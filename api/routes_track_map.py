@@ -15,7 +15,7 @@ from racelab_engine.services.track_map_service import (
     build_track_map_package,
     save_and_import_mt2_upload,
 )
-from racelab_engine.services.track_map_service import _sanitize_filename
+from racelab_engine.services.track_map_service import save_and_import_mt2_upload
 
 router = APIRouter(prefix="/api", tags=["track-maps"])
 
@@ -42,7 +42,7 @@ def _get_track_name(overview) -> str:
 async def import_mt2_endpoint(file: UploadFile = File(...)) -> dict:
     if not file.filename or not file.filename.lower().endswith(".mt2"):
         raise HTTPException(400, "Unsupported file type. Please select an .mt2 track map file.")
-    safe_name = _sanitize_filename(file.filename)
+    safe_name = file.filename
     content = await file.read()
     if len(content) > MAX_MT2_SIZE_BYTES:
         raise HTTPException(413, f".mt2 file is too large. Maximum size is {MAX_MT2_SIZE_BYTES // (1024*1024)} MB.")

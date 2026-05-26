@@ -326,14 +326,15 @@ def build_track_map_package(
         target_zone_end_pct=target_zone_end_pct,
     )
 
+    from dataclasses import asdict
     return {
         "run_id": run_id,
         "lap": lap,
         "map": track_map.as_dict() if track_map else None,
         "match": match,
         "overlays": overlays,
-        "sections": [s for s in (track_map.sections if track_map else [])],
-        "markers": [m for m in (track_map.markers if track_map else [])],
+        "sections": [asdict(s) for s in (track_map.sections if track_map else [])],
+        "markers": [asdict(m) for m in (track_map.markers if track_map else [])],
         "target_zone": {
             "start_pct": target_zone_start_pct,
             "end_pct": target_zone_end_pct,

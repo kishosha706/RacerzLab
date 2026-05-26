@@ -1,6 +1,6 @@
 import { AlertTriangle, Map as MapIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { TrackMapPackage, TrackMapOverlayMarker } from "../types/trackMap";
+import type { TrackMapPackage } from "../types/trackMap";
 import { fetchRunTrackMapPackage } from "../api/client";
 
 interface Props {
@@ -145,13 +145,6 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
           </div>
         )}
       </div>
-
-      {!pkg?.map && (
-        <div className="notebook-empty">
-          <p>No track map geometry available for this run.</p>
-          <p className="muted">Import a matching .mt2 file from your Track Maps folder.</p>
-        </div>
-      )}
 
       {pkg?.map && (
         <>

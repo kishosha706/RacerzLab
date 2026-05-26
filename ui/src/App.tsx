@@ -148,6 +148,7 @@ function CockpitShell() {
         setStatus(`Parsed .mt2 centerline: ${entry.points_count?.toLocaleString()} points, ${entry.markers_count} markers, ${entry.sections_count} sections.`);
         setImportStage(null);
         setImporting(false);
+        setLoading(false);
         return;
       }
       setImportStage("Importing telemetry…");
