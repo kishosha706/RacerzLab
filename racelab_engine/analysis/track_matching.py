@@ -144,7 +144,7 @@ def match_track_map_for_run(
             best_confidence = conf
             best_match = entry
 
-    if best_match and best_confidence != "none":
+    if best_match and best_confidence in ("high", "medium"):
         best_match["match_confidence"] = best_confidence
         best_match["match_score"] = best_score
         return best_match

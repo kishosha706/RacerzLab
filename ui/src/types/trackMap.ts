@@ -124,6 +124,8 @@ export interface TrackMapIndexEntry {
   distance_ft: number;
   match_aliases: string[];
   warnings: string[];
+  match_confidence?: string;
+  match_score?: number;
 }
 
 export interface TrackMapOverlayMarker {

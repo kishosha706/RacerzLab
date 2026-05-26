@@ -14,28 +14,46 @@ cd racelab-garage
 - App window opens titled "RaceLab Garage"
 - Backend health check passes at `http://127.0.0.1:8000/api/health`
 
-## 2. Import Baseline Run
+## 2. Startup Screen
+- Verify: Startup screen appears with "New Session" button
+- Verify: "No previous sessions" message shown on first launch
+- Click "New Session"
+- Verify: cockpit shell loads with empty state
+
+## 3. Import Baseline Run
 - Click "Import .ibt" or use the file selector
 - Select a baseline `.ibt` file
 - Verify: run appears in run list dropdown
 - Verify: overview shows track, car, lap count
+- Verify: run is automatically added to the current RaceLab session
 
-## 3. Import Test Run
+## 4. Import Test Run
 - Import a second `.ibt` (the test/experimental run)
 - Verify: two runs now appear in run selector
 - Verify: both runs show car/track info
 
-## 4. Select Useful Laps
+## 5. Select Useful Laps
 - Verify: best useful lap is auto-selected for both runs
 - Verify: run context bar shows track, car, lap
 
-## 5. Import .mt2 Track Map
+## 6. Lap Time Browser
+- Click "Laps" in the toolbar
+- Verify: sidebar opens showing lap list with out/timed/in classification
+- Verify: lap times display as M:SS.sss format
+- Verify: deltas show +0:NNN.NNN / -0:NNN.NNN / BEST
+- Verify: green checkmark for useful laps, red X for invalid
+- Verify: clicking a lap selects it and updates the trace
+- Click "Laps" again to close sidebar
+
+## 7. Import .mt2 Track Map
 - Click "Import .ibt" and select an `.mt2` file
 - Verify: status shows "Parsed .mt2 centerline: N points, M markers, S sections."
 - Verify: no crash for unsupported `.mt2` variants (graceful warning)
 
-## 6. Track Map View
+## 8. Track Map View
 - Navigate to "Map" in the nav rail
+- Verify: "Loaded Run" identity section shows track name, car name, setup name from .ibt
+- Verify: "Matched Map" section shows .mt2 filename with confidence badge (green=high, amber=medium)
 - Verify: SVG centerline path renders
 - Verify: markers toggle shows/hides .mt2 markers
 - Verify: events toggle shows/hides platform event overlays
@@ -135,9 +153,26 @@ cd racelab-garage
 - Verify: most common issue, best known target zone populated
 - Verify: recommended next test from latest needs_retest finding
 
-## 20. Persistence Restart Check
+## 20. Session Persistence
 - Close the app
 - Relaunch with `.\scripts\start_desktop.ps1`
+- Verify: Startup screen shows previous session in the list
+- Verify: session name, track, car, and run count are displayed
+- Click on the previous session
+- Verify: cockpit loads with the last imported run
+
+## 21. Session Management
+- Click "New Session" on the startup screen
+- Verify: fresh empty cockpit loads
+- Go back to startup screen (restart app)
+- Verify: both sessions appear in the list
+- Click the trash icon on a session
+- Verify: "Remove session? Telemetry files stay." confirmation appears
+- Click "Remove"
+- Verify: session is deleted from the list
+- Verify: telemetry data still exists (import another session's run to confirm)
+
+## 22. Notebook Persistence Restart Check
 - Navigate to Notebook
 - Verify: previously saved finding still appears
 - Verify: notes/tags/status changes persisted

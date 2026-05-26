@@ -123,6 +123,7 @@ export function fetchCompareInsights(request: {
   });
 }
 
+import type { RaceLabSession, RunLapList } from "../types/session";
 import type { TrackMapIndexEntry, TrackMapPackage } from "../types/trackMap";
 
 export function importMt2File(file: File): Promise<TrackMapIndexEntry> {
@@ -149,6 +150,54 @@ export function importMt2Folder(folderPath: string): Promise<{ imported: number;
 
 export function fetchTrackMaps(): Promise<TrackMapIndexEntry[]> {
   return requestJson<TrackMapIndexEntry[]>("/api/track-maps");
+}
+
+// ── Session API ────────────────────────────────────────────
+
+export function createSession(name?: string): Promise<RaceLabSession> {
+  return requestJson<RaceLabSession>("/api/sessions", {
+    method: "POST",
+    body: JSON.stringify({ name: name ?? null }),
+  });
+}
+
+export function fetchSessions(includeArchived = false): Promise<RaceLabSession[]> {
+  const params = includeArchived ? "?include_archived=true" : "";
+  return requestJson<RaceLabSession[]>(`/api/sessions${params}`);
+}
+
+export function fetchSession(sessionId: string): Promise<RaceLabSession> {
+  return requestJson<RaceLabSession>(`/api/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export function updateSession(sessionId: string, payload: Record<string, unknown>): Promise<RaceLabSession> {
+  return requestJson<RaceLabSession>(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteSession(sessionId: string): Promise<{ deleted: boolean; session_id: string }> {
+  return requestJson<{ deleted: boolean; session_id: string }>(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function archiveSession(sessionId: string): Promise<RaceLabSession> {
+  return requestJson<RaceLabSession>(`/api/sessions/${encodeURIComponent(sessionId)}/archive`, {
+    method: "POST",
+  });
+}
+
+export function addRunToSession(sessionId: string, runId: string): Promise<RaceLabSession> {
+  return requestJson<RaceLabSession>(`/api/sessions/${encodeURIComponent(sessionId)}/runs`, {
+    method: "POST",
+    body: JSON.stringify({ run_id: runId }),
+  });
+}
+
+export function fetchRunLapList(runId: string): Promise<RunLapList> {
+  return requestJson<RunLapList>(`/api/sessions/runs/${encodeURIComponent(runId)}/laps`);
 }
 
 export function fetchRunTrackMapPackage(

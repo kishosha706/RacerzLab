@@ -1348,3 +1348,51 @@ td {
 }
 .event-symbol { font-weight: 600; }
 .event-pct { color: #8d9aaa; }
+
+/* ── Map Identity ──────────────────────────────────────────── */
+.map-identity-section {
+  background: #0f1320;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+.map-identity-row {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  padding: 3px 0;
+}
+.map-identity-label {
+  color: #8d9aaa;
+  min-width: 110px;
+}
+.map-identity-value {
+  color: #e2e8f0;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.map-confidence-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  border-radius: 4px;
+  line-height: 1.5;
+}
+.map-confidence-badge[data-confidence="high"] {
+  color: #166534;
+  background: #4ade80;
+}
+.map-confidence-badge[data-confidence="medium"] {
+  color: #78350f;
+  background: #fbbf24;
+}
+.map-confidence-badge[data-confidence="low"] {
+  color: #7f1d1d;
+  background: #f87171;
+}

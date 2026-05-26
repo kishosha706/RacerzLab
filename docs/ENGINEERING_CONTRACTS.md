@@ -196,6 +196,44 @@ The Notebook should save existing comparison/insight payloads as-is from the API
 - Channels may be arrays or `TraceChannelPayload` objects
 - `downsample` and `preserve_extrema` control sampling
 
+### POST /api/sessions
+- Create a new RaceLab session. Optional `{name: string}` body.
+- Returns `RaceLabSession` with `session_id`, `name`, `created_at`, `updated_at`, `status: "active"`.
+
+### GET /api/sessions
+- List active RaceLab sessions. `?include_archived=true` to include archived.
+- Returns `RaceLabSession[]` ordered by `updated_at DESC`.
+
+### GET /api/sessions/{session_id}
+- Get a single session by ID. Returns 404 if not found.
+
+### PATCH /api/sessions/{session_id}
+- Update session fields: `name`, `track_name`, `car_name`, `last_opened_run_id`, `last_selected_lap`, `last_workspace`, `status`.
+
+### DELETE /api/sessions/{session_id}
+- Delete a session. Does **NOT** delete imported telemetry files. Returns `{deleted: true, session_id}`.
+
+### POST /api/sessions/{session_id}/archive
+- Archive a session (sets `status: "archived"`). Archived sessions hidden from default list.
+
+### POST /api/sessions/{session_id}/runs
+- Add a run to a session. Body: `{run_id: string}`. Duplicate run_ids are silently ignored.
+
+### DELETE /api/sessions/{session_id}/runs/{run_id}
+- Remove a run from a session. Does not delete telemetry data.
+
+### GET /api/sessions/{session_id}/runs/{run_id}/laps
+- Get full lap list for a run within a session context.
+- Returns `RunLapList` with `laps: LapSummaryItem[]`, `best_lap_number`, `useful_lap_numbers`.
+
+### GET /api/sessions/runs/{run_id}/laps
+- Standalone lap list (no session required). Same response shape as session-scoped endpoint.
+
+### Lap list response contract
+- `LapSummaryItem` fields: `lap_id`, `run_id`, `lap_number`, `label`, `lap_type` (out/timed/in/unknown), `lap_time_s`, `lap_time_display` (M:SS.sss), `delta_s`, `delta_display` (+/-/BEST), `is_valid`, `is_useful`, `invalid_reasons`, `sample_count`, `distance_pct_min/max`, `has_telemetry`
+- `lap_type` classification: first non-timed lap before first timed lap = "out", useful laps with lap_time = "timed", laps after last timed lap = "in", fallback = "unknown"
+- `delta_display` shows "BEST" for the fastest useful lap, `+0:NNN.NNN` for slower laps, `-0:NNN.NNN` for faster laps (relative to best)
+
 ---
 
 ## 10. Remaining Risks for Notebook Worker

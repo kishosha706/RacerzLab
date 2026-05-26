@@ -1,6 +1,7 @@
 import { BarChart3, Boxes, Gauge, Layers, List, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  addRunToSession,
   fetchChannels,
   fetchEvents,
   fetchLaps,
@@ -8,6 +9,7 @@ import {
   fetchPlatformEvents,
   fetchReport,
   fetchRunList,
+  fetchSession,
   fetchSetup,
   fetchTrace,
   importIbtFile,
@@ -15,9 +17,11 @@ import {
 } from "./api/client";
 import { EventTimeline } from "./components/EventTimeline";
 import { EvidenceInspector } from "./components/EvidenceInspector";
+import { LapTimeBrowser } from "./components/LapTimeBrowser";
 import { NextBestClick } from "./components/NextBestClick";
 import { PriorityRail } from "./components/PriorityRail";
 import { RunContextBar } from "./components/RunContextBar";
+import { StartupScreen } from "./components/StartupScreen";
 import { TelemetrySelectionProvider, useTelemetrySelection } from "./store/TelemetrySelectionContext";
 import { CompareTab } from "./tabs/CompareTab";
 import { NotebookTab } from "./tabs/NotebookTab";
@@ -38,6 +42,7 @@ import type {
 // ── cockpit shell ─────────────────────────────────────────────
 
 function CockpitShell() {
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [overview, setOverview] = useState<RunOverview | null>(null);
   const [trace, setTrace] = useState<TraceResponse | null>(null);
@@ -49,6 +54,7 @@ function CockpitShell() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showLapBrowser, setShowLapBrowser] = useState(false);
 
   const { selection, loadRun, selectLap, selectEvent, setWorkspace } = useTelemetrySelection();
 
@@ -107,33 +113,22 @@ function CockpitShell() {
     [loadRun],
   );
 
-  // ── initial load ────────────────────────────────────────────
-  const loadRecent = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  // ── session management (defined after loadSelectedRun to avoid hoisting issues) ──
+  const handleSessionSelected = useCallback(async (sid: string) => {
+    setSessionId(sid);
     try {
-      const recentRuns = await fetchRunList();
-      setRuns(recentRuns);
-      if (recentRuns.length > 0) {
-        await loadSelectedRun(recentRuns[0].run_id);
+      const session = await fetchSession(sid);
+      if (session.run_ids.length > 0) {
+        const recentRuns = await fetchRunList();
+        setRuns(recentRuns);
+        await loadSelectedRun(session.run_ids[session.run_ids.length - 1]);
       } else {
-        setOverview(null);
-        setTrace(null);
-        setChannels([]);
-        setPlatformEvents([]);
         setLoading(false);
       }
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to reach RaceLab API.");
-      setOverview(null);
-      setTrace(null);
-      setChannels([]);
-      setPlatformEvents([]);
+    } catch {
       setLoading(false);
     }
   }, [loadSelectedRun]);
-
-  useEffect(() => { void loadRecent(); }, [loadRecent]);
 
   // ── import ──────────────────────────────────────────────────
   const [importStage, setImportStage] = useState<string | null>(null);
@@ -161,6 +156,10 @@ function CockpitShell() {
       const recentRuns = await fetchRunList();
       setRuns(recentRuns);
       if (result.run_id) {
+        // Add to current RaceLab session
+        if (sessionId) {
+          addRunToSession(sessionId, result.run_id).catch(() => {});
+        }
         setImportStage("Building analysis…");
         await loadSelectedRun(result.run_id);
       }
@@ -202,10 +201,18 @@ function CockpitShell() {
       return <CompareTab runs={runs} currentRunId={overview.run_id} />;
     }
     if (ws === "map") {
-      return <TrackMapTab runId={overview.run_id} lap={selection.selectedLap} />;
+      return <TrackMapTab runId={overview.run_id} lap={selection.selectedLap}
+        trackName={overview.session.track_display_name ?? overview.session.track_name}
+        carName={overview.session.car_name}
+        setupName={overview.session.setup_name} />;
     }
     return <OverviewTab overview={overview} />;
   }, [overview, selection.selectedWorkspace, trace, cursor, channels]);
+
+  // ── no session yet → show startup screen ───────────────────
+  if (!sessionId) {
+    return <StartupScreen onSessionSelected={handleSessionSelected} />;
+  }
 
   // ── loading / empty state ───────────────────────────────────
   if (loading && !overview) {
@@ -218,7 +225,7 @@ function CockpitShell() {
         <section className="empty-panel">
           <span className="eyebrow">RaceLab Garage</span>
           <h1>No persisted runs yet</h1>
-          <p>Import a local iRacing `.ibt` file to create the first baseline run.</p>
+          <p>Import a local iRacing `.ibt` or `.mt2` file to get started.</p>
           <div className="import-row">
             <input
               ref={fileInputRef}
@@ -231,7 +238,7 @@ function CockpitShell() {
               }}
             />
             <button className="secondary-button" onClick={handleImportClick} disabled={importing}>
-              {importStage ?? (importing ? "Importing…" : "Import .ibt")}
+              {importStage ?? (importing ? "Importing…" : "Import .ibt or .mt2")}
             </button>
           </div>
           {error && <p className="error-text">{error}</p>}
@@ -317,6 +324,9 @@ function CockpitShell() {
               <button className="secondary-button" onClick={handleImportClick} disabled={importing}>
                 <BarChart3 size={16} /> {importStage ?? (importing ? "Importing…" : "Import .ibt")}
               </button>
+              <button className="secondary-button" onClick={() => setShowLapBrowser(!showLapBrowser)}>
+                <BarChart3 size={16} /> Laps
+              </button>
               <button className="secondary-button" onClick={handleExportReport}>
                 <BarChart3 size={16} /> Export
               </button>
@@ -324,8 +334,17 @@ function CockpitShell() {
           </div>
           {status && <p className="status-text">{status}</p>}
           {error && <p className="error-text">{error}</p>}
-          <NextBestClick runId={overview.run_id} platformEvents={platformEvents} />
-          {workspaceContent}
+          <div className="cockpit-workspace-body">
+            {showLapBrowser && overview && (
+              <aside className="lap-browser-sidebar">
+                <LapTimeBrowser runId={overview.run_id} />
+              </aside>
+            )}
+            <div className="cockpit-workspace-main">
+              <NextBestClick runId={overview.run_id} platformEvents={platformEvents} />
+              {workspaceContent}
+            </div>
+          </div>
         </main>
 
         <EvidenceInspector overview={overview} platformEvents={platformEvents} channels={channels} />

@@ -12,13 +12,17 @@
 | .mt2 track map parser | **Complete** | MoTeCTrackV2 binary parser, 36 maps imported, Atlanta: 1,911 pts, 8,014 ft, 4 markers, 4 sections |
 | Track Map matching | **Complete** | 28 iRacing track name→slug mappings, layout inference, confidence-scored matching |
 | Track Map UI | **Complete** | SVG centerline rendering, marker/event/target-zone toggles, honest warnings, nav "Map" tab |
-| SQLite persistence | **Complete** | Runs, laps, events, setup snapshots, notebook, test plans |
+| Track Map Identity | **Complete** | "Loaded Run" section (track/car/setup from .ibt), "Matched Map" section (.mt2 filename + confidence badge), telemetry-derived fallback messaging |
+| SQLite persistence | **Complete** | Runs, laps, events, setup snapshots, notebook, test plans, RaceLab sessions |
 | Telemetry normalization | **Complete** | 70+ calculated channels, unit conversions, g-projection |
 | Platform/Aero Workbench | **Complete** | MoTeC-style charts, 5 presets (Platform/Rake, Speed/RPM, Drag/Scrub, Tires), CFS bands, extrema downsampling |
 | Compare Workbook | **Complete** | Verdict, WCI, Four Corners, Tires, Shocks, Driver, Engine |
 | Delta Traces | **Complete** | 3 presets, target zone highlighting, per-channel deltas |
 | Insights Engine | **Complete** | Automated interpretation from comparison |
 | Notebook & Setup Memory | **Complete** | Save findings, edit notes/tags/status, duplicate detection, test plans, setup memory dashboard |
+| Session Manager | **Complete** | Create/list/get/update/delete/archive RaceLab sessions, add/remove runs, startup screen with New/Open/Delete, session-scoped lap lists |
+| Lap Time Browser | **Complete** | Compact sidebar with out/timed/in classification, lap times (M:SS.sss), deltas (+/-/BEST), validity icons, selected lap highlight |
+| Startup Flow | **Complete** | StartupScreen on launch with New Session button, Previous Sessions list, delete confirmation ("Telemetry files stay.") |
 | Markdown Export | **Complete** | Copy finding as Markdown to clipboard |
 | Channel Classification | **Complete** | raw/calculated/proxy with metadata, cross-run comparability |
 | Proxy Honesty | **Complete** | All aero/load/slip values marked proxy with warnings |
@@ -35,8 +39,10 @@
 
 | Check | Result |
 |---|---|
-| Backend tests | 101/101 pass |
+| Backend tests | 126/126 pass |
 | Codebase gap scan | 11 issues found and fixed |
+| QA audit (Session Manager) | 4 issues found and fixed (hoisting bug, hooks ordering, delta sign, unused imports) |
+| Session service tests | 25 new tests added |
 | TypeScript | Clean (`npx tsc --noEmit`) |
 | Local-only audit | Pass |
 | Build | `npm run build` successful |
@@ -101,7 +107,7 @@ They are preserved as scaffold for future features but should be reviewed before
 | README accurate | **Yes** |
 | SECURITY.md reflects local-only storage | **Yes** |
 | Engineering contracts documented | **Yes** (`docs/ENGINEERING_CONTRACTS.md`) |
-| Test suite passes | **Yes** (101/101) |
+| Test suite passes | **Yes** (126/126) |
 | TypeScript clean | **Yes** |
 | Local-only audit passes | **Yes** |
 | Build succeeds | **Yes** |
@@ -110,4 +116,4 @@ They are preserved as scaffold for future features but should be reviewed before
 
 ---
 
-**MVP Status:** Ready for local desktop use.
+**MVP Status:** Ready for local desktop use. Session workflow, lap browser, and track identity fully integrated.

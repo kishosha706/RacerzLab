@@ -9,12 +9,15 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **Real .ibt ingestion** — binary parser for iRacing telemetry files with 275+ variables
 - **.mt2 Track Map support** — MoTeCTrackV2 binary parser, centerline geometry, markers, sections, curvature derivation, distance-based interpolation, SVG rendering with platform event overlays and target zone highlighting
 - **Track Map matching** — automatic track name normalization and scoring-based map-to-run matching
+- **Track Map Identity** — "Loaded Run" section showing track/car/setup from .ibt, "Matched Map" section with confidence badge (green/amber)
+- **Session Manager** — create/list/get/update/delete/archive RaceLab sessions, add/remove runs, startup screen with New/Open/Delete
+- **Lap Time Browser** — compact sidebar with out/timed/in lap classification, lap times (M:SS.sss), deltas (+/-/BEST), validity icons
 - **Platform/Aero Workbench** — MoTeC-style stacked chart workbench with Platform/Rake, Speed/RPM, Drag/Scrub, and Tires presets
 - **Compare Workbook** — baseline vs test lap comparison by lap percentage with verdict, whole-car index, four corners, tires, shocks, driver, and engine views
 - **Delta Traces** — per-channel delta traces with target zone highlighting (Speed/Platform, Ride Height, Tire presets)
 - **Insights Engine** — automated interpretation of comparison results with trace annotations, correlations, target zone classification, confidence-weighted verdicts, and sector intelligence
 - **Notebook & Setup Memory** — save findings, edit notes/tags/status, duplicate detection, create test plans, copy Markdown export, view setup memory dashboard with per-car/track summaries
-- **Local SQLite persistence** — imported runs, laps, events, setup snapshots, findings, and test plans stored locally
+- **Local SQLite persistence** — imported runs, laps, events, setup snapshots, findings, test plans, and RaceLab sessions stored locally
 - **70+ calculated channels** — ride heights, rake, dynamic pressure, tire pressure gain, temp/wear spread, slip ratio proxy, shock velocity, motion g-conversions, platform pitch/roll estimates
 - **Extrema-preserving downsampling** — CFS minimums and event peaks never lost in chart views
 
@@ -85,18 +88,20 @@ pytest
 
 ## Core Workflow
 
-1. **Import baseline .ibt** — via file picker or `POST /api/imports/ibt`
-2. **Import test .ibt** — your experimental setup or driving change
-3. **Import .mt2 track map** — via file picker or folder import for spatial overlays
-4. **Open Platform Workbench** — inspect ride heights, rake, dynamic pressure, tire pressure/temp/slip
-5. **Open Track Map** — view centerline geometry with platform event markers and target zone overlay
-6. **Open Compare** — select baseline/test laps, run comparison
-7. **Review Verdict** — keep/undo/retest with confidence score and evidence
-8. **Explore Delta Traces** — see per-channel deltas by lap position with target zone highlight
-9. **Save Finding** — persist the comparison result to the Notebook
-10. **Edit Notes/Tags/Status** — add context, change confirmation status
-11. **Create Test Plan** — define the next controlled test
-12. **Setup Memory** — review the aggregate picture of what has worked
+1. **Create or open a RaceLab session** — via the startup screen
+2. **Import baseline .ibt** — via file picker or `POST /api/imports/ibt` (auto-added to session)
+3. **Import test .ibt** — your experimental setup or driving change
+4. **Import .mt2 track map** — via file picker or folder import for spatial overlays
+5. **Browse laps** — open the Lap Time Browser to see out/timed/in classification, lap times, and deltas
+6. **Open Platform Workbench** — inspect ride heights, rake, dynamic pressure, tire pressure/temp/slip
+7. **Open Track Map** — view centerline geometry with platform event markers, identity section, and target zone overlay
+8. **Open Compare** — select baseline/test laps, run comparison
+9. **Review Verdict** — keep/undo/retest with confidence score and evidence
+10. **Explore Delta Traces** — see per-channel deltas by lap position with target zone highlight
+11. **Save Finding** — persist the comparison result to the Notebook
+12. **Edit Notes/Tags/Status** — add context, change confirmation status
+13. **Create Test Plan** — define the next controlled test
+14. **Setup Memory** — review the aggregate picture of what has worked
 
 ---
 
@@ -131,6 +136,16 @@ POST /api/notebook/findings/{id}/test-plan
 GET  /api/notebook/test-plans
 PATCH /api/notebook/test-plans/{id}
 GET  /api/notebook/setup-memory
+POST /api/sessions (create RaceLab session)
+GET  /api/sessions (list sessions)
+GET  /api/sessions/{id} (get session)
+PATCH /api/sessions/{id} (update session)
+DELETE /api/sessions/{id} (delete session, keeps telemetry)
+POST /api/sessions/{id}/archive (archive session)
+POST /api/sessions/{id}/runs (add run to session)
+DELETE /api/sessions/{id}/runs/{run_id} (remove run from session)
+GET  /api/sessions/{id}/runs/{run_id}/laps (session-scoped lap list)
+GET  /api/sessions/runs/{run_id}/laps (standalone lap list)
 ```
 
 ---
