@@ -1,0 +1,180 @@
+import { AlertTriangle, Map as MapIcon, ShieldAlert } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import type { TrackMapPackage, TrackMapPoint, TrackMapOverlayMarker } from "../types/trackMap";
+import { fetchRunTrackMapPackage } from "../api/client";
+
+interface Props {
+  runId: string | null;
+  lap?: number | null;
+  targetZoneStartPct?: number;
+  targetZoneEndPct?: number;
+}
+
+export function TrackMapTab({ runId, lap, targetZoneStartPct, targetZoneEndPct }: Props) {
+  const [pkg, setPkg] = useState<TrackMapPackage | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showMarkers, setShowMarkers] = useState(true);
+  const [showOverlays, setShowOverlays] = useState(true);
+  const [showTargetZone, setShowTargetZone] = useState(true);
+
+  useEffect(() => {
+    if (!runId) { setPkg(null); return; }
+    setLoading(true);
+    setError(null);
+    fetchRunTrackMapPackage(runId, {
+      lap: lap ?? undefined,
+      target_zone_start_pct: targetZoneStartPct,
+      target_zone_end_pct: targetZoneEndPct,
+    })
+      .then(setPkg)
+      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load track map"))
+      .finally(() => setLoading(false));
+  }, [runId, lap, targetZoneStartPct, targetZoneEndPct]);
+
+  const points = pkg?.map?.points ?? [];
+  const bounds = pkg?.map?.bounds;
+  const overlays = pkg?.overlays ?? [];
+  const markers = pkg?.map?.markers ?? [];
+  const metadata = pkg?.map?.metadata;
+
+  const viewBox = useMemo(() => {
+    if (!bounds) return "0 0 800 600";
+    const pad = 50;
+    const w = bounds.width_m + pad * 2;
+    const h = bounds.height_m + pad * 2;
+    return `${bounds.min_x_m - pad} ${bounds.min_y_m - pad} ${w} ${h}`;
+  }, [bounds]);
+
+  const pointPath = useMemo(() => {
+    if (points.length === 0) return "";
+    const scale = 1;
+    return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x ?? p.x_m} ${p.y ?? p.y_m}`).join(" ");
+  }, [points]);
+
+  const targetZonePath = useMemo(() => {
+    const tz = overlays.find((o) => o.kind === "target_zone");
+    const pts = tz?.points;
+    if (!pts || pts.length < 2) return null;
+    return pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+  }, [overlays]);
+
+  // ── empty states ──
+  if (!runId) {
+    return (
+      <section className="notebook-tab">
+        <h2><MapIcon size={18} /> Track Map</h2>
+        <p className="muted">Import a run and .mt2 track map to view spatial data.</p>
+      </section>
+    );
+  }
+
+  if (loading) {
+    return (
+      <section className="notebook-tab">
+        <h2><MapIcon size={18} /> Track Map</h2>
+        <p className="muted">Loading track map…</p>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="notebook-tab">
+        <h2><MapIcon size={18} /> Track Map</h2>
+        <p className="error-text">{error}</p>
+      </section>
+    );
+  }
+
+  if (!pkg?.map) {
+    return (
+      <section className="notebook-tab">
+        <h2><MapIcon size={18} /> Track Map</h2>
+        <div className="notebook-empty">
+          <p>No track map available for this run.</p>
+          <p className="muted">Import a matching .mt2 file from your Track Maps folder.</p>
+        </div>
+      </section>
+    );
+  }
+
+  // ── render ──
+  const sourceBadge = "mt2";
+  return (
+    <section className="notebook-tab">
+      <header className="notebook-header">
+        <h2><MapIcon size={18} /> Track Map</h2>
+        <div className="track-map-controls">
+          <span className={`source-badge source-${sourceBadge}`}>.mt2</span>
+          <label className="toggle-label"><input type="checkbox" checked={showMarkers} onChange={(e) => setShowMarkers(e.target.checked)} /> Markers</label>
+          <label className="toggle-label"><input type="checkbox" checked={showOverlays} onChange={(e) => setShowOverlays(e.target.checked)} /> Events</label>
+          <label className="toggle-label"><input type="checkbox" checked={showTargetZone} onChange={(e) => setShowTargetZone(e.target.checked)} /> Target Zone</label>
+        </div>
+      </header>
+
+      {/* warnings */}
+      {metadata?.warnings && metadata.warnings.length > 0 && (
+        <div className="map-warnings">
+          {metadata.warnings.map((w: string, i: number) => (
+            <p key={i} className="warning-line"><AlertTriangle size={12} /> {w}</p>
+          ))}
+        </div>
+      )}
+
+      {/* parsed summary */}
+      <p className="map-summary">
+        Parsed .mt2 centerline: {points.length.toLocaleString()} points
+        {metadata?.has_markers && `, ${markers.length} markers`}
+        {metadata?.has_sections && `, ${pkg.map.sections.length} sections`}
+        . {metadata && !metadata.origin.gps_supported && "No GPS, banking, width, or boundary data found."}
+      </p>
+
+      {/* SVG map */}
+      <div className="track-map-svg-container">
+        <svg viewBox={viewBox} className="track-map-svg">
+          {/* centerline */}
+          <path d={pointPath} fill="none" stroke="#4ade80" strokeWidth={4} strokeOpacity={0.7} />
+
+          {/* target zone */}
+          {showTargetZone && targetZonePath && (
+            <path d={targetZonePath} fill="none" stroke="#22c55e" strokeWidth={8} strokeOpacity={0.5} />
+          )}
+
+          {/* .mt2 markers */}
+          {showMarkers && markers.map((m) => (
+            <g key={m.marker_id}>
+              <circle cx={m.x} cy={m.y} r={4} fill="#38bdf8" />
+              <text x={m.x + 6} y={m.y - 6} fill="#8d9aaa" fontSize={9} fontFamily="Inter, sans-serif">{m.name}</text>
+            </g>
+          ))}
+
+          {/* platform event overlays */}
+          {showOverlays && overlays
+            .filter((o) => o.kind === "platform_event")
+            .map((o) => (
+              o.x != null && o.y != null ? (
+                <g key={o.marker_id}>
+                  <circle cx={o.x} cy={o.y} r={5} fill={o.color ?? "#f59e0b"} stroke="#0a0d14" strokeWidth={1.5} />
+                  <text x={o.x + 7} y={o.y + 4} fill={o.color ?? "#f59e0b"} fontSize={9} fontFamily="Inter, sans-serif">{o.symbol ?? "◆"} {o.label}</text>
+                </g>
+              ) : null
+            ))}
+        </svg>
+      </div>
+
+      {/* no coordinate fallback — show lap-distance events */}
+      {overlays.filter((o) => o.kind === "platform_event" && o.x == null).length > 0 && (
+        <div className="map-fallback-events">
+          <h4>Events (lap-distance only)</h4>
+          {overlays.filter((o) => o.kind === "platform_event" && o.x == null).map((o) => (
+            <div key={o.marker_id} className="map-event-row">
+              <span className="event-symbol" style={{ color: o.color }}>{o.symbol} {o.label}</span>
+              <span className="event-pct">@{o.lap_pct?.toFixed(1)}%</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}

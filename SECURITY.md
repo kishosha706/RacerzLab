@@ -9,6 +9,7 @@ RaceLab Garage is local desktop software for iRacing telemetry and setup analysi
 - The RaceLab Engine backend binds to `127.0.0.1` only.
 - Imported `.ibt`, `.sto`, `.mt2`, generated reports, cache files, and SQLite data stay on the user's machine.
 - Notebook findings, notes, tags, and test plans are stored in local SQLite only. No cloud sync exists.
-- `.sto` and `.mt2` decoding are not implemented yet, and no claim is made that they are decoded.
+- `.mt2` decoding is partial/centerline only — no GPS, boundaries, banking, or track width data.
+- `.sto` decoding is not implemented yet, and no claim is made that it is decoded.
 
 If you discover a local data exposure issue, preserve the local files involved and document the exact steps to reproduce it.

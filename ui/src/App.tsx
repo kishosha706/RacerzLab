@@ -11,6 +11,7 @@ import {
   fetchSetup,
   fetchTrace,
   importIbtFile,
+  importMt2File,
 } from "./api/client";
 import { EventTimeline } from "./components/EventTimeline";
 import { EvidenceInspector } from "./components/EvidenceInspector";
@@ -24,6 +25,7 @@ import { OverviewTab } from "./tabs/OverviewTab";
 import { PlatformTab } from "./tabs/PlatformTab";
 import { RawChannelsTab } from "./tabs/RawChannelsTab";
 import { SetupTab } from "./tabs/SetupTab";
+import { TrackMapTab } from "./tabs/TrackMapTab";
 import type {
   ChannelCatalogItem,
   PlatformEventItem,
@@ -143,6 +145,16 @@ function CockpitShell() {
     setStatus(null);
     setImportStage("Opening file…");
     try {
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      if (ext === "mt2") {
+        setImportStage("Importing track map…");
+        const entry = await importMt2File(file);
+        setImportStage("Saving local copy…");
+        setStatus(`Parsed .mt2 centerline: ${entry.points_count?.toLocaleString()} points, ${entry.markers_count} markers, ${entry.sections_count} sections.`);
+        setImportStage(null);
+        setImporting(false);
+        return;
+      }
       setImportStage("Importing telemetry…");
       const result = await importIbtFile(file);
       setImportStage("Saving local copy…");
@@ -190,12 +202,7 @@ function CockpitShell() {
       return <CompareTab runs={runs} currentRunId={overview.run_id} />;
     }
     if (ws === "map") {
-      return (
-        <section className="workspace-placeholder">
-          <h3>Track Map</h3>
-          <p>Track map will be available when GPS data or .mt2 parsing is active.</p>
-        </section>
-      );
+      return <TrackMapTab runId={overview.run_id} lap={selection.selectedLap} />;
     }
     return <OverviewTab overview={overview} />;
   }, [overview, selection.selectedWorkspace, trace, cursor, channels]);
@@ -268,6 +275,7 @@ function CockpitShell() {
         <nav className="workspace-nav-rail">
           {([
             ["overview", "Overview", Gauge],
+            ["map", "Map", Layers],
             ["platform_trace", "Platform", Layers],
             ["setup_impact", "Setup", Wrench],
             ["compare", "Compare", BarChart3],
@@ -302,7 +310,7 @@ function CockpitShell() {
                 accept=".ibt,.sto,.mt2"
                 style={{ display: "none" }}
                 onChange={(e) => {
-                  const files = e.currentTarget.files;
+                  const { files } = e.currentTarget;
                   if (files && files.length > 0) void handleFileSelected(files[0]);
                 }}
               />

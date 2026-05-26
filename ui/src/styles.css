@@ -1289,3 +1289,62 @@ td {
 
 .result-setup-changes { margin-top: 12px; }
 .muted { color: var(--muted); font-size: 0.78rem; }
+
+/* ── Track Map ─────────────────────────────────────────────── */
+.track-map-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.source-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.source-mt2 { background: #4ade8020; color: #4ade80; }
+.source-telemetry { background: #38bdf820; color: #38bdf8; }
+.source-fallback { background: #8d9aaa20; color: #8d9aaa; }
+.toggle-label {
+  font-size: 11px;
+  color: #8d9aaa;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.toggle-label input { accent-color: #4ade80; }
+.map-warnings { margin-bottom: 12px; }
+.map-summary {
+  font-size: 12px;
+  color: #8d9aaa;
+  margin-bottom: 12px;
+}
+.track-map-svg-container {
+  background: #0a0d14;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.track-map-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.map-fallback-events {
+  margin-top: 16px;
+  padding: 12px;
+  background: #0f1320;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+}
+.map-event-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.event-symbol { font-weight: 600; }
+.event-pct { color: #8d9aaa; }

@@ -1,97 +1,11 @@
 from __future__ import annotations
 
 from racelab_engine.analysis.comparison import (
-    ChannelDeltaStats, CornerDelta, Corner, Direction,
+    ChannelDeltaStats, Corner, CornerDelta, Direction,
     PlatformComparison, TireComparison, ShockComparison,
     DriverComparison, PowertrainComparison, WholeCarIndex,
     build_lap_grid, interpolate_run_to_grid,
 )
-
-
-def _delta_dict(d: ChannelDeltaStats | None) -> dict | None:
-    if d is None:
-        return None
-    return {
-        "channel": d.channel, "label": d.label, "unit": d.unit,
-        "baseline_avg": d.baseline_avg, "test_avg": d.test_avg, "delta_avg": d.delta_avg,
-        "baseline_min": d.baseline_min, "test_min": d.test_min,
-        "baseline_max": d.baseline_max, "test_max": d.test_max,
-        "direction": d.direction, "interpretation": d.interpretation, "confidence": d.confidence,
-    }
-
-
-def _corner_dict(c: CornerDelta) -> dict:
-    return {
-        "corner": c.corner,
-        "ride_height_in": _delta_dict(c.ride_height_in),
-        "shock_defl_in": _delta_dict(c.shock_defl_in),
-        "shock_vel_in_s": _delta_dict(c.shock_vel_in_s),
-        "tire_pressure": _delta_dict(c.tire_pressure),
-        "wheel_speed": _delta_dict(c.wheel_speed),
-        "slip_ratio_proxy": _delta_dict(c.slip_ratio_proxy),
-        "corner_score": c.corner_score, "warnings": c.warnings,
-    }
-
-
-def _platform_dict(p: PlatformComparison) -> dict:
-    return {
-        "cfs_height": _delta_dict(p.cfs_height),
-        "front_avg_rh": _delta_dict(p.front_avg_rh),
-        "rear_avg_rh": _delta_dict(p.rear_avg_rh),
-        "center_rake_fs": _delta_dict(p.center_rake_fs),
-        "side_rake": _delta_dict(p.side_rake),
-        "front_split": _delta_dict(p.front_split),
-        "rear_split": _delta_dict(p.rear_split),
-        "dynamic_pressure": _delta_dict(p.dynamic_pressure),
-        "cfs_risk_score": _delta_dict(p.cfs_risk_score),
-        "platform_risk_delta_label": p.platform_risk_delta_label,
-        "platform_verdict": p.platform_verdict,
-    }
-
-
-def _tire_dict(t):
-    return {
-        "corners": {k: _corner_dict(v) for k, v in t.corners.items()},
-        "temp_spread_summary": t.temp_spread_summary,
-        "wear_summary": t.wear_summary,
-        "tire_verdict": t.tire_verdict,
-        "short_run_warning": t.short_run_warning,
-    }
-
-
-def _shock_dict(s):
-    return {
-        "corners": {k: _corner_dict(v) for k, v in s.corners.items()},
-        "shock_velocity_rms_avg": _delta_dict(s.shock_velocity_rms_avg),
-        "shock_activity_index": _delta_dict(s.shock_activity_index),
-        "shock_verdict": s.shock_verdict,
-    }
-
-
-def _driver_dict(d):
-    return {
-        "avg_throttle_pct": _delta_dict(d.avg_throttle_pct),
-        "full_throttle_pct_time": _delta_dict(d.full_throttle_pct_time),
-        "avg_brake_pct": _delta_dict(d.avg_brake_pct),
-        "avg_abs_steering_deg": _delta_dict(d.avg_abs_steering_deg),
-        "max_abs_steering_deg": _delta_dict(d.max_abs_steering_deg),
-        "driver_changed_warning": d.driver_changed_warning,
-        "driver_verdict": d.driver_verdict,
-    }
-
-
-def _powertrain_dict(p):
-    return {
-        "avg_rpm": _delta_dict(p.avg_rpm),
-        "min_rpm": _delta_dict(p.min_rpm),
-        "max_rpm": _delta_dict(p.max_rpm),
-        "gear_usage": p.gear_usage,
-        "speed_vs_rpm": p.speed_vs_rpm,
-        "pull_score": _delta_dict(p.pull_score),
-        "water_temp": _delta_dict(p.water_temp),
-        "oil_temp": _delta_dict(p.oil_temp),
-        "powertrain_verdict": p.powertrain_verdict,
-    }
 
 
 def _compute_direction(delta: float | None, higher_is: str) -> Direction | None:

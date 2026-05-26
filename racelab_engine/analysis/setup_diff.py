@@ -70,9 +70,12 @@ def diff_context(
     changes: list[ContextChange] = []
 
     def _get(obj: Any, key: str) -> Any:
-        if obj is None: return None
-        if hasattr(obj, key): return getattr(obj, key)
-        if isinstance(obj, dict): return obj.get(key)
+        if obj is None:
+            return None
+        if hasattr(obj, key):
+            return getattr(obj, key)
+        if isinstance(obj, dict):
+            return obj.get(key)
         return None
 
     checks = [
@@ -91,7 +94,8 @@ def diff_context(
                 changes.append(ContextChange(key=key, label=label, baseline_value=bl,
                     test_value=t, warning=warning, is_problem=True))
         except (TypeError, ValueError):
-            pass
+            changes.append(ContextChange(key=key, label=label, baseline_value=bl,
+                test_value=t, warning=f"Could not compare {label}.", is_problem=True))
 
     if not baseline_lap_valid:
         changes.append(ContextChange(key="baseline_lap", label="Baseline Lap",

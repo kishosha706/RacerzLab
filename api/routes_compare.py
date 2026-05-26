@@ -13,8 +13,9 @@ from racelab_engine.analysis.compare_delta_traces import (
 from racelab_engine.analysis.compare_math import (
     aggregate_platform_stats, aggregate_driver_stats,
     aggregate_powertrain_stats, aggregate_corner_stats,
-    compute_whole_car_index, _platform_dict, _corner_dict,
+    compute_whole_car_index,
 )
+from racelab_engine.analysis.comparison import _platform_dict, _corner_dict
 from racelab_engine.analysis.did_it_work import compute_verdict
 from racelab_engine.analysis.setup_diff import diff_context, diff_setups
 from racelab_engine.analysis.test_discipline import score_test_discipline

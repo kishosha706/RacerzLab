@@ -7,6 +7,8 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 ## Current MVP Features
 
 - **Real .ibt ingestion** — binary parser for iRacing telemetry files with 275+ variables
+- **.mt2 Track Map support** — MoTeCTrackV2 binary parser, centerline geometry, markers, sections, curvature derivation, distance-based interpolation, SVG rendering with platform event overlays and target zone highlighting
+- **Track Map matching** — automatic track name normalization and scoring-based map-to-run matching
 - **Platform/Aero Workbench** — MoTeC-style stacked chart workbench with Platform/Rake, Speed/RPM, Drag/Scrub, and Tires presets
 - **Compare Workbook** — baseline vs test lap comparison by lap percentage with verdict, whole-car index, four corners, tires, shocks, driver, and engine views
 - **Delta Traces** — per-channel delta traces with target zone highlighting (Speed/Platform, Ride Height, Tire presets)
@@ -85,14 +87,16 @@ pytest
 
 1. **Import baseline .ibt** — via file picker or `POST /api/imports/ibt`
 2. **Import test .ibt** — your experimental setup or driving change
-3. **Open Platform Workbench** — inspect ride heights, rake, dynamic pressure, tire pressure/temp/slip
-4. **Open Compare** — select baseline/test laps, run comparison
-5. **Review Verdict** — keep/undo/retest with confidence score and evidence
-6. **Explore Delta Traces** — see per-channel deltas by lap position with target zone highlight
-7. **Save Finding** — persist the comparison result to the Notebook
-8. **Edit Notes/Tags/Status** — add context, change confirmation status
-9. **Create Test Plan** — define the next controlled test
-10. **Setup Memory** — review the aggregate picture of what has worked
+3. **Import .mt2 track map** — via file picker or folder import for spatial overlays
+4. **Open Platform Workbench** — inspect ride heights, rake, dynamic pressure, tire pressure/temp/slip
+5. **Open Track Map** — view centerline geometry with platform event markers and target zone overlay
+6. **Open Compare** — select baseline/test laps, run comparison
+7. **Review Verdict** — keep/undo/retest with confidence score and evidence
+8. **Explore Delta Traces** — see per-channel deltas by lap position with target zone highlight
+9. **Save Finding** — persist the comparison result to the Notebook
+10. **Edit Notes/Tags/Status** — add context, change confirmation status
+11. **Create Test Plan** — define the next controlled test
+12. **Setup Memory** — review the aggregate picture of what has worked
 
 ---
 
@@ -101,6 +105,12 @@ pytest
 ```
 GET  /api/health
 POST /api/imports/ibt (multipart upload; JSON {path} is dev/local-only)
+POST /api/imports/mt2 (multipart upload)
+POST /api/imports/mt2-folder (JSON {folder_path})
+GET  /api/track-maps
+GET  /api/track-maps/{id}
+GET  /api/runs/{id}/track-map-match
+GET  /api/runs/{id}/track-map-package
 GET  /api/runs
 GET  /api/runs/{id}/overview
 GET  /api/runs/{id}/laps
@@ -128,7 +138,7 @@ GET  /api/notebook/setup-memory
 ## Known Limitations
 
 - `.sto` setup file decoding is not yet implemented
-- `.mt2` track map decoding is not yet implemented
+- `.mt2` decoding is partial/centerline only — no GPS, boundaries, banking, or track width
 - Aero/downforce/drag values are **proxy/relative only** — no exact force measurement exists in `.ibt`
 - Tire wear/falloff conclusions require longer runs for confidence
 - Tire temp/wear data may be unavailable on short runs

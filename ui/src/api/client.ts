@@ -122,3 +122,43 @@ export function fetchCompareInsights(request: {
     body: JSON.stringify(request),
   });
 }
+
+import type { TrackMapIndexEntry, TrackMapPackage } from "../types/trackMap";
+
+export function importMt2File(file: File): Promise<TrackMapIndexEntry> {
+  const form = new FormData();
+  form.append("file", file);
+  return fetch(`${API_BASE}/api/imports/mt2`, {
+    method: "POST",
+    body: form,
+  }).then(async (response) => {
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Import failed: ${response.status}`);
+    }
+    return response.json() as Promise<TrackMapIndexEntry>;
+  });
+}
+
+export function importMt2Folder(folderPath: string): Promise<{ imported: number; entries: TrackMapIndexEntry[] }> {
+  return requestJson<{ imported: number; entries: TrackMapIndexEntry[] }>("/api/imports/mt2-folder", {
+    method: "POST",
+    body: JSON.stringify({ folder_path: folderPath }),
+  });
+}
+
+export function fetchTrackMaps(): Promise<TrackMapIndexEntry[]> {
+  return requestJson<TrackMapIndexEntry[]>("/api/track-maps");
+}
+
+export function fetchRunTrackMapPackage(
+  runId: string,
+  options?: { lap?: number; target_zone_start_pct?: number; target_zone_end_pct?: number },
+): Promise<TrackMapPackage> {
+  const params = new URLSearchParams();
+  if (options?.lap != null) params.set("lap", String(options.lap));
+  if (options?.target_zone_start_pct != null) params.set("target_zone_start_pct", String(options.target_zone_start_pct));
+  if (options?.target_zone_end_pct != null) params.set("target_zone_end_pct", String(options.target_zone_end_pct));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestJson<TrackMapPackage>(`/api/runs/${encodeURIComponent(runId)}/track-map-package${suffix}`);
+}

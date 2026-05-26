@@ -29,14 +29,27 @@ cd racelab-garage
 - Verify: best useful lap is auto-selected for both runs
 - Verify: run context bar shows track, car, lap
 
-## 5. Platform Workbench — Platform/Rake Preset
+## 5. Import .mt2 Track Map
+- Click "Import .ibt" and select an `.mt2` file
+- Verify: status shows "Parsed .mt2 centerline: N points, M markers, S sections."
+- Verify: no crash for unsupported `.mt2` variants (graceful warning)
+
+## 6. Track Map View
+- Navigate to "Map" in the nav rail
+- Verify: SVG centerline path renders
+- Verify: markers toggle shows/hides .mt2 markers
+- Verify: events toggle shows/hides platform event overlays
+- Verify: target zone toggle shows/hides highlighted path segment
+- Verify: warnings displayed for missing GPS/boundaries/banking
+
+## 7. Platform Workbench — Platform/Rake Preset
 - Navigate to "Platform" in the nav rail
 - Select "Platform" preset from the chart dropdown
 - Verify: 5 stacked chart rows render (Throttle/Brake, Center Rake, Side Rake, CFS+LF+RF, LR+RR)
 - Verify: CFS threshold bands visible (scrape/critical/high/watch)
 - Verify: tooltip shows distance, per-channel values, "(proxy)" for proxy channels
 
-## 6. Platform Workbench — Tires Preset
+## 8. Platform Workbench — Tires Preset
 - Select "Tires" preset from the dropdown
 - Verify: Tire Pressure, Pressure Gain, Temp Spread, Slip Ratio Proxy rows
 - Verify: each row has LF/RF/LR/RR series with corner colors

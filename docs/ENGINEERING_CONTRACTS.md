@@ -4,6 +4,47 @@ Last updated: 2026-05-26
 
 ---
 
+## 0. Track Map (.mt2) Contract
+
+### Source of truth
+- `.mt2` files are MoTeCTrackV2 structured binary files.
+- They provide centerline geometry (x, y, z, distance, heading) — NOT GPS coordinates.
+- No left/right boundaries, track width, banking, or meaningful altitude variation.
+- All `.mt2` geometry is relative to an arbitrary local origin, not real-world GPS.
+
+### Import flow
+- Frontend sends `.mt2` file bytes via `multipart/form-data` to `POST /api/imports/mt2`.
+- Backend parses binary, extracts centerline points + markers + sections, caches parsed JSON.
+- Parsed maps are indexed in `data/track_maps/track_map_index.json`.
+- Folder import available at `POST /api/imports/mt2-folder` for bulk import.
+
+### Track matching
+- Track names are normalized via `normalize_track_key()` (removes suffixes, maps known aliases).
+- Layout inferred via `infer_layout_key()` (oval/road/roval/dirt).
+- Matching scored by track name (60pts) + layout (30pts) + filename bonus (10pts).
+- Scores ≥80 = high confidence, ≥50 = medium, ≥20 = low.
+
+### Overlay alignment
+- All overlay markers align by `lap_pct` / `distance_ft`, never by sample index.
+- Platform events are mapped to `.mt2` x/y via `interpolate_at_pct()`.
+- Target zone is rendered as a highlighted path segment.
+- If `.mt2` is unavailable, fall back to lap-distance event list (no spatial rendering).
+
+### Missing data
+- `.mt2` files without markers or sections still render centerline.
+- Unknown/unsupported `.mt2` variants return `status: "unsupported"` with warnings.
+- No GPS → `origin.gps_supported: false`.
+- No boundaries → `has_boundaries: false`.
+- No banking/width → warnings list explains limitations.
+
+### Local-only
+- `.mt2` files are saved to `data/imports/mt2/`.
+- Parsed JSON cache saved to `data/track_maps/`.
+- No external map tiles, CDN services, or GPS APIs.
+- SVG rendering is local-only — no Mapbox, Google Maps, or OpenStreetMap.
+
+---
+
 ## 1. Local-Only Rules
 
 - App runs entirely on the user's machine.
@@ -126,7 +167,30 @@ The Notebook should save existing comparison/insight payloads as-is from the API
 - Returns `DeltaTraceResponse` with per-channel delta arrays
 - `missing_channels` list for unavailable channels
 - Target zone highlighted via `target_zone_start_pct` / `target_zone_end_pct`
+### POST /api/compare/insights
+- Runs all 5 insight engines: trace annotations, correlations, target zone classification, confidence-weighted verdict, sector intelligence
+- Returns `ComparisonInsightsResponse` with `annotations`, `correlations`, `target_zone_classification`, `confidence_weighted_verdict`, `sectors`, `summary_headline`, `key_takeaways`
 
+### POST /api/imports/mt2
+- Multipart file upload for `.mt2` track map files
+- Returns `TrackMapIndexEntry` with points/markers/sections counts
+
+### POST /api/imports/mt2-folder
+- JSON body `{folder_path: string}` — bulk import all `.mt2` files from a directory
+- Returns `{imported: number, entries: TrackMapIndexEntry[]}`
+
+### GET /api/track-maps
+- Lists all imported track maps from index
+
+### GET /api/track-maps/{map_id}
+- Returns full `TrackMap` with all points, markers, sections
+
+### GET /api/runs/{run_id}/track-map-match
+- Returns best matching track map for a run based on track name + layout scoring
+
+### GET /api/runs/{run_id}/track-map-package
+- Returns full map + overlays (platform events + target zone) for frontend rendering
+- Supports `lap`, `target_zone_start_pct`, `target_zone_end_pct` query params
 ### GET /api/runs/{id}/trace
 - `x` may be array or `x_by_name` object
 - Channels may be arrays or `TraceChannelPayload` objects
