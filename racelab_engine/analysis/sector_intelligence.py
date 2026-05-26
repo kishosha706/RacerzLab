@@ -53,16 +53,12 @@ def compute_sector_deltas(
         def _avg(ch: str) -> float | None:
             bl = [v for v in (bl_grid.get(ch) or []) if v is not None]
             t = [v for v in (t_grid.get(ch) or []) if v is not None]
-            if not bl or not t:
-                return None
-            return (sum(t) / len(t)) - (sum(bl) / len(bl))
+            return (sum(t) / len(t)) - (sum(bl) / len(bl)) if bl and t else None
 
         def _min(ch: str) -> float | None:
             t = [v for v in (t_grid.get(ch) or []) if v is not None]
             bl = [v for v in (bl_grid.get(ch) or []) if v is not None]
-            if not t or not bl:
-                return None
-            return min(t) - min(bl)
+            return min(t) - min(bl) if t and bl else None
 
         avg_speed = _avg("speed_mph")
         min_cfs = _min("cfs_ride_height_in")

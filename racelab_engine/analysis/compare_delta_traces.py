@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from racelab_engine.analysis.comparison import build_lap_grid, interpolate_run_to_grid, _safe_float
+from racelab_engine.analysis.comparison import build_lap_grid, interpolate_run_to_grid
 from racelab_engine.services.import_service import FORCE_PROXY_CHANNELS
 
 

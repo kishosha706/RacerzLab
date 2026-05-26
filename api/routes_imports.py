@@ -29,7 +29,11 @@ def _sanitize_filename(name: str) -> str:
 
 @router.post("/ibt")
 async def import_ibt_file(request: Request) -> ImportIbtResponse:
-    """Accept either multipart file upload or JSON {path: ...}."""
+    """Import an .ibt telemetry file.
+
+    Primary path: multipart file upload (used by the UI).
+    Secondary path: JSON {path: ...} (dev/local-only — not exposed in the UI).
+    """
     content_type = request.headers.get("content-type", "").lower()
 
     if "multipart/form-data" in content_type or "application/octet-stream" in content_type:
@@ -48,10 +52,24 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
             await f.write(content)
         path_or_file = str(dest)
     elif "application/json" in content_type:
+        # DEV/LOCAL-ONLY: JSON path import is not exposed in the UI.
+        # It exists for test fixtures and local debugging.
         body = await request.json()
         path_or_file = body.get("path")
         if not path_or_file:
             raise HTTPException(400, "Missing 'path' in JSON body.")
+        resolved = os.path.abspath(os.path.normpath(path_or_file))
+        # Safety checks
+        if not os.path.exists(resolved):
+            raise HTTPException(400, f"Path does not exist: {resolved}")
+        if os.path.isdir(resolved):
+            raise HTTPException(400, "Path is a directory, not a file.")
+        if not resolved.lower().endswith(".ibt"):
+            raise HTTPException(400, "Path must point to an .ibt file.")
+        # Reject path traversal outside the intended scope
+        if ".." in path_or_file or path_or_file.startswith("~"):
+            raise HTTPException(400, "Path traversal is not allowed.")
+        path_or_file = resolved
     else:
         raise HTTPException(400, "Unsupported Content-Type. Use multipart/form-data or application/json.")
 

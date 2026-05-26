@@ -218,6 +218,7 @@ def test_notebook_stores_comparison_as_is_no_recompute(db_path: Path) -> None:
         db_path=db_path,
     )
     retrieved = get_finding(finding.finding_id, db_path)
+    assert retrieved is not None
     # Verdict must be stored verbatim, not reinterpreted
     assert retrieved.verdict == "keep_direction"
     assert retrieved.confidence_tier == "high"

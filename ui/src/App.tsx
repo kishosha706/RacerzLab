@@ -219,7 +219,7 @@ function CockpitShell() {
               accept=".ibt,.sto,.mt2"
               style={{ display: "none" }}
               onChange={(e) => {
-                const files = e.currentTarget.files;
+                const { files } = e.currentTarget;
                 if (files && files.length > 0) void handleFileSelected(files[0]);
               }}
             />

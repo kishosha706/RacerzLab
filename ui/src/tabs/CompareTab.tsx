@@ -1,4 +1,4 @@
-import { AlertTriangle, BarChart3, Bookmark, Layers, RefreshCw, RotateCcw, Table, XCircle } from "lucide-react";
+import { AlertTriangle, BarChart3, Bookmark, Layers, RefreshCw, RotateCcw, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchCompareInsights, fetchRunList } from "../api/client";
 import { ComparisonInsightPanel } from "../components/ComparisonInsightPanel";

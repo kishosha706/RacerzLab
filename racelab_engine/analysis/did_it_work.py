@@ -134,10 +134,8 @@ def compute_verdict(
     cfs_worse = _cfs_worsened(cfs_delta)
     discipline_ok = discipline.label in ("clean", "mostly_clean")
 
-    if not discipline_ok and discipline.label == "invalid":
-        result = _build_verdict_invalid()
-    elif not discipline_ok:
-        result = _build_verdict_retest_discipline(discipline)
+    if not discipline_ok:
+        result = _build_verdict_retest_discipline(discipline) if discipline.label != "invalid" else _build_verdict_invalid()
     elif speed_gained and not cfs_worse:
         result = _build_verdict_keep_direction(speed_delta, cfs_delta, discipline)
     elif speed_gained and cfs_worse:

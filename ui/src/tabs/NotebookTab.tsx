@@ -137,13 +137,14 @@ export function NotebookTab() {
   }, []);
 
   const handleUpdateStatus = useCallback(async (findingId: string, status: string) => {
+    if (!selectedFinding) return;
     try {
       await req(`/api/notebook/findings/${findingId}`, {
         method: "PATCH",
         body: JSON.stringify({ status }),
       });
       void loadFindings();
-      if (selectedFinding?.finding_id === findingId) {
+      if (selectedFinding.finding_id === findingId) {
         setSelectedFinding({ ...selectedFinding, status: status as any });
       }
       setDetailStatus("Status updated.");
@@ -170,13 +171,18 @@ export function NotebookTab() {
   const handleCopyMarkdown = useCallback(() => {
     if (!selectedFinding) return;
     const md = findingToMarkdown(selectedFinding);
-    navigator.clipboard.writeText(md).then(
-      () => setDetailStatus("Markdown copied."),
-      () => setDetailStatus("Failed to copy."),
-    );
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(md).then(
+        () => setDetailStatus("Markdown copied."),
+        () => setDetailStatus("Failed to copy."),
+      );
+    } else {
+      setDetailStatus("Clipboard not available.");
+    }
   }, [selectedFinding]);
 
   const handleCreateTestPlan = useCallback(async (findingId: string) => {
+    if (!selectedFinding) return;
     try {
       await req(`/api/notebook/findings/${findingId}/test-plan`, {
         method: "POST",
@@ -184,7 +190,7 @@ export function NotebookTab() {
       });
       setDetailStatus("Test plan created.");
     } catch { setDetailStatus("Failed to create test plan."); }
-  }, []);
+  }, [selectedFinding]);
 
   // ── render ──────────────────────────────────────────────────
   return (

@@ -41,6 +41,8 @@ export interface PlatformComparison {
   cfs_height: ChannelDeltaStats | null;
   front_avg_rh: ChannelDeltaStats | null;
   rear_avg_rh: ChannelDeltaStats | null;
+  left_avg_rh: ChannelDeltaStats | null;
+  right_avg_rh: ChannelDeltaStats | null;
   center_rake_fs: ChannelDeltaStats | null;
   side_rake: ChannelDeltaStats | null;
   front_split: ChannelDeltaStats | null;
@@ -53,6 +55,8 @@ export interface PlatformComparison {
 
 export interface TireComparison {
   corners: Partial<CornerMatrix>;
+  front_pressure_balance: ChannelDeltaStats | null;
+  rear_pressure_balance: ChannelDeltaStats | null;
   temp_spread_summary: string | null;
   wear_summary: string | null;
   tire_verdict: string | null;

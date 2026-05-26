@@ -100,7 +100,7 @@ pytest
 
 ```
 GET  /api/health
-POST /api/imports/ibt
+POST /api/imports/ibt (multipart upload; JSON {path} is dev/local-only)
 GET  /api/runs
 GET  /api/runs/{id}/overview
 GET  /api/runs/{id}/laps

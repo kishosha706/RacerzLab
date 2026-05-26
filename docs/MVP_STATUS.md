@@ -50,6 +50,18 @@
 
 ---
 
+## Scaffold / Dead Code Candidates
+
+The following files exist in the codebase but are **not currently wired** into any route or service.
+They are preserved as scaffold for future features but should be reviewed before the next major release:
+
+| File | Status | Notes |
+|---|---|---|
+| `racelab_engine/analysis/lap_classification.py` | Scaffold | `classify_laps()` defined but never called |
+| `racelab_engine/analysis/dynamic_crew_chief.py` | Scaffold | `build_recommendations()` defined but never called |
+| `racelab_engine/analysis/confidence.py` | Scaffold | `AnalyzerStatus` and `apply_confidence_penalty()` defined but never imported |
+| `racelab_engine/analysis/drag_scrub.py` | Partial | Functions exist but may overlap with `calculated_channels.py` drag/scrub logic |
+
 ## Known Risks
 
 - **Long .ibt import time** — 5-10 seconds for 6000-row files; test suite uses module-scoped fixture for caching

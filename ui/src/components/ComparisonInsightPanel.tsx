@@ -1,4 +1,4 @@
-import { AlertTriangle, BarChart3, CheckCircle, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { AlertTriangle, BarChart3, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import type { ComparisonInsightsResponse, TraceAnnotation, CorrelationInsight, SectorDeltaSummary } from "../types/compare";
 
 type ComparisonInsightPanelProps = {

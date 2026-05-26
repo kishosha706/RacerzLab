@@ -101,11 +101,11 @@ def save_finding(
     returns the existing finding unless force=True.
     """
     # Check for duplicate
-    if not force and comparison_id:
-        existing = find_duplicate(comparison_id, baseline_run_id, test_run_id,
-                                  target_zone_start_pct, target_zone_end_pct, db_path)
-        if existing:
-            return existing
+    if not force and comparison_id and (existing := find_duplicate(
+        comparison_id, baseline_run_id, test_run_id,
+        target_zone_start_pct, target_zone_end_pct, db_path,
+    )):
+        return existing
 
     finding_id = f"finding_{uuid.uuid4().hex[:12]}"
     now = _utc_now()
