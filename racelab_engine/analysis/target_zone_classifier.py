@@ -1,0 +1,139 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Literal
+
+GainClass = Literal[
+    "stable_gain",
+    "risky_gain",
+    "platform_sensitive_gain",
+    "driver_input_gain",
+    "drag_reduction",
+    "mechanical_balance_improvement",
+    "inconclusive",
+]
+
+
+@dataclass(frozen=True)
+class TargetZoneClassification:
+    gain_class: GainClass
+    label: str
+    confidence: float  # 0-1
+    reasoning: list[str] = field(default_factory=list)
+    recommendation: str | None = None
+
+
+def classify_target_zone(
+    avg_speed_delta: float | None,
+    min_cfs_delta: float | None,
+    avg_steering_delta: float | None,
+    avg_drag_delta: float | None,
+    avg_rpm_delta: float | None,
+    discipline_label: str,
+) -> TargetZoneClassification:
+    """Classify what kind of gain/loss occurred in the target zone."""
+    if avg_speed_delta is None:
+        return TargetZoneClassification(
+            gain_class="inconclusive",
+            label="No speed data",
+            confidence=0.0,
+            reasoning=["Speed delta unavailable in target zone."],
+        )
+
+    reasoning: list[str] = []
+    speed = avg_speed_delta
+    gained = speed > 0.05
+    lost = speed < -0.05
+
+    if not gained and not lost:
+        return TargetZoneClassification(
+            gain_class="inconclusive",
+            label="No meaningful change",
+            confidence=0.3,
+            reasoning=[f"Speed delta {speed:+.3f} mph is within noise range."],
+        )
+
+    # Gather signals
+    cfs_ok = min_cfs_delta is None or min_cfs_delta >= -0.001
+    cfs_worse = min_cfs_delta is not None and min_cfs_delta < -0.001
+    steering_higher = avg_steering_delta is not None and avg_steering_delta > 0.5
+    steering_lower = avg_steering_delta is not None and avg_steering_delta < -0.5
+    drag_higher = avg_drag_delta is not None and avg_drag_delta > 0.05
+    drag_lower = avg_drag_delta is not None and avg_drag_delta < -0.05
+    rpm_higher = avg_rpm_delta is not None and avg_rpm_delta > 50
+    rpm_lower = avg_rpm_delta is not None and avg_rpm_delta < -50
+
+    discipline_ok = discipline_label in ("clean", "mostly_clean")
+
+    if gained:
+        # Speed improved — classify why
+        if cfs_ok and not drag_higher and not steering_higher:
+            gain_class: GainClass = "stable_gain"
+            label = "Stable gain"
+            confidence = 0.75 if discipline_ok else 0.55
+            reasoning.append(f"Speed +{speed:.3f} mph with stable platform and no drag increase.")
+            recommendation = "Keep direction. This is a clean improvement."
+        elif cfs_worse and not drag_higher:
+            gain_class = "risky_gain"
+            label = "Risky gain"
+            confidence = 0.5
+            reasoning.append(f"Speed +{speed:.3f} mph but CFS worsened by {min_cfs_delta:.3f} in.")
+            recommendation = "Retest with smaller platform change to confirm tradeoff."
+        elif steering_lower:
+            gain_class = "driver_input_gain"
+            label = "Driver-input gain"
+            confidence = 0.55
+            reasoning.append(f"Speed +{speed:.3f} mph with reduced steering ({avg_steering_delta:.2f}°).")
+            recommendation = "Confirm driver line is repeatable before concluding setup change."
+        elif drag_lower:
+            gain_class = "drag_reduction"
+            label = "Likely drag reduction"
+            confidence = 0.6
+            reasoning.append(f"Speed +{speed:.3f} mph with drag/scrub delta {avg_drag_delta:.3f}.")
+            recommendation = "Check if platform or tape change reduced drag."
+        elif rpm_higher:
+            gain_class = "mechanical_balance_improvement"
+            label = "Mechanical balance improvement"
+            confidence = 0.5
+            reasoning.append(f"Speed +{speed:.3f} mph with RPM +{avg_rpm_delta:.0f}.")
+            recommendation = "Check gearing or corner exit traction."
+        else:
+            gain_class = "platform_sensitive_gain"
+            label = "Platform-sensitive gain"
+            confidence = 0.45
+            reasoning.append(f"Speed +{speed:.3f} mph but platform context is mixed.")
+            recommendation = "Review platform traces alongside speed delta."
+    else:
+        # Speed lost
+        if cfs_worse:
+            gain_class = "risky_gain"
+            label = "Platform-related loss"
+            confidence = 0.6
+            reasoning.append(f"Speed {speed:.3f} mph with CFS worsening {min_cfs_delta:.3f} in.")
+            recommendation = "Undo or reduce platform change."
+        elif drag_higher:
+            gain_class = "drag_reduction"
+            label = "Drag-related loss"
+            confidence = 0.55
+            reasoning.append(f"Speed {speed:.3f} mph with drag/scrub increase {avg_drag_delta:.3f}.")
+            recommendation = "Check for scrub or platform-induced drag."
+        elif steering_higher:
+            gain_class = "driver_input_gain"
+            label = "Driver-related loss"
+            confidence = 0.5
+            reasoning.append(f"Speed {speed:.3f} mph with more steering ({avg_steering_delta:.2f}°).")
+            recommendation = "Check if driver line changed between runs."
+        else:
+            gain_class = "inconclusive"
+            label = "Unexplained loss"
+            confidence = 0.35
+            reasoning.append(f"Speed {speed:.3f} mph without clear platform/drag/driver signal.")
+            recommendation = "Review all delta traces for hidden correlations."
+
+    return TargetZoneClassification(
+        gain_class=gain_class,
+        label=label,
+        confidence=confidence,
+        reasoning=reasoning,
+        recommendation=recommendation,
+    )

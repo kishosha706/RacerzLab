@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException
+
+from api.schemas import ChannelCatalogItem, RunListItem, TraceResponse
+from racelab_engine.models.session import RunOverview
+from racelab_engine.models.setup import SetupSnapshot
+from racelab_engine.services.import_service import build_channel_catalog, build_trace_payload
+from racelab_engine.storage.repository import RaceLabRepository
+
+router = APIRouter(prefix="/api/runs", tags=["runs"])
+
+
+def repository() -> RaceLabRepository:
+    return RaceLabRepository()
+
+
+def get_run_or_404(run_id: str) -> RunOverview:
+    overview = repository().get_overview(run_id)
+    if overview is None:
+        raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+    return overview
+
+
+@router.get("", response_model=list[RunListItem])
+def list_runs() -> list[RunListItem]:
+    return [RunListItem(**item) for item in repository().list_runs()]
+
+
+@router.get("/{run_id}/overview", response_model=RunOverview)
+def get_run_overview(run_id: str) -> RunOverview:
+    return get_run_or_404(run_id)
+
+
+@router.get("/{run_id}/setup", response_model=SetupSnapshot)
+def get_setup(run_id: str) -> SetupSnapshot:
+    setup = repository().get_setup_snapshot(run_id)
+    if setup is None:
+        raise HTTPException(status_code=404, detail=f"Setup snapshot not found for run: {run_id}")
+    return setup
+
+
+@router.get("/{run_id}/channels", response_model=list[ChannelCatalogItem])
+def get_channels(run_id: str) -> list[ChannelCatalogItem]:
+    if repository().get_session(run_id) is None:
+        raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+    return [ChannelCatalogItem(**item) for item in build_channel_catalog(run_id)]
+
+
+@router.get("/{run_id}/trace", response_model=TraceResponse)
+def get_trace(
+    run_id: str,
+    lap: Optional[int] = None,
+    channels: Optional[str] = None,
+    x: Optional[str] = None,
+    downsample: str = "1",
+    preserve_extrema: bool = False,
+) -> TraceResponse:
+    repo = repository()
+    if repo.get_session(run_id) is None:
+        raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+    selected_channels = [item.strip() for item in channels.split(",") if item.strip()] if channels else None
+    events = repo.get_events(run_id, lap=lap)
+    effective_preserve = preserve_extrema or (isinstance(downsample, str) and downsample.lower() == "auto")
+    payload = build_trace_payload(
+        run_id,
+        lap=lap,
+        channels=selected_channels,
+        downsample=downsample,
+        x_axis=x,
+        preserve_extrema=effective_preserve,
+        events=events,
+    )
+    return TraceResponse(**payload)

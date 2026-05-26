@@ -1,0 +1,22 @@
+{
+  "include": [
+    "api",
+    "racelab_engine",
+    "tests",
+    "ui"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.venv",
+    "**/.vscode",
+    "**/typeshed-fallback",
+    "**/site-packages"
+  ],
+  "reportUnknownMemberType": false,
+  "reportUnknownArgumentType": false,
+  "reportMissingTypeStubs": false,
+  "reportIncompatibleMethodOverride": "none",
+  "reportOverlappingOverload": "none",
+  "typeCheckingMode": "standard"
+}

@@ -1,0 +1,48 @@
+export type SelectionMode =
+  | "diagnose"
+  | "compare"
+  | "build_test"
+  | "long_run"
+  | "race"
+  | "learning";
+
+export type Workspace =
+  | "overview"
+  | "map"
+  | "platform_trace"
+  | "speed_delta"
+  | "drag_scrub"
+  | "setup_impact"
+  | "compare"
+  | "notebook"
+  | "channels";
+
+export type SelectionSource =
+  | "priority_stack"
+  | "event_timeline"
+  | "track_map"
+  | "trace_cursor"
+  | "setup_table"
+  | "channel_catalog"
+  | "compare_verdict"
+  | "manual";
+
+export type TelemetrySelection = {
+  selectedRunId: string | null;
+  selectedCompareRunId?: string | null;
+
+  selectedLap?: number | null;
+  selectedSampleIndex?: number | null;
+  selectedLapDistFt?: number | null;
+  selectedLapDistM?: number | null;
+  selectedLapPct?: number | null;
+
+  selectedEventId?: string | null;
+  selectedChannel?: string | null;
+  selectedSetupKey?: string | null;
+  selectedZoneId?: string | null;
+
+  selectedMode: SelectionMode;
+  selectedWorkspace: Workspace;
+  selectionSource: SelectionSource;
+};

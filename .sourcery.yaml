@@ -1,0 +1,17 @@
+rule_settings:
+  enable: [default]
+  disable:
+    - low-code-quality
+    - merge-nested-ifs
+    - simplify-boolean-comparison
+    - remove-redundant-conditional
+    - merge-consecutive-list-appends-into-extend
+    - lift-return-into-if
+    - replace-if-statement-with-if-expression
+    - extract-nested-conditional
+    - use-builtin-function-next
+    - restructure-and-simplify-code
+    - use-max-min-default
+  rule_types:
+    - refactoring
+    - suggestion

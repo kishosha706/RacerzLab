@@ -1,0 +1,97 @@
+# -----------------------------
+# RaceLab Garage .gitignore
+# -----------------------------
+
+# Python virtual environments / caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Frontend dependencies / builds
+node_modules/
+ui/node_modules/
+ui/dist/
+ui/build/
+
+# Tauri / Rust build outputs
+ui/src-tauri/target/
+target/
+
+# Environment / secrets
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.json.key
+
+# Local AI / extension state
+.deepcode/
+.deepseek/
+.vscode/
+
+# Local app databases
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Raw telemetry / setup / track map files anywhere
+*.ibt
+*.sto
+*.mt2
+
+# Local imported files
+data/imports/ibt/*
+data/imports/sto/*
+data/imports/mt2/*
+
+# Local cache files
+data/cache/parquet/*
+data/cache/maps/*
+data/cache/normalized/*
+
+# Local exports
+data/exports/reports/*
+data/exports/csv/*
+data/exports/debug/*
+
+# Keep folder structure
+!data/imports/ibt/.gitkeep
+!data/imports/sto/.gitkeep
+!data/imports/mt2/.gitkeep
+!data/cache/parquet/.gitkeep
+!data/cache/maps/.gitkeep
+!data/cache/normalized/.gitkeep
+!data/exports/reports/.gitkeep
+!data/exports/csv/.gitkeep
+!data/exports/debug/.gitkeep
+
+# Logs / temp
+*.log
+logs/
+tmp/
+temp/
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+# Backup files
+*.bak
+*.tmp
+*.old

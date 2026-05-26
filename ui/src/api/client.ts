@@ -1,0 +1,124 @@
+import type {
+  ImportIbtResponse,
+  ChannelCatalogItem,
+  LapSummary,
+  PlatformEventItem,
+  RunListItem,
+  RunOverview,
+  SetupSnapshot,
+  TelemetryEvent,
+  TraceResponse,
+} from "../types/telemetry";
+
+const API_BASE = import.meta.env.VITE_RACELAB_API_BASE_URL ?? "http://127.0.0.1:8000";
+
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+    ...init,
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed: ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
+export function fetchRunList(): Promise<RunListItem[]> {
+  return requestJson<RunListItem[]>("/api/runs");
+}
+
+export function importIbtFile(file: File): Promise<ImportIbtResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  return fetch(`${API_BASE}/api/imports/ibt`, {
+    method: "POST",
+    body: form,
+  }).then(async (response) => {
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Import failed: ${response.status}`);
+    }
+    return response.json() as Promise<ImportIbtResponse>;
+  });
+}
+
+export function fetchOverview(runId: string): Promise<RunOverview> {
+  return requestJson<RunOverview>(`/api/runs/${encodeURIComponent(runId)}/overview`);
+}
+
+export function fetchLaps(runId: string): Promise<LapSummary[]> {
+  return requestJson<LapSummary[]>(`/api/runs/${encodeURIComponent(runId)}/laps`);
+}
+
+export function fetchEvents(runId: string, options?: { lap?: number; type?: string }): Promise<TelemetryEvent[]> {
+  const params = new URLSearchParams();
+  if (options?.lap != null) params.set("lap", String(options.lap));
+  if (options?.type) params.set("type", options.type);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestJson<TelemetryEvent[]>(`/api/runs/${encodeURIComponent(runId)}/events${suffix}`);
+}
+
+export function fetchSetup(runId: string): Promise<SetupSnapshot> {
+  return requestJson<SetupSnapshot>(`/api/runs/${encodeURIComponent(runId)}/setup`);
+}
+
+export function fetchChannels(runId: string): Promise<ChannelCatalogItem[]> {
+  return requestJson<ChannelCatalogItem[]>(`/api/runs/${encodeURIComponent(runId)}/channels`);
+}
+
+export function fetchReport(runId: string): Promise<{ run_id: string; markdown: string }> {
+  return requestJson<{ run_id: string; markdown: string }>(`/api/runs/${encodeURIComponent(runId)}/report`);
+}
+
+export function fetchTrace(
+  runId: string,
+  options?: { lap?: number; channels?: string[]; x?: string; downsample?: number | string; preserveExtrema?: boolean },
+): Promise<TraceResponse> {
+  const params = new URLSearchParams();
+  if (options?.lap != null) params.set("lap", String(options.lap));
+  if (options?.channels?.length) params.set("channels", options.channels.join(","));
+  if (options?.x) params.set("x", options.x);
+  if (options?.downsample != null) params.set("downsample", String(options.downsample));
+  if (options?.preserveExtrema != null) params.set("preserve_extrema", String(options.preserveExtrema));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestJson<TraceResponse>(`/api/runs/${encodeURIComponent(runId)}/trace${suffix}`);
+}
+
+export function fetchPlatformEvents(
+  runId: string,
+  options?: { lap?: number; event_type?: string },
+): Promise<PlatformEventItem[]> {
+  const params = new URLSearchParams();
+  if (options?.lap != null) params.set("lap", String(options.lap));
+  if (options?.event_type) params.set("event_type", options.event_type);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestJson<PlatformEventItem[]>(`/api/runs/${encodeURIComponent(runId)}/platform-events${suffix}`);
+}
+
+import type { ComparisonInsightsResponse, DeltaTraceRequest, DeltaTraceResponse } from "../types/compare";
+
+export function fetchCompareDeltaTraces(request: DeltaTraceRequest): Promise<DeltaTraceResponse> {
+  return requestJson<DeltaTraceResponse>("/api/compare/delta-traces", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export function fetchCompareInsights(request: {
+  baseline_run_id: string;
+  test_run_id: string;
+  baseline_lap?: number | null;
+  test_lap?: number | null;
+  target_zone_start_pct?: number;
+  target_zone_end_pct?: number;
+  channels?: string[] | null;
+}): Promise<ComparisonInsightsResponse> {
+  return requestJson<ComparisonInsightsResponse>("/api/compare/insights", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}

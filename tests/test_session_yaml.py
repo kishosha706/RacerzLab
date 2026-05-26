@@ -1,0 +1,53 @@
+from __future__ import annotations
+
+from racelab_engine.io.session_yaml import extract_session_summary, extract_setup_snapshot
+
+
+def test_session_yaml_extracts_session_and_setup_values() -> None:
+    yaml_text = """
+WeekendInfo:
+  TrackName: talladega
+  TrackDisplayName: Talladega Super Speedway
+  WeekendStartTime: 2026-05-07 17:48:51
+DriverInfo:
+  DriverCarName: Chevrolet Camaro ZL1 Class A
+  DriverCarPath: stockcars/camarozl12018
+SessionInfo:
+  SessionType: Test
+WeatherInfo:
+  Skies: Clear
+  AirTemp: 78 F
+  TrackTemp: 102 F
+CarSetup:
+  SetupName: talladega.sto
+  Tape: 10%
+  Rear end ratio: 3.45
+  LF ride height: 66 mm
+  RF ride height: 77 mm
+  LR ride height: 127 mm
+  RR ride height: 137 mm
+  LF front spring: 1750 N/mm
+  RF front spring: 1750 N/mm
+  LR rear spring: 140 N/mm
+  RR rear spring: 52 N/mm
+  Nose weight: 53.4%
+  Cross weight: 47.9%
+  Front brake bias: 65.0%
+  Steering ratio: "10:1"
+  Steering offset: +10 deg
+"""
+
+    session = extract_session_summary(yaml_text, run_id="run-yaml")
+    setup = extract_setup_snapshot(yaml_text, run_id="run-yaml")
+
+    assert session.track_display_name == "Talladega Super Speedway"
+    assert session.car_name == "Chevrolet Camaro ZL1 Class A"
+    assert session.session_type == "Test"
+    assert session.air_temp == 78
+    assert setup.setup_name == "talladega.sto"
+    assert setup.tape_percent == 10
+    assert setup.rear_end_ratio == 3.45
+    assert setup.lf_ride_height_mm == 66
+    assert setup.rr_ride_height_mm == 137
+    assert setup.steering_ratio == "10:1"
+    assert setup.steering_offset_deg == 10
