@@ -141,6 +141,27 @@ def build_platform_proxy_estimates(row: Mapping[str, Any], setup: Any | None = N
     if front is not None and rear is not None and abs(front + rear) > 1e-9:
         balance = front / (front + rear) * 100.0
 
+    # Rear scrape risk from ride heights
+    lr_mm = _get_float(row, "lr_ride_height_mm")
+    rr_mm = _get_float(row, "rr_ride_height_mm")
+    rear_min_mm: float | None = None
+    rear_risk: float | None = None
+    rear_side: str | None = None
+    if lr_mm is not None and rr_mm is not None:
+        rear_min_mm = min(lr_mm, rr_mm)
+        from racelab_engine.analysis.constants import REAR_SCRAPE_MM, REAR_CRITICAL_MM, REAR_HIGH_MM, REAR_WATCH_MM
+        rear_risk = next((score for threshold, score in (
+            (REAR_SCRAPE_MM, 1.0), (REAR_CRITICAL_MM, 0.92),
+            (REAR_HIGH_MM, 0.72), (REAR_WATCH_MM, 0.38),
+        ) if rear_min_mm <= threshold), 0.08)
+        eps = 0.001
+        if abs(lr_mm - rr_mm) < eps:
+            rear_side = "both_rear"
+        elif lr_mm < rr_mm:
+            rear_side = "left_rear"
+        else:
+            rear_side = "right_rear"
+
     return {
         "front_load_proxy_n": ProxyEstimate("front_load_proxy_n", front, "N", confidence, assumptions, missing_constants),
         "rear_load_proxy_n": ProxyEstimate("rear_load_proxy_n", rear, "N", confidence, assumptions, missing_constants),
@@ -150,4 +171,8 @@ def build_platform_proxy_estimates(row: Mapping[str, Any], setup: Any | None = N
         "rear_downforce_proxy_n": ProxyEstimate("rear_downforce_proxy_n", rear, "N", confidence, assumptions, missing_constants),
         "rear_platform_proxy_n": ProxyEstimate("rear_platform_proxy_n", rear, "N", confidence, assumptions, missing_constants),
         "rear_diffuser_proxy_n": ProxyEstimate("rear_diffuser_proxy_n", rear, "N", "low", assumptions, missing_constants),
+        "rear_min_ride_height_mm": ProxyEstimate("rear_min_ride_height_mm", rear_min_mm, "mm", confidence, assumptions, missing_constants),
+        "rear_scrape_risk_score": ProxyEstimate("rear_scrape_risk_score", rear_risk, "score", confidence, assumptions, missing_constants),
+        "rear_platform_contact_risk": ProxyEstimate("rear_platform_contact_risk", rear_risk, "score", confidence, assumptions, missing_constants),
+        "rear_scrape_side": ProxyEstimate("rear_scrape_side", rear_side, "label", "medium", assumptions, missing_constants),
     }

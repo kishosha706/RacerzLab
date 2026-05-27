@@ -14,6 +14,10 @@ EventType = Literal[
     "HIGHEST_PLATFORM_COMPRESSION",
     "HIGHEST_SHOCK_ACTIVITY",
     "MAX_DYNAMIC_PRESSURE",
+    "MIN_REAR_RIDE_HEIGHT",
+    "REAR_PLATFORM_LOW",
+    "REAR_PLATFORM_SCRAPE",
+    "REAR_CONTACT_RISK",
 ]
 
 Severity = Literal["info", "watch", "high", "critical"]
@@ -126,6 +130,22 @@ def _cfs_severity(cfs_in: float | None) -> Severity:
     if cfs_in <= 0.236:
         return "high"
     if cfs_in <= 0.394:
+        return "watch"
+    return "info"
+
+
+def _rear_severity(rear_mm: float | None) -> Severity:
+    """Classify rear ride height severity using rear thresholds."""
+    from racelab_engine.analysis.constants import REAR_CRITICAL_MM, REAR_HIGH_MM, REAR_WATCH_MM
+    if rear_mm is None:
+        return "info"
+    if rear_mm <= 0:
+        return "critical"
+    if rear_mm <= REAR_CRITICAL_MM:
+        return "critical"
+    if rear_mm <= REAR_HIGH_MM:
+        return "high"
+    if rear_mm <= REAR_WATCH_MM:
         return "watch"
     return "info"
 
@@ -441,6 +461,100 @@ def detect_highest_shock_activity(rows: list[dict[str, Any]]) -> PlatformEvent |
     )
 
 
+def detect_min_rear_ride_height(rows: list[dict[str, Any]]) -> PlatformEvent | None:
+    """Detect the minimum rear ride height point in a lap."""
+    candidates = [
+        (i, row) for i, row in enumerate(rows)
+        if _sample_value(row, "rear_min_ride_height_mm") is not None
+    ]
+    if not candidates:
+        return None
+
+    idx, row = min(candidates, key=lambda item: float(item[1]["rear_min_ride_height_mm"]))
+    rear_mm = float(row["rear_min_ride_height_mm"])
+    rear_in = _sample_value(row, "rear_min_ride_height_in")
+    margin = _sample_value(row, "rear_scrape_margin_mm")
+    side_raw = _sample_value(row, "rear_scrape_side")
+    side_map = {-1: "left_rear", 0: "both_rear", 1: "right_rear"}
+    side_label = side_map.get(int(side_raw)) if side_raw is not None else None
+    loc = _event_location(row, idx)
+    speed = _sample_value(row, "speed_mph")
+    throttle = _sample_value(row, "throttle_pct")
+    brake = _sample_value(row, "brake_pct")
+    lr_mm = _sample_value(row, "lr_ride_height_mm")
+    rr_mm = _sample_value(row, "rr_ride_height_mm")
+    rear_avg = _sample_value(row, "rear_avg_rh_in")
+    rear_split = _sample_value(row, "rear_split_in")
+
+    evidence = ["Rear ride height reached minimum here."]
+    if rear_mm is not None:
+        evidence.append(f"Rear min height: {rear_mm:.2f} mm ({rear_in:.3f} in)" if rear_in else f"Rear min height: {rear_mm:.2f} mm")
+    if margin is not None:
+        evidence.append(f"Scrape margin: {margin:.2f} mm")
+    if side_label:
+        evidence.append(f"Lower side: {side_label}")
+    if lr_mm is not None and rr_mm is not None:
+        evidence.append(f"LR: {lr_mm:.2f} mm, RR: {rr_mm:.2f} mm")
+    if speed is not None:
+        evidence.append(f"Speed: {speed:.1f} mph")
+    if throttle is not None:
+        evidence.append(f"Throttle: {throttle:.1f}%")
+    if brake is not None:
+        evidence.append(f"Brake: {brake:.1f}%")
+    if loc["lap_pct"] is not None:
+        evidence.append(f"Location: {loc['lap_pct']:.1f}% lap")
+
+    severity = _rear_severity(rear_mm)
+    is_scrape = rear_mm <= 0
+    event_type: str = "REAR_PLATFORM_SCRAPE" if is_scrape else ("REAR_PLATFORM_LOW" if severity in ("critical", "high") else "MIN_REAR_RIDE_HEIGHT")
+    title = "Rear Platform Scrape Risk" if is_scrape else ("Rear Platform Low" if severity in ("critical", "high") else "Minimum Rear Ride Height")
+
+    return PlatformEvent(
+        event_id=_make_event_id(event_type.lower(), row, idx),
+        event_type=event_type,  # type: ignore[arg-type]
+        title=title,
+        severity=severity,
+        confidence="medium",
+        lap=loc["lap"],
+        sample_index=idx,
+        lap_dist_ft=loc["lap_dist_ft"],
+        lap_pct=loc["lap_pct"],
+        track_x_ft=loc["track_x_ft"],
+        track_y_ft=loc["track_y_ft"],
+        primary_value=rear_mm,
+        primary_unit="mm",
+        channels_used=[
+            "rear_min_ride_height_mm", "rear_min_ride_height_in",
+            "rear_scrape_margin_mm", "rear_scrape_side",
+            "lr_ride_height_mm", "rr_ride_height_mm",
+            "rear_avg_rh_in", "rear_split_in",
+            "speed_mph", "throttle_pct", "brake_pct",
+        ],
+        evidence=evidence,
+        recommended_action=(
+            "Rear platform contact risk detected. Inspect rear ride heights, "
+            "spring rates, and shock travel. Compare with rear damper energy and speed loss."
+        ),
+        is_proxy_based=True,
+        proxy_warning=FORCE_PROXY_WARNING,
+        metadata={
+            "rear_min_ride_height_mm": rear_mm,
+            "rear_min_ride_height_in": rear_in,
+            "rear_scrape_margin_mm": margin,
+            "rear_scrape_side": side_label,
+            "lr_ride_height_mm": lr_mm,
+            "rr_ride_height_mm": rr_mm,
+            "rear_avg_rh_in": rear_avg,
+            "rear_split_in": rear_split,
+            "speed_mph": speed,
+            "throttle_pct": throttle,
+            "brake_pct": brake,
+            "lap_pct": loc["lap_pct"],
+            "lap_dist_m": _sample_value(row, "lap_dist_m"),
+        },
+    )
+
+
 def detect_max_dynamic_pressure(rows: list[dict[str, Any]]) -> PlatformEvent | None:
     candidates = [
         (i, row) for i, row in enumerate(rows)
@@ -511,6 +625,7 @@ def detect_platform_events(
         detect_highest_platform_compression,
         detect_highest_shock_activity,
         detect_max_dynamic_pressure,
+        detect_min_rear_ride_height,
     ]
 
     if event_types:

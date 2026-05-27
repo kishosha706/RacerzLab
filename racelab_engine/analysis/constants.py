@@ -36,6 +36,12 @@ SPLITTER_CRITICAL_MM = 3.0
 SPLITTER_HIGH_MM = 6.0
 SPLITTER_WATCH_MM = 10.0
 
+# ── Rear platform / scrape thresholds (mm) ────────────────────
+REAR_SCRAPE_MM = 0.0
+REAR_CRITICAL_MM = 3.0
+REAR_HIGH_MM = 6.0
+REAR_WATCH_MM = 10.0
+
 # ── Platform validity gates ───────────────────────────────────
 PLATFORM_VALID_MIN_SPEED_MPH = 100.0
 DRAG_SCRUB_MIN_SPEED_MPH = 150.0

@@ -1094,6 +1094,62 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "used_by_events": [],
         "used_by_recommendations": [],
     },
+
+    # ── rear scrape channels ──
+    "rear_min_ride_height_mm": {
+        "label": "Rear Min Ride Height",
+        "description": "ESTIMATE — minimum rear ride height (LR vs RR) in millimeters. Proxy for rear platform ground clearance.",
+        "formula": "min(lr_ride_height_mm, rr_ride_height_mm)",
+        "dependencies": ["lr_ride_height_mm", "rr_ride_height_mm"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "rear_min_ride_height_in": {
+        "label": "Rear Min Ride Height (in)",
+        "description": "ESTIMATE — minimum rear ride height in inches.",
+        "formula": "rear_min_ride_height_mm * MM_TO_IN",
+        "dependencies": ["rear_min_ride_height_mm"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "rear_scrape_margin_mm": {
+        "label": "Rear Scrape Margin",
+        "description": "ESTIMATE — rear ground clearance margin in mm. Positive = clearance, zero/negative = contact risk.",
+        "formula": "rear_min_ride_height_mm - REAR_SCRAPE_MM",
+        "dependencies": ["rear_min_ride_height_mm"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "rear_scrape_risk_score": {
+        "label": "Rear Scrape Risk",
+        "description": "ESTIMATE — rear platform contact risk score. 1.0 = scrape, 0.92 = critical (<3mm), 0.72 = high (<6mm), 0.38 = watch (<10mm), 0.08 = safe. Proxy — not a direct contact sensor.",
+        "formula": "piecewise from rear_min_ride_height_mm",
+        "dependencies": ["rear_min_ride_height_mm"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE", "REAR_CONTACT_RISK"],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "rear_platform_contact_risk": {
+        "label": "Rear Platform Contact Risk",
+        "description": "ESTIMATE — alias for rear_scrape_risk_score. Proxy for rear underbody contact risk.",
+        "formula": "rear_scrape_risk_score",
+        "dependencies": ["rear_scrape_risk_score"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE", "REAR_CONTACT_RISK"],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "rear_scrape_side": {
+        "label": "Rear Scrape Side",
+        "description": "ESTIMATE — which rear corner has lower ride height. -1 = left_rear, 0 = both_rear, 1 = right_rear, None = unavailable.",
+        "formula": "-1 if lr < rr, 0 if equal, 1 if rr < lr",
+        "dependencies": ["lr_ride_height_mm", "rr_ride_height_mm"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
+        "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
 }
 
 
@@ -1453,10 +1509,49 @@ def _compute_dynamic_pressure(item: dict[str, Any]) -> None:
         _set_number(item, "dynamic_pressure_psf", dynamic_pressure_pa * PA_TO_PSF)
 
 
+def _risk_from_rear_mm(value: Any) -> float | None:
+    """Risk score for rear ride height using same scale as CFS risk."""
+    from racelab_engine.analysis.constants import REAR_SCRAPE_MM, REAR_CRITICAL_MM, REAR_HIGH_MM, REAR_WATCH_MM
+    rear_mm = _number(value)
+    if rear_mm is None:
+        return None
+    return next((score for threshold, score in (
+        (REAR_SCRAPE_MM, 1.0),
+        (REAR_CRITICAL_MM, 0.92),
+        (REAR_HIGH_MM, 0.72),
+        (REAR_WATCH_MM, 0.38),
+    ) if rear_mm <= threshold), 0.08)
+
+
+def _compute_rear_scrape(item: dict[str, Any]) -> None:
+    """Compute rear scrape risk channels."""
+    from racelab_engine.analysis.constants import REAR_SCRAPE_MM
+    lr_mm = _number(item.get("lr_ride_height_mm"))
+    rr_mm = _number(item.get("rr_ride_height_mm"))
+    if lr_mm is not None and rr_mm is not None:
+        rear_min = min(lr_mm, rr_mm)
+        _set_number(item, "rear_min_ride_height_mm", rear_min)
+        _set_number(item, "rear_min_ride_height_in", rear_min * MM_TO_IN)
+        margin = rear_min - REAR_SCRAPE_MM
+        _set_number(item, "rear_scrape_margin_mm", margin)
+        risk = _risk_from_rear_mm(rear_min)
+        _set_number(item, "rear_scrape_risk_score", risk)
+        _set_number(item, "rear_platform_contact_risk", risk)
+        # Determine scrape side
+        eps = 0.001  # mm tolerance for equality
+        if abs(lr_mm - rr_mm) < eps:
+            _set_number(item, "rear_scrape_side", 0)  # 0 = both
+        elif lr_mm < rr_mm:
+            _set_number(item, "rear_scrape_side", -1)  # -1 = left
+        else:
+            _set_number(item, "rear_scrape_side", 1)  # 1 = right
+
+
 def _compute_risk_scores(item: dict[str, Any]) -> None:
     cfs_risk = _risk_from_cfs_mm(item.get("cfs_ride_height_mm"))
     _set_number(item, "cfs_risk_score", cfs_risk)
     _set_number(item, "platform_risk_score", cfs_risk)
+    _compute_rear_scrape(item)
 
 
 def _compute_slip_ratios(item: dict[str, Any]) -> None:

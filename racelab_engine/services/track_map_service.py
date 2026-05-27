@@ -358,6 +358,10 @@ def _event_symbol(event_type: str) -> str:
         "HIGHEST_PLATFORM_COMPRESSION": "●",
         "HIGHEST_SHOCK_ACTIVITY": "S",
         "MAX_DYNAMIC_PRESSURE": "○",
+        "MIN_REAR_RIDE_HEIGHT": "Rmin",
+        "REAR_PLATFORM_LOW": "R",
+        "REAR_PLATFORM_SCRAPE": "R!",
+        "REAR_CONTACT_RISK": "R?",
     }
     return mapping.get(event_type, "◆")
 

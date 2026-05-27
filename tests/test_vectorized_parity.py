@@ -725,6 +725,126 @@ class TestParity:
         assert report["compared_channels"] == ["speed_mph"]
         assert report["pass_fail"] is True
 
+    # ── Rear scrape tests ─────────────────────────────────────
+
+    def test_rear_min_ride_height_calculated(self) -> None:
+        """rear_min_ride_height_mm = min(lr_ride_height_mm, rr_ride_height_mm)."""
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        rows = [_synthetic_row(lr_rh_m=0.080, rr_rh_m=0.060)]
+        ref = normalize_telemetry_rows(rows)
+        # lr=80mm, rr=60mm → min=60mm
+        assert ref[0].get("rear_min_ride_height_mm") == pytest.approx(60.0, abs=0.1)
+        assert ref[0].get("rear_min_ride_height_in") == pytest.approx(60.0 / 25.4, abs=0.01)
+
+    def test_rear_scrape_side_left(self) -> None:
+        """rear_scrape_side = -1 when LR is lower than RR."""
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        rows = [_synthetic_row(lr_rh_m=0.050, rr_rh_m=0.070)]
+        ref = normalize_telemetry_rows(rows)
+        assert ref[0].get("rear_scrape_side") == -1
+
+    def test_rear_scrape_side_right(self) -> None:
+        """rear_scrape_side = 1 when RR is lower than LR."""
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        rows = [_synthetic_row(lr_rh_m=0.070, rr_rh_m=0.050)]
+        ref = normalize_telemetry_rows(rows)
+        assert ref[0].get("rear_scrape_side") == 1
+
+    def test_rear_scrape_side_both(self) -> None:
+        """rear_scrape_side = 0 when LR and RR are equal."""
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        rows = [_synthetic_row(lr_rh_m=0.060, rr_rh_m=0.060)]
+        ref = normalize_telemetry_rows(rows)
+        assert ref[0].get("rear_scrape_side") == 0
+
+    def test_rear_risk_score_thresholds(self) -> None:
+        """Rear risk score thresholds match expected values."""
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        test_cases = [
+            (0.000, 1.0),   # 0 mm → scrape
+            (0.002, 0.92),  # 2 mm → critical
+            (0.005, 0.72),  # 5 mm → high
+            (0.008, 0.38),  # 8 mm → watch
+            (0.015, 0.08),  # 15 mm → safe
+        ]
+        for rh_m, expected in test_cases:
+            rows = [_synthetic_row(lr_rh_m=rh_m, rr_rh_m=rh_m)]
+            ref = normalize_telemetry_rows(rows)
+            assert ref[0].get("rear_scrape_risk_score") == pytest.approx(expected, abs=0.01), f"Failed at {rh_m}m"
+
+    def test_rear_platform_contact_risk_alias(self) -> None:
+        """rear_platform_contact_risk aliases rear_scrape_risk_score."""
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        rows = [_synthetic_row(lr_rh_m=0.050, rr_rh_m=0.050)]
+        ref = normalize_telemetry_rows(rows)
+        assert ref[0].get("rear_platform_contact_risk") == ref[0].get("rear_scrape_risk_score")
+
+    def test_rear_scrape_missing_rh(self) -> None:
+        """Missing rear ride heights produce None, not crash."""
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        rows = [{"Speed": 50.0, "SessionTime": 0.0}]  # no ride height columns
+        ref = normalize_telemetry_rows(rows)
+        assert ref[0].get("rear_min_ride_height_mm") is None
+        assert ref[0].get("rear_scrape_risk_score") is None
+        assert ref[0].get("rear_scrape_side") is None
+
+    def test_rear_scrape_event_emitted_when_low(self) -> None:
+        """Rear scrape event is emitted when rear height is low."""
+        from racelab_engine.analysis.platform_events import detect_platform_events
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        rows = [_synthetic_row(lr_rh_m=0.001, rr_rh_m=0.001)]  # 1 mm → critical
+        ref = normalize_telemetry_rows(rows)
+        events = detect_platform_events(ref)
+        rear_events = [e for e in events if "REAR" in e.event_type]
+        assert len(rear_events) >= 1
+        assert any(e.event_type == "REAR_PLATFORM_LOW" for e in rear_events)
+
+    def test_rear_scrape_event_scrape(self) -> None:
+        """REAR_PLATFORM_SCRAPE event when rear height is 0 or negative."""
+        from racelab_engine.analysis.platform_events import detect_platform_events
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        rows = [_synthetic_row(lr_rh_m=0.000, rr_rh_m=0.000)]  # 0 mm → scrape
+        ref = normalize_telemetry_rows(rows)
+        events = detect_platform_events(ref)
+        scrape_events = [e for e in events if e.event_type == "REAR_PLATFORM_SCRAPE"]
+        assert len(scrape_events) >= 1
+
+    def test_front_events_still_emitted(self) -> None:
+        """Front CFS events are still emitted alongside rear events."""
+        from racelab_engine.analysis.platform_events import detect_platform_events
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        rows = [_synthetic_row(cfs_rh_m=0.002, lr_rh_m=0.002, rr_rh_m=0.002)]
+        ref = normalize_telemetry_rows(rows)
+        events = detect_platform_events(ref)
+        front_events = [e for e in events if e.event_type == "MIN_SPLITTER"]
+        rear_events = [e for e in events if "REAR" in e.event_type]
+        assert len(front_events) >= 1, "Front events should still be emitted"
+        assert len(rear_events) >= 1, "Rear events should also be emitted"
+
+    def test_track_map_symbol_mapping(self) -> None:
+        """TrackMap symbol mapping includes rear event types."""
+        from racelab_engine.services.track_map_service import _event_symbol
+        assert _event_symbol("REAR_PLATFORM_SCRAPE") == "R!"
+        assert _event_symbol("REAR_PLATFORM_LOW") == "R"
+        assert _event_symbol("MIN_REAR_RIDE_HEIGHT") == "Rmin"
+        assert _event_symbol("REAR_CONTACT_RISK") == "R?"
+
+    def test_rear_metadata_has_no_missing_entries(self) -> None:
+        """All rear scrape channels have CHANNEL_METADATA entries."""
+        from racelab_engine.analysis.calculated_channels import CHANNEL_METADATA
+        rear_channels = [
+            "rear_min_ride_height_mm", "rear_min_ride_height_in",
+            "rear_scrape_margin_mm", "rear_scrape_risk_score",
+            "rear_platform_contact_risk", "rear_scrape_side",
+        ]
+        for ch in rear_channels:
+            assert ch in CHANNEL_METADATA, f"Missing metadata for {ch}"
+            meta = CHANNEL_METADATA[ch]
+            assert "description" in meta
+            assert "dependencies" in meta
+            assert "used_by_charts" in meta
+            assert "used_by_events" in meta
+
 
 class TestBenchmark:
     """Lightweight benchmarks (not real perf tests, just smoke checks)."""
