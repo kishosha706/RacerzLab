@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from racelab_engine.services.import_service import FORCE_PROXY_WARNING
+from racelab_engine.analysis.constants import FORCE_PROXY_WARNING
 
 EventType = Literal[
     "MIN_SPLITTER",
@@ -74,17 +75,27 @@ class PlatformEvent:
 
 def _sample_value(row: dict[str, Any], name: str) -> Any:
     value = row.get(name)
+    if value is None or isinstance(value, bool):
+        return None
     try:
-        if value != value:  # NaN check
+        if math.isnan(float(value)):
             return None
-    except Exception:
+    except (TypeError, ValueError):
         return None
     return value
 
 
 def _event_location(row: dict[str, Any], sample_index: int) -> dict[str, Any]:
+    lap_raw = row.get("lap")
+    lap_val: int | None = None
+    if lap_raw is not None and not isinstance(lap_raw, bool):
+        try:
+            if not math.isnan(float(lap_raw)):
+                lap_val = int(lap_raw)
+        except (TypeError, ValueError):
+            pass
     return {
-        "lap": int(row["lap"]) if "lap" in row and row.get("lap") == row.get("lap") else None,
+        "lap": lap_val,
         "sample_index": sample_index,
         "lap_dist_ft": _sample_value(row, "lap_dist_ft"),
         "lap_pct": _sample_value(row, "lap_dist_pct_100"),
@@ -94,7 +105,14 @@ def _event_location(row: dict[str, Any], sample_index: int) -> dict[str, Any]:
 
 
 def _make_event_id(event_type: str, row: dict[str, Any], sample_index: int) -> str:
-    lap = int(row["lap"]) if "lap" in row and row.get("lap") == row.get("lap") else "x"
+    lap_raw = row.get("lap")
+    lap: int | str = "x"
+    if lap_raw is not None and not isinstance(lap_raw, bool):
+        try:
+            if not math.isnan(float(lap_raw)):
+                lap = int(lap_raw)
+        except (TypeError, ValueError):
+            pass
     return f"{event_type.lower()}_lap{lap}_sample{sample_index}"
 
 

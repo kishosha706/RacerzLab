@@ -996,7 +996,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "description": "Vehicle speed in feet per second",
         "formula": "Speed * 3.280839895",
         "dependencies": ["Speed"],
-        "used_by_charts": [],
+        "used_by_charts": [SPEED_RPM_PULL],
         "used_by_events": [],
         "used_by_recommendations": [],
     },
@@ -1005,6 +1005,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     "cfsr_height_mm": {
         "label": "CFS Ride Height (mm, raw alias)",
         "description": "Alias for cfs_ride_height_mm from raw CFSRrideHeight channel.",
+        "formula": "CFSRrideHeight * 1000",
         "dependencies": ["CFSRrideHeight"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
         "used_by_events": ["PLATFORM_LOW", "PLATFORM_SCRAPE"],
