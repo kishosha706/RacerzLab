@@ -124,7 +124,7 @@ export function fetchCompareInsights(request: {
 }
 
 import type { RaceLabSession, RunLapList } from "../types/session";
-import type { TrackMapIndexEntry, TrackMapPackage } from "../types/trackMap";
+import type { TrackMap, TrackMapIndexEntry, TrackMapPackage } from "../types/trackMap";
 
 export function importMt2File(file: File): Promise<TrackMapIndexEntry> {
   const form = new FormData();
@@ -150,6 +150,10 @@ export function importMt2Folder(folderPath: string): Promise<{ imported: number;
 
 export function fetchTrackMaps(): Promise<TrackMapIndexEntry[]> {
   return requestJson<TrackMapIndexEntry[]>("/api/track-maps");
+}
+
+export function fetchTrackMap(mapId: string): Promise<TrackMap> {
+  return requestJson<TrackMap>(`/api/track-maps/${encodeURIComponent(mapId)}`);
 }
 
 // ── Session API ────────────────────────────────────────────

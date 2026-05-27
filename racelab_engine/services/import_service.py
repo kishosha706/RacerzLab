@@ -15,6 +15,7 @@ from racelab_engine.analysis.calculated_channels import (
     channel_metadata,
     normalize_telemetry_rows,
 )
+from racelab_engine.analysis.constants import FORCE_PROXY_WARNING, FORCE_PROXY_CHANNELS
 from racelab_engine.io.ibt_reader import import_ibt
 from racelab_engine.io.ibt_types import IBTImportResult, IBTVariableDefinition
 from racelab_engine.models.event import TelemetryEvent
@@ -86,31 +87,6 @@ PRESERVE_EXTREMA_CHANNELS = [
     "shock_activity_index",
     "damper_energy_proxy",
 ]
-
-FORCE_PROXY_WARNING = (
-    "Force values are estimates/proxies derived from telemetry, setup spring rates, ride heights, "
-    "shock movement, and dynamic pressure. They are not direct iRacing aerodynamic force channels."
-)
-
-FORCE_PROXY_CHANNELS = {
-    "front_load_proxy_n",
-    "rear_load_proxy_n",
-    "front_aero_proxy_n",
-    "rear_aero_proxy_n",
-    "aero_balance_front_pct",
-    "rear_downforce_proxy_n",
-    "rear_platform_proxy_n",
-    "rear_diffuser_proxy_n",
-    "platform_compression_index",
-    "front_scrub_proxy",
-    "rear_scrub_proxy",
-    "drag_scrub_suspicion",
-    "full_throttle_resistance_index",
-    "driven_wheel_slip_proxy",
-    "damper_energy_proxy",
-    "damper_work_proxy",
-}
-
 
 @dataclass(frozen=True)
 class TelemetryCacheResult:

@@ -1317,6 +1317,18 @@ td {
 }
 .toggle-label input { accent-color: #4ade80; }
 .map-warnings { margin-bottom: 12px; }
+.map-warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(245, 158, 11, 0.10);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #f59e0b;
+}
 .map-summary {
   font-size: 12px;
   color: #8d9aaa;

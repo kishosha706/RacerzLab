@@ -15,8 +15,6 @@ from racelab_engine.services.track_map_service import (
     build_track_map_package,
     save_and_import_mt2_upload,
 )
-from racelab_engine.services.track_map_service import save_and_import_mt2_upload
-
 router = APIRouter(prefix="/api", tags=["track-maps"])
 
 MAX_MT2_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB
@@ -94,13 +92,15 @@ def get_track_map_endpoint(map_id: str) -> dict:
 
 
 @router.get("/runs/{run_id}/track-map-match")
-def run_track_map_match(run_id: str) -> dict:
+def run_track_map_match(run_id: str, preferred_map_id: str | None = None) -> dict:
     repo = repository()
     overview = repo.get_overview(run_id)
     if overview is None:
         raise HTTPException(404, f"Run not found: {run_id}")
     track_name = _get_track_name(overview)
-    match = find_best_map_for_run(run_id, track_name)
+    match = find_best_map_for_run(run_id, track_name, preferred_map_id=preferred_map_id)
+    if preferred_map_id and match is None:
+        raise HTTPException(404, f"Track map not found: {preferred_map_id}")
     return {"run_id": run_id, "track_name": track_name, "match": match}
 
 
@@ -110,13 +110,18 @@ def run_track_map_package(
     lap: int | None = None,
     target_zone_start_pct: float | None = None,
     target_zone_end_pct: float | None = None,
+    preferred_map_id: str | None = None,
 ) -> dict:
     repo = repository()
     overview = repo.get_overview(run_id)
     if overview is None:
         raise HTTPException(404, f"Run not found: {run_id}")
     track_name = _get_track_name(overview)
-    match = find_best_map_for_run(run_id, track_name)
+    match = find_best_map_for_run(run_id, track_name, preferred_map_id=preferred_map_id)
+
+    # If the user explicitly requested a map ID that doesn't exist, 404
+    if preferred_map_id and match is None:
+        raise HTTPException(404, f"Track map not found: {preferred_map_id}")
 
     map_id = match.get("map_id") if match else None
     if not map_id:

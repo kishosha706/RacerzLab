@@ -103,6 +103,31 @@ WCI_WEIGHT_PROFILES: dict[str, dict[str, float]] = {
     },
 }
 
+# ── Proxy constants ───────────────────────────────────────────
+FORCE_PROXY_WARNING = (
+    "Force values are estimates/proxies derived from telemetry, setup spring rates, ride heights, "
+    "shock movement, and dynamic pressure. They are not direct iRacing aerodynamic force channels."
+)
+
+FORCE_PROXY_CHANNELS: set[str] = {
+    "front_load_proxy_n",
+    "rear_load_proxy_n",
+    "front_aero_proxy_n",
+    "rear_aero_proxy_n",
+    "aero_balance_front_pct",
+    "rear_downforce_proxy_n",
+    "rear_platform_proxy_n",
+    "rear_diffuser_proxy_n",
+    "platform_compression_index",
+    "front_scrub_proxy",
+    "rear_scrub_proxy",
+    "drag_scrub_suspicion",
+    "full_throttle_resistance_index",
+    "driven_wheel_slip_proxy",
+    "damper_energy_proxy",
+    "damper_work_proxy",
+}
+
 # ── Motion ratio helper ───────────────────────────────────────
 def apply_motion_ratio(wheel_delta: float, motion_ratio: float | None) -> float:
     """Apply motion ratio to convert wheel delta to spring delta.

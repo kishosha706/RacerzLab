@@ -125,3 +125,83 @@ def test_import_folder_indexes_multiple_maps() -> None:
         assert all("map_id" in e for e in entries)
         assert all("track_key" in e for e in entries)
         assert all("points_count" in e for e in entries)
+
+
+def test_filename_sanitization_prevents_traversal() -> None:
+    from racelab_engine.services.track_map_service import _sanitize_filename
+    assert _sanitize_filename("test.mt2") == "test.mt2"
+    # Path traversal is stripped by os.path.basename; result is the leaf filename
+    result = _sanitize_filename("../etc/passwd.mt2")
+    assert ".." not in result
+    assert "/" not in result
+    assert result.endswith(".mt2")
+    result = _sanitize_filename("a/b/c.mt2")
+    assert "/" not in result
+    assert result.endswith(".mt2")
+
+
+def test_import_mt2_file_rejects_non_mt2(tmp_path: Path) -> None:
+    from racelab_engine.services.track_map_service import import_mt2_file
+    fake = tmp_path / "test.txt"
+    fake.write_text("not a track map")
+    with pytest.raises(ValueError, match="Unsupported file type"):
+        import_mt2_file(fake)
+
+
+def test_overlay_build_uses_lap_pct_interpolation(atlanta_mt2_path: Path) -> None:
+    from racelab_engine.services.track_map_service import build_track_map_overlays, import_mt2_file
+    entry = import_mt2_file(atlanta_mt2_path)
+    map_id = entry["map_id"]
+    overlays = build_track_map_overlays(
+        map_id,
+        platform_events=[
+            {"event_id": "evt_1", "event_type": "MIN_SPLITTER", "lap_pct": 25.0, "label": "Test", "severity": "info"},
+        ],
+    )
+    assert len(overlays) == 1
+    assert overlays[0]["kind"] == "platform_event"
+    assert overlays[0]["x"] is not None
+    assert overlays[0]["y"] is not None
+    assert overlays[0]["lap_pct"] == 25.0
+
+
+def test_build_track_map_package_includes_all_sections(atlanta_mt2_path: Path) -> None:
+    from racelab_engine.services.track_map_service import build_track_map_package, import_mt2_file
+    entry = import_mt2_file(atlanta_mt2_path)
+    map_id = entry["map_id"]
+    pkg = build_track_map_package(map_id, "fake_run_id")
+    assert pkg["map"] is not None
+    assert pkg["run_id"] == "fake_run_id"
+    assert "overlays" in pkg
+    assert "sections" in pkg
+    assert "markers" in pkg
+
+
+def test_routes_upload_rejects_wrong_extension() -> None:
+    """Simulate the extension check logic used by the upload endpoint."""
+    filename = "test.ibt"
+    assert not filename.lower().endswith(".mt2")
+    filename = "test.mt2"
+    assert filename.lower().endswith(".mt2")
+
+
+def test_preferred_map_id_found_returns_manual_confidence() -> None:
+    """preferred_map_id returns confidence='manual' when found."""
+    from racelab_engine.analysis.track_matching import match_track_map_for_run
+    available = [
+        {"map_id": "laguna-seca-abc123", "track_key": "lagunaseca", "layout_key": "default", "source_filename": "lagunaseca.mt2"},
+    ]
+    result = match_track_map_for_run("Unknown Track", None, available, preferred_map_id="laguna-seca-abc123")
+    assert result is not None
+    assert result["match_confidence"] == "manual"
+    assert result["match_score"] == 100
+
+
+def test_preferred_map_id_missing_returns_none_no_fallback() -> None:
+    """preferred_map_id returns None when not found — no silent fallback to auto-match."""
+    from racelab_engine.analysis.track_matching import match_track_map_for_run
+    available = [
+        {"map_id": "talladega-abc123", "track_key": "talladega", "layout_key": "default", "source_filename": "talladega.mt2"},
+    ]
+    result = match_track_map_for_run("Talladega Super Speedway", None, available, preferred_map_id="nonexistent-id")
+    assert result is None

@@ -18,7 +18,10 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **Insights Engine** — automated interpretation of comparison results with trace annotations, correlations, target zone classification, confidence-weighted verdicts, and sector intelligence
 - **Notebook & Setup Memory** — save findings, edit notes/tags/status, duplicate detection, create test plans, copy Markdown export, view setup memory dashboard with per-car/track summaries
 - **Local SQLite persistence** — imported runs, laps, events, setup snapshots, findings, test plans, and RaceLab sessions stored locally
-- **70+ calculated channels** — ride heights, rake, dynamic pressure, tire pressure gain, temp/wear spread, slip ratio proxy, shock velocity, motion g-conversions, platform pitch/roll estimates
+- **100+ calculated channels** — ride heights, rake, dynamic pressure, tire pressure gain, temp/wear spread, slip ratio, shock velocity/activity/RMS, damper energy, motion g-conversions, platform pitch/roll estimates, kinematic slip angles, dynamic grade, aero load index, drag/scrub suspicion, platform compression, stability scores
+- **Vehicle Dynamics Engine** — 6 physics modules: aero coefficients, tire dynamics (slip angles, understeer gradient), vehicle dynamics (weight transfer, brake energy), geometry (pitch/roll with motion ratios), estimate confidence, physics inputs
+- **Vectorized Analysis Pipeline** — parallel Polars path (opt-in via `RACELAB_ANALYSIS_ENGINE` env var) with 7× speedup at 100k rows, full parity with row path
+- **Engine Comparison Script** — `scripts/compare_analysis_engines.py` for validating vector vs row path on real data
 - **Extrema-preserving downsampling** — CFS minimums and event peaks never lost in chart views
 
 ## Proxy Disclaimer

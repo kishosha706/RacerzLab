@@ -69,15 +69,17 @@ def _save_index(entries: list[dict[str, Any]]) -> None:
     _index_path().write_text(json.dumps(entries, indent=2, default=str), encoding="utf-8")
 
 
-def _upsert_index_entry(entry: dict[str, Any]) -> None:
+def _upsert_index_entry(entry: dict[str, Any]) -> bool:
+    """Insert or update an index entry. Returns True if new (inserted), False if updated."""
     entries = _load_index()
     for i, e in enumerate(entries):
         if e.get("map_id") == entry["map_id"]:
             entries[i] = entry
             _save_index(entries)
-            return
+            return False  # updated
     entries.append(entry)
     _save_index(entries)
+    return True  # inserted
 
 
 # ── import ────────────────────────────────────────────────────
@@ -124,7 +126,8 @@ def import_mt2_file(path: Path) -> dict[str, Any]:
         "sha256": sha,
         "file_size_bytes": len(data),
     }
-    _upsert_index_entry(entry)
+    is_new = _upsert_index_entry(entry)
+    entry["import_status"] = "indexed" if is_new else "already_indexed"
     return entry
 
 
@@ -230,10 +233,13 @@ def _dict_to_track_map(d: dict[str, Any]) -> TrackMap:
     )
 
 
-def find_best_map_for_run(run_id: str, track_name: str, layout: str | None = None) -> dict[str, Any] | None:
-    """Match a run to the best available track map."""
+def find_best_map_for_run(run_id: str, track_name: str, layout: str | None = None, preferred_map_id: str | None = None) -> dict[str, Any] | None:
+    """Match a run to the best available track map.
+
+    If *preferred_map_id* is provided, it bypasses autodetection entirely.
+    """
     entries = _load_index()
-    return match_track_map_for_run(track_name, layout, entries)
+    return match_track_map_for_run(track_name, layout, entries, preferred_map_id=preferred_map_id)
 
 
 # ── overlay builders ─────────────────────────────────────────

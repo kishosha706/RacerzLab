@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-from racelab_engine.services.import_service import FORCE_PROXY_WARNING
+from racelab_engine.analysis.constants import FORCE_PROXY_WARNING
 
 
 @dataclass(frozen=True)
@@ -89,7 +89,9 @@ def build_platform_proxy_estimates(row: Mapping[str, Any], setup: Any | None = N
     assumptions = [
         "Ride-height deltas are treated as relative compression proxies.",
         "A 1:1 Motion Ratio is assumed per corner unless setup provides motion ratios.",
-        "Mechanical weight transfer is NOT subtracted from aero load proxies.",
+        "Mechanical weight transfer is not subtracted from these raw platform load proxies. "
+        "Use aero_residual_load_proxy_n (vehicle_dynamics) when mass, geometry, and "
+        "mechanical transfer are available for a corrected aero residual estimate.",
         "Dynamic pressure is calculated from air density and speed when both are available.",
     ]
     if not has_motion_ratios:

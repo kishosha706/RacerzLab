@@ -126,6 +126,7 @@ export interface TrackMapIndexEntry {
   warnings: string[];
   match_confidence?: string;
   match_score?: number;
+  import_status?: "indexed" | "already_indexed";
 }
 
 export interface TrackMapOverlayMarker {

@@ -262,6 +262,11 @@ CALCULATED_CHANNEL_UNITS: dict[str, str] = {
     "rear_downforce_proxy_n": "N",
     "rear_platform_proxy_n": "N",
     "rear_diffuser_proxy_n": "N",
+    "speed_rate_mps2": "m/s^2",
+    "dynamic_grade_deg": "deg",
+    "front_slip_angle_deg": "deg",
+    "rear_slip_angle_deg": "deg",
+    "slip_angle_balance_deg": "deg",
     "track_x_m": "m",
     "track_y_m": "m",
     "track_x_ft": "ft",
@@ -656,6 +661,437 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "used_by_charts": [DRAG_SCRUB],
         "used_by_events": ["STEERING_SCRUB"],
         "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+
+    # ── platform angles ──
+    "platform_pitch_deg_from_rh": {
+        "label": "Platform Pitch (from RH)",
+        "description": "ESTIMATE — platform pitch angle derived from front/rear ride height difference. Assumes 1:1 motion ratio unless setup data provides it. Delegates to geometry.compute_pitch_deg().",
+        "formula": "geometry.compute_pitch_deg(front_rh_m, rear_rh_m, wheelbase_m)",
+        "dependencies": ["front_avg_rh_in", "rear_avg_rh_in", "wheelbase_m"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "platform_roll_deg_from_rh": {
+        "label": "Platform Roll (from RH)",
+        "description": "ESTIMATE — platform roll angle derived from left/right ride height difference. Assumes 1:1 motion ratio unless setup data provides it. Delegates to geometry.compute_roll_deg().",
+        "formula": "geometry.compute_roll_deg(left_rh_m, right_rh_m, track_width_m)",
+        "dependencies": ["left_avg_rh_in", "right_avg_rh_in", "front_track_width_m"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+
+    # ── dynamic pressure raw ──
+    "dynamic_pressure_pa": {
+        "label": "Dynamic Pressure (Pa)",
+        "description": "Dynamic pressure in Pascals. Raw SI value before conversion to psf.",
+        "formula": "0.5 * AirDensity * Speed^2",
+        "dependencies": ["AirDensity", "Speed"],
+        "used_by_charts": [AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+
+    # ── slip ratios ──
+    "lf_slip_ratio": {
+        "label": "LF Slip Ratio",
+        "description": "Left-front wheel slip ratio from raw wheel speed vs vehicle speed.",
+        "dependencies": ["LFspeed", "speed_mps"],
+        "used_by_charts": [TIRES, DRAG_SCRUB],
+        "used_by_events": ["TIRE_SCRUB"],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "rf_slip_ratio": {
+        "label": "RF Slip Ratio",
+        "description": "Right-front wheel slip ratio from raw wheel speed vs vehicle speed.",
+        "dependencies": ["RFspeed", "speed_mps"],
+        "used_by_charts": [TIRES, DRAG_SCRUB],
+        "used_by_events": ["TIRE_SCRUB"],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "lr_slip_ratio": {
+        "label": "LR Slip Ratio",
+        "description": "Left-rear wheel slip ratio from raw wheel speed vs vehicle speed.",
+        "dependencies": ["LRspeed", "speed_mps"],
+        "used_by_charts": [TIRES, DRAG_SCRUB],
+        "used_by_events": ["TIRE_SCRUB"],
+        "used_by_recommendations": [GEARING_COMPARISON],
+    },
+    "rr_slip_ratio": {
+        "label": "RR Slip Ratio",
+        "description": "Right-rear wheel slip ratio from raw wheel speed vs vehicle speed.",
+        "dependencies": ["RRspeed", "speed_mps"],
+        "used_by_charts": [TIRES, DRAG_SCRUB],
+        "used_by_events": ["TIRE_SCRUB"],
+        "used_by_recommendations": [GEARING_COMPARISON],
+    },
+
+    # ── wheel speed mismatch ──
+    "front_wheel_speed_mismatch": {
+        "label": "Front Wheel Speed Mismatch",
+        "description": "Difference between RF and LF wheel speeds. Indicates steering scrub or inside wheel slip.",
+        "dependencies": ["RFspeed", "LFspeed"],
+        "used_by_charts": [TIRES, DRAG_SCRUB],
+        "used_by_events": ["STEERING_SCRUB"],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "rear_wheel_speed_mismatch": {
+        "label": "Rear Wheel Speed Mismatch",
+        "description": "Difference between RR and LR wheel speeds. Indicates inside wheel spin or differential action.",
+        "dependencies": ["RRspeed", "LRspeed"],
+        "used_by_charts": [TIRES, DRAG_SCRUB],
+        "used_by_events": ["TIRE_SCRUB"],
+        "used_by_recommendations": [GEARING_COMPARISON],
+    },
+
+    # ── ride height mm variants ──
+    "lf_ride_height_mm": {
+        "label": "LF Ride Height (mm)",
+        "description": "Left-front ride height in millimeters",
+        "dependencies": ["LFrideHeight"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
+        "used_by_events": ["PLATFORM_LOW"],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "rf_ride_height_mm": {
+        "label": "RF Ride Height (mm)",
+        "description": "Right-front ride height in millimeters",
+        "dependencies": ["RFrideHeight"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
+        "used_by_events": ["PLATFORM_LOW"],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "lr_ride_height_mm": {
+        "label": "LR Ride Height (mm)",
+        "description": "Left-rear ride height in millimeters",
+        "dependencies": ["LRrideHeight"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
+        "used_by_events": [],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "rr_ride_height_mm": {
+        "label": "RR Ride Height (mm)",
+        "description": "Right-rear ride height in millimeters",
+        "dependencies": ["RRrideHeight"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
+        "used_by_events": [],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+
+    # ── ride height averages ──
+    "front_avg_rh_in": {
+        "label": "Front Avg RH",
+        "description": "Average front ride height (LF + RF) / 2 in inches",
+        "dependencies": ["lf_ride_height_in", "rf_ride_height_in"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "rear_avg_rh_in": {
+        "label": "Rear Avg RH",
+        "description": "Average rear ride height (LR + RR) / 2 in inches",
+        "dependencies": ["lr_ride_height_in", "rr_ride_height_in"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "left_avg_rh_in": {
+        "label": "Left Avg RH",
+        "description": "Average left ride height (LF + LR) / 2 in inches",
+        "dependencies": ["lf_ride_height_in", "lr_ride_height_in"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
+        "used_by_events": [],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "right_avg_rh_in": {
+        "label": "Right Avg RH",
+        "description": "Average right ride height (RF + RR) / 2 in inches",
+        "dependencies": ["rf_ride_height_in", "rr_ride_height_in"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
+        "used_by_events": [],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+
+    # ── shock mm variants ──
+    "lf_shock_defl_in": {
+        "label": "LF Shock Deflection",
+        "description": "Left-front shock deflection in inches",
+        "dependencies": ["LFSHshockDefl"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": [],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "rf_shock_defl_in": {
+        "label": "RF Shock Deflection",
+        "description": "Right-front shock deflection in inches",
+        "dependencies": ["RFSHshockDefl"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": [],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "lr_shock_defl_in": {
+        "label": "LR Shock Deflection",
+        "description": "Left-rear shock deflection in inches",
+        "dependencies": ["LRSHshockDefl"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": [],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "rr_shock_defl_in": {
+        "label": "RR Shock Deflection",
+        "description": "Right-rear shock deflection in inches",
+        "dependencies": ["RRSHshockDefl"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": [],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "lf_shock_vel_in_s": {
+        "label": "LF Shock Velocity",
+        "description": "Left-front shock velocity in inches per second",
+        "dependencies": ["LFSHshockVel"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "rf_shock_vel_in_s": {
+        "label": "RF Shock Velocity",
+        "description": "Right-front shock velocity in inches per second",
+        "dependencies": ["RFSHshockVel"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "lr_shock_vel_in_s": {
+        "label": "LR Shock Velocity",
+        "description": "Left-rear shock velocity in inches per second",
+        "dependencies": ["LRSHshockVel"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "rr_shock_vel_in_s": {
+        "label": "RR Shock Velocity",
+        "description": "Right-rear shock velocity in inches per second",
+        "dependencies": ["RRSHshockVel"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+
+    # ── stability scores ──
+    "platform_stability_score": {
+        "label": "Platform Stability",
+        "description": "Rate of CFS ride height change over time. Higher = less stable platform.",
+        "dependencies": ["cfs_ride_height_in", "session_time"],
+        "used_by_charts": [AERO_PLATFORM],
+        "used_by_events": ["PLATFORM_COMPRESSION"],
+        "used_by_recommendations": [PLATFORM_SCRUB_TEST],
+    },
+    "rake_stability_score": {
+        "label": "Rake Stability",
+        "description": "Rate of center rake change over time. Higher = less stable rake.",
+        "dependencies": ["center_rake_fs_in", "session_time"],
+        "used_by_charts": [AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "platform_risk_score": {
+        "label": "Platform Risk Score",
+        "description": "Alias for CFS risk score. Higher = riskier splitter margin.",
+        "dependencies": ["cfs_ride_height_mm"],
+        "used_by_charts": [AERO_PLATFORM],
+        "used_by_events": ["PLATFORM_LOW"],
+        "used_by_recommendations": [PLATFORM_SCRUB_TEST],
+    },
+
+    # ── scrub proxies ──
+    "front_scrub_proxy": {
+        "label": "Front Scrub Proxy",
+        "description": "ESTIMATE — front scrub/scrub index from slip mismatch, steering, yaw error, and curvature.",
+        "dependencies": ["lf_slip_ratio", "rf_slip_ratio", "abs_steering_deg", "abs_lat_accel", "yaw_rate", "radius_m"],
+        "used_by_charts": [DRAG_SCRUB],
+        "used_by_events": ["STEERING_SCRUB"],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "rear_scrub_proxy": {
+        "label": "Rear Scrub Proxy",
+        "description": "ESTIMATE — rear scrub index from rear slip mismatch.",
+        "dependencies": ["lr_slip_ratio", "rr_slip_ratio"],
+        "used_by_charts": [DRAG_SCRUB],
+        "used_by_events": ["TIRE_SCRUB"],
+        "used_by_recommendations": [GEARING_COMPARISON],
+    },
+    "full_throttle_resistance_index": {
+        "label": "Full-Throttle Resistance",
+        "description": "ESTIMATE — aero-normalized resistance index during full-throttle conditions. Higher = more drag/scrub per unit aero load.",
+        "dependencies": ["speed_mph", "throttle_pct", "brake_pct", "speed_rate_mph_s", "dynamic_pressure_psf"],
+        "used_by_charts": [DRAG_SCRUB],
+        "used_by_events": ["FULL_THROTTLE_SPEED_LOSS"],
+        "used_by_recommendations": [PLATFORM_SCRUB_TEST],
+    },
+    "damper_energy_proxy": {
+        "label": "Damper Energy Proxy",
+        "description": "ESTIMATE — trailing-window sum of squared shock velocities. Proxy for damper energy dissipation.",
+        "dependencies": ["lf_shock_vel_in_s", "rf_shock_vel_in_s", "lr_shock_vel_in_s", "rr_shock_vel_in_s"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "damper_work_proxy": {
+        "label": "Damper Work Proxy",
+        "description": "ESTIMATE — alias for damper energy proxy.",
+        "dependencies": ["lf_shock_vel_in_s", "rf_shock_vel_in_s", "lr_shock_vel_in_s", "rr_shock_vel_in_s"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": [],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+
+    # ── force proxies ──
+    "front_load_proxy_n": {
+        "label": "Front Load Proxy",
+        "description": "ESTIMATE — front total load proxy from spring rates and ride height deltas.",
+        "dependencies": ["lf_ride_height_mm", "rf_ride_height_mm"],
+        "used_by_charts": [AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+    },
+    "rear_load_proxy_n": {
+        "label": "Rear Load Proxy",
+        "description": "ESTIMATE — rear total load proxy from spring rates and ride height deltas.",
+        "dependencies": ["lr_ride_height_mm", "rr_ride_height_mm"],
+        "used_by_charts": [AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+    },
+    "front_aero_proxy_n": {
+        "label": "Front Aero Proxy",
+        "description": "ESTIMATE — front aero load proxy. Not a direct force measurement.",
+        "dependencies": ["front_load_proxy_n"],
+        "used_by_charts": [AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+    },
+    "rear_aero_proxy_n": {
+        "label": "Rear Aero Proxy",
+        "description": "ESTIMATE — rear aero load proxy. Not a direct force measurement.",
+        "dependencies": ["rear_load_proxy_n"],
+        "used_by_charts": [AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+    },
+    "rear_diffuser_proxy_n": {
+        "label": "Rear Diffuser Proxy",
+        "description": "ESTIMATE — rear diffuser load proxy. Very low confidence. Not a direct force measurement.",
+        "dependencies": ["rear_load_proxy_n"],
+        "used_by_charts": [AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+    },
+
+    # ── speed_fps ──
+    "speed_fps": {
+        "label": "Speed (ft/s)",
+        "description": "Vehicle speed in feet per second",
+        "formula": "Speed * 3.280839895",
+        "dependencies": ["Speed"],
+        "used_by_charts": [],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+
+    # ── cfsr_height_mm (alias) ──
+    "cfsr_height_mm": {
+        "label": "CFS Ride Height (mm, raw alias)",
+        "description": "Alias for cfs_ride_height_mm from raw CFSRrideHeight channel.",
+        "dependencies": ["CFSRrideHeight"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
+        "used_by_events": ["PLATFORM_LOW", "PLATFORM_SCRAPE"],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+
+    # ── slip angles ──
+    "front_slip_angle_deg": {
+        "label": "Front Slip Angle",
+        "description": "ESTIMATE — kinematic front tire slip angle from steering, yaw rate, and local velocity. Requires axle-to-CG distance from setup constants.",
+        "formula": "tire_dynamics.front_slip_angle_rad(steer, vx, vy, r, a)",
+        "dependencies": ["velocity_z", "velocity_x", "yaw_rate", "steering_rad", "front_axle_to_cg_m"],
+        "used_by_charts": [TIRES, DRAG_SCRUB],
+        "used_by_events": ["STEERING_SCRUB"],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "rear_slip_angle_deg": {
+        "label": "Rear Slip Angle",
+        "description": "ESTIMATE — kinematic rear tire slip angle from yaw rate and local velocity. Requires axle-to-CG distance from setup constants.",
+        "formula": "tire_dynamics.rear_slip_angle_rad(vx, vy, r, b)",
+        "dependencies": ["velocity_z", "velocity_x", "yaw_rate", "rear_axle_to_cg_m"],
+        "used_by_charts": [TIRES, DRAG_SCRUB],
+        "used_by_events": ["TIRE_SCRUB"],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "slip_angle_balance_deg": {
+        "label": "Slip Angle Balance",
+        "description": "ESTIMATE — difference between front and rear slip angles (front - rear). Positive = understeer bias, negative = oversteer bias.",
+        "formula": "tire_dynamics.slip_angle_balance_rad(af, ar)",
+        "dependencies": ["front_slip_angle_deg", "rear_slip_angle_deg"],
+        "used_by_charts": [TIRES, DRAG_SCRUB],
+        "used_by_events": ["STEERING_SCRUB"],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+
+    # ── dynamic grade ──
+    "speed_rate_mps2": {
+        "label": "Speed Rate (m/s²)",
+        "description": "Rate of speed change in SI units (m/s²). Used for dynamic grade isolation and force balance calculations.",
+        "formula": "d(speed_mps) / d(SessionTime)",
+        "dependencies": ["speed_mps", "SessionTime"],
+        "used_by_charts": [SPEED_RPM_PULL],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+    "dynamic_grade_deg": {
+        "label": "Dynamic Grade",
+        "description": "ESTIMATE — track slope (grade) angle derived by comparing sensor longitudinal acceleration vs GPS speed derivative. Positive = uphill, negative = downhill.",
+        "formula": "asin((long_accel - speed_rate_mps2) / 9.81)",
+        "dependencies": ["long_accel", "speed_rate_mps2"],
+        "used_by_charts": [SPEED_RPM_PULL],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+
+    # ── track GPS projection ──
+    "track_x_m": {
+        "label": "Track X (m)",
+        "description": "GPS-projected track X position in meters from local origin.",
+        "dependencies": ["Lat", "Lon"],
+        "used_by_charts": [],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+    "track_y_m": {
+        "label": "Track Y (m)",
+        "description": "GPS-projected track Y position in meters from local origin.",
+        "dependencies": ["Lat", "Lon"],
+        "used_by_charts": [],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+    "track_x_ft": {
+        "label": "Track X (ft)",
+        "description": "GPS-projected track X position in feet.",
+        "dependencies": ["track_x_m"],
+        "used_by_charts": [],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+    "track_y_ft": {
+        "label": "Track Y (ft)",
+        "description": "GPS-projected track Y position in feet.",
+        "dependencies": ["track_y_m"],
+        "used_by_charts": [],
+        "used_by_events": [],
+        "used_by_recommendations": [],
     },
 }
 
@@ -1085,6 +1521,10 @@ def _compute_scrub_proxies(item: dict[str, Any]) -> None:
 
     YAW_ERROR_CRITICAL = 0.15  # rad/s threshold for understeer
 
+    # TODO: When understeer_gradient_proxy_deg_per_g is available and
+    # abs(lat_accel_g) > 0.1, use it as primary scrub evidence instead of
+    # the steering/yaw blend below. Requires wiring vehicle_dynamics
+    # understeer functions into runtime (mass/geometry needed).
     if lf_slip is not None and rf_slip is not None:
         slip_delta = abs(rf_slip - lf_slip)
         steering_lat = (steering / 90.0) * lat_accel
@@ -1100,9 +1540,11 @@ def _compute_scrub_proxies(item: dict[str, Any]) -> None:
 def _init_derivative_row(row: dict[str, Any]) -> None:
     row["speed_rate_mph_s"] = None
     row["speed_rate_mph_1000ft"] = None
+    row["speed_rate_mps2"] = None
     row["platform_stability_score"] = None
     row["rake_stability_score"] = None
     row["platform_compression_index"] = None
+    row["dynamic_grade_deg"] = None
 
 
 def _compute_speed_rates(row: dict[str, Any], previous: dict[str, Any]) -> float | None:
@@ -1112,6 +1554,8 @@ def _compute_speed_rates(row: dict[str, Any], previous: dict[str, Any]) -> float
     previous_time = _number(previous.get("session_time"))
     lap_dist_ft = _number(row.get("lap_dist_ft"))
     previous_lap_dist_ft = _number(previous.get("lap_dist_ft"))
+    speed_mps = _number(row.get("speed_mps"))
+    prev_speed_mps = _number(previous.get("speed_mps"))
 
     speed_rate_s = None
     if speed is not None and previous_speed is not None and session_time is not None and previous_time is not None:
@@ -1119,6 +1563,10 @@ def _compute_speed_rates(row: dict[str, Any], previous: dict[str, Any]) -> float
         if dt > 0:
             speed_rate_s = (speed - previous_speed) / dt
             row["speed_rate_mph_s"] = speed_rate_s
+            
+            # SI unit rate for dynamic grade calculation
+            if speed_mps is not None and prev_speed_mps is not None:
+                row["speed_rate_mps2"] = (speed_mps - prev_speed_mps) / dt
     if speed is not None and previous_speed is not None and lap_dist_ft is not None and previous_lap_dist_ft is not None:
         dd = lap_dist_ft - previous_lap_dist_ft
         if abs(dd) > 0.1:
@@ -1219,6 +1667,7 @@ def _apply_row_calculations(item: dict[str, Any]) -> None:
     _compute_risk_scores(item)
     _copy_remaining_aliases(item)
     _compute_slip_ratios(item)
+    _compute_kinematic_slip_angles(item)
     _compute_scrub_proxies(item)
     _compute_g_values(item)
     _compute_platform_angles(item)
@@ -1232,6 +1681,34 @@ def _compute_g_values(item: dict[str, Any]) -> None:
             _set_number(item, f"{ch}_g", val / 9.81)
 
 
+def _compute_kinematic_slip_angles(item: dict[str, Any]) -> None:
+    """Estimate front and rear slip angles using local velocity and geometry.
+    Requires local frame velocities (VelocityX/Z) and axle-to-CG distances.
+    """
+    from racelab_engine.analysis.tire_dynamics import (
+        front_slip_angle_rad, rear_slip_angle_rad, slip_angle_balance_rad
+    )
+    # iRacing: VelocityZ is forward, VelocityX is sideways
+    vx = _number(item.get("velocity_z")) or _number(item.get("speed_mps"))
+    vy = _number(item.get("velocity_x"))
+    r = _number(item.get("yaw_rate"))
+    steer = _number(item.get("steering_rad"))
+    a = _number(item.get("front_axle_to_cg_m"))
+    b = _number(item.get("rear_axle_to_cg_m"))
+    
+    if vx and vx > 0.1 and vy is not None and r is not None and steer is not None and a and b:
+        af_rad, _ = front_slip_angle_rad(steer, vx, vy, r, a)
+        ar_rad, _ = rear_slip_angle_rad(vx, vy, r, b)
+        bal_rad, _ = slip_angle_balance_rad(af_rad, ar_rad)
+        
+        if af_rad is not None:
+            _set_number(item, "front_slip_angle_deg", math.degrees(af_rad))
+        if ar_rad is not None:
+            _set_number(item, "rear_slip_angle_deg", math.degrees(ar_rad))
+        if bal_rad is not None:
+            _set_number(item, "slip_angle_balance_deg", math.degrees(bal_rad))
+
+
 def _compute_platform_angles(item: dict[str, Any]) -> None:
     """Estimate platform pitch/roll angles from ride height differences.
     These are geometric estimates only — not true inertial angles.
@@ -1239,25 +1716,42 @@ def _compute_platform_angles(item: dict[str, Any]) -> None:
     Uses geometry.py for SI-first math with motion-ratio hooks.
     Geometry estimate assumes 1:1 motion ratio until setup data provides it.
     """
-    from racelab_engine.analysis.geometry import compute_pitch_deg, compute_roll_deg
+    from racelab_engine.analysis.geometry import compute_pitch_deg, compute_roll_deg, ride_height_mm_to_m
     wb_m = _number(item.get("wheelbase_m"))
-    tw_m = _number(item.get("front_track_width_m"))
-    if wb_m is not None and wb_m > 0:
-        front_rh_in = _number(item.get("front_avg_rh_in"))
-        rear_rh_in = _number(item.get("rear_avg_rh_in"))
-        if front_rh_in is not None and rear_rh_in is not None:
-            front_rh_m = front_rh_in / 39.37007874
-            rear_rh_m = rear_rh_in / 39.37007874
-            pitch = compute_pitch_deg(front_rh_m, rear_rh_m, wb_m)
+    ftw = _number(item.get("front_track_width_m"))
+    rtw = _number(item.get("rear_track_width_m"))
+    tw_m = ftw or rtw or ((ftw + rtw) / 2.0 if ftw and rtw else None)
+
+    # Motion ratios (optional setup constants)
+    mrf = _number(item.get("motion_ratio_front"))
+    mrr = _number(item.get("motion_ratio_rear"))
+
+    if wb_m and wb_m > 0:
+        fl_mm = _number(item.get("lf_ride_height_mm"))
+        fr_mm = _number(item.get("rf_ride_height_mm"))
+        rl_mm = _number(item.get("lr_ride_height_mm"))
+        rr_mm = _number(item.get("rr_ride_height_mm"))
+        
+        if None not in (fl_mm, fr_mm, rl_mm, rr_mm):
+            assert fl_mm is not None and fr_mm is not None and rl_mm is not None and rr_mm is not None
+            front_m = ride_height_mm_to_m((fl_mm + fr_mm) / 2.0)
+            rear_m = ride_height_mm_to_m((rl_mm + rr_mm) / 2.0)
+            pitch = compute_pitch_deg(front_m, rear_m, wb_m, front_motion_ratio=mrf, rear_motion_ratio=mrr)
             if pitch is not None:
                 _set_number(item, "platform_pitch_deg_from_rh", pitch)
-    if tw_m is not None and tw_m > 0:
-        left_rh_in = _number(item.get("left_avg_rh_in"))
-        right_rh_in = _number(item.get("right_avg_rh_in"))
-        if left_rh_in is not None and right_rh_in is not None:
-            left_rh_m = left_rh_in / 39.37007874
-            right_rh_m = right_rh_in / 39.37007874
-            roll = compute_roll_deg(left_rh_m, right_rh_m, tw_m)
+
+    if tw_m and tw_m > 0:
+        fl_mm = _number(item.get("lf_ride_height_mm"))
+        fr_mm = _number(item.get("rf_ride_height_mm"))
+        rl_mm = _number(item.get("lr_ride_height_mm"))
+        rr_mm = _number(item.get("rr_ride_height_mm"))
+        
+        if None not in (fl_mm, fr_mm, rl_mm, rr_mm):
+            assert fl_mm is not None and fr_mm is not None and rl_mm is not None and rr_mm is not None
+            left_m = ride_height_mm_to_m((fl_mm + rl_mm) / 2.0)
+            right_m = ride_height_mm_to_m((fr_mm + rr_mm) / 2.0)
+            # Use front track width for simplicity as roll ref if only one available
+            roll = compute_roll_deg(left_m, right_m, tw_m, left_motion_ratio=mrf, right_motion_ratio=mrf)
             if roll is not None:
                 _set_number(item, "platform_roll_deg_from_rh", roll)
 
@@ -1290,7 +1784,21 @@ def _apply_derivatives(rows: list[dict[str, Any]]) -> None:
         _compute_stability_scores(row, previous)
         _compute_resistance_indices(row, previous)
         _compute_compression_index(row)
+        _compute_dynamic_grade(row)
         previous = row
+
+
+def _compute_dynamic_grade(row: dict[str, Any]) -> None:
+    """Estimate track grade (slope) by comparing acceleration vs GPS speed change."""
+    ax = _number(row.get("long_accel"))
+    dvdt = _number(row.get("speed_rate_mps2"))
+    if ax is not None and dvdt is not None:
+        # ax_sensor = dv/dt + g*sin(theta)
+        # sin(theta) = (ax_sensor - dv/dt) / g
+        sin_theta = (ax - dvdt) / 9.81
+        sin_theta = max(-1.0, min(1.0, sin_theta))
+        grade_rad = math.asin(sin_theta)
+        row["dynamic_grade_deg"] = math.degrees(grade_rad)
 
 
 def _apply_rolling_aggregates(rows: list[dict[str, Any]], window: int = 60) -> None:
@@ -1325,38 +1833,6 @@ def _apply_gps_projection(rows: list[dict[str, Any]]) -> None:
         row["track_y_ft"] = y_m * M_TO_FT
 
 
-def _apply_geometry(item: dict[str, Any], wheelbase_m: float | None, average_track: float | None) -> None:
-    """Apply geometry-based platform angle estimates.
-
-    Uses geometry.py for SI-first math with motion-ratio hooks.
-    Only overwrites if _compute_platform_angles didn't already set these
-    (geometry data is more precise).
-    """
-    from racelab_engine.analysis.geometry import compute_pitch_deg, compute_roll_deg, ride_height_mm_to_m
-    if wheelbase_m and wheelbase_m > 0:
-        front_mm = _average(item, "lf_ride_height_mm", "rf_ride_height_mm")
-        rear_mm = _average(item, "lr_ride_height_mm", "rr_ride_height_mm")
-        if front_mm is not None and rear_mm is not None:
-            pitch = compute_pitch_deg(
-                ride_height_mm_to_m(front_mm),
-                ride_height_mm_to_m(rear_mm),
-                wheelbase_m,
-            )
-            if pitch is not None:
-                item["platform_pitch_deg_from_rh"] = pitch
-    if average_track and average_track > 0:
-        left_mm = _average(item, "lf_ride_height_mm", "lr_ride_height_mm")
-        right_mm = _average(item, "rf_ride_height_mm", "rr_ride_height_mm")
-        if left_mm is not None and right_mm is not None:
-            roll = compute_roll_deg(
-                ride_height_mm_to_m(left_mm),
-                ride_height_mm_to_m(right_mm),
-                average_track,
-            )
-            if roll is not None:
-                item["platform_roll_deg_from_rh"] = roll
-
-
 def normalize_telemetry_rows(
     table: Any,
     geometry: Mapping[str, float] | None = None,
@@ -1364,23 +1840,25 @@ def normalize_telemetry_rows(
     rows = rows_from_table(table)
     normalized: list[dict[str, Any]] = []
 
+    # Setup constants to inject for physics/geometry math
+    physics_keys = [
+        "mass_kg", "cg_height_m", "wheelbase_m", "front_track_width_m", 
+        "rear_track_width_m", "front_axle_to_cg_m", "rear_axle_to_cg_m", 
+        "crr", "motion_ratio_front", "motion_ratio_rear"
+    ]
+
     for row in rows:
         item = dict(row)
+        # Inject geometry/physics constants if provided
+        if geometry:
+            for k in physics_keys:
+                if k in geometry and item.get(k) is None:
+                    item[k] = geometry[k]
         _apply_row_calculations(item)
         normalized.append(item)
 
     _apply_derivatives(normalized)
     _apply_rolling_aggregates(normalized)
     _apply_gps_projection(normalized)
-
-    if geometry:
-        wheelbase_m = _number(geometry.get("wheelbase_m"))
-        front_track = _number(geometry.get("front_track_width_m"))
-        rear_track = _number(geometry.get("rear_track_width_m"))
-        average_track = None
-        if front_track is not None and rear_track is not None:
-            average_track = (front_track + rear_track) / 2.0
-        for item in normalized:
-            _apply_geometry(item, wheelbase_m, average_track)
 
     return normalized

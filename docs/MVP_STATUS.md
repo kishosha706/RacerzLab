@@ -1,6 +1,6 @@
 # RaceLab Garage — MVP Status
 
-**Date:** 2026-05-26
+**Date:** 2026-05-27
 
 ---
 
@@ -32,6 +32,9 @@
 | SQLite WAL Mode | **Complete** | Enabled WAL journal mode for safer concurrent reads |
 | Import Path Safety | **Complete** | JSON path import hardened with file-exists, is-file, .ibt-extension, and path-traversal checks |
 | Codebase Gap Scan | **Complete** | Unused imports removed, dead `.bak` file deleted, missing TS contract fields added, null guards added, silent error handling improved |
+| Vehicle Dynamics Engine | **Complete** | 6 new physics modules: estimate_confidence, physics_inputs, aero_coefficients, vehicle_dynamics, tire_dynamics, geometry. 50 new tests. |
+| Vectorized Analysis Pipeline | **Complete** | Parallel Polars path (opt-in) with 7× speedup at 100k rows. Feature flag: RACELAB_ANALYSIS_ENGINE. |
+| Channel Metadata Audit | **Complete** | 44 missing metadata entries added, formulas verified against actual code, dependencies corrected. |
 
 ---
 
@@ -39,7 +42,7 @@
 
 | Check | Result |
 |---|---|
-| Backend tests | 126/126 pass |
+| Backend tests | 236/236 pass |
 | Codebase gap scan | 11 issues found and fixed |
 | QA audit (Session Manager) | 4 issues found and fixed (hoisting bug, hooks ordering, delta sign, unused imports) |
 | Session service tests | 25 new tests added |
@@ -74,7 +77,14 @@ They are preserved as scaffold for future features but should be reviewed before
 | `racelab_engine/analysis/lap_classification.py` | Scaffold | `classify_laps()` defined but never called |
 | `racelab_engine/analysis/dynamic_crew_chief.py` | Scaffold | `build_recommendations()` defined but never called |
 | `racelab_engine/analysis/confidence.py` | Scaffold | `AnalyzerStatus` and `apply_confidence_penalty()` defined but never imported |
-| `racelab_engine/analysis/drag_scrub.py` | Partial | Functions exist but may overlap with `calculated_channels.py` drag/scrub logic |
+| `racelab_engine/analysis/drag_scrub.py` | Complete | Aero-normalized resistance, drag/scrub suspicion index, risk zone detection |
+| `racelab_engine/analysis/vectorized_channels.py` | Complete (opt-in) | Parallel Polars analysis path, 7× speedup at 100k rows, full parity with row path |
+| `racelab_engine/analysis/geometry.py` | Complete | SI-first pitch/roll with motion-ratio hooks |
+| `racelab_engine/analysis/tire_dynamics.py` | Complete | Slip angles, understeer gradient, tire utilization, thermal origin |
+| `racelab_engine/analysis/vehicle_dynamics.py` | Complete | Weight transfer, curvature/yaw math, brake energy, wheel power |
+| `racelab_engine/analysis/aero_coefficients.py` | Complete | Air-relative dynamic pressure, CdA proxy, coastdown validity gating |
+| `racelab_engine/analysis/estimate_confidence.py` | Complete | EstimateConfidence dataclass, confidence_from_missing() |
+| `racelab_engine/analysis/physics_inputs.py` | Complete | VehiclePhysicsInputs with resolve_motion_ratio_corner() |
 
 ## Known Risks
 
@@ -94,6 +104,9 @@ They are preserved as scaffold for future features but should be reviewed before
 5. Setup impact analysis from long-term notebook findings
 6. Track map overlay refinement — event click → cursor sync, delta trace overlays
 7. Real-time telemetry streaming from iRacing
+8. Wire vectorized engine as default (after adoption checklist complete)
+9. Frequency-domain shock analysis module
+10. Aero map regression from telemetry
 
 ---
 
@@ -107,7 +120,7 @@ They are preserved as scaffold for future features but should be reviewed before
 | README accurate | **Yes** |
 | SECURITY.md reflects local-only storage | **Yes** |
 | Engineering contracts documented | **Yes** (`docs/ENGINEERING_CONTRACTS.md`) |
-| Test suite passes | **Yes** (126/126) |
+| Test suite passes | **Yes** (236/236) |
 | TypeScript clean | **Yes** |
 | Local-only audit passes | **Yes** |
 | Build succeeds | **Yes** |

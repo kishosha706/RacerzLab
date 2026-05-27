@@ -1,7 +1,8 @@
 import { AlertTriangle, Map as MapIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import type { TrackMapPackage } from "../types/trackMap";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { TrackMapOverlayMarker, TrackMapPackage } from "../types/trackMap";
 import { fetchRunTrackMapPackage } from "../api/client";
+import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 
 interface Props {
   runId: string | null;
@@ -20,6 +21,16 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
   const [showMarkers, setShowMarkers] = useState(true);
   const [showOverlays, setShowOverlays] = useState(true);
   const [showTargetZone, setShowTargetZone] = useState(true);
+  const { selectSample, selectEvent } = useTelemetrySelection();
+
+  const handleOverlayClick = useCallback((overlay: TrackMapOverlayMarker) => {
+    if (overlay.lap_pct != null) {
+      selectSample(0, undefined, overlay.lap_pct, "track_map");
+    }
+    if (overlay.kind === "platform_event" && overlay.source_id) {
+      selectEvent(overlay.source_id, "track_map");
+    }
+  }, [selectSample, selectEvent]);
 
   useEffect(() => {
     if (!runId) { setPkg(null); return; }
@@ -129,7 +140,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
         {match ? (
           <div className="map-identity-row">
             <span className="map-identity-label">Matched Map:</span>
-            <span className="map-identity-value" style={{ color: match.match_confidence === "high" ? "#4ade80" : "#f59e0b" }}>
+            <span className="map-identity-value" style={{ color: match.match_confidence === "high" || match.match_confidence === "manual" ? "#4ade80" : match.match_confidence === "medium" ? "#f59e0b" : "#8d9aaa" }}>
               {match.source_filename ?? match.display_name}
               <span className="map-confidence-badge" data-confidence={match.match_confidence ?? "medium"}>
                 {match.match_confidence ?? "medium"} confidence
@@ -148,12 +159,11 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
 
       {pkg?.map && (
         <>
-          {/* warnings */}
-          {metadata?.warnings && metadata.warnings.length > 0 && (
-            <div className="map-warnings">
-              {metadata.warnings.map((w: string, i: number) => (
-                <p key={i} className="warning-line"><AlertTriangle size={12} /> {w}</p>
-              ))}
+          {/* centerline-only warning banner */}
+          {metadata && !metadata.origin.gps_supported && (
+            <div className="map-warning-banner">
+              <AlertTriangle size={14} />
+              <span>Centerline-only map — no boundaries, banking, GPS, or width data in this .mt2 file.</span>
             </div>
           )}
 
@@ -162,18 +172,20 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
             Parsed .mt2 centerline: {points.length.toLocaleString()} points
             {metadata?.has_markers && `, ${markers.length} markers`}
             {metadata?.has_sections && `, ${sections.length} sections`}
-            . {metadata && !metadata.origin.gps_supported && "No GPS, banking, width, or boundary data found."}
+            .
           </p>
 
           {/* SVG map */}
           <div className="track-map-svg-container">
             <svg viewBox={viewBox} className="track-map-svg">
+              <title>Track Map — {metadata?.track_name ?? "Unknown"}</title>
               <path d={pointPath} fill="none" stroke="#4ade80" strokeWidth={4} strokeOpacity={0.7} />
               {showTargetZone && targetZonePath && (
                 <path d={targetZonePath} fill="none" stroke="#22c55e" strokeWidth={8} strokeOpacity={0.5} />
               )}
               {showMarkers && markers.map((m) => (
                 <g key={m.marker_id}>
+                  <title>{m.name} — {m.distance_ft?.toFixed(0)} ft</title>
                   <circle cx={m.x} cy={m.y} r={4} fill="#38bdf8" />
                   <text x={m.x + 6} y={m.y - 6} fill="#8d9aaa" fontSize={9} fontFamily="Inter, sans-serif">{m.name}</text>
                 </g>
@@ -182,7 +194,8 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                 .filter((o) => o.kind === "platform_event")
                 .map((o) => (
                   o.x != null && o.y != null ? (
-                    <g key={o.marker_id}>
+                    <g key={o.marker_id} style={{ cursor: "pointer" }} onClick={() => handleOverlayClick(o)}>
+                      <title>{o.label}{o.description ? ` — ${o.description}` : ""} @ {o.lap_pct?.toFixed(1)}%</title>
                       <circle cx={o.x} cy={o.y} r={5} fill={o.color ?? "#f59e0b"} stroke="#0a0d14" strokeWidth={1.5} />
                       <text x={o.x + 7} y={o.y + 4} fill={o.color ?? "#f59e0b"} fontSize={9} fontFamily="Inter, sans-serif">{o.symbol ?? "◆"} {o.label}</text>
                     </g>

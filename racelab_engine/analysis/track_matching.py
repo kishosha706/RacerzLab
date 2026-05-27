@@ -35,6 +35,19 @@ TRACK_NAME_MAP: dict[str, str] = {
     "talladega super speedway": "talladega",
     "talladega superspeedway": "talladega",
     "texas motor speedway": "texas",
+    # TODO: Road course name mappings are incomplete.  Known iRacing names that
+    # may not fuzzy-match our indexed track_keys include:
+    #   "Road America", "Road Atlanta", "Sebring International Raceway",
+    #   "WeatherTech Raceway Laguna Seca", "Lime Rock Park", "Mid-Ohio Sports Car Course",
+    #   "Canadian Tire Motorsports Park" (Mosport), "Circuit Gilles Villeneuve" (Montreal),
+    #   "Mount Panorama Circuit" (Bathurst), "Silverstone Circuit", "Spa-Francorchamps",
+    #   "Autodromo Jose Carlos Pace" (Interlagos), "Phillip Island Circuit",
+    #   "Suzuka International Racing Course", "Circuit Zolder", "Circuit Park Zandvoort",
+    #   "Donington Park", "Brands Hatch", "Oulton Park", "Okayama International Circuit",
+    #   "Twin Ring Motegi", "Virginia International Raceway", "Watkins Glen International",
+    #   "Sonoma Raceway", "Summit Point Motorsports Park".
+    # Users can bypass autodetection by passing ?preferred_map_id=<map_id> on
+    # the /api/runs/{run_id}/track-map-package endpoint.
 }
 
 
@@ -125,8 +138,23 @@ def match_track_map_for_run(
     run_track_name: str,
     run_layout: str | None,
     available_maps: list[dict[str, Any]],
+    preferred_map_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """Return the best matching map entry dict, or None."""
+    """Return the best matching map entry dict, or None.
+
+    If *preferred_map_id* is given:
+      - returns the entry with confidence='manual' if found
+      - returns None if not found (caller should 404)
+    """
+    # ── manual override ──
+    if preferred_map_id:
+        for entry in available_maps:
+            if entry.get("map_id") == preferred_map_id:
+                entry["match_confidence"] = "manual"
+                entry["match_score"] = 100
+                return entry
+        # Explicitly requested but not found — do NOT fall through to auto-match
+        return None
     best_score = -1
     best_match: dict[str, Any] | None = None
     best_confidence = "none"

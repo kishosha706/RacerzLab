@@ -145,7 +145,8 @@ function CockpitShell() {
         setImportStage("Importing track map…");
         const entry = await importMt2File(file);
         setImportStage("Saving local copy…");
-        setStatus(`Parsed .mt2 centerline: ${entry.points_count?.toLocaleString()} points, ${entry.markers_count} markers, ${entry.sections_count} sections.`);
+        const dupNote = entry.import_status === "already_indexed" ? " (already indexed; refreshed cache)" : "";
+        setStatus(`Parsed .mt2 centerline: ${entry.points_count?.toLocaleString()} points, ${entry.markers_count} markers, ${entry.sections_count} sections.${dupNote}`);
         setImportStage(null);
         setImporting(false);
         setLoading(false);
@@ -323,7 +324,7 @@ function CockpitShell() {
                 }}
               />
               <button className="secondary-button" onClick={handleImportClick} disabled={importing}>
-                <BarChart3 size={16} /> {importStage ?? (importing ? "Importing…" : "Import .ibt")}
+                <BarChart3 size={16} /> {importStage ?? (importing ? "Importing…" : "Import .ibt or .mt2")}
               </button>
               <button className="secondary-button" onClick={() => setShowLapBrowser(!showLapBrowser)}>
                 <BarChart3 size={16} /> Laps
