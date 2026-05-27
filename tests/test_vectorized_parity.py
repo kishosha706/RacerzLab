@@ -845,6 +845,122 @@ class TestParity:
             assert "used_by_charts" in meta
             assert "used_by_events" in meta
 
+    # ── Platform balance tests ────────────────────────────────
+
+    def test_rear_scrape_side_label_converts_correctly(self) -> None:
+        """rear_scrape_side_label converts -1/0/1 to readable labels."""
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        # left lower
+        rows = [_synthetic_row(lr_rh_m=0.050, rr_rh_m=0.070)]
+        ref = normalize_telemetry_rows(rows)
+        assert ref[0].get("rear_scrape_side_label") == "left_rear"
+        # right lower
+        rows = [_synthetic_row(lr_rh_m=0.070, rr_rh_m=0.050)]
+        ref = normalize_telemetry_rows(rows)
+        assert ref[0].get("rear_scrape_side_label") == "right_rear"
+        # equal
+        rows = [_synthetic_row(lr_rh_m=0.060, rr_rh_m=0.060)]
+        ref = normalize_telemetry_rows(rows)
+        assert ref[0].get("rear_scrape_side_label") == "both_rear"
+
+    def test_rear_scrape_side_label_missing(self) -> None:
+        """Missing rear_scrape_side returns None for label."""
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        rows = [{"Speed": 50.0, "SessionTime": 0.0}]
+        ref = normalize_telemetry_rows(rows)
+        assert ref[0].get("rear_scrape_side_label") is None
+
+    def test_balance_front_elevated(self) -> None:
+        """Front risk elevated + rear safe → front_platform_risk."""
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        # cfs=2mm (critical=0.92), rear=15mm (safe=0.08)
+        rows = [_synthetic_row(cfs_rh_m=0.002, lr_rh_m=0.015, rr_rh_m=0.015)]
+        ref = normalize_telemetry_rows(rows)
+        assert ref[0].get("platform_balance_label") == "front_platform_risk"
+
+    def test_balance_rear_elevated(self) -> None:
+        """Rear risk elevated + front safe → rear_platform_risk."""
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        # cfs=15mm (safe=0.08), rear=2mm (critical=0.92)
+        rows = [_synthetic_row(cfs_rh_m=0.015, lr_rh_m=0.002, rr_rh_m=0.002)]
+        ref = normalize_telemetry_rows(rows)
+        assert ref[0].get("platform_balance_label") == "rear_platform_risk"
+
+    def test_balance_both_elevated(self) -> None:
+        """Both elevated → whole_car_bottoming."""
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        # cfs=2mm (critical=0.92), rear=2mm (critical=0.92)
+        rows = [_synthetic_row(cfs_rh_m=0.002, lr_rh_m=0.002, rr_rh_m=0.002)]
+        ref = normalize_telemetry_rows(rows)
+        assert ref[0].get("platform_balance_label") == "whole_car_bottoming"
+
+    def test_balance_both_safe(self) -> None:
+        """Both safe → balanced_safe."""
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        # cfs=15mm (safe=0.08), rear=15mm (safe=0.08)
+        rows = [_synthetic_row(cfs_rh_m=0.015, lr_rh_m=0.015, rr_rh_m=0.015)]
+        ref = normalize_telemetry_rows(rows)
+        assert ref[0].get("platform_balance_label") == "balanced_safe"
+
+    def test_balance_missing_risk(self) -> None:
+        """Missing front or rear risk → unavailable."""
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        rows = [{"Speed": 50.0, "SessionTime": 0.0}]
+        ref = normalize_telemetry_rows(rows)
+        assert ref[0].get("platform_balance_label") == "unavailable"
+
+    def test_whole_car_bottoming_risk_value(self) -> None:
+        """whole_car_bottoming_risk = min(front_risk, rear_risk)."""
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        # cfs=2mm (0.92), rear=5mm (0.72) → min=0.72
+        rows = [_synthetic_row(cfs_rh_m=0.002, lr_rh_m=0.005, rr_rh_m=0.005)]
+        ref = normalize_telemetry_rows(rows)
+        assert ref[0].get("whole_car_bottoming_risk") == pytest.approx(0.72, abs=0.01)
+
+    def test_balance_metadata_no_missing(self) -> None:
+        """All platform balance channels have CHANNEL_METADATA."""
+        from racelab_engine.analysis.calculated_channels import CHANNEL_METADATA
+        balance_channels = [
+            "front_platform_risk_score", "rear_platform_risk_score",
+            "whole_car_bottoming_risk", "platform_balance_label",
+            "platform_balance_explanation", "rear_scrape_side_label",
+        ]
+        for ch in balance_channels:
+            assert ch in CHANNEL_METADATA, f"Missing metadata for {ch}"
+            meta = CHANNEL_METADATA[ch]
+            assert "description" in meta
+            assert "dependencies" in meta
+
+    def test_front_events_still_emitted_with_balance(self) -> None:
+        """Front CFS events still emitted alongside balance."""
+        from racelab_engine.analysis.platform_events import detect_platform_events
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        rows = [_synthetic_row(cfs_rh_m=0.002, lr_rh_m=0.002, rr_rh_m=0.002)]
+        ref = normalize_telemetry_rows(rows)
+        events = detect_platform_events(ref)
+        front_events = [e for e in events if e.event_type == "MIN_SPLITTER"]
+        rear_events = [e for e in events if "REAR" in e.event_type]
+        whole_car = [e for e in events if e.event_type == "WHOLE_CAR_BOTTOMING_RISK"]
+        assert len(front_events) >= 1
+        assert len(rear_events) >= 1
+        assert len(whole_car) >= 1
+
+    def test_whole_car_event_emitted(self) -> None:
+        """WHOLE_CAR_BOTTOMING_RISK event emitted when both risks elevated."""
+        from racelab_engine.analysis.platform_events import detect_platform_events
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        rows = [_synthetic_row(cfs_rh_m=0.002, lr_rh_m=0.002, rr_rh_m=0.002)]
+        ref = normalize_telemetry_rows(rows)
+        events = detect_platform_events(ref)
+        whole_car = [e for e in events if e.event_type == "WHOLE_CAR_BOTTOMING_RISK"]
+        assert len(whole_car) >= 1
+        assert whole_car[0].primary_value is not None
+
+    def test_track_map_symbol_whole_car(self) -> None:
+        """TrackMap symbol mapping handles WHOLE_CAR_BOTTOMING_RISK."""
+        from racelab_engine.services.track_map_service import _event_symbol
+        assert _event_symbol("WHOLE_CAR_BOTTOMING_RISK") == "⇣"
+
 
 class TestBenchmark:
     """Lightweight benchmarks (not real perf tests, just smoke checks)."""

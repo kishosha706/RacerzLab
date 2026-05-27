@@ -1150,6 +1150,62 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
         "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
     },
+
+    # ── platform balance channels ──
+    "front_platform_risk_score": {
+        "label": "Front Platform Risk",
+        "description": "ESTIMATE — alias for cfs_risk_score. Front platform contact risk for consistent front/rear comparison.",
+        "formula": "cfs_risk_score",
+        "dependencies": ["cfs_risk_score"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": ["PLATFORM_LOW", "PLATFORM_SCRAPE", "WHOLE_CAR_BOTTOMING_RISK"],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "rear_platform_risk_score": {
+        "label": "Rear Platform Risk",
+        "description": "ESTIMATE — alias for rear_scrape_risk_score. Rear platform contact risk for consistent front/rear comparison.",
+        "formula": "rear_scrape_risk_score",
+        "dependencies": ["rear_scrape_risk_score"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE", "WHOLE_CAR_BOTTOMING_RISK"],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "whole_car_bottoming_risk": {
+        "label": "Whole-Car Bottoming Risk",
+        "description": "ESTIMATE — combined front/rear bottoming risk. Higher when both front and rear platform risk are elevated. Proxy — not a direct contact sensor.",
+        "formula": "min(front_platform_risk_score, rear_platform_risk_score)",
+        "dependencies": ["front_platform_risk_score", "rear_platform_risk_score"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": ["WHOLE_CAR_BOTTOMING_RISK"],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "platform_balance_label": {
+        "label": "Platform Balance",
+        "description": "Classification of platform balance: front_platform_risk, rear_platform_risk, whole_car_bottoming, balanced_safe, or unavailable.",
+        "formula": "classification from cfs_risk_score and rear_scrape_risk_score",
+        "dependencies": ["cfs_risk_score", "rear_scrape_risk_score"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": ["PLATFORM_LOW", "PLATFORM_SCRAPE", "REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE", "WHOLE_CAR_BOTTOMING_RISK"],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "platform_balance_explanation": {
+        "label": "Platform Balance Explanation",
+        "description": "Human-readable explanation of the current platform balance classification.",
+        "formula": "derived from platform_balance_label",
+        "dependencies": ["platform_balance_label"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": ["PLATFORM_LOW", "PLATFORM_SCRAPE", "REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE", "WHOLE_CAR_BOTTOMING_RISK"],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "rear_scrape_side_label": {
+        "label": "Rear Scrape Side Label",
+        "description": "Readable label for which rear corner is lower: left_rear, both_rear, right_rear, or None.",
+        "formula": "map from rear_scrape_side",
+        "dependencies": ["rear_scrape_side"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
+        "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
 }
 
 
@@ -1547,11 +1603,77 @@ def _compute_rear_scrape(item: dict[str, Any]) -> None:
             _set_number(item, "rear_scrape_side", 1)  # 1 = right
 
 
+def _compute_platform_balance(item: dict[str, Any]) -> None:
+    """Classify platform balance using front/CFS and rear scrape risk.
+
+    Sets:
+        front_platform_risk_score — alias for cfs_risk_score
+        rear_platform_risk_score — alias for rear_scrape_risk_score
+        whole_car_bottoming_risk — min(front_risk, rear_risk)
+        platform_balance_label — classification string
+        platform_balance_explanation — human-readable explanation
+        rear_scrape_side_label — readable side label
+    """
+    from racelab_engine.analysis.constants import SPLITTER_HIGH_MM
+    cfs_risk = _number(item.get("cfs_risk_score"))
+    rear_risk = _number(item.get("rear_scrape_risk_score"))
+    side_raw = item.get("rear_scrape_side")
+
+    # Aliases
+    if cfs_risk is not None:
+        _set_number(item, "front_platform_risk_score", cfs_risk)
+    if rear_risk is not None:
+        _set_number(item, "rear_platform_risk_score", rear_risk)
+
+    # rear_scrape_side_label
+    side_map = {-1: "left_rear", 0: "both_rear", 1: "right_rear"}
+    if side_raw is not None and isinstance(side_raw, (int, float)):
+        item["rear_scrape_side_label"] = side_map.get(int(side_raw))
+
+    # whole_car_bottoming_risk = min(front_risk, rear_risk) when both available
+    if cfs_risk is not None and rear_risk is not None:
+        bottoming = min(cfs_risk, rear_risk)
+        _set_number(item, "whole_car_bottoming_risk", bottoming)
+
+    # Platform balance classification
+    # Threshold: risk >= 0.72 (high) is considered elevated
+    ELEVATED_THRESHOLD = 0.72
+    front_elevated = cfs_risk is not None and cfs_risk >= ELEVATED_THRESHOLD
+    rear_elevated = rear_risk is not None and rear_risk >= ELEVATED_THRESHOLD
+
+    if cfs_risk is None or rear_risk is None:
+        item["platform_balance_label"] = "unavailable"
+        item["platform_balance_explanation"] = (
+            "Insufficient ride-height channels to classify platform balance."
+        )
+    elif front_elevated and rear_elevated:
+        item["platform_balance_label"] = "whole_car_bottoming"
+        item["platform_balance_explanation"] = (
+            "Front and rear are both low — likely whole-car bottoming or ride height too low."
+        )
+    elif front_elevated and not rear_elevated:
+        item["platform_balance_label"] = "front_platform_risk"
+        item["platform_balance_explanation"] = (
+            "Front/CFS is low while rear platform is safe — likely splitter/front platform risk."
+        )
+    elif rear_elevated and not front_elevated:
+        item["platform_balance_label"] = "rear_platform_risk"
+        item["platform_balance_explanation"] = (
+            "Rear platform is low while front/CFS is safe — likely rear platform contact or rear bottoming."
+        )
+    else:
+        item["platform_balance_label"] = "balanced_safe"
+        item["platform_balance_explanation"] = (
+            "Front and rear platform margins look safe."
+        )
+
+
 def _compute_risk_scores(item: dict[str, Any]) -> None:
     cfs_risk = _risk_from_cfs_mm(item.get("cfs_ride_height_mm"))
     _set_number(item, "cfs_risk_score", cfs_risk)
     _set_number(item, "platform_risk_score", cfs_risk)
     _compute_rear_scrape(item)
+    _compute_platform_balance(item)
 
 
 def _compute_slip_ratios(item: dict[str, Any]) -> None:

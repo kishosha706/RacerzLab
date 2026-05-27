@@ -741,17 +741,97 @@ def _risk_from_cfs_mm_vector(cfs_mm: pl.Expr) -> pl.Expr:
 
 
 def _compute_risk_scores(df: pl.DataFrame) -> pl.DataFrame:
-    """Compute cfs_risk_score and platform_risk_score.
+    """Compute cfs_risk_score, platform_risk_score, rear scrape, and platform balance.
 
-    Matches _compute_risk_scores in calculated_channels.py.
+    Matches _compute_risk_scores + _compute_rear_scrape + _compute_platform_balance
+    in calculated_channels.py.
     """
-    if "cfs_ride_height_mm" not in df.columns:
-        return df
-    risk = _risk_from_cfs_mm_vector(pl.col("cfs_ride_height_mm"))
-    df = df.with_columns(
-        risk.alias("cfs_risk_score"),
-        risk.alias("platform_risk_score"),
+    from racelab_engine.analysis.constants import (
+        REAR_SCRAPE_MM, REAR_CRITICAL_MM, REAR_HIGH_MM, REAR_WATCH_MM,
     )
+
+    # ── Front/CFS risk ─────────────────────────────────────────
+    if "cfs_ride_height_mm" in df.columns:
+        risk = _risk_from_cfs_mm_vector(pl.col("cfs_ride_height_mm"))
+        df = df.with_columns(
+            risk.alias("cfs_risk_score"),
+            risk.alias("platform_risk_score"),
+        )
+
+    # ── Rear scrape risk ───────────────────────────────────────
+    has_rear_rh = {"lr_ride_height_mm", "rr_ride_height_mm"}.issubset(df.columns)
+    if has_rear_rh:
+        lr = pl.col("lr_ride_height_mm")
+        rr = pl.col("rr_ride_height_mm")
+        rear_min = pl.min_horizontal(lr, rr)
+        margin = rear_min - REAR_SCRAPE_MM
+        risk_expr = (
+            pl.when(rear_min <= REAR_SCRAPE_MM).then(1.0)
+            .when(rear_min <= REAR_CRITICAL_MM).then(0.92)
+            .when(rear_min <= REAR_HIGH_MM).then(0.72)
+            .when(rear_min <= REAR_WATCH_MM).then(0.38)
+            .otherwise(0.08)
+        )
+        side_expr = (
+            pl.when((lr - rr).abs() < 0.001).then(pl.lit(0, dtype=pl.Int64))
+            .when(lr < rr).then(pl.lit(-1, dtype=pl.Int64))
+            .otherwise(pl.lit(1, dtype=pl.Int64))
+        )
+        side_label_expr = (
+            pl.when(side_expr == -1).then(pl.lit("left_rear"))
+            .when(side_expr == 0).then(pl.lit("both_rear"))
+            .when(side_expr == 1).then(pl.lit("right_rear"))
+            .otherwise(None)
+        )
+        df = df.with_columns(
+            rear_min.alias("rear_min_ride_height_mm"),
+            (rear_min * MM_TO_IN).alias("rear_min_ride_height_in"),
+            margin.alias("rear_scrape_margin_mm"),
+            risk_expr.alias("rear_scrape_risk_score"),
+            risk_expr.alias("rear_platform_contact_risk"),
+            side_expr.alias("rear_scrape_side"),
+            side_label_expr.alias("rear_scrape_side_label"),
+        )
+
+    # ── Platform balance ───────────────────────────────────────
+    has_front_risk = "cfs_risk_score" in df.columns
+    has_rear_risk = "rear_scrape_risk_score" in df.columns
+
+    if has_front_risk:
+        df = df.with_columns(pl.col("cfs_risk_score").alias("front_platform_risk_score"))
+    if has_rear_risk:
+        df = df.with_columns(pl.col("rear_scrape_risk_score").alias("rear_platform_risk_score"))
+
+    if has_front_risk and has_rear_risk:
+        front_r = pl.col("cfs_risk_score")
+        rear_r = pl.col("rear_scrape_risk_score")
+        bottoming = pl.min_horizontal(front_r, rear_r)
+        ELEVATED = 0.72
+
+        label_expr = (
+            pl.when(front_r.is_null() | rear_r.is_null()).then(pl.lit("unavailable"))
+            .when((front_r >= ELEVATED) & (rear_r >= ELEVATED)).then(pl.lit("whole_car_bottoming"))
+            .when((front_r >= ELEVATED) & (rear_r < ELEVATED)).then(pl.lit("front_platform_risk"))
+            .when((rear_r >= ELEVATED) & (front_r < ELEVATED)).then(pl.lit("rear_platform_risk"))
+            .otherwise(pl.lit("balanced_safe"))
+        )
+        explanation_expr = (
+            pl.when(front_r.is_null() | rear_r.is_null())
+            .then(pl.lit("Insufficient ride-height channels to classify platform balance."))
+            .when((front_r >= ELEVATED) & (rear_r >= ELEVATED))
+            .then(pl.lit("Front and rear are both low — likely whole-car bottoming or ride height too low."))
+            .when((front_r >= ELEVATED) & (rear_r < ELEVATED))
+            .then(pl.lit("Front/CFS is low while rear platform is safe — likely splitter/front platform risk."))
+            .when((rear_r >= ELEVATED) & (front_r < ELEVATED))
+            .then(pl.lit("Rear platform is low while front/CFS is safe — likely rear platform contact or rear bottoming."))
+            .otherwise(pl.lit("Front and rear platform margins look safe."))
+        )
+        df = df.with_columns(
+            bottoming.alias("whole_car_bottoming_risk"),
+            label_expr.alias("platform_balance_label"),
+            explanation_expr.alias("platform_balance_explanation"),
+        )
+
     return df
 
 

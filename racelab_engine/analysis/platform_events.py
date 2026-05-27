@@ -18,6 +18,7 @@ EventType = Literal[
     "REAR_PLATFORM_LOW",
     "REAR_PLATFORM_SCRAPE",
     "REAR_CONTACT_RISK",
+    "WHOLE_CAR_BOTTOMING_RISK",
 ]
 
 Severity = Literal["info", "watch", "high", "critical"]
@@ -555,6 +556,87 @@ def detect_min_rear_ride_height(rows: list[dict[str, Any]]) -> PlatformEvent | N
     )
 
 
+def _balance_evidence(row: dict[str, Any]) -> dict[str, Any]:
+    """Extract platform balance fields from a row for event evidence."""
+    return {
+        "platform_balance_label": row.get("platform_balance_label"),
+        "platform_balance_explanation": row.get("platform_balance_explanation"),
+        "front_platform_risk_score": _sample_value(row, "front_platform_risk_score"),
+        "rear_platform_risk_score": _sample_value(row, "rear_platform_risk_score"),
+        "whole_car_bottoming_risk": _sample_value(row, "whole_car_bottoming_risk"),
+        "rear_scrape_side_label": row.get("rear_scrape_side_label"),
+    }
+
+
+def detect_whole_car_bottoming_risk(rows: list[dict[str, Any]]) -> PlatformEvent | None:
+    """Detect when both front and rear platform risk are elevated."""
+    candidates = [
+        (i, row) for i, row in enumerate(rows)
+        if _sample_value(row, "whole_car_bottoming_risk") is not None
+        and _sample_value(row, "cfs_risk_score") is not None
+        and _sample_value(row, "rear_scrape_risk_score") is not None
+    ]
+    if not candidates:
+        return None
+
+    # Find the row with highest whole_car_bottoming_risk
+    idx, row = max(candidates, key=lambda item: float(item[1]["whole_car_bottoming_risk"]))
+    risk = float(row["whole_car_bottoming_risk"])
+    loc = _event_location(row, idx)
+    front_risk = _sample_value(row, "cfs_risk_score")
+    rear_risk = _sample_value(row, "rear_scrape_risk_score")
+    cfs_in = _sample_value(row, "cfs_ride_height_in")
+    rear_mm = _sample_value(row, "rear_min_ride_height_mm")
+    balance_label = row.get("platform_balance_label", "")
+    balance_explanation = row.get("platform_balance_explanation", "")
+
+    evidence = ["Both front and rear platform risk are elevated — possible whole-car bottoming."]
+    if front_risk is not None:
+        evidence.append(f"Front/CFS risk score: {front_risk:.2f}")
+    if rear_risk is not None:
+        evidence.append(f"Rear scrape risk score: {rear_risk:.2f}")
+    if cfs_in is not None:
+        evidence.append(f"CFS height: {cfs_in:.3f} in")
+    if rear_mm is not None:
+        evidence.append(f"Rear min height: {rear_mm:.2f} mm")
+    if balance_explanation:
+        evidence.append(balance_explanation)
+    if loc["lap_pct"] is not None:
+        evidence.append(f"Location: {loc['lap_pct']:.1f}% lap")
+
+    severity: Severity = "critical" if risk > 0.8 else ("high" if risk > 0.5 else "watch")
+
+    return PlatformEvent(
+        event_id=_make_event_id("whole_car_bottoming_risk", row, idx),
+        event_type="WHOLE_CAR_BOTTOMING_RISK",
+        title="Whole-Car Bottoming Risk",
+        severity=severity,
+        confidence="medium",
+        lap=loc["lap"],
+        sample_index=idx,
+        lap_dist_ft=loc["lap_dist_ft"],
+        lap_pct=loc["lap_pct"],
+        track_x_ft=loc["track_x_ft"],
+        track_y_ft=loc["track_y_ft"],
+        primary_value=risk,
+        primary_unit="index",
+        channels_used=[
+            "whole_car_bottoming_risk", "cfs_risk_score", "rear_scrape_risk_score",
+            "cfs_ride_height_in", "rear_min_ride_height_mm",
+            "platform_balance_label", "platform_balance_explanation",
+        ],
+        evidence=evidence,
+        recommended_action=(
+            "Both front and rear platform margins are low. Consider raising ride heights "
+            "or reviewing spring rates and packers. Compare speed and platform stability "
+            "at the same track position."
+        ),
+        is_proxy_based=True,
+        proxy_warning=FORCE_PROXY_WARNING,
+        metadata=_balance_evidence(row),
+    )
+
+
 def detect_max_dynamic_pressure(rows: list[dict[str, Any]]) -> PlatformEvent | None:
     candidates = [
         (i, row) for i, row in enumerate(rows)
@@ -626,6 +708,7 @@ def detect_platform_events(
         detect_highest_shock_activity,
         detect_max_dynamic_pressure,
         detect_min_rear_ride_height,
+        detect_whole_car_bottoming_risk,
     ]
 
     if event_types:

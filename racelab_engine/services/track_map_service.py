@@ -362,6 +362,7 @@ def _event_symbol(event_type: str) -> str:
         "REAR_PLATFORM_LOW": "R",
         "REAR_PLATFORM_SCRAPE": "R!",
         "REAR_CONTACT_RISK": "R?",
+        "WHOLE_CAR_BOTTOMING_RISK": "⇣",
     }
     return mapping.get(event_type, "◆")
 
