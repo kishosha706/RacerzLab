@@ -348,7 +348,13 @@ def _corner_dict(c: CornerDelta) -> dict:
         "ride_height_in": _delta_dict(c.ride_height_in),
         "shock_defl_in": _delta_dict(c.shock_defl_in),
         "shock_vel_in_s": _delta_dict(c.shock_vel_in_s),
+        "shock_velocity_rms": _delta_dict(c.shock_velocity_rms),
         "tire_pressure": _delta_dict(c.tire_pressure),
+        "tire_temp_inner": _delta_dict(c.tire_temp_inner),
+        "tire_temp_middle": _delta_dict(c.tire_temp_middle),
+        "tire_temp_outer": _delta_dict(c.tire_temp_outer),
+        "temp_spread": _delta_dict(c.temp_spread),
+        "tire_wear": _delta_dict(c.tire_wear),
         "wheel_speed": _delta_dict(c.wheel_speed),
         "slip_ratio_proxy": _delta_dict(c.slip_ratio_proxy),
         "corner_score": c.corner_score, "warnings": c.warnings,
@@ -374,6 +380,8 @@ def _platform_dict(p: PlatformComparison) -> dict:
 def _tire_dict(t: Any) -> dict:
     return {
         "corners": {k: _corner_dict(v) for k, v in t.corners.items()},
+        "front_pressure_balance": _delta_dict(t.front_pressure_balance),
+        "rear_pressure_balance": _delta_dict(t.rear_pressure_balance),
         "temp_spread_summary": t.temp_spread_summary,
         "wear_summary": t.wear_summary,
         "tire_verdict": t.tire_verdict,
