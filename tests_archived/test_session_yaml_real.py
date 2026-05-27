@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import pytest
+
 from pathlib import Path
 
 from racelab_engine.io.ibt_reader import read_session_yaml
 from racelab_engine.io.session_yaml import extract_session_summary, extract_setup_snapshot
+
+pytestmark = pytest.mark.slow
 
 
 def test_real_session_yaml_extracts_summary_and_setup(talladega_ibt_path: Path) -> None:

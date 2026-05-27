@@ -5,6 +5,12 @@ from collections.abc import Iterable, Mapping
 from contextlib import suppress
 from typing import Any, cast
 
+from racelab_engine.analysis.constants import (
+    SLIP_RATIO_SPEED_FLOOR_MPS,
+    SLIP_RATIO_CLAMP_MAX,
+    REFERENCE_DYNAMIC_PRESSURE_PA,
+)
+from racelab_engine.analysis.drag_scrub import compute_drag_scrub_index, aero_normalized_resistance
 from racelab_engine.analysis.units import (
     EARTH_RADIUS_M,
     M_TO_FT,
@@ -239,7 +245,10 @@ CALCULATED_CHANNEL_UNITS: dict[str, str] = {
     "full_throttle_resistance_index": "index",
     "drag_scrub_suspicion": "index",
     "driven_wheel_slip_proxy": "ratio",
+    "dynamic_pressure_lap_index": "index",
     "dynamic_pressure_index": "index",
+    "aero_load_index": "index",
+    "aero_load_index_180mph": "index",
     "platform_compression_index": "index",
     "shock_velocity_rms": "in/s",
     "shock_activity_index": "index",
@@ -461,8 +470,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "used_by_events": ["DYNAMIC_PRESSURE_PEAK", "MAX_DYNAMIC_PRESSURE"],
         "used_by_recommendations": [AERO_PLATFORM_CHECK, RIDE_HEIGHT_REVIEW],
     },
-    "dynamic_pressure_index": {
-        "label": "Dynamic Pressure Index",
+    "dynamic_pressure_lap_index": {
+        "label": "Dynamic Pressure Lap Index",
         "description": "Normalized dynamic pressure (0-1 scale relative to max in lap). LAP-RELATIVE index — NOT comparable across runs.",
         "formula": "dynamic_pressure_psf / max(dynamic_pressure_psf in lap)",
         "dependencies": ["dynamic_pressure_psf"],
@@ -470,6 +479,36 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "used_by_events": ["DYNAMIC_PRESSURE_PEAK"],
         "used_by_recommendations": [AERO_PLATFORM_CHECK],
         "comparable_across_runs": False,
+    },
+    "dynamic_pressure_index": {
+        "label": "Dynamic Pressure Index",
+        "description": "Alias for dynamic_pressure_lap_index. LAP-RELATIVE — NOT comparable across runs.",
+        "formula": "dynamic_pressure_psf / max(dynamic_pressure_psf in lap)",
+        "dependencies": ["dynamic_pressure_psf"],
+        "used_by_charts": [AERO_PLATFORM],
+        "used_by_events": ["DYNAMIC_PRESSURE_PEAK"],
+        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+        "comparable_across_runs": False,
+    },
+    "aero_load_index": {
+        "label": "Aero Load Index",
+        "description": "Cross-run comparable aero load index. Ratio of current dynamic pressure to reference pressure at 180 mph sea level. Safe for Notebook comparisons across runs, tracks, weather, and sessions.",
+        "formula": "dynamic_pressure_pa / REFERENCE_DYNAMIC_PRESSURE_PA",
+        "dependencies": ["dynamic_pressure_pa"],
+        "used_by_charts": [AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+        "comparable_across_runs": True,
+    },
+    "aero_load_index_180mph": {
+        "label": "Aero Load Index (180 mph ref)",
+        "description": "Alias for aero_load_index. Cross-run comparable.",
+        "formula": "dynamic_pressure_pa / (0.5 * 1.225 * 80.4672^2)",
+        "dependencies": ["dynamic_pressure_pa"],
+        "used_by_charts": [AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+        "comparable_across_runs": True,
     },
 
     # ── risk / suspicion ──
@@ -941,11 +980,14 @@ def _compute_tire_derived(item: dict[str, Any]) -> None:
         wears = [v for v in [wi, wm, wo] if v is not None]
         if len(wears) >= 2:
             _set_number(item, f"{c}_wear_spread", max(wears) - min(wears))
-        # slip ratio proxy
+        # slip ratio proxy (unified denominator with floor)
         ws = _number(item.get(f"{c}_speed"))
         speed_mps = _number(item.get("speed_mps"))
-        if ws is not None and speed_mps is not None and speed_mps > 0.1:
-            _set_number(item, f"{c}_slip_ratio_proxy", (ws - speed_mps) / speed_mps)
+        if ws is not None and speed_mps is not None:
+            denom = max(abs(speed_mps), SLIP_RATIO_SPEED_FLOOR_MPS)
+            slip = (ws - speed_mps) / denom
+            slip = max(-SLIP_RATIO_CLAMP_MAX, min(SLIP_RATIO_CLAMP_MAX, slip))
+            _set_number(item, f"{c}_slip_ratio_proxy", slip)
 
 
 def _compute_averages(item: dict[str, Any]) -> None:
@@ -981,19 +1023,46 @@ def _compute_risk_scores(item: dict[str, Any]) -> None:
 
 
 def _compute_slip_ratios(item: dict[str, Any]) -> None:
-    speed = _number(item.get("Speed"))
-    if speed and abs(speed) > 0.001:
-        for raw_key, target in _SLIP_RATIO_KEYS.items():
-            wheel_speed = _number(item.get(raw_key))
-            if wheel_speed is not None:
-                _set_number(item, target, (wheel_speed - speed) / speed)
-    _set_number(item, "front_wheel_speed_mismatch", _difference(item, "RFspeed", "LFspeed"))
-    _set_number(item, "rear_wheel_speed_mismatch", _difference(item, "RRspeed", "LRspeed"))
+    speed_mps = _number(item.get("speed_mps"))
+    denom = max(abs(speed_mps or 0.0), SLIP_RATIO_SPEED_FLOOR_MPS)
+    for raw_key, target in _SLIP_RATIO_KEYS.items():
+        wheel_speed = _number(item.get(raw_key))
+        if wheel_speed is not None:
+            slip = (wheel_speed - speed_mps) / denom if speed_mps is not None else 0.0
+            slip = max(-SLIP_RATIO_CLAMP_MAX, min(SLIP_RATIO_CLAMP_MAX, slip))
+            _set_number(item, target, slip)
+
+    # Geometry-corrected wheel speed mismatch using yaw rate
+    yaw_rate = _number(item.get("yaw_rate")) or 0.0
+    front_tw_m = _number(item.get("front_track_width_m"))
+    rear_tw_m = _number(item.get("rear_track_width_m"))
+
+    # Raw mismatch (for when track width is missing)
+    _set_number(item, "front_wheel_speed_mismatch_raw", _difference(item, "RFspeed", "LFspeed"))
+    _set_number(item, "rear_wheel_speed_mismatch_raw", _difference(item, "RRspeed", "LRspeed"))
+
+    # Geometry-corrected mismatch
+    if front_tw_m is not None:
+        front_geo = yaw_rate * front_tw_m
+        front_diff = _difference(item, "RFspeed", "LFspeed")
+        if front_diff is not None:
+            _set_number(item, "front_wheel_speed_mismatch_corrected", front_diff - front_geo)
+    else:
+        item.setdefault("front_wheel_speed_mismatch_corrected", None)
+    if rear_tw_m is not None:
+        rear_geo = yaw_rate * rear_tw_m
+        rear_diff = _difference(item, "RRspeed", "LRspeed")
+        if rear_diff is not None:
+            _set_number(item, "rear_wheel_speed_mismatch_corrected", rear_diff - rear_geo)
+    else:
+        item.setdefault("rear_wheel_speed_mismatch_corrected", None)
 
     lr_speed = _number(item.get("LRspeed"))
     rr_speed = _number(item.get("RRspeed"))
-    if speed and lr_speed is not None and rr_speed is not None:
-        _set_number(item, "driven_wheel_slip_proxy", ((lr_speed + rr_speed) / 2.0 - speed) / speed)
+    if speed_mps is not None and lr_speed is not None and rr_speed is not None:
+        slip = ((lr_speed + rr_speed) / 2.0 - speed_mps) / denom
+        slip = max(-SLIP_RATIO_CLAMP_MAX, min(SLIP_RATIO_CLAMP_MAX, slip))
+        _set_number(item, "driven_wheel_slip_proxy", slip)
 
 
 def _compute_scrub_proxies(item: dict[str, Any]) -> None:
@@ -1003,8 +1072,25 @@ def _compute_scrub_proxies(item: dict[str, Any]) -> None:
     rr_slip = _number(item.get("rr_slip_ratio"))
     steering = _number(item.get("abs_steering_deg")) or 0.0
     lat_accel = _number(item.get("abs_lat_accel")) or 0.0
+    speed_mps = _number(item.get("speed_mps")) or 0.0
+    yaw_rate = abs(_number(item.get("yaw_rate")) or 0.0)
+    radius = _number(item.get("radius_m"))
+
+    # Yaw error: actual yaw rate vs theoretical from curvature
+    yaw_error_proxy = 0.0
+    if radius is not None and radius > 0 and speed_mps > 1.0:
+        yaw_theoretical = speed_mps / radius
+        yaw_error_proxy = max(0.0, yaw_theoretical - yaw_rate)
+    item["yaw_error_proxy"] = yaw_error_proxy
+
+    YAW_ERROR_CRITICAL = 0.15  # rad/s threshold for understeer
+
     if lf_slip is not None and rf_slip is not None:
-        _set_number(item, "front_scrub_proxy", abs(rf_slip - lf_slip) + (steering / 90.0) * lat_accel)
+        slip_delta = abs(rf_slip - lf_slip)
+        steering_lat = (steering / 90.0) * lat_accel
+        yaw_component = min(1.0, yaw_error_proxy / YAW_ERROR_CRITICAL)
+        scrub = slip_delta * 0.30 + steering_lat * 0.25 + yaw_component * 0.45
+        _set_number(item, "front_scrub_proxy", scrub)
     if lr_slip is not None and rr_slip is not None:
         _set_number(item, "rear_scrub_proxy", abs(rr_slip - lr_slip))
 
@@ -1057,20 +1143,26 @@ def _compute_stability_scores(row: dict[str, Any], previous: dict[str, Any]) -> 
 
 
 def _compute_resistance_indices(row: dict[str, Any], previous: dict[str, Any]) -> None:
-    speed = _number(row.get("speed_mph"))
-    speed_rate_s = _compute_speed_rates(row, previous)
+    from racelab_engine.analysis.constants import (
+        DRAG_SCRUB_MIN_SPEED_MPH, FULL_THROTTLE_PCT, LOW_BRAKE_PCT,
+        RESISTANCE_COEFF_CRITICAL,
+    )
+
+    speed = _number(row.get("speed_mph")) or 0.0
     throttle = _number(row.get("throttle_pct")) or 0.0
-    brake = _number(row.get("brake_pct")) or 0.0
-    cfs_risk = _number(row.get("cfs_risk_score")) or 0.0
-    steering_scrub = min(1.0, (_number(row.get("abs_steering_deg")) or 0.0) / 10.0)
-    yaw_rate = min(1.0, abs(_number(row.get("yaw_rate")) or 0.0) / 0.2)
-    if throttle > 98.0 and brake < 1.0 and (speed or 0.0) > 150.0 and (speed_rate_s or 0.0) < 0.0:
-        resistance = min(1.0, abs(speed_rate_s or 0.0) / 4.0)
-        row["full_throttle_resistance_index"] = resistance
-        row["drag_scrub_suspicion"] = min(1.0, resistance * 0.45 + cfs_risk * 0.25 + steering_scrub * 0.2 + yaw_rate * 0.1)
+    brake_pct = _number(row.get("brake_pct")) or 0.0
+    max_lap_speed = _number(row.get("max_lap_speed_mph")) or speed
+    speed_threshold = max_lap_speed * 0.75 if max_lap_speed > 0 else DRAG_SCRUB_MIN_SPEED_MPH
+
+    if throttle >= FULL_THROTTLE_PCT and brake_pct <= LOW_BRAKE_PCT and speed >= speed_threshold:
+        resistance_coeff = float(aero_normalized_resistance(row))
+        resistance_index = min(1.0, resistance_coeff / RESISTANCE_COEFF_CRITICAL)
+        row["full_throttle_resistance_index"] = resistance_index
     else:
         row.setdefault("full_throttle_resistance_index", 0.0)
-        row.setdefault("drag_scrub_suspicion", 0.0)
+
+    # Use canonical drag/scrub index from shared module
+    row["drag_scrub_suspicion"] = compute_drag_scrub_index(row)
 
 
 def _compute_compression_index(row: dict[str, Any]) -> None:
@@ -1142,23 +1234,32 @@ def _compute_g_values(item: dict[str, Any]) -> None:
 
 def _compute_platform_angles(item: dict[str, Any]) -> None:
     """Estimate platform pitch/roll angles from ride height differences.
-    These are geometric estimates only — not true inertial angles."""
+    These are geometric estimates only — not true inertial angles.
+
+    Uses geometry.py for SI-first math with motion-ratio hooks.
+    Geometry estimate assumes 1:1 motion ratio until setup data provides it.
+    """
+    from racelab_engine.analysis.geometry import compute_pitch_deg, compute_roll_deg
     wb_m = _number(item.get("wheelbase_m"))
     tw_m = _number(item.get("front_track_width_m"))
     if wb_m is not None and wb_m > 0:
-        front_rh = _number(item.get("front_avg_rh_in"))
-        rear_rh = _number(item.get("rear_avg_rh_in"))
-        if front_rh is not None and rear_rh is not None:
-            import math
-            delta_m = (rear_rh - front_rh) / 39.37007874
-            _set_number(item, "platform_pitch_deg_from_rh", math.degrees(math.atan2(delta_m, wb_m)))
+        front_rh_in = _number(item.get("front_avg_rh_in"))
+        rear_rh_in = _number(item.get("rear_avg_rh_in"))
+        if front_rh_in is not None and rear_rh_in is not None:
+            front_rh_m = front_rh_in / 39.37007874
+            rear_rh_m = rear_rh_in / 39.37007874
+            pitch = compute_pitch_deg(front_rh_m, rear_rh_m, wb_m)
+            if pitch is not None:
+                _set_number(item, "platform_pitch_deg_from_rh", pitch)
     if tw_m is not None and tw_m > 0:
-        left_rh = _number(item.get("left_avg_rh_in"))
-        right_rh = _number(item.get("right_avg_rh_in"))
-        if left_rh is not None and right_rh is not None:
-            import math
-            delta_m = (right_rh - left_rh) / 39.37007874
-            _set_number(item, "platform_roll_deg_from_rh", math.degrees(math.atan2(delta_m, tw_m)))
+        left_rh_in = _number(item.get("left_avg_rh_in"))
+        right_rh_in = _number(item.get("right_avg_rh_in"))
+        if left_rh_in is not None and right_rh_in is not None:
+            left_rh_m = left_rh_in / 39.37007874
+            right_rh_m = right_rh_in / 39.37007874
+            roll = compute_roll_deg(left_rh_m, right_rh_m, tw_m)
+            if roll is not None:
+                _set_number(item, "platform_roll_deg_from_rh", roll)
 
 
 def _apply_derivatives(rows: list[dict[str, Any]]) -> None:
@@ -1171,8 +1272,14 @@ def _apply_derivatives(rows: list[dict[str, Any]]) -> None:
 
     previous: dict[str, Any] | None = None
     for row in rows:
-        dp = _number(row.get("dynamic_pressure_psf")) or 0.0
-        row["dynamic_pressure_index"] = dp / _max_dynamic_pressure
+        dp_psf = _number(row.get("dynamic_pressure_psf")) or 0.0
+        row["dynamic_pressure_lap_index"] = dp_psf / _max_dynamic_pressure
+        row["dynamic_pressure_index"] = dp_psf / _max_dynamic_pressure  # alias for backward compat
+
+        # Cross-run comparable aero load index
+        dp_pa = _number(row.get("dynamic_pressure_pa")) or 0.0
+        row["aero_load_index"] = dp_pa / REFERENCE_DYNAMIC_PRESSURE_PA
+        row["aero_load_index_180mph"] = dp_pa / REFERENCE_DYNAMIC_PRESSURE_PA
 
         if previous is None:
             _init_derivative_row(row)
@@ -1219,16 +1326,35 @@ def _apply_gps_projection(rows: list[dict[str, Any]]) -> None:
 
 
 def _apply_geometry(item: dict[str, Any], wheelbase_m: float | None, average_track: float | None) -> None:
-    if wheelbase_m:
-        front_m = _average(item, "lf_ride_height_mm", "rf_ride_height_mm")
-        rear_m = _average(item, "lr_ride_height_mm", "rr_ride_height_mm")
-        if front_m is not None and rear_m is not None:
-            item["platform_pitch_deg_from_rh"] = math.degrees(math.atan(((rear_m - front_m) / 1000.0) / wheelbase_m))
-    if average_track:
-        left_m = _average(item, "lf_ride_height_mm", "lr_ride_height_mm")
-        right_m = _average(item, "rf_ride_height_mm", "rr_ride_height_mm")
-        if left_m is not None and right_m is not None:
-            item["platform_roll_deg_from_rh"] = math.degrees(math.atan(((right_m - left_m) / 1000.0) / average_track))
+    """Apply geometry-based platform angle estimates.
+
+    Uses geometry.py for SI-first math with motion-ratio hooks.
+    Only overwrites if _compute_platform_angles didn't already set these
+    (geometry data is more precise).
+    """
+    from racelab_engine.analysis.geometry import compute_pitch_deg, compute_roll_deg, ride_height_mm_to_m
+    if wheelbase_m and wheelbase_m > 0:
+        front_mm = _average(item, "lf_ride_height_mm", "rf_ride_height_mm")
+        rear_mm = _average(item, "lr_ride_height_mm", "rr_ride_height_mm")
+        if front_mm is not None and rear_mm is not None:
+            pitch = compute_pitch_deg(
+                ride_height_mm_to_m(front_mm),
+                ride_height_mm_to_m(rear_mm),
+                wheelbase_m,
+            )
+            if pitch is not None:
+                item["platform_pitch_deg_from_rh"] = pitch
+    if average_track and average_track > 0:
+        left_mm = _average(item, "lf_ride_height_mm", "lr_ride_height_mm")
+        right_mm = _average(item, "rf_ride_height_mm", "rr_ride_height_mm")
+        if left_mm is not None and right_mm is not None:
+            roll = compute_roll_deg(
+                ride_height_mm_to_m(left_mm),
+                ride_height_mm_to_m(right_mm),
+                average_track,
+            )
+            if roll is not None:
+                item["platform_roll_deg_from_rh"] = roll
 
 
 def normalize_telemetry_rows(

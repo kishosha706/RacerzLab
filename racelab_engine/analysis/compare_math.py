@@ -6,6 +6,7 @@ from racelab_engine.analysis.comparison import (
     DriverComparison, PowertrainComparison, WholeCarIndex,
     build_lap_grid, interpolate_run_to_grid,
 )
+from racelab_engine.analysis.constants import WCI_WEIGHT_PROFILES, logistic_score
 
 
 def _compute_direction(delta: float | None, higher_is: str) -> Direction | None:
@@ -71,12 +72,23 @@ def aggregate_platform_stats(
         rl = "worsened"
     else:
         rl = "unchanged"
+
+    # Rake stability: if speed improved but rake changed significantly, flag as mixed
+    rake_delta = cr.delta_avg
+    rake_unstable = rake_delta is not None and abs(rake_delta) > 0.05
+    if rl == "improved" and rake_unstable:
+        pv = "mixed"
+    elif cd and cd > 0:
+        pv = "better"
+    else:
+        pv = "mixed"
+
     return PlatformComparison(
         cfs_height=cfs, front_avg_rh=fr, rear_avg_rh=rr,
         center_rake_fs=cr, side_rake=sr,
         dynamic_pressure=dp, cfs_risk_score=risk,
         platform_risk_delta_label=rl,
-        platform_verdict="better" if (cd and cd > 0) else "mixed",
+        platform_verdict=pv,
     )
 
 
@@ -167,16 +179,32 @@ def compute_whole_car_index(
     powertrain: PowertrainComparison | None = None,
     discipline_score: float = 50.0,
     context_problems: int = 0,
+    track_type: str = "oval",
 ) -> WholeCarIndex:
-    si = _score_direction(platform.dynamic_pressure, 0.8, 0.5) * 80 + 20
-    pi = _score_direction(platform.cfs_height, 0.9, 0.5) * 85
-    di = _score_direction(driver.avg_abs_steering_deg, 0.9, 0.7) * 90
-    pwi = _score_direction(powertrain.pull_score, 0.85, 0.6) * 75 if powertrain else 50
+    # Logistic scoring for continuous, analog sub-scores
+    speed_delta = platform.dynamic_pressure.delta_avg if platform.dynamic_pressure else None
+    si = logistic_score(delta=speed_delta, noise=0.05, steepness=2.5, higher_is_better=True)
+
+    cfs_delta = platform.cfs_height.delta_avg if platform.cfs_height else None
+    pi = logistic_score(delta=cfs_delta, noise=0.001, steepness=80.0, higher_is_better=True)
+
+    steering_delta = driver.avg_abs_steering_deg.delta_avg if driver.avg_abs_steering_deg else None
+    di = logistic_score(delta=steering_delta, noise=0.25, steepness=3.0, higher_is_better=False)
+
+    pull_delta = powertrain.pull_score.delta_avg if powertrain and powertrain.pull_score else None
+    pwi = logistic_score(delta=pull_delta, noise=0.05, steepness=2.0, higher_is_better=True) if pull_delta is not None else 50.0
+
     dici = min(100, discipline_score) if discipline_score else 50
-    # Weighted average — tire/shock indices are null (not yet implemented),
-    # so redistribute their weight across available subsystems.
-    weights = {"speed": 0.30, "platform": 0.30, "driver": 0.18, "powertrain": 0.12, "discipline": 0.10}
-    ov = si * weights["speed"] + pi * weights["platform"] + di * weights["driver"] + pwi * weights["powertrain"] + dici * weights["discipline"]
+
+    # Select weight profile by track type, fall back to oval
+    weights = WCI_WEIGHT_PROFILES.get(track_type, WCI_WEIGHT_PROFILES["oval"])
+    ov = (
+        si * weights["speed"]
+        + pi * weights["platform"]
+        + di * weights["driver"]
+        + pwi * weights["powertrain"]
+        + dici * weights["discipline"]
+    )
     ov = min(100, max(0, ov))
     lb = _overall_label(ov)
     return WholeCarIndex(

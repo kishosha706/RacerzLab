@@ -4,19 +4,28 @@ from collections import defaultdict
 from typing import Any, cast
 
 from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+from racelab_engine.analysis.constants import (
+    SPLITTER_SCRAPE_MM,
+    SPLITTER_CRITICAL_MM,
+    SPLITTER_HIGH_MM,
+    SPLITTER_WATCH_MM,
+    PLATFORM_VALID_MIN_SPEED_MPH,
+    PLATFORM_VALID_THROTTLE_PCT,
+    LOW_BRAKE_PCT,
+)
 from racelab_engine.models.event import TelemetryEvent
 
 
 def classify_splitter_height_mm(splitter_height_mm: float | None) -> str:
     if splitter_height_mm is None:
         return "unavailable"
-    if splitter_height_mm <= 0:
+    if splitter_height_mm <= SPLITTER_SCRAPE_MM:
         return "scrape"
-    if splitter_height_mm <= 3:
+    if splitter_height_mm <= SPLITTER_CRITICAL_MM:
         return "critical"
-    if splitter_height_mm <= 6:
+    if splitter_height_mm <= SPLITTER_HIGH_MM:
         return "high"
-    if splitter_height_mm <= 10:
+    if splitter_height_mm <= SPLITTER_WATCH_MM:
         return "watch"
     return "safe"
 
@@ -52,10 +61,10 @@ def detect_platform_events(table: Any, run_id: str = "unassigned") -> list[Telem
         is_complete_lap = bool(pct_values_clean) and min(pct_values_clean) <= 2.0 and max(pct_values_clean) >= 98.0
         valid_for_tuning = (
             is_complete_lap
-            and splitter >= 0.0
-            and speed_mph >= 100.0
-            and throttle_pct >= 80.0
-            and brake_pct <= 5.0
+            and splitter >= SPLITTER_SCRAPE_MM
+            and speed_mph >= PLATFORM_VALID_MIN_SPEED_MPH
+            and throttle_pct >= PLATFORM_VALID_THROTTLE_PCT
+            and brake_pct <= LOW_BRAKE_PCT
         )
 
         events.append(

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import sqlite3
 from pathlib import Path
 
@@ -10,6 +12,8 @@ from racelab_engine.services.import_service import ImportService, build_trace_pa
 from racelab_engine.services.report_service import ReportService
 from racelab_engine.storage.db import initialize_database
 from racelab_engine.storage.repository import RaceLabRepository
+
+pytestmark = pytest.mark.slow
 
 
 def test_sqlite_schema_initializes(tmp_path: Path) -> None:

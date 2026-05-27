@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from racelab_engine.analysis.constants import LAP_WRAP_DROP_THRESHOLD_PCT
+
 # ── types ───────────────────────────────────────────────────────
 
 VerdictKind = Literal["keep_direction", "undo", "retest", "inconclusive"]
@@ -236,6 +238,12 @@ class TestDisciplineResult:
     negative_factors: list[str] = field(default_factory=list)
     recommendation: str | None = None
 
+    @property
+    def is_reliable(self) -> bool:
+        """Whether this discipline result indicates a controlled, trustworthy test."""
+        from racelab_engine.analysis.constants import RELIABLE_DISCIPLINES
+        return self.label in RELIABLE_DISCIPLINES
+
 
 @dataclass(frozen=True)
 class DidItWorkVerdict:
@@ -459,23 +467,81 @@ def _interp(x: float, xs: list[float], ys: list[float]) -> float | None:
     return None
 
 
+def _split_monotonic_segments(
+    xs: list[float], ys: list[float],
+) -> list[tuple[list[float], list[float]]]:
+    """Split (xs, ys) into monotonic segments at wraparound boundaries.
+
+    A wraparound is detected when x drops by more than
+    LAP_WRAP_DROP_THRESHOLD_PCT (e.g. 99.9 -> 0.1 at start/finish).
+    Returns list of (segment_x, segment_y) tuples, each monotonic.
+    """
+    if not xs:
+        return []
+    segments: list[tuple[list[float], list[float]]] = []
+    seg_x: list[float] = [xs[0]]
+    seg_y: list[float] = [ys[0]]
+    for i in range(1, len(xs)):
+        if xs[i] < xs[i - 1] + LAP_WRAP_DROP_THRESHOLD_PCT:
+            segments.append((seg_x, seg_y))
+            seg_x = [xs[i]]
+            seg_y = [ys[i]]
+        else:
+            seg_x.append(xs[i])
+            seg_y.append(ys[i])
+    if seg_x:
+        segments.append((seg_x, seg_y))
+    return segments
+
+
 def interpolate_run_to_grid(
     rows: list[dict[str, Any]],
     channels: list[str],
     grid: list[float],
 ) -> dict[str, list[float | None]]:
-    """Interpolate each channel's values onto a shared lap-percent grid."""
-    xs = [row.get("lap_dist_pct_100") for row in rows]
+    """Interpolate each channel's values onto a shared lap-percent grid.
+
+    Handles start/finish wraparound by splitting data into monotonic
+    segments whenever lap percent drops by more than LAP_WRAP_DROP_THRESHOLD_PCT.
+    Each segment is interpolated independently; the segment overlapping the
+    requested grid range is used.
+    """
+    xs_raw = [row.get("lap_dist_pct_100") for row in rows]
     result: dict[str, list[float | None]] = {}
     for ch in channels:
-        ys = [_safe_float(row.get(ch)) for row in rows]
-        valid_pairs = [(x, y) for x, y in zip(xs, ys) if x is not None and y is not None]
-        if len(valid_pairs) < 2:
+        ys_raw = [_safe_float(row.get(ch)) for row in rows]
+        valid = [(x, y) for x, y in zip(xs_raw, ys_raw) if x is not None and y is not None]
+        if len(valid) < 2:
             result[ch] = [None] * len(grid)
             continue
-        vx = [p[0] for p in valid_pairs]
-        vy = [p[1] for p in valid_pairs]
-        result[ch] = [_interp(g, vx, vy) for g in grid]
+
+        vx = [p[0] for p in valid]
+        vy = [p[1] for p in valid]
+        segments = _split_monotonic_segments(vx, vy)
+
+        if len(segments) == 1:
+            # No wraparound — simple interpolation
+            result[ch] = [_interp(g, vx, vy) for g in grid]
+        else:
+            # Multiple segments — pick the one that overlaps the grid range
+            grid_start = min(grid)
+            grid_end = max(grid)
+            best_seg: tuple[list[float], list[float]] | None = None
+            best_overlap = -1.0
+            for sx, sy in segments:
+                if not sx:
+                    continue
+                seg_start = min(sx)
+                seg_end = max(sx)
+                overlap = max(0.0, min(grid_end, seg_end) - max(grid_start, seg_start))
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_seg = (sx, sy)
+            if best_seg and best_overlap > 0:
+                sx, sy = best_seg
+                result[ch] = [_interp(g, sx, sy) for g in grid]
+            else:
+                result[ch] = [None] * len(grid)
     return result
 
 

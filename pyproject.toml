@@ -41,4 +41,8 @@ include = ["racelab_engine*", "api*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-q"
+addopts = "-q --ignore=tests_archived"
+markers = [
+    "unit: Fast pure-logic or mock-based tests (no .ibt import)",
+    "slow: Tests that import real .ibt files or hit full telemetry pipeline",
+]

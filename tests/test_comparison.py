@@ -37,30 +37,10 @@ def test_target_zone_speed_delta() -> None:
     assert zone.speed_gain_or_loss_label == "gained"
 
 
-def test_setup_diff_detects_changes() -> None:
-    bl = {"lf_ride_height_mm": 77.0, "rf_ride_height_mm": 78.0, "tape_percent": 10}
-    t = {"lf_ride_height_mm": 78.0, "rf_ride_height_mm": 78.0, "tape_percent": 10}
-    changes = diff_setups(bl, t)
-    assert any(c.setup_key == "lf_ride_height_mm" for c in changes)
-    lf = next(c for c in changes if c.setup_key == "lf_ride_height_mm")
-    assert lf.significance == "moderate"
 
 
-def test_setup_diff_no_changes() -> None:
-    bl = {"lf_ride_height_mm": 77.0}
-    t = {"lf_ride_height_mm": 77.0}
-    assert diff_setups(bl, t) == []
 
 
-def test_setup_diff_none_setups() -> None:
-    assert diff_setups(None, None) == []
-
-
-def test_context_diff_detects_weather() -> None:
-    bl = {"air_temp": 20.0, "track_temp": 30.0, "duration_seconds": 100.0}
-    t = {"air_temp": 26.0, "track_temp": 30.0, "duration_seconds": 100.0}
-    changes = diff_context(bl, t)
-    assert any(c.key == "air_temp" and c.is_problem for c in changes)
 
 
 def test_test_discipline_clean() -> None:

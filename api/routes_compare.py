@@ -110,7 +110,7 @@ def run_comparison(req: CompareRequest) -> dict:
     discipline = score_test_discipline(setup_changes, context_problems)
 
     # verdict
-    verdict = compute_verdict(target_zone, discipline)
+    verdict = compute_verdict(target_zone, discipline, is_same_run=is_same)
 
     # whole car index
     wci = compute_whole_car_index(platform, driver, powertrain, discipline.score, context_problems)

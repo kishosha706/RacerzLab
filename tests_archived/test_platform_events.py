@@ -17,6 +17,8 @@ from racelab_engine.analysis.platform_events import (
 )
 from racelab_engine.io.ibt_reader import read_normalized_records
 
+pytestmark = pytest.mark.slow
+
 
 @pytest.fixture(scope="session")
 def lap2_rows(talladega_ibt_path: Path) -> list[dict[str, Any]]:

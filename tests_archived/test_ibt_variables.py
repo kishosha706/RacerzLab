@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import pytest
+
 from pathlib import Path
 
 from racelab_engine.io.ibt_reader import read_variable_definitions
+
+pytestmark = pytest.mark.slow
 
 
 def test_real_ibt_variable_definitions(talladega_ibt_path: Path) -> None:

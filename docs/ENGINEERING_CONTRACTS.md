@@ -236,10 +236,42 @@ The Notebook should save existing comparison/insight payloads as-is from the API
 
 ---
 
-## 10. Remaining Risks for Notebook Worker
+## 10. Aero Index & Drag/Scrub Physics Contract
+
+### Aero index usage
+- `dynamic_pressure_lap_index` — for within-lap visualization only. Lap-relative (0–1 scale). NOT comparable across runs.
+- `dynamic_pressure_index` — alias for `dynamic_pressure_lap_index`. Kept for backward compatibility.
+- `aero_load_index` — cross-run comparable aero reference. Ratio of current dynamic pressure to reference pressure at 180 mph sea level. Safe for Notebook comparisons across runs, tracks, weather, and sessions.
+- `aero_load_index_180mph` — alias for `aero_load_index`.
+
+### Drag/scrub physics
+- `drag_scrub_suspicion` MUST use aero-normalized resistance (`decel_mph_s / dynamic_pressure_psf`), not raw deceleration alone.
+- Aero-normalized resistance makes the index speed-independent: a car losing speed at 180 mph under high aero load scores lower than the same deceleration at 100 mph (which is more suspicious).
+- The canonical formula lives in `racelab_engine/analysis/drag_scrub.py:compute_drag_scrub_index()`.
+- All downstream consumers (segments, platform events, compare, notebook) MUST use this single formula.
+
+### Slip ratio safety
+- Denominator floors at `SLIP_RATIO_SPEED_FLOOR_MPS` (1.0 m/s) to prevent division-by-zero near zero speed.
+- Values are clamped to ±`SLIP_RATIO_CLAMP_MAX` (2.0) to keep charts sane during pit lane, caution, starts, stops, and replays.
+
+### Yaw-error scrub proxy
+- `front_scrub_proxy` is a composite: slip mismatch (30%) + steering/lat (25%) + yaw error (45%).
+- Yaw error = `max(0, theoretical_yaw_rate - actual_yaw_rate)` where theoretical comes from track curvature when available.
+- When `.mt2` curvature data is available, the yaw-error component enables understeer detection.
+- When curvature is unavailable, yaw error defaults to 0 and the proxy falls back to slip + steering components.
+
+### Geometry estimates
+- Platform pitch/roll from ride heights assumes 1:1 motion ratio unless setup motion-ratio data is available.
+- All internal geometry math uses SI (meters, radians). Conversion to inches/degrees happens only for presentation channels.
+- `racelab_engine/analysis/geometry.py` is the single source of truth for pitch/roll calculations.
+
+---
+
+## 11. Remaining Risks for Notebook Worker
 
 1. Tire temp/wear data may be unavailable on short runs — Notebook should not save tire conclusions without a confidence caveat.
 2. Aero proxy values are relative — Notebook must not present them as absolute forces.
 3. Comparison payload may have `null` for tire/shock sections — Notebook must handle gracefully.
-4. `dynamic_pressure_index` is lap-relative — not safe for cross-run comparison in Notebook.
+4. `dynamic_pressure_lap_index` is lap-relative — not safe for cross-run comparison in Notebook. Use `aero_load_index` instead.
 5. Same-run comparisons are reference-only — Notebook should not treat them as actionable tests.
+6. `drag_scrub_suspicion` is a proxy — do not present as exact drag force measurement.

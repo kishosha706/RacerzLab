@@ -9,6 +9,8 @@ from api.main import app
 from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
 from racelab_engine.services.import_service import ImportService, build_channel_catalog, build_trace_payload
 
+pytestmark = pytest.mark.slow
+
 
 def test_platform_calculated_channels_from_rows() -> None:
     rows = normalize_telemetry_rows(

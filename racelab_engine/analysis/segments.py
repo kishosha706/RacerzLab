@@ -6,6 +6,8 @@ from typing import Any, Optional
 from pydantic import BaseModel
 
 from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+from racelab_engine.analysis.constants import SEGMENT_WIDTH_PCT
+from racelab_engine.analysis.drag_scrub import compute_drag_scrub_index
 from racelab_engine.analysis.platform import classify_splitter_height_mm
 
 
@@ -72,8 +74,9 @@ def build_fixed_pct_segments(table: Any, run_id: str = "unassigned", lap_number:
         return []
 
     segments: list[SegmentSummary] = []
-    for start in range(0, 100, 5):
-        end = start + 5
+    step = int(SEGMENT_WIDTH_PCT)
+    for start in range(0, 100, step):
+        end = start + step
         segment_rows = [row for row in rows if (pct := _pct(row.get("lap_dist_pct"))) is not None and start <= pct < end]
         if not segment_rows:
             continue
@@ -95,9 +98,12 @@ def build_fixed_pct_segments(table: Any, run_id: str = "unassigned", lap_number:
         min_splitter = min(splitters) if splitters else None
         platform_score = _score_platform(min_splitter)
         driver_input_score = 1.0 if (avg_brake or 0.0) > 5.0 or (avg_throttle is not None and avg_throttle < 95.0) else 0.0
+        # Use canonical drag/scrub index from the shared module
         drag_scrub_score = 0.0
-        if speed_delta is not None and speed_delta < -0.5 and (avg_throttle or 0) >= 95.0 and (avg_brake or 0) <= 5.0:
-            drag_scrub_score = min(1.0, abs(speed_delta) / 3.0 + (avg_steering or 0.0) / 90.0 + platform_score * 0.25)
+        for row in segment_rows:
+            dsi = compute_drag_scrub_index(row)
+            if dsi > drag_scrub_score:
+                drag_scrub_score = dsi
 
         segments.append(
             SegmentSummary(
