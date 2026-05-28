@@ -70,7 +70,7 @@ export function RunContextBar({ overview, runs, onSelectLap }: RunContextBarProp
                 <option key={lap.lap_number} value={lap.lap_number}>
                   Lap {lap.lap_number}
                   {lap.lap_time != null ? ` — ${lap.lap_time.toFixed(3)}s` : ""}
-                  {!lap.is_useful ? " (invalid)" : ""}
+                  {lap.is_useful ? "" : " (invalid)"}
                   {tagStr}
                 </option>
               );
