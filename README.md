@@ -8,6 +8,7 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 
 - **Real .ibt ingestion** — binary parser for iRacing telemetry files with 275+ variables
 - **.mt2 Track Map support** — MoTeCTrackV2 binary parser, centerline geometry, markers, sections, curvature derivation, distance-based interpolation, SVG rendering with platform event overlays and target zone highlighting
+- **Track Map Location Intelligence** — location-aware labels replacing raw lap percentages (friendly section names, entry/center/exit phase detection), section heat strip with risk-intensity coloring, location jump chips, event clusters, pinned evidence, area drilldown table, 10 filter presets, Problem Focus mode, keyboard shortcuts, copy-to-clipboard summary
 - **Track Map matching** — automatic track name normalization and scoring-based map-to-run matching
 - **Track Map Identity** — "Loaded Run" section showing track/car/setup from .ibt, "Matched Map" section with confidence badge (green/amber)
 - **Session Manager** — create/list/get/update/delete/archive RaceLab sessions, add/remove runs, startup screen with New/Open/Delete
@@ -18,9 +19,9 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **Insights Engine** — automated interpretation of comparison results with trace annotations, correlations, target zone classification, confidence-weighted verdicts, and sector intelligence
 - **Notebook & Setup Memory** — save findings, edit notes/tags/status, duplicate detection, create test plans, copy Markdown export, view setup memory dashboard with per-car/track summaries
 - **Local SQLite persistence** — imported runs, laps, events, setup snapshots, findings, test plans, and RaceLab sessions stored locally
-- **100+ calculated channels** — ride heights, rake, dynamic pressure, tire pressure gain, temp/wear spread, slip ratio, shock velocity/activity/RMS, damper energy, motion g-conversions, platform pitch/roll estimates, kinematic slip angles, dynamic grade, aero load index, drag/scrub suspicion, platform compression, stability scores
+- **100+ calculated channels** — ride heights, rake, dynamic pressure, tire pressure gain, temp/wear spread, slip ratio, shock velocity/activity/RMS, damper energy, motion g-conversions, platform pitch/roll estimates, kinematic slip angles, dynamic grade, aero load index, drag/scrub suspicion, platform compression, stability scores, rear scrape detection, platform balance classification
 - **Vehicle Dynamics Engine** — 6 physics modules: aero coefficients, tire dynamics (slip angles, understeer gradient), vehicle dynamics (weight transfer, brake energy), geometry (pitch/roll with motion ratios), estimate confidence, physics inputs
-- **Vectorized Analysis Pipeline** — parallel Polars path (opt-in via `RACELAB_ANALYSIS_ENGINE` env var) with 7× speedup at 100k rows, full parity with row path
+- **Vectorized Analysis Pipeline** — parallel Polars path (opt-in via `RACELAB_ANALYSIS_ENGINE` env var) with 26× speedup at 10k rows, 111 core channels, full parity with row path across 38 synthetic tests + real Talladega validation
 - **Engine Comparison Script** — `scripts/compare_analysis_engines.py` for validating vector vs row path on real data
 - **Extrema-preserving downsampling** — CFS minimums and event peaks never lost in chart views
 
@@ -75,6 +76,8 @@ cd racelab-garage
 ```powershell
 pytest
 ```
+
+The full test suite (261 tests) includes unit tests, comparison math, notebook CRUD, track matching, slip ratios, drag/scrub, geometry, session logic, constants, local-config checks, and vectorized parity tests.
 
 The Talladega acceptance tests use the default fixture at:
 ```text

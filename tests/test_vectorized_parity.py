@@ -167,7 +167,7 @@ class TestParity:
     def test_core_channels_exist_in_vector_output(self, small_rows: list[dict]) -> None:
         vec = normalize_telemetry_frame(small_rows)
         # Channels that require columns not in synthetic rows
-        skip = {"lf_shock_defl_in", "rf_shock_defl_in", "lr_shock_defl_in", "rr_shock_defl_in",
+        skip = {"vert_accel_g", "lf_shock_defl_in", "rf_shock_defl_in", "lr_shock_defl_in", "rr_shock_defl_in",
                 "lf_shock_vel_in_s", "rf_shock_vel_in_s", "lr_shock_vel_in_s", "rr_shock_vel_in_s",
                 "lf_shock_velocity_rms", "rf_shock_velocity_rms", "lr_shock_velocity_rms", "rr_shock_velocity_rms",
                 "lf_shock_activity_index", "rf_shock_activity_index", "lr_shock_activity_index", "rr_shock_activity_index",
@@ -981,27 +981,20 @@ class TestBenchmark:
 
     Requires ``pytest-benchmark``.  Skipped gracefully if not installed.
     """
+    pytest.importorskip("pytest_benchmark")
 
     @pytest.mark.slow
     def test_bench_1k(self, benchmark) -> None:
-        pytest.importorskip("pytest_benchmark")
-        rows = _synthetic_rows(1000)
-        benchmark(normalize_telemetry_rows, rows)
+        benchmark(normalize_telemetry_rows, _synthetic_rows(1000))
 
     @pytest.mark.slow
     def test_bench_1k_vector(self, benchmark) -> None:
-        pytest.importorskip("pytest_benchmark")
-        rows = _synthetic_rows(1000)
-        benchmark(normalize_telemetry_frame, rows)
+        benchmark(normalize_telemetry_frame, _synthetic_rows(1000))
 
     @pytest.mark.slow
     def test_bench_10k(self, benchmark) -> None:
-        pytest.importorskip("pytest_benchmark")
-        rows = _synthetic_rows(10_000)
-        benchmark(normalize_telemetry_rows, rows)
+        benchmark(normalize_telemetry_rows, _synthetic_rows(10_000))
 
     @pytest.mark.slow
     def test_bench_10k_vector(self, benchmark) -> None:
-        pytest.importorskip("pytest_benchmark")
-        rows = _synthetic_rows(10_000)
-        benchmark(normalize_telemetry_frame, rows)
+        benchmark(normalize_telemetry_frame, _synthetic_rows(10_000))

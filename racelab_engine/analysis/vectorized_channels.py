@@ -313,6 +313,7 @@ CORE_CHANNELS: set[str] = {
     # g-values
     "lat_accel_g",
     "long_accel_g",
+    "vert_accel_g",
     # ride-height averages (slice 2)
     "front_avg_rh_in",
     "rear_avg_rh_in",
@@ -542,6 +543,26 @@ _SHOCK_VEL_RAW_KEYS: dict[str, str] = {
     "RRSHshockVel": "rr_shock_vel",
 }
 
+# Tire column aliases — matches _convert_tires in calculated_channels.py
+_TIRE_ALIAS_MAP: dict[str, str] = {
+    "LFpressure": "lf_pressure", "RFpressure": "rf_pressure",
+    "LRpressure": "lr_pressure", "RRpressure": "rr_pressure",
+    "LFcoldPressure": "lf_cold_pressure", "RFcoldPressure": "rf_cold_pressure",
+    "LRcoldPressure": "lr_cold_pressure", "RRcoldPressure": "rr_cold_pressure",
+    "LFtempL": "lf_temp_inner", "RFtempL": "rf_temp_inner",
+    "LRtempL": "lr_temp_inner", "RRtempL": "rr_temp_inner",
+    "LFtempM": "lf_temp_middle", "RFtempM": "rf_temp_middle",
+    "LRtempM": "lr_temp_middle", "RRtempM": "rr_temp_middle",
+    "LFtempR": "lf_temp_outer", "RFtempR": "rf_temp_outer",
+    "LRtempR": "lr_temp_outer", "RRtempR": "rr_temp_outer",
+    "LFwearL": "lf_wear_inner", "RFwearL": "rf_wear_inner",
+    "LRwearL": "lr_wear_inner", "RRwearL": "rr_wear_inner",
+    "LFwearM": "lf_wear_middle", "RFwearM": "rf_wear_middle",
+    "LRwearM": "lr_wear_middle", "RRwearM": "rr_wear_middle",
+    "LFwearR": "lf_wear_outer", "RFwearR": "rf_wear_outer",
+    "LRwearR": "lr_wear_outer", "RRwearR": "rr_wear_outer",
+}
+
 
 def _apply_aliases(df: pl.DataFrame) -> pl.DataFrame:
     """Rename raw iRacing columns to normalised names where they exist.
@@ -549,8 +570,10 @@ def _apply_aliases(df: pl.DataFrame) -> pl.DataFrame:
     Only renames if the target column does not already exist (avoids
     DuplicateError when the alias was already created by the row path).
     """
+    all_aliases = dict(_ALIAS_MAP)
+    all_aliases.update(_TIRE_ALIAS_MAP)
     if renames := {
-        raw: norm for raw, norm in _ALIAS_MAP.items()
+        raw: norm for raw, norm in all_aliases.items()
         if raw in df.columns and norm not in df.columns
     }:
         df = df.rename(renames)
@@ -701,12 +724,23 @@ def _compute_speed_derivatives(df: pl.DataFrame) -> pl.DataFrame:
     if has_speed and has_time:
         dt = pl.col("session_time") - pl.col("session_time").shift(1)
         dv_mph = pl.col("speed_mph") - pl.col("speed_mph").shift(1)
-        speed_rate = (dv_mph / dt).fill_nan(0.0).alias("speed_rate_mph_s")
+        # Guard: dt <= 0 (repeated timestamps) → None; first row (dt=None) → None
+        speed_rate = (
+            pl.when(dt.is_null() | (dt <= 0))
+            .then(None)
+            .otherwise(dv_mph / dt)
+            .alias("speed_rate_mph_s")
+        )
         df = df.with_columns(speed_rate)
 
         if has_mps:
             dv_mps = pl.col("speed_mps") - pl.col("speed_mps").shift(1)
-            speed_rate_mps2 = (dv_mps / dt).fill_nan(0.0).alias("speed_rate_mps2")
+            speed_rate_mps2 = (
+                pl.when(dt.is_null() | (dt <= 0))
+                .then(None)
+                .otherwise(dv_mps / dt)
+                .alias("speed_rate_mps2")
+            )
             df = df.with_columns(speed_rate_mps2)
 
     if has_speed and has_dist:

@@ -432,7 +432,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     # ── platform / rake ──
     "center_rake_fs_in": {
         "label": "Center Rake FS",
-        "description": "Center rake: rear average ride height minus CFS ride height. Higher = rear higher than splitter.",
+        "description": "Splitter-to-rear platform rake proxy: rear average ride height minus CFS ride height. Higher = rear higher than splitter. This is a ride-height-based rake proxy, not an axle-based rake measurement.",
         "formula": "rear_avg_rh_in - cfs_ride_height_in",
         "dependencies": ["lr_ride_height_in", "rr_ride_height_in", "cfs_ride_height_in"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
@@ -1742,6 +1742,28 @@ def _compute_dynamic_pressure(item: dict[str, Any]) -> None:
         _set_number(item, "dynamic_pressure_psf", dynamic_pressure_pa * PA_TO_PSF)
 
 
+def _apply_rear_scrape_risk(item: dict[str, Any], lr_mm: float, rr_mm: float) -> None:
+    """Compute and store rear scrape risk channels from ride heights."""
+    from racelab_engine.analysis.constants import REAR_SCRAPE_MM
+    rear_min = min(lr_mm, rr_mm)
+    _set_number(item, "rear_min_ride_height_mm", rear_min)
+    _set_number(item, "rear_min_ride_height_in", rear_min * MM_TO_IN)
+    margin = rear_min - REAR_SCRAPE_MM
+    _set_number(item, "rear_scrape_margin_mm", margin)
+    risk = _risk_from_rear_mm(rear_min)
+    _set_number(item, "rear_scrape_risk_score", risk)
+    _set_number(item, "rear_platform_contact_risk", risk)
+    _set_number(item, "rear_scrape_side", _scrape_side_code(lr_mm, rr_mm))
+
+
+def _scrape_side_code(lr_mm: float, rr_mm: float) -> int:
+    """Determine which rear corner is lower: -1=left, 0=both, 1=right."""
+    eps = 0.001
+    if abs(lr_mm - rr_mm) < eps:
+        return 0
+    return -1 if lr_mm < rr_mm else 1
+
+
 def _risk_from_rear_mm(value: Any) -> float | None:
     """Risk score for rear ride height using same scale as CFS risk."""
     from racelab_engine.analysis.constants import REAR_SCRAPE_MM, REAR_CRITICAL_MM, REAR_HIGH_MM, REAR_WATCH_MM
@@ -1758,26 +1780,10 @@ def _risk_from_rear_mm(value: Any) -> float | None:
 
 def _compute_rear_scrape(item: dict[str, Any]) -> None:
     """Compute rear scrape risk channels."""
-    from racelab_engine.analysis.constants import REAR_SCRAPE_MM
     lr_mm = _number(item.get("lr_ride_height_mm"))
     rr_mm = _number(item.get("rr_ride_height_mm"))
     if lr_mm is not None and rr_mm is not None:
-        rear_min = min(lr_mm, rr_mm)
-        _set_number(item, "rear_min_ride_height_mm", rear_min)
-        _set_number(item, "rear_min_ride_height_in", rear_min * MM_TO_IN)
-        margin = rear_min - REAR_SCRAPE_MM
-        _set_number(item, "rear_scrape_margin_mm", margin)
-        risk = _risk_from_rear_mm(rear_min)
-        _set_number(item, "rear_scrape_risk_score", risk)
-        _set_number(item, "rear_platform_contact_risk", risk)
-        # Determine scrape side
-        eps = 0.001  # mm tolerance for equality
-        if abs(lr_mm - rr_mm) < eps:
-            _set_number(item, "rear_scrape_side", 0)  # 0 = both
-        elif lr_mm < rr_mm:
-            _set_number(item, "rear_scrape_side", -1)  # -1 = left
-        else:
-            _set_number(item, "rear_scrape_side", 1)  # 1 = right
+        _apply_rear_scrape_risk(item, lr_mm, rr_mm)
 
 
 def _compute_platform_balance(item: dict[str, Any]) -> None:
@@ -1942,10 +1948,12 @@ def _compute_speed_rates(row: dict[str, Any], previous: dict[str, Any]) -> float
             # SI unit rate for dynamic grade calculation
             if speed_mps is not None and prev_speed_mps is not None:
                 row["speed_rate_mps2"] = (speed_mps - prev_speed_mps) / dt
+        # dt <= 0 (repeated timestamps): leave as None (already initialized)
     if speed is not None and previous_speed is not None and lap_dist_ft is not None and previous_lap_dist_ft is not None:
         dd = lap_dist_ft - previous_lap_dist_ft
         if abs(dd) > 0.1:
             row["speed_rate_mph_1000ft"] = (speed - previous_speed) / dd * 1000.0
+        # Tiny distance delta: leave as None
     return speed_rate_s
 
 

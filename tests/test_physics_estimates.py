@@ -33,6 +33,11 @@ from racelab_engine.analysis.vehicle_dynamics import (
     accel_power_w,
     drag_power_w,
     wheel_power_proxy_w,
+    dynamic_grade_rad,
+    dynamic_grade_deg,
+    grade_force_proxy_n,
+    grade_corrected_long_accel_mps2,
+    MAX_GRADE_COMPONENT,
 )
 from racelab_engine.analysis.tire_dynamics import (
     vehicle_sideslip_beta_rad,
@@ -459,3 +464,190 @@ def test_no_crash_missing_inputs() -> None:
     assert drag_power_w(None, None)[0] is None
     assert cda_coastdown_proxy_m2(None, None, None)[0] is None
     assert full_throttle_resistance_cda_proxy_m2(None, None, None)[0] is None
+
+
+# ── Dynamic grade isolation ───────────────────────────────────
+
+def test_dynamic_grade_flat() -> None:
+    """Flat track: long_accel ≈ speed_rate → grade ≈ 0."""
+    grade, conf = dynamic_grade_rad(2.0, 2.0)
+    assert grade is not None
+    assert abs(grade) < 0.001
+    assert conf.tier == "high"
+
+
+def test_dynamic_grade_uphill() -> None:
+    """Uphill: sensor reads more acceleration than speed change."""
+    grade, conf = dynamic_grade_rad(5.0, 2.0)
+    assert grade is not None
+    assert grade > 0  # uphill
+    assert conf.tier == "high"
+
+
+def test_dynamic_grade_downhill() -> None:
+    """Downhill: sensor reads less acceleration than speed change."""
+    grade, conf = dynamic_grade_rad(-1.0, 2.0)
+    assert grade is not None
+    assert grade < 0  # downhill
+    assert conf.tier == "high"
+
+
+def test_dynamic_grade_clamp_prevents_asin_crash() -> None:
+    """Extreme values should be clamped, not crash asin."""
+    grade, conf = dynamic_grade_rad(100.0, 0.0)  # far beyond realistic
+    assert grade is not None
+    assert abs(grade) <= math.asin(MAX_GRADE_COMPONENT) + 0.001
+
+
+def test_dynamic_grade_missing_inputs() -> None:
+    for args in [(None, 2.0), (2.0, None)]:
+        grade, conf = dynamic_grade_rad(*args)
+        assert grade is None
+        assert conf.score < 0.5
+
+
+def test_dynamic_grade_deg_conversion() -> None:
+    """Degrees version should be consistent with radians."""
+    grade_rad, _ = dynamic_grade_rad(5.0, 2.0)
+    grade_deg, _ = dynamic_grade_deg(5.0, 2.0)
+    assert grade_rad is not None and grade_deg is not None
+    assert abs(grade_deg - math.degrees(grade_rad)) < 0.001
+
+
+def test_grade_force_uphill() -> None:
+    """Uphill grade produces positive grade force (resisting motion)."""
+    grade_rad = math.radians(5.0)  # ~5° uphill
+    force, conf = grade_force_proxy_n(1500.0, grade_rad)
+    assert force is not None
+    expected = 1500.0 * 9.81 * math.sin(grade_rad)
+    assert abs(force - expected) < 0.1
+    assert force > 0  # uphill resists motion
+
+
+def test_grade_force_downhill() -> None:
+    """Downhill grade produces negative grade force (aiding motion)."""
+    grade_rad = math.radians(-3.0)  # ~3° downhill
+    force, conf = grade_force_proxy_n(1500.0, grade_rad)
+    assert force is not None
+    assert force < 0  # downhill aids motion
+
+
+def test_grade_force_missing_inputs() -> None:
+    force, conf = grade_force_proxy_n(None, 0.1)
+    assert force is None
+    force2, conf2 = grade_force_proxy_n(1500.0, None)
+    assert force2 is None
+
+
+def test_grade_corrected_long_accel() -> None:
+    """Grade correction removes gravity component from sensor acceleration."""
+    # Uphill: sensor reads 5.0, but true accel is lower
+    grade_rad = math.radians(5.0)
+    corrected, conf = grade_corrected_long_accel_mps2(5.0, grade_rad)
+    assert corrected is not None
+    expected = 5.0 - 9.81 * math.sin(grade_rad)
+    assert abs(corrected - expected) < 0.01
+    assert corrected < 5.0  # uphill reduces true acceleration
+
+
+def test_grade_corrected_long_accel_missing() -> None:
+    corrected, conf = grade_corrected_long_accel_mps2(None, 0.1)
+    assert corrected is None
+    corrected2, conf2 = grade_corrected_long_accel_mps2(5.0, None)
+    assert corrected2 is None
+
+
+# ── Speed rate zero-division guards ───────────────────────────
+
+def test_speed_rate_repeated_timestamps() -> None:
+    """Repeated timestamps (dt=0) should produce None, not crash."""
+    from racelab_engine.analysis.calculated_channels import _compute_speed_rates
+    row = {"speed_mph": 100.0, "session_time": 10.0, "lap_dist_ft": 5000.0, "speed_mps": 44.7}
+    prev = {"speed_mph": 95.0, "session_time": 10.0, "lap_dist_ft": 4900.0, "speed_mps": 42.5}
+    result = _compute_speed_rates(row, prev)
+    assert result is None  # dt=0 → None
+    assert row.get("speed_rate_mph_s") is None
+    assert row.get("speed_rate_mps2") is None
+
+
+def test_speed_rate_negative_dt() -> None:
+    """Negative dt (time going backwards) should produce None, not crash."""
+    from racelab_engine.analysis.calculated_channels import _compute_speed_rates
+    row = {"speed_mph": 100.0, "session_time": 5.0, "lap_dist_ft": 5000.0, "speed_mps": 44.7}
+    prev = {"speed_mph": 95.0, "session_time": 10.0, "lap_dist_ft": 4900.0, "speed_mps": 42.5}
+    result = _compute_speed_rates(row, prev)
+    assert result is None  # dt=-5 → None
+    assert row.get("speed_rate_mph_s") is None
+
+
+def test_speed_rate_tiny_distance_delta() -> None:
+    """Tiny distance delta should leave speed_rate_mph_1000ft as None."""
+    from racelab_engine.analysis.calculated_channels import _compute_speed_rates
+    row = {"speed_mph": 100.0, "session_time": 11.0, "lap_dist_ft": 5000.05, "speed_mps": 44.7}
+    prev = {"speed_mph": 95.0, "session_time": 10.0, "lap_dist_ft": 5000.0, "speed_mps": 42.5}
+    _compute_speed_rates(row, prev)
+    assert row.get("speed_rate_mph_1000ft") is None  # dd=0.05 < 0.1
+
+
+def test_speed_rate_first_row() -> None:
+    """First row (no previous) should have all speed rates as None."""
+    from racelab_engine.analysis.calculated_channels import _init_derivative_row
+    row: dict = {}
+    _init_derivative_row(row)
+    assert row["speed_rate_mph_s"] is None
+    assert row["speed_rate_mph_1000ft"] is None
+    assert row["speed_rate_mps2"] is None
+
+
+# ── Curvature smoothing ───────────────────────────────────────
+
+def test_curvature_smoothing_constant() -> None:
+    """Constant curvature should remain constant after smoothing."""
+    from racelab_engine.io.mt2_reader import smooth_curvature_5point
+    curvatures: list[float | None] = [0.001] * 20
+    smoothed = smooth_curvature_5point(curvatures)
+    assert len(smoothed) == 20
+    for v in smoothed:
+        if v is not None:
+            assert abs(v - 0.001) < 1e-9
+
+
+def test_curvature_smoothing_jitter_reduced() -> None:
+    """Jittered curvature should have lower variance after smoothing."""
+    from racelab_engine.io.mt2_reader import smooth_curvature_5point
+    import statistics
+    curvatures: list[float | None] = [0.001 + (i % 3 - 1) * 0.0005 for i in range(50)]
+    smoothed = smooth_curvature_5point(curvatures)
+    raw_var = statistics.variance([v for v in curvatures if v is not None])
+    smooth_vals = [v for v in smoothed if v is not None]
+    smooth_var = statistics.variance(smooth_vals) if len(smooth_vals) > 1 else 0.0
+    assert smooth_var < raw_var
+
+
+def test_curvature_smoothing_short_array() -> None:
+    """Arrays shorter than 5 should pass through unchanged."""
+    from racelab_engine.io.mt2_reader import smooth_curvature_5point
+    curvatures: list[float | None] = [0.001, 0.002, 0.003]
+    smoothed = smooth_curvature_5point(curvatures)
+    assert smoothed == curvatures
+
+
+def test_curvature_smoothing_none_values() -> None:
+    """None values should propagate correctly."""
+    from racelab_engine.io.mt2_reader import smooth_curvature_5point
+    curvatures: list[float | None] = [0.001, None, 0.003, 0.004, 0.005, 0.006, 0.007]
+    smoothed = smooth_curvature_5point(curvatures)
+    assert len(smoothed) == len(curvatures)
+    assert smoothed[1] is None  # None propagates
+
+
+def test_curvature_smoothing_closed_loop_no_spike() -> None:
+    """Closed-loop start/finish should not produce a spike."""
+    from racelab_engine.io.mt2_reader import smooth_curvature_5point
+    # Simulate a closed loop: start and end have same curvature
+    curvatures: list[float | None] = [0.001] * 10 + [0.01] * 10 + [0.001] * 10  # type: ignore[assignment]
+    smoothed = smooth_curvature_5point(curvatures)
+    # No value should exceed the max raw value significantly
+    max_raw = max(v for v in curvatures if v is not None)
+    max_smooth = max(v for v in smoothed if v is not None)
+    assert max_smooth <= max_raw * 1.1  # no amplification

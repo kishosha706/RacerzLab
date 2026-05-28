@@ -165,7 +165,10 @@ class TrackMapPoint:
     lap_pct: float | None = None
     heading_rad: float | None = None
     curvature_1_per_m: float | None = None
+    curvature_raw_1_per_m: float | None = None
+    curvature_smoothed_1_per_m: float | None = None
     radius_m: float | None = None
+    radius_smoothed_m: float | None = None
     section_name: str | None = None
     section_type: str | None = None
     kind: Literal["centerline", "left_boundary", "right_boundary", "unknown"] = "centerline"
@@ -298,11 +301,55 @@ def _bounds(points: list[TrackMapPoint]) -> TrackMapBounds:
     )
 
 
+def smooth_curvature_5point(
+    curvatures: list[float | None],
+    weights: tuple[float, float, float, float, float] = (1.0, 2.0, 4.0, 2.0, 1.0),
+) -> list[float | None]:
+    """Apply weighted 5-point smoothing to a curvature array.
+
+    Preserves raw values at edges (first 2, last 2 points).
+    Uses [1,2,4,2,1] weights by default — a binomial-like kernel
+    that preserves overall shape while reducing jitter.
+
+    Args:
+        curvatures: Raw curvature values (1/m). None values are skipped.
+        weights: 5-tuple of weights for the smoothing kernel.
+
+    Returns:
+        Smoothed curvature array (same length). None values propagate.
+    """
+    n = len(curvatures)
+    if n < 5:
+        return list(curvatures)  # Not enough points to smooth
+    w_sum = sum(weights)
+    result: list[float | None] = [None] * n
+    for i in range(n):
+        if curvatures[i] is None:
+            continue
+        # Edge points: preserve raw value
+        if i < 2 or i >= n - 2:
+            result[i] = curvatures[i]
+            continue
+        # Interior: weighted average
+        vals: list[float] = []
+        w_used: list[float] = []
+        for j, w in enumerate(weights):
+            offset = i - 2 + j
+            v = curvatures[offset]
+            if v is not None:
+                vals.append(v)
+                w_used.append(w)
+        if vals:
+            result[i] = sum(v * w for v, w in zip(vals, w_used)) / sum(w_used)
+    return result
+
+
 def _derive_curvature(points: list[TrackMapPoint]) -> None:
     headings = [p.heading_rad for p in points]
     if len(points) < 3 or any(h is None for h in headings):
         return
     unwrapped = unwrap_angles([float(h) for h in headings if h is not None])
+    raw_curvatures: list[float | None] = [None] * len(points)
     for i, point in enumerate(points):
         if point.distance_m is None:
             continue
@@ -318,8 +365,19 @@ def _derive_curvature(points: list[TrackMapPoint]) -> None:
             continue
         curvature = (unwrapped[j1] - unwrapped[j0]) / (d1 - d0)
         if finite(curvature):
+            raw_curvatures[i] = curvature
             point.curvature_1_per_m = curvature
+            point.curvature_raw_1_per_m = curvature
             point.radius_m = 1.0 / abs(curvature) if abs(curvature) > EPSILON else None
+
+    # Apply 5-point smoothing for a cleaner curvature signal
+    # Raw curvature_1_per_m is preserved; smoothed goes into separate field
+    smoothed = smooth_curvature_5point(raw_curvatures)
+    for i, point in enumerate(points):
+        sv = smoothed[i]
+        if sv is not None:
+            point.curvature_smoothed_1_per_m = sv
+            point.radius_smoothed_m = 1.0 / abs(sv) if abs(sv) > EPSILON else None
 
 
 def parse_points(points_node: Node, total_dist_m: float) -> list[TrackMapPoint]:

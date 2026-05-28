@@ -251,9 +251,111 @@ def understeer_yaw_error_proxy(
     Returns 0 if oversteer or data unavailable.
     """
     error, conf = yaw_error_rad_s(expected_yaw_rate_rad_s, actual_yaw_rate_rad_s)
-    if error is None:
-        return 0.0, conf
-    return max(0.0, error), conf
+    return (max(0.0, error), conf) if error is not None else (0.0, conf)
+
+
+# ── Dynamic grade isolation ────────────────────────────────────
+
+MAX_GRADE_COMPONENT = 0.30  # max |sin(grade)| before clamping; ~17.5°
+
+
+def dynamic_grade_rad(
+    long_accel_mps2: float | None,
+    speed_rate_mps2: float | None,
+) -> tuple[float | None, EstimateConfidence]:
+    """Estimate track grade (slope) from sensor acceleration vs speed derivative.
+
+    grade_rad = asin(clamp((long_accel - speed_rate) / g, -MAX_GRADE_COMPONENT, MAX_GRADE_COMPONENT))
+
+    Positive = uphill (sensor reads more acceleration than speed change).
+    Negative = downhill (sensor reads less acceleration than speed change).
+
+    ESTIMATE — grade is inferred, not measured. Low confidence during
+    braking, wheelspin, high yaw, or low speed.
+    """
+    if long_accel_mps2 is None:
+        return None, confidence_from_missing(
+            ["long_accel_mps2"], set(),
+            ["Longitudinal acceleration unavailable."],
+        )
+    if speed_rate_mps2 is None:
+        return None, confidence_from_missing(
+            ["speed_rate_mps2"], set(),
+            ["Speed rate (dv/dt) unavailable. Grade cannot be isolated without speed derivative."],
+        )
+    sin_theta = (long_accel_mps2 - speed_rate_mps2) / G
+    sin_theta = max(-MAX_GRADE_COMPONENT, min(MAX_GRADE_COMPONENT, sin_theta))
+    grade = math.asin(sin_theta)
+    return grade, confidence_from_missing(
+        [], set(),
+        ["Dynamic grade ESTIMATE. Inferred from acceleration vs speed derivative. "
+         "Low confidence during braking, wheelspin, high yaw, or low speed."],
+    )
+
+
+def dynamic_grade_deg(
+    long_accel_mps2: float | None,
+    speed_rate_mps2: float | None,
+) -> tuple[float | None, EstimateConfidence]:
+    """Dynamic grade in degrees. See dynamic_grade_rad."""
+    grade_rad, conf = dynamic_grade_rad(long_accel_mps2, speed_rate_mps2)
+    return (math.degrees(grade_rad), conf) if grade_rad is not None else (None, conf)
+
+
+def grade_force_proxy_n(
+    mass_kg: float | None,
+    grade_rad: float | None,
+) -> tuple[float | None, EstimateConfidence]:
+    """Grade force = m * g * sin(grade).
+
+    Positive grade (uphill) → positive grade force (resisting motion).
+    Negative grade (downhill) → negative grade force (aiding motion).
+
+    ESTIMATE — grade is inferred, not measured.
+    """
+    if mass_kg is None:
+        return None, confidence_from_missing(
+            ["mass_kg"], set(),
+            ["Mass unavailable."],
+        )
+    if grade_rad is None:
+        return None, confidence_from_missing(
+            ["grade_rad"], set(),
+            ["Grade unavailable."],
+        )
+    force = mass_kg * G * math.sin(grade_rad)
+    return force, confidence_from_missing(
+        [], set(),
+        ["Grade force ESTIMATE. Relies on inferred grade."],
+    )
+
+
+def grade_corrected_long_accel_mps2(
+    long_accel_mps2: float | None,
+    grade_rad: float | None,
+) -> tuple[float | None, EstimateConfidence]:
+    """Remove grade component from longitudinal acceleration.
+
+    a_corrected = a_sensor - g * sin(grade)
+
+    When grade is positive (uphill), the sensor reads extra acceleration
+    from gravity. Subtracting g*sin(grade) gives the true car acceleration.
+    """
+    if long_accel_mps2 is None:
+        return None, confidence_from_missing(
+            ["long_accel_mps2"], set(),
+            ["Longitudinal acceleration unavailable."],
+        )
+    if grade_rad is None:
+        return None, confidence_from_missing(
+            ["grade_rad"], set(),
+            ["Grade unavailable."],
+        )
+    corrected = long_accel_mps2 - G * math.sin(grade_rad)
+    return corrected, confidence_from_missing(
+        [], set(),
+        ["Grade-corrected acceleration ESTIMATE. Relies on inferred grade."],
+    )
 
 
 # ── Brake energy and wheel power ──────────────────────────────

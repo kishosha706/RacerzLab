@@ -178,20 +178,59 @@ The first slice of the vectorized analysis path is complete and verified:
 ### Current Status (May 2026)
 
 All three slices are complete and verified:
-- **Slice 1**: Core conversions, dynamic pressure, slip ratios, speed derivatives
-- **Slice 2**: Ride-height averages, CFS aliases, risk scores, g-values, wheel mismatch, shock conversions
-- **Slice 3**: Stability scores, drag/resistance indices, platform compression, shock rolling aggregates
 
-**Row path is the default. Vector path is opt-in only.**
+- **Slice 1**: Core conversions, dynamic pressure, slip ratios, speed derivatives, g-values
+- **Slice 2**: Ride-height averages, CFS aliases, risk scores, wheel mismatch, shock conversions, rear scrape, platform balance
+- **Slice 3**: Stability scores, drag/resistance indices, platform compression, shock rolling aggregates
+- **Final sweep**: Tire derived (pressure gain, temp spread, wear spread), scrub proxies, dynamic pressure lap index, dynamic grade, GPS projection
+
+**111 CORE_CHANNELS produced. 38 synthetic parity tests pass. 20 track map tests pass.**
+
+**Row path is the production default. Vector path is experimental opt-in.**
+
+### Real-Data Validation
+
+| Sample | Rows | Channels | Pass/Fail | Max Diff | Notes |
+|--------|------|----------|-----------|----------|-------|
+| Talladega (high-speed oval) | ~3,100 | ~110 | **PASS** | 7.74e-09 (GPS float) | Non-GPS channels: max diff 0.0 |
+| Road course | — | — | **PENDING** | — | No sample available |
+| Short track | — | — | **PENDING** | — | No sample available |
+
+**Road course and short-track validation with real .ibt data is required before default switch.**
+
+### Known Bug Fixes
+
+- GPS projection: `lon_rad.cos()` → `lat0.cos()` (latitude, not longitude, for Mercator projection)
+- Alias collision: pre-aliased data no longer causes `DuplicateError`
+- First-row `full_throttle_resistance_index`: now `None` (not 0.0), matching row path
+- **Tire derived channels** (May 2026): 12 channels (`lf_pressure_gain`, `lf_temp_spread`, etc.) were missing because the vector path's `_apply_aliases` didn't include tire column aliases. Fixed by adding `_TIRE_ALIAS_MAP` (24 entries).
+- **Cascading import failure** (May 2026): `analysis/__init__.py` eagerly imported `vectorized_channels` → `polars`, breaking the whole analysis package when polars wasn't installed. Fixed with lazy `try/except ImportError` wrapper.
+
+### Known Differences from Row Path
+
+1. **Shock rolling aggregates (warm-up window)**: The first 59 rows (window=60) differ between paths. The row path uses a growing Python list buffer; Polars rolling uses `min_samples=1`. After the window fills, results converge. The comparison helper exempts these rows from failure reporting.
+
+2. **`drag_scrub_suspicion` UDF**: Uses `map_elements` with the shared `compute_drag_scrub_index` function. This is the one place a Python UDF is used. Performance impact is minimal but it prevents full vectorization of this channel.
+
+3. **First-row `None` values**: Derivative-based channels are `None` on the first row in both paths.
+
+4. **`damper_work_proxy`**: Produced only by the vector path (as an alias of `damper_energy_proxy`). Not in `CORE_CHANNELS` since the row path doesn't produce it.
+
+### Benchmark Results (Slices 1–3 + final sweep)
+
+| Row count | Row path | Vector path | Speedup |
+|-----------|----------|-------------|---------|
+| 1,000 | 96 ms | 10 ms | **9.6×** |
+| 10,000 | 973 ms | 37 ms | **26×** |
+
+Vector path overhead is worthwhile above ~200 rows. Row path may be faster at tiny samples — acceptable for the targeted large-import/Compare/Notebook use case.
 
 ### Feature Flag
-
-A resolver is available in `vectorized_channels.py`:
 
 ```python
 from racelab_engine.analysis.vectorized_channels import get_analysis_engine_mode
 
-mode = get_analysis_engine_mode()                        # "row"
+mode = get_analysis_engine_mode()                        # "row" (default)
 mode = get_analysis_engine_mode(override="vectorized")   # "vectorized"
 ```
 
@@ -202,45 +241,45 @@ Resolution order:
 
 Invalid values log a warning and fall back to `"row"`.
 
-### Comparison Helper
+### Comparison Script
 
-```python
-from racelab_engine.analysis.vectorized_channels import compare_row_vs_vectorized
-
-report = compare_row_vs_vectorized(rows)
-# report["pass_fail"] -> bool
-# report["max_abs_diff_by_channel"] -> dict
-# report["mismatch_count_by_channel"] -> dict
-```
-
-Also available as a CLI script:
-```
+```bash
 python scripts/compare_analysis_engines.py path/to/sample.json
+python scripts/compare_analysis_engines.py path/to/sample.jsonl
 ```
 
-### Known Differences from Row Path
+Exit code 0 = pass, 1 = fail. Exports sample data from existing imports:
+```bash
+python scripts/export_sample_json.py <run_id> --out sample.json
+```
 
-1. **Shock rolling aggregates (warm-up window)**: The first 59 rows (window=60) differ between paths. The row path uses a growing Python list buffer; Polars rolling uses `min_samples=1`. After the window fills, results converge. The comparison helper exempts these rows from failure reporting.
+### pytest-benchmark
 
-2. **`drag_scrub_suspicion` UDF**: Uses `map_elements` with the shared `compute_drag_scrub_index` function. This is the one place a Python UDF is used. Performance impact is minimal but it prevents full vectorization of this channel.
+Benchmark tests in `tests/test_vectorized_parity.py::TestBenchmark` require `pytest-benchmark`:
+```bash
+pip install pytest-benchmark
+python -B -m pytest -m slow tests/test_vectorized_parity.py
+```
 
-3. **First-row `None` values**: Derivative-based channels (`speed_rate_*`, `platform_stability_score`, `full_throttle_resistance_index`, `drag_scrub_suspicion`, `platform_compression_index`) are `None` on the first row in both paths.
+Without `pytest-benchmark`, the entire `TestBenchmark` class is skipped via class-level `pytest.importorskip`.
 
-### Benchmark Results (Slices 1–3, 100k synthetic rows with shocks)
+### Adoption Stages
 
-| Metric | Value |
-|--------|-------|
-| Row path | ~9.6s |
-| Vector path | ~1.4s |
-| Speedup | **~7×** |
+1. **Sidecar only** — current (May 2026). Vector path exists alongside row path, not wired to runtime.
+2. **Real sample parity** — in progress. Talladega oval passed. Road course + short track pending.
+3. **Opt-in runtime flag** — `RACELAB_ANALYSIS_ENGINE=vectorized` for developer use. Available now.
+4. **User-configurable experimental** — setting in UI or session config. Not yet.
+5. **Default switch** — blocked until broad real-data validation.
 
 ### Adoption Checklist (Before Default Switch)
 
-- [ ] Real .ibt data tested end-to-end through vector path
-- [ ] `map_elements` UDF for `drag_scrub_suspicion` replaced with pure Polars expression
-- [ ] Shock rolling aggregate warm-up difference documented for users
-- [ ] Feature flag tested in CI with both modes
+- [x] Talladega real .ibt data validated (110 channels, pass)
+- [ ] Road course real .ibt data validated
+- [ ] Short-track real .ibt data validated
+- [x] `polars` dependency isolated (lazy import, doesn't break row path)
+- [x] Feature flag tested with both modes
 - [ ] `import_service` wired with `get_analysis_engine_mode()` dispatch
-- [ ] Performance regression gate: vector path must be ≥3× faster at 10k rows
+- [x] Performance regression gate: vector path ≥3× faster at 10k rows (26× actual)
+- [ ] `map_elements` UDF for `drag_scrub_suspicion` replaced with pure Polars (nice-to-have)
 
-**Do not wire runtime usage until the checklist is complete.**
+**Do not switch default until road course and short-track real .ibt samples pass.**
