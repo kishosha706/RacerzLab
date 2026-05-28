@@ -5,12 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
 import { CornerTireMap } from "../components/CornerTireMap";
-import { ProxyBadge } from "../components/ProxyBadge";
-import { RiskBar } from "../components/RiskBar";
 import { WorkbenchSubnav } from "../components/WorkbenchSubnav";
 import type { WorkbenchView } from "../components/WorkbenchSubnav";
 import { fetchPlatformEvents } from "../api/client";
-import { isProxyChannel, isEstimateChannel, getChannelDisclaimer } from "../utils/channelMeta";
+import { isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
 import { getTraceValues, formatChannelValue, formatRiskScore, formatForceProxyN, safeStringValue } from "../utils/channelFormat";
 import type {
   PlatformEventItem,
