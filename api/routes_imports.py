@@ -134,6 +134,7 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
         path_or_file = resolved
         _log.info("[%s] JSON path accepted: %s", req_id, path_or_file)
     else:
+        _log.warning("[%s] Unsupported Content-Type received: '%s'", req_id, content_type)
         raise HTTPException(400, "Unsupported Content-Type. Use multipart/form-data or application/json.")
 
     # ── Import with timing ───────────────────────────────────────

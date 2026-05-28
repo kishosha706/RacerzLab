@@ -53,12 +53,20 @@ function timeoutErrorMessage(ms: number, label: string): string {
 async function requestJson<T>(path: string, init?: RequestInit, timeoutMs: number = REQUEST_TIMEOUT_MS, timeoutLabel: string = "Request"): Promise<T> {
   let response: Response;
   try {
+    // Spread init FIRST so its headers don't overwrite our Content-Type default.
+    // Then explicitly set Content-Type and merge any user headers on top.
+    const mergedHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (init?.headers) {
+      const userHeaders = init.headers as Record<string, string>;
+      for (const key of Object.keys(userHeaders)) {
+        mergedHeaders[key] = userHeaders[key];
+      }
+    }
     response = await fetchWithTimeout(`${API_BASE}${path}`, {
-      headers: {
-        "Content-Type": "application/json",
-        ...(init?.headers ?? {}),
-      },
       ...init,
+      headers: mergedHeaders,
     }, timeoutMs);
   } catch (err: unknown) {
     if (err instanceof DOMException && err.name === "AbortError") {
@@ -123,9 +131,21 @@ function importRequestId(): string {
 /** Import an .ibt file from a local filesystem path (Tauri native picker). */
 export function importIbtFileFromPath(filePath: string): Promise<ImportIbtResponse> {
   const reqId = importRequestId();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-RacerZLab-Request-Id": reqId,
+  };
+  // Debug log safe header info
+  if (typeof localStorage !== "undefined") {
+    try {
+      if (localStorage.getItem("DEBUG_IMPORT") === "1") {
+        console.debug("[ImportDebug] Request headers:", JSON.stringify(headers));
+      }
+    } catch { /* ignore */ }
+  }
   return importJson<ImportIbtResponse>("/api/imports/ibt", {
     method: "POST",
-    headers: { "X-RacerZLab-Request-Id": reqId },
+    headers,
     body: JSON.stringify({ path: filePath }),
   });
 }
