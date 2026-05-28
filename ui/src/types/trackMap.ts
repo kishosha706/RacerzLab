@@ -146,6 +146,8 @@ export interface TrackMapOverlayMarker {
   source_type?: string;
   related_channels?: string[];
   confidence?: string;
+  event_type?: string;
+  category?: string;
   start_pct?: number;
   end_pct?: number;
   points?: Array<{ x: number; y: number; pct: number }>;

@@ -977,24 +977,31 @@ class TestParity:
 
 
 class TestBenchmark:
-    """Lightweight benchmarks (not real perf tests, just smoke checks)."""
+    """Lightweight benchmarks (not real perf tests, just smoke checks).
+
+    Requires ``pytest-benchmark``.  Skipped gracefully if not installed.
+    """
 
     @pytest.mark.slow
     def test_bench_1k(self, benchmark) -> None:
+        pytest.importorskip("pytest_benchmark")
         rows = _synthetic_rows(1000)
         benchmark(normalize_telemetry_rows, rows)
 
     @pytest.mark.slow
     def test_bench_1k_vector(self, benchmark) -> None:
+        pytest.importorskip("pytest_benchmark")
         rows = _synthetic_rows(1000)
         benchmark(normalize_telemetry_frame, rows)
 
     @pytest.mark.slow
     def test_bench_10k(self, benchmark) -> None:
+        pytest.importorskip("pytest_benchmark")
         rows = _synthetic_rows(10_000)
         benchmark(normalize_telemetry_rows, rows)
 
     @pytest.mark.slow
     def test_bench_10k_vector(self, benchmark) -> None:
+        pytest.importorskip("pytest_benchmark")
         rows = _synthetic_rows(10_000)
         benchmark(normalize_telemetry_frame, rows)

@@ -1335,6 +1335,7 @@ td {
   margin-bottom: 12px;
 }
 .track-map-svg-container {
+  position: relative;
   background: #0a0d14;
   border: 1px solid #1f2937;
   border-radius: 8px;

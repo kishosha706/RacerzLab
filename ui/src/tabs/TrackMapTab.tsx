@@ -1,4 +1,4 @@
-import { ChevronDown, Info, Layers, Map as MapIcon } from "lucide-react";
+import { Info, Layers, Map as MapIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { TrackMapIndexEntry, TrackMapOverlayMarker, TrackMapPackage, TrackMapSection } from "../types/trackMap";
 import { fetchRunTrackMapPackage, fetchTrackMaps } from "../api/client";
@@ -190,9 +190,9 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
     return overlays.filter((o) => {
       const cat = classifyOverlayLayer(o);
       if (cat === "all_events" && !activeLayers.has("all_events")) {
-        // check if any specific event layer covers it
-        const covered = ["front_scrape", "rear_scrape", "whole_car_bottoming", "drag_scrub", "speed_loss", "aero", "shocks"];
-        if (!covered.some((c) => activeLayers.has(c as LayerId))) return false;
+        // covered by any active specific event layer?
+        const eventLayers = LAYER_DEFS.filter((d) => d.group === "events" && d.id !== "all_events").map((d) => d.id);
+        if (!eventLayers.some((id) => activeLayers.has(id))) return false;
       } else if (!activeLayers.has(cat) && cat !== "all_events") {
         return false;
       }

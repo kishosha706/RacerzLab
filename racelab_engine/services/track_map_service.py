@@ -285,6 +285,8 @@ def build_track_map_overlays(
                 "source_type": "platform_event",
                 "related_channels": event.get("related_channels", []),
                 "confidence": event.get("confidence"),
+                "event_type": event.get("event_type"),
+                "category": _event_category(event.get("event_type", "")),
             })
 
     # Target zone
@@ -365,6 +367,32 @@ def _event_symbol(event_type: str) -> str:
         "WHOLE_CAR_BOTTOMING_RISK": "⇣",
     }
     return mapping.get(event_type, "◆")
+
+
+def _event_category(event_type: str) -> str:
+    """Map event type to a stable category for frontend layer filtering."""
+    mapping: dict[str, str] = {
+        "MIN_SPLITTER": "front_platform",
+        "FRONT_PLATFORM_LOW": "front_platform",
+        "FRONT_PLATFORM_SCRAPE": "front_platform",
+        "FRONT_SCRAPE": "front_platform",
+        "REAR_PLATFORM_LOW": "rear_platform",
+        "REAR_PLATFORM_SCRAPE": "rear_platform",
+        "REAR_SCRAPE": "rear_platform",
+        "REAR_CONTACT_RISK": "rear_platform",
+        "MIN_REAR_RIDE_HEIGHT": "rear_platform",
+        "WHOLE_CAR_BOTTOMING_RISK": "whole_car_bottoming",
+        "WORST_DRAG_SCRUB": "drag_scrub",
+        "FULL_THROTTLE_SPEED_LOSS": "drag_scrub",
+        "STEERING_SCRUB": "drag_scrub",
+        "WORST_SPEED_LOSS": "speed_loss",
+        "MAX_DYNAMIC_PRESSURE": "aero_dynamic_pressure",
+        "DYNAMIC_PRESSURE_PEAK": "aero_dynamic_pressure",
+        "HIGHEST_SHOCK_ACTIVITY": "shocks",
+        "HIGHEST_RAKE": "aero_dynamic_pressure",
+        "HIGHEST_PLATFORM_COMPRESSION": "front_platform",
+    }
+    return mapping.get(event_type, "other")
 
 
 def _severity_color(severity: str) -> str:
