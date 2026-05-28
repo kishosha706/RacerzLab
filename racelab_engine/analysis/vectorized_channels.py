@@ -43,6 +43,7 @@ from racelab_engine.analysis.constants import (
     SLIP_RATIO_SPEED_FLOOR_MPS,
 )
 from racelab_engine.analysis.units import (
+    EARTH_RADIUS_M,
     M_TO_FT,
     M_TO_IN,
     MPS_TO_MPH,
@@ -376,6 +377,33 @@ CORE_CHANNELS: set[str] = {
     "whole_car_bottoming_risk",
     "platform_balance_label",
     "platform_balance_explanation",
+    # tire derived (final sweep)
+    "lf_pressure_gain",
+    "rf_pressure_gain",
+    "lr_pressure_gain",
+    "rr_pressure_gain",
+    "lf_temp_spread",
+    "rf_temp_spread",
+    "lr_temp_spread",
+    "rr_temp_spread",
+    "lf_wear_spread",
+    "rf_wear_spread",
+    "lr_wear_spread",
+    "rr_wear_spread",
+    # scrub proxies (final sweep)
+    "front_scrub_proxy",
+    "rear_scrub_proxy",
+    "yaw_error_proxy",
+    # dynamic pressure lap index (final sweep)
+    "dynamic_pressure_lap_index",
+    "dynamic_pressure_index",
+    # dynamic grade (final sweep)
+    "dynamic_grade_deg",
+    # GPS projection (final sweep)
+    "track_x_m",
+    "track_y_m",
+    "track_x_ft",
+    "track_y_ft",
 }
 
 
@@ -445,6 +473,11 @@ def calculate_core_channels_frame(df: pl.DataFrame) -> pl.DataFrame:
     df = _compute_resistance_indices(df)
     df = _compute_compression_index(df)
     df = _compute_shock_rolling_aggregates(df)
+    df = _compute_tire_derived(df)
+    df = _compute_scrub_proxies(df)
+    df = _compute_dynamic_pressure_lap_index(df)
+    df = _compute_dynamic_grade(df)
+    df = _apply_gps_projection(df)
     return df
 
 
@@ -1137,4 +1170,168 @@ def _compute_shock_rolling_aggregates(df: pl.DataFrame) -> pl.DataFrame:
     if "damper_energy_proxy" in df.columns and "damper_work_proxy" not in df.columns:
         df = df.with_columns(pl.col("damper_energy_proxy").alias("damper_work_proxy"))
 
+    return df
+
+
+# ── Final sweep: tire derived ────────────────────────────────────
+
+_TIRE_CORNERS: tuple[str, ...] = ("lf", "rf", "lr", "rr")
+
+
+def _compute_tire_derived(df: pl.DataFrame) -> pl.DataFrame:
+    """Compute pressure gain, temp spread, and wear spread per corner.
+
+    Matches _compute_tire_derived in calculated_channels.py.
+    """
+    for c in _TIRE_CORNERS:
+        p_col = f"{c}_pressure"
+        cp_col = f"{c}_cold_pressure"
+        if p_col in df.columns and cp_col in df.columns:
+            df = df.with_columns(
+                (pl.col(p_col) - pl.col(cp_col)).alias(f"{c}_pressure_gain"),
+            )
+
+        ti = f"{c}_temp_inner"
+        tm = f"{c}_temp_middle"
+        to = f"{c}_temp_outer"
+        temps = [col for col in (ti, tm, to) if col in df.columns]
+        if len(temps) >= 2:
+            max_expr = pl.max_horizontal(*[pl.col(col) for col in temps])
+            min_expr = pl.min_horizontal(*[pl.col(col) for col in temps])
+            df = df.with_columns(
+                (max_expr - min_expr).alias(f"{c}_temp_spread"),
+            )
+
+        wi = f"{c}_wear_inner"
+        wm = f"{c}_wear_middle"
+        wo = f"{c}_wear_outer"
+        wears = [col for col in (wi, wm, wo) if col in df.columns]
+        if len(wears) >= 2:
+            max_expr = pl.max_horizontal(*[pl.col(col) for col in wears])
+            min_expr = pl.min_horizontal(*[pl.col(col) for col in wears])
+            df = df.with_columns(
+                (max_expr - min_expr).alias(f"{c}_wear_spread"),
+            )
+
+    return df
+
+
+# ── Final sweep: scrub proxies ───────────────────────────────────
+
+def _compute_scrub_proxies(df: pl.DataFrame) -> pl.DataFrame:
+    """Compute front_scrub_proxy, rear_scrub_proxy, and yaw_error_proxy.
+
+    Matches _compute_scrub_proxies in calculated_channels.py.
+    Uses map_elements for yaw_error logic (complex curvature math).
+    """
+    # yaw_error_proxy
+    if df.height == 0:
+        return df
+    has_yaw = {"yaw_rate", "radius_m", "speed_mps"}.issubset(df.columns)
+    if has_yaw:
+        yaw_rate = pl.col("yaw_rate").abs()
+        speed = pl.col("speed_mps")
+        radius = pl.col("radius_m")
+        yaw_theoretical = speed / radius
+        yaw_error = (yaw_theoretical - yaw_rate).clip(lower_bound=0.0)
+        yaw_error = pl.when((radius > 0) & (speed > 1.0)).then(yaw_error).otherwise(0.0)
+        df = df.with_columns(yaw_error.alias("yaw_error_proxy"))
+    else:
+        df = df.with_columns(pl.lit(0.0, dtype=pl.Float64).alias("yaw_error_proxy"))
+
+    # front_scrub_proxy
+    has_front_scrub = {"lf_slip_ratio", "rf_slip_ratio",
+                       "abs_steering_deg", "abs_lat_accel",
+                       "yaw_rate", "radius_m", "speed_mps"}.issubset(df.columns)
+    if has_front_scrub:
+        lf_slip = pl.col("lf_slip_ratio")
+        rf_slip = pl.col("rf_slip_ratio")
+        slip_delta = (rf_slip - lf_slip).abs()
+        steering = pl.col("abs_steering_deg").fill_null(0.0)
+        lat_accel = pl.col("abs_lat_accel").fill_null(0.0)
+        steering_lat = (steering / 90.0) * lat_accel
+        yaw_error = pl.col("yaw_error_proxy").fill_null(0.0)
+        yaw_component = (yaw_error / 0.15).clip(0.0, 1.0)
+        scrub = slip_delta * 0.30 + steering_lat * 0.25 + yaw_component * 0.45
+        scrub = pl.when(lf_slip.is_not_null() & rf_slip.is_not_null()).then(scrub).otherwise(None)
+        df = df.with_columns(scrub.alias("front_scrub_proxy"))
+
+    # rear_scrub_proxy
+    if {"lr_slip_ratio", "rr_slip_ratio"}.issubset(df.columns):
+        rear_scrub = (pl.col("rr_slip_ratio") - pl.col("lr_slip_ratio")).abs()
+        rear_scrub = pl.when(
+            pl.col("lr_slip_ratio").is_not_null() & pl.col("rr_slip_ratio").is_not_null()
+        ).then(rear_scrub).otherwise(None)
+        df = df.with_columns(rear_scrub.alias("rear_scrub_proxy"))
+
+    return df
+
+
+# ── Final sweep: dynamic pressure lap index ─────────────────────
+
+def _compute_dynamic_pressure_lap_index(df: pl.DataFrame) -> pl.DataFrame:
+    """Compute dynamic_pressure_lap_index and dynamic_pressure_index.
+
+    Matches the lap-relative normalization in _apply_derivatives.
+    """
+    if "dynamic_pressure_psf" not in df.columns:
+        return df
+    max_dp = pl.col("dynamic_pressure_psf").max()
+    # Use max of max_dp and 1.0 to avoid division by zero
+    denom = pl.max_horizontal(max_dp, pl.lit(1.0))
+    idx = pl.col("dynamic_pressure_psf") / denom
+    df = df.with_columns(
+        idx.alias("dynamic_pressure_lap_index"),
+        idx.alias("dynamic_pressure_index"),
+    )
+    return df
+
+
+# ── Final sweep: dynamic grade ───────────────────────────────────
+
+def _compute_dynamic_grade(df: pl.DataFrame) -> pl.DataFrame:
+    """Compute dynamic_grade_deg from long_accel and speed_rate_mps2.
+
+    Matches _compute_dynamic_grade in calculated_channels.py.
+    """
+    if "long_accel" not in df.columns or "speed_rate_mps2" not in df.columns:
+        return df
+    ax = pl.col("long_accel")
+    dvdt = pl.col("speed_rate_mps2")
+    sin_theta = ((ax - dvdt) / 9.81).clip(-1.0, 1.0)
+    # Polars doesn't have asin, use when/then with math.asin via map_elements
+    grade = pl.struct(sin_theta.alias("sin_theta")).map_elements(
+        lambda s: math.degrees(math.asin(s["sin_theta"])) if s["sin_theta"] is not None else None,
+        return_dtype=pl.Float64,
+    )
+    grade = pl.when(ax.is_not_null() & dvdt.is_not_null()).then(grade).otherwise(None)
+    df = df.with_columns(grade.alias("dynamic_grade_deg"))
+    return df
+
+
+# ── Final sweep: GPS projection ──────────────────────────────────
+
+def _apply_gps_projection(df: pl.DataFrame) -> pl.DataFrame:
+    """Project lat/lon to local Cartesian coordinates.
+
+    Matches _apply_gps_projection in calculated_channels.py.
+    """
+    if "lat" not in df.columns or "lon" not in df.columns:
+        return df
+    lat = pl.col("lat")
+    lon = pl.col("lon")
+    # Convert degrees to radians if needed (values > pi are degrees)
+    lat_rad = pl.when(lat.abs() > math.pi).then(lat * math.pi / 180.0).otherwise(lat)
+    lon_rad = pl.when(lon.abs() > math.pi).then(lon * math.pi / 180.0).otherwise(lon)
+    # Use first row as origin
+    lat0 = lat_rad.first()
+    lon0 = lon_rad.first()
+    x_m = EARTH_RADIUS_M * lon_rad.cos() * (lon_rad - lon0)
+    y_m = EARTH_RADIUS_M * (lat_rad - lat0)
+    df = df.with_columns(
+        x_m.alias("track_x_m"),
+        y_m.alias("track_y_m"),
+        (x_m * M_TO_FT).alias("track_x_ft"),
+        (y_m * M_TO_FT).alias("track_y_ft"),
+    )
     return df

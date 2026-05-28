@@ -1408,3 +1408,211 @@ td {
   color: #7f1d1d;
   background: #f87171;
 }
+
+/* ── Track Map Cockpit ─────────────────────────────────────── */
+.trackmap-cockpit {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 16px;
+  height: 100%;
+  overflow: hidden;
+}
+.trackmap-left {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.trackmap-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.trackmap-header h2 {
+  font-size: 15px;
+  margin: 0;
+}
+.trackmap-header-stats {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: #8d9aaa;
+  align-items: center;
+}
+.trackmap-header-match {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+.map-confidence-badge[data-confidence="manual"] {
+  color: #14532d;
+  background: #4ade80;
+}
+
+/* Layer toggles */
+.trackmap-toggles {
+  background: #0f1320;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+.trackmap-toggles h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: #8d9aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.trackmap-toggle-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+}
+.toggle-label.toggle-disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Legend */
+.trackmap-legend {
+  background: #0f1320;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+.trackmap-legend h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: #8d9aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.trackmap-legend-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 10px;
+  font-size: 11px;
+  color: #b0bec5;
+}
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-sym { display: inline-block; width: 18px; text-align: center; font-weight: 600; color: #f59e0b; }
+
+/* Inspector (right panel) */
+.trackmap-inspector {
+  background: #0f1320;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+  overflow-y: auto;
+  padding: 14px;
+  min-height: 0;
+}
+.inspector-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  color: #8d9aaa;
+  text-align: center;
+  font-size: 13px;
+  padding: 40px 20px;
+}
+.inspector-body h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.inspector-badges {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.inspector-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #1e293b;
+  color: #8d9aaa;
+}
+.inspector-badge[data-severity="critical"] { background: #7f1d1d; color: #fca5a5; }
+.inspector-badge[data-severity="high"] { background: #78350f; color: #fcd34d; }
+.inspector-badge[data-severity="watch"] { background: #422006; color: #fbbf24; }
+.inspector-badge[data-severity="info"] { background: #0c4a6e; color: #7dd3fc; }
+.inspector-badge[data-type="straight"] { background: #14532d; color: #86efac; }
+.inspector-badge[data-type="corner"] { background: #422006; color: #fbbf24; }
+.inspector-badge[data-type="unknown"] { background: #1e293b; color: #8d9aaa; }
+
+.inspector-fields { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.inspector-fields div { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.inspector-fields label { color: #8d9aaa; min-width: 70px; flex-shrink: 0; }
+.inspector-fields span { color: #e2e8f0; text-align: right; word-break: break-all; }
+.inspector-fields .mono { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 11px; }
+
+.inspector-events { margin-top: 12px; }
+.inspector-events h4 { margin: 0 0 6px; font-size: 12px; color: #b0bec5; }
+.inspector-event-row {
+  display: flex;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+  cursor: pointer;
+  align-items: center;
+}
+.inspector-event-row:hover { color: #e2e8f0; }
+
+/* Platform balance */
+.inspector-platform {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #1f2937;
+}
+.inspector-platform h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: #8d9aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.platform-rows { display: flex; flex-direction: column; gap: 6px; }
+.platform-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.platform-row label { color: #8d9aaa; }
+.platform-row span { color: #e2e8f0; }
+.platform-row-emphasis {
+  padding: 6px 8px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 4px;
+}
+.platform-row-emphasis span { color: #fca5a5; font-weight: 600; }
+.platform-explanation {
+  font-size: 11px;
+  color: #8d9aaa;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.platform-label {
+  font-weight: 600;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 4px;
+}
+.platform-label.balanced-safe { background: #14532d; color: #86efac; }
+.platform-label.front-platform-risk { background: #78350f; color: #fcd34d; }
+.platform-label.rear-platform-risk { background: #78350f; color: #fcd34d; }
+.platform-label.whole-car-bottoming { background: #7f1d1d; color: #fca5a5; }
+.platform-label.unavailable { background: #1e293b; color: #8d9aaa; }
+
+@media (max-width: 900px) {
+  .trackmap-cockpit { grid-template-columns: 1fr; }
+  .trackmap-inspector { max-height: 40vh; }
+}

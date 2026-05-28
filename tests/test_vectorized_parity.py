@@ -166,13 +166,20 @@ class TestParity:
 
     def test_core_channels_exist_in_vector_output(self, small_rows: list[dict]) -> None:
         vec = normalize_telemetry_frame(small_rows)
-        # Shock channels require raw shock columns not in synthetic rows
+        # Channels that require columns not in synthetic rows
         skip = {"lf_shock_defl_in", "rf_shock_defl_in", "lr_shock_defl_in", "rr_shock_defl_in",
                 "lf_shock_vel_in_s", "rf_shock_vel_in_s", "lr_shock_vel_in_s", "rr_shock_vel_in_s",
                 "lf_shock_velocity_rms", "rf_shock_velocity_rms", "lr_shock_velocity_rms", "rr_shock_velocity_rms",
                 "lf_shock_activity_index", "rf_shock_activity_index", "lr_shock_activity_index", "rr_shock_activity_index",
                 "lf_damper_energy_proxy", "rf_damper_energy_proxy", "lr_damper_energy_proxy", "rr_damper_energy_proxy",
-                "shock_velocity_rms", "shock_activity_index", "damper_energy_proxy"}
+                "shock_velocity_rms", "shock_activity_index", "damper_energy_proxy",
+                "lf_pressure_gain", "rf_pressure_gain", "lr_pressure_gain", "rr_pressure_gain",
+                "lf_temp_spread", "rf_temp_spread", "lr_temp_spread", "rr_temp_spread",
+                "lf_wear_spread", "rf_wear_spread", "lr_wear_spread", "rr_wear_spread",
+                "front_scrub_proxy", "rear_scrub_proxy",
+                "dynamic_pressure_lap_index", "dynamic_pressure_index",
+                "dynamic_grade_deg",
+                "track_x_m", "track_y_m", "track_x_ft", "track_y_ft"}
         for ch in CORE_CHANNELS - skip:
             assert ch in vec.columns, f"Missing core channel: {ch}"
 
@@ -184,7 +191,14 @@ class TestParity:
                 "lf_shock_velocity_rms", "rf_shock_velocity_rms", "lr_shock_velocity_rms", "rr_shock_velocity_rms",
                 "lf_shock_activity_index", "rf_shock_activity_index", "lr_shock_activity_index", "rr_shock_activity_index",
                 "lf_damper_energy_proxy", "rf_damper_energy_proxy", "lr_damper_energy_proxy", "rr_damper_energy_proxy",
-                "shock_velocity_rms", "shock_activity_index", "damper_energy_proxy"}
+                "shock_velocity_rms", "shock_activity_index", "damper_energy_proxy",
+                "lf_pressure_gain", "rf_pressure_gain", "lr_pressure_gain", "rr_pressure_gain",
+                "lf_temp_spread", "rf_temp_spread", "lr_temp_spread", "rr_temp_spread",
+                "lf_wear_spread", "rf_wear_spread", "lr_wear_spread", "rr_wear_spread",
+                "front_scrub_proxy", "rear_scrub_proxy",
+                "dynamic_pressure_lap_index", "dynamic_pressure_index",
+                "dynamic_grade_deg",
+                "track_x_m", "track_y_m", "track_x_ft", "track_y_ft"}
         for ch in CORE_CHANNELS - skip:
             assert any(ch in r for r in ref), f"Missing core channel in ref: {ch}"
 
