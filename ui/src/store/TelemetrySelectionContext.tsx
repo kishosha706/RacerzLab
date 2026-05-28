@@ -49,7 +49,7 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
     case "SET_WORKSPACE":
       return { ...state, selectedWorkspace: action.workspace, selectionSource: action.source };
     case "SELECT_ZONE":
-      return { ...state, selectedZoneId: action.zoneId };
+      return { ...state, selectedZoneId: action.zoneId, selectionSource: "track_map" };
     case "RESET_SELECTION":
       return { ...DEFAULT_SELECTION, selectedRunId: state.selectedRunId, selectedMode: state.selectedMode };
     case "LOAD_RUN":

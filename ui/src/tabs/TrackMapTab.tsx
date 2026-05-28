@@ -1,4 +1,4 @@
-import { AlertTriangle, Info, Layers, Map as MapIcon } from "lucide-react";
+import { Info, Layers, Map as MapIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { TrackMapOverlayMarker, TrackMapPackage, TrackMapSection } from "../types/trackMap";
 import { fetchRunTrackMapPackage } from "../api/client";
@@ -183,6 +183,11 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
             {metadata && <span>{metadata.distance_miles.toFixed(2)} mi · {metadata.distance_ft.toFixed(0)} ft</span>}
             <span>{points.length.toLocaleString()} pts</span>
             <span>{markers.length} mk · {sections.length} sec</span>
+          </div>
+          <div className="trackmap-header-run">
+            {trackName && <span className="muted">{trackName}</span>}
+            {carName && <span className="muted">— {carName}</span>}
+            {setupName && <span className="muted">· {setupName}</span>}
           </div>
           {match && (
             <div className="trackmap-header-match">

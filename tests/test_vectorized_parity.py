@@ -810,7 +810,7 @@ class TestParity:
         ref = normalize_telemetry_rows(rows)
         events = detect_platform_events(ref)
         rear_events = [e for e in events if "REAR" in e.event_type]
-        assert len(rear_events) >= 1
+        assert rear_events
         assert any(e.event_type == "REAR_PLATFORM_LOW" for e in rear_events)
 
     def test_rear_scrape_event_scrape(self) -> None:
@@ -821,7 +821,7 @@ class TestParity:
         ref = normalize_telemetry_rows(rows)
         events = detect_platform_events(ref)
         scrape_events = [e for e in events if e.event_type == "REAR_PLATFORM_SCRAPE"]
-        assert len(scrape_events) >= 1
+        assert scrape_events
 
     def test_front_events_still_emitted(self) -> None:
         """Front CFS events are still emitted alongside rear events."""
@@ -832,8 +832,8 @@ class TestParity:
         events = detect_platform_events(ref)
         front_events = [e for e in events if e.event_type == "MIN_SPLITTER"]
         rear_events = [e for e in events if "REAR" in e.event_type]
-        assert len(front_events) >= 1, "Front events should still be emitted"
-        assert len(rear_events) >= 1, "Rear events should also be emitted"
+        assert front_events, "Front events should still be emitted"
+        assert rear_events, "Rear events should also be emitted"
 
     def test_track_map_symbol_mapping(self) -> None:
         """TrackMap symbol mapping includes rear event types."""
@@ -955,9 +955,9 @@ class TestParity:
         front_events = [e for e in events if e.event_type == "MIN_SPLITTER"]
         rear_events = [e for e in events if "REAR" in e.event_type]
         whole_car = [e for e in events if e.event_type == "WHOLE_CAR_BOTTOMING_RISK"]
-        assert len(front_events) >= 1
-        assert len(rear_events) >= 1
-        assert len(whole_car) >= 1
+        assert front_events
+        assert rear_events
+        assert whole_car
 
     def test_whole_car_event_emitted(self) -> None:
         """WHOLE_CAR_BOTTOMING_RISK event emitted when both risks elevated."""
@@ -967,7 +967,7 @@ class TestParity:
         ref = normalize_telemetry_rows(rows)
         events = detect_platform_events(ref)
         whole_car = [e for e in events if e.event_type == "WHOLE_CAR_BOTTOMING_RISK"]
-        assert len(whole_car) >= 1
+        assert whole_car
         assert whole_car[0].primary_value is not None
 
     def test_track_map_symbol_whole_car(self) -> None:

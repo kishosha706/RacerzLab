@@ -1441,6 +1441,12 @@ td {
   color: #8d9aaa;
   align-items: center;
 }
+.trackmap-header-run {
+  display: flex;
+  gap: 4px;
+  font-size: 11px;
+  flex-wrap: wrap;
+}
 .trackmap-header-match {
   display: flex;
   gap: 8px;
