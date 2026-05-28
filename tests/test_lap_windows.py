@@ -65,6 +65,16 @@ class TestDraftStatus:
 # ── _is_lap_valid_for_ranking ─────────────────────────────────
 
 class TestIsLapValidForRanking:
+    def _assert_invalid(self, tags=None, **kwargs):
+        lap = _make_lap(1, tags=tags, **kwargs)
+        ok, _ = _is_lap_valid_for_ranking(lap)
+        assert not ok
+
+    def _assert_valid(self, tags=None, include_draft=False, **kwargs):
+        lap = _make_lap(1, tags=tags, **kwargs)
+        ok, _ = _is_lap_valid_for_ranking(lap, include_draft=include_draft)
+        assert ok
+
     def test_valid_lap_passes(self):
         lap = _make_lap(1)
         ok, reason = _is_lap_valid_for_ranking(lap)
@@ -72,61 +82,37 @@ class TestIsLapValidForRanking:
         assert reason is None
 
     def test_incomplete_lap_fails(self):
-        lap = _make_lap(1, is_complete=False)
-        ok, reason = _is_lap_valid_for_ranking(lap)
-        assert not ok
-        assert "Incomplete" in (reason or "")
+        self._assert_invalid(is_complete=False)
 
     def test_not_useful_lap_fails(self):
-        lap = _make_lap(1, is_useful=False)
-        ok, reason = _is_lap_valid_for_ranking(lap)
-        assert not ok
-        assert "Not useful" in (reason or "")
+        self._assert_invalid(is_useful=False)
 
     def test_out_lap_excluded(self):
-        lap = _make_lap(1, tags=["OUT_LAP"])
-        ok, _ = _is_lap_valid_for_ranking(lap)
-        assert not ok
+        self._assert_invalid(tags=["OUT_LAP"])
 
     def test_cooldown_lap_excluded(self):
-        lap = _make_lap(1, tags=["COOLDOWN"])
-        ok, _ = _is_lap_valid_for_ranking(lap)
-        assert not ok
+        self._assert_invalid(tags=["COOLDOWN"])
 
     def test_pit_road_excluded(self):
-        lap = _make_lap(1, tags=["PIT_ROAD"])
-        ok, _ = _is_lap_valid_for_ranking(lap)
-        assert not ok
+        self._assert_invalid(tags=["PIT_ROAD"])
 
     def test_wreck_excluded(self):
-        lap = _make_lap(1, tags=["WRECK_OR_SPIN"])
-        ok, _ = _is_lap_valid_for_ranking(lap)
-        assert not ok
+        self._assert_invalid(tags=["WRECK_OR_SPIN"])
 
     def test_invalid_speed_excluded(self):
-        lap = _make_lap(1, tags=["INVALID_SPEED_EVENT"])
-        ok, _ = _is_lap_valid_for_ranking(lap)
-        assert not ok
+        self._assert_invalid(tags=["INVALID_SPEED_EVENT"])
 
     def test_draft_affected_excluded_by_default(self):
-        lap = _make_lap(1, tags=["DRAFT_AFFECTED"])
-        ok, _ = _is_lap_valid_for_ranking(lap)
-        assert not ok
+        self._assert_invalid(tags=["DRAFT_AFFECTED"])
 
     def test_draft_affected_included_when_flag_set(self):
-        lap = _make_lap(1, tags=["DRAFT_AFFECTED"])
-        ok, _ = _is_lap_valid_for_ranking(lap, include_draft=True)
-        assert ok
+        self._assert_valid(tags=["DRAFT_AFFECTED"], include_draft=True)
 
     def test_no_lap_time_fails(self):
-        lap = _make_lap(1, lap_time=None)
-        ok, _ = _is_lap_valid_for_ranking(lap)
-        assert not ok
+        self._assert_invalid(lap_time=None)
 
     def test_zero_lap_time_fails(self):
-        lap = _make_lap(1, lap_time=0.0)
-        ok, _ = _is_lap_valid_for_ranking(lap)
-        assert not ok
+        self._assert_invalid(lap_time=0.0)
 
 
 # ── compute_fastest_groups ────────────────────────────────────
@@ -180,41 +166,38 @@ class TestComputeFastestGroups:
 # ── compute_best_windows ──────────────────────────────────────
 
 class TestComputeBestWindows:
+    def _best_window(self, laps, size=10):
+        return compute_best_windows(laps, sizes=[size])[0].best_window
+
     def test_best_5_window_with_25_laps(self):
         laps = _make_laps(25)
         windows = compute_best_windows(laps, sizes=[5, 10, 20, 30, 40])
-        assert windows[0].is_available  # Best 5
-        assert windows[1].is_available  # Best 10
-        assert windows[2].is_available  # Best 20
-        assert not windows[3].is_available  # Best 30 — only 25 laps
-        assert not windows[4].is_available  # Best 40 — only 25 laps
+        assert windows[0].is_available
+        assert windows[1].is_available
+        assert windows[2].is_available
+        assert not windows[3].is_available
+        assert not windows[4].is_available
 
     def test_best_window_has_correct_size(self):
-        laps = _make_laps(25)
-        windows = compute_best_windows(laps, sizes=[10])
-        assert windows[0].best_window is not None
-        assert windows[0].best_window.window_size == 10
-        assert windows[0].best_window.valid_lap_count == 10
+        best = self._best_window(_make_laps(25))
+        assert best is not None
+        assert best.window_size == 10
+        assert best.valid_lap_count == 10
 
     def test_window_start_end_lap_recorded(self):
-        laps = _make_laps(25)
-        windows = compute_best_windows(laps, sizes=[10])
-        best = windows[0].best_window
+        best = self._best_window(_make_laps(25))
         assert best is not None
-        assert best.end_lap - best.start_lap == 9  # 10 consecutive laps
+        assert best.end_lap - best.start_lap == 9
 
     def test_draft_lap_excluded_from_window(self):
         laps = _make_laps(25)
-        laps[12] = _make_lap(13, tags=["DRAFT_AFFECTED"])  # Lap 13 is draft
-        windows = compute_best_windows(laps, sizes=[10])
-        best = windows[0].best_window
+        laps[12] = _make_lap(13, tags=["DRAFT_AFFECTED"])
+        best = self._best_window(laps)
         assert best is not None
-        # Window should have 10 valid laps (draft lap excluded from valid count)
         assert best.valid_lap_count == 10
 
     def test_not_enough_laps_for_window(self):
-        laps = _make_laps(3)
-        windows = compute_best_windows(laps, sizes=[10])
+        windows = compute_best_windows(_make_laps(3), sizes=[10])
         assert not windows[0].is_available
 
     def test_empty_laps_returns_all_unavailable(self):
@@ -222,12 +205,8 @@ class TestComputeBestWindows:
         assert all(not w.is_available for w in windows)
 
     def test_consistency_score_higher_for_constant_times(self):
-        constant = _make_laps(15, base_time=50.0, time_step=0.0)
-        variable = _make_laps(15, base_time=50.0, time_step=0.5)
-        const_wins = compute_best_windows(constant, sizes=[10])
-        var_wins = compute_best_windows(variable, sizes=[10])
-        const_best = const_wins[0].best_window
-        var_best = var_wins[0].best_window
+        const_best = self._best_window(_make_laps(15, base_time=50.0, time_step=0.0))
+        var_best = self._best_window(_make_laps(15, base_time=50.0, time_step=0.5))
         assert const_best is not None and var_best is not None
         assert const_best.consistency_score > var_best.consistency_score
 

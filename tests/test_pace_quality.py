@@ -151,30 +151,27 @@ class TestScoreShockSafety:
 
 
 class TestComputeDeductions:
-    def test_draft_affected_deducts_20(self):
-        ded, _ = compute_deductions(["DRAFT_AFFECTED"], 10, 10, ["DRAFT_AFFECTED"])
+    def _assert_deduction(self, expected_amount: int, **kwargs):
+        ded, _ = compute_deductions(**kwargs)
         amounts = [d["amount"] for d in ded]
-        assert 20 in amounts
+        assert expected_amount in amounts
+
+    def test_draft_affected_deducts_20(self):
+        self._assert_deduction(20, classification_tags=["DRAFT_AFFECTED"], valid_lap_count=10, window_size=10, draft_statuses=["DRAFT_AFFECTED"])
 
     def test_possible_draft_deducts_10(self):
-        ded, _ = compute_deductions(["POSSIBLE_DRAFT_ASSIST"], 10, 10, ["POSSIBLE_DRAFT_ASSIST"])
-        amounts = [d["amount"] for d in ded]
-        assert 10 in amounts
+        self._assert_deduction(10, classification_tags=["POSSIBLE_DRAFT_ASSIST"], valid_lap_count=10, window_size=10, draft_statuses=["POSSIBLE_DRAFT_ASSIST"])
 
     def test_invalid_lap_deducts(self):
         ded, _ = compute_deductions(["INVALID_SPEED_EVENT"], 9, 10, ["LIKELY_SOLO"])
-        amounts = [d["amount"] for d in ded]
-        assert any(a > 0 for a in amounts)
+        assert any(d["amount"] > 0 for d in ded)
 
     def test_missing_lap_deducts(self):
         ded, _ = compute_deductions([], 8, 10, ["LIKELY_SOLO"])
-        amounts = [d["amount"] for d in ded]
-        assert any(a > 0 for a in amounts)
+        assert any(d["amount"] > 0 for d in ded)
 
     def test_short_window_deducts(self):
-        ded, _ = compute_deductions([], 5, 5, ["LIKELY_SOLO"])
-        amounts = [d["amount"] for d in ded]
-        assert 10 in amounts
+        self._assert_deduction(10, classification_tags=[], valid_lap_count=5, window_size=5, draft_statuses=["LIKELY_SOLO"])
 
     def test_less_than_60_percent_warns(self):
         _, warnings = compute_deductions([], 5, 10, ["LIKELY_SOLO"])
