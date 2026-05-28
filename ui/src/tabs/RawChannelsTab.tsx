@@ -1,6 +1,7 @@
-import { Copy, Pin, Search } from "lucide-react";
+import { Copy, Info, Pin, Search } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
+import { getChannelConfidenceLevel, getChannelDisclaimer } from "../utils/channelMeta";
 import type { ChannelCatalogItem, RunOverview, TraceResponse } from "../types/telemetry";
 
 type RawChannelsTabProps = {
@@ -35,7 +36,9 @@ export function RawChannelsTab({ overview, trace, channels }: RawChannelsTabProp
     try { return JSON.parse(sessionStorage.getItem("racelab_pinned_channels") ?? "[]"); }
     catch { return []; }
   });
-  const { selectChannel, setWorkspace, selection } = useTelemetrySelection();
+  const [expandedChannel, setExpandedChannel] = useState<string | null>(null);
+  const [confidenceFilter, setConfidenceFilter] = useState<string>("all");
+  const { selectChannel, setWorkspace } = useTelemetrySelection();
 
   const togglePin = useCallback((name: string) => {
     setPinnedChannels(prev => {
@@ -55,15 +58,21 @@ export function RawChannelsTab({ overview, trace, channels }: RawChannelsTabProp
   }, [selectChannel, setWorkspace]);
 
   const filtered = useMemo(() => {
-    if (!debouncedSearch) return channels;
-    const q = debouncedSearch.toLowerCase();
-    return channels.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        (c.unit && c.unit.toLowerCase().includes(q)) ||
-        (c.description && c.description.toLowerCase().includes(q)),
-    );
-  }, [channels, debouncedSearch]);
+    let result = channels;
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
+      result = result.filter(
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          (c.unit && c.unit.toLowerCase().includes(q)) ||
+          (c.description && c.description.toLowerCase().includes(q)),
+      );
+    }
+    if (confidenceFilter !== "all") {
+      result = result.filter((c) => getChannelConfidenceLevel(c.name) === confidenceFilter);
+    }
+    return result;
+  }, [channels, debouncedSearch, confidenceFilter]);
 
   return (
     <section className="workspace-section">
@@ -111,6 +120,25 @@ export function RawChannelsTab({ overview, trace, channels }: RawChannelsTabProp
             outline: "none",
           }}
         />
+        <select
+          value={confidenceFilter}
+          onChange={(e) => setConfidenceFilter(e.target.value)}
+          style={{
+            padding: "4px 8px",
+            background: "#0a0d14",
+            border: "1px solid #1f2937",
+            borderRadius: 4,
+            color: "#e2e8f0",
+            fontSize: 11,
+            outline: "none",
+          }}
+        >
+          <option value="all">All</option>
+          <option value="measured">Measured</option>
+          <option value="calculated">Calculated</option>
+          <option value="estimate">Estimate</option>
+          <option value="proxy">Proxy</option>
+        </select>
         <span style={{ fontSize: 10, color: "#8d9aaa" }}>{filtered.length} of {channels.length}</span>
       </div>
       <div className="table-scroll">
@@ -129,31 +157,102 @@ export function RawChannelsTab({ overview, trace, channels }: RawChannelsTabProp
             </tr>
           </thead>
           <tbody>
-            {filtered.map((channel) => (
-              <tr key={channel.name} style={{ background: pinnedChannels.includes(channel.name) ? "rgba(56,189,248,0.04)" : undefined }}>
-                <td title={channel.description ?? undefined}>{channel.name}</td>
-                <td>{channel.unit ?? ""}</td>
-                <td>{channel.type ?? "n/a"}</td>
-                <td>{channel.is_calculated ? "calculated" : "raw"}</td>
-                <td>{formatNumber(channel.min)}</td>
-                <td>{formatNumber(channel.max)}</td>
-                <td>{formatNumber(channel.mean)}</td>
-                <td>{channel.missing_status ?? "loaded"}</td>
-                <td>
-                  <div style={{ display: "flex", gap: 2 }}>
-                    <button className="trackmap-action-btn" onClick={() => togglePin(channel.name)} title={pinnedChannels.includes(channel.name) ? "Unpin" : "Pin to workbench"}>
-                      <Pin size={10} />
-                    </button>
-                    <button className="trackmap-action-btn" onClick={() => handleCopyName(channel.name)} title="Copy channel name">
-                      <Copy size={10} />
-                    </button>
-                    <button className="trackmap-action-btn" onClick={() => handlePinToPlatform(channel.name)} title="Open in Platform Trace">
-                      <Pin size={10} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {filtered.map((channel) => {
+              const isExpanded = expandedChannel === channel.name;
+              const disclaimer = getChannelDisclaimer(channel.name);
+              return (
+                <>
+                  <tr key={channel.name} style={{ background: pinnedChannels.includes(channel.name) ? "rgba(56,189,248,0.04)" : undefined }}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <button
+                          className="trackmap-action-btn"
+                          onClick={() => setExpandedChannel(isExpanded ? null : channel.name)}
+                          title="Show details"
+                        >
+                          <Info size={10} />
+                        </button>
+                        <span title={channel.description ?? undefined}>{channel.name}</span>
+                      </div>
+                    </td>
+                    <td>{channel.unit ?? ""}</td>
+                    <td>{channel.type ?? "n/a"}</td>
+                    <td>
+                      {channel.is_calculated ? (channel.is_proxy ? "proxy" : "calculated") : "raw"}
+                      {channel.is_proxy && <span className="proxy-pill" style={{ marginLeft: 4 }}>PROXY</span>}
+                    </td>
+                    <td>{formatNumber(channel.min)}</td>
+                    <td>{formatNumber(channel.max)}</td>
+                    <td>{formatNumber(channel.mean)}</td>
+                    <td style={{ color: channel.missing_status && channel.missing_status !== "loaded" ? "#f59e0b" : undefined }}>
+                      {channel.missing_status ?? "loaded"}
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", gap: 2 }}>
+                        <button className="trackmap-action-btn" onClick={() => togglePin(channel.name)} title={pinnedChannels.includes(channel.name) ? "Unpin" : "Pin to workbench"}>
+                          <Pin size={10} />
+                        </button>
+                        <button className="trackmap-action-btn" onClick={() => handleCopyName(channel.name)} title="Copy channel name">
+                          <Copy size={10} />
+                        </button>
+                        <button className="trackmap-action-btn" onClick={() => handlePinToPlatform(channel.name)} title="Open in Platform Trace">
+                          <Pin size={10} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr key={`${channel.name}-detail`}>
+                      <td colSpan={9} style={{ padding: "8px 16px", background: "#0a0d14", fontSize: 11 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                          {channel.description && (
+                            <div><span className="muted">Description</span><br />{channel.description}</div>
+                          )}
+                          {channel.formula && (
+                            <div><span className="muted">Formula</span><br /><code style={{ fontSize: 10, color: "#38bdf8" }}>{channel.formula}</code></div>
+                          )}
+                          {!channel.formula && channel.is_calculated && (
+                            <div><span className="muted">Formula</span><br /><span className="muted">Formula unavailable.</span></div>
+                          )}
+                          {channel.dependencies && channel.dependencies.length > 0 && (
+                            <div><span className="muted">Dependencies</span><br />
+                              <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 2 }}>
+                                {channel.dependencies.map((dep) => (
+                                  <span key={dep} className="channel-chip">{dep}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {disclaimer && (
+                            <div style={{ gridColumn: "1 / -1" }}>
+                              <span className="muted">⚠ {disclaimer}</span>
+                            </div>
+                          )}
+                          {channel.used_by_charts && channel.used_by_charts.length > 0 && (
+                            <div><span className="muted">Used by Charts</span><br />
+                              <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 2 }}>
+                                {channel.used_by_charts.map((chart) => (
+                                  <span key={chart} className="channel-chip">{chart}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {channel.used_by_events && channel.used_by_events.length > 0 && (
+                            <div><span className="muted">Used by Events</span><br />
+                              <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 2 }}>
+                                {channel.used_by_events.map((evt) => (
+                                  <span key={evt} className="channel-chip">{evt}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              );
+            })}
           </tbody>
         </table>
       </div>

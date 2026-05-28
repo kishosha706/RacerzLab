@@ -114,6 +114,10 @@ function VerdictView({ verdict: v, disc, wci, confidence, draftWarning, weatherW
         evidence={v.evidence}
         warnings={v.warnings}
         nextStep={v.next_step}
+        successMetric={v.success_metric}
+        causeBucket={v.cause_bucket}
+        requiredNextData={v.required_next_data}
+        doNotChangeWarnings={v.do_not_change_warnings}
         draftWarning={draftWarning}
         weatherWarning={weatherWarning}
         onSaveFinding={isSelfCompare ? undefined : onSaveFinding}
@@ -486,6 +490,7 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
         setup_changes: result.setup_changes ?? [],
         context_changes: result.context_changes ?? [],
         next_step: result.verdict?.next_step ?? null,
+        success_metric: result.verdict?.success_metric ?? null,
         force,
       };
       const resp = await req<Record<string, unknown>>("/api/notebook/findings/from-comparison", {

@@ -112,7 +112,14 @@ export interface DidItWorkVerdict {
   evidence: string[];
   warnings: string[];
   next_step: string | null;
+  success_metric?: string | null;
+  cause_bucket?: string | null;
+  required_next_data?: string[];
+  do_not_change_warnings?: string[];
 }
+
+/** Extended verdict kind used by DidItWorkCard UI (includes frontend-only states). */
+export type VerdictKind = "keep_direction" | "undo_partially" | "undo" | "retest" | "inconclusive" | "reference_mode";
 
 export interface TestDisciplineResult {
   score: number;

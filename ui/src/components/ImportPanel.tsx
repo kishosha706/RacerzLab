@@ -13,8 +13,8 @@
  */
 
 import { Folder, HardDrive, MapPin, Monitor, Upload } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { importIbtFile, importIbtFileFromPath, importMt2File, importMt2FileFromPath, importMt2Folder } from "../api/client";
+import { useCallback, useState } from "react";
+import { importIbtFileFromPath, importMt2FileFromPath, importMt2Folder } from "../api/client";
 import { isTauri } from "../utils/env";
 import { pickTelemetryFile, pickTrackMapFile, pickTelemetryFolder } from "../utils/tauriImport";
 
@@ -209,6 +209,13 @@ export function ImportPanel({
       {importStage && <p className="import-stage">{importStage}</p>}
       {error && <p className="error-text">{error}</p>}
       {status && <p className="status-text">{status}</p>}
+
+      {/* ── Cache info ── */}
+      {status && status.includes("cached") && (
+        <div className="import-cache-info" style={{ fontSize: 10, color: "#8d9aaa", marginTop: 4 }}>
+          <span>📦 Cached locally — parquet format</span>
+        </div>
+      )}
 
       {/* ── Recent telemetry files ── */}
       {recentTelemetry.length > 0 && (

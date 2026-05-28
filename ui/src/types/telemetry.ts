@@ -3,16 +3,26 @@ export type SessionSummary = {
   source_file?: string | null;
   file_hash?: string | null;
   import_time?: string | null;
+  sim_date_time?: string | null;
   car_name?: string | null;
+  car_path?: string | null;
   track_name?: string | null;
   track_display_name?: string | null;
+  track_id_or_path?: string | null;
   session_type?: string | null;
   weather_summary?: string | null;
+  air_temp?: number | null;
+  track_temp?: number | null;
+  wind_speed?: number | null;
+  wind_direction?: number | null;
+  air_pressure?: number | null;
   telemetry_rate_hz?: number | null;
   variable_count?: number | null;
   record_count?: number | null;
   duration_seconds?: number | null;
   setup_name?: string | null;
+  setup_passed_tech?: boolean | null;
+  setup_modified?: boolean | null;
   notes: string[];
 };
 
@@ -37,17 +47,31 @@ export type LapSummary = {
   lap_type: string;
   is_complete: boolean;
   is_useful: boolean;
+  start_time?: number | null;
+  end_time?: number | null;
   lap_time?: number | null;
   pct_min?: number | null;
   pct_max?: number | null;
+  pct_span?: number | null;
+  sample_count: number;
   avg_speed_mph?: number | null;
   max_speed_mph?: number | null;
+  min_speed_mph?: number | null;
+  avg_rpm?: number | null;
+  min_rpm?: number | null;
+  max_rpm?: number | null;
   avg_throttle_pct?: number | null;
+  max_throttle_pct?: number | null;
   avg_brake_pct?: number | null;
+  max_brake_pct?: number | null;
   min_splitter_mm?: number | null;
   min_splitter_pct?: number | null;
+  min_splitter_distance_m?: number | null;
   min_splitter_speed_mph?: number | null;
+  max_abs_steering_deg?: number | null;
+  avg_abs_steering_deg?: number | null;
   classification_tags: string[];
+  confidence_notes: string[];
 };
 
 export type SetupSnapshot = {
@@ -105,6 +129,7 @@ export type Recommendation = {
   required_next_data: string[];
   do_not_change_warnings: string[];
   evidence_event_ids: string[];
+  created_at?: string | null;
 };
 
 export type RunOverview = {
@@ -155,7 +180,7 @@ export type ChannelCatalogItem = {
   count: number;
   is_raw: boolean;
   is_calculated: boolean;
-  is_proxy?: boolean;
+  is_proxy: boolean;
   formula?: string | null;
   dependencies: string[];
   used_by_charts: string[];
@@ -193,12 +218,15 @@ export type TraceResponse = {
   preserve_extrema?: boolean;
 };
 
+export type PlatformEventSeverity = "info" | "watch" | "high" | "critical";
+export type PlatformEventConfidence = "low" | "medium" | "high";
+
 export type PlatformEventItem = {
   event_id: string;
   event_type: string;
   title: string;
-  severity: string;
-  confidence: string;
+  severity: PlatformEventSeverity;
+  confidence: PlatformEventConfidence;
   lap?: number | null;
   sample_index: number;
   lap_dist_ft?: number | null;

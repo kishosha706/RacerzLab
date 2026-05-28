@@ -253,6 +253,10 @@ class DidItWorkVerdict:
     evidence: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     next_step: str | None = None
+    success_metric: str | None = None
+    cause_bucket: str | None = None
+    required_next_data: list[str] = field(default_factory=list)
+    do_not_change_warnings: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -325,7 +329,10 @@ def _discipline_dict(d: TestDisciplineResult) -> dict[str, Any]:
 def _verdict_dict(v: DidItWorkVerdict) -> dict[str, Any]:
     return {"verdict": v.verdict, "confidence_score": v.confidence_score,
             "headline": v.headline, "evidence": v.evidence, "warnings": v.warnings,
-            "next_step": v.next_step}
+            "next_step": v.next_step, "success_metric": v.success_metric,
+            "cause_bucket": v.cause_bucket,
+            "required_next_data": v.required_next_data,
+            "do_not_change_warnings": v.do_not_change_warnings}
 
 
 # ── serializer helpers (used by EnhancedComparisonSummary.as_dict) ──

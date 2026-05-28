@@ -4,22 +4,20 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from api.routes_runs import repository
-from racelab_engine.analysis.comparison import RunComparisonSummary, compare_target_zone, EnhancedComparisonSummary
+from racelab_engine.analysis.comparison import compare_target_zone, EnhancedComparisonSummary
 from racelab_engine.analysis.compare_delta_traces import (
-    DEFAULT_DELTA_CHANNELS,
     DeltaTraceResponse,
     compute_delta_traces,
 )
 from racelab_engine.analysis.compare_math import (
     aggregate_platform_stats, aggregate_driver_stats,
     aggregate_powertrain_stats, aggregate_corner_stats,
+    aggregate_tire_comparison, aggregate_shock_comparison,
     compute_whole_car_index,
 )
-from racelab_engine.analysis.comparison import _platform_dict, _corner_dict
 from racelab_engine.analysis.did_it_work import compute_verdict
 from racelab_engine.analysis.setup_diff import diff_context, diff_setups
 from racelab_engine.analysis.test_discipline import score_test_discipline
-from racelab_engine.models.comparison_insights import ComparisonInsightsResponse
 from racelab_engine.services.import_service import read_telemetry_rows
 from racelab_engine.services.insight_service import build_comparison_insights
 
@@ -94,6 +92,11 @@ def run_comparison(req: CompareRequest) -> dict:
     corners = aggregate_corner_stats(bl_rows, t_rows, s, e)
     driver = aggregate_driver_stats(bl_rows, t_rows, s, e)
     powertrain = aggregate_powertrain_stats(bl_rows, t_rows, s, e)
+    tire_comparison = aggregate_tire_comparison(
+        bl_rows, t_rows, s, e,
+        lap_count=len(bl_overview.laps) if bl_overview.laps else 0,
+    )
+    shock_comparison = aggregate_shock_comparison(bl_rows, t_rows, s, e)
 
     # setup diff
     bl_setup = repo.get_setup_snapshot(req.baseline_run_id)
@@ -135,6 +138,13 @@ def run_comparison(req: CompareRequest) -> dict:
     wci = compute_whole_car_index(platform, driver, powertrain, discipline.score, context_problems)
 
     comparison_id = _make_comparison_id(req.baseline_run_id, req.test_run_id, bl_lap, t_lap)
+    # Thread recommendation fields into verdict if available
+    bl_recommendations = repo.get_recommendations(req.baseline_run_id) if hasattr(repo, 'get_recommendations') else []
+    cause_bucket = bl_recommendations[0].cause_bucket if bl_recommendations else None
+    success_metric = bl_recommendations[0].success_metric if bl_recommendations else None
+    required_next_data = bl_recommendations[0].required_next_data if bl_recommendations else []
+    do_not_change_warnings = bl_recommendations[0].do_not_change_warnings if bl_recommendations else []
+
     summary = EnhancedComparisonSummary(
         comparison_id=comparison_id,
         baseline_run_id=req.baseline_run_id,
@@ -146,20 +156,28 @@ def run_comparison(req: CompareRequest) -> dict:
         whole_car_index=wci,
         platform=platform,
         corner_matrix=corners,
+        tire_comparison=tire_comparison,
+        shock_comparison=shock_comparison,
         driver_comparison=driver,
         powertrain_comparison=powertrain,
         setup_changes=[{"setup_key": c.setup_key, "label": c.label, "group": c.group,
                          "baseline_value": c.baseline_value, "test_value": c.test_value,
-                         "delta": c.delta, "significance": c.significance} for c in setup_changes],
-        context_changes=[{"key": c.key, "label": c.label, "warning": c.warning, "is_problem": c.is_problem}
-                          for c in context_changes],
+                         "delta": c.delta, "significance": c.significance,
+                         "related_to_target_issue": c.related_to_target_issue} for c in setup_changes],
+        context_changes=[{"key": c.key, "label": c.label, "baseline_value": c.baseline_value,
+                          "test_value": c.test_value, "warning": c.warning,
+                          "is_problem": c.is_problem} for c in context_changes],
         test_discipline={"score": discipline.score, "label": discipline.label,
                          "positive_factors": discipline.positive_factors,
                          "negative_factors": discipline.negative_factors,
                          "recommendation": discipline.recommendation},
         verdict={"verdict": verdict.verdict, "confidence_score": verdict.confidence_score,
                  "headline": verdict.headline, "evidence": verdict.evidence,
-                 "warnings": verdict.warnings, "next_step": verdict.next_step},
+                 "warnings": verdict.warnings, "next_step": verdict.next_step,
+                 "success_metric": success_metric,
+                 "cause_bucket": cause_bucket,
+                 "required_next_data": required_next_data,
+                 "do_not_change_warnings": do_not_change_warnings},
         warnings=["Same run/lap comparison — reference only. Import a second .ibt to compare."] if is_same else [],
         confidence_score=verdict.confidence_score,
     )
@@ -186,9 +204,11 @@ def compare_preview(baseline_run_id: str, test_run_id: str) -> ComparePreviewRes
         suggested_test_lap=t.best_useful_lap.lap_number if t.best_useful_lap else None,
         setup_changes=[{"setup_key": c.setup_key, "label": c.label, "group": c.group,
                          "baseline_value": c.baseline_value, "test_value": c.test_value,
-                         "delta": c.delta, "significance": c.significance} for c in setup_changes],
-        context_changes=[{"key": c.key, "label": c.label, "warning": c.warning, "is_problem": c.is_problem}
-                          for c in context_changes],
+                         "delta": c.delta, "significance": c.significance,
+                         "related_to_target_issue": c.related_to_target_issue} for c in setup_changes],
+        context_changes=[{"key": c.key, "label": c.label, "baseline_value": c.baseline_value,
+                          "test_value": c.test_value, "warning": c.warning,
+                          "is_problem": c.is_problem} for c in context_changes],
         warnings=[],
     )
 

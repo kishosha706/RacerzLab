@@ -75,7 +75,6 @@ export function LapsTab({ overview }: LapsTabProps) {
   const { selection, selectLap, setWorkspace } = useTelemetrySelection();
   const { setBaseline, setTest } = useCompareBasket();
   const [windowsData, setWindowsData] = useState<LapWindowsResponse | null>(null);
-  const [loading, setLoading] = useState(false);
   const [expandedLap, setExpandedLap] = useState<number | null>(null);
   const [includeDraft, setIncludeDraft] = useState(false);
   const [stintMode, setStintMode] = useState<"ev" | "delta" | "draft" | "falloff">("ev");
@@ -95,11 +94,9 @@ export function LapsTab({ overview }: LapsTabProps) {
   }, [subview]);
 
   useEffect(() => {
-    setLoading(true);
     fetchLapWindows(overview.run_id, includeDraft)
       .then(setWindowsData)
-      .catch(() => setWindowsData(null))
-      .finally(() => setLoading(false));
+      .catch(() => setWindowsData(null));
   }, [overview.run_id, includeDraft]);
 
   const { laps } = overview;
@@ -374,7 +371,7 @@ export function LapsTab({ overview }: LapsTabProps) {
             </div>
           </div>
           <div className="laps-stint-map">
-            {laps.map((lap, idx) => {
+            {laps.map((lap) => {
               const tags = lap.classification_tags ?? [];
               const hasDraft = tags.some((t) => t.includes("DRAFT"));
               const isValid = lap.is_useful && !hasDraft;
@@ -580,6 +577,48 @@ export function LapsTab({ overview }: LapsTabProps) {
         </section>
       )}
 
+      {/* ── Degradation stress trends ── */}
+      {subview === "current" && windowsData?.degradation && windowsData.degradation.lap_count >= 10 && (
+        <section className="workspace-section">
+          <h2><TrendingDown size={16} /> Stress Trends</h2>
+          <div className="metrics-row" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))" }}>
+            {windowsData.degradation.tire_stress_trend && windowsData.degradation.tire_stress_trend !== "unknown" && (
+              <div className="metric-card">
+                <span>Tire Stress</span>
+                <strong style={{
+                  color: windowsData.degradation.tire_stress_trend === "improving" ? "#22c55e"
+                    : windowsData.degradation.tire_stress_trend === "worsening" ? "#ef4444" : "#f59e0b"
+                }}>
+                  {windowsData.degradation.tire_stress_trend.charAt(0).toUpperCase() + windowsData.degradation.tire_stress_trend.slice(1)}
+                </strong>
+              </div>
+            )}
+            {windowsData.degradation.platform_stress_trend && windowsData.degradation.platform_stress_trend !== "unknown" && (
+              <div className="metric-card">
+                <span>Platform Stress</span>
+                <strong style={{
+                  color: windowsData.degradation.platform_stress_trend === "improving" ? "#22c55e"
+                    : windowsData.degradation.platform_stress_trend === "worsening" ? "#ef4444" : "#f59e0b"
+                }}>
+                  {windowsData.degradation.platform_stress_trend.charAt(0).toUpperCase() + windowsData.degradation.platform_stress_trend.slice(1)}
+                </strong>
+              </div>
+            )}
+            {windowsData.degradation.cooling_stress_trend && windowsData.degradation.cooling_stress_trend !== "unknown" && (
+              <div className="metric-card">
+                <span>Cooling Stress</span>
+                <strong style={{
+                  color: windowsData.degradation.cooling_stress_trend === "improving" ? "#22c55e"
+                    : windowsData.degradation.cooling_stress_trend === "worsening" ? "#ef4444" : "#f59e0b"
+                }}>
+                  {windowsData.degradation.cooling_stress_trend.charAt(0).toUpperCase() + windowsData.degradation.cooling_stress_trend.slice(1)}
+                </strong>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
       {/* ── Lap Table ── */}
       {subview === "current" && (
         <section className="workspace-section" style={{ padding: 0, overflow: "auto" }}>
@@ -664,11 +703,24 @@ export function LapsTab({ overview }: LapsTabProps) {
                       <tr key={`${lap.lap_id}-expanded`}>
                         <td colSpan={8} style={{ padding: "8px 16px", background: "#0a0d14" }}>
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8 }}>
+                            <div><span className="muted">Avg Speed</span><br /><ValueDisplay value={lap.avg_speed_mph} unit="mph" precision={1} /></div>
                             <div><span className="muted">Max Speed</span><br /><ValueDisplay value={lap.max_speed_mph} unit="mph" precision={1} /></div>
+                            <div><span className="muted">Min Speed</span><br /><ValueDisplay value={lap.min_speed_mph} unit="mph" precision={1} /></div>
+                            <div><span className="muted">Avg RPM</span><br /><ValueDisplay value={lap.avg_rpm} unit="rpm" precision={0} /></div>
+                            <div><span className="muted">Max RPM</span><br /><ValueDisplay value={lap.max_rpm} unit="rpm" precision={0} /></div>
                             <div><span className="muted">Min Splitter</span><br /><ValueDisplay value={lap.min_splitter_mm} unit="mm" precision={1} /></div>
+                            <div><span className="muted">Avg Steering</span><br /><ValueDisplay value={lap.avg_abs_steering_deg} unit="deg" precision={1} /></div>
+                            <div><span className="muted">Max Steering</span><br /><ValueDisplay value={lap.max_abs_steering_deg} unit="deg" precision={1} /></div>
                             <div><span className="muted">Avg Throttle</span><br /><ValueDisplay value={lap.avg_throttle_pct} unit="%" precision={1} /></div>
+                            <div><span className="muted">Max Throttle</span><br /><ValueDisplay value={lap.max_throttle_pct} unit="%" precision={1} /></div>
                             <div><span className="muted">Avg Brake</span><br /><ValueDisplay value={lap.avg_brake_pct} unit="%" precision={1} /></div>
+                            <div><span className="muted">Max Brake</span><br /><ValueDisplay value={lap.max_brake_pct} unit="%" precision={1} /></div>
                           </div>
+                          {lap.confidence_notes?.length > 0 && (
+                            <div style={{ marginTop: 8, fontSize: 10, color: "#f59e0b" }}>
+                              ⚠ {lap.confidence_notes.join(" • ")}
+                            </div>
+                          )}
                           <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
                             <button className="secondary-button" onClick={() => { selectLap(lap.lap_number); setWorkspace("map", "manual"); }}>
                               <MapPin size={14} /> Open Map

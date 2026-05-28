@@ -1,7 +1,6 @@
 import { AlertTriangle, Bookmark, CheckCircle, RotateCcw, Thermometer, XCircle } from "lucide-react";
 import { VERDICT_COLORS } from "../constants/verdict";
-
-export type VerdictKind = "keep_direction" | "undo_partially" | "undo" | "retest" | "inconclusive" | "reference_mode";
+import type { VerdictKind } from "../types/compare";
 
 export interface TireContextProps {
   pressureGainDelta?: number | null;
@@ -25,6 +24,9 @@ export interface DidItWorkCardProps {
   warnings: string[];
   nextStep?: string | null;
   successMetric?: string | null;
+  causeBucket?: string | null;
+  requiredNextData?: string[];
+  doNotChangeWarnings?: string[];
   setupChanges?: Array<{ label: string; baseline_value: unknown; test_value: unknown }>;
   contextWarnings?: Array<{ label: string; warning: string }>;
   draftWarning?: string | null;
@@ -62,7 +64,7 @@ function deltaSign(v: number | null | undefined): string {
   return v > 0 ? "+" : "";
 }
 
-function tireContextColor(delta: number | null | undefined, worseIfPositive: boolean = false): string {
+function tireContextColor(delta: number | null | undefined): string {
   if (delta == null || Number.isNaN(delta)) return "#8d9aaa";
   const abs = Math.abs(delta);
   if (abs < 2) return "#22c55e";
@@ -74,6 +76,7 @@ export function DidItWorkCard({
   verdict, headline, confidenceScore, testDisciplineScore,
   targetZoneDeltaMph, splitterDeltaMm, platformRiskDelta, scrubDelta,
   evidence, warnings, nextStep, successMetric,
+  causeBucket, requiredNextData, doNotChangeWarnings,
   setupChanges, contextWarnings, draftWarning, weatherWarning,
   tireContext,
   onSaveFinding, onCreateTestPlan, onStageNextTest, onOpenSetup, onOpenEvidence, onOpenMap,
@@ -131,9 +134,12 @@ export function DidItWorkCard({
         )}
       </div>
 
-      {/* ── Context warnings ── */}
+      {/* ── Context warnings (grouped) ── */}
       {(draftWarning || weatherWarning || (contextWarnings?.length ?? 0) > 0) && (
         <div className="diw-context-warnings">
+          <h4 style={{ fontSize: 11, color: "#8d9aaa", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 4px" }}>
+            <AlertTriangle size={12} /> Context Warnings
+          </h4>
           {draftWarning && <p className="warning-line"><AlertTriangle size={12} /> {draftWarning}</p>}
           {weatherWarning && <p className="warning-line"><AlertTriangle size={12} /> {weatherWarning}</p>}
           {contextWarnings?.map(cw => (
@@ -216,11 +222,16 @@ export function DidItWorkCard({
         </div>
       )}
 
-      {/* ── Warnings ── */}
+      {/* ── Warnings (grouped) ── */}
       {warnings.length > 0 && (
         <div className="diw-section diw-warnings">
-          <h4>Warnings</h4>
+          <h4><AlertTriangle size={12} /> Warnings</h4>
           {warnings.map((w, i) => <p key={i} className="warning-line"><AlertTriangle size={12} /> {w}</p>)}
+          {testDisciplineScore != null && testDisciplineScore < 50 && (
+            <p style={{ fontSize: 10, marginTop: 8, color: "#f59e0b", fontStyle: "italic" }}>
+              ℹ Comparison is useful for review, not setup verdict.
+            </p>
+          )}
         </div>
       )}
 
@@ -238,15 +249,41 @@ export function DidItWorkCard({
         </div>
       )}
 
+      {/* ── Cause bucket ── */}
+      {causeBucket && (
+        <div className="diw-section">
+          <h4>Cause</h4>
+          <p className="diw-evidence-item">{causeBucket}</p>
+        </div>
+      )}
+
+      {/* ── Required next data ── */}
+      {requiredNextData && requiredNextData.length > 0 && (
+        <div className="diw-section">
+          <h4>Required Next Data</h4>
+          {requiredNextData.map((d, i) => <p key={i} className="diw-evidence-item">• {d}</p>)}
+        </div>
+      )}
+
+      {/* ── Do Not Change Yet ── */}
+      {doNotChangeWarnings && doNotChangeWarnings.length > 0 && (
+        <div className="diw-section diw-warnings">
+          <h4><AlertTriangle size={12} /> Do Not Change Yet</h4>
+          {doNotChangeWarnings.map((w, i) => <p key={i} className="warning-line"><AlertTriangle size={12} /> {w}</p>)}
+        </div>
+      )}
+
       {/* ── Action buttons ── */}
       <div className="diw-actions">
         {onSaveFinding && (
-          <button className="diw-btn diw-btn-primary" onClick={onSaveFinding} disabled={saving || disabled}>
+          <button className="diw-btn diw-btn-primary" onClick={onSaveFinding} disabled={saving || disabled}
+            style={{ fontWeight: 600, fontSize: 13 }}>
             <Bookmark size={14} /> {saving ? "Saving…" : "Save Finding"}
           </button>
         )}
         {onStageNextTest && (
-          <button className="diw-btn" onClick={onStageNextTest} disabled={disabled}>
+          <button className="diw-btn diw-btn-primary" onClick={onStageNextTest} disabled={disabled}
+            style={{ fontWeight: 600, fontSize: 13 }}>
             Stage Next Test
           </button>
         )}

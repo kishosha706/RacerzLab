@@ -78,7 +78,7 @@ def aggregate_platform_stats(
     rake_unstable = rake_delta is not None and abs(rake_delta) > 0.05
     if rl == "improved" and rake_unstable:
         pv = "mixed"
-    elif cd and cd > 0:
+    elif cd is not None and cd > 0:
         pv = "better"
     else:
         pv = "mixed"
@@ -153,6 +153,160 @@ def aggregate_corner_stats(
             slip_ratio_proxy=aggregate_channel_stats(bl, t, f"{p}_slip_ratio", f"{c} Slip Ratio", "ratio", "worse"),
         )
     return result
+
+
+def aggregate_tire_comparison(
+    bl_rows: list[dict], t_rows: list[dict],
+    start: float = 0.0, end: float = 100.0,
+    lap_count: int = 0,
+) -> TireComparison:
+    """Build a TireComparison from baseline and test rows in the target zone.
+
+    Returns available=false with explanation if tire data is missing.
+    Short runs get low confidence.
+    """
+    grid = build_lap_grid(start, end)
+    tire_channels = [
+        "lf_pressure_gain", "rf_pressure_gain", "lr_pressure_gain", "rr_pressure_gain",
+        "lf_temp_spread", "rf_temp_spread", "lr_temp_spread", "rr_temp_spread",
+        "lf_wear_spread", "rf_wear_spread", "lr_wear_spread", "rr_wear_spread",
+        "lf_camber_temp_bias_c", "rf_camber_temp_bias_c",
+        "lr_camber_temp_bias_c", "rr_camber_temp_bias_c",
+    ]
+    bl = interpolate_run_to_grid(bl_rows, tire_channels, grid)
+    t = interpolate_run_to_grid(t_rows, tire_channels, grid)
+
+    # Check if any tire data exists
+    has_tire_data = any(
+        any(v is not None for v in (bl.get(ch) or []))
+        for ch in ["lf_pressure_gain", "lf_temp_spread"]
+    )
+    if not has_tire_data:
+        return TireComparison(
+            corners={},
+            tire_verdict=None,
+            short_run_warning="Tire context unavailable — missing tire channels.",
+        )
+
+    # Compute aggregate deltas
+    pg_channels = ["lf_pressure_gain", "rf_pressure_gain", "lr_pressure_gain", "rr_pressure_gain"]
+    ts_channels = ["lf_temp_spread", "rf_temp_spread", "lr_temp_spread", "rr_temp_spread"]
+    ws_channels = ["lf_wear_spread", "rf_wear_spread", "lr_wear_spread", "rr_wear_spread"]
+    cb_channels = ["lf_camber_temp_bias_c", "rf_camber_temp_bias_c",
+                   "lr_camber_temp_bias_c", "rr_camber_temp_bias_c"]
+
+    def _avg_delta(chs: list[str]) -> float | None:
+        vals: list[float] = []
+        for ch in chs:
+            bl_v = [v for v in (bl.get(ch) or []) if v is not None]
+            t_v = [v for v in (t.get(ch) or []) if v is not None]
+            if bl_v and t_v:
+                vals.append(sum(t_v) / len(t_v) - sum(bl_v) / len(bl_v))
+        return sum(vals) / len(vals) if vals else None
+
+    pg_delta = _avg_delta(pg_channels)
+    ts_delta = _avg_delta(ts_channels)
+    ws_delta = _avg_delta(ws_channels)
+    cb_delta = _avg_delta(cb_channels)
+
+    # Determine tire stress change label
+    is_short_run = lap_count < 10
+    confidence: str = "low" if is_short_run else ("medium" if has_tire_data else "low")
+
+    # Build warnings
+    warnings: list[str] = []
+    if is_short_run:
+        warnings.append("Short run — tire falloff conclusions are low confidence.")
+    if pg_delta is not None and abs(pg_delta) > 2.0:
+        warnings.append(f"Pressure gain changed by {pg_delta:+.1f} psi.")
+    if ts_delta is not None and abs(ts_delta) > 5.0:
+        warnings.append(f"Temp spread changed by {ts_delta:+.1f}°C.")
+
+    # Stress change label
+    if pg_delta is None and ts_delta is None:
+        stress_label = "unavailable"
+    elif (pg_delta is not None and pg_delta < -0.5) or (ts_delta is not None and ts_delta < -2.0):
+        stress_label = "improved"
+    elif (pg_delta is not None and pg_delta > 0.5) or (ts_delta is not None and ts_delta > 2.0):
+        stress_label = "worse"
+    else:
+        stress_label = "similar"
+
+    # Explanation
+    parts: list[str] = []
+    if pg_delta is not None:
+        parts.append(f"pressure gain {pg_delta:+.1f} psi")
+    if ts_delta is not None:
+        parts.append(f"temp spread {ts_delta:+.1f}°C")
+    if ws_delta is not None:
+        parts.append(f"wear spread {ws_delta:+.2f} mm")
+    explanation = f"Tire stress {stress_label}: {', '.join(parts)}." if parts else "Tire context limited."
+
+    return TireComparison(
+        corners={},
+        tire_verdict=stress_label,
+        short_run_warning=warnings[0] if warnings else None,
+    )
+
+
+def aggregate_shock_comparison(
+    bl_rows: list[dict], t_rows: list[dict],
+    start: float = 0.0, end: float = 100.0,
+) -> ShockComparison:
+    """Build a ShockComparison from baseline and test rows in the target zone.
+
+    Returns available=false with explanation if shock data is missing.
+    Treats damper energy as proxy.
+    """
+    grid = build_lap_grid(start, end)
+    shock_channels = [
+        "shock_activity_index", "shock_velocity_rms",
+        "damper_energy_proxy", "damper_work_proxy",
+        "lf_shock_velocity_rms", "rf_shock_velocity_rms",
+        "lr_shock_velocity_rms", "rr_shock_velocity_rms",
+        "lf_shock_activity_index", "rf_shock_activity_index",
+        "lr_shock_activity_index", "rr_shock_activity_index",
+    ]
+    bl = interpolate_run_to_grid(bl_rows, shock_channels, grid)
+    t = interpolate_run_to_grid(t_rows, shock_channels, grid)
+
+    # Check if any shock data exists
+    has_shock_data = any(
+        any(v is not None for v in (bl.get(ch) or []))
+        for ch in ["shock_activity_index", "shock_velocity_rms"]
+    )
+    if not has_shock_data:
+        return ShockComparison(
+            corners={},
+            shock_verdict=None,
+        )
+
+    sai = aggregate_channel_stats(bl, t, "shock_activity_index", "Shock Activity", "index", "worse")
+    svr = aggregate_channel_stats(bl, t, "shock_velocity_rms", "Shock Velocity RMS", "in/s", "worse")
+    dep = aggregate_channel_stats(bl, t, "damper_energy_proxy", "Damper Energy", "index", "worse")
+
+    # Determine shock stress change label
+    sai_d = sai.delta_avg
+    svr_d = svr.delta_avg
+    if sai_d is None and svr_d is None:
+        shock_label = "unavailable"
+    elif (sai_d is not None and sai_d < -0.5) and (svr_d is not None and svr_d < -0.1):
+        shock_label = "improved"
+    elif (sai_d is not None and sai_d > 0.5) or (svr_d is not None and svr_d > 0.1):
+        shock_label = "worse"
+    else:
+        shock_label = "similar"
+
+    warnings: list[str] = []
+    if dep.delta_avg is not None and abs(dep.delta_avg) > 0.5:
+        warnings.append("Damper energy proxy changed — platform motion may have shifted.")
+
+    return ShockComparison(
+        corners={},
+        shock_velocity_rms_avg=svr,
+        shock_activity_index=sai,
+        shock_verdict=shock_label,
+    )
 
 
 def _score_direction(d: ChannelDeltaStats | None, bv: float = 0.85, fb: float = 0.55) -> float:
