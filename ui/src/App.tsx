@@ -230,7 +230,7 @@ function CockpitShell() {
           <span className="eyebrow">RACERZLAB</span>
           <h1>No persisted runs yet</h1>
           <ImportPanel
-            onImportComplete={(runId) => {
+            onImportComplete={(runId, _trackMap) => {
               if (runId) void loadSelectedRun(runId);
             }}
             importing={importing}
@@ -304,7 +304,7 @@ function CockpitShell() {
             </div>
             <div className="toolbar-actions">
               <ImportPanel
-                onImportComplete={(runId) => {
+                onImportComplete={(runId, _trackMap) => {
                   if (runId) void loadSelectedRun(runId);
                 }}
                 importing={importing}

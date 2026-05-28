@@ -23,10 +23,19 @@ class CacheInfo(BaseModel):
     used_fallback: bool = False
 
 
+class TrackMapResolution(BaseModel):
+    status: str = "missing"  # matched | ambiguous | missing | manual_required
+    map_id: Optional[str] = None
+    map_name: Optional[str] = None
+    confidence: str = "unknown"  # high | medium | low | unknown
+    message: Optional[str] = None
+
+
 class ImportIbtResponse(BaseModel):
     run_id: Optional[str] = None
     status: ImportStatus
     cache: Optional[CacheInfo] = None
+    track_map: Optional[TrackMapResolution] = None
 
 
 class RunListItem(BaseModel):
@@ -37,6 +46,9 @@ class RunListItem(BaseModel):
     imported_at: Optional[str] = None
     best_lap_number: Optional[int] = None
     best_lap_time: Optional[float] = None
+    best_lap_time_s: Optional[float] = None
+    lap_count: Optional[int] = None
+    has_setup_snapshot: bool = False
     primary_issue: Optional[str] = None
 
 

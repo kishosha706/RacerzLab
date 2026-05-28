@@ -2,21 +2,23 @@
  * ImportPanel — unified import UI with native Tauri picker and browser fallback.
  *
  * Desktop mode (Tauri):
- * - "Choose Telemetry File" — native .ibt/.sto picker
- * - "Choose Track Map" — native .mt2 picker
- * - "Choose Telemetry Folder" — native folder picker
- * - Recent files/folders list
+ * - "Choose Telemetry File" — native .ibt/.sto picker (primary)
+ * - "Scan Telemetry Folder" — native folder picker, scans for .ibt files
+ * - "Manage Track Maps" — native .mt2 picker (secondary/fallback)
  *
  * Browser mode:
  * - Hidden file input for .ibt/.sto/.mt2 (existing behavior)
- * - "Import .ibt or .mt2" button
+ * - "Import .ibt" button
+ *
+ * Track maps are applied automatically when a matching local .mt2 is found.
  */
 
 import { Folder, HardDrive, MapPin, Monitor, Upload } from "lucide-react";
 import { useCallback, useState } from "react";
-import { importIbtFileFromPath, importMt2FileFromPath, importMt2Folder } from "../api/client";
+import { importIbtFileFromPath, importMt2FileFromPath, scanTelemetryFolder } from "../api/client";
 import { isTauri } from "../utils/env";
 import { pickTelemetryFile, pickTrackMapFile, pickTelemetryFolder } from "../utils/tauriImport";
+import type { TrackMapResolution } from "../types/telemetry";
 
 const RECENT_TELEMETRY_KEY = "racelab_recent_telemetry_files";
 const RECENT_MAPS_KEY = "racelab_recent_track_maps";
@@ -30,7 +32,7 @@ interface RecentEntry {
 }
 
 type ImportPanelProps = {
-  onImportComplete: (runId?: string | null) => void;
+  onImportComplete: (runId?: string | null, trackMap?: TrackMapResolution | null) => void;
   importing: boolean;
   importStage: string | null;
   error: string | null;
@@ -77,28 +79,27 @@ export function ImportPanel({
   });
   const [folderImporting, setFolderImporting] = useState(false);
 
-  // ── Native telemetry file picker ──────────────────────────────
+  // ── Native telemetry file picker (primary) ────────────────────
   const handleNativeTelemetryPick = useCallback(async () => {
     const result = await pickTelemetryFile();
     if (!result.filePath || result.cancelled) return;
     addRecent(RECENT_TELEMETRY_KEY, result.filePath, result.filePath.split(/[/\\]/).pop() ?? result.filePath);
     try {
       const resp = await importIbtFileFromPath(result.filePath);
-      onImportComplete(resp.run_id);
+      onImportComplete(resp.run_id, resp.track_map ?? null);
     } catch (caught) {
-      // Error is handled by parent via the import flow
       throw caught;
     }
   }, [onImportComplete]);
 
-  // ── Native track map picker ───────────────────────────────────
+  // ── Native track map picker (secondary/fallback) ──────────────
   const handleNativeMapPick = useCallback(async () => {
     const result = await pickTrackMapFile();
     if (!result.filePath || result.cancelled) return;
     addRecent(RECENT_MAPS_KEY, result.filePath, result.filePath.split(/[/\\]/).pop() ?? result.filePath);
     try {
       await importMt2FileFromPath(result.filePath);
-      onImportComplete(null);
+      onImportComplete(null, null);
     } catch (caught) {
       throw caught;
     }
@@ -114,27 +115,33 @@ export function ImportPanel({
     } catch { /* ignore */ }
   }, []);
 
-  // ── Scan folder for .ibt files ────────────────────────────────
+  // ── Scan telemetry folder for .ibt files only ─────────────────
   const handleScanFolder = useCallback(async () => {
     if (!telemetryFolder) return;
     setFolderImporting(true);
     try {
-      // Import all .mt2 files from the folder first
-      await importMt2Folder(telemetryFolder).catch(() => {});
-      // For .ibt files, we'd need a folder scan endpoint — TODO
-      // For now, just show the folder is set
-    } catch { /* ignore */ }
+      const result = await scanTelemetryFolder(telemetryFolder);
+      if (result.files.length === 0) {
+        setFolderImporting(false);
+        return;
+      }
+      const newest = result.files[0];
+      addRecent(RECENT_TELEMETRY_KEY, newest.path, newest.name);
+      const resp = await importIbtFileFromPath(newest.path);
+      onImportComplete(resp.run_id, resp.track_map ?? null);
+    } catch { /* parent handles error */ }
     finally { setFolderImporting(false); }
-  }, [telemetryFolder]);
+  }, [telemetryFolder, onImportComplete]);
 
   // ── Click recent file ─────────────────────────────────────────
   const handleRecentClick = useCallback(async (entry: RecentEntry) => {
     try {
       if (entry.path.endsWith(".mt2")) {
         await importMt2FileFromPath(entry.path);
+        onImportComplete(null, null);
       } else {
         const resp = await importIbtFileFromPath(entry.path);
-        onImportComplete(resp.run_id);
+        onImportComplete(resp.run_id, resp.track_map ?? null);
       }
     } catch { /* parent handles error display */ }
   }, [onImportComplete]);
@@ -159,16 +166,21 @@ export function ImportPanel({
       {/* ── Desktop native buttons ── */}
       {desktop && (
         <div className="import-desktop-actions">
-          <button className="secondary-button" onClick={handleNativeTelemetryPick} disabled={importing}>
+          <button className="secondary-button" onClick={handleNativeTelemetryPick} disabled={importing} style={{ fontWeight: 600 }}>
             <HardDrive size={14} /> Choose Telemetry File
           </button>
-          <button className="secondary-button" onClick={handleNativeMapPick} disabled={importing}>
-            <MapPin size={14} /> Choose Track Map
-          </button>
           <button className="secondary-button" onClick={handleNativeFolderPick} disabled={importing}>
-            <Folder size={14} /> Choose Telemetry Folder
+            <Folder size={14} /> Scan Telemetry Folder
+          </button>
+          <button className="secondary-button" onClick={handleNativeMapPick} disabled={importing} style={{ opacity: 0.7 }}>
+            <MapPin size={14} /> Manage Track Maps
           </button>
         </div>
+      )}
+      {desktop && (
+        <p className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+          Track maps are applied automatically when a matching local .mt2 is found.
+        </p>
       )}
 
       {/* ── Browser fallback ── */}
@@ -190,17 +202,17 @@ export function ImportPanel({
         </div>
       )}
 
-      {/* ── Selected folder ── */}
+      {/* ── Selected telemetry folder ── */}
       {desktop && telemetryFolder && (
         <div className="import-folder-info">
           <span className="import-folder-path">
             <Folder size={12} /> {telemetryFolder}
           </span>
           <button className="trackmap-action-btn" onClick={handleScanFolder} disabled={folderImporting}>
-            {folderImporting ? "Scanning…" : "Scan Latest Files"}
+            {folderImporting ? "Scanning…" : "Import Latest .ibt"}
           </button>
           <span className="muted" style={{ fontSize: 10, marginLeft: 4 }}>
-            (folder scan for .ibt files is a TODO — .mt2 folder import works)
+            (scans for newest .ibt file)
           </span>
         </div>
       )}

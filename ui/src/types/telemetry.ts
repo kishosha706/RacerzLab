@@ -155,6 +155,14 @@ export type TelemetryCursor = {
   selected_event_id?: string | null;
 };
 
+export type TrackMapResolution = {
+  status: "matched" | "ambiguous" | "missing" | "manual_required";
+  map_id?: string | null;
+  map_name?: string | null;
+  confidence?: string;
+  message?: string | null;
+};
+
 export type ImportIbtResponse = {
   run_id?: string | null;
   status: {
@@ -169,6 +177,7 @@ export type ImportIbtResponse = {
     format?: string | null;
     used_fallback: boolean;
   } | null;
+  track_map?: TrackMapResolution | null;
 };
 
 export type ChannelCatalogItem = {

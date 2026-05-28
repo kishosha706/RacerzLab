@@ -235,6 +235,27 @@ export function fetchLapWindows(runId: string, includeDraft = false): Promise<La
   return requestJson<LapWindowsResponse>(`/api/runs/${encodeURIComponent(runId)}/lap-windows${suffix}`);
 }
 
+export interface TelemetryFileEntry {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_at: string;
+}
+
+export interface ScanTelemetryFolderResponse {
+  files: TelemetryFileEntry[];
+  folder: string;
+  count: number;
+}
+
+/** Scan a local folder for .ibt telemetry files (Tauri native only). */
+export function scanTelemetryFolder(folderPath: string): Promise<ScanTelemetryFolderResponse> {
+  return requestJson<ScanTelemetryFolderResponse>("/api/imports/scan-telemetry-folder", {
+    method: "POST",
+    body: JSON.stringify({ folder_path: folderPath }),
+  });
+}
+
 export function fetchRunTrackMapPackage(
   runId: string,
   options?: { lap?: number; target_zone_start_pct?: number; target_zone_end_pct?: number; preferred_map_id?: string },

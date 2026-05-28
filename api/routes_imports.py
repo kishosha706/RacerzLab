@@ -3,13 +3,13 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Optional
 
 import aiofiles  # type: ignore[import-untyped]
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, HTTPException, Request, UploadFile
+from pydantic import BaseModel
 
-from api.schemas import CacheInfo, ImportIbtRequest, ImportIbtResponse
+from api.schemas import CacheInfo, ImportIbtRequest, ImportIbtResponse, TrackMapResolution
 from racelab_engine.services.import_service import ImportService, default_data_dir
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
@@ -25,6 +25,49 @@ def _sanitize_filename(name: str) -> str:
         raise HTTPException(400, "Invalid filename.")
     name = re.sub(r'[^\w.\- ]', "_", name)
     return name
+
+
+class ScanTelemetryFolderRequest(BaseModel):
+    folder_path: str
+
+
+class TelemetryFileEntry(BaseModel):
+    name: str
+    path: str
+    size_bytes: int
+    modified_at: str
+
+
+@router.post("/scan-telemetry-folder")
+def scan_telemetry_folder(req: ScanTelemetryFolderRequest) -> dict:
+    """Scan a local folder for .ibt telemetry files. Returns newest-first sorted list."""
+    folder = req.folder_path.strip()
+    if not folder:
+        raise HTTPException(400, "folder_path must not be empty.")
+    if ".." in folder:
+        raise HTTPException(400, "Path traversal not allowed.")
+    path = Path(folder).resolve()
+    if not path.exists():
+        raise HTTPException(400, f"Folder does not exist: {folder}")
+    if not path.is_dir():
+        raise HTTPException(400, f"Path is not a directory: {folder}")
+
+    from datetime import datetime, timezone
+    files: list[dict] = []
+    for f in path.iterdir():
+        if f.suffix.lower() != ".ibt":
+            continue
+        if not f.is_file():
+            continue
+        mtime = datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc)
+        files.append({
+            "name": f.name,
+            "path": str(f),
+            "size_bytes": f.stat().st_size,
+            "modified_at": mtime.isoformat(),
+        })
+    files.sort(key=lambda x: x["modified_at"], reverse=True)
+    return {"files": files, "folder": folder, "count": len(files)}
 
 
 @router.post("/ibt")
@@ -81,8 +124,41 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
             format=cache_result.format,
             used_fallback=cache_result.used_fallback,
         )
+
+    # ── Auto-resolve track map ───────────────────────────────────
+    track_map_resolution: TrackMapResolution | None = None
+    if result.overview is not None:
+        try:
+            from racelab_engine.services.track_map_service import find_best_map_for_run
+            track_name = (
+                result.overview.session.track_display_name
+                or result.overview.session.track_name
+                or ""
+            )
+            match = find_best_map_for_run(result.overview.run_id, track_name)
+            if match:
+                conf = match.get("match_confidence", "unknown")
+                track_map_resolution = TrackMapResolution(
+                    status="matched",
+                    map_id=match.get("map_id"),
+                    map_name=match.get("display_name"),
+                    confidence=conf,
+                    message=f"Matched {match.get('display_name', 'track map')} from local map index.",
+                )
+            else:
+                track_map_resolution = TrackMapResolution(
+                    status="missing",
+                    message="No matching track map found in local index. Import a .mt2 file or choose a map manually.",
+                )
+        except Exception:
+            track_map_resolution = TrackMapResolution(
+                status="missing",
+                message="Track map resolution unavailable.",
+            )
+
     return ImportIbtResponse(
         run_id=result.overview.run_id if result.overview is not None else None,
         status=result.status,
         cache=cache,
+        track_map=track_map_resolution,
     )
