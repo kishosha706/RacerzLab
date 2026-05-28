@@ -1,9 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default RaceLab Garage desktop window with dialog permissions for native file picker.",
+  "description": "Default RacerZLab desktop window with dialog permissions for native file picker.",
   "windows": ["main"],
   "permissions": [
+    "core:default",
     "dialog:default"
   ]
 }
