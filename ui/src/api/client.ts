@@ -46,6 +46,14 @@ export function importIbtFile(file: File): Promise<ImportIbtResponse> {
   });
 }
 
+/** Import an .ibt file from a local filesystem path (Tauri native picker). */
+export function importIbtFileFromPath(filePath: string): Promise<ImportIbtResponse> {
+  return requestJson<ImportIbtResponse>("/api/imports/ibt", {
+    method: "POST",
+    body: JSON.stringify({ path: filePath }),
+  });
+}
+
 export function fetchOverview(runId: string): Promise<RunOverview> {
   return requestJson<RunOverview>(`/api/runs/${encodeURIComponent(runId)}/overview`);
 }
@@ -139,6 +147,14 @@ export function importMt2File(file: File): Promise<TrackMapIndexEntry> {
       throw new Error(text || `Import failed: ${response.status}`);
     }
     return response.json() as Promise<TrackMapIndexEntry>;
+  });
+}
+
+/** Import an .mt2 file from a local filesystem path (Tauri native picker). */
+export function importMt2FileFromPath(filePath: string): Promise<TrackMapIndexEntry> {
+  return requestJson<TrackMapIndexEntry>("/api/imports/mt2", {
+    method: "POST",
+    body: JSON.stringify({ path: filePath }),
   });
 }
 

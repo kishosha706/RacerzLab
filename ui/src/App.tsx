@@ -17,6 +17,7 @@ import {
 } from "./api/client";
 import { EventTimeline } from "./components/EventTimeline";
 import { EvidenceInspector } from "./components/EvidenceInspector";
+import { ImportPanel } from "./components/ImportPanel";
 import { LapTimeBrowser } from "./components/LapTimeBrowser";
 import { NextBestClick } from "./components/NextBestClick";
 import { PriorityRail } from "./components/PriorityRail";
@@ -228,24 +229,18 @@ function CockpitShell() {
         <section className="empty-panel">
           <span className="eyebrow">RaceLab Garage</span>
           <h1>No persisted runs yet</h1>
-          <p>Import a local iRacing `.ibt` or `.mt2` file to get started.</p>
-          <div className="import-row">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".ibt,.sto,.mt2"
-              style={{ display: "none" }}
-              onChange={(e) => {
-                const { files } = e.currentTarget;
-                if (files && files.length > 0) void handleFileSelected(files[0]);
-              }}
-            />
-            <button className="secondary-button" onClick={handleImportClick} disabled={importing}>
-              {importStage ?? (importing ? "Importing…" : "Import .ibt or .mt2")}
-            </button>
-          </div>
-          {error && <p className="error-text">{error}</p>}
-          {status && <p className="status-text">{status}</p>}
+          <ImportPanel
+            onImportComplete={(runId) => {
+              if (runId) void loadSelectedRun(runId);
+            }}
+            importing={importing}
+            importStage={importStage}
+            error={error}
+            status={status}
+            fileInputRef={fileInputRef}
+            onFileSelected={(file) => { void handleFileSelected(file); }}
+            onImportClick={handleImportClick}
+          />
         </section>
       </main>
     );
@@ -308,19 +303,18 @@ function CockpitShell() {
               </span>
             </div>
             <div className="toolbar-actions">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".ibt,.sto,.mt2"
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const { files } = e.currentTarget;
-                  if (files && files.length > 0) void handleFileSelected(files[0]);
+              <ImportPanel
+                onImportComplete={(runId) => {
+                  if (runId) void loadSelectedRun(runId);
                 }}
+                importing={importing}
+                importStage={importStage}
+                error={error}
+                status={status}
+                fileInputRef={fileInputRef}
+                onFileSelected={(file) => { void handleFileSelected(file); }}
+                onImportClick={handleImportClick}
               />
-              <button className="secondary-button" onClick={handleImportClick} disabled={importing}>
-                <BarChart3 size={16} /> {importStage ?? (importing ? "Importing…" : "Import .ibt or .mt2")}
-              </button>
               <button className="secondary-button" onClick={() => setShowLapBrowser(!showLapBrowser)}>
                 <BarChart3 size={16} /> Laps
               </button>
