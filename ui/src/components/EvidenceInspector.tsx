@@ -52,10 +52,12 @@ export function EvidenceInspector({ overview, platformEvents, channels }: Eviden
 function RunInspector({ overview, channels }: { overview: RunOverview | null; channels: ChannelCatalogItem[] }) {
   if (!overview) return <InspectorShell title="No Run Loaded" icon={<Database size={16} />} />;
 
-  const raw = channels.filter((c) => c.is_raw && !c.missing_status).length;
-  const calc = channels.filter((c) => c.is_calculated && !c.missing_status).length;
-  const proxy = channels.filter((c) => c.is_proxy).length;
-  const missing = channels.filter((c) => c.missing_status).length;
+  const { raw, calc, proxy, missing } = useMemo(() => ({
+    raw: channels.filter((c) => c.is_raw && !c.missing_status).length,
+    calc: channels.filter((c) => c.is_calculated && !c.missing_status).length,
+    proxy: channels.filter((c) => c.is_proxy).length,
+    missing: channels.filter((c) => c.missing_status).length,
+  }), [channels]);
 
   return (
     <InspectorShell title="Run Overview" icon={<Info size={16} />}>
@@ -93,12 +95,12 @@ function RunInspector({ overview, channels }: { overview: RunOverview | null; ch
 }
 
 function CrewChiefSummary({ overview }: { overview: RunOverview }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [open, setOpen] = useState(true);
   const recommendation = overview.recommendations?.[0];
   return (
-    <details className="crew-chief-inline" open={!collapsed}>
-      <summary onClick={() => setCollapsed(!collapsed)}>
-        <ClipboardCheck size={14} /> Crew Chief {collapsed ? "" : ""}
+    <details className="crew-chief-inline" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>
+        <ClipboardCheck size={14} /> Crew Chief
       </summary>
       <p className="crew-summary">{overview.crew_chief_summary}</p>
       {recommendation ? (

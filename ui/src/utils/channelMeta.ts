@@ -244,6 +244,27 @@ export function getChannelLabel(channel: string): string {
 }
 
 /**
+ * Get a consolidated confidence level for a channel.
+ *
+ * Returns one of:
+ * - "measured" — direct sensor reading (isProxy=false, isEstimate=false)
+ * - "calculated" — derived from measured channels (isProxy=false, isEstimate=false)
+ * - "estimate" — inferred with moderate confidence (isEstimate=true)
+ * - "proxy" — low-confidence approximation (isProxy=true)
+ *
+ * Keeps isProxy/isEstimate fields for backward compatibility.
+ */
+export type ConfidenceLevel = "measured" | "calculated" | "estimate" | "proxy";
+
+export function getChannelConfidenceLevel(channel: string): ConfidenceLevel {
+  const meta = CHANNEL_META[channel];
+  if (!meta) return "measured";
+  if (meta.isProxy) return "proxy";
+  if (meta.isEstimate) return "estimate";
+  return "measured";
+}
+
+/**
  * Get a legend label for ECharts series.
  * In race mode, returns the human-readable label.
  * In learning mode, appends the raw channel name in parentheses.

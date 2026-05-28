@@ -107,7 +107,15 @@ export function SetupTab({ overview }: SetupTabProps) {
         <div className="setup-focus-banner">
           <Focus size={14} />
           <span>Setup Focus Mode — {selectedEventName ? `related to "${selectedEventName}"` : "fields related to the selected event are highlighted."}</span>
-          {isInferred && <span className="muted" style={{ marginLeft: 6, fontSize: 10 }}>(inferred)</span>}
+          {isInferred ? (
+            <span className="setup-related-tag" style={{ position: "static", background: "rgba(245,158,11,0.15)", color: "#f59e0b" }} title="Suggested from event type mapping">
+              Inferred
+            </span>
+          ) : (
+            <span className="setup-related-tag" style={{ position: "static", background: "rgba(34,197,94,0.15)", color: "#22c55e" }} title="Provided by event metadata">
+              Explicit
+            </span>
+          )}
         </div>
       )}
       {selection.selectedEventId && !hasFocus && (

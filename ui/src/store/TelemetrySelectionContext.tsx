@@ -1,10 +1,20 @@
-import { createContext, useCallback, useContext, useReducer, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useReducer, type ReactNode } from "react";
 import type { SelectionMode, SelectionSource, TelemetrySelection, Workspace } from "./types";
+
+const VALID_WORKSPACES: Workspace[] = ["overview", "map", "laps", "platform_trace", "speed_delta", "drag_scrub", "setup_impact", "compare", "notebook", "channels"];
+
+function loadLastWorkspace(): Workspace {
+  try {
+    const saved = localStorage.getItem("racelab_last_workspace");
+    if (saved && VALID_WORKSPACES.includes(saved as Workspace)) return saved as Workspace;
+  } catch { /* ignore */ }
+  return "overview";
+}
 
 const DEFAULT_SELECTION: TelemetrySelection = {
   selectedRunId: null,
   selectedMode: "race",
-  selectedWorkspace: "overview",
+  selectedWorkspace: loadLastWorkspace(),
   selectionSource: "manual",
 };
 
@@ -86,6 +96,13 @@ const TelemetrySelectionContext = createContext<TelemetrySelectionContextValue |
 
 export function TelemetrySelectionProvider({ children }: { children: ReactNode }) {
   const [selection, dispatch] = useReducer(selectionReducer, DEFAULT_SELECTION);
+
+  // Persist last workspace to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem("racelab_last_workspace", selection.selectedWorkspace);
+    } catch { /* ignore */ }
+  }, [selection.selectedWorkspace]);
 
   const selectRun = useCallback((runId: string | null) => dispatch({ type: "SELECT_RUN", runId }), []);
   const selectLap = useCallback((lap: number | null) => dispatch({ type: "SELECT_LAP", lap }), []);
