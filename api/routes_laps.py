@@ -21,8 +21,7 @@ def get_lap_windows(
     include_draft: bool = Query(False, description="Include DRAFT_AFFECTED laps"),
 ) -> LapWindowsResponse:
     """Compute fastest individual laps, best consecutive windows, and degradation."""
-    laps = repository().get_laps(run_id)
-    if not laps:
+    if not (laps := repository().get_laps(run_id)):
         raise HTTPException(404, f"No laps found for run {run_id}")
     return compute_lap_windows_response(laps, include_draft=include_draft)
 

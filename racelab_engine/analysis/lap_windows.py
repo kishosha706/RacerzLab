@@ -324,21 +324,20 @@ def compute_degradation(
         confidence *= 0.7
 
     # Coaching message
-    coaching_message = None
-    if falloff is not None and falloff > 0.5 and n >= 20:
-        coaching_message = (
-            "Long-run pace fell off significantly. "
-            "Consider a smoother opening pace or reviewing tire/platform management."
-        )
-    elif falloff is not None and falloff > 0.2 and n >= 10:
-        coaching_message = (
-            "Early pace was stronger than later pace. "
-            "Monitor tire spread and platform stability for falloff causes."
-        )
-    elif falloff is not None and falloff < 0.05:
-        coaching_message = "Pace was consistent throughout the stint."
-    else:
-        coaching_message = "Limited falloff data — more laps needed for stronger conclusions."
+    coaching_message = "Limited falloff data — more laps needed for stronger conclusions."
+    if falloff is not None:
+        if falloff > 0.5 and n >= 20:
+            coaching_message = (
+                "Long-run pace fell off significantly. "
+                "Consider a smoother opening pace or reviewing tire/platform management."
+            )
+        elif falloff > 0.2 and n >= 10:
+            coaching_message = (
+                "Early pace was stronger than later pace. "
+                "Monitor tire spread and platform stability for falloff causes."
+            )
+        elif falloff < 0.05:
+            coaching_message = "Pace was consistent throughout the stint."
 
     return LapDegradationSummary(
         run_id=valid[0].run_id if valid else "",
@@ -379,7 +378,7 @@ def compute_lap_windows_response(
 
     run_id = laps[0].run_id
     total = len(laps)
-    valid = sum(1 for l in laps if _is_lap_valid_for_ranking(l, include_draft=include_draft)[0])
+    valid = sum(_is_lap_valid_for_ranking(l, include_draft=include_draft)[0] for l in laps)
 
     fastest_groups = compute_fastest_groups(laps, include_draft=include_draft)
     best_windows = compute_best_windows(laps, include_draft=include_draft)

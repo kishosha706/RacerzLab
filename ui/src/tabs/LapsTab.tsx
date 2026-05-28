@@ -39,7 +39,7 @@ export function LapsTab({ overview }: LapsTabProps) {
       .finally(() => setLoading(false));
   }, [overview.run_id, includeDraft]);
 
-  const laps = overview.laps;
+  const { laps } = overview;
   const bestTime = useMemo(
     () => Math.min(...laps.filter((l) => l.lap_time != null).map((l) => l.lap_time!)),
     [laps],
