@@ -11,6 +11,7 @@ import aiofiles  # type: ignore[import-untyped]
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from api.schemas import CacheInfo, ImportIbtRequest, ImportIbtResponse, TrackMapResolution
 from racelab_engine.services.import_service import ImportService, default_data_dir
@@ -137,10 +138,11 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
         _log.warning("[%s] Unsupported Content-Type received: '%s'", req_id, content_type)
         raise HTTPException(400, "Unsupported Content-Type. Use multipart/form-data or application/json.")
 
-    # ── Import with timing ───────────────────────────────────────
-    _log.info("[%s] Starting import_service.import_ibt_file", req_id)
+    # ── Import with timing (offloaded to threadpool) ─────────────
+    _log.info("[%s] Starting import_service.import_ibt_file (dispatched to threadpool)", req_id)
     t0 = time.time()
-    result, cache_result = ImportService().import_ibt_file(path_or_file)
+    import_service = ImportService()
+    result, cache_result = await run_in_threadpool(import_service.import_ibt_file, path_or_file)
     elapsed = time.time() - t0
     run_id = result.overview.run_id if result.overview else None
     _log.info("[%s] Import_service finished in %.1f s: run_id=%s", req_id, elapsed, run_id)
@@ -153,7 +155,7 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
             used_fallback=cache_result.used_fallback,
         )
 
-    # ── Auto-resolve track map ───────────────────────────────────
+    # ── Auto-resolve track map (also offloaded — reads disk index) ──
     track_map_resolution: TrackMapResolution | None = None
     if result.overview is not None:
         try:
@@ -163,7 +165,7 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
                 or result.overview.session.track_name
                 or ""
             )
-            match = find_best_map_for_run(result.overview.run_id, track_name)
+            match = await run_in_threadpool(find_best_map_for_run, result.overview.run_id, track_name)
             if match:
                 conf = match.get("match_confidence", "unknown")
                 track_map_resolution = TrackMapResolution(

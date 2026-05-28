@@ -21,8 +21,13 @@ import urllib.error
 
 BASE_URL = "http://127.0.0.1:8010"
 
+# Default timeout for quick requests (health, sessions, etc.)
+QUICK_TIMEOUT = 15
+# Timeout for import requests — large .ibt files can take 1-3 minutes.
+IMPORT_TIMEOUT = 180
 
-def request(method: str, path: str, body: dict | None = None, content_type: str | None = None) -> dict:
+
+def request(method: str, path: str, body: dict | None = None, content_type: str | None = None, timeout: int = QUICK_TIMEOUT) -> dict:
     url = f"{BASE_URL}{path}"
     headers = {
         "Accept": "application/json",
@@ -37,7 +42,7 @@ def request(method: str, path: str, body: dict | None = None, content_type: str 
 
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8")
             return {
                 "status": resp.status,
@@ -88,7 +93,8 @@ def cmd_import_ibt(ibt_path: str) -> None:
     print(f"\n=== Import .ibt: POST {BASE_URL}/api/imports/ibt ===")
     print(f"  File: {ibt_path}")
     print(f"  Content-Type: application/json")
-    result = request("POST", "/api/imports/ibt", body={"path": ibt_path}, content_type="application/json")
+    print(f"  Import may take 1–3 minutes for large .ibt files.")
+    result = request("POST", "/api/imports/ibt", body={"path": ibt_path}, content_type="application/json", timeout=IMPORT_TIMEOUT)
     print(f"  Status: {result['status']}")
     if result.get("body"):
         body = result["body"]
