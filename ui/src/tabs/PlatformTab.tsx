@@ -10,7 +10,7 @@ import { RiskBar } from "../components/RiskBar";
 import { WorkbenchSubnav } from "../components/WorkbenchSubnav";
 import type { WorkbenchView } from "../components/WorkbenchSubnav";
 import { fetchPlatformEvents } from "../api/client";
-import { PROXY_CHANNELS } from "../constants/ui";
+import { isProxyChannel, isEstimateChannel, getChannelDisclaimer } from "../utils/channelMeta";
 import { getTraceValues, formatChannelValue, formatRiskScore, formatForceProxyN, safeStringValue } from "../utils/channelFormat";
 import type {
   PlatformEventItem,
@@ -167,8 +167,8 @@ function makeTooltipFormatter(rows: ChartRow[]) {
       const chName = labelToChannel[p.seriesName] ?? p.seriesName;
       const unit = rowUnit(chName);
       const unitStr = unit ? ` ${unit}` : "";
-      const tag = PROXY_CHANNELS.has(chName) ? " (proxy)" : "";
-      const display = y != null && !Number.isNaN(y) ? formatTooltipValue(chName, y) + unitStr + tag : "—";
+      const proxyTag = isProxyChannel(chName) ? (isEstimateChannel(chName) ? " (estimate)" : " (proxy)") : "";
+      const display = y != null && !Number.isNaN(y) ? formatTooltipValue(chName, y) + unitStr + proxyTag : "—";
       html += `<div style="display:flex;justify-content:space-between;gap:16px">`
         + `<span style="color:${p.color}">● ${p.seriesName}</span>`
         + `<span>${display}</span></div>`;
@@ -419,7 +419,7 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
           showSymbol: false,
           sampling: "lttb",
           connectNulls: false,
-          lineStyle: { width: 1.35, color: channel.color, type: PROXY_CHANNELS.has(channel.name) ? "dashed" : "solid" },
+          lineStyle: { width: 1.35, color: channel.color, type: isProxyChannel(channel.name) ? "dashed" : "solid" },
           itemStyle: { color: channel.color },
           data,
           markLine: rowIndex === 0 && channelIndex === 0 ? {
@@ -529,9 +529,22 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
     </div>
   );
 
-  const renderAeroPanel = () => (
+  const renderAeroPanel = () => {
+    const aeroIdx = latest("aero_load_index") as number | null;
+    const dynPsf = latest("dynamic_pressure_psf") as number | null;
+    const ribbonPct = aeroIdx != null ? Math.min(100, Math.max(0, (aeroIdx / 2) * 100)) : 0;
+    const ribbonColor = aeroIdx != null ? (aeroIdx > 1.2 ? "#ef4444" : aeroIdx > 0.8 ? "#f59e0b" : "#22c55e") : "#475569";
+    return (
     <div className="engineering-panel">
       <p className="proxy-warning">Aero/load values are telemetry-derived estimates/proxies, not direct force sensor measurements. Confidence depends on setup geometry, mass, motion ratios, and steady-state conditions.</p>
+      {/* Aero Load Pressure Ribbon */}
+      <div className="aero-pressure-ribbon" title={`Aero Load Index: ${aeroIdx?.toFixed(3) ?? "—"} · Dynamic Pressure: ${dynPsf?.toFixed(1) ?? "—"} psf`}>
+        <span className="aero-pressure-label">Aero Load</span>
+        <div className="aero-pressure-track">
+          <div className="aero-pressure-fill" style={{ width: `${ribbonPct}%`, background: ribbonColor }} />
+        </div>
+        <span className="aero-pressure-label" style={{ color: ribbonColor }}>{aeroIdx?.toFixed(3) ?? "—"}</span>
+      </div>
       <div className="engineering-panel-grid">
         <EngineeringMetricCard title="Aero Load Index" channelName="aero_load_index" value={latest("aero_load_index")} color="#38bdf8" />
         <EngineeringMetricCard title="Dynamic Pressure" value={`${formatChannelValue(latest("dynamic_pressure_psf") as number, "psf")} / ${formatChannelValue(latest("dynamic_pressure_pa") as number, "Pa")}`} subtitle={`Lap index: ${formatChannelValue(latest("dynamic_pressure_lap_index") as number, "index")}`} channelName="dynamic_pressure_lap_index" color="#60a5fa" />
@@ -542,7 +555,8 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
         <EngineeringMetricCard title="Grade Context" value={safeStringValue(latest("grade_context_label"))} subtitle={`${formatChannelValue(latest("dynamic_grade_deg") as number, "°")} · Force: ${formatForceProxyN(latest("grade_force_proxy_n") as number | null)}`} channelName="grade_context_label" color="#f59e0b" />
       </div>
     </div>
-  );
+    );
+  };
 
   const renderScrubPanel = () => (
     <div className="engineering-panel">
@@ -693,7 +707,6 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
                 <dt>Location</dt>
                 <dd>
                   Lap {selectedPlatformEvent.lap ?? "n/a"}
-                  {selectedPlatformEvent.lap_pct != null && ` | ${selectedPlatformEvent.lap_pct.toFixed(1)}%`}
                   {selectedPlatformEvent.lap_dist_ft != null && ` | ${selectedPlatformEvent.lap_dist_ft.toFixed(0)} ft`}
                 </dd>
                 {selectedPlatformEvent.primary_value != null && (

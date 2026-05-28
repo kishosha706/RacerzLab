@@ -2433,3 +2433,215 @@ td {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* ── DidItWorkCard ────────────────────────────────────────── */
+.did-it-work-card {
+  border: 1px solid;
+  border-radius: 10px;
+  background: #0f1320;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.diw-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid;
+}
+.diw-header h3 { margin: 0; font-size: 15px; text-transform: uppercase; letter-spacing: .04em; }
+.diw-confidence {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid;
+  font-weight: 600;
+}
+.diw-headline { font-size: 13px; color: #e2e8f0; line-height: 1.5; margin: 0; }
+.diw-score-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.diw-score-block {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 8px 14px; border: 1px solid; border-radius: 6px;
+  background: #0a0d14; min-width: 80px;
+}
+.diw-score-label { font-size: 10px; color: #8d9aaa; text-transform: uppercase; letter-spacing: .04em; }
+.diw-score-value { font-size: 22px; font-weight: 800; }
+.diw-deltas { display: flex; gap: 10px; flex-wrap: wrap; }
+.diw-delta { font-size: 12px; font-weight: 600; padding: 2px 8px; background: #0a0d14; border-radius: 4px; }
+.diw-context-warnings { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); border-radius: 6px; }
+.diw-section { display: flex; flex-direction: column; gap: 4px; }
+.diw-section h4 { margin: 0; font-size: 11px; color: #8d9aaa; text-transform: uppercase; letter-spacing: .05em; }
+.diw-evidence-item { font-size: 12px; color: #b0bec5; margin: 0; padding-left: 4px; }
+.diw-change-row { display: flex; justify-content: space-between; font-size: 12px; color: #e2e8f0; }
+.diw-warnings { background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.15); border-radius: 6px; padding: 8px 10px; }
+.diw-next-step { font-size: 13px; color: #e2e8f0; margin: 0; font-weight: 500; }
+.diw-success-metric { font-size: 12px; color: #22c55e; margin: 0; }
+.diw-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.diw-btn {
+  font-size: 11px; padding: 6px 12px; border-radius: 5px;
+  border: 1px solid #1f2937; background: #111821; color: #b0bec5;
+  cursor: pointer; display: flex; align-items: center; gap: 4px;
+  transition: border-color .15s;
+}
+.diw-btn:hover { border-color: #334155; }
+.diw-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.diw-btn-primary { border-color: #38bdf8; color: #38bdf8; }
+.diw-btn-primary:hover { background: #38bdf810; }
+.diw-save-status { font-size: 11px; color: #22c55e; margin: 0; }
+
+/* ── Learning / Race mode badge ───────────────────────────── */
+.mode-badge {
+  font-size: 10px; padding: 2px 8px; border-radius: 4px;
+  font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+  cursor: pointer; border: 1px solid; user-select: none;
+}
+.mode-badge.mode-learning { color: #38bdf8; border-color: #38bdf840; background: #38bdf810; }
+.mode-badge.mode-race { color: #22c55e; border-color: #22c55e40; background: #22c55e10; }
+
+/* ── Keyboard shortcut hint ───────────────────────────────── */
+.shortcut-hint {
+  font-size: 10px; color: #4a5568; padding: 2px 6px;
+  border: 1px solid #1f2937; border-radius: 3px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+}
+
+/* ── Evidence Anchor Beam ──────────────────────────────────── */
+.evidence-inspector.anchored {
+  border-left: 2px solid var(--cyan);
+  box-shadow: inset 3px 0 8px rgba(56, 189, 248, 0.08);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+@keyframes anchorPulse {
+  0% { box-shadow: inset 3px 0 8px rgba(56, 189, 248, 0); }
+  50% { box-shadow: inset 3px 0 16px rgba(56, 189, 248, 0.2); }
+  100% { box-shadow: inset 3px 0 8px rgba(56, 189, 248, 0.08); }
+}
+.evidence-inspector.anchored.anchor-just-selected {
+  animation: anchorPulse 0.6s ease-out 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .evidence-inspector.anchored { transition: none; }
+  .evidence-inspector.anchored.anchor-just-selected { animation: none; }
+}
+
+/* ── Trace Evidence Band ───────────────────────────────────── */
+.trace-evidence-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0.25;
+  transition: opacity 0.2s;
+}
+.trace-evidence-band:hover { opacity: 0.5; }
+.trace-evidence-band.category-platform { background: var(--rl-platform); }
+.trace-evidence-band.category-scrub { background: var(--rl-scrub); }
+.trace-evidence-band.category-aero { background: var(--rl-aero); }
+.trace-evidence-band.category-shocks { background: var(--rl-shocks); }
+.trace-evidence-band.category-tires { background: var(--rl-tires); }
+.trace-evidence-band.category-grade { background: var(--rl-grade); }
+
+/* ── Selected Event Glow Ring ──────────────────────────────── */
+@keyframes glowRing {
+  0% { r: 5; stroke-opacity: 0.8; stroke-width: 2; }
+  50% { r: 9; stroke-opacity: 0; stroke-width: 4; }
+  100% { r: 5; stroke-opacity: 0.8; stroke-width: 2; }
+}
+.trackmap-marker-glow-ring {
+  animation: glowRing 0.8s ease-out 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .trackmap-marker-glow-ring { animation: none; }
+}
+
+/* ── Tire Corner Heat Glow ─────────────────────────────────── */
+.tire-map-corner.mode-temp_spread {
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+.tire-map-corner.mode-temp_spread.heat-low { background: rgba(34, 197, 94, 0.08); }
+.tire-map-corner.mode-temp_spread.heat-medium { background: rgba(245, 158, 11, 0.12); }
+.tire-map-corner.mode-temp_spread.heat-high { background: rgba(239, 68, 68, 0.15); }
+.tire-map-corner.mode-temp_spread.heat-critical { background: rgba(167, 139, 250, 0.15); }
+.tire-map-corner.mode-slip.slip-high {
+  animation: slipPulse 1.5s ease-in-out infinite;
+}
+@keyframes slipPulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(239, 68, 68, 0); }
+  50% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.3); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tire-map-corner.mode-slip.slip-high { animation: none; }
+}
+
+/* ── Aero Load Pressure Ribbon ─────────────────────────────── */
+.aero-pressure-ribbon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.aero-pressure-track {
+  flex: 1;
+  height: 8px;
+  background: #1e293b;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.aero-pressure-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease, background 0.3s ease;
+}
+.aero-pressure-label {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* ── Critical Card Slow Pulse ──────────────────────────────── */
+@keyframes criticalPulse {
+  0%, 100% { border-color: var(--red); box-shadow: 0 0 0 rgba(239, 68, 68, 0); }
+  50% { border-color: #fca5a5; box-shadow: 0 0 12px rgba(239, 68, 68, 0.15); }
+}
+.engineering-metric-card.card-critical {
+  animation: criticalPulse 3s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .engineering-metric-card.card-critical { animation: none; }
+}
+
+/* ── Accessibility: focus outlines ─────────────────────────── */
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+button:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── Accessibility: reduced motion ─────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ── Accessibility: contrast for muted text ────────────────── */
+.muted {
+  color: #8d9aaa;
+}
+@media (prefers-contrast: more) {
+  .muted { color: #b0bec5; }
+  .section-note { color: #b0bec5; }
+}

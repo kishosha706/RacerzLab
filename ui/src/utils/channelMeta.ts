@@ -211,6 +211,10 @@ export function isProxyChannel(channel: string): boolean {
   return CHANNEL_META[channel]?.isProxy ?? false;
 }
 
+export function isEstimateChannel(channel: string): boolean {
+  return CHANNEL_META[channel]?.isEstimate ?? false;
+}
+
 export function isMissingValue(value: unknown): boolean {
   return value == null || (typeof value === "number" && (Number.isNaN(value) || !Number.isFinite(value))) || value === "" || value === "Unavailable";
 }

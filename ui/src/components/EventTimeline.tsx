@@ -73,7 +73,7 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
               key={event.event_id}
               className={`timeline-marker ${isActive ? "active" : ""}`}
               style={{ left: `${left}%`, top: `${event.staggerOffset}px`, color: colour }}
-              title={`${event.title} — ${event._lapPct.toFixed(1)}% — ${event.severity}`}
+              title={`${event.title} — ${event.severity}`}
               onClick={() => {
                 selectEvent(event.event_id, "event_timeline");
                 if (event.sample_index != null) {

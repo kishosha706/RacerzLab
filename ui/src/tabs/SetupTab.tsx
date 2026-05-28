@@ -10,15 +10,22 @@ type SetupTabProps = {
 /** Map event types to related setup keys when backend doesn't provide them. */
 function inferSetupKeys(eventType: string): string[] {
   const map: Record<string, string[]> = {
-    PLATFORM_LOW: ["lf_ride_height_mm", "rf_ride_height_mm", "lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm"],
-    PLATFORM_SCRAPE: ["lf_ride_height_mm", "rf_ride_height_mm", "lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm"],
-    REAR_PLATFORM_LOW: ["lr_ride_height_mm", "rr_ride_height_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm"],
-    REAR_PLATFORM_SCRAPE: ["lr_ride_height_mm", "rr_ride_height_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm"],
+    PLATFORM_LOW: ["lf_ride_height_mm", "rf_ride_height_mm", "lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm", "nose_weight_pct", "cross_weight_pct"],
+    PLATFORM_SCRAPE: ["lf_ride_height_mm", "rf_ride_height_mm", "lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm", "lf_packer_mm", "rf_packer_mm", "nose_weight_pct"],
+    REAR_PLATFORM_LOW: ["lr_ride_height_mm", "rr_ride_height_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm", "rear_arb_rating", "cross_weight_pct"],
+    REAR_PLATFORM_SCRAPE: ["lr_ride_height_mm", "rr_ride_height_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm", "lr_packer_mm", "rr_packer_mm", "cross_weight_pct"],
     REAR_CONTACT_RISK: ["lr_ride_height_mm", "rr_ride_height_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm"],
-    WHOLE_CAR_BOTTOMING_RISK: ["lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm"],
-    STEERING_SCRUB: ["steering_ratio", "steering_offset_deg"],
-    TIRE_SCRUB: ["lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm"],
-    RPM_FLATTENING: ["rear_end_ratio"],
+    WHOLE_CAR_BOTTOMING_RISK: ["lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm", "lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm", "nose_weight_pct", "cross_weight_pct"],
+    STEERING_SCRUB: ["steering_ratio", "steering_offset_deg", "front_arb_rating", "lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm", "cross_weight_pct"],
+    TIRE_SCRUB: ["lf_pressure_kpa", "rf_pressure_kpa", "lr_pressure_kpa", "rr_pressure_kpa"],
+    FULL_THROTTLE_SPEED_LOSS: ["rear_end_ratio", "tape_percent", "lf_ride_height_mm", "rf_ride_height_mm"],
+    RPM_FLATTENING: ["rear_end_ratio", "tape_percent"],
+    DRAG_SCRUB_SUSPICION: ["lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm", "rear_end_ratio"],
+    DYNAMIC_PRESSURE_PEAK: ["tape_percent", "lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm"],
+    SHOCK_ACTIVITY: ["lf_rebound_per_click", "rf_rebound_per_click", "lr_rebound_per_click", "rr_rebound_per_click", "lf_compression_per_click", "rf_compression_per_click", "lr_compression_per_click", "rr_compression_per_click"],
+    HIGH_CENTER_RAKE: ["lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm"],
+    PLATFORM_COMPRESSION: ["lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm", "nose_weight_pct", "cross_weight_pct"],
+    MAX_DYNAMIC_PRESSURE: ["tape_percent", "lf_ride_height_mm", "rf_ride_height_mm"],
   };
   return map[eventType] ?? [];
 }
@@ -45,6 +52,22 @@ export function SetupTab({ overview }: SetupTabProps) {
 
   const hasFocus = relatedSetupKeys.size > 0;
 
+  // Resolve selected event name for display
+  const selectedEventName = useMemo(() => {
+    if (!selection.selectedEventId) return null;
+    const event = overview.events.find((e) => e.event_id === selection.selectedEventId);
+    if (!event) return null;
+    return event.event_subtype ?? event.event_type.replace(/_/g, " ");
+  }, [selection.selectedEventId, overview.events]);
+
+  // Check if keys are from backend or inferred
+  const isInferred = useMemo(() => {
+    if (!selection.selectedEventId) return false;
+    const event = overview.events.find((e) => e.event_id === selection.selectedEventId);
+    if (!event) return true;
+    return (event.related_setup_keys?.length ?? 0) === 0;
+  }, [selection.selectedEventId, overview.events]);
+
   return (
     <section className="workspace-section setup-grid">
       <h2>Setup</h2>
@@ -53,7 +76,8 @@ export function SetupTab({ overview }: SetupTabProps) {
       {hasFocus && (
         <div className="setup-focus-banner">
           <Focus size={14} />
-          <span>Setup Focus Mode — fields related to the selected event are highlighted.</span>
+          <span>Setup Focus Mode — {selectedEventName ? `related to "${selectedEventName}"` : "fields related to the selected event are highlighted."}</span>
+          {isInferred && <span className="muted" style={{ marginLeft: 6, fontSize: 10 }}>(inferred)</span>}
         </div>
       )}
       {selection.selectedEventId && !hasFocus && (

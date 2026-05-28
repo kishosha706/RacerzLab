@@ -1,5 +1,5 @@
 import { AlertTriangle, ClipboardCheck, Crosshair, Database, Info } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { ChannelCatalogItem, PlatformEventItem, RunOverview } from "../types/telemetry";
 
@@ -11,6 +11,8 @@ type EvidenceInspectorProps = {
 
 export function EvidenceInspector({ overview, platformEvents, channels }: EvidenceInspectorProps) {
   const { selection } = useTelemetrySelection();
+  const [justAnchored, setJustAnchored] = useState(false);
+  const prevEventRef = useRef<string | null | undefined>(null);
 
   const selectedEvent = useMemo(
     () => platformEvents.find((e) => e.event_id === selection.selectedEventId) ?? null,
@@ -22,7 +24,21 @@ export function EvidenceInspector({ overview, platformEvents, channels }: Eviden
     [channels, selection.selectedChannel],
   );
 
-  if (selectedEvent) return <EventInspector event={selectedEvent} />;
+  // Evidence Anchor Beam: pulse when event selection changes
+  useEffect(() => {
+    if (selection.selectedEventId && selection.selectedEventId !== prevEventRef.current) {
+      setJustAnchored(true);
+      const timer = setTimeout(() => setJustAnchored(false), 700);
+      prevEventRef.current = selection.selectedEventId;
+      return () => clearTimeout(timer);
+    }
+  }, [selection.selectedEventId]);
+
+  const anchorClass = selectedEvent
+    ? ` evidence-inspector anchored${justAnchored ? " anchor-just-selected" : ""}`
+    : "";
+
+  if (selectedEvent) return <div className={anchorClass}><EventInspector event={selectedEvent} /></div>;
   if (selectedChannel) return <ChannelInspector channel={selectedChannel} />;
   return <RunInspector overview={overview} channels={channels} />;
 }
@@ -111,7 +127,6 @@ function EventInspector({ event }: { event: PlatformEventItem }) {
         <dt>Location</dt>
         <dd>
           Lap {event.lap ?? "n/a"}
-          {event.lap_pct != null && ` · ${event.lap_pct.toFixed(1)}%`}
           {event.lap_dist_ft != null && ` · ${event.lap_dist_ft.toFixed(0)} ft`}
         </dd>
         {event.primary_value != null && (

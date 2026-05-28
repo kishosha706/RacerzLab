@@ -668,11 +668,23 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
               .map((o) => {
                 const loc = getLocation(o.lap_pct);
                 return (
-                  <g key={o.marker_id} style={{ cursor: "pointer" }} onClick={() => handleOverlayClick(o)}>
+                  <g key={o.marker_id} style={{ cursor: "pointer" }} onClick={() => handleOverlayClick(o)} aria-label={`${o.label} — ${loc.display_label} — ${o.severity ?? "info"}`}>
                     <title>
                       {o.symbol ?? ""} {o.label} — {loc.display_label}
                       {o.description ? ` — ${o.description}` : ""}
                     </title>
+                    {/* Glow ring for selected marker */}
+                    {selOvlId === o.marker_id && (
+                      <circle
+                        cx={o.x!} cy={o.y!}
+                        r={9}
+                        fill="none"
+                        stroke="#38bdf8"
+                        strokeWidth={2}
+                        strokeOpacity={0.5}
+                        className="trackmap-marker-glow-ring"
+                      />
+                    )}
                     <circle
                       cx={o.x!} cy={o.y!}
                       r={selOvlId === o.marker_id ? 7 : 5}

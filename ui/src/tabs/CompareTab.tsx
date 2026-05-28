@@ -1,8 +1,9 @@
-import { AlertTriangle, BarChart3, Bookmark, Layers, RefreshCw, RotateCcw, XCircle } from "lucide-react";
+import { AlertTriangle, BarChart3, Bookmark } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchCompareInsights, fetchRunList } from "../api/client";
+import { fetchCompareInsights } from "../api/client";
 import { ComparisonInsightPanel } from "../components/ComparisonInsightPanel";
 import { DeltaTracesView } from "../components/DeltaTracesView";
+import { DidItWorkCard } from "../components/DidItWorkCard";
 import type { RunListItem } from "../types/telemetry";
 import type {
   ChannelDeltaStats, CompareResponse, ComparisonInsightsResponse, CornerName, CornerMetric,
@@ -34,10 +35,6 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 // ── utilities ───────────────────────────────────────────────
-
-const VERDICT_COLORS: Record<string, string> = {
-  keep_direction: "#22c55e", undo: "#ef4444", retest: "#f59e0b", inconclusive: "#8d9aaa",
-};
 
 function safeDelta(d: ChannelDeltaStats | null | undefined): ChannelDeltaStats | null {
   return d ?? null;
@@ -97,60 +94,26 @@ function cornerMini(c: CornerName, m: CornerMetric | undefined) {
 
 // ── Sub-views ───────────────────────────────────────────────
 
-function VerdictView({ verdict, disc, wci, confidence }: {
+function VerdictView({ verdict: v, disc, wci, confidence, draftWarning, weatherWarning }: {
   verdict: DidItWorkVerdict | null; disc: { score: number; label: string } | null;
   wci: WholeCarIndex | null; confidence: number;
+  draftWarning?: string | null; weatherWarning?: string | null;
 }) {
-  if (!verdict) return <p className="muted">No verdict available.</p>;
-  const color = VERDICT_COLORS[verdict.verdict] ?? "#8d9aaa";
-  const discColor = disc ? (disc.score >= 80 ? "#22c55e" : disc.score >= 50 ? "#f59e0b" : "#ef4444") : "#8d9aaa";
+  if (!v) return <p className="muted">No verdict available.</p>;
+
   return (
     <div className="compare-subview">
-      {/* Did-It-Work Verdict Card */}
-      <div className="verdict-card" style={{ borderColor: color }}>
-        <div className="verdict-card-header">
-          <h3 style={{ color }}>{verdict.verdict.replace(/_/g, " ").toUpperCase()}</h3>
-          <span className="verdict-confidence-badge" style={{ background: `${color}20`, color, border: `1px solid ${color}40` }}>
-            {formatVal(confidence * 100, 0)}% confidence
-          </span>
-        </div>
-        <p className="verdict-headline">{verdict.headline}</p>
-
-        {/* Evidence */}
-        {verdict.evidence.length > 0 && (
-          <div className="verdict-evidence-list">
-            <h4>Evidence</h4>
-            {verdict.evidence.map((e, i) => <p key={i} className="verdict-evidence">• {e}</p>)}
-          </div>
-        )}
-
-        {/* Warnings */}
-        {verdict.warnings.length > 0 && (
-          <div className="verdict-warnings">
-            {verdict.warnings.map((w, i) => <p key={i} className="warning-line"><AlertTriangle size={12} /> {w}</p>)}
-          </div>
-        )}
-
-        {/* Next step */}
-        {verdict.next_step && <p className="verdict-next"><strong>Next:</strong> {verdict.next_step}</p>}
-      </div>
-
-      {/* Test Discipline Card */}
-      {disc && (
-        <div className="discipline-card" style={{ borderColor: discColor }}>
-          <div className="discipline-card-header">
-            <h4>Test Discipline</h4>
-            <span className="discipline-score" style={{ color: discColor }}>{disc.score}/100</span>
-          </div>
-          <span className="discipline-label-badge" style={{ background: `${discColor}15`, color: discColor }}>
-            {disc.label.replace(/_/g, " ")}
-          </span>
-          {disc.score >= 80 && <p className="discipline-note">One controlled change — result is trustworthy.</p>}
-          {disc.score >= 50 && disc.score < 80 && <p className="discipline-note">Multiple changes — result may be mixed.</p>}
-          {disc.score < 50 && <p className="discipline-note">Too many variables — retest with one change.</p>}
-        </div>
-      )}
-
+      <DidItWorkCard
+        verdict={(v.verdict as "keep_direction" | "undo_partially" | "undo" | "retest" | "inconclusive" | "reference_mode") ?? "inconclusive"}
+        headline={v.headline}
+        confidenceScore={confidence}
+        testDisciplineScore={disc?.score}
+        evidence={v.evidence}
+        warnings={v.warnings}
+        nextStep={v.next_step}
+        draftWarning={draftWarning}
+        weatherWarning={weatherWarning}
+      />
       {wci && <div className="wci-strip">{indexStrip(wci)}</div>}
     </div>
   );
@@ -620,7 +583,7 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
               <p className="self-compare-text">Baseline and test are the same run/lap, so no setup decision should be made from this comparison.</p>
             </div>
           )}
-          <VerdictView verdict={result.verdict} disc={result.test_discipline} wci={result.whole_car_index} confidence={result.confidence_score} />
+          <VerdictView verdict={result.verdict} disc={result.test_discipline} wci={result.whole_car_index} confidence={result.confidence_score} draftWarning={preview?.context_changes?.find(c => c.key === "draft" || c.key === "draft_status")?.warning ?? null} weatherWarning={preview?.context_changes?.find(c => c.key === "weather")?.warning ?? null} />
           <div className="toolbar-actions" style={{ marginTop: 12 }}>
             <button className="secondary-button" onClick={() => {
               const isDuplicate = saveStatus === "Finding already saved. Click again to save duplicate.";

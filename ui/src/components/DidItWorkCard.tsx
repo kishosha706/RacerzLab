@@ -1,0 +1,202 @@
+import { AlertTriangle, Bookmark, CheckCircle, RotateCcw, XCircle } from "lucide-react";
+
+export type VerdictKind = "keep_direction" | "undo_partially" | "undo" | "retest" | "inconclusive" | "reference_mode";
+
+export interface DidItWorkCardProps {
+  verdict: VerdictKind;
+  headline: string;
+  confidenceScore: number;           // 0-1
+  testDisciplineScore?: number;      // 0-100
+  targetZoneDeltaMph?: number | null;
+  splitterDeltaMm?: number | null;
+  platformRiskDelta?: number | null;
+  scrubDelta?: number | null;
+  evidence: string[];
+  warnings: string[];
+  nextStep?: string | null;
+  successMetric?: string | null;
+  setupChanges?: Array<{ label: string; baseline_value: unknown; test_value: unknown }>;
+  contextWarnings?: Array<{ label: string; warning: string }>;
+  draftWarning?: string | null;
+  weatherWarning?: string | null;
+  /** Callbacks */
+  onSaveFinding?: () => void;
+  onCreateTestPlan?: () => void;
+  onOpenSetup?: () => void;
+  onOpenEvidence?: () => void;
+  saving?: boolean;
+  saveStatus?: string | null;
+  disabled?: boolean;
+}
+
+const VERDICT_COLORS: Record<VerdictKind, string> = {
+  keep_direction: "#22c55e",
+  undo_partially: "#f97316",
+  undo: "#ef4444",
+  retest: "#f59e0b",
+  inconclusive: "#8d9aaa",
+  reference_mode: "#38bdf8",
+};
+
+const VERDICT_ICONS: Record<VerdictKind, typeof CheckCircle> = {
+  keep_direction: CheckCircle,
+  undo_partially: RotateCcw,
+  undo: XCircle,
+  retest: RotateCcw,
+  inconclusive: AlertTriangle,
+  reference_mode: AlertTriangle,
+};
+
+function disciplineColor(score: number): string {
+  if (score >= 80) return "#22c55e";
+  if (score >= 50) return "#f59e0b";
+  return "#ef4444";
+}
+
+function deltaSign(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(v)) return "";
+  return v > 0 ? "+" : "";
+}
+
+export function DidItWorkCard({
+  verdict, headline, confidenceScore, testDisciplineScore,
+  targetZoneDeltaMph, splitterDeltaMm, platformRiskDelta, scrubDelta,
+  evidence, warnings, nextStep, successMetric,
+  setupChanges, contextWarnings, draftWarning, weatherWarning,
+  onSaveFinding, onCreateTestPlan, onOpenSetup, onOpenEvidence,
+  saving, saveStatus, disabled,
+}: DidItWorkCardProps) {
+  const color = VERDICT_COLORS[verdict] ?? "#8d9aaa";
+  const Icon = VERDICT_ICONS[verdict] ?? AlertTriangle;
+  const discColor = testDisciplineScore != null ? disciplineColor(testDisciplineScore) : "#8d9aaa";
+
+  return (
+    <div className="did-it-work-card" style={{ borderColor: color }}>
+      {/* ── Verdict header ── */}
+      <div className="diw-header" style={{ borderColor: color }}>
+        <Icon size={20} color={color} />
+        <h3 style={{ color }}>{verdict.replace(/_/g, " ").toUpperCase()}</h3>
+        <span className="diw-confidence" style={{ background: `${color}18`, color, borderColor: `${color}30` }}>
+          {Math.round(confidenceScore * 100)}% confidence
+        </span>
+      </div>
+
+      <p className="diw-headline">{headline}</p>
+
+      {/* ── Score row ── */}
+      <div className="diw-score-row">
+        {testDisciplineScore != null && (
+          <div className="diw-score-block" style={{ borderColor: discColor }}>
+            <span className="diw-score-label">Test Discipline</span>
+            <span className="diw-score-value" style={{ color: discColor }}>{testDisciplineScore}/100</span>
+          </div>
+        )}
+        {/* Delta summary */}
+        {(targetZoneDeltaMph != null || splitterDeltaMm != null || scrubDelta != null) && (
+          <div className="diw-deltas">
+            {targetZoneDeltaMph != null && (
+              <span className="diw-delta" style={{ color: targetZoneDeltaMph > 0 ? "#22c55e" : "#ef4444" }}>
+                {deltaSign(targetZoneDeltaMph)}{targetZoneDeltaMph.toFixed(2)} mph
+              </span>
+            )}
+            {splitterDeltaMm != null && (
+              <span className="diw-delta" style={{ color: splitterDeltaMm > 0 ? "#22c55e" : "#f97316" }}>
+                Splitter: {deltaSign(splitterDeltaMm)}{splitterDeltaMm.toFixed(1)} mm
+              </span>
+            )}
+            {scrubDelta != null && (
+              <span className="diw-delta" style={{ color: scrubDelta > 0 ? "#ef4444" : "#22c55e" }}>
+                Scrub: {deltaSign(scrubDelta)}{scrubDelta.toFixed(3)}
+              </span>
+            )}
+            {platformRiskDelta != null && (
+              <span className="diw-delta" style={{ color: platformRiskDelta > 0 ? "#ef4444" : "#22c55e" }}>
+                Platform Risk: {deltaSign(platformRiskDelta)}{platformRiskDelta.toFixed(3)}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Context warnings ── */}
+      {(draftWarning || weatherWarning || (contextWarnings?.length ?? 0) > 0) && (
+        <div className="diw-context-warnings">
+          {draftWarning && <p className="warning-line"><AlertTriangle size={12} /> {draftWarning}</p>}
+          {weatherWarning && <p className="warning-line"><AlertTriangle size={12} /> {weatherWarning}</p>}
+          {contextWarnings?.map(cw => (
+            <p key={cw.label} className="warning-line"><AlertTriangle size={12} /> {cw.warning}</p>
+          ))}
+        </div>
+      )}
+
+      {/* ── Evidence ── */}
+      {evidence.length > 0 && (
+        <div className="diw-section">
+          <h4>Evidence</h4>
+          {evidence.map((e, i) => <p key={i} className="diw-evidence-item">• {e}</p>)}
+        </div>
+      )}
+
+      {/* ── Setup changes ── */}
+      {setupChanges && setupChanges.length > 0 && (
+        <div className="diw-section">
+          <h4>Setup Changes</h4>
+          {setupChanges.slice(0, 8).map((sc, i) => (
+            <div key={i} className="diw-change-row">
+              <span>{sc.label}</span>
+              <span className="muted">{String(sc.baseline_value ?? "—")} → {String(sc.test_value ?? "—")}</span>
+            </div>
+          ))}
+          {setupChanges.length > 8 && <p className="muted">+{setupChanges.length - 8} more changes</p>}
+        </div>
+      )}
+
+      {/* ── Warnings ── */}
+      {warnings.length > 0 && (
+        <div className="diw-section diw-warnings">
+          <h4>Warnings</h4>
+          {warnings.map((w, i) => <p key={i} className="warning-line"><AlertTriangle size={12} /> {w}</p>)}
+        </div>
+      )}
+
+      {/* ── Next step / Success metric ── */}
+      {nextStep && (
+        <div className="diw-section">
+          <h4>Next Step</h4>
+          <p className="diw-next-step">{nextStep}</p>
+        </div>
+      )}
+      {successMetric && (
+        <div className="diw-section">
+          <h4>Success Metric</h4>
+          <p className="diw-success-metric">{successMetric}</p>
+        </div>
+      )}
+
+      {/* ── Action buttons ── */}
+      <div className="diw-actions">
+        {onSaveFinding && (
+          <button className="diw-btn diw-btn-primary" onClick={onSaveFinding} disabled={saving || disabled}>
+            <Bookmark size={14} /> {saving ? "Saving…" : "Save Finding"}
+          </button>
+        )}
+        {onCreateTestPlan && (
+          <button className="diw-btn" onClick={onCreateTestPlan} disabled={disabled}>
+            Create Next Test
+          </button>
+        )}
+        {onOpenSetup && (
+          <button className="diw-btn" onClick={onOpenSetup} disabled={disabled}>
+            Open Setup
+          </button>
+        )}
+        {onOpenEvidence && (
+          <button className="diw-btn" onClick={onOpenEvidence} disabled={disabled}>
+            Open Evidence
+          </button>
+        )}
+      </div>
+      {saveStatus && <p className="diw-save-status">{saveStatus}</p>}
+    </div>
+  );
+}

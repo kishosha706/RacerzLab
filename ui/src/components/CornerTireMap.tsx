@@ -40,6 +40,23 @@ function cornerColor(trace: TraceResponse | null, corner: string, mode: TireMapM
   return "#22c55e";
 }
 
+function cornerHeatClass(trace: TraceResponse | null, corner: string, mode: TireMapMode): string {
+  if (mode !== "temp_spread" && mode !== "camber" && mode !== "slip") return "";
+  const ch = `${corner}_${mode === "camber" ? "camber_temp_bias_c" : mode === "slip" ? "slip_ratio_proxy" : mode}`;
+  const vals = getTraceValues(trace, ch);
+  const v = vals.length > 0 ? vals[vals.length - 1] : null;
+  if (v == null || typeof v === "string") return "";
+  const abs = Math.abs(v);
+  if (mode === "slip") {
+    return abs > 0.05 ? " slip-high" : "";
+  }
+  if (abs > 15) return " heat-critical";
+  if (abs > 10) return " heat-high";
+  if (abs > 5) return " heat-medium";
+  if (abs > 2) return " heat-low";
+  return "";
+}
+
 function cornerLabel(trace: TraceResponse | null, corner: string): string {
   const biasCh = `${corner}_camber_bias_label`;
   const vals = getTraceValues(trace, biasCh);
@@ -63,22 +80,22 @@ export function CornerTireMap({ trace, mode, onModeChange }: CornerTireMapProps)
       </div>
       <div className="tire-map-grid">
         <div className="tire-map-label top">FRONT</div>
-        <div className="tire-map-corner lf" style={{ borderColor: cornerColor(trace, "lf", mode) }}>
+        <div className={`tire-map-corner lf${cornerHeatClass(trace, "lf", mode)}`} style={{ borderColor: cornerColor(trace, "lf", mode) }}>
           <div className="tire-corner-value">{cornerValue(trace, "lf", mode)}</div>
           <div className="tire-corner-label">LF</div>
           <div className="tire-corner-sub">{cornerLabel(trace, "lf")}</div>
         </div>
-        <div className="tire-map-corner rf" style={{ borderColor: cornerColor(trace, "rf", mode) }}>
+        <div className={`tire-map-corner rf${cornerHeatClass(trace, "rf", mode)}`} style={{ borderColor: cornerColor(trace, "rf", mode) }}>
           <div className="tire-corner-value">{cornerValue(trace, "rf", mode)}</div>
           <div className="tire-corner-label">RF</div>
           <div className="tire-corner-sub">{cornerLabel(trace, "rf")}</div>
         </div>
-        <div className="tire-map-corner lr" style={{ borderColor: cornerColor(trace, "lr", mode) }}>
+        <div className={`tire-map-corner lr${cornerHeatClass(trace, "lr", mode)}`} style={{ borderColor: cornerColor(trace, "lr", mode) }}>
           <div className="tire-corner-value">{cornerValue(trace, "lr", mode)}</div>
           <div className="tire-corner-label">LR</div>
           <div className="tire-corner-sub">{cornerLabel(trace, "lr")}</div>
         </div>
-        <div className="tire-map-corner rr" style={{ borderColor: cornerColor(trace, "rr", mode) }}>
+        <div className={`tire-map-corner rr${cornerHeatClass(trace, "rr", mode)}`} style={{ borderColor: cornerColor(trace, "rr", mode) }}>
           <div className="tire-corner-value">{cornerValue(trace, "rr", mode)}</div>
           <div className="tire-corner-label">RR</div>
           <div className="tire-corner-sub">{cornerLabel(trace, "rr")}</div>

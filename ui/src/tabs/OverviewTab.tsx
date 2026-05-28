@@ -73,7 +73,7 @@ export function OverviewTab({ overview }: OverviewTabProps) {
             {topEvent.zone_name && (
               <p className="overview-hero-location">
                 <MapPin size={14} /> {topEvent.zone_name}
-                {topEvent.lap_pct_peak != null && ` at ${topEvent.lap_pct_peak.toFixed(1)}% lap`}
+                {topEvent.lap_pct_peak != null && ` in target zone`}
               </p>
             )}
             <p className="overview-hero-why">

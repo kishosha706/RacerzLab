@@ -90,8 +90,7 @@ export function PriorityRail({ runId, selectedLap }: PriorityRailProps) {
               </div>
               <span className="priority-category">{categoryIcon(event.event_type)} {CATEGORY_LABELS[event.event_type] ?? event.event_type}</span>
               <span className="priority-location">
-                {event.lap_pct != null && `${event.lap_pct.toFixed(1)}%`}
-                {event.lap_dist_ft != null && ` | ${event.lap_dist_ft.toFixed(0)} ft`}
+                {event.lap_dist_ft != null && `${event.lap_dist_ft.toFixed(0)} ft`}
               </span>
               <span className="priority-severity" style={{ color: SEVERITY_COLOURS[event.severity] }}>
                 <AlertTriangle size={12} /> {event.severity.toUpperCase()}

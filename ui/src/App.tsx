@@ -23,6 +23,7 @@ import { PriorityRail } from "./components/PriorityRail";
 import { RunContextBar } from "./components/RunContextBar";
 import { StartupScreen } from "./components/StartupScreen";
 import { TelemetrySelectionProvider, useTelemetrySelection } from "./store/TelemetrySelectionContext";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { TRACE_WORKBENCH_CHANNELS } from "./constants/workbenchChannels";
 import { CompareTab } from "./tabs/CompareTab";
 import { NotebookTab } from "./tabs/NotebookTab";
@@ -58,6 +59,9 @@ function CockpitShell() {
   const [showLapBrowser, setShowLapBrowser] = useState(false);
 
   const { selection, loadRun, selectLap, selectEvent, setWorkspace } = useTelemetrySelection();
+
+  // ── keyboard shortcuts ─────────────────────────────────────
+  useKeyboardShortcuts(platformEvents, setWorkspace);
 
   // ── load a run ──────────────────────────────────────────────
   const loadSelectedRun = useCallback(

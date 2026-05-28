@@ -103,3 +103,24 @@ export function formatMph(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) return "Unavailable";
   return `${value.toFixed(1)} mph`;
 }
+
+/**
+ * Format a lap percentage for user-facing display.
+ * Replaces raw "X%" with a friendlier label.
+ * If sections are available, uses location name; otherwise uses "lap position".
+ */
+export function formatLapPct(pct: number | null | undefined, fallback = "lap position"): string {
+  if (pct == null || Number.isNaN(pct)) return "—";
+  // Use a descriptive range label instead of raw percentage
+  if (pct < 5) return "Start/Finish";
+  if (pct >= 95) return "Approaching Start/Finish";
+  return `${fallback}`;
+}
+
+/**
+ * Format a lap percentage range for user-facing display.
+ */
+export function formatLapPctRange(startPct: number | null | undefined, endPct: number | null | undefined): string {
+  if (startPct == null && endPct == null) return "—";
+  return "target zone";
+}
