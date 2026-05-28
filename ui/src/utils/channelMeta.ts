@@ -242,3 +242,16 @@ export function getChannelUnit(channel: string): string {
 export function getChannelLabel(channel: string): string {
   return CHANNEL_META[channel]?.label ?? channel;
 }
+
+/**
+ * Get a legend label for ECharts series.
+ * In race mode, returns the human-readable label.
+ * In learning mode, appends the raw channel name in parentheses.
+ */
+export function getLegendLabel(channel: string, mode: "race" | "learning" = "race"): string {
+  const label = getChannelLabel(channel);
+  if (mode === "learning") {
+    return `${label} (${channel})`;
+  }
+  return label;
+}

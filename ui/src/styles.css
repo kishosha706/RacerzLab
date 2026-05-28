@@ -2178,6 +2178,13 @@ td {
   color: var(--muted);
   text-transform: uppercase;
 }
+.evidence-chip-clickable {
+  transition: border-color 0.15s, background 0.15s;
+}
+.evidence-chip-clickable:hover {
+  border-color: var(--cyan) !important;
+  background: rgba(56, 189, 248, 0.08);
+}
 
 /* ── Self-Compare Banner ───────────────────────────────────── */
 .self-compare-banner {
@@ -2924,4 +2931,295 @@ button:focus:not(:focus-visible) {
 }
 @media (prefers-reduced-motion: reduce) {
   .playback-btn-play { transition: none; }
+}
+
+/* ── Compare Basket ────────────────────────────────────────── */
+.compare-basket {
+  position: fixed;
+  bottom: 8px;
+  right: 8px;
+  z-index: 100;
+  background: #0f1320;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-width: 200px;
+  max-width: 280px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.compare-basket-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+}
+.compare-basket-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cyan);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.compare-basket-actions {
+  display: flex;
+  gap: 2px;
+}
+.compare-basket-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.compare-basket-action-btn:hover {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+.compare-basket-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 8px 8px;
+  border-top: 1px solid var(--line);
+}
+.compare-basket-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.compare-basket-slot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.compare-basket-slot-label {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.compare-basket-slot-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 6px;
+  background: var(--panel-soft);
+  border-radius: 4px;
+}
+.compare-basket-item-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+.compare-basket-item-meta {
+  font-size: 10px;
+  color: var(--muted);
+}
+.compare-basket-item-ev {
+  font-size: 9px;
+  color: var(--cyan);
+  font-weight: 600;
+}
+.compare-basket-empty {
+  font-size: 10px;
+  color: #4a5568;
+  font-style: italic;
+}
+.compare-basket-swap-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.compare-basket-swap-btn:hover {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+.compare-basket-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 6px;
+  background: rgba(245, 158, 11, 0.06);
+  border: 1px solid rgba(245, 158, 11, 0.15);
+  border-radius: 4px;
+}
+.compare-basket-hint {
+  font-size: 10px;
+  color: #4a5568;
+  font-style: italic;
+  margin: 0;
+  text-align: center;
+}
+
+/* ── Laps Stint Map ────────────────────────────────────────── */
+.laps-stint-map {
+  display: flex;
+  gap: 2px;
+  align-items: stretch;
+  padding: 8px 0;
+  overflow-x: auto;
+  min-height: 48px;
+}
+.laps-stint-block {
+  flex: 1;
+  min-width: 8px;
+  max-width: 20px;
+  border-radius: 2px;
+  position: relative;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.15s;
+}
+.laps-stint-block:hover {
+  opacity: 0.8;
+  transform: scaleY(1.1);
+}
+.laps-stint-block.selected {
+  outline: 2px solid var(--cyan);
+  outline-offset: 1px;
+  z-index: 2;
+}
+.laps-stint-block.invalid {
+  opacity: 0.4;
+}
+.laps-stint-block.draft {
+  border: 1px dashed var(--amber);
+}
+.laps-stint-block.window-outline {
+  box-shadow: 0 0 0 1px var(--cyan);
+}
+.laps-stint-legend {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.laps-stint-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  color: var(--muted);
+}
+.laps-stint-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* ── Overview zero-event state ─────────────────────────────── */
+.overview-zero-state {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+}
+.overview-zero-state h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+}
+.overview-zero-state p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.overview-zero-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+/* ── Setup Diff Toggle ─────────────────────────────────────── */
+.setup-diff-toggle {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 12px;
+}
+.setup-diff-toggle-btn {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.setup-diff-toggle-btn:hover {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+.setup-diff-toggle-btn.active {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  background: rgba(56, 189, 248, 0.1);
+}
+.setup-diff-empty {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+  padding: 8px 0;
+}
+.setup-diff-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.setup-diff-row.changed {
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px solid rgba(56, 189, 248, 0.15);
+}
+.setup-diff-row.unchanged {
+  opacity: 0.4;
+}
+.setup-diff-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px 8px 4px;
+}
+.setup-diff-values {
+  display: flex;
+  gap: 8px;
+  font-weight: 600;
+}
+.setup-diff-baseline {
+  color: var(--muted);
+}
+.setup-diff-test {
+  color: var(--cyan);
+}
+.setup-diff-arrow {
+  color: #4a5568;
 }

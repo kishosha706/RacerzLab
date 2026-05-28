@@ -33,8 +33,10 @@ export interface DidItWorkCardProps {
   /** Callbacks */
   onSaveFinding?: () => void;
   onCreateTestPlan?: () => void;
+  onStageNextTest?: () => void;
   onOpenSetup?: () => void;
   onOpenEvidence?: () => void;
+  onOpenMap?: () => void;
   saving?: boolean;
   saveStatus?: string | null;
   disabled?: boolean;
@@ -74,7 +76,7 @@ export function DidItWorkCard({
   evidence, warnings, nextStep, successMetric,
   setupChanges, contextWarnings, draftWarning, weatherWarning,
   tireContext,
-  onSaveFinding, onCreateTestPlan, onOpenSetup, onOpenEvidence,
+  onSaveFinding, onCreateTestPlan, onStageNextTest, onOpenSetup, onOpenEvidence, onOpenMap,
   saving, saveStatus, disabled,
 }: DidItWorkCardProps) {
   const color = VERDICT_COLORS[verdict] ?? "#8d9aaa";
@@ -243,6 +245,11 @@ export function DidItWorkCard({
             <Bookmark size={14} /> {saving ? "Saving…" : "Save Finding"}
           </button>
         )}
+        {onStageNextTest && (
+          <button className="diw-btn" onClick={onStageNextTest} disabled={disabled}>
+            Stage Next Test
+          </button>
+        )}
         {onCreateTestPlan && (
           <button className="diw-btn" onClick={onCreateTestPlan} disabled={disabled}>
             Create Next Test
@@ -251,6 +258,11 @@ export function DidItWorkCard({
         {onOpenSetup && (
           <button className="diw-btn" onClick={onOpenSetup} disabled={disabled}>
             Open Setup
+          </button>
+        )}
+        {onOpenMap && (
+          <button className="diw-btn" onClick={onOpenMap} disabled={disabled}>
+            Open Map
           </button>
         )}
         {onOpenEvidence && (

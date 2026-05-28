@@ -412,6 +412,30 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
       .map((event) => eventDistanceFt(event))
       .filter((value): value is number => value != null)
       .map((x) => ({ xAxis: x }));
+    // Build markArea data for event annotations (translucent bands)
+    const eventMarkAreas = legacyEvents
+      .filter((event) => eventDistanceFt(event) != null)
+      .map((event) => {
+        const distFt = eventDistanceFt(event)!;
+        const bandWidth = 50; // 50 ft band around event
+        const color = event.severity === "critical" ? "#ef4444"
+          : event.severity === "high" ? "#f97316"
+          : event.severity === "watch" ? "#f59e0b"
+          : "#38bdf8";
+        return {
+          name: event.event_subtype ?? event.event_type,
+          xAxis: distFt - bandWidth / 2,
+          itemStyle: { color, opacity: 0.08 },
+          label: {
+            show: true,
+            position: "insideTop" as const,
+            color,
+            fontSize: 9,
+            fontWeight: 600,
+            formatter: event.event_subtype ?? event.event_type.replace(/_/g, " "),
+          },
+        };
+      });
     const series: SeriesOption[] = [];
     rows.forEach((row, rowIndex) => {
       row.channels.forEach((channel, channelIndex) => {
@@ -442,7 +466,13 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
               [{ yAxis: 0.118, itemStyle: { color: "#f97316" } }, { yAxis: 0.236, itemStyle: { color: "#f97316" } }],
               [{ yAxis: 0.236, itemStyle: { color: "#f59e0b" } }, { yAxis: 0.394, itemStyle: { color: "#f59e0b" } }],
             ],
-          } : undefined,
+          } : (rowIndex === 0 && channelIndex === 0 && eventMarkAreas.length > 0 ? {
+            silent: true,
+            data: eventMarkAreas.map((area) => [
+              { xAxis: area.xAxis, itemStyle: { color: area.itemStyle.color, opacity: area.itemStyle.opacity } },
+              { xAxis: area.xAxis + 50, itemStyle: { color: area.itemStyle.color, opacity: area.itemStyle.opacity } },
+            ]),
+          } : undefined),
         });
       });
     });

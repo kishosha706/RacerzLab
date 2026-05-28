@@ -23,6 +23,8 @@ import { PriorityRail } from "./components/PriorityRail";
 import { RunContextBar } from "./components/RunContextBar";
 import { StartupScreen } from "./components/StartupScreen";
 import { TelemetrySelectionProvider, useTelemetrySelection } from "./store/TelemetrySelectionContext";
+import { CompareBasketProvider } from "./store/CompareBasketContext";
+import { CompareBasket } from "./components/CompareBasket";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { humanizeModeLabel, humanizeWorkspaceLabel } from "./constants/ui";
 import { TRACE_WORKBENCH_CHANNELS } from "./constants/workbenchChannels";
@@ -346,6 +348,7 @@ function CockpitShell() {
       </div>
 
       <EventTimeline platformEvents={platformEvents} />
+      <CompareBasket />
     </div>
   );
 }
@@ -355,7 +358,9 @@ function CockpitShell() {
 function App() {
   return (
     <TelemetrySelectionProvider>
-      <CockpitShell />
+      <CompareBasketProvider>
+        <CockpitShell />
+      </CompareBasketProvider>
     </TelemetrySelectionProvider>
   );
 }

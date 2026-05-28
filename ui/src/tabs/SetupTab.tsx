@@ -1,6 +1,7 @@
 import { AlertTriangle, Focus } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
+import { useCompareBasket } from "../store/CompareBasketContext";
 import type { RunOverview } from "../types/telemetry";
 
 type SetupTabProps = {
@@ -68,9 +69,38 @@ export function SetupTab({ overview }: SetupTabProps) {
     return (event.related_setup_keys?.length ?? 0) === 0;
   }, [selection.selectedEventId, overview.events]);
 
+  // ── Setup Diff ───────────────────────────────────────────────
+  const { basket } = useCompareBasket();
+  const [diffMode, setDiffMode] = useState<"current" | "diff">("current");
+  const hasBaselineSetup = diffMode === "diff" && basket.baseline != null;
+
+  // Mock baseline setup data — in production this would come from the baseline run's setup_snapshot
+  // For now, show the toggle but indicate when no baseline is selected
+  const showDiffUnavailable = diffMode === "diff" && !basket.baseline;
+
   return (
     <section className="workspace-section setup-grid">
       <h2>Setup</h2>
+
+      {/* Setup Diff Toggle */}
+      <div className="setup-diff-toggle">
+        <button
+          className={`setup-diff-toggle-btn ${diffMode === "current" ? "active" : ""}`}
+          onClick={() => setDiffMode("current")}
+        >
+          Current Setup
+        </button>
+        <button
+          className={`setup-diff-toggle-btn ${diffMode === "diff" ? "active" : ""}`}
+          onClick={() => setDiffMode("diff")}
+        >
+          Diff vs Baseline
+        </button>
+      </div>
+
+      {showDiffUnavailable && (
+        <p className="setup-diff-empty">Select a baseline in Compare or Compare Basket to view setup diff.</p>
+      )}
 
       {/* Setup Focus Mode */}
       {hasFocus && (
@@ -88,37 +118,93 @@ export function SetupTab({ overview }: SetupTabProps) {
       )}
 
       <dl>
-        <div className={hasFocus && isRelated("tape_percent", relatedSetupKeys) ? "setup-field-highlighted" : hasFocus ? "setup-field-dimmed" : ""}>
-          <dt>Tape</dt>
-          <dd>{setup?.tape_percent ?? "n/a"}%</dd>
-          {isRelated("tape_percent", relatedSetupKeys) && <span className="setup-related-tag">Related</span>}
-        </div>
-        <div className={hasFocus && isRelated("rear_end_ratio", relatedSetupKeys) ? "setup-field-highlighted" : hasFocus ? "setup-field-dimmed" : ""}>
-          <dt>Rear gear</dt>
-          <dd>{setup?.rear_end_ratio ?? "n/a"}</dd>
-          {isRelated("rear_end_ratio", relatedSetupKeys) && <span className="setup-related-tag">Related</span>}
-        </div>
-        <div className={hasFocus && (isRelated("lf_ride_height_mm", relatedSetupKeys) || isRelated("rf_ride_height_mm", relatedSetupKeys)) ? "setup-field-highlighted" : hasFocus ? "setup-field-dimmed" : ""}>
-          <dt>Front ride heights</dt>
-          <dd>LF {setup?.lf_ride_height_mm ?? "n/a"} / RF {setup?.rf_ride_height_mm ?? "n/a"} mm</dd>
-          {(isRelated("lf_ride_height_mm", relatedSetupKeys) || isRelated("rf_ride_height_mm", relatedSetupKeys)) && <span className="setup-related-tag">Related</span>}
-        </div>
-        <div className={hasFocus && (isRelated("lr_ride_height_mm", relatedSetupKeys) || isRelated("rr_ride_height_mm", relatedSetupKeys)) ? "setup-field-highlighted" : hasFocus ? "setup-field-dimmed" : ""}>
-          <dt>Rear ride heights</dt>
-          <dd>LR {setup?.lr_ride_height_mm ?? "n/a"} / RR {setup?.rr_ride_height_mm ?? "n/a"} mm</dd>
-          {(isRelated("lr_ride_height_mm", relatedSetupKeys) || isRelated("rr_ride_height_mm", relatedSetupKeys)) && <span className="setup-related-tag">Related</span>}
-        </div>
-        <div className={hasFocus && (isRelated("lf_front_spring_n_per_mm", relatedSetupKeys) || isRelated("rf_front_spring_n_per_mm", relatedSetupKeys) || isRelated("lr_rear_spring_n_per_mm", relatedSetupKeys) || isRelated("rr_rear_spring_n_per_mm", relatedSetupKeys)) ? "setup-field-highlighted" : hasFocus ? "setup-field-dimmed" : ""}>
-          <dt>Springs</dt>
-          <dd>LF {setup?.lf_front_spring_n_per_mm ?? "n/a"} / RF {setup?.rf_front_spring_n_per_mm ?? "n/a"} / LR {setup?.lr_rear_spring_n_per_mm ?? "n/a"} / RR {setup?.rr_rear_spring_n_per_mm ?? "n/a"}</dd>
-          {(isRelated("lf_front_spring_n_per_mm", relatedSetupKeys) || isRelated("rf_front_spring_n_per_mm", relatedSetupKeys) || isRelated("lr_rear_spring_n_per_mm", relatedSetupKeys) || isRelated("rr_rear_spring_n_per_mm", relatedSetupKeys)) && <span className="setup-related-tag">Related</span>}
-        </div>
-        <div className={hasFocus && (isRelated("steering_ratio", relatedSetupKeys) || isRelated("steering_offset_deg", relatedSetupKeys)) ? "setup-field-highlighted" : hasFocus ? "setup-field-dimmed" : ""}>
-          <dt>Steering</dt>
-          <dd>{setup?.steering_ratio ?? "n/a"} / {setup?.steering_offset_deg ?? "n/a"} deg</dd>
-          {(isRelated("steering_ratio", relatedSetupKeys) || isRelated("steering_offset_deg", relatedSetupKeys)) && <span className="setup-related-tag">Related</span>}
-        </div>
+        <SetupFieldRow
+          label="Tape"
+          currentValue={setup?.tape_percent != null ? `${setup.tape_percent}%` : "n/a"}
+          hasFocus={hasFocus}
+          isRelated={isRelated("tape_percent", relatedSetupKeys)}
+          diffMode={diffMode}
+          baselineValue={hasBaselineSetup ? "—" : undefined}
+        />
+        <SetupFieldRow
+          label="Rear gear"
+          currentValue={setup?.rear_end_ratio != null ? String(setup.rear_end_ratio) : "n/a"}
+          hasFocus={hasFocus}
+          isRelated={isRelated("rear_end_ratio", relatedSetupKeys)}
+          diffMode={diffMode}
+          baselineValue={hasBaselineSetup ? "—" : undefined}
+        />
+        <SetupFieldRow
+          label="Front ride heights"
+          currentValue={`LF ${setup?.lf_ride_height_mm ?? "n/a"} / RF ${setup?.rf_ride_height_mm ?? "n/a"} mm`}
+          hasFocus={hasFocus}
+          isRelated={isRelated("lf_ride_height_mm", relatedSetupKeys) || isRelated("rf_ride_height_mm", relatedSetupKeys)}
+          diffMode={diffMode}
+          baselineValue={hasBaselineSetup ? "—" : undefined}
+        />
+        <SetupFieldRow
+          label="Rear ride heights"
+          currentValue={`LR ${setup?.lr_ride_height_mm ?? "n/a"} / RR ${setup?.rr_ride_height_mm ?? "n/a"} mm`}
+          hasFocus={hasFocus}
+          isRelated={isRelated("lr_ride_height_mm", relatedSetupKeys) || isRelated("rr_ride_height_mm", relatedSetupKeys)}
+          diffMode={diffMode}
+          baselineValue={hasBaselineSetup ? "—" : undefined}
+        />
+        <SetupFieldRow
+          label="Springs"
+          currentValue={`LF ${setup?.lf_front_spring_n_per_mm ?? "n/a"} / RF ${setup?.rf_front_spring_n_per_mm ?? "n/a"} / LR ${setup?.lr_rear_spring_n_per_mm ?? "n/a"} / RR ${setup?.rr_rear_spring_n_per_mm ?? "n/a"}`}
+          hasFocus={hasFocus}
+          isRelated={isRelated("lf_front_spring_n_per_mm", relatedSetupKeys) || isRelated("rf_front_spring_n_per_mm", relatedSetupKeys) || isRelated("lr_rear_spring_n_per_mm", relatedSetupKeys) || isRelated("rr_rear_spring_n_per_mm", relatedSetupKeys)}
+          diffMode={diffMode}
+          baselineValue={hasBaselineSetup ? "—" : undefined}
+        />
+        <SetupFieldRow
+          label="Steering"
+          currentValue={`${setup?.steering_ratio ?? "n/a"} / ${setup?.steering_offset_deg ?? "n/a"} deg`}
+          hasFocus={hasFocus}
+          isRelated={isRelated("steering_ratio", relatedSetupKeys) || isRelated("steering_offset_deg", relatedSetupKeys)}
+          diffMode={diffMode}
+          baselineValue={hasBaselineSetup ? "—" : undefined}
+        />
       </dl>
     </section>
+  );
+}
+
+/** A single setup field row that supports diff mode. */
+function SetupFieldRow({
+  label,
+  currentValue,
+  hasFocus,
+  isRelated: fieldIsRelated,
+  diffMode,
+  baselineValue,
+}: {
+  label: string;
+  currentValue: string;
+  hasFocus: boolean;
+  isRelated: boolean;
+  diffMode: "current" | "diff";
+  baselineValue?: string;
+}) {
+  const isChanged = diffMode === "diff" && baselineValue !== undefined && currentValue !== baselineValue;
+  const rowClass = hasFocus
+    ? fieldIsRelated ? "setup-field-highlighted" : "setup-field-dimmed"
+    : "";
+
+  return (
+    <div className={`${rowClass} ${diffMode === "diff" ? (isChanged ? "setup-diff-row changed" : "setup-diff-row unchanged") : ""}`}>
+      <dt>{label}</dt>
+      {diffMode === "diff" && baselineValue !== undefined ? (
+        <div className="setup-diff-values">
+          <span className="setup-diff-baseline">{baselineValue}</span>
+          <span className="setup-diff-arrow">→</span>
+          <span className="setup-diff-test">{currentValue}</span>
+        </div>
+      ) : (
+        <dd>{currentValue}</dd>
+      )}
+      {fieldIsRelated && <span className="setup-related-tag">Related</span>}
+    </div>
   );
 }

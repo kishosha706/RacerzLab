@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle, Info, Lightbulb, MapPin } from "lucide-react";
+import { AlertTriangle, BarChart3, CheckCircle, Clock, Info, Layers, Lightbulb, MapPin } from "lucide-react";
 import { useMemo } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
@@ -58,7 +58,7 @@ export function OverviewTab({ overview }: OverviewTabProps) {
   const lap = overview.best_useful_lap;
   const topEvent = overview.events.length > 0 ? overview.events[0] : null;
   const crewBrief = overview.crew_chief_summary;
-  const { setWorkspace, selectEvent, selection } = useTelemetrySelection();
+  const { setWorkspace, selectEvent, selection, selectLap } = useTelemetrySelection();
   const isLearning = selection.selectedMode === "learning";
 
   const gainInfo = useMemo(() => topEvent ? gainClass(topEvent) : null, [topEvent]);
@@ -110,18 +110,28 @@ export function OverviewTab({ overview }: OverviewTabProps) {
             )}
             {whyText && <p className="overview-hero-why">{whyText}</p>}
 
-            {/* Evidence chips */}
+            {/* Evidence chips — clickable when context is available */}
             <div className="overview-evidence-chips">
-              <span className="evidence-chip" style={{ borderColor: SEVERITY_COLOURS[topEvent.severity] ?? "#8d9aaa" }}>
+              <span
+                className="evidence-chip evidence-chip-clickable"
+                style={{ borderColor: SEVERITY_COLOURS[topEvent.severity] ?? "#8d9aaa", cursor: "pointer" }}
+                onClick={handleOpenPlatform}
+                title="Open in Platform Trace"
+              >
                 <AlertTriangle size={12} /> {topEvent.severity.toUpperCase()}
               </span>
               {topEvent.confidence_score != null && (
-                <span className="evidence-chip">
+                <span className="evidence-chip" title={`Confidence: ${(topEvent.confidence_score * 100).toFixed(0)}%`}>
                   Confidence: {(topEvent.confidence_score * 100).toFixed(0)}%
                 </span>
               )}
               {topEvent.valid_for_tuning && (
-                <span className="evidence-chip" style={{ borderColor: "#22c55e" }}>
+                <span
+                  className="evidence-chip evidence-chip-clickable"
+                  style={{ borderColor: "#22c55e", cursor: "pointer" }}
+                  onClick={() => { selectEvent(topEvent.event_id, "overview"); setWorkspace("setup_impact", "overview"); }}
+                  title="Open in Setup"
+                >
                   <CheckCircle size={12} /> Valid for tuning
                 </span>
               )}
@@ -148,6 +158,23 @@ export function OverviewTab({ overview }: OverviewTabProps) {
                 <Info size={14} /> {proxyEventCount} event{proxyEventCount > 1 ? "s" : ""} based on proxy/estimate channels.
               </p>
             )}
+          </div>
+        ) : overview.events.length === 0 ? (
+          <div className="overview-zero-state">
+            <h3>No critical events detected.</h3>
+            <p>Platform margins appear within safe limits.</p>
+            <p>Review Laps for pace quality and Compare for setup validation.</p>
+            <div className="overview-zero-actions">
+              <button className="secondary-button" onClick={() => setWorkspace("laps", "overview")}>
+                <Clock size={14} /> Open Laps
+              </button>
+              <button className="secondary-button" onClick={() => setWorkspace("platform_trace", "overview")}>
+                <Layers size={14} /> Open Platform
+              </button>
+              <button className="secondary-button" onClick={() => setWorkspace("compare", "overview")}>
+                <BarChart3 size={14} /> Open Compare
+              </button>
+            </div>
           </div>
         ) : (
           <div className="overview-hero-empty">

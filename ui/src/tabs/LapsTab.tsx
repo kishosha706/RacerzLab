@@ -2,6 +2,8 @@ import { AlertTriangle, BarChart3, Clock, Gauge, Layers, MapPin, TrendingDown, T
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchLapWindows } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
+import { useCompareBasket } from "../store/CompareBasketContext";
+import { makeBasketItem } from "../components/CompareBasket";
 import { ValueDisplay } from "../components/ValueDisplay";
 import type { RunOverview } from "../types/telemetry";
 import type { LapWindowsResponse } from "../types/laps";
@@ -57,12 +59,23 @@ const PERFORMANCE_TOOLTIP = "How strong the pace was, based on speed relative to
 const TRUST_TOOLTIP = "How trustworthy this data is for setup decisions, based on validity, draft status, data completeness, window size, and context stability.";
 const ENGINEERING_VALUE_TOOLTIP = "Combined decision value for setup work. A fast lap with low trust may still have low Engineering Value.";
 
+function stintMapColor(ev: number | null | undefined): string {
+  if (ev == null) return "#1f2937";
+  if (ev >= 85) return "#22c55e";
+  if (ev >= 70) return "#38bdf8";
+  if (ev >= 50) return "#f59e0b";
+  if (ev >= 25) return "#f97316";
+  return "#ef4444";
+}
+
 export function LapsTab({ overview }: LapsTabProps) {
   const { selection, selectLap, setWorkspace } = useTelemetrySelection();
+  const { setBaseline, setTest } = useCompareBasket();
   const [windowsData, setWindowsData] = useState<LapWindowsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [expandedLap, setExpandedLap] = useState<number | null>(null);
   const [includeDraft, setIncludeDraft] = useState(false);
+  const [stintMode, setStintMode] = useState<"ev" | "delta" | "draft" | "falloff">("ev");
 
   useEffect(() => {
     setLoading(true);
@@ -111,6 +124,90 @@ export function LapsTab({ overview }: LapsTabProps) {
           )}
         </p>
       </section>
+
+      {/* ── Stint Map ── */}
+      {windowsData && laps.length > 0 && (
+        <section className="workspace-section">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+            <span style={{ fontSize: 10, color: "#8d9aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Stint Shape</span>
+            <div style={{ display: "flex", gap: 2 }}>
+              {(["ev", "delta", "draft", "falloff"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  className={`setup-diff-toggle-btn ${stintMode === mode ? "active" : ""}`}
+                  onClick={() => setStintMode(mode)}
+                  style={{ fontSize: 9, padding: "2px 6px" }}
+                >
+                  {mode === "ev" ? "Eng Val" : mode === "delta" ? "Δ Time" : mode === "draft" ? "Draft" : "Falloff"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="laps-stint-map">
+            {laps.map((lap, idx) => {
+              const tags = lap.classification_tags ?? [];
+              const hasDraft = tags.some((t) => t.includes("DRAFT"));
+              const isValid = lap.is_useful && !hasDraft;
+              const isSelected = selection.selectedLap === lap.lap_number;
+              // Find best window for this lap
+              const inBestWindow = windowsData.best_windows.some((wg) =>
+                wg.best_window && lap.lap_number >= wg.best_window.start_lap && lap.lap_number <= wg.best_window.end_lap
+              );
+              let color = "#1f2937";
+              if (stintMode === "ev") {
+                // Use Engineering Value from best window if available, else fallback
+                const bw = windowsData.best_windows.find(w => w.window_size === 10)?.best_window;
+                color = stintMapColor(bw?.setup_usefulness_score);
+              } else if (stintMode === "delta") {
+                const delta = lap.lap_time != null && bestTime != null ? lap.lap_time - bestTime : null;
+                if (delta == null) color = "#1f2937";
+                else if (delta < 0.1) color = "#22c55e";
+                else if (delta < 0.5) color = "#f59e0b";
+                else color = "#ef4444";
+              } else if (stintMode === "draft") {
+                color = hasDraft ? "#f59e0b" : isValid ? "#22c55e" : "#4a5568";
+              } else if (stintMode === "falloff") {
+                const falloff = windowsData.degradation?.falloff_slope_sec_per_lap;
+                if (falloff == null) color = "#1f2937";
+                else if (falloff < 0.01) color = "#22c55e";
+                else if (falloff < 0.05) color = "#f59e0b";
+                else color = "#ef4444";
+              }
+              return (
+                <div
+                  key={lap.lap_id}
+                  className={`laps-stint-block ${isSelected ? "selected" : ""} ${!isValid ? "invalid" : ""} ${hasDraft ? "draft" : ""} ${inBestWindow ? "window-outline" : ""}`}
+                  style={{ background: color }}
+                  onClick={() => selectLap(lap.lap_number)}
+                  title={`Lap ${lap.lap_number}: ${lap.lap_time != null ? lap.lap_time.toFixed(3) + "s" : "—"}${hasDraft ? " [DRAFT]" : ""}${!isValid ? " [INVALID]" : ""}`}
+                />
+              );
+            })}
+          </div>
+          <div className="laps-stint-legend">
+            <span className="laps-stint-legend-item">
+              <span className="laps-stint-legend-swatch" style={{ background: "#22c55e" }} />
+              {stintMode === "ev" ? "High EV" : stintMode === "delta" ? "Fast" : stintMode === "draft" ? "Clean" : "Low falloff"}
+            </span>
+            <span className="laps-stint-legend-item">
+              <span className="laps-stint-legend-swatch" style={{ background: "#f59e0b" }} />
+              {stintMode === "ev" ? "Medium EV" : stintMode === "delta" ? "Moderate Δ" : stintMode === "draft" ? "Draft" : "Moderate falloff"}
+            </span>
+            <span className="laps-stint-legend-item">
+              <span className="laps-stint-legend-swatch" style={{ background: "#ef4444" }} />
+              {stintMode === "ev" ? "Low EV" : stintMode === "delta" ? "Slow" : stintMode === "draft" ? "Invalid" : "High falloff"}
+            </span>
+            <span className="laps-stint-legend-item">
+              <span className="laps-stint-legend-swatch" style={{ outline: "2px solid var(--cyan)", outlineOffset: 1, background: "transparent" }} />
+              Selected
+            </span>
+            <span className="laps-stint-legend-item">
+              <span className="laps-stint-legend-swatch" style={{ boxShadow: "0 0 0 1px var(--cyan)", background: "transparent" }} />
+              Best window
+            </span>
+          </div>
+        </section>
+      )}
 
       {/* ── Top Cards ── */}
       {windowsData && (
@@ -241,6 +338,23 @@ export function LapsTab({ overview }: LapsTabProps) {
                         </button>
                         <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); handleAddToCompare(lap.lap_number); }} title="Add to Compare">
                           <BarChart3 size={10} />
+                        </button>
+                        <button className="trackmap-action-btn" onClick={(e) => {
+                          e.stopPropagation();
+                          const item = makeBasketItem(
+                            overview.run_id, lap.lap_number,
+                            `Lap ${lap.lap_number}`,
+                            overview.session.car_name ?? null,
+                            (overview.session.track_display_name ?? overview.session.track_name) ?? null,
+                            overview.session.setup_name ?? null,
+                            lap.lap_time ?? null,
+                            lap.classification_tags ?? [],
+                            tags.some(t => t.includes("DRAFT")) ? "DRAFT_AFFECTED" : "LIKELY_SOLO",
+                            null,
+                          );
+                          setTest(item);
+                        }} title="Set as Test in Compare Basket">
+                          <Gauge size={10} />
                         </button>
                       </div>
                     </td>
