@@ -33,6 +33,30 @@ function paceQualityColor(score: number | null | undefined): string {
   return "#ef4444";
 }
 
+/** Human-readable label for the pace–trust relationship. */
+function classifyPaceTrust(
+  pq: number | null | undefined,
+  ec: number | null | undefined,
+  _su: number | null | undefined,
+  warnings: string[] | undefined,
+): string {
+  if (!warnings) warnings = [];
+  const upper = warnings.map(w => w.toUpperCase());
+  if (upper.some(w => w.includes("DRAFT"))) return "Draft-affected: setup conclusions limited";
+  if (upper.some(w => w.includes("60%") || w.includes("INSUFFICIENT") || w.includes("ONLY"))) return "Insufficient valid laps";
+  if (pq != null && ec != null) {
+    if (pq >= 70 && ec < 50) return "Fast but not trustworthy";
+    if (ec >= 70 && pq < 50) return "Clean but not fast";
+    if (pq >= 70 && ec >= 70) return "Strong clean pace";
+    if (pq < 30 && ec < 30) return "Not useful for setup decisions";
+  }
+  return "Usable with caution";
+}
+
+const PERFORMANCE_TOOLTIP = "How strong the pace was, based on speed relative to reference, consistency, falloff, and stress context.";
+const TRUST_TOOLTIP = "How trustworthy this data is for setup decisions, based on validity, draft status, data completeness, window size, and context stability.";
+const ENGINEERING_VALUE_TOOLTIP = "Combined decision value for setup work. A fast lap with low trust may still have low Engineering Value.";
+
 export function LapsTab({ overview }: LapsTabProps) {
   const { selection, selectLap, setWorkspace } = useTelemetrySelection();
   const [windowsData, setWindowsData] = useState<LapWindowsResponse | null>(null);
@@ -102,11 +126,10 @@ export function LapsTab({ overview }: LapsTabProps) {
           {[10, 20].map((size) => {
             const bw = windowsData.best_windows.find(w => w.window_size === size)?.best_window;
             const pqScore = bw?.pace_quality_score;
-            const pqLabel = bw?.pace_quality_label;
             const ecScore = bw?.evidence_confidence_score;
-            const ecLabel = bw?.evidence_confidence_label;
             const suScore = bw?.setup_usefulness_score;
-            const suLabel = bw?.setup_usefulness_label;
+            const warnings = bw?.pace_quality_warnings;
+            const relationship = classifyPaceTrust(pqScore, ecScore, suScore, warnings);
             return (
               <div className="metric-card" key={size}>
                 <span><Gauge size={14} /> Best {size}-Lap Avg</span>
@@ -115,20 +138,21 @@ export function LapsTab({ overview }: LapsTabProps) {
                     ? formatTime(bw.average_lap_time)
                     : windowsData.total_valid_laps < size ? `Need ${size} laps` : "—"}
                 </strong>
+                <div style={{ fontSize: 10, color: "#8d9aaa", marginTop: 2 }}>{relationship}</div>
                 <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
                   {pqScore != null && (
-                    <span style={{ fontSize: 10, color: paceQualityColor(pqScore), background: `${paceQualityColor(pqScore)}15`, padding: "1px 6px", borderRadius: 4, whiteSpace: "nowrap" }}>
-                      Pace: {pqScore.toFixed(0)} — {pqLabel}
+                    <span title={PERFORMANCE_TOOLTIP} style={{ fontSize: 10, color: paceQualityColor(pqScore), background: `${paceQualityColor(pqScore)}15`, padding: "1px 6px", borderRadius: 4, whiteSpace: "nowrap", cursor: "default" }}>
+                      Performance: {pqScore.toFixed(0)}
                     </span>
                   )}
                   {ecScore != null && (
-                    <span style={{ fontSize: 10, color: paceQualityColor(ecScore), background: `${paceQualityColor(ecScore)}15`, padding: "1px 6px", borderRadius: 4, whiteSpace: "nowrap" }}>
-                      Evidence: {ecScore.toFixed(0)} — {ecLabel}
+                    <span title={TRUST_TOOLTIP} style={{ fontSize: 10, color: paceQualityColor(ecScore), background: `${paceQualityColor(ecScore)}15`, padding: "1px 6px", borderRadius: 4, whiteSpace: "nowrap", cursor: "default" }}>
+                      Trust: {ecScore.toFixed(0)}
                     </span>
                   )}
                   {suScore != null && (
-                    <span style={{ fontSize: 10, color: paceQualityColor(suScore), background: `${paceQualityColor(suScore)}15`, padding: "1px 6px", borderRadius: 4, whiteSpace: "nowrap" }}>
-                      Setup: {suScore.toFixed(0)} — {suLabel}
+                    <span title={ENGINEERING_VALUE_TOOLTIP} style={{ fontSize: 10, color: paceQualityColor(suScore), background: `${paceQualityColor(suScore)}15`, padding: "1px 6px", borderRadius: 4, whiteSpace: "nowrap", cursor: "default" }}>
+                      Engineering Value: {suScore.toFixed(0)}
                     </span>
                   )}
                 </div>

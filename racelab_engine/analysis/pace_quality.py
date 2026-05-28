@@ -247,6 +247,36 @@ def score_shock_safety(shock_activity_index: float | None = None) -> float:
     return logistic_score(shock_activity_index, good=0.30, bad=0.90, invert=True)
 
 
+# ── Pace–trust relationship classifier ────────────────────────
+
+def classify_pace_trust_relationship(
+    pace_quality_score: float,
+    evidence_confidence_score: float,
+    setup_usefulness_score: float,
+    warnings: list[str],
+) -> str:
+    """
+    Classify the relationship between pace and trust into a human-readable label.
+
+    Returns a short string describing the relationship, e.g.
+    "Fast but not trustworthy", "Clean but not fast", etc.
+    """
+    upper_warnings = [w.upper() for w in warnings]
+    if any("DRAFT" in w for w in upper_warnings):
+        return "Draft-affected: setup conclusions limited"
+    if any("60%" in w or "INSUFFICIENT" in w or "ONLY" in w for w in upper_warnings):
+        return "Insufficient valid laps"
+    if pace_quality_score >= 70 and evidence_confidence_score < 50:
+        return "Fast but not trustworthy"
+    if evidence_confidence_score >= 70 and pace_quality_score < 50:
+        return "Clean but not fast"
+    if pace_quality_score >= 70 and evidence_confidence_score >= 70:
+        return "Strong clean pace"
+    if pace_quality_score < 30 and evidence_confidence_score < 30:
+        return "Not useful for setup decisions"
+    return "Usable with caution"
+
+
 # ── Evidence confidence deductions ────────────────────────────
 
 def compute_evidence_deductions(

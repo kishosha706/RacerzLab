@@ -5,6 +5,7 @@ from __future__ import annotations
 from racelab_engine.analysis.pace_quality import (
     PaceQualityResult,
     clamp_score,
+    classify_pace_trust_relationship,
     compute_evidence_deductions,
     compute_pace_quality_score,
     logistic_score,
@@ -467,3 +468,158 @@ class TestComputePaceQualityScore:
             lap_time_std_dev=0.03, falloff_sec_per_lap=0.005,
         )
         assert result.component_scores.get("pace_speed", 0) == 70
+
+    def test_missing_reference_includes_confidence_note(self) -> None:
+        """Missing reference lap should include a confidence note."""
+        result = self._assert_result(
+            window_size=20, valid_lap_count=20,
+            classification_tags=["SOLO_CLEAN"], draft_statuses=["LIKELY_SOLO"],
+            avg_lap_time=90.0,
+            lap_time_std_dev=0.03, falloff_sec_per_lap=0.005,
+        )
+        assert any("reference" in n.lower() for n in result.confidence_notes)
+
+    def test_missing_tire_data_does_not_affect_performance(self) -> None:
+        """Missing tire data should reduce trust but not fake bad performance."""
+        with_tire = self._assert_result(
+            window_size=20, valid_lap_count=20,
+            classification_tags=["SOLO_CLEAN"], draft_statuses=["LIKELY_SOLO"],
+            avg_lap_time=90.0, reference_lap_time=89.0,
+            lap_time_std_dev=0.03, falloff_sec_per_lap=0.005,
+            tire_temp_spread=3.0,
+        )
+        without_tire = self._assert_result(
+            window_size=20, valid_lap_count=20,
+            classification_tags=["SOLO_CLEAN"], draft_statuses=["LIKELY_SOLO"],
+            avg_lap_time=90.0, reference_lap_time=89.0,
+            lap_time_std_dev=0.03, falloff_sec_per_lap=0.005,
+        )
+        # Performance should be similar (tire is only 7% of pace weight)
+        assert abs(with_tire.pace_quality_score - without_tire.pace_quality_score) < 10
+        # Trust should be lower without tire data
+        assert without_tire.evidence_confidence_score < with_tire.evidence_confidence_score
+
+    def test_missing_shock_data_does_not_affect_performance(self) -> None:
+        """Missing shock data should reduce trust but not fake bad performance."""
+        with_shock = self._assert_result(
+            window_size=20, valid_lap_count=20,
+            classification_tags=["SOLO_CLEAN"], draft_statuses=["LIKELY_SOLO"],
+            avg_lap_time=90.0, reference_lap_time=89.0,
+            lap_time_std_dev=0.03, falloff_sec_per_lap=0.005,
+            shock_activity_index=0.2,
+        )
+        without_shock = self._assert_result(
+            window_size=20, valid_lap_count=20,
+            classification_tags=["SOLO_CLEAN"], draft_statuses=["LIKELY_SOLO"],
+            avg_lap_time=90.0, reference_lap_time=89.0,
+            lap_time_std_dev=0.03, falloff_sec_per_lap=0.005,
+        )
+        # Performance should be similar (shock is only 5% of pace weight)
+        assert abs(with_shock.pace_quality_score - without_shock.pace_quality_score) < 10
+        # Trust should be lower without shock data
+        assert without_shock.evidence_confidence_score < with_shock.evidence_confidence_score
+
+    def test_missing_platform_data_does_not_affect_performance(self) -> None:
+        """Missing platform data should reduce trust but not fake bad performance."""
+        with_platform = self._assert_result(
+            window_size=20, valid_lap_count=20,
+            classification_tags=["SOLO_CLEAN"], draft_statuses=["LIKELY_SOLO"],
+            avg_lap_time=90.0, reference_lap_time=89.0,
+            lap_time_std_dev=0.03, falloff_sec_per_lap=0.005,
+            platform_risk_peak=0.3,
+        )
+        without_platform = self._assert_result(
+            window_size=20, valid_lap_count=20,
+            classification_tags=["SOLO_CLEAN"], draft_statuses=["LIKELY_SOLO"],
+            avg_lap_time=90.0, reference_lap_time=89.0,
+            lap_time_std_dev=0.03, falloff_sec_per_lap=0.005,
+        )
+        # Performance should be similar (platform is only 8% of pace weight)
+        assert abs(with_platform.pace_quality_score - without_platform.pace_quality_score) < 10
+        # Trust should be lower without platform data
+        assert without_platform.evidence_confidence_score < with_platform.evidence_confidence_score
+
+    def test_backward_compatible_score_alias(self) -> None:
+        """The .score alias should equal setup_usefulness_score."""
+        result = self._assert_result(
+            window_size=20, valid_lap_count=20,
+            classification_tags=["SOLO_CLEAN"], draft_statuses=["LIKELY_SOLO"],
+            avg_lap_time=90.0, reference_lap_time=89.0,
+            lap_time_std_dev=0.03, falloff_sec_per_lap=0.005,
+        )
+        assert result.score == result.setup_usefulness_score
+
+    def test_backward_compatible_label_alias(self) -> None:
+        """The .label alias should equal setup_usefulness_label."""
+        result = self._assert_result(
+            window_size=20, valid_lap_count=20,
+            classification_tags=["SOLO_CLEAN"], draft_statuses=["LIKELY_SOLO"],
+            avg_lap_time=90.0, reference_lap_time=89.0,
+            lap_time_std_dev=0.03, falloff_sec_per_lap=0.005,
+        )
+        assert result.label == result.setup_usefulness_label
+
+
+class TestClassifyPaceTrustRelationship:
+    def test_high_pace_low_trust(self) -> None:
+        label = classify_pace_trust_relationship(
+            pace_quality_score=85.0,
+            evidence_confidence_score=30.0,
+            setup_usefulness_score=50.0,
+            warnings=[],
+        )
+        assert "Fast but not trustworthy" in label
+
+    def test_low_pace_high_trust(self) -> None:
+        label = classify_pace_trust_relationship(
+            pace_quality_score=30.0,
+            evidence_confidence_score=85.0,
+            setup_usefulness_score=50.0,
+            warnings=[],
+        )
+        assert "Clean but not fast" in label
+
+    def test_high_pace_high_trust(self) -> None:
+        label = classify_pace_trust_relationship(
+            pace_quality_score=85.0,
+            evidence_confidence_score=85.0,
+            setup_usefulness_score=85.0,
+            warnings=[],
+        )
+        assert "Strong clean pace" in label
+
+    def test_low_pace_low_trust(self) -> None:
+        label = classify_pace_trust_relationship(
+            pace_quality_score=20.0,
+            evidence_confidence_score=20.0,
+            setup_usefulness_score=20.0,
+            warnings=[],
+        )
+        assert "Not useful for setup decisions" in label
+
+    def test_draft_warning_returns_draft_label(self) -> None:
+        label = classify_pace_trust_relationship(
+            pace_quality_score=85.0,
+            evidence_confidence_score=85.0,
+            setup_usefulness_score=85.0,
+            warnings=["Draft affected"],
+        )
+        assert "Draft-affected" in label
+
+    def test_insufficient_valid_laps_warning(self) -> None:
+        label = classify_pace_trust_relationship(
+            pace_quality_score=50.0,
+            evidence_confidence_score=50.0,
+            setup_usefulness_score=50.0,
+            warnings=["Fewer than 60% of laps in this window are valid."],
+        )
+        assert "Insufficient valid laps" in label
+
+    def test_mid_range_returns_usable(self) -> None:
+        label = classify_pace_trust_relationship(
+            pace_quality_score=55.0,
+            evidence_confidence_score=55.0,
+            setup_usefulness_score=55.0,
+            warnings=[],
+        )
+        assert "Usable with caution" in label
