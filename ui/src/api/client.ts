@@ -123,6 +123,7 @@ export function fetchCompareInsights(request: {
   });
 }
 
+import type { LapWindowsResponse } from "../types/laps";
 import type { RaceLabSession, RunLapList } from "../types/session";
 import type { TrackMap, TrackMapIndexEntry, TrackMapPackage } from "../types/trackMap";
 
@@ -202,6 +203,13 @@ export function addRunToSession(sessionId: string, runId: string): Promise<RaceL
 
 export function fetchRunLapList(runId: string): Promise<RunLapList> {
   return requestJson<RunLapList>(`/api/sessions/runs/${encodeURIComponent(runId)}/laps`);
+}
+
+export function fetchLapWindows(runId: string, includeDraft = false): Promise<LapWindowsResponse> {
+  const params = new URLSearchParams();
+  if (includeDraft) params.set("include_draft", "true");
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestJson<LapWindowsResponse>(`/api/runs/${encodeURIComponent(runId)}/lap-windows${suffix}`);
 }
 
 export function fetchRunTrackMapPackage(

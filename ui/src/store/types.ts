@@ -14,6 +14,7 @@ export type SelectionMode =
 export type Workspace =
   | "overview"
   | "map"
+  | "laps"
   | "platform_trace"
   | "speed_delta"
   | "drag_scrub"

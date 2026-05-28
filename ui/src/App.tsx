@@ -1,4 +1,4 @@
-import { BarChart3, Boxes, Gauge, Layers, List, MapPin, Wrench } from "lucide-react";
+import { BarChart3, Boxes, Clock, Gauge, Layers, List, MapPin, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
@@ -27,6 +27,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { humanizeModeLabel, humanizeWorkspaceLabel } from "./constants/ui";
 import { TRACE_WORKBENCH_CHANNELS } from "./constants/workbenchChannels";
 import { CompareTab } from "./tabs/CompareTab";
+import { LapsTab } from "./tabs/LapsTab";
 import { NotebookTab } from "./tabs/NotebookTab";
 import { OverviewTab } from "./tabs/OverviewTab";
 import { PlatformTab } from "./tabs/PlatformTab";
@@ -197,6 +198,9 @@ function CockpitShell() {
     if (ws === "compare") {
       return <CompareTab runs={runs} currentRunId={overview.run_id} />;
     }
+    if (ws === "laps") {
+      return <LapsTab overview={overview} />;
+    }
     if (ws === "map") {
       return <TrackMapTab runId={overview.run_id} lap={selection.selectedLap}
         trackName={overview.session.track_display_name ?? overview.session.track_name}
@@ -273,6 +277,7 @@ function CockpitShell() {
           {([
             ["overview", "Overview", Gauge],
             ["map", "Map", MapPin],
+            ["laps", "Laps", Clock],
             ["platform_trace", "Platform", Layers],
             ["setup_impact", "Setup", Wrench],
             ["compare", "Compare", BarChart3],
