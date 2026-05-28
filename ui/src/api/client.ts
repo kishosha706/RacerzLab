@@ -152,9 +152,16 @@ export function importMt2File(file: File): Promise<TrackMapIndexEntry> {
 
 /** Import an .mt2 file from a local filesystem path (Tauri native picker). */
 export function importMt2FileFromPath(filePath: string): Promise<TrackMapIndexEntry> {
-  return requestJson<TrackMapIndexEntry>("/api/imports/mt2", {
+  return fetch(`${API_BASE}/api/imports/mt2`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path: filePath }),
+  }).then(async (response) => {
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Import failed: ${response.status}`);
+    }
+    return response.json() as Promise<TrackMapIndexEntry>;
   });
 }
 

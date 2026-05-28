@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -29,8 +30,7 @@ def _get_track_name(overview) -> str:
     """Safely extract track_name from a RunOverview."""
     session = getattr(overview, "session", None)
     if session is not None:
-        name = getattr(session, "track_name", None) or getattr(session, "track_display_name", None)
-        if name:
+        if name := getattr(session, "track_name", None) or getattr(session, "track_display_name", None):
             return name
     return ""
 
@@ -38,14 +38,21 @@ def _get_track_name(overview) -> str:
 # ── import ────────────────────────────────────────────────────
 
 @router.post("/imports/mt2")
-async def import_mt2_endpoint(file: UploadFile = File(None), request: Request = None) -> dict:
+async def import_mt2_endpoint(request: Request) -> dict:
     """Import an .mt2 track map file.
 
     Primary path: multipart file upload (used by the browser UI).
     Secondary path: JSON {path: ...} (used by Tauri native picker).
     """
-    if file is not None:
+    content_type = request.headers.get("content-type", "").lower()
+
+    if "multipart/form-data" in content_type:
         # Multipart upload path
+        form = await request.form()
+        raw_file = form.get("file")
+        if raw_file is None or not isinstance(raw_file, UploadFile):
+            raise HTTPException(400, "Missing file in upload.")
+        file: UploadFile = raw_file
         if not file.filename or not file.filename.lower().endswith(".mt2"):
             raise HTTPException(400, "Unsupported file type. Please select an .mt2 track map file.")
         safe_name = file.filename
@@ -60,31 +67,30 @@ async def import_mt2_endpoint(file: UploadFile = File(None), request: Request = 
             raise HTTPException(422, f"Failed to parse .mt2: {e}") from e
         return entry
 
-    # JSON path import (Tauri native picker)
-    if request is not None:
-        content_type = request.headers.get("content-type", "").lower()
-        if "application/json" in content_type:
-            body = await request.json()
-            path_or_file = body.get("path")
-            if not path_or_file:
-                raise HTTPException(400, "Missing 'path' in JSON body.")
-            resolved = os.path.abspath(os.path.normpath(path_or_file))
-            if not os.path.exists(resolved):
-                raise HTTPException(400, f"Path does not exist: {resolved}")
-            if os.path.isdir(resolved):
-                raise HTTPException(400, "Path is a directory, not a file.")
-            if not resolved.lower().endswith(".mt2"):
-                raise HTTPException(400, "Path must point to an .mt2 file.")
-            if ".." in path_or_file or path_or_file.startswith("~"):
-                raise HTTPException(400, "Path traversal is not allowed.")
-            try:
-                from racelab_engine.services.track_map_service import import_mt2_file
-                entry = import_mt2_file(resolved)
-            except ValueError as e:
-                raise HTTPException(400, str(e)) from e
-            except Exception as e:
-                raise HTTPException(422, f"Failed to parse .mt2: {e}") from e
-            return entry
+    if "application/json" in content_type:
+        # JSON path import (Tauri native picker)
+        body_bytes = await request.body()
+        body = json.loads(body_bytes) if body_bytes else {}
+        path_or_file = body.get("path")
+        if not path_or_file:
+            raise HTTPException(400, "Missing 'path' in JSON body.")
+        resolved = os.path.abspath(os.path.normpath(path_or_file))
+        if not os.path.exists(resolved):
+            raise HTTPException(400, f"Path does not exist: {resolved}")
+        if os.path.isdir(resolved):
+            raise HTTPException(400, "Path is a directory, not a file.")
+        if not resolved.lower().endswith(".mt2"):
+            raise HTTPException(400, "Path must point to an .mt2 file.")
+        if ".." in path_or_file or path_or_file.startswith("~"):
+            raise HTTPException(400, "Path traversal is not allowed.")
+        try:
+            from racelab_engine.services.track_map_service import import_mt2_file
+            entry = import_mt2_file(resolved)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        except Exception as e:
+            raise HTTPException(422, f"Failed to parse .mt2: {e}") from e
+        return entry
 
     raise HTTPException(400, "Unsupported Content-Type. Use multipart/form-data or application/json.")
 
