@@ -1,5 +1,5 @@
 import { AlertTriangle, BarChart3, Clock, Gauge, Layers, List, MapPin, TrendingDown, Trophy } from "lucide-react";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchLapWindows, fetchRunList } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useCompareBasket } from "../store/CompareBasketContext";
@@ -71,6 +71,93 @@ function stintMapColor(ev: number | null | undefined): string {
   return "#ef4444";
 }
 
+/** Build compact trust-reason chips from a window's warnings and tags. */
+function trustReasonChips(
+  ecScore: number | null | undefined,
+  warnings: string[] | undefined,
+  tags: string[] | undefined,
+): string[] {
+  if (ecScore == null || ecScore >= 70) return [];
+  const chips: string[] = [];
+  const upper = (warnings ?? []).map(w => w.toUpperCase());
+  const tagUpper = (tags ?? []).map(t => t.toUpperCase());
+  if (tagUpper.some(t => t.includes("DRAFT"))) chips.push("Draft");
+  if (upper.some(w => w.includes("DRAFT"))) chips.push("Draft");
+  if (upper.some(w => w.includes("INVALID") || w.includes("INSUFFICIENT") || w.includes("ONLY"))) chips.push("Few laps");
+  if (upper.some(w => w.includes("TIRE") || w.includes("TEMP"))) chips.push("Tire data");
+  if (upper.some(w => w.includes("SHOCK"))) chips.push("Shock data");
+  if (upper.some(w => w.includes("PLATFORM"))) chips.push("Platform data");
+  if (upper.some(w => w.includes("SHORT"))) chips.push("Short window");
+  return [...new Set(chips)].slice(0, 3);
+}
+
+/** SVG sparkline for lap-time trend. */
+function LapTimeSparkline({
+  laps, windowRanges, selectedLap, onSelectLap,
+}: {
+  laps: Array<{ lap_number: number; lap_time?: number | null; is_useful: boolean; classification_tags: string[] }>;
+  windowRanges: Array<{ start: number; end: number }>;
+  selectedLap: number | null | undefined;
+  onSelectLap: (n: number) => void;
+}) {
+  const w = 400;
+  const h = 80;
+  const pad = { top: 4, right: 8, bottom: 16, left: 36 };
+  const iw = w - pad.left - pad.right;
+  const ih = h - pad.top - pad.bottom;
+
+  const valid = laps.filter(l => l.lap_time != null && l.is_useful);
+  if (valid.length < 2) return null;
+
+  const times = valid.map(l => l.lap_time!);
+  const minT = Math.min(...times);
+  const maxT = Math.max(...times);
+  const range = Math.max(maxT - minT, 0.01);
+
+  const xScale = (n: number) => pad.left + ((n - valid[0].lap_number) / Math.max(valid[valid.length - 1].lap_number - valid[0].lap_number, 1)) * iw;
+  const yScale = (t: number) => pad.top + (1 - (t - minT) / range) * ih;
+
+  const line = valid.map((l, i) => `${i === 0 ? "M" : "L"}${xScale(l.lap_number).toFixed(1)},${yScale(l.lap_time!).toFixed(1)}`).join(" ");
+
+  return (
+    <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block", maxWidth: w }}>
+      {/* Best window shading */}
+      {windowRanges.map((wr, i) => {
+        const x1 = xScale(wr.start);
+        const x2 = xScale(wr.end);
+        return <rect key={i} x={x1} y={pad.top} width={x2 - x1} height={ih} fill="rgba(56,189,248,0.08)" rx={2} />;
+      })}
+      {/* Grid lines */}
+      <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + ih} stroke="#1f2937" strokeWidth={1} />
+      <line x1={pad.left} y1={pad.top + ih} x2={pad.left + iw} y2={pad.top + ih} stroke="#1f2937" strokeWidth={1} />
+      {/* Y-axis labels */}
+      <text x={pad.left - 4} y={pad.top + 4} textAnchor="end" fill="#64748b" fontSize={8}>{minT.toFixed(2)}s</text>
+      <text x={pad.left - 4} y={pad.top + ih} textAnchor="end" fill="#64748b" fontSize={8}>{maxT.toFixed(2)}s</text>
+      {/* Line */}
+      <path d={line} fill="none" stroke="#38bdf8" strokeWidth={1.5} strokeOpacity={0.7} />
+      {/* Dots */}
+      {valid.map(l => {
+        const cx = xScale(l.lap_number);
+        const cy = yScale(l.lap_time!);
+        const isSel = l.lap_number === selectedLap;
+        const tags = l.classification_tags ?? [];
+        const hasDraft = tags.some(t => t.includes("DRAFT"));
+        return (
+          <circle
+            key={l.lap_number}
+            cx={cx} cy={cy} r={isSel ? 4 : 2.5}
+            fill={hasDraft ? "#f59e0b" : isSel ? "#38bdf8" : "#4ade80"}
+            stroke={isSel ? "#fff" : "none"}
+            strokeWidth={1}
+            style={{ cursor: "pointer" }}
+            onClick={() => onSelectLap(l.lap_number)}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
 export function LapsTab({ overview }: LapsTabProps) {
   const { selection, selectLap, setWorkspace } = useTelemetrySelection();
   const { setBaseline, setTest } = useCompareBasket();
@@ -81,6 +168,9 @@ export function LapsTab({ overview }: LapsTabProps) {
   const [subview, setSubview] = useState<LapsSubview>("current");
   const [allRuns, setAllRuns] = useState<RunListItem[]>([]);
   const [runsLoading, setRunsLoading] = useState(false);
+  const [hoveredWindowId, setHoveredWindowId] = useState<string | null>(null);
+  const [selectedWindowId, setSelectedWindowId] = useState<string | null>(null);
+  const stintRef = useRef<HTMLDivElement>(null);
 
   // Load all runs for cross-session views
   useEffect(() => {
@@ -370,19 +460,29 @@ export function LapsTab({ overview }: LapsTabProps) {
               ))}
             </div>
           </div>
-          <div className="laps-stint-map">
+          <div className="laps-stint-map" ref={stintRef}>
             {laps.map((lap) => {
               const tags = lap.classification_tags ?? [];
               const hasDraft = tags.some((t) => t.includes("DRAFT"));
-              const isValid = lap.is_useful && !hasDraft;
+              const isOutLap = lap.lap_type === "out";
+              const isInLap = lap.lap_type === "in";
+              const isPit = lap.lap_type === "pit" || lap.lap_type === "unknown";
+              const isValid = lap.is_useful && !hasDraft && !isOutLap && !isInLap;
               const isSelected = selection.selectedLap === lap.lap_number;
-              // Find best window for this lap
-              const inBestWindow = windowsData.best_windows.some((wg) =>
+              // Check if this lap belongs to a hovered or selected window
+              const inHoveredWindow = hoveredWindowId != null && windowsData.best_windows.some((wg) =>
+                (wg.best_window?.window_id ?? "") === hoveredWindowId && wg.best_window &&
+                lap.lap_number >= wg.best_window.start_lap && lap.lap_number <= wg.best_window.end_lap
+              );
+              const inSelectedWindow = selectedWindowId != null && windowsData.best_windows.some((wg) =>
+                (wg.best_window?.window_id ?? "") === selectedWindowId && wg.best_window &&
+                lap.lap_number >= wg.best_window.start_lap && lap.lap_number <= wg.best_window.end_lap
+              );
+              const inBestWindow = inSelectedWindow || inHoveredWindow || windowsData.best_windows.some((wg) =>
                 wg.best_window && lap.lap_number >= wg.best_window.start_lap && lap.lap_number <= wg.best_window.end_lap
               );
               let color = "#1f2937";
               if (stintMode === "ev") {
-                // Use Engineering Value from best window if available, else fallback
                 const bw = windowsData.best_windows.find(w => w.window_size === 10)?.best_window;
                 color = stintMapColor(bw?.setup_usefulness_score);
               } else if (stintMode === "delta") {
@@ -400,14 +500,28 @@ export function LapsTab({ overview }: LapsTabProps) {
                 else if (falloff < 0.05) color = "#f59e0b";
                 else color = "#ef4444";
               }
+              // Non-color markers
+              let marker = "";
+              if (hasDraft) { marker = "D"; }
+              else if (!lap.is_useful) { marker = "!"; }
+              else if (isOutLap) { marker = "O"; }
+              else if (isInLap) { marker = "I"; }
+              else if (isPit) { marker = "P"; }
+              const ariaLabel = `Lap ${lap.lap_number}${lap.lap_time != null ? `, ${lap.lap_time.toFixed(3)} seconds` : ""}${hasDraft ? ", draft affected" : ""}${!lap.is_useful ? ", invalid" : ""}${isOutLap ? ", out lap" : ""}${isInLap ? ", in lap" : ""}`;
               return (
                 <div
                   key={lap.lap_id}
-                  className={`laps-stint-block ${isSelected ? "selected" : ""} ${!isValid ? "invalid" : ""} ${hasDraft ? "draft" : ""} ${inBestWindow ? "window-outline" : ""}`}
+                  className={`laps-stint-block ${isSelected ? "selected" : ""} ${!isValid ? "invalid" : ""} ${hasDraft ? "draft" : ""} ${inBestWindow ? "window-outline" : ""} ${inSelectedWindow ? "window-highlight" : ""} ${inHoveredWindow ? "window-hover" : ""}`}
                   style={{ background: color }}
                   onClick={() => selectLap(lap.lap_number)}
-                  title={`Lap ${lap.lap_number}: ${lap.lap_time != null ? lap.lap_time.toFixed(3) + "s" : "—"}${hasDraft ? " [DRAFT]" : ""}${!isValid ? " [INVALID]" : ""}`}
-                />
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectLap(lap.lap_number); } }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={ariaLabel}
+                  title={`Lap ${lap.lap_number}: ${lap.lap_time != null ? lap.lap_time.toFixed(3) + "s" : "—"}${hasDraft ? " [DRAFT]" : ""}${!lap.is_useful ? " [INVALID]" : ""}${isOutLap ? " [OUT]" : ""}${isInLap ? " [IN]" : ""}`}
+                >
+                  {marker && <span className="laps-stint-marker">{marker}</span>}
+                </div>
               );
             })}
           </div>
@@ -432,7 +546,34 @@ export function LapsTab({ overview }: LapsTabProps) {
               <span className="laps-stint-legend-swatch" style={{ boxShadow: "0 0 0 1px var(--cyan)", background: "transparent" }} />
               Best window
             </span>
+            <span className="laps-stint-legend-item">
+              <span className="laps-stint-marker" style={{ position: "static", display: "inline-flex", marginRight: 4 }}>D</span>
+              Draft
+            </span>
+            <span className="laps-stint-legend-item">
+              <span className="laps-stint-marker" style={{ position: "static", display: "inline-flex", marginRight: 4, background: "#ef4444" }}>!</span>
+              Invalid
+            </span>
+            <span className="laps-stint-legend-item">
+              <span className="laps-stint-marker" style={{ position: "static", display: "inline-flex", marginRight: 4, background: "#4a5568" }}>O</span>
+              Out/In
+            </span>
           </div>
+        </section>
+      )}
+
+      {/* ── Sparkline ── */}
+      {subview === "current" && windowsData && laps.length > 0 && (
+        <section className="workspace-section" style={{ padding: "8px 12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+            <span style={{ fontSize: 10, color: "#8d9aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Lap Time Trend</span>
+          </div>
+          <LapTimeSparkline
+            laps={laps}
+            windowRanges={windowsData.best_windows.filter(w => w.best_window).map(w => ({ start: w.best_window!.start_lap, end: w.best_window!.end_lap }))}
+            selectedLap={selection.selectedLap}
+            onSelectLap={(n) => selectLap(n)}
+          />
         </section>
       )}
 
@@ -444,21 +585,49 @@ export function LapsTab({ overview }: LapsTabProps) {
             <p className="muted">No windows available. Need more valid laps.</p>
           )}
           {windowsData.best_windows.filter(w => w.is_available).map((wg) => (
-            <div key={wg.window_size} style={{ marginBottom: 12 }}>
+            <div
+              key={wg.window_size}
+              style={{ marginBottom: 12 }}
+              onMouseEnter={() => setHoveredWindowId(wg.best_window?.window_id ?? null)}
+              onMouseLeave={() => setHoveredWindowId(null)}
+              onClick={() => setSelectedWindowId(selectedWindowId === (wg.best_window?.window_id ?? null) ? null : (wg.best_window?.window_id ?? null))}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedWindowId(selectedWindowId === (wg.best_window?.window_id ?? null) ? null : (wg.best_window?.window_id ?? null)); } }}
+            >
               <h4 style={{ fontSize: 12, color: "#8d9aaa", marginBottom: 4 }}>{wg.label}</h4>
               {wg.best_window && (
-                <div className="setup-diff-row changed" style={{ justifyContent: "space-between" }}>
+                <div className={`setup-diff-row changed ${selectedWindowId === wg.best_window.window_id ? "window-highlight" : ""}`} style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
                   <div>
                     <span>Laps {wg.best_window.start_lap}–{wg.best_window.end_lap}</span>
                     <span className="muted" style={{ marginLeft: 8 }}>
                       Avg: {wg.best_window.average_lap_time?.toFixed(3)}s
                       {' · '}EV: {wg.best_window.setup_usefulness_score?.toFixed(0) ?? "—"}
                     </span>
+                    {/* Trust reason chips */}
+                    {wg.best_window.evidence_confidence_score != null && wg.best_window.evidence_confidence_score < 70 && (
+                      <div style={{ display: "flex", gap: 3, marginTop: 4, flexWrap: "wrap" }}>
+                        {trustReasonChips(
+                          wg.best_window.evidence_confidence_score,
+                          wg.best_window.pace_quality_warnings,
+                          wg.best_window.classification_tags,
+                        ).map((chip) => (
+                          <span key={chip} className="lap-flag-badge" style={{ background: "#f59e0b20", color: "#f59e0b", fontSize: 9 }}>
+                            {chip}
+                          </span>
+                        ))}
+                        {wg.best_window.evidence_confidence_score < 50 && (
+                          <span className="lap-flag-badge" style={{ background: "#ef444420", color: "#ef4444", fontSize: 9 }}>
+                            Low trust
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div style={{ display: "flex", gap: 4 }}>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                     <button
                       className="trackmap-action-btn"
-                      onClick={() => {
+                      onClick={(e) => { e.stopPropagation();
                         const bw = wg.best_window!;
                         const item = makeBasketItem(
                           overview.run_id, bw.start_lap,
@@ -479,7 +648,7 @@ export function LapsTab({ overview }: LapsTabProps) {
                     </button>
                     <button
                       className="trackmap-action-btn"
-                      onClick={() => {
+                      onClick={(e) => { e.stopPropagation();
                         const bw = wg.best_window!;
                         const item = makeBasketItem(
                           overview.run_id, bw.start_lap,
@@ -497,6 +666,16 @@ export function LapsTab({ overview }: LapsTabProps) {
                       title="Set as Test"
                     >
                       <Gauge size={10} /> Test
+                    </button>
+                    <button
+                      className="trackmap-action-btn"
+                      onClick={(e) => { e.stopPropagation();
+                        selectLap(wg.best_window!.start_lap);
+                        setWorkspace("platform_trace", "manual");
+                      }}
+                      title="Analyze this window in Platform"
+                    >
+                      <Layers size={10} /> Platform
                     </button>
                   </div>
                 </div>
@@ -550,6 +729,21 @@ export function LapsTab({ overview }: LapsTabProps) {
                     </span>
                   )}
                 </div>
+                {/* Trust reason chips on cards */}
+                {ecScore != null && ecScore < 70 && (
+                  <div style={{ display: "flex", gap: 3, marginTop: 4, flexWrap: "wrap" }}>
+                    {trustReasonChips(ecScore, warnings, bw?.classification_tags).map((chip) => (
+                      <span key={chip} className="lap-flag-badge" style={{ background: "#f59e0b20", color: "#f59e0b", fontSize: 9 }}>
+                        {chip}
+                      </span>
+                    ))}
+                    {ecScore < 50 && (
+                      <span className="lap-flag-badge" style={{ background: "#ef444420", color: "#ef4444", fontSize: 9 }}>
+                        Low trust
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
