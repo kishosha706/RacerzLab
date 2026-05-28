@@ -42,45 +42,71 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
   }, [loadSessions]);
 
   return (
-    <main className="startup-screen">
-      <div className="startup-panel">
-        <span className="eyebrow">RaceLab Garage</span>
-        <h1>Start a new RaceLab session or open a previous session.</h1>
+    <main className="start-shell">
+      <div className="start-hero">
+        <span className="start-eyebrow">RACERZLAB</span>
+        <h1 className="start-title">Start a new RacerZLab session</h1>
+        <p className="start-subtitle">
+          Import telemetry, inspect evidence, compare setup changes, and build your next test plan.
+        </p>
 
-        <button className="primary-button" onClick={handleNewSession} disabled={creating} style={{ marginBottom: 24 }}>
-          <Plus size={16} /> {creating ? "Creating…" : "New Session"}
-        </button>
+        <div className="start-actions">
+          <button className="start-primary-btn" onClick={handleNewSession} disabled={creating}>
+            <Plus size={18} /> {creating ? "Creating…" : "New Session"}
+          </button>
+        </div>
 
-        {loading && <p className="muted">Loading previous sessions…</p>}
+        <p className="start-hint">Open a previous session below.</p>
+      </div>
 
-        {!loading && sessions.length === 0 && (
-          <div className="startup-empty">
-            <p className="muted">No previous sessions. Create a new session to begin.</p>
-          </div>
-        )}
+      {loading && <p className="muted" style={{ textAlign: "center", marginTop: 32 }}>Loading sessions…</p>}
 
-        {sessions.length > 0 && (
-          <div className="startup-session-list">
-            <h3>Previous Sessions</h3>
+      {!loading && sessions.length === 0 && (
+        <div className="start-empty">
+          <p className="muted">No previous sessions yet.</p>
+          <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>Create a new session to import your first telemetry file.</p>
+        </div>
+      )}
+
+      {!loading && sessions.length > 0 && (
+        <section className="session-list">
+          <h2 className="session-list-heading">Previous Sessions</h2>
+          <div className="session-list-grid">
             {sessions.map((s) => (
-              <div key={s.session_id} className="startup-session-row">
-                <button className="startup-session-button" onClick={() => onSessionSelected(s.session_id)}>
-                  <span className="startup-session-name">{s.name}</span>
-                  <span className="startup-session-meta">
-                    {s.track_name ?? "No track"} · {s.car_name ?? "No car"}
-                    {s.run_ids.length > 0 && ` · ${s.run_ids.length} run(s)`}
+              <div key={s.session_id} className="session-card">
+                <button
+                  className="session-card-body"
+                  onClick={() => onSessionSelected(s.session_id)}
+                  aria-label={`Open session ${s.name}`}
+                >
+                  <span className="session-card-title">{s.name}</span>
+                  <span className="session-card-meta">
+                    <span>{s.track_name ?? "No track"}</span>
+                    <span className="session-card-sep">·</span>
+                    <span>{s.car_name ?? "No car"}</span>
+                    {s.run_ids.length > 0 && (
+                      <>
+                        <span className="session-card-sep">·</span>
+                        <span>{s.run_ids.length} run{s.run_ids.length !== 1 ? "s" : ""}</span>
+                      </>
+                    )}
                   </span>
-                  <span className="startup-session-date">{s.updated_at?.slice(0, 10)}</span>
+                  <span className="session-card-date">{s.updated_at?.slice(0, 10) ?? ""}</span>
                 </button>
-                <div className="startup-session-actions">
+                <div className="session-card-actions">
                   {confirmDelete === s.session_id ? (
-                    <div className="confirm-delete-row">
-                      <span className="muted">Remove session? Telemetry files stay.</span>
-                      <button className="danger-button" onClick={() => handleDelete(s.session_id)}>Remove</button>
-                      <button className="secondary-button" onClick={() => setConfirmDelete(null)}>Cancel</button>
+                    <div className="session-confirm-delete">
+                      <span className="muted" style={{ fontSize: 11 }}>Remove session?</span>
+                      <button className="session-delete-confirm-btn" onClick={() => handleDelete(s.session_id)}>Remove</button>
+                      <button className="session-delete-cancel-btn" onClick={() => setConfirmDelete(null)}>Keep</button>
                     </div>
                   ) : (
-                    <button className="icon-button" onClick={() => setConfirmDelete(s.session_id)} title="Remove session">
+                    <button
+                      className="session-delete-btn"
+                      onClick={() => setConfirmDelete(s.session_id)}
+                      aria-label={`Delete session ${s.name}`}
+                      title="Delete session"
+                    >
                       <Trash2 size={14} />
                     </button>
                   )}
@@ -88,8 +114,8 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
               </div>
             ))}
           </div>
-        )}
-      </div>
+        </section>
+      )}
     </main>
   );
 }

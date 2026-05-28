@@ -1,4 +1,4 @@
-// ── Shared UI constants for RaceLab Garage ──────────────────
+// ── Shared UI constants for RacerZLab ────────────────────────
 // Centralized to avoid duplication across components.
 
 export const SEVERITY_COLOURS: Record<string, string> = {
@@ -190,6 +190,7 @@ export function humanizeEventLabel(eventType: string): string {
     HIGHEST_RAKE: "Highest Rake",
     HIGHEST_PLATFORM_COMPRESSION: "Highest Platform Compression",
     HIGHEST_SHOCK_ACTIVITY: "Highest Shock Activity",
+    MIN_REAR_RIDE_HEIGHT: "Min Rear Ride Height",
   };
   return map[eventType] ?? eventType.replace(/_/g, " ");
 }
@@ -234,6 +235,7 @@ export function humanizeClassificationTag(tag: string): string {
     LINE_TEST: "Line Test",
     NO_SETUP_CONCLUSION: "No Setup",
     PARTIAL: "Partial",
+    UNKNOWN_DRAFT_STATUS: "Unknown",
   };
   return map[tag] ?? tag.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }

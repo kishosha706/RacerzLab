@@ -1,5 +1,5 @@
 import { BarChart3, Boxes, Clock, Gauge, Layers, List, MapPin, Wrench } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
   fetchChannels,
@@ -63,7 +63,7 @@ function CockpitShell() {
   const [error, setError] = useState<string | null>(null);
   const [showLapBrowser, setShowLapBrowser] = useState(false);
 
-  const { selection, loadRun, selectLap, selectEvent, setWorkspace } = useTelemetrySelection();
+  const { selection, loadRun, selectLap, setWorkspace } = useTelemetrySelection();
 
   // ── keyboard shortcuts ─────────────────────────────────────
   useKeyboardShortcuts(platformEvents, setWorkspace);
@@ -220,14 +220,14 @@ function CockpitShell() {
 
   // ── loading / empty state ───────────────────────────────────
   if (loading && !overview) {
-    return <main className="boot-screen">RaceLab Garage</main>;
+    return <main className="boot-screen">RacerZLab</main>;
   }
 
   if (!overview) {
     return (
       <main className="empty-state">
         <section className="empty-panel">
-          <span className="eyebrow">RaceLab Garage</span>
+          <span className="eyebrow">RACERZLAB</span>
           <h1>No persisted runs yet</h1>
           <ImportPanel
             onImportComplete={(runId) => {

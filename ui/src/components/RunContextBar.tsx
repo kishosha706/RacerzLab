@@ -34,7 +34,7 @@ export function RunContextBar({ overview, runs: _runs, onSelectLap }: RunContext
   return (
     <header className="context-bar">
       <div className="context-bar-left">
-        <span className="context-brand">RaceLab Garage</span>
+        <span className="context-brand">RacerZLab</span>
         {session && (
           <>
             <span className="context-sep">|</span>
