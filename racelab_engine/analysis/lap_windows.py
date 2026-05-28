@@ -366,7 +366,6 @@ def compute_degradation(
             )
         elif falloff < 0.05:
             coaching_message = "Pace was consistent throughout the stint."
-    # sourcery: skip=merge-comparisons
 
     return LapDegradationSummary(
         run_id=valid[0].run_id if valid else "",
