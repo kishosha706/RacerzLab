@@ -23,14 +23,18 @@ export function RiskBar({ value, label, thresholds = DEFAULT_THRESHOLDS, colors 
 
   const pct = Math.min(100, Math.max(0, value * 100));
   let color = colors[0];
+  let riskClass = "";
   for (let i = thresholds.length - 1; i >= 0; i--) {
     if (value >= thresholds[i]) { color = colors[i]; break; }
   }
+  if (value >= 0.92) riskClass = " risk-critical";
+  else if (value >= 0.72) riskClass = " risk-high";
+  else if (value >= 0.38) riskClass = " risk-watch";
 
   return (
     <div className="risk-bar">
       <div className="risk-bar-track">
-        <div className="risk-bar-fill" style={{ width: `${pct}%`, background: color }} />
+        <div className={`risk-bar-fill${riskClass}`} style={{ width: `${pct}%`, background: color }} />
       </div>
       {label && <span className="risk-bar-label" style={{ color }}>{label}</span>}
     </div>

@@ -1,4 +1,4 @@
-import { BarChart3, Boxes, Gauge, Layers, List, Wrench } from "lucide-react";
+import { BarChart3, Boxes, Gauge, Layers, List, MapPin, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
@@ -24,6 +24,7 @@ import { RunContextBar } from "./components/RunContextBar";
 import { StartupScreen } from "./components/StartupScreen";
 import { TelemetrySelectionProvider, useTelemetrySelection } from "./store/TelemetrySelectionContext";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { humanizeModeLabel, humanizeWorkspaceLabel } from "./constants/ui";
 import { TRACE_WORKBENCH_CHANNELS } from "./constants/workbenchChannels";
 import { CompareTab } from "./tabs/CompareTab";
 import { NotebookTab } from "./tabs/NotebookTab";
@@ -271,7 +272,7 @@ function CockpitShell() {
         <nav className="workspace-nav-rail">
           {([
             ["overview", "Overview", Gauge],
-            ["map", "Map", Layers],
+            ["map", "Map", MapPin],
             ["platform_trace", "Platform", Layers],
             ["setup_impact", "Setup", Wrench],
             ["compare", "Compare", BarChart3],
@@ -296,7 +297,7 @@ function CockpitShell() {
           <div className="workspace-toolbar">
             <div>
               <span className="eyebrow">
-                {selection.selectedMode} · {selection.selectedWorkspace.replace(/_/g, " ")}
+                {humanizeModeLabel(selection.selectedMode)} · {humanizeWorkspaceLabel(selection.selectedWorkspace)}
               </span>
             </div>
             <div className="toolbar-actions">

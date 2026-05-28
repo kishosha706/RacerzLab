@@ -52,7 +52,7 @@ export function useKeyboardShortcuts(
           break;
         case "l":
         case "L":
-          setMode(selection.selectedMode === "learning" ? "diagnose" : "learning");
+          setMode(selection.selectedMode === "learning" ? "race" : "learning");
           break;
         case "ArrowLeft":
         case "ArrowRight": {

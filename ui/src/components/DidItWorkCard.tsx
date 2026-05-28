@@ -1,4 +1,5 @@
 import { AlertTriangle, Bookmark, CheckCircle, RotateCcw, XCircle } from "lucide-react";
+import { VERDICT_COLORS } from "../constants/verdict";
 
 export type VerdictKind = "keep_direction" | "undo_partially" | "undo" | "retest" | "inconclusive" | "reference_mode";
 
@@ -28,15 +29,6 @@ export interface DidItWorkCardProps {
   saveStatus?: string | null;
   disabled?: boolean;
 }
-
-const VERDICT_COLORS: Record<VerdictKind, string> = {
-  keep_direction: "#22c55e",
-  undo_partially: "#f97316",
-  undo: "#ef4444",
-  retest: "#f59e0b",
-  inconclusive: "#8d9aaa",
-  reference_mode: "#38bdf8",
-};
 
 const VERDICT_ICONS: Record<VerdictKind, typeof CheckCircle> = {
   keep_direction: CheckCircle,

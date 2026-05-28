@@ -163,3 +163,94 @@ export const PROXY_CHANNELS = new Set([
   "rear_platform_roll_deg_from_rh",
   "platform_roll_balance_deg",
 ]);
+
+// ── Human-readable labels ────────────────────────────────────
+
+/** Map internal event type to a human-readable label. */
+export function humanizeEventLabel(eventType: string): string {
+  const map: Record<string, string> = {
+    MIN_SPLITTER: "Minimum Splitter",
+    PLATFORM_LOW: "Front Platform Low",
+    PLATFORM_SCRAPE: "Front Platform Scrape",
+    REAR_PLATFORM_LOW: "Rear Platform Low",
+    REAR_PLATFORM_SCRAPE: "Rear Platform Scrape",
+    REAR_CONTACT_RISK: "Rear Contact Risk",
+    WHOLE_CAR_BOTTOMING_RISK: "Whole-Car Bottoming Risk",
+    FULL_THROTTLE_SPEED_LOSS: "Full-Throttle Speed Loss",
+    STEERING_SCRUB: "Steering Scrub",
+    DYNAMIC_PRESSURE_PEAK: "Dynamic Pressure Peak",
+    MAX_DYNAMIC_PRESSURE: "Max Dynamic Pressure",
+    SHOCK_ACTIVITY: "Shock Activity",
+    TIRE_SCRUB: "Tire Scrub",
+    RPM_FLATTENING: "RPM Flattening",
+    HIGH_CENTER_RAKE: "High Center Rake",
+    PLATFORM_COMPRESSION: "Platform Compression",
+    WORST_SPEED_LOSS: "Worst Speed Loss",
+    WORST_DRAG_SCRUB: "Worst Drag/Scrub",
+    HIGHEST_RAKE: "Highest Rake",
+    HIGHEST_PLATFORM_COMPRESSION: "Highest Platform Compression",
+    HIGHEST_SHOCK_ACTIVITY: "Highest Shock Activity",
+  };
+  return map[eventType] ?? eventType.replace(/_/g, " ");
+}
+
+/** Map internal workspace key to a human-readable label. */
+export function humanizeWorkspaceLabel(ws: string): string {
+  const map: Record<string, string> = {
+    overview: "Overview",
+    map: "Track Map",
+    platform_trace: "Platform Trace",
+    speed_delta: "Speed Delta",
+    drag_scrub: "Drag/Scrub",
+    setup_impact: "Setup Impact",
+    compare: "Compare",
+    notebook: "Notes",
+    channels: "Raw Channels",
+    setup: "Setup",
+  };
+  return map[ws] ?? ws.replace(/_/g, " ");
+}
+
+/** Map classification tag to a compact display label. */
+export function humanizeClassificationTag(tag: string): string {
+  const map: Record<string, string> = {
+    SOLO_CLEAN: "Solo",
+    LIKELY_SOLO: "Solo",
+    DRAFT_AFFECTED: "Draft",
+    POSSIBLE_DRAFT_ASSIST: "Possible Draft",
+    OUT_LAP: "Out Lap",
+    COOLDOWN: "Cooldown",
+    PIT_ROAD: "Pit Road",
+    WRECK_OR_SPIN: "Wreck/Spin",
+    INVALID_SPEED_EVENT: "Invalid",
+    INVALID_FOR_PLATFORM_TUNING: "Invalid",
+    SHORT_RUN: "Short Run",
+    LONG_RUN: "Long Run",
+    GEAR_TEST: "Gear Test",
+    TAPE_TEST: "Tape Test",
+    PLATFORM_TEST: "Platform Test",
+    TIRE_PRESSURE_TEST: "Tire Test",
+    LINE_TEST: "Line Test",
+  };
+  return map[tag] ?? tag.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/** Classify a lap by its tags for display. Returns { label, color, tone }. */
+export function classifyLapTags(tags: string[]): { label: string; color: string } | null {
+  if (tags.includes("DRAFT_AFFECTED")) return { label: "Draft", color: "#f59e0b" };
+  if (tags.includes("POSSIBLE_DRAFT_ASSIST")) return { label: "Draft?", color: "#f59e0b" };
+  if (tags.includes("SOLO_CLEAN") || tags.includes("LIKELY_SOLO")) return { label: "Solo", color: "#22c55e" };
+  if (tags.includes("OUT_LAP")) return { label: "Out", color: "#8d9aaa" };
+  if (tags.includes("COOLDOWN")) return { label: "Cool", color: "#8d9aaa" };
+  if (tags.includes("PIT_ROAD")) return { label: "Pit", color: "#8d9aaa" };
+  if (tags.some(t => t.startsWith("INVALID"))) return { label: "Invalid", color: "#ef4444" };
+  if (tags.includes("SHORT_RUN")) return { label: "Short", color: "#8d9aaa" };
+  if (tags.includes("LONG_RUN")) return { label: "Long", color: "#38bdf8" };
+  return null;
+}
+
+/** Return the display label for a mode value. */
+export function humanizeModeLabel(mode: string): string {
+  if (mode === "learning") return "Learning Mode";
+  return "Race Mode";
+}

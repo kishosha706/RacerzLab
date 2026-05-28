@@ -8,22 +8,27 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 
 - **Real .ibt ingestion** — binary parser for iRacing telemetry files with 275+ variables
 - **.mt2 Track Map support** — MoTeCTrackV2 binary parser, centerline geometry, markers, sections, curvature derivation, distance-based interpolation, SVG rendering with platform event overlays and target zone highlighting
-- **Track Map Location Intelligence** — location-aware labels replacing raw lap percentages (friendly section names, entry/center/exit phase detection), section heat strip with risk-intensity coloring, location jump chips, event clusters, pinned evidence, area drilldown table, 10 filter presets, Problem Focus mode, keyboard shortcuts, copy-to-clipboard summary
-- **Track Map matching** — automatic track name normalization and scoring-based map-to-run matching
-- **Track Map Identity** — "Loaded Run" section showing track/car/setup from .ibt, "Matched Map" section with confidence badge (green/amber)
+- **Track Map Cockpit** — two-panel layout (map + inspector), 16 data-aware layer toggles with live counts, heatmap modes (Normal/Density/Severity), section summary cards, mini event timeline, analysis summary panel, manual map association, 82 indexed maps
+- **Track Map matching** — automatic track name normalization and scoring-based map-to-run matching with optional manual override
 - **Session Manager** — create/list/get/update/delete/archive RaceLab sessions, add/remove runs, startup screen with New/Open/Delete
 - **Lap Time Browser** — compact sidebar with out/timed/in lap classification, lap times (M:SS.sss), deltas (+/-/BEST), validity icons
-- **Platform/Aero Workbench** — MoTeC-style stacked chart workbench with Platform/Rake, Speed/RPM, Drag/Scrub, and Tires presets
-- **Compare Workbook** — baseline vs test lap comparison by lap percentage with verdict, whole-car index, four corners, tires, shocks, driver, and engine views
+- **Platform/Aero Workbench** — MoTeC-style stacked chart workbench (ECharts) with Platform/Rake, Speed/RPM, Drag/Scrub, Tires, Shocks, Grade/Pull subviews
+- **Compare Workbook** — baseline vs test lap comparison by lap percentage with verdict, whole-car index, four corners, tires, shocks, driver, engine, and delta traces views
+- **Did-It-Work Card** — standalone verdict component with evidence, test discipline score, target-zone/splitter/scrub deltas, warnings, setup changes, and action buttons (Save Finding, Create Test, Open Setup, Open Evidence)
 - **Delta Traces** — per-channel delta traces with target zone highlighting (Speed/Platform, Ride Height, Tire presets)
 - **Insights Engine** — automated interpretation of comparison results with trace annotations, correlations, target zone classification, confidence-weighted verdicts, and sector intelligence
 - **Notebook & Setup Memory** — save findings, edit notes/tags/status, duplicate detection, create test plans, copy Markdown export, view setup memory dashboard with per-car/track summaries
-- **Local SQLite persistence** — imported runs, laps, events, setup snapshots, findings, test plans, and RaceLab sessions stored locally
-- **100+ calculated channels** — ride heights, rake, dynamic pressure, tire pressure gain, temp/wear spread, slip ratio, shock velocity/activity/RMS, damper energy, motion g-conversions, platform pitch/roll estimates, kinematic slip angles, dynamic grade, aero load index, drag/scrub suspicion, platform compression, stability scores, rear scrape detection, platform balance classification
+- **Setup Relevance** — 16 event types mapped to related setup keys; fields highlight/dim on event selection
+- **Learning/Race Mode** — toggle between short/direct (Race Mode) and verbose/coaching (Learning Mode) via L key or mode badge click. Mode-aware copy in Overview, Crew Chief, and inspector.
+- **Keyboard Shortcuts** — Esc clear, M/P/O/C/N workspace nav, L mode toggle, ←/→ event navigation
+- **Persistent Evidence Inspector** — right-side Crew Chief panel with event selection, evidence cards, setup linkage, and next-action buttons
+- **Local SQLite persistence** — imported runs, laps, events, setup snapshots, recommendations, segments, notebook findings, test plans, and RaceLab sessions stored locally
+- **112+ calculated channels** — ride heights, rake, dynamic pressure, tire pressure gain, temp/wear spread, slip ratio, shock velocity/activity/RMS, damper energy, motion g-conversions, platform pitch/roll estimates, kinematic slip angles, dynamic grade, aero load index, drag/scrub suspicion, platform compression, stability scores, rear scrape detection, platform balance classification
 - **Vehicle Dynamics Engine** — 6 physics modules: aero coefficients, tire dynamics (slip angles, understeer gradient), vehicle dynamics (weight transfer, brake energy), geometry (pitch/roll with motion ratios), estimate confidence, physics inputs
-- **Vectorized Analysis Pipeline** — parallel Polars path (opt-in via `RACELAB_ANALYSIS_ENGINE` env var) with 26× speedup at 10k rows, 111 core channels, full parity with row path across 38 synthetic tests + real Talladega validation
+- **Vectorized Analysis Pipeline** — parallel Polars path (opt-in via `RACELAB_ANALYSIS_ENGINE` env var) with 26× speedup at 10k rows, 111 core channels, full parity with row path across 38 synthetic tests + real Talladega validation. Row engine remains production default.
 - **Engine Comparison Script** — `scripts/compare_analysis_engines.py` for validating vector vs row path on real data
 - **Extrema-preserving downsampling** — CFS minimums and event peaks never lost in chart views
+- **310+ tests** — unit, integration, parity, benchmarks; fast suite <1s
 
 ## Proxy Disclaimer
 
@@ -74,40 +79,42 @@ cd racelab-garage
 ## Run Tests
 
 ```powershell
+# Fast suite (<1s)
+python -B -m pytest -m "not slow and not integration" -q
+
+# Full suite including .ibt-dependent tests
 pytest
 ```
 
-The full test suite (261 tests) includes unit tests, comparison math, notebook CRUD, track matching, slip ratios, drag/scrub, geometry, session logic, constants, local-config checks, and vectorized parity tests.
-
-The Talladega acceptance tests use the default fixture at:
-```text
-C:\Users\Soulj\Documents\iRacing\telemetry\stockcars camarozl12018_talladega 2026-05-07 15-05-45.ibt
-```
-
-Override via:
-```powershell
-$env:RACELAB_TALLADEGA_IBT="C:\path\to\baseline.ibt"
-pytest
-```
+See [TESTING.md](TESTING.md) for full details.
 
 ---
 
 ## Core Workflow
 
 1. **Create or open a RaceLab session** — via the startup screen
-2. **Import baseline .ibt** — via file picker or `POST /api/imports/ibt` (auto-added to session)
+2. **Import baseline .ibt** — via file picker or `POST /api/imports/ibt`
 3. **Import test .ibt** — your experimental setup or driving change
 4. **Import .mt2 track map** — via file picker or folder import for spatial overlays
-5. **Browse laps** — open the Lap Time Browser to see out/timed/in classification, lap times, and deltas
-6. **Open Platform Workbench** — inspect ride heights, rake, dynamic pressure, tire pressure/temp/slip
-7. **Open Track Map** — view centerline geometry with platform event markers, identity section, and target zone overlay
+5. **Browse laps** — open the Lap Time Browser to see classification, lap times, and deltas
+6. **Open Platform Workbench** — inspect ride heights, rake, dynamic pressure, tire pressure/temp/slip via ECharts
+7. **Open Track Map** — view centerline geometry with platform event markers, heatmaps, section cards, and layer toggles
 8. **Open Compare** — select baseline/test laps, run comparison
-9. **Review Verdict** — keep/undo/retest with confidence score and evidence
+9. **Review Verdict** — keep/undo/retest with confidence score, evidence, and Did-It-Work card
 10. **Explore Delta Traces** — see per-channel deltas by lap position with target zone highlight
-11. **Save Finding** — persist the comparison result to the Notebook
-12. **Edit Notes/Tags/Status** — add context, change confirmation status
-13. **Create Test Plan** — define the next controlled test
-14. **Setup Memory** — review the aggregate picture of what has worked
+11. **Check Setup Relevance** — highlighted setup fields linked to selected event
+12. **Save Finding** — persist the comparison result to the Notebook
+13. **Edit Notes/Tags/Status** — add context, change confirmation status
+14. **Create Test Plan** — define the next controlled test
+15. **Setup Memory** — review the aggregate picture of what has worked
+
+---
+
+## Feature Flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `RACELAB_ANALYSIS_ENGINE` | `row` | Set to `vectorized` for Polars-accelerated channel calculations (26× faster at 10k rows). Opt-in only — default switch blocked pending road course validation. |
 
 ---
 
@@ -166,15 +173,12 @@ GET  /api/sessions/runs/{run_id}/laps (standalone lap list)
 - No cloud sync — all data is local only
 - Native Tauri file dialogs not yet implemented (uses browser file input)
 - No setup editor or live setup comparison
+- Vectorized engine validated on Talladega oval only — road course and short-track real .ibt samples pending
 
 ---
 
 ## For AI Workers
 
-See `docs/ENGINEERING_CONTRACTS.md` for:
-- Channel classification rules (raw/calculated/proxy)
-- Proxy wording requirements
-- Compare contract (same-run identity, lap-percent alignment)
-- Missing-data behavior
-- Confidence tier definitions
-- Notebook dependency rule: "Save comparison/insight payloads as-is. Do not recompute."
+See `AGENTS.md` for product rules (evidence first, no junk-lap conclusions, proxy honesty, one change at a time, draft vs solo separation).
+
+See `racelab_engine/analysis/DESIGN_NOTES_vectorized_future.md` for the vectorized engine adoption plan and validation status.

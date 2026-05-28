@@ -1,9 +1,14 @@
+/**
+ * UI mode — controls explanation verbosity and decision style.
+ *
+ * - ``"race"``      — Short, direct, decision-first. Minimal explanation.
+ * - ``"learning"``  — Verbose, coaching style. Explains *why*.
+ */
 export type SelectionMode =
-  | "diagnose"
+  | "race"
   | "compare"
   | "build_test"
   | "long_run"
-  | "race"
   | "learning";
 
 export type Workspace =

@@ -1,7 +1,8 @@
 import { Car, Flag, Gauge, MapPin, ThermometerSun, Wrench } from "lucide-react";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import type { RunOverview, LapSummary } from "../types/telemetry";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
+import { humanizeWorkspaceLabel, humanizeModeLabel, classifyLapTags, humanizeClassificationTag } from "../constants/ui";
 
 type RunContextBarProps = {
   overview: RunOverview | null;
@@ -10,8 +11,8 @@ type RunContextBarProps = {
   onSelectLap?: (lap: number | null) => void;
 };
 
-export function RunContextBar({ overview, runs, onSelectRun, onSelectLap }: RunContextBarProps) {
-  const { selection } = useTelemetrySelection();
+export function RunContextBar({ overview, runs, onSelectLap }: RunContextBarProps) {
+  const { selection, setMode } = useTelemetrySelection();
   const session = overview?.session;
   const laps = overview?.laps ?? [];
 
@@ -19,6 +20,13 @@ export function RunContextBar({ overview, runs, onSelectRun, onSelectLap }: RunC
     const val = e.target.value;
     onSelectLap?.(val ? Number(val) : null);
   }, [onSelectLap]);
+
+  const handleModeToggle = useCallback(() => {
+    setMode(selection.selectedMode === "learning" ? "race" : "learning");
+  }, [selection.selectedMode, setMode]);
+
+  const modeLabel = useMemo(() => humanizeModeLabel(selection.selectedMode), [selection.selectedMode]);
+  const wsLabel = useMemo(() => humanizeWorkspaceLabel(selection.selectedWorkspace), [selection.selectedWorkspace]);
 
   return (
     <header className="context-bar">
@@ -43,20 +51,7 @@ export function RunContextBar({ overview, runs, onSelectRun, onSelectLap }: RunC
       </div>
 
       <div className="context-bar-right">
-        <select
-          value={overview?.run_id ?? ""}
-          onChange={(e) => onSelectRun(e.target.value)}
-          className="context-run-select"
-          aria-label="Select run"
-        >
-          {runs.map((run) => (
-            <option key={run.run_id} value={run.run_id}>
-              {run.track_name ?? "Run"}
-            </option>
-          ))}
-        </select>
-
-        {/* lap selector */}
+        {/* lap selector with classification tags */}
         {laps.length > 0 && (
           <select
             value={selection.selectedLap ?? ""}
@@ -65,24 +60,57 @@ export function RunContextBar({ overview, runs, onSelectRun, onSelectLap }: RunC
             aria-label="Select lap"
           >
             <option value="">Lap —</option>
-            {laps.map((lap: LapSummary) => (
-              <option key={lap.lap_number} value={lap.lap_number}>
-                Lap {lap.lap_number}
-                {lap.lap_time != null ? ` — ${lap.lap_time.toFixed(3)}s` : ""}
-                {lap.is_useful ? "" : " (invalid)"}
-              </option>
-            ))}
+            {laps.map((lap: LapSummary) => {
+              const tags = lap.classification_tags ?? [];
+              const tagLabels = tags
+                .map(t => humanizeClassificationTag(t))
+                .slice(0, 2);
+              const tagStr = tagLabels.length > 0 ? ` [${tagLabels.join(", ")}]${tags.length > 2 ? " +" : ""}` : "";
+              return (
+                <option key={lap.lap_number} value={lap.lap_number}>
+                  Lap {lap.lap_number}
+                  {lap.lap_time != null ? ` — ${lap.lap_time.toFixed(3)}s` : ""}
+                  {!lap.is_useful ? " (invalid)" : ""}
+                  {tagStr}
+                </option>
+              );
+            })}
           </select>
         )}
 
-        <span className="context-badge mode-badge">
-          <Gauge size={14} /> {selection.selectedMode}
-        </span>
+        {/* lap tag badges */}
+        {selection.selectedLap != null && (
+          (() => {
+            const lap = laps.find(l => l.lap_number === selection.selectedLap);
+            if (!lap?.classification_tags?.length) return null;
+            const cls = classifyLapTags(lap.classification_tags);
+            return cls ? (
+              <span className="context-tag-badge" style={{ borderColor: cls.color, color: cls.color }}>
+                {cls.label}
+              </span>
+            ) : null;
+          })()
+        )}
+
+        {/* mode badge — clickable toggle */}
+        <button
+          className={`context-badge mode-badge mode-${selection.selectedMode}`}
+          onClick={handleModeToggle}
+          title={selection.selectedMode === "learning"
+            ? "Learning Mode: coaching and explains why — Click for Race Mode"
+            : "Race Mode: short, decision-first output — Click for Learning Mode"}
+        >
+          <Gauge size={14} /> {modeLabel}
+        </button>
+
         {selection.selectedWorkspace !== "overview" && (
           <span className="context-badge workspace-badge">
-            <Flag size={14} /> {selection.selectedWorkspace.replace(/_/g, " ")}
+            <Flag size={14} /> {wsLabel}
           </span>
         )}
+
+        {/* baseline badge TODO */}
+        {/* Future: show "Baseline" / "Test Run" badge from session/notebook state */}
       </div>
     </header>
   );

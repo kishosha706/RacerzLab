@@ -38,7 +38,11 @@ export function EvidenceInspector({ overview, platformEvents, channels }: Eviden
     ? ` evidence-inspector anchored${justAnchored ? " anchor-just-selected" : ""}`
     : "";
 
-  if (selectedEvent) return <div className={anchorClass}><EventInspector event={selectedEvent} /></div>;
+  if (selectedEvent) return (
+    <div className={anchorClass}>
+      <EventInspector event={selectedEvent} showAnchorBadge={true} />
+    </div>
+  );
   if (selectedChannel) return <ChannelInspector channel={selectedChannel} />;
   return <RunInspector overview={overview} channels={channels} />;
 }
@@ -111,11 +115,12 @@ function CrewChiefSummary({ overview }: { overview: RunOverview }) {
   );
 }
 
-function EventInspector({ event }: { event: PlatformEventItem }) {
+function EventInspector({ event, showAnchorBadge }: { event: PlatformEventItem; showAnchorBadge?: boolean }) {
   const sevColour = event.severity === "critical" ? "#ef4444" : event.severity === "high" ? "#f97316" : event.severity === "watch" ? "#f59e0b" : "#38bdf8";
 
   return (
     <InspectorShell title={event.title} icon={<Crosshair size={16} />}>
+      {showAnchorBadge && <span className="anchor-evidence-badge"><Crosshair size={10} /> Anchored Evidence</span>}
       <div className="inspector-meta">
         <span className="severity-badge" style={{ color: sevColour, borderColor: sevColour }}>
           <AlertTriangle size={12} /> {event.severity.toUpperCase()}

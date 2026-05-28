@@ -3,7 +3,7 @@ import type { SelectionMode, SelectionSource, TelemetrySelection, Workspace } fr
 
 const DEFAULT_SELECTION: TelemetrySelection = {
   selectedRunId: null,
-  selectedMode: "diagnose",
+  selectedMode: "race",
   selectedWorkspace: "overview",
   selectionSource: "manual",
 };

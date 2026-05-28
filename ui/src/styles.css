@@ -2507,6 +2507,43 @@ td {
   font-family: "JetBrains Mono", "Fira Code", monospace;
 }
 
+/* ── Context bar polish ────────────────────────────────────── */
+.context-tag-badge {
+  font-size: 10px; padding: 1px 6px; border-radius: 3px;
+  border: 1px solid; font-weight: 600; line-height: 1.6;
+}
+.context-badge.mode-badge { cursor: pointer; transition: filter .15s; }
+.context-badge.mode-badge:hover { filter: brightness(1.3); }
+
+/* ── Timeline shortcut hint ────────────────────────────────── */
+.timeline-shortcuts {
+  font-size: 9px; color: #4a5568; letter-spacing: .02em;
+  margin: 0 auto; white-space: nowrap;
+}
+
+/* ── Crew Chief panel actions ──────────────────────────────── */
+.crew-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.crew-action-btn {
+  font-size: 11px; padding: 4px 10px; border-radius: 5px;
+  border: 1px solid #1f2937; background: #0a0d14; color: #b0bec5;
+  cursor: pointer; display: flex; align-items: center; gap: 4px;
+  transition: border-color .15s;
+}
+.crew-action-btn:hover { border-color: #334155; }
+.crew-warning-line {
+  margin: 2px 0; font-size: 12px; color: #b0bec5;
+  padding-left: 8px; border-left: 2px solid #8d9aaa;
+  display: flex; align-items: flex-start; gap: 4px;
+}
+
+/* ── Overview learning context ─────────────────────────────── */
+.overview-learning-context {
+  margin-top: 12px; padding: 10px 12px;
+  background: rgba(56,189,248,0.05); border: 1px solid rgba(56,189,248,0.15);
+  border-radius: 6px; font-size: 12px; color: #b0bec5; line-height: 1.5;
+}
+.overview-learning-context h4 { margin: 0 0 4px; font-size: 11px; color: #38bdf8; }
+
 /* ── Evidence Anchor Beam ──────────────────────────────────── */
 .evidence-inspector.anchored {
   border-left: 2px solid var(--cyan);
@@ -2644,4 +2681,178 @@ button:focus:not(:focus-visible) {
 @media (prefers-contrast: more) {
   .muted { color: #b0bec5; }
   .section-note { color: #b0bec5; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MOTION POLISH — meaningful, performance-safe effects
+   All animations respect prefers-reduced-motion.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Reusable motion-safe classes ──────────────────────────── */
+.motion-safe-pulse {
+  animation: motionPulse 2s ease-in-out infinite;
+}
+.motion-safe-shimmer {
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+.motion-safe-pop {
+  animation: motionPop 0.25s ease-out 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .motion-safe-pulse,
+  .motion-safe-shimmer,
+  .motion-safe-pop {
+    animation: none !important;
+  }
+}
+
+@keyframes motionPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+@keyframes motionPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+
+/* ── RiskBar polish ────────────────────────────────────────── */
+.risk-bar-fill {
+  transition: width 0.4s ease, background 0.3s ease;
+}
+.risk-bar-fill.risk-critical {
+  animation: riskCriticalPulse 3s ease-in-out infinite;
+}
+.risk-bar-fill.risk-high {
+  box-shadow: 0 0 6px rgba(249, 115, 22, 0.25);
+}
+.risk-bar-fill.risk-watch {
+  box-shadow: 0 0 4px rgba(245, 158, 11, 0.15);
+}
+@keyframes riskCriticalPulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(239, 68, 68, 0); }
+  50% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.3); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .risk-bar-fill.risk-critical { animation: none; }
+}
+
+/* ── Jump-to button click feedback ─────────────────────────── */
+.secondary-button.jump-clicked {
+  animation: btnClickFlash 0.3s ease-out 1;
+}
+@keyframes btnClickFlash {
+  0% { box-shadow: 0 0 0 rgba(56, 189, 248, 0); }
+  50% { box-shadow: 0 0 10px rgba(56, 189, 248, 0.3); }
+  100% { box-shadow: 0 0 0 rgba(56, 189, 248, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .secondary-button.jump-clicked { animation: none; }
+}
+
+/* ── Overview hero priority pulse ──────────────────────────── */
+.overview-hero.gain-risky {
+  animation: heroAmberPulse 3s ease-in-out infinite;
+}
+.overview-hero.gain-negative {
+  animation: heroRedPulse 3s ease-in-out infinite;
+}
+.overview-hero.gain-clean {
+  border-color: rgba(34, 197, 94, 0.4);
+}
+@keyframes heroAmberPulse {
+  0%, 100% { border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 0 rgba(245, 158, 11, 0); }
+  50% { border-color: rgba(245, 158, 11, 0.6); box-shadow: 0 0 12px rgba(245, 158, 11, 0.08); }
+}
+@keyframes heroRedPulse {
+  0%, 100% { border-color: rgba(239, 68, 68, 0.4); box-shadow: 0 0 0 rgba(239, 68, 68, 0); }
+  50% { border-color: rgba(239, 68, 68, 0.6); box-shadow: 0 0 14px rgba(239, 68, 68, 0.1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .overview-hero.gain-risky,
+  .overview-hero.gain-negative {
+    animation: none;
+  }
+}
+
+/* ── WorkbenchSubnav active glow ───────────────────────────── */
+.workbench-subnav-item.active {
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.12);
+  transition: box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+.workbench-subnav-item.active::after {
+  content: '';
+  display: block;
+  height: 2px;
+  background: var(--cyan);
+  border-radius: 1px;
+  margin-top: 2px;
+  animation: subnavUnderline 0.3s ease-out 1;
+}
+@keyframes subnavUnderline {
+  from { width: 0; opacity: 0; }
+  to { width: 100%; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workbench-subnav-item.active::after { animation: none; }
+}
+
+/* ── Track heat strip shimmer (selected/hover only) ────────── */
+.trackmap-timeline-section.shimmer-active {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.06) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+.trackmap-timeline-section:hover.shimmer-active {
+  filter: brightness(1.4);
+}
+@media (prefers-reduced-motion: reduce) {
+  .trackmap-timeline-section.shimmer-active { animation: none; }
+}
+
+/* ── Aero ribbon flow ──────────────────────────────────────── */
+.aero-pressure-fill.aero-flow {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.15) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2.5s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .aero-pressure-fill.aero-flow { animation: none; }
+}
+
+/* ── EvidenceInspector anchored badge ──────────────────────── */
+.anchor-evidence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--cyan);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  margin-bottom: 8px;
+}
+
+/* ── Secondary button hover polish ─────────────────────────── */
+.secondary-button {
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.secondary-button:hover {
+  border-color: #4a5568;
+  background: rgba(255, 255, 255, 0.03);
 }

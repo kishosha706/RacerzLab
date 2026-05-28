@@ -2,6 +2,7 @@ import { AlertTriangle, BookOpen, Clipboard, List, RotateCcw } from "lucide-reac
 import { useCallback, useEffect, useState } from "react";
 import type { NotebookFinding, SetupMemorySummary, TestPlan } from "../types/compare";
 import { findingToMarkdown } from "../utils/exportUtils";
+import { VERDICT_COLORS } from "../constants/verdict";
 
 const API_BASE = import.meta.env.VITE_RACELAB_API_BASE_URL ?? "http://127.0.0.1:8000";
 
@@ -19,13 +20,6 @@ const STATUS_COLORS: Record<string, string> = {
   rejected: "#ef4444",
   needs_retest: "#f59e0b",
   archived: "#8d9aaa",
-};
-
-const VERDICT_COLORS: Record<string, string> = {
-  keep_direction: "#22c55e",
-  undo: "#ef4444",
-  retest: "#f59e0b",
-  inconclusive: "#8d9aaa",
 };
 
 function formatVal(v: number | null | undefined, digits = 2): string {

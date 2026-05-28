@@ -350,6 +350,14 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
     [updateCursor, xs],
   );
 
+  // ── jump button click flash ──────────────────────────────────
+  const [jumpedBtn, setJumpedBtn] = useState<string | null>(null);
+  const handleJumpClick = useCallback((label: string, index: number | null, eventId?: string | null) => {
+    jumpToIndex(index, eventId);
+    setJumpedBtn(label);
+    setTimeout(() => setJumpedBtn(null), 350);
+  }, [jumpToIndex]);
+
   // ── chart ────────────────────────────────────────────────────
   useEffect(() => {
     if (!chartNode.current || !trace || xs.length === 0) return;
@@ -539,7 +547,7 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
       <div className="aero-pressure-ribbon" title={`Aero Load Index: ${aeroIdx?.toFixed(3) ?? "—"} · Dynamic Pressure: ${dynPsf?.toFixed(1) ?? "—"} psf`}>
         <span className="aero-pressure-label">Aero Load</span>
         <div className="aero-pressure-track">
-          <div className="aero-pressure-fill" style={{ width: `${ribbonPct}%`, background: ribbonColor }} />
+          <div className="aero-pressure-fill aero-flow" style={{ width: `${ribbonPct}%`, background: ribbonColor }} />
         </div>
         <span className="aero-pressure-label" style={{ color: ribbonColor }}>{aeroIdx?.toFixed(3) ?? "—"}</span>
       </div>
@@ -638,10 +646,10 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
           <button className="secondary-button" onClick={() => chartRef.current?.dispatchAction({ type: "restore" })}>
             <RotateCcw size={16} /> Reset Zoom
           </button>
-          <button className="secondary-button" onClick={() => jumpToIndex(minSplitterIndex, "MIN_SPLITTER")}>
+          <button className={`secondary-button${jumpedBtn === "min_splitter" ? " jump-clicked" : ""}`} onClick={() => handleJumpClick("min_splitter", minSplitterIndex, "MIN_SPLITTER")}>
             <LocateFixed size={16} /> Jump to Min Splitter
           </button>
-          <button className="secondary-button" onClick={() => jumpToIndex(worstSpeedLossIndex, "WORST_SPEED_LOSS")}>
+          <button className={`secondary-button${jumpedBtn === "worst_speed" ? " jump-clicked" : ""}`} onClick={() => handleJumpClick("worst_speed", worstSpeedLossIndex, "WORST_SPEED_LOSS")}>
             <Activity size={16} /> Jump to Worst Speed Loss
           </button>
         </div>

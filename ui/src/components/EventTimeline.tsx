@@ -50,6 +50,7 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
     <footer className="event-timeline">
       <div className="timeline-header">
         <span className="timeline-label">Lap Storyline</span>
+        <span className="timeline-shortcuts">Esc clear · ←/→ events · L mode</span>
         <span className="timeline-lap">Lap {selection.selectedLap ?? "—"}</span>
       </div>
       <div className="timeline-track">
