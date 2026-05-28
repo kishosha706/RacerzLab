@@ -61,7 +61,12 @@ export interface LapWindowSummary {
   recommendation: string | null;
   pace_quality_score?: number | null;
   pace_quality_label?: string | null;
+  evidence_confidence_score?: number | null;
+  evidence_confidence_label?: string | null;
+  setup_usefulness_score?: number | null;
+  setup_usefulness_label?: string | null;
   pace_quality_warnings?: string[];
+  pace_quality_components?: Record<string, number> | null;
 }
 
 export interface LapDegradationSummary {
@@ -94,7 +99,12 @@ export interface FastestLapGroup {
   warning: string | null;
   pace_quality_score?: number | null;
   pace_quality_label?: string | null;
+  evidence_confidence_score?: number | null;
+  evidence_confidence_label?: string | null;
+  setup_usefulness_score?: number | null;
+  setup_usefulness_label?: string | null;
   pace_quality_warnings?: string[];
+  pace_quality_components?: Record<string, number> | null;
 }
 
 export interface BestWindowGroup {

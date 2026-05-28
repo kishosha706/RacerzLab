@@ -70,7 +70,8 @@ class TestIsLapValidForRanking:
         ok, _ = _is_lap_valid_for_ranking(lap)
         assert not ok
 
-    def _assert_valid(self, tags=None, include_draft=False, **kwargs):
+    def _assert_valid(self, tags=None, **kwargs):
+        include_draft = kwargs.pop("include_draft", False)
         lap = _make_lap(1, tags=tags, **kwargs)
         ok, _ = _is_lap_valid_for_ranking(lap, include_draft=include_draft)
         assert ok

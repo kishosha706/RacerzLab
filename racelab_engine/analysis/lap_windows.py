@@ -162,6 +162,7 @@ def compute_fastest_groups(
             valid_lap_count=len(selected),
             classification_tags=tags,
             draft_statuses=draft_statuses,
+            avg_lap_time=stats["avg"],
             lap_time_std_dev=stats["std"],
             falloff_sec_per_lap=stats["falloff_per_lap"],
             is_fastest_group=True,
@@ -174,9 +175,14 @@ def compute_fastest_groups(
             fastest_lap_time=stats["fastest"],
             slowest_lap_time=stats["slowest"],
             is_available=True,
-            pace_quality_score=pq.score,
-            pace_quality_label=pq.label,
+            pace_quality_score=pq.pace_quality_score,
+            pace_quality_label=pq.pace_quality_label,
+            evidence_confidence_score=pq.evidence_confidence_score,
+            evidence_confidence_label=pq.evidence_confidence_label,
+            setup_usefulness_score=pq.setup_usefulness_score,
+            setup_usefulness_label=pq.setup_usefulness_label,
             pace_quality_warnings=pq.warnings,
+            pace_quality_components=pq.component_scores,
         ))
 
     return groups
@@ -247,6 +253,7 @@ def compute_best_windows(
                 valid_lap_count=len(valid_window_laps),
                 classification_tags=tags,
                 draft_statuses=draft_statuses,
+                avg_lap_time=stats["avg"],
                 lap_time_std_dev=stats["std"],
                 falloff_sec_per_lap=stats["falloff_per_lap"],
             )
@@ -269,9 +276,14 @@ def compute_best_windows(
                 excluded_laps=excluded,
                 classification_tags=tags,
                 draft_status_summary=_draft_status(tags),
-                pace_quality_score=pq.score,
-                pace_quality_label=pq.label,
+                pace_quality_score=pq.pace_quality_score,
+                pace_quality_label=pq.pace_quality_label,
+                evidence_confidence_score=pq.evidence_confidence_score,
+                evidence_confidence_label=pq.evidence_confidence_label,
+                setup_usefulness_score=pq.setup_usefulness_score,
+                setup_usefulness_label=pq.setup_usefulness_label,
                 pace_quality_warnings=pq.warnings,
+                pace_quality_components=pq.component_scores,
             ))
 
         if not windows:

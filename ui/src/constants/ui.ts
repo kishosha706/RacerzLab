@@ -206,6 +206,7 @@ export function humanizeWorkspaceLabel(ws: string): string {
     compare: "Compare",
     notebook: "Notes",
     channels: "Raw Channels",
+    laps: "Laps",
     setup: "Setup",
   };
   return map[ws] ?? ws.replace(/_/g, " ");
@@ -231,6 +232,8 @@ export function humanizeClassificationTag(tag: string): string {
     PLATFORM_TEST: "Platform Test",
     TIRE_PRESSURE_TEST: "Tire Test",
     LINE_TEST: "Line Test",
+    NO_SETUP_CONCLUSION: "No Setup",
+    PARTIAL: "Partial",
   };
   return map[tag] ?? tag.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
@@ -246,6 +249,8 @@ export function classifyLapTags(tags: string[]): { label: string; color: string 
   if (tags.some(t => t.startsWith("INVALID"))) return { label: "Invalid", color: "#ef4444" };
   if (tags.includes("SHORT_RUN")) return { label: "Short", color: "#8d9aaa" };
   if (tags.includes("LONG_RUN")) return { label: "Long", color: "#38bdf8" };
+  if (tags.includes("PARTIAL")) return { label: "Partial", color: "#f59e0b" };
+  if (tags.includes("NO_SETUP_CONCLUSION")) return { label: "No Setup", color: "#8d9aaa" };
   return null;
 }
 

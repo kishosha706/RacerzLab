@@ -103,19 +103,35 @@ export function LapsTab({ overview }: LapsTabProps) {
             const bw = windowsData.best_windows.find(w => w.window_size === size)?.best_window;
             const pqScore = bw?.pace_quality_score;
             const pqLabel = bw?.pace_quality_label;
+            const ecScore = bw?.evidence_confidence_score;
+            const ecLabel = bw?.evidence_confidence_label;
+            const suScore = bw?.setup_usefulness_score;
+            const suLabel = bw?.setup_usefulness_label;
             return (
-              <div className="metric-card" key={size} title={pqLabel ? `Pace Quality: ${pqLabel}` : "Pace Quality unavailable"}>
+              <div className="metric-card" key={size}>
                 <span><Gauge size={14} /> Best {size}-Lap Avg</span>
                 <strong style={{ color: "#38bdf8" }}>
                   {bw?.average_lap_time != null
                     ? formatTime(bw.average_lap_time)
                     : windowsData.total_valid_laps < size ? `Need ${size} laps` : "—"}
                 </strong>
-                {pqScore != null && (
-                  <span style={{ display: "block", fontSize: 10, marginTop: 4, color: paceQualityColor(pqScore) }}>
-                    Pace: {pqScore.toFixed(0)}/100 — {pqLabel}
-                  </span>
-                )}
+                <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
+                  {pqScore != null && (
+                    <span style={{ fontSize: 10, color: paceQualityColor(pqScore), background: `${paceQualityColor(pqScore)}15`, padding: "1px 6px", borderRadius: 4, whiteSpace: "nowrap" }}>
+                      Pace: {pqScore.toFixed(0)} — {pqLabel}
+                    </span>
+                  )}
+                  {ecScore != null && (
+                    <span style={{ fontSize: 10, color: paceQualityColor(ecScore), background: `${paceQualityColor(ecScore)}15`, padding: "1px 6px", borderRadius: 4, whiteSpace: "nowrap" }}>
+                      Evidence: {ecScore.toFixed(0)} — {ecLabel}
+                    </span>
+                  )}
+                  {suScore != null && (
+                    <span style={{ fontSize: 10, color: paceQualityColor(suScore), background: `${paceQualityColor(suScore)}15`, padding: "1px 6px", borderRadius: 4, whiteSpace: "nowrap" }}>
+                      Setup: {suScore.toFixed(0)} — {suLabel}
+                    </span>
+                  )}
+                </div>
               </div>
             );
           })}
