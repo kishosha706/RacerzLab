@@ -72,6 +72,7 @@ type TelemetrySelectionContextValue = {
   selectSample: (sampleIndex: number, lapDistFt?: number, lapPct?: number, source?: SelectionSource) => void;
   selectEvent: (eventId: string | null, source?: SelectionSource) => void;
   selectChannel: (channel: string | null, source?: SelectionSource) => void;
+  selectZone: (zoneId: string | null) => void;
   setMode: (mode: SelectionMode) => void;
   setWorkspace: (workspace: Workspace, source?: SelectionSource) => void;
   loadRun: (runId: string, bestLap: number | null) => void;
@@ -99,6 +100,10 @@ export function TelemetrySelectionProvider({ children }: { children: ReactNode }
       dispatch({ type: "SELECT_CHANNEL", channel, source }),
     [],
   );
+  const selectZone = useCallback(
+    (zoneId: string | null) => dispatch({ type: "SELECT_ZONE", zoneId }),
+    [],
+  );
   const setMode = useCallback((mode: SelectionMode) => dispatch({ type: "SET_MODE", mode }), []);
   const setWorkspace = useCallback(
     (workspace: Workspace, source: SelectionSource = "manual") =>
@@ -112,7 +117,7 @@ export function TelemetrySelectionProvider({ children }: { children: ReactNode }
 
   return (
     <TelemetrySelectionContext.Provider
-      value={{ selection, dispatch, selectRun, selectLap, selectSample, selectEvent, selectChannel, setMode, setWorkspace, loadRun }}
+      value={{ selection, dispatch, selectRun, selectLap, selectSample, selectEvent, selectChannel, selectZone, setMode, setWorkspace, loadRun }}
     >
       {children}
     </TelemetrySelectionContext.Provider>

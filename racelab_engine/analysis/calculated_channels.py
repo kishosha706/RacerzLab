@@ -628,6 +628,15 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "used_by_events": ["STEERING_SCRUB"],
         "used_by_recommendations": [LINE_STEERING_REVIEW],
     },
+    "abs_steering_deg": {
+        "label": "|Steering Angle|",
+        "description": "Absolute steering wheel angle in degrees",
+        "formula": "abs(steering_deg)",
+        "dependencies": ["steering_deg"],
+        "used_by_charts": [DRAG_SCRUB],
+        "used_by_events": ["STEERING_SCRUB"],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
     "rpm": {
         "label": "RPM",
         "description": "Engine RPM",
