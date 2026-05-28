@@ -39,6 +39,10 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
     # migration framework.
     if "runs" in {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
         for column_name, ddl in {
+            "analysis_engine_version": "analysis_engine_version TEXT DEFAULT '1.0.0'",
+            "analysis_config_hash": "analysis_config_hash TEXT",
+            "analysis_mode": "analysis_mode TEXT DEFAULT 'row'",
+            "analyzed_at": "analyzed_at TEXT",
             "imported_at": "imported_at TEXT",
             "sim_date_time": "sim_date_time TEXT",
             "track_id_or_path": "track_id_or_path TEXT",

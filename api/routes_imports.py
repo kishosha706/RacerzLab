@@ -201,4 +201,5 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
         status=result.status,
         cache=cache,
         track_map=track_map_resolution,
+        analysis_status="ready",
     )

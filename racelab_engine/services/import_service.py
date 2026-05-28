@@ -5,6 +5,7 @@ import importlib.util
 import json
 import math
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -284,7 +285,13 @@ def write_telemetry_cache(run_id: str, rows: list[dict[str, Any]], data_dir: str
 
         path = parquet_path(data_root, run_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        pl.DataFrame([{column: row.get(column) for column in _scalar_columns(rows)} for row in rows]).write_parquet(path)
+        columns = _scalar_columns(rows)
+        data = [{column: row.get(column) for column in columns} for row in rows]
+        try:
+            pl.DataFrame(data).write_parquet(path)
+        except Exception:
+            # Fallback: build with full schema inference for mixed-type columns
+            pl.DataFrame(data, infer_schema_length=None).write_parquet(path)
         return TelemetryCacheResult(path=path, format="parquet", used_fallback=False)
 
     if importlib.util.find_spec("pandas") is not None and importlib.util.find_spec("pyarrow") is not None:
@@ -292,7 +299,9 @@ def write_telemetry_cache(run_id: str, rows: list[dict[str, Any]], data_dir: str
 
         path = parquet_path(data_root, run_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame([{column: row.get(column) for column in _scalar_columns(rows)} for row in rows]).to_parquet(path)
+        columns = _scalar_columns(rows)
+        data = [{column: row.get(column) for column in columns} for row in rows]
+        pd.DataFrame(data).to_parquet(path)
         return TelemetryCacheResult(path=path, format="parquet", used_fallback=False)
 
     return _write_csv(rows, csv_path(data_root, run_id))
@@ -583,19 +592,34 @@ class ImportService:
         self.data_dir = Path(data_dir) if data_dir is not None else default_data_dir()
 
     def import_ibt_file(self, path: str | Path) -> tuple[IBTImportResult, TelemetryCacheResult | None]:
+        import logging
+        _log = logging.getLogger(__name__)
+        _timings: dict[str, float] = {}
+
+        t0 = time.time()
         result = import_ibt(path)
+        _timings["decode_ibt"] = time.time() - t0
+
         if result.overview is None:
             return result, None
 
         run_id = result.overview.run_id
+
+        t0 = time.time()
         cache_result = write_telemetry_cache(run_id, result.records, self.data_dir)
+        _timings["write_parquet_cache"] = time.time() - t0
+
+        t0 = time.time()
         write_channel_metadata(result.overview.run_id, result.variable_definitions, self.data_dir)
+        _timings["write_channel_metadata"] = time.time() - t0
+
+        t0 = time.time()
         self.repository.save_import(result.overview, result.fingerprint)
+        _timings["save_run_metadata"] = time.time() - t0
 
         # ── Post-import analysis ──────────────────────────────────
         # 1. Build and persist segments
-        import logging
-        _log = logging.getLogger(__name__)
+        t0 = time.time()
         try:
             from racelab_engine.analysis.segments import build_fixed_pct_segments
             from racelab_engine.models.segment import SegmentSummary as ModelSegment
@@ -608,8 +632,10 @@ class ImportService:
                 _log.info("Saved %d segments for run %s", len(model_segments), run_id)
         except Exception as exc:
             _log.warning("Segment persistence failed for run %s: %s", run_id, exc)
+        _timings["segment_building"] = time.time() - t0
 
         # 2. Run draft detection on each useful lap
+        t0 = time.time()
         try:
             from racelab_engine.analysis.draft_detection import classify_draft_status
             rows = read_telemetry_rows(run_id, self.data_dir)
@@ -630,11 +656,14 @@ class ImportService:
                             if w not in result.overview.warnings:
                                 result.overview.warnings.append(w)
             if tags_updated:
-                # Re-save laps with updated classification tags
                 self.repository.save_import(result.overview, result.fingerprint)
                 _log.info("Draft tags updated for run %s", run_id)
         except Exception as exc:
             _log.warning("Draft detection failed for run %s: %s", run_id, exc)
+        _timings["draft_detection"] = time.time() - t0
+
+        _log.info("Import stage timings for %s: %s", run_id,
+                  " | ".join(f"{k}={v:.2f}s" for k, v in sorted(_timings.items(), key=lambda x: -x[1])))
 
         implemented = list(result.status.implemented)
         for item in ["SQLite persistence", f"telemetry cache persistence ({cache_result.format})",

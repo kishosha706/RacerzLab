@@ -36,6 +36,7 @@ class ImportIbtResponse(BaseModel):
     status: ImportStatus
     cache: Optional[CacheInfo] = None
     track_map: Optional[TrackMapResolution] = None
+    analysis_status: Optional[str] = None  # imported | analyzing | ready | failed
 
 
 class RunListItem(BaseModel):
