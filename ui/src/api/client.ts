@@ -112,10 +112,20 @@ export function importIbtFile(file: File): Promise<ImportIbtResponse> {
   });
 }
 
+/** Generate a correlation ID for import requests. */
+function importRequestId(): string {
+  const now = new Date();
+  const ts = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}`;
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `import_${ts}_${rand}`;
+}
+
 /** Import an .ibt file from a local filesystem path (Tauri native picker). */
 export function importIbtFileFromPath(filePath: string): Promise<ImportIbtResponse> {
+  const reqId = importRequestId();
   return importJson<ImportIbtResponse>("/api/imports/ibt", {
     method: "POST",
+    headers: { "X-RacerZLab-Request-Id": reqId },
     body: JSON.stringify({ path: filePath }),
   });
 }

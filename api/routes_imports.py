@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from pathlib import Path
 
 import aiofiles  # type: ignore[import-untyped]
@@ -19,6 +20,14 @@ router = APIRouter(prefix="/api/imports", tags=["imports"])
 
 IMPORTS_DIR = default_data_dir() / "imports" / "ibt"
 os.makedirs(IMPORTS_DIR, exist_ok=True)
+
+
+def _get_request_id(request: Request) -> str:
+    """Get or generate a correlation ID for this request."""
+    req_id = request.headers.get("x-racerzlab-request-id", "")
+    if not req_id:
+        req_id = f"be_{uuid.uuid4().hex[:12]}"
+    return req_id
 
 
 def _sanitize_filename(name: str) -> str:
@@ -80,9 +89,13 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
     Primary path: multipart file upload (used by the UI).
     Secondary path: JSON {path: ...} (dev/local-only — not exposed in the UI).
     """
+    req_id = _get_request_id(request)
     content_type = request.headers.get("content-type", "").lower()
+    import_mode = "unknown"
 
     if "multipart/form-data" in content_type or "application/octet-stream" in content_type:
+        import_mode = "multipart"
+        _log.info("[%s] Import mode=%s content_type=%s", req_id, import_mode, content_type)
         form = await request.form()
         raw_file = form.get("file")
         if raw_file is None or not isinstance(raw_file, UploadFile):
@@ -91,6 +104,7 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
         filename = file.filename
         if filename is None or not filename.lower().endswith(".ibt"):
             raise HTTPException(400, "Unsupported file type. Please select an .ibt telemetry file.")
+        _log.info("[%s] Multipart file accepted: %s", req_id, filename)
         safe_name = _sanitize_filename(filename)
         dest = IMPORTS_DIR / safe_name
         content = await file.read()
@@ -98,6 +112,8 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
             await f.write(content)
         path_or_file = str(dest)
     elif "application/json" in content_type:
+        import_mode = "json_path"
+        _log.info("[%s] Import mode=%s", req_id, import_mode)
         # DEV/LOCAL-ONLY: JSON path import is not exposed in the UI.
         # It exists for test fixtures and local debugging.
         body = await request.json()
@@ -116,15 +132,17 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
         if ".." in path_or_file or path_or_file.startswith("~"):
             raise HTTPException(400, "Path traversal is not allowed.")
         path_or_file = resolved
+        _log.info("[%s] JSON path accepted: %s", req_id, path_or_file)
     else:
         raise HTTPException(400, "Unsupported Content-Type. Use multipart/form-data or application/json.")
 
     # ── Import with timing ───────────────────────────────────────
-    _log.info("Starting import: %s", path_or_file)
+    _log.info("[%s] Starting import_service.import_ibt_file", req_id)
     t0 = time.time()
     result, cache_result = ImportService().import_ibt_file(path_or_file)
     elapsed = time.time() - t0
-    _log.info("Import finished in %.1f s: run_id=%s", elapsed, result.overview.run_id if result.overview else "None")
+    run_id = result.overview.run_id if result.overview else None
+    _log.info("[%s] Import_service finished in %.1f s: run_id=%s", req_id, elapsed, run_id)
 
     cache = None
     if cache_result is not None:
@@ -154,19 +172,23 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
                     confidence=conf,
                     message=f"Matched {match.get('display_name', 'track map')} from local map index.",
                 )
+                _log.info("[%s] Track map matched: %s (confidence=%s)", req_id, match.get("display_name"), conf)
             else:
                 track_map_resolution = TrackMapResolution(
                     status="missing",
                     message="No matching track map found in local index. Import a .mt2 file or choose a map manually.",
                 )
-        except Exception:
+                _log.info("[%s] Track map not found for track: %s", req_id, track_name)
+        except Exception as exc:
+            _log.warning("[%s] Track map resolution failed: %s", req_id, exc)
             track_map_resolution = TrackMapResolution(
                 status="missing",
                 message="Track map resolution unavailable.",
             )
 
+    _log.info("[%s] Returning response: run_id=%s track_map=%s", req_id, run_id, track_map_resolution.status if track_map_resolution else "None")
     return ImportIbtResponse(
-        run_id=result.overview.run_id if result.overview is not None else None,
+        run_id=run_id,
         status=result.status,
         cache=cache,
         track_map=track_map_resolution,
