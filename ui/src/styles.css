@@ -1584,6 +1584,50 @@ td {
 }
 .inspector-badge-sm { font-size: 9px !important; padding: 1px 5px !important; }
 
+/* ── Mode row + summary ── */
+.trackmap-mode-row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+.trackmap-summary { font-size:12px; color:#b0bec5; padding:8px 12px; background:#0f1320; border:1px solid #1f2937; border-radius:6px; margin-bottom:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.trackmap-action-btn.active { background:#4ade8020; border-color:#4ade80; color:#4ade80; }
+
+/* ── Mini timeline ── */
+.trackmap-timeline { margin-top:8px; }
+.trackmap-timeline-bar { position:relative; height:28px; background:#0a0d14; border:1px solid #1f2937; border-radius:6px; overflow:hidden; }
+.trackmap-timeline-section { position:absolute; top:0; height:100%; cursor:pointer; transition:background .15s; display:flex; align-items:center; justify-content:center; }
+.trackmap-timeline-section:hover { filter:brightness(1.3); }
+.trackmap-timeline-label { font-size:8px; color:#8d9aaa; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding:0 2px; }
+.trackmap-timeline-dot { position:absolute; top:6px; width:8px; height:8px; border-radius:50%; transform:translateX(-50%); cursor:pointer; z-index:2; border:1px solid #0a0d14; transition:transform .15s; }
+.trackmap-timeline-dot:hover,.trackmap-timeline-dot.selected { transform:translateX(-50%) scale(1.6); z-index:3; }
+.trackmap-timeline-ticks { display:flex; justify-content:space-between; font-size:9px; color:#4a5568; padding:2px 1px 0; }
+
+/* ── Section cards ── */
+.trackmap-section-cards { margin-top:10px; }
+.trackmap-section-cards h4 { margin:0 0 6px; font-size:11px; color:#8d9aaa; text-transform:uppercase; letter-spacing:.04em; }
+.trackmap-section-cards-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:6px; }
+.trackmap-section-card { background:#0f1320; border:1px solid #1f2937; border-radius:6px; padding:8px; cursor:pointer; transition:border-color .15s; }
+.trackmap-section-card:hover { border-color:#334155; }
+.trackmap-section-card.selected { border-color:#38bdf8; }
+.trackmap-section-card-header { display:flex; justify-content:space-between; align-items:center; gap:4px; margin-bottom:4px; }
+.trackmap-section-card-name { font-size:12px; font-weight:600; color:#e2e8f0; }
+.trackmap-section-card-meta { font-size:10px; color:#8d9aaa; margin-bottom:4px; }
+.trackmap-section-card-stats { display:flex; gap:6px; align-items:center; font-size:11px; color:#b0bec5; }
+
+/* ── Evidence blocks ── */
+.inspector-evidence { margin-top:12px; display:flex; flex-direction:column; gap:8px; }
+.inspector-block { padding:8px 10px; background:#0a0d14; border:1px solid #1f2937; border-radius:6px; }
+.inspector-block label { display:block; font-size:10px; color:#8d9aaa; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
+.inspector-block span { font-size:12px; color:#e2e8f0; }
+.inspector-block-emphasis { border-color:rgba(245,158,11,0.3); background:rgba(245,158,11,0.05); }
+.inspector-block-content { display:flex; flex-direction:column; gap:6px; }
+.inspector-block-grid { display:flex; flex-wrap:wrap; gap:4px 12px; font-size:12px; color:#b0bec5; }
+.text-critical { color:#fca5a5; font-weight:600; }
+.channel-chips { display:flex; flex-wrap:wrap; gap:4px; }
+.channel-chip { font-size:10px; padding:1px 6px; background:#1e293b; color:#8d9aaa; border-radius:3px; font-family:"JetBrains Mono","Fira Code",monospace; }
+
+/* ── Map search ── */
+.trackmap-search-row { display:flex; align-items:center; gap:6px; margin-bottom:6px; padding:4px 8px; background:#0a0d14; border:1px solid #1f2937; border-radius:6px; }
+.trackmap-search-input { background:transparent; border:none; color:#e2e8f0; font-size:12px; width:100%; outline:none; font-family:inherit; }
+.trackmap-search-input::placeholder { color:#4a5568; }
+
 /* Inspector (right panel) */
 .trackmap-inspector {
   background: #0f1320;
