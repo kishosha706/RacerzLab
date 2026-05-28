@@ -150,12 +150,6 @@ export function CompareBasketProvider({ children }: { children: ReactNode }) {
       return { status: "not_valid", reason: "Different tracks — comparison not meaningful." };
     }
     const warnings = getWarnings();
-    const criticalWarnings = warnings.filter(w =>
-      w.includes("Different car") || w.includes("Different track") || w.includes("self-reference")
-    );
-    if (criticalWarnings.length > 0) {
-      return { status: "not_valid", reason: criticalWarnings[0] };
-    }
     if (warnings.length >= 3) {
       return { status: "caution", reason: `${warnings.length} warnings — review before comparing.` };
     }
