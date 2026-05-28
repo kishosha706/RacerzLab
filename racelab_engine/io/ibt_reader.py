@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 import re
 import struct
+import time
 from pathlib import Path
 from statistics import mean
 from typing import Any, Collection, Mapping, cast
+
+_log = logging.getLogger(__name__)
 
 from racelab_engine.analysis.calculated_channels import (
     CORE_REQUIRED_CHANNELS,
@@ -360,6 +364,7 @@ def import_ibt(path: str | Path) -> IBTImportResult:
 
     file_path = Path(path)
     if not file_path.exists():
+        _log.warning("IBT file does not exist: %s", file_path)
         return IBTImportResult(
             status=ImportStatus(
                 status="unavailable",
@@ -371,21 +376,46 @@ def import_ibt(path: str | Path) -> IBTImportResult:
 
     fingerprint = fingerprint_file(file_path)
     try:
+        t0 = time.time()
         data = _read_bytes(file_path)
+        _log.info("IBT decoder: read %d bytes in %.3fs", len(data), time.time() - t0)
+
+        t0 = time.time()
         header = _parse_header(data, len(data))
+        _log.info("IBT decoder: header parsed in %.3fs (vars=%s, records=%s, rate=%sHz)",
+                  time.time() - t0, header.variable_count, header.record_count, header.telemetry_rate_hz)
+
+        t0 = time.time()
         definitions = _parse_variable_definitions(data, header)
+        _log.info("IBT decoder: %d variable definitions parsed in %.3fs", len(definitions), time.time() - t0)
+
+        t0 = time.time()
         session_yaml = read_session_yaml(file_path)
+        _log.info("IBT decoder: session YAML extracted in %.3fs (%d chars)",
+                  time.time() - t0, len(session_yaml))
+
         available = {definition.name for definition in definitions}
         missing = [channel for channel in CORE_REQUIRED_CHANNELS if channel not in available]
+
+        t0 = time.time()
         raw_rows = _read_records_from_data(
             data,
             header,
             definitions,
             variables=[channel for channel in TARGET_CHANNELS if channel in available],
         )
+        _log.info("IBT decoder: %d records decoded in %.3fs", len(raw_rows), time.time() - t0)
+
+        t0 = time.time()
         rows = normalize_telemetry_rows(raw_rows)
+        _log.info("IBT decoder: normalized %d rows in %.3fs", len(rows), time.time() - t0)
+
+        t0 = time.time()
         overview = _build_overview(file_path, fingerprint.sha256, header, session_yaml, rows, missing)
+        _log.info("IBT decoder: overview built in %.3fs (laps=%d, events=%d)",
+                  time.time() - t0, len(overview.laps), len(overview.events))
     except (OSError, IBTParseError, struct.error, UnicodeDecodeError) as exc:
+        _log.error("IBT decoder failed: %s", exc)
         return IBTImportResult(
             fingerprint=fingerprint,
             status=ImportStatus(

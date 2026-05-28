@@ -140,9 +140,15 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
 
     # ── Import with timing (offloaded to threadpool) ─────────────
     _log.info("[%s] Starting import_service.import_ibt_file (dispatched to threadpool)", req_id)
+    _log.info("[%s] Decoder stage: file_path=%s size=%s", req_id, path_or_file,
+              os.path.getsize(path_or_file) if os.path.exists(path_or_file) else "N/A")
     t0 = time.time()
     import_service = ImportService()
-    result, cache_result = await run_in_threadpool(import_service.import_ibt_file, path_or_file)
+    try:
+        result, cache_result = await run_in_threadpool(import_service.import_ibt_file, path_or_file)
+    except Exception as exc:
+        _log.error("[%s] Import_service raised unhandled exception: %s", req_id, exc)
+        raise HTTPException(500, detail=f"Internal import error: {exc}")
     elapsed = time.time() - t0
     run_id = result.overview.run_id if result.overview else None
     _log.info("[%s] Import_service finished in %.1f s: run_id=%s", req_id, elapsed, run_id)
