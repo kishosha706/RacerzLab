@@ -159,6 +159,17 @@ def medium_rows() -> list[dict[str, Any]]:
 class TestParity:
     """Parity between row-by-row and vectorized paths."""
 
+    @staticmethod
+    def _run_both(rows: list[dict]) -> tuple[list[dict], list[dict]]:
+        """Run both row and vector paths, return (ref_rows, vec_rows)."""
+        return normalize_telemetry_rows(rows), frame_to_rows(normalize_telemetry_frame(rows))
+
+    @staticmethod
+    def _assert_parity(ref: list[dict], vec: list[dict], channels: set[str]) -> None:
+        """Assert that ref and vec match on the given channels."""
+        mismatches = _compare_rows(ref, vec, channels)
+        assert not mismatches, "\n".join(mismatches[:10])
+
     def test_both_produce_same_number_of_rows(self, small_rows: list[dict]) -> None:
         ref = normalize_telemetry_rows(small_rows)
         vec = normalize_telemetry_frame(small_rows)
@@ -179,6 +190,13 @@ class TestParity:
                 "front_scrub_proxy", "rear_scrub_proxy",
                 "dynamic_pressure_lap_index", "dynamic_pressure_index",
                 "dynamic_grade_deg",
+                "grade_force_proxy_n",
+                "front_slip_angle_deg", "rear_slip_angle_deg", "slip_angle_balance_deg",
+                "platform_pitch_deg_from_rh", "platform_roll_deg_from_rh",
+                "front_platform_roll_deg_from_rh", "rear_platform_roll_deg_from_rh", "platform_roll_balance_deg",
+                "ackermann_steering_expected_deg", "ackermann_steering_error_deg", "ackermann_scrub_proxy",
+                "lf_camber_temp_bias_c", "rf_camber_temp_bias_c", "lr_camber_temp_bias_c", "rr_camber_temp_bias_c",
+                "lf_camber_bias_label", "rf_camber_bias_label", "lr_camber_bias_label", "rr_camber_bias_label",
                 "track_x_m", "track_y_m", "track_x_ft", "track_y_ft"}
         for ch in CORE_CHANNELS - skip:
             assert ch in vec.columns, f"Missing core channel: {ch}"
@@ -198,55 +216,48 @@ class TestParity:
                 "front_scrub_proxy", "rear_scrub_proxy",
                 "dynamic_pressure_lap_index", "dynamic_pressure_index",
                 "dynamic_grade_deg",
+                "grade_force_proxy_n",
+                "front_slip_angle_deg", "rear_slip_angle_deg", "slip_angle_balance_deg",
+                "platform_pitch_deg_from_rh", "platform_roll_deg_from_rh",
+                "front_platform_roll_deg_from_rh", "rear_platform_roll_deg_from_rh", "platform_roll_balance_deg",
+                "ackermann_steering_expected_deg", "ackermann_steering_error_deg", "ackermann_scrub_proxy",
+                "lf_camber_temp_bias_c", "rf_camber_temp_bias_c", "lr_camber_temp_bias_c", "rr_camber_temp_bias_c",
+                "lf_camber_bias_label", "rf_camber_bias_label", "lr_camber_bias_label", "rr_camber_bias_label",
                 "track_x_m", "track_y_m", "track_x_ft", "track_y_ft"}
         for ch in CORE_CHANNELS - skip:
             assert any(ch in r for r in ref), f"Missing core channel in ref: {ch}"
 
     def test_speed_conversions_parity(self, small_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(small_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(small_rows))
-        mismatches = _compare_rows(ref, vec, {"speed_mph", "speed_fps"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(small_rows)
+        self._assert_parity(ref, vec, {"speed_mph", "speed_fps"})
 
     def test_distance_conversions_parity(self, small_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(small_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(small_rows))
-        mismatches = _compare_rows(ref, vec, {"lap_dist_ft", "lap_dist_pct_100"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(small_rows)
+        self._assert_parity(ref, vec, {"lap_dist_ft", "lap_dist_pct_100"})
 
     def test_input_conversions_parity(self, small_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(small_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(small_rows))
-        mismatches = _compare_rows(ref, vec, {"throttle_pct", "brake_pct", "steering_deg", "abs_steering_deg", "abs_lat_accel"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(small_rows)
+        self._assert_parity(ref, vec, {"throttle_pct", "brake_pct", "steering_deg", "abs_steering_deg", "abs_lat_accel"})
 
     def test_dynamic_pressure_parity(self, small_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(small_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(small_rows))
-        mismatches = _compare_rows(ref, vec, {"dynamic_pressure_pa", "dynamic_pressure_psf"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(small_rows)
+        self._assert_parity(ref, vec, {"dynamic_pressure_pa", "dynamic_pressure_psf"})
 
     def test_aero_load_index_parity(self, small_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(small_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(small_rows))
-        mismatches = _compare_rows(ref, vec, {"aero_load_index", "aero_load_index_180mph"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(small_rows)
+        self._assert_parity(ref, vec, {"aero_load_index", "aero_load_index_180mph"})
 
     def test_ride_height_conversions_parity(self, small_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(small_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(small_rows))
+        ref, vec = self._run_both(small_rows)
         channels = {"cfs_ride_height_mm", "cfs_ride_height_in", "cfsr_height_mm",
                      "lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm",
                      "lf_ride_height_in", "rf_ride_height_in", "lr_ride_height_in", "rr_ride_height_in"}
-        mismatches = _compare_rows(ref, vec, channels)
-        assert not mismatches, "\n".join(mismatches[:10])
+        self._assert_parity(ref, vec, channels)
 
     def test_slip_ratio_parity(self, small_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(small_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(small_rows))
+        ref, vec = self._run_both(small_rows)
         channels = {"lf_slip_ratio", "rf_slip_ratio", "lr_slip_ratio", "rr_slip_ratio", "driven_wheel_slip_proxy"}
-        mismatches = _compare_rows(ref, vec, channels)
-        assert not mismatches, "\n".join(mismatches[:10])
+        self._assert_parity(ref, vec, channels)
 
     def test_slip_ratio_floor_and_clamp(self) -> None:
         """Verify floor/clamp behaviour at very low speed."""
@@ -255,24 +266,18 @@ class TestParity:
             _synthetic_row(speed_mps=0.5, lf_speed=10.0, rf_speed=10.0, lr_speed=10.0, rr_speed=10.0),
             _synthetic_row(speed_mps=100.0, lf_speed=300.0, rf_speed=300.0, lr_speed=300.0, rr_speed=300.0),
         ]
-        ref = normalize_telemetry_rows(rows)
-        vec = frame_to_rows(normalize_telemetry_frame(rows))
-        mismatches = _compare_rows(ref, vec, {"lf_slip_ratio", "rf_slip_ratio", "lr_slip_ratio", "rr_slip_ratio"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(rows)
+        self._assert_parity(ref, vec, {"lf_slip_ratio", "rf_slip_ratio", "lr_slip_ratio", "rr_slip_ratio"})
 
     def test_speed_derivative_parity(self, medium_rows: list[dict]) -> None:
         """Derivatives need more rows for meaningful shift(1) comparison."""
-        ref = normalize_telemetry_rows(medium_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(medium_rows))
+        ref, vec = self._run_both(medium_rows)
         channels = {"speed_rate_mph_s", "speed_rate_mph_1000ft", "speed_rate_mps2"}
-        mismatches = _compare_rows(ref, vec, channels)
-        assert not mismatches, "\n".join(mismatches[:10])
+        self._assert_parity(ref, vec, channels)
 
     def test_g_values_parity(self, small_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(small_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(small_rows))
-        mismatches = _compare_rows(ref, vec, {"lat_accel_g", "long_accel_g", "vert_accel_g"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(small_rows)
+        self._assert_parity(ref, vec, {"lat_accel_g", "long_accel_g", "vert_accel_g"})
 
     def test_frame_to_rows_roundtrip(self, small_rows: list[dict]) -> None:
         """frame_to_rows(normalize_telemetry_frame(rows)) produces list[dict]."""
@@ -314,29 +319,21 @@ class TestParity:
     # ── Slice 2: ride-height averages ──────────────────────────
 
     def test_ride_height_averages_parity(self, small_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(small_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(small_rows))
+        ref, vec = self._run_both(small_rows)
         channels = {"front_avg_rh_in", "rear_avg_rh_in", "left_avg_rh_in", "right_avg_rh_in"}
-        mismatches = _compare_rows(ref, vec, channels)
-        assert not mismatches, "\n".join(mismatches[:10])
+        self._assert_parity(ref, vec, channels)
 
     def test_center_rake_parity(self, small_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(small_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(small_rows))
-        mismatches = _compare_rows(ref, vec, {"center_rake_fs_in"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(small_rows)
+        self._assert_parity(ref, vec, {"center_rake_fs_in"})
 
     def test_side_rake_parity(self, small_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(small_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(small_rows))
-        mismatches = _compare_rows(ref, vec, {"side_rake_in"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(small_rows)
+        self._assert_parity(ref, vec, {"side_rake_in"})
 
     def test_front_rear_split_parity(self, small_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(small_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(small_rows))
-        mismatches = _compare_rows(ref, vec, {"front_split_in", "rear_split_in"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(small_rows)
+        self._assert_parity(ref, vec, {"front_split_in", "rear_split_in"})
 
     def test_ride_height_averages_missing_cfs(self) -> None:
         """Missing cfs_ride_height_in should not crash, just skip center_rake."""
@@ -384,10 +381,8 @@ class TestParity:
     # ── Slice 2: risk scores ───────────────────────────────────
 
     def test_risk_scores_parity(self, small_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(small_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(small_rows))
-        mismatches = _compare_rows(ref, vec, {"cfs_risk_score", "platform_risk_score"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(small_rows)
+        self._assert_parity(ref, vec, {"cfs_risk_score", "platform_risk_score"})
 
     def test_risk_scores_thresholds(self) -> None:
         """Verify risk score thresholds: scrape, critical, high, watch, safe."""
@@ -398,10 +393,8 @@ class TestParity:
             _synthetic_row(cfs_rh_m=0.008),   # 8 mm → watch → 0.38
             _synthetic_row(cfs_rh_m=0.015),   # 15 mm → safe → 0.08
         ]
-        ref = normalize_telemetry_rows(rows)
-        vec = frame_to_rows(normalize_telemetry_frame(rows))
-        mismatches = _compare_rows(ref, vec, {"cfs_risk_score", "platform_risk_score"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(rows)
+        self._assert_parity(ref, vec, {"cfs_risk_score", "platform_risk_score"})
 
     def test_risk_scores_missing_cfs(self) -> None:
         """Missing cfs_ride_height_mm produces None risk scores."""
@@ -416,19 +409,15 @@ class TestParity:
     def test_g_values_vert_accel_parity(self) -> None:
         """vert_accel_g requires VertAccel column."""
         rows = [_synthetic_row(VertAccel=5.0)]
-        ref = normalize_telemetry_rows(rows)
-        vec = frame_to_rows(normalize_telemetry_frame(rows))
-        mismatches = _compare_rows(ref, vec, {"vert_accel_g"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(rows)
+        self._assert_parity(ref, vec, {"vert_accel_g"})
 
     # ── Slice 2: wheel speed mismatch ──────────────────────────
 
     def test_wheel_speed_mismatch_parity(self, small_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(small_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(small_rows))
+        ref, vec = self._run_both(small_rows)
         channels = {"front_wheel_speed_mismatch_raw", "rear_wheel_speed_mismatch_raw"}
-        mismatches = _compare_rows(ref, vec, channels)
-        assert not mismatches, "\n".join(mismatches[:10])
+        self._assert_parity(ref, vec, channels)
 
     def test_wheel_speed_mismatch_corrected_parity(self) -> None:
         """Geometry-corrected mismatch requires yaw_rate and track width."""
@@ -436,11 +425,9 @@ class TestParity:
         for r in rows:
             r["front_track_width_m"] = 2.0
             r["rear_track_width_m"] = 2.0
-        ref = normalize_telemetry_rows(rows)
-        vec = frame_to_rows(normalize_telemetry_frame(rows))
+        ref, vec = self._run_both(rows)
         channels = {"front_wheel_speed_mismatch_corrected", "rear_wheel_speed_mismatch_corrected"}
-        mismatches = _compare_rows(ref, vec, channels)
-        assert not mismatches, "\n".join(mismatches[:10])
+        self._assert_parity(ref, vec, channels)
 
     def test_wheel_speed_mismatch_no_track_width(self) -> None:
         """Without track width, corrected mismatch is None."""
@@ -455,12 +442,10 @@ class TestParity:
     # ── Slice 2: shock conversions ─────────────────────────────
 
     def test_shock_conversions_parity(self, small_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(small_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(small_rows))
+        ref, vec = self._run_both(small_rows)
         channels = {"lf_shock_defl_in", "rf_shock_defl_in", "lr_shock_defl_in", "rr_shock_defl_in",
                      "lf_shock_vel_in_s", "rf_shock_vel_in_s", "lr_shock_vel_in_s", "rr_shock_vel_in_s"}
-        mismatches = _compare_rows(ref, vec, channels)
-        assert not mismatches, "\n".join(mismatches[:10])
+        self._assert_parity(ref, vec, channels)
 
     def test_shock_conversions_missing(self) -> None:
         """Missing shock columns should not crash."""
@@ -473,21 +458,16 @@ class TestParity:
     # ── Slice 3: stability scores ─────────────────────────────
 
     def test_platform_stability_score_parity(self, medium_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(medium_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(medium_rows))
-        mismatches = _compare_rows(ref, vec, {"platform_stability_score"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(medium_rows)
+        self._assert_parity(ref, vec, {"platform_stability_score"})
 
     def test_rake_stability_score_parity(self, medium_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(medium_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(medium_rows))
-        mismatches = _compare_rows(ref, vec, {"rake_stability_score"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(medium_rows)
+        self._assert_parity(ref, vec, {"rake_stability_score"})
 
     def test_stability_scores_first_row_none(self, medium_rows: list[dict]) -> None:
         """First row should have None for stability scores (no previous row)."""
-        ref = normalize_telemetry_rows(medium_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(medium_rows))
+        ref, vec = self._run_both(medium_rows)
         assert ref[0].get("platform_stability_score") is None
         assert vec[0].get("platform_stability_score") is None
         assert ref[0].get("rake_stability_score") is None
@@ -504,16 +484,12 @@ class TestParity:
     # ── Slice 3: drag / resistance indices ────────────────────
 
     def test_full_throttle_resistance_index_parity(self, medium_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(medium_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(medium_rows))
-        mismatches = _compare_rows(ref, vec, {"full_throttle_resistance_index"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(medium_rows)
+        self._assert_parity(ref, vec, {"full_throttle_resistance_index"})
 
     def test_drag_scrub_suspicion_parity(self, medium_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(medium_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(medium_rows))
-        mismatches = _compare_rows(ref, vec, {"drag_scrub_suspicion"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(medium_rows)
+        self._assert_parity(ref, vec, {"drag_scrub_suspicion"})
 
     def test_resistance_indices_missing_columns(self) -> None:
         """Missing columns should not crash resistance indices."""
@@ -526,10 +502,8 @@ class TestParity:
     # ── Slice 3: platform compression ─────────────────────────
 
     def test_platform_compression_index_parity(self, medium_rows: list[dict]) -> None:
-        ref = normalize_telemetry_rows(medium_rows)
-        vec = frame_to_rows(normalize_telemetry_frame(medium_rows))
-        mismatches = _compare_rows(ref, vec, {"platform_compression_index"})
-        assert not mismatches, "\n".join(mismatches[:10])
+        ref, vec = self._run_both(medium_rows)
+        self._assert_parity(ref, vec, {"platform_compression_index"})
 
     def test_platform_compression_missing_columns(self) -> None:
         """Missing columns should not crash compression index."""

@@ -358,6 +358,90 @@ def grade_corrected_long_accel_mps2(
     )
 
 
+# ── Ackermann steering error ──────────────────────────────────
+
+
+def ackermann_steering_expected_rad(
+    wheelbase_m: float | None,
+    curvature_1_per_m: float | None,
+) -> tuple[float | None, EstimateConfidence]:
+    """Expected Ackermann steering angle = atan(wheelbase * curvature).
+
+    Returns the steering angle (radians) needed to follow a given curvature
+    at the Ackermann condition (no slip).  Actual steering will differ due
+    to slip angles, steering ratio, and driver input.
+
+    ESTIMATE — assumes bicycle model, no steering ratio compensation.
+    """
+    if wheelbase_m is None or wheelbase_m <= 0:
+        return None, confidence_from_missing(
+            ["wheelbase_m"], set(),
+            ["Wheelbase unavailable or invalid."],
+        )
+    if curvature_1_per_m is None or curvature_1_per_m == 0:
+        return None, confidence_from_missing(
+            ["curvature_1_per_m"], set(),
+            ["Curvature unavailable or zero (straight)."],
+        )
+    expected = math.atan(wheelbase_m * curvature_1_per_m)
+    return expected, confidence_from_missing(
+        [], set(),
+        ["Ackermann steering ESTIMATE. Bicycle model, no steering ratio."],
+    )
+
+
+def ackermann_steering_expected_deg(
+    wheelbase_m: float | None,
+    curvature_1_per_m: float | None,
+) -> tuple[float | None, EstimateConfidence]:
+    """Expected Ackermann steering angle in degrees."""
+    rad, conf = ackermann_steering_expected_rad(wheelbase_m, curvature_1_per_m)
+    return (math.degrees(rad), conf) if rad is not None else (None, conf)
+
+
+def ackermann_steering_error_deg(
+    actual_steering_deg: float | None,
+    expected_steering_deg: float | None,
+) -> tuple[float | None, EstimateConfidence]:
+    """Ackermann steering error = |actual| - |expected|.
+
+    Positive = more steering than Ackermann predicts (understeer or extra input).
+    Negative = less steering than Ackermann predicts (oversteer or reduced input).
+    """
+    if actual_steering_deg is None:
+        return None, confidence_from_missing(
+            ["actual_steering_deg"], set(),
+            ["Actual steering unavailable."],
+        )
+    if expected_steering_deg is None:
+        return None, confidence_from_missing(
+            ["expected_steering_deg"], set(),
+            ["Expected steering unavailable."],
+        )
+    error = abs(actual_steering_deg) - abs(expected_steering_deg)
+    return error, confidence_from_missing(
+        [], set(),
+        ["Ackermann steering error ESTIMATE. Depends on curvature and wheelbase accuracy."],
+    )
+
+
+def ackermann_scrub_proxy(
+    actual_steering_deg: float | None,
+    expected_steering_deg: float | None,
+    scale_deg: float = 5.0,
+) -> tuple[float, EstimateConfidence]:
+    """Ackermann scrub proxy: clamp01(max(0, error) / scale).
+
+    Positive error (extra steering beyond Ackermann) suggests scrub.
+    Zero or negative error returns 0 (no scrub from this metric).
+    Scale of 5 degrees means 5° extra steering → proxy of 1.0.
+    """
+    error, conf = ackermann_steering_error_deg(actual_steering_deg, expected_steering_deg)
+    if error is None or scale_deg <= 0:
+        return 0.0, conf
+    return min(1.0, max(0.0, error) / scale_deg), conf
+
+
 # ── Brake energy and wheel power ──────────────────────────────
 
 def brake_energy_j(

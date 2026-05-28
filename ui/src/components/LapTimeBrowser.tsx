@@ -1,4 +1,4 @@
-import { CheckCircle, Clock, Flag, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle, Clock, Flag, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchRunLapList } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
@@ -13,6 +13,13 @@ const LAP_TYPE_COLORS: Record<string, string> = {
   timed: "#22c55e",
   in: "#8d9aaa",
   unknown: "#6b7280",
+};
+
+const LAP_TYPE_LABELS: Record<string, string> = {
+  out: "Out",
+  timed: "Timed",
+  in: "In",
+  unknown: "Unknown",
 };
 
 export function LapTimeBrowser({ runId }: LapTimeBrowserProps) {
@@ -61,6 +68,8 @@ export function LapTimeBrowser({ runId }: LapTimeBrowserProps) {
         {lapList.laps.map((lap) => {
           const isSelected = selection.selectedLap === lap.lap_number;
           const isBest = lap.delta_display === "BEST";
+          const hasDraftFlag = lap.warnings?.some((w) => w.toLowerCase().includes("draft")) ?? false;
+          const hasInvalidFlag = !lap.is_useful || (lap.invalid_reasons?.length ?? 0) > 0;
           return (
             <button
               key={lap.lap_id}
@@ -76,6 +85,24 @@ export function LapTimeBrowser({ runId }: LapTimeBrowserProps) {
               <span className={`lap-row-delta ${isBest ? "best" : ""}`}>
                 {isBest ? "BEST" : lap.delta_display}
               </span>
+              <span className="lap-row-badges">
+                {/* Lap type badge */}
+                <span className="lap-type-badge" style={{ background: `${LAP_TYPE_COLORS[lap.lap_type] ?? "#6b7280"}20`, color: LAP_TYPE_COLORS[lap.lap_type] ?? "#6b7280" }}>
+                  {LAP_TYPE_LABELS[lap.lap_type] ?? lap.lap_type}
+                </span>
+                {/* Draft flag */}
+                {hasDraftFlag && (
+                  <span className="lap-flag-badge lap-flag-draft" title="Draft suspected">
+                    <AlertTriangle size={10} /> Draft
+                  </span>
+                )}
+                {/* Invalid flag */}
+                {hasInvalidFlag && (
+                  <span className="lap-flag-badge lap-flag-invalid" title="Invalid for clean comparison">
+                    <XCircle size={10} /> Invalid
+                  </span>
+                )}
+              </span>
               <span className="lap-row-status">
                 {lap.is_useful ? <CheckCircle size={12} color="#22c55e" /> : <XCircle size={12} color="#ef4444" />}
               </span>
@@ -83,6 +110,7 @@ export function LapTimeBrowser({ runId }: LapTimeBrowserProps) {
           );
         })}
       </div>
+      {/* TODO: If backend provides draft-suspected or dirty/invalid flags, show Draft Suspected / Dirty badges */}
     </div>
   );
 }

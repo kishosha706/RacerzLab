@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from racelab_engine.analysis.estimate_confidence import confidence_from_missing
 from racelab_engine.analysis.physics_inputs import VehiclePhysicsInputs
 from racelab_engine.analysis.aero_coefficients import (
@@ -557,6 +559,161 @@ def test_grade_corrected_long_accel_missing() -> None:
     assert corrected2 is None
 
 
+# ── Grade context label ───────────────────────────────────────
+
+def test_grade_context_label_uphill() -> None:
+    """Positive grade should produce 'uphill'."""
+    from racelab_engine.analysis.calculated_channels import _grade_context_label
+    assert _grade_context_label(3.0) == "uphill"
+
+
+def test_grade_context_label_downhill() -> None:
+    """Negative grade should produce 'downhill'."""
+    from racelab_engine.analysis.calculated_channels import _grade_context_label
+    assert _grade_context_label(-2.0) == "downhill"
+
+
+def test_grade_context_label_flat() -> None:
+    """Near-zero grade should produce 'flat'."""
+    from racelab_engine.analysis.calculated_channels import _grade_context_label
+    assert _grade_context_label(0.1) == "flat"
+    assert _grade_context_label(-0.1) == "flat"
+    assert _grade_context_label(0.0) == "flat"
+
+
+# ── Grade channel integration via normalize_telemetry_rows ────
+
+def test_grade_channels_produced_on_synthetic_rows() -> None:
+    """normalize_telemetry_rows should produce all grade channels."""
+    from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+    rows = [
+        {"SessionTime": 0.0, "LapDist": 0.0, "LapDistPct": 0.0, "Speed": 0.0,
+         "Throttle": 0.0, "Brake": 0.0, "SteeringWheelAngle": 0.0,
+         "LatAccel": 0.0, "LongAccel": 0.0, "RPM": 0.0, "Gear": 0,
+         "CFSRrideHeight": 0.05, "LFrideHeight": 0.05, "RFrideHeight": 0.05,
+         "LRrideHeight": 0.05, "RRrideHeight": 0.05,
+         "LFSHshockDefl": 0.0, "RFSHshockDefl": 0.0,
+         "LRSHshockDefl": 0.0, "RRSHshockDefl": 0.0,
+         "LFSHshockVel": 0.0, "RFSHshockVel": 0.0,
+         "LRSHshockVel": 0.0, "RRSHshockVel": 0.0,
+         "AirDensity": 1.225, "mass_kg": 1500.0},
+        {"SessionTime": 0.1, "LapDist": 10.0, "LapDistPct": 0.02, "Speed": 20.0,
+         "Throttle": 0.5, "Brake": 0.0, "SteeringWheelAngle": 0.0,
+         "LatAccel": 0.0, "LongAccel": 2.0, "RPM": 3000.0, "Gear": 3,
+         "CFSRrideHeight": 0.05, "LFrideHeight": 0.05, "RFrideHeight": 0.05,
+         "LRrideHeight": 0.05, "RRrideHeight": 0.05,
+         "LFSHshockDefl": 0.0, "RFSHshockDefl": 0.0,
+         "LRSHshockDefl": 0.0, "RRSHshockDefl": 0.0,
+         "LFSHshockVel": 0.0, "RFSHshockVel": 0.0,
+         "LRSHshockVel": 0.0, "RRSHshockVel": 0.0,
+         "AirDensity": 1.225, "mass_kg": 1500.0},
+    ]
+    result = normalize_telemetry_rows(rows)
+    assert len(result) == 2
+    row = result[1]
+    # First row has None for derivatives
+    assert result[0].get("dynamic_grade_deg") is None
+    assert result[0].get("dynamic_grade_rad") is None
+    assert result[0].get("grade_corrected_long_accel_mps2") is None
+    assert result[0].get("grade_force_proxy_n") is None
+    assert result[0].get("grade_context_label") is None
+    assert result[0].get("grade_corrected_speed_loss_mph_s") is None
+    # Second row should have grade channels
+    assert row.get("dynamic_grade_deg") is not None
+    assert row.get("dynamic_grade_rad") is not None
+    assert row.get("grade_corrected_long_accel_mps2") is not None
+    assert row.get("grade_force_proxy_n") is not None
+    assert row.get("grade_context_label") is not None
+    assert row.get("grade_corrected_speed_loss_mph_s") is not None
+
+
+def test_grade_channels_missing_long_accel() -> None:
+    """Missing long_accel should produce None for all grade channels."""
+    from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+    rows = [
+        {"SessionTime": 0.0, "LapDist": 0.0, "LapDistPct": 0.0, "Speed": 0.0,
+         "Throttle": 0.0, "Brake": 0.0, "SteeringWheelAngle": 0.0,
+         "LatAccel": 0.0, "RPM": 0.0, "Gear": 0,
+         "CFSRrideHeight": 0.05, "LFrideHeight": 0.05, "RFrideHeight": 0.05,
+         "LRrideHeight": 0.05, "RRrideHeight": 0.05,
+         "LFSHshockDefl": 0.0, "RFSHshockDefl": 0.0,
+         "LRSHshockDefl": 0.0, "RRSHshockDefl": 0.0,
+         "LFSHshockVel": 0.0, "RFSHshockVel": 0.0,
+         "LRSHshockVel": 0.0, "RRSHshockVel": 0.0,
+         "AirDensity": 1.225, "mass_kg": 1500.0},
+        {"SessionTime": 0.1, "LapDist": 10.0, "LapDistPct": 0.02, "Speed": 20.0,
+         "Throttle": 0.5, "Brake": 0.0, "SteeringWheelAngle": 0.0,
+         "LatAccel": 0.0, "RPM": 3000.0, "Gear": 3,
+         "CFSRrideHeight": 0.05, "LFrideHeight": 0.05, "RFrideHeight": 0.05,
+         "LRrideHeight": 0.05, "RRrideHeight": 0.05,
+         "LFSHshockDefl": 0.0, "RFSHshockDefl": 0.0,
+         "LRSHshockDefl": 0.0, "RRSHshockDefl": 0.0,
+         "LFSHshockVel": 0.0, "RFSHshockVel": 0.0,
+         "LRSHshockVel": 0.0, "RRSHshockVel": 0.0,
+         "AirDensity": 1.225, "mass_kg": 1500.0},
+    ]
+    result = normalize_telemetry_rows(rows)
+    row = result[1]
+    assert row.get("dynamic_grade_deg") is None
+    assert row.get("dynamic_grade_rad") is None
+    assert row.get("grade_corrected_long_accel_mps2") is None
+    assert row.get("grade_force_proxy_n") is None
+    assert row.get("grade_context_label") is None
+    assert row.get("grade_corrected_speed_loss_mph_s") is None
+
+
+def test_grade_force_proxy_none_without_mass() -> None:
+    """grade_force_proxy_n should be None when mass_kg is missing."""
+    from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+    rows = [
+        {"SessionTime": 0.0, "LapDist": 0.0, "LapDistPct": 0.0, "Speed": 0.0,
+         "Throttle": 0.0, "Brake": 0.0, "SteeringWheelAngle": 0.0,
+         "LatAccel": 0.0, "LongAccel": 0.0, "RPM": 0.0, "Gear": 0,
+         "CFSRrideHeight": 0.05, "LFrideHeight": 0.05, "RFrideHeight": 0.05,
+         "LRrideHeight": 0.05, "RRrideHeight": 0.05,
+         "LFSHshockDefl": 0.0, "RFSHshockDefl": 0.0,
+         "LRSHshockDefl": 0.0, "RRSHshockDefl": 0.0,
+         "LFSHshockVel": 0.0, "RFSHshockVel": 0.0,
+         "LRSHshockVel": 0.0, "RRSHshockVel": 0.0,
+         "AirDensity": 1.225},
+        {"SessionTime": 0.1, "LapDist": 10.0, "LapDistPct": 0.02, "Speed": 20.0,
+         "Throttle": 0.5, "Brake": 0.0, "SteeringWheelAngle": 0.0,
+         "LatAccel": 0.0, "LongAccel": 2.0, "RPM": 3000.0, "Gear": 3,
+         "CFSRrideHeight": 0.05, "LFrideHeight": 0.05, "RFrideHeight": 0.05,
+         "LRrideHeight": 0.05, "RRrideHeight": 0.05,
+         "LFSHshockDefl": 0.0, "RFSHshockDefl": 0.0,
+         "LRSHshockDefl": 0.0, "RRSHshockDefl": 0.0,
+         "LFSHshockVel": 0.0, "RFSHshockVel": 0.0,
+         "LRSHshockVel": 0.0, "RRSHshockVel": 0.0,
+         "AirDensity": 1.225},
+    ]
+    result = normalize_telemetry_rows(rows)
+    row = result[1]
+    # Grade channels that don't need mass should still work
+    assert row.get("dynamic_grade_deg") is not None
+    assert row.get("grade_corrected_long_accel_mps2") is not None
+    # Grade force needs mass
+    assert row.get("grade_force_proxy_n") is None
+
+
+def test_grade_channels_metadata_exists() -> None:
+    """All grade channels should have CHANNEL_METADATA entries."""
+    from racelab_engine.analysis.calculated_channels import CHANNEL_METADATA
+    grade_channels = [
+        "dynamic_grade_rad",
+        "dynamic_grade_deg",
+        "grade_corrected_long_accel_mps2",
+        "grade_force_proxy_n",
+        "grade_context_label",
+        "grade_corrected_speed_loss_mph_s",
+    ]
+    for ch in grade_channels:
+        assert ch in CHANNEL_METADATA, f"Missing metadata for {ch}"
+        assert "ESTIMATE" in CHANNEL_METADATA[ch].get("description", "").upper() or \
+               "proxy" in CHANNEL_METADATA[ch].get("description", "").lower(), \
+               f"{ch} metadata missing estimate/proxy wording"
+
+
 # ── Speed rate zero-division guards ───────────────────────────
 
 def test_speed_rate_repeated_timestamps() -> None:
@@ -651,3 +808,217 @@ def test_curvature_smoothing_closed_loop_no_spike() -> None:
     max_raw = max(v for v in curvatures if v is not None)
     max_smooth = max(v for v in smoothed if v is not None)
     assert max_smooth <= max_raw * 1.1  # no amplification
+
+
+# ── Ackermann steering ────────────────────────────────────────
+
+def test_ackermann_expected_known() -> None:
+    """wb=3.0, curv=0.001 → expected = atan(0.003) ≈ 0.003 rad ≈ 0.172°."""
+    from racelab_engine.analysis.vehicle_dynamics import ackermann_steering_expected_deg
+    expected, conf = ackermann_steering_expected_deg(3.0, 0.001)
+    assert expected is not None
+    assert abs(expected - math.degrees(math.atan(0.003))) < 0.001
+    assert conf.tier == "high"
+
+
+def test_ackermann_expected_missing_wheelbase() -> None:
+    from racelab_engine.analysis.vehicle_dynamics import ackermann_steering_expected_deg
+    expected, conf = ackermann_steering_expected_deg(None, 0.001)
+    assert expected is None
+
+
+def test_ackermann_expected_missing_curvature() -> None:
+    from racelab_engine.analysis.vehicle_dynamics import ackermann_steering_expected_deg
+    expected, conf = ackermann_steering_expected_deg(3.0, None)
+    assert expected is None
+
+
+def test_ackermann_error_extra_steering() -> None:
+    """More steering than Ackermann → positive error."""
+    from racelab_engine.analysis.vehicle_dynamics import ackermann_steering_error_deg
+    error, conf = ackermann_steering_error_deg(10.0, 5.0)
+    assert error is not None
+    assert abs(error - 5.0) < 0.001
+
+
+def test_ackermann_error_less_steering() -> None:
+    """Less steering than Ackermann → negative error."""
+    from racelab_engine.analysis.vehicle_dynamics import ackermann_steering_error_deg
+    error, conf = ackermann_steering_error_deg(3.0, 8.0)
+    assert error is not None
+    assert error < 0
+
+
+def test_ackermann_scrub_proxy_positive() -> None:
+    """Extra steering creates positive scrub proxy."""
+    from racelab_engine.analysis.vehicle_dynamics import ackermann_scrub_proxy
+    proxy, conf = ackermann_scrub_proxy(10.0, 5.0)
+    assert proxy > 0
+    assert proxy <= 1.0
+
+
+def test_ackermann_scrub_proxy_zero_when_understeering() -> None:
+    """Less steering than Ackermann → zero scrub proxy."""
+    from racelab_engine.analysis.vehicle_dynamics import ackermann_scrub_proxy
+    proxy, conf = ackermann_scrub_proxy(3.0, 8.0)
+    assert proxy == 0.0
+
+
+def test_ackermann_scrub_proxy_missing_inputs() -> None:
+    """Missing inputs return 0.0, not crash."""
+    from racelab_engine.analysis.vehicle_dynamics import ackermann_scrub_proxy
+    proxy, conf = ackermann_scrub_proxy(None, 5.0)
+    assert proxy == 0.0
+
+
+# ── Camber temp bias ──────────────────────────────────────────
+
+def test_camber_bias_inner_hotter() -> None:
+    """Inner hotter than outer → high_inside."""
+    from racelab_engine.analysis.calculated_channels import _compute_camber_bias
+    row: dict = {"lf_carcass_temp_l": 120.0, "lf_carcass_temp_r": 90.0}
+    _compute_camber_bias(row)
+    assert row.get("lf_camber_temp_bias_c") == 30.0
+    assert row.get("lf_camber_bias_label") == "high_inside"
+
+
+def test_camber_bias_outer_hotter() -> None:
+    """Outer hotter than inner → high_outside."""
+    from racelab_engine.analysis.calculated_channels import _compute_camber_bias
+    row: dict = {"lf_carcass_temp_l": 80.0, "lf_carcass_temp_r": 110.0}
+    _compute_camber_bias(row)
+    assert row.get("lf_camber_temp_bias_c") == -30.0
+    assert row.get("lf_camber_bias_label") == "high_outside"
+
+
+def test_camber_bias_even() -> None:
+    """Small temp difference → even."""
+    from racelab_engine.analysis.calculated_channels import _compute_camber_bias
+    row: dict = {"lf_carcass_temp_l": 100.0, "lf_carcass_temp_r": 105.0}
+    _compute_camber_bias(row)
+    assert row.get("lf_camber_bias_label") == "even"
+
+
+def test_camber_bias_missing_temps() -> None:
+    """Missing carcass temps → no crash, no channels."""
+    from racelab_engine.analysis.calculated_channels import _compute_camber_bias
+    row: dict = {}
+    _compute_camber_bias(row)
+    assert row.get("lf_camber_temp_bias_c") is None
+
+
+# ── New channel metadata check ────────────────────────────────
+
+def test_new_channels_metadata_exists() -> None:
+    """All new vehicle dynamics channels should have CHANNEL_METADATA."""
+    from racelab_engine.analysis.calculated_channels import CHANNEL_METADATA
+    channels = [
+        "ackermann_steering_expected_deg",
+        "ackermann_steering_error_deg",
+        "ackermann_scrub_proxy",
+        "front_platform_roll_deg_from_rh",
+        "rear_platform_roll_deg_from_rh",
+        "platform_roll_balance_deg",
+        "lf_camber_temp_bias_c",
+        "rf_camber_temp_bias_c",
+        "lr_camber_temp_bias_c",
+        "rr_camber_temp_bias_c",
+        "lf_camber_bias_label",
+        "rf_camber_bias_label",
+        "lr_camber_bias_label",
+        "rr_camber_bias_label",
+    ]
+    for ch in channels:
+        assert ch in CHANNEL_METADATA, f"Missing metadata for {ch}"
+        desc = CHANNEL_METADATA[ch].get("description", "")
+        assert "ESTIMATE" in desc.upper() or "proxy" in desc.lower(), \
+            f"{ch} metadata missing estimate/proxy wording"
+
+
+# ── Channel contract audit ────────────────────────────────────
+
+def test_frontend_channels_are_backend_known() -> None:
+    """Every frontend-requested channel must be known to the backend.
+
+    This test catches typos or dead channel names in the frontend
+    TRACE_WORKBENCH_CHANNELS list.  It does NOT require every backend
+    channel to be frontend-requested — only that frontend requests
+    point to real channels.
+    """
+    import json
+    from pathlib import Path
+    import re
+
+    # Read frontend channel list
+    frontend_file = Path(__file__).resolve().parents[1] / "ui/src/constants/workbenchChannels.ts"
+    if not frontend_file.exists():
+        pytest.skip("Frontend workbenchChannels.ts not found — skipping UI contract check")
+    frontend_src = frontend_file.read_text()
+    frontend_channels: set[str] = set()
+    for line in frontend_src.split("\n"):
+        if m := re.search(r'"([^"]+)"', line):
+            frontend_channels.add(m.group(1))
+
+    # Build set of all known backend channels (metadata + units + CORE)
+    from racelab_engine.analysis.calculated_channels import CHANNEL_METADATA, CALCULATED_CHANNEL_UNITS
+    try:
+        from racelab_engine.analysis.vectorized_channels import CORE_CHANNELS
+    except ImportError:
+        CORE_CHANNELS = set()
+
+    known = set(CHANNEL_METADATA.keys()) | set(CALCULATED_CHANNEL_UNITS.keys()) | CORE_CHANNELS
+
+    # Also accept raw iRacing channel names that the backend aliases
+    # and computed channels that exist in row path but not in metadata/CORE
+    known |= {
+        "throttle_pct", "brake_pct", "steering_deg", "abs_steering_deg",
+        "abs_lat_accel", "lat_accel_g", "long_accel_g", "vert_accel_g",
+        "rpm", "gear", "lap_dist_pct_100", "speed_mph", "speed_fps",
+        "lf_pressure", "rf_pressure", "lr_pressure", "rr_pressure",
+        # slip ratio proxies — computed in row path _compute_tire_derived
+        "lf_slip_ratio_proxy", "rf_slip_ratio_proxy",
+        "lr_slip_ratio_proxy", "rr_slip_ratio_proxy",
+    }
+
+    unknown = frontend_channels - known
+    assert not unknown, (
+        f"Frontend requests {len(unknown)} channel(s) unknown to backend:\n"
+        + "\n".join(f"  {ch}" for ch in sorted(unknown))
+        + "\n\nFix: update TRACE_WORKBENCH_CHANNELS or add backend support."
+    )
+
+
+def test_core_channels_have_metadata() -> None:
+    """Every CORE_CHANNEL should have a CHANNEL_METADATA entry."""
+    from racelab_engine.analysis.calculated_channels import CHANNEL_METADATA
+    try:
+        from racelab_engine.analysis.vectorized_channels import CORE_CHANNELS
+    except ImportError:
+        pytest.skip("CORE_CHANNELS not available — skipping")
+    missing = [ch for ch in sorted(CORE_CHANNELS) if ch not in CHANNEL_METADATA]
+    assert not missing, (
+        f"{len(missing)} CORE_CHANNELS missing metadata:\n"
+        + "\n".join(f"  {ch}" for ch in missing)
+    )
+
+
+def test_core_channels_have_units() -> None:
+    """Every CORE_CHANNEL should have a unit entry where applicable."""
+    from racelab_engine.analysis.calculated_channels import CALCULATED_CHANNEL_UNITS
+    try:
+        from racelab_engine.analysis.vectorized_channels import CORE_CHANNELS
+    except ImportError:
+        pytest.skip("CORE_CHANNELS not available — skipping")
+    # Label channels don't need units
+    no_unit_needed = {
+        "platform_balance_label", "platform_balance_explanation",
+        "rear_scrape_side_label", "grade_context_label",
+        "lf_camber_bias_label", "rf_camber_bias_label",
+        "lr_camber_bias_label", "rr_camber_bias_label",
+    }
+    missing = [ch for ch in sorted(CORE_CHANNELS)
+               if ch not in CALCULATED_CHANNEL_UNITS and ch not in no_unit_needed]
+    assert not missing, (
+        f"{len(missing)} CORE_CHANNELS missing units:\n"
+        + "\n".join(f"  {ch}" for ch in missing)
+    )

@@ -167,7 +167,7 @@ export type ChannelCatalogItem = {
 
 export type TraceChannelPayload = {
   unit?: string | null;
-  values: Array<number | null>;
+  values: Array<number | string | null>;
   min?: number | null;
   max?: number | null;
   mean?: number | null;

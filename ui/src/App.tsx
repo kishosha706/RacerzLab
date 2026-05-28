@@ -23,6 +23,7 @@ import { PriorityRail } from "./components/PriorityRail";
 import { RunContextBar } from "./components/RunContextBar";
 import { StartupScreen } from "./components/StartupScreen";
 import { TelemetrySelectionProvider, useTelemetrySelection } from "./store/TelemetrySelectionContext";
+import { TRACE_WORKBENCH_CHANNELS } from "./constants/workbenchChannels";
 import { CompareTab } from "./tabs/CompareTab";
 import { NotebookTab } from "./tabs/NotebookTab";
 import { OverviewTab } from "./tabs/OverviewTab";
@@ -74,18 +75,7 @@ function CockpitShell() {
           fetchTrace(runId, {
             lap: bestLap ?? undefined,
             x: "lap_dist_ft",
-            channels: [
-              "throttle_pct", "brake_pct", "center_rake_fs_in", "side_rake_in",
-              "cfs_ride_height_in", "cfs_ride_height_mm",
-              "lf_ride_height_in", "rf_ride_height_in", "lr_ride_height_in", "rr_ride_height_in",
-              "speed_mph", "rpm", "gear", "dynamic_pressure_psf", "lap_dist_pct_100",
-              "speed_rate_mph_s", "speed_rate_mph_1000ft",
-              "drag_scrub_suspicion", "abs_steering_deg", "abs_lat_accel",
-              "lf_pressure", "rf_pressure", "lr_pressure", "rr_pressure",
-              "lf_pressure_gain", "rf_pressure_gain", "lr_pressure_gain", "rr_pressure_gain",
-              "lf_temp_spread", "rf_temp_spread", "lr_temp_spread", "rr_temp_spread",
-              "lf_slip_ratio_proxy", "rf_slip_ratio_proxy", "lr_slip_ratio_proxy", "rr_slip_ratio_proxy",
-            ],
+            channels: TRACE_WORKBENCH_CHANNELS,
             downsample: "auto",
             preserveExtrema: true,
           }).catch(() => null),
@@ -263,14 +253,7 @@ function CockpitShell() {
             fetchTrace(overview.run_id, {
               lap: lap ?? undefined,
               x: "lap_dist_ft",
-              channels: [
-                "throttle_pct", "brake_pct", "center_rake_fs_in", "side_rake_in",
-                "cfs_ride_height_in", "cfs_ride_height_mm",
-                "lf_ride_height_in", "rf_ride_height_in", "lr_ride_height_in", "rr_ride_height_in",
-                "speed_mph", "rpm", "gear", "dynamic_pressure_psf", "lap_dist_pct_100",
-                "speed_rate_mph_s", "speed_rate_mph_1000ft",
-                "drag_scrub_suspicion", "abs_steering_deg", "abs_lat_accel",
-              ],
+              channels: TRACE_WORKBENCH_CHANNELS,
               downsample: "auto",
               preserveExtrema: true,
             }).then((t) => setTrace(t)).catch(() => {});

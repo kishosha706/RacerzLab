@@ -3,8 +3,15 @@ import type { EChartsOption, SeriesOption } from "echarts";
 import { Activity, AlertTriangle, Crosshair, LocateFixed, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
+import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
+import { CornerTireMap } from "../components/CornerTireMap";
+import { ProxyBadge } from "../components/ProxyBadge";
+import { RiskBar } from "../components/RiskBar";
+import { WorkbenchSubnav } from "../components/WorkbenchSubnav";
+import type { WorkbenchView } from "../components/WorkbenchSubnav";
 import { fetchPlatformEvents } from "../api/client";
 import { PROXY_CHANNELS } from "../constants/ui";
+import { getTraceValues, formatChannelValue, formatRiskScore, formatForceProxyN, safeStringValue } from "../utils/channelFormat";
 import type {
   PlatformEventItem,
   RunOverview,
@@ -92,7 +99,7 @@ function asPayload(trace: TraceResponse | null, channel: string): TraceChannelPa
   return Array.isArray(raw) ? { values: raw } : raw;
 }
 
-function values(trace: TraceResponse | null, channel: string): Array<number | null> {
+function values(trace: TraceResponse | null, channel: string): Array<number | string | null> {
   return asPayload(trace, channel)?.values ?? [];
 }
 
@@ -102,9 +109,11 @@ function xValues(trace: TraceResponse | null): Array<number | null> {
   return (trace as any).x?.lap_dist_ft ?? trace.x_by_name?.lap_dist_ft ?? trace.x_by_name?.lap_dist_pct ?? [];
 }
 
-function valueAt(trace: TraceResponse | null, channel: string, index: number | null | undefined) {
+function valueAt(trace: TraceResponse | null, channel: string, index: number | null | undefined): number | null {
   if (index == null) return null;
-  return values(trace, channel)[index] ?? null;
+  const v = values(trace, channel)[index];
+  if (v == null || typeof v === "string") return null;
+  return v;
 }
 
 function fmt(value: number | null | undefined, digits = 2) {
@@ -258,7 +267,7 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
 
   // ── fallback raw channel scans (used when no structured event exists) ──
   const fallbackMinSplitterIndex = useMemo(() => {
-    const cfs = values(trace, "cfs_ride_height_in");
+    const cfs = values(trace, "cfs_ride_height_in") as number[];
     let bestIndex: number | null = null;
     let bestValue = Number.POSITIVE_INFINITY;
     cfs.forEach((value, index) => {
@@ -268,7 +277,7 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
   }, [trace]);
 
   const fallbackWorstSpeedLossIndex = useMemo(() => {
-    const rates = values(trace, "speed_rate_mph_s");
+    const rates = values(trace, "speed_rate_mph_s") as number[];
     let bestIndex: number | null = null;
     let bestValue = Number.POSITIVE_INFINITY;
     rates.forEach((value, index) => {
@@ -450,8 +459,16 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
       series,
     };
     chart.setOption(option);
+
+    // Throttled hover — use RAF to avoid flooding React state on mousemove
+    let rafId: number | null = null;
     chart.on("updateAxisPointer", (event: any) => {
-      if (event.dataIndex != null) updateCursor(event.dataIndex);
+      if (event.dataIndex == null) return;
+      if (rafId != null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        updateCursor(event.dataIndex);
+      });
     });
     chart.on("click", (params) => {
       if (typeof params.dataIndex === "number") updateCursor(params.dataIndex);
@@ -487,6 +504,106 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
   const severityColour = (sev: string) =>
     sev === "critical" ? "#ef4444" : sev === "high" ? "#f97316" : sev === "watch" ? "#f59e0b" : "#38bdf8";
 
+  // ── workbench subview ────────────────────────────────────────
+  const [workbenchView, setWorkbenchView] = useState<WorkbenchView>("balance");
+  const [tireMapMode, setTireMapMode] = useState<any>("pressure");
+
+  // ── helper to get latest value ───────────────────────────────
+  const latest = useCallback((ch: string) => {
+    const vals = getTraceValues(trace, ch);
+    return vals.length > 0 ? vals[vals.length - 1] : null;
+  }, [trace]);
+
+  // ── engineering panel renderers ──────────────────────────────
+  const renderBalancePanel = () => (
+    <div className="engineering-panel">
+      <div className="engineering-panel-grid">
+        <EngineeringMetricCard title="Front Platform Risk" channelName="front_platform_risk_score" value={latest("front_platform_risk_score")} riskValue={latest("front_platform_risk_score") as number | null} color="#38bdf8" />
+        <EngineeringMetricCard title="Rear Platform Risk" channelName="rear_platform_risk_score" value={latest("rear_platform_risk_score")} riskValue={latest("rear_platform_risk_score") as number | null} color="#a78bfa" />
+        <EngineeringMetricCard title="Whole-Car Bottoming" channelName="whole_car_bottoming_risk" value={latest("whole_car_bottoming_risk")} riskValue={latest("whole_car_bottoming_risk") as number | null} color="#ef4444" />
+        <EngineeringMetricCard title="Platform Balance" value={safeStringValue(latest("platform_balance_label"))} subtitle={safeStringValue(latest("platform_balance_explanation"))} color="#22c55e" />
+        <EngineeringMetricCard title="Rear Scrape Side" value={safeStringValue(latest("rear_scrape_side_label"))} subtitle={latest("rear_scrape_margin_mm") != null ? `${formatChannelValue(latest("rear_scrape_margin_mm") as number, "mm")} margin` : undefined} channelName="rear_scrape_side_label" color="#f59e0b" />
+        <EngineeringMetricCard title="Roll Balance" value={`Front ${formatChannelValue(latest("front_platform_roll_deg_from_rh") as number, "°")} / Rear ${formatChannelValue(latest("rear_platform_roll_deg_from_rh") as number, "°")}`} subtitle={`Balance: ${formatChannelValue(latest("platform_roll_balance_deg") as number, "°")}`} channelName="platform_roll_balance_deg" color="#a78bfa" />
+        <EngineeringMetricCard title="Rake / Pitch" value={`Rake ${formatChannelValue(latest("center_rake_fs_in") as number, "in")}`} subtitle={`Pitch ${formatChannelValue(latest("platform_pitch_deg_from_rh") as number, "°")}`} color="#4ade80" />
+      </div>
+    </div>
+  );
+
+  const renderAeroPanel = () => (
+    <div className="engineering-panel">
+      <p className="proxy-warning">Aero/load values are telemetry-derived estimates/proxies, not direct force sensor measurements. Confidence depends on setup geometry, mass, motion ratios, and steady-state conditions.</p>
+      <div className="engineering-panel-grid">
+        <EngineeringMetricCard title="Aero Load Index" channelName="aero_load_index" value={latest("aero_load_index")} color="#38bdf8" />
+        <EngineeringMetricCard title="Dynamic Pressure" value={`${formatChannelValue(latest("dynamic_pressure_psf") as number, "psf")} / ${formatChannelValue(latest("dynamic_pressure_pa") as number, "Pa")}`} subtitle={`Lap index: ${formatChannelValue(latest("dynamic_pressure_lap_index") as number, "index")}`} channelName="dynamic_pressure_lap_index" color="#60a5fa" />
+        <EngineeringMetricCard title="Front Aero Proxy" channelName="front_aero_proxy_n" value={latest("front_aero_proxy_n")} color="#22d3ee" />
+        <EngineeringMetricCard title="Rear Aero Proxy" channelName="rear_aero_proxy_n" value={latest("rear_aero_proxy_n")} color="#a78bfa" />
+        <EngineeringMetricCard title="Rear Platform Proxy" channelName="rear_platform_proxy_n" value={latest("rear_platform_proxy_n")} subtitle={`Diffuser: ${formatForceProxyN(latest("rear_diffuser_proxy_n") as number | null)}`} color="#c084fc" />
+        <EngineeringMetricCard title="Aero Balance Front" channelName="aero_balance_front_pct" value={latest("aero_balance_front_pct")} color="#22c55e" />
+        <EngineeringMetricCard title="Grade Context" value={safeStringValue(latest("grade_context_label"))} subtitle={`${formatChannelValue(latest("dynamic_grade_deg") as number, "°")} · Force: ${formatForceProxyN(latest("grade_force_proxy_n") as number | null)}`} channelName="grade_context_label" color="#f59e0b" />
+      </div>
+    </div>
+  );
+
+  const renderScrubPanel = () => (
+    <div className="engineering-panel">
+      <div className="engineering-panel-grid">
+        <EngineeringMetricCard title="Drag/Scrub Suspicion" channelName="drag_scrub_suspicion" value={latest("drag_scrub_suspicion")} riskValue={latest("drag_scrub_suspicion") as number | null} color="#ef4444" />
+        <EngineeringMetricCard title="Full-Throttle Resistance" channelName="full_throttle_resistance_index" value={latest("full_throttle_resistance_index")} riskValue={latest("full_throttle_resistance_index") as number | null} color="#f97316" />
+        <EngineeringMetricCard title="Ackermann Steering Error" value={`${formatChannelValue(latest("ackermann_steering_error_deg") as number, "°")} error`} subtitle={`Expected: ${formatChannelValue(latest("ackermann_steering_expected_deg") as number, "°")} · Scrub proxy: ${formatChannelValue(latest("ackermann_scrub_proxy") as number, "proxy")}`} channelName="ackermann_scrub_proxy" color="#a78bfa" />
+        <EngineeringMetricCard title="Yaw / Scrub" value={`Yaw error: ${formatChannelValue(latest("yaw_error_proxy") as number, "rad/s")}`} subtitle={`Front scrub: ${formatChannelValue(latest("front_scrub_proxy") as number, "proxy")} · Rear: ${formatChannelValue(latest("rear_scrub_proxy") as number, "proxy")}`} channelName="yaw_error_proxy" color="#38bdf8" />
+        <EngineeringMetricCard title="Wheel Mismatch" value={`Front: ${formatChannelValue(latest("front_wheel_speed_mismatch_corrected") as number, "m/s")}`} subtitle={`Rear: ${formatChannelValue(latest("rear_wheel_speed_mismatch_corrected") as number, "m/s")}`} color="#f59e0b" />
+        <EngineeringMetricCard title="Grade-Corrected Speed Loss" channelName="grade_corrected_speed_loss_mph_s" value={latest("grade_corrected_speed_loss_mph_s")} subtitle={`Raw: ${formatChannelValue(latest("speed_rate_mph_s") as number, "mph/s")}`} color="#22c55e" />
+      </div>
+      <p className="section-note" style={{ marginTop: 8 }}>Extra steering beyond track radius suggests tire scrub. Grade-corrected speed loss removes estimated uphill/downhill effect. Corrected wheel mismatch subtracts yaw-rate geometry so ovals do not look like false slip.</p>
+    </div>
+  );
+
+  const renderTiresPanel = () => (
+    <div className="engineering-panel">
+      <CornerTireMap trace={trace} mode={tireMapMode} onModeChange={setTireMapMode} />
+      <p className="section-note" style={{ marginTop: 8 }}>Inner hotter than outer may indicate camber load. Outer hotter than inner may indicate rollover, under-camber, or overdriving. Slip values are proxies unless true wheel/ground speed calibration is available.</p>
+    </div>
+  );
+
+  const renderShocksPanel = () => (
+    <div className="engineering-panel">
+      <div className="engineering-panel-grid">
+        <EngineeringMetricCard title="Shock Velocity RMS" channelName="shock_velocity_rms" value={latest("shock_velocity_rms")} riskValue={Math.min(1, (latest("shock_velocity_rms") as number ?? 0) / 5)} color="#38bdf8" />
+        <EngineeringMetricCard title="Shock Activity" channelName="shock_activity_index" value={latest("shock_activity_index")} riskValue={Math.min(1, (latest("shock_activity_index") as number ?? 0) / 10)} color="#a78bfa" />
+        <EngineeringMetricCard title="Damper Energy Proxy" channelName="damper_energy_proxy" value={latest("damper_energy_proxy")} color="#c084fc" />
+        <EngineeringMetricCard title="Platform Stability" value={`Stability: ${formatChannelValue(latest("platform_stability_score") as number, "index")}`} subtitle={`Rake stability: ${formatChannelValue(latest("rake_stability_score") as number, "index")}`} channelName="platform_stability_score" riskValue={latest("platform_stability_score") as number | null} color="#22c55e" />
+        <EngineeringMetricCard title="Platform Compression" channelName="platform_compression_index" value={latest("platform_compression_index")} riskValue={latest("platform_compression_index") as number | null} color="#f97316" />
+      </div>
+      <p className="section-note" style={{ marginTop: 8 }}>Frequency-domain shock analysis can later split aero oscillation from bump activity.</p>
+    </div>
+  );
+
+  const renderGradePanel = () => (
+    <div className="engineering-panel">
+      <div className="engineering-panel-grid">
+        <EngineeringMetricCard title="Grade Context" channelName="grade_context_label" value={latest("grade_context_label")} subtitle={`${formatChannelValue(latest("dynamic_grade_deg") as number, "°")}`} color="#22c55e" />
+        <EngineeringMetricCard title="Grade Force Proxy" channelName="grade_force_proxy_n" value={latest("grade_force_proxy_n")} color="#f59e0b" />
+        <EngineeringMetricCard title="Raw Speed Loss" value={formatChannelValue(latest("speed_rate_mph_s") as number, "mph/s")} color="#ef4444" />
+        <EngineeringMetricCard title="Grade-Corrected Speed Loss" channelName="grade_corrected_speed_loss_mph_s" value={latest("grade_corrected_speed_loss_mph_s")} color="#22c55e" />
+        <EngineeringMetricCard title="Pull Context" value={`${formatChannelValue(latest("speed_rate_mph_1000ft") as number, "mph/1000ft")}`} subtitle={`RPM: ${formatChannelValue(latest("rpm") as number, "rpm")} · Gear: ${latest("gear") ?? "—"}`} color="#93c5fd" />
+        <EngineeringMetricCard title="Grade-Corrected Long Accel" channelName="grade_corrected_long_accel_mps2" value={latest("grade_corrected_long_accel_mps2")} color="#4ade80" />
+      </div>
+      <p className="section-note" style={{ marginTop: 8 }}>Raw speed loss includes slope effects. Grade-corrected speed loss estimates what remains after removing uphill/downhill gravity component. Grade values are estimates from acceleration and speed derivative, not surveyed elevation.</p>
+    </div>
+  );
+
+  const renderEngineeringPanel = () => {
+    switch (workbenchView) {
+      case "balance": return renderBalancePanel();
+      case "aero_load": return renderAeroPanel();
+      case "scrub_steering": return renderScrubPanel();
+      case "tires": return renderTiresPanel();
+      case "shocks": return renderShocksPanel();
+      case "grade_pull": return renderGradePanel();
+      default: return renderBalancePanel();
+    }
+  };
+
   return (
     <section className="platform-workbench">
       <header className="platform-header">
@@ -503,8 +620,8 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
             <option>Speed / RPM / Pull</option>
             <option>Drag / Scrub</option>
             <option>Tires</option>
-            <option disabled>Shocks</option>
-            <option disabled>Engine</option>
+            <option>Shocks</option>
+            <option>Engine</option>
           </select>
           <button className="secondary-button" onClick={() => chartRef.current?.dispatchAction({ type: "restore" })}>
             <RotateCcw size={16} /> Reset Zoom
@@ -520,6 +637,8 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
       <p className="proxy-warning">
         Force values are estimates/proxies derived from telemetry, setup spring rates, ride heights, shock movement, and dynamic pressure. They are not direct iRacing aerodynamic force channels.
       </p>
+      <WorkbenchSubnav active={workbenchView} onChange={setWorkbenchView} />
+      {renderEngineeringPanel()}
       <div className="platform-layout">
         <div className="trace-panel" ref={chartNode} />
         <aside className="cursor-panel">
@@ -527,7 +646,7 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
           <dl>
             <div><dt>Lap</dt><dd>{trace?.lap ?? "n/a"}</dd></div>
             <div><dt>Distance</dt><dd>{fmt(selected.distanceFt, 0)} ft</dd></div>
-            <div><dt>Lap %</dt><dd>{fmt(selected.lapPct, 2)}%</dd></div>
+            <div><dt>Position</dt><dd>{fmt(selected.lapPct, 2)}%</dd></div>
             <div><dt>Speed</dt><dd>{fmt(selected.speed, 2)} mph</dd></div>
             <div><dt>Throttle</dt><dd>{fmt(selected.throttle, 1)}%</dd></div>
             <div><dt>Brake</dt><dd>{fmt(selected.brake, 1)}%</dd></div>
@@ -625,7 +744,7 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
               jumpToIndex(idx, event.event_id);
             }}
           >
-            <Activity size={16} /> {event.event_subtype ?? event.event_type} {event.lap_pct_peak?.toFixed(1) ?? "n/a"}%
+            <Activity size={16} /> {event.event_subtype ?? event.event_type}
           </button>
         ))}
       </div>

@@ -1741,3 +1741,566 @@ td {
   .trackmap-cockpit { grid-template-columns: 1fr; }
   .trackmap-inspector { max-height: 40vh; }
 }
+
+/* ── Engineering Metric Card ───────────────────────────────── */
+.engineering-metric-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--cyan);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: glowIn 0.3s ease-out;
+}
+.metric-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.metric-card-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.metric-card-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.metric-card-subtitle {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* ── Proxy Badge ────────────────────────────────────────────── */
+.proxy-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(167, 139, 250, 0.15);
+  color: #a78bfa;
+  border: 1px dashed rgba(167, 139, 250, 0.4);
+}
+
+/* ── Risk Bar ───────────────────────────────────────────────── */
+.risk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.risk-bar-track {
+  flex: 1;
+  height: 6px;
+  background: #1e293b;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.risk-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.risk-bar-label {
+  font-size: 10px;
+  font-weight: 600;
+  min-width: 40px;
+  text-align: right;
+}
+
+/* ── Workbench Subnav ───────────────────────────────────────── */
+.workbench-subnav {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.workbench-subnav-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.workbench-subnav-item:hover {
+  color: var(--text);
+  background: var(--panel-soft);
+}
+.workbench-subnav-item.active {
+  color: var(--cyan);
+  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(56, 189, 248, 0.3);
+}
+.workbench-subnav-icon {
+  font-size: 14px;
+}
+
+/* ── Engineering Panel ──────────────────────────────────────── */
+.engineering-panel {
+  animation: glowIn 0.25s ease-out;
+}
+.engineering-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+/* ── Corner Tire Map ────────────────────────────────────────── */
+.corner-tire-map {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+.tire-map-mode-select {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.tire-map-mode-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.tire-map-mode-btn:hover { color: var(--text); background: var(--panel-soft); }
+.tire-map-mode-btn.active { color: var(--cyan); border-color: var(--cyan); background: rgba(56,189,248,0.1); }
+.tire-map-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  max-width: 400px;
+  margin: 0 auto;
+}
+.tire-map-label {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.tire-map-label.top { margin-bottom: 4px; }
+.tire-map-label.bottom { margin-top: 4px; }
+.tire-map-corner {
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+  background: var(--panel-soft);
+  transition: border-color 0.2s;
+}
+.tire-corner-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.tire-corner-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+.tire-corner-sub {
+  font-size: 9px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── Crew Chief Brief ───────────────────────────────────────── */
+.crew-chief-brief {
+  background: var(--panel);
+  border: 1px solid var(--cyan);
+  border-radius: 8px;
+  padding: 14px;
+  animation: glowIn 0.3s ease-out;
+}
+.crew-chief-brief h2 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--cyan);
+}
+.crew-chief-text {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  margin: 0;
+}
+
+/* ── Next Test Note ─────────────────────────────────────────── */
+.next-test-note {
+  font-size: 12px;
+  color: var(--cyan);
+  margin: 8px 0 0;
+  font-style: italic;
+}
+
+/* ── Warnings List ──────────────────────────────────────────── */
+.warnings-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ── Animations ─────────────────────────────────────────────── */
+@keyframes glowIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulseCritical {
+  0%, 100% { box-shadow: 0 0 0 rgba(239, 68, 68, 0); }
+  50% { box-shadow: 0 0 24px rgba(239, 68, 68, 0.35); }
+}
+.engineering-metric-card.risk-critical {
+  animation: pulseCritical 2s ease-in-out infinite;
+}
+
+/* ── Skeleton Loading ───────────────────────────────────────── */
+.skeleton-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.skeleton-row {
+  height: 60px;
+  background: linear-gradient(90deg, var(--panel) 25%, var(--panel-soft) 50%, var(--panel) 75%);
+  background-size: 200% 100%;
+  border-radius: 6px;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.loading-text {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  margin-top: 8px;
+}
+
+/* ── Semantic category colors ───────────────────────────────── */
+:root {
+  --rl-platform: #38bdf8;
+  --rl-aero: #60a5fa;
+  --rl-scrub: #f97316;
+  --rl-tires: #22c55e;
+  --rl-shocks: #a78bfa;
+  --rl-grade: #14b8a6;
+  --rl-critical: #ef4444;
+  --rl-proxy: #a78bfa;
+  --rl-selected: #38bdf8;
+}
+
+/* ── Metric card missing state ──────────────────────────────── */
+.metric-card-missing {
+  opacity: 0.5;
+  border-left-color: #475569 !important;
+}
+.metric-card-missing .metric-card-value {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* ── Responsive: engineering panel grid ─────────────────────── */
+@media (max-width: 900px) {
+  .engineering-panel-grid {
+    grid-template-columns: 1fr;
+  }
+  .metrics-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .platform-layout {
+    grid-template-columns: 1fr;
+  }
+  .trace-panel {
+    height: 400px;
+  }
+}
+
+/* ── ValueDisplay ──────────────────────────────────────────── */
+.value-display {
+  font-variant-numeric: tabular-nums;
+}
+.value-display-missing {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 0.85em;
+}
+
+/* ── Estimate Badge (lighter purple, dashed) ──────────────── */
+.proxy-badge.estimate-badge {
+  background: rgba(20, 184, 166, 0.12);
+  color: #14b8a6;
+  border-color: rgba(20, 184, 166, 0.35);
+}
+
+/* ── Overview Hero ─────────────────────────────────────────── */
+.overview-hero {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  animation: glowIn 0.3s ease-out;
+}
+.overview-hero.gain-risky {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.04);
+}
+.overview-hero.gain-negative {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.04);
+}
+.overview-hero.gain-clean {
+  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(34, 197, 94, 0.04);
+}
+.overview-hero-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.overview-hero-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.gain-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.overview-hero-issue {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.overview-hero-headline {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+.overview-hero-location {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--amber);
+  margin: 0;
+}
+.overview-hero-why {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+}
+.overview-hero-next {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--cyan);
+  margin: 4px 0 0;
+  font-weight: 600;
+}
+.overview-hero-proxy-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--amber);
+  margin: 4px 0 0;
+  font-style: italic;
+}
+.overview-hero-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.overview-hero-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+}
+.overview-evidence-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.evidence-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+/* ── Self-Compare Banner ───────────────────────────────────── */
+.self-compare-banner {
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.self-compare-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--cyan);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  display: inline-block;
+  width: fit-content;
+}
+.self-compare-text {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── Setup Focus Mode ──────────────────────────────────────── */
+.setup-focus-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--cyan);
+  margin-bottom: 12px;
+}
+.setup-focus-empty {
+  background: rgba(245, 158, 11, 0.06);
+  border-color: rgba(245, 158, 11, 0.2);
+  color: var(--amber);
+}
+.setup-field-highlighted {
+  border-color: var(--cyan) !important;
+  background: rgba(56, 189, 248, 0.06) !important;
+  position: relative;
+}
+.setup-field-dimmed {
+  opacity: 0.4;
+}
+.setup-related-tag {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--cyan);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ── Lap Browser Badges ────────────────────────────────────── */
+.lap-row-badges {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.lap-type-badge {
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.lap-flag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 7px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.lap-flag-draft {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--amber);
+}
+.lap-flag-invalid {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--red);
+}
+
+/* ── Compare subnav responsive ─────────────────────────────── */
+.compare-subnav {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.subnav-item {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: capitalize;
+}
+.subnav-item:hover { color: var(--text); background: var(--panel-soft); }
+.subnav-item.active { color: var(--cyan); border-color: var(--cyan); background: rgba(56,189,248,0.1); }

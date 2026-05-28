@@ -499,6 +499,9 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
   const otherRuns = runs.filter((r) => r.run_id !== baselineRunId);
   const isSameRun = testRunId === baselineRunId && testRunId !== "";
 
+  // ── Same-run reference mode ──────────────────────────────────
+  const isSelfCompare = result != null && result.baseline_lap === result.test_lap && isSameRun;
+
   // ── empty state: only one run ───────────────────────────────
   if (runs.length <= 1) {
     return (
@@ -575,13 +578,19 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
     switch (subview) {
       case "verdict": return (
         <div className="compare-subview">
+          {isSelfCompare && (
+            <div className="self-compare-banner">
+              <span className="self-compare-badge">Reference Mode</span>
+              <p className="self-compare-text">Baseline and test are the same run/lap, so no setup decision should be made from this comparison.</p>
+            </div>
+          )}
           <VerdictView verdict={result.verdict} disc={result.test_discipline} wci={result.whole_car_index} confidence={result.confidence_score} />
           <div className="toolbar-actions" style={{ marginTop: 12 }}>
             <button className="secondary-button" onClick={() => {
               const isDuplicate = saveStatus === "Finding already saved. Click again to save duplicate.";
               handleSaveFinding(isDuplicate);
-            }} disabled={saving}>
-              <Bookmark size={14} /> {saving ? "Saving…" : saveStatus === "Finding already saved. Click again to save duplicate." ? "Save Duplicate" : "Save Finding"}
+            }} disabled={saving || isSelfCompare} title={isSelfCompare ? "Cannot save finding for self-comparison" : undefined}>
+              <Bookmark size={14} /> {isSelfCompare ? "Self-Comparison" : saving ? "Saving…" : saveStatus === "Finding already saved. Click again to save duplicate." ? "Save Duplicate" : "Save Finding"}
             </button>
             {saveStatus && <span className="status-text" style={{ marginLeft: 8 }}>{saveStatus}</span>}
           </div>
@@ -603,13 +612,19 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
         if (!insights) return <p className="muted">Insights not available.</p>;
         return (
           <div>
+            {isSelfCompare && (
+              <div className="self-compare-banner">
+                <span className="self-compare-badge">Reference Mode</span>
+                <p className="self-compare-text">Baseline and test are the same run/lap, so no setup decision should be made from this comparison.</p>
+              </div>
+            )}
             <ComparisonInsightPanel insights={insights} onOpenDeltaTraces={() => setSubview("delta-traces")} />
             <div className="toolbar-actions" style={{ marginTop: 12 }}>
               <button className="secondary-button" onClick={() => {
                 const isDuplicate = saveStatus === "Finding already saved. Click again to save duplicate.";
                 handleSaveFinding(isDuplicate);
-              }} disabled={saving}>
-                <Bookmark size={14} /> {saving ? "Saving…" : saveStatus === "Finding already saved. Click again to save duplicate." ? "Save Duplicate" : "Save Insight Finding"}
+              }} disabled={saving || isSelfCompare} title={isSelfCompare ? "Cannot save finding for self-comparison" : undefined}>
+                <Bookmark size={14} /> {isSelfCompare ? "Self-Comparison" : saving ? "Saving…" : saveStatus === "Finding already saved. Click again to save duplicate." ? "Save Duplicate" : "Save Insight Finding"}
               </button>
               {saveStatus && <span className="status-text" style={{ marginLeft: 8 }}>{saveStatus}</span>}
             </div>

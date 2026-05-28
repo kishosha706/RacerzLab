@@ -23,8 +23,9 @@ export function NextBestClick({ runId, platformEvents }: NextBestClickProps) {
       const top = platformEvents[0];
       if (!top) return { question: "No events", action: "Check data coverage", workspace: "overview" as const };
       const ws = eventWorkspace(top.event_type) as Workspace;
+      const loc = top.title || "selected event";
       return {
-        question: `What happened at ${top.lap_pct?.toFixed(1) ?? "?"}%?`,
+        question: `What happened at the ${loc}?`,
         action: `Open ${eventLabel(top.event_type)}`,
         workspace: ws,
         eventId: top.event_id,

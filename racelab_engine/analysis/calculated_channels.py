@@ -263,7 +263,43 @@ CALCULATED_CHANNEL_UNITS: dict[str, str] = {
     "rear_platform_proxy_n": "N",
     "rear_diffuser_proxy_n": "N",
     "speed_rate_mps2": "m/s^2",
+    "dynamic_grade_rad": "rad",
     "dynamic_grade_deg": "deg",
+    "grade_corrected_long_accel_mps2": "m/s^2",
+    "grade_force_proxy_n": "N",
+    "grade_context_label": "label",
+    "grade_corrected_speed_loss_mph_s": "mph/s",
+    "ackermann_steering_expected_deg": "deg",
+    "ackermann_steering_error_deg": "deg",
+    "ackermann_scrub_proxy": "proxy",
+    "front_platform_roll_deg_from_rh": "deg",
+    "rear_platform_roll_deg_from_rh": "deg",
+    "platform_roll_balance_deg": "deg",
+    "lf_camber_temp_bias_c": "C",
+    "rf_camber_temp_bias_c": "C",
+    "lr_camber_temp_bias_c": "C",
+    "rr_camber_temp_bias_c": "C",
+    "lf_camber_bias_label": "label",
+    "rf_camber_bias_label": "label",
+    "lr_camber_bias_label": "label",
+    "rr_camber_bias_label": "label",
+    # ── tire derived ──
+    "lf_pressure_gain": "psi",
+    "rf_pressure_gain": "psi",
+    "lr_pressure_gain": "psi",
+    "rr_pressure_gain": "psi",
+    "lf_temp_spread": "C",
+    "rf_temp_spread": "C",
+    "lr_temp_spread": "C",
+    "rr_temp_spread": "C",
+    "lf_wear_spread": "mm",
+    "rf_wear_spread": "mm",
+    "lr_wear_spread": "mm",
+    "rr_wear_spread": "mm",
+    # ── yaw error ──
+    "yaw_error_proxy": "rad/s",
+    # ── vert accel g ──
+    "vert_accel_g": "g",
     "front_slip_angle_deg": "deg",
     "rear_slip_angle_deg": "deg",
     "slip_angle_balance_deg": "deg",
@@ -271,6 +307,50 @@ CALCULATED_CHANNEL_UNITS: dict[str, str] = {
     "track_y_m": "m",
     "track_x_ft": "ft",
     "track_y_ft": "ft",
+    # ── input pct ──
+    "throttle_pct": "%",
+    "brake_pct": "%",
+    "steering_deg": "deg",
+    "abs_steering_deg": "deg",
+    "rpm": "rpm",
+    "gear": "gear",
+    # ── accel ──
+    "lat_accel": "m/s^2",
+    "abs_lat_accel": "m/s^2",
+    "lat_accel_g": "g",
+    "long_accel_g": "g",
+    # ── shock per-corner ──
+    "lf_shock_velocity_rms": "in/s",
+    "rf_shock_velocity_rms": "in/s",
+    "lr_shock_velocity_rms": "in/s",
+    "rr_shock_velocity_rms": "in/s",
+    "lf_shock_activity_index": "index",
+    "rf_shock_activity_index": "index",
+    "lr_shock_activity_index": "index",
+    "rr_shock_activity_index": "index",
+    "lf_damper_energy_proxy": "index",
+    "rf_damper_energy_proxy": "index",
+    "lr_damper_energy_proxy": "index",
+    "rr_damper_energy_proxy": "index",
+    # ── wheel speed mismatch ──
+    "front_wheel_speed_mismatch_raw": "m/s",
+    "rear_wheel_speed_mismatch_raw": "m/s",
+    "front_wheel_speed_mismatch_corrected": "m/s",
+    "rear_wheel_speed_mismatch_corrected": "m/s",
+    # ── rear scrape ──
+    "rear_min_ride_height_mm": "mm",
+    "rear_min_ride_height_in": "in",
+    "rear_scrape_margin_mm": "mm",
+    "rear_scrape_risk_score": "score",
+    "rear_platform_contact_risk": "score",
+    "rear_scrape_side": "code",
+    "rear_scrape_side_label": "label",
+    # ── platform balance ──
+    "front_platform_risk_score": "score",
+    "rear_platform_risk_score": "score",
+    "whole_car_bottoming_risk": "score",
+    "platform_balance_label": "label",
+    "platform_balance_explanation": "label",
 }
 
 
@@ -305,6 +385,10 @@ CHART_PRESETS = [
 EVENT_LABELS = [
     "PLATFORM_LOW",
     "PLATFORM_SCRAPE",
+    "REAR_PLATFORM_LOW",
+    "REAR_PLATFORM_SCRAPE",
+    "REAR_CONTACT_RISK",
+    "WHOLE_CAR_BOTTOMING_RISK",
     "FULL_THROTTLE_SPEED_LOSS",
     "STEERING_SCRUB",
     "DYNAMIC_PRESSURE_PEAK",
@@ -477,7 +561,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "dynamic_pressure_lap_index": {
         "label": "Dynamic Pressure Lap Index",
-        "description": "Normalized dynamic pressure (0-1 scale relative to max in lap). LAP-RELATIVE index — NOT comparable across runs.",
+        "description": "ESTIMATE — normalized dynamic pressure (0-1 scale relative to max in lap). LAP-RELATIVE index — NOT comparable across runs. Proxy, not absolute pressure.",
         "formula": "dynamic_pressure_psf / max(dynamic_pressure_psf in lap)",
         "dependencies": ["dynamic_pressure_psf"],
         "used_by_charts": [AERO_PLATFORM],
@@ -487,7 +571,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "dynamic_pressure_index": {
         "label": "Dynamic Pressure Index",
-        "description": "Alias for dynamic_pressure_lap_index. LAP-RELATIVE — NOT comparable across runs.",
+        "description": "ESTIMATE — alias for dynamic_pressure_lap_index. LAP-RELATIVE — NOT comparable across runs. Normalized proxy, not absolute pressure.",
         "formula": "dynamic_pressure_psf / max(dynamic_pressure_psf in lap)",
         "dependencies": ["dynamic_pressure_psf"],
         "used_by_charts": [AERO_PLATFORM],
@@ -497,7 +581,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "aero_load_index": {
         "label": "Aero Load Index",
-        "description": "Cross-run comparable aero load index. Ratio of current dynamic pressure to reference pressure at 180 mph sea level. Safe for Notebook comparisons across runs, tracks, weather, and sessions.",
+        "description": "ESTIMATE — cross-run comparable aero load index. Ratio of current dynamic pressure to reference pressure at 180 mph sea level. Proxy — not a direct force measurement. Safe for Notebook comparisons across runs, tracks, weather, and sessions.",
         "formula": "dynamic_pressure_pa / REFERENCE_DYNAMIC_PRESSURE_PA",
         "dependencies": ["dynamic_pressure_pa"],
         "used_by_charts": [AERO_PLATFORM],
@@ -507,7 +591,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "aero_load_index_180mph": {
         "label": "Aero Load Index (180 mph ref)",
-        "description": "Alias for aero_load_index. Cross-run comparable.",
+        "description": "ESTIMATE — alias for aero_load_index. Cross-run comparable. Proxy — not a direct force measurement.",
         "formula": "dynamic_pressure_pa / (0.5 * 1.225 * 80.4672^2)",
         "dependencies": ["dynamic_pressure_pa"],
         "used_by_charts": [AERO_PLATFORM],
@@ -519,7 +603,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     # ── risk / suspicion ──
     "cfs_risk_score": {
         "label": "CFS Risk Score",
-        "description": "Splitter risk: 1.0 = scrape, 0.92 = critical (<3mm), 0.72 = high (<6mm), 0.38 = watch (<10mm), 0.08 = safe",
+        "description": "ESTIMATE — splitter contact risk score from ride height. 1.0 = scrape, 0.92 = critical (<3mm), 0.72 = high (<6mm), 0.38 = watch (<10mm), 0.08 = safe. Proxy — not a direct contact sensor.",
         "formula": "piecewise from cfs_ride_height_mm",
         "dependencies": ["cfs_ride_height_mm"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
@@ -585,7 +669,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "shock_activity_index": {
         "label": "Shock Activity Index",
-        "description": "Composite shock activity score from velocity magnitude and peaks.",
+        "description": "ESTIMATE — composite shock activity score from velocity magnitude and peaks. Proxy for damper activity, not a direct measurement.",
         "dependencies": ["lf_shock_vel_in_s", "rf_shock_vel_in_s", "lr_shock_vel_in_s", "rr_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
@@ -601,6 +685,116 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["TIRE_SCRUB"],
         "used_by_recommendations": [GEARING_COMPARISON],
+    },
+
+    # ── tire derived (pressure gain, temp spread, wear spread) ──
+    "lf_pressure_gain": {
+        "label": "LF Pressure Gain",
+        "description": "ESTIMATE — left-front tire pressure gain (current minus cold). Proxy for tire temperature build-up.",
+        "formula": "lf_pressure - lf_cold_pressure",
+        "dependencies": ["lf_pressure", "lf_cold_pressure"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LONG_RUN_TIRE_REVIEW],
+    },
+    "rf_pressure_gain": {
+        "label": "RF Pressure Gain",
+        "description": "ESTIMATE — right-front tire pressure gain.",
+        "formula": "rf_pressure - rf_cold_pressure",
+        "dependencies": ["rf_pressure", "rf_cold_pressure"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LONG_RUN_TIRE_REVIEW],
+    },
+    "lr_pressure_gain": {
+        "label": "LR Pressure Gain",
+        "description": "ESTIMATE — left-rear tire pressure gain.",
+        "formula": "lr_pressure - lr_cold_pressure",
+        "dependencies": ["lr_pressure", "lr_cold_pressure"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LONG_RUN_TIRE_REVIEW],
+    },
+    "rr_pressure_gain": {
+        "label": "RR Pressure Gain",
+        "description": "ESTIMATE — right-rear tire pressure gain.",
+        "formula": "rr_pressure - rr_cold_pressure",
+        "dependencies": ["rr_pressure", "rr_cold_pressure"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LONG_RUN_TIRE_REVIEW],
+    },
+    "lf_temp_spread": {
+        "label": "LF Temp Spread",
+        "description": "ESTIMATE — left-front tire temperature spread (max minus min across inner/middle/outer). Proxy for uneven tire loading.",
+        "formula": "max(lf_temp_inner, lf_temp_middle, lf_temp_outer) - min(...)",
+        "dependencies": ["lf_temp_inner", "lf_temp_middle", "lf_temp_outer"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "rf_temp_spread": {
+        "label": "RF Temp Spread",
+        "description": "ESTIMATE — right-front tire temperature spread.",
+        "formula": "max(rf_temp_inner, rf_temp_middle, rf_temp_outer) - min(...)",
+        "dependencies": ["rf_temp_inner", "rf_temp_middle", "rf_temp_outer"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "lr_temp_spread": {
+        "label": "LR Temp Spread",
+        "description": "ESTIMATE — left-rear tire temperature spread.",
+        "formula": "max(lr_temp_inner, lr_temp_middle, lr_temp_outer) - min(...)",
+        "dependencies": ["lr_temp_inner", "lr_temp_middle", "lr_temp_outer"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "rr_temp_spread": {
+        "label": "RR Temp Spread",
+        "description": "ESTIMATE — right-rear tire temperature spread.",
+        "formula": "max(rr_temp_inner, rr_temp_middle, rr_temp_outer) - min(...)",
+        "dependencies": ["rr_temp_inner", "rr_temp_middle", "rr_temp_outer"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "lf_wear_spread": {
+        "label": "LF Wear Spread",
+        "description": "ESTIMATE — left-front tire wear spread (max minus min across inner/middle/outer). Proxy for uneven wear or alignment issues.",
+        "formula": "max(lf_wear_inner, lf_wear_middle, lf_wear_outer) - min(...)",
+        "dependencies": ["lf_wear_inner", "lf_wear_middle", "lf_wear_outer"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "rf_wear_spread": {
+        "label": "RF Wear Spread",
+        "description": "ESTIMATE — right-front tire wear spread.",
+        "formula": "max(rf_wear_inner, rf_wear_middle, rf_wear_outer) - min(...)",
+        "dependencies": ["rf_wear_inner", "rf_wear_middle", "rf_wear_outer"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "lr_wear_spread": {
+        "label": "LR Wear Spread",
+        "description": "ESTIMATE — left-rear tire wear spread.",
+        "formula": "max(lr_wear_inner, lr_wear_middle, lr_wear_outer) - min(...)",
+        "dependencies": ["lr_wear_inner", "lr_wear_middle", "lr_wear_outer"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "rr_wear_spread": {
+        "label": "RR Wear Spread",
+        "description": "ESTIMATE — right-rear tire wear spread.",
+        "formula": "max(rr_wear_inner, rr_wear_middle, rr_wear_outer) - min(...)",
+        "dependencies": ["rr_wear_inner", "rr_wear_middle", "rr_wear_outer"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
     },
 
     # ── inputs ──
@@ -892,7 +1086,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     # ── stability scores ──
     "platform_stability_score": {
         "label": "Platform Stability",
-        "description": "Rate of CFS ride height change over time. Higher = less stable platform.",
+        "description": "ESTIMATE — rate of CFS ride height change over time. Higher = less stable platform. Proxy — ride-height-based, not inertial.",
         "dependencies": ["cfs_ride_height_in", "session_time"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": ["PLATFORM_COMPRESSION"],
@@ -900,7 +1094,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "rake_stability_score": {
         "label": "Rake Stability",
-        "description": "Rate of center rake change over time. Higher = less stable rake.",
+        "description": "ESTIMATE — rate of center rake change over time. Higher = less stable rake. Proxy — ride-height-based, not inertial.",
         "dependencies": ["center_rake_fs_in", "session_time"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
@@ -908,7 +1102,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "platform_risk_score": {
         "label": "Platform Risk Score",
-        "description": "Alias for CFS risk score. Higher = riskier splitter margin.",
+        "description": "ESTIMATE — alias for CFS risk score. Higher = riskier splitter margin. Proxy — not a direct contact sensor.",
         "dependencies": ["cfs_ride_height_mm"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": ["PLATFORM_LOW"],
@@ -931,6 +1125,15 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "used_by_charts": [DRAG_SCRUB],
         "used_by_events": ["TIRE_SCRUB"],
         "used_by_recommendations": [GEARING_COMPARISON],
+    },
+    "yaw_error_proxy": {
+        "label": "Yaw Error Proxy",
+        "description": "ESTIMATE — yaw error from curvature vs actual yaw rate. max(0, theoretical_yaw - actual_yaw). Positive = understeer. Used internally by front_scrub_proxy.",
+        "formula": "max(0, speed_mps / radius_m - abs(yaw_rate))",
+        "dependencies": ["speed_mps", "radius_m", "yaw_rate"],
+        "used_by_charts": [],
+        "used_by_events": [],
+        "used_by_recommendations": [],
     },
     "full_throttle_resistance_index": {
         "label": "Full-Throttle Resistance",
@@ -1062,12 +1265,189 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "dynamic_grade_deg": {
         "label": "Dynamic Grade",
-        "description": "ESTIMATE — track slope (grade) angle derived by comparing sensor longitudinal acceleration vs GPS speed derivative. Positive = uphill, negative = downhill.",
+        "description": "ESTIMATE — track slope (grade) angle derived by comparing sensor longitudinal acceleration vs GPS speed derivative. Positive = uphill, negative = downhill. Not surveyed elevation.",
         "formula": "asin((long_accel - speed_rate_mps2) / 9.81)",
         "dependencies": ["long_accel", "speed_rate_mps2"],
         "used_by_charts": [SPEED_RPM_PULL],
         "used_by_events": [],
         "used_by_recommendations": [],
+    },
+    "dynamic_grade_rad": {
+        "label": "Dynamic Grade (rad)",
+        "description": "ESTIMATE — track slope in radians. SI unit version of dynamic_grade_deg. Not surveyed elevation.",
+        "formula": "asin((long_accel - speed_rate_mps2) / 9.81)",
+        "dependencies": ["long_accel", "speed_rate_mps2"],
+        "used_by_charts": [],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+    "grade_corrected_long_accel_mps2": {
+        "label": "Grade-Corrected Long Accel",
+        "description": "ESTIMATE — longitudinal acceleration with estimated grade component removed. a_corrected = a_sensor - g * sin(grade). Confidence depends on clean acceleration and speed derivative.",
+        "formula": "long_accel - 9.81 * sin(dynamic_grade_rad)",
+        "dependencies": ["long_accel", "speed_rate_mps2"],
+        "used_by_charts": [SPEED_RPM_PULL],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+    "grade_force_proxy_n": {
+        "label": "Grade Force Proxy",
+        "description": "ESTIMATE — grade-induced force component. Positive = uphill resistance, negative = downhill assist. Requires mass_kg; returns None if mass unavailable. Proxy — not a direct force measurement.",
+        "formula": "mass_kg * 9.81 * sin(dynamic_grade_rad)",
+        "dependencies": ["mass_kg", "long_accel", "speed_rate_mps2"],
+        "used_by_charts": [SPEED_RPM_PULL],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+    "grade_context_label": {
+        "label": "Grade Context",
+        "description": "ESTIMATE — qualitative grade classification: uphill, downhill, flat, or unknown. Based on dynamic_grade_deg with a small deadband around zero. Not surveyed elevation.",
+        "formula": "classification from dynamic_grade_deg",
+        "dependencies": ["dynamic_grade_deg"],
+        "used_by_charts": [],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+    "grade_corrected_speed_loss_mph_s": {
+        "label": "Grade-Corrected Speed Loss",
+        "description": "ESTIMATE — speed_rate_mph_s with grade-induced acceleration removed. Positive = true speed loss (aero/mechanical), negative = true speed gain. Raw speed_rate_mph_s is preserved. Proxy — grade is inferred, not measured.",
+        "formula": "speed_rate_mph_s - grade_accel_mph_s",
+        "dependencies": ["speed_rate_mph_s", "dynamic_grade_rad"],
+        "used_by_charts": [SPEED_RPM_PULL, DRAG_SCRUB],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+
+    # ── Ackermann steering ──
+    "ackermann_steering_expected_deg": {
+        "label": "Ackermann Steering Expected",
+        "description": "ESTIMATE — expected steering angle from Ackermann geometry: atan(wheelbase * curvature). Bicycle model, no steering ratio. Positive = left, negative = right.",
+        "formula": "atan(wheelbase_m * curvature_1_per_m)",
+        "dependencies": ["wheelbase_m", "curvature_1_per_m"],
+        "used_by_charts": [],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+    "ackermann_steering_error_deg": {
+        "label": "Ackermann Steering Error",
+        "description": "ESTIMATE — |actual_steering| - |expected_ackermann|. Positive = more steering than geometry predicts (understeer or extra input). Negative = less steering (oversteer or reduced input).",
+        "formula": "abs(steering_deg) - abs(ackermann_steering_expected_deg)",
+        "dependencies": ["steering_deg", "ackermann_steering_expected_deg"],
+        "used_by_charts": [],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+    "ackermann_scrub_proxy": {
+        "label": "Ackermann Scrub Proxy",
+        "description": "ESTIMATE — scrub proxy from Ackermann error. clamp01(max(0, error) / 5°). Extra steering beyond Ackermann suggests scrub. Does NOT replace front_scrub_proxy.",
+        "formula": "clamp01(max(0, ackermann_steering_error_deg) / 5.0)",
+        "dependencies": ["ackermann_steering_error_deg"],
+        "used_by_charts": [],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+
+    # ── front/rear platform roll ──
+    "front_platform_roll_deg_from_rh": {
+        "label": "Front Platform Roll (from RH)",
+        "description": "ESTIMATE — front axle roll angle from LF/RF ride height difference using front track width and front motion ratio. Not a direct chassis attitude measurement.",
+        "formula": "compute_roll_deg(lf_rh_m, rf_rh_m, front_track_width_m, front_motion_ratio)",
+        "dependencies": ["lf_ride_height_mm", "rf_ride_height_mm", "front_track_width_m"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "rear_platform_roll_deg_from_rh": {
+        "label": "Rear Platform Roll (from RH)",
+        "description": "ESTIMATE — rear axle roll angle from LR/RR ride height difference using rear track width and rear motion ratio. Not a direct chassis attitude measurement.",
+        "formula": "compute_roll_deg(lr_rh_m, rr_rh_m, rear_track_width_m, rear_motion_ratio)",
+        "dependencies": ["lr_ride_height_mm", "rr_ride_height_mm", "rear_track_width_m"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+    "platform_roll_balance_deg": {
+        "label": "Platform Roll Balance",
+        "description": "ESTIMATE — front roll minus rear roll. Positive = front rolls more than rear (more front grip or softer front roll stiffness). Negative = rear rolls more.",
+        "formula": "front_platform_roll_deg_from_rh - rear_platform_roll_deg_from_rh",
+        "dependencies": ["front_platform_roll_deg_from_rh", "rear_platform_roll_deg_from_rh"],
+        "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
+        "used_by_events": [],
+        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+    },
+
+    # ── camber heat spread proxy ──
+    "lf_camber_temp_bias_c": {
+        "label": "LF Camber Temp Bias",
+        "description": "ESTIMATE — left-front inner minus outer carcass temperature. Positive = inside hotter (too much negative camber or cornering load). Proxy — not a direct camber measurement.",
+        "formula": "lf_carcass_temp_l - lf_carcass_temp_r",
+        "dependencies": ["lf_carcass_temp_l", "lf_carcass_temp_r"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "rf_camber_temp_bias_c": {
+        "label": "RF Camber Temp Bias",
+        "description": "ESTIMATE — right-front inner minus outer carcass temperature.",
+        "formula": "rf_carcass_temp_l - rf_carcass_temp_r",
+        "dependencies": ["rf_carcass_temp_l", "rf_carcass_temp_r"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "lr_camber_temp_bias_c": {
+        "label": "LR Camber Temp Bias",
+        "description": "ESTIMATE — left-rear inner minus outer carcass temperature.",
+        "formula": "lr_carcass_temp_l - lr_carcass_temp_r",
+        "dependencies": ["lr_carcass_temp_l", "lr_carcass_temp_r"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "rr_camber_temp_bias_c": {
+        "label": "RR Camber Temp Bias",
+        "description": "ESTIMATE — right-rear inner minus outer carcass temperature.",
+        "formula": "rr_carcass_temp_l - rr_carcass_temp_r",
+        "dependencies": ["rr_carcass_temp_l", "rr_carcass_temp_r"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "lf_camber_bias_label": {
+        "label": "LF Camber Bias Label",
+        "description": "ESTIMATE — qualitative camber bias: high_inside, high_outside, even, or unknown.",
+        "formula": "classification from lf_camber_temp_bias_c",
+        "dependencies": ["lf_camber_temp_bias_c"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "rf_camber_bias_label": {
+        "label": "RF Camber Bias Label",
+        "description": "ESTIMATE — qualitative camber bias for right-front.",
+        "formula": "classification from rf_camber_temp_bias_c",
+        "dependencies": ["rf_camber_temp_bias_c"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "lr_camber_bias_label": {
+        "label": "LR Camber Bias Label",
+        "description": "ESTIMATE — qualitative camber bias for left-rear.",
+        "formula": "classification from lr_camber_temp_bias_c",
+        "dependencies": ["lr_camber_temp_bias_c"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "rr_camber_bias_label": {
+        "label": "RR Camber Bias Label",
+        "description": "ESTIMATE — qualitative camber bias for right-rear.",
+        "formula": "classification from rr_camber_temp_bias_c",
+        "dependencies": ["rr_camber_temp_bias_c"],
+        "used_by_charts": [TIRES],
+        "used_by_events": [],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
     },
 
     # ── track GPS projection ──
@@ -1120,6 +1500,15 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "formula": "long_accel / 9.81",
         "dependencies": ["long_accel"],
         "used_by_charts": [SPEED_RPM_PULL],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+    "vert_accel_g": {
+        "label": "Vertical Accel (g)",
+        "description": "Vertical acceleration in g units.",
+        "formula": "vert_accel / 9.81",
+        "dependencies": ["vert_accel"],
+        "used_by_charts": [],
         "used_by_events": [],
         "used_by_recommendations": [],
     },
@@ -1926,6 +2315,11 @@ def _init_derivative_row(row: dict[str, Any]) -> None:
     row["rake_stability_score"] = None
     row["platform_compression_index"] = None
     row["dynamic_grade_deg"] = None
+    row["dynamic_grade_rad"] = None
+    row["grade_corrected_long_accel_mps2"] = None
+    row["grade_force_proxy_n"] = None
+    row["grade_context_label"] = None
+    row["grade_corrected_speed_loss_mph_s"] = None
 
 
 def _compute_speed_rates(row: dict[str, Any], previous: dict[str, Any]) -> float | None:
@@ -2054,6 +2448,8 @@ def _apply_row_calculations(item: dict[str, Any]) -> None:
     _compute_scrub_proxies(item)
     _compute_g_values(item)
     _compute_platform_angles(item)
+    _compute_ackermann(item)
+    _compute_camber_bias(item)
 
 
 def _compute_g_values(item: dict[str, Any]) -> None:
@@ -2109,34 +2505,91 @@ def _compute_platform_angles(item: dict[str, Any]) -> None:
     mrf = _number(item.get("motion_ratio_front"))
     mrr = _number(item.get("motion_ratio_rear"))
 
-    if wb_m and wb_m > 0:
-        fl_mm = _number(item.get("lf_ride_height_mm"))
-        fr_mm = _number(item.get("rf_ride_height_mm"))
-        rl_mm = _number(item.get("lr_ride_height_mm"))
-        rr_mm = _number(item.get("rr_ride_height_mm"))
-        
-        if None not in (fl_mm, fr_mm, rl_mm, rr_mm):
-            assert fl_mm is not None and fr_mm is not None and rl_mm is not None and rr_mm is not None
-            front_m = ride_height_mm_to_m((fl_mm + fr_mm) / 2.0)
-            rear_m = ride_height_mm_to_m((rl_mm + rr_mm) / 2.0)
-            pitch = compute_pitch_deg(front_m, rear_m, wb_m, front_motion_ratio=mrf, rear_motion_ratio=mrr)
-            if pitch is not None:
-                _set_number(item, "platform_pitch_deg_from_rh", pitch)
+    fl_mm = _number(item.get("lf_ride_height_mm"))
+    fr_mm = _number(item.get("rf_ride_height_mm"))
+    rl_mm = _number(item.get("lr_ride_height_mm"))
+    rr_mm = _number(item.get("rr_ride_height_mm"))
+    has_all_rh = None not in (fl_mm, fr_mm, rl_mm, rr_mm)
 
-    if tw_m and tw_m > 0:
-        fl_mm = _number(item.get("lf_ride_height_mm"))
-        fr_mm = _number(item.get("rf_ride_height_mm"))
-        rl_mm = _number(item.get("lr_ride_height_mm"))
-        rr_mm = _number(item.get("rr_ride_height_mm"))
-        
-        if None not in (fl_mm, fr_mm, rl_mm, rr_mm):
-            assert fl_mm is not None and fr_mm is not None and rl_mm is not None and rr_mm is not None
-            left_m = ride_height_mm_to_m((fl_mm + rl_mm) / 2.0)
-            right_m = ride_height_mm_to_m((fr_mm + rr_mm) / 2.0)
-            # Use front track width for simplicity as roll ref if only one available
-            roll = compute_roll_deg(left_m, right_m, tw_m, left_motion_ratio=mrf, right_motion_ratio=mrf)
-            if roll is not None:
-                _set_number(item, "platform_roll_deg_from_rh", roll)
+    if wb_m and wb_m > 0 and has_all_rh:
+        assert fl_mm is not None and fr_mm is not None and rl_mm is not None and rr_mm is not None
+        front_m = ride_height_mm_to_m((fl_mm + fr_mm) / 2.0)
+        rear_m = ride_height_mm_to_m((rl_mm + rr_mm) / 2.0)
+        pitch = compute_pitch_deg(front_m, rear_m, wb_m, front_motion_ratio=mrf, rear_motion_ratio=mrr)
+        if pitch is not None:
+            _set_number(item, "platform_pitch_deg_from_rh", pitch)
+
+    if tw_m and tw_m > 0 and has_all_rh:
+        assert fl_mm is not None and fr_mm is not None and rl_mm is not None and rr_mm is not None
+        left_m = ride_height_mm_to_m((fl_mm + rl_mm) / 2.0)
+        right_m = ride_height_mm_to_m((fr_mm + rr_mm) / 2.0)
+        # Legacy global roll using blended track width
+        roll = compute_roll_deg(left_m, right_m, tw_m, left_motion_ratio=mrf, right_motion_ratio=mrf)
+        if roll is not None:
+            _set_number(item, "platform_roll_deg_from_rh", roll)
+
+        # Front axle roll (uses front track width + front motion ratio)
+        if ftw and ftw > 0:
+            front_left_m = ride_height_mm_to_m(fl_mm)
+            front_right_m = ride_height_mm_to_m(fr_mm)
+            front_roll = compute_roll_deg(front_left_m, front_right_m, ftw, left_motion_ratio=mrf, right_motion_ratio=mrf)
+            if front_roll is not None:
+                _set_number(item, "front_platform_roll_deg_from_rh", front_roll)
+
+        # Rear axle roll (uses rear track width + rear motion ratio)
+        if rtw and rtw > 0:
+            rear_left_m = ride_height_mm_to_m(rl_mm)
+            rear_right_m = ride_height_mm_to_m(rr_mm)
+            rear_roll = compute_roll_deg(rear_left_m, rear_right_m, rtw, left_motion_ratio=mrr, right_motion_ratio=mrr)
+            if rear_roll is not None:
+                _set_number(item, "rear_platform_roll_deg_from_rh", rear_roll)
+
+        # Roll balance (front - rear)
+        front_roll_val = _number(item.get("front_platform_roll_deg_from_rh"))
+        rear_roll_val = _number(item.get("rear_platform_roll_deg_from_rh"))
+        if front_roll_val is not None and rear_roll_val is not None:
+            _set_number(item, "platform_roll_balance_deg", front_roll_val - rear_roll_val)
+
+
+def _compute_ackermann(item: dict[str, Any]) -> None:
+    """Compute Ackermann steering channels. Optional — requires wheelbase and curvature."""
+    from racelab_engine.analysis.vehicle_dynamics import (
+        ackermann_steering_expected_deg as _ase,
+        ackermann_steering_error_deg as _ase_err,
+        ackermann_scrub_proxy as _asp,
+    )
+    wb = _number(item.get("wheelbase_m"))
+    curv = _number(item.get("curvature_1_per_m"))
+    steer = _number(item.get("steering_deg"))
+
+    if wb is not None and curv is not None:
+        expected, _ = _ase(wb, curv)
+        if expected is not None:
+            _set_number(item, "ackermann_steering_expected_deg", expected)
+
+            if steer is not None:
+                error, _ = _ase_err(steer, expected)
+                if error is not None:
+                    _set_number(item, "ackermann_steering_error_deg", error)
+                proxy, _ = _asp(steer, expected)
+                _set_number(item, "ackermann_scrub_proxy", proxy)
+
+
+def _compute_camber_bias(item: dict[str, Any]) -> None:
+    """Compute camber temp bias channels from carcass temps."""
+    CAMBER_BIAS_THRESHOLD_C = 15.0
+    for c in ["lf", "rf", "lr", "rr"]:
+        inner = _number(item.get(f"{c}_carcass_temp_l"))
+        outer = _number(item.get(f"{c}_carcass_temp_r"))
+        if inner is not None and outer is not None:
+            bias = inner - outer
+            _set_number(item, f"{c}_camber_temp_bias_c", bias)
+            if abs(bias) < CAMBER_BIAS_THRESHOLD_C:
+                item[f"{c}_camber_bias_label"] = "even"
+            elif bias > 0:
+                item[f"{c}_camber_bias_label"] = "high_inside"
+            else:
+                item[f"{c}_camber_bias_label"] = "high_outside"
 
 
 def _apply_derivatives(rows: list[dict[str, Any]]) -> None:
@@ -2172,16 +2625,61 @@ def _apply_derivatives(rows: list[dict[str, Any]]) -> None:
 
 
 def _compute_dynamic_grade(row: dict[str, Any]) -> None:
-    """Estimate track grade (slope) by comparing acceleration vs GPS speed change."""
+    """Estimate track grade (slope) by comparing acceleration vs GPS speed change.
+
+    Produces optional grade-aware channels alongside existing raw channels.
+    All grade values are ESTIMATES — not surveyed elevation.
+    """
+    from racelab_engine.analysis.vehicle_dynamics import (
+        dynamic_grade_rad as _dg_rad,
+        dynamic_grade_deg as _dg_deg,
+        grade_force_proxy_n as _gf,
+        grade_corrected_long_accel_mps2 as _gc,
+    )
+
     ax = _number(row.get("long_accel"))
     dvdt = _number(row.get("speed_rate_mps2"))
+    mass = _number(row.get("mass_kg"))
+
     if ax is not None and dvdt is not None:
-        # ax_sensor = dv/dt + g*sin(theta)
-        # sin(theta) = (ax_sensor - dv/dt) / g
-        sin_theta = (ax - dvdt) / 9.81
-        sin_theta = max(-1.0, min(1.0, sin_theta))
-        grade_rad = math.asin(sin_theta)
-        row["dynamic_grade_deg"] = math.degrees(grade_rad)
+        grade_rad, _ = _dg_rad(ax, dvdt)
+        grade_deg, _ = _dg_deg(ax, dvdt)
+
+        if grade_rad is not None:
+            row["dynamic_grade_rad"] = grade_rad
+        if grade_deg is not None:
+            row["dynamic_grade_deg"] = grade_deg
+
+        # Grade-corrected longitudinal acceleration
+        corrected_accel, _ = _gc(ax, grade_rad)
+        if corrected_accel is not None:
+            row["grade_corrected_long_accel_mps2"] = corrected_accel
+
+        # Grade force proxy (requires mass)
+        if mass is not None and grade_rad is not None:
+            force, _ = _gf(mass, grade_rad)
+            if force is not None:
+                row["grade_force_proxy_n"] = force
+
+        # Grade context label
+        if grade_deg is not None:
+            row["grade_context_label"] = _grade_context_label(grade_deg)
+
+        # Grade-corrected speed loss (mph/s)
+        # grade_accel_mph_s = g * sin(grade_rad) converted from m/s^2 to mph/s
+        # 1 m/s^2 = 2.23694 mph/s
+        speed_rate = _number(row.get("speed_rate_mph_s"))
+        if grade_rad is not None and speed_rate is not None:
+            grade_accel_mph_s = 9.81 * math.sin(grade_rad) * MPS_TO_MPH
+            row["grade_corrected_speed_loss_mph_s"] = speed_rate - grade_accel_mph_s
+
+
+def _grade_context_label(grade_deg: float) -> str:
+    """Classify grade as uphill/downhill/flat based on dynamic_grade_deg."""
+    GRADE_FLAT_THRESHOLD_DEG = 0.5  # ~0.9% grade
+    if abs(grade_deg) < GRADE_FLAT_THRESHOLD_DEG:
+        return "flat"
+    return "uphill" if grade_deg > 0 else "downhill"
 
 
 def _apply_rolling_aggregates(rows: list[dict[str, Any]], window: int = 60) -> None:

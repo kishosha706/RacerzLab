@@ -398,8 +398,36 @@ CORE_CHANNELS: set[str] = {
     # dynamic pressure lap index (final sweep)
     "dynamic_pressure_lap_index",
     "dynamic_pressure_index",
+    # slip angles (row path only — requires VelocityX/Z and axle-to-CG)
+    "front_slip_angle_deg",
+    "rear_slip_angle_deg",
+    "slip_angle_balance_deg",
+    # platform angles
+    "platform_pitch_deg_from_rh",
+    "platform_roll_deg_from_rh",
+    "front_platform_roll_deg_from_rh",
+    "rear_platform_roll_deg_from_rh",
+    "platform_roll_balance_deg",
+    # Ackermann steering (row path only — requires wheelbase + curvature)
+    "ackermann_steering_expected_deg",
+    "ackermann_steering_error_deg",
+    "ackermann_scrub_proxy",
+    # camber bias (row path only — requires carcass temps)
+    "lf_camber_temp_bias_c",
+    "rf_camber_temp_bias_c",
+    "lr_camber_temp_bias_c",
+    "rr_camber_temp_bias_c",
+    "lf_camber_bias_label",
+    "rf_camber_bias_label",
+    "lr_camber_bias_label",
+    "rr_camber_bias_label",
     # dynamic grade (final sweep)
+    "dynamic_grade_rad",
     "dynamic_grade_deg",
+    "grade_corrected_long_accel_mps2",
+    "grade_force_proxy_n",
+    "grade_context_label",
+    "grade_corrected_speed_loss_mph_s",
     # GPS projection (final sweep)
     "track_x_m",
     "track_y_m",
@@ -717,36 +745,28 @@ def _compute_speed_derivatives(df: pl.DataFrame) -> pl.DataFrame:
     .shift() / .diff() for vectorised adjacent-row differences.
     """
     has_speed = "speed_mph" in df.columns
+    if not has_speed:
+        return df
+
     has_time = "session_time" in df.columns
     has_dist = "lap_dist_ft" in df.columns
-    has_mps = "speed_mps" in df.columns
 
-    if has_speed and has_time:
+    if has_time:
+        has_mps = "speed_mps" in df.columns
         dt = pl.col("session_time") - pl.col("session_time").shift(1)
         dv_mph = pl.col("speed_mph") - pl.col("speed_mph").shift(1)
-        # Guard: dt <= 0 (repeated timestamps) → None; first row (dt=None) → None
-        speed_rate = (
-            pl.when(dt.is_null() | (dt <= 0))
-            .then(None)
-            .otherwise(dv_mph / dt)
-            .alias("speed_rate_mph_s")
-        )
+        dt_ok = dt.is_null() | (dt <= 0)
+        speed_rate = pl.when(dt_ok).then(None).otherwise(dv_mph / dt).alias("speed_rate_mph_s")
         df = df.with_columns(speed_rate)
 
         if has_mps:
             dv_mps = pl.col("speed_mps") - pl.col("speed_mps").shift(1)
-            speed_rate_mps2 = (
-                pl.when(dt.is_null() | (dt <= 0))
-                .then(None)
-                .otherwise(dv_mps / dt)
-                .alias("speed_rate_mps2")
-            )
+            speed_rate_mps2 = pl.when(dt_ok).then(None).otherwise(dv_mps / dt).alias("speed_rate_mps2")
             df = df.with_columns(speed_rate_mps2)
 
-    if has_speed and has_dist:
+    if has_dist:
         dd = pl.col("lap_dist_ft") - pl.col("lap_dist_ft").shift(1)
         dv_mph = pl.col("speed_mph") - pl.col("speed_mph").shift(1)
-        # Avoid division by near-zero distance
         speed_rate_1000 = (
             pl.when(dd.abs() > 0.1)
             .then(dv_mph / dd * 1000.0)
@@ -1327,22 +1347,66 @@ def _compute_dynamic_pressure_lap_index(df: pl.DataFrame) -> pl.DataFrame:
 # ── Final sweep: dynamic grade ───────────────────────────────────
 
 def _compute_dynamic_grade(df: pl.DataFrame) -> pl.DataFrame:
-    """Compute dynamic_grade_deg from long_accel and speed_rate_mps2.
+    """Compute dynamic_grade_deg and optional grade-aware channels.
 
     Matches _compute_dynamic_grade in calculated_channels.py.
+    All grade values are ESTIMATES — not surveyed elevation.
     """
     if "long_accel" not in df.columns or "speed_rate_mps2" not in df.columns:
         return df
     ax = pl.col("long_accel")
     dvdt = pl.col("speed_rate_mps2")
     sin_theta = ((ax - dvdt) / 9.81).clip(-1.0, 1.0)
-    # Polars doesn't have asin, use when/then with math.asin via map_elements
-    grade = pl.struct(sin_theta.alias("sin_theta")).map_elements(
-        lambda s: math.degrees(math.asin(s["sin_theta"])) if s["sin_theta"] is not None else None,
+    has_data = ax.is_not_null() & dvdt.is_not_null()
+
+    # Polars doesn't have asin, use map_elements
+    grade_rad_expr = pl.struct(sin_theta.alias("sin_theta")).map_elements(
+        lambda s: math.asin(s["sin_theta"]) if s["sin_theta"] is not None else None,
         return_dtype=pl.Float64,
     )
-    grade = pl.when(ax.is_not_null() & dvdt.is_not_null()).then(grade).otherwise(None)
-    df = df.with_columns(grade.alias("dynamic_grade_deg"))
+    grade_rad = pl.when(has_data).then(grade_rad_expr).otherwise(None)
+    grade_deg = pl.when(has_data).then(grade_rad_expr * (180.0 / math.pi)).otherwise(None)
+
+    df = df.with_columns(
+        grade_rad.alias("dynamic_grade_rad"),
+        grade_deg.alias("dynamic_grade_deg"),
+    )
+
+    # Grade-corrected longitudinal acceleration
+    # a_corrected = a_sensor - g * sin(grade)
+    corrected_accel = pl.when(has_data).then(
+        ax - 9.81 * sin_theta  # sin_theta is already clamped sin(grade)
+    ).otherwise(None)
+    df = df.with_columns(corrected_accel.alias("grade_corrected_long_accel_mps2"))
+
+    # Grade force proxy (requires mass_kg)
+    if "mass_kg" in df.columns:
+        mass = pl.col("mass_kg")
+        grade_force = pl.when(has_data & mass.is_not_null()).then(
+            mass * 9.81 * sin_theta
+        ).otherwise(None)
+        df = df.with_columns(grade_force.alias("grade_force_proxy_n"))
+
+    # Grade context label
+    GRADE_FLAT_THRESHOLD_DEG = 0.5
+    grade_abs = grade_deg.abs()
+    context_label = (
+        pl.when(grade_deg.is_null()).then(pl.lit("unknown"))
+        .when(grade_abs < GRADE_FLAT_THRESHOLD_DEG).then(pl.lit("flat"))
+        .when(grade_deg > 0).then(pl.lit("uphill"))
+        .otherwise(pl.lit("downhill"))
+    )
+    df = df.with_columns(context_label.alias("grade_context_label"))
+
+    # Grade-corrected speed loss (mph/s)
+    # grade_accel_mph_s = g * sin(grade) * MPS_TO_MPH
+    if "speed_rate_mph_s" in df.columns:
+        grade_accel_mph_s = 9.81 * sin_theta * MPS_TO_MPH
+        corrected_speed_loss = pl.when(has_data).then(
+            pl.col("speed_rate_mph_s") - grade_accel_mph_s
+        ).otherwise(None)
+        df = df.with_columns(corrected_speed_loss.alias("grade_corrected_speed_loss_mph_s"))
+
     return df
 
 

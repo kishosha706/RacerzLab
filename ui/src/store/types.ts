@@ -25,6 +25,7 @@ export type SelectionSource =
   | "setup_table"
   | "channel_catalog"
   | "compare_verdict"
+  | "overview"
   | "manual";
 
 export type TelemetrySelection = {

@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, ChevronDown, ChevronRight, ShieldOff } from "lucide-react";
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronRight, Gauge, Shield, ShieldOff, Siren, ToggleLeft, Waves } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { fetchPlatformEvents } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
@@ -54,6 +54,16 @@ export function PriorityRail({ runId, selectedLap }: PriorityRailProps) {
     setWorkspace(ws, "priority_stack");
   };
 
+  /** Map event type to a category icon for accessibility (color + icon). */
+  const categoryIcon = (eventType: string, size = 12) => {
+    const cat = CATEGORY_LABELS[eventType] ?? "";
+    if (cat.includes("Platform") || cat.includes("Rear")) return <Gauge size={size} />;
+    if (cat.includes("Speed")) return <Siren size={size} />;
+    if (cat.includes("Drag") || cat.includes("Scrub")) return <Waves size={size} />;
+    if (cat.includes("Shock")) return <ToggleLeft size={size} />;
+    return <Shield size={size} />;
+  };
+
   return (
     <aside className="priority-rail">
       <header className="rail-header">
@@ -78,7 +88,7 @@ export function PriorityRail({ runId, selectedLap }: PriorityRailProps) {
                 <strong>{event.title}</strong>
                 {event.is_proxy_based && <span className="proxy-pill">PROXY</span>}
               </div>
-              <span className="priority-category">{CATEGORY_LABELS[event.event_type] ?? event.event_type}</span>
+              <span className="priority-category">{categoryIcon(event.event_type)} {CATEGORY_LABELS[event.event_type] ?? event.event_type}</span>
               <span className="priority-location">
                 {event.lap_pct != null && `${event.lap_pct.toFixed(1)}%`}
                 {event.lap_dist_ft != null && ` | ${event.lap_dist_ft.toFixed(0)} ft`}
