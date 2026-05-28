@@ -108,7 +108,7 @@ def classify_draft_status(
             rpm_curr = _numeric(curr.get("rpm"))
             throttle = _numeric(curr.get("throttle_pct"))
 
-            if None in (speed_prev, speed_curr, rpm_prev, rpm_curr, throttle):
+            if speed_prev is None or speed_curr is None or rpm_prev is None or rpm_curr is None or throttle is None:
                 continue
             if throttle < DRAFT_THROTTLE_MIN:
                 continue
@@ -142,8 +142,7 @@ def classify_draft_status(
     high_speed_rows = [r for r in rows if (_numeric(r.get("speed_mph")) or 0) > MIN_DRAFT_SPEED_MPH]
     if high_speed_rows:
         speeds = [_numeric(r.get("speed_mph")) for r in high_speed_rows]
-        speeds_clean = [s for s in speeds if s is not None]
-        if speeds_clean:
+        if speeds_clean := [s for s in speeds if s is not None]:
             speed_range = max(speeds_clean) - min(speeds_clean)
             # High speed variation at full throttle can indicate draft
             full_throttle_high_speed = [
@@ -151,8 +150,7 @@ def classify_draft_status(
                 if (_numeric(r.get("throttle_pct")) or 0) > DRAFT_THROTTLE_MIN
             ]
             ft_speeds = [_numeric(r.get("speed_mph")) for r in full_throttle_high_speed]
-            ft_speeds_clean = [s for s in ft_speeds if s is not None]
-            if ft_speeds_clean and len(ft_speeds_clean) > 10:
+            if (ft_speeds_clean := [s for s in ft_speeds if s is not None]) and len(ft_speeds_clean) > 10:
                 ft_range = max(ft_speeds_clean) - min(ft_speeds_clean)
                 if ft_range > DRAFT_SPEED_GAIN_THRESHOLD * 2:
                     signals.append(

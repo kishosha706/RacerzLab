@@ -596,10 +596,14 @@ class ImportService:
         # 1. Build and persist segments
         try:
             from racelab_engine.analysis.segments import build_fixed_pct_segments
+            from racelab_engine.models.segment import SegmentSummary as ModelSegment
             rows = read_telemetry_rows(run_id, self.data_dir)
-            segments = build_fixed_pct_segments(rows, run_id=run_id)
-            if segments:
-                self.repository.save_segments(run_id, segments)
+            raw_segments = build_fixed_pct_segments(rows, run_id=run_id)
+            if raw_segments:
+                model_segments = [
+                    ModelSegment(**seg.model_dump()) for seg in raw_segments
+                ]
+                self.repository.save_segments(run_id, model_segments)
         except Exception:
             pass  # Non-critical — segments can be rebuilt on demand
 
