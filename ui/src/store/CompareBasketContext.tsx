@@ -22,6 +22,10 @@ export interface BasketItem {
   classification_tags: string[];
   draft_status: string;
   engineering_value: number | null;
+  /** Cross-session support */
+  date: string | null;
+  session_name: string | null;
+  has_setup_snapshot: boolean;
 }
 
 export type BasketSlot = "baseline" | "test";
@@ -67,6 +71,8 @@ function basketReducer(state: CompareBasketState, action: BasketAction): Compare
   }
 }
 
+export type BasketReadiness = "ready" | "caution" | "not_valid" | "reference_mode";
+
 type CompareBasketContextValue = {
   basket: CompareBasketState;
   setBaseline: (item: BasketItem) => void;
@@ -79,6 +85,8 @@ type CompareBasketContextValue = {
   clearQueue: () => void;
   /** Validation warnings for the current baseline/test pair. */
   getWarnings: () => string[];
+  /** Readiness state for the current basket pair. */
+  getReadiness: () => { status: BasketReadiness; reason: string };
 };
 
 const CompareBasketContext = createContext<CompareBasketContextValue | null>(null);
@@ -108,14 +116,57 @@ export function CompareBasketProvider({ children }: { children: ReactNode }) {
     if (test.draft_status === "DRAFT_AFFECTED") {
       w.push("Test lap is draft-affected — setup conclusions limited.");
     }
+    if (baseline.draft_status === "DRAFT_AFFECTED") {
+      w.push("Baseline lap is draft-affected — reference may not be clean.");
+    }
     if (baseline.run_id === test.run_id && baseline.lap_number === test.lap_number) {
       w.push("Same lap selected as baseline and test — this is a self-reference.");
+    }
+    if (baseline.run_id !== test.run_id) {
+      w.push("Cross-session comparison — car/track/weather may differ.");
+    }
+    if (!baseline.has_setup_snapshot) {
+      w.push("Baseline has no setup snapshot — setup diff unavailable.");
+    }
+    if (!test.has_setup_snapshot) {
+      w.push("Test has no setup snapshot — setup diff unavailable.");
+    }
+    if (baseline.date && test.date && baseline.date !== test.date) {
+      w.push("Different session dates — weather/track conditions may differ.");
     }
     return w;
   }, [basket]);
 
+  const getReadiness = useCallback((): { status: BasketReadiness; reason: string } => {
+    const { baseline, test } = basket;
+    if (!baseline || !test) return { status: "not_valid", reason: "Both baseline and test are required." };
+    if (baseline.run_id === test.run_id && baseline.lap_number === test.lap_number) {
+      return { status: "reference_mode", reason: "Same lap selected — this is a self-reference." };
+    }
+    if (baseline.car && test.car && baseline.car !== test.car) {
+      return { status: "not_valid", reason: "Different cars — comparison not meaningful." };
+    }
+    if (baseline.track && test.track && baseline.track !== test.track) {
+      return { status: "not_valid", reason: "Different tracks — comparison not meaningful." };
+    }
+    const warnings = getWarnings();
+    const criticalWarnings = warnings.filter(w =>
+      w.includes("Different car") || w.includes("Different track") || w.includes("self-reference")
+    );
+    if (criticalWarnings.length > 0) {
+      return { status: "not_valid", reason: criticalWarnings[0] };
+    }
+    if (warnings.length >= 3) {
+      return { status: "caution", reason: `${warnings.length} warnings — review before comparing.` };
+    }
+    if (warnings.length > 0) {
+      return { status: "caution", reason: warnings[0] };
+    }
+    return { status: "ready", reason: "Ready to compare." };
+  }, [basket, getWarnings]);
+
   return (
-    <CompareBasketContext.Provider value={{ basket, setBaseline, setTest, swap, clear, remove, addToQueue, removeFromQueue, clearQueue, getWarnings }}>
+    <CompareBasketContext.Provider value={{ basket, setBaseline, setTest, swap, clear, remove, addToQueue, removeFromQueue, clearQueue, getWarnings, getReadiness }}>
       {children}
     </CompareBasketContext.Provider>
   );

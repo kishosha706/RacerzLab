@@ -4,6 +4,7 @@ import { fetchCompareInsights } from "../api/client";
 import { ComparisonInsightPanel } from "../components/ComparisonInsightPanel";
 import { DeltaTracesView } from "../components/DeltaTracesView";
 import { DidItWorkCard } from "../components/DidItWorkCard";
+import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { RunListItem } from "../types/telemetry";
 import type {
   ChannelDeltaStats, CompareResponse, ComparisonInsightsResponse, CornerName, CornerMetric,
@@ -94,10 +95,12 @@ function cornerMini(c: CornerName, m: CornerMetric | undefined) {
 
 // ── Sub-views ───────────────────────────────────────────────
 
-function VerdictView({ verdict: v, disc, wci, confidence, draftWarning, weatherWarning }: {
+function VerdictView({ verdict: v, disc, wci, confidence, draftWarning, weatherWarning, onSaveFinding, onStageNextTest, onOpenMap, saving, saveStatus, isSelfCompare }: {
   verdict: DidItWorkVerdict | null; disc: { score: number; label: string } | null;
   wci: WholeCarIndex | null; confidence: number;
   draftWarning?: string | null; weatherWarning?: string | null;
+  onSaveFinding?: () => void; onStageNextTest?: () => void; onOpenMap?: () => void;
+  saving?: boolean; saveStatus?: string | null; isSelfCompare?: boolean;
 }) {
   if (!v) return <p className="muted">No verdict available.</p>;
 
@@ -113,6 +116,12 @@ function VerdictView({ verdict: v, disc, wci, confidence, draftWarning, weatherW
         nextStep={v.next_step}
         draftWarning={draftWarning}
         weatherWarning={weatherWarning}
+        onSaveFinding={isSelfCompare ? undefined : onSaveFinding}
+        onStageNextTest={isSelfCompare ? undefined : onStageNextTest}
+        onOpenMap={onOpenMap}
+        saving={saving}
+        saveStatus={saveStatus}
+        disabled={isSelfCompare}
       />
       {wci && <div className="wci-strip">{indexStrip(wci)}</div>}
     </div>
@@ -437,6 +446,7 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
   const [result, setResult] = useState<CompareResponse | null>(null);
   const [subview, setSubview] = useState<SubView>("verdict");
   const [loading, setLoading] = useState(false);
+  const { setWorkspace } = useTelemetrySelection();
   const [error, setError] = useState<string | null>(null);
   const [insights, setInsights] = useState<ComparisonInsightsResponse | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -583,16 +593,24 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
               <p className="self-compare-text">Baseline and test are the same run/lap, so no setup decision should be made from this comparison.</p>
             </div>
           )}
-          <VerdictView verdict={result.verdict} disc={result.test_discipline} wci={result.whole_car_index} confidence={result.confidence_score} draftWarning={preview?.context_changes?.find(c => c.key === "draft" || c.key === "draft_status")?.warning ?? null} weatherWarning={preview?.context_changes?.find(c => c.key === "weather")?.warning ?? null} />
-          <div className="toolbar-actions" style={{ marginTop: 12 }}>
-            <button className="secondary-button" onClick={() => {
-              const isDuplicate = saveStatus === "Finding already saved. Click again to save duplicate.";
-              handleSaveFinding(isDuplicate);
-            }} disabled={saving || isSelfCompare} title={isSelfCompare ? "Cannot save finding for self-comparison" : undefined}>
-              <Bookmark size={14} /> {isSelfCompare ? "Self-Comparison" : saving ? "Saving…" : saveStatus === "Finding already saved. Click again to save duplicate." ? "Save Duplicate" : "Save Finding"}
-            </button>
-            {saveStatus && <span className="status-text" style={{ marginLeft: 8 }}>{saveStatus}</span>}
-          </div>
+          <VerdictView
+            verdict={result.verdict} disc={result.test_discipline}
+            wci={result.whole_car_index} confidence={result.confidence_score}
+            draftWarning={preview?.context_changes?.find(c => c.key === "draft" || c.key === "draft_status")?.warning ?? null}
+            weatherWarning={preview?.context_changes?.find(c => c.key === "weather")?.warning ?? null}
+            onSaveFinding={() => {
+              const isDup = saveStatus === "Finding already saved. Click again to save duplicate.";
+              handleSaveFinding(isDup);
+            }}
+            onStageNextTest={() => {
+              handleSaveFinding(false);
+              setWorkspace("notebook", "compare_verdict");
+            }}
+            onOpenMap={() => setWorkspace("map", "compare_verdict")}
+            saving={saving}
+            saveStatus={saveStatus}
+            isSelfCompare={isSelfCompare}
+          />
         </div>
       );
       case "what-changed": return <WhatChangedView setup={result.setup_changes} context={result.context_changes} />;

@@ -1,5 +1,6 @@
-import { Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Copy, Pin, Search } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { ChannelCatalogItem, RunOverview, TraceResponse } from "../types/telemetry";
 
 type RawChannelsTabProps = {
@@ -30,6 +31,28 @@ function useDebounce<T>(value: T, delay: number): T {
 export function RawChannelsTab({ overview, trace, channels }: RawChannelsTabProps) {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 200);
+  const [pinnedChannels, setPinnedChannels] = useState<string[]>(() => {
+    try { return JSON.parse(sessionStorage.getItem("racelab_pinned_channels") ?? "[]"); }
+    catch { return []; }
+  });
+  const { selectChannel, setWorkspace, selection } = useTelemetrySelection();
+
+  const togglePin = useCallback((name: string) => {
+    setPinnedChannels(prev => {
+      const next = prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name];
+      sessionStorage.setItem("racelab_pinned_channels", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const handleCopyName = useCallback((name: string) => {
+    navigator.clipboard?.writeText(name).catch(() => {});
+  }, []);
+
+  const handlePinToPlatform = useCallback((name: string) => {
+    selectChannel(name, "channel_catalog");
+    setWorkspace("platform_trace", "channel_catalog");
+  }, [selectChannel, setWorkspace]);
 
   const filtered = useMemo(() => {
     if (!debouncedSearch) return channels;
@@ -57,6 +80,19 @@ export function RawChannelsTab({ overview, trace, channels }: RawChannelsTabProp
           <span>{trace?.sample_count ?? 0} trace samples</span>
         </div>
       </div>
+      {/* Pinned channels */}
+      {pinnedChannels.length > 0 && (
+        <div style={{ marginBottom: 8, display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: 10, color: "#8d9aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Pinned:</span>
+          {pinnedChannels.map(name => (
+            <span key={name} style={{ fontSize: 10, padding: "2px 6px", background: "rgba(56,189,248,0.1)", border: "1px solid rgba(56,189,248,0.2)", borderRadius: 4, color: "#38bdf8", cursor: "pointer" }}
+              onClick={() => handlePinToPlatform(name)} title="Open in Platform Trace">
+              {name} <Pin size={8} style={{ marginLeft: 2 }} />
+            </span>
+          ))}
+        </div>
+      )}
+
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
         <Search size={14} style={{ color: "#8d9aaa" }} />
         <input
@@ -89,11 +125,12 @@ export function RawChannelsTab({ overview, trace, channels }: RawChannelsTabProp
               <th>Max</th>
               <th>Mean</th>
               <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((channel) => (
-              <tr key={channel.name}>
+              <tr key={channel.name} style={{ background: pinnedChannels.includes(channel.name) ? "rgba(56,189,248,0.04)" : undefined }}>
                 <td title={channel.description ?? undefined}>{channel.name}</td>
                 <td>{channel.unit ?? ""}</td>
                 <td>{channel.type ?? "n/a"}</td>
@@ -102,6 +139,19 @@ export function RawChannelsTab({ overview, trace, channels }: RawChannelsTabProp
                 <td>{formatNumber(channel.max)}</td>
                 <td>{formatNumber(channel.mean)}</td>
                 <td>{channel.missing_status ?? "loaded"}</td>
+                <td>
+                  <div style={{ display: "flex", gap: 2 }}>
+                    <button className="trackmap-action-btn" onClick={() => togglePin(channel.name)} title={pinnedChannels.includes(channel.name) ? "Unpin" : "Pin to workbench"}>
+                      <Pin size={10} />
+                    </button>
+                    <button className="trackmap-action-btn" onClick={() => handleCopyName(channel.name)} title="Copy channel name">
+                      <Copy size={10} />
+                    </button>
+                    <button className="trackmap-action-btn" onClick={() => handlePinToPlatform(channel.name)} title="Open in Platform Trace">
+                      <Pin size={10} />
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>

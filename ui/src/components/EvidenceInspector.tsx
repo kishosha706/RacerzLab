@@ -1,6 +1,8 @@
-import { AlertTriangle, ClipboardCheck, Crosshair, Database, Info } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, ClipboardCheck, Crosshair, Database, Info, Layers, MapPin, Gauge, List } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
+import { useCompareBasket } from "../store/CompareBasketContext";
+import { makeBasketItem } from "./CompareBasket";
 import type { ChannelCatalogItem, PlatformEventItem, RunOverview } from "../types/telemetry";
 
 type EvidenceInspectorProps = {
@@ -117,38 +119,89 @@ function CrewChiefSummary({ overview }: { overview: RunOverview }) {
 
 function EventInspector({ event, showAnchorBadge }: { event: PlatformEventItem; showAnchorBadge?: boolean }) {
   const sevColour = event.severity === "critical" ? "#ef4444" : event.severity === "high" ? "#f97316" : event.severity === "watch" ? "#f59e0b" : "#38bdf8";
+  const { setWorkspace, selectEvent } = useTelemetrySelection();
+  const { setBaseline, setTest } = useCompareBasket();
+
+  const handleOpenPlatform = useCallback(() => {
+    selectEvent(event.event_id, "priority_stack");
+    setWorkspace("platform_trace", "priority_stack");
+  }, [event.event_id, selectEvent, setWorkspace]);
+
+  const handleOpenMap = useCallback(() => {
+    selectEvent(event.event_id, "priority_stack");
+    setWorkspace("map", "priority_stack");
+  }, [event.event_id, selectEvent, setWorkspace]);
+
+  const handleStageTest = useCallback(() => {
+    setWorkspace("notebook", "priority_stack");
+  }, [setWorkspace]);
 
   return (
     <InspectorShell title={event.title} icon={<Crosshair size={16} />}>
       {showAnchorBadge && <span className="anchor-evidence-badge"><Crosshair size={10} /> Anchored Evidence</span>}
-      <div className="inspector-meta">
-        <span className="severity-badge" style={{ color: sevColour, borderColor: sevColour }}>
-          <AlertTriangle size={12} /> {event.severity.toUpperCase()}
-        </span>
-        <span>Confidence: {event.confidence}</span>
-        {event.is_proxy_based && <span className="proxy-pill">PROXY</span>}
+
+      {/* Source Stack: Where */}
+      <div className="inspector-source-stack">
+        <h4>Where</h4>
+        <p className="inspector-source-item">
+          <MapPin size={12} /> Lap {event.lap ?? "n/a"}{event.lap_dist_ft != null ? ` · ${event.lap_dist_ft.toFixed(0)} ft` : ""}
+        </p>
       </div>
-      <dl>
-        <dt>Location</dt>
-        <dd>
-          Lap {event.lap ?? "n/a"}
-          {event.lap_dist_ft != null && ` · ${event.lap_dist_ft.toFixed(0)} ft`}
-        </dd>
-        {event.primary_value != null && (
-          <>
-            <dt>Value</dt>
-            <dd>{event.primary_value.toFixed(3)} {event.primary_unit ?? ""}</dd>
-          </>
-        )}
-      </dl>
+
+      {/* Source Stack: What */}
+      <div className="inspector-source-stack">
+        <h4>What</h4>
+        <div className="inspector-meta">
+          <span className="severity-badge" style={{ color: sevColour, borderColor: sevColour }}>
+            <AlertTriangle size={12} /> {event.severity.toUpperCase()}
+          </span>
+          <span>Confidence: {event.confidence}</span>
+          {event.is_proxy_based && <span className="proxy-pill">PROXY</span>}
+        </div>
+        <p className="inspector-source-item">{event.title}</p>
+      </div>
+
+      {/* Source Stack: Evidence */}
       {event.evidence.length > 0 && (
-        <div className="inspector-evidence">
-          <h4>Why it was flagged</h4>
+        <div className="inspector-source-stack">
+          <h4>Evidence</h4>
           <ul>
             {event.evidence.map((line, i) => <li key={i}>{line}</li>)}
           </ul>
+          {event.primary_value != null && (
+            <p className="inspector-source-item">
+              <Database size={12} /> {event.primary_value.toFixed(3)} {event.primary_unit ?? ""}
+            </p>
+          )}
         </div>
       )}
+
+      {/* Source Stack: Related Setup */}
+      <div className="inspector-source-stack">
+        <h4>Related Setup</h4>
+        {event.channels_used.length > 0 ? (
+          <p className="inspector-source-item">{event.channels_used.slice(0, 5).join(", ")}{event.channels_used.length > 5 ? ` +${event.channels_used.length - 5} more` : ""}</p>
+        ) : (
+          <p className="inspector-source-item muted">Unavailable</p>
+        )}
+      </div>
+
+      {/* Source Stack: Decision */}
+      <div className="inspector-source-stack">
+        <h4>Decision</h4>
+        <div className="diw-actions" style={{ marginTop: 4 }}>
+          <button className="trackmap-action-btn" onClick={handleOpenPlatform} title="Open Platform">
+            <Layers size={10} /> Platform
+          </button>
+          <button className="trackmap-action-btn" onClick={handleOpenMap} title="Open Map">
+            <MapPin size={10} /> Map
+          </button>
+          <button className="trackmap-action-btn" onClick={handleStageTest} title="Stage Test">
+            <List size={10} /> Test
+          </button>
+        </div>
+      </div>
+
       {event.recommended_action && (
         <div className="inspector-action">
           <h4>Recommended</h4>

@@ -1,16 +1,19 @@
-import { AlertTriangle, BarChart3, Clock, Gauge, Layers, MapPin, TrendingDown, Trophy } from "lucide-react";
+import { AlertTriangle, BarChart3, Clock, Gauge, Layers, List, MapPin, TrendingDown, Trophy } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchLapWindows } from "../api/client";
+import { fetchLapWindows, fetchRunList } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useCompareBasket } from "../store/CompareBasketContext";
 import { makeBasketItem } from "../components/CompareBasket";
 import { ValueDisplay } from "../components/ValueDisplay";
 import type { RunOverview } from "../types/telemetry";
+import type { RunListItem } from "../types/telemetry";
 import type { LapWindowsResponse } from "../types/laps";
 
 type LapsTabProps = {
   overview: RunOverview;
 };
+
+type LapsSubview = "current" | "windows" | "all_sessions" | "baselines" | "basket";
 
 function formatTime(seconds: number | null | undefined): string {
   if (seconds == null || Number.isNaN(seconds)) return "—";
@@ -76,6 +79,20 @@ export function LapsTab({ overview }: LapsTabProps) {
   const [expandedLap, setExpandedLap] = useState<number | null>(null);
   const [includeDraft, setIncludeDraft] = useState(false);
   const [stintMode, setStintMode] = useState<"ev" | "delta" | "draft" | "falloff">("ev");
+  const [subview, setSubview] = useState<LapsSubview>("current");
+  const [allRuns, setAllRuns] = useState<RunListItem[]>([]);
+  const [runsLoading, setRunsLoading] = useState(false);
+
+  // Load all runs for cross-session views
+  useEffect(() => {
+    if (subview === "all_sessions" || subview === "baselines") {
+      setRunsLoading(true);
+      fetchRunList()
+        .then(setAllRuns)
+        .catch(() => setAllRuns([]))
+        .finally(() => setRunsLoading(false));
+    }
+  }, [subview]);
 
   useEffect(() => {
     setLoading(true);
@@ -125,8 +142,221 @@ export function LapsTab({ overview }: LapsTabProps) {
         </p>
       </section>
 
+      {/* ── Subview Navigation ── */}
+      <div className="compare-subnav">
+        {(["current", "windows", "all_sessions", "baselines", "basket"] as LapsSubview[]).map((sv) => (
+          <button
+            key={sv}
+            className={`subnav-item ${subview === sv ? "active" : ""}`}
+            onClick={() => setSubview(sv)}
+          >
+            {sv === "current" ? "Current Run" : sv === "windows" ? "Windows" : sv === "all_sessions" ? "All Sessions" : sv === "baselines" ? "Baselines" : "Basket"}
+          </button>
+        ))}
+      </div>
+
+      {/* ── All Sessions view ── */}
+      {subview === "all_sessions" && (
+        <section className="workspace-section">
+          <h2><List size={16} /> All Sessions</h2>
+          {runsLoading && <p className="muted">Loading runs…</p>}
+          {!runsLoading && allRuns.length === 0 && <p className="muted">No imported runs found.</p>}
+          {!runsLoading && allRuns.length > 0 && (
+            <table className="compact-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Car</th>
+                  <th>Track</th>
+                  <th>Setup</th>
+                  <th>Laps</th>
+                  <th>Best Lap</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allRuns.map((run) => (
+                  <tr key={run.run_id}>
+                    <td className="cell-val">{run.imported_at?.slice(0, 10) ?? "—"}</td>
+                    <td className="cell-label">{run.car_name ?? "—"}</td>
+                    <td className="cell-label">{run.track_name ?? "—"}</td>
+                    <td className="cell-val">{run.setup_name ?? "—"}</td>
+                    <td className="cell-val">{run.lap_count ?? "—"}</td>
+                    <td className="cell-val">{run.best_lap_time_s != null ? `${run.best_lap_time_s.toFixed(3)}s` : "—"}</td>
+                    <td>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button
+                          className="trackmap-action-btn"
+                          onClick={() => {
+                            const item = makeBasketItem(
+                              run.run_id, null,
+                              `${run.car_name ?? "Car"} @ ${run.track_name ?? "Track"}`,
+                              run.car_name ?? null,
+                              run.track_name ?? null,
+                              run.setup_name ?? null,
+                              run.best_lap_time_s ?? null,
+                              [],
+                              "UNKNOWN_DRAFT_STATUS",
+                              null,
+                              run.imported_at ?? null,
+                              null,
+                              run.has_setup_snapshot ?? false,
+                            );
+                            setBaseline(item);
+                          }}
+                          title="Set as Baseline"
+                        >
+                          <Clock size={10} /> BL
+                        </button>
+                        <button
+                          className="trackmap-action-btn"
+                          onClick={() => {
+                            const item = makeBasketItem(
+                              run.run_id, null,
+                              `${run.car_name ?? "Car"} @ ${run.track_name ?? "Track"}`,
+                              run.car_name ?? null,
+                              run.track_name ?? null,
+                              run.setup_name ?? null,
+                              run.best_lap_time_s ?? null,
+                              [],
+                              "UNKNOWN_DRAFT_STATUS",
+                              null,
+                              run.imported_at ?? null,
+                              null,
+                              run.has_setup_snapshot ?? false,
+                            );
+                            setTest(item);
+                          }}
+                          title="Set as Test"
+                        >
+                          <Gauge size={10} /> Test
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      )}
+
+      {/* ── Baselines view ── */}
+      {subview === "baselines" && (
+        <section className="workspace-section">
+          <h2><Trophy size={16} /> Recommended Baselines</h2>
+          {runsLoading && <p className="muted">Loading runs…</p>}
+          {!runsLoading && allRuns.length === 0 && <p className="muted">No imported runs found.</p>}
+          {!runsLoading && allRuns.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {/* Fastest clean lap from current run */}
+              {overview.best_useful_lap && (
+                <div className="setup-diff-row changed" style={{ justifyContent: "space-between" }}>
+                  <div>
+                    <strong>Fastest Clean Lap</strong>
+                    <span className="muted" style={{ marginLeft: 8, fontSize: 11 }}>
+                      Lap {overview.best_useful_lap.lap_number} — {overview.best_useful_lap.lap_time?.toFixed(3)}s
+                    </span>
+                  </div>
+                  <button
+                    className="trackmap-action-btn"
+                    onClick={() => {
+                      const item = makeBasketItem(
+                        overview.run_id, overview.best_useful_lap!.lap_number,
+                        `Fastest Clean Lap ${overview.best_useful_lap!.lap_number}`,
+                        overview.session.car_name ?? null,
+                        (overview.session.track_display_name ?? overview.session.track_name) ?? null,
+                        overview.session.setup_name ?? null,
+                        overview.best_useful_lap!.lap_time ?? null,
+                        overview.best_useful_lap!.classification_tags ?? [],
+                        "LIKELY_SOLO",
+                        null,
+                      );
+                      setBaseline(item);
+                    }}
+                    title="Add as Baseline"
+                  >
+                    <Clock size={10} /> Baseline
+                  </button>
+                </div>
+              )}
+              {/* Most recent run */}
+              {allRuns.length > 0 && (
+                <div className="setup-diff-row" style={{ justifyContent: "space-between" }}>
+                  <div>
+                    <strong>Most Recent Run</strong>
+                    <span className="muted" style={{ marginLeft: 8, fontSize: 11 }}>
+                      {allRuns[allRuns.length - 1].car_name} @ {allRuns[allRuns.length - 1].track_name}
+                    </span>
+                  </div>
+                  <button
+                    className="trackmap-action-btn"
+                    onClick={() => {
+                      const run = allRuns[allRuns.length - 1];
+                      const item = makeBasketItem(
+                        run.run_id, null,
+                        `Recent: ${run.car_name} @ ${run.track_name}`,
+                        run.car_name ?? null,
+                        run.track_name ?? null,
+                        run.setup_name ?? null,
+                        run.best_lap_time_s ?? null,
+                        [],
+                        "UNKNOWN_DRAFT_STATUS",
+                        null,
+                        run.imported_at ?? null,
+                        null,
+                        run.has_setup_snapshot ?? false,
+                      );
+                      setBaseline(item);
+                    }}
+                    title="Add as Baseline"
+                  >
+                    <Clock size={10} /> Baseline
+                  </button>
+                </div>
+              )}
+              {/* Best 10-lap Engineering Value from current run */}
+              {windowsData?.best_windows.find(w => w.window_size === 10)?.best_window && (
+                <div className="setup-diff-row changed" style={{ justifyContent: "space-between" }}>
+                  <div>
+                    <strong>Best 10-Lap Window (by Engineering Value)</strong>
+                    <span className="muted" style={{ marginLeft: 8, fontSize: 11 }}>
+                      Laps {windowsData.best_windows.find(w => w.window_size === 10)!.best_window!.start_lap}–
+                      {windowsData.best_windows.find(w => w.window_size === 10)!.best_window!.end_lap}
+                      {' · '}
+                      EV: {windowsData.best_windows.find(w => w.window_size === 10)!.best_window!.setup_usefulness_score?.toFixed(0) ?? "—"}
+                    </span>
+                  </div>
+                  <button
+                    className="trackmap-action-btn"
+                    onClick={() => {
+                      const bw = windowsData!.best_windows.find(w => w.window_size === 10)!.best_window!;
+                      const item = makeBasketItem(
+                        overview.run_id, bw.start_lap,
+                        `Best 10-Lap Window (Laps ${bw.start_lap}–${bw.end_lap})`,
+                        overview.session.car_name ?? null,
+                        (overview.session.track_display_name ?? overview.session.track_name) ?? null,
+                        overview.session.setup_name ?? null,
+                        bw.average_lap_time ?? null,
+                        bw.classification_tags ?? [],
+                        bw.draft_status_summary,
+                        bw.setup_usefulness_score ?? null,
+                      );
+                      setBaseline(item);
+                    }}
+                    title="Add as Baseline"
+                  >
+                    <Clock size={10} /> Baseline
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* ── Stint Map ── */}
-      {windowsData && laps.length > 0 && (
+      {subview === "current" && windowsData && laps.length > 0 && (
         <section className="workspace-section">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
             <span style={{ fontSize: 10, color: "#8d9aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Stint Shape</span>
@@ -209,8 +439,78 @@ export function LapsTab({ overview }: LapsTabProps) {
         </section>
       )}
 
+      {/* ── Windows subview ── */}
+      {subview === "windows" && windowsData && (
+        <section className="workspace-section">
+          <h2><BarChart3 size={16} /> Best Windows</h2>
+          {windowsData.best_windows.filter(w => w.is_available).length === 0 && (
+            <p className="muted">No windows available. Need more valid laps.</p>
+          )}
+          {windowsData.best_windows.filter(w => w.is_available).map((wg) => (
+            <div key={wg.window_size} style={{ marginBottom: 12 }}>
+              <h4 style={{ fontSize: 12, color: "#8d9aaa", marginBottom: 4 }}>{wg.label}</h4>
+              {wg.best_window && (
+                <div className="setup-diff-row changed" style={{ justifyContent: "space-between" }}>
+                  <div>
+                    <span>Laps {wg.best_window.start_lap}–{wg.best_window.end_lap}</span>
+                    <span className="muted" style={{ marginLeft: 8 }}>
+                      Avg: {wg.best_window.average_lap_time?.toFixed(3)}s
+                      {' · '}EV: {wg.best_window.setup_usefulness_score?.toFixed(0) ?? "—"}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <button
+                      className="trackmap-action-btn"
+                      onClick={() => {
+                        const bw = wg.best_window!;
+                        const item = makeBasketItem(
+                          overview.run_id, bw.start_lap,
+                          `${wg.label} (Laps ${bw.start_lap}–${bw.end_lap})`,
+                          overview.session.car_name ?? null,
+                          (overview.session.track_display_name ?? overview.session.track_name) ?? null,
+                          overview.session.setup_name ?? null,
+                          bw.average_lap_time ?? null,
+                          bw.classification_tags ?? [],
+                          bw.draft_status_summary,
+                          bw.setup_usefulness_score ?? null,
+                        );
+                        setBaseline(item);
+                      }}
+                      title="Set as Baseline"
+                    >
+                      <Clock size={10} /> BL
+                    </button>
+                    <button
+                      className="trackmap-action-btn"
+                      onClick={() => {
+                        const bw = wg.best_window!;
+                        const item = makeBasketItem(
+                          overview.run_id, bw.start_lap,
+                          `${wg.label} (Laps ${bw.start_lap}–${bw.end_lap})`,
+                          overview.session.car_name ?? null,
+                          (overview.session.track_display_name ?? overview.session.track_name) ?? null,
+                          overview.session.setup_name ?? null,
+                          bw.average_lap_time ?? null,
+                          bw.classification_tags ?? [],
+                          bw.draft_status_summary,
+                          bw.setup_usefulness_score ?? null,
+                        );
+                        setTest(item);
+                      }}
+                      title="Set as Test"
+                    >
+                      <Gauge size={10} /> Test
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+
       {/* ── Top Cards ── */}
-      {windowsData && (
+      {subview === "current" && windowsData && (
         <section className="metrics-row" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
           <div className="metric-card">
             <span><Trophy size={14} /> Fastest Lap</span>
@@ -270,7 +570,7 @@ export function LapsTab({ overview }: LapsTabProps) {
       )}
 
       {/* ── Degradation coaching message ── */}
-      {windowsData?.degradation?.coaching_message && windowsData.degradation.lap_count >= 10 && (
+      {subview === "current" && windowsData?.degradation?.coaching_message && windowsData.degradation.lap_count >= 10 && (
         <section className="crew-chief-brief" style={{ borderColor: "#f59e0b" }}>
           <h2>Pace Trend</h2>
           <p className="crew-chief-text">{windowsData.degradation.coaching_message}</p>
@@ -281,113 +581,115 @@ export function LapsTab({ overview }: LapsTabProps) {
       )}
 
       {/* ── Lap Table ── */}
-      <section className="workspace-section" style={{ padding: 0, overflow: "auto" }}>
-        <table className="compact-table" style={{ margin: 0 }}>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Time</th>
-              <th>Δ</th>
-              <th>Type</th>
-              <th>Tags</th>
-              <th>Avg Speed</th>
-              <th>Min Splitter</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {laps.map((lap) => {
-              const isSelected = selection.selectedLap === lap.lap_number;
-              const isExpanded = expandedLap === lap.lap_number;
-              const tags = lap.classification_tags ?? [];
-              const hasDraft = tags.some((t) => t.includes("DRAFT"));
-              const isValid = lap.is_useful && !hasDraft;
-              return (
-                <React.Fragment key={lap.lap_id}>
-                  <tr
-                    className={isSelected ? "selected-row" : ""}
-                    style={{ cursor: "pointer", opacity: isValid ? 1 : 0.5 }}
-                    onClick={() => setExpandedLap(isExpanded ? null : lap.lap_number)}
-                  >
-                    <td>{lap.lap_number}</td>
-                    <td style={{ fontWeight: 600 }}>{formatTime(lap.lap_time)}</td>
-                    <td style={{ color: formatDelta(lap.lap_time, bestTime) === "BEST" ? "#22c55e" : "#8d9aaa" }}>
-                      {formatDelta(lap.lap_time, bestTime)}
-                    </td>
-                    <td>
-                      <span className="lap-type-badge" style={{
-                        background: lap.lap_type === "timed" ? "#22c55e20" : "#8d9aaa20",
-                        color: lap.lap_type === "timed" ? "#22c55e" : "#8d9aaa",
-                      }}>
-                        {lap.lap_type}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-                        {hasDraft && <span className="lap-flag-badge lap-flag-draft">Draft</span>}
-                        {!lap.is_useful && <span className="lap-flag-badge lap-flag-invalid">Invalid</span>}
-                        {tags.includes("LIKELY_SOLO") && <span className="lap-flag-badge" style={{ background: "#22c55e20", color: "#22c55e" }}>Solo</span>}
-                      </div>
-                    </td>
-                    <td><ValueDisplay value={lap.avg_speed_mph} unit="mph" precision={1} /></td>
-                    <td><ValueDisplay value={lap.min_splitter_mm} unit="mm" precision={1} /></td>
-                    <td>
-                      <div style={{ display: "flex", gap: 4 }}>
-                        <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); handleSelectLap(lap.lap_number); }} title="Open Platform">
-                          <Layers size={10} />
-                        </button>
-                        <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); handleAddToCompare(lap.lap_number); }} title="Add to Compare">
-                          <BarChart3 size={10} />
-                        </button>
-                        <button className="trackmap-action-btn" onClick={(e) => {
-                          e.stopPropagation();
-                          const item = makeBasketItem(
-                            overview.run_id, lap.lap_number,
-                            `Lap ${lap.lap_number}`,
-                            overview.session.car_name ?? null,
-                            (overview.session.track_display_name ?? overview.session.track_name) ?? null,
-                            overview.session.setup_name ?? null,
-                            lap.lap_time ?? null,
-                            lap.classification_tags ?? [],
-                            tags.some(t => t.includes("DRAFT")) ? "DRAFT_AFFECTED" : "LIKELY_SOLO",
-                            null,
-                          );
-                          setTest(item);
-                        }} title="Set as Test in Compare Basket">
-                          <Gauge size={10} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  {isExpanded && (
-                    <tr key={`${lap.lap_id}-expanded`}>
-                      <td colSpan={8} style={{ padding: "8px 16px", background: "#0a0d14" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8 }}>
-                          <div><span className="muted">Max Speed</span><br /><ValueDisplay value={lap.max_speed_mph} unit="mph" precision={1} /></div>
-                          <div><span className="muted">Min Splitter</span><br /><ValueDisplay value={lap.min_splitter_mm} unit="mm" precision={1} /></div>
-                          <div><span className="muted">Avg Throttle</span><br /><ValueDisplay value={lap.avg_throttle_pct} unit="%" precision={1} /></div>
-                          <div><span className="muted">Avg Brake</span><br /><ValueDisplay value={lap.avg_brake_pct} unit="%" precision={1} /></div>
+      {subview === "current" && (
+        <section className="workspace-section" style={{ padding: 0, overflow: "auto" }}>
+          <table className="compact-table" style={{ margin: 0 }}>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Time</th>
+                <th>Δ</th>
+                <th>Type</th>
+                <th>Tags</th>
+                <th>Avg Speed</th>
+                <th>Min Splitter</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {laps.map((lap) => {
+                const isSelected = selection.selectedLap === lap.lap_number;
+                const isExpanded = expandedLap === lap.lap_number;
+                const tags = lap.classification_tags ?? [];
+                const hasDraft = tags.some((t) => t.includes("DRAFT"));
+                const isValid = lap.is_useful && !hasDraft;
+                return (
+                  <React.Fragment key={lap.lap_id}>
+                    <tr
+                      className={isSelected ? "selected-row" : ""}
+                      style={{ cursor: "pointer", opacity: isValid ? 1 : 0.5 }}
+                      onClick={() => setExpandedLap(isExpanded ? null : lap.lap_number)}
+                    >
+                      <td>{lap.lap_number}</td>
+                      <td style={{ fontWeight: 600 }}>{formatTime(lap.lap_time)}</td>
+                      <td style={{ color: formatDelta(lap.lap_time, bestTime) === "BEST" ? "#22c55e" : "#8d9aaa" }}>
+                        {formatDelta(lap.lap_time, bestTime)}
+                      </td>
+                      <td>
+                        <span className="lap-type-badge" style={{
+                          background: lap.lap_type === "timed" ? "#22c55e20" : "#8d9aaa20",
+                          color: lap.lap_type === "timed" ? "#22c55e" : "#8d9aaa",
+                        }}>
+                          {lap.lap_type}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                          {hasDraft && <span className="lap-flag-badge lap-flag-draft">Draft</span>}
+                          {!lap.is_useful && <span className="lap-flag-badge lap-flag-invalid">Invalid</span>}
+                          {tags.includes("LIKELY_SOLO") && <span className="lap-flag-badge" style={{ background: "#22c55e20", color: "#22c55e" }}>Solo</span>}
                         </div>
-                        <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
-                          <button className="secondary-button" onClick={() => { selectLap(lap.lap_number); setWorkspace("map", "manual"); }}>
-                            <MapPin size={14} /> Open Map
+                      </td>
+                      <td><ValueDisplay value={lap.avg_speed_mph} unit="mph" precision={1} /></td>
+                      <td><ValueDisplay value={lap.min_splitter_mm} unit="mm" precision={1} /></td>
+                      <td>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); handleSelectLap(lap.lap_number); }} title="Open Platform">
+                            <Layers size={10} />
                           </button>
-                          <button className="secondary-button" onClick={() => { selectLap(lap.lap_number); setWorkspace("platform_trace", "manual"); }}>
-                            <Layers size={14} /> Open Platform
+                          <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); handleAddToCompare(lap.lap_number); }} title="Add to Compare">
+                            <BarChart3 size={10} />
                           </button>
-                          <button className="secondary-button" onClick={() => { selectLap(lap.lap_number); setWorkspace("compare", "manual"); }}>
-                            <BarChart3 size={14} /> Compare
+                          <button className="trackmap-action-btn" onClick={(e) => {
+                            e.stopPropagation();
+                            const item = makeBasketItem(
+                              overview.run_id, lap.lap_number,
+                              `Lap ${lap.lap_number}`,
+                              overview.session.car_name ?? null,
+                              (overview.session.track_display_name ?? overview.session.track_name) ?? null,
+                              overview.session.setup_name ?? null,
+                              lap.lap_time ?? null,
+                              lap.classification_tags ?? [],
+                              tags.some(t => t.includes("DRAFT")) ? "DRAFT_AFFECTED" : "LIKELY_SOLO",
+                              null,
+                            );
+                            setTest(item);
+                          }} title="Set as Test in Compare Basket">
+                            <Gauge size={10} />
                           </button>
                         </div>
                       </td>
                     </tr>
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </section>
+                    {isExpanded && (
+                      <tr key={`${lap.lap_id}-expanded`}>
+                        <td colSpan={8} style={{ padding: "8px 16px", background: "#0a0d14" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8 }}>
+                            <div><span className="muted">Max Speed</span><br /><ValueDisplay value={lap.max_speed_mph} unit="mph" precision={1} /></div>
+                            <div><span className="muted">Min Splitter</span><br /><ValueDisplay value={lap.min_splitter_mm} unit="mm" precision={1} /></div>
+                            <div><span className="muted">Avg Throttle</span><br /><ValueDisplay value={lap.avg_throttle_pct} unit="%" precision={1} /></div>
+                            <div><span className="muted">Avg Brake</span><br /><ValueDisplay value={lap.avg_brake_pct} unit="%" precision={1} /></div>
+                          </div>
+                          <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                            <button className="secondary-button" onClick={() => { selectLap(lap.lap_number); setWorkspace("map", "manual"); }}>
+                              <MapPin size={14} /> Open Map
+                            </button>
+                            <button className="secondary-button" onClick={() => { selectLap(lap.lap_number); setWorkspace("platform_trace", "manual"); }}>
+                              <Layers size={14} /> Open Platform
+                            </button>
+                            <button className="secondary-button" onClick={() => { selectLap(lap.lap_number); setWorkspace("compare", "manual"); }}>
+                              <BarChart3 size={14} /> Compare
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
+      )}
     </div>
   );
 }

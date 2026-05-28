@@ -24,6 +24,9 @@ export type RunListItem = {
   imported_at?: string | null;
   best_lap_number?: number | null;
   best_lap_time?: number | null;
+  best_lap_time_s?: number | null;
+  lap_count?: number | null;
+  has_setup_snapshot?: boolean;
   primary_issue?: string | null;
 };
 

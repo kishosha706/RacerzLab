@@ -481,6 +481,7 @@ class TestComputePaceQualityScore:
 
     def test_missing_tire_data_does_not_affect_performance(self) -> None:
         """Missing tire data should reduce trust but not fake bad performance."""
+        # sourcery skip: extract-duplicate-code
         with_tire = self._assert_result(
             window_size=20, valid_lap_count=20,
             classification_tags=["SOLO_CLEAN"], draft_statuses=["LIKELY_SOLO"],

@@ -371,7 +371,7 @@ def compute_degradation(
                 "Long-run pace fell off significantly. "
                 "Consider a smoother opening pace or reviewing tire/platform management."
             )
-        elif falloff > 0.2 and n >= 10:
+        elif falloff > 0.2:
             coaching_message = (
                 "Early pace was stronger than later pace. "
                 "Monitor tire spread and platform stability for falloff causes."

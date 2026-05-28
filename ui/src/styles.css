@@ -3071,6 +3071,16 @@ button:focus:not(:focus-visible) {
   margin: 0;
   text-align: center;
 }
+.compare-basket-readiness {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 10px;
+  flex-wrap: wrap;
+}
 
 /* ── Laps Stint Map ────────────────────────────────────────── */
 .laps-stint-map {
@@ -3150,6 +3160,32 @@ button:focus:not(:focus-visible) {
   gap: 6px;
   flex-wrap: wrap;
   margin-top: 4px;
+}
+
+/* ── Evidence Inspector Source Stack ───────────────────────── */
+.inspector-source-stack {
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.inspector-source-stack:last-of-type {
+  border-bottom: none;
+}
+.inspector-source-stack h4 {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 4px;
+}
+.inspector-source-item {
+  font-size: 11px;
+  color: var(--text);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* ── Setup Diff Toggle ─────────────────────────────────────── */

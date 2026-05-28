@@ -217,7 +217,7 @@ def score_platform_safety(
         scores.append(logistic_score(rear_platform_risk_peak, good=0.30, bad=0.85, invert=True))
     if whole_car_bottoming_peak is not None:
         scores.append(logistic_score(whole_car_bottoming_peak, good=0.30, bad=0.85, invert=True))
-    return 70.0 if not scores else min(scores)
+    return min(scores) if scores else 70.0
 
 
 def score_tire_safety(
@@ -236,7 +236,7 @@ def score_tire_safety(
         scores.append(logistic_score(camber_bias, good=5.0, bad=20.0, invert=True))
     if wear_spread is not None:
         scores.append(logistic_score(wear_spread, good=1.0, bad=5.0, invert=True))
-    return 70.0 if not scores else min(scores)
+    return min(scores) if scores else 70.0
 
 
 def score_shock_safety(shock_activity_index: float | None = None) -> float:
@@ -301,7 +301,7 @@ def compute_evidence_deductions(
         deductions.append({"reason": "Possible draft assist", "amount": 12})
     if "UNKNOWN_DRAFT_STATUS" in [d.upper() for d in draft_statuses]:
         deductions.append({"reason": "Unknown draft status", "amount": 5})
-    unique_drafts = set(d.upper() for d in draft_statuses if d.upper() != "UNKNOWN_DRAFT_STATUS")
+    unique_drafts = {d.upper() for d in draft_statuses if d.upper() != "UNKNOWN_DRAFT_STATUS"}
     if len(unique_drafts) > 1:
         deductions.append({"reason": "Mixed draft statuses", "amount": 12})
     invalid_count = sum(t in ("INVALID_SPEED_EVENT", "OUT_LAP", "COOLDOWN", "PIT_ROAD", "WRECK_OR_SPIN") for t in upper_tags)
@@ -354,11 +354,11 @@ def compute_pace_quality_score(
     Evidence Confidence measures whether the data is trustworthy.
     Setup Usefulness combines both for setup decisions.
     """
+    upper_tags = [t.upper() for t in classification_tags]
     components: dict[str, float] = {}
     warnings: list[str] = []
     confidence_notes: list[str] = []
     caps: list[dict[str, Any]] = []
-    upper_tags = [t.upper() for t in classification_tags]
 
     has_platform = platform_risk_peak is not None or rear_platform_risk_peak is not None or whole_car_bottoming_peak is not None
     has_tire = tire_temp_spread is not None or tire_pressure_gain is not None
