@@ -1,4 +1,4 @@
-import { Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { createSession, deleteSession, fetchSessions } from "../api/client";
 import type { RaceLabSession } from "../types/session";
@@ -10,27 +10,38 @@ type StartupScreenProps = {
 export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
   const [sessions, setSessions] = useState<RaceLabSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const loadSessions = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await fetchSessions();
       setSessions(data);
-    } catch { setSessions([]); }
-    finally { setLoading(false); }
+    } catch (err) {
+      setSessions([]);
+      setLoadError(err instanceof Error ? err.message : "Could not load previous sessions.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { void loadSessions(); }, [loadSessions]);
 
   const handleNewSession = useCallback(async () => {
     setCreating(true);
+    setCreateError(null);
     try {
       const session = await createSession();
       onSessionSelected(session.session_id);
-    } catch { /* empty */ }
-    finally { setCreating(false); }
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : "Could not create session.");
+    } finally {
+      setCreating(false);
+    }
   }, [onSessionSelected]);
 
   const handleDelete = useCallback(async (sessionId: string) => {
@@ -38,7 +49,7 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
       await deleteSession(sessionId);
       setConfirmDelete(null);
       void loadSessions();
-    } catch { /* empty */ }
+    } catch { /* delete failure is non-critical */ }
   }, [loadSessions]);
 
   return (
@@ -56,19 +67,41 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
           </button>
         </div>
 
+        {createError && (
+          <div className="start-error" style={{ marginTop: 12 }}>
+            <p className="error-text" style={{ fontSize: 12, margin: 0 }}>
+              <AlertTriangle size={12} /> {createError}
+            </p>
+          </div>
+        )}
+
         <p className="start-hint">Open a previous session below.</p>
       </div>
 
       {loading && <p className="muted" style={{ textAlign: "center", marginTop: 32 }}>Loading sessions…</p>}
 
-      {!loading && sessions.length === 0 && (
+      {loadError && !loading && (
+        <div className="start-empty" style={{ marginTop: 32 }}>
+          <p className="error-text" style={{ fontSize: 12, margin: 0 }}>
+            <AlertTriangle size={12} /> {loadError}
+          </p>
+          <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+            Start backend: <code style={{ color: "#38bdf8", fontSize: 11 }}>python -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8010</code>
+          </p>
+          <button className="trackmap-action-btn" onClick={loadSessions} style={{ marginTop: 8 }}>
+            <RefreshCw size={12} /> Retry
+          </button>
+        </div>
+      )}
+
+      {!loading && !loadError && sessions.length === 0 && (
         <div className="start-empty">
           <p className="muted">No previous sessions yet.</p>
           <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>Create a new session to import your first telemetry file.</p>
         </div>
       )}
 
-      {!loading && sessions.length > 0 && (
+      {!loading && !loadError && sessions.length > 0 && (
         <section className="session-list">
           <h2 className="session-list-heading">Previous Sessions</h2>
           <div className="session-list-grid">

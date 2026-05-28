@@ -12,14 +12,40 @@ import type {
 
 const API_BASE = import.meta.env.VITE_RACELAB_API_BASE_URL ?? "http://127.0.0.1:8000";
 
+/** Default timeout for API requests (10 seconds). */
+const REQUEST_TIMEOUT_MS = 10_000;
+
+/**
+ * Fetch with timeout. Throws if the request does not complete within `ms`.
+ * The AbortController is cleaned up on completion to avoid memory leaks.
+ */
+async function fetchWithTimeout(url: string, init: RequestInit, ms: number = REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    return response;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    ...init,
-  });
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(`${API_BASE}${path}`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+      ...init,
+    });
+  } catch (err: unknown) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(`Request timed out. Is the backend running at ${API_BASE}?`);
+    }
+    throw new Error(`Network error: ${(err as Error).message ?? "Unknown error"}`);
+  }
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || `Request failed: ${response.status}`);
