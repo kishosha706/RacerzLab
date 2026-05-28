@@ -547,8 +547,15 @@ _SHOCK_VEL_RAW_KEYS: dict[str, str] = {
 
 
 def _apply_aliases(df: pl.DataFrame) -> pl.DataFrame:
-    """Rename raw iRacing columns to normalised names where they exist."""
-    renames = {raw: norm for raw, norm in _ALIAS_MAP.items() if raw in df.columns}
+    """Rename raw iRacing columns to normalised names where they exist.
+
+    Only renames if the target column does not already exist (avoids
+    DuplicateError when the alias was already created by the row path).
+    """
+    renames = {
+        raw: norm for raw, norm in _ALIAS_MAP.items()
+        if raw in df.columns and norm not in df.columns
+    }
     if renames:
         df = df.rename(renames)
     return df
@@ -1038,7 +1045,7 @@ def _compute_resistance_indices(df: pl.DataFrame) -> pl.DataFrame:
         resistance_coeff = decel_pos / dp_psf
         resistance_index = (resistance_coeff / RESISTANCE_COEFF_CRITICAL).clip(0.0, 1.0)
 
-        # Row path: first row gets None (via _init_derivative_row), subsequent rows get 0.0 or computed
+        # Row path skips first row (via _init_derivative_row continue)
         row_idx = pl.int_range(0, df.height, dtype=pl.Int64)
         ft_index = (
             pl.when(row_idx == 0).then(None)
@@ -1070,7 +1077,8 @@ def _compute_resistance_indices(df: pl.DataFrame) -> pl.DataFrame:
             lambda s: compute_drag_scrub_index(s),
             return_dtype=pl.Float64,
         )
-        # First row gets None to match row path _init_derivative_row
+        # Row path skips first row (via _init_derivative_row continue)
+        row_idx = pl.int_range(0, df.height, dtype=pl.Int64)
         drag_expr = pl.when(row_idx == 0).then(None).otherwise(drag_expr).alias("drag_scrub_suspicion")
         df = df.with_columns(drag_expr)
 
@@ -1090,7 +1098,7 @@ def _compute_compression_index(df: pl.DataFrame) -> pl.DataFrame:
     if not needed.issubset(df.columns):
         return df
 
-    # Row path: first row gets None (via _init_derivative_row)
+    # Row path: first row gets None (via _init_derivative_row), subsequent rows computed
     row_idx = pl.int_range(0, df.height, dtype=pl.Int64)
     cfs_risk = pl.col("cfs_risk_score").fill_null(0.0)
     plat_stab = pl.col("platform_stability_score").fill_null(0.0)
@@ -1326,7 +1334,7 @@ def _apply_gps_projection(df: pl.DataFrame) -> pl.DataFrame:
     # Use first row as origin
     lat0 = lat_rad.first()
     lon0 = lon_rad.first()
-    x_m = EARTH_RADIUS_M * lon_rad.cos() * (lon_rad - lon0)
+    x_m = EARTH_RADIUS_M * lat0.cos() * (lon_rad - lon0)
     y_m = EARTH_RADIUS_M * (lat_rad - lat0)
     df = df.with_columns(
         x_m.alias("track_x_m"),

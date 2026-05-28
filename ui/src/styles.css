@@ -1509,6 +1509,80 @@ td {
 .legend-item { display: flex; align-items: center; gap: 4px; }
 .legend-sym { display: inline-block; width: 18px; text-align: center; font-weight: 600; color: #f59e0b; }
 
+/* ── Quick actions & select ── */
+.trackmap-toggles-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.trackmap-toggles-header h4 { margin: 0; }
+.trackmap-quick-actions { display: flex; gap: 4px; }
+.trackmap-action-btn {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #8d9aaa;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.trackmap-action-btn:hover { background: #334155; color: #e2e8f0; }
+.trackmap-select {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  width: 100%;
+  cursor: pointer;
+  font-family: inherit;
+}
+.trackmap-select-sm { font-size: 11px; padding: 3px 6px; width: auto; }
+.trackmap-manual-select { margin-top: 8px; }
+.trackmap-severity-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #1f2937;
+}
+.trackmap-empty-map-overlay {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(15, 19, 32, 0.92);
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #8d9aaa;
+  pointer-events: none;
+}
+
+/* ── Inspector event groups ── */
+.inspector-event-group { margin-bottom: 8px; }
+.inspector-event-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #b0bec5;
+  padding: 2px 0;
+  margin-bottom: 2px;
+}
+.inspector-badge-sm { font-size: 9px !important; padding: 1px 5px !important; }
+
 /* Inspector (right panel) */
 .trackmap-inspector {
   background: #0f1320;

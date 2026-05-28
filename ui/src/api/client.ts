@@ -206,12 +206,13 @@ export function fetchRunLapList(runId: string): Promise<RunLapList> {
 
 export function fetchRunTrackMapPackage(
   runId: string,
-  options?: { lap?: number; target_zone_start_pct?: number; target_zone_end_pct?: number },
+  options?: { lap?: number; target_zone_start_pct?: number; target_zone_end_pct?: number; preferred_map_id?: string },
 ): Promise<TrackMapPackage> {
   const params = new URLSearchParams();
   if (options?.lap != null) params.set("lap", String(options.lap));
   if (options?.target_zone_start_pct != null) params.set("target_zone_start_pct", String(options.target_zone_start_pct));
   if (options?.target_zone_end_pct != null) params.set("target_zone_end_pct", String(options.target_zone_end_pct));
+  if (options?.preferred_map_id) params.set("preferred_map_id", options.preferred_map_id);
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return requestJson<TrackMapPackage>(`/api/runs/${encodeURIComponent(runId)}/track-map-package${suffix}`);
 }
