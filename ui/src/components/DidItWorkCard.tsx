@@ -1,7 +1,16 @@
-import { AlertTriangle, Bookmark, CheckCircle, RotateCcw, XCircle } from "lucide-react";
+import { AlertTriangle, Bookmark, CheckCircle, RotateCcw, Thermometer, XCircle } from "lucide-react";
 import { VERDICT_COLORS } from "../constants/verdict";
 
 export type VerdictKind = "keep_direction" | "undo_partially" | "undo" | "retest" | "inconclusive" | "reference_mode";
+
+export interface TireContextProps {
+  pressureGainDelta?: number | null;
+  tempSpreadDelta?: number | null;
+  camberBiasDelta?: number | null;
+  wearSpreadDelta?: number | null;
+  runLengthLaps?: number | null;
+  isShortRun?: boolean;
+}
 
 export interface DidItWorkCardProps {
   verdict: VerdictKind;
@@ -20,6 +29,7 @@ export interface DidItWorkCardProps {
   contextWarnings?: Array<{ label: string; warning: string }>;
   draftWarning?: string | null;
   weatherWarning?: string | null;
+  tireContext?: TireContextProps | null;
   /** Callbacks */
   onSaveFinding?: () => void;
   onCreateTestPlan?: () => void;
@@ -50,11 +60,20 @@ function deltaSign(v: number | null | undefined): string {
   return v > 0 ? "+" : "";
 }
 
+function tireContextColor(delta: number | null | undefined, worseIfPositive: boolean = false): string {
+  if (delta == null || Number.isNaN(delta)) return "#8d9aaa";
+  const abs = Math.abs(delta);
+  if (abs < 2) return "#22c55e";
+  if (abs < 5) return "#f59e0b";
+  return "#ef4444";
+}
+
 export function DidItWorkCard({
   verdict, headline, confidenceScore, testDisciplineScore,
   targetZoneDeltaMph, splitterDeltaMm, platformRiskDelta, scrubDelta,
   evidence, warnings, nextStep, successMetric,
   setupChanges, contextWarnings, draftWarning, weatherWarning,
+  tireContext,
   onSaveFinding, onCreateTestPlan, onOpenSetup, onOpenEvidence,
   saving, saveStatus, disabled,
 }: DidItWorkCardProps) {
@@ -140,6 +159,58 @@ export function DidItWorkCard({
             </div>
           ))}
           {setupChanges.length > 8 && <p className="muted">+{setupChanges.length - 8} more changes</p>}
+        </div>
+      )}
+
+      {/* ── Tire Lifecycle Context ── */}
+      {tireContext && (
+        <div className="diw-section">
+          <h4><Thermometer size={12} /> Tire Lifecycle Context</h4>
+          {tireContext.isShortRun && (
+            <p className="warning-line"><AlertTriangle size={12} /> Short run — tire falloff conclusions are low confidence.</p>
+          )}
+          {tireContext.runLengthLaps != null && (
+            <div className="diw-change-row">
+              <span>Run Length</span>
+              <span>{tireContext.runLengthLaps} lap{tireContext.runLengthLaps !== 1 ? "s" : ""}</span>
+            </div>
+          )}
+          {tireContext.pressureGainDelta != null && (
+            <div className="diw-change-row">
+              <span>Pressure Gain Δ</span>
+              <span style={{ color: tireContextColor(tireContext.pressureGainDelta) }}>
+                {tireContext.pressureGainDelta > 0 ? "+" : ""}{tireContext.pressureGainDelta.toFixed(1)} psi
+              </span>
+            </div>
+          )}
+          {tireContext.tempSpreadDelta != null && (
+            <div className="diw-change-row">
+              <span>Temp Spread Δ</span>
+              <span style={{ color: tireContextColor(tireContext.tempSpreadDelta) }}>
+                {tireContext.tempSpreadDelta > 0 ? "+" : ""}{tireContext.tempSpreadDelta.toFixed(1)}°C
+              </span>
+            </div>
+          )}
+          {tireContext.camberBiasDelta != null && (
+            <div className="diw-change-row">
+              <span>Camber Bias Δ</span>
+              <span style={{ color: tireContextColor(tireContext.camberBiasDelta) }}>
+                {tireContext.camberBiasDelta > 0 ? "+" : ""}{tireContext.camberBiasDelta.toFixed(1)}°C
+              </span>
+            </div>
+          )}
+          {tireContext.wearSpreadDelta != null && (
+            <div className="diw-change-row">
+              <span>Wear Spread Δ</span>
+              <span style={{ color: tireContextColor(tireContext.wearSpreadDelta) }}>
+                {tireContext.wearSpreadDelta > 0 ? "+" : ""}{tireContext.wearSpreadDelta.toFixed(2)} mm
+              </span>
+            </div>
+          )}
+          {tireContext.pressureGainDelta == null && tireContext.tempSpreadDelta == null &&
+           tireContext.camberBiasDelta == null && tireContext.wearSpreadDelta == null && (
+            <p className="muted">Tire lifecycle context unavailable.</p>
+          )}
         </div>
       )}
 

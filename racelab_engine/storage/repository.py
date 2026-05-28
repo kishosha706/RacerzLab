@@ -55,10 +55,13 @@ class RaceLabRepository:
             connection.execute("DELETE FROM events WHERE run_id = ?", (overview.run_id,))
             connection.execute("DELETE FROM laps WHERE run_id = ?", (overview.run_id,))
             connection.execute("DELETE FROM runs WHERE run_id = ?", (overview.run_id,))
+            analyzed_at = utc_now_iso()
             connection.execute(
                 """
                 INSERT INTO runs (
-                  run_id, source_file, file_hash, import_time, imported_at, sim_date_time,
+                  run_id, source_file, file_hash, import_time, imported_at,
+                  analysis_engine_version, analysis_config_hash, analysis_mode, analyzed_at,
+                  sim_date_time,
                   car_name, car_path, track_name, track_display_name, track_id_or_path,
                   session_type, weather_summary, setup_name, setup_passed_tech,
                   setup_modified, telemetry_rate_hz, variable_count, record_count,
@@ -66,7 +69,10 @@ class RaceLabRepository:
                   air_pressure, notes, primary_findings_json, warnings_json,
                   crew_chief_summary, next_test, session_json
                 ) VALUES (
-                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                  ?, ?, ?, ?, ?,
+                  ?, ?, ?, ?,
+                  ?,
+                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -75,6 +81,10 @@ class RaceLabRepository:
                     session.file_hash,
                     session.import_time.isoformat() if hasattr(session.import_time, "isoformat") else str(session.import_time),
                     imported_at,
+                    "1.0.0",  # analysis_engine_version
+                    None,     # analysis_config_hash
+                    "row",    # analysis_mode
+                    analyzed_at,
                     session.sim_date_time,
                     session.car_name,
                     session.car_path,
