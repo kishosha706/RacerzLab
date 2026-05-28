@@ -106,8 +106,9 @@ def run_comparison(req: CompareRequest) -> dict:
     context_changes = diff_context(bl_overview.session, t_overview.session, bl_lap_valid, t_lap_valid)
 
     # ── Draft status context ──────────────────────────────────────
-    from contextlib import suppress
-    with suppress(Exception):
+    import logging
+    _log = logging.getLogger(__name__)
+    try:
         from racelab_engine.analysis.draft_detection import classify_draft_status
         bl_draft = classify_draft_status(bl_rows)
         t_draft = classify_draft_status(t_rows)
@@ -120,6 +121,8 @@ def run_comparison(req: CompareRequest) -> dict:
                         f"Draft difference may affect speed comparison.",
                 is_problem=True,
             ))
+    except Exception as exc:
+        _log.warning("Draft comparison failed: %s", exc)
 
     # discipline
     context_problems = sum(c.is_problem for c in context_changes)

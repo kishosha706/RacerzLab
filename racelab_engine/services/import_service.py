@@ -594,6 +594,8 @@ class ImportService:
 
         # ── Post-import analysis ──────────────────────────────────
         # 1. Build and persist segments
+        import logging
+        _log = logging.getLogger(__name__)
         try:
             from racelab_engine.analysis.segments import build_fixed_pct_segments
             from racelab_engine.models.segment import SegmentSummary as ModelSegment
@@ -604,29 +606,36 @@ class ImportService:
                     ModelSegment(**seg.model_dump()) for seg in raw_segments
                 ]
                 self.repository.save_segments(run_id, model_segments)
-        except Exception:
-            pass  # Non-critical — segments can be rebuilt on demand
+                _log.info("Saved %d segments for run %s", len(model_segments), run_id)
+        except Exception as exc:
+            _log.warning("Segment persistence failed for run %s: %s", run_id, exc)
 
         # 2. Run draft detection on each useful lap
         try:
             from racelab_engine.analysis.draft_detection import classify_draft_status
             rows = read_telemetry_rows(run_id, self.data_dir)
+            tags_updated = False
             for lap in result.overview.laps:
                 if not lap.is_useful:
                     continue
                 draft = classify_draft_status(rows, lap_number=lap.lap_number)
                 if draft.status.value != "UNKNOWN_DRAFT_STATUS":
                     tag = draft.status.value
+                    if not lap.classification_tags:
+                        lap.classification_tags = []
                     if tag not in lap.classification_tags:
                         lap.classification_tags.append(tag)
+                        tags_updated = True
                     if draft.warnings:
                         for w in draft.warnings:
                             if w not in result.overview.warnings:
                                 result.overview.warnings.append(w)
-            # Re-save laps with updated classification tags
-            self.repository.save_import(result.overview, result.fingerprint)
-        except Exception:
-            pass  # Non-critical — draft detection is best-effort
+            if tags_updated:
+                # Re-save laps with updated classification tags
+                self.repository.save_import(result.overview, result.fingerprint)
+                _log.info("Draft tags updated for run %s", run_id)
+        except Exception as exc:
+            _log.warning("Draft detection failed for run %s: %s", run_id, exc)
 
         implemented = list(result.status.implemented)
         for item in ["SQLite persistence", f"telemetry cache persistence ({cache_result.format})",

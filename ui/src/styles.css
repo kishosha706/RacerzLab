@@ -2382,3 +2382,54 @@ td {
   margin: 6px 0 0;
   line-height: 1.4;
 }
+
+/* ── Whole Car Index Strip ──────────────────────────────── */
+.wci-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.wci-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 56px;
+  padding: 4px 8px;
+  background: var(--panel-soft);
+  border-radius: 4px;
+}
+.wci-label {
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+.wci-score {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Compare Subview ────────────────────────────────────── */
+.compare-subview {
+  padding: 4px 0;
+}
+.compare-subview h3 {
+  font-size: 0.95rem;
+  margin: 0 0 8px;
+}
+.compare-subview h4 {
+  font-size: 0.8rem;
+  margin: 0 0 4px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

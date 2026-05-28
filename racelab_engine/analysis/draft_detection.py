@@ -119,7 +119,7 @@ def classify_draft_status(
             rpm_delta = rpm_curr - rpm_prev
 
             # Speed gain without proportional RPM gain
-            if speed_delta > DRAFT_SPEED_GAIN_THRESHOLD:
+            if speed_delta > DRAFT_SPEED_GAIN_THRESHOLD and speed_delta > 0:
                 if rpm_delta / speed_delta < DRAFT_RPM_DIFF_RATIO:
                     speed_rpm_anomalies += 1
 
@@ -203,7 +203,12 @@ def classify_draft_status(
 
 
 def _find_straight_segments(rows: list[dict[str, Any]]) -> list[tuple[int, int]]:
-    """Find straightaway segments where steering is near center."""
+    """Find straightaway segments where steering is near center.
+
+    Uses steering angle (< 2 deg) as primary signal. Falls back to
+    speed-curvature analysis on road courses where steering may not
+    fully center.
+    """
     segments: list[tuple[int, int]] = []
     in_straight = False
     start = 0
@@ -211,7 +216,9 @@ def _find_straight_segments(rows: list[dict[str, Any]]) -> list[tuple[int, int]]
 
     for i, row in enumerate(rows):
         steering = abs(_numeric(row.get("abs_steering_deg")) or _numeric(row.get("steering_deg")) or 0)
-        is_straight = steering < 2.0  # degrees
+        # On road courses, also check speed rate — straights have sustained acceleration
+        speed_rate = _numeric(row.get("speed_rate_mph_s")) or 0
+        is_straight = steering < 2.0 or (steering < 5.0 and speed_rate > 1.0)
 
         if is_straight and not in_straight:
             start = i
@@ -228,6 +235,7 @@ def _find_straight_segments(rows: list[dict[str, Any]]) -> list[tuple[int, int]]
 
 
 def _numeric(value: Any) -> float | None:
+    """Safely convert a value to float, returning None for missing/bad values."""
     if value is None:
         return None
     try:
@@ -238,5 +246,6 @@ def _numeric(value: Any) -> float | None:
 
 
 def _mean_of(values: list[float | None]) -> float | None:
+    """Compute mean of a list of optional floats, returning None if empty."""
     clean = [v for v in values if v is not None]
     return sum(clean) / len(clean) if clean else None
