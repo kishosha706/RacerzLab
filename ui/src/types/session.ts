@@ -36,6 +36,7 @@ export interface LapSummaryItem {
   end_time_s: number | null;
   has_telemetry: boolean;
   warnings: string[];
+  classification_tags?: string[];
 }
 
 export interface RunLapList {

@@ -103,19 +103,55 @@ function VerdictView({ verdict, disc, wci, confidence }: {
 }) {
   if (!verdict) return <p className="muted">No verdict available.</p>;
   const color = VERDICT_COLORS[verdict.verdict] ?? "#8d9aaa";
+  const discColor = disc ? (disc.score >= 80 ? "#22c55e" : disc.score >= 50 ? "#f59e0b" : "#ef4444") : "#8d9aaa";
   return (
     <div className="compare-subview">
+      {/* Did-It-Work Verdict Card */}
       <div className="verdict-card" style={{ borderColor: color }}>
-        <h3 style={{ color }}>{verdict.verdict.replace(/_/g, " ").toUpperCase()}</h3>
+        <div className="verdict-card-header">
+          <h3 style={{ color }}>{verdict.verdict.replace(/_/g, " ").toUpperCase()}</h3>
+          <span className="verdict-confidence-badge" style={{ background: `${color}20`, color, border: `1px solid ${color}40` }}>
+            {formatVal(confidence * 100, 0)}% confidence
+          </span>
+        </div>
         <p className="verdict-headline">{verdict.headline}</p>
-        <p className="verdict-confidence">Confidence: {formatVal(confidence * 100, 0)}%</p>
+
+        {/* Evidence */}
+        {verdict.evidence.length > 0 && (
+          <div className="verdict-evidence-list">
+            <h4>Evidence</h4>
+            {verdict.evidence.map((e, i) => <p key={i} className="verdict-evidence">• {e}</p>)}
+          </div>
+        )}
+
+        {/* Warnings */}
+        {verdict.warnings.length > 0 && (
+          <div className="verdict-warnings">
+            {verdict.warnings.map((w, i) => <p key={i} className="warning-line"><AlertTriangle size={12} /> {w}</p>)}
+          </div>
+        )}
+
+        {/* Next step */}
+        {verdict.next_step && <p className="verdict-next"><strong>Next:</strong> {verdict.next_step}</p>}
       </div>
-      {wci && <div className="wci-strip">{indexStrip(wci)}</div>}
-      {disc && <div className="discipline-badge">Test Discipline: {disc.score}/100 ({disc.label})</div>}
-      {verdict.evidence.length > 0 && (
-        <div className="evidence-list"><h4>Evidence</h4>{verdict.evidence.map((e, i) => <p key={i} className="verdict-evidence">• {e}</p>)}</div>
+
+      {/* Test Discipline Card */}
+      {disc && (
+        <div className="discipline-card" style={{ borderColor: discColor }}>
+          <div className="discipline-card-header">
+            <h4>Test Discipline</h4>
+            <span className="discipline-score" style={{ color: discColor }}>{disc.score}/100</span>
+          </div>
+          <span className="discipline-label-badge" style={{ background: `${discColor}15`, color: discColor }}>
+            {disc.label.replace(/_/g, " ")}
+          </span>
+          {disc.score >= 80 && <p className="discipline-note">One controlled change — result is trustworthy.</p>}
+          {disc.score >= 50 && disc.score < 80 && <p className="discipline-note">Multiple changes — result may be mixed.</p>}
+          {disc.score < 50 && <p className="discipline-note">Too many variables — retest with one change.</p>}
+        </div>
       )}
-      {verdict.next_step && <p className="verdict-next"><strong>Next:</strong> {verdict.next_step}</p>}
+
+      {wci && <div className="wci-strip">{indexStrip(wci)}</div>}
     </div>
   );
 }

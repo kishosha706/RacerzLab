@@ -19,6 +19,7 @@ type SelectionAction =
   | { type: "SET_MODE"; mode: SelectionMode }
   | { type: "SET_WORKSPACE"; workspace: Workspace; source: SelectionSource }
   | { type: "SELECT_ZONE"; zoneId: string | null }
+  | { type: "SET_HOVER"; lapPct: number | null; sampleIndex?: number | null }
   | { type: "RESET_SELECTION" }
   | { type: "LOAD_RUN"; runId: string; bestLap: number | null };
 
@@ -50,6 +51,8 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
       return { ...state, selectedWorkspace: action.workspace, selectionSource: action.source };
     case "SELECT_ZONE":
       return { ...state, selectedZoneId: action.zoneId, selectionSource: "track_map" };
+    case "SET_HOVER":
+      return { ...state, hoverLapPct: action.lapPct, hoverSampleIndex: action.sampleIndex ?? state.hoverSampleIndex };
     case "RESET_SELECTION":
       return { ...DEFAULT_SELECTION, selectedRunId: state.selectedRunId, selectedMode: state.selectedMode };
     case "LOAD_RUN":
@@ -73,6 +76,7 @@ type TelemetrySelectionContextValue = {
   selectEvent: (eventId: string | null, source?: SelectionSource) => void;
   selectChannel: (channel: string | null, source?: SelectionSource) => void;
   selectZone: (zoneId: string | null) => void;
+  setHover: (lapPct: number | null, sampleIndex?: number | null) => void;
   setMode: (mode: SelectionMode) => void;
   setWorkspace: (workspace: Workspace, source?: SelectionSource) => void;
   loadRun: (runId: string, bestLap: number | null) => void;
@@ -104,6 +108,11 @@ export function TelemetrySelectionProvider({ children }: { children: ReactNode }
     (zoneId: string | null) => dispatch({ type: "SELECT_ZONE", zoneId }),
     [],
   );
+  const setHover = useCallback(
+    (lapPct: number | null, sampleIndex?: number | null) =>
+      dispatch({ type: "SET_HOVER", lapPct, sampleIndex }),
+    [],
+  );
   const setMode = useCallback((mode: SelectionMode) => dispatch({ type: "SET_MODE", mode }), []);
   const setWorkspace = useCallback(
     (workspace: Workspace, source: SelectionSource = "manual") =>
@@ -117,7 +126,7 @@ export function TelemetrySelectionProvider({ children }: { children: ReactNode }
 
   return (
     <TelemetrySelectionContext.Provider
-      value={{ selection, dispatch, selectRun, selectLap, selectSample, selectEvent, selectChannel, selectZone, setMode, setWorkspace, loadRun }}
+      value={{ selection, dispatch, selectRun, selectLap, selectSample, selectEvent, selectChannel, selectZone, setHover, setMode, setWorkspace, loadRun }}
     >
       {children}
     </TelemetrySelectionContext.Provider>

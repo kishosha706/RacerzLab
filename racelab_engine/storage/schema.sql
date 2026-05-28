@@ -193,6 +193,40 @@ CREATE TABLE IF NOT EXISTS test_plans (
   FOREIGN KEY(source_finding_id) REFERENCES notebook_findings(finding_id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS segments (
+  segment_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  lap_number INTEGER,
+  segment_type TEXT DEFAULT 'fixed_pct',
+  segment_name TEXT,
+  pct_start REAL,
+  pct_end REAL,
+  distance_start_m REAL,
+  distance_end_m REAL,
+  avg_speed_mph REAL,
+  min_speed_mph REAL,
+  max_speed_mph REAL,
+  speed_delta_mph REAL,
+  avg_rpm REAL,
+  rpm_delta REAL,
+  avg_throttle_pct REAL,
+  avg_brake_pct REAL,
+  avg_abs_steering_deg REAL,
+  max_abs_steering_deg REAL,
+  avg_lat_accel REAL,
+  min_splitter_mm REAL,
+  platform_risk_score REAL DEFAULT 0.0,
+  drag_scrub_score REAL DEFAULT 0.0,
+  driver_input_score REAL DEFAULT 0.0,
+  powertrain_score REAL DEFAULT 0.0,
+  confidence_score REAL DEFAULT 0.0,
+  segment_json TEXT NOT NULL,
+  FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_segments_run_id ON segments(run_id);
+CREATE INDEX IF NOT EXISTS idx_segments_run_lap ON segments(run_id, lap_number);
+
 CREATE INDEX IF NOT EXISTS idx_findings_car_track ON notebook_findings(car_name, track_name);
 CREATE INDEX IF NOT EXISTS idx_findings_verdict ON notebook_findings(verdict);
 CREATE INDEX IF NOT EXISTS idx_findings_status ON notebook_findings(status);

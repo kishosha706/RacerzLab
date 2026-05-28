@@ -591,15 +591,50 @@ class ImportService:
         cache_result = write_telemetry_cache(run_id, result.records, self.data_dir)
         write_channel_metadata(result.overview.run_id, result.variable_definitions, self.data_dir)
         self.repository.save_import(result.overview, result.fingerprint)
+
+        # ── Post-import analysis ──────────────────────────────────
+        # 1. Build and persist segments
+        try:
+            from racelab_engine.analysis.segments import build_fixed_pct_segments
+            rows = read_telemetry_rows(run_id, self.data_dir)
+            segments = build_fixed_pct_segments(rows, run_id=run_id)
+            if segments:
+                self.repository.save_segments(run_id, segments)
+        except Exception:
+            pass  # Non-critical — segments can be rebuilt on demand
+
+        # 2. Run draft detection on each useful lap
+        try:
+            from racelab_engine.analysis.draft_detection import classify_draft_status
+            rows = read_telemetry_rows(run_id, self.data_dir)
+            for lap in result.overview.laps:
+                if not lap.is_useful:
+                    continue
+                draft = classify_draft_status(rows, lap_number=lap.lap_number)
+                if draft.status.value != "UNKNOWN_DRAFT_STATUS":
+                    tag = draft.status.value
+                    if tag not in lap.classification_tags:
+                        lap.classification_tags.append(tag)
+                    if draft.warnings:
+                        for w in draft.warnings:
+                            if w not in result.overview.warnings:
+                                result.overview.warnings.append(w)
+            # Re-save laps with updated classification tags
+            self.repository.save_import(result.overview, result.fingerprint)
+        except Exception:
+            pass  # Non-critical — draft detection is best-effort
+
         implemented = list(result.status.implemented)
-        for item in ["SQLite persistence", f"telemetry cache persistence ({cache_result.format})"]:
+        for item in ["SQLite persistence", f"telemetry cache persistence ({cache_result.format})",
+                      "segment persistence", "draft detection"]:
             if item not in implemented:
                 implemented.append(item)
         result.status = result.status.model_copy(
             update={
                 "message": (
                     "Imported and persisted iRacing .ibt header, variable definitions, "
-                    "session YAML, MVP telemetry channels, analysis summaries, and telemetry cache."
+                    "session YAML, MVP telemetry channels, analysis summaries, "
+                    "telemetry cache, segments, and draft detection."
                 ),
                 "implemented": implemented,
                 "remaining": [

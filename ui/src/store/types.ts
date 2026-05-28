@@ -43,6 +43,10 @@ export type TelemetrySelection = {
   selectedSetupKey?: string | null;
   selectedZoneId?: string | null;
 
+  /** Transient hover position — updated at high frequency, not committed to React state on every frame. */
+  hoverLapPct?: number | null;
+  hoverSampleIndex?: number | null;
+
   selectedMode: SelectionMode;
   selectedWorkspace: Workspace;
   selectionSource: SelectionSource;

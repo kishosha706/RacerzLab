@@ -105,6 +105,23 @@ def run_comparison(req: CompareRequest) -> dict:
     t_lap_valid = t_overview.best_useful_lap is not None
     context_changes = diff_context(bl_overview.session, t_overview.session, bl_lap_valid, t_lap_valid)
 
+    # ── Draft status context ──────────────────────────────────────
+    try:
+        from racelab_engine.analysis.draft_detection import classify_draft_status
+        bl_draft = classify_draft_status(bl_rows)
+        t_draft = classify_draft_status(t_rows)
+        if bl_draft.status != t_draft.status:
+            from racelab_engine.analysis.comparison import ContextChange
+            context_changes.append(ContextChange(
+                key="draft_status",
+                label="Draft Status",
+                warning=f"Baseline: {bl_draft.status.value}, Test: {t_draft.status.value}. "
+                        f"Draft difference may affect speed comparison.",
+                is_problem=True,
+            ))
+    except Exception:
+        pass
+
     # discipline
     context_problems = sum(c.is_problem for c in context_changes)
     discipline = score_test_discipline(setup_changes, context_problems)

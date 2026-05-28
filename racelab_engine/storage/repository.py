@@ -9,6 +9,7 @@ from racelab_engine.io.file_fingerprint import FileFingerprint
 from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.recommendation import Recommendation
+from racelab_engine.models.segment import SegmentSummary
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.storage.db import initialize_database
@@ -362,6 +363,85 @@ class RaceLabRepository:
         ).fetchall()
         connection.close()
         return [Recommendation.model_validate_json(row["recommendation_json"]) for row in rows]
+
+    # ── Segments ──────────────────────────────────────────────────
+
+    def save_segments(self, run_id: str, segments: list[SegmentSummary]) -> None:
+        """Save segment summaries, replacing any existing for this run."""
+        connection = initialize_database(self.db_path)
+        with connection:
+            connection.execute("DELETE FROM segments WHERE run_id = ?", (run_id,))
+            for segment in segments:
+                connection.execute(
+                    """
+                    INSERT INTO segments (
+                      segment_id, run_id, lap_number, segment_type, segment_name,
+                      pct_start, pct_end, distance_start_m, distance_end_m,
+                      avg_speed_mph, min_speed_mph, max_speed_mph, speed_delta_mph,
+                      avg_rpm, rpm_delta, avg_throttle_pct, avg_brake_pct,
+                      avg_abs_steering_deg, max_abs_steering_deg, avg_lat_accel,
+                      min_splitter_mm, platform_risk_score, drag_scrub_score,
+                      driver_input_score, powertrain_score, confidence_score,
+                      segment_json
+                    ) VALUES (
+                      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    )
+                    """,
+                    (
+                        segment.segment_id,
+                        segment.run_id,
+                        segment.lap_number,
+                        segment.segment_type,
+                        segment.segment_name,
+                        segment.pct_start,
+                        segment.pct_end,
+                        segment.distance_start_m,
+                        segment.distance_end_m,
+                        segment.avg_speed_mph,
+                        segment.min_speed_mph,
+                        segment.max_speed_mph,
+                        segment.speed_delta_mph,
+                        segment.avg_rpm,
+                        segment.rpm_delta,
+                        segment.avg_throttle_pct,
+                        segment.avg_brake_pct,
+                        segment.avg_abs_steering_deg,
+                        segment.max_abs_steering_deg,
+                        segment.avg_lat_accel,
+                        segment.min_splitter_mm,
+                        segment.platform_risk_score,
+                        segment.drag_scrub_score,
+                        segment.driver_input_score,
+                        segment.powertrain_score,
+                        segment.confidence_score,
+                        _model_json(segment),
+                    ),
+                )
+        connection.close()
+
+    def list_segments(self, run_id: str, lap_number: int | None = None) -> list[SegmentSummary]:
+        """Retrieve segment summaries for a run, optionally filtered by lap."""
+        connection = initialize_database(self.db_path)
+        sql = "SELECT segment_json FROM segments WHERE run_id = ?"
+        params: list[Any] = [run_id]
+        if lap_number is not None:
+            sql += " AND lap_number = ?"
+            params.append(lap_number)
+        sql += " ORDER BY pct_start ASC"
+        rows = connection.execute(sql, params).fetchall()
+        connection.close()
+        return [SegmentSummary.model_validate_json(row["segment_json"]) for row in rows]
+
+    def get_segment(self, segment_id: str) -> SegmentSummary | None:
+        """Retrieve a single segment by ID."""
+        connection = initialize_database(self.db_path)
+        row = connection.execute(
+            "SELECT segment_json FROM segments WHERE segment_id = ?", (segment_id,)
+        ).fetchone()
+        connection.close()
+        if row is None:
+            return None
+        return SegmentSummary.model_validate_json(row["segment_json"])
 
     def get_overview(self, run_id: str) -> RunOverview | None:
         connection = initialize_database(self.db_path)

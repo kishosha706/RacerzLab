@@ -2304,3 +2304,81 @@ td {
 }
 .subnav-item:hover { color: var(--text); background: var(--panel-soft); }
 .subnav-item.active { color: var(--cyan); border-color: var(--cyan); background: rgba(56,189,248,0.1); }
+
+/* ── Verdict Card (Did-It-Work) ───────────────────────────── */
+.verdict-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.verdict-card-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.verdict-confidence-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.verdict-evidence-list {
+  margin-top: 8px;
+}
+.verdict-evidence-list h4 {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 4px;
+}
+.verdict-warnings {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ── Discipline Card ──────────────────────────────────────── */
+.discipline-card {
+  background: var(--panel-soft);
+  border: 1px solid;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+}
+.discipline-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.discipline-card-header h4 {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.discipline-score {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.discipline-label-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  display: inline-block;
+}
+.discipline-note {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 6px 0 0;
+  line-height: 1.4;
+}

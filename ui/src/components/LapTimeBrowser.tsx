@@ -68,7 +68,8 @@ export function LapTimeBrowser({ runId }: LapTimeBrowserProps) {
         {lapList.laps.map((lap) => {
           const isSelected = selection.selectedLap === lap.lap_number;
           const isBest = lap.delta_display === "BEST";
-          const hasDraftFlag = lap.warnings?.some((w) => w.toLowerCase().includes("draft")) ?? false;
+          const tags = lap.classification_tags ?? [];
+          const hasDraftFlag = tags.some((t) => t.includes("DRAFT")) || (lap.warnings?.some((w) => w.toLowerCase().includes("draft")) ?? false);
           const hasInvalidFlag = !lap.is_useful || (lap.invalid_reasons?.length ?? 0) > 0;
           return (
             <button
