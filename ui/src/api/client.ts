@@ -12,8 +12,17 @@ import type {
 
 const API_BASE = import.meta.env.VITE_RACELAB_API_BASE_URL ?? "http://127.0.0.1:8000";
 
-/** Default timeout for API requests (10 seconds). */
+/** Default timeout for normal API requests (10 seconds). */
 const REQUEST_TIMEOUT_MS = 10_000;
+
+/** Timeout for telemetry import requests (3 minutes — large .ibt files take time). */
+const IMPORT_TIMEOUT_MS = 180_000;
+
+/** Timeout for track map import requests (1 minute). */
+const MAP_IMPORT_TIMEOUT_MS = 60_000;
+
+/** Timeout for folder scan requests (30 seconds). */
+const SCAN_TIMEOUT_MS = 30_000;
 
 /**
  * Fetch with timeout. Throws if the request does not complete within `ms`.
@@ -30,7 +39,18 @@ async function fetchWithTimeout(url: string, init: RequestInit, ms: number = REQ
   }
 }
 
-async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * Build a timeout error message. For the default timeout, mention the backend.
+ * For longer timeouts (imports), mention the operation-specific message.
+ */
+function timeoutErrorMessage(ms: number, label: string): string {
+  if (ms === REQUEST_TIMEOUT_MS) {
+    return `Request timed out. Is the backend running at ${API_BASE}?`;
+  }
+  return `${label} timed out after ${(ms / 1000).toFixed(0)} seconds. The backend may still be processing or the file may be too large or corrupt.`;
+}
+
+async function requestJson<T>(path: string, init?: RequestInit, timeoutMs: number = REQUEST_TIMEOUT_MS, timeoutLabel: string = "Request"): Promise<T> {
   let response: Response;
   try {
     response = await fetchWithTimeout(`${API_BASE}${path}`, {
@@ -39,10 +59,10 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
         ...(init?.headers ?? {}),
       },
       ...init,
-    });
+    }, timeoutMs);
   } catch (err: unknown) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error(`Request timed out. Is the backend running at ${API_BASE}?`);
+      throw new Error(timeoutErrorMessage(timeoutMs, timeoutLabel));
     }
     throw new Error(`Network error: ${(err as Error).message ?? "Unknown error"}`);
   }
@@ -53,6 +73,21 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+/** Like requestJson but with a longer timeout for import operations. */
+async function importJson<T>(path: string, init?: RequestInit): Promise<T> {
+  return requestJson<T>(path, init, IMPORT_TIMEOUT_MS, "Telemetry import");
+}
+
+/** Like requestJson but with a medium timeout for map import operations. */
+async function mapImportJson<T>(path: string, init?: RequestInit): Promise<T> {
+  return requestJson<T>(path, init, MAP_IMPORT_TIMEOUT_MS, "Track map import");
+}
+
+/** Like requestJson but with a scan timeout for folder scan operations. */
+async function scanJson<T>(path: string, init?: RequestInit): Promise<T> {
+  return requestJson<T>(path, init, SCAN_TIMEOUT_MS, "Folder scan");
+}
+
 export function fetchRunList(): Promise<RunListItem[]> {
   return requestJson<RunListItem[]>("/api/runs");
 }
@@ -60,21 +95,26 @@ export function fetchRunList(): Promise<RunListItem[]> {
 export function importIbtFile(file: File): Promise<ImportIbtResponse> {
   const form = new FormData();
   form.append("file", file);
-  return fetch(`${API_BASE}/api/imports/ibt`, {
+  return fetchWithTimeout(`${API_BASE}/api/imports/ibt`, {
     method: "POST",
     body: form,
-  }).then(async (response) => {
+  }, IMPORT_TIMEOUT_MS).then(async (response) => {
     if (!response.ok) {
       const text = await response.text();
       throw new Error(text || `Import failed: ${response.status}`);
     }
     return response.json() as Promise<ImportIbtResponse>;
+  }).catch((err: unknown) => {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(timeoutErrorMessage(IMPORT_TIMEOUT_MS, "Telemetry import"));
+    }
+    throw err;
   });
 }
 
 /** Import an .ibt file from a local filesystem path (Tauri native picker). */
 export function importIbtFileFromPath(filePath: string): Promise<ImportIbtResponse> {
-  return requestJson<ImportIbtResponse>("/api/imports/ibt", {
+  return importJson<ImportIbtResponse>("/api/imports/ibt", {
     method: "POST",
     body: JSON.stringify({ path: filePath }),
   });
@@ -164,35 +204,34 @@ import type { TrackMap, TrackMapIndexEntry, TrackMapPackage } from "../types/tra
 export function importMt2File(file: File): Promise<TrackMapIndexEntry> {
   const form = new FormData();
   form.append("file", file);
-  return fetch(`${API_BASE}/api/imports/mt2`, {
+  return fetchWithTimeout(`${API_BASE}/api/imports/mt2`, {
     method: "POST",
     body: form,
-  }).then(async (response) => {
+  }, MAP_IMPORT_TIMEOUT_MS).then(async (response) => {
     if (!response.ok) {
       const text = await response.text();
       throw new Error(text || `Import failed: ${response.status}`);
     }
     return response.json() as Promise<TrackMapIndexEntry>;
+  }).catch((err: unknown) => {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(timeoutErrorMessage(MAP_IMPORT_TIMEOUT_MS, "Track map import"));
+    }
+    throw err;
   });
 }
 
 /** Import an .mt2 file from a local filesystem path (Tauri native picker). */
 export function importMt2FileFromPath(filePath: string): Promise<TrackMapIndexEntry> {
-  return fetch(`${API_BASE}/api/imports/mt2`, {
+  return mapImportJson<TrackMapIndexEntry>("/api/imports/mt2", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path: filePath }),
-  }).then(async (response) => {
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `Import failed: ${response.status}`);
-    }
-    return response.json() as Promise<TrackMapIndexEntry>;
   });
 }
 
 export function importMt2Folder(folderPath: string): Promise<{ imported: number; entries: TrackMapIndexEntry[] }> {
-  return requestJson<{ imported: number; entries: TrackMapIndexEntry[] }>("/api/imports/mt2-folder", {
+  return mapImportJson<{ imported: number; entries: TrackMapIndexEntry[] }>("/api/imports/mt2-folder", {
     method: "POST",
     body: JSON.stringify({ folder_path: folderPath }),
   });
@@ -276,7 +315,7 @@ export interface ScanTelemetryFolderResponse {
 
 /** Scan a local folder for .ibt telemetry files (Tauri native only). */
 export function scanTelemetryFolder(folderPath: string): Promise<ScanTelemetryFolderResponse> {
-  return requestJson<ScanTelemetryFolderResponse>("/api/imports/scan-telemetry-folder", {
+  return scanJson<ScanTelemetryFolderResponse>("/api/imports/scan-telemetry-folder", {
     method: "POST",
     body: JSON.stringify({ folder_path: folderPath }),
   });

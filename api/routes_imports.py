@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
+import time
 from pathlib import Path
 
 import aiofiles  # type: ignore[import-untyped]
@@ -12,6 +14,7 @@ from pydantic import BaseModel
 from api.schemas import CacheInfo, ImportIbtRequest, ImportIbtResponse, TrackMapResolution
 from racelab_engine.services.import_service import ImportService, default_data_dir
 
+_log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/imports", tags=["imports"])
 
 IMPORTS_DIR = default_data_dir() / "imports" / "ibt"
@@ -116,7 +119,13 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
     else:
         raise HTTPException(400, "Unsupported Content-Type. Use multipart/form-data or application/json.")
 
+    # ── Import with timing ───────────────────────────────────────
+    _log.info("Starting import: %s", path_or_file)
+    t0 = time.time()
     result, cache_result = ImportService().import_ibt_file(path_or_file)
+    elapsed = time.time() - t0
+    _log.info("Import finished in %.1f s: run_id=%s", elapsed, result.overview.run_id if result.overview else "None")
+
     cache = None
     if cache_result is not None:
         cache = CacheInfo(

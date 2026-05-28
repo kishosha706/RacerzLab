@@ -219,6 +219,11 @@ export function ImportPanel({
 
       {/* ── Progress ── */}
       {importStage && <p className="import-stage">{importStage}</p>}
+      {importing && !importStage && (
+        <p className="import-stage" style={{ color: "#8d9aaa" }}>
+          Importing telemetry… this can take a minute for large .ibt files.
+        </p>
+      )}
       {error && <p className="error-text">{error}</p>}
       {status && <p className="status-text">{status}</p>}
 
