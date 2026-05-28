@@ -24,11 +24,13 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **Persistent Evidence Inspector** — right-side Crew Chief panel with event selection, evidence cards, setup linkage, and next-action buttons
 - **Local SQLite persistence** — imported runs, laps, events, setup snapshots, recommendations, segments, notebook findings, test plans, and RaceLab sessions stored locally
 - **112+ calculated channels** — ride heights, rake, dynamic pressure, tire pressure gain, temp/wear spread, slip ratio, shock velocity/activity/RMS, damper energy, motion g-conversions, platform pitch/roll estimates, kinematic slip angles, dynamic grade, aero load index, drag/scrub suspicion, platform compression, stability scores, rear scrape detection, platform balance classification
+- **Draft detection** — `classify_draft_status()` returning LIKELY_SOLO/POSSIBLE_DRAFT_ASSIST/DRAFT_AFFECTED/UNKNOWN_DRAFT_STATUS using speed/RPM ratio anomalies and segment speed jumps
+- **Signal smoothing helpers** — Savitzky-Golay 5-point and centered SMA smoothing (opt-in, pure Python, zero-phase)
 - **Vehicle Dynamics Engine** — 6 physics modules: aero coefficients, tire dynamics (slip angles, understeer gradient), vehicle dynamics (weight transfer, brake energy), geometry (pitch/roll with motion ratios), estimate confidence, physics inputs
 - **Vectorized Analysis Pipeline** — parallel Polars path (opt-in via `RACELAB_ANALYSIS_ENGINE` env var) with 26× speedup at 10k rows, 111 core channels, full parity with row path across 38 synthetic tests + real Talladega validation. Row engine remains production default.
 - **Engine Comparison Script** — `scripts/compare_analysis_engines.py` for validating vector vs row path on real data
 - **Extrema-preserving downsampling** — CFS minimums and event peaks never lost in chart views
-- **310+ tests** — unit, integration, parity, benchmarks; fast suite <1s
+- **325+ tests** — unit, integration, parity, benchmarks; fast suite <1s
 
 ## Proxy Disclaimer
 
