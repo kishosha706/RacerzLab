@@ -252,8 +252,8 @@ def compare_row_vs_vectorized(
     missing_only_row = [ch for ch in missing_in_row if ch not in missing_both]
     missing_only_vector = [ch for ch in missing_in_vector if ch not in missing_both]
     pass_fail = (
-        len(missing_only_row) == 0
-        and len(missing_only_vector) == 0
+        not missing_only_row
+        and not missing_only_vector
         and total_mismatches == 0
     )
 
@@ -425,10 +425,7 @@ def normalize_telemetry_frame(
     pl.DataFrame
         DataFrame with all core calculated channels added.
     """
-    if isinstance(data, list):
-        df = pl.DataFrame(data)
-    else:
-        df = data.clone()
+    df = pl.DataFrame(data) if isinstance(data, list) else data.clone()
 
     # ── 1. Alias raw iRacing names to normalised names ──────────
     df = _apply_aliases(df)
@@ -552,11 +549,10 @@ def _apply_aliases(df: pl.DataFrame) -> pl.DataFrame:
     Only renames if the target column does not already exist (avoids
     DuplicateError when the alias was already created by the row path).
     """
-    renames = {
+    if renames := {
         raw: norm for raw, norm in _ALIAS_MAP.items()
         if raw in df.columns and norm not in df.columns
-    }
-    if renames:
+    }:
         df = df.rename(renames)
     return df
 
@@ -1164,8 +1160,7 @@ def _compute_shock_rolling_aggregates(df: pl.DataFrame) -> pl.DataFrame:
     # Row path always produces these (defaults to 0.0 when no shock columns)
     any_corner = any(f"{c}_shock_vel_in_s" in df.columns for c in corners)
     for component in ("shock_velocity_rms", "shock_activity_index", "damper_energy_proxy"):
-        corner_cols = [f"{c}_{component}" for c in corners if f"{c}_{component}" in df.columns]
-        if corner_cols:
+        if corner_cols := [f"{c}_{component}" for c in corners if f"{c}_{component}" in df.columns]:
             avg_expr = pl.mean_horizontal(
                 *[pl.col(col).fill_null(0.0) for col in corner_cols]
             )

@@ -86,7 +86,7 @@ def _upsert_index_entry(entry: dict[str, Any]) -> bool:
 
 def import_mt2_file(path: Path) -> dict[str, Any]:
     """Import a single .mt2 file: copy, parse, cache, index. Returns index entry dict."""
-    if not path.suffix.lower() == ".mt2":
+    if path.suffix.lower() != ".mt2":
         raise ValueError("Unsupported file type. Please select an .mt2 track map file.")
 
     safe_name = _sanitize_filename(path.name)
