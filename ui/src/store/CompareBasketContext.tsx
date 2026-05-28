@@ -8,7 +8,7 @@
  * - validation warnings (different car, track, draft, etc.)
  */
 
-import { createContext, useCallback, useContext, useReducer, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useReducer, type ReactNode } from "react";
 
 export interface BasketItem {
   id: string;
@@ -45,6 +45,22 @@ type BasketAction =
   | { type: "ADD_TO_QUEUE"; item: BasketItem }
   | { type: "REMOVE_FROM_QUEUE"; id: string }
   | { type: "CLEAR_QUEUE" };
+
+const STORAGE_KEY = "racelab_compare_basket";
+
+function loadPersistedState(): CompareBasketState {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved) as CompareBasketState;
+      // Validate shape — if malformed, return empty
+      if (parsed && typeof parsed === "object" && "baseline" in parsed && "test" in parsed) {
+        return parsed;
+      }
+    }
+  } catch { /* ignore corrupt data */ }
+  return { baseline: null, test: null, queue: [] };
+}
 
 const EMPTY: CompareBasketState = { baseline: null, test: null, queue: [] };
 
@@ -92,7 +108,14 @@ type CompareBasketContextValue = {
 const CompareBasketContext = createContext<CompareBasketContextValue | null>(null);
 
 export function CompareBasketProvider({ children }: { children: ReactNode }) {
-  const [basket, dispatch] = useReducer(basketReducer, EMPTY);
+  const [basket, dispatch] = useReducer(basketReducer, undefined, loadPersistedState);
+
+  // Persist to localStorage on every change
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(basket));
+    } catch { /* ignore quota errors */ }
+  }, [basket]);
 
   const setBaseline = useCallback((item: BasketItem) => dispatch({ type: "SET_BASELINE", item }), []);
   const setTest = useCallback((item: BasketItem) => dispatch({ type: "SET_TEST", item }), []);

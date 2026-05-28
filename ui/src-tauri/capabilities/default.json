@@ -1,7 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default RaceLab Garage desktop window with no extra platform permissions.",
+  "description": "Default RaceLab Garage desktop window with dialog permissions for native file picker.",
   "windows": ["main"],
-  "permissions": []
+  "permissions": [
+    "dialog:default"
+  ]
 }

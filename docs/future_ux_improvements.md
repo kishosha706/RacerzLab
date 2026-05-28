@@ -7,16 +7,25 @@ architectural changes beyond a single polish pass.
 
 ## Native Tauri File Dialogs
 
-**Status:** Not implemented. Browser file input is used.
+**Status:** Partially implemented. `tauri-plugin-dialog` is installed and
+registered. `ui/src/utils/tauriImport.ts` provides `pickTelemetryFile()`,
+`pickTrackMapFile()`, and `pickTelemetryFolder()` helpers with browser
+fallback detection via `isTauri()`.
 
-**Future work:**
-- Native file picker via Tauri dialog API
-- Telemetry folder scanner (Documents/iRacing/telemetry)
-- Remember last import folder
+**What's done:**
+- `tauri-plugin-dialog` added to Cargo.toml and registered in lib.rs
+- Dialog permission added to capabilities
+- `@tauri-apps/plugin-dialog` npm package installed
+- `ui/src/utils/tauriImport.ts` — native file/folder picker helpers
+- `ui/src/utils/env.ts` — `isTauri()` / `isBrowser()` detection
+- Browser file input fallback preserved
+
+**Still needed:**
+- Wire `pickTelemetryFile()` into the import flow in App.tsx
+- Wire `pickTelemetryFolder()` into a folder scanner workflow
+- Remember last import folder in localStorage
 - Drag-and-drop support
-
-**Current import flow:** `App.tsx` uses a hidden `<input type="file">` with
-`.ibt,.sto,.mt2` accept filter. This works in both browser and Tauri webview.
+- Documents/iRacing/telemetry default scan path
 
 ---
 
@@ -24,10 +33,42 @@ architectural changes beyond a single polish pass.
 
 **Status:** Not implemented. Units are hardcoded in `channelMeta.ts`.
 
-**Future design:**
-- `UnitSystemContext` with values: `"imperial" | "metric" | "mixed"`
-- Default: `"mixed"` (mph, in, psi, °F for iRacing defaults)
-- All formatting goes through `channelFormat.ts` which reads the context
+**Design scaffolding:**
+
+```typescript
+export type UnitSystem = "motorsport_default" | "imperial" | "metric";
+
+export interface UnitConversion {
+  channel: string;
+  toMotorsport: (v: number) => number;
+  toImperial: (v: number) => number;
+  toMetric: (v: number) => number;
+  motorsportUnit: string;
+  imperialUnit: string;
+  metricUnit: string;
+}
+```
+
+**Conversion candidates (safe display-only):**
+
+| Dimension | Motorsport Default | Imperial | Metric |
+|---|---|---|---|
+| Length (ride height) | mm | in | mm |
+| Length (distance) | ft | ft | m |
+| Speed | mph | mph | km/h |
+| Pressure (tire) | psi | psi | kPa |
+| Temperature | °F | °F | °C |
+| Force | N | N | N |
+
+**Design helper signatures (not yet implemented):**
+
+```typescript
+// Convert a channel value for display only
+function convertChannelValue(channel: string, value: number, target: UnitSystem): number;
+
+// Get the display unit for a channel in the target system
+function getDisplayUnit(channel: string, target: UnitSystem): string;
+```
 
 **Files that would need conversion:**
 - `ui/src/utils/channelMeta.ts` — unit definitions
@@ -39,7 +80,8 @@ architectural changes beyond a single polish pass.
 - `ui/src/components/DidItWorkCard.tsx` — hardcoded "mph", "mm", "psi", "°C"
 
 **Risk:** High — changing displayed telemetry units globally could confuse users
-who are accustomed to iRacing's imperial defaults. Must be opt-in.
+who are accustomed to iRacing's imperial defaults. Must be opt-in with a clear
+toggle in the UI. Do NOT change backend stored units or calculation units.
 
 ---
 
@@ -69,6 +111,39 @@ who are accustomed to iRacing's imperial defaults. Must be opt-in.
 - Clear when run changes
 
 **Risk:** Low, but requires stable zoom state serialization from ECharts.
+
+---
+
+## Ghost Lap / Baseline Overlay
+
+**Status:** Not implemented. Design only.
+
+**Goal:** Show a baseline lap ghost marker on the TrackMap or as a trace overlay
+in the Platform workbench, so the user can visually compare baseline vs test
+at the same normalized track position.
+
+**Design notes:**
+- Ghost marker on TrackMap: show baseline event positions alongside test events
+- Trace overlay: overlay baseline trace as a dashed line on test charts
+- Requires reliable sample alignment between runs (lap percentage grid)
+- Warning: raw lap percentage should not be shown in normal UI
+- Performance: ghost traces double the series count — use sparingly
+
+**Disabled until:**
+- Compare sample alignment is proven reliable across all track types
+- Performance impact of double traces is measured
+- UI has a clear "Show Baseline Ghost" toggle
+
+**Implementation sketch:**
+```typescript
+// Future — not implemented
+interface GhostOverlay {
+  enabled: boolean;
+  baselineRunId: string;
+  baselineLap: number;
+  opacity: number; // 0.3–0.7
+}
+```
 
 ---
 
