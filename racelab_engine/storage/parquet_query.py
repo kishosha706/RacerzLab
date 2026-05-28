@@ -24,7 +24,7 @@ from typing import Any
 _log = logging.getLogger(__name__)
 
 try:
-    import duckdb
+    import duckdb  # type: ignore
     HAS_DUCKDB = True
 except ImportError:
     HAS_DUCKDB = False
