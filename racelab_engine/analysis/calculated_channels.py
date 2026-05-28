@@ -1095,6 +1095,174 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "used_by_recommendations": [],
     },
 
+    # ── g-values ──
+    "lat_accel_g": {
+        "label": "Lateral Accel (g)",
+        "description": "Lateral acceleration in g units.",
+        "formula": "lat_accel / 9.81",
+        "dependencies": ["lat_accel"],
+        "used_by_charts": [DRAG_SCRUB],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+    "long_accel_g": {
+        "label": "Longitudinal Accel (g)",
+        "description": "Longitudinal acceleration in g units.",
+        "formula": "long_accel / 9.81",
+        "dependencies": ["long_accel"],
+        "used_by_charts": [SPEED_RPM_PULL],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+    },
+
+    # ── wheel speed mismatch raw/corrected ──
+    "front_wheel_speed_mismatch_raw": {
+        "label": "Front Wheel Speed Mismatch (raw)",
+        "description": "Raw difference between RF and LF wheel speeds. Indicates steering scrub or inside wheel slip.",
+        "formula": "RFspeed - LFspeed",
+        "dependencies": ["RFspeed", "LFspeed"],
+        "used_by_charts": [TIRES, DRAG_SCRUB],
+        "used_by_events": ["STEERING_SCRUB"],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "rear_wheel_speed_mismatch_raw": {
+        "label": "Rear Wheel Speed Mismatch (raw)",
+        "description": "Raw difference between RR and LR wheel speeds.",
+        "formula": "RRspeed - LRspeed",
+        "dependencies": ["RRspeed", "LRspeed"],
+        "used_by_charts": [TIRES, DRAG_SCRUB],
+        "used_by_events": ["TIRE_SCRUB"],
+        "used_by_recommendations": [GEARING_COMPARISON],
+    },
+    "front_wheel_speed_mismatch_corrected": {
+        "label": "Front Wheel Speed Mismatch (corrected)",
+        "description": "Geometry-corrected front wheel speed mismatch accounting for yaw rate and track width.",
+        "formula": "(RFspeed - LFspeed) - (yaw_rate * front_track_width_m)",
+        "dependencies": ["RFspeed", "LFspeed", "yaw_rate", "front_track_width_m"],
+        "used_by_charts": [TIRES, DRAG_SCRUB],
+        "used_by_events": ["STEERING_SCRUB"],
+        "used_by_recommendations": [LINE_STEERING_REVIEW],
+    },
+    "rear_wheel_speed_mismatch_corrected": {
+        "label": "Rear Wheel Speed Mismatch (corrected)",
+        "description": "Geometry-corrected rear wheel speed mismatch accounting for yaw rate and track width.",
+        "formula": "(RRspeed - LRspeed) - (yaw_rate * rear_track_width_m)",
+        "dependencies": ["RRspeed", "LRspeed", "yaw_rate", "rear_track_width_m"],
+        "used_by_charts": [TIRES, DRAG_SCRUB],
+        "used_by_events": ["TIRE_SCRUB"],
+        "used_by_recommendations": [GEARING_COMPARISON],
+    },
+
+    # ── per-corner shock rolling aggregates ──
+    "lf_shock_velocity_rms": {
+        "label": "LF Shock Velocity RMS",
+        "description": "Rolling RMS of left-front shock velocity. Higher = more platform disturbance at LF corner.",
+        "formula": "rolling sqrt(mean(lf_shock_vel_in_s^2))",
+        "dependencies": ["lf_shock_vel_in_s"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "rf_shock_velocity_rms": {
+        "label": "RF Shock Velocity RMS",
+        "description": "Rolling RMS of right-front shock velocity.",
+        "formula": "rolling sqrt(mean(rf_shock_vel_in_s^2))",
+        "dependencies": ["rf_shock_vel_in_s"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "lr_shock_velocity_rms": {
+        "label": "LR Shock Velocity RMS",
+        "description": "Rolling RMS of left-rear shock velocity.",
+        "formula": "rolling sqrt(mean(lr_shock_vel_in_s^2))",
+        "dependencies": ["lr_shock_vel_in_s"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "rr_shock_velocity_rms": {
+        "label": "RR Shock Velocity RMS",
+        "description": "Rolling RMS of right-rear shock velocity.",
+        "formula": "rolling sqrt(mean(rr_shock_vel_in_s^2))",
+        "dependencies": ["rr_shock_vel_in_s"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "lf_shock_activity_index": {
+        "label": "LF Shock Activity Index",
+        "description": "Composite shock activity score for left-front corner from velocity magnitude and peaks.",
+        "formula": "mean(abs(sv)) + max(abs(sv)) * 0.3",
+        "dependencies": ["lf_shock_vel_in_s"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "rf_shock_activity_index": {
+        "label": "RF Shock Activity Index",
+        "description": "Composite shock activity score for right-front corner.",
+        "formula": "mean(abs(sv)) + max(abs(sv)) * 0.3",
+        "dependencies": ["rf_shock_vel_in_s"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "lr_shock_activity_index": {
+        "label": "LR Shock Activity Index",
+        "description": "Composite shock activity score for left-rear corner.",
+        "formula": "mean(abs(sv)) + max(abs(sv)) * 0.3",
+        "dependencies": ["lr_shock_vel_in_s"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "rr_shock_activity_index": {
+        "label": "RR Shock Activity Index",
+        "description": "Composite shock activity score for right-rear corner.",
+        "formula": "mean(abs(sv)) + max(abs(sv)) * 0.3",
+        "dependencies": ["rr_shock_vel_in_s"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "lf_damper_energy_proxy": {
+        "label": "LF Damper Energy Proxy",
+        "description": "ESTIMATE — trailing-window sum of squared LF shock velocities. Proxy for damper energy dissipation.",
+        "formula": "rolling sum(lf_shock_vel_in_s^2)",
+        "dependencies": ["lf_shock_vel_in_s"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "rf_damper_energy_proxy": {
+        "label": "RF Damper Energy Proxy",
+        "description": "ESTIMATE — trailing-window sum of squared RF shock velocities.",
+        "formula": "rolling sum(rf_shock_vel_in_s^2)",
+        "dependencies": ["rf_shock_vel_in_s"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "lr_damper_energy_proxy": {
+        "label": "LR Damper Energy Proxy",
+        "description": "ESTIMATE — trailing-window sum of squared LR shock velocities.",
+        "formula": "rolling sum(lr_shock_vel_in_s^2)",
+        "dependencies": ["lr_shock_vel_in_s"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+    "rr_damper_energy_proxy": {
+        "label": "RR Damper Energy Proxy",
+        "description": "ESTIMATE — trailing-window sum of squared RR shock velocities.",
+        "formula": "rolling sum(rr_shock_vel_in_s^2)",
+        "dependencies": ["rr_shock_vel_in_s"],
+        "used_by_charts": [SHOCKS],
+        "used_by_events": ["SHOCK_ACTIVITY"],
+        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+    },
+
     # ── rear scrape channels ──
     "rear_min_ride_height_mm": {
         "label": "Rear Min Ride Height",
@@ -1604,59 +1772,40 @@ def _compute_rear_scrape(item: dict[str, Any]) -> None:
 
 
 def _compute_platform_balance(item: dict[str, Any]) -> None:
-    """Classify platform balance using front/CFS and rear scrape risk.
-
-    Sets:
-        front_platform_risk_score — alias for cfs_risk_score
-        rear_platform_risk_score — alias for rear_scrape_risk_score
-        whole_car_bottoming_risk — min(front_risk, rear_risk)
-        platform_balance_label — classification string
-        platform_balance_explanation — human-readable explanation
-        rear_scrape_side_label — readable side label
-    """
-    from racelab_engine.analysis.constants import SPLITTER_HIGH_MM
+    """Classify platform balance using front/CFS and rear scrape risk."""
     cfs_risk = _number(item.get("cfs_risk_score"))
     rear_risk = _number(item.get("rear_scrape_risk_score"))
     side_raw = item.get("rear_scrape_side")
 
-    # Aliases
     if cfs_risk is not None:
         _set_number(item, "front_platform_risk_score", cfs_risk)
     if rear_risk is not None:
         _set_number(item, "rear_platform_risk_score", rear_risk)
 
-    # rear_scrape_side_label
     side_map = {-1: "left_rear", 0: "both_rear", 1: "right_rear"}
     if side_raw is not None and isinstance(side_raw, (int, float)):
         item["rear_scrape_side_label"] = side_map.get(int(side_raw))
 
-    # whole_car_bottoming_risk = min(front_risk, rear_risk) when both available
     if cfs_risk is not None and rear_risk is not None:
-        bottoming = min(cfs_risk, rear_risk)
-        _set_number(item, "whole_car_bottoming_risk", bottoming)
+        _set_number(item, "whole_car_bottoming_risk", min(cfs_risk, rear_risk))
 
-    # Platform balance classification
-    # Threshold: risk >= 0.72 (high) is considered elevated
-    ELEVATED_THRESHOLD = 0.72
-    front_elevated = cfs_risk is not None and cfs_risk >= ELEVATED_THRESHOLD
-    rear_elevated = rear_risk is not None and rear_risk >= ELEVATED_THRESHOLD
-
+    ELEVATED = 0.72
     if cfs_risk is None or rear_risk is None:
         item["platform_balance_label"] = "unavailable"
         item["platform_balance_explanation"] = (
             "Insufficient ride-height channels to classify platform balance."
         )
-    elif front_elevated and rear_elevated:
+    elif cfs_risk >= ELEVATED and rear_risk >= ELEVATED:
         item["platform_balance_label"] = "whole_car_bottoming"
         item["platform_balance_explanation"] = (
             "Front and rear are both low — likely whole-car bottoming or ride height too low."
         )
-    elif front_elevated and not rear_elevated:
+    elif cfs_risk >= ELEVATED:
         item["platform_balance_label"] = "front_platform_risk"
         item["platform_balance_explanation"] = (
             "Front/CFS is low while rear platform is safe — likely splitter/front platform risk."
         )
-    elif rear_elevated and not front_elevated:
+    elif rear_risk >= ELEVATED:
         item["platform_balance_label"] = "rear_platform_risk"
         item["platform_balance_explanation"] = (
             "Rear platform is low while front/CFS is safe — likely rear platform contact or rear bottoming."

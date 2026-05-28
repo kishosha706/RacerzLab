@@ -362,6 +362,20 @@ CORE_CHANNELS: set[str] = {
     "shock_velocity_rms",
     "shock_activity_index",
     "damper_energy_proxy",
+    # rear scrape (added after slice 3)
+    "rear_min_ride_height_mm",
+    "rear_min_ride_height_in",
+    "rear_scrape_margin_mm",
+    "rear_scrape_risk_score",
+    "rear_platform_contact_risk",
+    "rear_scrape_side",
+    "rear_scrape_side_label",
+    # platform balance
+    "front_platform_risk_score",
+    "rear_platform_risk_score",
+    "whole_car_bottoming_risk",
+    "platform_balance_label",
+    "platform_balance_explanation",
 }
 
 

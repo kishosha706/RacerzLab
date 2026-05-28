@@ -156,11 +156,13 @@ def build_platform_proxy_estimates(row: Mapping[str, Any], setup: Any | None = N
         ) if rear_min_mm <= threshold), 0.08)
         eps = 0.001
         if abs(lr_mm - rr_mm) < eps:
-            rear_side = "both_rear"
+            rear_side_code = 0.0
         elif lr_mm < rr_mm:
-            rear_side = "left_rear"
+            rear_side_code = -1.0
         else:
-            rear_side = "right_rear"
+            rear_side_code = 1.0
+    else:
+        rear_side_code = None
 
     return {
         "front_load_proxy_n": ProxyEstimate("front_load_proxy_n", front, "N", confidence, assumptions, missing_constants),
@@ -174,5 +176,5 @@ def build_platform_proxy_estimates(row: Mapping[str, Any], setup: Any | None = N
         "rear_min_ride_height_mm": ProxyEstimate("rear_min_ride_height_mm", rear_min_mm, "mm", confidence, assumptions, missing_constants),
         "rear_scrape_risk_score": ProxyEstimate("rear_scrape_risk_score", rear_risk, "score", confidence, assumptions, missing_constants),
         "rear_platform_contact_risk": ProxyEstimate("rear_platform_contact_risk", rear_risk, "score", confidence, assumptions, missing_constants),
-        "rear_scrape_side": ProxyEstimate("rear_scrape_side", rear_side, "label", "medium", assumptions, missing_constants),
+        "rear_scrape_side": ProxyEstimate("rear_scrape_side", rear_side_code, "code", "medium", assumptions, missing_constants),
     }
