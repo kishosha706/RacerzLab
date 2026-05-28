@@ -60,6 +60,38 @@ cd racelab-garage
 - Verify: target zone toggle shows/hides highlighted path segment
 - Verify: warnings displayed for missing GPS/boundaries/banking
 
+## 6b. Laps Workspace — Stint Map
+- Navigate to "Laps" in the nav rail
+- Verify: Stint Shape section shows colored blocks per lap
+- Verify: mode toggles work (Eng Val, Δ Time, Draft, Falloff)
+- Verify: selected lap highlighted with cyan outline
+- Verify: best window outlined
+- Verify: hover shows lap time and tags
+
+## 6c. Laps Workspace — Performance/Trust/Engineering Value
+- Verify: Best 10/20-Lap Avg cards show three badges
+- Verify: Performance badge has tooltip
+- Verify: Trust badge has tooltip
+- Verify: Engineering Value badge has tooltip
+- Verify: relationship label shown (e.g., "Strong clean pace")
+
+## 6d. Laps Workspace — All Sessions / Baselines
+- Click "All Sessions" subview
+- Verify: all imported runs listed with car/track/setup/best-lap
+- Verify: Set as Baseline and Set as Test buttons work
+- Click "Baselines" subview
+- Verify: recommended candidates shown (fastest clean lap, most recent run, best 10-lap EV)
+- Verify: Add as Baseline buttons work
+
+## 6e. Compare Basket
+- Add a lap as Test from Laps table (Gauge icon)
+- Verify: Compare Basket appears at bottom-right
+- Verify: readiness badge shows (ready/caution/not_valid/reference_mode)
+- Verify: warnings displayed for cross-session/draft/missing-setup
+- Verify: Swap and Clear buttons work
+- Click Open Compare
+- Verify: CompareTab opens
+
 ## 7. Platform Workbench — Platform/Rake Preset
 - Navigate to "Platform" in the nav rail
 - Select "Platform" preset from the chart dropdown
@@ -188,6 +220,10 @@ cd racelab-garage
 | Launch | App window, health OK | |
 | Import baseline | Run appears | |
 | Import test | Two runs available | |
+| Laps stint map | Colored blocks render | |
+| Performance/Trust/EV badges | Three badges on Best 10/20 cards | |
+| All Sessions | Runs listed with basket actions | |
+| Compare Basket | Drawer appears, readiness shown | |
 | Platform preset | 5 rows render | |
 | Tires preset | 4 rows render | |
 | Compare verdict | Verdict card visible | |

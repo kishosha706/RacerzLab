@@ -1,6 +1,6 @@
 # RaceLab Garage — MVP Status
 
-**Date:** 2026-05-27
+**Date:** 2026-05-28
 
 ---
 
@@ -35,6 +35,24 @@
 | Vehicle Dynamics Engine | **Complete** | 6 new physics modules: estimate_confidence, physics_inputs, aero_coefficients, vehicle_dynamics, tire_dynamics, geometry. 50 new tests. |
 | Vectorized Analysis Pipeline | **Complete** | Parallel Polars path (opt-in) with 7× speedup at 100k rows. Feature flag: RACELAB_ANALYSIS_ENGINE. |
 | Channel Metadata Audit | **Complete** | 44 missing metadata entries added, formulas verified against actual code, dependencies corrected. |
+| Pace Quality Scoring | **Complete** | Three-dimension scoring: Performance, Trust, Engineering Value. Percentage-based consistency/falloff thresholds. Caps for wreck/pit/<60%/draft. Deductions for missing data. |
+| Lap Windows Analysis | **Complete** | Best consecutive windows, fastest individual groups, degradation/falloff analysis. Pace quality integrated into all window summaries. |
+| Lap Scoring Stabilization | **Complete** | classify_pace_trust_relationship() helper. Master assertions doc. Future track-profile scaffolding doc. 63 tests. |
+| Compare Basket | **Complete** | Persistent bottom-right drawer. Baseline/test slots with readiness state. Cross-session support. Validation warnings. Swap/clear/remove/Open Compare. |
+| Laps Stint Map | **Complete** | Colored-block visualization per lap. 4 mode toggles (EV, delta, draft, falloff). Selected lap, best window, draft/invalid markers. |
+| Clickable Evidence Chips | **Complete** | Evidence chips in OverviewTab open Platform/Setup. EvidenceCard clickable with Platform/Map actions. |
+| Setup Diff Toggle | **Complete** | Current Setup / Diff vs Baseline toggle. Baseline → test value pairs with changed/unchanged styling. |
+| Setup Focus Explicit/Inferred | **Complete** | Green Explicit badge ("Provided by event metadata"), amber Inferred badge ("Suggested from event type mapping"). |
+| Trace markArea Event Bands | **Complete** | Translucent event annotation bands on PlatformTab charts, color-coded by severity. |
+| Overview Zero-Event State | **Complete** | "No critical events detected" with Open Laps/Platform/Compare actions. |
+| Raw Channels Pin-to-Workbench | **Complete** | Pin/copy/open-in-platform actions per channel. Pinned channels persist in sessionStorage. |
+| Evidence Inspector Source Stack | **Complete** | Structured sections: Where, What, Evidence, Related Setup, Decision with action buttons. |
+| Workspace Persistence | **Complete** | Last workspace saved to localStorage, restored on app load. |
+| channelMeta confidenceLevel | **Complete** | getChannelConfidenceLevel() helper returning measured/calculated/estimate/proxy. |
+| Cross-Session Compare Basket | **Complete** | date/session_name/has_setup_snapshot fields. Enhanced warnings for cross-session, setup, weather. Readiness state. |
+| All Sessions / Baselines in LapsTab | **Complete** | Subview navigation: Current Run, Windows, All Sessions, Baselines, Basket. All Sessions lists runs with basket actions. Baselines shows recommended candidates. |
+| CrewChiefSummary Controlled Collapse | **Complete** | Fully controlled React component via onToggle, no dual source of truth. |
+| EvidenceInspector Memoization | **Complete** | Data coverage counts wrapped in useMemo. |
 
 ---
 
@@ -42,10 +60,7 @@
 
 | Check | Result |
 |---|---|
-| Backend tests | 236/236 pass |
-| Codebase gap scan | 11 issues found and fixed |
-| QA audit (Session Manager) | 4 issues found and fixed (hoisting bug, hooks ordering, delta sign, unused imports) |
-| Session service tests | 25 new tests added |
+| Backend tests | 489/489 pass |
 | TypeScript | Clean (`npx tsc --noEmit`) |
 | Local-only audit | Pass |
 | Build | `npm run build` successful |
@@ -57,13 +72,16 @@
 | Limitation | Impact |
 |---|---|
 | `.sto` decoding not implemented | Cannot diff setup files directly — relies on SQLite setup snapshots |
-| `.mt2` decoding — partial/centerline only | No GPS, boundaries, banking, or track width. Centerline + markers + sections supported. See `docs/TRACK_MAP_STRATEGY.md` |
+| `.mt2` decoding — partial/centerline only | No GPS, boundaries, banking, or track width. Centerline + markers + sections supported |
 | Aero/downforce are proxy only | No exact force values — relative direction only |
 | Tire wear/falloff confidence | Requires longer runs for reliable conclusions |
 | No native file dialog | Uses browser file input for .ibt import |
 | No cloud sync | All data local only (design choice) |
 | No auto-updater | Manual install required |
 | No setup editor | Cannot modify setups within app |
+| No dynamic track-type weighting | Deferred until more .ibt variety collected |
+| No global unit toggle | Deferred — high risk, needs architecture |
+| No lazy-load for heavy tabs | Tabs use named exports, need default export conversion |
 
 ---
 
@@ -99,10 +117,10 @@ They are preserved as scaffold for future features but should be reviewed before
 
 1. `.sto` setup file decoding for native setup diff
 2. Native Tauri file picker for .ibt/.mt2 import
-3. Shocks preset in Platform Workbench (shock velocity, activity index)
-4. Engine/Pull preset in Platform Workbench (RPM, fuel, manifold)
-5. Setup impact analysis from long-term notebook findings
-6. Track map overlay refinement — event click → cursor sync, delta trace overlays
+3. Dynamic track-type weighting for pace quality scoring
+4. Global unit system toggle (imperial/metric/mixed)
+5. Lazy-load heavy tabs via React.lazy (convert to default exports)
+6. Setup impact analysis from long-term notebook findings
 7. Real-time telemetry streaming from iRacing
 8. Wire vectorized engine as default (after adoption checklist complete)
 9. Frequency-domain shock analysis module
@@ -120,7 +138,10 @@ They are preserved as scaffold for future features but should be reviewed before
 | README accurate | **Yes** |
 | SECURITY.md reflects local-only storage | **Yes** |
 | Engineering contracts documented | **Yes** (`docs/ENGINEERING_CONTRACTS.md`) |
-| Test suite passes | **Yes** (236/236) |
+| Lap scoring master assertions documented | **Yes** (`docs/lap_scoring_master_assertions.md`) |
+| Future track-profile plan documented | **Yes** (`docs/lap_scoring_track_profiles_future.md`) |
+| Future UX improvements documented | **Yes** (`docs/future_ux_improvements.md`) |
+| Test suite passes | **Yes** (489/489) |
 | TypeScript clean | **Yes** |
 | Local-only audit passes | **Yes** |
 | Build succeeds | **Yes** |
@@ -129,4 +150,4 @@ They are preserved as scaffold for future features but should be reviewed before
 
 ---
 
-**MVP Status:** Ready for local desktop use. Session workflow, lap browser, and track identity fully integrated.
+**MVP Status:** Ready for local desktop use. Cross-session workflow, lap scoring, Compare Basket, and stint map fully integrated.
