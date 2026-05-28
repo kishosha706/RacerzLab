@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { SEVERITY_COLOURS, EVENT_SHAPES } from "../constants/ui";
 import type { PlatformEventItem } from "../types/telemetry";
@@ -8,6 +9,7 @@ type EventTimelineProps = {
 };
 
 const CLUSTER_THRESHOLD_PCT = 0.25;
+const PLAYBACK_SPEEDS = [0.5, 1, 2] as const;
 
 /** Assign staggered vertical offsets to events that cluster within threshold. */
 type StaggeredEvent = PlatformEventItem & { staggerOffset: number; _lapPct: number };
@@ -40,19 +42,144 @@ function staggerMarkers(events: PlatformEventItem[]): StaggeredEvent[] {
 }
 
 export function EventTimeline({ platformEvents }: EventTimelineProps) {
-  const { selection, selectEvent, setWorkspace, selectSample } = useTelemetrySelection();
-
+  const { selection, selectEvent, setWorkspace, selectSample, setHover } = useTelemetrySelection();
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState<number>(1);
+  const playbackRef = useRef<number | null>(null);
+  const indexRef = useRef(0);
   const staggered = useMemo(() => staggerMarkers(platformEvents), [platformEvents]);
 
+  // ── Playback logic ───────────────────────────────────────────
+  const sorted = useMemo(
+    () => [...platformEvents].filter((e) => e.lap_pct != null).sort((a, b) => (a.lap_pct ?? 0) - (b.lap_pct ?? 0)),
+    [platformEvents],
+  );
+
+  const stepTo = useCallback((index: number) => {
+    const event = sorted[index];
+    if (!event) return;
+    indexRef.current = index;
+    // Use transient hover for playback movement — don't commit to global state
+    setHover(event.lap_pct ?? null, event.sample_index ?? null);
+  }, [sorted, setHover]);
+
+  const commitEvent = useCallback((index: number) => {
+    const event = sorted[index];
+    if (!event) return;
+    selectEvent(event.event_id, "event_timeline");
+    if (event.sample_index != null) {
+      selectSample(event.sample_index, event.lap_dist_ft ?? undefined, event.lap_pct ?? undefined, "event_timeline");
+    }
+    setWorkspace("platform_trace", "event_timeline");
+  }, [sorted, selectEvent, selectSample, setWorkspace]);
+
+  const togglePlay = useCallback(() => {
+    setPlaying((p) => !p);
+  }, []);
+
+  const stepPrev = useCallback(() => {
+    setPlaying(false);
+    const next = Math.max(0, indexRef.current - 1);
+    commitEvent(next);
+  }, [commitEvent]);
+
+  const stepNext = useCallback(() => {
+    setPlaying(false);
+    const next = Math.min(sorted.length - 1, indexRef.current + 1);
+    commitEvent(next);
+  }, [sorted, commitEvent]);
+
+  // Playback RAF loop
+  useEffect(() => {
+    if (!playing || sorted.length === 0) {
+      if (playbackRef.current != null) {
+        cancelAnimationFrame(playbackRef.current);
+        playbackRef.current = null;
+      }
+      return;
+    }
+
+    let lastTime = performance.now();
+    const intervalMs = 1000 / speed;
+
+    const tick = (now: number) => {
+      if (now - lastTime < intervalMs) {
+        playbackRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      lastTime = now;
+      const next = (indexRef.current + 1) % sorted.length;
+      stepTo(next);
+      if (next === 0) {
+        // Looped — commit the last event and stop
+        commitEvent(sorted.length - 1);
+        setPlaying(false);
+        return;
+      }
+      playbackRef.current = requestAnimationFrame(tick);
+    };
+
+    playbackRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (playbackRef.current != null) cancelAnimationFrame(playbackRef.current);
+    };
+  }, [playing, speed, sorted, stepTo, commitEvent]);
+
+  // Keyboard shortcut: Space to toggle play
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === " " && sorted.length > 0) {
+        e.preventDefault();
+        togglePlay();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [togglePlay, sorted]);
+
   if (platformEvents.length === 0) return null;
+
+  const currentEvent = sorted[indexRef.current];
 
   return (
     <footer className="event-timeline">
       <div className="timeline-header">
         <span className="timeline-label">Lap Storyline</span>
-        <span className="timeline-shortcuts">Esc clear · ←/→ events · L mode</span>
+        <span className="timeline-shortcuts">Esc clear · ←/→ events · L mode · Space play</span>
         <span className="timeline-lap">Lap {selection.selectedLap ?? "—"}</span>
       </div>
+
+      {/* ── Playback controls ── */}
+      <div className="playback-controls">
+        <button className="playback-btn" onClick={stepPrev} title="Previous event" aria-label="Previous event">
+          <SkipBack size={14} />
+        </button>
+        <button className="playback-btn playback-btn-play" onClick={togglePlay} title={playing ? "Pause" : "Play"} aria-label={playing ? "Pause playback" : "Start playback"}>
+          {playing ? <Pause size={14} /> : <Play size={14} />}
+        </button>
+        <button className="playback-btn" onClick={stepNext} title="Next event" aria-label="Next event">
+          <SkipForward size={14} />
+        </button>
+        <div className="playback-speed">
+          {PLAYBACK_SPEEDS.map((s) => (
+            <button
+              key={s}
+              className={`playback-speed-btn${speed === s ? " active" : ""}`}
+              onClick={() => setSpeed(s)}
+              aria-label={`${s}x speed`}
+            >
+              {s}x
+            </button>
+          ))}
+        </div>
+        {currentEvent && (
+          <span className="playback-location" title={currentEvent.title}>
+            {currentEvent.title}
+          </span>
+        )}
+      </div>
+
       <div className="timeline-track">
         {/* percentage markers */}
         {[0, 25, 50, 75, 100].map((pct) => (
@@ -76,6 +203,8 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
               style={{ left: `${left}%`, top: `${event.staggerOffset}px`, color: colour }}
               title={`${event.title} — ${event.severity}`}
               onClick={() => {
+                const idx = sorted.findIndex((e) => e.event_id === event.event_id);
+                if (idx >= 0) indexRef.current = idx;
                 selectEvent(event.event_id, "event_timeline");
                 if (event.sample_index != null) {
                   selectSample(event.sample_index, event.lap_dist_ft ?? undefined, event.lap_pct ?? undefined, "event_timeline");
