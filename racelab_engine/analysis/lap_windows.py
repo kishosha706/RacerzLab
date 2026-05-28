@@ -156,7 +156,7 @@ def compute_fastest_groups(
 
         stats = _compute_window_stats(selected)
         draft_statuses = [_draft_status(l.classification_tags) for l in selected]
-        tags = list(set(t for l in selected for t in l.classification_tags))
+        tags = list({t for l in selected for t in l.classification_tags})
         pq = compute_pace_quality_score(
             window_size=size,
             valid_lap_count=len(selected),

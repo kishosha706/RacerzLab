@@ -53,26 +53,18 @@ def logistic_score(value: float, good: float, bad: float, invert: bool = False) 
         return 50.0
 
     if invert:
-        # Lower is better: flip the midpoint logic
-        midpoint = (good + bad) / 2
-        # Steepness: wider range = gentler curve
-        steepness = 10.0 / max(0.1, abs(bad - good))
-        raw = 1.0 / (1.0 + math.exp(steepness * (value - midpoint)))
-        # Scale to 0-100, but good side should be high
+        # Lower is better
         if value <= good:
-            return clamp_score(100 - (value / max(0.01, good)) * 15)  # Near-perfect at good
+            return clamp_score(100 - (value / max(0.01, good)) * 15)
         if value >= bad:
-            return clamp_score((max(0, bad * 2 - value) / max(0.01, bad)) * 15)  # Near-zero at bad
-        # In between: logistic transition
+            return clamp_score((max(0, bad * 2 - value) / max(0.01, bad)) * 15)
         return clamp_score(100 * (1.0 - (value - good) / max(0.01, bad - good)))
-    else:
-        # Higher is better
-        if value >= good:
-            return clamp_score(100 - (good / max(0.01, value)) * 5)  # Near-perfect above good
-        if value <= bad:
-            return clamp_score((value / max(0.01, bad)) * 15)  # Near-zero at bad
-        # In between: linear transition
-        return clamp_score(100 * (value - bad) / max(0.01, good - bad))
+    # Higher is better
+    if value >= good:
+        return clamp_score(100 - (good / max(0.01, value)) * 5)
+    if value <= bad:
+        return clamp_score((value / max(0.01, bad)) * 15)
+    return clamp_score(100 * (value - bad) / max(0.01, good - bad))
 
 
 # ── Component scorers ─────────────────────────────────────────
@@ -102,9 +94,7 @@ def score_validity(valid_lap_count: int, window_size: int) -> float:
         return 85.0
     if ratio >= 0.75:
         return 65.0
-    if ratio >= 0.6:
-        return 40.0
-    return 10.0
+    return 40.0 if ratio >= 0.6 else 10.0
 
 
 def score_draft_confidence(draft_statuses: list[str]) -> float:
@@ -119,7 +109,7 @@ def score_draft_confidence(draft_statuses: list[str]) -> float:
     scores = []
     for status in draft_statuses:
         upper = status.upper()
-        if upper == "LIKELY_SOLO" or upper == "SOLO_CLEAN":
+        if upper in ("LIKELY_SOLO", "SOLO_CLEAN"):
             scores.append(100.0)
         elif upper == "UNKNOWN_DRAFT_STATUS":
             scores.append(70.0)
@@ -215,8 +205,8 @@ def compute_deductions(
 
     # Invalid lap deductions
     invalid_count = sum(
-        1 for t in upper_tags
-        if t in ("INVALID_SPEED_EVENT", "OUT_LAP", "COOLDOWN", "PIT_ROAD", "WRECK_OR_SPIN")
+        t in ("INVALID_SPEED_EVENT", "OUT_LAP", "COOLDOWN", "PIT_ROAD", "WRECK_OR_SPIN")
+        for t in upper_tags
     )
     if invalid_count > 0:
         amount = min(25, invalid_count * 8)
