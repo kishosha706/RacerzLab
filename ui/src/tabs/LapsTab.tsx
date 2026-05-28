@@ -24,6 +24,15 @@ function formatDelta(seconds: number | null | undefined, best: number | null | u
   return `+${delta.toFixed(3)}`;
 }
 
+function paceQualityColor(score: number | null | undefined): string {
+  if (score == null) return "#8d9aaa";
+  if (score >= 85) return "#22c55e";
+  if (score >= 70) return "#38bdf8";
+  if (score >= 50) return "#f59e0b";
+  if (score >= 25) return "#f97316";
+  return "#ef4444";
+}
+
 export function LapsTab({ overview }: LapsTabProps) {
   const { selection, selectLap, setWorkspace } = useTelemetrySelection();
   const [windowsData, setWindowsData] = useState<LapWindowsResponse | null>(null);
@@ -90,22 +99,26 @@ export function LapsTab({ overview }: LapsTabProps) {
                 : "—"}
             </strong>
           </div>
-          <div className="metric-card">
-            <span><Gauge size={14} /> Best 10-Lap Avg</span>
-            <strong style={{ color: "#38bdf8" }}>
-              {windowsData.best_windows.find(w => w.window_size === 10)?.best_window?.average_lap_time != null
-                ? formatTime(windowsData.best_windows.find(w => w.window_size === 10)!.best_window!.average_lap_time)
-                : windowsData.total_valid_laps < 10 ? "Need 10 laps" : "—"}
-            </strong>
-          </div>
-          <div className="metric-card">
-            <span><Gauge size={14} /> Best 20-Lap Avg</span>
-            <strong style={{ color: "#38bdf8" }}>
-              {windowsData.best_windows.find(w => w.window_size === 20)?.best_window?.average_lap_time != null
-                ? formatTime(windowsData.best_windows.find(w => w.window_size === 20)!.best_window!.average_lap_time)
-                : windowsData.total_valid_laps < 20 ? "Need 20 laps" : "—"}
-            </strong>
-          </div>
+          {[10, 20].map((size) => {
+            const bw = windowsData.best_windows.find(w => w.window_size === size)?.best_window;
+            const pqScore = bw?.pace_quality_score;
+            const pqLabel = bw?.pace_quality_label;
+            return (
+              <div className="metric-card" key={size} title={pqLabel ? `Pace Quality: ${pqLabel}` : "Pace Quality unavailable"}>
+                <span><Gauge size={14} /> Best {size}-Lap Avg</span>
+                <strong style={{ color: "#38bdf8" }}>
+                  {bw?.average_lap_time != null
+                    ? formatTime(bw.average_lap_time)
+                    : windowsData.total_valid_laps < size ? `Need ${size} laps` : "—"}
+                </strong>
+                {pqScore != null && (
+                  <span style={{ display: "block", fontSize: 10, marginTop: 4, color: paceQualityColor(pqScore) }}>
+                    Pace: {pqScore.toFixed(0)}/100 — {pqLabel}
+                  </span>
+                )}
+              </div>
+            );
+          })}
           {windowsData.degradation && windowsData.degradation.lap_count >= 10 && (
             <div className="metric-card">
               <span><TrendingDown size={14} /> Falloff</span>
@@ -197,7 +210,7 @@ export function LapsTab({ overview }: LapsTabProps) {
                       <td colSpan={8} style={{ padding: "8px 16px", background: "#0a0d14" }}>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8 }}>
                           <div><span className="muted">Max Speed</span><br /><ValueDisplay value={lap.max_speed_mph} unit="mph" precision={1} /></div>
-                          <div><span className="muted">Max Speed</span><br /><ValueDisplay value={lap.max_speed_mph} unit="mph" precision={1} /></div>
+                          <div><span className="muted">Min Splitter</span><br /><ValueDisplay value={lap.min_splitter_mm} unit="mm" precision={1} /></div>
                           <div><span className="muted">Avg Throttle</span><br /><ValueDisplay value={lap.avg_throttle_pct} unit="%" precision={1} /></div>
                           <div><span className="muted">Avg Brake</span><br /><ValueDisplay value={lap.avg_brake_pct} unit="%" precision={1} /></div>
                         </div>

@@ -68,6 +68,9 @@ class LapWindowSummary(BaseModel):
     confidence_score: float = 0.0
     warnings: list[str] = Field(default_factory=list)
     recommendation: Optional[str] = None
+    pace_quality_score: Optional[float] = None
+    pace_quality_label: Optional[str] = None
+    pace_quality_warnings: list[str] = Field(default_factory=list)
 
 
 class LapDegradationSummary(BaseModel):
@@ -111,6 +114,9 @@ class FastestLapGroup(BaseModel):
     slowest_lap_time: Optional[float] = None
     is_available: bool = False
     warning: Optional[str] = None
+    pace_quality_score: Optional[float] = None
+    pace_quality_label: Optional[str] = None
+    pace_quality_warnings: list[str] = Field(default_factory=list)
 
 
 class BestWindowGroup(BaseModel):

@@ -14,6 +14,7 @@ from __future__ import annotations
 import statistics
 from typing import Any
 
+from racelab_engine.analysis.pace_quality import compute_pace_quality_score
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.lap_analysis import (
     BestWindowGroup,
@@ -154,6 +155,17 @@ def compute_fastest_groups(
             continue
 
         stats = _compute_window_stats(selected)
+        draft_statuses = [_draft_status(l.classification_tags) for l in selected]
+        tags = list(set(t for l in selected for t in l.classification_tags))
+        pq = compute_pace_quality_score(
+            window_size=size,
+            valid_lap_count=len(selected),
+            classification_tags=tags,
+            draft_statuses=draft_statuses,
+            lap_time_std_dev=stats["std"],
+            falloff_sec_per_lap=stats["falloff_per_lap"],
+            is_fastest_group=True,
+        )
         groups.append(FastestLapGroup(
             label=f"Fastest {size} Laps",
             lap_count=size,
@@ -162,6 +174,9 @@ def compute_fastest_groups(
             fastest_lap_time=stats["fastest"],
             slowest_lap_time=stats["slowest"],
             is_available=True,
+            pace_quality_score=pq.score,
+            pace_quality_label=pq.label,
+            pace_quality_warnings=pq.warnings,
         ))
 
     return groups
@@ -226,6 +241,16 @@ def compute_best_windows(
                 tags.extend(wl.classification_tags)
             tags = list(set(tags))
 
+            draft_statuses = [_draft_status(wl.classification_tags) for wl in valid_window_laps]
+            pq = compute_pace_quality_score(
+                window_size=size,
+                valid_lap_count=len(valid_window_laps),
+                classification_tags=tags,
+                draft_statuses=draft_statuses,
+                lap_time_std_dev=stats["std"],
+                falloff_sec_per_lap=stats["falloff_per_lap"],
+            )
+
             windows.append(LapWindowSummary(
                 window_id=f"window_{sorted_laps[0].run_id}_{window_laps[0].lap_number}_{window_laps[-1].lap_number}",
                 run_id=sorted_laps[0].run_id,
@@ -244,6 +269,9 @@ def compute_best_windows(
                 excluded_laps=excluded,
                 classification_tags=tags,
                 draft_status_summary=_draft_status(tags),
+                pace_quality_score=pq.score,
+                pace_quality_label=pq.label,
+                pace_quality_warnings=pq.warnings,
             ))
 
         if not windows:
