@@ -600,8 +600,7 @@ class ImportService:
             from racelab_engine.analysis.segments import build_fixed_pct_segments
             from racelab_engine.models.segment import SegmentSummary as ModelSegment
             rows = read_telemetry_rows(run_id, self.data_dir)
-            raw_segments = build_fixed_pct_segments(rows, run_id=run_id)
-            if raw_segments:
+            if raw_segments := build_fixed_pct_segments(rows, run_id=run_id):
                 model_segments = [
                     ModelSegment(**seg.model_dump()) for seg in raw_segments
                 ]
