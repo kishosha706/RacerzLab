@@ -70,8 +70,7 @@ def simple_moving_average(values: list[float], window: int = 5) -> list[float | 
     Returns:
         Smoothed signal with None-padded edges, same length as input.
     """
-    if window < 3:
-        window = 3
+    window = max(3, window)
     if window % 2 == 0:
         window += 1  # Force odd for centered window
 
@@ -104,8 +103,7 @@ def smooth_edges(values: list[float], window: int = 5) -> list[float]:
     Returns:
         List of smoothed values (shorter than input by window-1).
     """
-    if window < 3:
-        window = 3
+    window = max(3, window)
     if window % 2 == 0:
         window += 1
 

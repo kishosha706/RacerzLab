@@ -30,9 +30,7 @@ def _model_json(model: Any) -> str:
 
 
 def _load_json(value: str | None, fallback: Any) -> Any:
-    if not value:
-        return fallback
-    return json.loads(value)
+    return json.loads(value) if value else fallback
 
 
 class RaceLabRepository:
