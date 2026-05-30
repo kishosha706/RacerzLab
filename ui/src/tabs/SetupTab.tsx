@@ -1,249 +1,251 @@
-import { Crosshair, Layers, MapPin } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, Crosshair, Gauge, Layers, MapPin, Sliders, Wrench } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useCompareBasket } from "../store/CompareBasketContext";
-import type { RunOverview } from "../types/telemetry";
+import type { RunOverview, SetupSnapshot } from "../types/telemetry";
 
-type SetupTabProps = {
-  overview: RunOverview;
-};
+type SetupTabProps = { overview: RunOverview };
 
-/** Map event types to related setup keys when backend doesn't provide them. */
-function inferSetupKeys(eventType: string): string[] {
-  const map: Record<string, string[]> = {
-    PLATFORM_LOW: ["lf_ride_height_mm", "rf_ride_height_mm", "lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm", "nose_weight_pct", "cross_weight_pct"],
-    PLATFORM_SCRAPE: ["lf_ride_height_mm", "rf_ride_height_mm", "lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm", "lf_packer_mm", "rf_packer_mm", "nose_weight_pct"],
-    REAR_PLATFORM_LOW: ["lr_ride_height_mm", "rr_ride_height_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm", "rear_arb_rating", "cross_weight_pct"],
-    REAR_PLATFORM_SCRAPE: ["lr_ride_height_mm", "rr_ride_height_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm", "lr_packer_mm", "rr_packer_mm", "cross_weight_pct"],
-    REAR_CONTACT_RISK: ["lr_ride_height_mm", "rr_ride_height_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm"],
-    WHOLE_CAR_BOTTOMING_RISK: ["lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm", "lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm", "nose_weight_pct", "cross_weight_pct"],
-    STEERING_SCRUB: ["steering_ratio", "steering_offset_deg", "front_arb_rating", "lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm", "cross_weight_pct"],
-    TIRE_SCRUB: ["lf_pressure_kpa", "rf_pressure_kpa", "lr_pressure_kpa", "rr_pressure_kpa"],
-    FULL_THROTTLE_SPEED_LOSS: ["rear_end_ratio", "tape_percent", "lf_ride_height_mm", "rf_ride_height_mm"],
-    RPM_FLATTENING: ["rear_end_ratio", "tape_percent"],
-    DRAG_SCRUB_SUSPICION: ["lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm", "rear_end_ratio"],
-    DYNAMIC_PRESSURE_PEAK: ["tape_percent", "lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm"],
-    SHOCK_ACTIVITY: ["lf_rebound_per_click", "rf_rebound_per_click", "lr_rebound_per_click", "rr_rebound_per_click", "lf_compression_per_click", "rf_compression_per_click", "lr_compression_per_click", "rr_compression_per_click"],
-    HIGH_CENTER_RAKE: ["lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm"],
-    PLATFORM_COMPRESSION: ["lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm", "nose_weight_pct", "cross_weight_pct"],
-    MAX_DYNAMIC_PRESSURE: ["tape_percent", "lf_ride_height_mm", "rf_ride_height_mm"],
-  };
-  return map[eventType] ?? [];
+// ── Imperial display conversions ─────────────────────────────────
+const MM_IN   = 1 / 25.4;        // mm → in
+const KPA_PSI = 0.1450377;      // kPa → psi
+const NMM_LB  = 5.710147;       // N/mm → lb/in
+const N_LB    = 0.224808943;    // N → lb (iRacing CornerWeight raw)
+const NM_FTLB = 0.737562;       // Nm → ft-lb
+
+function imp(v: number | null, c: number, d: number): number | null {
+  return v != null ? +(v * c).toFixed(d) : null;
 }
 
-// ── Setup field groups ──────────────────────────────────────
-type SetupField = {
-  key: string;
-  label: string;
-  group: string;
-  getValue: (s: NonNullable<RunOverview["setup_snapshot"]>) => string;
-};
-
-const SETUP_FIELDS: SetupField[] = [
-  // Aero / Body
-  { key: "tape_percent", label: "Tape", group: "Aero / Body", getValue: (s) => s.tape_percent != null ? `${s.tape_percent}%` : "n/a" },
-  // Gearing / Pull
-  { key: "rear_end_ratio", label: "Rear gear", group: "Gearing / Pull", getValue: (s) => s.rear_end_ratio != null ? String(s.rear_end_ratio) : "n/a" },
-  // Front Platform
-  { key: "lf_ride_height_mm", label: "Front ride heights", group: "Front Platform", getValue: (s) => `LF ${s.lf_ride_height_mm ?? "n/a"} / RF ${s.rf_ride_height_mm ?? "n/a"} mm` },
-  // Rear Platform
-  { key: "lr_ride_height_mm", label: "Rear ride heights", group: "Rear Platform", getValue: (s) => `LR ${s.lr_ride_height_mm ?? "n/a"} / RR ${s.rr_ride_height_mm ?? "n/a"} mm` },
-  // Springs / Dampers
-  { key: "lf_front_spring_n_per_mm", label: "Springs", group: "Springs / Dampers", getValue: (s) => `LF ${s.lf_front_spring_n_per_mm ?? "n/a"} / RF ${s.rf_front_spring_n_per_mm ?? "n/a"} / LR ${s.lr_rear_spring_n_per_mm ?? "n/a"} / RR ${s.rr_rear_spring_n_per_mm ?? "n/a"}` },
-  // Steering / Geometry
-  { key: "steering_ratio", label: "Steering", group: "Steering / Geometry", getValue: (s) => `${s.steering_ratio ?? "n/a"} / ${s.steering_offset_deg ?? "n/a"} deg` },
-];
-
-/** Check if a setup key is related to the current focus. */
-function isRelated(key: string, relatedKeys: Set<string>): boolean {
-  return relatedKeys.has(key);
+// ── Data helpers ─────────────────────────────────────────────────
+function evNum(s: SetupSnapshot, k: string): number | null {
+  const v = s.extracted_values?.[k];
+  return (typeof v === "number" && Number.isFinite(v)) ? v : null;
+}
+function evCorner(s: SetupSnapshot, c: string, k: string): number | null {
+  const o = s.extracted_values?.[c];
+  if (typeof o === "object" && o !== null) {
+    const v = (o as Record<string, unknown>)[k];
+    return (typeof v === "number" && Number.isFinite(v)) ? v : null;
+  }
+  return null;
 }
 
-export function SetupTab({ overview }: SetupTabProps) {
-  const setup = overview.setup_snapshot;
-  const { selection, setWorkspace } = useTelemetrySelection();
-
-  // Resolve selected event for display
-  const selectedEvent = useMemo(() => {
-    if (!selection.selectedEventId) return null;
-    return overview.events.find((e) => e.event_id === selection.selectedEventId) ?? null;
-  }, [selection.selectedEventId, overview.events]);
-
-  // Resolve related setup keys from selected event
-  const relatedSetupKeys = useMemo(() => {
-    if (!selectedEvent) return new Set<string>();
-    const keys = (selectedEvent.related_setup_keys?.length ?? 0) > 0
-      ? selectedEvent.related_setup_keys
-      : inferSetupKeys(selectedEvent.event_type);
-    return new Set(keys);
-  }, [selectedEvent]);
-
-  const hasFocus = relatedSetupKeys.size > 0;
-
-  // Selected event name for display
-  const selectedEventName = useMemo(() => {
-    if (!selectedEvent) return null;
-    return selectedEvent.event_subtype ?? selectedEvent.event_type.replace(/_/g, " ");
-  }, [selectedEvent]);
-
-  // Check if keys are from backend or inferred
-  const isInferred = useMemo(() => {
-    if (!selectedEvent) return false;
-    return (selectedEvent.related_setup_keys?.length ?? 0) === 0;
-  }, [selectedEvent]);
-
-  // ── Setup Diff ───────────────────────────────────────────────
-  const { basket } = useCompareBasket();
-  const [diffMode, setDiffMode] = useState<"current" | "diff">("current");
-
-  const hasBaselineSetup = diffMode === "diff"
-    && basket.baseline != null
-    && basket.baseline.has_setup_snapshot;
-
-  const showDiffUnavailable = diffMode === "diff"
-    && (!basket.baseline || !basket.baseline.has_setup_snapshot);
-
-  const diffUnavailableReason = basket.baseline
-    ? "Setup diff unavailable — baseline setup snapshot not found."
-    : "Select a baseline in Compare or Compare Basket to view setup diff.";
-
-  // ── Group fields ─────────────────────────────────────────────
-  const groupedSetupFields = useMemo(() => {
-    const groups = new Map<string, SetupField[]>();
-    for (const field of SETUP_FIELDS) {
-      const g = groups.get(field.group) ?? [];
-      g.push(field);
-      groups.set(field.group, g);
-    }
-    // Sort groups: related group first, then alphabetically
-    const related = hasFocus ? [...relatedSetupKeys] : [];
-    const order = (group: string): number => {
-      const groupKeys = SETUP_FIELDS.filter(f => f.group === group).map(f => f.key);
-      if (related.some(k => groupKeys.includes(k))) return 0;
-      return 1;
-    };
-    return [...groups.entries()].sort((a, b) => order(a[0]) - order(b[0]));
-  }, [hasFocus, relatedSetupKeys]);
-
+// ── Field Row ────────────────────────────────────────────────────
+function Field({ l, v, u, d }: { l: string; v: string | number | null; u?: string; d?: boolean }) {
+  const m = v == null;
   return (
-    <section className="workspace-section setup-grid">
-      <h2>Setup</h2>
-
-      {/* Selected evidence context */}
-      {selectedEvent && (
-        <div className="setup-focus-banner" style={{ marginBottom: 8 }}>
-          <Crosshair size={14} />
-          <span style={{ flex: 1 }}>Evidence: {selectedEventName}</span>
-          {selection.selectedLap != null && (
-            <span className="lap-flag-badge" style={{ fontSize: 9 }}>Lap {selection.selectedLap}</span>
-          )}
-          {selection.selectedLapDistFt != null && (
-            <span className="lap-flag-badge" style={{ fontSize: 9 }}>{selection.selectedLapDistFt.toFixed(0)} ft</span>
-          )}
-          {selection.selectedZoneLabel && (
-            <span className="lap-flag-badge" style={{ fontSize: 9 }}>{selection.selectedZoneLabel}</span>
-          )}
-          <span className="setup-related-tag" style={{
-            position: "static",
-            background: isInferred ? "rgba(245,158,11,0.15)" : "rgba(34,197,94,0.15)",
-            color: isInferred ? "#f59e0b" : "#22c55e",
-          }}>
-            {isInferred ? "Inferred" : "Explicit"}
-          </span>
-          <button className="trackmap-action-btn" onClick={() => setWorkspace("platform_trace", "setup_table")} title="Open Platform">
-            <Layers size={10} /> Platform
-          </button>
-          <button className="trackmap-action-btn" onClick={() => setWorkspace("map", "setup_table")} title="Open Map">
-            <MapPin size={10} /> Map
-          </button>
-        </div>
-      )}
-      {!selectedEvent && (
-        <p className="section-note" style={{ marginBottom: 8, fontSize: 11 }}>
-          Select evidence in Platform, Laps, or Map to show related setup fields.
-        </p>
-      )}
-
-      {/* Setup Diff Toggle */}
-      <div className="setup-diff-toggle">
-        <button
-          className={`setup-diff-toggle-btn ${diffMode === "current" ? "active" : ""}`}
-          onClick={() => setDiffMode("current")}
-        >
-          Current Setup
-        </button>
-        <button
-          className={`setup-diff-toggle-btn ${diffMode === "diff" ? "active" : ""}`}
-          onClick={() => setDiffMode("diff")}
-        >
-          Diff vs Baseline
-        </button>
-      </div>
-
-      {showDiffUnavailable && (
-        <p className="setup-diff-empty">{diffUnavailableReason}</p>
-      )}
-
-      {/* Setup groups */}
-      {groupedSetupFields.map(([groupName, fields]) => {
-        const groupRelated = fields.some(f => isRelated(f.key, relatedSetupKeys));
-        return (
-          <div key={groupName} className={`setup-group ${groupRelated && hasFocus ? "setup-group-related" : ""}`}>
-            <h4 className="setup-group-title">{groupName}</h4>
-            <dl>
-              {fields.map(field => (
-                <SetupFieldRow
-                  key={field.key}
-                  label={field.label}
-                  currentValue={setup ? field.getValue(setup) : "n/a"}
-                  hasFocus={hasFocus}
-                  isRelated={isRelated(field.key, relatedSetupKeys)}
-                  diffMode={diffMode}
-                  baselineValue={hasBaselineSetup ? "—" : undefined}
-                />
-              ))}
-            </dl>
-          </div>
-        );
-      })}
-    </section>
+    <div className={`gr-row${d ? " dim" : ""}${m ? " missing" : ""}`}>
+      <span className="gr-label">{l}</span>
+      <span className="gr-value">{m ? "\u2014" : `${v}${u ? ` ${u}` : ""}`}</span>
+    </div>
   );
 }
 
-/** A single setup field row that supports diff mode. */
-function SetupFieldRow({
-  label,
-  currentValue,
-  hasFocus,
-  isRelated: fieldIsRelated,
-  diffMode,
-  baselineValue,
-}: {
-  label: string;
-  currentValue: string;
-  hasFocus: boolean;
-  isRelated: boolean;
-  diffMode: "current" | "diff";
-  baselineValue?: string;
+// ── Corner Panel ─────────────────────────────────────────────────
+function CornerPanel({ label, corner, setup, glow }: {
+  label: string; corner: string; setup: SetupSnapshot; glow?: boolean;
 }) {
-  const isChanged = diffMode === "diff" && baselineValue !== undefined && currentValue !== baselineValue;
-  const rowClass = hasFocus
-    ? fieldIsRelated ? "setup-field-highlighted" : "setup-field-dimmed"
-    : "";
+  const wt     = imp(evCorner(setup, corner, "corner_weight_kg"), N_LB, 0);
+  const rh     = imp(evCorner(setup, corner, "ride_height_mm"), MM_IN, 3);
+  const collar = imp(evCorner(setup, corner, "shock_collar_offset_mm"), MM_IN, 3);
+  const spring = imp(evCorner(setup, corner, "spring_rate_n_per_mm"), NMM_LB, 0);
+  const psi    = imp(evCorner(setup, corner, "cold_pressure_kpa"), KPA_PSI, 1);
+  const lsC    = evCorner(setup, corner, "ls_compression");
+  const hsC    = evCorner(setup, corner, "hs_compression");
+  const hsCS   = evCorner(setup, corner, "hs_comp_slope");
+  const lsR    = evCorner(setup, corner, "ls_rebound");
+  const hsR    = evCorner(setup, corner, "hs_rebound");
+  const hsRS   = evCorner(setup, corner, "hs_reb_slope");
+  const camber = evCorner(setup, corner, "camber_deg");
+  const caster = evCorner(setup, corner, "caster_deg");
+  const toe    = imp(evCorner(setup, corner, "toe_in_mm"), MM_IN, 4);
 
   return (
-    <div className={`${rowClass} ${diffMode === "diff" ? (isChanged ? "setup-diff-row changed" : "setup-diff-row unchanged") : ""}`}>
-      <dt>{label}</dt>
-      {diffMode === "diff" && baselineValue !== undefined ? (
-        <div className="setup-diff-values">
-          <span className="setup-diff-baseline">{baselineValue}</span>
-          <span className="setup-diff-arrow">→</span>
-          <span className="setup-diff-test">{currentValue}</span>
-        </div>
-      ) : (
-        <dd>{currentValue}</dd>
-      )}
-      {fieldIsRelated && <span className="setup-related-tag">Related</span>}
+    <div className={`gr-corner${glow ? " glow" : ""}`}>
+      <div className="gr-corner-head">{label}</div>
+      <div className="gr-corner-body">
+        <Field l="Corner Weight" v={wt} u="lb" />
+        <Field l="Ride Height" v={rh} u="in" />
+        <Field l="Shock Collar" v={collar} u="in" d />
+        <Field l="Spring Rate" v={spring} u="lb/in" />
+        <div className="gr-sep" />
+        <Field l="Tire PSI" v={psi} u="psi" />
+        <div className="gr-sep" />
+        <Field l="LS Compression" v={lsC} u="clk" d />
+        <Field l="HS Compression" v={hsC} u="clk" d />
+        <Field l="HS Comp Slope" v={hsCS} d />
+        <Field l="LS Rebound" v={lsR} u="clk" d />
+        <Field l="HS Rebound" v={hsR} u="clk" d />
+        <Field l="HS Reb Slope" v={hsRS} d />
+        <div className="gr-sep" />
+        <Field l="Camber" v={camber} u="deg" />
+        <Field l="Caster" v={caster} u="deg" d={corner === "lr" || corner === "rr"} />
+        <Field l="Toe-In" v={toe} u="in" d />
+      </div>
     </div>
+  );
+}
+
+// ── Main ─────────────────────────────────────────────────────────
+export function SetupTab({ overview }: SetupTabProps) {
+  const setup = overview.setup_snapshot;
+  const { selection, setWorkspace } = useTelemetrySelection();
+  const { basket } = useCompareBasket();
+  const [diffMode, setDiffMode] = useState<"current" | "diff">("current");
+  const [arbOpen, setArbOpen] = useState(false);
+
+  const selectedEvent = useMemo(() => {
+    if (!selection.selectedEventId) return null;
+    return overview.events.find(e => e.event_id === selection.selectedEventId) ?? null;
+  }, [selection.selectedEventId, overview.events]);
+
+  const isInferred = selectedEvent ? (selectedEvent.related_setup_keys?.length ?? 0) === 0 : false;
+  const evtName = selectedEvent
+    ? (selectedEvent.event_subtype ?? selectedEvent.event_type.replace(/_/g, " "))
+    : null;
+
+  const focusZone = useMemo(() => {
+    if (!selectedEvent) return "none";
+    const et = selectedEvent.event_type;
+    if (/REAR/.test(et)) return "rear";
+    if (/SPLITTER|PLATFORM/.test(et) && !/REAR/.test(et)) return "front";
+    if (/BOTTOMING|COMPRESSION|RAKE/.test(et)) return "all";
+    if (/STEER|SCRUB|ACKERMANN/.test(et)) return "steering";
+    if (/TIRE|PRESSURE|CAMBER|TEMP/.test(et)) return "tires";
+    if (/SHOCK|DAMPER/.test(et)) return "dampers";
+    return "all";
+  }, [selectedEvent]);
+
+  const showDiffUnavailable = diffMode === "diff" && (!basket.baseline || !basket.baseline.has_setup_snapshot);
+  const diffReason = basket.baseline
+    ? "Setup diff unavailable \u2014 baseline setup snapshot not found."
+    : "Add a baseline run to Compare Basket to view setup diff.";
+
+  const handlePlatform = useCallback(() => setWorkspace("platform_trace", "setup_table"), [setWorkspace]);
+  const handleMap = useCallback(() => setWorkspace("map", "setup_table"), [setWorkspace]);
+
+  if (!setup) {
+    return (
+      <section className="workspace-section">
+        <h2>Setup Board</h2>
+        <div className="gr-empty">
+          <Sliders size={40} style={{ opacity: 0.2 }} />
+          <p style={{ fontSize: 13, color: "#8d9aaa", marginTop: 8 }}>No setup snapshot available.</p>
+          <p className="section-note">Import a run with a CarSetup section to populate the setup board.</p>
+        </div>
+      </section>
+    );
+  }
+
+  const car = overview.session.car_name ?? "Unknown Car";
+  const track = overview.session.track_display_name ?? overview.session.track_name ?? "";
+
+  return (
+    <section className="garage-board">
+      {/* ── Top Bar ── */}
+      <div className="gr-topbar">
+        <div className="gr-topbar-left">
+          <Sliders size={16} />
+          <div>
+            <span className="gr-topbar-name">{setup.setup_name ?? "Unnamed Setup"}</span>
+            <span className="gr-topbar-meta">{car}{track ? ` \u00b7 ${track}` : ""}</span>
+          </div>
+          <span className="gr-tag source">.ibt CarSetup</span>
+        </div>
+        <div className="gr-topbar-right">
+          {selectedEvent && (
+            <div className={`gr-evidence ${focusZone}`}>
+              <Crosshair size={11} />
+              <span>{evtName}</span>
+              {selection.selectedLap && <span className="gr-ev-lap">L{selection.selectedLap}</span>}
+              <span className={`gr-ev-tag ${isInferred ? "inferred" : "explicit"}`}>
+                {isInferred ? "Inferred" : "Explicit"}
+              </span>
+              <button className="gr-icon-btn" onClick={handlePlatform} title="Platform"><Layers size={12} /></button>
+              <button className="gr-icon-btn" onClick={handleMap} title="Map"><MapPin size={12} /></button>
+            </div>
+          )}
+          <div className="gr-diff-tabs">
+            <button className={`gr-diff-tab ${diffMode === "current" ? "active" : ""}`} onClick={() => setDiffMode("current")}>Current</button>
+            <button className={`gr-diff-tab ${diffMode === "diff" ? "active" : ""}`} onClick={() => setDiffMode("diff")}>Diff</button>
+          </div>
+        </div>
+      </div>
+
+      {showDiffUnavailable && <p className="gr-diff-empty">{diffReason}</p>}
+
+      {/* ── Top Row: Controls / Balance / ARB&Diff ── */}
+      <div className="gr-toprow">
+
+        {/* Steering / Controls */}
+        <div className="gr-card">
+          <div className="gr-card-head"><Gauge size={12} /> Steering / Controls</div>
+          <div className="gr-card-body">
+            <Field l="Steering Ratio" v={setup.steering_ratio ?? null} />
+            <Field l="Offset" v={setup.steering_offset_deg ?? null} u="deg" />
+            <Field l="Pinion" v={evNum(setup, "steering_pinion_mm")} u="mm/rev" d />
+            <Field l="Brake Bias" v={setup.front_brake_bias_percent ?? null} u="%" />
+            <Field l="Front Master Cyl" v={evNum(setup, "front_mc_mm")} u="mm" d />
+            <Field l="Rear Master Cyl" v={evNum(setup, "rear_mc_mm")} u="mm" d />
+            <Field l="Tape" v={setup.tape_percent ?? null} u="%" />
+            <Field l="Rear Gear" v={setup.rear_end_ratio ?? null} u=":1" />
+          </div>
+        </div>
+
+        {/* Balance */}
+        <div className="gr-card">
+          <div className="gr-card-head"><Crosshair size={12} /> Balance</div>
+          <div className="gr-card-body">
+            <Field l="Nose Weight" v={setup.nose_weight_percent ?? null} u="%" />
+            <Field l="Cross Weight" v={setup.cross_weight_percent ?? null} u="%" />
+            <Field l="Left Weight" v={
+              (() => {
+                const lf = evCorner(setup, "lf", "corner_weight_kg");
+                const lr = evCorner(setup, "lr", "corner_weight_kg");
+                const rf = evCorner(setup, "rf", "corner_weight_kg");
+                const rr = evCorner(setup, "rr", "corner_weight_kg");
+                if (lf != null && lr != null && rf != null && rr != null) {
+                  const t = lf + rf + lr + rr;
+                  return t > 0 ? +((lf + lr) / t * 100).toFixed(1) : null;
+                }
+                return null;
+              })()
+            } u="%" d />
+            <Field l="Final Drive" v={evNum(setup, "final_drive_ratio")} u=":1" d />
+          </div>
+        </div>
+
+        {/* ARB / Diff */}
+        <div className="gr-card">
+          <div className="gr-card-head" onClick={() => setArbOpen(!arbOpen)} style={{ cursor: "pointer" }}>
+            <Wrench size={12} /> ARB / Diff
+            <span style={{ marginLeft: "auto" }}>{arbOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
+          </div>
+          {arbOpen && (
+            <div className="gr-card-body">
+              <div className="gr-subhead">Front ARB</div>
+              <Field l="Diameter" v={imp(evNum(setup, "front_arb_diameter_mm"), MM_IN, 3)} u="in" />
+              <Field l="Arm Length" v={imp(evNum(setup, "front_arb_arm_mm"), MM_IN, 3)} u="in" d />
+              <Field l="Preload" v={imp(evNum(setup, "front_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" d />
+              <div className="gr-subhead">Rear ARB</div>
+              <Field l="Diameter" v={imp(evNum(setup, "rear_arb_diameter_mm"), MM_IN, 3)} u="in" />
+              <Field l="Arm Length" v={imp(evNum(setup, "rear_arb_arm_mm"), MM_IN, 3)} u="in" d />
+              <Field l="Preload" v={imp(evNum(setup, "rear_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" d />
+              <div className="gr-subhead">Differential</div>
+              <Field l="Preload" v={imp(evNum(setup, "diff_preload_nm"), NM_FTLB, 1)} u="ft-lb" d />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Four Corner Panels — 2×2 ── */}
+      <div className="gr-corners">
+        <CornerPanel label="LEFT FRONT"   corner="lf" setup={setup} glow={focusZone === "front" || focusZone === "all" || focusZone === "steering"} />
+        <CornerPanel label="RIGHT FRONT"  corner="rf" setup={setup} glow={focusZone === "front" || focusZone === "all" || focusZone === "steering"} />
+        <CornerPanel label="LEFT REAR"    corner="lr" setup={setup} glow={focusZone === "rear"  || focusZone === "all"} />
+        <CornerPanel label="RIGHT REAR"   corner="rr" setup={setup} glow={focusZone === "rear"  || focusZone === "all"} />
+      </div>
+    </section>
   );
 }

@@ -158,23 +158,88 @@ def _setup_value_or_label(car_setup: dict[str, Any], section: str, key: str, lab
 
 def _setup_extracted_values(car_setup: dict[str, Any], source: dict[str, Any], yaml_text: str) -> dict[str, Any]:
     front = _setup_chassis_section(car_setup, "Front")
+    left_front = _setup_chassis_section(car_setup, "LeftFront")
+    right_front = _setup_chassis_section(car_setup, "RightFront")
+    left_rear = _setup_chassis_section(car_setup, "LeftRear")
+    right_rear = _setup_chassis_section(car_setup, "RightRear")
+
+    # Tires section — ColdPressure may live here instead of Chassis corner
+    tires = car_setup.get("Tires", {}) if isinstance(car_setup, dict) else {}
+    tires_lf = tires.get("LeftFront", {}) if isinstance(tires, dict) else {}
+    tires_rf = tires.get("RightFront", {}) if isinstance(tires, dict) else {}
+    tires_lr = tires.get("LeftRear", {}) if isinstance(tires, dict) else {}
+    tires_rr = tires.get("RightRear", {}) if isinstance(tires, dict) else {}
+
+    _CP_ALIASES = ("ColdPressure", "ColdPress", "ColdPressureKpa", "cold_pressure")
+
+    def _cold(corner: dict[str, Any], tires_corner: dict[str, Any]) -> float | None:
+        val = _float_from_text(corner.get("ColdPressure"))
+        if val is not None: return val
+        return _float_from_text(
+            next((tires_corner.get(k) for k in _CP_ALIASES if tires_corner.get(k) is not None), None)
+        )
+
+    def _corner(corner: dict[str, Any], tires_corner: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "ride_height_mm": _float_from_text(corner.get("RideHeight")),
+            "corner_weight_kg": _float_from_text(corner.get("CornerWeight")),
+            "spring_rate_n_per_mm": _float_from_text(corner.get("SpringRate")),
+            "cold_pressure_kpa": _cold(corner, tires_corner),
+            "camber_deg": _float_from_text(corner.get("Camber")),
+            "caster_deg": _float_from_text(corner.get("Caster")),
+            "toe_in_mm": _float_from_text(corner.get("ToeIn")),
+            "shock_collar_offset_mm": _float_from_text(corner.get("ShockCollarOffset") or corner.get("CollarOffset")),
+            "ls_compression": _float_from_text(corner.get("LsCompression") or corner.get("LsComp")),
+            "hs_compression": _float_from_text(corner.get("HsCompression") or corner.get("HsComp")),
+            "hs_comp_slope": _float_from_text(corner.get("HsCompSlope") or corner.get("HsCompressionSlope")),
+            "ls_rebound": _float_from_text(corner.get("LsRebound") or corner.get("LsReb")),
+            "hs_rebound": _float_from_text(corner.get("HsRebound") or corner.get("HsReb")),
+            "hs_reb_slope": _float_from_text(corner.get("HsRebSlope") or corner.get("HsReboundSlope")),
+        }
+
+    # ARB section
+    front_arb = _setup_chassis_section(car_setup, "FrontARB")
+    rear_arb = _setup_chassis_section(car_setup, "RearARB")
+    diff = _setup_chassis_section(car_setup, "Differential")
+
     return {
         "raw_source": "CarSetup" if car_setup else "session_yaml",
         "tape_percent": _float_from_text(front.get("TapeConfiguration") or _find_value_by_label(source, ("tape",))),
         "rear_end_ratio": _float_from_text(front.get("RearEndRatio") or _find_value_by_label(source, ("rear", "ratio"))),
-        "lf_ride_height_mm": _float_from_text(_setup_value_or_label(car_setup, "LeftFront", "RideHeight", ("lf", "ride", "height"))),
-        "rf_ride_height_mm": _float_from_text(_setup_value_or_label(car_setup, "RightFront", "RideHeight", ("rf", "ride", "height"))),
-        "lr_ride_height_mm": _float_from_text(_setup_value_or_label(car_setup, "LeftRear", "RideHeight", ("lr", "ride", "height"))),
-        "rr_ride_height_mm": _float_from_text(_setup_value_or_label(car_setup, "RightRear", "RideHeight", ("rr", "ride", "height"))),
-        "lf_front_spring_n_per_mm": _float_from_text(_setup_value_or_label(car_setup, "LeftFront", "SpringRate", ("lf", "spring"))),
-        "rf_front_spring_n_per_mm": _float_from_text(_setup_value_or_label(car_setup, "RightFront", "SpringRate", ("rf", "spring"))),
-        "lr_rear_spring_n_per_mm": _float_from_text(_setup_value_or_label(car_setup, "LeftRear", "SpringRate", ("lr", "spring"))),
-        "rr_rear_spring_n_per_mm": _float_from_text(_setup_value_or_label(car_setup, "RightRear", "SpringRate", ("rr", "spring"))),
+        "front_brake_bias_percent": _float_from_text(front.get("FrontBrakeBias") or _find_value_by_label(source, ("brake", "bias"))),
+        "front_mc_mm": _float_from_text(front.get("FrontMc") or _find_value_by_label(source, ("front", "mc"))),
+        "rear_mc_mm": _float_from_text(front.get("RearMc") or _find_value_by_label(source, ("rear", "mc"))),
+        "steering_pinion_mm": _float_from_text(front.get("SteeringPinion") or _find_value_by_label(source, ("steering", "pinion"))),
         "nose_weight_percent": _float_from_text(front.get("NoseWeight") or _find_value_by_label(source, ("nose", "weight"))),
         "cross_weight_percent": _float_from_text(front.get("CrossWeight") or _find_value_by_label(source, ("cross", "weight"))),
-        "front_brake_bias_percent": _float_from_text(front.get("FrontBrakeBias") or _find_value_by_label(source, ("brake", "bias"))),
         "steering_ratio": _steering_ratio_from_yaml(yaml_text, front.get("SteeringRatio") or _find_value_by_label(source, ("steering", "ratio"))),
         "steering_offset_deg": _float_from_text(front.get("SteeringOffset") or _find_value_by_label(source, ("steering", "offset"))),
+        # Corner blocks
+        "lf": _corner(left_front, tires_lf),
+        "rf": _corner(right_front, tires_rf),
+        "lr": _corner(left_rear, tires_lr),
+        "rr": _corner(right_rear, tires_rr),
+        # Legacy flat keys for backward compatibility
+        "lf_ride_height_mm": _float_from_text(left_front.get("RideHeight") or _find_value_by_label(source, ("lf", "ride", "height"))),
+        "rf_ride_height_mm": _float_from_text(right_front.get("RideHeight") or _find_value_by_label(source, ("rf", "ride", "height"))),
+        "lr_ride_height_mm": _float_from_text(left_rear.get("RideHeight") or _find_value_by_label(source, ("lr", "ride", "height"))),
+        "rr_ride_height_mm": _float_from_text(right_rear.get("RideHeight") or _find_value_by_label(source, ("rr", "ride", "height"))),
+        "lf_front_spring_n_per_mm": _float_from_text(left_front.get("SpringRate") or _find_value_by_label(source, ("lf", "spring"))),
+        "rf_front_spring_n_per_mm": _float_from_text(right_front.get("SpringRate") or _find_value_by_label(source, ("rf", "spring"))),
+        "lr_rear_spring_n_per_mm": _float_from_text(left_rear.get("SpringRate") or _find_value_by_label(source, ("lr", "spring"))),
+        "rr_rear_spring_n_per_mm": _float_from_text(right_rear.get("SpringRate") or _find_value_by_label(source, ("rr", "spring"))),
+        # ARB
+        "front_arb_diameter_mm": _float_from_text(front_arb.get("Diameter") or _find_value_by_label(source, ("front", "arb", "diameter"))),
+        "front_arb_arm_mm": _float_from_text(front_arb.get("Arm") or _find_value_by_label(source, ("front", "arb", "arm"))),
+        "front_arb_preload_nm": _float_from_text(front_arb.get("Preload") or _find_value_by_label(source, ("front", "arb", "preload"))),
+        "front_arb_attach": _float_from_text(front_arb.get("Attach") or _find_value_by_label(source, ("front", "arb", "attach"))),
+        "rear_arb_diameter_mm": _float_from_text(rear_arb.get("Diameter") or _find_value_by_label(source, ("rear", "arb", "diameter"))),
+        "rear_arb_arm_mm": _float_from_text(rear_arb.get("Arm") or _find_value_by_label(source, ("rear", "arb", "arm"))),
+        "rear_arb_preload_nm": _float_from_text(rear_arb.get("Preload") or _find_value_by_label(source, ("rear", "arb", "preload"))),
+        "rear_arb_attach": _float_from_text(rear_arb.get("Attach") or _find_value_by_label(source, ("rear", "arb", "attach"))),
+        # Diff
+        "diff_preload_nm": _float_from_text(diff.get("Preload") or _find_value_by_label(source, ("diff", "preload"))),
+        "final_drive_ratio": _float_from_text(front.get("FinalDriveRatio") or diff.get("FinalDriveRatio") or _find_value_by_label(source, ("final", "drive"))),
     }
 
 

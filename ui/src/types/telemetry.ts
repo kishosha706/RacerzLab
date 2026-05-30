@@ -93,6 +93,7 @@ export type SetupSnapshot = {
   front_brake_bias_percent?: number | null;
   steering_ratio?: string | null;
   steering_offset_deg?: number | null;
+  extracted_values?: Record<string, unknown>;
 };
 
 export type TelemetryEvent = {
