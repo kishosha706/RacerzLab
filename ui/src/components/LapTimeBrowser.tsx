@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle, Clock, Flag, XCircle } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { fetchRunLapList } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { LapSummaryItem, RunLapList } from "../types/session";

@@ -1,30 +1,38 @@
-import { AlertTriangle, ArrowRight, ChevronDown, ChevronRight, Gauge, Shield, ShieldOff, Siren, ToggleLeft, Waves } from "lucide-react";
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Gauge, Lightbulb, Shield, ShieldOff, Siren, ToggleLeft, Waves } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { fetchPlatformEvents } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import {
   CATEGORY_LABELS, CATEGORY_ORDER, SEVERITY_ORDER,
-  SEVERITY_COLOURS, eventWorkspace,
+  SEVERITY_COLOURS, eventWorkspace, eventLabel,
 } from "../constants/ui";
 import type { PlatformEventItem } from "../types/telemetry";
+import type { Workspace } from "../store/types";
 
 type PriorityRailProps = {
   runId: string;
   selectedLap?: number | null;
+  collapsed?: boolean;
+  onToggle?: () => void;
+  platformEvents?: PlatformEventItem[];
 };
 
-export function PriorityRail({ runId, selectedLap }: PriorityRailProps) {
+export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platformEvents: externalEvents }: PriorityRailProps) {
   const { selection, selectEvent, setWorkspace } = useTelemetrySelection();
   const [events, setEvents] = useState<PlatformEventItem[]>([]);
   const [showInvalid, setShowInvalid] = useState(false);
 
   useEffect(() => {
+    if (externalEvents) {
+      setEvents(externalEvents);
+      return;
+    }
     let cancelled = false;
     fetchPlatformEvents(runId, { lap: selectedLap ?? undefined })
       .then((e) => { if (!cancelled) setEvents(e); })
       .catch(() => { if (!cancelled) setEvents([]); });
     return () => { cancelled = true; };
-  }, [runId, selectedLap]);
+  }, [runId, selectedLap, externalEvents]);
 
   const { valid, invalid } = useMemo(() => {
     const v: PlatformEventItem[] = [];
@@ -64,16 +72,67 @@ export function PriorityRail({ runId, selectedLap }: PriorityRailProps) {
     return <Shield size={size} />;
   };
 
+  // ── decision-first suggestion ──────────────────────────────
+  const suggestion = useMemo(() => {
+    if (valid.length === 0) {
+      return { question: "No priority events", action: "Review Overview", workspace: "overview" as const };
+    }
+    if (!selection.selectedEventId) {
+      const top = valid[0];
+      const ws = eventWorkspace(top.event_type) as Workspace;
+      return {
+        question: `What happened at ${top.title}?`,
+        action: `Open ${eventLabel(top.event_type)}`,
+        workspace: ws,
+        eventId: top.event_id,
+      };
+    }
+    const event = valid.find((e) => e.event_id === selection.selectedEventId);
+    if (!event) return { question: "Select an event", action: "Browse events", workspace: "overview" as const };
+    const currentWs = selection.selectedWorkspace;
+    if (currentWs === "platform_trace" || currentWs === "speed_delta" || currentWs === "drag_scrub") {
+      return { question: "Which setup values relate?", action: "Open Setup", workspace: "setup_impact" as const };
+    }
+    if (currentWs === "setup_impact") {
+      return { question: "What to test next?", action: "Create Test Note", workspace: "notebook" as const };
+    }
+    return { question: "Inspect in detail", action: "Open Platform Trace", workspace: "platform_trace" as const };
+  }, [valid, selection]);
+
   return (
-    <aside className="priority-rail">
+    <aside className={`priority-rail${collapsed ? " collapsed" : ""}`}>
+      <button className="rail-collapse-btn" onClick={onToggle} title={collapsed ? "Expand Priority Rail" : "Collapse Priority Rail"}>
+        {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+      </button>
       <header className="rail-header">
         <h3>Priority Stack</h3>
         <span className="rail-count">{valid.length} events</span>
       </header>
 
+      {/* decision-first next-action card */}
+      <div className="rail-next-action">
+        <div className="nbc-body" style={{ flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--muted)", fontSize: "0.68rem", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.5px" }}>
+            <Lightbulb size={12} /> Next Action
+          </span>
+          <span className="nbc-question">{suggestion.question}</span>
+          <button
+            className="nbc-action"
+            onClick={() => {
+              setWorkspace(suggestion.workspace, "manual");
+              if ("eventId" in suggestion && suggestion.eventId) {
+                selectEvent(suggestion.eventId, "priority_stack");
+              }
+            }}
+          >
+            <ArrowRight size={14} /> {suggestion.action}
+          </button>
+        </div>
+      </div>
+
       <div className="rail-list">
         {valid.length === 0 && (
-          <p className="rail-empty">No diagnostic events yet. Import a run to populate the stack.</p>
+          <p className="rail-empty">No priority events for this lap.</p>
         )}
         {valid.map((event, idx) => (
           <button

@@ -94,11 +94,10 @@ def _event_location(row: dict[str, Any], sample_index: int) -> dict[str, Any]:
     lap_raw = row.get("lap")
     lap_val: int | None = None
     if lap_raw is not None and not isinstance(lap_raw, bool):
-        try:
+        from contextlib import suppress
+        with suppress(TypeError, ValueError):
             if not math.isnan(float(lap_raw)):
                 lap_val = int(lap_raw)
-        except (TypeError, ValueError):
-            pass
     return {
         "lap": lap_val,
         "sample_index": sample_index,
@@ -113,19 +112,16 @@ def _make_event_id(event_type: str, row: dict[str, Any], sample_index: int) -> s
     lap_raw = row.get("lap")
     lap: int | str = "x"
     if lap_raw is not None and not isinstance(lap_raw, bool):
-        try:
+        from contextlib import suppress
+        with suppress(TypeError, ValueError):
             if not math.isnan(float(lap_raw)):
                 lap = int(lap_raw)
-        except (TypeError, ValueError):
-            pass
     return f"{event_type.lower()}_lap{lap}_sample{sample_index}"
 
 
 def _cfs_severity(cfs_in: float | None) -> Severity:
     if cfs_in is None:
         return "info"
-    if cfs_in <= 0:
-        return "critical"
     if cfs_in <= 0.118:
         return "critical"
     if cfs_in <= 0.236:
@@ -140,8 +136,6 @@ def _rear_severity(rear_mm: float | None) -> Severity:
     from racelab_engine.analysis.constants import REAR_CRITICAL_MM, REAR_HIGH_MM, REAR_WATCH_MM
     if rear_mm is None:
         return "info"
-    if rear_mm <= 0:
-        return "critical"
     if rear_mm <= REAR_CRITICAL_MM:
         return "critical"
     if rear_mm <= REAR_HIGH_MM:

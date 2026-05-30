@@ -12,6 +12,7 @@ rule_settings:
     - use-builtin-function-next
     - restructure-and-simplify-code
     - use-max-min-default
+    - avoid-using-var
   rule_types:
     - refactoring
     - suggestion

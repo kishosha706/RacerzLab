@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from pydantic import BaseModel
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from api.routes_runs import repository
 from racelab_engine.services.track_map_service import (
@@ -50,9 +51,9 @@ async def import_mt2_endpoint(request: Request) -> dict:
         # Multipart upload path
         form = await request.form()
         raw_file = form.get("file")
-        if raw_file is None or not isinstance(raw_file, UploadFile):
+        if raw_file is None or not isinstance(raw_file, StarletteUploadFile):
             raise HTTPException(400, "Missing file in upload.")
-        file: UploadFile = raw_file
+        file: UploadFile | StarletteUploadFile = raw_file
         if not file.filename or not file.filename.lower().endswith(".mt2"):
             raise HTTPException(400, "Unsupported file type. Please select an .mt2 track map file.")
         safe_name = file.filename
@@ -70,7 +71,12 @@ async def import_mt2_endpoint(request: Request) -> dict:
     if "application/json" in content_type:
         # JSON path import (Tauri native picker)
         body_bytes = await request.body()
-        body = json.loads(body_bytes) if body_bytes else {}
+        try:
+            body = json.loads(body_bytes) if body_bytes else {}
+        except json.JSONDecodeError as exc:
+            raise HTTPException(400, "Malformed JSON body.") from exc
+        if not isinstance(body, dict):
+            raise HTTPException(400, "JSON body must be an object.")
         path_or_file = body.get("path")
         if not path_or_file:
             raise HTTPException(400, "Missing 'path' in JSON body.")
@@ -85,7 +91,7 @@ async def import_mt2_endpoint(request: Request) -> dict:
             raise HTTPException(400, "Path traversal is not allowed.")
         try:
             from racelab_engine.services.track_map_service import import_mt2_file
-            entry = import_mt2_file(resolved)
+            entry = import_mt2_file(Path(resolved))
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
         except Exception as e:

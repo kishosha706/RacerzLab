@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import cast
 
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.testclient import TestClient
+import pytest
 
 from api.main import app
 
@@ -20,7 +22,66 @@ def test_backend_cors_is_local_only() -> None:
     origins: list[str] = cast("list[str]", raw_origins)
 
     assert "*" not in origins
-    assert set(origins) == {"http://127.0.0.1:5173", "http://localhost:5173"}
+    assert set(origins) == {
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+    }
+
+    assert cors.kwargs.get("allow_methods") == ["*"]
+    assert cors.kwargs.get("allow_headers") == ["*"]
+
+
+def test_backend_cors_preflight_accepts_import_headers() -> None:
+    response = TestClient(app).options(
+        "/api/imports/ibt",
+        headers={
+            "Origin": "http://127.0.0.1:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type,x-racerzlab-request-id",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+    assert "POST" in response.headers["access-control-allow-methods"]
+
+
+def test_json_import_routes_reject_malformed_json_cleanly() -> None:
+    client = TestClient(app)
+
+    for route in ("/api/imports/ibt", "/api/imports/mt2"):
+        response = client.post(
+            route,
+            content="{not-json",
+            headers={"Content-Type": "application/json"},
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Malformed JSON body."
+
+
+def test_mt2_json_path_import_passes_path_object(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    mt2_path = tmp_path / "test map.mt2"
+    mt2_path.write_bytes(b"placeholder")
+    seen: dict[str, object] = {}
+
+    def fake_import(path: Path) -> dict:
+        seen["path"] = path
+        return {"map_id": "map-1", "status": "parsed"}
+
+    monkeypatch.setattr("racelab_engine.services.track_map_service.import_mt2_file", fake_import)
+
+    response = TestClient(app).post(
+        "/api/imports/mt2",
+        json={"path": str(mt2_path)},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["map_id"] == "map-1"
+    assert seen["path"] == mt2_path.resolve()
 
 
 def test_backend_scripts_bind_to_loopback_only() -> None:
@@ -39,11 +100,11 @@ def test_tauri_config_uses_local_dev_and_dist_assets() -> None:
     config = json.loads(config_path.read_text(encoding="utf-8"))
     text = config_path.read_text(encoding="utf-8")
 
-    assert config["productName"] == "RaceLab Garage"
+    assert config["productName"] == "RacerZLab"
     assert config["identifier"] == "com.racelab.garage"
     assert config["build"]["devUrl"] == "http://127.0.0.1:5173"
     assert config["build"]["frontendDist"] == "../dist"
-    assert config["app"]["windows"][0]["title"] == "RaceLab Garage"
+    assert config["app"]["windows"][0]["title"] == "RacerZLab"
 
     assert "allowlist" not in text
     assert '"all": true' not in text

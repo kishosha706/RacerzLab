@@ -11,13 +11,19 @@ from racelab_engine.analysis.smoothing import (
 )
 
 
-class TestSavitzkyGolay5Point:
-    def _assert_interior_all(self, values: list[float], expected: float) -> None:
-        smoothed = savitzky_golay_5point(values)
-        assert all(smoothed[i] == expected for i in range(2, len(values) - 2))
+def _assert_interior_all_sg(values: list[float], expected: float) -> None:
+    smoothed = savitzky_golay_5point(values)
+    assert all(smoothed[i] == expected for i in range(2, len(values) - 2))
 
+
+def _assert_interior_all_sma(values: list[float], expected: float) -> None:
+    smoothed = simple_moving_average(values, window=5)
+    assert all(smoothed[i] == expected for i in range(2, len(values) - 2))
+
+
+class TestSavitzkyGolay5Point:
     def test_constant_signal_remains_constant(self) -> None:
-        self._assert_interior_all([5.0] * 20, 5.0)
+        _assert_interior_all_sg([5.0] * 20, 5.0)
 
     def test_edges_are_none(self) -> None:
         smoothed = savitzky_golay_5point([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
@@ -55,11 +61,7 @@ class TestSavitzkyGolay5Point:
 
 class TestSimpleMovingAverage:
     def test_constant_signal(self) -> None:
-        self._assert_interior_all([3.0] * 15, 3.0)
-
-    def _assert_interior_all(self, values: list[float], expected: float) -> None:
-        smoothed = simple_moving_average(values, window=5)
-        assert all(smoothed[i] == expected for i in range(2, len(values) - 2))
+        _assert_interior_all_sma([3.0] * 15, 3.0)
 
     def test_edges_are_none(self) -> None:
         smoothed = simple_moving_average([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], window=5)

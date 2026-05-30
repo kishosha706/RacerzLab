@@ -18,7 +18,7 @@ from pathlib import Path
 
 def diagnose(path_str: str, do_import: bool = False) -> None:
     path = Path(path_str)
-    print(f"=== IBT Decode Diagnostic ===")
+    print("=== IBT Decode Diagnostic ===")
     print(f"  Path: {path}")
     print(f"  Exists: {path.exists()}")
     if not path.exists():
@@ -33,8 +33,7 @@ def diagnose(path_str: str, do_import: bool = False) -> None:
         print("  FAIL: File does not have .ibt extension.")
         return
 
-    # Read first bytes for magic check
-    try:
+    try:  # sourcery skip: extract-duplicate-code
         with open(path, "rb") as f:
             first_bytes = f.read(16)
         print(f"  First 16 bytes (hex): {first_bytes.hex()}")
@@ -130,7 +129,7 @@ def diagnose(path_str: str, do_import: bool = False) -> None:
         t1 = time.time()
         print(f"\n=== Stage 4: Normalized Records ({t1-t0:.3f}s) ===")
         print(f"  Rows: {len(rows):,}")
-        print(f"  Missing channels: {missing if missing else 'None'}")
+        print(f"  Missing channels: {missing or 'None'}")
         if rows:
             first = rows[0]
             print(f"  First row keys: {list(first.keys())[:10]}...")

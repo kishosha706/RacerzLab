@@ -22,13 +22,6 @@ const CLASSIFICATION_COLORS: Record<string, string> = {
   inconclusive: "#8d9aaa",
 };
 
-const SEVERITY_ICONS: Record<string, typeof AlertTriangle> = {
-  critical: AlertTriangle,
-  high: TrendingDown,
-  watch: Minus,
-  info: TrendingUp,
-};
-
 function annotationIcon(kind: string) {
   switch (kind) {
     case "speed_gain": return <TrendingUp size={14} style={{ color: "#22c55e" }} />;
@@ -171,10 +164,10 @@ export function ComparisonInsightPanel({ insights, onOpenDeltaTraces }: Comparis
               {insights.sectors.map((s: SectorDeltaSummary) => (
                 <tr key={s.sector_id}>
                   <td className="cell-label">{s.label}</td>
-                  <td className="cell-delta" style={{ color: (s.avg_speed_delta_mph ?? 0) >= 0 ? "#22c55e" : "#ef4444" }}>
+                  <td className="cell-delta" style={{ color: s.avg_speed_delta_mph != null ? (s.avg_speed_delta_mph >= 0 ? "#22c55e" : "#ef4444") : "#8d9aaa" }}>
                     {formatVal(s.avg_speed_delta_mph, 3)}
                   </td>
-                  <td className="cell-delta" style={{ color: (s.min_cfs_delta_in ?? 0) >= 0 ? "#22c55e" : "#ef4444" }}>
+                  <td className="cell-delta" style={{ color: s.min_cfs_delta_in != null ? (s.min_cfs_delta_in >= 0 ? "#22c55e" : "#ef4444") : "#8d9aaa" }}>
                     {formatVal(s.min_cfs_delta_in, 3)}
                   </td>
                   <td className="cell-val">{formatVal(s.avg_steering_delta_deg, 2)}</td>

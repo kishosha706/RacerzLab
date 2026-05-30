@@ -13,7 +13,7 @@
  * Track maps are applied automatically when a matching local .mt2 is found.
  */
 
-import { Bug, Copy, Folder, HardDrive, MapPin, Monitor, Upload, X } from "lucide-react";
+import { Bug, ChevronDown, ChevronRight, Copy, Folder, HardDrive, MapPin, Monitor, Upload, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { importIbtFileFromPath, importMt2FileFromPath, scanTelemetryFolder } from "../api/client";
 import { isTauri } from "../utils/env";
@@ -81,6 +81,15 @@ export function ImportPanel({
   });
   const [folderImporting, setFolderImporting] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  const [nativeBusy, setNativeBusy] = useState(false);
+  const [nativeStage, setNativeStage] = useState<string | null>(null);
+  const [nativeError, setNativeError] = useState<string | null>(null);
+  const [nativeStatus, setNativeStatus] = useState<string | null>(null);
+
+  const busy = importing || nativeBusy || folderImporting;
+  const displayedStage = nativeStage ?? importStage;
+  const displayedError = nativeError ?? error;
+  const displayedStatus = nativeStatus ?? status;
 
   // ── Native telemetry file picker (primary) ────────────────────
   const handleNativeTelemetryPick = useCallback(async () => {
@@ -96,6 +105,10 @@ export function ImportPanel({
     }
     const fileName = result.filePath.split(/[/\\]/).pop() ?? result.filePath;
     importDebug.log("picker_selected", { source: "native_file", fileName });
+    setNativeBusy(true);
+    setNativeStage("Importing telemetry...");
+    setNativeError(null);
+    setNativeStatus(null);
     try {
       importDebug.start("import_request_started", { source: "native_file", fileName });
       const resp = await importIbtFileFromPath(result.filePath);
@@ -106,13 +119,17 @@ export function ImportPanel({
       });
       // Only add to recent AFTER successful import
       addRecentAfterImport(RECENT_TELEMETRY_KEY, result.filePath, fileName);
+      importDebug.log("recent_file_saved", { source: "native_file", fileName });
+      setNativeStatus(resp.status.message);
       importDebug.log("on_import_complete_called", { runId: resp.run_id });
       onImportComplete(resp.run_id, resp.track_map ?? null);
     } catch (caught) {
       const msg = caught instanceof Error ? caught.message : "Import failed";
       importDebug.error("import_request_finished", msg, { source: "native_file", fileName });
-      // Re-throw so parent can catch and show error
-      throw caught;
+      setNativeError(msg);
+    } finally {
+      setNativeBusy(false);
+      setNativeStage(null);
     }
   }, [onImportComplete]);
 
@@ -130,16 +147,25 @@ export function ImportPanel({
     }
     const fileName = result.filePath.split(/[/\\]/).pop() ?? result.filePath;
     importDebug.log("picker_selected", { source: "native_map", fileName });
+    setNativeBusy(true);
+    setNativeStage("Importing track map...");
+    setNativeError(null);
+    setNativeStatus(null);
     try {
       importDebug.start("import_request_started", { source: "native_map", fileName });
       await importMt2FileFromPath(result.filePath);
       importDebug.success("import_request_finished", { source: "native_map", fileName });
       addRecentAfterImport(RECENT_MAPS_KEY, result.filePath, fileName);
+      importDebug.log("recent_file_saved", { source: "native_map", fileName });
+      setNativeStatus("Track map import complete.");
       onImportComplete(null, null);
     } catch (caught) {
       const msg = caught instanceof Error ? caught.message : "Import failed";
       importDebug.error("import_request_finished", msg, { source: "native_map", fileName });
-      throw caught;
+      setNativeError(msg);
+    } finally {
+      setNativeBusy(false);
+      setNativeStage(null);
     }
   }, [onImportComplete]);
 
@@ -161,16 +187,22 @@ export function ImportPanel({
   const handleScanFolder = useCallback(async () => {
     if (!telemetryFolder) return;
     setFolderImporting(true);
+    setNativeStage("Scanning telemetry folder...");
+    setNativeError(null);
+    setNativeStatus(null);
     importDebug.start("folder_scan_started", { folder: telemetryFolder });
     try {
       const result = await scanTelemetryFolder(telemetryFolder);
       importDebug.log("folder_scan_finished", { count: result.files.length });
       if (result.files.length === 0) {
+        setNativeStatus("No .ibt files found in the selected folder.");
         setFolderImporting(false);
+        setNativeStage(null);
         return;
       }
       const newest = result.files[0];
       importDebug.log("folder_scan_selected", { fileName: newest.name });
+      setNativeStage("Importing telemetry...");
       importDebug.start("import_request_started", { source: "folder_latest", fileName: newest.name });
       const resp = await importIbtFileFromPath(newest.path);
       importDebug.success("import_request_finished", {
@@ -178,13 +210,19 @@ export function ImportPanel({
         run_id: resp.run_id,
       });
       addRecentAfterImport(RECENT_TELEMETRY_KEY, newest.path, newest.name);
+      importDebug.log("recent_file_saved", { source: "folder_latest", fileName: newest.name });
+      setNativeStatus(resp.status.message);
       importDebug.log("on_import_complete_called", { runId: resp.run_id });
       onImportComplete(resp.run_id, resp.track_map ?? null);
     } catch (caught) {
       const msg = caught instanceof Error ? caught.message : "Import failed";
       importDebug.error("import_request_finished", msg, { source: "folder_latest" });
+      setNativeError(msg);
     }
-    finally { setFolderImporting(false); }
+    finally {
+      setFolderImporting(false);
+      setNativeStage(null);
+    }
   }, [telemetryFolder, onImportComplete]);
 
   // ── Click recent file ─────────────────────────────────────────
@@ -202,141 +240,147 @@ export function ImportPanel({
     } catch { /* parent handles error display */ }
   }, [onImportComplete]);
 
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
   return (
-    <div className="import-panel">
-      {/* Mode badge */}
-      <div className="import-mode-badge">
+    <div className="import-panel import-panel-compact">
+      {/* ── Primary: Choose Telemetry File ── */}
+      <div className="import-primary-row">
         {desktop ? (
-          <span><Monitor size={12} /> Desktop Mode</span>
-        ) : (
-          <span><Upload size={12} /> Browser Mode</span>
-        )}
-      </div>
-
-      <p className="import-description">
-        {desktop
-          ? "Choose telemetry directly from your iRacing folder."
-          : "Select an .ibt file to import."}
-      </p>
-
-      {/* ── Desktop native buttons ── */}
-      {desktop && (
-        <div className="import-desktop-actions">
-          <button className="secondary-button" onClick={handleNativeTelemetryPick} disabled={importing} style={{ fontWeight: 600 }}>
+          <button className="secondary-button" onClick={handleNativeTelemetryPick} disabled={busy} style={{ fontWeight: 600 }}>
             <HardDrive size={14} /> Choose Telemetry File
           </button>
-          <button className="secondary-button" onClick={handleNativeFolderPick} disabled={importing}>
-            <Folder size={14} /> Scan Telemetry Folder
-          </button>
-          <button className="secondary-button" onClick={handleNativeMapPick} disabled={importing} style={{ opacity: 0.7 }}>
-            <MapPin size={14} /> Manage Track Maps
-          </button>
-        </div>
-      )}
-      {desktop && (
-        <p className="muted" style={{ fontSize: 11, marginTop: 4 }}>
-          Track maps are applied automatically when a matching local .mt2 is found.
-        </p>
-      )}
+        ) : (
+          <div className="import-row">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".ibt,.sto,.mt2"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const { files } = e.currentTarget;
+                if (files && files.length > 0) onFileSelected(files[0]);
+              }}
+            />
+            <button className="secondary-button" onClick={onImportClick} disabled={busy}>
+              {displayedStage ?? (busy ? "Importing…" : "Import .ibt or .mt2")}
+            </button>
+          </div>
+        )}
 
-      {/* ── Browser fallback ── */}
-      {!desktop && (
-        <div className="import-row">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".ibt,.sto,.mt2"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              const { files } = e.currentTarget;
-              if (files && files.length > 0) onFileSelected(files[0]);
-            }}
-          />
-          <button className="secondary-button" onClick={onImportClick} disabled={importing}>
-            {importStage ?? (importing ? "Importing…" : "Import .ibt or .mt2")}
-          </button>
-        </div>
-      )}
+        {/* ── Advanced toggle ── */}
+        <button
+          className="import-advanced-toggle"
+          onClick={() => setAdvancedOpen(!advancedOpen)}
+          title="Advanced import tools"
+        >
+          {advancedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <span>Advanced</span>
+        </button>
+      </div>
 
-      {/* ── Selected telemetry folder ── */}
-      {desktop && telemetryFolder && (
-        <div className="import-folder-info">
-          <span className="import-folder-path">
-            <Folder size={12} /> {telemetryFolder}
-          </span>
-          <button className="trackmap-action-btn" onClick={handleScanFolder} disabled={folderImporting}>
-            {folderImporting ? "Scanning…" : "Import Latest .ibt"}
-          </button>
-          <span className="muted" style={{ fontSize: 10, marginLeft: 4 }}>
-            (scans for newest .ibt file)
-          </span>
-        </div>
-      )}
-
-      {/* ── Progress ── */}
-      {importStage && <p className="import-stage">{importStage}</p>}
-      {importing && !importStage && (
+      {/* ── Progress / status ── */}
+      {displayedStage && <p className="import-stage">{displayedStage}</p>}
+      {busy && !displayedStage && (
         <p className="import-stage" style={{ color: "#8d9aaa" }}>
           Importing telemetry… this can take a minute for large .ibt files.
         </p>
       )}
-      {error && <p className="error-text">{error}</p>}
-      {status && <p className="status-text">{status}</p>}
-
-      {/* ── Cache info ── */}
-      {status && status.includes("cached") && (
-        <div className="import-cache-info" style={{ fontSize: 10, color: "#8d9aaa", marginTop: 4 }}>
+      {displayedError && <p className="error-text">{displayedError}</p>}
+      {displayedStatus && <p className="status-text">{displayedStatus}</p>}
+      {displayedStatus && displayedStatus.includes("cached") && (
+        <div className="import-cache-info" style={{ fontSize: 10, color: "#8d9aaa", marginTop: 2 }}>
           <span>📦 Cached locally — parquet format</span>
         </div>
       )}
 
-      {/* ── Recent telemetry files ── */}
-      {recentTelemetry.length > 0 && (
-        <div className="import-recent">
-          <h4>Recent Telemetry Files</h4>
-          {recentTelemetry.map((entry) => (
+      {/* ── Advanced Import (collapsible) ── */}
+      {advancedOpen && (
+        <div className="import-advanced-section">
+          {/* ── Recent Telemetry Files ── */}
+          {recentTelemetry.length > 0 && (
+            <div className="import-recent">
+              <h4>Recent Telemetry Files</h4>
+              {recentTelemetry.map((entry) => (
+                <button
+                  key={entry.path}
+                  className="import-recent-item"
+                  onClick={() => handleRecentClick(entry)}
+                  title={entry.path}
+                >
+                  <span className="import-recent-name">{entry.name}</span>
+                  <span className="import-recent-meta">{entry.path} · {entry.importedAt.slice(0, 10)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="import-mode-badge">
+            {desktop ? (
+              <span><Monitor size={12} /> Desktop Mode</span>
+            ) : (
+              <span><Upload size={12} /> Browser Mode</span>
+            )}
+          </div>
+
+          {desktop && (
+            <>
+              <div className="import-desktop-actions">
+                <button className="secondary-button" onClick={handleNativeFolderPick} disabled={busy}>
+                  <Folder size={14} /> Scan Telemetry Folder
+                </button>
+                <button className="secondary-button" onClick={handleNativeMapPick} disabled={busy} style={{ opacity: 0.7 }}>
+                  <MapPin size={14} /> Manage Track Maps
+                </button>
+              </div>
+              <p className="muted" style={{ fontSize: 11, margin: "2px 0 4px" }}>
+                Track maps are applied automatically when a matching local .mt2 is found.
+              </p>
+            </>
+          )}
+
+          {/* ── Selected telemetry folder ── */}
+          {desktop && telemetryFolder && (
+            <div className="import-folder-info">
+              <span className="import-folder-path">
+                <Folder size={12} /> {telemetryFolder}
+              </span>
+              <button className="trackmap-action-btn" onClick={handleScanFolder} disabled={busy}>
+                {folderImporting ? "Scanning…" : "Import Latest .ibt"}
+              </button>
+            </div>
+          )}
+
+          {/* ── Recent track maps ── */}
+          {recentMaps.length > 0 && (
+            <div className="import-recent">
+              <h4>Recent Track Maps</h4>
+              {recentMaps.map((entry) => (
+                <button
+                  key={entry.path}
+                  className="import-recent-item"
+                  onClick={() => handleRecentClick(entry)}
+                  title={entry.path}
+                >
+                  <span className="import-recent-name">{entry.name}</span>
+                  <span className="import-recent-meta">{entry.path} · {entry.importedAt.slice(0, 10)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* ── Import Debug ── */}
+          <div style={{ marginTop: 8, borderTop: "1px solid #1f2937", paddingTop: 6 }}>
             <button
-              key={entry.path}
-              className="import-recent-item"
-              onClick={() => handleRecentClick(entry)}
-              title={entry.path}
+              className="trackmap-action-btn"
+              onClick={() => setShowDebug(!showDebug)}
+              title="Toggle import debug panel"
             >
-              <span className="import-recent-name">{entry.name}</span>
-              <span className="import-recent-meta">{entry.path} · {entry.importedAt.slice(0, 10)}</span>
+              <Bug size={10} /> {showDebug ? "Hide" : "Show"} Import Debug
             </button>
-          ))}
+            {showDebug && <ImportDebugPanel />}
+          </div>
         </div>
       )}
-
-      {/* ── Recent track maps ── */}
-      {recentMaps.length > 0 && (
-        <div className="import-recent">
-          <h4>Recent Track Maps</h4>
-          {recentMaps.map((entry) => (
-            <button
-              key={entry.path}
-              className="import-recent-item"
-              onClick={() => handleRecentClick(entry)}
-              title={entry.path}
-            >
-              <span className="import-recent-name">{entry.name}</span>
-              <span className="import-recent-meta">{entry.path} · {entry.importedAt.slice(0, 10)}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* ── Import Debug Panel ── */}
-      <div style={{ marginTop: 12, borderTop: "1px solid #1f2937", paddingTop: 8 }}>
-        <button
-          className="trackmap-action-btn"
-          onClick={() => setShowDebug(!showDebug)}
-          title="Toggle import debug panel"
-        >
-          <Bug size={10} /> {showDebug ? "Hide" : "Show"} Import Debug
-        </button>
-        {showDebug && <ImportDebugPanel />}
-      </div>
     </div>
   );
 }

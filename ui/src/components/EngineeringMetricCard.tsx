@@ -23,7 +23,7 @@ export function EngineeringMetricCard({
 }: MetricCardProps) {
   const meta = channelName ? getChannelUiMeta(channelName) : null;
   const showProxy = isProxy || meta?.isProxy || false;
-  const showEstimate = meta?.isEstimate && !showProxy;
+  const showEstimate = !showProxy && (meta?.isEstimate || false);
   const disclaimer = meta?.warning ?? undefined;
   const isMissing = value == null || value === "" || (typeof value === "number" && (Number.isNaN(value) || !Number.isFinite(value))) || isMissingValue(value);
   return (
@@ -31,7 +31,8 @@ export function EngineeringMetricCard({
       style={color ? { borderLeftColor: isMissing ? "#475569" : color } : undefined}>
       <div className="metric-card-header">
         <span className="metric-card-title">{title}</span>
-        {showProxy && !isMissing && <ProxyBadge isEstimate={showEstimate} disclaimer={disclaimer} />}
+        {showProxy && !isMissing && <ProxyBadge disclaimer={disclaimer} />}
+        {showEstimate && !isMissing && <ProxyBadge isEstimate disclaimer={disclaimer} />}
       </div>
       <div className="metric-card-value" style={color && !isMissing ? { color } : undefined}>
         <ValueDisplay value={value} missingReason={missingReason} fallback={displayUnavailable(missingReason)} />

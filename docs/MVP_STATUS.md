@@ -60,7 +60,7 @@
 
 | Check | Result |
 |---|---|
-| Backend tests | 489/489 pass |
+| Backend tests | 492/492 pass |
 | TypeScript | Clean (`npx tsc --noEmit`) |
 | Local-only audit | Pass |
 | Build | `npm run build` successful |
@@ -75,13 +75,16 @@
 | `.mt2` decoding — partial/centerline only | No GPS, boundaries, banking, or track width. Centerline + markers + sections supported |
 | Aero/downforce are proxy only | No exact force values — relative direction only |
 | Tire wear/falloff confidence | Requires longer runs for reliable conclusions |
-| No native file dialog | Uses browser file input for .ibt import |
+| No native file dialog | Uses browser file input for .ibt import (Tauri dialogs scaffolded but not fully wired) |
 | No cloud sync | All data local only (design choice) |
 | No auto-updater | Manual install required |
 | No setup editor | Cannot modify setups within app |
 | No dynamic track-type weighting | Deferred until more .ibt variety collected |
 | No global unit toggle | Deferred — high risk, needs architecture |
 | No lazy-load for heavy tabs | Tabs use named exports, need default export conversion |
+| No full playback scrubber | EventTimeline is interactive navigator only, not continuous playback |
+| No degradation trend chart | Falloff logic exists in backend but no visual chart in LapsTab |
+| No cross-session search/filter | Finding specific laps across runs requires manual browsing |
 
 ---
 
@@ -92,9 +95,9 @@ They are preserved as scaffold for future features but should be reviewed before
 
 | File | Status | Notes |
 |---|---|---|
-| `racelab_engine/analysis/lap_classification.py` | Scaffold | `classify_laps()` defined but never called |
-| `racelab_engine/analysis/dynamic_crew_chief.py` | Scaffold | `build_recommendations()` defined but never called |
-| `racelab_engine/analysis/confidence.py` | Scaffold | `AnalyzerStatus` and `apply_confidence_penalty()` defined but never imported |
+| `racelab_engine/analysis/lap_classification.py` | Complete | `classify_laps()` called from `ibt_reader.py` |
+| `racelab_engine/analysis/dynamic_crew_chief.py` | Complete | `build_recommendations()` called from `ibt_reader.py` |
+| `racelab_engine/analysis/confidence.py` | Removed | Dead code — `AnalyzerStatus` and `apply_confidence_penalty()` were never imported |
 | `racelab_engine/analysis/drag_scrub.py` | Complete | Aero-normalized resistance, drag/scrub suspicion index, risk zone detection |
 | `racelab_engine/analysis/vectorized_channels.py` | Complete (opt-in) | Parallel Polars analysis path, 7× speedup at 100k rows, full parity with row path |
 | `racelab_engine/analysis/geometry.py` | Complete | SI-first pitch/roll with motion-ratio hooks |
@@ -115,16 +118,40 @@ They are preserved as scaffold for future features but should be reviewed before
 
 ## Next Recommended Features
 
-1. `.sto` setup file decoding for native setup diff
-2. Native Tauri file picker for .ibt/.mt2 import
-3. Dynamic track-type weighting for pace quality scoring
-4. Global unit system toggle (imperial/metric/mixed)
-5. Lazy-load heavy tabs via React.lazy (convert to default exports)
-6. Setup impact analysis from long-term notebook findings
-7. Real-time telemetry streaming from iRacing
-8. Wire vectorized engine as default (after adoption checklist complete)
-9. Frequency-domain shock analysis module
-10. Aero map regression from telemetry
+### P0 (Must Fix Before Stable)
+1. Full lap playback scrubber (EventTimeline → requestAnimationFrame)
+2. Baseline/Test badges in RunContextBar
+
+### P1 (High-Value Next Sprint)
+3. Enhanced zero-event state in OverviewTab
+4. Richer tooltips for engineering metrics
+5. Degradation trend chart in LapsTab
+6. Clearer warning grouping in CompareTab/DidItWorkCard
+7. Direct "Open Setup with Focus" from EvidenceInspector
+8. Enhanced Test Discipline and Confidence explanations
+
+### P2 (Polish/Quality)
+9. Refined buildWhyText for Overview hero
+10. Interactive event clustering on TrackMapTab
+11. Cross-session search/filter in LapsTab
+12. "Why This Setup Field Matters" tooltips
+13. Notebook finding card redesign
+14. RawChannelsTab filters and metadata drawer
+15. Chart zoom persistence
+
+### P3 (Future/Nice-to-Have)
+16. `.sto` setup file decoding
+17. Native Tauri file picker full wiring
+18. Dynamic track-type weighting
+19. Global unit system toggle
+20. Lazy-load heavy tabs
+21. Ghost lap / baseline overlay
+22. Semantic CSS organization
+23. Setup impact analysis from notebook findings
+24. Real-time telemetry streaming
+25. Wire vectorized engine as default
+26. Frequency-domain shock analysis
+27. Aero map regression from telemetry
 
 ---
 
@@ -141,7 +168,7 @@ They are preserved as scaffold for future features but should be reviewed before
 | Lap scoring master assertions documented | **Yes** (`docs/lap_scoring_master_assertions.md`) |
 | Future track-profile plan documented | **Yes** (`docs/lap_scoring_track_profiles_future.md`) |
 | Future UX improvements documented | **Yes** (`docs/future_ux_improvements.md`) |
-| Test suite passes | **Yes** (489/489) |
+| Test suite passes | **Yes** (492/492) |
 | TypeScript clean | **Yes** |
 | Local-only audit passes | **Yes** |
 | Build succeeds | **Yes** |

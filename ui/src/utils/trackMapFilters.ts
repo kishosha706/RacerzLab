@@ -33,10 +33,12 @@ export const CATEGORY_LAYER_MAP: Record<string, LayerId> = {
   front_platform: "front_scrape",
   rear_platform: "rear_scrape",
   whole_car_bottoming: "whole_car_bottoming",
+  platform_risk: "whole_car_bottoming",
   drag_scrub: "drag_scrub",
   speed_loss: "speed_loss",
   aero_dynamic_pressure: "aero",
   shocks: "shocks",
+  other: "all_events",
 };
 
 export const LAYER_DEFS: { id: LayerId; label: string; group: "map" | "events" | "other" }[] = [
@@ -78,13 +80,24 @@ export function classifyOverlayLayer(o: TrackMapOverlayMarker): LayerId {
   if (o.kind === "insight") return "insights";
   if (o.kind === "tire_shock") return "tires";
   if (o.kind === "notebook_finding") return "notebook";
+  // Check event_type for precise classification
+  if (o.event_type) {
+    const et = o.event_type;
+    if (/MIN_SPLITTER/.test(et)) return "front_scrape";
+    if (/REAR_/.test(et) || /MIN_REAR/.test(et)) return "rear_scrape";
+    if (/BOTTOMING/.test(et) || /PLATFORM_COMPRESSION/.test(et)) return "whole_car_bottoming";
+    if (/DRAG_SCRUB/.test(et)) return "drag_scrub";
+    if (/SPEED_LOSS/.test(et)) return "speed_loss";
+    if (/SHOCK/.test(et)) return "shocks";
+    if (/DYNAMIC_PRESSURE/.test(et) || /RAKE/.test(et)) return "aero";
+  }
   const l = (o.label || "").toLowerCase();
   if (/whole.?car.?bottoming|bottoming/.test(l)) return "whole_car_bottoming";
   if (/front.?scrape|front.?platform.?low|splitter/.test(l)) return "front_scrape";
   if (/rear.?scrape|rear.?platform.?low|rear.?ride.?height|rear.?contact|min.?rear/.test(l)) return "rear_scrape";
   if (/drag|scrub/.test(l)) return "drag_scrub";
   if (/speed.?loss/.test(l)) return "speed_loss";
-  if (/dynamic.?pressure|aero/.test(l)) return "aero";
+  if (/dynamic.?pressure|aero|rake/.test(l)) return "aero";
   if (/shock|damper/.test(l)) return "shocks";
   return "all_events";
 }

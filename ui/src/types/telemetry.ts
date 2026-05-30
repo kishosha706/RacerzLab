@@ -178,6 +178,7 @@ export type ImportIbtResponse = {
     used_fallback: boolean;
   } | null;
   track_map?: TrackMapResolution | null;
+  analysis_status?: string | null;
 };
 
 export type ChannelCatalogItem = {

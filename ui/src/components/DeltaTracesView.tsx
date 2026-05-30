@@ -3,8 +3,7 @@ import type { EChartsOption, SeriesOption } from "echarts";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCompareDeltaTraces } from "../api/client";
-import { PROXY_CHANNELS } from "../constants/ui";
-import type { CompareResponse, DeltaTraceChannel, DeltaTraceResponse } from "../types/compare";
+import type { CompareResponse, DeltaTraceResponse } from "../types/compare";
 
 type DeltaTracesViewProps = {
   baselineRunId: string;
@@ -60,31 +59,6 @@ const DELTA_ROW_COLORS: Record<string, string> = {
   lr_slip_ratio_proxy: "#eab308",
   rr_slip_ratio_proxy: "#f59e0b",
 };
-
-function deltaTooltipFormatter(params: any, channels: Record<string, DeltaTraceChannel>): string {
-  if (!Array.isArray(params) || params.length === 0) return "";
-  const first = params[0];
-  const tuple = Array.isArray(first.value) ? first.value : Array.isArray(first.data) ? first.data : null;
-  const xVal = tuple ? tuple[0] : first.axisValue;
-  const distFt = typeof xVal === "number" && !Number.isNaN(xVal) ? Math.round(xVal).toLocaleString() : "—";
-  let html = `<div style="font-weight:600;margin-bottom:4px">Distance: ${distFt} ft</div>`;
-  for (const p of params) {
-    const pt = Array.isArray(p.value) ? p.value : Array.isArray(p.data) ? p.data : null;
-    const y = pt ? pt[1] : p.value;
-    const chName = p.seriesName;
-    const ch = channels[chName];
-    const unit = ch?.unit ?? "";
-    const unitStr = unit ? ` ${unit}` : "";
-    const tag = ch?.is_proxy ? " (proxy)" : "";
-    const display = y != null && !Number.isNaN(y)
-      ? `${y > 0 ? "+" : ""}${Number(y).toFixed(3)}${unitStr}${tag}`
-      : "—";
-    html += `<div style="display:flex;justify-content:space-between;gap:16px">`
-      + `<span style="color:${p.color}">● ${ch?.label ?? chName}</span>`
-      + `<span>${display}</span></div>`;
-  }
-  return html;
-}
 
 export function DeltaTracesView({ baselineRunId, testRunId, startPct, endPct, result }: DeltaTracesViewProps) {
   const chartNode = useRef<HTMLDivElement | null>(null);
@@ -225,18 +199,13 @@ export function DeltaTracesView({ baselineRunId, testRunId, startPct, endPct, re
     const option: EChartsOption = {
       backgroundColor: "transparent",
       animation: false,
-      tooltip: {
-        trigger: "axis",
-        axisPointer: { type: "cross" },
-        formatter: (params: any) => deltaTooltipFormatter(params, deltaData.channels),
-      },
+      tooltip: { show: false, axisPointer: { type: "cross" } },
       legend: { show: false },
       grid,
       xAxis,
       yAxis,
       graphic,
       dataZoom: [
-        { type: "inside", xAxisIndex: available.map((_, i) => i), filterMode: "none" },
         { type: "slider", xAxisIndex: available.map((_, i) => i), bottom: 4, height: 20, filterMode: "none" },
       ],
       toolbox: { feature: { dataZoom: { yAxisIndex: "none" }, restore: {} }, iconStyle: { borderColor: "#8d9aaa" } },

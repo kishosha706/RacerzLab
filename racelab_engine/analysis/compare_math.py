@@ -76,12 +76,11 @@ def aggregate_platform_stats(
     # Rake stability: if speed improved but rake changed significantly, flag as mixed
     rake_delta = cr.delta_avg
     rake_unstable = rake_delta is not None and abs(rake_delta) > 0.05
+    pv = "mixed"  # default
     if rl == "improved" and rake_unstable:
         pv = "mixed"
     elif cd is not None and cd > 0:
         pv = "better"
-    else:
-        pv = "mixed"
 
     return PlatformComparison(
         cfs_height=cfs, front_avg_rh=fr, rear_avg_rh=rr,
@@ -297,9 +296,7 @@ def aggregate_shock_comparison(
     else:
         shock_label = "similar"
 
-    warnings: list[str] = []
-    if dep.delta_avg is not None and abs(dep.delta_avg) > 0.5:
-        warnings.append("Damper energy proxy changed — platform motion may have shifted.")
+    warnings = ["Damper energy proxy changed — platform motion may have shifted."] if dep.delta_avg is not None and abs(dep.delta_avg) > 0.5 else []
 
     return ShockComparison(
         corners={},

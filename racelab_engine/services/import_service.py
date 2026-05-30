@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 import json
+import logging
 import math
 import os
 import time
@@ -592,13 +593,10 @@ class ImportService:
         self.data_dir = Path(data_dir) if data_dir is not None else default_data_dir()
 
     def import_ibt_file(self, path: str | Path) -> tuple[IBTImportResult, TelemetryCacheResult | None]:
-        import logging
         _log = logging.getLogger(__name__)
-        _timings: dict[str, float] = {}
-
         t0 = time.time()
         result = import_ibt(path)
-        _timings["decode_ibt"] = time.time() - t0
+        _timings: dict[str, float] = {"decode_ibt": time.time() - t0}
 
         if result.overview is None:
             return result, None

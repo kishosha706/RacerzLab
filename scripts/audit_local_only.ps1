@@ -58,11 +58,13 @@ foreach ($path in $RuntimeFiles) {
       $_.FullName -notmatch "\\node_modules\\" -and
       $_.FullName -notmatch "\\dist\\" -and
       $_.FullName -notmatch "\\target\\" -and
+      $_.FullName -notmatch "\\__pycache__\\" -and
+      $_.Extension -ne ".pyc" -and
       $_.Name -ne "audit_local_only.ps1"
     }
   foreach ($file in $files) {
     $text = Get-Content -Raw -LiteralPath $file.FullName
-    if ($text -match "https?://(?!127\.0\.0\.1|localhost|nodejs\.org|rustup\.rs)") {
+    if ($text -match "https?://(?!127\.0\.0\.1|localhost|tauri\.localhost|nodejs\.org|rustup\.rs)") {
       Add-Failure "Potential non-local URL in $($file.FullName)"
     }
     if ($text -match "analytics|sentry|crash reporting|cloud sync|telemetry upload") {

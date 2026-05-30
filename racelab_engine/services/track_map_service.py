@@ -295,12 +295,11 @@ def build_track_map_overlays(
         zone_points = []
         step = (target_zone_end_pct - target_zone_start_pct) / 50.0
         p = target_zone_start_pct
+        from contextlib import suppress
         while p <= target_zone_end_pct:
-            try:
+            with suppress(Exception):
                 pos = interpolate_at_pct(points, p, total_dist)
                 zone_points.append({"x": pos["x_m"], "y": pos["y_m"], "pct": p})
-            except Exception:
-                pass
             p += step
         overlays.append({
             "marker_id": "target_zone",

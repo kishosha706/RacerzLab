@@ -14,7 +14,10 @@ import type {
   WholeCarIndex,
 } from "../types/compare";
 
-const API_BASE = import.meta.env.VITE_RACELAB_API_BASE_URL ?? "http://127.0.0.1:8000";
+const API_BASE =
+  import.meta.env.VITE_RACELAB_API_BASE_URL ??
+  import.meta.env.VITE_API_BASE_URL ??
+  "http://127.0.0.1:8010";
 
 type CompareTabProps = { runs: RunListItem[]; currentRunId: string };
 type SubView =
@@ -142,9 +145,12 @@ function indexStrip(wci: WholeCarIndex) {
   return (
     <div className="wci-strip">
       {items.map(([label, score]) => (
-        <div key={label} className="wci-item">
+        <div key={label} className="wci-item" data-severity={score == null ? "missing" : score >= 70 ? "safe" : score >= 45 ? "watch" : "high"}>
           <span className="wci-label">{label}</span>
           <span className="wci-score">{score != null ? score.toFixed(0) : "—"}</span>
+          <span className="wci-mini-bar" aria-hidden="true">
+            <span style={{ width: `${score != null ? Math.max(0, Math.min(100, score)) : 0}%` }} />
+          </span>
         </div>
       ))}
       {wci.overall_label && <span className="wci-label">{wci.overall_label}</span>}

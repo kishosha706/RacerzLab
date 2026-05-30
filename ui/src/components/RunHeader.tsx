@@ -12,7 +12,7 @@ export function RunHeader({ overview }: RunHeaderProps) {
   return (
     <header className="run-header">
       <div>
-        <p className="eyebrow">RaceLab Garage</p>
+        <p className="eyebrow">RacerZLab</p>
         <h1>{session.track_display_name ?? "No run loaded"}</h1>
       </div>
       <div className="run-header-meta">

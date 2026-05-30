@@ -118,7 +118,7 @@ export function sectionPhaseForLapPct(
 /** Generate a friendly UI label for a section name. */
 export function friendlySectionName(
   section: TrackMapSection,
-  allSections: TrackMapSection[],
+  _allSections: TrackMapSection[],
 ): string {
   const raw = section.name || "";
 

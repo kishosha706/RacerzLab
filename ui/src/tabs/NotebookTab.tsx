@@ -4,7 +4,10 @@ import type { NotebookFinding, SetupMemorySummary, TestPlan } from "../types/com
 import { findingToMarkdown } from "../utils/exportUtils";
 import { VERDICT_COLORS } from "../constants/verdict";
 
-const API_BASE = import.meta.env.VITE_RACELAB_API_BASE_URL ?? "http://127.0.0.1:8000";
+const API_BASE =
+  import.meta.env.VITE_RACELAB_API_BASE_URL ??
+  import.meta.env.VITE_API_BASE_URL ??
+  "http://127.0.0.1:8010";
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { headers: { "Content-Type": "application/json" }, ...init });

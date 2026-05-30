@@ -10,7 +10,10 @@ import type {
   TraceResponse,
 } from "../types/telemetry";
 
-const API_BASE = import.meta.env.VITE_RACELAB_API_BASE_URL ?? "http://127.0.0.1:8000";
+const API_BASE =
+  import.meta.env.VITE_RACELAB_API_BASE_URL ??
+  import.meta.env.VITE_API_BASE_URL ??
+  "http://127.0.0.1:8010";
 
 /** Default timeout for normal API requests (10 seconds). */
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -24,6 +27,9 @@ const MAP_IMPORT_TIMEOUT_MS = 60_000;
 /** Timeout for folder scan requests (30 seconds). */
 const SCAN_TIMEOUT_MS = 30_000;
 
+/** Timeout for full telemetry trace payloads (1 minute). */
+const TRACE_TIMEOUT_MS = 60_000;
+
 /**
  * Fetch with timeout. Throws if the request does not complete within `ms`.
  * The AbortController is cleaned up on completion to avoid memory leaks.
@@ -32,8 +38,7 @@ async function fetchWithTimeout(url: string, init: RequestInit, ms: number = REQ
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
-    return response;
+    return await fetch(url, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
@@ -189,7 +194,12 @@ export function fetchTrace(
   if (options?.downsample != null) params.set("downsample", String(options.downsample));
   if (options?.preserveExtrema != null) params.set("preserve_extrema", String(options.preserveExtrema));
   const suffix = params.toString() ? `?${params.toString()}` : "";
-  return requestJson<TraceResponse>(`/api/runs/${encodeURIComponent(runId)}/trace${suffix}`);
+  return requestJson<TraceResponse>(
+    `/api/runs/${encodeURIComponent(runId)}/trace${suffix}`,
+    undefined,
+    TRACE_TIMEOUT_MS,
+    "Telemetry trace",
+  );
 }
 
 export function fetchPlatformEvents(

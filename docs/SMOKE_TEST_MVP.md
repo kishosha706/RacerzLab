@@ -12,7 +12,7 @@ cd racelab-garage
 .\scripts\start_desktop.ps1
 ```
 - App window opens titled "RaceLab Garage"
-- Backend health check passes at `http://127.0.0.1:8000/api/health`
+- Backend health check passes at `http://127.0.0.1:8010/api/health`
 
 ## 2. Startup Screen
 - Verify: Startup screen appears with "New Session" button

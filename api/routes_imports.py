@@ -12,6 +12,7 @@ import aiofiles  # type: ignore[import-untyped]
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from api.schemas import CacheInfo, ImportIbtRequest, ImportIbtResponse, TrackMapResolution
 from racelab_engine.services.import_service import ImportService, default_data_dir
@@ -25,10 +26,7 @@ os.makedirs(IMPORTS_DIR, exist_ok=True)
 
 def _get_request_id(request: Request) -> str:
     """Get or generate a correlation ID for this request."""
-    req_id = request.headers.get("x-racerzlab-request-id", "")
-    if not req_id:
-        req_id = f"be_{uuid.uuid4().hex[:12]}"
-    return req_id
+    return request.headers.get("x-racerzlab-request-id") or f"be_{uuid.uuid4().hex[:12]}"
 
 
 def _sanitize_filename(name: str) -> str:
@@ -99,9 +97,9 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
         _log.info("[%s] Import mode=%s content_type=%s", req_id, import_mode, content_type)
         form = await request.form()
         raw_file = form.get("file")
-        if raw_file is None or not isinstance(raw_file, UploadFile):
+        if raw_file is None or not isinstance(raw_file, StarletteUploadFile):
             raise HTTPException(400, "Missing file in upload.")
-        file: UploadFile = raw_file
+        file: UploadFile | StarletteUploadFile = raw_file
         filename = file.filename
         if filename is None or not filename.lower().endswith(".ibt"):
             raise HTTPException(400, "Unsupported file type. Please select an .ibt telemetry file.")
@@ -117,7 +115,13 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
         _log.info("[%s] Import mode=%s", req_id, import_mode)
         # DEV/LOCAL-ONLY: JSON path import is not exposed in the UI.
         # It exists for test fixtures and local debugging.
-        body = await request.json()
+        try:
+            body = await request.json()
+        except ValueError as exc:
+            _log.warning("[%s] Malformed JSON body received.", req_id)
+            raise HTTPException(400, "Malformed JSON body.") from exc
+        if not isinstance(body, dict):
+            raise HTTPException(400, "JSON body must be an object.")
         path_or_file = body.get("path")
         if not path_or_file:
             raise HTTPException(400, "Missing 'path' in JSON body.")
@@ -167,8 +171,8 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
         try:
             from racelab_engine.services.track_map_service import find_best_map_for_run
             track_name = (
-                result.overview.session.track_display_name
-                or result.overview.session.track_name
+                result.overview.session.track_name
+                or result.overview.session.track_display_name
                 or ""
             )
             match = await run_in_threadpool(find_best_map_for_run, result.overview.run_id, track_name)

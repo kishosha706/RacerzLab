@@ -84,10 +84,6 @@ def build_best_theoretical(
         valid, reason = _is_lap_valid(tags)
         if valid and lap_num in segments_by_lap:
             valid_laps.add(lap_num)
-        else:
-            BestTheoreticalResult(
-                excluded_laps=[{"lap_number": lap_num, "reason": reason or "Unknown"}],
-            )
 
     if not valid_laps:
         return BestTheoreticalResult(

@@ -84,9 +84,7 @@ def _score_label(value: float) -> str:
         return "Strong useful pace"
     if value >= 50:
         return "Usable with caution"
-    if value >= 25:
-        return "Low confidence"
-    return "Not useful for setup decisions"
+    return "Low confidence" if value >= 25 else "Not useful for setup decisions"
 
 
 # ── Component scorers ─────────────────────────────────────────
@@ -147,8 +145,6 @@ def score_draft_confidence(draft_statuses: list[str]) -> float:
         upper = status.upper()
         if upper in ("LIKELY_SOLO", "SOLO_CLEAN"):
             scores.append(100.0)
-        elif upper == "UNKNOWN_DRAFT_STATUS":
-            scores.append(70.0)
         elif upper == "POSSIBLE_DRAFT_ASSIST":
             scores.append(55.0)
         elif upper == "DRAFT_AFFECTED":
@@ -169,9 +165,7 @@ def score_data_completeness(
         return 100.0
     if available >= 2:
         return 85.0
-    if available >= 1:
-        return 65.0
-    return 40.0
+    return 65.0 if available >= 1 else 40.0
 
 
 def score_window_size_confidence(window_size: int) -> float:
@@ -182,9 +176,7 @@ def score_window_size_confidence(window_size: int) -> float:
         return 85.0
     if window_size >= 10:
         return 65.0
-    if window_size >= 5:
-        return 40.0
-    return 15.0
+    return 40.0 if window_size >= 5 else 15.0
 
 
 def score_context_consistency(classification_tags: list[str]) -> float:
@@ -194,9 +186,7 @@ def score_context_consistency(classification_tags: list[str]) -> float:
     if has_conflict:
         return 20.0
     has_issue = any(t in upper for t in ("COOLDOWN", "OUT_LAP"))
-    if has_issue:
-        return 40.0
-    return 90.0
+    return 40.0 if has_issue else 90.0
 
 
 def score_weather_confidence(weather_changed: bool = False) -> float:
@@ -217,7 +207,7 @@ def score_platform_safety(
         scores.append(logistic_score(rear_platform_risk_peak, good=0.30, bad=0.85, invert=True))
     if whole_car_bottoming_peak is not None:
         scores.append(logistic_score(whole_car_bottoming_peak, good=0.30, bad=0.85, invert=True))
-    return min(scores) if scores else 70.0
+    return min(scores, default=70.0)
 
 
 def score_tire_safety(
@@ -236,7 +226,7 @@ def score_tire_safety(
         scores.append(logistic_score(camber_bias, good=5.0, bad=20.0, invert=True))
     if wear_spread is not None:
         scores.append(logistic_score(wear_spread, good=1.0, bad=5.0, invert=True))
-    return min(scores) if scores else 70.0
+    return min(scores, default=70.0)
 
 
 def score_shock_safety(shock_activity_index: float | None = None) -> float:

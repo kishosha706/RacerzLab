@@ -52,6 +52,7 @@ export type TelemetrySelection = {
   /** Transient hover position — updated at high frequency, not committed to React state on every frame. */
   hoverLapPct?: number | null;
   hoverSampleIndex?: number | null;
+  playbackActive?: boolean;
 
   selectedMode: SelectionMode;
   selectedWorkspace: Workspace;

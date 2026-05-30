@@ -25,9 +25,7 @@ def classify_splitter_height_mm(splitter_height_mm: float | None) -> str:
         return "critical"
     if splitter_height_mm <= SPLITTER_HIGH_MM:
         return "high"
-    if splitter_height_mm <= SPLITTER_WATCH_MM:
-        return "watch"
-    return "safe"
+    return "watch" if splitter_height_mm <= SPLITTER_WATCH_MM else "safe"
 
 
 def _pct(value: Any) -> float | None:

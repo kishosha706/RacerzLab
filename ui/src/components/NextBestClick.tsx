@@ -10,12 +10,12 @@ type NextBestClickProps = {
   platformEvents: PlatformEventItem[];
 };
 
-export function NextBestClick({ runId, platformEvents }: NextBestClickProps) {
+export function NextBestClick({ runId: _runId, platformEvents }: NextBestClickProps) {
   const { selection, setWorkspace, selectEvent } = useTelemetrySelection();
 
   const suggestion = useMemo(() => {
     if (platformEvents.length === 0) {
-      return { question: "No diagnostic events yet", action: "Import a run to begin analysis", workspace: "overview" as const };
+      return { question: "No priority events for this lap", action: "Review Overview", workspace: "overview" as const };
     }
 
     // If no event selected, suggest the top-priority event

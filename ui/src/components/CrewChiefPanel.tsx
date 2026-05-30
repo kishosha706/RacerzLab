@@ -19,7 +19,6 @@ function warnColor(text: string): string {
 
 export function CrewChiefPanel({ overview, onOpenMap, onOpenPlatform, onOpenSetup, onOpenNotebook, isLearning }: CrewChiefPanelProps) {
   const recommendation = overview.recommendations?.[0];
-  const topEvent = overview.events?.[0];
 
   return (
     <aside className="crew-panel">

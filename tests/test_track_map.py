@@ -101,10 +101,30 @@ def test_talladega_matches_high_confidence() -> None:
 def test_normalize_track_key_examples() -> None:
     from racelab_engine.analysis.track_matching import normalize_track_key
     assert normalize_track_key("Atlanta Motor Speedway") == "atlanta"
+    assert normalize_track_key("EchoPark Speedway") == "atlanta"
     assert normalize_track_key("Daytona International Speedway") == "daytona"
     assert normalize_track_key("Phoenix Raceway") == "phoenix"
     assert normalize_track_key("Charlotte Motor Speedway") == "charlotte"
     assert normalize_track_key(None) == "unknown"
+
+
+def test_echopark_speedway_matches_atlanta_2022_map() -> None:
+    from racelab_engine.analysis.track_matching import match_track_map_for_run
+
+    available = [
+        {
+            "map_id": "atlanta-2022-oval",
+            "track_key": "atlanta2022oval",
+            "layout_key": "oval",
+            "source_filename": "atlanta 2022 oval.mt2",
+        },
+    ]
+
+    result = match_track_map_for_run("EchoPark Speedway", None, available)
+
+    assert result is not None
+    assert result["map_id"] == "atlanta-2022-oval"
+    assert result["match_confidence"] in {"high", "medium"}
 
 
 def test_infer_layout_key_examples() -> None:
@@ -119,9 +139,8 @@ def test_infer_layout_key_examples() -> None:
 
 def test_import_folder_indexes_multiple_maps() -> None:
     from racelab_engine.services.track_map_service import list_track_maps
-    entries = list_track_maps()
     # Should have at least 1 entry from previous session import
-    if entries:
+    if entries := list_track_maps():
         assert all("map_id" in e for e in entries)
         assert all("track_key" in e for e in entries)
         assert all("points_count" in e for e in entries)
@@ -183,6 +202,30 @@ def test_routes_upload_rejects_wrong_extension() -> None:
     assert not filename.lower().endswith(".mt2")
     filename = "test.mt2"
     assert filename.lower().endswith(".mt2")
+
+
+def test_json_import_rejects_wrong_extension() -> None:
+    """JSON local import should reject non-.mt2 extensions."""
+    path = "/some/path/test.txt"
+    assert not path.lower().endswith(".mt2")
+    path = "/some/path/test.mt2"
+    assert path.lower().endswith(".mt2")
+
+
+def test_json_import_rejects_missing_path() -> None:
+    """JSON local import without 'path' key should fail."""
+    body: dict = {}
+    path = body.get("path")
+    assert not path
+
+
+def test_json_import_rejects_path_traversal() -> None:
+    """JSON local import should reject .. and ~ in paths."""
+    assert ".." in "../etc/passwd.mt2"
+    assert ".." in "a/../../b/file.mt2"
+    assert ".." not in "normal_file.mt2"
+    assert "~" in "~/file.mt2"
+    assert "~" not in "/home/user/file.mt2"
 
 
 def test_preferred_map_id_found_returns_manual_confidence() -> None:

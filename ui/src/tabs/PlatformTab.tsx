@@ -1,15 +1,18 @@
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { Activity, AlertTriangle, Crosshair, LocateFixed, RotateCcw } from "lucide-react";
+import { Activity, AlertTriangle, BarChart3, Crosshair, LocateFixed, MapPin, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
 import { CornerTireMap } from "../components/CornerTireMap";
+import { CornerBarChart } from "../components/CornerBarChart";
+import { ShockHistogram } from "../components/ShockHistogram";
 import { WorkbenchSubnav } from "../components/WorkbenchSubnav";
 import type { WorkbenchView } from "../components/WorkbenchSubnav";
 import { fetchPlatformEvents } from "../api/client";
 import { isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
-import { getTraceValues, formatChannelValue, formatRiskScore, formatForceProxyN, safeStringValue } from "../utils/channelFormat";
+import { getTraceValues, formatChannelValue, formatForceProxyN, safeStringValue } from "../utils/channelFormat";
+import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type {
   PlatformEventItem,
   RunOverview,
@@ -24,6 +27,12 @@ type PlatformTabProps = {
   trace: TraceResponse | null;
   cursor: TelemetryCursor;
   onCursorChange: (cursor: TelemetryCursor) => void;
+  platformEvents?: PlatformEventItem[];
+  initialWorkbenchView?: WorkbenchView;
+};
+
+type PlatformTraceWorkbenchProps = Omit<PlatformTabProps, "trace"> & {
+  trace: TraceResponse;
 };
 
 type ChartRow = {
@@ -38,6 +47,19 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
     { label: "Throttle / Brake [%]", channels: [{ name: "throttle_pct", label: "Throttle", color: "#22c55e" }, { name: "brake_pct", label: "Brake", color: "#ef4444" }], min: 0, max: 105 },
     { label: "Center Rake FS [in]", channels: [{ name: "center_rake_fs_in", label: "Center Rake", color: "#4ade80" }] },
     { label: "Side Rake [in]", channels: [{ name: "side_rake_in", label: "Side Rake", color: "#f59e0b" }] },
+    { label: "Front / Rear Avg RH [in]", channels: [
+      { name: "front_avg_rh_in", label: "Front Avg", color: "#38bdf8" },
+      { name: "rear_avg_rh_in", label: "Rear Avg", color: "#a78bfa" },
+    ] },
+    { label: "Rear Min / Scrape [mm]", channels: [
+      { name: "rear_min_ride_height_mm", label: "Rear Min", color: "#22d3ee" },
+      { name: "rear_scrape_margin_mm", label: "Scrape Margin", color: "#f97316" },
+    ] },
+    { label: "Platform Risk", channels: [
+      { name: "cfs_risk_score", label: "CFS Risk", color: "#ef4444" },
+      { name: "platform_compression_index", label: "Compression", color: "#f97316" },
+      { name: "whole_car_bottoming_risk", label: "Bottoming", color: "#f59e0b" },
+    ], min: 0, max: 1 },
     { label: "CFS / LF / RF Ride Height [in]", channels: [
       { name: "cfs_ride_height_in", label: "CFS", color: "#4ade80" },
       { name: "lf_ride_height_in", label: "LF", color: "#eab308" },
@@ -47,6 +69,48 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "lr_ride_height_in", label: "LR", color: "#eab308" },
       { name: "rr_ride_height_in", label: "RR", color: "#22d3ee" },
     ] },
+  ],
+  "Rear Scrape": [
+    { label: "Rear Min / Scrape Margin [mm]", channels: [
+      { name: "rear_min_ride_height_mm", label: "Rear Min", color: "#22d3ee" },
+      { name: "rear_scrape_margin_mm", label: "Margin", color: "#f97316" },
+    ] },
+    { label: "Rear Risk", channels: [
+      { name: "rear_scrape_risk_score", label: "Scrape Risk", color: "#ef4444" },
+      { name: "rear_platform_contact_risk", label: "Contact Risk", color: "#f59e0b" },
+    ], min: 0, max: 1 },
+    { label: "Rear Ride Heights", channels: [
+      { name: "lr_ride_height_mm", label: "LR", color: "#eab308" },
+      { name: "rr_ride_height_mm", label: "RR", color: "#22d3ee" },
+      { name: "rear_min_ride_height_in", label: "Rear Min [in]", color: "#a78bfa" },
+    ] },
+    { label: "Context", channels: [
+      { name: "cfs_ride_height_mm", label: "CFS", color: "#38bdf8" },
+      { name: "speed_mph", label: "Speed", color: "#93c5fd" },
+    ] },
+    { label: "Throttle / Brake [%]", channels: [
+      { name: "throttle_pct", label: "Throttle", color: "#22c55e" },
+      { name: "brake_pct", label: "Brake", color: "#ef4444" },
+    ], min: 0, max: 105 },
+  ],
+  "Aero Load": [
+    { label: "Speed / Dynamic Pressure", channels: [
+      { name: "speed_mph", label: "Speed", color: "#93c5fd" },
+      { name: "dynamic_pressure_psf", label: "Dyn Pressure", color: "#38bdf8" },
+    ] },
+    { label: "Dynamic Pressure Index", channels: [
+      { name: "dynamic_pressure_lap_index", label: "Lap Index", color: "#60a5fa" },
+      { name: "dynamic_pressure_index", label: "Index", color: "#22d3ee" },
+    ] },
+    { label: "Aero Load Index", channels: [
+      { name: "aero_load_index", label: "Aero Load", color: "#f59e0b" },
+      { name: "aero_load_index_180mph", label: "180 mph Index", color: "#f97316" },
+    ] },
+    { label: "Front / Rear Aero Proxy [N]", channels: [
+      { name: "front_aero_proxy_n", label: "Front", color: "#22d3ee" },
+      { name: "rear_aero_proxy_n", label: "Rear", color: "#a78bfa" },
+    ] },
+    { label: "Aero Balance Front [%]", channels: [{ name: "aero_balance_front_pct", label: "Front Balance", color: "#22c55e" }] },
   ],
   "Speed / RPM / Pull": [
     { label: "Speed [mph]", channels: [{ name: "speed_mph", label: "Speed", color: "#93c5fd" }] },
@@ -60,10 +124,53 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
     { label: "Speed Rate / 1000 ft", channels: [{ name: "speed_rate_mph_1000ft", label: "Rate/1000ft", color: "#f97316" }] },
     { label: "Throttle / Brake [%]", channels: [{ name: "throttle_pct", label: "Throttle", color: "#22c55e" }, { name: "brake_pct", label: "Brake", color: "#ef4444" }], min: 0, max: 105 },
     { label: "Steering [deg]", channels: [{ name: "abs_steering_deg", label: "Steering", color: "#f59e0b" }] },
+    { label: "Ackermann Error / Scrub", channels: [
+      { name: "ackermann_steering_expected_deg", label: "Expected", color: "#38bdf8" },
+      { name: "ackermann_steering_error_deg", label: "Error", color: "#f97316" },
+      { name: "ackermann_scrub_proxy", label: "Scrub Proxy", color: "#ef4444" },
+    ] },
+    { label: "Full-Throttle Resistance", channels: [{ name: "full_throttle_resistance_index", label: "Resistance", color: "#f59e0b" }], min: 0, max: 1 },
     { label: "Lat Accel", channels: [{ name: "abs_lat_accel", label: "Lat Accel", color: "#a78bfa" }] },
     { label: "CFS Ride Height [in]", channels: [{ name: "cfs_ride_height_in", label: "CFS", color: "#38bdf8" }] },
   ],
+  "Grade / Pull": [
+    { label: "Speed [mph]", channels: [{ name: "speed_mph", label: "Speed", color: "#93c5fd" }] },
+    { label: "Speed Rate / Pull", channels: [
+      { name: "speed_rate_mph_s", label: "mph/s", color: "#f59e0b" },
+      { name: "speed_rate_mph_1000ft", label: "mph/1000ft", color: "#f97316" },
+      { name: "grade_corrected_speed_loss_mph_s", label: "Grade-Corrected", color: "#22c55e" },
+    ] },
+    { label: "RPM / Gear", channels: [
+      { name: "rpm", label: "RPM", color: "#fde047" },
+      { name: "gear", label: "Gear", color: "#a78bfa" },
+    ] },
+    { label: "Throttle / Grade", channels: [
+      { name: "throttle_pct", label: "Throttle", color: "#22c55e" },
+      { name: "dynamic_grade_deg", label: "Grade", color: "#38bdf8" },
+    ] },
+    { label: "Grade Force Proxy", channels: [{ name: "grade_force_proxy_n", label: "Force", color: "#f59e0b" }] },
+  ],
   "Tires": [
+    { label: "LF Tire Temps [°C]", channels: [
+      { name: "lf_temp_inner", label: "Inner", color: "#4ade80" },
+      { name: "lf_temp_middle", label: "Middle", color: "#22c55e" },
+      { name: "lf_temp_outer", label: "Outer", color: "#16a34a" },
+    ] },
+    { label: "RF Tire Temps [°C]", channels: [
+      { name: "rf_temp_inner", label: "Inner", color: "#ef4444" },
+      { name: "rf_temp_middle", label: "Middle", color: "#dc2626" },
+      { name: "rf_temp_outer", label: "Outer", color: "#b91c1c" },
+    ] },
+    { label: "LR Tire Temps [°C]", channels: [
+      { name: "lr_temp_inner", label: "Inner", color: "#eab308" },
+      { name: "lr_temp_middle", label: "Middle", color: "#ca8a04" },
+      { name: "lr_temp_outer", label: "Outer", color: "#a16207" },
+    ] },
+    { label: "RR Tire Temps [°C]", channels: [
+      { name: "rr_temp_inner", label: "Inner", color: "#22d3ee" },
+      { name: "rr_temp_middle", label: "Middle", color: "#06b6d4" },
+      { name: "rr_temp_outer", label: "Outer", color: "#0891b2" },
+    ] },
     { label: "Tire Pressure [kPa]", channels: [
       { name: "lf_pressure", label: "LF", color: "#4ade80" },
       { name: "rf_pressure", label: "RF", color: "#ef4444" },
@@ -87,6 +194,48 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "rf_slip_ratio_proxy", label: "RF", color: "#ef4444" },
       { name: "lr_slip_ratio_proxy", label: "LR", color: "#eab308" },
       { name: "rr_slip_ratio_proxy", label: "RR", color: "#22d3ee" },
+    ] },
+  ],
+  "Shocks": [
+    { label: "Throttle / Brake [%]", channels: [{ name: "throttle_pct", label: "Throttle", color: "#22c55e" }, { name: "brake_pct", label: "Brake", color: "#ef4444" }], min: 0, max: 105 },
+    { label: "Shock Deflection [in]", channels: [
+      { name: "lf_shock_defl_in", label: "LF", color: "#4ade80" },
+      { name: "rf_shock_defl_in", label: "RF", color: "#ef4444" },
+      { name: "lr_shock_defl_in", label: "LR", color: "#eab308" },
+      { name: "rr_shock_defl_in", label: "RR", color: "#22d3ee" },
+    ] },
+    { label: "Shock Velocity [in/s]", channels: [
+      { name: "lf_shock_vel_in_s", label: "LF", color: "#4ade80" },
+      { name: "rf_shock_vel_in_s", label: "RF", color: "#ef4444" },
+      { name: "lr_shock_vel_in_s", label: "LR", color: "#eab308" },
+      { name: "rr_shock_vel_in_s", label: "RR", color: "#22d3ee" },
+    ] },
+    { label: "Shock Activity Index", channels: [
+      { name: "lf_shock_activity_index", label: "LF", color: "#4ade80" },
+      { name: "rf_shock_activity_index", label: "RF", color: "#ef4444" },
+      { name: "lr_shock_activity_index", label: "LR", color: "#eab308" },
+      { name: "rr_shock_activity_index", label: "RR", color: "#22d3ee" },
+    ] },
+    { label: "Damper Energy Proxy", channels: [
+      { name: "lf_damper_energy_proxy", label: "LF", color: "#4ade80" },
+      { name: "rf_damper_energy_proxy", label: "RF", color: "#ef4444" },
+      { name: "lr_damper_energy_proxy", label: "LR", color: "#eab308" },
+      { name: "rr_damper_energy_proxy", label: "RR", color: "#22d3ee" },
+    ] },
+  ],
+  "Engine": [
+    { label: "Speed [mph]", channels: [{ name: "speed_mph", label: "Speed", color: "#93c5fd" }] },
+    { label: "RPM", channels: [{ name: "rpm", label: "RPM", color: "#fde047" }] },
+    { label: "Gear", channels: [{ name: "gear", label: "Gear", color: "#a78bfa" }] },
+    { label: "Throttle / Brake [%]", channels: [{ name: "throttle_pct", label: "Throttle", color: "#22c55e" }, { name: "brake_pct", label: "Brake", color: "#ef4444" }], min: 0, max: 105 },
+    { label: "Speed Rate / Pull", channels: [
+      { name: "speed_rate_mph_s", label: "Speed Rate", color: "#f59e0b" },
+      { name: "speed_rate_mph_1000ft", label: "Rate/1000ft", color: "#f97316" },
+      { name: "grade_corrected_speed_loss_mph_s", label: "Grade-Corrected", color: "#22c55e" },
+    ] },
+    { label: "Dynamic Pressure", channels: [
+      { name: "dynamic_pressure_psf", label: "Pressure", color: "#38bdf8" },
+      { name: "dynamic_pressure_lap_index", label: "Lap Index", color: "#60a5fa" },
     ] },
   ],
 };
@@ -119,6 +268,12 @@ function fmt(value: number | null | undefined, digits = 2) {
   return value.toFixed(digits);
 }
 
+/** Scale a value into a 0-1 risk range, returning null for missing data. */
+function scaledRisk(value: number | null | undefined, divisor: number): number | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return Math.min(1, Math.max(0, value / divisor));
+}
+
 function riskLabel(cfsIn: number | null | undefined) {
   if (cfsIn == null) return "Unavailable";
   if (cfsIn <= 0) return "Scrape";
@@ -144,37 +299,6 @@ function formatTooltipValue(channel: string, y: number | null | undefined): stri
   return y.toFixed(2);
 }
 
-function makeTooltipFormatter(rows: ChartRow[]) {
-  // map series label → channel name for unit resolution
-  const labelToChannel: Record<string, string> = {};
-  for (const row of rows) {
-    for (const ch of row.channels) {
-      labelToChannel[ch.label] = ch.name;
-    }
-  }
-  return (params: any) => {
-    if (!Array.isArray(params) || params.length === 0) return "";
-    const first = params[0];
-    const tuple = Array.isArray(first.value) ? first.value : Array.isArray(first.data) ? first.data : null;
-    const xVal = tuple ? tuple[0] : first.axisValue;
-    const distFt = typeof xVal === "number" && !Number.isNaN(xVal) ? Math.round(xVal).toLocaleString() : "—";
-    let html = `<div style="font-weight:600;margin-bottom:4px">Distance: ${distFt} ft</div>`;
-    for (const p of params) {
-      const pt = Array.isArray(p.value) ? p.value : Array.isArray(p.data) ? p.data : null;
-      const y = pt ? pt[1] : p.value;
-      const chName = labelToChannel[p.seriesName] ?? p.seriesName;
-      const unit = rowUnit(chName);
-      const unitStr = unit ? ` ${unit}` : "";
-      const proxyTag = isProxyChannel(chName) ? (isEstimateChannel(chName) ? " (estimate)" : " (proxy)") : "";
-      const display = y != null && !Number.isNaN(y) ? formatTooltipValue(chName, y) + unitStr + proxyTag : "—";
-      html += `<div style="display:flex;justify-content:space-between;gap:16px">`
-        + `<span style="color:${p.color}">● ${p.seriesName}</span>`
-        + `<span>${display}</span></div>`;
-    }
-    return html;
-  };
-}
-
 function rowUnit(channel: string): string {
   if (channel.includes("_pct") || channel === "throttle_pct" || channel === "brake_pct") return "%";
   if (channel.includes("_in")) return "in";
@@ -184,6 +308,56 @@ function rowUnit(channel: string): string {
   if (channel.includes("psf")) return "psf";
   if (channel.includes("deg")) return "°";
   return "";
+}
+
+/** Inline readout card shown when a trace sample is clicked. */
+export function TraceSampleReadout({
+  trace,
+  sampleIndex,
+  rows,
+  onClose,
+}: {
+  trace: TraceResponse;
+  sampleIndex: number;
+  rows: ChartRow[];
+  onClose: () => void;
+}) {
+  const xs = xValues(trace);
+  const distFt = xs[sampleIndex];
+  const distStr = distFt != null && !Number.isNaN(distFt) ? `${Math.round(distFt).toLocaleString()} ft` : "—";
+  return (
+    <div className="trace-sample-readout">
+      <div className="readout-header">
+        <span className="readout-title">Sample Readout</span>
+        <button className="readout-close" onClick={onClose} aria-label="Close readout" title="Close (Esc)">
+          <X size={14} />
+        </button>
+      </div>
+      <div className="readout-distance">{distStr}</div>
+      <div className="readout-rows">
+        {rows.map((row) => (
+          <div key={row.label} className="readout-row-group">
+            <div className="readout-row-label">{row.label}</div>
+            {row.channels.map((ch) => {
+              const raw = values(trace, ch.name)[sampleIndex];
+              const numVal = typeof raw === "number" ? raw : null;
+              const display = numVal != null && !Number.isNaN(numVal)
+                ? formatTooltipValue(ch.name, numVal) + (rowUnit(ch.name) ? ` ${rowUnit(ch.name)}` : "")
+                : "—";
+              const tag = isProxyChannel(ch.name) ? (isEstimateChannel(ch.name) ? " (est)" : " (proxy)") : "";
+              return (
+                <div key={ch.name} className="readout-channel">
+                  <span className="readout-bullet" style={{ color: ch.color }}>●</span>
+                  <span className="readout-channel-label">{ch.label}</span>
+                  <span className="readout-channel-value">{display}{tag}</span>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function nearestIndexByFt(xs: Array<number | null>, targetFt: number): number | null {
@@ -200,15 +374,30 @@ function nearestIndexByFt(xs: Array<number | null>, targetFt: number): number | 
   return bestIndex;
 }
 
-export function PlatformTab({ overview, trace, cursor, onCursorChange }: PlatformTabProps) {
-  const chartNode = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<echarts.ECharts | null>(null);
-  const [preset, setPreset] = useState("Platform / Rake / Ride Height");
-  const [platformEvents, setPlatformEvents] = useState<PlatformEventItem[]>([]);
-  const [selectedPlatformEvent, setSelectedPlatformEvent] = useState<PlatformEventItem | null>(null);
+function nearestIndexByPct(trace: TraceResponse | null, targetPct: number): number | null {
+  const pctValues = values(trace, "lap_dist_pct_100") as Array<number | null>;
+  let bestIndex: number | null = null;
+  let bestDelta = Number.POSITIVE_INFINITY;
+  pctValues.forEach((pct, index) => {
+    if (pct == null || !Number.isFinite(pct)) return;
+    const delta = Math.abs(pct - targetPct);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
+}
+
+function validSampleIndex(index: number | null | undefined, length: number): number | null {
+  if (index == null || !Number.isInteger(index)) return null;
+  if (index < 0 || index >= length) return null;
+  return index;
+}
+
+export function PlatformTab({ overview, trace, cursor, onCursorChange, platformEvents, initialWorkbenchView }: PlatformTabProps) {
   const xs = useMemo(() => xValues(trace), [trace]);
 
-  // ── loading / empty states ──────────────────────────────────
   if (!trace) {
     return (
       <section className="platform-workbench">
@@ -218,13 +407,8 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
             <h2>Platform Trace Workbench</h2>
           </div>
         </header>
-        <div className="platform-loading">
-          <div className="skeleton-chart">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="skeleton-row" style={{ animationDelay: `${i * 0.1}s` }} />
-            ))}
-          </div>
-          <p className="loading-text">Loading trace data…</p>
+        <div className="platform-empty">
+          <p className="loading-text">Loading trace data...</p>
         </div>
       </section>
     );
@@ -245,17 +429,92 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
       </section>
     );
   }
-  const legacyEvents = overview.events.filter((event) => event.event_type.startsWith("PLATFORM"));
+
+  return (
+    <PlatformTraceWorkbench
+      overview={overview}
+      trace={trace}
+      cursor={cursor}
+      onCursorChange={onCursorChange}
+      platformEvents={platformEvents}
+      initialWorkbenchView={initialWorkbenchView}
+    />
+  );
+}
+
+function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platformEvents: externalPlatformEvents, initialWorkbenchView = "balance" }: PlatformTraceWorkbenchProps) {
+  const { selection, selectSample, selectEvent, setWorkspace } = useTelemetrySelection();
+  const chartNode = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
+  const cursorLineRef = useRef<HTMLDivElement | null>(null);
+  const clickedSampleIndexRef = useRef<number | null>(null);
+  const hoverSampleIndexRef = useRef<number | null>(null);
+  const zoomRangeRef = useRef<{ startValue?: number; endValue?: number } | null>(null);
+  const latestXsRef = useRef<Array<number | null>>([]);
+  const gridLeftRef = useRef(100);
+  const updateCursorRef = useRef<(index: number | null, eventId?: string | null) => void>(() => {});
+  const showCursorLineRef = useRef<(offsetX: number, locked: boolean) => void>(() => {});
+  const hideCursorLineRef = useRef<() => void>(() => {});
+  const commitHoverSampleRef = useRef<(index: number | null) => void>(() => {});
+  const hoverRafRef = useRef<number | null>(null);
+  const pendingHoverSampleIndexRef = useRef<number | null>(null);
+  const lastHoverCommitRef = useRef(0);
+  const [platformEvents, setPlatformEvents] = useState<PlatformEventItem[]>([]);
+  const [selectedPlatformEvent, setSelectedPlatformEvent] = useState<PlatformEventItem | null>(null);
+  const [clickedSampleIndex, setClickedSampleIndex] = useState<number | null>(null);
+  const [hoverSampleIndex, setHoverSampleIndex] = useState<number | null>(null);
+  const [tireMapMode, setTireMapMode] = useState<any>("pressure");
+  const [workbenchView, setWorkbenchView] = useState<WorkbenchView>(initialWorkbenchView);
+  useEffect(() => {
+    setWorkbenchView(initialWorkbenchView);
+  }, [initialWorkbenchView]);
+
+  const presetFromView: Record<WorkbenchView, string> = {
+    balance: "Platform / Rake / Ride Height",
+    rear_scrape: "Rear Scrape",
+    aero_load: "Aero Load",
+    scrub_steering: "Drag / Scrub",
+    tires: "Tires",
+    shocks: "Shocks",
+    grade_pull: "Grade / Pull",
+  };
+  const preset = presetFromView[workbenchView] ?? "Platform / Rake / Ride Height";
+  const handleViewChange = useCallback((view: WorkbenchView) => {
+    setWorkbenchView(view);
+    setHoverSampleIndex(null);
+  }, []);
+  const xs = useMemo(() => xValues(trace), [trace]);
+
+  useEffect(() => {
+    latestXsRef.current = xs;
+  }, [xs]);
+
+  useEffect(() => {
+    clickedSampleIndexRef.current = clickedSampleIndex;
+  }, [clickedSampleIndex]);
+
+  useEffect(() => {
+    hoverSampleIndexRef.current = hoverSampleIndex;
+  }, [hoverSampleIndex]);
+
+  const legacyEvents = useMemo(
+    () => overview.events.filter((event) => event.event_type.startsWith("PLATFORM")),
+    [overview.events],
+  );
   const rows = useMemo(() => PRESET_ROWS[preset] ?? PRESET_ROWS["Platform / Rake / Ride Height"], [preset]);
 
-  // ── load structured platform events from API ──────────────────
+  // ── load structured platform events from API (or use external prop) ──
   useEffect(() => {
+    if (externalPlatformEvents) {
+      setPlatformEvents(externalPlatformEvents);
+      return;
+    }
     let cancelled = false;
     fetchPlatformEvents(overview.run_id, { lap: trace?.lap ?? undefined })
       .then((events) => { if (!cancelled) setPlatformEvents(events); })
       .catch(() => { if (!cancelled) setPlatformEvents([]); });
     return () => { cancelled = true; };
-  }, [overview.run_id, trace?.lap]);
+  }, [overview.run_id, trace?.lap, externalPlatformEvents]);
 
   // ── event lookup helpers ─────────────────────────────────────
   const findEvent = useCallback(
@@ -301,7 +560,27 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
 
   const minSplitterIndex = resolveIndex("MIN_SPLITTER", fallbackMinSplitterIndex);
   const worstSpeedLossIndex = resolveIndex("WORST_SPEED_LOSS", fallbackWorstSpeedLossIndex);
-  const selectedIndex = cursor.selected_sample_index ?? minSplitterIndex ?? 0;
+  const playbackIndex = selection.playbackActive ? validSampleIndex(selection.hoverSampleIndex, xs.length) : null;
+  const lockedIndex = validSampleIndex(clickedSampleIndex, xs.length);
+  const transientHoverIndex = validSampleIndex(hoverSampleIndex, xs.length);
+  const cursorIndex = validSampleIndex(cursor.selected_sample_index, xs.length);
+  const selectedContextIndex = selection.selectedLapDistFt != null
+    ? nearestIndexByFt(xs, selection.selectedLapDistFt)
+    : selection.selectedLapPct != null
+      ? nearestIndexByPct(trace, selection.selectedLapPct)
+      : validSampleIndex(selection.selectedSampleIndex, xs.length);
+  // Prefer selection context over shell cursor — selection is the canonical source
+  const defaultIndex = selectedContextIndex ?? cursorIndex ?? minSplitterIndex ?? 0;
+  const selectedIndex = playbackIndex ?? lockedIndex ?? transientHoverIndex ?? defaultIndex;
+  const readoutSource = playbackIndex != null
+    ? "Playback"
+    : lockedIndex != null
+      ? "Locked"
+      : transientHoverIndex != null
+        ? "Hover"
+        : cursor.selected_event_id || selection.selectedEventId
+          ? "Event"
+          : "Default";
 
   // ── event-to-index for remaining jump buttons ────────────────
   const resolveEventIndex = useCallback(
@@ -315,28 +594,63 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
     [findEvent, xs],
   );
 
+  const nearestEventForIndex = useCallback(
+    (index: number | null): PlatformEventItem | null => {
+      if (index == null) return null;
+      const dist = xs[index];
+      const pct = valueAt(trace, "lap_dist_pct_100", index);
+      let best: PlatformEventItem | null = null;
+      let bestScore = Number.POSITIVE_INFINITY;
+      for (const event of platformEvents) {
+        let score = Number.POSITIVE_INFINITY;
+        if (dist != null && event.lap_dist_ft != null) {
+          score = Math.abs(dist - event.lap_dist_ft);
+          if (score > 120) continue;
+        } else if (pct != null && event.lap_pct != null) {
+          score = Math.abs(pct - event.lap_pct) * 40;
+          if (score > 20) continue;
+        } else if (event.sample_index != null) {
+          score = Math.abs(index - event.sample_index);
+          if (score > 15) continue;
+        }
+        if (score < bestScore) {
+          bestScore = score;
+          best = event;
+        }
+      }
+      return best;
+    },
+    [platformEvents, trace, xs],
+  );
+
   // ── cursor management ────────────────────────────────────────
   const updateCursor = useCallback(
     (index: number | null, eventId?: string | null) => {
       if (index == null || !trace) return;
       const lapPct = valueAt(trace, "lap_dist_pct_100", index);
-      const pevt = eventId ? findEvent(eventId) ?? platformEvents.find((e) => e.event_id === eventId) : null;
+      const pevt = eventId
+        ? findEvent(eventId) ?? platformEvents.find((e) => e.event_id === eventId) ?? null
+        : nearestEventForIndex(index);
       onCursorChange({
         selected_run_id: overview.run_id,
         selected_lap: trace.lap ?? overview.best_useful_lap?.lap_number ?? null,
         selected_sample_index: index,
         selected_lap_dist_ft: xs[index] ?? null,
         selected_lap_pct: lapPct,
-        selected_event_id: eventId ?? null,
+        selected_event_id: pevt?.event_id ?? eventId ?? null,
       });
       setSelectedPlatformEvent(pevt ?? null);
+      selectSample(index, xs[index] ?? undefined, lapPct ?? undefined, "trace_cursor");
+      if (pevt?.event_id) selectEvent(pevt.event_id, "trace_cursor");
     },
-    [trace, overview, xs, onCursorChange, findEvent, platformEvents],
+    [trace, overview, xs, onCursorChange, findEvent, platformEvents, nearestEventForIndex, selectSample, selectEvent],
   );
 
   const jumpToIndex = useCallback(
     (index: number | null, eventId?: string | null) => {
       if (index == null) return;
+      setClickedSampleIndex(index);
+      setHoverSampleIndex(null);
       updateCursor(index, eventId);
       const x = xs[index];
       if (x != null && chartRef.current) {
@@ -350,6 +664,83 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
     [updateCursor, xs],
   );
 
+  useEffect(() => {
+    if (!trace || xs.length === 0 || selection.selectionSource === "trace_cursor") return;
+    const indexFromSelection = selection.selectedLapDistFt != null
+      ? nearestIndexByFt(xs, selection.selectedLapDistFt)
+      : selection.selectedLapPct != null
+        ? nearestIndexByPct(trace, selection.selectedLapPct)
+        : validSampleIndex(selection.selectedSampleIndex, xs.length);
+    if (indexFromSelection == null) return;
+    setClickedSampleIndex(indexFromSelection);
+    setHoverSampleIndex(null);
+    const event = selection.selectedEventId
+      ? platformEvents.find((e) => e.event_id === selection.selectedEventId) ?? null
+      : nearestEventForIndex(indexFromSelection);
+    setSelectedPlatformEvent(event);
+  }, [
+    trace,
+    xs,
+    selection.selectionSource,
+    selection.selectedSampleIndex,
+    selection.selectedLapDistFt,
+    selection.selectedLapPct,
+    selection.selectedEventId,
+    platformEvents,
+    nearestEventForIndex,
+  ]);
+
+  const showCursorLine = useCallback((offsetX: number, locked: boolean) => {
+    const line = cursorLineRef.current;
+    const node = chartNode.current;
+    if (!line || !node) return;
+    const boundedX = Math.max(0, Math.min(offsetX, node.clientWidth));
+    line.hidden = false;
+    line.dataset.locked = locked ? "true" : "false";
+    line.style.transform = `translateX(${boundedX}px)`;
+  }, []);
+
+  const hideCursorLine = useCallback(() => {
+    if (cursorLineRef.current) {
+      cursorLineRef.current.hidden = true;
+      cursorLineRef.current.dataset.locked = "false";
+    }
+  }, []);
+
+  const positionCursorLineForIndex = useCallback(
+    (index: number | null, locked: boolean) => {
+      const chart = chartRef.current;
+      if (index == null || !chart) return;
+      const x = xs[index];
+      if (x == null || !Number.isFinite(x)) return;
+      const pixel = chart.convertToPixel({ xAxisIndex: 0 }, [x, 0]);
+      const offsetX = Array.isArray(pixel) ? pixel[0] : pixel;
+      if (typeof offsetX === "number" && Number.isFinite(offsetX)) {
+        showCursorLine(offsetX, locked);
+      }
+    },
+    [showCursorLine, xs],
+  );
+
+  const commitHoverSample = useCallback((index: number | null) => {
+    pendingHoverSampleIndexRef.current = index;
+    if (hoverRafRef.current != null) return;
+    hoverRafRef.current = requestAnimationFrame(() => {
+      hoverRafRef.current = null;
+      const nextIndex = pendingHoverSampleIndexRef.current;
+      if (nextIndex === hoverSampleIndexRef.current) return;
+      const now = performance.now();
+      if (now - lastHoverCommitRef.current < 80) return;
+      lastHoverCommitRef.current = now;
+      setHoverSampleIndex(nextIndex);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (readoutSource === "Default" && clickedSampleIndex == null && hoverSampleIndex == null) return;
+    positionCursorLineForIndex(selectedIndex, readoutSource === "Locked");
+  }, [clickedSampleIndex, hoverSampleIndex, positionCursorLineForIndex, readoutSource, selectedIndex]);
+
   // ── jump button click flash ──────────────────────────────────
   const [jumpedBtn, setJumpedBtn] = useState<string | null>(null);
   const handleJumpClick = useCallback((label: string, index: number | null, eventId?: string | null) => {
@@ -358,18 +749,167 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
     setTimeout(() => setJumpedBtn(null), 350);
   }, [jumpToIndex]);
 
-  // ── chart ────────────────────────────────────────────────────
+  // ── chart lifecycle ──────────────────────────────────────────
   useEffect(() => {
-    if (!chartNode.current || !trace || xs.length === 0) return;
-    const chart = echarts.init(chartNode.current, "dark");
+    updateCursorRef.current = updateCursor;
+    showCursorLineRef.current = showCursorLine;
+    hideCursorLineRef.current = hideCursorLine;
+    commitHoverSampleRef.current = commitHoverSample;
+  }, [commitHoverSample, hideCursorLine, showCursorLine, updateCursor]);
+
+  useEffect(() => {
+    const node = chartNode.current;
+    if (!node) return;
+    const chart = echarts.init(node, "dark");
     chartRef.current = chart;
-    const ROW_H = 90;
-    const ROW_GAP = 12;
-    const GRID_LEFT = 80;
+
+    const indexFromPoint = (offsetX: number): number | null => {
+      const xsRef = latestXsRef.current;
+      const finiteXs = xsRef.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+      if (finiteXs.length === 0) return null;
+      const minX = finiteXs[0];
+      const maxX = finiteXs[finiteXs.length - 1];
+      const plotLeft = gridLeftRef.current;
+      const plotRight = node.clientWidth - 24;
+      if (plotRight <= plotLeft) return null;
+      const ratio = Math.max(0, Math.min(1, (offsetX - plotLeft) / (plotRight - plotLeft)));
+      const zoom = (chart.getOption().dataZoom as any[] | undefined)?.[0] ?? {};
+      const startValue = typeof zoom.startValue === "number"
+        ? zoom.startValue
+        : minX + ((typeof zoom.start === "number" ? zoom.start : 0) / 100) * (maxX - minX);
+      const endValue = typeof zoom.endValue === "number"
+        ? zoom.endValue
+        : minX + ((typeof zoom.end === "number" ? zoom.end : 100) / 100) * (maxX - minX);
+      return nearestIndexByFt(xsRef, startValue + ratio * (endValue - startValue));
+    };
+
+    const handleMove = (event: any) => {
+      const offsetX = typeof event.offsetX === "number" ? event.offsetX : event.zrX;
+      const offsetY = typeof event.offsetY === "number" ? event.offsetY : event.zrY;
+      if (typeof offsetX !== "number" || typeof offsetY !== "number") return;
+      const index = indexFromPoint(offsetX);
+      if (index == null) return;
+      showCursorLineRef.current(offsetX, clickedSampleIndexRef.current != null);
+      if (clickedSampleIndexRef.current == null) {
+        commitHoverSampleRef.current(index);
+      }
+    };
+
+    const handleClick = (event: any) => {
+      const offsetX = typeof event.offsetX === "number" ? event.offsetX : event.zrX;
+      const offsetY = typeof event.offsetY === "number" ? event.offsetY : event.zrY;
+      if (typeof offsetX !== "number" || typeof offsetY !== "number") return;
+      const index = indexFromPoint(offsetX);
+      if (index == null) return;
+      setClickedSampleIndex(index);
+      setHoverSampleIndex(null);
+      updateCursorRef.current(index);
+      showCursorLineRef.current(offsetX, true);
+    };
+
+    const handleGlobalOut = () => {
+      if (clickedSampleIndexRef.current == null) {
+        commitHoverSampleRef.current(null);
+        hideCursorLineRef.current();
+      }
+    };
+
+    const handleDomMove = (event: MouseEvent) => {
+      const rect = node.getBoundingClientRect();
+      handleMove({ offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top });
+    };
+
+    const handleDomClick = (event: MouseEvent) => {
+      const rect = node.getBoundingClientRect();
+      handleClick({ offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top });
+    };
+
+    const pointInChart = (event: MouseEvent) => {
+      const rect = node.getBoundingClientRect();
+      if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) {
+        return null;
+      }
+      return { offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
+    };
+
+    const handleWindowMove = (event: MouseEvent) => {
+      const point = pointInChart(event);
+      if (!point) return;
+      handleMove(point);
+    };
+
+    const handleWindowClick = (event: MouseEvent) => {
+      const point = pointInChart(event);
+      if (!point) return;
+      handleClick(point);
+    };
+
+    const zr = chart.getZr();
+    const handleDataZoom = () => {
+      const zoom = (chart.getOption().dataZoom as any[] | undefined)?.[0] ?? {};
+      zoomRangeRef.current = {
+        startValue: typeof zoom.startValue === "number" ? zoom.startValue : undefined,
+        endValue: typeof zoom.endValue === "number" ? zoom.endValue : undefined,
+      };
+    };
+    const resize = () => chart.resize();
+
+    chart.on("datazoom", handleDataZoom);
+    zr.on("mousemove", handleMove);
+    zr.on("click", handleClick);
+    zr.on("globalout", handleGlobalOut);
+    node.addEventListener("mousemove", handleDomMove);
+    node.addEventListener("click", handleDomClick);
+    node.addEventListener("mouseleave", handleGlobalOut);
+    window.addEventListener("mousemove", handleWindowMove, { passive: true });
+    window.addEventListener("click", handleWindowClick, { capture: true, passive: true });
+    window.addEventListener("resize", resize);
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("mousemove", handleWindowMove);
+      window.removeEventListener("click", handleWindowClick, true);
+      zr.off("mousemove", handleMove);
+      zr.off("click", handleClick);
+      zr.off("globalout", handleGlobalOut);
+      chart.off("datazoom", handleDataZoom);
+      node.removeEventListener("mousemove", handleDomMove);
+      node.removeEventListener("click", handleDomClick);
+      node.removeEventListener("mouseleave", handleGlobalOut);
+      if (hoverRafRef.current != null) {
+        cancelAnimationFrame(hoverRafRef.current);
+        hoverRafRef.current = null;
+      }
+      chart.dispose();
+      if (chartRef.current === chart) chartRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !chartNode.current) return;
+
+    const sectionRowConfig: Record<string, { height: number; gap: number }> = {
+      "Platform / Rake / Ride Height": { height: 100, gap: 12 },
+      "Rear Scrape": { height: 104, gap: 12 },
+      "Aero Load": { height: 104, gap: 12 },
+      "Drag / Scrub": { height: 104, gap: 12 },
+      "Tires": { height: 130, gap: 12 },
+      "Shocks": { height: 120, gap: 12 },
+      "Grade / Pull": { height: 104, gap: 12 },
+    };
+    const config = sectionRowConfig[preset] ?? { height: 100, gap: 12 };
+    const ROW_H = config.height;
+    const ROW_GAP = config.gap;
+    const isTires = preset === "Tires";
+    const GRID_LEFT = isTires ? 130 : 100;
+    const LABEL_LEFT = 4;
+    gridLeftRef.current = GRID_LEFT;
+
     const grid = rows.map((_, index) => ({
       left: GRID_LEFT,
-      right: 24,
-      top: 40 + index * (ROW_H + ROW_GAP),
+      right: 20,
+      top: 50 + index * (ROW_H + ROW_GAP),
       height: ROW_H,
     }));
     const xAxis = rows.map((_, index) => ({
@@ -377,7 +917,8 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
       gridIndex: index,
       min: "dataMin",
       max: "dataMax",
-      axisLabel: { show: index === rows.length - 1, color: "#8d9aaa" },
+      scale: isTires,
+      axisLabel: { show: index === rows.length - 1, color: "#8d9aaa", fontSize: 10 },
       axisLine: { lineStyle: { color: "#263241" } },
       splitLine: { lineStyle: { color: "#1f2937" } },
     }));
@@ -386,61 +927,108 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
       gridIndex: index,
       min: row.min,
       max: row.max,
+      scale: isTires,
       axisLabel: { color: "#8d9aaa", fontSize: 10 },
       axisLine: { lineStyle: { color: "#263241" } },
       splitLine: { lineStyle: { color: "#1f2937" } },
     }));
-    // horizontal row labels as ECharts graphic text
-    const graphic: any[] = rows.map((row, index) => ({
-      type: "text",
-      left: 4,
-      top: 43 + index * (ROW_H + ROW_GAP),
-      style: {
-        text: row.label,
-        fill: "#8d9aaa",
-        fontSize: 11,
-        fontWeight: 600,
-        fontFamily: "Inter, sans-serif",
-      },
-    }));
-    const totalChartH = 40 + rows.length * (ROW_H + ROW_GAP) + 30;
-    if (chartNode.current) {
-      chartNode.current.style.height = `${totalChartH}px`;
-      chartNode.current.style.minHeight = `${totalChartH}px`;
+
+    const graphic: any[] = [];
+    rows.forEach((row, index) => {
+      const top = 50 + index * (ROW_H + ROW_GAP);
+      graphic.push({
+        type: "line",
+        shape: { x1: GRID_LEFT, y1: top, x2: 9999, y2: top },
+        style: { stroke: "rgba(31,41,55,0.5)", lineWidth: 1 },
+        silent: true,
+        z: 1,
+      });
+      graphic.push({
+        type: "rect",
+        left: 0,
+        right: 0,
+        top,
+        height: ROW_H,
+        style: { fill: "rgba(15,17,23,0.5)", opacity: 1 },
+        silent: true,
+        z: 0,
+      });
+      graphic.push({
+        type: "line",
+        shape: { x1: GRID_LEFT, y1: top, x2: GRID_LEFT, y2: top + ROW_H },
+        style: { stroke: "rgba(31,41,55,0.4)", lineWidth: 1 },
+        silent: true,
+        z: 1,
+      });
+      graphic.push({
+        type: "text",
+        left: LABEL_LEFT,
+        top: top + 6,
+        style: {
+          text: row.label,
+          fill: "#8d9aaa",
+          fontSize: 10,
+          fontWeight: 600,
+          fontFamily: "Inter, sans-serif",
+          lineWidth: 0,
+        },
+        z: 2,
+      });
+    });
+
+    if (rows.length > 0) {
+      const lastTop = 50 + (rows.length - 1) * (ROW_H + ROW_GAP);
+      graphic.push({
+        type: "line",
+        shape: { x1: GRID_LEFT, y1: lastTop + ROW_H, x2: 9999, y2: lastTop + ROW_H },
+        style: { stroke: "rgba(31,41,55,0.5)", lineWidth: 1 },
+        silent: true,
+        z: 1,
+      });
     }
-    const eventLines = legacyEvents
-      .map((event) => eventDistanceFt(event))
+
+    const totalChartH = 50 + rows.length * (ROW_H + ROW_GAP) + 34;
+    chartNode.current.style.height = `${totalChartH}px`;
+    chartNode.current.style.minHeight = `${totalChartH}px`;
+
+    const eventLines = [
+      ...platformEvents.map((event) => event.lap_dist_ft ?? null),
+      ...legacyEvents.map((event) => eventDistanceFt(event)),
+    ]
       .filter((value): value is number => value != null)
       .map((x) => ({ xAxis: x }));
-    // Build markArea data for event annotations (translucent bands)
-    const eventMarkAreas = legacyEvents
-      .filter((event) => eventDistanceFt(event) != null)
-      .map((event) => {
-        const distFt = eventDistanceFt(event)!;
-        const bandWidth = 50; // 50 ft band around event
-        const color = event.severity === "critical" ? "#ef4444"
-          : event.severity === "high" ? "#f97316"
+    const eventMarkAreas = [
+      ...platformEvents
+        .filter((event) => event.lap_dist_ft != null)
+        .map((event) => ({ distFt: event.lap_dist_ft!, label: event.title, severity: event.severity })),
+      ...legacyEvents
+        .filter((event) => eventDistanceFt(event) != null)
+        .map((event) => ({ distFt: eventDistanceFt(event)!, label: event.event_subtype ?? event.event_type, severity: event.severity })),
+    ].map((event) => {
+      const color = event.severity === "critical" ? "#ef4444"
+        : event.severity === "high" ? "#f97316"
           : event.severity === "watch" ? "#f59e0b"
-          : "#38bdf8";
-        return {
-          name: event.event_subtype ?? event.event_type,
-          xAxis: distFt - bandWidth / 2,
-          itemStyle: { color, opacity: 0.08 },
-          label: {
-            show: true,
-            position: "insideTop" as const,
-            color,
-            fontSize: 9,
-            fontWeight: 600,
-            formatter: event.event_subtype ?? event.event_type.replace(/_/g, " "),
-          },
-        };
-      });
+            : "#38bdf8";
+      return {
+        name: event.label,
+        xAxis: event.distFt - 25,
+        itemStyle: { color, opacity: 0.08 },
+      };
+    });
+
     const series: SeriesOption[] = [];
     rows.forEach((row, rowIndex) => {
       row.channels.forEach((channel, channelIndex) => {
         const channelValues = values(trace, channel.name);
         const data = xs.map((x, index) => [x, channelValues[index]]);
+        let lineType: "solid" | "dashed" | "dotted" = "solid";
+        if (preset === "Tires") {
+          const label = channel.label.toLowerCase();
+          if (label === "inner") lineType = "solid";
+          else if (label === "middle") lineType = "dashed";
+          else if (label === "outer") lineType = "dotted";
+        }
+        if (isProxyChannel(channel.name)) lineType = "dashed";
         series.push({
           type: "line",
           name: channel.label,
@@ -449,7 +1037,7 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
           showSymbol: false,
           sampling: "lttb",
           connectNulls: false,
-          lineStyle: { width: 1.35, color: channel.color, type: isProxyChannel(channel.name) ? "dashed" : "solid" },
+          lineStyle: { width: 1.35, color: channel.color, type: lineType },
           itemStyle: { color: channel.color },
           data,
           markLine: rowIndex === 0 && channelIndex === 0 ? {
@@ -476,52 +1064,77 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
         });
       });
     });
+
     const option: EChartsOption = {
       backgroundColor: "transparent",
       animation: false,
       color: rows.flatMap((row) => row.channels.map((channel) => channel.color)),
-      tooltip: { trigger: "axis", axisPointer: { type: "cross" }, formatter: makeTooltipFormatter(rows) },
-      legend: { top: 0, right: 0, textStyle: { color: "#cbd6e3" } },
+      tooltip: { show: false, trigger: "none", axisPointer: { type: "cross" } },
+      legend: {
+        type: "scroll",
+        top: 0,
+        left: 18,
+        right: 18,
+        itemWidth: 10,
+        itemHeight: 8,
+        itemGap: 10,
+        textStyle: { color: "#cbd6e3", fontSize: 11 },
+        pageIconColor: "#38bdf8",
+        pageIconInactiveColor: "#334155",
+        pageTextStyle: { color: "#8d9aaa" },
+      },
       grid,
       xAxis,
       yAxis,
       graphic,
       dataZoom: [
-        { type: "inside", xAxisIndex: rows.map((_, i) => i), filterMode: "none" },
-        { type: "slider", xAxisIndex: rows.map((_, i) => i), bottom: 4, height: 20, filterMode: "none" },
+        { type: "slider", xAxisIndex: rows.map((_, i) => i), bottom: 0, height: 14, filterMode: "none",
+          borderColor: "#1f2937", backgroundColor: "rgba(15,17,23,0.6)", fillerColor: "rgba(59,130,246,0.15)",
+          handleStyle: { color: "#3b82f6", borderColor: "#3b82f6" },
+          textStyle: { color: "#7d8a99", fontSize: 9 },
+          labelFormatter: (value: number) => `${Math.round(value).toLocaleString()} ft`,
+          showDetail: false,
+          ...(zoomRangeRef.current ?? {}),
+        },
       ],
       toolbox: { feature: { dataZoom: { yAxisIndex: "none" }, restore: {} }, iconStyle: { borderColor: "#8d9aaa" } },
-      axisPointer: { link: [{ xAxisIndex: rows.map((_, i) => i) }] },
+      axisPointer: { link: [{ xAxisIndex: rows.map((_, i) => i) }], snap: false },
       series,
     };
-    chart.setOption(option);
+    chart.setOption(option, { notMerge: false, lazyUpdate: true, replaceMerge: ["series", "xAxis", "yAxis", "grid", "graphic"] });
+    chart.resize();
+  }, [legacyEvents, platformEvents, preset, rows, trace, xs]);
 
-    // Throttled hover — use RAF to avoid flooding React state on mousemove
-    let rafId: number | null = null;
-    chart.on("updateAxisPointer", (event: any) => {
-      if (event.dataIndex == null) return;
-      if (rafId != null) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        updateCursor(event.dataIndex);
-      });
-    });
-    chart.on("click", (params) => {
-      if (typeof params.dataIndex === "number") updateCursor(params.dataIndex);
-    });
-    const resize = () => chart.resize();
-    window.addEventListener("resize", resize);
-    return () => {
-      window.removeEventListener("resize", resize);
-      chart.dispose();
-      if (chartRef.current === chart) chartRef.current = null;
+  // ── Escape key clears clicked sample ─────────────────────────
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (clickedSampleIndexRef.current != null) {
+        setClickedSampleIndex(null);
+        setHoverSampleIndex(null);
+        onCursorChange({
+          ...cursor,
+          selected_sample_index: null,
+          selected_lap_dist_ft: null,
+          selected_lap_pct: null,
+          selected_event_id: null,
+        });
+      }
+      hideCursorLine();
     };
-  }, [overview.run_id, legacyEvents, trace, xs, rows, updateCursor]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [cursor, hideCursorLine, onCursorChange]);
+
+  // ── clear clicked sample when trace/preset changes ───────────
+  useEffect(() => {
+    setHoverSampleIndex(null);
+  }, [trace]);
 
   // ── cursor readout ───────────────────────────────────────────
   const selected = {
-    distanceFt: cursor.selected_lap_dist_ft ?? xs[selectedIndex] ?? null,
-    lapPct: cursor.selected_lap_pct ?? valueAt(trace, "lap_dist_pct_100", selectedIndex),
+    distanceFt: xs[selectedIndex] ?? null,
+    lapPct: valueAt(trace, "lap_dist_pct_100", selectedIndex),
     speed: valueAt(trace, "speed_mph", selectedIndex),
     throttle: valueAt(trace, "throttle_pct", selectedIndex),
     brake: valueAt(trace, "brake_pct", selectedIndex),
@@ -534,21 +1147,101 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
     centerRake: valueAt(trace, "center_rake_fs_in", selectedIndex),
     sideRake: valueAt(trace, "side_rake_in", selectedIndex),
     dynamicPressure: valueAt(trace, "dynamic_pressure_psf", selectedIndex),
+    rearMinMm: valueAt(trace, "rear_min_ride_height_mm", selectedIndex),
+    rearScrapeMarginMm: valueAt(trace, "rear_scrape_margin_mm", selectedIndex),
+    aeroLoadIndex: valueAt(trace, "aero_load_index", selectedIndex),
+    wholeCarBottomingRisk: valueAt(trace, "whole_car_bottoming_risk", selectedIndex),
+    cfsRisk: valueAt(trace, "cfs_risk_score", selectedIndex),
+    platformRisk: valueAt(trace, "platform_risk_score", selectedIndex),
+    dragScrub: valueAt(trace, "drag_scrub_suspicion", selectedIndex),
+    fullThrottleResistance: valueAt(trace, "full_throttle_resistance_index", selectedIndex),
   };
+
+  const platformBalanceValue = values(trace, "platform_balance_label")[selectedIndex];
+  const selectedPlatformBalance = typeof platformBalanceValue === "string" ? platformBalanceValue : null;
 
   // ── event severity badge colour ──────────────────────────────
   const severityColour = (sev: string) =>
     sev === "critical" ? "#ef4444" : sev === "high" ? "#f97316" : sev === "watch" ? "#f59e0b" : "#38bdf8";
-
-  // ── workbench subview ────────────────────────────────────────
-  const [workbenchView, setWorkbenchView] = useState<WorkbenchView>("balance");
-  const [tireMapMode, setTireMapMode] = useState<any>("pressure");
 
   // ── helper to get latest value ───────────────────────────────
   const latest = useCallback((ch: string) => {
     const vals = getTraceValues(trace, ch);
     return vals.length > 0 ? vals[vals.length - 1] : null;
   }, [trace]);
+
+  const semanticSeverity = (value: number | null | undefined): "missing" | "safe" | "watch" | "high" | "critical" => {
+    if (value == null || !Number.isFinite(value)) return "missing";
+    if (value >= 0.85) return "critical";
+    if (value >= 0.65) return "high";
+    if (value >= 0.35) return "watch";
+    return "safe";
+  };
+
+  const summaryItems = [
+    { label: "CFS", value: selected.cfsIn != null ? `${selected.cfsIn.toFixed(3)} in` : "Unavailable", badge: "measured", severity: riskLabel(selected.cfsIn).toLowerCase() },
+    { label: "Rear min", value: selected.rearMinMm != null ? `${selected.rearMinMm.toFixed(1)} mm` : "Unavailable", badge: "calculated", severity: semanticSeverity(selected.rearScrapeMarginMm != null ? 1 - Math.max(0, Math.min(1, selected.rearScrapeMarginMm / 25)) : null) },
+    { label: "Rake", value: selected.centerRake != null || selected.sideRake != null ? `${fmt(selected.centerRake, 2)} / ${fmt(selected.sideRake, 3)} in` : "Unavailable", badge: "calculated", severity: "safe" },
+    { label: "Aero load", value: selected.aeroLoadIndex != null ? selected.aeroLoadIndex.toFixed(3) : "Unavailable", badge: "proxy", severity: semanticSeverity(selected.aeroLoadIndex != null ? Math.abs(selected.aeroLoadIndex - 1) : null) },
+    { label: "Bottoming", value: selected.wholeCarBottomingRisk != null ? selected.wholeCarBottomingRisk.toFixed(2) : "Unavailable", badge: "proxy", severity: semanticSeverity(selected.wholeCarBottomingRisk) },
+    { label: "Balance", value: selectedPlatformBalance ?? "Unavailable", badge: "derived", severity: selectedPlatformBalance ? (selectedPlatformBalance.toLowerCase().includes("bottom") ? "critical" : selectedPlatformBalance.toLowerCase().includes("risk") ? "high" : "safe") : "missing" },
+    { label: "Scrub", value: selected.dragScrub != null ? selected.dragScrub.toFixed(2) : "Unavailable", badge: "proxy", severity: semanticSeverity(selected.dragScrub) },
+    { label: "Selected", value: selected.distanceFt != null ? `Lap ${trace?.lap ?? "n/a"} @ ${selected.distanceFt.toFixed(0)} ft` : `Lap ${trace?.lap ?? "n/a"}`, badge: readoutSource.toLowerCase(), severity: selected.distanceFt != null ? "safe" : "missing" },
+  ];
+
+  const riskSegments = useMemo(() => {
+    const riskChannels = [
+      "cfs_risk_score",
+      "platform_risk_score",
+      "rear_scrape_risk_score",
+      "rear_platform_contact_risk",
+      "whole_car_bottoming_risk",
+      "drag_scrub_suspicion",
+      "full_throttle_resistance_index",
+    ];
+    const available = riskChannels
+      .map((name) => values(trace, name) as Array<number | null>)
+      .filter((vals) => vals.some((v) => typeof v === "number" && Number.isFinite(v)));
+    if (available.length === 0 || xs.length === 0) return [];
+    const segmentCount = Math.min(120, Math.max(24, Math.floor(xs.length / 8)));
+    return Array.from({ length: segmentCount }, (_, segmentIndex) => {
+      const startIndex = Math.floor((segmentIndex / segmentCount) * xs.length);
+      const endIndex = Math.min(xs.length - 1, Math.floor(((segmentIndex + 1) / segmentCount) * xs.length));
+      let risk: number | null = null;
+      for (const vals of available) {
+        for (let i = startIndex; i <= endIndex; i += 1) {
+          const value = vals[i];
+          if (typeof value === "number" && Number.isFinite(value)) risk = Math.max(risk ?? 0, value);
+        }
+      }
+      return {
+        startIndex,
+        endIndex,
+        risk,
+        severity: semanticSeverity(risk),
+      };
+    });
+  }, [trace, xs]);
+
+  const scatterPoints = useMemo(() => {
+    if (workbenchView !== "aero_load") return [];
+    const speed = values(trace, "speed_mph") as Array<number | null>;
+    const aero = (values(trace, "aero_load_index") as Array<number | null>).some((v) => typeof v === "number")
+      ? values(trace, "aero_load_index") as Array<number | null>
+      : values(trace, "dynamic_pressure_lap_index") as Array<number | null>;
+    const maxSpeed2 = speed.reduce<number>((max, v) => typeof v === "number" ? Math.max(max, v * v) : max, 0);
+    const maxAero = aero.reduce<number>((max, v) => typeof v === "number" ? Math.max(max, Math.abs(v)) : max, 0);
+    if (maxSpeed2 <= 0 || maxAero <= 0) return [];
+    const stride = Math.max(1, Math.floor(speed.length / 180));
+    const points: Array<{ x: number; y: number; risk: number | null; distance: number | null }> = [];
+    for (let i = 0; i < speed.length; i += stride) {
+      const s = speed[i];
+      const y = aero[i];
+      if (typeof s !== "number" || typeof y !== "number" || !Number.isFinite(s) || !Number.isFinite(y)) continue;
+      points.push({ x: (s * s) / maxSpeed2, y: y / maxAero, risk: valueAt(trace, "whole_car_bottoming_risk", i), distance: xs[i] ?? null });
+    }
+    return points;
+  }, [trace, workbenchView, xs]);
 
   // ── engineering panel renderers ──────────────────────────────
   const renderBalancePanel = () => (
@@ -562,6 +1255,19 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
         <EngineeringMetricCard title="Roll Balance" value={`Front ${formatChannelValue(latest("front_platform_roll_deg_from_rh") as number, "°")} / Rear ${formatChannelValue(latest("rear_platform_roll_deg_from_rh") as number, "°")}`} subtitle={`Balance: ${formatChannelValue(latest("platform_roll_balance_deg") as number, "°")}`} channelName="platform_roll_balance_deg" color="#a78bfa" />
         <EngineeringMetricCard title="Rake / Pitch" value={`Rake ${formatChannelValue(latest("center_rake_fs_in") as number, "in")}`} subtitle={`Pitch ${formatChannelValue(latest("platform_pitch_deg_from_rh") as number, "°")}`} color="#4ade80" />
       </div>
+    </div>
+  );
+
+  const renderRearScrapePanel = () => (
+    <div className="engineering-panel">
+      <div className="engineering-panel-grid">
+        <EngineeringMetricCard title="Rear Min Ride Height" channelName="rear_min_ride_height_mm" value={latest("rear_min_ride_height_mm")} color="#22d3ee" />
+        <EngineeringMetricCard title="Rear Scrape Margin" channelName="rear_scrape_margin_mm" value={latest("rear_scrape_margin_mm")} color="#f97316" />
+        <EngineeringMetricCard title="Rear Scrape Risk" channelName="rear_scrape_risk_score" value={latest("rear_scrape_risk_score")} riskValue={latest("rear_scrape_risk_score") as number | null} color="#ef4444" />
+        <EngineeringMetricCard title="Rear Contact Risk" channelName="rear_platform_contact_risk" value={latest("rear_platform_contact_risk")} riskValue={latest("rear_platform_contact_risk") as number | null} color="#f59e0b" />
+        <EngineeringMetricCard title="Rear Scrape Side" channelName="rear_scrape_side_label" value={safeStringValue(latest("rear_scrape_side_label"))} color="#a78bfa" />
+      </div>
+      <p className="section-note" style={{ marginTop: 8 }}>Rear scrape uses existing rear ride-height, scrape-margin, and contact-risk channels. Unavailable values remain unavailable rather than being treated as safe.</p>
     </div>
   );
 
@@ -580,6 +1286,32 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
           <div className="aero-pressure-fill aero-flow" style={{ width: `${ribbonPct}%`, background: ribbonColor }} />
         </div>
         <span className="aero-pressure-label" style={{ color: ribbonColor }}>{aeroIdx?.toFixed(3) ?? "—"}</span>
+      </div>
+      <div className="aero-scatter-panel">
+        <div className="aero-scatter-header">
+          <span><BarChart3 size={13} /> Speed^2 vs aero/load proxy</span>
+          <span className="proxy-pill">PROXY</span>
+        </div>
+        {scatterPoints.length === 0 ? (
+          <p className="muted" style={{ margin: 0, fontSize: 11 }}>Unavailable: speed and aero/load proxy channels are required.</p>
+        ) : (
+          <svg className="aero-scatter-svg" viewBox="0 0 360 120" role="img" aria-label="Speed squared versus aero load proxy scatter">
+            <line x1="28" y1="96" x2="344" y2="96" className="scatter-axis" />
+            <line x1="28" y1="10" x2="28" y2="96" className="scatter-axis" />
+            <text x="344" y="113" className="scatter-label" textAnchor="end">speed^2</text>
+            <text x="4" y="16" className="scatter-label">proxy</text>
+            {scatterPoints.map((point, index) => (
+              <circle
+                key={`${point.distance ?? index}-${index}`}
+                cx={28 + point.x * 316}
+                cy={96 - point.y * 82}
+                r={point.distance === selected.distanceFt ? 3.8 : 2.2}
+                className="scatter-point"
+                data-severity={semanticSeverity(point.risk)}
+              />
+            ))}
+          </svg>
+        )}
       </div>
       <div className="engineering-panel-grid">
         <EngineeringMetricCard title="Aero Load Index" channelName="aero_load_index" value={latest("aero_load_index")} color="#38bdf8" />
@@ -610,21 +1342,41 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
 
   const renderTiresPanel = () => (
     <div className="engineering-panel">
+      <p className="section-note" style={{ fontSize: 10, marginBottom: 6 }}>
+        Tire temps are measured iRacing telemetry channels. Lines show inner/middle/outer surface temperature across each tire.
+      </p>
       <CornerTireMap trace={trace} mode={tireMapMode} onModeChange={setTireMapMode} />
+      <div className="engineering-panel-grid" style={{ marginTop: 8 }}>
+        <CornerBarChart trace={trace} channelPrefix="lf_pressure_gain" label="Pressure Gain" unit="kPa" color="#4ade80" decimals={1} />
+        <CornerBarChart trace={trace} channelPrefix="lf_temp_spread" label="Temp Spread" unit="°C" color="#f97316" decimals={1} />
+        <CornerBarChart trace={trace} channelPrefix="lf_slip_ratio_proxy" label="Slip Ratio" color="#a78bfa" decimals={3} />
+      </div>
       <p className="section-note" style={{ marginTop: 8 }}>Inner hotter than outer may indicate camber load. Outer hotter than inner may indicate rollover, under-camber, or overdriving. Slip values are proxies unless true wheel/ground speed calibration is available.</p>
     </div>
   );
 
   const renderShocksPanel = () => (
     <div className="engineering-panel">
+      {/* Four-corner shock velocity histograms */}
+      <div className="shock-histogram-grid">
+        <ShockHistogram trace={trace} channelName="lf_shock_vel_in_s" corner="LF" color="#4ade80" />
+        <ShockHistogram trace={trace} channelName="rf_shock_vel_in_s" corner="RF" color="#ef4444" />
+        <ShockHistogram trace={trace} channelName="lr_shock_vel_in_s" corner="LR" color="#eab308" />
+        <ShockHistogram trace={trace} channelName="rr_shock_vel_in_s" corner="RR" color="#22d3ee" />
+      </div>
+      {/* Four-corner activity bars */}
+      <div className="engineering-panel-grid" style={{ marginBottom: 8 }}>
+        <CornerBarChart trace={trace} channelPrefix="lf_shock_activity_index" label="Shock Activity" color="#a78bfa" decimals={3} />
+        <CornerBarChart trace={trace} channelPrefix="lf_damper_energy_proxy" label="Damper Energy" color="#c084fc" decimals={3} />
+      </div>
       <div className="engineering-panel-grid">
-        <EngineeringMetricCard title="Shock Velocity RMS" channelName="shock_velocity_rms" value={latest("shock_velocity_rms")} riskValue={Math.min(1, (latest("shock_velocity_rms") as number ?? 0) / 5)} color="#38bdf8" />
-        <EngineeringMetricCard title="Shock Activity" channelName="shock_activity_index" value={latest("shock_activity_index")} riskValue={Math.min(1, (latest("shock_activity_index") as number ?? 0) / 10)} color="#a78bfa" />
+        <EngineeringMetricCard title="Shock Velocity RMS" channelName="shock_velocity_rms" value={latest("shock_velocity_rms")} riskValue={scaledRisk(latest("shock_velocity_rms") as number | null, 5)} color="#38bdf8" />
+        <EngineeringMetricCard title="Shock Activity" channelName="shock_activity_index" value={latest("shock_activity_index")} riskValue={scaledRisk(latest("shock_activity_index") as number | null, 10)} color="#a78bfa" />
         <EngineeringMetricCard title="Damper Energy Proxy" channelName="damper_energy_proxy" value={latest("damper_energy_proxy")} color="#c084fc" />
         <EngineeringMetricCard title="Platform Stability" value={`Stability: ${formatChannelValue(latest("platform_stability_score") as number, "index")}`} subtitle={`Rake stability: ${formatChannelValue(latest("rake_stability_score") as number, "index")}`} channelName="platform_stability_score" riskValue={latest("platform_stability_score") as number | null} color="#22c55e" />
         <EngineeringMetricCard title="Platform Compression" channelName="platform_compression_index" value={latest("platform_compression_index")} riskValue={latest("platform_compression_index") as number | null} color="#f97316" />
       </div>
-      <p className="section-note" style={{ marginTop: 8 }}>Frequency-domain shock analysis can later split aero oscillation from bump activity.</p>
+      <p className="section-note" style={{ marginTop: 8 }}>Frequency-domain shock analysis can later split aero oscillation from bump activity. Histograms show velocity distribution per corner.</p>
     </div>
   );
 
@@ -645,6 +1397,7 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
   const renderEngineeringPanel = () => {
     switch (workbenchView) {
       case "balance": return renderBalancePanel();
+      case "rear_scrape": return renderRearScrapePanel();
       case "aero_load": return renderAeroPanel();
       case "scrub_steering": return renderScrubPanel();
       case "tires": return renderTiresPanel();
@@ -661,19 +1414,11 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
           <span className="eyebrow">Platform / Aero Workbench</span>
           <h2>Platform Trace Workbench</h2>
           <p className="section-note">
-            Lap {trace?.lap ?? overview.best_useful_lap?.lap_number ?? "n/a"} | X Axis: Lap Distance [ft] | Preset: {preset}
+            Lap {trace?.lap ?? overview.best_useful_lap?.lap_number ?? "n/a"} | X Axis: Lap Distance [ft]
           </p>
         </div>
         <div className="toolbar-actions">
-          <select value={preset} onChange={(event) => setPreset(event.target.value)} aria-label="Chart preset">
-            <option>Platform / Rake / Ride Height</option>
-            <option>Speed / RPM / Pull</option>
-            <option>Drag / Scrub</option>
-            <option>Tires</option>
-            <option>Shocks</option>
-            <option>Engine</option>
-          </select>
-          <button className="secondary-button" onClick={() => chartRef.current?.dispatchAction({ type: "restore" })}>
+          <button className="secondary-button" onClick={() => { zoomRangeRef.current = null; chartRef.current?.dispatchAction({ type: "restore" }); }}>
             <RotateCcw size={16} /> Reset Zoom
           </button>
           <button className={`secondary-button${jumpedBtn === "min_splitter" ? " jump-clicked" : ""}`} onClick={() => handleJumpClick("min_splitter", minSplitterIndex, "MIN_SPLITTER")}>
@@ -682,21 +1427,60 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
           <button className={`secondary-button${jumpedBtn === "worst_speed" ? " jump-clicked" : ""}`} onClick={() => handleJumpClick("worst_speed", worstSpeedLossIndex, "WORST_SPEED_LOSS")}>
             <Activity size={16} /> Jump to Worst Speed Loss
           </button>
+          <button className="secondary-button" onClick={() => setWorkspace("map", "trace_cursor")}>
+            <MapPin size={16} /> Open Map
+          </button>
         </div>
       </header>
       <p className="proxy-warning">
         Force values are estimates/proxies derived from telemetry, setup spring rates, ride heights, shock movement, and dynamic pressure. They are not direct iRacing aerodynamic force channels.
       </p>
-      <WorkbenchSubnav active={workbenchView} onChange={setWorkbenchView} />
+      <div className="platform-summary-bar" aria-label="Current platform summary">
+        {summaryItems.map((item) => (
+          <div key={item.label} className="platform-summary-chip" data-severity={item.severity}>
+            <span className="platform-summary-label">{item.label}</span>
+            <strong>{item.value}</strong>
+            <span className="platform-summary-badge">{item.badge}</span>
+          </div>
+        ))}
+      </div>
+      <div className="platform-risk-strip" aria-label="Platform risk over lap distance">
+        {riskSegments.length === 0 ? (
+          <span className="risk-strip-empty">Risk strip unavailable: required risk channels are missing.</span>
+        ) : (
+          riskSegments.map((segment) => {
+            const isSelected = selectedIndex >= segment.startIndex && selectedIndex <= segment.endIndex;
+            const dist = xs[Math.floor((segment.startIndex + segment.endIndex) / 2)];
+            return (
+              <button
+                key={`${segment.startIndex}-${segment.endIndex}`}
+                className={`risk-strip-segment${isSelected ? " selected" : ""}`}
+                data-severity={segment.severity}
+                style={{ width: `${100 / riskSegments.length}%` }}
+                title={dist != null ? `${Math.round(dist).toLocaleString()} ft | risk ${segment.risk?.toFixed(2) ?? "unavailable"}` : "Risk unavailable"}
+                onClick={() => jumpToIndex(Math.floor((segment.startIndex + segment.endIndex) / 2))}
+                aria-label={dist != null ? `Jump to ${Math.round(dist)} feet` : "Risk segment unavailable"}
+              />
+            );
+          })
+        )}
+      </div>
+      <WorkbenchSubnav active={workbenchView} onChange={handleViewChange} />
       {renderEngineeringPanel()}
       <div className="platform-layout">
-        <div className="trace-panel" ref={chartNode} />
+        <div className="trace-panel-wrapper">
+          <div className="trace-panel" ref={chartNode} />
+          <div className="trace-cursor-line" ref={cursorLineRef} hidden />
+        </div>
         <aside className="cursor-panel">
-          <header><Crosshair size={16} /> Cursor Readout</header>
+          <header>
+            <span><Crosshair size={16} /> Cursor Readout</span>
+            <span className={`cursor-source-badge source-${readoutSource.toLowerCase()}`}>{readoutSource}</span>
+            {readoutSource === "Locked" && <span className="cursor-unlock-hint">Esc to unlock</span>}
+          </header>
           <dl>
             <div><dt>Lap</dt><dd>{trace?.lap ?? "n/a"}</dd></div>
             <div><dt>Distance</dt><dd>{fmt(selected.distanceFt, 0)} ft</dd></div>
-            <div><dt>Position</dt><dd>{fmt(selected.lapPct, 2)}%</dd></div>
             <div><dt>Speed</dt><dd>{fmt(selected.speed, 2)} mph</dd></div>
             <div><dt>Throttle</dt><dd>{fmt(selected.throttle, 1)}%</dd></div>
             <div><dt>Brake</dt><dd>{fmt(selected.brake, 1)}%</dd></div>
@@ -722,6 +1506,7 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
                 key={event.event_id}
                 onClick={() => {
                   const idx = resolveEventIndex(event.event_type);
+                  selectEvent(event.event_id, "trace_cursor");
                   jumpToIndex(idx, event.event_id);
                 }}
               >
@@ -767,6 +1552,11 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
                   <strong>Recommended:</strong> {selectedPlatformEvent.recommended_action}
                 </p>
               )}
+              <div className="diw-actions" style={{ marginTop: 8 }}>
+                <button className="trackmap-action-btn" onClick={() => setWorkspace("map", "trace_cursor")} title="Open Map at selected event">
+                  <MapPin size={10} /> Open Map
+                </button>
+              </div>
               {selectedPlatformEvent.is_proxy_based && selectedPlatformEvent.proxy_warning && (
                 <p className="proxy-note">Note: {selectedPlatformEvent.proxy_warning}</p>
               )}
@@ -780,28 +1570,32 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange }: Platfor
         </div>
       )}
 
-      {/* ── legacy platform events ── */}
-      <div className="event-jump-row">
-        {legacyEvents.map((event) => (
-          <button
-            className="secondary-button"
-            key={event.event_id}
-            onClick={() => {
-              const targetFt = eventDistanceFt(event);
-              if (targetFt == null) return;
-              const idx = nearestIndexByFt(xs, targetFt);
-              jumpToIndex(idx, event.event_id);
-            }}
-          >
-            <Activity size={16} /> {event.event_subtype ?? event.event_type}
-          </button>
-        ))}
-      </div>
-      <div className="evidence-list">
-        {legacyEvents.map((event) => (
-          <EvidenceCard event={event} key={event.event_id} />
-        ))}
-      </div>
+      {/* ── legacy platform events (only shown when no structured events exist) ── */}
+      {platformEvents.length === 0 && legacyEvents.length > 0 && (
+        <>
+          <div className="event-jump-row">
+            {legacyEvents.map((event) => (
+              <button
+                className="secondary-button"
+                key={event.event_id}
+                onClick={() => {
+                  const targetFt = eventDistanceFt(event);
+                  if (targetFt == null) return;
+                  const idx = nearestIndexByFt(xs, targetFt);
+                  jumpToIndex(idx, event.event_id);
+                }}
+              >
+                <Activity size={16} /> {event.event_subtype ?? event.event_type}
+              </button>
+            ))}
+          </div>
+          <div className="evidence-list">
+            {legacyEvents.map((event) => (
+              <EvidenceCard event={event} key={event.event_id} />
+            ))}
+          </div>
+        </>
+      )}
     </section>
   );
 }

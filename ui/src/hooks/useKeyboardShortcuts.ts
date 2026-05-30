@@ -4,7 +4,7 @@ import type { Workspace } from "../store/types";
 import type { PlatformEventItem } from "../types/telemetry";
 
 /**
- * Global keyboard shortcuts for RaceLab Garage.
+ * Global keyboard shortcuts for RacerZLab.
  *
  * Rules:
  * - Ignored while typing in input/textarea/select/contenteditable.
@@ -13,6 +13,10 @@ import type { PlatformEventItem } from "../types/telemetry";
 export function useKeyboardShortcuts(
   platformEvents: PlatformEventItem[],
   openWorkspace: (ws: Workspace) => void,
+  options?: {
+    onTogglePriorityRail?: () => void;
+    onToggleInspector?: () => void;
+  },
 ) {
   const { selection, selectEvent, selectSample, setMode } = useTelemetrySelection();
 
@@ -29,6 +33,12 @@ export function useKeyboardShortcuts(
       switch (key) {
         case "Escape":
           selectEvent(null, "manual");
+          break;
+        case "[":
+          options?.onTogglePriorityRail?.();
+          break;
+        case "]":
+          options?.onToggleInspector?.();
           break;
         case "m":
         case "M":
@@ -77,5 +87,5 @@ export function useKeyboardShortcuts(
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [platformEvents, selection.selectedLap, selection.selectedMode, selectEvent, selectSample, setMode, openWorkspace]);
+  }, [platformEvents, selection.selectedLap, selection.selectedMode, selectEvent, selectSample, setMode, openWorkspace, options]);
 }

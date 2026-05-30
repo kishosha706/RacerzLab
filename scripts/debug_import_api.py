@@ -6,7 +6,7 @@ Tests the backend import endpoints directly without the frontend.
 Useful for distinguishing backend route bugs from frontend header bugs.
 
 Usage:
-    python scripts/debug_import_api.py --ibt "C:\\path\\to\\file.ibt"
+    python scripts/debug_import_api.py --base-url http://127.0.0.1:8010 --ibt "C:\\path\\to\\file.ibt"
     python scripts/debug_import_api.py --health
     python scripts/debug_import_api.py --sessions
     python scripts/debug_import_api.py --folder "C:\\path\\to\\telemetry"
@@ -14,12 +14,14 @@ Usage:
 
 import argparse
 import json
+import socket
 import sys
 import urllib.request
 import urllib.error
 
 
 BASE_URL = "http://127.0.0.1:8010"
+REQUEST_ID = "debug_script"
 
 # Default timeout for quick requests (health, sessions, etc.)
 QUICK_TIMEOUT = 15
@@ -35,7 +37,7 @@ def request(method: str, path: str, body: dict | None = None, content_type: str 
     if content_type:
         headers["Content-Type"] = content_type
     if body is not None:
-        headers["X-RacerZLab-Request-Id"] = "debug_script"
+        headers["X-RacerZLab-Request-Id"] = REQUEST_ID
         data = json.dumps(body).encode("utf-8")
     else:
         data = None
@@ -58,6 +60,16 @@ def request(method: str, path: str, body: dict | None = None, content_type: str 
         return {
             "status": 0,
             "error": f"Connection failed: {e.reason}. Is the backend running at {BASE_URL}?",
+        }
+    except TimeoutError:
+        return {
+            "status": 0,
+            "error": f"Timed out after {timeout}s. Backend URL: {BASE_URL}",
+        }
+    except socket.timeout:
+        return {
+            "status": 0,
+            "error": f"Timed out after {timeout}s. Backend URL: {BASE_URL}",
         }
     except Exception as e:
         return {
@@ -92,8 +104,9 @@ def cmd_sessions() -> None:
 def cmd_import_ibt(ibt_path: str) -> None:
     print(f"\n=== Import .ibt: POST {BASE_URL}/api/imports/ibt ===")
     print(f"  File: {ibt_path}")
-    print(f"  Content-Type: application/json")
-    print(f"  Import may take 1–3 minutes for large .ibt files.")
+    print("  Content-Type: application/json")
+    print(f"  X-RacerZLab-Request-Id: {REQUEST_ID}")
+    print("  Import may take 1–3 minutes for large .ibt files.")
     result = request("POST", "/api/imports/ibt", body={"path": ibt_path}, content_type="application/json", timeout=IMPORT_TIMEOUT)
     print(f"  Status: {result['status']}")
     if result.get("body"):
@@ -117,7 +130,7 @@ def cmd_import_ibt(ibt_path: str) -> None:
 def cmd_import_wrong_content_type() -> None:
     """Test that wrong Content-Type is rejected properly."""
     print(f"\n=== Test Wrong Content-Type: POST {BASE_URL}/api/imports/ibt ===")
-    print(f"  Content-Type: text/plain (should be rejected)")
+    print("  Content-Type: text/plain (should be rejected)")
     result = request("POST", "/api/imports/ibt", body={"path": "test.ibt"}, content_type="text/plain")
     print(f"  Status: {result['status']}")
     if result.get("error"):
@@ -141,35 +154,38 @@ def cmd_scan_folder(folder_path: str) -> None:
 
 
 def main() -> None:
+    global BASE_URL
     parser = argparse.ArgumentParser(description="Debug RacerZLab import API")
+    parser.add_argument("--base-url", default=BASE_URL, help="Backend base URL (default: http://127.0.0.1:8010)")
     parser.add_argument("--ibt", type=str, help="Path to .ibt file for import test")
     parser.add_argument("--folder", type=str, help="Path to telemetry folder for scan test")
     parser.add_argument("--health", action="store_true", help="Check backend health")
+    parser.add_argument("--health-only", action="store_true", help="Alias for --health")
     parser.add_argument("--sessions", action="store_true", help="List sessions")
     parser.add_argument("--all", action="store_true", help="Run all available tests")
     args = parser.parse_args()
+    BASE_URL = args.base_url.rstrip("/")
 
-    if not any(vars(args).values()):
+    requested = args.ibt or args.folder or args.health or args.health_only or args.sessions or args.all
+    if not requested:
         parser.print_help()
         print("\nNo arguments provided. Running default health check.")
         args.health = True
 
-    if args.health or args.all:
+    if args.health or args.health_only or args.all:
         cmd_health()
     if args.sessions or args.all:
         cmd_sessions()
     if args.all:
         cmd_import_wrong_content_type()
-    if args.ibt or args.all:
-        if args.ibt:
-            cmd_import_ibt(args.ibt)
-        elif args.all:
-            print("\n  (skipping actual .ibt import — use --ibt to specify a file)")
-    if args.folder or args.all:
-        if args.folder:
-            cmd_scan_folder(args.folder)
-        elif args.all:
-            print("\n  (skipping folder scan — use --folder to specify a path)")
+    if args.ibt:
+        cmd_import_ibt(args.ibt)
+    elif args.all:
+        print("\n  (skipping actual .ibt import — use --ibt to specify a file)")
+    if args.folder:
+        cmd_scan_folder(args.folder)
+    elif args.all:
+        print("\n  (skipping folder scan — use --folder to specify a path)")
 
     print("\nDone.")
 

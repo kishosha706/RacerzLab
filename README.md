@@ -14,7 +14,7 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **Laps Workspace** — lap table with stint map visualization, Performance/Trust/Engineering Value scoring, subviews (Current Run, Windows, All Sessions, Baselines, Compare Basket)
 - **Laps Stint Map** — compact colored-block visualization per lap with mode toggle (Engineering Value, Lap Time Delta, Draft/Validity, Falloff), selected lap highlight, best window outline
 - **Pace Quality Scoring** — three-dimension system: Performance (speed/consistency/falloff/stress), Trust (validity/draft/completeness/window/context), Engineering Value (combined). Percentage-based thresholds, caps for wreck/pit/<60%/draft, deductions for missing data.
-- **Compare Basket** — persistent bottom-right drawer for collecting laps/runs to compare. Baseline/test slots with readiness state (ready/caution/not_valid/reference_mode), cross-session support, validation warnings, Swap/Clear/Open Compare.
+- **Compare Basket** — persistent bottom-right drawer for collecting laps/runs to compare. Baseline/test slots with readiness state (ready/caution/not_valid/reference_mode), cross-session support, validation warnings, Swap/Clear/Open Compare. Persists to localStorage across app restarts.
 - **All Sessions / Baselines** — browse all imported runs with Add as Baseline/Test actions. Recommended baseline candidates (fastest clean lap, most recent run, best 10-lap EV window).
 - **Platform/Aero Workbench** — MoTeC-style stacked chart workbench (ECharts) with Platform/Rake, Speed/RPM, Drag/Scrub, Tires, Shocks, Grade/Pull subviews. Event markArea annotation bands.
 - **Compare Workbook** — baseline vs test lap comparison by lap percentage with verdict, whole-car index, four corners, tires, shocks, driver, engine, and delta traces views
@@ -25,6 +25,7 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **Setup Focus Mode** — 16 event types mapped to related setup keys; fields highlight/dim on event selection. Explicit/Inferred badges with tooltips. Diff vs Baseline toggle.
 - **Evidence Inspector Source Stack** — structured sections: Where, What, Evidence, Related Setup, Decision with action buttons (Platform, Map, Test)
 - **Clickable Evidence Chips** — evidence chips in Overview open Platform/Setup. EvidenceCard clickable with Platform/Map actions.
+- **Comprehensive UX Audit** — full page-by-page review completed (2026-05-28). P0-P3 priority matrix documented in `docs/future_ux_improvements.md`.
 - **Learning/Race Mode** — toggle between short/direct (Race Mode) and verbose/coaching (Learning Mode) via L key or mode badge click. Mode-aware copy in Overview, Crew Chief, and inspector.
 - **Keyboard Shortcuts** — Esc clear, M/P/O/C/N workspace nav, L mode toggle, ←/→ event navigation
 - **Persistent Evidence Inspector** — right-side Crew Chief panel with event selection, evidence cards, setup linkage, and next-action buttons
@@ -36,7 +37,7 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **Vectorized Analysis Pipeline** — parallel Polars path (opt-in via `RACELAB_ANALYSIS_ENGINE` env var) with 26× speedup at 10k rows, 111 core channels, full parity with row path across 38 synthetic tests + real Talladega validation. Row engine remains production default.
 - **Engine Comparison Script** — `scripts/compare_analysis_engines.py` for validating vector vs row path on real data
 - **Extrema-preserving downsampling** — CFS minimums and event peaks never lost in chart views
-- **489 tests** — unit, integration, parity, benchmarks; fast suite <4s
+- **492 tests** — unit, integration, parity, benchmarks; fast suite <4s
 
 ## Proxy Disclaimer
 
@@ -58,7 +59,7 @@ RaceLab Garage is intended to be used as a desktop app. Recommended launch:
 .\scripts\start_desktop.ps1
 ```
 
-This starts the RaceLab Engine backend on `127.0.0.1:8000` and opens a native Tauri window. The backend remains bound to the local machine only.
+This starts the RaceLab Engine backend on `127.0.0.1:8010` and opens a native Tauri window. The backend remains bound to the local machine only.
 
 Production desktop build:
 
@@ -181,11 +182,12 @@ GET  /api/sessions/runs/{run_id}/laps (standalone lap list)
 - Tire wear/falloff conclusions require longer runs for confidence
 - Tire temp/wear data may be unavailable on short runs
 - No cloud sync — all data is local only
-- Native Tauri file dialogs not yet implemented (uses browser file input)
+- Native Tauri file dialogs scaffolded and wired for .ibt/.mt2 import; browser file input preserved as fallback
 - No setup editor or live setup comparison
 - Vectorized engine validated on Talladega oval only — road course and short-track real .ibt samples pending
-- Dynamic track-type weighting deferred — insufficient .ibt variety
-- Global unit toggle deferred — high risk, needs architecture change
+- Dynamic track-type weighting deferred — insufficient .ibt variety for validation
+- Global unit toggle deferred/design-only — high risk, needs architecture change
+- Ghost lap proxy deferred/design-only — no implementation yet
 
 ---
 

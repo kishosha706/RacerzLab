@@ -292,6 +292,14 @@ class RaceLabRepository:
                 """,
                 (row["run_id"],),
             ).fetchone()
+            lap_count_row = connection.execute(
+                "SELECT COUNT(*) as cnt FROM laps WHERE run_id = ?",
+                (row["run_id"],),
+            ).fetchone()
+            has_setup = connection.execute(
+                "SELECT 1 FROM setup_snapshots WHERE run_id = ? LIMIT 1",
+                (row["run_id"],),
+            ).fetchone()
             recommendation = connection.execute(
                 """
                 SELECT issue
@@ -302,6 +310,7 @@ class RaceLabRepository:
                 """,
                 (row["run_id"],),
             ).fetchone()
+            best_time = best_lap["lap_time"] if best_lap else None
             items.append(
                 {
                     "run_id": row["run_id"],
@@ -310,7 +319,10 @@ class RaceLabRepository:
                     "setup_name": row["setup_name"],
                     "imported_at": row["imported_at"],
                     "best_lap_number": best_lap["lap_number"] if best_lap else None,
-                    "best_lap_time": best_lap["lap_time"] if best_lap else None,
+                    "best_lap_time": best_time,
+                    "best_lap_time_s": best_time,
+                    "lap_count": lap_count_row["cnt"] if lap_count_row else None,
+                    "has_setup_snapshot": has_setup is not None,
                     "primary_issue": recommendation["issue"] if recommendation else None,
                 }
             )

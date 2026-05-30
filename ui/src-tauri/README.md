@@ -1,6 +1,6 @@
-# RaceLab Garage Desktop Shell
+# RacerZLab Desktop Shell
 
-This is a minimal Tauri 2 desktop shell for RaceLab Garage.
+This is a minimal Tauri 2 desktop shell for RacerZLab.
 
 Normal development launch from the project root:
 

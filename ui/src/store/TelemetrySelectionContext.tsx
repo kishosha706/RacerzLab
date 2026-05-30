@@ -30,8 +30,10 @@ type SelectionAction =
   | { type: "SET_WORKSPACE"; workspace: Workspace; source: SelectionSource }
   | { type: "SELECT_ZONE"; zoneId: string | null }
   | { type: "SET_HOVER"; lapPct: number | null; sampleIndex?: number | null }
+  | { type: "SET_PLAYBACK_ACTIVE"; active: boolean }
   | { type: "RESET_SELECTION" }
-  | { type: "LOAD_RUN"; runId: string; bestLap: number | null };
+  | { type: "LOAD_RUN"; runId: string; bestLap: number | null }
+  | { type: "FOCUS_EVENT"; eventId: string; lap: number | null; sampleIndex: number | null; lapDistFt: number | null; lapPct: number | null; workspace: Workspace; source: SelectionSource };
 
 function selectionReducer(state: TelemetrySelection, action: SelectionAction): TelemetrySelection {
   switch (action.type) {
@@ -40,7 +42,7 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
     case "SELECT_COMPARE_RUN":
       return { ...state, selectedCompareRunId: action.runId };
     case "SELECT_LAP":
-      return { ...state, selectedLap: action.lap, selectedSampleIndex: null, selectedLapDistFt: null, selectedLapPct: null };
+      return { ...state, selectedLap: action.lap, selectedSampleIndex: null, selectedLapDistFt: null, selectedLapPct: null, selectedEventId: null, selectedChannel: null };
     case "SELECT_SAMPLE":
       return {
         ...state,
@@ -63,6 +65,8 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
       return { ...state, selectedZoneId: action.zoneId, selectionSource: "track_map" };
     case "SET_HOVER":
       return { ...state, hoverLapPct: action.lapPct, hoverSampleIndex: action.sampleIndex ?? state.hoverSampleIndex };
+    case "SET_PLAYBACK_ACTIVE":
+      return { ...state, playbackActive: action.active };
     case "RESET_SELECTION":
       return { ...DEFAULT_SELECTION, selectedRunId: state.selectedRunId, selectedMode: state.selectedMode };
     case "LOAD_RUN":
@@ -71,6 +75,17 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
         selectedRunId: action.runId,
         selectedLap: action.bestLap,
         selectedMode: state.selectedMode,
+      };
+    case "FOCUS_EVENT":
+      return {
+        ...state,
+        selectedEventId: action.eventId,
+        selectedLap: action.lap,
+        selectedSampleIndex: action.sampleIndex,
+        selectedLapDistFt: action.lapDistFt,
+        selectedLapPct: action.lapPct,
+        selectedWorkspace: action.workspace,
+        selectionSource: action.source,
       };
     default:
       return state;
@@ -87,9 +102,11 @@ type TelemetrySelectionContextValue = {
   selectChannel: (channel: string | null, source?: SelectionSource) => void;
   selectZone: (zoneId: string | null) => void;
   setHover: (lapPct: number | null, sampleIndex?: number | null) => void;
+  setPlaybackActive: (active: boolean) => void;
   setMode: (mode: SelectionMode) => void;
   setWorkspace: (workspace: Workspace, source?: SelectionSource) => void;
   loadRun: (runId: string, bestLap: number | null) => void;
+  focusTelemetryEvent: (eventId: string, lap: number | null, sampleIndex: number | null, lapDistFt: number | null, lapPct: number | null, workspace: Workspace, source?: SelectionSource) => void;
 };
 
 const TelemetrySelectionContext = createContext<TelemetrySelectionContextValue | null>(null);
@@ -130,6 +147,10 @@ export function TelemetrySelectionProvider({ children }: { children: ReactNode }
       dispatch({ type: "SET_HOVER", lapPct, sampleIndex }),
     [],
   );
+  const setPlaybackActive = useCallback(
+    (active: boolean) => dispatch({ type: "SET_PLAYBACK_ACTIVE", active }),
+    [],
+  );
   const setMode = useCallback((mode: SelectionMode) => dispatch({ type: "SET_MODE", mode }), []);
   const setWorkspace = useCallback(
     (workspace: Workspace, source: SelectionSource = "manual") =>
@@ -140,10 +161,15 @@ export function TelemetrySelectionProvider({ children }: { children: ReactNode }
     (runId: string, bestLap: number | null) => dispatch({ type: "LOAD_RUN", runId, bestLap }),
     [],
   );
+  const focusTelemetryEvent = useCallback(
+    (eventId: string, lap: number | null, sampleIndex: number | null, lapDistFt: number | null, lapPct: number | null, workspace: Workspace, source: SelectionSource = "priority_stack") =>
+      dispatch({ type: "FOCUS_EVENT", eventId, lap, sampleIndex, lapDistFt, lapPct, workspace, source }),
+    [],
+  );
 
   return (
     <TelemetrySelectionContext.Provider
-      value={{ selection, dispatch, selectRun, selectLap, selectSample, selectEvent, selectChannel, selectZone, setHover, setMode, setWorkspace, loadRun }}
+      value={{ selection, dispatch, selectRun, selectLap, selectSample, selectEvent, selectChannel, selectZone, setHover, setPlaybackActive, setMode, setWorkspace, loadRun, focusTelemetryEvent }}
     >
       {children}
     </TelemetrySelectionContext.Provider>

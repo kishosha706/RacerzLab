@@ -15,11 +15,17 @@ from api.routes_track_map import router as track_map_router
 from api.schemas import HealthResponse
 from racelab_engine import __version__
 
-app = FastAPI(title="RaceLab Garage API", version=__version__)
+app = FastAPI(title="RacerZLab API", version=__version__)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+    allow_origins=[
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -28,7 +34,7 @@ app.add_middleware(
 
 @app.get("/api/health")
 def health() -> HealthResponse:
-    return HealthResponse(status="ok", app="RaceLab Garage", version=__version__)
+    return HealthResponse(status="ok", app="RacerZLab", version=__version__)
 
 
 app.include_router(compare_router)

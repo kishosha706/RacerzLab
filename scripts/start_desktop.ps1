@@ -11,7 +11,7 @@ function Assert-Command($Name, $InstallHint) {
 
 function Test-BackendHealth {
   try {
-    $response = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/health" -UseBasicParsing -TimeoutSec 2
+    $response = Invoke-WebRequest -Uri "http://127.0.0.1:8010/api/health" -UseBasicParsing -TimeoutSec 2
     return ($response.StatusCode -eq 200)
   } catch {
     return $false
@@ -25,16 +25,16 @@ $BackendProcess = $null
 
 try {
   if (Test-BackendHealth) {
-    Write-Host "RaceLab Engine already running on http://127.0.0.1:8000"
+    Write-Host "RaceLab Engine already running on http://127.0.0.1:8010"
   } else {
-    Write-Host "Starting RaceLab Engine on http://127.0.0.1:8000"
+    Write-Host "Starting RaceLab Engine on http://127.0.0.1:8010"
     $PythonExe = "python"
     if (Test-Path ".venv\Scripts\python.exe") {
       $PythonExe = (Resolve-Path ".venv\Scripts\python.exe").Path
     }
     $BackendProcess = Start-Process `
       -FilePath $PythonExe `
-      -ArgumentList @("-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", "8000") `
+      -ArgumentList @("-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", "8010") `
       -WorkingDirectory $ProjectRoot `
       -PassThru `
       -WindowStyle Hidden
@@ -51,7 +51,7 @@ try {
       }
     }
     if (-not $Ready) {
-      throw "RaceLab Engine did not become ready on http://127.0.0.1:8000"
+      throw "RaceLab Engine did not become ready on http://127.0.0.1:8010"
     }
   }
 

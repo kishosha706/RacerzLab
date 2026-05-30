@@ -58,7 +58,7 @@ export function OverviewTab({ overview }: OverviewTabProps) {
   const lap = overview.best_useful_lap;
   const topEvent = overview.events.length > 0 ? overview.events[0] : null;
   const crewBrief = overview.crew_chief_summary;
-  const { setWorkspace, selectEvent, selection, selectLap } = useTelemetrySelection();
+  const { setWorkspace, selectEvent, selection } = useTelemetrySelection();
   const isLearning = selection.selectedMode === "learning";
 
   const gainInfo = useMemo(() => topEvent ? gainClass(topEvent) : null, [topEvent]);
@@ -71,6 +71,30 @@ export function OverviewTab({ overview }: OverviewTabProps) {
     }).length,
     [overview.events],
   );
+
+  const runRiskEvents = useMemo(() => overview.events
+    .filter((event) => event.lap_pct_peak != null || event.lap_pct_start != null || event.distance_m_peak != null)
+    .slice(0, 24),
+    [overview.events],
+  );
+
+  const usefulCount = overview.laps.filter((l) => l.is_useful).length;
+  const draftCount = overview.laps.filter((l) => (l.classification_tags ?? []).some((tag) => tag.includes("DRAFT"))).length;
+  const invalidCount = overview.laps.filter((l) => !l.is_useful).length;
+  const systemCounts = useMemo(() => {
+    const systems = [
+      { key: "platform", label: "Platform", match: /PLATFORM|SPLITTER|BOTTOM|RIDE/i },
+      { key: "tires", label: "Tires", match: /TIRE|PRESSURE|CAMBER/i },
+      { key: "shocks", label: "Shocks", match: /SHOCK|DAMPER/i },
+      { key: "aero", label: "Aero", match: /AERO|PRESSURE|RAKE/i },
+      { key: "scrub", label: "Scrub", match: /SCRUB|STEER|DRAG/i },
+    ];
+    return systems.map((system) => ({
+      ...system,
+      count: overview.events.filter((event) => system.match.test(event.event_type)).length,
+      worst: overview.events.find((event) => system.match.test(event.event_type))?.severity ?? "info",
+    }));
+  }, [overview.events]);
 
   const handleOpenPlatform = () => {
     if (topEvent) selectEvent(topEvent.event_id, "overview");
@@ -99,9 +123,6 @@ export function OverviewTab({ overview }: OverviewTabProps) {
         {/* Main Issue */}
         {topEvent ? (
           <div className="overview-hero-issue">
-            <p className="overview-hero-headline">
-              {humanizeEventLabel(topEvent.event_type)}
-            </p>
             {topEvent.zone_name && (
               <p className="overview-hero-location">
                 <MapPin size={14} /> {topEvent.zone_name}
@@ -207,6 +228,42 @@ export function OverviewTab({ overview }: OverviewTabProps) {
         </section>
       )}
 
+      <section className="workspace-section overview-visual-summary">
+        <h2>Run Risk Timeline</h2>
+        <div className="overview-risk-strip">
+          {runRiskEvents.length === 0 ? (
+            <span className="risk-strip-empty">No located events available.</span>
+          ) : runRiskEvents.map((event) => {
+            const pos = event.lap_pct_peak ?? event.lap_pct_start ?? 0;
+            return (
+              <button
+                key={event.event_id}
+                className="overview-risk-marker"
+                data-severity={event.severity}
+                style={{ left: `${Math.max(0, Math.min(100, pos))}%` }}
+                onClick={() => { selectEvent(event.event_id, "overview"); setWorkspace("platform_trace", "overview"); }}
+                title={`${humanizeEventLabel(event.event_type)} | ${event.severity}`}
+                aria-label={`Open ${humanizeEventLabel(event.event_type)} in Platform`}
+              />
+            );
+          })}
+        </div>
+        <div className="overview-trust-system-grid">
+          <div className="overview-trust-summary">
+            <span>Useful {usefulCount}</span>
+            <span>Draft {draftCount}</span>
+            <span>Invalid {invalidCount}</span>
+          </div>
+          <div className="overview-system-counts">
+            {systemCounts.map((system) => (
+              <span key={system.key} className="overview-system-chip" data-severity={system.count > 0 ? system.worst : "missing"}>
+                {system.label}: {system.count}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Key Metrics */}
       <section className="metrics-row">
         <EngineeringMetricCard title="Best Lap" value={lap ? `Lap ${lap.lap_number} · ${lap.lap_time?.toFixed(3)}s` : null} color="#22c55e" />
@@ -226,6 +283,24 @@ export function OverviewTab({ overview }: OverviewTabProps) {
           </ul>
         </section>
       )}
+
+      {/* Recommendations */}
+      <section className="workspace-section">
+        <h2>Recommendations</h2>
+        {overview.recommendations.length > 0 ? (
+          <ol className="findings-list">
+            {overview.recommendations.map((rec) => (
+              <li key={rec.recommendation_id}>
+                <strong>P{rec.priority_rank}:</strong> {rec.recommendation_text}
+                {rec.success_metric && <span className="muted" style={{ marginLeft: 8 }}>— Success metric: {rec.success_metric}</span>}
+                {rec.evidence_strength && rec.evidence_strength !== "unknown" && <span className="muted" style={{ marginLeft: 8 }}>({rec.evidence_strength} evidence)</span>}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="muted">No recommendations yet. Compare runs to generate setup recommendations.</p>
+        )}
+      </section>
 
       {/* Primary Findings */}
       <section className="workspace-section">

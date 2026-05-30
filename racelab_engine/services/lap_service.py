@@ -35,14 +35,36 @@ def format_delta(delta_seconds: float | None) -> str:
 
 def find_best_lap(laps: list[LapSummary]) -> LapSummary | None:
     """Return the fastest useful lap."""
-    useful = [l for l in laps if l.is_useful and l.lap_time is not None]
-    if not useful:
+    if not (useful := [l for l in laps if l.is_useful and l.lap_time is not None]):
         return None
     return min(useful, key=lambda l: l.lap_time or 999999.0)
 
 
 def useful_laps(laps: list[LapSummary]) -> list[LapSummary]:
     return [l for l in laps if l.is_useful]
+
+
+def _collect_invalid_reasons(lap: LapSummary) -> list[str]:
+    """Collect human-readable reasons why a lap is not useful for comparison."""
+    reasons: list[str] = []
+    tags_upper = [t.upper() for t in lap.classification_tags]
+    tag_reason_map = {
+        "OUT_LAP": "Out lap (pit exit)",
+        "COOLDOWN": "Cool-down lap",
+        "PIT_ROAD": "Pit road included",
+        "WRECK_OR_SPIN": "Wreck or spin detected",
+        "INVALID_SPEED_EVENT": "Invalid speed event",
+        "DRAFT_AFFECTED": "Draft affected",
+        "POSSIBLE_DRAFT_ASSIST": "Possible draft assist",
+    }
+    for tag, reason in tag_reason_map.items():
+        if tag in tags_upper:
+            reasons.append(reason)
+    if not lap.is_complete:
+        reasons.append("Incomplete lap")
+    if not lap.is_useful and not reasons:
+        reasons.append("Short or incomplete lap")
+    return reasons
 
 
 def classify_lap_type(lap: LapSummary, all_laps: list[LapSummary]) -> str:
@@ -116,7 +138,7 @@ def build_lap_list_for_run(run_id: str, repo: RaceLabRepository | None = None) -
             "delta_display": format_delta(delta) if delta is not None else ("BEST" if best and lap.lap_id == best.lap_id else ""),
             "is_valid": lap.is_complete,
             "is_useful": lap.is_useful,
-            "invalid_reasons": [] if lap.is_useful else ["Short or incomplete lap"],
+            "invalid_reasons": _collect_invalid_reasons(lap),
             "sample_count": lap.sample_count or 0,
             "distance_ft": None,
             "distance_pct_min": lap.pct_min,
@@ -127,6 +149,8 @@ def build_lap_list_for_run(run_id: str, repo: RaceLabRepository | None = None) -
             "end_time_s": lap.end_time,
             "has_telemetry": (lap.sample_count or 0) > 0,
             "warnings": [],
+            "classification_tags": lap.classification_tags,
+            "confidence_notes": lap.confidence_notes,
         })
 
     return {

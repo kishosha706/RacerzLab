@@ -1,4 +1,4 @@
-import { BarChart3, Boxes, Clock, Gauge, Layers, List, MapPin, Wrench } from "lucide-react";
+import { Clock, Gauge, GitCompare, Layers, List, MapPin, Wrench } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
@@ -7,7 +7,6 @@ import {
   fetchLaps,
   fetchOverview,
   fetchPlatformEvents,
-  fetchReport,
   fetchRunList,
   fetchSession,
   fetchSetup,
@@ -18,8 +17,6 @@ import {
 import { EventTimeline } from "./components/EventTimeline";
 import { EvidenceInspector } from "./components/EvidenceInspector";
 import { ImportPanel } from "./components/ImportPanel";
-import { LapTimeBrowser } from "./components/LapTimeBrowser";
-import { NextBestClick } from "./components/NextBestClick";
 import { PriorityRail } from "./components/PriorityRail";
 import { RunContextBar } from "./components/RunContextBar";
 import { StartupScreen } from "./components/StartupScreen";
@@ -27,22 +24,23 @@ import { TelemetrySelectionProvider, useTelemetrySelection } from "./store/Telem
 import { CompareBasketProvider } from "./store/CompareBasketContext";
 import { CompareBasket } from "./components/CompareBasket";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
-import { humanizeModeLabel, humanizeWorkspaceLabel } from "./constants/ui";
+
 import { TRACE_WORKBENCH_CHANNELS } from "./constants/workbenchChannels";
 import { CompareTab } from "./tabs/CompareTab";
 import { LapsTab } from "./tabs/LapsTab";
 import { NotebookTab } from "./tabs/NotebookTab";
 import { OverviewTab } from "./tabs/OverviewTab";
 import { PlatformTab } from "./tabs/PlatformTab";
-import { RawChannelsTab } from "./tabs/RawChannelsTab";
 import { SetupTab } from "./tabs/SetupTab";
 import { TrackMapTab } from "./tabs/TrackMapTab";
+import { importDebug } from "./utils/importDebug";
 import type {
   ChannelCatalogItem,
   PlatformEventItem,
   RunListItem,
   RunOverview,
   TelemetryCursor,
+  TrackMapResolution,
   TraceResponse,
 } from "./types/telemetry";
 
@@ -61,12 +59,16 @@ function CockpitShell() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showLapBrowser, setShowLapBrowser] = useState(false);
+  const [priorityRailOpen, setPriorityRailOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
 
   const { selection, loadRun, selectLap, setWorkspace } = useTelemetrySelection();
 
   // ── keyboard shortcuts ─────────────────────────────────────
-  useKeyboardShortcuts(platformEvents, setWorkspace);
+  useKeyboardShortcuts(platformEvents, setWorkspace, {
+    onTogglePriorityRail: () => setPriorityRailOpen((open) => !open),
+    onToggleInspector: () => setInspectorOpen((open) => !open),
+  });
 
   // ── load a run ──────────────────────────────────────────────
   const loadSelectedRun = useCallback(
@@ -132,6 +134,46 @@ function CockpitShell() {
   // ── import ──────────────────────────────────────────────────
   const [importStage, setImportStage] = useState<string | null>(null);
 
+  const openImportedRun = useCallback(
+    async (runId?: string | null, trackMap?: TrackMapResolution | null) => {
+      setError(null);
+      setStatus(null);
+
+      importDebug.start("sessions_refresh_started", { runId, track_map_status: trackMap?.status });
+      if (sessionId && runId) {
+        await addRunToSession(sessionId, runId).catch((caught) => {
+          importDebug.error(
+            "sessions_refresh_started",
+            caught instanceof Error ? caught.message : "Could not attach run to session.",
+            { sessionId, runId },
+          );
+        });
+      }
+      const recentRuns = await fetchRunList();
+      setRuns(recentRuns);
+      importDebug.success("sessions_refresh_finished", { run_count: recentRuns.length });
+
+      if (!runId) {
+        // Track-map-only import: suppress success message in normal UI
+        // Only show if there's an actual error or ambiguity
+        if (trackMap?.status === "matched") {
+          setStatus(null);
+        } else {
+          setStatus(trackMap?.message ?? null);
+        }
+        return;
+      }
+
+      importDebug.start("open_imported_run_started", { runId });
+      setWorkspace("overview", "manual");
+      await loadSelectedRun(runId);
+      importDebug.success("open_imported_run_finished", { runId });
+      // Suppress success messages for normal auto-resolution
+      setStatus(null);
+    },
+    [loadSelectedRun, sessionId, setWorkspace],
+  );
+
   const handleFileSelected = useCallback(async (file: File | null) => {
     if (!file) return;
     setImporting(true);
@@ -154,17 +196,10 @@ function CockpitShell() {
       setImportStage("Importing telemetry…");
       const result = await importIbtFile(file);
       setImportStage("Saving local copy…");
-      const recentRuns = await fetchRunList();
-      setRuns(recentRuns);
       if (result.run_id) {
-        // Add to current RaceLab session
-        if (sessionId) {
-          addRunToSession(sessionId, result.run_id).catch(() => {});
-        }
         setImportStage("Building analysis…");
-        await loadSelectedRun(result.run_id);
       }
-      setStatus(result.status.message);
+      await openImportedRun(result.run_id, result.track_map ?? null);
       setImportStage(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Import failed.");
@@ -173,17 +208,11 @@ function CockpitShell() {
       setImporting(false);
       setLoading(false);
     }
-  }, [loadSelectedRun]);
+  }, [openImportedRun]);
 
   const handleImportClick = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
-
-  const handleExportReport = async () => {
-    if (!overview) return;
-    const report = await fetchReport(overview.run_id);
-    setStatus(`Report generated (${report.markdown.length} chars).`);
-  };
 
   // ── workspace content ───────────────────────────────────────
   const workspaceContent = useMemo(() => {
@@ -191,10 +220,18 @@ function CockpitShell() {
     const ws = selection.selectedWorkspace;
     if (ws === "overview") return <OverviewTab overview={overview} />;
     if (ws === "platform_trace" || ws === "speed_delta" || ws === "drag_scrub") {
-      return <PlatformTab overview={overview} trace={trace} cursor={cursor} onCursorChange={setCursor} />;
+      const initialWorkbenchView = ws === "drag_scrub"
+        ? "scrub_steering"
+        : ws === "speed_delta"
+          ? "grade_pull"
+          : "balance";
+      return <PlatformTab overview={overview} trace={trace} cursor={cursor} onCursorChange={setCursor} platformEvents={platformEvents} initialWorkbenchView={initialWorkbenchView} />;
     }
     if (ws === "setup_impact") return <SetupTab overview={overview} />;
-    if (ws === "channels") return <RawChannelsTab overview={overview} trace={trace} channels={channels} />;
+    if (ws === "channels") {
+      // Channels removed from nav; redirect to overview if stale state exists
+      return <OverviewTab overview={overview} />;
+    }
     if (ws === "notebook") {
       return <NotebookTab />;
     }
@@ -211,7 +248,7 @@ function CockpitShell() {
         setupName={overview.session.setup_name} />;
     }
     return <OverviewTab overview={overview} />;
-  }, [overview, selection.selectedWorkspace, trace, cursor, channels]);
+  }, [overview, selection.selectedWorkspace, selection.selectedLap, trace, cursor, channels, platformEvents, runs]);
 
   // ── no session yet → show startup screen ───────────────────
   if (!sessionId) {
@@ -230,8 +267,8 @@ function CockpitShell() {
           <span className="eyebrow">RACERZLAB</span>
           <h1>No persisted runs yet</h1>
           <ImportPanel
-            onImportComplete={(runId, _trackMap) => {
-              if (runId) void loadSelectedRun(runId);
+            onImportComplete={(runId, trackMap) => {
+              void openImportedRun(runId, trackMap);
             }}
             importing={importing}
             importStage={importStage}
@@ -277,8 +314,7 @@ function CockpitShell() {
             ["laps", "Laps", Clock],
             ["platform_trace", "Platform", Layers],
             ["setup_impact", "Setup", Wrench],
-            ["compare", "Compare", BarChart3],
-            ["channels", "Channels", Boxes],
+            ["compare", "Compare", GitCompare],
             ["notebook", "Notes", List],
           ] as const).map(([key, label, Icon]) => (
             <button
@@ -293,52 +329,33 @@ function CockpitShell() {
           ))}
         </nav>
 
-        <PriorityRail runId={overview.run_id} selectedLap={selection.selectedLap} />
+        <PriorityRail runId={overview.run_id} selectedLap={selection.selectedLap} collapsed={!priorityRailOpen} onToggle={() => setPriorityRailOpen(!priorityRailOpen)} platformEvents={platformEvents} />
 
         <main className="cockpit-workspace">
           <div className="workspace-toolbar">
-            <div>
-              <span className="eyebrow">
-                {humanizeModeLabel(selection.selectedMode)} · {humanizeWorkspaceLabel(selection.selectedWorkspace)}
-              </span>
-            </div>
-            <div className="toolbar-actions">
-              <ImportPanel
-                onImportComplete={(runId, _trackMap) => {
-                  if (runId) void loadSelectedRun(runId);
-                }}
-                importing={importing}
-                importStage={importStage}
-                error={error}
-                status={status}
-                fileInputRef={fileInputRef}
-                onFileSelected={(file) => { void handleFileSelected(file); }}
-                onImportClick={handleImportClick}
-              />
-              <button className="secondary-button" onClick={() => setShowLapBrowser(!showLapBrowser)}>
-                <BarChart3 size={16} /> Laps
-              </button>
-              <button className="secondary-button" onClick={handleExportReport}>
-                <BarChart3 size={16} /> Export
-              </button>
-            </div>
+            <ImportPanel
+              onImportComplete={(runId, trackMap) => {
+                void openImportedRun(runId, trackMap);
+              }}
+              importing={importing}
+              importStage={importStage}
+              error={error}
+              status={status}
+              fileInputRef={fileInputRef}
+              onFileSelected={(file) => { void handleFileSelected(file); }}
+              onImportClick={handleImportClick}
+            />
           </div>
           {status && <p className="status-text">{status}</p>}
           {error && <p className="error-text">{error}</p>}
           <div className="cockpit-workspace-body">
-            {showLapBrowser && overview && (
-              <aside className="lap-browser-sidebar">
-                <LapTimeBrowser runId={overview.run_id} />
-              </aside>
-            )}
             <div className="cockpit-workspace-main">
-              <NextBestClick runId={overview.run_id} platformEvents={platformEvents} />
               {workspaceContent}
             </div>
           </div>
         </main>
 
-        <EvidenceInspector overview={overview} platformEvents={platformEvents} channels={channels} />
+        <EvidenceInspector overview={overview} platformEvents={platformEvents} channels={channels} collapsed={!inspectorOpen} onToggle={() => setInspectorOpen(!inspectorOpen)} />
       </div>
 
       <EventTimeline platformEvents={platformEvents} />

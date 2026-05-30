@@ -31,9 +31,7 @@ def diff_setups(baseline_setup: Any, test_setup: Any) -> list[SetupChange]:
             return None
         if hasattr(obj, key):
             return getattr(obj, key)
-        if isinstance(obj, dict):
-            return obj.get(key)
-        return None
+        return obj.get(key) if isinstance(obj, dict) else None
 
     for key, (group, label) in SETUP_GROUPS.items():
         bl = _get(baseline_setup, key)
@@ -74,9 +72,7 @@ def diff_context(
             return None
         if hasattr(obj, key):
             return getattr(obj, key)
-        if isinstance(obj, dict):
-            return obj.get(key)
-        return None
+        return obj.get(key) if isinstance(obj, dict) else None
 
     checks = [
         ("air_temp", "Air Temp", None, 5.0, "Weather changed: air temp delta > 5°C"),

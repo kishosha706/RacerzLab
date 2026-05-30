@@ -177,17 +177,13 @@ def _coastdown_is_valid(
     - decelerating (long_accel < 0)
     - no active full-throttle resistance
     """
-    if throttle_pct is not None and throttle_pct >= 1.0:
-        return False
-    if brake_pct is not None and brake_pct >= 1.0:
-        return False
-    if speed_mps is not None and speed_mps < min_speed_mps:
-        return False
-    if long_accel_mps2 is not None and long_accel_mps2 >= 0:
-        return False
-    if full_throttle_resistance_index is not None and full_throttle_resistance_index > 0.01:
-        return False
-    return True
+    return not (
+        (throttle_pct is not None and throttle_pct >= 1.0)
+        or (brake_pct is not None and brake_pct >= 1.0)
+        or (speed_mps is not None and speed_mps < min_speed_mps)
+        or (long_accel_mps2 is not None and long_accel_mps2 >= 0)
+        or (full_throttle_resistance_index is not None and full_throttle_resistance_index > 0.01)
+    )
 
 
 def cda_coastdown_proxy_m2(

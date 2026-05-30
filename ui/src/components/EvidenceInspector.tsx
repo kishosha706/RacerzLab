@@ -1,17 +1,17 @@
-import { AlertTriangle, ClipboardCheck, Crosshair, Database, Info, Layers, MapPin, Gauge, List } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCheck, Crosshair, Database, Info, Layers, MapPin, List, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
-import { useCompareBasket } from "../store/CompareBasketContext";
-import { makeBasketItem } from "./CompareBasket";
 import type { ChannelCatalogItem, PlatformEventItem, RunOverview } from "../types/telemetry";
 
 type EvidenceInspectorProps = {
   overview: RunOverview | null;
   platformEvents: PlatformEventItem[];
   channels: ChannelCatalogItem[];
+  collapsed?: boolean;
+  onToggle?: () => void;
 };
 
-export function EvidenceInspector({ overview, platformEvents, channels }: EvidenceInspectorProps) {
+export function EvidenceInspector({ overview, platformEvents, channels, collapsed, onToggle }: EvidenceInspectorProps) {
   const { selection } = useTelemetrySelection();
   const [justAnchored, setJustAnchored] = useState(false);
   const prevEventRef = useRef<string | null | undefined>(null);
@@ -42,15 +42,15 @@ export function EvidenceInspector({ overview, platformEvents, channels }: Eviden
 
   if (selectedEvent) return (
     <div className={anchorClass}>
-      <EventInspector event={selectedEvent} showAnchorBadge={true} />
+      <EventInspector event={selectedEvent} showAnchorBadge={true} collapsed={collapsed} onToggle={onToggle} />
     </div>
   );
-  if (selectedChannel) return <ChannelInspector channel={selectedChannel} />;
-  return <RunInspector overview={overview} channels={channels} />;
+  if (selectedChannel) return <ChannelInspector channel={selectedChannel} collapsed={collapsed} onToggle={onToggle} />;
+  return <RunInspector overview={overview} channels={channels} collapsed={collapsed} onToggle={onToggle} />;
 }
 
-function RunInspector({ overview, channels }: { overview: RunOverview | null; channels: ChannelCatalogItem[] }) {
-  if (!overview) return <InspectorShell title="No Run Loaded" icon={<Database size={16} />} />;
+function RunInspector({ overview, channels, collapsed, onToggle }: { overview: RunOverview | null; channels: ChannelCatalogItem[]; collapsed?: boolean; onToggle?: () => void }) {
+  if (!overview) return <InspectorShell title="No Run Loaded" icon={<Database size={16} />} collapsed={collapsed} onToggle={onToggle} />;
 
   const { raw, calc, proxy, missing } = useMemo(() => ({
     raw: channels.filter((c) => c.is_raw && !c.missing_status).length,
@@ -60,7 +60,7 @@ function RunInspector({ overview, channels }: { overview: RunOverview | null; ch
   }), [channels]);
 
   return (
-    <InspectorShell title="Run Overview" icon={<Info size={16} />}>
+    <InspectorShell title="Run Overview" icon={<Info size={16} />} collapsed={collapsed} onToggle={onToggle}>
       <dl>
         <dt>Track</dt>
         <dd>{overview.session.track_display_name ?? overview.session.track_name ?? "Unknown"}</dd>
@@ -119,27 +119,34 @@ function CrewChiefSummary({ overview }: { overview: RunOverview }) {
   );
 }
 
-function EventInspector({ event, showAnchorBadge }: { event: PlatformEventItem; showAnchorBadge?: boolean }) {
+function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event: PlatformEventItem; showAnchorBadge?: boolean; collapsed?: boolean; onToggle?: () => void }) {
   const sevColour = event.severity === "critical" ? "#ef4444" : event.severity === "high" ? "#f97316" : event.severity === "watch" ? "#f59e0b" : "#38bdf8";
-  const { setWorkspace, selectEvent } = useTelemetrySelection();
-  const { setBaseline, setTest } = useCompareBasket();
+  const { setWorkspace, selectLap, selectSample, selectEvent } = useTelemetrySelection();
 
   const handleOpenPlatform = useCallback(() => {
+    if (event.lap != null) selectLap(event.lap);
     selectEvent(event.event_id, "priority_stack");
+    if (typeof event.sample_index === "number" && Number.isFinite(event.sample_index) && event.sample_index >= 0) {
+      selectSample(event.sample_index, event.lap_dist_ft ?? undefined, event.lap_pct ?? undefined, "priority_stack");
+    }
     setWorkspace("platform_trace", "priority_stack");
-  }, [event.event_id, selectEvent, setWorkspace]);
+  }, [event.event_id, event.lap, event.lap_dist_ft, event.lap_pct, event.sample_index, selectEvent, selectLap, selectSample, setWorkspace]);
 
   const handleOpenMap = useCallback(() => {
+    if (event.lap != null) selectLap(event.lap);
     selectEvent(event.event_id, "priority_stack");
+    if (typeof event.sample_index === "number" && Number.isFinite(event.sample_index) && event.sample_index >= 0) {
+      selectSample(event.sample_index, event.lap_dist_ft ?? undefined, event.lap_pct ?? undefined, "priority_stack");
+    }
     setWorkspace("map", "priority_stack");
-  }, [event.event_id, selectEvent, setWorkspace]);
+  }, [event.event_id, event.lap, event.lap_dist_ft, event.lap_pct, event.sample_index, selectEvent, selectLap, selectSample, setWorkspace]);
 
   const handleStageTest = useCallback(() => {
     setWorkspace("notebook", "priority_stack");
   }, [setWorkspace]);
 
   return (
-    <InspectorShell title={event.title} icon={<Crosshair size={16} />}>
+    <InspectorShell title={event.title} icon={<Crosshair size={16} />} collapsed={collapsed} onToggle={onToggle}>
       {showAnchorBadge && <span className="anchor-evidence-badge"><Crosshair size={10} /> Anchored Evidence</span>}
 
       {/* Source Stack: Where */}
@@ -198,6 +205,9 @@ function EventInspector({ event, showAnchorBadge }: { event: PlatformEventItem; 
           <button className="trackmap-action-btn" onClick={handleOpenMap} title="Open Map">
             <MapPin size={10} /> Map
           </button>
+          <button className="trackmap-action-btn" onClick={() => setWorkspace("setup_impact")} title="Open Setup with event focus">
+            <Wrench size={10} /> Setup
+          </button>
           <button className="trackmap-action-btn" onClick={handleStageTest} title="Stage Test">
             <List size={10} /> Test
           </button>
@@ -217,9 +227,9 @@ function EventInspector({ event, showAnchorBadge }: { event: PlatformEventItem; 
   );
 }
 
-function ChannelInspector({ channel }: { channel: ChannelCatalogItem }) {
+function ChannelInspector({ channel, collapsed, onToggle }: { channel: ChannelCatalogItem; collapsed?: boolean; onToggle?: () => void }) {
   return (
-    <InspectorShell title={channel.name} icon={<Database size={16} />}>
+    <InspectorShell title={channel.name} icon={<Database size={16} />} collapsed={collapsed} onToggle={onToggle}>
       <dl>
         <dt>Type</dt>
         <dd>
@@ -237,9 +247,12 @@ function ChannelInspector({ channel }: { channel: ChannelCatalogItem }) {
   );
 }
 
-function InspectorShell({ title, icon, children }: { title: string; icon: React.ReactNode; children?: React.ReactNode }) {
+function InspectorShell({ title, icon, children, collapsed, onToggle }: { title: string; icon: React.ReactNode; children?: React.ReactNode; collapsed?: boolean; onToggle?: () => void }) {
   return (
-    <aside className="evidence-inspector">
+    <aside className={`evidence-inspector${collapsed ? " collapsed" : ""}`}>
+      <button className="inspector-collapse-btn" onClick={onToggle} title={collapsed ? "Expand Inspector" : "Collapse Inspector"}>
+        {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+      </button>
       <header className="inspector-header">
         {icon}
         <h3>{title}</h3>

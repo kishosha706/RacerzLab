@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "setup:python": "powershell -ExecutionPolicy Bypass -File scripts/setup_python.ps1",
-    "api": "uvicorn api.main:app --reload --host 127.0.0.1 --port 8000",
+    "api": "uvicorn api.main:app --reload --host 127.0.0.1 --port 8010",
     "test": "pytest",
     "ui": "npm --prefix ui run dev",
     "ui:build": "npm --prefix ui run build",

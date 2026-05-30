@@ -1,7 +1,7 @@
 /** Track Map insight helpers: summaries, sentences, fingerprints, next-best-click. */
 
 import type { TrackMapOverlayMarker, TrackMapSection } from "../types/trackMap";
-import { calculateTrackLocation, friendlySectionName, normalizePct } from "./trackLocation";
+import { calculateTrackLocation } from "./trackLocation";
 
 // ── Severity ranking ───────────────────────────────────────────
 
@@ -22,6 +22,18 @@ const CATEGORY_PRIORITY: Record<string, number> = {
 
 function classifyCategory(o: TrackMapOverlayMarker): string {
   if (o.category) return o.category;
+  // Check event_type first for exact mapping
+  if (o.event_type) {
+    const et = o.event_type;
+    if (/MIN_SPLITTER/.test(et)) return "front_platform";
+    if (/REAR_/.test(et) || /MIN_REAR/.test(et)) return "rear_platform";
+    if (/BOTTOMING/.test(et) || /PLATFORM_COMPRESSION/.test(et)) return "whole_car_bottoming";
+    if (/DRAG_SCRUB/.test(et)) return "drag_scrub";
+    if (/SPEED_LOSS/.test(et)) return "speed_loss";
+    if (/SHOCK/.test(et)) return "shocks";
+    if (/DYNAMIC_PRESSURE/.test(et) || /RAKE/.test(et)) return "aero_dynamic_pressure";
+  }
+  // Fallback: text matching on label
   const l = (o.label || "").toLowerCase();
   if (/whole.?car.?bottoming|bottoming/.test(l)) return "whole_car_bottoming";
   if (/rear.?scrape|rear.?platform/.test(l)) return "rear_platform";
@@ -29,7 +41,7 @@ function classifyCategory(o: TrackMapOverlayMarker): string {
   if (/drag|scrub/.test(l)) return "drag_scrub";
   if (/speed.?loss/.test(l)) return "speed_loss";
   if (/shock|damper/.test(l)) return "shocks";
-  if (/aero|dynamic.?pressure/.test(l)) return "aero_dynamic_pressure";
+  if (/aero|dynamic.?pressure|rake/.test(l)) return "aero_dynamic_pressure";
   return "other";
 }
 

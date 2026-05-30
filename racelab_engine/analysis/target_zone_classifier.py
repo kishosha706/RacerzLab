@@ -63,8 +63,6 @@ def classify_target_zone(
         )
 
     # Gather signals
-    cfs_ok = min_cfs_delta is None or min_cfs_delta >= CFS_WORSEN_THRESHOLD
-    cfs_worse = min_cfs_delta is not None and min_cfs_delta < CFS_WORSEN_THRESHOLD
     steering_higher = avg_steering_delta is not None and avg_steering_delta > STEERING_CHANGE_THRESHOLD
     steering_lower = avg_steering_delta is not None and avg_steering_delta < -STEERING_CHANGE_THRESHOLD
     drag_higher = avg_drag_delta is not None and avg_drag_delta > DRAG_CHANGE_THRESHOLD
@@ -72,9 +70,11 @@ def classify_target_zone(
     rpm_higher = avg_rpm_delta is not None and avg_rpm_delta > RPM_CHANGE_THRESHOLD
     rpm_lower = avg_rpm_delta is not None and avg_rpm_delta < -RPM_CHANGE_THRESHOLD
 
-    discipline_ok = discipline_label in RELIABLE_DISCIPLINES
+    cfs_ok = min_cfs_delta is None or min_cfs_delta >= CFS_WORSEN_THRESHOLD
+    cfs_worse = min_cfs_delta is not None and min_cfs_delta < CFS_WORSEN_THRESHOLD
 
     if gained:
+        discipline_ok = discipline_label in RELIABLE_DISCIPLINES
         # Speed improved — classify why
         if cfs_ok and not drag_higher and not steering_higher:
             gain_class: GainClass = "stable_gain"

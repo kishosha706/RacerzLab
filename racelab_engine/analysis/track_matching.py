@@ -7,6 +7,7 @@ from typing import Any
 
 TRACK_NAME_MAP: dict[str, str] = {
     "atlanta motor speedway": "atlanta",
+    "echopark speedway": "atlanta",
     "autoclub speedway": "california",
     "bristol motor speedway": "bristol",
     "charlotte motor speedway": "charlotte",

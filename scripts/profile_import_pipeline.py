@@ -17,12 +17,12 @@ from pathlib import Path
 
 
 def profile(path_str: str, no_db: bool = False) -> None:
-    path = Path(path_str)
+    path = Path(path_str)  # sourcery skip: move-assignment-closer
     if not path.exists():
         print(f"File not found: {path}")
         return
 
-    print(f"=== Import Pipeline Profile ===")
+    print("=== Import Pipeline Profile ===")
     print(f"  File: {path}")
     print(f"  Size: {path.stat().st_size:,} bytes")
     print(f"  No DB: {no_db}")
@@ -61,7 +61,7 @@ def profile(path_str: str, no_db: bool = False) -> None:
 
     if no_db:
         print(f"\n  Skipping DB stages (--no-db)")
-        print(f"\n=== Profile Summary ===")
+        print("\n=== Profile Summary ===")
         total = sum(timings.values())
         print(f"  Total: {total:.3f}s")
         return
@@ -119,7 +119,7 @@ def profile(path_str: str, no_db: bool = False) -> None:
                     tags_updated = True
         if tags_updated:
             repo.save_import(result.overview, result.fingerprint)
-            print(f"    Draft tags updated")
+            print("    Draft tags updated")
     except Exception as exc:
         print(f"    Draft detection error: {exc}")
     timings["6_draft_detection"] = time.time() - t0
@@ -134,7 +134,7 @@ def profile(path_str: str, no_db: bool = False) -> None:
         pct = (dur / total) * 100 if total > 0 else 0
         print(f"    {name}: {dur:.3f}s ({pct:.1f}%)")
 
-    slowest = max(timings, key=timings.get)
+    slowest = max(timings, key=lambda k: timings[k])  # type: ignore[arg-type]
     print(f"\n  Slowest stage: {slowest} ({timings[slowest]:.3f}s)")
     print(f"  Run ID: {run_id}")
 

@@ -6,7 +6,7 @@ function formatVal(v: number | null | undefined, digits = 2): string {
 
 export function findingToMarkdown(f: NotebookFinding): string {
   const lines: string[] = [];
-  lines.push(`# ${f.summary_headline ?? "RaceLab Finding"}`);
+  lines.push(`# ${f.summary_headline ?? "RacerZLab Finding"}`);
   lines.push("");
   lines.push(`**Car:** ${f.car_name ?? "—"}  **Track:** ${f.track_name ?? "—"}  **Setup:** ${f.setup_name ?? "—"}`);
   lines.push(`**Verdict:** ${f.verdict?.replace(/_/g, " ") ?? "—"}  **Confidence:** ${formatVal(f.confidence_score * 100, 0)}%  **Tier:** ${f.confidence_tier ?? "—"}`);

@@ -85,53 +85,40 @@ def annotate_delta_traces(
 
     # Speed gain/loss
     speed = delta_channels.get("speed_mph", {})
-    speed_deltas = speed.get("delta_values", [])
-    if speed_deltas:
-        gain = _find_extreme(speed_deltas, lap_pct_values, x_values, "SPEED_GAIN", "Biggest Speed Gain", "▲", " mph", True, 0.05)
-        if gain:
+    if speed_deltas := speed.get("delta_values", []):
+        if gain := _find_extreme(speed_deltas, lap_pct_values, x_values, "SPEED_GAIN", "Biggest Speed Gain", "▲", " mph", True, 0.05):
             annotations.append(gain)
-        loss = _find_extreme(speed_deltas, lap_pct_values, x_values, "SPEED_LOSS", "Biggest Speed Loss", "▼", " mph", False, -0.05)
-        if loss:
+        if loss := _find_extreme(speed_deltas, lap_pct_values, x_values, "SPEED_LOSS", "Biggest Speed Loss", "▼", " mph", False, -0.05):
             annotations.append(loss)
 
     # CFS compression (negative delta = worse)
     cfs = delta_channels.get("cfs_ride_height_in", {})
-    cfs_deltas = cfs.get("delta_values", [])
-    if cfs_deltas:
-        cfs_worst = _find_extreme(cfs_deltas, lap_pct_values, x_values, "CFS_COMPRESSION", "Worst CFS Compression", "⬇", " in", False, -0.001)
-        if cfs_worst:
+    if cfs_deltas := cfs.get("delta_values", []):
+        if cfs_worst := _find_extreme(cfs_deltas, lap_pct_values, x_values, "CFS_COMPRESSION", "Worst CFS Compression", "⬇", " in", False, -0.001):
             annotations.append(cfs_worst)
 
     # Drag/scrub spike (positive delta = worse)
     drag = delta_channels.get("drag_scrub_suspicion", {})
-    drag_deltas = drag.get("delta_values", [])
-    if drag_deltas:
-        drag_spike = _find_extreme(drag_deltas, lap_pct_values, x_values, "DRAG_SCRUB_SPIKE", "Drag/Scrub Spike", "⚠", " index", True, 0.05)
-        if drag_spike:
+    if drag_deltas := drag.get("delta_values", []):
+        if drag_spike := _find_extreme(drag_deltas, lap_pct_values, x_values, "DRAG_SCRUB_SPIKE", "Drag/Scrub Spike", "⚠", " index", True, 0.05):
             annotations.append(drag_spike)
 
     # Steering correction
     steering = delta_channels.get("abs_steering_deg", {}) or delta_channels.get("steering_deg", {})
-    steer_deltas = steering.get("delta_values", [])
-    if steer_deltas:
-        steer_max = _find_extreme(steer_deltas, lap_pct_values, x_values, "STEERING_CORRECTION", "Largest Steering Correction", "↔", " deg", True, 0.5)
-        if steer_max:
+    if steer_deltas := steering.get("delta_values", []):
+        if steer_max := _find_extreme(steer_deltas, lap_pct_values, x_values, "STEERING_CORRECTION", "Largest Steering Correction", "↔", " deg", True, 0.5):
             annotations.append(steer_max)
 
     # RPM flattening (negative delta = losing RPM)
     rpm = delta_channels.get("rpm", {})
-    rpm_deltas = rpm.get("delta_values", [])
-    if rpm_deltas:
-        rpm_loss = _find_extreme(rpm_deltas, lap_pct_values, x_values, "RPM_FLATTENING", "RPM Flattening", "◊", " rpm", False, -50)
-        if rpm_loss:
+    if rpm_deltas := rpm.get("delta_values", []):
+        if rpm_loss := _find_extreme(rpm_deltas, lap_pct_values, x_values, "RPM_FLATTENING", "RPM Flattening", "◊", " rpm", False, -50):
             annotations.append(rpm_loss)
 
     # Throttle lift (negative delta = lifting earlier)
     throttle = delta_channels.get("throttle_pct", {})
-    throttle_deltas = throttle.get("delta_values", [])
-    if throttle_deltas:
-        lift = _find_extreme(throttle_deltas, lap_pct_values, x_values, "THROTTLE_LIFT", "Throttle Lift", "○", " %", False, -2)
-        if lift:
+    if throttle_deltas := throttle.get("delta_values", []):
+        if lift := _find_extreme(throttle_deltas, lap_pct_values, x_values, "THROTTLE_LIFT", "Throttle Lift", "○", " %", False, -2):
             annotations.append(lift)
 
     # Build summary

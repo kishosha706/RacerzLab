@@ -1,5 +1,5 @@
-import { AlertTriangle, Car, CheckCircle, Clock, Flag, Gauge, MapPin, ThermometerSun, Wind, Wrench } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { AlertTriangle, Car, CheckCircle, Flag, Gauge, Info, MapPin, Wrench } from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { RunOverview, LapSummary } from "../types/telemetry";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useCompareBasket } from "../store/CompareBasketContext";
@@ -18,6 +18,8 @@ export function RunContextBar({ overview, runs: _runs, onSelectLap }: RunContext
   const readiness = basket.baseline && basket.test ? getReadiness().status : null;
   const session = overview?.session;
   const laps = overview?.laps ?? [];
+  const [showSessionInfo, setShowSessionInfo] = useState(false);
+  const sessionInfoRef = useRef<HTMLDivElement | null>(null);
 
   const handleLapChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
@@ -43,56 +45,34 @@ export function RunContextBar({ overview, runs: _runs, onSelectLap }: RunContext
             <span className="context-item"><Car size={14} /> {session.car_name ?? "Unknown Car"}</span>
             <span className="context-sep">|</span>
             <span className="context-item"><Wrench size={14} /> {session.setup_name ?? "Unknown Setup"}</span>
-            {session.setup_passed_tech != null && (
-              <>
-                <span className="context-sep">|</span>
-                <span className={`context-item ${session.setup_passed_tech ? "" : "text-critical"}`}>
-                  <CheckCircle size={14} /> Tech {session.setup_passed_tech ? "Passed" : "Failed"}
-                </span>
-              </>
-            )}
-            {session.setup_passed_tech == null && session.setup_name && (
-              <>
-                <span className="context-sep">|</span>
-                <span className="context-item muted">Tech Unknown</span>
-              </>
-            )}
-            {session.setup_modified != null && session.setup_modified && (
-              <>
-                <span className="context-sep">|</span>
-                <span className="context-item" style={{ color: "#f59e0b" }}>Modified</span>
-              </>
-            )}
-            {session.weather_summary && (
-              <>
-                <span className="context-sep">|</span>
-                <span className="context-item"><ThermometerSun size={14} /> {session.weather_summary}</span>
-              </>
-            )}
-            {session.session_type && (
-              <>
-                <span className="context-sep">|</span>
-                <span className="context-item"><Flag size={14} /> {session.session_type}</span>
-              </>
-            )}
-            {session.air_temp != null && (
-              <>
-                <span className="context-sep">|</span>
-                <span className="context-item" title="Air / Track temp"><ThermometerSun size={14} /> {session.air_temp.toFixed(0)}°C{ session.track_temp != null ? ` / ${session.track_temp.toFixed(0)}°C` : ""}</span>
-              </>
-            )}
-            {session.wind_speed != null && (
-              <>
-                <span className="context-sep">|</span>
-                <span className="context-item" title={`Wind ${session.wind_speed} mph @ ${session.wind_direction ?? "?"}°`}><Wind size={14} /> {session.wind_speed.toFixed(0)} mph</span>
-              </>
-            )}
-            {session.duration_seconds != null && (
-              <>
-                <span className="context-sep">|</span>
-                <span className="context-item"><Clock size={14} /> {Math.round(session.duration_seconds / 60)} min</span>
-              </>
-            )}
+
+            {/* Session Info trigger — shows secondary metadata in a popover */}
+            <div ref={sessionInfoRef} style={{ position: "relative", display: "inline-flex" }}>
+              <button className="session-info-trigger" onClick={() => setShowSessionInfo(!showSessionInfo)} onBlur={() => setTimeout(() => setShowSessionInfo(false), 200)}>
+                <Info size={14} /> Session
+              </button>
+              {showSessionInfo && (
+                <div className="session-info-popover" onMouseDown={(e) => e.preventDefault()}>
+                  <h4>Session Details</h4>
+                  <dl>
+                    {session.session_type && <><dt>Type</dt><dd>{session.session_type}</dd></>}
+                    {session.weather_summary && <><dt>Weather</dt><dd>{session.weather_summary}</dd></>}
+                    {session.air_temp != null && <><dt>Air Temp</dt><dd>{session.air_temp.toFixed(0)}°C</dd></>}
+                    {session.track_temp != null && <><dt>Track Temp</dt><dd>{session.track_temp.toFixed(0)}°C</dd></>}
+                    {session.wind_speed != null && <><dt>Wind</dt><dd>{session.wind_speed.toFixed(0)} mph @ {session.wind_direction ?? "?"}°</dd></>}
+                    {session.duration_seconds != null && <><dt>Duration</dt><dd>{Math.round(session.duration_seconds / 60)} min</dd></>}
+                  </dl>
+                  <h4>Tech Status</h4>
+                  <div className="popover-row">
+                    <CheckCircle size={12} />
+                    {session.setup_passed_tech != null
+                      ? `Tech ${session.setup_passed_tech ? "Passed" : "Failed"}`
+                      : "Tech Unknown"}
+                    {session.setup_modified && <span style={{ color: "#f59e0b" }}> · Modified</span>}
+                  </div>
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>

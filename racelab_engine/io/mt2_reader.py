@@ -420,6 +420,17 @@ def parse_points(points_node: Node, total_dist_m: float) -> list[TrackMapPoint]:
     return points
 
 
+def _interpolate_point(p1: TrackMapPoint, p2: TrackMapPoint, t: float) -> dict[str, float]:
+    """Interpolate between two track map points at parameter t (0-1)."""
+    heading = circular_lerp_angle(float(p1.heading_rad or 0.0), float(p2.heading_rad or 0.0), t)
+    return {
+        "x_m": float(p1.x_m or p1.x) + (float(p2.x_m or p2.x) - float(p1.x_m or p1.x)) * t,
+        "y_m": float(p1.y_m or p1.y) + (float(p2.y_m or p2.y) - float(p1.y_m or p1.y)) * t,
+        "z_m": float(p1.z_m or p1.z or 0.0) + (float(p2.z_m or p2.z or 0.0) - float(p1.z_m or p1.z or 0.0)) * t,
+        "heading_rad": normalized_angle(heading),
+    }
+
+
 def interpolate_at_distance(points: list[TrackMapPoint], distance_m: float, total_dist_m: float) -> dict[str, float]:
     if not points:
         raise MT2DecodeError("Cannot interpolate an empty point list")
@@ -440,13 +451,7 @@ def interpolate_at_distance(points: list[TrackMapPoint], distance_m: float, tota
         p2 = points[0]
         span = max(EPSILON, total_dist_m - distances[-1])
         t = (d - distances[-1]) / span
-        heading = circular_lerp_angle(float(p1.heading_rad or 0.0), float(p2.heading_rad or 0.0), t)
-        return {
-            "x_m": float(p1.x_m or p1.x) + (float(p2.x_m or p2.x) - float(p1.x_m or p1.x)) * t,
-            "y_m": float(p1.y_m or p1.y) + (float(p2.y_m or p2.y) - float(p1.y_m or p1.y)) * t,
-            "z_m": float(p1.z_m or p1.z or 0.0) + (float(p2.z_m or p2.z or 0.0) - float(p1.z_m or p1.z or 0.0)) * t,
-            "heading_rad": normalized_angle(heading),
-        }
+        return _interpolate_point(p1, p2, t)
 
     i2 = bisect.bisect_left(distances, d)
     i2 = min(max(1, i2), len(points) - 1)
@@ -456,13 +461,7 @@ def interpolate_at_distance(points: list[TrackMapPoint], distance_m: float, tota
     d2 = float(p2.distance_m or d1)
     span = max(EPSILON, d2 - d1)
     t = (d - d1) / span
-    heading = circular_lerp_angle(float(p1.heading_rad or 0.0), float(p2.heading_rad or 0.0), t)
-    return {
-        "x_m": float(p1.x_m or p1.x) + (float(p2.x_m or p2.x) - float(p1.x_m or p1.x)) * t,
-        "y_m": float(p1.y_m or p1.y) + (float(p2.y_m or p2.y) - float(p1.y_m or p1.y)) * t,
-        "z_m": float(p1.z_m or p1.z or 0.0) + (float(p2.z_m or p2.z or 0.0) - float(p1.z_m or p1.z or 0.0)) * t,
-        "heading_rad": normalized_angle(heading),
-    }
+    return _interpolate_point(p1, p2, t)
 
 
 def interpolate_at_pct(points: list[TrackMapPoint], lap_pct: float, total_dist_m: float) -> dict[str, float]:

@@ -160,7 +160,7 @@ function LapTimeSparkline({
 
 export function LapsTab({ overview }: LapsTabProps) {
   const { selection, selectLap, setWorkspace } = useTelemetrySelection();
-  const { setBaseline, setTest } = useCompareBasket();
+  const { setBaseline, setTest, addToQueue } = useCompareBasket();
   const [windowsData, setWindowsData] = useState<LapWindowsResponse | null>(null);
   const [expandedLap, setExpandedLap] = useState<number | null>(null);
   const [includeDraft, setIncludeDraft] = useState(false);
@@ -205,6 +205,40 @@ export function LapsTab({ overview }: LapsTabProps) {
     setWorkspace("compare", "manual");
   }, [selectLap, setWorkspace]);
 
+  const makeLapBasketItem = useCallback((lapNumber: number, label = `Lap ${lapNumber}`) => {
+    const lap = laps.find((l) => l.lap_number === lapNumber);
+    const tags = lap?.classification_tags ?? [];
+    return makeBasketItem(
+      overview.run_id,
+      lapNumber,
+      label,
+      overview.session.car_name ?? null,
+      (overview.session.track_display_name ?? overview.session.track_name) ?? null,
+      overview.session.setup_name ?? null,
+      lap?.lap_time ?? null,
+      tags,
+      tags.some((t) => t.includes("DRAFT")) ? "DRAFT_AFFECTED" : "LIKELY_SOLO",
+      null,
+      overview.session.import_time ?? null,
+      overview.session.session_type ?? null,
+      overview.setup_snapshot != null,
+    );
+  }, [laps, overview]);
+
+  const evidenceLaps = useMemo(() => {
+    const useful = laps.filter((lap) => lap.is_useful);
+    const cleanSolo = useful.find((lap) => (lap.classification_tags ?? []).includes("LIKELY_SOLO")) ?? useful[0] ?? null;
+    const fastest = [...useful].filter((lap) => lap.lap_time != null).sort((a, b) => (a.lap_time ?? 9999) - (b.lap_time ?? 9999))[0] ?? null;
+    const highestTrust = cleanSolo ?? fastest;
+    const engineering = [...useful].sort((a, b) => (a.min_splitter_mm ?? 9999) - (b.min_splitter_mm ?? 9999))[0] ?? fastest;
+    return [
+      { key: "trust", label: "Highest Trust", lap: highestTrust, note: "Clean usable evidence" },
+      { key: "engineering", label: "Engineering Value", lap: engineering, note: "Most platform-relevant lap" },
+      { key: "solo", label: "Clean / Solo", lap: cleanSolo, note: "Best setup signal" },
+      { key: "fastest", label: "Fastest Usable", lap: fastest, note: "Pace reference" },
+    ].filter((item) => item.lap != null);
+  }, [laps]);
+
   return (
     <div className="tab-grid">
       {/* ── Header ── */}
@@ -241,6 +275,39 @@ export function LapsTab({ overview }: LapsTabProps) {
           </button>
         ))}
       </div>
+
+      {subview === "current" && evidenceLaps.length > 0 && (
+        <section className="workspace-section">
+          <h2><Trophy size={16} /> Best Evidence Laps</h2>
+          <div className="best-evidence-laps">
+            {evidenceLaps.map((item) => (
+              <div key={item.key} className="best-evidence-lap">
+                <div>
+                  <strong>{item.label}: Lap {item.lap!.lap_number}</strong>
+                  <span className="muted">{item.note} | {formatTime(item.lap!.lap_time)}</span>
+                </div>
+                <div className="diw-actions">
+                  <button className="trackmap-action-btn" onClick={() => { selectLap(item.lap!.lap_number); setWorkspace("platform_trace", "manual"); }} title="Open in Platform">
+                    <Layers size={10} /> Platform
+                  </button>
+                  <button className="trackmap-action-btn" onClick={() => { selectLap(item.lap!.lap_number); setWorkspace("map", "manual"); }} title="Open on Map">
+                    <MapPin size={10} /> Map
+                  </button>
+                  <button className="trackmap-action-btn" onClick={() => setBaseline(makeLapBasketItem(item.lap!.lap_number, `${item.label} Lap ${item.lap!.lap_number}`))} title="Set Baseline">
+                    <Clock size={10} /> BL
+                  </button>
+                  <button className="trackmap-action-btn" onClick={() => setTest(makeLapBasketItem(item.lap!.lap_number, `${item.label} Lap ${item.lap!.lap_number}`))} title="Set Test">
+                    <Gauge size={10} /> Test
+                  </button>
+                  <button className="trackmap-action-btn" onClick={() => addToQueue(makeLapBasketItem(item.lap!.lap_number, `${item.label} Lap ${item.lap!.lap_number}`))} title="Add to Compare Basket">
+                    <BarChart3 size={10} /> Basket
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ── All Sessions view ── */}
       {subview === "all_sessions" && (
@@ -507,7 +574,7 @@ export function LapsTab({ overview }: LapsTabProps) {
               else if (isOutLap) { marker = "O"; }
               else if (isInLap) { marker = "I"; }
               else if (isPit) { marker = "P"; }
-              const ariaLabel = `Lap ${lap.lap_number}${lap.lap_time != null ? `, ${lap.lap_time.toFixed(3)} seconds` : ""}${hasDraft ? ", draft affected" : ""}${!lap.is_useful ? ", invalid" : ""}${isOutLap ? ", out lap" : ""}${isInLap ? ", in lap" : ""}`;
+              const ariaLabel = `Lap ${lap.lap_number}${lap.lap_time != null ? `, ${lap.lap_time.toFixed(3)} seconds` : ""}${hasDraft ? ", draft affected" : ""}${lap.is_useful ? "" : ", invalid"}${isOutLap ? ", out lap" : ""}${isInLap ? ", in lap" : ""}`;
               return (
                 <div
                   key={lap.lap_id}
@@ -518,7 +585,7 @@ export function LapsTab({ overview }: LapsTabProps) {
                   role="button"
                   tabIndex={0}
                   aria-label={ariaLabel}
-                  title={`Lap ${lap.lap_number}: ${lap.lap_time != null ? lap.lap_time.toFixed(3) + "s" : "—"}${hasDraft ? " [DRAFT]" : ""}${!lap.is_useful ? " [INVALID]" : ""}${isOutLap ? " [OUT]" : ""}${isInLap ? " [IN]" : ""}`}
+                  title={`Lap ${lap.lap_number}: ${lap.lap_time != null ? lap.lap_time.toFixed(3) + "s" : "—"}${hasDraft ? " [DRAFT]" : ""}${lap.is_useful ? "" : " [INVALID]"}${isOutLap ? " [OUT]" : ""}${isInLap ? " [IN]" : ""}`}
                 >
                   {marker && <span className="laps-stint-marker">{marker}</span>}
                 </div>
@@ -870,23 +937,15 @@ export function LapsTab({ overview }: LapsTabProps) {
                           <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); handleSelectLap(lap.lap_number); }} title="Open Platform">
                             <Layers size={10} />
                           </button>
-                          <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); handleAddToCompare(lap.lap_number); }} title="Add to Compare">
+                          <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); addToQueue(makeLapBasketItem(lap.lap_number)); handleAddToCompare(lap.lap_number); }} title="Add to Compare Basket">
                             <BarChart3 size={10} />
+                          </button>
+                          <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); setBaseline(makeLapBasketItem(lap.lap_number, `Baseline Lap ${lap.lap_number}`)); }} title="Set as Baseline">
+                            <Clock size={10} />
                           </button>
                           <button className="trackmap-action-btn" onClick={(e) => {
                             e.stopPropagation();
-                            const item = makeBasketItem(
-                              overview.run_id, lap.lap_number,
-                              `Lap ${lap.lap_number}`,
-                              overview.session.car_name ?? null,
-                              (overview.session.track_display_name ?? overview.session.track_name) ?? null,
-                              overview.session.setup_name ?? null,
-                              lap.lap_time ?? null,
-                              lap.classification_tags ?? [],
-                              tags.some(t => t.includes("DRAFT")) ? "DRAFT_AFFECTED" : "LIKELY_SOLO",
-                              null,
-                            );
-                            setTest(item);
+                            setTest(makeLapBasketItem(lap.lap_number, `Test Lap ${lap.lap_number}`));
                           }} title="Set as Test in Compare Basket">
                             <Gauge size={10} />
                           </button>

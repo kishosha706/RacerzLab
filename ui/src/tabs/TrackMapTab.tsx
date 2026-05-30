@@ -83,7 +83,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const [selectedArea, setSelectedArea] = useState<string | null>(null);
   const inspectorRef = useRef<HTMLDivElement>(null);
-  const { selectSample, selectEvent, selectZone } = useTelemetrySelection();
+  const { selectSample, selectEvent, selectLap, selectZone, setWorkspace } = useTelemetrySelection();
 
   useEffect(() => { fetchTrackMaps().then(setAvailableMaps).catch(()=>{}); }, []);
   useEffect(() => {
@@ -116,11 +116,12 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
   const handleOverlayClick = useCallback(
     (o: TrackMapOverlayMarker) => {
       setInspector({ kind: "overlay", overlay: o });
-      if (o.lap_pct != null) selectSample(0, undefined, o.lap_pct, "track_map");
+      if (lap != null) selectLap(lap);
+      if (o.lap_pct != null || o.distance_ft != null) selectSample(0, o.distance_ft, o.lap_pct, "track_map");
       if (o.kind === "platform_event" && o.source_id) selectEvent(o.source_id, "track_map");
       inspectorRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     },
-    [selectSample, selectEvent],
+    [lap, selectSample, selectEvent, selectLap],
   );
 
   const handleSectionClick = useCallback(
@@ -297,7 +298,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
     const selOvl = inspector.kind === "overlay" ? inspector.overlay : null;
     const selLoc = selOvl ? getLocation(selOvl.lap_pct) : null;
     const lines = [
-      "RaceLab Track Map Summary",
+      "RacerZLab Track Map Summary",
       `Map: ${metadata?.track_name ?? "Unknown"}`,
       ...(selLoc ? [`Location: ${selLoc.display_label}`] : []),
       ...(selOvl ? [`Event: ${selOvl.label}`, `Severity: ${selOvl.severity ?? "info"}`] : []),
@@ -1153,6 +1154,22 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                       <span className="muted" style={{ marginLeft: 6, fontSize: 10 }}>Location confidence: {loc.confidence}</span>
                     )}
                   </span>
+                </div>
+                <div className="inspector-block">
+                  <label>Actions</label>
+                  <div className="diw-actions">
+                    <button
+                      className="trackmap-action-btn"
+                      onClick={() => {
+                        if (o.lap_pct != null || o.distance_ft != null) selectSample(0, o.distance_ft, o.lap_pct, "track_map");
+                        if (o.kind === "platform_event" && o.source_id) selectEvent(o.source_id, "track_map");
+                        setWorkspace("platform_trace", "track_map");
+                      }}
+                      title="Open Platform at this location"
+                    >
+                      <Layers size={10} /> Open Platform
+                    </button>
+                  </div>
                 </div>
                 {DEBUG_LOCATION && o.lap_pct != null && (
                   <div className="inspector-block">

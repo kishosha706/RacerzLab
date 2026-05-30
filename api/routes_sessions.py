@@ -54,15 +54,14 @@ def list_sessions_endpoint(include_archived: bool = False) -> list[dict]:
 
 @router.get("/{session_id}")
 def get_session_endpoint(session_id: str) -> dict:
-    session = get_session(session_id)
-    if not session:
+    if not (session := get_session(session_id)):
         raise HTTPException(404, f"Session not found: {session_id}")
     return session.as_dict()
 
 
 @router.patch("/{session_id}")
 def update_session_endpoint(session_id: str, req: UpdateSessionRequest) -> dict:
-    session = update_session(
+    if not (session := update_session(
         session_id,
         name=req.name,
         track_name=req.track_name,
@@ -71,8 +70,7 @@ def update_session_endpoint(session_id: str, req: UpdateSessionRequest) -> dict:
         last_selected_lap=req.last_selected_lap,
         last_workspace=req.last_workspace,
         status=req.status,
-    )
-    if not session:
+    )):
         raise HTTPException(404, f"Session not found: {session_id}")
     return session.as_dict()
 
@@ -88,8 +86,7 @@ def delete_session_endpoint(session_id: str) -> dict:
 
 @router.post("/{session_id}/archive")
 def archive_session_endpoint(session_id: str) -> dict:
-    session = archive_session(session_id)
-    if not session:
+    if not (session := archive_session(session_id)):
         raise HTTPException(404, f"Session not found: {session_id}")
     return session.as_dict()
 
@@ -98,16 +95,14 @@ def archive_session_endpoint(session_id: str) -> dict:
 
 @router.post("/{session_id}/runs")
 def add_run_endpoint(session_id: str, req: AddRunRequest) -> dict:
-    session = add_run_to_session(session_id, req.run_id)
-    if not session:
+    if not (session := add_run_to_session(session_id, req.run_id)):
         raise HTTPException(404, f"Session not found: {session_id}")
     return session.as_dict()
 
 
 @router.delete("/{session_id}/runs/{run_id}")
 def remove_run_endpoint(session_id: str, run_id: str) -> dict:
-    session = remove_run_from_session(session_id, run_id)
-    if not session:
+    if not (session := remove_run_from_session(session_id, run_id)):
         raise HTTPException(404, f"Session not found: {session_id}")
     return session.as_dict()
 

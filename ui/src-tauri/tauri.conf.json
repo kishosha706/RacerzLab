@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "RaceLab Garage",
+  "productName": "RacerZLab",
   "version": "0.1.0",
   "identifier": "com.racelab.garage",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "RaceLab Garage",
+        "title": "RacerZLab",
         "width": 1440,
         "height": 900,
         "minWidth": 1100,
@@ -20,7 +20,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8000 http://localhost:8000 http://127.0.0.1:5173 ws://127.0.0.1:5173; img-src 'self' asset:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8010 http://localhost:8010 http://127.0.0.1:5173 ws://127.0.0.1:5173; img-src 'self' asset:; style-src 'self' 'unsafe-inline'; script-src 'self'"
     }
   },
   "bundle": {

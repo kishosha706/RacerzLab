@@ -42,7 +42,7 @@ function staggerMarkers(events: PlatformEventItem[]): StaggeredEvent[] {
 }
 
 export function EventTimeline({ platformEvents }: EventTimelineProps) {
-  const { selection, selectEvent, setWorkspace, selectSample, setHover } = useTelemetrySelection();
+  const { selection, selectEvent, selectLap, setWorkspace, selectSample, setHover, setPlaybackActive } = useTelemetrySelection();
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<number>(1);
   const playbackRef = useRef<number | null>(null);
@@ -55,6 +55,11 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
     [platformEvents],
   );
 
+  useEffect(() => {
+    setPlaybackActive(playing);
+    return () => setPlaybackActive(false);
+  }, [playing, setPlaybackActive]);
+
   const stepTo = useCallback((index: number) => {
     const event = sorted[index];
     if (!event) return;
@@ -66,12 +71,11 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
   const commitEvent = useCallback((index: number) => {
     const event = sorted[index];
     if (!event) return;
+    if (event.lap != null) selectLap(event.lap);
     selectEvent(event.event_id, "event_timeline");
-    if (event.sample_index != null) {
-      selectSample(event.sample_index, event.lap_dist_ft ?? undefined, event.lap_pct ?? undefined, "event_timeline");
-    }
+    selectSample(event.sample_index ?? 0, event.lap_dist_ft ?? undefined, event.lap_pct ?? undefined, "event_timeline");
     setWorkspace("platform_trace", "event_timeline");
-  }, [sorted, selectEvent, selectSample, setWorkspace]);
+  }, [sorted, selectEvent, selectLap, selectSample, setWorkspace]);
 
   const togglePlay = useCallback(() => {
     setPlaying((p) => !p);
@@ -205,10 +209,9 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
               onClick={() => {
                 const idx = sorted.findIndex((e) => e.event_id === event.event_id);
                 if (idx >= 0) indexRef.current = idx;
+                if (event.lap != null) selectLap(event.lap);
                 selectEvent(event.event_id, "event_timeline");
-                if (event.sample_index != null) {
-                  selectSample(event.sample_index, event.lap_dist_ft ?? undefined, event.lap_pct ?? undefined, "event_timeline");
-                }
+                selectSample(event.sample_index ?? 0, event.lap_dist_ft ?? undefined, event.lap_pct ?? undefined, "event_timeline");
                 setWorkspace("platform_trace", "event_timeline");
               }}
             >

@@ -18,7 +18,7 @@ const READINESS_COLORS: Record<BasketReadiness, string> = {
 };
 
 export function CompareBasket() {
-  const { basket, setBaseline, setTest, swap, clear, remove, getWarnings, getReadiness } = useCompareBasket();
+  const { basket, swap, clear, remove, getWarnings, getReadiness } = useCompareBasket();
   const { setWorkspace } = useTelemetrySelection();
   const [expanded, setExpanded] = useState(false);
 
@@ -73,6 +73,53 @@ export function CompareBasket() {
               </span>
               <span style={{ fontSize: 10, opacity: 0.8 }}>— {readiness.reason}</span>
             </div>
+          )}
+
+          {/* Ready to Compare CTA */}
+          {basket.baseline && basket.test && readiness.status === "ready" && (
+            <button
+              className="compare-basket-ready-btn"
+              onClick={handleOpenCompare}
+              style={{
+                background: READINESS_COLORS.ready,
+                color: "white",
+                border: "none",
+                padding: "6px 12px",
+                borderRadius: 4,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+                marginTop: 8,
+                width: "100%",
+              }}
+            >
+              Ready to Compare
+            </button>
+          )}
+
+          {/* Caution/Not Valid explanation */}
+          {basket.baseline && basket.test && readiness.status === "caution" && (
+            <p style={{ fontSize: 11, color: READINESS_COLORS.caution, margin: "6px 0", lineHeight: 1.4 }}>
+              ⚠ Caution: {readiness.reason}
+            </p>
+          )}
+          {basket.baseline && basket.test && readiness.status === "not_valid" && (
+            <p style={{ fontSize: 11, color: READINESS_COLORS.not_valid, margin: "6px 0", lineHeight: 1.4 }}>
+              ✗ Not valid: {readiness.reason}
+            </p>
+          )}
+          {basket.baseline && basket.test && readiness.status === "reference_mode" && (
+            <p style={{ fontSize: 11, color: READINESS_COLORS.reference_mode, margin: "6px 0", lineHeight: 1.4 }}>
+              ℹ Reference mode: {readiness.reason}
+            </p>
+          )}
+
+          {/* Partial status */}
+          {basket.baseline && !basket.test && (
+            <p style={{ fontSize: 11, color: "#8d9aaa", margin: "8px 0" }}>1/2 — Add test run</p>
+          )}
+          {!basket.baseline && basket.test && (
+            <p style={{ fontSize: 11, color: "#8d9aaa", margin: "8px 0" }}>1/2 — Add baseline run</p>
           )}
 
           <BasketSlotDisplay

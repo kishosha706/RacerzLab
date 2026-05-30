@@ -161,8 +161,7 @@ def compute_verdict(
     warnings = list(result.warnings)
     if discipline.label in ("mixed", "weak"):
         msg = "Low test discipline — result may not be reproducible."
-        if msg not in discipline.negative_factors:
-            warnings.append(msg)
+        warnings.append(msg)
     for factor in discipline.negative_factors:
         if factor not in warnings:
             warnings.append(factor)

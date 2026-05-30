@@ -14,13 +14,13 @@ Verifies the 8 edge cases from the engineering audit:
 from __future__ import annotations
 
 import math
+import pytest
 
 from racelab_engine.analysis.drag_scrub import aero_normalized_resistance, compute_drag_scrub_index
 from racelab_engine.analysis.calculated_channels import (
     _compute_slip_ratios,
     _compute_scrub_proxies,
     _compute_tire_derived,
-    SLIP_RATIO_SPEED_FLOOR_MPS,
     SLIP_RATIO_CLAMP_MAX,
 )
 
@@ -40,9 +40,7 @@ def test_superspeedway_aero_decel_low_index() -> None:
         "cfs_risk_score": 0.1,
     }
     index = compute_drag_scrub_index(row)
-    # resistance_coeff = 1.5/120 = 0.0125, resistance_index = 0.0125/0.02 = 0.625
-    # weighted: 0.625*0.45 + small steering/yaw/cfs = ~0.28 + ~0.02 = ~0.30
-    assert index < 0.5, f"Expected low/medium index, got {index:.3f}"
+    assert index == pytest.approx(0.30, abs=0.05)
 
 
 # ── Edge case 2: Lower-speed corner, same raw decel ───────────
@@ -94,9 +92,10 @@ def test_missing_dynamic_pressure_fallback() -> None:
         "yaw_rate": 0.05,
         "cfs_risk_score": 0.1,
     }
-    # aero_normalized_resistance should not crash
+    # aero_normalized_resistance should use the 1.0 psf floor defined in the blueprint
     coeff = aero_normalized_resistance(row)
-    assert coeff == 2.0  # 2.0 / 1.0 (floor)
+    assert coeff == 2.0
+    
     index = compute_drag_scrub_index(row)
     assert 0.0 <= index <= 1.0
 
@@ -111,10 +110,9 @@ def test_missing_track_width_preserves_raw() -> None:
         "RRspeed": 50.3,
         "LRspeed": 50.0,
         "yaw_rate": 0.1,
+        "Speed": 50.0,
         # no front_track_width_m, no rear_track_width_m
     }
-    # _compute_slip_ratios sets raw mismatch
-    item["Speed"] = 50.0
     _compute_slip_ratios(item)
     # Raw mismatch should be set
     assert item.get("front_wheel_speed_mismatch_raw") is not None

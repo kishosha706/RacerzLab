@@ -44,8 +44,7 @@ def load_rows(path: Path) -> list[dict[str, Any]]:
     # Try JSONL (one dict per line)
     rows: list[dict[str, Any]] = []
     for line in text.splitlines():
-        line = line.strip()
-        if not line:
+        if not (line := line.strip()):
             continue
         rows.append(json.loads(line))
     return rows
@@ -70,8 +69,7 @@ def print_report(report: dict[str, Any]) -> None:
         print(f"  Early-window exemptions (shock rolling): {report['early_window_exemptions']}")
     print()
 
-    mismatches = {ch: cnt for ch, cnt in report["mismatch_count_by_channel"].items() if cnt > 0}
-    if mismatches:
+    if mismatches := {ch: cnt for ch, cnt in report["mismatch_count_by_channel"].items() if cnt > 0}:
         header = f"  {'Channel':<40s} {'Mismatches':<12s} {'Max |diff|':<12s}"
         print(header)
         print("  " + "-" * 40 + " " + "-" * 12 + " " + "-" * 12)

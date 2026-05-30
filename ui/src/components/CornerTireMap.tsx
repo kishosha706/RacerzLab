@@ -1,6 +1,6 @@
 /** Four-corner tire map showing per-corner tire state. */
 import type { TraceResponse } from "../types/telemetry";
-import { getTraceValues, formatChannelValue, safeStringValue } from "../utils/channelFormat";
+import { getTraceValues, safeStringValue } from "../utils/channelFormat";
 
 type TireMapMode = "pressure" | "pressure_gain" | "temp_spread" | "wear_spread" | "slip" | "camber";
 
@@ -32,7 +32,7 @@ function cornerColor(trace: TraceResponse | null, corner: string, mode: TireMapM
   const ch = `${corner}_${mode === "camber" ? "camber_temp_bias_c" : mode === "slip" ? "slip_ratio_proxy" : mode}`;
   const vals = getTraceValues(trace, ch);
   const v = vals.length > 0 ? vals[vals.length - 1] : null;
-  if (v == null || typeof v === "string") return "#475569";
+  if (v == null || typeof v === "string" || !Number.isFinite(v)) return "#475569";
   const abs = Math.abs(v);
   if (abs > 20) return "#ef4444";
   if (abs > 10) return "#f97316";
@@ -45,7 +45,7 @@ function cornerHeatClass(trace: TraceResponse | null, corner: string, mode: Tire
   const ch = `${corner}_${mode === "camber" ? "camber_temp_bias_c" : mode === "slip" ? "slip_ratio_proxy" : mode}`;
   const vals = getTraceValues(trace, ch);
   const v = vals.length > 0 ? vals[vals.length - 1] : null;
-  if (v == null || typeof v === "string") return "";
+  if (v == null || typeof v === "string" || !Number.isFinite(v)) return "";
   const abs = Math.abs(v);
   if (mode === "slip") {
     return abs > 0.05 ? " slip-high" : "";

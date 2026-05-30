@@ -69,11 +69,9 @@ class VehiclePhysicsInputs:
 
         Falls back to front or rear average, then 1.0.
         """
-        if corner in ("lf", "rf"):
+        if corner in {"lf", "rf"}:
             return self.resolve_motion_ratio_front()
-        if corner in ("lr", "rr"):
-            return self.resolve_motion_ratio_rear()
-        return 1.0
+        return self.resolve_motion_ratio_rear() if corner in {"lr", "rr"} else 1.0
 
     @staticmethod
     def from_row(row: dict[str, Any]) -> VehiclePhysicsInputs:

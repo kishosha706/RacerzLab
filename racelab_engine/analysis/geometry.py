@@ -66,13 +66,9 @@ def compute_roll_deg(
 
 def ride_height_m_to_in(meters: float | None) -> float | None:
     """Convert ride height from meters to inches."""
-    if meters is None:
-        return None
-    return meters * 39.37007874
+    return None if meters is None else meters * 39.37007874
 
 
 def ride_height_mm_to_m(mm: float | None) -> float | None:
     """Convert ride height from millimeters to meters."""
-    if mm is None:
-        return None
-    return mm / 1000.0
+    return None if mm is None else mm / 1000.0
