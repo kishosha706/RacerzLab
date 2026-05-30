@@ -1,10 +1,11 @@
-import { AlertTriangle, BarChart3, Bookmark } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, BarChart3, Bookmark, MapPin, ShoppingCart } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCompareInsights } from "../api/client";
 import { ComparisonInsightPanel } from "../components/ComparisonInsightPanel";
 import { DeltaTracesView } from "../components/DeltaTracesView";
 import { DidItWorkCard } from "../components/DidItWorkCard";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
+import { useCompareBasket, type BasketItem } from "../store/CompareBasketContext";
 import type { RunListItem } from "../types/telemetry";
 import type {
   ChannelDeltaStats, CompareResponse, ComparisonInsightsResponse, CornerName, CornerMetric,
@@ -67,6 +68,32 @@ function dirColor(dir: string | null | undefined): string {
   if (dir === "worse") return "#ef4444";
   if (dir === "mixed" || dir === "context") return "#f59e0b";
   return "#8d9aaa";
+}
+
+function describeEvidenceScope(
+  item: BasketItem | null,
+): string {
+  if (!item) return "Run-level";
+  if (item.lap_scope === "lap_window" && item.lap_window_start != null && item.lap_window_end != null) {
+    return `Window ${item.lap_window_start}-${item.lap_window_end}`;
+  }
+  if (item.lap_number != null) return `Lap ${item.lap_number}`;
+  return "Run-level";
+}
+
+function describeValueBasisLabel(valueBasis: string | null | undefined): string | null {
+  switch (valueBasis) {
+    case "selected_window":
+      return "Selected window";
+    case "full_lap":
+      return "Full lap";
+    case "selected_sample":
+      return "Selected sample";
+    case "run_level":
+      return "Run-level";
+    default:
+      return null;
+  }
 }
 
 function deltaRow(label: string, d: ChannelDeltaStats | null | undefined, unit = "") {
@@ -233,10 +260,11 @@ function WhatChangedView({ setup, context }: { setup: SetupChange[]; context: Ar
   );
 }
 
-function TargetZoneView({ data: r, onOpenDeltaTraces }: { data: CompareResponse; onOpenDeltaTraces?: () => void }) {
+function TargetZoneView({ data: r, friendlyLabel, onOpenDeltaTraces }: { data: CompareResponse; friendlyLabel?: string | null; onOpenDeltaTraces?: () => void }) {
   return (
     <div className="compare-subview">
-      <h3>Target Zone {r.target_zone_start_pct}–{r.target_zone_end_pct}%</h3>
+      <h3>{friendlyLabel ?? `Target Zone ${r.target_zone_start_pct}–${r.target_zone_end_pct}%`}</h3>
+      {friendlyLabel && <p className="section-note">Range {r.target_zone_start_pct}–{r.target_zone_end_pct}%</p>}
       {r.verdict && (
         <p>Speed: <strong>{r.verdict.headline}</strong></p>
       )}
@@ -447,8 +475,16 @@ function EvidenceView({ verdict }: { verdict: DidItWorkVerdict | null }) {
 // ── Main Tab ────────────────────────────────────────────────
 
 export function CompareTab({ runs, currentRunId }: CompareTabProps) {
+  const { basket } = useCompareBasket();
   const [baselineRunId, setBaselineRunId] = useState(currentRunId);
   const [testRunId, setTestRunId] = useState("");
+  // Determine if Compare is using basket-driven or manual selections
+  const basketBaselineRunId = basket.baseline?.run_id;
+  const basketTestRunId = basket.test?.run_id;
+  const isBasketDriven = basketBaselineRunId != null
+    && baselineRunId === basketBaselineRunId
+    && testRunId === basketTestRunId
+    && testRunId !== "";
   const [startPct, setStartPct] = useState(55);
   const [endPct, setEndPct] = useState(70);
   const [preview, setPreview] = useState<PreviewData | null>(null);
@@ -456,12 +492,22 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
   const [result, setResult] = useState<CompareResponse | null>(null);
   const [subview, setSubview] = useState<SubView>("verdict");
   const [loading, setLoading] = useState(false);
-  const { setWorkspace } = useTelemetrySelection();
+  const { selection, setWorkspace } = useTelemetrySelection();
   const [error, setError] = useState<string | null>(null);
   const [insights, setInsights] = useState<ComparisonInsightsResponse | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [activeZoneLabel, setActiveZoneLabel] = useState<string | null>(null);
+  const lastSyncedZoneKeyRef = useRef<string | null>(null);
+  const basketBaselineLap = basket.baseline?.representative_lap ?? basket.baseline?.lap_number ?? null;
+  const basketTestLap = basket.test?.representative_lap ?? basket.test?.lap_number ?? null;
+  const effectiveBaselineLap = isBasketDriven ? basketBaselineLap : preview?.suggested_baseline_lap ?? null;
+  const effectiveTestLap = isBasketDriven ? basketTestLap : preview?.suggested_test_lap ?? null;
+  const compareModeLabel = isBasketDriven ? "Basket-driven" : "Manual / detached";
+  const compareScopeNote = basket.baseline?.lap_scope === "lap_window" || basket.test?.lap_scope === "lap_window"
+    ? "Compare currently uses representative laps and run-level compare math; window metadata is preserved for context."
+    : "Compare currently uses lap or run identity without window metadata.";
 
   // Resolve car/track/setup from the baseline run in the runs list
   const baselineRun = runs.find((r) => r.run_id === baselineRunId);
@@ -518,6 +564,12 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
 
   const otherRuns = runs.filter((r) => r.run_id !== baselineRunId);
   const isSameRun = testRunId === baselineRunId && testRunId !== "";
+  const selectedZoneReady = selection.selectedRunId === baselineRunId
+    && selection.selectedZoneStartPct != null
+    && selection.selectedZoneEndPct != null;
+  const selectedZoneRangeLabel = selectedZoneReady
+    ? selection.selectedZoneLabel ?? `Zone ${selection.selectedZoneStartPct?.toFixed(1)}-${selection.selectedZoneEndPct?.toFixed(1)}%`
+    : null;
 
   // ── Same-run reference mode ──────────────────────────────────
   const isSelfCompare = result != null && result.baseline_lap === result.test_lap && isSameRun;
@@ -548,6 +600,36 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
     return () => { cancelled = true; };
   }, [baselineRunId, testRunId]);
 
+  useEffect(() => {
+    if (!selectedZoneReady) {
+      if (selection.selectedRunId !== baselineRunId) {
+        setActiveZoneLabel(null);
+      }
+      return;
+    }
+    const nextKey = [
+      baselineRunId,
+      selection.selectedZoneId ?? "",
+      selection.selectedZoneStartPct,
+      selection.selectedZoneEndPct,
+      selection.selectedZoneLabel ?? "",
+    ].join("|");
+    if (lastSyncedZoneKeyRef.current === nextKey) return;
+    lastSyncedZoneKeyRef.current = nextKey;
+    setStartPct(selection.selectedZoneStartPct ?? 0);
+    setEndPct(selection.selectedZoneEndPct ?? 100);
+    setActiveZoneLabel(selection.selectedZoneLabel ?? null);
+    setResult(null);
+  }, [
+    baselineRunId,
+    selectedZoneReady,
+    selection.selectedRunId,
+    selection.selectedZoneEndPct,
+    selection.selectedZoneId,
+    selection.selectedZoneLabel,
+    selection.selectedZoneStartPct,
+  ]);
+
   const handleCompare = useCallback(async () => {
     if (!testRunId) return;
     setLoading(true);
@@ -558,8 +640,8 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
         body: JSON.stringify({
           baseline_run_id: baselineRunId,
           test_run_id: testRunId,
-          baseline_lap: preview?.suggested_baseline_lap ?? null,
-          test_lap: preview?.suggested_test_lap ?? null,
+          baseline_lap: effectiveBaselineLap,
+          test_lap: effectiveTestLap,
           target_zone_start_pct: startPct,
           target_zone_end_pct: endPct,
         }),
@@ -571,7 +653,7 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
     } finally {
       setLoading(false);
     }
-  }, [baselineRunId, testRunId, startPct, endPct, preview]);
+  }, [baselineRunId, effectiveBaselineLap, effectiveTestLap, testRunId, startPct, endPct]);
 
   // ── load insights when comparison exists ────────────────────
   useEffect(() => {
@@ -626,7 +708,7 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
       );
       case "what-changed": return <WhatChangedView setup={result.setup_changes} context={result.context_changes} />;
       case "whole-car-index": return <WholeCarIndexView wci={result.whole_car_index} />;
-      case "target-zone": return <TargetZoneView data={result} onOpenDeltaTraces={() => setSubview("delta-traces")} />;
+      case "target-zone": return <TargetZoneView data={result} friendlyLabel={activeZoneLabel} onOpenDeltaTraces={() => setSubview("delta-traces")} />;
       case "platform": return <PlatformView platform={result.platform} onOpenDeltaTraces={() => setSubview("delta-traces")} />;
       case "four-corners": return <FourCornersView cm={result.corner_matrix} onOpenDeltaTraces={() => setSubview("delta-traces")} />;
       case "tires": return <TiresView tire={result.tire_comparison} />;
@@ -688,9 +770,9 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
         <div className="selector-group">
           <label>Target Zone</label>
           <div className="zone-inputs">
-            <input type="number" value={startPct} onChange={e => setStartPct(Number(e.target.value))} min={0} max={100} />%
+            <input type="number" value={startPct} onChange={e => { setStartPct(Number(e.target.value)); setActiveZoneLabel(null); setResult(null); }} min={0} max={100} />%
             <span>–</span>
-            <input type="number" value={endPct} onChange={e => setEndPct(Number(e.target.value))} min={0} max={100} />%
+            <input type="number" value={endPct} onChange={e => { setEndPct(Number(e.target.value)); setActiveZoneLabel(null); setResult(null); }} min={0} max={100} />%
           </div>
         </div>
         <button className="primary-button" onClick={handleCompare} disabled={!testRunId || loading || isSameRun}>
@@ -698,7 +780,90 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
         </button>
       </div>
 
+      {(activeZoneLabel || selectedZoneRangeLabel) && (
+        <div className="compare-basket-status" style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+          <span className="lap-flag-badge" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>
+            <MapPin size={10} style={{ marginRight: 4 }} />
+            {activeZoneLabel ?? selectedZoneRangeLabel}
+          </span>
+          {selectedZoneReady && (
+            <span className="section-note" style={{ margin: 0 }}>
+              Compare target zone synced from the current spatial selection.
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="laps-chip-row" style={{ marginBottom: 8 }}>
+        <span className="lap-flag-badge">Baseline Lap {effectiveBaselineLap ?? "auto"}</span>
+        <span className="lap-flag-badge">Test Lap {effectiveTestLap ?? "auto"}</span>
+      </div>
+
       {error && <p className="error-text">{error}</p>}
+
+      {/* Compare Basket status */}
+      <div className="compare-basket-status" style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
+        <span className="lap-flag-badge" style={{
+          background: isBasketDriven ? "rgba(34,197,94,0.12)" : "rgba(245,158,11,0.12)",
+          color: isBasketDriven ? "#22c55e" : "#f59e0b",
+          fontSize: 10, padding: "2px 8px",
+        }}>
+          <ShoppingCart size={10} style={{ marginRight: 4 }} />
+          {compareModeLabel}
+        </span>
+        {!isBasketDriven && basketBaselineRunId && basketTestRunId && (
+          <button
+            className="trackmap-action-btn"
+            onClick={() => {
+              setBaselineRunId(basketBaselineRunId);
+              setTestRunId(basketTestRunId);
+              setResult(null);
+            }}
+            title="Sync runs from Compare Basket"
+          >
+            <ShoppingCart size={10} /> Sync from Basket
+          </button>
+        )}
+        {(basket.baseline?.lap_scope === "lap_window" || basket.test?.lap_scope === "lap_window") && (
+          <span className="lap-flag-badge" style={{ background: "rgba(56,189,248,0.12)", color: "#38bdf8", fontSize: 10, padding: "2px 8px" }}>
+            Window metadata preserved
+          </span>
+        )}
+      </div>
+
+      {(basket.baseline || basket.test) && (
+        <div className="laps-window-grid" style={{ marginBottom: 10 }}>
+          {([
+            ["Baseline", basket.baseline, effectiveBaselineLap],
+            ["Test", basket.test, effectiveTestLap],
+          ] as const).map(([role, item, effectiveLap]) => (
+            <article key={role} className="laps-window-card">
+              <span className="eyebrow">{role}</span>
+              <h3 style={{ margin: 0 }}>{item?.label ?? "Empty"}</h3>
+              {item ? (
+                <>
+                  <div className="laps-chip-row">
+                    <span className="lap-flag-badge">{describeEvidenceScope(item)}</span>
+                    {item.trust_tier && <span className="lap-flag-badge">Trust {item.trust_tier}</span>}
+                    {describeValueBasisLabel(item.value_basis) && <span className="lap-flag-badge">{describeValueBasisLabel(item.value_basis)}</span>}
+                    {item.representative_lap != null && <span className="lap-flag-badge">Rep Lap {item.representative_lap}</span>}
+                    {item.engineering_value != null && <span className="lap-flag-badge">EV {item.engineering_value.toFixed(0)}</span>}
+                  </div>
+                  <p className="section-note" style={{ marginBottom: 0 }}>
+                    {item.car ?? "-"} · {item.track ?? "-"} · Compare will use {effectiveLap != null ? `Lap ${effectiveLap}` : "run-level identity"} for this side.
+                  </p>
+                </>
+              ) : (
+                <p className="muted" style={{ marginBottom: 0 }}>Stage {role.toLowerCase()} evidence from Laps or use manual run selectors below.</p>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+
+      <p className="section-note" style={{ marginTop: 0 }}>
+        {compareScopeNote}
+      </p>
 
       {/* preview loading */}
       {previewLoading && <div className="compare-preview-loading"><span className="loading-spinner" /> Loading preview…</div>}

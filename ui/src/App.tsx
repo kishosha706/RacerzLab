@@ -1,5 +1,5 @@
 import { Clock, Gauge, GitCompare, Layers, List, MapPin, Wrench } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
   fetchChannels,
@@ -39,7 +39,6 @@ import type {
   PlatformEventItem,
   RunListItem,
   RunOverview,
-  TelemetryCursor,
   TrackMapResolution,
   TraceResponse,
 } from "./types/telemetry";
@@ -53,7 +52,6 @@ function CockpitShell() {
   const [trace, setTrace] = useState<TraceResponse | null>(null);
   const [channels, setChannels] = useState<ChannelCatalogItem[]>([]);
   const [platformEvents, setPlatformEvents] = useState<PlatformEventItem[]>([]);
-  const [cursor, setCursor] = useState<TelemetryCursor>({});
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -63,6 +61,7 @@ function CockpitShell() {
   const [inspectorOpen, setInspectorOpen] = useState(true);
 
   const { selection, loadRun, selectLap, setWorkspace } = useTelemetrySelection();
+  const selectedTraceLap = selection.selectedRepresentativeLap ?? selection.selectedLap ?? null;
 
   // ── keyboard shortcuts ─────────────────────────────────────
   useKeyboardShortcuts(platformEvents, setWorkspace, {
@@ -97,14 +96,6 @@ function CockpitShell() {
         setTrace(nextTrace);
         setPlatformEvents(pevents);
         loadRun(runId, bestLap ?? null);
-        setCursor({
-          selected_run_id: runId,
-          selected_lap: bestLap ?? null,
-          selected_sample_index: null,
-          selected_lap_dist_ft: null,
-          selected_lap_pct: null,
-          selected_event_id: null,
-        });
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "Failed to load run.");
       } finally {
@@ -214,6 +205,33 @@ function CockpitShell() {
     fileInputRef.current?.click();
   }, []);
 
+  useEffect(() => {
+    if (!overview) return;
+    const targetLap = selectedTraceLap ?? overview.best_useful_lap?.lap_number ?? null;
+    if (targetLap == null) return;
+    if (trace?.run_id === overview.run_id && trace?.lap === targetLap) return;
+
+    let cancelled = false;
+    Promise.all([
+      fetchTrace(overview.run_id, {
+        lap: targetLap,
+        x: "lap_dist_ft",
+        channels: TRACE_WORKBENCH_CHANNELS,
+        downsample: "auto",
+        preserveExtrema: true,
+      }).catch(() => null),
+      fetchPlatformEvents(overview.run_id, { lap: targetLap }).catch(() => []),
+    ]).then(([nextTrace, nextPlatformEvents]) => {
+      if (cancelled) return;
+      if (nextTrace) setTrace(nextTrace);
+      setPlatformEvents(nextPlatformEvents);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [overview, selectedTraceLap, trace]);
+
   // ── workspace content ───────────────────────────────────────
   const workspaceContent = useMemo(() => {
     if (!overview) return null;
@@ -225,7 +243,7 @@ function CockpitShell() {
         : ws === "speed_delta"
           ? "grade_pull"
           : "balance";
-      return <PlatformTab overview={overview} trace={trace} cursor={cursor} onCursorChange={setCursor} platformEvents={platformEvents} initialWorkbenchView={initialWorkbenchView} />;
+      return <PlatformTab overview={overview} trace={trace} platformEvents={platformEvents} initialWorkbenchView={initialWorkbenchView} />;
     }
     if (ws === "setup_impact") return <SetupTab overview={overview} />;
     if (ws === "channels") {
@@ -242,13 +260,15 @@ function CockpitShell() {
       return <LapsTab overview={overview} />;
     }
     if (ws === "map") {
-      return <TrackMapTab runId={overview.run_id} lap={selection.selectedLap}
+      return <TrackMapTab runId={overview.run_id} lap={selectedTraceLap}
         trackName={overview.session.track_display_name ?? overview.session.track_name}
         carName={overview.session.car_name}
-        setupName={overview.session.setup_name} />;
+        setupName={overview.session.setup_name}
+        targetZoneStartPct={selection.selectedZoneStartPct ?? undefined}
+        targetZoneEndPct={selection.selectedZoneEndPct ?? undefined} />;
     }
     return <OverviewTab overview={overview} />;
-  }, [overview, selection.selectedWorkspace, selection.selectedLap, trace, cursor, channels, platformEvents, runs]);
+  }, [overview, selection.selectedWorkspace, selectedTraceLap, trace, channels, platformEvents, runs]);
 
   // ── no session yet → show startup screen ───────────────────
   if (!sessionId) {
@@ -292,17 +312,6 @@ function CockpitShell() {
         onSelectRun={(runId) => { void loadSelectedRun(runId); }}
         onSelectLap={(lap) => {
           selectLap(lap);
-          if (overview) {
-            fetchTrace(overview.run_id, {
-              lap: lap ?? undefined,
-              x: "lap_dist_ft",
-              channels: TRACE_WORKBENCH_CHANNELS,
-              downsample: "auto",
-              preserveExtrema: true,
-            }).then((t) => setTrace(t)).catch(() => {});
-            fetchPlatformEvents(overview.run_id, { lap: lap ?? undefined })
-              .then((pe) => setPlatformEvents(pe)).catch(() => {});
-          }
         }}
       />
 

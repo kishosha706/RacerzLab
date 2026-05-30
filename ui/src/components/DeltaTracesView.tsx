@@ -318,6 +318,11 @@ export function DeltaTracesView({ baselineRunId, testRunId, startPct, endPct, re
         </div>
       )}
 
+      {/* Data scope label — truthful about range semantics */}
+      <p className="section-note" style={{ fontSize: 10, margin: 0 }}>
+        Full-lap delta trace — target zone ({startPct}–{endPct}%) highlighted in green band.
+      </p>
+
       {/* missing channels */}
       {deltaData && deltaData.missing_channels.length > 0 && (
         <p className="warning-line">

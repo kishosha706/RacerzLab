@@ -1,6 +1,6 @@
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { Activity, AlertTriangle, BarChart3, Crosshair, LocateFixed, MapPin, RotateCcw, X } from "lucide-react";
+import { Activity, AlertTriangle, BarChart3, Crosshair, LocateFixed, MapPin, RotateCcw, Wrench, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
@@ -13,10 +13,10 @@ import { fetchPlatformEvents } from "../api/client";
 import { isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
 import { getTraceValues, formatChannelValue, formatForceProxyN, safeStringValue } from "../utils/channelFormat";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
+import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
 import type {
   PlatformEventItem,
   RunOverview,
-  TelemetryCursor,
   TelemetryEvent,
   TraceChannelPayload,
   TraceResponse,
@@ -25,14 +25,15 @@ import type {
 type PlatformTabProps = {
   overview: RunOverview;
   trace: TraceResponse | null;
-  cursor: TelemetryCursor;
-  onCursorChange: (cursor: TelemetryCursor) => void;
   platformEvents?: PlatformEventItem[];
   initialWorkbenchView?: WorkbenchView;
 };
 
-type PlatformTraceWorkbenchProps = Omit<PlatformTabProps, "trace"> & {
+type PlatformTraceWorkbenchProps = {
+  overview: RunOverview;
   trace: TraceResponse;
+  platformEvents?: PlatformEventItem[];
+  initialWorkbenchView?: WorkbenchView;
 };
 
 type ChartRow = {
@@ -59,6 +60,7 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "cfs_risk_score", label: "CFS Risk", color: "#ef4444" },
       { name: "platform_compression_index", label: "Compression", color: "#f97316" },
       { name: "whole_car_bottoming_risk", label: "Bottoming", color: "#f59e0b" },
+      { name: "rear_platform_contact_risk", label: "Rear Contact", color: "#a78bfa" },
     ], min: 0, max: 1 },
     { label: "CFS / LF / RF Ride Height [in]", channels: [
       { name: "cfs_ride_height_in", label: "CFS", color: "#4ade80" },
@@ -75,7 +77,7 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "rear_min_ride_height_mm", label: "Rear Min", color: "#22d3ee" },
       { name: "rear_scrape_margin_mm", label: "Margin", color: "#f97316" },
     ] },
-    { label: "Rear Risk", channels: [
+    { label: "Rear Scrape Risk", channels: [
       { name: "rear_scrape_risk_score", label: "Scrape Risk", color: "#ef4444" },
       { name: "rear_platform_contact_risk", label: "Contact Risk", color: "#f59e0b" },
     ], min: 0, max: 1 },
@@ -84,7 +86,7 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "rr_ride_height_mm", label: "RR", color: "#22d3ee" },
       { name: "rear_min_ride_height_in", label: "Rear Min [in]", color: "#a78bfa" },
     ] },
-    { label: "Context", channels: [
+    { label: "CFS / Speed Context", channels: [
       { name: "cfs_ride_height_mm", label: "CFS", color: "#38bdf8" },
       { name: "speed_mph", label: "Speed", color: "#93c5fd" },
     ] },
@@ -120,8 +122,16 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
     { label: "Speed Rate [mph/s]", channels: [{ name: "speed_rate_mph_s", label: "Speed Rate", color: "#f59e0b" }] },
   ],
   "Drag / Scrub": [
-    { label: "Drag/Scrub Suspicion", channels: [{ name: "drag_scrub_suspicion", label: "Suspicion", color: "#ef4444" }], min: 0, max: 1 },
-    { label: "Speed Rate / 1000 ft", channels: [{ name: "speed_rate_mph_1000ft", label: "Rate/1000ft", color: "#f97316" }] },
+    { label: "Drag/Scrub Risk", channels: [
+      { name: "drag_scrub_suspicion", label: "Scrub Suspicion", color: "#ef4444" },
+      { name: "full_throttle_resistance_index", label: "Resistance", color: "#f97316" },
+      { name: "front_scrub_proxy", label: "Front Scrub", color: "#a78bfa" },
+      { name: "rear_scrub_proxy", label: "Rear Scrub", color: "#38bdf8" },
+    ], min: 0, max: 1 },
+    { label: "Speed Loss", channels: [
+      { name: "speed_rate_mph_1000ft", label: "Rate/1000ft", color: "#f97316" },
+      { name: "grade_corrected_speed_loss_mph_s", label: "Grade-Corrected", color: "#22c55e" },
+    ] },
     { label: "Throttle / Brake [%]", channels: [{ name: "throttle_pct", label: "Throttle", color: "#22c55e" }, { name: "brake_pct", label: "Brake", color: "#ef4444" }], min: 0, max: 105 },
     { label: "Steering [deg]", channels: [{ name: "abs_steering_deg", label: "Steering", color: "#f59e0b" }] },
     { label: "Ackermann Error / Scrub", channels: [
@@ -283,8 +293,88 @@ function riskLabel(cfsIn: number | null | undefined) {
   return "Safer";
 }
 
+function semanticSeverity(value: number | null | undefined): "missing" | "safe" | "watch" | "high" | "critical" {
+  if (value == null || !Number.isFinite(value)) return "missing";
+  if (value >= 0.85) return "critical";
+  if (value >= 0.65) return "high";
+  if (value >= 0.35) return "watch";
+  return "safe";
+}
+
 function eventDistanceFt(event: TelemetryEvent) {
   return event.distance_m_peak == null ? null : event.distance_m_peak * 3.280839895;
+}
+
+/**
+ * Compact multi-lane risk corridor SVG microchart.
+ * Each lane shows risk (0–1) over lap distance as a colored heat bar.
+ * Clicking a segment calls onJump(index).
+ */
+function RiskCorridorSVG({
+  channels, trace, xs, selectedIndex, onJump, height = 60,
+}: {
+  channels: string[];
+  trace: TraceResponse;
+  xs: (number | null)[];
+  selectedIndex: number | null;
+  onJump: (index: number) => void;
+  height?: number;
+}) {
+  const laneCount = channels.length;
+  const laneH = Math.max(6, Math.floor((height - 4) / Math.max(laneCount, 1)));
+  const totalH = 4 + laneCount * laneH;
+  const w = 600;
+  const pad = { left: 28, right: 8 };
+  const iw = w - pad.left - pad.right;
+  if (xs.length < 2) return null;
+
+  const minX = xs[0] ?? 0;
+  const maxX = xs[xs.length - 1] ?? 1;
+  const xRange = Math.max(maxX - minX, 1);
+  const segCount = Math.min(80, Math.max(16, Math.floor(xs.length / 6)));
+
+  return (
+    <svg width="100%" height={totalH} viewBox={`0 0 ${w} ${totalH}`} style={{ display: "block" }}>
+      {channels.map((ch, laneIdx) => {
+        const vals = values(trace, ch) as (number | null)[];
+        const hasData = vals.some(v => typeof v === "number" && Number.isFinite(v));
+        const top = 2 + laneIdx * laneH;
+        return (
+          <g key={ch}>
+            {Array.from({ length: segCount }, (_, segIdx) => {
+              const segStart = Math.floor((segIdx / segCount) * xs.length);
+              const segEnd = Math.min(xs.length - 1, Math.floor(((segIdx + 1) / segCount) * xs.length));
+              let segRisk: number | null = null;
+              for (let i = segStart; i <= segEnd; i++) {
+                const v = vals[i];
+                if (typeof v === "number" && Number.isFinite(v)) segRisk = Math.max(segRisk ?? 0, v);
+              }
+              const x1 = pad.left + (xs[segStart]! - minX) / xRange * iw;
+              const x2 = pad.left + (xs[segEnd]! - minX) / xRange * iw;
+              const segSev = semanticSeverity(segRisk);
+              const fill = segSev === "critical" ? "#ef4444" : segSev === "high" ? "#f97316" : segSev === "watch" ? "#f59e0b" : segSev === "safe" ? "#22c55e" : "#1f2937";
+              const isSel = selectedIndex != null && selectedIndex >= segStart && selectedIndex <= segEnd;
+              return (
+                <rect
+                  key={segIdx}
+                  x={x1} y={top} width={Math.max(1, x2 - x1)} height={laneH - 1}
+                  fill={hasData ? fill : "#1a1d27"}
+                  stroke={isSel ? "#fff" : "none"}
+                  strokeWidth={isSel ? 1 : 0}
+                  rx={1}
+                  style={{ cursor: "pointer" }}
+                  onClick={() => onJump(Math.floor((segStart + segEnd) / 2))}
+                />
+              );
+            })}
+            <text x={2} y={top + laneH - 2} fill="#8d9aaa" fontSize={7} fontWeight={600}>
+              {ch.replace(/_/g, " ").replace(/(risk|score|index)/gi, "").trim().slice(0, 12)}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
 }
 
 /** Find the trace sample index nearest to a given lap_dist_ft value. */
@@ -395,7 +485,7 @@ function validSampleIndex(index: number | null | undefined, length: number): num
   return index;
 }
 
-export function PlatformTab({ overview, trace, cursor, onCursorChange, platformEvents, initialWorkbenchView }: PlatformTabProps) {
+export function PlatformTab({ overview, trace, platformEvents, initialWorkbenchView }: PlatformTabProps) {
   const xs = useMemo(() => xValues(trace), [trace]);
 
   if (!trace) {
@@ -434,16 +524,14 @@ export function PlatformTab({ overview, trace, cursor, onCursorChange, platformE
     <PlatformTraceWorkbench
       overview={overview}
       trace={trace}
-      cursor={cursor}
-      onCursorChange={onCursorChange}
       platformEvents={platformEvents}
       initialWorkbenchView={initialWorkbenchView}
     />
   );
 }
 
-function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platformEvents: externalPlatformEvents, initialWorkbenchView = "balance" }: PlatformTraceWorkbenchProps) {
-  const { selection, selectSample, selectEvent, setWorkspace } = useTelemetrySelection();
+function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatformEvents, initialWorkbenchView = "balance" }: PlatformTraceWorkbenchProps) {
+  const { selection, setWorkspace, focusEvidence } = useTelemetrySelection();
   const chartNode = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
   const cursorLineRef = useRef<HTMLDivElement | null>(null);
@@ -502,6 +590,37 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
     [overview.events],
   );
   const rows = useMemo(() => PRESET_ROWS[preset] ?? PRESET_ROWS["Platform / Rake / Ride Height"], [preset]);
+  const windowContextActive = selection.selectedLapScope === "lap_window"
+    && selection.selectedLapWindowStart != null
+    && selection.selectedLapWindowEnd != null;
+  const representativeLap = selection.selectedRepresentativeLap ?? trace?.lap ?? selection.selectedLap ?? null;
+  const windowLapNumbers = useMemo(() => {
+    if (!windowContextActive) return [];
+    return overview.laps
+      .filter((lap) =>
+        lap.lap_number >= (selection.selectedLapWindowStart ?? -Infinity)
+        && lap.lap_number <= (selection.selectedLapWindowEnd ?? Infinity))
+      .map((lap) => lap.lap_number);
+  }, [overview.laps, selection.selectedLapWindowEnd, selection.selectedLapWindowStart, windowContextActive]);
+  const representativeLapIndex = representativeLap != null ? windowLapNumbers.indexOf(representativeLap) : -1;
+
+  const buildTraceEvidence = useCallback((
+    lapNumber: number | null,
+    lapPct: number | null,
+    sampleIndex: number | null,
+    lapDistFt: number | null,
+    eventId: string | null,
+  ) => ({
+    runId: overview.run_id,
+    lapNumber,
+    ...buildWindowEvidence(selection, lapNumber),
+    ...buildZoneEvidence(selection, { lapPct, preserveWithoutLapPct: true }),
+    eventId,
+    sampleIndex,
+    lapDistFt,
+    lapPct,
+    trustTier: selection.selectedTrustTier ?? null,
+  }), [overview.run_id, selection]);
 
   // ── load structured platform events from API (or use external prop) ──
   useEffect(() => {
@@ -518,8 +637,29 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
 
   // ── event lookup helpers ─────────────────────────────────────
   const findEvent = useCallback(
-    (type: string) => platformEvents.find((e) => e.event_type === type) ?? null,
+    (reference?: string | null) => {
+      if (!reference) return null;
+      return platformEvents.find((event) => event.event_id === reference)
+        ?? platformEvents.find((event) => event.event_type === reference)
+        ?? null;
+    },
     [platformEvents],
+  );
+
+  const indexForPlatformEvent = useCallback(
+    (event: PlatformEventItem | null): number | null => {
+      if (!event) return null;
+      if (event.lap_dist_ft != null) {
+        return nearestIndexByFt(xs, event.lap_dist_ft);
+      }
+      const si = validSampleIndex(event.sample_index, xs.length);
+      if (si != null) return si;
+      if (event.lap_pct != null) {
+        return nearestIndexByPct(trace, event.lap_pct);
+      }
+      return null;
+    },
+    [trace, xs],
   );
 
   // ── fallback raw channel scans (used when no structured event exists) ──
@@ -547,28 +687,27 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
   const resolveIndex = useCallback(
     (eventType: string, fallbackIndex: number | null): number | null => {
       const event = findEvent(eventType);
-      if (event && event.lap_dist_ft != null) {
-        return nearestIndexByFt(xs, event.lap_dist_ft);
-      }
-      if (event && event.sample_index != null && event.sample_index < xs.length) {
-        return event.sample_index;
-      }
-      return fallbackIndex;
+      return indexForPlatformEvent(event) ?? fallbackIndex;
     },
-    [findEvent, xs],
+    [findEvent, indexForPlatformEvent],
   );
 
   const minSplitterIndex = resolveIndex("MIN_SPLITTER", fallbackMinSplitterIndex);
   const worstSpeedLossIndex = resolveIndex("WORST_SPEED_LOSS", fallbackWorstSpeedLossIndex);
-  const playbackIndex = selection.playbackActive ? validSampleIndex(selection.hoverSampleIndex, xs.length) : null;
+  const playbackIndex = selection.playbackActive
+    ? validSampleIndex(selection.hoverSampleIndex, xs.length)
+      ?? (selection.hoverLapPct != null ? nearestIndexByPct(trace, selection.hoverLapPct) : null)
+    : null;
   const lockedIndex = validSampleIndex(clickedSampleIndex, xs.length);
   const transientHoverIndex = validSampleIndex(hoverSampleIndex, xs.length);
-  const cursorIndex = validSampleIndex(cursor.selected_sample_index, xs.length);
+  const cursorIndex = validSampleIndex(selection.selectedSampleIndex, xs.length);
+  const selectedEventForContext = findEvent(selection.selectedEventId);
+  const selectedEventContextIndex = indexForPlatformEvent(selectedEventForContext);
   const selectedContextIndex = selection.selectedLapDistFt != null
     ? nearestIndexByFt(xs, selection.selectedLapDistFt)
     : selection.selectedLapPct != null
       ? nearestIndexByPct(trace, selection.selectedLapPct)
-      : validSampleIndex(selection.selectedSampleIndex, xs.length);
+      : validSampleIndex(selection.selectedSampleIndex, xs.length) ?? selectedEventContextIndex;
   // Prefer selection context over shell cursor — selection is the canonical source
   const defaultIndex = selectedContextIndex ?? cursorIndex ?? minSplitterIndex ?? 0;
   const selectedIndex = playbackIndex ?? lockedIndex ?? transientHoverIndex ?? defaultIndex;
@@ -578,21 +717,11 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
       ? "Locked"
       : transientHoverIndex != null
         ? "Hover"
-        : cursor.selected_event_id || selection.selectedEventId
+        : selection.selectedEventId
           ? "Event"
           : "Default";
 
-  // ── event-to-index for remaining jump buttons ────────────────
-  const resolveEventIndex = useCallback(
-    (eventType: string): number | null => {
-      const event = findEvent(eventType);
-      if (!event) return null;
-      if (event.lap_dist_ft != null) return nearestIndexByFt(xs, event.lap_dist_ft);
-      if (event.sample_index != null && event.sample_index < xs.length) return event.sample_index;
-      return null;
-    },
-    [findEvent, xs],
-  );
+  // ── nearest event for cursor index ───────────────────────────
 
   const nearestEventForIndex = useCallback(
     (index: number | null): PlatformEventItem | null => {
@@ -629,21 +758,24 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
       if (index == null || !trace) return;
       const lapPct = valueAt(trace, "lap_dist_pct_100", index);
       const pevt = eventId
-        ? findEvent(eventId) ?? platformEvents.find((e) => e.event_id === eventId) ?? null
+        ? findEvent(eventId)
         : nearestEventForIndex(index);
-      onCursorChange({
-        selected_run_id: overview.run_id,
-        selected_lap: trace.lap ?? overview.best_useful_lap?.lap_number ?? null,
-        selected_sample_index: index,
-        selected_lap_dist_ft: xs[index] ?? null,
-        selected_lap_pct: lapPct,
-        selected_event_id: pevt?.event_id ?? eventId ?? null,
+      focusEvidence({
+        ...buildTraceEvidence(
+          trace.lap ?? overview.best_useful_lap?.lap_number ?? null,
+          lapPct,
+          index,
+          xs[index] ?? null,
+          pevt?.event_id ?? eventId ?? null,
+        ),
+        sampleIndex: index,
+        lockState: "locked",
+        valueBasis: "selected_sample",
+        selectionSource: "trace_cursor",
       });
       setSelectedPlatformEvent(pevt ?? null);
-      selectSample(index, xs[index] ?? undefined, lapPct ?? undefined, "trace_cursor");
-      if (pevt?.event_id) selectEvent(pevt.event_id, "trace_cursor");
     },
-    [trace, overview, xs, onCursorChange, findEvent, platformEvents, nearestEventForIndex, selectSample, selectEvent],
+    [trace, overview, xs, focusEvidence, findEvent, platformEvents, nearestEventForIndex, buildTraceEvidence],
   );
 
   const jumpToIndex = useCallback(
@@ -664,19 +796,38 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
     [updateCursor, xs],
   );
 
+  const focusRepresentativeLap = useCallback((lapNumber: number) => {
+    if (!windowContextActive) return;
+    focusEvidence({
+      ...buildTraceEvidence(lapNumber, null, null, null, null),
+      eventId: null,
+      sampleIndex: null,
+      lapDistFt: null,
+      lapPct: null,
+      selectionSource: "manual",
+      lockState: "none",
+      valueBasis: "selected_window",
+    }, "platform_trace");
+    setClickedSampleIndex(null);
+    setHoverSampleIndex(null);
+    setSelectedPlatformEvent(null);
+  }, [focusEvidence, buildTraceEvidence, windowContextActive]);
+
   useEffect(() => {
     if (!trace || xs.length === 0 || selection.selectionSource === "trace_cursor") return;
+    const eventFromSelection = findEvent(selection.selectedEventId);
     const indexFromSelection = selection.selectedLapDistFt != null
       ? nearestIndexByFt(xs, selection.selectedLapDistFt)
       : selection.selectedLapPct != null
         ? nearestIndexByPct(trace, selection.selectedLapPct)
-        : validSampleIndex(selection.selectedSampleIndex, xs.length);
+        : validSampleIndex(selection.selectedSampleIndex, xs.length)
+          ?? indexForPlatformEvent(eventFromSelection);
+
     if (indexFromSelection == null) return;
     setClickedSampleIndex(indexFromSelection);
     setHoverSampleIndex(null);
-    const event = selection.selectedEventId
-      ? platformEvents.find((e) => e.event_id === selection.selectedEventId) ?? null
-      : nearestEventForIndex(indexFromSelection);
+
+    const event = eventFromSelection ?? nearestEventForIndex(indexFromSelection);
     setSelectedPlatformEvent(event);
   }, [
     trace,
@@ -688,6 +839,8 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
     selection.selectedEventId,
     platformEvents,
     nearestEventForIndex,
+    findEvent,
+    indexForPlatformEvent,
   ]);
 
   const showCursorLine = useCallback((offsetX: number, locked: boolean) => {
@@ -1112,19 +1265,71 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
       if (clickedSampleIndexRef.current != null) {
         setClickedSampleIndex(null);
         setHoverSampleIndex(null);
-        onCursorChange({
-          ...cursor,
-          selected_sample_index: null,
-          selected_lap_dist_ft: null,
-          selected_lap_pct: null,
-          selected_event_id: null,
+        focusEvidence({
+          ...buildTraceEvidence(
+            trace?.lap ?? overview.best_useful_lap?.lap_number ?? null,
+            null,
+            null,
+            null,
+            null,
+          ),
+          sampleIndex: null,
+          lapDistFt: null,
+          lapPct: null,
+          eventId: null,
+          lockState: "none",
+          valueBasis: "unavailable",
+          selectionSource: "trace_cursor",
         });
       }
       hideCursorLine();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cursor, hideCursorLine, onCursorChange]);
+  }, [overview.best_useful_lap?.lap_number, trace?.lap, hideCursorLine, focusEvidence, buildTraceEvidence]);
+
+  const handleOpenMapFromCursor = useCallback(() => {
+    const lapNumber = trace?.lap ?? overview.best_useful_lap?.lap_number ?? null;
+    const lapPct = valueAt(trace, "lap_dist_pct_100", selectedIndex);
+    focusEvidence({
+      ...buildTraceEvidence(
+        lapNumber,
+        lapPct,
+        selectedIndex,
+        xs[selectedIndex] ?? null,
+        selectedPlatformEvent?.event_id ?? selection.selectedEventId ?? null,
+      ),
+      lockState: readoutSource === "Locked" ? "locked" : "none",
+      valueBasis: selectedIndex != null ? "selected_sample" : selection.selectedValueBasis ?? "unavailable",
+      selectionSource: "trace_cursor",
+    }, "map");
+  }, [
+    buildTraceEvidence,
+    focusEvidence,
+    overview.best_useful_lap?.lap_number,
+    readoutSource,
+    selectedIndex,
+    selectedPlatformEvent?.event_id,
+    selection.selectedEventId,
+    selection.selectedValueBasis,
+    trace,
+    xs,
+  ]);
+
+  const handleOpenMapFromPlatformEvent = useCallback((event: PlatformEventItem) => {
+    focusEvidence({
+      ...buildTraceEvidence(
+        event.lap ?? trace?.lap ?? overview.best_useful_lap?.lap_number ?? null,
+        event.lap_pct ?? null,
+        event.sample_index ?? null,
+        event.lap_dist_ft ?? null,
+        event.event_id,
+      ),
+      lockState: "locked",
+      valueBasis: "selected_sample",
+      selectionSource: "trace_cursor",
+    }, "map");
+  }, [buildTraceEvidence, focusEvidence, overview.best_useful_lap?.lap_number, trace?.lap]);
 
   // ── clear clicked sample when trace/preset changes ───────────
   useEffect(() => {
@@ -1164,19 +1369,25 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
   const severityColour = (sev: string) =>
     sev === "critical" ? "#ef4444" : sev === "high" ? "#f97316" : sev === "watch" ? "#f59e0b" : "#38bdf8";
 
-  // ── helper to get latest value ───────────────────────────────
+  // ── helper to get value at selected/hover sample, falling back to latest ──
   const latest = useCallback((ch: string) => {
     const vals = getTraceValues(trace, ch);
-    return vals.length > 0 ? vals[vals.length - 1] : null;
-  }, [trace]);
+    if (vals.length === 0) return null;
+    // Prefer clicked sample, then hover, then last value
+    const idx = clickedSampleIndex ?? hoverSampleIndex;
+    if (idx != null && idx >= 0 && idx < vals.length) {
+      const v = vals[idx];
+      if (v != null && (typeof v !== "number" || Number.isFinite(v))) return v;
+    }
+    return vals[vals.length - 1] ?? null;
+  }, [trace, clickedSampleIndex, hoverSampleIndex]);
 
-  const semanticSeverity = (value: number | null | undefined): "missing" | "safe" | "watch" | "high" | "critical" => {
-    if (value == null || !Number.isFinite(value)) return "missing";
-    if (value >= 0.85) return "critical";
-    if (value >= 0.65) return "high";
-    if (value >= 0.35) return "watch";
-    return "safe";
-  };
+  /** What basis the engineering cards are using. */
+  const sampleBasisLabel: string = clickedSampleIndex != null
+    ? "Selected sample"
+    : hoverSampleIndex != null
+      ? "Hover sample"
+      : "Latest sample";
 
   const summaryItems = [
     { label: "CFS", value: selected.cfsIn != null ? `${selected.cfsIn.toFixed(3)} in` : "Unavailable", badge: "measured", severity: riskLabel(selected.cfsIn).toLowerCase() },
@@ -1244,6 +1455,23 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
   }, [trace, workbenchView, xs]);
 
   // ── engineering panel renderers ──────────────────────────────
+  const setupAction = useCallback((_setupKeys: string[], label: string, isInferred: boolean) => {
+    return (
+      <div className="setup-link-row" style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6 }}>
+        <button className="trackmap-action-btn" onClick={() => setWorkspace("setup_impact", "trace_cursor")} title={`Open ${label}`}>
+          <Wrench size={10} /> {label}
+        </button>
+        <span className="lap-flag-badge" style={{
+          background: isInferred ? "rgba(245,158,11,0.12)" : "rgba(34,197,94,0.12)",
+          color: isInferred ? "#f59e0b" : "#22c55e",
+          fontSize: 8, padding: "1px 5px",
+        }}>
+          {isInferred ? "Inferred" : "Explicit"}
+        </span>
+      </div>
+    );
+  }, [setWorkspace]);
+
   const renderBalancePanel = () => (
     <div className="engineering-panel">
       <div className="engineering-panel-grid">
@@ -1255,6 +1483,23 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
         <EngineeringMetricCard title="Roll Balance" value={`Front ${formatChannelValue(latest("front_platform_roll_deg_from_rh") as number, "°")} / Rear ${formatChannelValue(latest("rear_platform_roll_deg_from_rh") as number, "°")}`} subtitle={`Balance: ${formatChannelValue(latest("platform_roll_balance_deg") as number, "°")}`} channelName="platform_roll_balance_deg" color="#a78bfa" />
         <EngineeringMetricCard title="Rake / Pitch" value={`Rake ${formatChannelValue(latest("center_rake_fs_in") as number, "in")}`} subtitle={`Pitch ${formatChannelValue(latest("platform_pitch_deg_from_rh") as number, "°")}`} color="#4ade80" />
       </div>
+      {/* Multi-lane risk corridor */}
+      <div style={{ marginTop: 8 }}>
+        <span style={{ fontSize: 9, color: "#8d9aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Platform Risk Corridor</span>
+        {trace && xs.length > 1 ? (
+          <RiskCorridorSVG
+            channels={["cfs_risk_score", "platform_compression_index", "whole_car_bottoming_risk", "rear_platform_contact_risk"]}
+            trace={trace}
+            xs={xs}
+            selectedIndex={selectedIndex}
+            onJump={(idx) => jumpToIndex(idx)}
+            height={52}
+          />
+        ) : (
+          <p className="muted" style={{ fontSize: 9 }}>Risk corridor unavailable: missing trace channels.</p>
+        )}
+      </div>
+      {setupAction(["lf_ride_height_mm", "rf_ride_height_mm", "nose_weight_pct", "cross_weight_pct"], "Platform / Ride Height Setup", true)}
     </div>
   );
 
@@ -1267,6 +1512,34 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
         <EngineeringMetricCard title="Rear Contact Risk" channelName="rear_platform_contact_risk" value={latest("rear_platform_contact_risk")} riskValue={latest("rear_platform_contact_risk") as number | null} color="#f59e0b" />
         <EngineeringMetricCard title="Rear Scrape Side" channelName="rear_scrape_side_label" value={safeStringValue(latest("rear_scrape_side_label"))} color="#a78bfa" />
       </div>
+      {/* Jump to worst scrape */}
+      <div className="toolbar-actions" style={{ marginTop: 6 }}>
+        <button className={`secondary-button${jumpedBtn === "worst_scrape" ? " jump-clicked" : ""}`} onClick={() => {
+          const scrapeVals = values(trace, "rear_scrape_risk_score") as (number | null)[];
+          let worstIdx: number | null = null;
+          let worstVal = -Infinity;
+          scrapeVals.forEach((v, i) => { if (typeof v === "number" && v > worstVal) { worstVal = v; worstIdx = i; } });
+          handleJumpClick("worst_scrape", worstIdx);
+        }}>
+          <Activity size={14} /> Jump to Worst Scrape Risk
+        </button>
+      </div>
+      <div style={{ marginTop: 6 }}>
+        <span style={{ fontSize: 9, color: "#8d9aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Rear Risk Corridor</span>
+        {trace && xs.length > 1 ? (
+          <RiskCorridorSVG
+            channels={["rear_scrape_risk_score", "rear_platform_contact_risk"]}
+            trace={trace}
+            xs={xs}
+            selectedIndex={selectedIndex}
+            onJump={(idx) => jumpToIndex(idx)}
+            height={28}
+          />
+        ) : (
+          <p className="muted" style={{ fontSize: 9 }}>Risk corridor unavailable.</p>
+        )}
+      </div>
+      {setupAction(["lr_ride_height_mm", "rr_ride_height_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm", "lr_packer_mm", "rr_packer_mm"], "Rear Platform Setup", true)}
       <p className="section-note" style={{ marginTop: 8 }}>Rear scrape uses existing rear ride-height, scrape-margin, and contact-risk channels. Unavailable values remain unavailable rather than being treated as safe.</p>
     </div>
   );
@@ -1289,7 +1562,7 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
       </div>
       <div className="aero-scatter-panel">
         <div className="aero-scatter-header">
-          <span><BarChart3 size={13} /> Speed^2 vs aero/load proxy</span>
+          <span><BarChart3 size={13} /> Speed² vs aero/load proxy</span>
           <span className="proxy-pill">PROXY</span>
         </div>
         {scatterPoints.length === 0 ? (
@@ -1298,18 +1571,21 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
           <svg className="aero-scatter-svg" viewBox="0 0 360 120" role="img" aria-label="Speed squared versus aero load proxy scatter">
             <line x1="28" y1="96" x2="344" y2="96" className="scatter-axis" />
             <line x1="28" y1="10" x2="28" y2="96" className="scatter-axis" />
-            <text x="344" y="113" className="scatter-label" textAnchor="end">speed^2</text>
-            <text x="4" y="16" className="scatter-label">proxy</text>
-            {scatterPoints.map((point, index) => (
-              <circle
-                key={`${point.distance ?? index}-${index}`}
-                cx={28 + point.x * 316}
-                cy={96 - point.y * 82}
-                r={point.distance === selected.distanceFt ? 3.8 : 2.2}
-                className="scatter-point"
-                data-severity={semanticSeverity(point.risk)}
-              />
-            ))}
+            <text x="344" y="113" className="scatter-label" textAnchor="end">speed²</text>
+            <text x="4" y="16" className="scatter-label" fill="#8d9aaa" fontSize={8}>proxy</text>
+            {scatterPoints.map((point, index) => {
+              const isSelectedSample = selectedIndex != null && point.distance != null && Math.abs(xs[selectedIndex]! - point.distance) < 1;
+              return (
+                <circle
+                  key={`${point.distance ?? index}-${index}`}
+                  cx={28 + point.x * 316}
+                  cy={96 - point.y * 82}
+                  r={isSelectedSample ? 4 : point.distance === selected.distanceFt ? 3.8 : 2.2}
+                  className={isSelectedSample ? "scatter-point-selected" : "scatter-point"}
+                  data-severity={semanticSeverity(point.risk)}
+                />
+              );
+            })}
           </svg>
         )}
       </div>
@@ -1322,6 +1598,7 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
         <EngineeringMetricCard title="Aero Balance Front" channelName="aero_balance_front_pct" value={latest("aero_balance_front_pct")} color="#22c55e" />
         <EngineeringMetricCard title="Grade Context" value={safeStringValue(latest("grade_context_label"))} subtitle={`${formatChannelValue(latest("dynamic_grade_deg") as number, "°")} · Force: ${formatForceProxyN(latest("grade_force_proxy_n") as number | null)}`} channelName="grade_context_label" color="#f59e0b" />
       </div>
+      {setupAction(["tape_percent", "lf_ride_height_mm", "rf_ride_height_mm"], "Aero / Ride Height Setup", true)}
     </div>
     );
   };
@@ -1336,6 +1613,44 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
         <EngineeringMetricCard title="Wheel Mismatch" value={`Front: ${formatChannelValue(latest("front_wheel_speed_mismatch_corrected") as number, "m/s")}`} subtitle={`Rear: ${formatChannelValue(latest("rear_wheel_speed_mismatch_corrected") as number, "m/s")}`} color="#f59e0b" />
         <EngineeringMetricCard title="Grade-Corrected Speed Loss" channelName="grade_corrected_speed_loss_mph_s" value={latest("grade_corrected_speed_loss_mph_s")} subtitle={`Raw: ${formatChannelValue(latest("speed_rate_mph_s") as number, "mph/s")}`} color="#22c55e" />
       </div>
+      {/* Scrub/Resistance risk corridor */}
+      <div style={{ marginTop: 8 }}>
+        <span style={{ fontSize: 9, color: "#8d9aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Scrub / Resistance Corridor</span>
+        {trace && xs.length > 1 ? (
+          <RiskCorridorSVG
+            channels={["drag_scrub_suspicion", "full_throttle_resistance_index", "front_scrub_proxy", "rear_scrub_proxy"]}
+            trace={trace}
+            xs={xs}
+            selectedIndex={selectedIndex}
+            onJump={(idx) => jumpToIndex(idx)}
+            height={52}
+          />
+        ) : (
+          <p className="muted" style={{ fontSize: 9 }}>Scrub corridor unavailable: missing risk channels.</p>
+        )}
+      </div>
+      {/* Jump to worst scrub/resistance */}
+      <div className="toolbar-actions" style={{ marginTop: 6 }}>
+        <button className={`secondary-button${jumpedBtn === "worst_scrub" ? " jump-clicked" : ""}`} onClick={() => {
+          const scrubVals = values(trace, "drag_scrub_suspicion") as (number | null)[];
+          let worstIdx: number | null = null;
+          let worstVal = -Infinity;
+          scrubVals.forEach((v, i) => { if (typeof v === "number" && v > worstVal) { worstVal = v; worstIdx = i; } });
+          handleJumpClick("worst_scrub", worstIdx);
+        }}>
+          <Activity size={14} /> Jump to Max Scrub
+        </button>
+        <button className={`secondary-button${jumpedBtn === "worst_resistance" ? " jump-clicked" : ""}`} onClick={() => {
+          const resVals = values(trace, "full_throttle_resistance_index") as (number | null)[];
+          let worstIdx: number | null = null;
+          let worstVal = -Infinity;
+          resVals.forEach((v, i) => { if (typeof v === "number" && v > worstVal) { worstVal = v; worstIdx = i; } });
+          handleJumpClick("worst_resistance", worstIdx);
+        }}>
+          <Activity size={14} /> Jump to Worst Resistance
+        </button>
+      </div>
+      {setupAction(["steering_ratio", "steering_offset_deg", "front_arb_rating", "cross_weight_pct"], "Steering / Front Geometry Setup", true)}
       <p className="section-note" style={{ marginTop: 8 }}>Extra steering beyond track radius suggests tire scrub. Grade-corrected speed loss removes estimated uphill/downhill effect. Corrected wheel mismatch subtracts yaw-rate geometry so ovals do not look like false slip.</p>
     </div>
   );
@@ -1345,18 +1660,32 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
       <p className="section-note" style={{ fontSize: 10, marginBottom: 6 }}>
         Tire temps are measured iRacing telemetry channels. Lines show inner/middle/outer surface temperature across each tire.
       </p>
+      <div className="basis-label" style={{ fontSize: 9, color: "#8d9aaa", marginBottom: 4 }}>
+        <span className="lap-flag-badge" style={{ background: "rgba(141,154,170,0.12)", color: "#8d9aaa", fontSize: 9, padding: "1px 6px" }}>
+          Tire map: Full-lap distribution
+        </span>
+      </div>
       <CornerTireMap trace={trace} mode={tireMapMode} onModeChange={setTireMapMode} />
       <div className="engineering-panel-grid" style={{ marginTop: 8 }}>
         <CornerBarChart trace={trace} channelPrefix="lf_pressure_gain" label="Pressure Gain" unit="kPa" color="#4ade80" decimals={1} />
         <CornerBarChart trace={trace} channelPrefix="lf_temp_spread" label="Temp Spread" unit="°C" color="#f97316" decimals={1} />
         <CornerBarChart trace={trace} channelPrefix="lf_slip_ratio_proxy" label="Slip Ratio" color="#a78bfa" decimals={3} />
       </div>
+      {setupAction(["lf_pressure_kpa", "rf_pressure_kpa", "lr_pressure_kpa", "rr_pressure_kpa"], "Tire Pressure / Camber Setup", true)}
+      <p className="section-note" style={{ fontSize: 9, color: "#8d9aaa", marginTop: 2 }}>
+        Bar charts show <strong>{sampleBasisLabel === "Latest sample" ? "latest" : sampleBasisLabel.toLowerCase()} sample</strong> values.
+      </p>
       <p className="section-note" style={{ marginTop: 8 }}>Inner hotter than outer may indicate camber load. Outer hotter than inner may indicate rollover, under-camber, or overdriving. Slip values are proxies unless true wheel/ground speed calibration is available.</p>
     </div>
   );
 
   const renderShocksPanel = () => (
     <div className="engineering-panel">
+      <div className="basis-label" style={{ fontSize: 9, color: "#8d9aaa", marginBottom: 4 }}>
+        <span className="lap-flag-badge" style={{ background: "rgba(141,154,170,0.12)", color: "#8d9aaa", fontSize: 9, padding: "1px 6px" }}>
+          Histograms: Full-lap distribution
+        </span>
+      </div>
       {/* Four-corner shock velocity histograms */}
       <div className="shock-histogram-grid">
         <ShockHistogram trace={trace} channelName="lf_shock_vel_in_s" corner="LF" color="#4ade80" />
@@ -1376,6 +1705,7 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
         <EngineeringMetricCard title="Platform Stability" value={`Stability: ${formatChannelValue(latest("platform_stability_score") as number, "index")}`} subtitle={`Rake stability: ${formatChannelValue(latest("rake_stability_score") as number, "index")}`} channelName="platform_stability_score" riskValue={latest("platform_stability_score") as number | null} color="#22c55e" />
         <EngineeringMetricCard title="Platform Compression" channelName="platform_compression_index" value={latest("platform_compression_index")} riskValue={latest("platform_compression_index") as number | null} color="#f97316" />
       </div>
+      {setupAction(["lf_rebound_per_click", "rf_rebound_per_click", "lr_rebound_per_click", "rr_rebound_per_click", "lf_compression_per_click", "rf_compression_per_click", "lr_compression_per_click", "rr_compression_per_click"], "Dampers / Springs Setup", true)}
       <p className="section-note" style={{ marginTop: 8 }}>Frequency-domain shock analysis can later split aero oscillation from bump activity. Histograms show velocity distribution per corner.</p>
     </div>
   );
@@ -1390,6 +1720,7 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
         <EngineeringMetricCard title="Pull Context" value={`${formatChannelValue(latest("speed_rate_mph_1000ft") as number, "mph/1000ft")}`} subtitle={`RPM: ${formatChannelValue(latest("rpm") as number, "rpm")} · Gear: ${latest("gear") ?? "—"}`} color="#93c5fd" />
         <EngineeringMetricCard title="Grade-Corrected Long Accel" channelName="grade_corrected_long_accel_mps2" value={latest("grade_corrected_long_accel_mps2")} color="#4ade80" />
       </div>
+      {setupAction(["rear_end_ratio", "tape_percent"], "Gearing / Pull Setup", true)}
       <p className="section-note" style={{ marginTop: 8 }}>Raw speed loss includes slope effects. Grade-corrected speed loss estimates what remains after removing uphill/downhill gravity component. Grade values are estimates from acceleration and speed derivative, not surveyed elevation.</p>
     </div>
   );
@@ -1416,8 +1747,57 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
           <p className="section-note">
             Lap {trace?.lap ?? overview.best_useful_lap?.lap_number ?? "n/a"} | X Axis: Lap Distance [ft]
           </p>
+          {windowContextActive && (
+            <>
+              <p className="scope-banner">
+                Selected window: Laps {selection.selectedLapWindowStart}-{selection.selectedLapWindowEnd}. Platform trace is currently showing representative lap {trace?.lap ?? representativeLap ?? selection.selectedLapWindowStart}.
+              </p>
+              <div className="laps-chip-row" style={{ marginTop: 6 }}>
+                <span className="lap-flag-badge">Basis: selected window / representative lap</span>
+                {representativeLap != null && <span className="lap-flag-badge">Rep Lap {representativeLap}</span>}
+                {windowLapNumbers.length > 0 && <span className="lap-flag-badge">{windowLapNumbers.length} laps in window</span>}
+              </div>
+            </>
+          )}
         </div>
         <div className="toolbar-actions">
+          {windowContextActive && (
+            <>
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  if (representativeLapIndex <= 0) return;
+                  focusRepresentativeLap(windowLapNumbers[representativeLapIndex - 1]);
+                }}
+                disabled={representativeLapIndex <= 0}
+              >
+                Previous Lap
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  if (representativeLapIndex < 0 || representativeLapIndex >= windowLapNumbers.length - 1) return;
+                  focusRepresentativeLap(windowLapNumbers[representativeLapIndex + 1]);
+                }}
+                disabled={representativeLapIndex < 0 || representativeLapIndex >= windowLapNumbers.length - 1}
+              >
+                Next Lap
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  if (trace?.lap == null || trace.lap === representativeLap) return;
+                  focusRepresentativeLap(trace.lap);
+                }}
+                disabled={trace?.lap == null || trace.lap === representativeLap}
+              >
+                Use This Lap
+              </button>
+              <button className="secondary-button" onClick={() => setWorkspace("laps", "manual")}>
+                Return to Laps
+              </button>
+            </>
+          )}
           <button className="secondary-button" onClick={() => { zoomRangeRef.current = null; chartRef.current?.dispatchAction({ type: "restore" }); }}>
             <RotateCcw size={16} /> Reset Zoom
           </button>
@@ -1427,7 +1807,7 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
           <button className={`secondary-button${jumpedBtn === "worst_speed" ? " jump-clicked" : ""}`} onClick={() => handleJumpClick("worst_speed", worstSpeedLossIndex, "WORST_SPEED_LOSS")}>
             <Activity size={16} /> Jump to Worst Speed Loss
           </button>
-          <button className="secondary-button" onClick={() => setWorkspace("map", "trace_cursor")}>
+          <button className="secondary-button" onClick={handleOpenMapFromCursor}>
             <MapPin size={16} /> Open Map
           </button>
         </div>
@@ -1466,6 +1846,18 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
         )}
       </div>
       <WorkbenchSubnav active={workbenchView} onChange={handleViewChange} />
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+        <span className="laps-stint-legend-item" style={{ fontSize: 10, color: "#8d9aaa", fontWeight: 600 }}>
+          Engineering cards basis:
+        </span>
+        <span className="lap-flag-badge" style={{
+          background: sampleBasisLabel === "Selected sample" ? "rgba(56,189,248,0.15)" : "rgba(141,154,170,0.12)",
+          color: sampleBasisLabel === "Selected sample" ? "#38bdf8" : "#8d9aaa",
+          fontSize: 10, padding: "2px 8px",
+        }}>
+          {sampleBasisLabel}
+        </span>
+      </div>
       {renderEngineeringPanel()}
       <div className="platform-layout">
         <div className="trace-panel-wrapper">
@@ -1505,8 +1897,7 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
                 className="secondary-button"
                 key={event.event_id}
                 onClick={() => {
-                  const idx = resolveEventIndex(event.event_type);
-                  selectEvent(event.event_id, "trace_cursor");
+                  const idx = indexForPlatformEvent(event);
                   jumpToIndex(idx, event.event_id);
                 }}
               >
@@ -1553,7 +1944,7 @@ function PlatformTraceWorkbench({ overview, trace, cursor, onCursorChange, platf
                 </p>
               )}
               <div className="diw-actions" style={{ marginTop: 8 }}>
-                <button className="trackmap-action-btn" onClick={() => setWorkspace("map", "trace_cursor")} title="Open Map at selected event">
+                <button className="trackmap-action-btn" onClick={() => handleOpenMapFromPlatformEvent(selectedPlatformEvent)} title="Open Map at selected event">
                   <MapPin size={10} /> Open Map
                 </button>
               </div>

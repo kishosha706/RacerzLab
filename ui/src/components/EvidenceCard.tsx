@@ -1,6 +1,7 @@
 import { AlertTriangle, Gauge, Layers, MapPin } from "lucide-react";
 import { useCallback } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
+import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
 import type { TelemetryEvent } from "../types/telemetry";
 
 type EvidenceCardProps = {
@@ -9,20 +10,38 @@ type EvidenceCardProps = {
 
 export function EvidenceCard({ event }: EvidenceCardProps) {
   const confidence = `${Math.round(event.confidence_score * 100)}%`;
-  const { selectEvent, setWorkspace } = useTelemetrySelection();
+  const { selection, focusEvidence } = useTelemetrySelection();
+
+  const buildCardEvidence = useCallback(() => {
+    const lapDistFt = event.distance_m_peak != null ? event.distance_m_peak * 3.280839895 : null;
+    const lapPct = event.lap_pct_peak ?? event.lap_pct_start ?? event.lap_pct_end ?? null;
+    const hasLocation = lapDistFt != null || lapPct != null;
+
+    return {
+      runId: event.run_id,
+      lapNumber: event.lap_number ?? null,
+      ...buildWindowEvidence(selection, event.lap_number),
+      ...buildZoneEvidence(selection, { lapPct, preserveWithoutLapPct: true }),
+      eventId: event.event_id,
+      sampleIndex: null,
+      lapDistFt,
+      lapPct,
+      selectionSource: "overview" as const,
+      lockState: (hasLocation ? "locked" : "none") as "locked" | "none",
+      valueBasis: (hasLocation ? "selected_sample" : "run_level") as "selected_sample" | "run_level",
+    };
+  }, [event, selection]);
 
   const handleOpenPlatform = useCallback(() => {
-    selectEvent(event.event_id, "priority_stack");
-    setWorkspace("platform_trace", "priority_stack");
-  }, [event.event_id, selectEvent, setWorkspace]);
+    focusEvidence(buildCardEvidence(), "platform_trace");
+  }, [focusEvidence, buildCardEvidence]);
 
   const handleOpenMap = useCallback(() => {
-    selectEvent(event.event_id, "priority_stack");
-    setWorkspace("map", "priority_stack");
-  }, [event.event_id, selectEvent, setWorkspace]);
+    focusEvidence(buildCardEvidence(), "map");
+  }, [focusEvidence, buildCardEvidence]);
 
   return (
-    <article className="evidence-card" style={{ cursor: "pointer" }} onClick={handleOpenPlatform} title="Open in Platform Trace">
+    <article className="evidence-card" style={{ cursor: "pointer" }} onClick={handleOpenPlatform} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpenPlatform(); } }} role="button" tabIndex={0} title="Open in Platform Trace">
       <header>
         <span className={`severity severity-${event.severity}`}>{event.severity}</span>
         <strong>{event.event_subtype ?? event.event_type.replace(/_/g, " ")}</strong>
@@ -42,10 +61,10 @@ export function EvidenceCard({ event }: EvidenceCardProps) {
       </div>
       <p>{event.recommended_actions[0] ?? "No action attached yet."}</p>
       <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
-        <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); handleOpenPlatform(); }} title="Open Platform">
+        <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); handleOpenPlatform(); }} title="Open Platform" aria-label="Open Platform for this event">
           <Layers size={10} />
         </button>
-        <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); handleOpenMap(); }} title="Open Map">
+        <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); handleOpenMap(); }} title="Open Map" aria-label="Open Map for this event">
           <MapPin size={10} />
         </button>
       </div>

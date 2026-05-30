@@ -119,6 +119,24 @@ export function RunContextBar({ overview, runs: _runs, onSelectLap }: RunContext
           })()
         )}
 
+        {selection.selectedLapScope === "lap_window" && selection.selectedLapWindowStart != null && selection.selectedLapWindowEnd != null && (
+          <span className="context-tag-badge" style={{ borderColor: "#38bdf8", color: "#38bdf8" }}>
+            Window {selection.selectedLapWindowStart}-{selection.selectedLapWindowEnd}
+          </span>
+        )}
+        {selection.selectedLapScope === "lap_window" && selection.selectedRepresentativeLap != null && (
+          <span className="context-tag-badge" style={{ borderColor: "#cbd5e1", color: "#cbd5e1" }}>
+            Rep Lap {selection.selectedRepresentativeLap}
+          </span>
+        )}
+        {(selection.selectedZoneLabel || (selection.selectedZoneStartPct != null && selection.selectedZoneEndPct != null)) && (
+          <span className="context-tag-badge" style={{ borderColor: "#f59e0b", color: "#f59e0b" }}>
+            {selection.selectedZoneLabel
+              ? `Area ${selection.selectedZoneLabel}`
+              : `Zone ${selection.selectedZoneStartPct?.toFixed(1)}-${selection.selectedZoneEndPct?.toFixed(1)}%`}
+          </span>
+        )}
+
         {/* mode badge — clickable toggle */}
         <button
           className={`context-badge mode-badge mode-${selection.selectedMode}`}

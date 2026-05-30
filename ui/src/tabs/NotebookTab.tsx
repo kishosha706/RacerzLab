@@ -1,4 +1,4 @@
-import { AlertTriangle, BookOpen, Clipboard, List, RotateCcw } from "lucide-react";
+import { AlertTriangle, BarChart3, BookOpen, Clipboard, Layers, List, MapPin, RotateCcw, Wrench } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { NotebookFinding, SetupMemorySummary, TestPlan } from "../types/compare";
 import { findingToMarkdown } from "../utils/exportUtils";
@@ -208,7 +208,7 @@ export function NotebookTab() {
               </thead>
               <tbody>
                 {findings.map((f) => (
-                  <tr key={f.finding_id} className="finding-row" onClick={() => handleSelectFinding(f)}>
+                  <tr key={f.finding_id} className="finding-row" onClick={() => handleSelectFinding(f)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSelectFinding(f); } }} tabIndex={0} role="button" aria-label={`Open finding: ${f.summary_headline ?? f.finding_id}`}>
                     <td className="cell-val">{f.created_at?.slice(0, 10) ?? "—"}</td>
                     <td className="cell-label">{f.car_name ?? "—"}</td>
                     <td className="cell-label">{f.track_name ?? "—"}</td>
@@ -356,6 +356,52 @@ export function NotebookTab() {
             <button className="secondary-button" onClick={handleSaveDetail} disabled={savingDetail}>
               {savingDetail ? "Saving…" : "Save Changes"}
             </button>
+          </div>
+
+          {/* ── Relaunch actions ── */}
+          <div className="toolbar-actions" style={{ marginTop: 12, flexWrap: "wrap" }}>
+            <span className="section-note" style={{ fontSize: 10, color: "#8d9aaa", marginRight: 4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              Revisit:
+            </span>
+            <button className="trackmap-action-btn" onClick={() => {
+              const params = new URLSearchParams({
+                baseline_run_id: selectedFinding.baseline_run_id ?? "",
+                test_run_id: selectedFinding.test_run_id ?? "",
+                target_zone_start_pct: String(selectedFinding.target_zone_start_pct ?? 55),
+                target_zone_end_pct: String(selectedFinding.target_zone_end_pct ?? 70),
+              });
+              window.open(`/compare?${params.toString()}`, "_blank");
+            }} disabled={!selectedFinding.baseline_run_id || !selectedFinding.test_run_id} title="Open Compare with same baseline/test">
+              <BarChart3 size={10} /> Compare
+            </button>
+            <button className="trackmap-action-btn" onClick={() => {
+              const runId = selectedFinding.baseline_run_id ?? selectedFinding.test_run_id;
+              if (runId) {
+                const baseUrl = import.meta.env.BASE_URL ?? "/";
+                window.open(`${baseUrl}?run=${encodeURIComponent(runId)}&ws=platform_trace`, "_blank");
+              }
+            }} disabled={!selectedFinding.baseline_run_id && !selectedFinding.test_run_id} title="Open Platform">
+              <Layers size={10} /> Platform
+            </button>
+            <button className="trackmap-action-btn" onClick={() => {
+              const runId = selectedFinding.baseline_run_id ?? selectedFinding.test_run_id;
+              if (runId) {
+                const baseUrl = import.meta.env.BASE_URL ?? "/";
+                window.open(`${baseUrl}?run=${encodeURIComponent(runId)}&ws=map`, "_blank");
+              }
+            }} disabled={!selectedFinding.baseline_run_id && !selectedFinding.test_run_id} title="Open Map">
+              <MapPin size={10} /> Map
+            </button>
+            <button className="trackmap-action-btn" onClick={() => {
+              const runId = selectedFinding.baseline_run_id ?? selectedFinding.test_run_id;
+              if (runId) {
+                const baseUrl = import.meta.env.BASE_URL ?? "/";
+                window.open(`${baseUrl}?run=${encodeURIComponent(runId)}&ws=setup_impact`, "_blank");
+              }
+            }} disabled={!selectedFinding.baseline_run_id && !selectedFinding.test_run_id} title="Open Setup">
+              <Wrench size={10} /> Setup
+            </button>
+            <span style={{ flex: 1 }} />
             <button className="secondary-button" onClick={handleCopyMarkdown}>
               <Clipboard size={14} /> Copy Markdown
             </button>
@@ -363,6 +409,13 @@ export function NotebookTab() {
               <List size={14} /> Create Test Plan
             </button>
           </div>
+
+          {/* ── Test plan status ── */}
+          {selectedFinding.next_step && (
+            <p className="insight-recommendation" style={{ marginTop: 12 }}>
+              <strong>Next test:</strong> {selectedFinding.next_step}
+            </p>
+          )}
         </div>
       )}
 

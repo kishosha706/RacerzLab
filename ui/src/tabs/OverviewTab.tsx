@@ -1,5 +1,5 @@
 import { AlertTriangle, BarChart3, CheckCircle, Clock, Info, Layers, Lightbulb, MapPin } from "lucide-react";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
@@ -56,10 +56,51 @@ function buildWhyText(event: TelemetryEvent, isLearning: boolean): string {
 
 export function OverviewTab({ overview }: OverviewTabProps) {
   const lap = overview.best_useful_lap;
-  const topEvent = overview.events.length > 0 ? overview.events[0] : null;
+
+  // Sort events by severity (critical first), then confidence, then actionable priority
+  const sortedEvents = useMemo(() => {
+    const sevOrder: Record<string, number> = { critical: 0, high: 1, watch: 2, info: 3 };
+    return [...overview.events].sort((a, b) => {
+      const sevDiff = (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9);
+      if (sevDiff !== 0) return sevDiff;
+      const confA = a.confidence_score ?? 0;
+      const confB = b.confidence_score ?? 0;
+      if (confB !== confA) return confB - confA; // higher confidence first
+      // Actionable events (valid_for_tuning) before non-actionable
+      if (a.valid_for_tuning !== b.valid_for_tuning) return a.valid_for_tuning ? -1 : 1;
+      return 0;
+    });
+  }, [overview.events]);
+
+  const topEvent = sortedEvents.length > 0 ? sortedEvents[0] : null;
   const crewBrief = overview.crew_chief_summary;
-  const { setWorkspace, selectEvent, selection } = useTelemetrySelection();
+  const { setWorkspace, focusEvidence, selection } = useTelemetrySelection();
   const isLearning = selection.selectedMode === "learning";
+
+  const buildOverviewEvidence = useCallback((event: TelemetryEvent) => {
+    const hasLocation = event.lap_pct_peak != null || event.lap_pct_start != null || event.distance_m_peak != null;
+    const lapDistFt = event.distance_m_peak != null ? event.distance_m_peak * 3.280839895 : null;
+    const lapPct = event.lap_pct_peak ?? event.lap_pct_start ?? null;
+    return {
+      runId: overview.run_id,
+      lapNumber: event.lap_number ?? null,
+      eventId: event.event_id,
+      sampleIndex: null,
+      lapDistFt,
+      lapPct,
+      lockState: (hasLocation ? "locked" : "none") as "locked" | "none",
+      valueBasis: (hasLocation ? "selected_sample" : "run_level") as "selected_sample" | "run_level",
+      selectionSource: "overview" as const,
+    };
+  }, [overview.run_id]);
+
+  const handleOpenPlatform = useCallback(() => {
+    if (topEvent) focusEvidence(buildOverviewEvidence(topEvent), "platform_trace");
+  }, [topEvent, focusEvidence, buildOverviewEvidence]);
+
+  const handleOpenSetup = useCallback(() => {
+    if (topEvent) focusEvidence(buildOverviewEvidence(topEvent), "setup_impact");
+  }, [topEvent, focusEvidence, buildOverviewEvidence]);
 
   const gainInfo = useMemo(() => topEvent ? gainClass(topEvent) : null, [topEvent]);
   const whyText = useMemo(() => topEvent ? buildWhyText(topEvent, isLearning) : null, [topEvent, isLearning]);
@@ -96,10 +137,9 @@ export function OverviewTab({ overview }: OverviewTabProps) {
     }));
   }, [overview.events]);
 
-  const handleOpenPlatform = () => {
-    if (topEvent) selectEvent(topEvent.event_id, "overview");
-    setWorkspace("platform_trace", "overview");
-  };
+  const handleBuildOverviewRiskEvidence = useCallback((event: TelemetryEvent) => {
+    focusEvidence(buildOverviewEvidence(event), "platform_trace");
+  }, [focusEvidence, buildOverviewEvidence]);
 
   return (
     <div className="tab-grid">
@@ -133,28 +173,28 @@ export function OverviewTab({ overview }: OverviewTabProps) {
 
             {/* Evidence chips — clickable when context is available */}
             <div className="overview-evidence-chips">
-              <span
+              <button
                 className="evidence-chip evidence-chip-clickable"
-                style={{ borderColor: SEVERITY_COLOURS[topEvent.severity] ?? "#8d9aaa", cursor: "pointer" }}
+                style={{ borderColor: SEVERITY_COLOURS[topEvent.severity] ?? "#8d9aaa", cursor: "pointer", background: "none", color: "inherit", font: "inherit", padding: "2px 8px" }}
                 onClick={handleOpenPlatform}
                 title="Open in Platform Trace"
               >
                 <AlertTriangle size={12} /> {topEvent.severity.toUpperCase()}
-              </span>
+              </button>
               {topEvent.confidence_score != null && (
                 <span className="evidence-chip" title={`Confidence: ${(topEvent.confidence_score * 100).toFixed(0)}%`}>
                   Confidence: {(topEvent.confidence_score * 100).toFixed(0)}%
                 </span>
               )}
               {topEvent.valid_for_tuning && (
-                <span
+                <button
                   className="evidence-chip evidence-chip-clickable"
-                  style={{ borderColor: "#22c55e", cursor: "pointer" }}
-                  onClick={() => { selectEvent(topEvent.event_id, "overview"); setWorkspace("setup_impact", "overview"); }}
+                  style={{ borderColor: "#22c55e", cursor: "pointer", background: "none", color: "inherit", font: "inherit", padding: "2px 8px" }}
+                  onClick={handleOpenSetup}
                   title="Open in Setup"
                 >
                   <CheckCircle size={12} /> Valid for tuning
-                </span>
+                </button>
               )}
             </div>
 
@@ -241,7 +281,7 @@ export function OverviewTab({ overview }: OverviewTabProps) {
                 className="overview-risk-marker"
                 data-severity={event.severity}
                 style={{ left: `${Math.max(0, Math.min(100, pos))}%` }}
-                onClick={() => { selectEvent(event.event_id, "overview"); setWorkspace("platform_trace", "overview"); }}
+                onClick={() => { focusEvidence(buildOverviewEvidence(event), "platform_trace"); }}
                 title={`${humanizeEventLabel(event.event_type)} | ${event.severity}`}
                 aria-label={`Open ${humanizeEventLabel(event.event_type)} in Platform`}
               />

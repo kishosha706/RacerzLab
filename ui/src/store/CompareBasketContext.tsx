@@ -9,11 +9,16 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useReducer, type ReactNode } from "react";
+import type { LapScope, ValueBasis } from "./types";
 
 export interface BasketItem {
   id: string;
   run_id: string;
   lap_number: number | null;
+  lap_scope?: LapScope | null;
+  lap_window_start?: number | null;
+  lap_window_end?: number | null;
+  representative_lap?: number | null;
   label: string;
   car: string | null;
   track: string | null;
@@ -26,6 +31,8 @@ export interface BasketItem {
   date: string | null;
   session_name: string | null;
   has_setup_snapshot: boolean;
+  trust_tier?: string | null;
+  value_basis?: ValueBasis | null;
 }
 
 export type BasketSlot = "baseline" | "test";
@@ -87,6 +94,16 @@ function basketReducer(state: CompareBasketState, action: BasketAction): Compare
   }
 }
 
+function sameEvidenceScope(left: BasketItem, right: BasketItem): boolean {
+  if (left.run_id !== right.run_id) return false;
+  if ((left.lap_scope ?? "single_lap") === "lap_window" || (right.lap_scope ?? "single_lap") === "lap_window") {
+    return (left.lap_scope ?? "single_lap") === (right.lap_scope ?? "single_lap")
+      && left.lap_window_start === right.lap_window_start
+      && left.lap_window_end === right.lap_window_end;
+  }
+  return left.lap_number === right.lap_number;
+}
+
 export type BasketReadiness = "ready" | "caution" | "not_valid" | "reference_mode";
 
 type CompareBasketContextValue = {
@@ -142,8 +159,12 @@ export function CompareBasketProvider({ children }: { children: ReactNode }) {
     if (baseline.draft_status === "DRAFT_AFFECTED") {
       w.push("Baseline lap is draft-affected — reference may not be clean.");
     }
-    if (baseline.run_id === test.run_id && baseline.lap_number === test.lap_number) {
-      w.push("Same lap selected as baseline and test — this is a self-reference.");
+    if (sameEvidenceScope(baseline, test)) {
+      w.push(
+        baseline.lap_scope === "lap_window"
+          ? "Same window selected as baseline and test — this is a self-reference."
+          : "Same lap selected as baseline and test — this is a self-reference.",
+      );
     }
     if (baseline.run_id !== test.run_id) {
       w.push("Cross-session comparison — car/track/weather may differ.");
@@ -163,8 +184,13 @@ export function CompareBasketProvider({ children }: { children: ReactNode }) {
   const getReadiness = useCallback((): { status: BasketReadiness; reason: string } => {
     const { baseline, test } = basket;
     if (!baseline || !test) return { status: "not_valid", reason: "Both baseline and test are required." };
-    if (baseline.run_id === test.run_id && baseline.lap_number === test.lap_number) {
-      return { status: "reference_mode", reason: "Same lap selected — this is a self-reference." };
+    if (sameEvidenceScope(baseline, test)) {
+      return {
+        status: "reference_mode",
+        reason: baseline.lap_scope === "lap_window"
+          ? "Same window selected — this is a self-reference."
+          : "Same lap selected — this is a self-reference.",
+      };
     }
     if (baseline.car && test.car && baseline.car !== test.car) {
       return { status: "not_valid", reason: "Different cars — comparison not meaningful." };

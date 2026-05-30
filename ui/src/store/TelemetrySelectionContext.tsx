@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, type ReactNode } from "react";
-import type { SelectionMode, SelectionSource, TelemetrySelection, Workspace } from "./types";
+import type { EvidenceContext, SelectionMode, SelectionSource, TelemetrySelection, Workspace } from "./types";
 
 const VALID_WORKSPACES: Workspace[] = ["overview", "map", "laps", "platform_trace", "speed_delta", "drag_scrub", "setup_impact", "compare", "notebook", "channels"];
 
@@ -16,6 +16,14 @@ const DEFAULT_SELECTION: TelemetrySelection = {
   selectedMode: "race",
   selectedWorkspace: loadLastWorkspace(),
   selectionSource: "manual",
+  selectedValueBasis: "unavailable",
+  selectedLockState: "none",
+  selectedLapScope: "unknown",
+  selectedTrustTier: null,
+  selectedZoneId: null,
+  selectedZoneLabel: null,
+  selectedZoneStartPct: null,
+  selectedZoneEndPct: null,
 };
 
 type SelectionAction =
@@ -33,16 +41,46 @@ type SelectionAction =
   | { type: "SET_PLAYBACK_ACTIVE"; active: boolean }
   | { type: "RESET_SELECTION" }
   | { type: "LOAD_RUN"; runId: string; bestLap: number | null }
-  | { type: "FOCUS_EVENT"; eventId: string; lap: number | null; sampleIndex: number | null; lapDistFt: number | null; lapPct: number | null; workspace: Workspace; source: SelectionSource };
+  | { type: "FOCUS_EVENT"; eventId: string; lap: number | null; sampleIndex: number | null; lapDistFt: number | null; lapPct: number | null; workspace: Workspace; source: SelectionSource }
+  /** Focus full evidence context — sets all relevant fields in one transaction. */
+  | { type: "FOCUS_EVIDENCE"; evidence: Partial<EvidenceContext>; workspace?: Workspace };
 
 function selectionReducer(state: TelemetrySelection, action: SelectionAction): TelemetrySelection {
   switch (action.type) {
     case "SELECT_RUN":
-      return { ...state, selectedRunId: action.runId, selectedCompareRunId: null };
+      return {
+        ...DEFAULT_SELECTION,
+        selectedRunId: action.runId,
+        selectedCompareRunId: null,
+        selectedMode: state.selectedMode,
+        selectedWorkspace: state.selectedWorkspace,
+      };
     case "SELECT_COMPARE_RUN":
       return { ...state, selectedCompareRunId: action.runId };
     case "SELECT_LAP":
-      return { ...state, selectedLap: action.lap, selectedSampleIndex: null, selectedLapDistFt: null, selectedLapPct: null, selectedEventId: null, selectedChannel: null };
+      // Manual lap change: clear sample/event/distance/hover to prevent stale cross-lap context
+      return {
+        ...state,
+        selectedLap: action.lap,
+        selectedLapScope: "single_lap",
+        selectedLapWindowStart: null,
+        selectedLapWindowEnd: null,
+        selectedRepresentativeLap: null,
+        selectedSampleIndex: null,
+        selectedLapDistFt: null,
+        selectedLapPct: null,
+        selectedEventId: null,
+        selectedChannel: null,
+        selectedZoneId: null,
+        selectedZoneLabel: null,
+        selectedZoneStartPct: null,
+        selectedZoneEndPct: null,
+        selectedValueBasis: action.lap != null ? "full_lap" : "unavailable",
+        selectedLockState: "none",
+        hoverLapPct: null,
+        hoverSampleIndex: null,
+        playbackActive: false,
+      };
     case "SELECT_SAMPLE":
       return {
         ...state,
@@ -62,7 +100,14 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
     case "SET_WORKSPACE":
       return { ...state, selectedWorkspace: action.workspace, selectionSource: action.source };
     case "SELECT_ZONE":
-      return { ...state, selectedZoneId: action.zoneId, selectionSource: "track_map" };
+      return {
+        ...state,
+        selectedZoneId: action.zoneId,
+        selectedZoneLabel: action.zoneId == null ? null : state.selectedZoneLabel,
+        selectedZoneStartPct: action.zoneId == null ? null : state.selectedZoneStartPct,
+        selectedZoneEndPct: action.zoneId == null ? null : state.selectedZoneEndPct,
+        selectionSource: "track_map",
+      };
     case "SET_HOVER":
       return { ...state, hoverLapPct: action.lapPct, hoverSampleIndex: action.sampleIndex ?? state.hoverSampleIndex };
     case "SET_PLAYBACK_ACTIVE":
@@ -74,19 +119,71 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
         ...DEFAULT_SELECTION,
         selectedRunId: action.runId,
         selectedLap: action.bestLap,
+        selectedLapScope: "single_lap",
+        selectedRepresentativeLap: null,
         selectedMode: state.selectedMode,
+        selectedValueBasis: action.bestLap != null ? "full_lap" : "unavailable",
       };
     case "FOCUS_EVENT":
       return {
         ...state,
         selectedEventId: action.eventId,
         selectedLap: action.lap,
+        selectedLapScope: action.lap != null ? "single_lap" : state.selectedLapScope,
+        selectedLapWindowStart: action.lap != null ? null : state.selectedLapWindowStart,
+        selectedLapWindowEnd: action.lap != null ? null : state.selectedLapWindowEnd,
+        selectedRepresentativeLap: action.lap != null ? null : state.selectedRepresentativeLap,
         selectedSampleIndex: action.sampleIndex,
         selectedLapDistFt: action.lapDistFt,
         selectedLapPct: action.lapPct,
+        selectedValueBasis: action.sampleIndex != null ? "selected_sample" : state.selectedValueBasis,
+        selectedLockState: action.sampleIndex != null ? "locked" : state.selectedLockState,
         selectedWorkspace: action.workspace,
         selectionSource: action.source,
+        hoverLapPct: null,
+        hoverSampleIndex: null,
       };
+    case "FOCUS_EVIDENCE": {
+      const ev = action.evidence;
+      const nextLapScope = ev.lapScope !== undefined ? ev.lapScope : state.selectedLapScope;
+      const nextRepresentativeLap = ev.representativeLap !== undefined
+        ? ev.representativeLap
+        : nextLapScope === "lap_window"
+          ? ev.lapNumber !== undefined
+            ? ev.lapNumber
+            : state.selectedRepresentativeLap
+          : null;
+      return {
+        ...state,
+        selectedRunId: ev.runId !== undefined ? ev.runId : state.selectedRunId,
+        selectedLap: ev.lapNumber !== undefined ? ev.lapNumber : state.selectedLap,
+        selectedLapScope: nextLapScope,
+        selectedLapWindowStart: nextLapScope === "lap_window"
+          ? ev.lapWindowStart !== undefined ? ev.lapWindowStart : state.selectedLapWindowStart
+          : null,
+        selectedLapWindowEnd: nextLapScope === "lap_window"
+          ? ev.lapWindowEnd !== undefined ? ev.lapWindowEnd : state.selectedLapWindowEnd
+          : null,
+        selectedRepresentativeLap: nextRepresentativeLap,
+        selectedEventId: ev.eventId !== undefined ? ev.eventId : state.selectedEventId,
+        selectedSampleIndex: ev.sampleIndex !== undefined ? ev.sampleIndex : state.selectedSampleIndex,
+        selectedLapDistFt: ev.lapDistFt !== undefined ? ev.lapDistFt : state.selectedLapDistFt,
+        selectedLapPct: ev.lapPct !== undefined ? ev.lapPct : state.selectedLapPct,
+        selectedZoneId: ev.zoneId !== undefined ? ev.zoneId : state.selectedZoneId,
+        selectedZoneLabel: ev.zoneLabel !== undefined ? ev.zoneLabel : state.selectedZoneLabel,
+        selectedZoneStartPct: ev.zoneStartPct !== undefined ? ev.zoneStartPct : state.selectedZoneStartPct,
+        selectedZoneEndPct: ev.zoneEndPct !== undefined ? ev.zoneEndPct : state.selectedZoneEndPct,
+        selectedChannel: ev.channelId !== undefined ? ev.channelId : state.selectedChannel,
+        selectedValueBasis: ev.valueBasis !== undefined ? ev.valueBasis : state.selectedValueBasis,
+        selectedLockState: ev.lockState !== undefined ? ev.lockState : state.selectedLockState,
+        selectedTrustTier: ev.trustTier !== undefined ? ev.trustTier : state.selectedTrustTier,
+        selectionSource: ev.selectionSource !== undefined ? ev.selectionSource : state.selectionSource,
+        selectedWorkspace: action.workspace !== undefined ? action.workspace : state.selectedWorkspace,
+        hoverLapPct: null,
+        hoverSampleIndex: null,
+        playbackActive: false,
+      };
+    }
     default:
       return state;
   }
@@ -107,6 +204,8 @@ type TelemetrySelectionContextValue = {
   setWorkspace: (workspace: Workspace, source?: SelectionSource) => void;
   loadRun: (runId: string, bestLap: number | null) => void;
   focusTelemetryEvent: (eventId: string, lap: number | null, sampleIndex: number | null, lapDistFt: number | null, lapPct: number | null, workspace: Workspace, source?: SelectionSource) => void;
+  /** Set all relevant evidence context in one transaction. */
+  focusEvidence: (evidence: Partial<EvidenceContext>, workspace?: Workspace) => void;
 };
 
 const TelemetrySelectionContext = createContext<TelemetrySelectionContextValue | null>(null);
@@ -167,9 +266,15 @@ export function TelemetrySelectionProvider({ children }: { children: ReactNode }
     [],
   );
 
+  const focusEvidence = useCallback(
+    (evidence: Partial<EvidenceContext>, workspace?: Workspace) =>
+      dispatch({ type: "FOCUS_EVIDENCE", evidence, workspace }),
+    [],
+  );
+
   return (
     <TelemetrySelectionContext.Provider
-      value={{ selection, dispatch, selectRun, selectLap, selectSample, selectEvent, selectChannel, selectZone, setHover, setPlaybackActive, setMode, setWorkspace, loadRun, focusTelemetryEvent }}
+      value={{ selection, dispatch, selectRun, selectLap, selectSample, selectEvent, selectChannel, selectZone, setHover, setPlaybackActive, setMode, setWorkspace, loadRun, focusTelemetryEvent, focusEvidence }}
     >
       {children}
     </TelemetrySelectionContext.Provider>

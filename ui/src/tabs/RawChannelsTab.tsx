@@ -1,5 +1,5 @@
 import { Copy, Info, Pin, Search } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { getChannelConfidenceLevel, getChannelDisclaimer } from "../utils/channelMeta";
 import type { ChannelCatalogItem, RunOverview, TraceResponse } from "../types/telemetry";
@@ -15,17 +15,13 @@ function formatNumber(value: number | null | undefined) {
   return Math.abs(value) >= 100 ? value.toFixed(1) : value.toFixed(4);
 }
 
-/** Simple debounce hook for search input. */
+/** Proper useEffect-based debounce hook for search input. */
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
-  // Use a simple timeout-based debounce
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  timeout = setTimeout(() => setDebounced(value), delay);
-  // Cleanup on unmount or value change
-  useMemo(() => {
-    clearTimeout(timeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
   return debounced;
 }
 

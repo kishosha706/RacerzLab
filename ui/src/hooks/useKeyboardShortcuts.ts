@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { Workspace } from "../store/types";
 import type { PlatformEventItem } from "../types/telemetry";
+import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
 
 /**
  * Global keyboard shortcuts for RacerZLab.
@@ -18,7 +19,7 @@ export function useKeyboardShortcuts(
     onToggleInspector?: () => void;
   },
 ) {
-  const { selection, selectEvent, selectSample, setMode } = useTelemetrySelection();
+  const { selection, focusEvidence, setMode } = useTelemetrySelection();
 
   useEffect(() => {
     function handler(e: KeyboardEvent) {
@@ -32,7 +33,7 @@ export function useKeyboardShortcuts(
 
       switch (key) {
         case "Escape":
-          selectEvent(null, "manual");
+          focusEvidence({ eventId: null, selectionSource: "manual" });
           break;
         case "[":
           options?.onTogglePriorityRail?.();
@@ -70,22 +71,32 @@ export function useKeyboardShortcuts(
           const dir = key === "ArrowLeft" ? -1 : 1;
           const filtered = platformEvents.filter((evt) => {
             if (!selection.selectedLap) return true;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             return (evt as any).lap === selection.selectedLap;
           });
           if (filtered.length === 0) return;
           const currentIdx = filtered.findIndex((evt) => evt.event_id === selection.selectedEventId);
           const nextIdx = currentIdx === -1 ? 0 : (currentIdx + dir + filtered.length) % filtered.length;
           const nextEvt = filtered[nextIdx];
-          selectEvent(nextEvt.event_id, "event_timeline");
-          if (nextEvt.sample_index != null) {
-            selectSample(nextEvt.sample_index, nextEvt.lap_dist_ft ?? undefined, nextEvt.lap_pct ?? undefined, "event_timeline");
-          }
+          const validSampleIdx = typeof nextEvt.sample_index === "number" && Number.isFinite(nextEvt.sample_index) && nextEvt.sample_index >= 0 ? nextEvt.sample_index : null;
+          const hasLocation = validSampleIdx != null || nextEvt.lap_dist_ft != null || nextEvt.lap_pct != null;
+          focusEvidence({
+            runId: selection.selectedRunId,
+            lapNumber: nextEvt.lap ?? null,
+            ...buildWindowEvidence(selection, nextEvt.lap),
+            ...buildZoneEvidence(selection, { lapPct: nextEvt.lap_pct ?? null, preserveWithoutLapPct: true }),
+            eventId: nextEvt.event_id,
+            sampleIndex: validSampleIdx,
+            lapDistFt: nextEvt.lap_dist_ft,
+            lapPct: nextEvt.lap_pct,
+            selectionSource: "event_timeline",
+            lockState: (hasLocation ? "locked" : "none") as "locked" | "none",
+            valueBasis: (hasLocation ? "selected_sample" : "run_level") as "selected_sample" | "run_level",
+          }, "platform_trace");
           break;
         }
       }
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [platformEvents, selection.selectedLap, selection.selectedMode, selectEvent, selectSample, setMode, openWorkspace, options]);
+  }, [platformEvents, selection.selectedLap, selection.selectedMode, focusEvidence, setMode, openWorkspace, options]);
 }

@@ -3,6 +3,7 @@ import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { SEVERITY_COLOURS, EVENT_SHAPES } from "../constants/ui";
 import type { PlatformEventItem } from "../types/telemetry";
+import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
 
 type EventTimelineProps = {
   platformEvents: PlatformEventItem[];
@@ -42,7 +43,7 @@ function staggerMarkers(events: PlatformEventItem[]): StaggeredEvent[] {
 }
 
 export function EventTimeline({ platformEvents }: EventTimelineProps) {
-  const { selection, selectEvent, selectLap, setWorkspace, selectSample, setHover, setPlaybackActive } = useTelemetrySelection();
+  const { selection, focusEvidence, setHover, setPlaybackActive } = useTelemetrySelection();
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<number>(1);
   const playbackRef = useRef<number | null>(null);
@@ -64,18 +65,32 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
     const event = sorted[index];
     if (!event) return;
     indexRef.current = index;
-    // Use transient hover for playback movement — don't commit to global state
-    setHover(event.lap_pct ?? null, event.sample_index ?? null);
+    setHover(event.lap_pct ?? null, typeof event.sample_index === "number" && Number.isFinite(event.sample_index) && event.sample_index >= 0 ? event.sample_index : null);
   }, [sorted, setHover]);
+
+  const buildTimelineEvidence = useCallback((event: PlatformEventItem) => {
+    const validSampleIdx = typeof event.sample_index === "number" && Number.isFinite(event.sample_index) && event.sample_index >= 0 ? event.sample_index : null;
+    const hasLocation = validSampleIdx != null || event.lap_dist_ft != null || event.lap_pct != null;
+    return {
+      runId: selection.selectedRunId ?? null,
+      lapNumber: event.lap,
+      ...buildWindowEvidence(selection, event.lap),
+      ...buildZoneEvidence(selection, { lapPct: event.lap_pct ?? null, preserveWithoutLapPct: true }),
+      eventId: event.event_id,
+      sampleIndex: validSampleIdx,
+      lapDistFt: event.lap_dist_ft,
+      lapPct: event.lap_pct,
+      selectionSource: "event_timeline" as const,
+      lockState: (hasLocation ? "locked" : "none") as "locked" | "none",
+      valueBasis: (hasLocation ? "selected_sample" : "run_level") as "selected_sample" | "run_level",
+    };
+  }, [selection]);
 
   const commitEvent = useCallback((index: number) => {
     const event = sorted[index];
     if (!event) return;
-    if (event.lap != null) selectLap(event.lap);
-    selectEvent(event.event_id, "event_timeline");
-    selectSample(event.sample_index ?? 0, event.lap_dist_ft ?? undefined, event.lap_pct ?? undefined, "event_timeline");
-    setWorkspace("platform_trace", "event_timeline");
-  }, [sorted, selectEvent, selectLap, selectSample, setWorkspace]);
+    focusEvidence(buildTimelineEvidence(event), "platform_trace");
+  }, [sorted, focusEvidence, buildTimelineEvidence]);
 
   const togglePlay = useCallback(() => {
     setPlaying((p) => !p);
@@ -206,13 +221,11 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
               className={`timeline-marker ${isActive ? "active" : ""}`}
               style={{ left: `${left}%`, top: `${event.staggerOffset}px`, color: colour }}
               title={`${event.title} — ${event.severity}`}
+              aria-label={`${event.title}, ${event.severity}, ${left.toFixed(1)} percent lap`}
               onClick={() => {
                 const idx = sorted.findIndex((e) => e.event_id === event.event_id);
                 if (idx >= 0) indexRef.current = idx;
-                if (event.lap != null) selectLap(event.lap);
-                selectEvent(event.event_id, "event_timeline");
-                selectSample(event.sample_index ?? 0, event.lap_dist_ft ?? undefined, event.lap_pct ?? undefined, "event_timeline");
-                setWorkspace("platform_trace", "event_timeline");
+                focusEvidence(buildTimelineEvidence(event), "platform_trace");
               }}
             >
               <span className="timeline-shape" style={{ color: colour }}>{shape}</span>

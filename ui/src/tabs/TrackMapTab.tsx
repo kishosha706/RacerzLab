@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TrackMapIndexEntry, TrackMapOverlayMarker, TrackMapPackage, TrackMapSection } from "../types/trackMap";
 import { fetchRunTrackMapPackage, fetchTrackMaps } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
+import { buildWindowEvidence } from "../utils/evidenceFocus";
 import { calculateTrackLocation, describeLapPctRangeAsLocations } from "../utils/trackLocation";
 import { buildTrackMapSummary, buildEventSentence, buildProblemFingerprints, buildNextBestClick } from "../utils/trackMapInsights";
 import {
@@ -83,7 +84,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const [selectedArea, setSelectedArea] = useState<string | null>(null);
   const inspectorRef = useRef<HTMLDivElement>(null);
-  const { selectSample, selectEvent, selectLap, selectZone, setWorkspace } = useTelemetrySelection();
+  const { selection, focusEvidence } = useTelemetrySelection();
 
   useEffect(() => { fetchTrackMaps().then(setAvailableMaps).catch(()=>{}); }, []);
   useEffect(() => {
@@ -106,6 +107,54 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
     [sections],
   );
 
+  const windowContextActive = selection.selectedLapScope === "lap_window"
+    && selection.selectedLapWindowStart != null
+    && selection.selectedLapWindowEnd != null;
+  const representativeLap = selection.selectedRepresentativeLap ?? lap ?? selection.selectedLap ?? null;
+  const sectionMidLapPct = useCallback((section: TrackMapSection) => {
+    const span = (section.end_lap_pct - section.start_lap_pct + 100) % 100;
+    return (section.start_lap_pct + span / 2) % 100;
+  }, []);
+
+  const buildSectionEvidence = useCallback((section: TrackMapSection) => ({
+    runId,
+    lapNumber: representativeLap,
+    ...buildWindowEvidence(selection, representativeLap),
+    eventId: null,
+    sampleIndex: null,
+    lapDistFt: section.start_distance_ft ?? null,
+    lapPct: sectionMidLapPct(section),
+    zoneId: section.section_id,
+    zoneLabel: describeLapPctRangeAsLocations(section.start_lap_pct, section.end_lap_pct, sections),
+    zoneStartPct: section.start_lap_pct,
+    zoneEndPct: section.end_lap_pct,
+    selectionSource: "track_map" as const,
+    lockState: "locked" as const,
+    valueBasis: selection.selectedLapScope === "lap_window" ? "selected_window" as const : "full_lap" as const,
+    trustTier: selection.selectedTrustTier ?? null,
+  }), [representativeLap, runId, sectionMidLapPct, sections, selection]);
+
+  const buildOverlayEvidence = useCallback((overlay: TrackMapOverlayMarker) => {
+    const loc = getLocation(overlay.lap_pct);
+    return {
+      runId,
+      lapNumber: representativeLap,
+      ...buildWindowEvidence(selection, representativeLap),
+      eventId: overlay.kind === "platform_event" ? overlay.source_id ?? null : null,
+      sampleIndex: null,
+      lapDistFt: overlay.distance_ft ?? null,
+      lapPct: overlay.lap_pct ?? null,
+      zoneId: loc.section_id,
+      zoneLabel: loc.friendly_section_name !== "Unknown section" ? loc.friendly_section_name : null,
+      zoneStartPct: loc.start_lap_pct ?? null,
+      zoneEndPct: loc.end_lap_pct ?? null,
+      selectionSource: "track_map" as const,
+      lockState: "locked" as const,
+      valueBasis: "selected_sample" as const,
+      trustTier: selection.selectedTrustTier ?? null,
+    };
+  }, [getLocation, representativeLap, runId, selection]);
+
   // ── Active preset ────────────────────────────────────────────
   const activePreset = useMemo(
     () => detectActivePreset(activeLayers, severityFilter),
@@ -116,21 +165,19 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
   const handleOverlayClick = useCallback(
     (o: TrackMapOverlayMarker) => {
       setInspector({ kind: "overlay", overlay: o });
-      if (lap != null) selectLap(lap);
-      if (o.lap_pct != null || o.distance_ft != null) selectSample(0, o.distance_ft, o.lap_pct, "track_map");
-      if (o.kind === "platform_event" && o.source_id) selectEvent(o.source_id, "track_map");
+      focusEvidence(buildOverlayEvidence(o));
       inspectorRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     },
-    [lap, selectSample, selectEvent, selectLap],
+    [buildOverlayEvidence, focusEvidence],
   );
 
   const handleSectionClick = useCallback(
     (s: TrackMapSection) => {
       setInspector({ kind: "section", section: s });
       setSelectedArea(s.section_id);
-      selectZone(s.section_id);
+      focusEvidence(buildSectionEvidence(s));
     },
-    [selectZone],
+    [buildSectionEvidence, focusEvidence],
   );
 
   const toggleLayer = useCallback((id: LayerId) =>
@@ -507,6 +554,11 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
             {carName && <span className="muted">— {carName}</span>}
             {setupName && <span className="muted">· {setupName}</span>}
           </div>
+          {windowContextActive && (
+            <p className="scope-banner">
+              Selected window: Laps {selection.selectedLapWindowStart}-{selection.selectedLapWindowEnd}. Map is currently showing representative lap {representativeLap ?? selection.selectedLapWindowStart}. Full window overlay filtering is not yet supported, so the window context stays preserved for navigation and event focus.
+            </p>
+          )}
           {match && (
             <div className="trackmap-header-match">
               <span className="map-confidence-badge" data-confidence={match.match_confidence ?? "medium"}>
@@ -575,6 +627,13 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
           </div>
         )}
 
+        {windowContextActive && (
+          <div className="laps-chip-row" style={{ marginBottom: 8 }}>
+            <span className="lap-flag-badge">Basis: selected window / representative lap</span>
+            {representativeLap != null && <span className="lap-flag-badge">Rep Lap {representativeLap}</span>}
+          </div>
+        )}
+
         {metadata && !metadata.origin.gps_supported && (
           <div className="map-warning-banner"><Info size={14} /><span>Centerline-only .mt2 map — no boundaries, banking, GPS, or track width found.</span></div>
         )}
@@ -633,7 +692,19 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
               const stat = sectionStats.find((ss) => ss.section.section_id === sp.section.section_id);
               const loc = getLocation(sp.section.start_lap_pct);
               return (
-                <g key={sp.section.section_id} style={{ cursor: "pointer" }} onClick={() => handleSectionClick(sp.section)}>
+                <g
+                  key={sp.section.section_id}
+                  style={{ cursor: "pointer" }}
+                  onClick={() => handleSectionClick(sp.section)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      handleSectionClick(sp.section);
+                    }
+                  }}
+                >
                   <title>
                     {loc.friendly_section_name} ({sp.section.section_type})
                     {"\n"}{sp.section.length_ft.toFixed(0)} ft
@@ -669,7 +740,20 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
               .map((o) => {
                 const loc = getLocation(o.lap_pct);
                 return (
-                  <g key={o.marker_id} style={{ cursor: "pointer" }} onClick={() => handleOverlayClick(o)} aria-label={`${o.label} — ${loc.display_label} — ${o.severity ?? "info"}`}>
+                  <g
+                    key={o.marker_id}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => handleOverlayClick(o)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        handleOverlayClick(o);
+                      }
+                    }}
+                    aria-label={`${o.label} — ${loc.display_label} — ${o.severity ?? "info"}`}
+                  >
                     <title>
                       {o.symbol ?? ""} {o.label} — {loc.display_label}
                       {o.description ? ` — ${o.description}` : ""}
@@ -717,8 +801,9 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                 s.riskScore >= 1 ? "#f59e0b" :
                 "#1e293b";
               return (
-                <div
+                <button
                   key={s.section.section_id}
+                  type="button"
                   className="trackmap-timeline-section"
                   style={{
                     left: `${s.section.start_lap_pct}%`,
@@ -728,9 +813,10 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                   }}
                   onClick={() => handleSectionClick(s.section)}
                   title={`${loc.friendly_section_name}: ${s.count} event${s.count !== 1 ? "s" : ""} · risk score ${s.riskScore}`}
+                  aria-label={`${loc.friendly_section_name}, ${s.count} events, risk score ${s.riskScore}`}
                 >
                   <span className="trackmap-timeline-label">{loc.short_label}</span>
-                </div>
+                </button>
               );
             })}
             {visibleOverlays
@@ -738,13 +824,15 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
               .map((o) => {
                 const loc = getLocation(o.lap_pct);
                 return (
-                  <div
+                  <button
                     key={o.marker_id}
+                    type="button"
                     className={`trackmap-timeline-dot${selOvlId === o.marker_id ? " selected" : ""}`}
                     style={{ left: `${o.lap_pct}%`, background: o.color ?? "#f59e0b" }}
                     onClick={() => handleOverlayClick(o)}
                     title={`${o.symbol ?? ""} ${o.label} — ${loc.display_label}`}
-                  />
+                    aria-label={`${o.label}, ${loc.display_label}`}
+                  ></button>
                 );
               })}
           </div>
@@ -791,15 +879,16 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
             <h4>Clusters</h4>
             <div className="trackmap-cluster-list">
               {clusters.slice(0, 5).map((c) => (
-                <div
+                <button
                   key={c.key}
+                  type="button"
                   className="trackmap-cluster-item"
-                  style={{ cursor: "pointer" }}
                   onClick={() => handleOverlayClick(c.worst)}
+                  aria-label={`${c.count} events in ${c.sectionName}`}
                 >
                   <span className="trackmap-cluster-badge">{c.count}</span>
                   <span>{c.count} event{c.count > 1 ? "s" : ""} in {c.sectionName}{c.phase !== "unknown" && c.phase ? ` · ${c.phase}` : ""}</span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -896,10 +985,12 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
             {(problemFocus ? [...sectionStats].sort((a, b) => b.riskScore - a.riskScore) : sectionStats).slice(0, 12).map((s) => {
               const loc = getLocation(s.section.start_lap_pct);
               return (
-                <div
+                <button
                   key={s.section.section_id}
+                  type="button"
                   className={`trackmap-section-card${selSecId === s.section.section_id ? " selected" : ""}`}
                   onClick={() => handleSectionClick(s.section)}
+                  aria-label={`${loc.friendly_section_name}, ${s.count} events`}
                 >
                   <div className="trackmap-section-card-header">
                     <span className="trackmap-section-card-name">{loc.friendly_section_name}</span>
@@ -913,7 +1004,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                     {s.worst && <span className="inspector-badge inspector-badge-sm" data-severity={s.worst.severity ?? "info"}>{s.worst.severity}</span>}
                     {s.topCat && <span className="muted">{CATEGORY_LABELS[s.topCat] ?? s.topCat}</span>}
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -928,11 +1019,11 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
               .map((o) => {
                 const loc = getLocation(o.lap_pct);
                 return (
-                  <div key={o.marker_id} className="map-event-row" style={{ cursor: "pointer" }} onClick={() => handleOverlayClick(o)}>
+                  <button key={o.marker_id} type="button" className="map-event-row" onClick={() => handleOverlayClick(o)} aria-label={`${o.label}, ${loc.display_label}`}>
                     <span className="event-symbol" style={{ color: o.color }}>{o.symbol} {o.label}</span>
                     <span className="muted"> — {loc.display_label}</span>
                     {o.distance_ft != null && <span className="muted"> · {o.distance_ft.toFixed(0)} ft</span>}
-                  </div>
+                  </button>
                 );
               })}
           </div>
@@ -1039,6 +1130,22 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                   </>
                 )}
               </div>
+              <div className="diw-actions" style={{ marginTop: 12 }}>
+                <button
+                  className="trackmap-action-btn"
+                  onClick={() => focusEvidence(buildSectionEvidence(inspector.section), "platform_trace")}
+                  title="Open Platform for this area"
+                >
+                  <Layers size={10} /> Open Platform
+                </button>
+                <button
+                  className="trackmap-action-btn"
+                  onClick={() => focusEvidence(buildSectionEvidence(inspector.section), "compare")}
+                  title="Use this area as the compare target zone"
+                >
+                  <Crosshair size={10} /> Compare Zone
+                </button>
+              </div>
               {se.length === 0 ? (
                 <p className="muted" style={{ marginTop: 12 }}>No events in this area.</p>
               ) : (
@@ -1055,11 +1162,11 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                       {g.events.slice(0, 5).map((e) => {
                         const eloc = getLocation(e.lap_pct);
                         return (
-                          <div key={e.marker_id} className="inspector-event-row" onClick={() => handleOverlayClick(e)}>
+                          <button key={e.marker_id} type="button" className="inspector-event-row" onClick={() => handleOverlayClick(e)}>
                             <span className="event-symbol" style={{ color: e.color }}>{e.symbol}</span>
                             <span>{e.label}</span>
                             <span className="muted"> — {eloc.display_label}</span>
-                          </div>
+                          </button>
                         );
                       })}
                       {g.events.length > 5 && <p className="muted" style={{ fontSize: 10, margin: 0 }}>+{g.events.length - 5} more</p>}
@@ -1106,10 +1213,10 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                         <label>Pinned in Area</label>
                         <div className="inspector-block-content">
                           {pinnedInArea.map((po) => (
-                            <div key={po.marker_id} className="inspector-event-row" onClick={() => handleOverlayClick(po)}>
+                            <button key={po.marker_id} type="button" className="inspector-event-row" onClick={() => handleOverlayClick(po)}>
                               <span className="event-symbol" style={{ color: po.color }}>{po.symbol}</span>
                               <span>{po.label}</span>
-                            </div>
+                            </button>
                           ))}
                         </div>
                       </div>
@@ -1160,15 +1267,20 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                   <div className="diw-actions">
                     <button
                       className="trackmap-action-btn"
-                      onClick={() => {
-                        if (o.lap_pct != null || o.distance_ft != null) selectSample(0, o.distance_ft, o.lap_pct, "track_map");
-                        if (o.kind === "platform_event" && o.source_id) selectEvent(o.source_id, "track_map");
-                        setWorkspace("platform_trace", "track_map");
-                      }}
+                      onClick={() => focusEvidence(buildOverlayEvidence(o), "platform_trace")}
                       title="Open Platform at this location"
                     >
                       <Layers size={10} /> Open Platform
                     </button>
+                    {o.lap_pct != null && (
+                      <button
+                        className="trackmap-action-btn"
+                        onClick={() => focusEvidence(buildOverlayEvidence(o), "compare")}
+                        title="Use this area as the compare target zone"
+                      >
+                        <Crosshair size={10} /> Compare Zone
+                      </button>
+                    )}
                   </div>
                 </div>
                 {DEBUG_LOCATION && o.lap_pct != null && (

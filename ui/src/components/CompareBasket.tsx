@@ -1,5 +1,5 @@
 /**
- * CompareBasket — compact persistent basket for collecting laps/runs to compare.
+ * CompareBasket - compact persistent basket for collecting laps/runs to compare.
  *
  * Lives at the bottom of the nav rail or as a bottom-right drawer.
  * Visible only when at least one item is added.
@@ -16,6 +16,34 @@ const READINESS_COLORS: Record<BasketReadiness, string> = {
   not_valid: "#ef4444",
   reference_mode: "#38bdf8",
 };
+
+function describeBasketScope(item: BasketItem): string {
+  if (item.lap_scope === "lap_window" && item.lap_window_start != null && item.lap_window_end != null) {
+    return `Window ${item.lap_window_start}-${item.lap_window_end}`;
+  }
+  if (item.lap_number != null) return `Lap ${item.lap_number}`;
+  return "Run-level";
+}
+
+function describeRepresentativeLap(item: BasketItem): string | null {
+  if (item.lap_scope !== "lap_window" || item.representative_lap == null) return null;
+  return `Rep Lap ${item.representative_lap}`;
+}
+
+function describeBasketBasis(item: BasketItem): string | null {
+  switch (item.value_basis) {
+    case "selected_window":
+      return "Selected window";
+    case "full_lap":
+      return "Full lap";
+    case "selected_sample":
+      return "Selected sample";
+    case "run_level":
+      return "Run-level";
+    default:
+      return null;
+  }
+}
 
 export function CompareBasket() {
   const { basket, swap, clear, remove, getWarnings, getReadiness } = useCompareBasket();
@@ -57,7 +85,6 @@ export function CompareBasket() {
 
       {expanded && (
         <div className="compare-basket-body">
-          {/* Readiness badge */}
           {basket.baseline && basket.test && (
             <div
               className="compare-basket-readiness"
@@ -75,7 +102,6 @@ export function CompareBasket() {
             </div>
           )}
 
-          {/* Ready to Compare CTA */}
           {basket.baseline && basket.test && readiness.status === "ready" && (
             <button
               className="compare-basket-ready-btn"
@@ -97,29 +123,27 @@ export function CompareBasket() {
             </button>
           )}
 
-          {/* Caution/Not Valid explanation */}
           {basket.baseline && basket.test && readiness.status === "caution" && (
             <p style={{ fontSize: 11, color: READINESS_COLORS.caution, margin: "6px 0", lineHeight: 1.4 }}>
-              ⚠ Caution: {readiness.reason}
+              Caution: {readiness.reason}
             </p>
           )}
           {basket.baseline && basket.test && readiness.status === "not_valid" && (
             <p style={{ fontSize: 11, color: READINESS_COLORS.not_valid, margin: "6px 0", lineHeight: 1.4 }}>
-              ✗ Not valid: {readiness.reason}
+              Not valid: {readiness.reason}
             </p>
           )}
           {basket.baseline && basket.test && readiness.status === "reference_mode" && (
             <p style={{ fontSize: 11, color: READINESS_COLORS.reference_mode, margin: "6px 0", lineHeight: 1.4 }}>
-              ℹ Reference mode: {readiness.reason}
+              Reference mode: {readiness.reason}
             </p>
           )}
 
-          {/* Partial status */}
           {basket.baseline && !basket.test && (
-            <p style={{ fontSize: 11, color: "#8d9aaa", margin: "8px 0" }}>1/2 — Add test run</p>
+            <p style={{ fontSize: 11, color: "#8d9aaa", margin: "8px 0" }}>1/2 — Add test evidence</p>
           )}
           {!basket.baseline && basket.test && (
-            <p style={{ fontSize: 11, color: "#8d9aaa", margin: "8px 0" }}>1/2 — Add baseline run</p>
+            <p style={{ fontSize: 11, color: "#8d9aaa", margin: "8px 0" }}>1/2 — Add baseline evidence</p>
           )}
 
           <BasketSlotDisplay
@@ -145,14 +169,14 @@ export function CompareBasket() {
 
           {warnings.length > 0 && (
             <div className="compare-basket-warnings">
-              {warnings.map((w, i) => (
-                <p key={i} className="warning-line"><AlertTriangle size={10} /> {w}</p>
+              {warnings.map((warning, index) => (
+                <p key={index} className="warning-line"><AlertTriangle size={10} /> {warning}</p>
               ))}
             </div>
           )}
 
           {(!basket.baseline || !basket.test) && (
-            <p className="compare-basket-hint">Add laps from Laps or Overview to compare.</p>
+            <p className="compare-basket-hint">Add laps or windows from Laps to stage a comparison.</p>
           )}
         </div>
       )}
@@ -185,8 +209,20 @@ function BasketSlotDisplay({
         <div className="compare-basket-slot-item">
           <span className="compare-basket-item-label">{item.label}</span>
           <span className="compare-basket-item-meta">
-            {item.car && `${item.car} · `}{item.lap_time != null ? `${item.lap_time.toFixed(3)}s` : ""}
+            {describeBasketScope(item)}
+            {item.lap_time != null ? ` · ${item.lap_time.toFixed(3)}s` : ""}
+            {item.car ? ` · ${item.car}` : ""}
           </span>
+          {(item.trust_tier || describeBasketBasis(item)) && (
+            <span className="compare-basket-item-meta">
+              {item.trust_tier ? `Trust: ${item.trust_tier}` : ""}
+              {item.trust_tier && describeBasketBasis(item) ? " · " : ""}
+              {describeBasketBasis(item) ?? ""}
+            </span>
+          )}
+          {describeRepresentativeLap(item) && (
+            <span className="compare-basket-item-meta">{describeRepresentativeLap(item)}</span>
+          )}
           {item.engineering_value != null && (
             <span className="compare-basket-item-ev">EV: {item.engineering_value.toFixed(0)}</span>
           )}
@@ -198,7 +234,7 @@ function BasketSlotDisplay({
   );
 }
 
-/** Helper to create a BasketItem from lap data. */
+/** Helper to create a BasketItem from lap or window data. */
 export function makeBasketItem(
   runId: string,
   lapNumber: number | null,
@@ -213,11 +249,23 @@ export function makeBasketItem(
   date?: string | null,
   sessionName?: string | null,
   hasSetupSnapshot?: boolean,
+  metadata?: {
+    lapScope?: BasketItem["lap_scope"];
+    lapWindowStart?: number | null;
+    lapWindowEnd?: number | null;
+    representativeLap?: number | null;
+    trustTier?: string | null;
+    valueBasis?: BasketItem["value_basis"];
+  },
 ): BasketItem {
   return {
     id: `${runId}_${lapNumber ?? "run"}_${Date.now()}`,
     run_id: runId,
     lap_number: lapNumber,
+    lap_scope: metadata?.lapScope ?? null,
+    lap_window_start: metadata?.lapWindowStart ?? null,
+    lap_window_end: metadata?.lapWindowEnd ?? null,
+    representative_lap: metadata?.representativeLap ?? null,
     label,
     car,
     track,
@@ -229,5 +277,7 @@ export function makeBasketItem(
     date: date ?? null,
     session_name: sessionName ?? null,
     has_setup_snapshot: hasSetupSnapshot ?? false,
+    trust_tier: metadata?.trustTier ?? null,
+    value_basis: metadata?.valueBasis ?? null,
   };
 }

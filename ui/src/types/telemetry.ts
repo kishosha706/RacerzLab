@@ -238,7 +238,7 @@ export type PlatformEventItem = {
   severity: PlatformEventSeverity;
   confidence: PlatformEventConfidence;
   lap?: number | null;
-  sample_index: number;
+  sample_index?: number | null;
   lap_dist_ft?: number | null;
   lap_pct?: number | null;
   track_x_ft?: number | null;

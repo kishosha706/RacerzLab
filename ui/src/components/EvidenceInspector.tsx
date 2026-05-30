@@ -1,7 +1,8 @@
-import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCheck, Crosshair, Database, Info, Layers, MapPin, List, Wrench } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCheck, Crosshair, Database, GitCompare, Info, Layers, MapPin, List, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { ChannelCatalogItem, PlatformEventItem, RunOverview } from "../types/telemetry";
+import { buildWindowEvidence, buildZoneEvidence, hasWindowSelection } from "../utils/evidenceFocus";
 
 type EvidenceInspectorProps = {
   overview: RunOverview | null;
@@ -10,6 +11,10 @@ type EvidenceInspectorProps = {
   collapsed?: boolean;
   onToggle?: () => void;
 };
+
+function humanizeSelectionSource(source: ReturnType<typeof useTelemetrySelection>["selection"]["selectionSource"]): string {
+  return source.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
 
 export function EvidenceInspector({ overview, platformEvents, channels, collapsed, onToggle }: EvidenceInspectorProps) {
   const { selection } = useTelemetrySelection();
@@ -50,14 +55,22 @@ export function EvidenceInspector({ overview, platformEvents, channels, collapse
 }
 
 function RunInspector({ overview, channels, collapsed, onToggle }: { overview: RunOverview | null; channels: ChannelCatalogItem[]; collapsed?: boolean; onToggle?: () => void }) {
-  if (!overview) return <InspectorShell title="No Run Loaded" icon={<Database size={16} />} collapsed={collapsed} onToggle={onToggle} />;
+  const { selection, setWorkspace } = useTelemetrySelection();
 
-  const { raw, calc, proxy, missing } = useMemo(() => ({
+  const channelCounts = useMemo(() => ({
     raw: channels.filter((c) => c.is_raw && !c.missing_status).length,
     calc: channels.filter((c) => c.is_calculated && !c.missing_status).length,
     proxy: channels.filter((c) => c.is_proxy).length,
     missing: channels.filter((c) => c.missing_status).length,
   }), [channels]);
+
+  if (!overview) return <InspectorShell title="No Run Loaded" icon={<Database size={16} />} collapsed={collapsed} onToggle={onToggle} />;
+  const activeZoneLabel = selection.selectedZoneLabel
+    ?? (selection.selectedZoneStartPct != null && selection.selectedZoneEndPct != null
+      ? `Zone ${selection.selectedZoneStartPct.toFixed(1)}-${selection.selectedZoneEndPct.toFixed(1)}%`
+      : null);
+
+  const { raw, calc, proxy, missing } = channelCounts;
 
   return (
     <InspectorShell title="Run Overview" icon={<Info size={16} />} collapsed={collapsed} onToggle={onToggle}>
@@ -73,6 +86,40 @@ function RunInspector({ overview, channels, collapsed, onToggle }: { overview: R
         <dt>Useful Laps</dt>
         <dd>{overview.laps.filter((l) => l.is_useful).length} / {overview.laps.length}</dd>
       </dl>
+      {hasWindowSelection(selection) && (
+        <div className="inspector-source-stack">
+          <h4>Window Scope</h4>
+          <p className="inspector-source-item">
+            Selected window: Laps {selection.selectedLapWindowStart}-{selection.selectedLapWindowEnd}
+            {selection.selectedRepresentativeLap != null ? ` · Rep Lap ${selection.selectedRepresentativeLap}` : ""}
+          </p>
+          <p className="inspector-source-item muted">
+            Basis: selected window. Lap-level tabs still anchor to the representative lap.
+          </p>
+        </div>
+      )}
+      <div className="inspector-source-stack">
+        <h4>Current Focus</h4>
+        <p className="inspector-source-item">Source: {humanizeSelectionSource(selection.selectionSource)}</p>
+        {selection.selectedLapDistFt != null && (
+          <p className="inspector-source-item">
+            <MapPin size={12} /> {selection.selectedLapDistFt.toFixed(0)} ft
+            {selection.selectedLapPct != null ? ` · ${selection.selectedLapPct.toFixed(1)}% lap` : ""}
+          </p>
+        )}
+        {activeZoneLabel && (
+          <p className="inspector-source-item">
+            <Crosshair size={12} /> {activeZoneLabel}
+          </p>
+        )}
+        {(selection.selectedZoneStartPct != null && selection.selectedZoneEndPct != null) && (
+          <div className="diw-actions" style={{ marginTop: 6 }}>
+            <button className="trackmap-action-btn" onClick={() => setWorkspace("compare", selection.selectionSource)} title="Open Compare with the selected area">
+              <GitCompare size={10} /> Compare Zone
+            </button>
+          </div>
+        )}
+      </div>
       <div className="inspector-data-coverage">
         <h4>Data Coverage</h4>
         <div className="coverage-grid">
@@ -121,25 +168,59 @@ function CrewChiefSummary({ overview }: { overview: RunOverview }) {
 
 function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event: PlatformEventItem; showAnchorBadge?: boolean; collapsed?: boolean; onToggle?: () => void }) {
   const sevColour = event.severity === "critical" ? "#ef4444" : event.severity === "high" ? "#f97316" : event.severity === "watch" ? "#f59e0b" : "#38bdf8";
-  const { setWorkspace, selectLap, selectSample, selectEvent } = useTelemetrySelection();
+  const { selection, focusEvidence, setWorkspace } = useTelemetrySelection();
+  const eventSource = selection.selectedEventId === event.event_id ? selection.selectionSource : "priority_stack";
+  const eventWithinSelectedWindow = hasWindowSelection(selection)
+    && event.lap != null
+    && event.lap >= (selection.selectedLapWindowStart ?? Number.NEGATIVE_INFINITY)
+    && event.lap <= (selection.selectedLapWindowEnd ?? Number.POSITIVE_INFINITY);
+  const activeZoneLabel = selection.selectedZoneLabel
+    ?? (selection.selectedZoneStartPct != null && selection.selectedZoneEndPct != null
+      ? `Zone ${selection.selectedZoneStartPct.toFixed(1)}-${selection.selectedZoneEndPct.toFixed(1)}%`
+      : null);
 
-  const handleOpenPlatform = useCallback(() => {
-    if (event.lap != null) selectLap(event.lap);
-    selectEvent(event.event_id, "priority_stack");
-    if (typeof event.sample_index === "number" && Number.isFinite(event.sample_index) && event.sample_index >= 0) {
-      selectSample(event.sample_index, event.lap_dist_ft ?? undefined, event.lap_pct ?? undefined, "priority_stack");
-    }
-    setWorkspace("platform_trace", "priority_stack");
-  }, [event.event_id, event.lap, event.lap_dist_ft, event.lap_pct, event.sample_index, selectEvent, selectLap, selectSample, setWorkspace]);
+  const eventSampleIndex =
+    typeof event.sample_index === "number" &&
+    Number.isFinite(event.sample_index) &&
+    event.sample_index >= 0
+      ? event.sample_index
+      : null;
 
-  const handleOpenMap = useCallback(() => {
-    if (event.lap != null) selectLap(event.lap);
-    selectEvent(event.event_id, "priority_stack");
-    if (typeof event.sample_index === "number" && Number.isFinite(event.sample_index) && event.sample_index >= 0) {
-      selectSample(event.sample_index, event.lap_dist_ft ?? undefined, event.lap_pct ?? undefined, "priority_stack");
-    }
-    setWorkspace("map", "priority_stack");
-  }, [event.event_id, event.lap, event.lap_dist_ft, event.lap_pct, event.sample_index, selectEvent, selectLap, selectSample, setWorkspace]);
+  const eventHasLocation = eventSampleIndex != null || event.lap_dist_ft != null || event.lap_pct != null;
+
+  const focusEventEvidence = useCallback((workspace: "platform_trace" | "map") => {
+    focusEvidence({
+      runId: selection.selectedRunId,
+      lapNumber: event.lap,
+      ...buildWindowEvidence(selection, event.lap),
+      ...buildZoneEvidence(selection, { lapPct: event.lap_pct ?? null, preserveWithoutLapPct: true }),
+      eventId: event.event_id,
+      sampleIndex: eventSampleIndex,
+      lapDistFt: event.lap_dist_ft,
+      lapPct: event.lap_pct,
+      selectionSource: eventSource,
+      lockState: eventHasLocation ? "locked" : "none",
+      valueBasis: eventHasLocation ? "selected_sample" : "run_level",
+    }, workspace);
+  }, [event.event_id, event.lap, event.lap_dist_ft, event.lap_pct, eventSampleIndex, eventHasLocation, eventSource, focusEvidence, selection]);
+
+  const handleOpenPlatform = useCallback(() => focusEventEvidence("platform_trace"), [focusEventEvidence]);
+  const handleOpenMap = useCallback(() => focusEventEvidence("map"), [focusEventEvidence]);
+  const handleOpenSetup = useCallback(() => {
+    focusEvidence({
+      runId: selection.selectedRunId,
+      lapNumber: event.lap,
+      ...buildWindowEvidence(selection, event.lap),
+      ...buildZoneEvidence(selection, { lapPct: event.lap_pct ?? null, preserveWithoutLapPct: true }),
+      eventId: event.event_id,
+      sampleIndex: eventSampleIndex,
+      lapDistFt: event.lap_dist_ft,
+      lapPct: event.lap_pct,
+      selectionSource: eventSource,
+      lockState: eventHasLocation ? "locked" : "none",
+      valueBasis: eventHasLocation ? "selected_sample" : "run_level",
+    }, "setup_impact");
+  }, [event, eventSampleIndex, eventHasLocation, eventSource, focusEvidence, selection]);
 
   const handleStageTest = useCallback(() => {
     setWorkspace("notebook", "priority_stack");
@@ -155,6 +236,18 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
         <p className="inspector-source-item">
           <MapPin size={12} /> Lap {event.lap ?? "n/a"}{event.lap_dist_ft != null ? ` · ${event.lap_dist_ft.toFixed(0)} ft` : ""}
         </p>
+        {eventWithinSelectedWindow && (
+          <p className="inspector-source-item muted">
+            Parent window: Laps {selection.selectedLapWindowStart}-{selection.selectedLapWindowEnd}
+            {event.lap != null ? ` · Rep Lap ${event.lap}` : ""}
+          </p>
+        )}
+        {activeZoneLabel && (
+          <p className="inspector-source-item muted">
+            <Crosshair size={12} /> Area: {activeZoneLabel}
+          </p>
+        )}
+        <p className="inspector-source-item muted">Source: {humanizeSelectionSource(eventSource)}</p>
       </div>
 
       {/* Source Stack: What */}
@@ -205,9 +298,14 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
           <button className="trackmap-action-btn" onClick={handleOpenMap} title="Open Map">
             <MapPin size={10} /> Map
           </button>
-          <button className="trackmap-action-btn" onClick={() => setWorkspace("setup_impact")} title="Open Setup with event focus">
+          <button className="trackmap-action-btn" onClick={handleOpenSetup} title="Open Setup with event focus">
             <Wrench size={10} /> Setup
           </button>
+          {(selection.selectedZoneStartPct != null && selection.selectedZoneEndPct != null) && (
+            <button className="trackmap-action-btn" onClick={() => setWorkspace("compare", eventSource)} title="Open Compare with the selected area">
+              <GitCompare size={10} /> Compare
+            </button>
+          )}
           <button className="trackmap-action-btn" onClick={handleStageTest} title="Stage Test">
             <List size={10} /> Test
           </button>

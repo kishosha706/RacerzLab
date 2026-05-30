@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Gauge, Lightbulb, Shield, ShieldOff, Siren, ToggleLeft, Waves } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchPlatformEvents } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import {
@@ -7,7 +7,8 @@ import {
   SEVERITY_COLOURS, eventWorkspace, eventLabel,
 } from "../constants/ui";
 import type { PlatformEventItem } from "../types/telemetry";
-import type { Workspace } from "../store/types";
+import type { EvidenceContext, Workspace } from "../store/types";
+import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
 
 type PriorityRailProps = {
   runId: string;
@@ -18,7 +19,7 @@ type PriorityRailProps = {
 };
 
 export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platformEvents: externalEvents }: PriorityRailProps) {
-  const { selection, selectEvent, setWorkspace } = useTelemetrySelection();
+  const { selection, setWorkspace, focusEvidence } = useTelemetrySelection();
   const [events, setEvents] = useState<PlatformEventItem[]>([]);
   const [showInvalid, setShowInvalid] = useState(false);
 
@@ -56,11 +57,35 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
     return { valid: v, invalid: inv };
   }, [events]);
 
-  const handleClick = (event: PlatformEventItem) => {
-    selectEvent(event.event_id, "priority_stack");
-    const ws = eventWorkspace(event.event_type) as Parameters<typeof setWorkspace>[0];
-    setWorkspace(ws, "priority_stack");
-  };
+  const buildPriorityEvidence = useCallback((event: PlatformEventItem): Partial<EvidenceContext> => {
+    const sampleIndex =
+      typeof event.sample_index === "number" &&
+      Number.isInteger(event.sample_index) &&
+      event.sample_index >= 0
+        ? event.sample_index
+        : null;
+
+    const hasLocation = sampleIndex != null || event.lap_dist_ft != null || event.lap_pct != null;
+
+    return {
+      runId,
+      lapNumber: event.lap,
+      ...buildWindowEvidence(selection, event.lap),
+      ...buildZoneEvidence(selection, { lapPct: event.lap_pct ?? null, preserveWithoutLapPct: true }),
+      eventId: event.event_id,
+      sampleIndex,
+      lapDistFt: event.lap_dist_ft,
+      lapPct: event.lap_pct,
+      trustTier: selection.selectedTrustTier ?? null,
+      lockState: (hasLocation ? "locked" : "none") as "locked" | "none",
+      valueBasis: (hasLocation ? "selected_sample" : "run_level") as "selected_sample" | "run_level",
+      selectionSource: "priority_stack",
+    };
+  }, [runId, selection]);
+
+  const handleClick = useCallback((event: PlatformEventItem) => {
+    focusEvidence(buildPriorityEvidence(event), eventWorkspace(event.event_type) as Parameters<typeof setWorkspace>[0]);
+  }, [buildPriorityEvidence, focusEvidence, setWorkspace]);
 
   /** Map event type to a category icon for accessibility (color + icon). */
   const categoryIcon = (eventType: string, size = 12) => {
@@ -84,7 +109,7 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
         question: `What happened at ${top.title}?`,
         action: `Open ${eventLabel(top.event_type)}`,
         workspace: ws,
-        eventId: top.event_id,
+        event: top,
       };
     }
     const event = valid.find((e) => e.event_id === selection.selectedEventId);
@@ -119,9 +144,10 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
           <button
             className="nbc-action"
             onClick={() => {
-              setWorkspace(suggestion.workspace, "manual");
-              if ("eventId" in suggestion && suggestion.eventId) {
-                selectEvent(suggestion.eventId, "priority_stack");
+              if ("event" in suggestion && suggestion.event) {
+                handleClick(suggestion.event);
+              } else {
+                setWorkspace(suggestion.workspace, "manual");
               }
             }}
           >
@@ -139,6 +165,7 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
             key={event.event_id}
             className={`priority-card ${selection.selectedEventId === event.event_id ? "active" : ""}`}
             onClick={() => handleClick(event)}
+            aria-label={`${event.title}, ${event.severity}, ${event.lap_dist_ft != null ? `${Math.round(event.lap_dist_ft)} feet` : "unknown location"}`}
           >
             <span className="priority-rank">{idx + 1}</span>
             <span className="priority-colour" style={{ backgroundColor: SEVERITY_COLOURS[event.severity] ?? "#8d9aaa" }} />
@@ -175,6 +202,7 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
                   key={event.event_id}
                   className="priority-card invalid"
                   onClick={() => handleClick(event)}
+                  aria-label={`${event.title}, low confidence`}
                 >
                   <span className="priority-colour" style={{ backgroundColor: "#6b7280" }} />
                   <div className="priority-body">
