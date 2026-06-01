@@ -9,7 +9,7 @@ these principles.
 ## The Assertions
 
 ### 1. Fast does not mean trustworthy.
-A lap or window can be fast because of draft, traffic, or favorable conditions.
+A lap or window can be fast because of traffic, favorable conditions, or limited context.
 Performance and Trust are independent dimensions. High Performance with low Trust
 should produce a "Fast but not trustworthy" classification.
 
@@ -17,11 +17,10 @@ should produce a "Fast but not trustworthy" classification.
 A solo, clean, well-measured lap may simply be slow. High Trust with low
 Performance should produce a "Clean but not fast" classification.
 
-### 3. Draft can improve pace while destroying setup confidence.
-Draft-affected laps may show artificially high speed. The Evidence Confidence
-score must reflect this by capping Trust when draft is detected. The Performance
-score may remain high, but the Engineering Value (which weights Trust more
-heavily) should drop.
+### 3. Context can improve pace while reducing setup confidence.
+High pace with weak context quality should reduce Trust via confidence penalties.
+Performance may remain high, but Engineering Value (which weights Trust more
+heavily) should drop when context confidence is weak.
 
 ### 4. Invalid laps should never strengthen a setup recommendation.
 Wrecks, pit road, out laps, cooldown laps, and invalid speed events must cap
@@ -62,7 +61,7 @@ exposed. Users should always be able to understand *why* a score is what it is.
 ## Implementation Checklist
 
 - [x] Performance and Trust are independent dimensions
-- [x] Draft caps Trust but may leave Performance high
+- [x] Confidence penalties can reduce Trust while Performance remains high
 - [x] Wreck/spin caps both scores very low
 - [x] Pit road caps both scores very low
 - [x] <60% valid laps caps Trust

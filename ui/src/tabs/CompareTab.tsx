@@ -25,6 +25,30 @@ type SubView =
   | "verdict" | "what-changed" | "whole-car-index" | "target-zone"
   | "platform" | "four-corners" | "tires" | "shocks"
   | "driver" | "engine-pull" | "delta-traces" | "evidence" | "insights";
+type SubViewGroup = "verdict" | "platform" | "systems" | "detail";
+
+const SUBVIEW_GROUPS: Record<SubViewGroup, SubView[]> = {
+  verdict: ["verdict", "whole-car-index", "evidence"],
+  platform: ["what-changed", "target-zone", "platform", "four-corners"],
+  systems: ["tires", "shocks", "driver", "engine-pull"],
+  detail: ["delta-traces", "insights"],
+};
+
+const SUBVIEW_LABELS: Record<SubView, string> = {
+  verdict: "Verdict",
+  "what-changed": "What Changed",
+  "whole-car-index": "Index",
+  "target-zone": "Target Zone",
+  platform: "Platform",
+  "four-corners": "4 Corners",
+  tires: "Tires",
+  shocks: "Shocks",
+  driver: "Driver",
+  "engine-pull": "Engine",
+  "delta-traces": "Traces",
+  evidence: "Evidence",
+  insights: "Insights",
+};
 
 type PreviewData = {
   baseline_laps: number[]; test_laps: number[];
@@ -507,6 +531,7 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
   const compareScopeNote = basket.baseline?.lap_scope === "lap_window" || basket.test?.lap_scope === "lap_window"
     ? "Compare currently uses representative laps and run-level compare math; window metadata is preserved for context."
     : "Compare currently uses lap or run identity without window metadata.";
+  const [subviewGroup, setSubviewGroup] = useState<SubViewGroup>("verdict");
 
   // Resolve car/track/setup from the baseline run in the runs list
   const baselineRun = runs.find((r) => r.run_id === baselineRunId);
@@ -563,6 +588,12 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
 
   const otherRuns = runs.filter((r) => r.run_id !== baselineRunId);
   const isSameRun = testRunId === baselineRunId && testRunId !== "";
+  const compareDisabledReason = !testRunId
+    ? "Select a test run to enable Compare."
+    : isSameRun
+      ? "Baseline and test are the same run. Choose a different test run for setup decisions."
+      : null;
+  const showBasketSyncHint = !isBasketDriven && basketBaselineRunId != null && basketTestRunId != null;
   const selectedZoneReady = selection.selectedRunId === baselineRunId
     && selection.selectedZoneStartPct != null
     && selection.selectedZoneEndPct != null;
@@ -743,6 +774,13 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
     }
   }, [result, subview, insights, insightsLoading]);
 
+  useEffect(() => {
+    if (SUBVIEW_GROUPS[subviewGroup].includes(subview)) return;
+    const nextGroup = (Object.entries(SUBVIEW_GROUPS) as Array<[SubViewGroup, SubView[]]>)
+      .find(([, views]) => views.includes(subview))?.[0] ?? "verdict";
+    setSubviewGroup(nextGroup);
+  }, [subview, subviewGroup]);
+
   return (
     <section className="compare-workspace">
       <header className="compare-header">
@@ -773,9 +811,30 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
             <input type="number" value={endPct} onChange={e => { setEndPct(Number(e.target.value)); setActiveZoneLabel(null); setResult(null); }} min={0} max={100} />%
           </div>
         </div>
-        <button className="primary-button" onClick={handleCompare} disabled={!testRunId || loading || isSameRun}>
+        <button
+          className="primary-button"
+          onClick={handleCompare}
+          disabled={!testRunId || loading || isSameRun}
+          title={compareDisabledReason ?? "Run baseline vs test comparison"}
+        >
           {loading ? "Comparing..." : isSameRun ? "Same run selected" : "Compare"}
         </button>
+      </div>
+
+      <div className="compare-readiness-strip" aria-live="polite">
+        {compareDisabledReason ? (
+          <p className="compare-readiness-item warn">
+            <AlertTriangle size={12} />
+            {compareDisabledReason}
+          </p>
+        ) : (
+          <p className="compare-readiness-item ready">Compare is ready. Verdict opens first.</p>
+        )}
+        {showBasketSyncHint && (
+          <p className="compare-readiness-item info">
+            Compare Basket has a staged pair. Use "Sync from Basket" to align selectors instantly.
+          </p>
+        )}
       </div>
 
       {(activeZoneLabel || selectedZoneRangeLabel) && (
@@ -869,15 +928,30 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
       {/* workbook */}
       {result && (
         <div className="compare-workbook">
-          <nav className="compare-subnav">
-            {(["verdict", "what-changed", "whole-car-index", "target-zone", "platform", "four-corners",
-               "tires", "shocks", "driver", "engine-pull", "delta-traces", "evidence", "insights"] as SubView[]).map(sv => (
-              <button key={sv} className={`subnav-item ${subview === sv ? "active" : ""}`} onClick={() => setSubview(sv)}>
-                {sv === "verdict" ? "Verdict" : sv === "what-changed" ? "What Changed" : sv === "whole-car-index" ? "Index"
-                 : sv === "target-zone" ? "Target Zone" : sv === "platform" ? "Platform" : sv === "four-corners" ? "4 Corners"
-                 : sv === "tires" ? "Tires" : sv === "shocks" ? "Shocks" : sv === "driver" ? "Driver"
-                 : sv === "engine-pull" ? "Engine" : sv === "delta-traces" ? "Traces" : sv === "evidence" ? "Evidence"
-                 : "Insights"}
+          <p className="section-note compare-group-explainer" style={{ marginTop: 0, marginBottom: 8 }}>
+            Grouped navigation: start with Verdict, then drill into Platform, Systems, and Detail.
+          </p>
+          <nav className="compare-group-nav" aria-label="Compare subview groups">
+            {(["verdict", "platform", "systems", "detail"] as SubViewGroup[]).map((group) => (
+              <button
+                key={group}
+                className={`subnav-item ${subviewGroup === group ? "active" : ""}`}
+                aria-current={subviewGroup === group ? "page" : undefined}
+                onClick={() => {
+                  setSubviewGroup(group);
+                  if (!SUBVIEW_GROUPS[group].includes(subview)) {
+                    setSubview(SUBVIEW_GROUPS[group][0]);
+                  }
+                }}
+              >
+                {group === "verdict" ? "Verdict" : group === "platform" ? "Platform" : group === "systems" ? "Systems" : "Detail"}
+              </button>
+            ))}
+          </nav>
+          <nav className="compare-subnav" aria-label="Compare subviews">
+            {SUBVIEW_GROUPS[subviewGroup].map((sv) => (
+              <button key={sv} className={`subnav-item ${subview === sv ? "active" : ""}`} onClick={() => setSubview(sv)} aria-current={subview === sv ? "page" : undefined}>
+                {SUBVIEW_LABELS[sv]}
               </button>
             ))}
           </nav>

@@ -12,8 +12,8 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **Track Map matching** — automatic track name normalization and scoring-based map-to-run matching with optional manual override
 - **Session Manager** — create/list/get/update/delete/archive RaceLab sessions, add/remove runs, startup screen with New/Open/Delete
 - **Laps Workspace** — lap table with stint map visualization, Performance/Trust/Engineering Value scoring, subviews (Current Run, Windows, All Sessions, Baselines, Compare Basket)
-- **Laps Stint Map** — compact colored-block visualization per lap with mode toggle (Engineering Value, Lap Time Delta, Draft/Validity, Falloff), selected lap highlight, best window outline
-- **Pace Quality Scoring** — three-dimension system: Performance (speed/consistency/falloff/stress), Trust (validity/draft/completeness/window/context), Engineering Value (combined). Percentage-based thresholds, caps for wreck/pit/<60%/draft, deductions for missing data.
+- **Laps Stint Map** — compact colored-block visualization per lap with mode toggle (Engineering Value, Lap Time Delta, Validity, Falloff), selected lap highlight, best window outline
+- **Pace Quality Scoring** — three-dimension system: Performance (speed/consistency/falloff/stress), Trust (validity/completeness/window/context), Engineering Value (combined). Percentage-based thresholds, caps for wreck/pit/<60% valid laps, deductions for missing data.
 - **Compare Basket** — persistent bottom-right drawer for collecting laps/runs to compare. Baseline/test slots with readiness state (ready/caution/not_valid/reference_mode), cross-session support, validation warnings, Swap/Clear/Open Compare. Persists to localStorage across app restarts.
 - **All Sessions / Baselines** — browse all imported runs with Add as Baseline/Test actions. Recommended baseline candidates (fastest clean lap, most recent run, best 10-lap EV window).
 - **Platform/Aero Workbench** — MoTeC-style stacked chart workbench (ECharts) with Platform/Rake, Speed/RPM, Drag/Scrub, Tires, Shocks, Grade/Pull subviews. Event markArea annotation bands.
@@ -33,7 +33,7 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **112+ calculated channels** — ride heights, rake, dynamic pressure, tire pressure gain, temp/wear spread, slip ratio, shock velocity/activity/RMS, damper energy, motion g-conversions, platform pitch/roll estimates, kinematic slip angles, dynamic grade, aero load index, drag/scrub suspicion, platform compression, stability scores, rear scrape detection, platform balance classification
 - **Signal smoothing helpers** — Savitzky-Golay 5-point and centered SMA smoothing (opt-in, pure Python, zero-phase)
 - **Vehicle Dynamics Engine** — 6 physics modules: aero coefficients, tire dynamics (slip angles, understeer gradient), vehicle dynamics (weight transfer, brake energy), geometry (pitch/roll with motion ratios), estimate confidence, physics inputs
-- **Vectorized Analysis Pipeline** — parallel Polars path (opt-in via `RACELAB_ANALYSIS_ENGINE` env var) with 26× speedup at 10k rows, 111 core channels, full parity with row path across 38 synthetic tests + real Talladega validation. Row engine remains production default.
+- **Vectorized Analysis Pipeline** — default Polars path with parity coverage against row fallback, frame-native overview consumers, and no full-row materialization in the normal import path.
 - **Engine Comparison Script** — `scripts/compare_analysis_engines.py` for validating vector vs row path on real data
 - **Extrema-preserving downsampling** — CFS minimums and event peaks never lost in chart views
 - **492 tests** — unit, integration, parity, benchmarks; fast suite <4s
@@ -47,6 +47,8 @@ Aerodynamic load, downforce, drag, and diffuser values are **proxy estimates onl
 - Are relative and intended for comparison direction, not absolute values
 
 Tire slip ratio is a proxy — no true slip measurement exists in `.ibt`.
+
+Draft detection/classification is removed from active runtime and product decisions.
 
 ---
 
@@ -124,7 +126,7 @@ See [TESTING.md](TESTING.md) for full details.
 
 | Flag | Default | Description |
 |---|---|---|
-| `RACELAB_ANALYSIS_ENGINE` | `row` | Set to `vectorized` for Polars-accelerated channel calculations (26× faster at 10k rows). Opt-in only — default switch blocked pending road course validation. |
+| `RACELAB_ANALYSIS_ENGINE` | `vectorized` | Use `row` only for forced/debug fallback and parity checks. Normal runtime remains vectorized + frame-native. |
 
 ---
 
@@ -192,7 +194,9 @@ GET  /api/sessions/runs/{run_id}/laps (standalone lap list)
 
 ## For AI Workers
 
-See `AGENTS.md` for product rules (evidence first, no junk-lap conclusions, proxy honesty, one change at a time, draft vs solo separation).
+See `AGENTS.md` for product rules (evidence first, no junk-lap conclusions, proxy honesty, one change at a time, telemetry-truth first).
 
-See `racelab_engine/analysis/DESIGN_NOTES_vectorized_future.md` for the vectorized engine adoption plan and validation status.
+Vectorized analysis is the default runtime path; row mode is retained as fallback/debug parity only.
+
+Last verified: 2026-06-01 (docs alignment pass; large-fixture timing numbers should be re-verified via profiler runs).
 

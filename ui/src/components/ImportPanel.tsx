@@ -20,6 +20,7 @@ import { isTauri } from "../utils/env";
 import { pickTelemetryFile, pickTrackMapFile, pickTelemetryFolder } from "../utils/tauriImport";
 import { importDebug } from "../utils/importDebug";
 import type { TrackMapResolution } from "../types/telemetry";
+import type { TelemetryFileEntry } from "../api/client";
 
 const RECENT_TELEMETRY_KEY = "racelab_recent_telemetry_files";
 const RECENT_MAPS_KEY = "racelab_recent_track_maps";
@@ -30,6 +31,21 @@ interface RecentEntry {
   path: string;
   name: string;
   importedAt: string;
+}
+
+function formatBytes(sizeBytes: number): string {
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  const kb = sizeBytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(1)} MB`;
+  return `${(mb / 1024).toFixed(2)} GB`;
+}
+
+function formatStamp(isoString: string): string {
+  const stamp = new Date(isoString);
+  if (Number.isNaN(stamp.getTime())) return isoString;
+  return stamp.toLocaleString();
 }
 
 type ImportPanelProps = {
@@ -85,6 +101,7 @@ export function ImportPanel({
   const [nativeStage, setNativeStage] = useState<string | null>(null);
   const [nativeError, setNativeError] = useState<string | null>(null);
   const [nativeStatus, setNativeStatus] = useState<string | null>(null);
+  const [latestFolderCandidate, setLatestFolderCandidate] = useState<TelemetryFileEntry | null>(null);
 
   const busy = importing || nativeBusy || folderImporting;
   const displayedStage = nativeStage ?? importStage;
@@ -195,13 +212,24 @@ export function ImportPanel({
       const result = await scanTelemetryFolder(telemetryFolder);
       importDebug.log("folder_scan_finished", { count: result.files.length });
       if (result.files.length === 0) {
+        setLatestFolderCandidate(null);
         setNativeStatus("No .ibt files found in the selected folder.");
         setFolderImporting(false);
         setNativeStage(null);
         return;
       }
       const newest = result.files[0];
+      setLatestFolderCandidate(newest);
       importDebug.log("folder_scan_selected", { fileName: newest.name });
+      const confirmed = window.confirm(
+        `Import latest telemetry file?\n\n${newest.name}\n${formatBytes(newest.size_bytes)}\n${formatStamp(newest.modified_at)}\n\n${newest.path}`,
+      );
+      if (!confirmed) {
+        setNativeStatus("Import cancelled.");
+        setFolderImporting(false);
+        setNativeStage(null);
+        return;
+      }
       setNativeStage("Importing telemetry...");
       importDebug.start("import_request_started", { source: "folder_latest", fileName: newest.name });
       const resp = await importIbtFileFromPath(newest.path);
@@ -247,7 +275,7 @@ export function ImportPanel({
       {/* ── Primary: Choose Telemetry File ── */}
       <div className="import-primary-row">
         {desktop ? (
-          <button className="secondary-button" onClick={handleNativeTelemetryPick} disabled={busy} style={{ fontWeight: 600 }}>
+          <button className="secondary-button" onClick={handleNativeTelemetryPick} disabled={busy} style={{ fontWeight: 600 }} aria-label="Choose telemetry file">
             <HardDrive size={14} /> Choose Telemetry File
           </button>
         ) : (
@@ -273,6 +301,8 @@ export function ImportPanel({
           className="import-advanced-toggle"
           onClick={() => setAdvancedOpen(!advancedOpen)}
           title="Advanced import tools"
+          aria-label={advancedOpen ? "Hide advanced import tools" : "Show advanced import tools"}
+          aria-expanded={advancedOpen}
         >
           {advancedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           <span>Advanced</span>
@@ -280,14 +310,14 @@ export function ImportPanel({
       </div>
 
       {/* ── Progress / status ── */}
-      {displayedStage && <p className="import-stage">{displayedStage}</p>}
+      {displayedStage && <p className="import-stage import-alert import-alert-stage" aria-live="polite">{displayedStage}</p>}
       {busy && !displayedStage && (
-        <p className="import-stage" style={{ color: "#8d9aaa" }}>
+        <p className="import-stage import-alert import-alert-stage">
           Importing telemetry… this can take a minute for large .ibt files.
         </p>
       )}
-      {displayedError && <p className="error-text">{displayedError}</p>}
-      {displayedStatus && <p className="status-text">{displayedStatus}</p>}
+      {displayedError && <p className="error-text import-alert import-alert-error" aria-live="polite">{displayedError}</p>}
+      {displayedStatus && <p className="status-text import-alert import-alert-status" aria-live="polite">{displayedStatus}</p>}
       {displayedStatus && displayedStatus.includes("cached") && (
         <div className="import-cache-info" style={{ fontSize: 10, color: "#8d9aaa", marginTop: 2 }}>
           <span>📦 Cached locally — parquet format</span>
@@ -325,10 +355,10 @@ export function ImportPanel({
           {desktop && (
             <>
               <div className="import-desktop-actions">
-                <button className="secondary-button" onClick={handleNativeFolderPick} disabled={busy}>
+                <button className="secondary-button" onClick={handleNativeFolderPick} disabled={busy} aria-label="Pick telemetry folder to scan">
                   <Folder size={14} /> Scan Telemetry Folder
                 </button>
-                <button className="secondary-button" onClick={handleNativeMapPick} disabled={busy} style={{ opacity: 0.7 }}>
+                <button className="secondary-button" onClick={handleNativeMapPick} disabled={busy} style={{ opacity: 0.7 }} aria-label="Pick track map file">
                   <MapPin size={14} /> Manage Track Maps
                 </button>
               </div>
@@ -344,8 +374,15 @@ export function ImportPanel({
               <span className="import-folder-path">
                 <Folder size={12} /> {telemetryFolder}
               </span>
-              <button className="trackmap-action-btn" onClick={handleScanFolder} disabled={busy}>
-                {folderImporting ? "Scanning…" : "Import Latest .ibt"}
+              {latestFolderCandidate && (
+                <div className="import-latest-candidate" aria-live="polite">
+                  <span className="import-latest-candidate-label">Latest candidate</span>
+                  <strong>{latestFolderCandidate.name}</strong>
+                  <span>{formatBytes(latestFolderCandidate.size_bytes)} · {formatStamp(latestFolderCandidate.modified_at)}</span>
+                </div>
+              )}
+              <button className="trackmap-action-btn" onClick={handleScanFolder} disabled={busy} aria-label="Import latest telemetry file from selected folder">
+                {folderImporting ? "Scanning…" : "Review + Import Latest .ibt"}
               </button>
             </div>
           )}
@@ -388,11 +425,15 @@ export function ImportPanel({
 /** Dev-only import debug panel. Shows last 50 import steps. */
 function ImportDebugPanel() {
   const log = importDebug.getLog();
+  const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     const text = log.map(e =>
       `[${e.timestamp}] ${e.status.toUpperCase()} ${e.step}${e.durationMs ? ` (${e.durationMs}ms)` : ""}${e.data ? ` ${JSON.stringify(e.data)}` : ""}`
     ).join("\n");
-    navigator.clipboard.writeText(text).catch(() => {});
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {});
   };
   return (
     <div style={{ marginTop: 8, fontSize: 10, background: "#0a0d14", border: "1px solid #1f2937", borderRadius: 6, padding: 8, maxHeight: 300, overflow: "auto" }}>
@@ -401,14 +442,15 @@ function ImportDebugPanel() {
           Import Debug Log ({log.length} entries)
         </span>
         <div style={{ display: "flex", gap: 4 }}>
-          <button className="trackmap-action-btn" onClick={handleCopy} title="Copy debug log">
+          <button className="trackmap-action-btn" onClick={handleCopy} title="Copy debug log" aria-label="Copy debug log">
             <Copy size={10} /> Copy
           </button>
-          <button className="trackmap-action-btn" onClick={() => importDebug.clear()} title="Clear debug log">
+          <button className="trackmap-action-btn" onClick={() => importDebug.clear()} title="Clear debug log" aria-label="Clear debug log">
             <X size={10} /> Clear
           </button>
         </div>
       </div>
+      {copied && <p className="status-text" style={{ marginBottom: 6 }}>Copied</p>}
       {log.length === 0 && <p className="muted" style={{ fontSize: 10 }}>No import debug entries yet.</p>}
       {log.map((e, i) => (
         <div key={i} style={{
@@ -427,3 +469,4 @@ function ImportDebugPanel() {
     </div>
   );
 }
+

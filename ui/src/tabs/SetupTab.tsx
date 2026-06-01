@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Crosshair, Gauge, Layers, MapPin, Sliders, Wrench } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Crosshair, Gauge, Layers, MapPin, Sliders, Wrench } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useCompareBasket } from "../store/CompareBasketContext";
@@ -202,6 +202,7 @@ export function SetupTab({ overview }: SetupTabProps) {
               <span className={`gr-ev-tag ${isInferred ? "inferred" : "explicit"}`}>
                 {isInferred ? "Inferred" : "Explicit"}
               </span>
+              {focusZone !== "none" && <span className="gr-ev-tag explicit">{focusZone === "all" ? "Front/Rear" : focusZone.charAt(0).toUpperCase() + focusZone.slice(1)}</span>}
               <button className="gr-icon-btn" onClick={handlePlatform} aria-label="Open platform trace"><Layers size={12} /></button>
               <button className="gr-icon-btn" onClick={handleMap} aria-label="Open track map"><MapPin size={12} /></button>
             </div>
@@ -224,9 +225,10 @@ export function SetupTab({ overview }: SetupTabProps) {
       </div>
 
       {showDiffUnavailable && (
-        <p className="gr-diff-empty" role="alert">
-          Diff unavailable. Current setup values are still shown; no placeholder comparison is generated.
-        </p>
+        <div className="map-warning-banner" role="alert" style={{ marginBottom: 10 }}>
+          <AlertTriangle size={14} />
+          <span>Diff unavailable — no real baseline snapshot selected. Current setup values are shown.</span>
+        </div>
       )}
 
       {/* ── Top Row ── */}

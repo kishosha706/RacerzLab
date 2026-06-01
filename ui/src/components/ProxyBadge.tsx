@@ -1,19 +1,19 @@
-/** Small badge indicating a value is a proxy/estimate. */
 type ProxyBadgeProps = {
-  label?: string;
-  /** If true, shows "ESTIMATE" instead of "PROXY" */
-  isEstimate?: boolean;
-  /** Optional tooltip/disclaimer text */
-  disclaimer?: string;
+  kind: "proxy" | "estimate";
+  title?: string;
 };
 
-export function ProxyBadge({ label, isEstimate, disclaimer }: ProxyBadgeProps) {
-  const text = label ?? (isEstimate ? "ESTIMATE" : "PROXY");
+export function ProxyBadge({ kind, title }: ProxyBadgeProps) {
+  const isEstimate = kind === "estimate";
+  const text = isEstimate ? "EST" : "PROXY";
+  const ariaLabel = isEstimate ? "Estimate value" : "Proxy value";
+  const defaultTitle = isEstimate
+    ? "Estimate value - derived, not a direct measurement"
+    : "Proxy value - inferred from related channels";
   const cls = isEstimate ? "proxy-badge estimate-badge" : "proxy-badge";
   return (
-    <span className={cls} title={disclaimer ?? (isEstimate ? "Derived value — not a direct measurement" : "Proxy value — inferred from related channels")}>
+    <span className={cls} aria-label={ariaLabel} title={title ?? defaultTitle}>
       {text}
     </span>
   );
 }
-

@@ -1,5 +1,5 @@
 import { Clock, Gauge, GitCompare, Layers, List, MapPin, Wrench } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
   fetchChannelSummary,
@@ -27,13 +27,7 @@ import { CompareBasket } from "./components/CompareBasket";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 
 import { TRACE_WORKBENCH_CHANNELS } from "./constants/workbenchChannels";
-import { CompareTab } from "./tabs/CompareTab";
-import { LapsTab } from "./tabs/LapsTab";
-import { NotebookTab } from "./tabs/NotebookTab";
 import { OverviewTab } from "./tabs/OverviewTab";
-import { PlatformTab } from "./tabs/PlatformTab";
-import { SetupTab } from "./tabs/SetupTab";
-import { TrackMapTab } from "./tabs/TrackMapTab";
 import { importDebug } from "./utils/importDebug";
 import type {
   ChannelCatalogItem,
@@ -43,6 +37,31 @@ import type {
   TrackMapResolution,
   TraceResponse,
 } from "./types/telemetry";
+
+const CompareTab = lazy(async () => {
+  const module = await import("./tabs/CompareTab");
+  return { default: module.CompareTab };
+});
+const LapsTab = lazy(async () => {
+  const module = await import("./tabs/LapsTab");
+  return { default: module.LapsTab };
+});
+const NotebookTab = lazy(async () => {
+  const module = await import("./tabs/NotebookTab");
+  return { default: module.NotebookTab };
+});
+const PlatformTab = lazy(async () => {
+  const module = await import("./tabs/PlatformTab");
+  return { default: module.PlatformTab };
+});
+const SetupTab = lazy(async () => {
+  const module = await import("./tabs/SetupTab");
+  return { default: module.SetupTab };
+});
+const TrackMapTab = lazy(async () => {
+  const module = await import("./tabs/TrackMapTab");
+  return { default: module.TrackMapTab };
+});
 
 // ── cockpit shell ─────────────────────────────────────────────
 
@@ -246,54 +265,26 @@ function CockpitShell() {
   }, [overview, selectedTraceLap]);
 
   useEffect(() => {
-    if (!overview) return;
+    if (!overview || !isTraceWorkspace) return;
     const targetLap = selectedTraceLap ?? overview.best_useful_lap?.lap_number ?? null;
     if (targetLap == null) return;
     if (trace?.run_id === overview.run_id && trace?.lap === targetLap) return;
 
     let cancelled = false;
-    const loadTrace = () => {
-      fetchTrace(overview.run_id, {
-        lap: targetLap,
-        x: "lap_dist_ft",
-        channels: TRACE_WORKBENCH_CHANNELS,
-        downsample: "auto",
-        preserveExtrema: true,
+    fetchTrace(overview.run_id, {
+      lap: targetLap,
+      x: "lap_dist_ft",
+      channels: TRACE_WORKBENCH_CHANNELS,
+      downsample: "auto",
+      preserveExtrema: true,
+    })
+      .then((nextTrace) => {
+        if (!cancelled) setTrace(nextTrace);
       })
-        .then((nextTrace) => {
-          if (!cancelled) setTrace(nextTrace);
-        })
-        .catch(() => {});
-    };
-
-    if (isTraceWorkspace) {
-      loadTrace();
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const schedulePrefetch = () => loadTrace();
-    let timeoutId: number | null = null;
-    let idleId: number | null = null;
-    const requestIdle = (window as unknown as {
-      requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number;
-    }).requestIdleCallback;
-    const cancelIdle = (window as unknown as {
-      cancelIdleCallback?: (id: number) => void;
-    }).cancelIdleCallback;
-    if (typeof requestIdle === "function") {
-      idleId = requestIdle(schedulePrefetch, { timeout: 1800 });
-    } else {
-      timeoutId = window.setTimeout(schedulePrefetch, 450);
-    }
+      .catch(() => {});
 
     return () => {
       cancelled = true;
-      if (idleId != null && typeof cancelIdle === "function") {
-        cancelIdle(idleId);
-      }
-      if (timeoutId != null) window.clearTimeout(timeoutId);
     };
   }, [overview, selectedTraceLap, trace?.lap, trace?.run_id, isTraceWorkspace]);
 
@@ -350,7 +341,7 @@ function CockpitShell() {
         targetZoneEndPct={selection.selectedZoneEndPct ?? undefined} />;
     }
     return <OverviewTab overview={overview} />;
-  }, [overview, selection.selectedWorkspace, selectedTraceLap, trace, channels, platformEvents, runs]);
+  }, [overview, selection.selectedWorkspace, selectedTraceLap, trace, platformEvents, runs]);
 
   // ── no session yet → show startup screen ───────────────────
   if (!sessionId) {
@@ -441,7 +432,15 @@ function CockpitShell() {
           {error && <p className="error-text">{error}</p>}
           <div className="cockpit-workspace-body">
             <div className="cockpit-workspace-main">
-              {workspaceContent}
+              <Suspense fallback={(
+                <div className="workspace-placeholder">
+                  <h3>Loading workspace...</h3>
+                  <p>Preparing view data and UI.</p>
+                </div>
+              )}
+              >
+                {workspaceContent}
+              </Suspense>
             </div>
           </div>
         </main>

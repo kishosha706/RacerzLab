@@ -67,16 +67,18 @@ export function CompareBasket() {
           className="compare-basket-toggle"
           onClick={() => setExpanded(!expanded)}
           title={expanded ? "Collapse" : "Expand Compare Basket"}
+          aria-label={expanded ? "Collapse Compare Basket" : "Expand Compare Basket"}
+          aria-expanded={expanded}
         >
           <BarChart3 size={14} />
           <span>Compare {basket.baseline ? "•" : ""}{basket.test ? "•" : ""}</span>
         </button>
         {hasItems && (
           <div className="compare-basket-actions">
-            <button className="compare-basket-action-btn" onClick={handleOpenCompare} title="Open Compare">
+            <button className="compare-basket-action-btn" onClick={handleOpenCompare} title="Open Compare" aria-label="Open Compare from basket">
               <BarChart3 size={12} />
             </button>
-            <button className="compare-basket-action-btn" onClick={clear} title="Clear All">
+            <button className="compare-basket-action-btn" onClick={clear} title="Clear All" aria-label="Clear Compare Basket">
               <Trash2 size={12} />
             </button>
           </div>
@@ -196,11 +198,11 @@ function BasketSlotDisplay({
   onRemove: () => void;
 }) {
   return (
-    <div className="compare-basket-slot">
+    <div className="compare-basket-slot" tabIndex={0}>
       <div className="compare-basket-slot-header">
         <span className="compare-basket-slot-label">{label}</span>
         {item && (
-          <button className="compare-basket-action-btn" onClick={onRemove} title={`Remove ${label}`}>
+          <button className="compare-basket-action-btn" onClick={onRemove} title={`Remove ${label}`} aria-label={`Remove ${label} slot`}>
             <X size={10} />
           </button>
         )}

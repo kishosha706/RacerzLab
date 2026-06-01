@@ -31,8 +31,8 @@ export function EngineeringMetricCard({
       style={color ? { borderLeftColor: isMissing ? "#475569" : color } : undefined}>
       <div className="metric-card-header">
         <span className="metric-card-title">{title}</span>
-        {showProxy && !isMissing && <ProxyBadge disclaimer={disclaimer} />}
-        {showEstimate && !isMissing && <ProxyBadge isEstimate disclaimer={disclaimer} />}
+        {showProxy && !isMissing && <ProxyBadge kind="proxy" title={disclaimer} />}
+        {showEstimate && !isMissing && <ProxyBadge kind="estimate" title={disclaimer} />}
       </div>
       <div className="metric-card-value" style={color && !isMissing ? { color } : undefined}>
         <ValueDisplay value={value} missingReason={missingReason} fallback={displayUnavailable(missingReason)} />

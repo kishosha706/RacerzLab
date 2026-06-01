@@ -31,21 +31,21 @@ superspeedway configuration). We need representative .ibt data from at least
 Each profile would adjust the scoring weights and thresholds for its track type:
 
 ### `superspeedway`
-- **Draft penalty severity:** Higher — draft is more common and more impactful
+- **Context-confidence penalty severity:** Higher — pack effects are more common and more impactful
 - **Consistency threshold:** Tighter — pack racing produces naturally consistent times
 - **Falloff expected range:** Lower — less tire stress at high speed
 - **Tire/shock weighting:** Lower — less cornering load
 - **Platform weighting:** Lower — less ride-height sensitivity at high speed
 
 ### `intermediate_oval`
-- **Draft penalty severity:** Moderate — some draft but not pack racing
+- **Context-confidence penalty severity:** Moderate — mixed traffic/pack influence
 - **Consistency threshold:** Moderate
 - **Falloff expected range:** Moderate — tire falloff matters
 - **Tire/shock weighting:** Moderate
 - **Platform weighting:** Moderate
 
 ### `short_track`
-- **Draft penalty severity:** Low — minimal draft effect
+- **Context-confidence penalty severity:** Low — minimal pack effect
 - **Consistency threshold:** Wider — more lap-to-lap variation from traffic
 - **Falloff expected range:** Higher — tire degradation is significant
 - **Tire/shock weighting:** Higher — cornering load dominates
@@ -72,9 +72,12 @@ Future: Superspeedway falloff should be nearly zero; short track falloff is expe
 Currently: Fixed weights regardless of window size.
 Future: Longer windows could increase tire/shock weight (degradation matters more).
 
-### Draft penalty severity by track type
+### Context-confidence penalty severity by track type
 Currently: Fixed deduction amounts.
-Future: Superspeedway could have higher draft deductions; short track lower.
+Future: Superspeedway could have higher context penalties; short track lower.
+
+> Legacy note: earlier drafts of this document referenced explicit draft-detection penalties.
+> Draft detection is removed from runtime/product and is not an active feature.
 
 ### Run-shape classification
 Future: Classify runs as "sprint", "feature", "qualifying simulation" based on

@@ -9,6 +9,7 @@ import { CornerBarChart } from "../components/CornerBarChart";
 import { ShockHistogram } from "../components/ShockHistogram";
 import { WorkbenchSubnav } from "../components/WorkbenchSubnav";
 import type { WorkbenchView } from "../components/WorkbenchSubnav";
+import { ProxyBadge } from "../components/ProxyBadge";
 import { fetchPlatformEvents } from "../api/client";
 import { isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
 import { getTraceValues, formatChannelValue, formatForceProxyN, safeStringValue } from "../utils/channelFormat";
@@ -464,12 +465,18 @@ export function TraceSampleReadout({
               const display = numVal != null && !Number.isNaN(numVal)
                 ? formatTooltipValue(ch.name, numVal) + (rowUnit(ch.name) ? ` ${rowUnit(ch.name)}` : "")
                 : "—";
-              const tag = isProxyChannel(ch.name) ? (isEstimateChannel(ch.name) ? " (est)" : " (proxy)") : "";
               return (
                 <div key={ch.name} className="readout-channel">
                   <span className="readout-bullet" style={{ color: ch.color }}>●</span>
                   <span className="readout-channel-label">{ch.label}</span>
-                  <span className="readout-channel-value">{display}{tag}</span>
+                  <span className="readout-channel-value">
+                    {display}
+                    {isProxyChannel(ch.name) && (
+                      <span style={{ marginLeft: 6 }}>
+                        <ProxyBadge kind={isEstimateChannel(ch.name) ? "estimate" : "proxy"} />
+                      </span>
+                    )}
+                  </span>
                 </div>
               );
             })}
@@ -1647,7 +1654,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
       <div className="aero-scatter-panel">
         <div className="aero-scatter-header">
           <span><BarChart3 size={13} /> Speed² vs aero/load proxy</span>
-          <span className="proxy-pill">PROXY</span>
+          <ProxyBadge kind="proxy" />
         </div>
         {scatterPoints.length === 0 ? (
           <p className="muted" style={{ margin: 0, fontSize: 11 }}>Unavailable: speed and aero/load proxy channels are required.</p>
@@ -1995,7 +2002,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
                   <AlertTriangle size={14} /> {selectedPlatformEvent.severity}
                 </span>
                 <span>Confidence: {selectedPlatformEvent.confidence}</span>
-                {selectedPlatformEvent.is_proxy_based && <span className="proxy-badge">PROXY</span>}
+                {selectedPlatformEvent.is_proxy_based && <ProxyBadge kind="proxy" />}
               </div>
               <dl>
                 <dt>Location</dt>

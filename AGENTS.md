@@ -6,7 +6,7 @@
 - Treat aero/load values as proxies unless directly supported by measured channels and complete vehicle constants. Prefer reliable run-to-run comparison over unsupported absolute force claims.
 - Compare future runs by track position, not sample index.
 - One setup change at a time. Multiple unrelated setup changes reduce confidence.
-- Draft and solo laps must not be treated the same.
+- Draft detection/classification is removed from runtime and product decisions.
 - Short runs cannot support strong tire degradation or cooling conclusions.
 - Setup values must link back to telemetry events.
 - Prefer small, tested increments.
@@ -20,7 +20,8 @@
 
 ## Vectorized Engine
 
-- Row engine (`normalize_telemetry_rows`) is the **production default**.
-- Vectorized engine (`normalize_telemetry_frame`) is **opt-in** via `RACELAB_ANALYSIS_ENGINE=vectorized`.
-- Do not switch the default without road course + short-track real .ibt validation.
-- See `racelab_engine/analysis/DESIGN_NOTES_vectorized_future.md` for full status.
+- Vectorized engine (`normalize_telemetry_frame`) is the **production default**.
+- Row engine (`normalize_telemetry_rows`) remains available as fallback/debug parity path.
+- Normal import path is frame-native and avoids full row materialization.
+
+Last verified: 2026-06-01 (docs/code alignment pass; benchmark numbers still require fixture rerun verification).

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { getChannelConfidenceLevel, getChannelDisclaimer } from "../utils/channelMeta";
 import type { ChannelCatalogItem, RunOverview, TraceResponse } from "../types/telemetry";
+import { ProxyBadge } from "../components/ProxyBadge";
 
 type RawChannelsTabProps = {
   overview: RunOverview;
@@ -175,7 +176,7 @@ export function RawChannelsTab({ overview, trace, channels }: RawChannelsTabProp
                     <td>{channel.type ?? "n/a"}</td>
                     <td>
                       {channel.is_calculated ? (channel.is_proxy ? "proxy" : "calculated") : "raw"}
-                      {channel.is_proxy && <span className="proxy-pill" style={{ marginLeft: 4 }}>PROXY</span>}
+                      {channel.is_proxy && <span style={{ marginLeft: 4 }}><ProxyBadge kind="proxy" /></span>}
                     </td>
                     <td>{formatNumber(channel.min)}</td>
                     <td>{formatNumber(channel.max)}</td>

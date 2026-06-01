@@ -3,6 +3,7 @@
 Run through this workflow to verify the core product loop works end-to-end.
 
 **Prerequisites:** Backend running, one baseline `.ibt` and one test `.ibt` imported.
+**Last verified:** 2026-06-01 (step labels may need minor UI text refresh; treat any mismatch as needs verification, not failure of truth rules).
 
 ---
 
@@ -63,7 +64,7 @@ cd racelab-garage
 ## 6b. Laps Workspace — Stint Map
 - Navigate to "Laps" in the nav rail
 - Verify: Stint Shape section shows colored blocks per lap
-- Verify: mode toggles work (Eng Val, Δ Time, Draft, Falloff)
+- Verify: mode toggles work (Eng Val, Δ Time, Validity, Falloff)
 - Verify: selected lap highlighted with cyan outline
 - Verify: best window outlined
 - Verify: hover shows lap time and tags
@@ -87,7 +88,7 @@ cd racelab-garage
 - Add a lap as Test from Laps table (Gauge icon)
 - Verify: Compare Basket appears at bottom-right
 - Verify: readiness badge shows (ready/caution/not_valid/reference_mode)
-- Verify: warnings displayed for cross-session/draft/missing-setup
+- Verify: warnings displayed for cross-session/missing-setup
 - Verify: Swap and Clear buttons work
 - Click Open Compare
 - Verify: CompareTab opens

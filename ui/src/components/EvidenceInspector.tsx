@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { ChannelCatalogItem, PlatformEventItem, RunOverview } from "../types/telemetry";
 import { buildWindowEvidence, buildZoneEvidence, hasWindowSelection } from "../utils/evidenceFocus";
+import { ProxyBadge } from "./ProxyBadge";
 
 type EvidenceInspectorProps = {
   overview: RunOverview | null;
@@ -258,7 +259,7 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
             <AlertTriangle size={12} /> {event.severity.toUpperCase()}
           </span>
           <span>Confidence: {event.confidence}</span>
-          {event.is_proxy_based && <span className="proxy-pill">PROXY</span>}
+          {event.is_proxy_based && <ProxyBadge kind="proxy" />}
         </div>
         <p className="inspector-source-item">{event.title}</p>
       </div>
@@ -332,7 +333,7 @@ function ChannelInspector({ channel, collapsed, onToggle }: { channel: ChannelCa
         <dt>Type</dt>
         <dd>
           {channel.is_calculated ? "Calculated" : channel.is_raw ? "Raw" : "Derived"}
-          {channel.is_proxy && <span className="proxy-pill">PROXY</span>}
+          {channel.is_proxy && <ProxyBadge kind="proxy" />}
         </dd>
         {channel.unit && <><dt>Unit</dt><dd>{channel.unit}</dd></>}
         {channel.description && <><dt>Description</dt><dd>{channel.description}</dd></>}

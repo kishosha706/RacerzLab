@@ -193,7 +193,7 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
           ))}
         </div>
         {currentEvent && (
-          <span className="playback-location" title={currentEvent.title}>
+          <span className="playback-location" title={currentEvent.title} aria-live="polite">
             {currentEvent.title}
           </span>
         )}

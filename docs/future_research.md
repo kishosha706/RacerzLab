@@ -1,5 +1,7 @@
 # Future Research Notes
 
+Last verified: 2026-06-01. Current runtime baseline remains columnar decode + vectorized analysis + frame-native import path, with draft detection removed.
+
 This document captures design notes for systems that are **not implemented** in the current pass.
 These are research topics — do not implement without profiling or data justification.
 
@@ -118,11 +120,14 @@ These are research topics — do not implement without profiling or data justifi
 
 **What ML would provide:**
 - Automated setup change recommendation
-- Lap classification (draft vs solo) with higher accuracy
+- Lap/context classification with higher accuracy
 - Anomaly detection in telemetry
 
 **Why deferred:**
 - Rule-based classification is transparent and debuggable
 - No labeled dataset for training
 - ML would add dependencies (scikit-learn, ONNX)
-- Current draft detection uses deterministic rules
+- Current runtime has no draft-detection feature; confidence/context scoring remains deterministic
+
+
+

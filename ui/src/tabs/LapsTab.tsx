@@ -429,6 +429,15 @@ export function LapsTab({ overview }: LapsTabProps) {
     if (currentSelectionDescriptor) items.push(currentSelectionDescriptor);
     return items;
   }, [bestEvidenceLap, bestWindow, currentSelectionDescriptor, fastestUsableLap, representativeLapByWindowId]);
+  const groupedEvidenceSelector = useMemo(() => {
+    const groups: Array<{ label: string; items: EvidenceDescriptor[] }> = [
+      { label: "Pace Reference", items: evidenceSelector.filter((item) => item.title.includes("Fastest")) },
+      { label: "Evidence Quality", items: evidenceSelector.filter((item) => item.title.includes("Best Evidence")) },
+      { label: "Windows", items: evidenceSelector.filter((item) => item.scope === "lap_window" && !item.title.includes("Current")) },
+      { label: "Current Selection", items: evidenceSelector.filter((item) => item.title.includes("Current Selection")) },
+    ];
+    return groups.filter((group) => group.items.length > 0);
+  }, [evidenceSelector]);
 
   const candidateMatrix = useMemo(() => {
     const rows: EvidenceDescriptor[] = [];
@@ -538,10 +547,24 @@ export function LapsTab({ overview }: LapsTabProps) {
     ? { start: selection.selectedLapWindowStart ?? null, end: selection.selectedLapWindowEnd ?? null }
     : null;
 
-  const renderEvidenceActions = useCallback((item: EvidenceDescriptor, compact = false) => {
+  useEffect(() => {
+    if (subview !== "current" || selection.selectedLap == null || selection.selectedLapScope === "lap_window") return;
+    const row = document.querySelector(`[data-lap-row="${selection.selectedLap}"]`) as HTMLElement | null;
+    if (!row) return;
+    row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selection.selectedLap, selection.selectedLapScope, subview]);
+
+  const renderEvidenceActions = useCallback((item: EvidenceDescriptor, compact = false, mode: "full" | "compare_inline" = "full") => {
     const isWindow = item.scope === "lap_window" && item.window;
     const isLap = item.scope === "single_lap" && item.lap;
     if (!isWindow && !isLap) return null;
+    const hasWindowContext = item.window != null
+      && item.window.start_lap != null
+      && item.window.end_lap != null;
+    const hasLapContext = item.lap != null && item.lap.lap_number != null;
+    const canStage = hasWindowContext || hasLapContext;
+    const canOpenPlatform = canStage;
+    const disabledReason = "Not available for this run";
 
     const handleSelect = () => {
       if (item.window) focusWindowEvidence(item.window);
@@ -573,24 +596,40 @@ export function LapsTab({ overview }: LapsTabProps) {
       if (item.lap) addToQueue(makeLapBasket(item.lap, `${item.title} Lap ${item.lap.lap_number}`));
     };
 
+    if (mode === "compare_inline") {
+      return (
+        <div className="laps-inline-compare-actions">
+          <button className="secondary-button" onClick={handleBaseline} disabled={!canStage} title={canStage ? "Stage this evidence as baseline" : disabledReason} aria-label="Set baseline from evidence">
+            <Clock size={14} /> Set Baseline
+          </button>
+          <button className="secondary-button" onClick={handleTest} disabled={!canStage} title={canStage ? "Stage this evidence as test" : disabledReason} aria-label="Set test from evidence">
+            <Gauge size={14} /> Set Test
+          </button>
+          <button className="secondary-button" onClick={handlePlatform} disabled={!canOpenPlatform} title={canOpenPlatform ? "Open Platform with this evidence context" : disabledReason} aria-label="Open evidence in Platform">
+            <Layers size={14} /> Open Platform
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div className={`laps-action-row${compact ? " compact" : ""}`}>
-        <button className="secondary-button" onClick={handleSelect}>
+        <button className="secondary-button" onClick={handleSelect} disabled={!canStage} title={canStage ? "Use this evidence as current selection" : disabledReason} aria-label={isWindow ? "Select window evidence" : "Select lap evidence"}>
           <Target size={14} /> {isWindow ? "Select Window" : "Select Evidence"}
         </button>
-        <button className="secondary-button" onClick={handlePlatform}>
+        <button className="secondary-button" onClick={handlePlatform} disabled={!canOpenPlatform} title={canOpenPlatform ? "Open Platform with this evidence context" : disabledReason} aria-label="Open evidence in Platform">
           <Layers size={14} /> Platform
         </button>
-        <button className="secondary-button" onClick={handleMap}>
+        <button className="secondary-button" onClick={handleMap} disabled={!canStage} title={canStage ? "Open Map with this evidence context" : disabledReason} aria-label="Open evidence on Map">
           <MapPin size={14} /> Map
         </button>
-        <button className="secondary-button" onClick={handleBaseline}>
+        <button className="secondary-button" onClick={handleBaseline} disabled={!canStage} title={canStage ? "Stage as compare baseline" : disabledReason} aria-label="Set baseline from evidence">
           <Clock size={14} /> Baseline
         </button>
-        <button className="secondary-button" onClick={handleTest}>
+        <button className="secondary-button" onClick={handleTest} disabled={!canStage} title={canStage ? "Stage as compare test" : disabledReason} aria-label="Set test from evidence">
           <Gauge size={14} /> Test
         </button>
-        <button className="secondary-button" onClick={handleBasket}>
+        <button className="secondary-button" onClick={handleBasket} disabled={!canStage} title={canStage ? "Add evidence to Compare Basket queue" : disabledReason} aria-label="Add evidence to Compare Basket">
           <BarChart3 size={14} /> Basket
         </button>
       </div>
@@ -724,19 +763,24 @@ export function LapsTab({ overview }: LapsTabProps) {
               <h2><Target size={16} /> Evidence Selector</h2>
             </div>
           </div>
-          <div className="laps-evidence-selector">
-            {evidenceSelector.map((item) => (
-              <article key={item.id} className="laps-evidence-card">
-                {renderDescriptorSummary(item)}
-                {item.scope === "lap_window" && (
-                  <p className="section-note" style={{ marginTop: 8 }}>
-                    Window context stays preserved globally. Platform and Map use the representative lap for lap-level anchoring and still label the selection as a window.
-                  </p>
-                )}
-                {renderEvidenceActions(item)}
-              </article>
-            ))}
-          </div>
+          {groupedEvidenceSelector.map((group) => (
+            <div key={group.label} style={{ marginBottom: 12 }}>
+              <h4 style={{ margin: "0 0 6px 2px" }}>{group.label}</h4>
+              <div className="laps-evidence-selector">
+                {group.items.map((item) => (
+                  <article key={item.id} className="laps-evidence-card">
+                    {renderDescriptorSummary(item)}
+                    {item.scope === "lap_window" && (
+                      <p className="section-note" style={{ marginTop: 8 }}>
+                        Window context stays preserved globally. Platform and Map use the representative lap for lap-level anchoring and still label the selection as a window.
+                      </p>
+                    )}
+                    {renderEvidenceActions(item, false, "compare_inline")}
+                  </article>
+                ))}
+              </div>
+            </div>
+          ))}
         </section>
       )}
 
@@ -995,7 +1039,7 @@ export function LapsTab({ overview }: LapsTabProps) {
                       "Actionable evidence scope",
                       window,
                       representativeLapByWindowId.get(window.window_id) ?? null,
-                    ))}
+                    ), false, "compare_inline")}
                   </article>
                 ))}
             </div>
@@ -1089,7 +1133,7 @@ export function LapsTab({ overview }: LapsTabProps) {
             {bestEvidenceLap && (
               <article className="laps-window-card">
                 {renderDescriptorSummary(descriptorForLap("Best Evidence Lap", "Strong single-lap baseline candidate", bestEvidenceLap))}
-                {renderEvidenceActions(descriptorForLap("Best Evidence Lap", "Strong single-lap baseline candidate", bestEvidenceLap))}
+                {renderEvidenceActions(descriptorForLap("Best Evidence Lap", "Strong single-lap baseline candidate", bestEvidenceLap), false, "compare_inline")}
               </article>
             )}
             {bestWindow && (
@@ -1105,7 +1149,7 @@ export function LapsTab({ overview }: LapsTabProps) {
                   "Sustained baseline candidate",
                   bestWindow,
                   representativeLapByWindowId.get(bestWindow.window_id) ?? null,
-                ))}
+                ), false, "compare_inline")}
               </article>
             )}
           </div>
@@ -1220,7 +1264,7 @@ export function LapsTab({ overview }: LapsTabProps) {
 
                 return (
                   <React.Fragment key={lap.lap_id}>
-                    <tr className={isSelectedLap ? "selected-row" : ""} style={{ opacity: lap.is_useful ? 1 : 0.72 }}>
+                    <tr data-lap-row={lap.lap_number} className={isSelectedLap ? "selected-row" : ""} style={{ opacity: lap.is_useful ? 1 : 0.72 }}>
                       <td>
                         <button
                           className="secondary-button"

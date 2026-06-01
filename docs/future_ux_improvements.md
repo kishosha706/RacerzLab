@@ -322,3 +322,4 @@ users accustomed to iRacing's imperial defaults. Must be opt-in.
 ### Phase 5: Accessibility & Data Hardening (P2/P3)
 1. Remaining accessibility improvements
 2. Final audit of data contract adherence and missing-state handling
+

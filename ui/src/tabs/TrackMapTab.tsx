@@ -28,6 +28,14 @@ type HeatmapMode = "normal" | "density" | "severity";
 interface CategoryGroup {
   category: LayerId; label: string; events: TrackMapOverlayMarker[]; worst: TrackMapOverlayMarker | null;
 }
+type PlatformBalanceOverlay = TrackMapOverlayMarker & {
+  front_platform_risk_score?: number | null;
+  rear_platform_risk_score?: number | null;
+  whole_car_bottoming_risk?: number | null;
+  platform_balance_label?: string | null;
+  rear_scrape_side_label?: string | null;
+  platform_balance_explanation?: string | null;
+};
 
 type InspectorTarget =
   | { kind: "overlay"; overlay: TrackMapOverlayMarker }
@@ -84,7 +92,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const [selectedArea, setSelectedArea] = useState<string | null>(null);
   const inspectorRef = useRef<HTMLDivElement>(null);
-  const { selection, focusEvidence } = useTelemetrySelection();
+  const { selection, focusEvidence, setWorkspace } = useTelemetrySelection();
 
   useEffect(() => { fetchTrackMaps().then(setAvailableMaps).catch(()=>{}); }, []);
   useEffect(() => {
@@ -111,6 +119,14 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
     && selection.selectedLapWindowStart != null
     && selection.selectedLapWindowEnd != null;
   const representativeLap = selection.selectedRepresentativeLap ?? lap ?? selection.selectedLap ?? null;
+  const selectedAreaSection = useMemo(
+    () => (selectedArea ? sections.find((s) => s.section_id === selectedArea) ?? null : null),
+    [sections, selectedArea],
+  );
+  const selectedAreaLabel = useMemo(
+    () => (selectedAreaSection ? describeLapPctRangeAsLocations(selectedAreaSection.start_lap_pct, selectedAreaSection.end_lap_pct, sections) : null),
+    [selectedAreaSection, sections],
+  );
   const sectionMidLapPct = useCallback((section: TrackMapSection) => {
     const span = (section.end_lap_pct - section.start_lap_pct + 100) % 100;
     return (section.start_lap_pct + span / 2) % 100;
@@ -567,7 +583,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
               <span className="muted">{match.source_filename ?? match.display_name}</span>
               {lap != null && <span className="muted">· Lap {lap}</span>}
               {preferredMapId && (
-                <button className="trackmap-action-btn" onClick={clearPreferredMap} title="Clear manual map">
+                <button className="trackmap-action-btn" onClick={clearPreferredMap} title="Clear manual map" aria-label="Clear manual map selection">
                   <X size={12} /> Clear
                 </button>
               )}
@@ -583,8 +599,8 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
             </span>
             {summary.worstEvent && (
               <span>
-                {" "}Worst: <span className="event-symbol" style={{ color: (summary.worstEvent as any).color }}>
-                  {(summary.worstEvent as any).symbol} {summary.worstEvent.label}
+                {" "}Worst: <span className="event-symbol" style={{ color: summary.worstEvent.color }}>
+                  {summary.worstEvent.symbol} {summary.worstEvent.label}
                 </span> in {summary.worstLocation}.
               </span>
             )}
@@ -629,8 +645,17 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
 
         {windowContextActive && (
           <div className="laps-chip-row" style={{ marginBottom: 8 }}>
-            <span className="lap-flag-badge">Basis: selected window / representative lap</span>
+            <span className="lap-flag-badge">Window {selection.selectedLapWindowStart}-{selection.selectedLapWindowEnd}</span>
             {representativeLap != null && <span className="lap-flag-badge">Rep Lap {representativeLap}</span>}
+          </div>
+        )}
+
+        {preferredMapId && match?.display_name && (
+          <div className="laps-chip-row" style={{ marginBottom: 8 }}>
+            <span className="lap-flag-badge">Using {match.display_name}</span>
+            <button className="trackmap-action-btn" onClick={clearPreferredMap} aria-label="Reset manual map selection">
+              <X size={10} /> Reset
+            </button>
           </div>
         )}
 
@@ -661,10 +686,28 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
           <button className={`trackmap-action-btn${problemFocus ? " active" : ""}`} onClick={() => setProblemFocus((p) => !p)} title="Toggle Problem Focus">
             F
           </button>
+          {selectedAreaSection && (
+            <button
+              className="trackmap-action-btn"
+              onClick={() => {
+                focusEvidence(buildSectionEvidence(selectedAreaSection), "compare");
+                setWorkspace("compare", "track_map");
+              }}
+              title="Open Compare using the selected zone"
+              aria-label={`Compare selected zone ${selectedAreaLabel ?? selectedAreaSection.section_id}`}
+            >
+              <Crosshair size={12} /> Compare Selected Zone
+            </button>
+          )}
           <button className="trackmap-action-btn" onClick={copySummary} title="Copy Summary">
             <Copy size={12} /> Copy
           </button>
         </div>
+        {heatmap === "severity" && (
+          <div className="trackmap-summary muted" style={{ marginTop: 6 }}>
+            Severity legend: Critical (red), High (orange), Watch (amber), Info (blue).
+          </div>
+        )}
 
         {/* ── Presets ── */}
         <div className="trackmap-presets">
@@ -1231,6 +1274,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
         {/* ── Overlay inspector ── */}
         {inspector.kind === "overlay" && (() => {
           const o = inspector.overlay;
+          const platformOverlay = o as PlatformBalanceOverlay;
           const loc = getLocation(o.lap_pct);
           const isPinned = pinnedIds.has(o.marker_id);
           return (
@@ -1300,23 +1344,23 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                 {o.description && (
                   <div className="inspector-block"><label>Description</label><span>{o.description}</span></div>
                 )}
-                {(o as any).front_platform_risk_score != null || (o as any).rear_platform_risk_score != null || (o as any).whole_car_bottoming_risk != null ? (
+                {platformOverlay.front_platform_risk_score != null || platformOverlay.rear_platform_risk_score != null || platformOverlay.whole_car_bottoming_risk != null ? (
                   <div className="inspector-block inspector-block-emphasis">
                     <label>Platform Balance</label>
                     <div className="inspector-block-content">
-                      {(o as any).platform_balance_label && (
-                        <span className={`platform-label platform-${String((o as any).platform_balance_label).toLowerCase().replace(/\s+/g, "-")}`}>
-                          {(o as any).platform_balance_label}
+                      {platformOverlay.platform_balance_label && (
+                        <span className={`platform-label platform-${String(platformOverlay.platform_balance_label).toLowerCase().replace(/\s+/g, "-")}`}>
+                          {platformOverlay.platform_balance_label}
                         </span>
                       )}
                       <div className="inspector-block-grid">
-                        {(o as any).front_platform_risk_score != null && <span>Front: {(o as any).front_platform_risk_score}</span>}
-                        {(o as any).rear_platform_risk_score != null && <span>Rear: {(o as any).rear_platform_risk_score}</span>}
-                        {(o as any).whole_car_bottoming_risk != null && <span className="text-critical">Bottoming: {(o as any).whole_car_bottoming_risk}</span>}
-                        {(o as any).rear_scrape_side_label && <span>Side: {(o as any).rear_scrape_side_label}</span>}
+                        {platformOverlay.front_platform_risk_score != null && <span>Front: {platformOverlay.front_platform_risk_score}</span>}
+                        {platformOverlay.rear_platform_risk_score != null && <span>Rear: {platformOverlay.rear_platform_risk_score}</span>}
+                        {platformOverlay.whole_car_bottoming_risk != null && <span className="text-critical">Bottoming: {platformOverlay.whole_car_bottoming_risk}</span>}
+                        {platformOverlay.rear_scrape_side_label && <span>Side: {platformOverlay.rear_scrape_side_label}</span>}
                       </div>
-                      {(o as any).platform_balance_explanation && (
-                        <p className="muted" style={{ fontSize: 11, marginTop: 4 }}>{(o as any).platform_balance_explanation}</p>
+                      {platformOverlay.platform_balance_explanation && (
+                        <p className="muted" style={{ fontSize: 11, marginTop: 4 }}>{platformOverlay.platform_balance_explanation}</p>
                       )}
                     </div>
                   </div>

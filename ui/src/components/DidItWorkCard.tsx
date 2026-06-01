@@ -272,34 +272,34 @@ export function DidItWorkCard({
       {/* ── Action buttons ── */}
       <div className="diw-actions">
         {onSaveFinding && (
-          <button className="diw-btn diw-btn-primary" onClick={onSaveFinding} disabled={saving || disabled}
+          <button className="diw-btn diw-btn-primary" onClick={onSaveFinding} disabled={saving || disabled} aria-disabled={saving || disabled}
             style={{ fontWeight: 600, fontSize: 13 }}>
             <Bookmark size={14} /> {saving ? "Saving…" : "Save Finding"}
           </button>
         )}
         {onStageNextTest && (
-          <button className="diw-btn diw-btn-primary" onClick={onStageNextTest} disabled={disabled}
+          <button className="diw-btn diw-btn-primary" onClick={onStageNextTest} disabled={disabled} aria-disabled={disabled}
             style={{ fontWeight: 600, fontSize: 13 }}>
             Stage Next Test
           </button>
         )}
         {onCreateTestPlan && (
-          <button className="diw-btn" onClick={onCreateTestPlan} disabled={disabled}>
+          <button className="diw-btn" onClick={onCreateTestPlan} disabled={disabled} aria-disabled={disabled}>
             Create Next Test
           </button>
         )}
         {onOpenSetup && (
-          <button className="diw-btn" onClick={onOpenSetup} disabled={disabled}>
+          <button className="diw-btn" onClick={onOpenSetup} disabled={disabled} aria-disabled={disabled}>
             Open Setup
           </button>
         )}
         {onOpenMap && (
-          <button className="diw-btn" onClick={onOpenMap} disabled={disabled}>
+          <button className="diw-btn" onClick={onOpenMap} disabled={disabled} aria-disabled={disabled}>
             Open Map
           </button>
         )}
         {onOpenEvidence && (
-          <button className="diw-btn" onClick={onOpenEvidence} disabled={disabled}>
+          <button className="diw-btn" onClick={onOpenEvidence} disabled={disabled} aria-disabled={disabled}>
             Open Evidence
           </button>
         )}

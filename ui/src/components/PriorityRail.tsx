@@ -6,6 +6,7 @@ import {
   CATEGORY_LABELS, CATEGORY_ORDER, SEVERITY_ORDER,
   SEVERITY_COLOURS, eventWorkspace, eventLabel,
 } from "../constants/ui";
+import { ProxyBadge } from "./ProxyBadge";
 import type { PlatformEventItem } from "../types/telemetry";
 import type { EvidenceContext, Workspace } from "../store/types";
 import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
@@ -126,7 +127,7 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
 
   return (
     <aside className={`priority-rail${collapsed ? " collapsed" : ""}`}>
-      <button className="rail-collapse-btn" onClick={onToggle} title={collapsed ? "Expand Priority Rail" : "Collapse Priority Rail"}>
+      <button className="rail-collapse-btn" onClick={onToggle} title={collapsed ? "Expand Priority Rail" : "Collapse Priority Rail"} aria-label={collapsed ? "Expand Priority Rail" : "Collapse Priority Rail"} aria-expanded={!collapsed}>
         {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
       </button>
       <header className="rail-header">
@@ -150,6 +151,7 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
                 setWorkspace(suggestion.workspace, "manual");
               }
             }}
+            aria-label={`Next action: ${suggestion.action}`}
           >
             <ArrowRight size={14} /> {suggestion.action}
           </button>
@@ -164,6 +166,7 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
           <button
             key={event.event_id}
             className={`priority-card ${selection.selectedEventId === event.event_id ? "active" : ""}`}
+            data-severity={event.severity}
             onClick={() => handleClick(event)}
             aria-label={`${event.title}, ${event.severity}, ${event.lap_dist_ft != null ? `${Math.round(event.lap_dist_ft)} feet` : "unknown location"}`}
           >
@@ -172,7 +175,7 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
             <div className="priority-body">
               <div className="priority-title-row">
                 <strong>{event.title}</strong>
-                {event.is_proxy_based && <span className="proxy-pill">PROXY</span>}
+                {event.is_proxy_based && <ProxyBadge kind="proxy" />}
               </div>
               <span className="priority-category">{categoryIcon(event.event_type)} {CATEGORY_LABELS[event.event_type] ?? event.event_type}</span>
               <span className="priority-location">

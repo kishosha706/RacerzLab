@@ -1163,6 +1163,21 @@ td {
   min-height: 32px;
 }
 
+.cockpit-workspace-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.cockpit-workspace-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
 .workspace-placeholder {
   flex: 1;
   display: flex;
@@ -1631,7 +1646,38 @@ td {
   gap: 12px;
   align-items: flex-end;
   flex-wrap: wrap;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
+}
+
+.compare-readiness-strip {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 10px;
+}
+
+.compare-readiness-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.compare-readiness-item.ready {
+  color: var(--green);
+}
+
+.compare-readiness-item.warn {
+  color: var(--amber);
+}
+
+.compare-readiness-item.info {
+  color: var(--muted);
+}
+
+.compare-group-explainer {
+  color: var(--muted);
 }
 
 .selector-group { display: flex; flex-direction: column; gap: 4px; }
@@ -2827,6 +2873,12 @@ td {
   flex-wrap: wrap;
   margin-bottom: 12px;
 }
+.compare-group-nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
 .subnav-item {
   padding: 4px 10px;
   border: 1px solid var(--line);
@@ -2840,6 +2892,21 @@ td {
 }
 .subnav-item:hover { color: var(--text); background: var(--panel-soft); }
 .subnav-item.active { color: var(--cyan); border-color: var(--cyan); background: rgba(56,189,248,0.1); }
+
+@media (max-width: 720px) {
+  .compare-group-nav .subnav-item,
+  .compare-subnav .subnav-item {
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+}
+
+.laps-inline-compare-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
 
 /* ── Verdict Card (Did-It-Work) ───────────────────────────── */
 .verdict-card-header {
@@ -4053,6 +4120,53 @@ button:focus:not(:focus-visible) {
   margin: 0;
   font-style: italic;
 }
+
+.import-alert {
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.import-alert-stage {
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+.import-alert-status {
+  border-color: rgba(22, 163, 74, 0.35);
+}
+
+.import-alert-error {
+  border-color: rgba(220, 38, 38, 0.45);
+}
+
+.import-latest-candidate {
+  display: grid;
+  gap: 1px;
+  min-width: 180px;
+  padding: 4px 8px;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 4px;
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.import-latest-candidate-label {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.import-latest-candidate strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.import-latest-candidate span {
+  color: var(--muted);
+  font-size: 10px;
+}
 .import-recent {
   display: flex;
   flex-direction: column;
@@ -4491,6 +4605,43 @@ button:focus:not(:focus-visible) {
 .overview-risk-marker[data-severity="high"] { background: #f97316; }
 .overview-risk-marker[data-severity="watch"] { background: #f59e0b; }
 .overview-risk-marker[data-severity="info"] { background: #38bdf8; }
+
+/* Accessibility polish */
+.priority-card:focus-visible,
+.timeline-marker:focus-visible,
+.import-recent-item:focus-visible,
+.finding-row:focus-visible,
+.compare-basket-slot:focus-visible,
+.nav-rail-item:focus-visible,
+.gr-icon-btn:focus-visible,
+.trackmap-action-btn:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.did-it-work-card .diw-btn:disabled,
+.did-it-work-card .diw-btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Subtle critical pulse for cockpit awareness */
+@keyframes priorityCriticalPulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(239, 68, 68, 0); }
+  50% { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.28); }
+}
+.priority-card[data-severity="critical"] {
+  animation: priorityCriticalPulse 3.2s ease-in-out infinite;
+}
+.overview-risk-marker[data-severity="critical"] {
+  animation: priorityCriticalPulse 3.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .priority-card[data-severity="critical"],
+  .overview-risk-marker[data-severity="critical"] {
+    animation: none;
+  }
+}
 
 .overview-trust-system-grid,
 .overview-trust-summary,

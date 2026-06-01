@@ -1,5 +1,7 @@
-import { AlertTriangle, BarChart3, BookOpen, Clipboard, Layers, List, MapPin, RotateCcw, Wrench } from "lucide-react";
+﻿import { AlertTriangle, BarChart3, BookOpen, CheckCircle2, Clipboard, Layers, List, MapPin, RotateCcw, Wrench } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useCompareBasket } from "../store/CompareBasketContext";
+import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { NotebookFinding, SetupMemorySummary, TestPlan } from "../types/compare";
 import { findingToMarkdown } from "../utils/exportUtils";
 import { VERDICT_COLORS } from "../constants/verdict";
@@ -16,6 +18,16 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 type NotebookView = "findings" | "finding-detail" | "test-plans" | "setup-memory";
+type FindingSectorSummary = {
+  label?: string;
+  sector_name?: string;
+  avg_speed_delta_mph?: number | null;
+  min_cfs_delta_in?: number | null;
+};
+type FindingSetupChange = {
+  label?: string;
+  delta?: string | null;
+};
 
 const STATUS_COLORS: Record<string, string> = {
   saved: "#38bdf8",
@@ -26,10 +38,12 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 function formatVal(v: number | null | undefined, digits = 2): string {
-  return v != null && !Number.isNaN(v) ? v.toFixed(digits) : "—";
+  return v != null && !Number.isNaN(v) ? v.toFixed(digits) : "â€”";
 }
 
 export function NotebookTab() {
+  const { focusEvidence, setWorkspace } = useTelemetrySelection();
+  const { setBaseline, setTest } = useCompareBasket();
   const [view, setView] = useState<NotebookView>("findings");
   const [findings, setFindings] = useState<NotebookFinding[]>([]);
   const [selectedFinding, setSelectedFinding] = useState<NotebookFinding | null>(null);
@@ -82,6 +96,11 @@ export function NotebookTab() {
 
   useEffect(() => { if (view === "test-plans") void loadTestPlans(); }, [view, loadTestPlans]);
   useEffect(() => { if (view === "setup-memory") void loadSetupMemory(); }, [view, loadSetupMemory]);
+  useEffect(() => {
+    if (detailStatus !== "Changes saved.") return;
+    const timer = window.setTimeout(() => setDetailStatus(null), 2000);
+    return () => window.clearTimeout(timer);
+  }, [detailStatus]);
 
   const handleSelectFinding = useCallback(async (finding: NotebookFinding) => {
     setSelectedFinding(finding);
@@ -100,7 +119,7 @@ export function NotebookTab() {
       });
       void loadFindings();
       if (selectedFinding.finding_id === findingId) {
-        setSelectedFinding({ ...selectedFinding, status: status as any });
+        setSelectedFinding({ ...selectedFinding, status });
       }
       setDetailStatus("Status updated.");
     } catch { setDetailStatus("Failed to update."); }
@@ -147,7 +166,31 @@ export function NotebookTab() {
     } catch { setDetailStatus("Failed to create test plan."); }
   }, [selectedFinding]);
 
-  // ── render ──────────────────────────────────────────────────
+  const getFindingEvidence = useCallback((finding: NotebookFinding, runId: string | null, lapNumber: number | null) => {
+    const hasZoneStart = Number.isFinite(finding.target_zone_start_pct);
+    const hasZoneEnd = Number.isFinite(finding.target_zone_end_pct);
+    return {
+      runId,
+      lapNumber,
+      lapScope: lapNumber != null ? "single_lap" as const : "run" as const,
+      zoneStartPct: hasZoneStart ? finding.target_zone_start_pct : null,
+      zoneEndPct: hasZoneEnd ? finding.target_zone_end_pct : null,
+      valueBasis: lapNumber != null ? "full_lap" as const : "run_level" as const,
+      lockState: "none" as const,
+      selectionSource: "compare_verdict" as const,
+    };
+  }, []);
+
+  const hasCompareRevisitContext = !!(selectedFinding?.baseline_run_id && selectedFinding?.test_run_id);
+  const hasSingleRunRevisitContext = !!(selectedFinding?.baseline_run_id || selectedFinding?.test_run_id);
+  const compareRevisitTitle = hasCompareRevisitContext
+    ? "Open Compare with this finding context"
+    : "Not available for this run";
+  const singleRunRevisitTitle = hasSingleRunRevisitContext
+    ? undefined
+    : "Not available for this run";
+
+  // â”€â”€ render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <section className="notebook-tab">
       <header className="notebook-header">
@@ -184,7 +227,7 @@ export function NotebookTab() {
             <button className="secondary-button" onClick={loadFindings}><RotateCcw size={14} /> Refresh</button>
           </div>
 
-          {loading && <p className="muted">Loading findings…</p>}
+          {loading && <p className="muted">Loading findingsâ€¦</p>}
 
           {!loading && findings.length === 0 && (
             <div className="notebook-empty">
@@ -209,14 +252,14 @@ export function NotebookTab() {
               <tbody>
                 {findings.map((f) => (
                   <tr key={f.finding_id} className="finding-row" onClick={() => handleSelectFinding(f)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSelectFinding(f); } }} tabIndex={0} role="button" aria-label={`Open finding: ${f.summary_headline ?? f.finding_id}`}>
-                    <td className="cell-val">{f.created_at?.slice(0, 10) ?? "—"}</td>
-                    <td className="cell-label">{f.car_name ?? "—"}</td>
-                    <td className="cell-label">{f.track_name ?? "—"}</td>
+                    <td className="cell-val">{f.created_at?.slice(0, 10) ?? "â€”"}</td>
+                    <td className="cell-label">{f.car_name ?? "â€”"}</td>
+                    <td className="cell-label">{f.track_name ?? "â€”"}</td>
                     <td className="cell-delta" style={{ color: VERDICT_COLORS[f.verdict ?? ""] ?? "#8d9aaa" }}>
-                      {f.verdict?.replace(/_/g, " ") ?? "—"}
+                      {f.verdict?.replace(/_/g, " ") ?? "â€”"}
                     </td>
                     <td className="cell-val">{formatVal(f.confidence_score * 100, 0)}%</td>
-                    <td className="cell-val">{f.summary_headline ?? "—"}</td>
+                    <td className="cell-val">{f.summary_headline ?? "â€”"}</td>
                     <td>
                       <span className="status-badge" style={{ color: STATUS_COLORS[f.status] ?? "#8d9aaa" }}>
                         {f.status}
@@ -238,10 +281,14 @@ export function NotebookTab() {
       {view === "finding-detail" && selectedFinding && (
         <div className="notebook-detail">
           <button className="secondary-button" onClick={() => setView("findings")} style={{ marginBottom: 12 }}>
-            ← Back to Findings
+            â† Back to Findings
           </button>
 
-          {detailStatus && <p className="status-text">{detailStatus}</p>}
+          {detailStatus && (
+            <p className="status-text" aria-live="polite">
+              {detailStatus === "Changes saved." ? <><CheckCircle2 size={14} style={{ color: "#22c55e", marginRight: 4 }} />Saved</> : detailStatus}
+            </p>
+          )}
 
           <div className="insight-card" style={{ borderLeftColor: VERDICT_COLORS[selectedFinding.verdict ?? ""] ?? "#8d9aaa" }}>
             <h3>{selectedFinding.summary_headline ?? "Finding"}</h3>
@@ -250,10 +297,10 @@ export function NotebookTab() {
                 {selectedFinding.verdict?.replace(/_/g, " ").toUpperCase()}
               </span>
               <span>Confidence: {formatVal(selectedFinding.confidence_score * 100, 0)}%</span>
-              <span>Tier: {selectedFinding.confidence_tier ?? "—"}</span>
-              <span>Classification: {selectedFinding.target_zone_classification ?? "—"}</span>
+              <span>Tier: {selectedFinding.confidence_tier ?? "â€”"}</span>
+              <span>Classification: {selectedFinding.target_zone_classification ?? "â€”"}</span>
             </div>
-            <p className="finding-car-track">{selectedFinding.car_name} @ {selectedFinding.track_name} — {selectedFinding.setup_name}</p>
+            <p className="finding-car-track">{selectedFinding.car_name} @ {selectedFinding.track_name} â€” {selectedFinding.setup_name}</p>
           </div>
 
           {selectedFinding.key_takeaways.length > 0 && (
@@ -274,15 +321,18 @@ export function NotebookTab() {
             <div className="insight-section">
               <h4>Sector Deltas</h4>
               <table className="compact-table">
-                <thead><tr><th>Sector</th><th>Speed Δ</th><th>CFS Δ</th></tr></thead>
+                <thead><tr><th>Sector</th><th>Speed Î”</th><th>CFS Î”</th></tr></thead>
                 <tbody>
-                  {selectedFinding.sector_summaries.map((s: any, i: number) => (
-                    <tr key={i}>
-                      <td className="cell-label">{s.label ?? s.sector_name}</td>
-                      <td className="cell-delta">{formatVal(s.avg_speed_delta_mph, 3)}</td>
-                      <td className="cell-delta">{formatVal(s.min_cfs_delta_in, 3)}</td>
-                    </tr>
-                  ))}
+                  {selectedFinding.sector_summaries.map((s, i: number) => {
+                    const row = s as FindingSectorSummary;
+                    return (
+                      <tr key={i}>
+                        <td className="cell-label">{row.label ?? row.sector_name}</td>
+                        <td className="cell-delta">{formatVal(row.avg_speed_delta_mph, 3)}</td>
+                        <td className="cell-delta">{formatVal(row.min_cfs_delta_in, 3)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -294,12 +344,15 @@ export function NotebookTab() {
               <table className="compact-table">
                 <thead><tr><th>Setting</th><th>Delta</th></tr></thead>
                 <tbody>
-                  {selectedFinding.setup_changes.map((s: any, i: number) => (
-                    <tr key={i}>
-                      <td className="cell-label">{s.label}</td>
-                      <td className="cell-delta">{s.delta ?? "—"}</td>
-                    </tr>
-                  ))}
+                  {selectedFinding.setup_changes.map((s, i: number) => {
+                    const row = s as FindingSetupChange;
+                    return (
+                      <tr key={i}>
+                        <td className="cell-label">{row.label ?? "—"}</td>
+                        <td className="cell-delta">{row.delta ?? "—"}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -317,7 +370,7 @@ export function NotebookTab() {
             <p className="insight-recommendation"><strong>Next:</strong> {selectedFinding.next_step}</p>
           )}
 
-          {/* ── Notes editor ── */}
+          {/* â”€â”€ Notes editor â”€â”€ */}
           <div className="insight-section">
             <h4>Notes</h4>
             <textarea
@@ -325,11 +378,11 @@ export function NotebookTab() {
               value={editNotes}
               onChange={(e) => setEditNotes(e.target.value)}
               rows={4}
-              placeholder="Add notes about this finding…"
+              placeholder="Add notes about this findingâ€¦"
             />
           </div>
 
-          {/* ── Tags editor ── */}
+          {/* â”€â”€ Tags editor â”€â”€ */}
           <div className="insight-section">
             <h4>Tags</h4>
             <input
@@ -341,7 +394,7 @@ export function NotebookTab() {
             />
           </div>
 
-          {/* ── Actions ── */}
+          {/* â”€â”€ Actions â”€â”€ */}
           <div className="finding-actions">
             <div className="selector-group">
               <label>Status</label>
@@ -354,51 +407,102 @@ export function NotebookTab() {
               </select>
             </div>
             <button className="secondary-button" onClick={handleSaveDetail} disabled={savingDetail}>
-              {savingDetail ? "Saving…" : "Save Changes"}
+              {savingDetail ? "Savingâ€¦" : "Save Changes"}
             </button>
           </div>
 
-          {/* ── Relaunch actions ── */}
+          {/* â”€â”€ Relaunch actions â”€â”€ */}
           <div className="toolbar-actions" style={{ marginTop: 12, flexWrap: "wrap" }}>
             <span className="section-note" style={{ fontSize: 10, color: "#8d9aaa", marginRight: 4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
               Revisit:
             </span>
             <button className="trackmap-action-btn" onClick={() => {
-              const params = new URLSearchParams({
-                baseline_run_id: selectedFinding.baseline_run_id ?? "",
-                test_run_id: selectedFinding.test_run_id ?? "",
-                target_zone_start_pct: String(selectedFinding.target_zone_start_pct ?? 55),
-                target_zone_end_pct: String(selectedFinding.target_zone_end_pct ?? 70),
+              if (!selectedFinding.baseline_run_id || !selectedFinding.test_run_id) return;
+              setBaseline({
+                id: `notebook-baseline-${selectedFinding.finding_id}`,
+                run_id: selectedFinding.baseline_run_id,
+                lap_number: selectedFinding.baseline_lap,
+                lap_scope: "single_lap",
+                label: `Notebook baseline ${selectedFinding.finding_id}`,
+                car: selectedFinding.car_name ?? null,
+                track: selectedFinding.track_name ?? null,
+                setup_label: selectedFinding.setup_name ?? null,
+                lap_time: null,
+                classification_tags: [],
+                engineering_value: null,
+                date: null,
+                session_name: null,
+                has_setup_snapshot: true,
+                value_basis: selectedFinding.baseline_lap != null ? "full_lap" : "run_level",
               });
-              window.open(`/compare?${params.toString()}`, "_blank");
-            }} disabled={!selectedFinding.baseline_run_id || !selectedFinding.test_run_id} title="Open Compare with same baseline/test">
+              setTest({
+                id: `notebook-test-${selectedFinding.finding_id}`,
+                run_id: selectedFinding.test_run_id,
+                lap_number: selectedFinding.test_lap,
+                lap_scope: "single_lap",
+                label: `Notebook test ${selectedFinding.finding_id}`,
+                car: selectedFinding.car_name ?? null,
+                track: selectedFinding.track_name ?? null,
+                setup_label: selectedFinding.setup_name ?? null,
+                lap_time: null,
+                classification_tags: [],
+                engineering_value: null,
+                date: null,
+                session_name: null,
+                has_setup_snapshot: true,
+                value_basis: selectedFinding.test_lap != null ? "full_lap" : "run_level",
+              });
+              focusEvidence(
+                getFindingEvidence(selectedFinding, selectedFinding.baseline_run_id, selectedFinding.baseline_lap),
+                "compare",
+              );
+              setWorkspace("compare", "compare_verdict");
+            }} disabled={!hasCompareRevisitContext} title={compareRevisitTitle} aria-label="Revisit in Compare">
               <BarChart3 size={10} /> Compare
             </button>
             <button className="trackmap-action-btn" onClick={() => {
               const runId = selectedFinding.baseline_run_id ?? selectedFinding.test_run_id;
               if (runId) {
-                const baseUrl = import.meta.env.BASE_URL ?? "/";
-                window.open(`${baseUrl}?run=${encodeURIComponent(runId)}&ws=platform_trace`, "_blank");
+                focusEvidence(
+                  getFindingEvidence(
+                    selectedFinding,
+                    runId,
+                    selectedFinding.baseline_run_id ? selectedFinding.baseline_lap : selectedFinding.test_lap,
+                  ),
+                  "platform_trace",
+                );
               }
-            }} disabled={!selectedFinding.baseline_run_id && !selectedFinding.test_run_id} title="Open Platform">
+            }} disabled={!hasSingleRunRevisitContext} title={singleRunRevisitTitle} aria-label="Revisit in Platform">
               <Layers size={10} /> Platform
             </button>
             <button className="trackmap-action-btn" onClick={() => {
               const runId = selectedFinding.baseline_run_id ?? selectedFinding.test_run_id;
               if (runId) {
-                const baseUrl = import.meta.env.BASE_URL ?? "/";
-                window.open(`${baseUrl}?run=${encodeURIComponent(runId)}&ws=map`, "_blank");
+                focusEvidence(
+                  getFindingEvidence(
+                    selectedFinding,
+                    runId,
+                    selectedFinding.baseline_run_id ? selectedFinding.baseline_lap : selectedFinding.test_lap,
+                  ),
+                  "map",
+                );
               }
-            }} disabled={!selectedFinding.baseline_run_id && !selectedFinding.test_run_id} title="Open Map">
+            }} disabled={!hasSingleRunRevisitContext} title={singleRunRevisitTitle} aria-label="Revisit on Map">
               <MapPin size={10} /> Map
             </button>
             <button className="trackmap-action-btn" onClick={() => {
               const runId = selectedFinding.baseline_run_id ?? selectedFinding.test_run_id;
               if (runId) {
-                const baseUrl = import.meta.env.BASE_URL ?? "/";
-                window.open(`${baseUrl}?run=${encodeURIComponent(runId)}&ws=setup_impact`, "_blank");
+                focusEvidence(
+                  getFindingEvidence(
+                    selectedFinding,
+                    runId,
+                    selectedFinding.baseline_run_id ? selectedFinding.baseline_lap : selectedFinding.test_lap,
+                  ),
+                  "setup_impact",
+                );
               }
-            }} disabled={!selectedFinding.baseline_run_id && !selectedFinding.test_run_id} title="Open Setup">
+            }} disabled={!hasSingleRunRevisitContext} title={singleRunRevisitTitle} aria-label="Revisit in Setup">
               <Wrench size={10} /> Setup
             </button>
             <span style={{ flex: 1 }} />
@@ -410,7 +514,7 @@ export function NotebookTab() {
             </button>
           </div>
 
-          {/* ── Test plan status ── */}
+          {/* â”€â”€ Test plan status â”€â”€ */}
           {selectedFinding.next_step && (
             <p className="insight-recommendation" style={{ marginTop: 12 }}>
               <strong>Next test:</strong> {selectedFinding.next_step}
@@ -431,8 +535,8 @@ export function NotebookTab() {
                     <td className="cell-val">{p.created_at?.slice(0, 10)}</td>
                     <td className="cell-label">{p.car_name}</td>
                     <td className="cell-label">{p.track_name}</td>
-                    <td className="cell-val">{p.goal ?? "—"}</td>
-                    <td className="cell-val">{p.change_to_try ?? "—"}</td>
+                    <td className="cell-val">{p.goal ?? "â€”"}</td>
+                    <td className="cell-val">{p.change_to_try ?? "â€”"}</td>
                     <td className="cell-delta">{p.status}</td>
                   </tr>
                 ))}
@@ -503,3 +607,5 @@ export function NotebookTab() {
     </section>
   );
 }
+
+
