@@ -202,6 +202,20 @@ export type ChannelCatalogItem = {
   mean?: number | null;
   sample_value?: unknown;
   missing_status?: string | null;
+  group?: string | null;
+  source?: string | null;
+};
+
+export type ChannelSummaryItem = {
+  name: string;
+  label?: string | null;
+  unit?: string | null;
+  is_raw: boolean;
+  is_calculated: boolean;
+  is_proxy: boolean;
+  missing_status?: string | null;
+  group?: string | null;
+  source?: string | null;
 };
 
 export type TraceChannelPayload = {

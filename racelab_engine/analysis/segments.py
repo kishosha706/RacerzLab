@@ -6,6 +6,14 @@ from typing import Any, Optional
 from pydantic import BaseModel
 
 from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+
+
+def _ensure_normalized(table: Any) -> list[dict[str, Any]]:
+    """Normalize if needed; skip if already a list of normalized row dicts."""
+    if isinstance(table, list) and table and isinstance(table[0], dict):
+        if "speed_mph" in table[0]:
+            return table  # already normalized
+    return normalize_telemetry_rows(table)
 from racelab_engine.analysis.constants import SEGMENT_WIDTH_PCT
 from racelab_engine.analysis.drag_scrub import compute_drag_scrub_index
 from racelab_engine.analysis.platform import classify_splitter_height_mm
@@ -64,7 +72,7 @@ def _score_platform(splitter_mm: float | None) -> float:
 
 
 def build_fixed_pct_segments(table: Any, run_id: str = "unassigned", lap_number: int | None = None) -> list[SegmentSummary]:
-    rows = normalize_telemetry_rows(table)
+    rows = _ensure_normalized(table)
     if not rows:
         return []
 

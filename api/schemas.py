@@ -78,6 +78,20 @@ class ChannelCatalogItem(BaseModel):
     mean: Optional[float] = None
     sample_value: Any = None
     missing_status: Optional[str] = None
+    group: Optional[str] = None
+    source: Optional[str] = None
+
+
+class ChannelSummaryItem(BaseModel):
+    name: str
+    label: Optional[str] = None
+    unit: Optional[str] = None
+    is_raw: bool = False
+    is_calculated: bool = False
+    is_proxy: bool = False
+    missing_status: Optional[str] = None
+    group: Optional[str] = None
+    source: Optional[str] = None
 
 
 class TraceResponse(BaseModel):

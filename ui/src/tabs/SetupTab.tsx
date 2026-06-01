@@ -7,14 +7,36 @@ import type { RunOverview, SetupSnapshot } from "../types/telemetry";
 type SetupTabProps = { overview: RunOverview };
 
 // ── Imperial display conversions ─────────────────────────────────
-const MM_IN   = 1 / 25.4;        // mm → in
-const KPA_PSI = 0.1450377;      // kPa → psi
-const NMM_LB  = 5.710147;       // N/mm → lb/in
-const N_LB    = 0.224808943;    // N → lb (iRacing CornerWeight raw)
-const NM_FTLB = 0.737562;       // Nm → ft-lb
+// iRacing CornerWeight raw values are Newtons, stored under corner_weight_kg
+// key for legacy reasons; convert with N→lb.
+const MM_IN   = 1 / 25.4;
+const KPA_PSI = 0.1450377;
+const NMM_LB  = 5.710147;
+const N_LB    = 0.224808943;
+const NM_FTLB = 0.737562;
 
 function imp(v: number | null, c: number, d: number): number | null {
   return v != null ? +(v * c).toFixed(d) : null;
+}
+
+// ── Steering pinion → ratio lookup ───────────────────────────────
+// Source: MoTeC Slip Angles steering pinion constants (mm/rev)
+const PINION_TO_RATIO: Record<number, string> = {
+  40: "31:1", 46.5: "27.5:1", 53: "24:1", 60: "20.5:1",
+  67: "18.5:1", 73: "17:1", 80: "15.5:1",
+};
+
+function deriveSteeringRatio(pinionMm: number | null): string | null {
+  if (pinionMm == null) return null;
+  // Closest match: find nearest key
+  const keys = Object.keys(PINION_TO_RATIO).map(Number);
+  let bestKey = keys[0];
+  let bestDelta = Math.abs(pinionMm - bestKey);
+  for (const k of keys) {
+    const delta = Math.abs(pinionMm - k);
+    if (delta < bestDelta) { bestDelta = delta; bestKey = k; }
+  }
+  return bestDelta <= 2 ? PINION_TO_RATIO[bestKey] : null;
 }
 
 // ── Data helpers ─────────────────────────────────────────────────
@@ -32,12 +54,19 @@ function evCorner(s: SetupSnapshot, c: string, k: string): number | null {
 }
 
 // ── Field Row ────────────────────────────────────────────────────
-function Field({ l, v, u, d }: { l: string; v: string | number | null; u?: string; d?: boolean }) {
-  const m = v == null;
+function Field({ l, v, u, imp: isImp }: {
+  l: string; v: string | number | null | undefined;
+  u?: string; imp?: boolean;
+}) {
+  const missing = v == null || (typeof v === "number" && !Number.isFinite(v)) || (typeof v === "object");
+  const display = missing ? "Unavailable" : `${v}${u ? ` ${u}` : ""}`;
+  const cls = ["gr-row"];
+  if (missing) cls.push("missing");
+  else if (isImp) cls.push("important");
   return (
-    <div className={`gr-row${d ? " dim" : ""}${m ? " missing" : ""}`}>
-      <span className="gr-label">{l}</span>
-      <span className="gr-value">{m ? "\u2014" : `${v}${u ? ` ${u}` : ""}`}</span>
+    <div className={cls.join(" ")} role="row">
+      <span className="gr-label" role="rowheader">{l}</span>
+      <span className="gr-value" role="cell">{display}</span>
     </div>
   );
 }
@@ -62,26 +91,25 @@ function CornerPanel({ label, corner, setup, glow }: {
   const toe    = imp(evCorner(setup, corner, "toe_in_mm"), MM_IN, 4);
 
   return (
-    <div className={`gr-corner${glow ? " glow" : ""}`}>
+    <div className={`gr-corner${glow ? " glow" : ""}`} role="region" aria-label={label}>
       <div className="gr-corner-head">{label}</div>
       <div className="gr-corner-body">
-        <Field l="Corner Weight" v={wt} u="lb" />
-        <Field l="Ride Height" v={rh} u="in" />
-        <Field l="Shock Collar" v={collar} u="in" d />
-        <Field l="Spring Rate" v={spring} u="lb/in" />
-        <div className="gr-sep" />
-        <Field l="Tire PSI" v={psi} u="psi" />
-        <div className="gr-sep" />
-        <Field l="LS Compression" v={lsC} u="clk" d />
-        <Field l="HS Compression" v={hsC} u="clk" d />
-        <Field l="HS Comp Slope" v={hsCS} d />
-        <Field l="LS Rebound" v={lsR} u="clk" d />
-        <Field l="HS Rebound" v={hsR} u="clk" d />
-        <Field l="HS Reb Slope" v={hsRS} d />
-        <div className="gr-sep" />
+        <Field l="Tire PSI" v={psi} u="psi" imp />
+        <Field l="Ride Height" v={rh} u="in" imp />
+        <Field l="Spring Rate" v={spring} u="lb/in" imp />
+        <Field l="Corner Weight" v={wt} u="lb" imp />
+        <Field l="Shock Collar" v={collar} u="in" />
+        <div className="gr-group-head">Dampers</div>
+        <Field l="LS Compression" v={lsC} u="clk" />
+        <Field l="HS Compression" v={hsC} u="clk" />
+        <Field l="HS Comp Slope" v={hsCS} />
+        <Field l="LS Rebound" v={lsR} u="clk" />
+        <Field l="HS Rebound" v={hsR} u="clk" />
+        <Field l="HS Reb Slope" v={hsRS} />
+        <div className="gr-group-head">Alignment</div>
         <Field l="Camber" v={camber} u="deg" />
-        <Field l="Caster" v={caster} u="deg" d={corner === "lr" || corner === "rr"} />
-        <Field l="Toe-In" v={toe} u="in" d />
+        <Field l="Caster" v={caster} u="deg" />
+        <Field l="Toe-In" v={toe} u="in" />
       </div>
     </div>
   );
@@ -118,9 +146,6 @@ export function SetupTab({ overview }: SetupTabProps) {
   }, [selectedEvent]);
 
   const showDiffUnavailable = diffMode === "diff" && (!basket.baseline || !basket.baseline.has_setup_snapshot);
-  const diffReason = basket.baseline
-    ? "Setup diff unavailable \u2014 baseline setup snapshot not found."
-    : "Add a baseline run to Compare Basket to view setup diff.";
 
   const handlePlatform = useCallback(() => setWorkspace("platform_trace", "setup_table"), [setWorkspace]);
   const handleMap = useCallback(() => setWorkspace("map", "setup_table"), [setWorkspace]);
@@ -141,6 +166,15 @@ export function SetupTab({ overview }: SetupTabProps) {
   const car = overview.session.car_name ?? "Unknown Car";
   const track = overview.session.track_display_name ?? overview.session.track_name ?? "";
 
+  // Steering: true ratio wins; fallback to pinion-derived ratio (MoTeC Slip Angles)
+  const rawRatio = setup.steering_ratio;
+  const pinion  = evNum(setup, "steering_pinion_mm");
+  const derivedRatio = (!rawRatio || rawRatio === "") ? deriveSteeringRatio(pinion) : null;
+  const displayRatio = rawRatio || derivedRatio;
+  // Master cylinders → imperial
+  const frontMc = imp(evNum(setup, "front_mc_mm"), MM_IN, 3);
+  const rearMc  = imp(evNum(setup, "rear_mc_mm"), MM_IN, 3);
+
   return (
     <section className="garage-board">
       {/* ── Top Bar ── */}
@@ -157,39 +191,60 @@ export function SetupTab({ overview }: SetupTabProps) {
           {selectedEvent && (
             <div className={`gr-evidence ${focusZone}`}>
               <Crosshair size={11} />
-              <span>{evtName}</span>
-              {selection.selectedLap && <span className="gr-ev-lap">L{selection.selectedLap}</span>}
+              <span className="gr-ev-name">{evtName}</span>
+              {selection.selectedLap != null && <span className="gr-ev-lap">L{selection.selectedLap}</span>}
+              {selection.selectedLapPct != null && (
+                <span className="gr-ev-pct">{selection.selectedLapPct.toFixed(1)}%</span>
+              )}
+              {selection.selectedZoneLabel && (
+                <span className="gr-ev-zone">{selection.selectedZoneLabel}</span>
+              )}
               <span className={`gr-ev-tag ${isInferred ? "inferred" : "explicit"}`}>
                 {isInferred ? "Inferred" : "Explicit"}
               </span>
-              <button className="gr-icon-btn" onClick={handlePlatform} title="Platform"><Layers size={12} /></button>
-              <button className="gr-icon-btn" onClick={handleMap} title="Map"><MapPin size={12} /></button>
+              <button className="gr-icon-btn" onClick={handlePlatform} aria-label="Open platform trace"><Layers size={12} /></button>
+              <button className="gr-icon-btn" onClick={handleMap} aria-label="Open track map"><MapPin size={12} /></button>
             </div>
           )}
-          <div className="gr-diff-tabs">
-            <button className={`gr-diff-tab ${diffMode === "current" ? "active" : ""}`} onClick={() => setDiffMode("current")}>Current</button>
-            <button className={`gr-diff-tab ${diffMode === "diff" ? "active" : ""}`} onClick={() => setDiffMode("diff")}>Diff</button>
+          <div className="gr-diff-tabs" role="tablist" aria-label="Setup view mode">
+            <button
+              className={`gr-diff-tab ${diffMode === "current" ? "active" : ""}`}
+              onClick={() => setDiffMode("current")}
+              role="tab" aria-selected={diffMode === "current"}
+              aria-pressed={diffMode === "current"}
+            >Current</button>
+            <button
+              className={`gr-diff-tab ${diffMode === "diff" ? "active" : ""}`}
+              onClick={() => setDiffMode("diff")}
+              role="tab" aria-selected={diffMode === "diff"}
+              aria-pressed={diffMode === "diff"}
+            >Diff</button>
           </div>
         </div>
       </div>
 
-      {showDiffUnavailable && <p className="gr-diff-empty">{diffReason}</p>}
+      {showDiffUnavailable && (
+        <p className="gr-diff-empty" role="alert">
+          Diff unavailable. Current setup values are still shown; no placeholder comparison is generated.
+        </p>
+      )}
 
-      {/* ── Top Row: Controls / Balance / ARB&Diff ── */}
+      {/* ── Top Row ── */}
       <div className="gr-toprow">
 
         {/* Steering / Controls */}
         <div className="gr-card">
           <div className="gr-card-head"><Gauge size={12} /> Steering / Controls</div>
           <div className="gr-card-body">
-            <Field l="Steering Ratio" v={setup.steering_ratio ?? null} />
-            <Field l="Offset" v={setup.steering_offset_deg ?? null} u="deg" />
-            <Field l="Pinion" v={evNum(setup, "steering_pinion_mm")} u="mm/rev" d />
+            <Field l="Steering Ratio" v={displayRatio ?? null} />
+            {derivedRatio && pinion != null && (
+              <Field l="Steering Pinion" v={pinion} u="mm/rev" />
+            )}
+            <Field l="Steering Offset" v={setup.steering_offset_deg ?? null} u="deg" />
             <Field l="Brake Bias" v={setup.front_brake_bias_percent ?? null} u="%" />
-            <Field l="Front Master Cyl" v={evNum(setup, "front_mc_mm")} u="mm" d />
-            <Field l="Rear Master Cyl" v={evNum(setup, "rear_mc_mm")} u="mm" d />
+            <Field l="Front Master Cyl" v={frontMc} u="in" />
+            <Field l="Rear Master Cyl" v={rearMc} u="in" />
             <Field l="Tape" v={setup.tape_percent ?? null} u="%" />
-            <Field l="Rear Gear" v={setup.rear_end_ratio ?? null} u=":1" />
           </div>
         </div>
 
@@ -211,29 +266,34 @@ export function SetupTab({ overview }: SetupTabProps) {
                 }
                 return null;
               })()
-            } u="%" d />
-            <Field l="Final Drive" v={evNum(setup, "final_drive_ratio")} u=":1" d />
+            } u="%" />
+            <Field l="Final Drive" v={evNum(setup, "final_drive_ratio")} u=":1" />
           </div>
         </div>
 
         {/* ARB / Diff */}
         <div className="gr-card">
-          <div className="gr-card-head" onClick={() => setArbOpen(!arbOpen)} style={{ cursor: "pointer" }}>
+          <button
+            className="gr-card-head gr-card-head-btn"
+            onClick={() => setArbOpen(!arbOpen)}
+            aria-expanded={arbOpen}
+            aria-controls="arb-diff-body"
+          >
             <Wrench size={12} /> ARB / Diff
-            <span style={{ marginLeft: "auto" }}>{arbOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
-          </div>
+            <span className="gr-card-chev">{arbOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
+          </button>
           {arbOpen && (
-            <div className="gr-card-body">
+            <div className="gr-card-body" id="arb-diff-body">
               <div className="gr-subhead">Front ARB</div>
               <Field l="Diameter" v={imp(evNum(setup, "front_arb_diameter_mm"), MM_IN, 3)} u="in" />
-              <Field l="Arm Length" v={imp(evNum(setup, "front_arb_arm_mm"), MM_IN, 3)} u="in" d />
-              <Field l="Preload" v={imp(evNum(setup, "front_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" d />
+              <Field l="Arm Length" v={imp(evNum(setup, "front_arb_arm_mm"), MM_IN, 3)} u="in" />
+              <Field l="Preload" v={imp(evNum(setup, "front_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" />
               <div className="gr-subhead">Rear ARB</div>
               <Field l="Diameter" v={imp(evNum(setup, "rear_arb_diameter_mm"), MM_IN, 3)} u="in" />
-              <Field l="Arm Length" v={imp(evNum(setup, "rear_arb_arm_mm"), MM_IN, 3)} u="in" d />
-              <Field l="Preload" v={imp(evNum(setup, "rear_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" d />
+              <Field l="Arm Length" v={imp(evNum(setup, "rear_arb_arm_mm"), MM_IN, 3)} u="in" />
+              <Field l="Preload" v={imp(evNum(setup, "rear_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" />
               <div className="gr-subhead">Differential</div>
-              <Field l="Preload" v={imp(evNum(setup, "diff_preload_nm"), NM_FTLB, 1)} u="ft-lb" d />
+              <Field l="Preload" v={imp(evNum(setup, "diff_preload_nm"), NM_FTLB, 1)} u="ft-lb" />
             </div>
           )}
         </div>

@@ -137,10 +137,6 @@ export function OverviewTab({ overview }: OverviewTabProps) {
     }));
   }, [overview.events]);
 
-  const handleBuildOverviewRiskEvidence = useCallback((event: TelemetryEvent) => {
-    focusEvidence(buildOverviewEvidence(event), "platform_trace");
-  }, [focusEvidence, buildOverviewEvidence]);
-
   return (
     <div className="tab-grid">
       {/* ── Decision-First Hero ── */}

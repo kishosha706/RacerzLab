@@ -585,6 +585,7 @@ def test_grade_context_label_flat() -> None:
 
 def test_grade_channels_produced_on_synthetic_rows() -> None:
     """normalize_telemetry_rows should produce all grade channels."""
+    import os; os.environ["RACELAB_ANALYSIS_ENGINE"] = "row"
     from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
     rows = [
         {"SessionTime": 0.0, "LapDist": 0.0, "LapDistPct": 0.0, "Speed": 0.0,

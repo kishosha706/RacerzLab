@@ -454,7 +454,56 @@ def normalize_telemetry_frame(
     pl.DataFrame
         DataFrame with all core calculated channels added.
     """
-    df = pl.DataFrame(data) if isinstance(data, list) else data.clone()
+# Known string channels -- for explicit schema inference
+_STRING_CHANNELS: frozenset[str] = frozenset({
+    "Skies", "TrackWetness", "SessionType", "SessionName",
+    "platform_balance_label", "platform_balance_explanation",
+    "grade_context_label", "rear_scrape_side_label",
+    "lf_camber_bias_label", "rf_camber_bias_label",
+    "lr_camber_bias_label", "rr_camber_bias_label",
+})
+
+
+def _rows_to_frame(data: list[dict[str, Any]]) -> pl.DataFrame:
+    """Build DataFrame from row dicts with explicit schema (fast)."""
+    if not data:
+        return pl.DataFrame()
+    schema: dict[str, pl.PolarsDataType] = {}
+    first = data[0]
+    for key in first:
+        if key in _STRING_CHANNELS or isinstance(first[key], str):
+            schema[key] = pl.Utf8
+        elif isinstance(first[key], bool):
+            schema[key] = pl.Boolean
+        elif isinstance(first[key], int):
+            schema[key] = pl.Int64
+        else:
+            schema[key] = pl.Float64
+    return pl.DataFrame(data, schema=schema)
+
+
+def _columns_to_frame(columns: dict[str, list[Any]]) -> pl.DataFrame:
+    """Build DataFrame from columnar data (fastest path)."""
+    if not columns:
+        return pl.DataFrame()
+    # Let Polars infer types from column lists (fast, no scanning needed)
+    # Use strict=False to handle occasional mixed types gracefully
+    return pl.DataFrame(columns, strict=False)
+
+
+def normalize_telemetry_frame(
+    data: pl.DataFrame | list[dict[str, Any]] | dict[str, list[Any]],
+    geometry: dict[str, float] | None = None,
+) -> pl.DataFrame:
+    """Vectorised normalizer. Accepts DataFrame, list[dict], or dict[str,list]."""
+    if isinstance(data, pl.DataFrame):
+        df = data.clone()
+    elif isinstance(data, dict):
+        df = _columns_to_frame(data)
+    elif isinstance(data, list):
+        df = _rows_to_frame(data) if data else pl.DataFrame()
+    else:
+        raise TypeError(f"Unsupported data type: {type(data)}")
 
     # ── 1. Alias raw iRacing names to normalised names ──────────
     df = _apply_aliases(df)

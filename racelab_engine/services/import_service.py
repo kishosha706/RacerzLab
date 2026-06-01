@@ -9,6 +9,7 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from threading import RLock
 from typing import Any
 
 from racelab_engine.analysis.calculated_channels import (
@@ -95,6 +96,43 @@ class TelemetryCacheResult:
     path: Path
     format: str
     used_fallback: bool
+
+
+@dataclass
+class _TelemetryRowsCacheEntry:
+    signature: tuple[str, int, int]
+    rows: list[dict[str, Any]]
+    last_access: float
+
+
+_NORMALIZED_BASE_COLUMNS = ("speed_mph", "lap_dist_pct", "session_time")
+_NORMALIZED_CALCULATED_COLUMNS = ("cfs_risk_score", "drag_scrub_suspicion", "platform_compression_index")
+_TELEMETRY_ROWS_CACHE: dict[tuple[str, str], _TelemetryRowsCacheEntry] = {}
+_TELEMETRY_ROWS_CACHE_LOCK = RLock()
+_TELEMETRY_ROWS_CACHE_MAX = 24
+
+
+@dataclass
+class _ChannelCatalogCacheEntry:
+    signature: tuple[Any, ...] | None
+    catalog: list[dict[str, Any]]
+    last_access: float
+
+
+_CHANNEL_CATALOG_CACHE: dict[tuple[str, str], _ChannelCatalogCacheEntry] = {}
+_CHANNEL_CATALOG_CACHE_MAX = 16
+
+
+@dataclass
+class _ChannelSummaryCacheEntry:
+    signature: tuple[Any, ...] | None
+    summary: list[dict[str, Any]]
+    last_access: float
+
+
+_CHANNEL_SUMMARY_CACHE: dict[tuple[str, str], _ChannelSummaryCacheEntry] = {}
+_CHANNEL_SUMMARY_CACHE_MAX = 24
+_CHANNEL_SCHEMA_VERSION = "v2"
 
 
 def default_data_dir() -> Path:
@@ -278,34 +316,45 @@ def read_channel_metadata(run_id: str, data_dir: str | Path | None = None) -> li
 
 
 def write_telemetry_cache(run_id: str, rows: list[dict[str, Any]], data_dir: str | Path | None = None) -> TelemetryCacheResult:
+    """Write telemetry cache — uses Polars direct write for speed."""
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
     data_root.mkdir(parents=True, exist_ok=True)
 
     if importlib.util.find_spec("polars") is not None:
         pl = importlib.import_module("polars")
-
         path = parquet_path(data_root, run_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        columns = _scalar_columns(rows)
-        data = [{column: row.get(column) for column in columns} for row in rows]
+
+        if not rows:
+            pl.DataFrame().write_parquet(path)
+            return TelemetryCacheResult(path=path, format="parquet", used_fallback=False)
+
+        # Fast path: use first row keys (all vec output columns are scalar)
+        # Skip _scalar_columns() full scan — saves ~5s on 54K rows
+        columns = list(rows[0].keys())
         try:
-            pl.DataFrame(data).write_parquet(path)
+            pl.from_dicts(rows, infer_schema_length=5000).write_parquet(
+                path, compression="snappy",
+            )
         except Exception:
-            # Fallback: build with full schema inference for mixed-type columns
-            pl.DataFrame(data, infer_schema_length=None).write_parquet(path)
+            pl.from_dicts(rows, infer_schema_length=None).write_parquet(
+                path, compression="snappy",
+            )
+        _invalidate_run_cache(data_root, run_id)
         return TelemetryCacheResult(path=path, format="parquet", used_fallback=False)
 
     if importlib.util.find_spec("pandas") is not None and importlib.util.find_spec("pyarrow") is not None:
         pd = importlib.import_module("pandas")
-
         path = parquet_path(data_root, run_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        columns = _scalar_columns(rows)
+        columns = list(rows[0].keys()) if rows else []
         data = [{column: row.get(column) for column in columns} for row in rows]
         pd.DataFrame(data).to_parquet(path)
+        _invalidate_run_cache(data_root, run_id)
         return TelemetryCacheResult(path=path, format="parquet", used_fallback=False)
-
-    return _write_csv(rows, csv_path(data_root, run_id))
+    cache_result = _write_csv(rows, csv_path(data_root, run_id))
+    _invalidate_run_cache(data_root, run_id)
+    return cache_result
 
 
 def _coerce_number(value: str) -> Any:
@@ -318,27 +367,116 @@ def _coerce_number(value: str) -> Any:
     return int(number) if number.is_integer() else number
 
 
-def read_telemetry_rows(run_id: str, data_dir: str | Path | None = None) -> list[dict[str, Any]]:
+def _cache_key(data_root: Path, run_id: str) -> tuple[str, str]:
+    return str(data_root.resolve()), run_id
+
+
+def _source_signature(parquet: Path, csv_file: Path) -> tuple[str, int, int] | None:
+    source = parquet if parquet.exists() else csv_file if csv_file.exists() else None
+    if source is None:
+        return None
+    stat = source.stat()
+    return str(source.resolve()), stat.st_mtime_ns, stat.st_size
+
+
+def _rows_look_normalized(rows: list[dict[str, Any]]) -> bool:
+    if not rows:
+        return True
+    first = rows[0]
+    if not isinstance(first, dict):
+        return False
+    has_base = all(column in first for column in _NORMALIZED_BASE_COLUMNS)
+    has_calculated = any(column in first for column in _NORMALIZED_CALCULATED_COLUMNS)
+    return has_base and has_calculated
+
+
+def _normalize_if_needed(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return rows if _rows_look_normalized(rows) else normalize_telemetry_rows(rows)
+
+
+def _evict_if_needed() -> None:
+    if len(_TELEMETRY_ROWS_CACHE) <= _TELEMETRY_ROWS_CACHE_MAX:
+        return
+    oldest_key = min(_TELEMETRY_ROWS_CACHE.items(), key=lambda item: item[1].last_access)[0]
+    _TELEMETRY_ROWS_CACHE.pop(oldest_key, None)
+
+
+def _evict_channel_catalog_if_needed() -> None:
+    if len(_CHANNEL_CATALOG_CACHE) <= _CHANNEL_CATALOG_CACHE_MAX:
+        return
+    oldest_key = min(_CHANNEL_CATALOG_CACHE.items(), key=lambda item: item[1].last_access)[0]
+    _CHANNEL_CATALOG_CACHE.pop(oldest_key, None)
+
+
+def _evict_channel_summary_if_needed() -> None:
+    if len(_CHANNEL_SUMMARY_CACHE) <= _CHANNEL_SUMMARY_CACHE_MAX:
+        return
+    oldest_key = min(_CHANNEL_SUMMARY_CACHE.items(), key=lambda item: item[1].last_access)[0]
+    _CHANNEL_SUMMARY_CACHE.pop(oldest_key, None)
+
+
+def _invalidate_run_cache(data_root: Path, run_id: str) -> None:
+    with _TELEMETRY_ROWS_CACHE_LOCK:
+        _TELEMETRY_ROWS_CACHE.pop(_cache_key(data_root, run_id), None)
+        _CHANNEL_CATALOG_CACHE.pop(_cache_key(data_root, run_id), None)
+        _CHANNEL_SUMMARY_CACHE.pop(_cache_key(data_root, run_id), None)
+
+
+def read_telemetry_rows(
+    run_id: str,
+    data_dir: str | Path | None = None,
+    lap: int | None = None,
+) -> list[dict[str, Any]]:
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
     parquet = parquet_path(data_root, run_id)
+    csv_file = csv_path(data_root, run_id)
+    signature = _source_signature(parquet, csv_file)
+    key = _cache_key(data_root, run_id)
+
+    with _TELEMETRY_ROWS_CACHE_LOCK:
+        entry = _TELEMETRY_ROWS_CACHE.get(key)
+        if entry is not None and entry.signature == signature:
+            entry.last_access = time.time()
+            rows = entry.rows
+            return rows if lap is None else [row for row in rows if row.get("lap") == lap]
+        if entry is not None and entry.signature != signature:
+            _TELEMETRY_ROWS_CACHE.pop(key, None)
+
+    # Fast miss path for lap-scoped calls: avoid reading full parquet into memory.
+    if lap is not None and parquet.exists() and importlib.util.find_spec("polars") is not None:
+        pl = importlib.import_module("polars")
+        df = pl.read_parquet(parquet)
+        if "lap" in df.columns:
+            df = df.filter(pl.col("lap") == lap)
+        return _normalize_if_needed([dict(row) for row in df.to_dicts()])
+
     if parquet.exists() and importlib.util.find_spec("polars") is not None:
         pl = importlib.import_module("polars")
-
-        return normalize_telemetry_rows([dict(row) for row in pl.read_parquet(parquet).to_dicts()])
-    if parquet.exists() and importlib.util.find_spec("pandas") is not None:
+        rows = _normalize_if_needed([dict(row) for row in pl.read_parquet(parquet).to_dicts()])
+    elif parquet.exists() and importlib.util.find_spec("pandas") is not None:
         pd = importlib.import_module("pandas")
+        rows = _normalize_if_needed(pd.read_parquet(parquet).to_dict("records"))
+    else:
+        if not csv_file.exists():
+            rows = []
+        else:
+            with csv_file.open("r", newline="", encoding="utf-8") as file_obj:
+                rows = [
+                    {key: _coerce_number(value) for key, value in row.items()}
+                    for row in csv.DictReader(file_obj)
+                ]
+            rows = _normalize_if_needed(rows)
 
-        return normalize_telemetry_rows(pd.read_parquet(parquet).to_dict("records"))
+    if signature is not None:
+        with _TELEMETRY_ROWS_CACHE_LOCK:
+            _TELEMETRY_ROWS_CACHE[key] = _TelemetryRowsCacheEntry(
+                signature=signature,
+                rows=rows,
+                last_access=time.time(),
+            )
+            _evict_if_needed()
 
-    csv_file = csv_path(data_root, run_id)
-    if not csv_file.exists():
-        return []
-    with csv_file.open("r", newline="", encoding="utf-8") as file_obj:
-        rows = [
-            {key: _coerce_number(value) for key, value in row.items()}
-            for row in csv.DictReader(file_obj)
-        ]
-    return normalize_telemetry_rows(rows)
+    return rows if lap is None else [row for row in rows if row.get("lap") == lap]
 
 
 def _channel_stats(rows: list[dict[str, Any]], channel: str) -> dict[str, Any]:
@@ -353,6 +491,99 @@ def _channel_stats(rows: list[dict[str, Any]], channel: str) -> dict[str, Any]:
         "mean": sum(numeric_values) / len(numeric_values),
         "sample_value": sample_value,
     }
+
+
+def _precompute_channel_stats(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    stats: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        for name, value in row.items():
+            if value is None:
+                continue
+            if name not in stats:
+                stats[name] = {
+                    "min": None,
+                    "max": None,
+                    "sum": 0.0,
+                    "count": 0,
+                    "sample_value": value,
+                }
+            entry = stats[name]
+            if entry["sample_value"] is None:
+                entry["sample_value"] = value
+            numeric_value = _numeric_value(value)
+            if numeric_value is None:
+                continue
+            entry["min"] = numeric_value if entry["min"] is None else min(entry["min"], numeric_value)
+            entry["max"] = numeric_value if entry["max"] is None else max(entry["max"], numeric_value)
+            entry["sum"] += numeric_value
+            entry["count"] += 1
+
+    result: dict[str, dict[str, Any]] = {}
+    for name, entry in stats.items():
+        count = int(entry["count"])
+        if count == 0:
+            result[name] = {
+                "min": None,
+                "max": None,
+                "mean": None,
+                "sample_value": entry["sample_value"],
+            }
+            continue
+        result[name] = {
+            "min": entry["min"],
+            "max": entry["max"],
+            "mean": entry["sum"] / count,
+            "sample_value": entry["sample_value"],
+        }
+    return result
+
+
+def _is_numeric_dtype(dtype: Any) -> bool:
+    kind = str(dtype).lower()
+    return any(
+        marker in kind
+        for marker in ("int", "uint", "float", "decimal")
+    ) and "list" not in kind and "struct" not in kind
+
+
+def _precompute_channel_stats_from_parquet(
+    path: Path,
+) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    if importlib.util.find_spec("polars") is None:
+        return {}, []
+    pl = importlib.import_module("polars")
+    schema = pl.read_parquet_schema(path)
+    columns = list(schema.keys())
+    if not columns:
+        return {}, []
+
+    head_df = pl.read_parquet(path, n_rows=1)
+    sample_values = head_df.to_dicts()[0] if head_df.height > 0 else {}
+
+    numeric_cols = [name for name, dtype in schema.items() if _is_numeric_dtype(dtype)]
+    stats: dict[str, dict[str, Any]] = {
+        name: {"min": None, "max": None, "mean": None, "sample_value": sample_values.get(name)}
+        for name in columns
+    }
+    if not numeric_cols:
+        return stats, columns
+
+    exprs: list[Any] = []
+    for name in numeric_cols:
+        exprs.extend([
+            pl.col(name).min().alias(f"{name}__min"),
+            pl.col(name).max().alias(f"{name}__max"),
+            pl.col(name).mean().alias(f"{name}__mean"),
+        ])
+    row = pl.scan_parquet(path).select(exprs).collect(streaming=True).to_dicts()[0]
+    for name in numeric_cols:
+        stats[name] = {
+            "min": row.get(f"{name}__min"),
+            "max": row.get(f"{name}__max"),
+            "mean": row.get(f"{name}__mean"),
+            "sample_value": sample_values.get(name),
+        }
+    return stats, columns
 
 
 def _definition_type(definition: dict[str, Any]) -> str | None:
@@ -384,9 +615,9 @@ def _build_catalog_item(
     is_raw: bool,
     is_calculated: bool,
     in_column_set: bool,
-    rows: list[dict[str, Any]],
+    channel_stats: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
-    stats = _channel_stats(rows, name)
+    stats = channel_stats.get(name, {"min": None, "max": None, "mean": None, "sample_value": None})
     missing_status = _missing_status(name, definition, is_calculated, in_column_set)
     definition_type = _definition_type_for(definition, is_calculated)
     meta = channel_metadata(name)
@@ -415,9 +646,59 @@ def _build_catalog_item(
     return item
 
 
+def _build_summary_item(
+    name: str,
+    definition: dict[str, Any] | None,
+    is_raw: bool,
+    is_calculated: bool,
+    in_column_set: bool,
+) -> dict[str, Any]:
+    meta = channel_metadata(name)
+    missing_status = _missing_status(name, definition, is_calculated, in_column_set)
+    definition_type = _definition_type_for(definition, is_calculated)
+    return {
+        "name": name,
+        "label": meta.get("label", name),
+        "description": definition.get("description") if definition else meta.get("description"),
+        "unit": definition.get("unit") if definition and definition.get("unit") else TRACE_CHANNEL_UNITS.get(name),
+        "type": definition_type,
+        "count": definition.get("count", 1) if definition else 1,
+        "is_raw": is_raw,
+        "is_calculated": is_calculated,
+        "is_proxy": name in FORCE_PROXY_CHANNELS,
+        "formula": None,
+        "dependencies": [],
+        "used_by_charts": [],
+        "used_by_events": [],
+        "used_by_recommendations": [],
+        "min": None,
+        "max": None,
+        "mean": None,
+        "sample_value": None,
+        "missing_status": missing_status,
+        "group": "raw" if is_raw and not is_calculated else "calculated" if is_calculated else "derived",
+        "source": "raw" if definition is not None else "calculated" if is_calculated else "derived",
+    }
+
+
 def build_channel_catalog(run_id: str, data_dir: str | Path | None = None) -> list[dict[str, Any]]:
-    rows = read_telemetry_rows(run_id, data_dir)
-    columns = _scalar_columns(rows)
+    data_root = Path(data_dir) if data_dir is not None else default_data_dir()
+    key = _cache_key(data_root, run_id)
+    source_signature = _source_signature(parquet_path(data_root, run_id), csv_path(data_root, run_id))
+    signature = None if source_signature is None else (*source_signature, _CHANNEL_SCHEMA_VERSION)
+    with _TELEMETRY_ROWS_CACHE_LOCK:
+        entry = _CHANNEL_CATALOG_CACHE.get(key)
+        if entry is not None and entry.signature == signature:
+            entry.last_access = time.time()
+            return entry.catalog
+
+    path = parquet_path(data_root, run_id)
+    if path.exists() and importlib.util.find_spec("polars") is not None:
+        stats_map, columns = _precompute_channel_stats_from_parquet(path)
+    else:
+        rows = read_telemetry_rows(run_id, data_dir)
+        stats_map = _precompute_channel_stats(rows)
+        columns = list(stats_map.keys())
     column_set = set(columns)
     definitions = {definition["name"]: definition for definition in read_channel_metadata(run_id, data_dir)}
     catalog_names = list(definitions)
@@ -430,8 +711,60 @@ def build_channel_catalog(run_id: str, data_dir: str | Path | None = None) -> li
         definition = definitions.get(name)
         is_raw = definition is not None or name in HIGH_VALUE_RAW_CHANNELS
         is_calculated = name in CALCULATED_CHANNEL_UNITS or (not is_raw and name in column_set)
-        catalog.append(_build_catalog_item(name, definition, is_raw, is_calculated, name in column_set, rows))
+        catalog.append(_build_catalog_item(name, definition, is_raw, is_calculated, name in column_set, stats_map))
+
+    with _TELEMETRY_ROWS_CACHE_LOCK:
+        _CHANNEL_CATALOG_CACHE[key] = _ChannelCatalogCacheEntry(
+            signature=signature,
+            catalog=catalog,
+            last_access=time.time(),
+        )
+        _evict_channel_catalog_if_needed()
     return catalog
+
+
+def build_channel_summary(run_id: str, data_dir: str | Path | None = None) -> list[dict[str, Any]]:
+    data_root = Path(data_dir) if data_dir is not None else default_data_dir()
+    key = _cache_key(data_root, run_id)
+    source_signature = _source_signature(parquet_path(data_root, run_id), csv_path(data_root, run_id))
+    signature = None if source_signature is None else (*source_signature, _CHANNEL_SCHEMA_VERSION)
+    with _TELEMETRY_ROWS_CACHE_LOCK:
+        entry = _CHANNEL_SUMMARY_CACHE.get(key)
+        if entry is not None and entry.signature == signature:
+            entry.last_access = time.time()
+            return entry.summary
+
+    path = parquet_path(data_root, run_id)
+    columns: list[str]
+    if path.exists() and importlib.util.find_spec("polars") is not None:
+        pl = importlib.import_module("polars")
+        columns = list(pl.read_parquet_schema(path).keys())
+    else:
+        rows = read_telemetry_rows(run_id, data_dir)
+        columns = list(rows[0].keys()) if rows else []
+
+    column_set = set(columns)
+    definitions = {definition["name"]: definition for definition in read_channel_metadata(run_id, data_dir)}
+    catalog_names = list(definitions)
+    catalog_names.extend(name for name in HIGH_VALUE_RAW_CHANNELS if name not in catalog_names)
+    catalog_names.extend(name for name in columns if name not in catalog_names)
+    catalog_names.extend(name for name in CALCULATED_CHANNEL_UNITS if name not in catalog_names)
+
+    summary: list[dict[str, Any]] = []
+    for name in catalog_names:
+        definition = definitions.get(name)
+        is_raw = definition is not None or name in HIGH_VALUE_RAW_CHANNELS
+        is_calculated = name in CALCULATED_CHANNEL_UNITS or (not is_raw and name in column_set)
+        summary.append(_build_summary_item(name, definition, is_raw, is_calculated, name in column_set))
+
+    with _TELEMETRY_ROWS_CACHE_LOCK:
+        _CHANNEL_SUMMARY_CACHE[key] = _ChannelSummaryCacheEntry(
+            signature=signature,
+            summary=summary,
+            last_access=time.time(),
+        )
+        _evict_channel_summary_if_needed()
+    return summary
 
 
 def _row_delta(row: dict[str, Any], event: TelemetryEvent) -> float | None:
@@ -540,9 +873,32 @@ def build_trace_payload(
     events: list[TelemetryEvent] | None = None,
     data_dir: str | Path | None = None,
 ) -> dict[str, Any]:
-    rows = read_telemetry_rows(run_id, data_dir)
-    if lap is not None:
-        rows = [row for row in rows if row.get("lap") == lap]
+    data_root = Path(data_dir) if data_dir is not None else default_data_dir()
+    selected_channels = channels or TRACE_DEFAULT_CHANNELS
+
+    # Fast path: use column pruning to read only needed channels from parquet
+    if importlib.util.find_spec("polars") is not None:
+        pl = importlib.import_module("polars")
+        path = parquet_path(data_root, run_id)
+        if path.exists():
+            needed_cols = list(dict.fromkeys(
+                [c for c in selected_channels + (["lap", "lap_dist_ft", "lap_dist_pct", "session_time", "lap_dist_pct_100"] if x_axis else ["lap"])]
+            ))
+            # Only request columns that actually exist in the parquet file
+            existing = set(pl.read_parquet_schema(path).keys())
+            safe_cols = [c for c in needed_cols if c in existing]
+            df = pl.read_parquet(path, columns=safe_cols) if safe_cols else pl.read_parquet(path)
+            if lap is not None:
+                df = df.filter(pl.col("lap") == lap)
+            rows = df.to_dicts()
+        else:
+            rows = read_telemetry_rows(run_id, data_dir)
+            if lap is not None:
+                rows = [row for row in rows if row.get("lap") == lap]
+    else:
+        rows = read_telemetry_rows(run_id, data_dir)
+        if lap is not None:
+            rows = [row for row in rows if row.get("lap") == lap]
 
     selected_channels = channels or TRACE_DEFAULT_CHANNELS
     bucket_size, downsample_label = _resolve_bucket_size(len(rows), downsample)
@@ -616,12 +972,12 @@ class ImportService:
         _timings["save_run_metadata"] = time.time() - t0
 
         # ── Post-import analysis ──────────────────────────────────
+        rows = result.records  # use in-memory, avoid disk re-read
         # 1. Build and persist segments
         t0 = time.time()
         try:
             from racelab_engine.analysis.segments import build_fixed_pct_segments
             from racelab_engine.models.segment import SegmentSummary as ModelSegment
-            rows = read_telemetry_rows(run_id, self.data_dir)
             if raw_segments := build_fixed_pct_segments(rows, run_id=run_id):
                 model_segments = [
                     ModelSegment(**seg.model_dump()) for seg in raw_segments
@@ -636,7 +992,6 @@ class ImportService:
         t0 = time.time()
         try:
             from racelab_engine.analysis.draft_detection import classify_draft_status
-            rows = read_telemetry_rows(run_id, self.data_dir)
             tags_updated = False
             for lap in result.overview.laps:
                 if not lap.is_useful:

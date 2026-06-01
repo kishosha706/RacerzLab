@@ -4,10 +4,10 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 
-from api.schemas import ChannelCatalogItem, RunListItem, TraceResponse
+from api.schemas import ChannelCatalogItem, ChannelSummaryItem, RunListItem, TraceResponse
 from racelab_engine.models.session import RunOverview
 from racelab_engine.models.setup import SetupSnapshot
-from racelab_engine.services.import_service import build_channel_catalog, build_trace_payload
+from racelab_engine.services.import_service import build_channel_catalog, build_channel_summary, build_trace_payload
 from racelab_engine.storage.repository import RaceLabRepository
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
@@ -43,10 +43,19 @@ def get_setup(run_id: str) -> SetupSnapshot:
 
 
 @router.get("/{run_id}/channels", response_model=list[ChannelCatalogItem])
-def get_channels(run_id: str) -> list[ChannelCatalogItem]:
+def get_channels(run_id: str, summary: bool = False) -> list[ChannelCatalogItem]:
     if repository().get_session(run_id) is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+    if summary:
+        return [ChannelCatalogItem(**item) for item in build_channel_summary(run_id)]
     return [ChannelCatalogItem(**item) for item in build_channel_catalog(run_id)]
+
+
+@router.get("/{run_id}/channels/summary", response_model=list[ChannelSummaryItem])
+def get_channels_summary(run_id: str) -> list[ChannelSummaryItem]:
+    if repository().get_session(run_id) is None:
+        raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+    return [ChannelSummaryItem(**item) for item in build_channel_summary(run_id)]
 
 
 @router.get("/{run_id}/trace", response_model=TraceResponse)

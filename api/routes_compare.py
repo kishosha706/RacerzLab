@@ -61,6 +61,10 @@ def _make_comparison_id(baseline: str, test: str, bl_lap: int | None, t_lap: int
     return f"{baseline[:12]}_vs_{test[:12]}_l{bl_lap or 'x'}_l{t_lap or 'x'}"
 
 
+def _load_compare_rows(run_id: str, lap: int | None) -> list[dict]:
+    return read_telemetry_rows(run_id, lap=lap)
+
+
 @router.post("")
 def run_comparison(req: CompareRequest) -> dict:
     repo = repository()
@@ -76,10 +80,8 @@ def run_comparison(req: CompareRequest) -> dict:
 
     is_same = req.baseline_run_id == req.test_run_id and bl_lap == t_lap and bl_lap is not None
 
-    bl_rows = read_telemetry_rows(req.baseline_run_id)
-    t_rows = read_telemetry_rows(req.test_run_id)
-    bl_rows = [r for r in bl_rows if r.get("lap") == bl_lap] if bl_lap else bl_rows
-    t_rows = [r for r in t_rows if r.get("lap") == t_lap] if t_lap else t_rows
+    bl_rows = _load_compare_rows(req.baseline_run_id, bl_lap)
+    t_rows = _load_compare_rows(req.test_run_id, t_lap)
 
     s = req.target_zone_start_pct
     e = req.target_zone_end_pct
@@ -236,10 +238,8 @@ def get_delta_traces(req: DeltaTraceRequest) -> dict:
     if req.baseline_run_id == req.test_run_id and bl_lap == t_lap:
         raise HTTPException(400, "Same run and lap compared. Select a different test run or lap.")
 
-    bl_rows = read_telemetry_rows(req.baseline_run_id)
-    t_rows = read_telemetry_rows(req.test_run_id)
-    bl_rows = [r for r in bl_rows if r.get("lap") == bl_lap]
-    t_rows = [r for r in t_rows if r.get("lap") == t_lap]
+    bl_rows = _load_compare_rows(req.baseline_run_id, bl_lap)
+    t_rows = _load_compare_rows(req.test_run_id, t_lap)
 
     if not bl_rows:
         raise HTTPException(400, f"Baseline lap {bl_lap} has no telemetry data.")
@@ -307,10 +307,8 @@ def get_comparison_insights(req: InsightsRequest) -> dict:
     if req.baseline_run_id == req.test_run_id and bl_lap == t_lap:
         raise HTTPException(400, "Same run and lap compared. Select a different test run or lap.")
 
-    bl_rows = read_telemetry_rows(req.baseline_run_id)
-    t_rows = read_telemetry_rows(req.test_run_id)
-    bl_rows = [r for r in bl_rows if r.get("lap") == bl_lap]
-    t_rows = [r for r in t_rows if r.get("lap") == t_lap]
+    bl_rows = _load_compare_rows(req.baseline_run_id, bl_lap)
+    t_rows = _load_compare_rows(req.test_run_id, t_lap)
 
     if not bl_rows:
         raise HTTPException(400, f"Baseline lap {bl_lap} has no telemetry data.")

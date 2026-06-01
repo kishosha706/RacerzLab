@@ -8,6 +8,13 @@ from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
 from racelab_engine.models.lap import LapSummary
 
 
+def _ensure_normalized(table: Any) -> list[dict[str, Any]]:
+    if isinstance(table, list) and table and isinstance(table[0], dict):
+        if "speed_mph" in table[0]:
+            return table
+    return normalize_telemetry_rows(table)
+
+
 def _numbers(rows: list[dict[str, Any]], key: str) -> list[float]:
     values: list[float] = []
     for row in rows:
@@ -32,7 +39,7 @@ def _lap_number(row: dict[str, Any]) -> int | None:
 
 
 def detect_laps(table: Any, run_id: str = "unassigned") -> list[LapSummary]:
-    rows = normalize_telemetry_rows(table)
+    rows = _ensure_normalized(table)
     if not rows:
         return []
 

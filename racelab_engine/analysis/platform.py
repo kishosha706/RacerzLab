@@ -4,6 +4,15 @@ from collections import defaultdict
 from typing import Any, cast
 
 from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+
+
+def _ensure_normalized(table: Any) -> list[dict[str, Any]]:
+    if isinstance(table, list) and table and isinstance(table[0], dict):
+        if "speed_mph" in table[0]:
+            return table
+    return normalize_telemetry_rows(table)
+
+
 from racelab_engine.analysis.constants import (
     SPLITTER_SCRAPE_MM,
     SPLITTER_CRITICAL_MM,
@@ -36,7 +45,7 @@ def _pct(value: Any) -> float | None:
 
 
 def detect_platform_events(table: Any, run_id: str = "unassigned") -> list[TelemetryEvent]:
-    rows = [row for row in normalize_telemetry_rows(table) if row.get("cfsr_height_mm") is not None]
+    rows = [row for row in _ensure_normalized(table) if row.get("cfsr_height_mm") is not None]
     if not rows:
         return []
 

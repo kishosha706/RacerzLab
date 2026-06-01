@@ -2,7 +2,8 @@ import { Clock, Gauge, GitCompare, Layers, List, MapPin, Wrench } from "lucide-r
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
-  fetchChannels,
+  fetchChannelSummary,
+  fetchChannelsFull,
   fetchEvents,
   fetchLaps,
   fetchOverview,
@@ -51,6 +52,7 @@ function CockpitShell() {
   const [overview, setOverview] = useState<RunOverview | null>(null);
   const [trace, setTrace] = useState<TraceResponse | null>(null);
   const [channels, setChannels] = useState<ChannelCatalogItem[]>([]);
+  const [channelsHaveFullCatalog, setChannelsHaveFullCatalog] = useState(false);
   const [platformEvents, setPlatformEvents] = useState<PlatformEventItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
@@ -62,6 +64,34 @@ function CockpitShell() {
 
   const { selection, loadRun, selectLap, setWorkspace } = useTelemetrySelection();
   const selectedTraceLap = selection.selectedRepresentativeLap ?? selection.selectedLap ?? null;
+  const isTraceWorkspace =
+    selection.selectedWorkspace === "platform_trace"
+    || selection.selectedWorkspace === "speed_delta"
+    || selection.selectedWorkspace === "drag_scrub";
+
+  const toCatalogShape = useCallback((channel: Partial<ChannelCatalogItem> & { name: string }): ChannelCatalogItem => ({
+    name: channel.name,
+    label: channel.label ?? channel.name,
+    description: channel.description ?? null,
+    unit: channel.unit ?? null,
+    type: channel.type ?? null,
+    count: channel.count ?? 1,
+    is_raw: Boolean(channel.is_raw),
+    is_calculated: Boolean(channel.is_calculated),
+    is_proxy: Boolean(channel.is_proxy),
+    formula: channel.formula ?? null,
+    dependencies: channel.dependencies ?? [],
+    used_by_charts: channel.used_by_charts ?? [],
+    used_by_events: channel.used_by_events ?? [],
+    used_by_recommendations: channel.used_by_recommendations ?? [],
+    min: channel.min ?? null,
+    max: channel.max ?? null,
+    mean: channel.mean ?? null,
+    sample_value: channel.sample_value ?? null,
+    missing_status: channel.missing_status ?? null,
+    group: channel.group ?? null,
+    source: channel.source ?? null,
+  }), []);
 
   // ── keyboard shortcuts ─────────────────────────────────────
   useKeyboardShortcuts(platformEvents, setWorkspace, {
@@ -77,24 +107,17 @@ function CockpitShell() {
       try {
         const base = await fetchOverview(runId);
         const bestLap = base.best_useful_lap?.lap_number;
-        const [laps, events, setup, channelCatalog, nextTrace, pevents] = await Promise.all([
+        const [laps, events, setup, channelCatalog] = await Promise.all([
           fetchLaps(runId),
           fetchEvents(runId),
           fetchSetup(runId).catch(() => base.setup_snapshot ?? null),
-          fetchChannels(runId).catch(() => []),
-          fetchTrace(runId, {
-            lap: bestLap ?? undefined,
-            x: "lap_dist_ft",
-            channels: TRACE_WORKBENCH_CHANNELS,
-            downsample: "auto",
-            preserveExtrema: true,
-          }).catch(() => null),
-          fetchPlatformEvents(runId, { lap: bestLap ?? undefined }).catch(() => []),
+          fetchChannelSummary(runId).catch(() => []),
         ]);
         setOverview({ ...base, laps, events, setup_snapshot: setup });
-        setChannels(channelCatalog);
-        setTrace(nextTrace);
-        setPlatformEvents(pevents);
+        setChannels(channelCatalog.map((item) => toCatalogShape(item)));
+        setChannelsHaveFullCatalog(false);
+        setTrace(null);        // reset; loaded lazily in effect below
+        setPlatformEvents([]);  // reset; loaded lazily in effect below
         loadRun(runId, bestLap ?? null);
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "Failed to load run.");
@@ -102,7 +125,7 @@ function CockpitShell() {
         setLoading(false);
       }
     },
-    [loadRun],
+    [loadRun, toCatalogShape],
   );
 
   // ── session management (defined after loadSelectedRun to avoid hoisting issues) ──
@@ -209,28 +232,87 @@ function CockpitShell() {
     if (!overview) return;
     const targetLap = selectedTraceLap ?? overview.best_useful_lap?.lap_number ?? null;
     if (targetLap == null) return;
+    let cancelled = false;
+    fetchPlatformEvents(overview.run_id, { lap: targetLap })
+      .then((nextPlatformEvents) => {
+        if (!cancelled) setPlatformEvents(nextPlatformEvents);
+      })
+      .catch(() => {
+        if (!cancelled) setPlatformEvents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [overview, selectedTraceLap]);
+
+  useEffect(() => {
+    if (!overview) return;
+    const targetLap = selectedTraceLap ?? overview.best_useful_lap?.lap_number ?? null;
+    if (targetLap == null) return;
     if (trace?.run_id === overview.run_id && trace?.lap === targetLap) return;
 
     let cancelled = false;
-    Promise.all([
+    const loadTrace = () => {
       fetchTrace(overview.run_id, {
         lap: targetLap,
         x: "lap_dist_ft",
         channels: TRACE_WORKBENCH_CHANNELS,
         downsample: "auto",
         preserveExtrema: true,
-      }).catch(() => null),
-      fetchPlatformEvents(overview.run_id, { lap: targetLap }).catch(() => []),
-    ]).then(([nextTrace, nextPlatformEvents]) => {
-      if (cancelled) return;
-      if (nextTrace) setTrace(nextTrace);
-      setPlatformEvents(nextPlatformEvents);
-    });
+      })
+        .then((nextTrace) => {
+          if (!cancelled) setTrace(nextTrace);
+        })
+        .catch(() => {});
+    };
+
+    if (isTraceWorkspace) {
+      loadTrace();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const schedulePrefetch = () => loadTrace();
+    let timeoutId: number | null = null;
+    let idleId: number | null = null;
+    const requestIdle = (window as unknown as {
+      requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number;
+    }).requestIdleCallback;
+    const cancelIdle = (window as unknown as {
+      cancelIdleCallback?: (id: number) => void;
+    }).cancelIdleCallback;
+    if (typeof requestIdle === "function") {
+      idleId = requestIdle(schedulePrefetch, { timeout: 1800 });
+    } else {
+      timeoutId = window.setTimeout(schedulePrefetch, 450);
+    }
 
     return () => {
       cancelled = true;
+      if (idleId != null && typeof cancelIdle === "function") {
+        cancelIdle(idleId);
+      }
+      if (timeoutId != null) window.clearTimeout(timeoutId);
     };
-  }, [overview, selectedTraceLap, trace]);
+  }, [overview, selectedTraceLap, trace?.lap, trace?.run_id, isTraceWorkspace]);
+
+  useEffect(() => {
+    if (!overview || channelsHaveFullCatalog) return;
+    const needsFullCatalog = selection.selectedWorkspace === "channels" || selection.selectedChannel != null;
+    if (!needsFullCatalog) return;
+    let cancelled = false;
+    fetchChannelsFull(overview.run_id)
+      .then((fullCatalog) => {
+        if (cancelled) return;
+        setChannels(fullCatalog.map((item) => toCatalogShape(item)));
+        setChannelsHaveFullCatalog(true);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [overview, selection.selectedWorkspace, selection.selectedChannel, channelsHaveFullCatalog, toCatalogShape]);
 
   // ── workspace content ───────────────────────────────────────
   const workspaceContent = useMemo(() => {

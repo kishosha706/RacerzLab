@@ -913,7 +913,10 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
   useEffect(() => {
     const node = chartNode.current;
     if (!node) return;
-    const chart = echarts.init(node, "dark");
+    const chart = echarts.init(node, "dark", {
+      width: Math.max(node.clientWidth, 1024),
+      height: Math.max(node.clientHeight, 420),
+    });
     chartRef.current = chart;
 
     const indexFromPoint = (offsetX: number): number | null => {

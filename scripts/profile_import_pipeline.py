@@ -1,151 +1,94 @@
-#!/usr/bin/env python
-"""
-Import pipeline profiler.
-
-Runs ImportService.import_ibt_file() with detailed stage timing.
-Prints a sorted timing table and identifies the slowest stages.
-
-Usage:
-    python scripts/profile_import_pipeline.py --ibt "C:\\path\\to\\file.ibt"
-    python scripts/profile_import_pipeline.py --ibt "C:\\path\\to\\file.ibt" --no-db
-"""
-
-import argparse
-import sys
-import time
+"""Profile the full .ibt import pipeline with per-stage timing."""
+from __future__ import annotations
+import time, sys, os, json
 from pathlib import Path
 
+def _read_bytes(path):
+    with open(path, "rb") as f:
+        return f.read()
 
-def profile(path_str: str, no_db: bool = False) -> None:
-    path = Path(path_str)  # sourcery skip: move-assignment-closer
-    if not path.exists():
-        print(f"File not found: {path}")
-        return
+def profile(ibt_path: str, engine: str | None = None):
+    if engine:
+        os.environ["RACELAB_ANALYSIS_ENGINE"] = engine
+    else:
+        os.environ.pop("RACELAB_ANALYSIS_ENGINE", None)
 
-    print("=== Import Pipeline Profile ===")
-    print(f"  File: {path}")
-    print(f"  Size: {path.stat().st_size:,} bytes")
-    print(f"  No DB: {no_db}")
-    print()
+    stages = {}
 
-    # Ensure PYTHONPATH is set
-    import sys
-    repo_root = Path(__file__).resolve().parent.parent
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
+    # Stage 1: file read
+    t0 = time.perf_counter()
+    data = _read_bytes(ibt_path)
+    stages["file_read"] = time.perf_counter() - t0
 
-    from racelab_engine.services.import_service import ImportService
-    from racelab_engine.io.ibt_reader import import_ibt
-    from racelab_engine.services.import_service import (
-        write_telemetry_cache, write_channel_metadata,
-        read_telemetry_rows, default_data_dir,
-    )
-    from racelab_engine.storage.repository import RaceLabRepository
-    import logging
-    logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
+    # Stage 2: header parse
+    from racelab_engine.io.ibt_reader import _parse_header, _parse_variable_definitions
+    t0 = time.perf_counter()
+    header = _parse_header(data, len(data))
+    stages["header_parse"] = time.perf_counter() - t0
 
-    timings: dict[str, float] = {}
+    # Stage 3: variable definitions
+    t0 = time.perf_counter()
+    definitions = _parse_variable_definitions(data, header)
+    available = {d.name for d in definitions}
+    stages["var_defs"] = time.perf_counter() - t0
 
-    # Stage 1: Decode IBT
-    t0 = time.time()
-    result = import_ibt(path)
-    timings["1_decode_ibt"] = time.time() - t0
-    print(f"  1_decode_ibt:          {timings['1_decode_ibt']:.3f}s")
-    if result.overview is None:
-        print(f"  FAIL: {result.status.message}")
-        return
-    run_id = result.overview.run_id
-    print(f"  Run ID: {run_id}")
-    print(f"  Laps: {len(result.overview.laps)}")
-    print(f"  Records: {len(result.records):,}")
+    # Stage 4: raw row extraction
+    from racelab_engine.io.ibt_reader import _read_records_from_data, CORE_REQUIRED_CHANNELS, TARGET_CHANNELS
+    t0 = time.perf_counter()
+    target_vars = [c for c in TARGET_CHANNELS if c in available]
+    raw_rows = _read_records_from_data(data, header, definitions, variables=target_vars)
+    stages["raw_rows"] = time.perf_counter() - t0
 
-    if no_db:
-        print(f"\n  Skipping DB stages (--no-db)")
-        print("\n=== Profile Summary ===")
-        total = sum(timings.values())
-        print(f"  Total: {total:.3f}s")
-        return
+    # Stage 5: normalization (dispatched)
+    from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+    t0 = time.perf_counter()
+    normalized = normalize_telemetry_rows(raw_rows)
+    stages["normalize"] = time.perf_counter() - t0
 
-    # Stage 2: Write parquet cache
-    t0 = time.time()
-    cache_result = write_telemetry_cache(run_id, result.records)
-    timings["2_write_parquet_cache"] = time.time() - t0
-    print(f"  2_write_parquet_cache:  {timings['2_write_parquet_cache']:.3f}s ({cache_result.format})")
+    missing = [c for c in CORE_REQUIRED_CHANNELS if c not in available]
 
-    # Stage 3: Write channel metadata
-    t0 = time.time()
-    write_channel_metadata(run_id, result.variable_definitions)
-    timings["3_write_channel_metadata"] = time.time() - t0
-    print(f"  3_write_channel_meta:   {timings['3_write_channel_metadata']:.3f}s")
+    result = {
+        "file": str(Path(ibt_path).name),
+        "engine": engine or "default",
+        "rows": len(raw_rows),
+        "raw_channels": len(available),
+        "normalized_cols": len(normalized[0]) if normalized else 0,
+        "missing_core": missing,
+        "stages": {k: round(v, 4) for k, v in stages.items()},
+        "total": round(sum(stages.values()), 4),
+    }
 
-    # Stage 4: Save run metadata
-    t0 = time.time()
-    repo = RaceLabRepository()
-    repo.save_import(result.overview, result.fingerprint)
-    timings["4_save_run_metadata"] = time.time() - t0
-    print(f"  4_save_run_metadata:    {timings['4_save_run_metadata']:.3f}s")
+    # Also time DataFrame construction alone
+    t0 = time.perf_counter()
+    import polars as pl
+    df = pl.from_dicts(raw_rows, infer_schema_length=None)
+    result["df_construction"] = round(time.perf_counter() - t0, 4)
 
-    # Stage 5: Segment building
-    t0 = time.time()
-    try:
-        from racelab_engine.analysis.segments import build_fixed_pct_segments
-        from racelab_engine.models.segment import SegmentSummary as ModelSegment
-        rows = read_telemetry_rows(run_id)
-        if raw_segments := build_fixed_pct_segments(rows, run_id=run_id):
-            model_segments = [ModelSegment(**seg.model_dump()) for seg in raw_segments]
-            repo.save_segments(run_id, model_segments)
-            print(f"    Segments saved: {len(model_segments)}")
-    except Exception as exc:
-        print(f"    Segment error: {exc}")
-    timings["5_segment_building"] = time.time() - t0
-    print(f"  5_segment_building:     {timings['5_segment_building']:.3f}s")
+    # Also time row-path normalize alone for comparison
+    if engine != "row":
+        os.environ["RACELAB_ANALYSIS_ENGINE"] = "row"
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows as row_normalize
+        t0 = time.perf_counter()
+        row_normalize(raw_rows)
+        result["row_normalize_time"] = round(time.perf_counter() - t0, 4)
+        os.environ.pop("RACELAB_ANALYSIS_ENGINE", None)
 
-    # Stage 6: Draft detection
-    t0 = time.time()
-    try:
-        from racelab_engine.analysis.draft_detection import classify_draft_status
-        rows = read_telemetry_rows(run_id)
-        tags_updated = False
-        for lap in result.overview.laps:
-            if not lap.is_useful:
-                continue
-            draft = classify_draft_status(rows, lap_number=lap.lap_number)
-            if draft.status.value != "UNKNOWN_DRAFT_STATUS":
-                tag = draft.status.value
-                if not lap.classification_tags:
-                    lap.classification_tags = []
-                if tag not in lap.classification_tags:
-                    lap.classification_tags.append(tag)
-                    tags_updated = True
-        if tags_updated:
-            repo.save_import(result.overview, result.fingerprint)
-            print("    Draft tags updated")
-    except Exception as exc:
-        print(f"    Draft detection error: {exc}")
-    timings["6_draft_detection"] = time.time() - t0
-    print(f"  6_draft_detection:      {timings['6_draft_detection']:.3f}s")
-
-    # Summary
-    print(f"\n=== Profile Summary ===")
-    total = sum(timings.values())
-    print(f"  Total: {total:.3f}s")
-    print(f"\n  Stages sorted by duration (slowest first):")
-    for name, dur in sorted(timings.items(), key=lambda x: -x[1]):
-        pct = (dur / total) * 100 if total > 0 else 0
-        print(f"    {name}: {dur:.3f}s ({pct:.1f}%)")
-
-    slowest = max(timings, key=lambda k: timings[k])  # type: ignore[arg-type]
-    print(f"\n  Slowest stage: {slowest} ({timings[slowest]:.3f}s)")
-    print(f"  Run ID: {run_id}")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Profile the import pipeline")
-    parser.add_argument("--ibt", required=True, help="Path to .ibt file")
-    parser.add_argument("--no-db", action="store_true", help="Skip DB stages (decode only)")
-    args = parser.parse_args()
-    profile(args.ibt, no_db=args.no_db)
-
+    return result
 
 if __name__ == "__main__":
-    main()
+    ibt = sys.argv[1] if len(sys.argv) > 1 else None
+    engine = sys.argv[2] if len(sys.argv) > 2 else None
+    if not ibt:
+        # Find first available .ibt
+        imports = Path("data/imports/ibt")
+        ibt = str(next(imports.glob("*.ibt"), None))
+        if not ibt:
+            print("No .ibt found")
+            sys.exit(1)
+    
+    r = profile(ibt, engine)
+    print(json.dumps(r, indent=2))
+    print(f"\nSlowest stages:")
+    for s, t in sorted(r["stages"].items(), key=lambda x: -x[1]):
+        bar = "#" * int(t / r["total"] * 40)
+        print(f"  {s:20s} {t:8.3f}s  {bar}")

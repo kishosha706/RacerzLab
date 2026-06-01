@@ -1,6 +1,7 @@
 import type {
   ImportIbtResponse,
   ChannelCatalogItem,
+  ChannelSummaryItem,
   LapSummary,
   PlatformEventItem,
   RunListItem,
@@ -29,6 +30,43 @@ const SCAN_TIMEOUT_MS = 30_000;
 
 /** Timeout for full telemetry trace payloads (1 minute). */
 const TRACE_TIMEOUT_MS = 60_000;
+const GET_CACHE_DEFAULT_TTL_MS = 8_000;
+const GET_CACHE_TRACE_TTL_MS = 2_000;
+
+type JsonCacheEntry = {
+  expiresAt: number;
+  value: unknown;
+};
+
+const inflightGetRequests = new Map<string, Promise<unknown>>();
+const getResponseCache = new Map<string, JsonCacheEntry>();
+
+function requestMethod(init?: RequestInit): string {
+  return (init?.method ?? "GET").toUpperCase();
+}
+
+function requestKey(path: string, timeoutMs: number): string {
+  return `${timeoutMs}:${path}`;
+}
+
+function cacheTtlMs(path: string): number {
+  if (path.includes("/trace") || path.includes("/platform-events")) return GET_CACHE_TRACE_TTL_MS;
+  return GET_CACHE_DEFAULT_TTL_MS;
+}
+
+function invalidateApiCache(pathPrefix?: string): void {
+  if (!pathPrefix) {
+    inflightGetRequests.clear();
+    getResponseCache.clear();
+    return;
+  }
+  for (const key of inflightGetRequests.keys()) {
+    if (key.includes(pathPrefix)) inflightGetRequests.delete(key);
+  }
+  for (const key of getResponseCache.keys()) {
+    if (key.includes(pathPrefix)) getResponseCache.delete(key);
+  }
+}
 
 /**
  * Fetch with timeout. Throws if the request does not complete within `ms`.
@@ -56,34 +94,64 @@ function timeoutErrorMessage(ms: number, label: string): string {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit, timeoutMs: number = REQUEST_TIMEOUT_MS, timeoutLabel: string = "Request"): Promise<T> {
-  let response: Response;
-  try {
-    // Spread init FIRST so its headers don't overwrite our Content-Type default.
-    // Then explicitly set Content-Type and merge any user headers on top.
-    const mergedHeaders: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (init?.headers) {
-      const userHeaders = init.headers as Record<string, string>;
-      for (const key of Object.keys(userHeaders)) {
-        mergedHeaders[key] = userHeaders[key];
+  const method = requestMethod(init);
+  const key = requestKey(path, timeoutMs);
+  if (method === "GET") {
+    const cached = getResponseCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value as T;
+    }
+    const inflight = inflightGetRequests.get(key);
+    if (inflight) return inflight as Promise<T>;
+  }
+
+  const run = async (): Promise<T> => {
+    let response: Response;
+    try {
+      // Spread init FIRST so its headers don't overwrite our Content-Type default.
+      // Then explicitly set Content-Type and merge any user headers on top.
+      const mergedHeaders: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (init?.headers) {
+        const userHeaders = init.headers as Record<string, string>;
+        for (const key of Object.keys(userHeaders)) {
+          mergedHeaders[key] = userHeaders[key];
+        }
       }
+      response = await fetchWithTimeout(`${API_BASE}${path}`, {
+        ...init,
+        headers: mergedHeaders,
+      }, timeoutMs);
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        throw new Error(timeoutErrorMessage(timeoutMs, timeoutLabel));
+      }
+      throw new Error(`Network error: ${(err as Error).message ?? "Unknown error"}`);
     }
-    response = await fetchWithTimeout(`${API_BASE}${path}`, {
-      ...init,
-      headers: mergedHeaders,
-    }, timeoutMs);
-  } catch (err: unknown) {
-    if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error(timeoutErrorMessage(timeoutMs, timeoutLabel));
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Request failed: ${response.status}`);
     }
-    throw new Error(`Network error: ${(err as Error).message ?? "Unknown error"}`);
-  }
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `Request failed: ${response.status}`);
-  }
-  return (await response.json()) as T;
+    const payload = (await response.json()) as T;
+    if (method === "GET") {
+      getResponseCache.set(key, {
+        value: payload,
+        expiresAt: Date.now() + cacheTtlMs(path),
+      });
+    } else {
+      invalidateApiCache();
+    }
+    return payload;
+  };
+
+  if (method !== "GET") return run();
+
+  const promise = run().finally(() => {
+    inflightGetRequests.delete(key);
+  });
+  inflightGetRequests.set(key, promise);
+  return promise;
 }
 
 /** Like requestJson but with a longer timeout for import operations. */
@@ -116,7 +184,9 @@ export function importIbtFile(file: File): Promise<ImportIbtResponse> {
       const text = await response.text();
       throw new Error(text || `Import failed: ${response.status}`);
     }
-    return response.json() as Promise<ImportIbtResponse>;
+    const payload = await response.json() as ImportIbtResponse;
+    invalidateApiCache();
+    return payload;
   }).catch((err: unknown) => {
     if (err instanceof DOMException && err.name === "AbortError") {
       throw new Error(timeoutErrorMessage(IMPORT_TIMEOUT_MS, "Telemetry import"));
@@ -152,6 +222,9 @@ export function importIbtFileFromPath(filePath: string): Promise<ImportIbtRespon
     method: "POST",
     headers,
     body: JSON.stringify({ path: filePath }),
+  }).then((payload) => {
+    invalidateApiCache();
+    return payload;
   });
 }
 
@@ -176,6 +249,14 @@ export function fetchSetup(runId: string): Promise<SetupSnapshot> {
 }
 
 export function fetchChannels(runId: string): Promise<ChannelCatalogItem[]> {
+  return requestJson<ChannelCatalogItem[]>(`/api/runs/${encodeURIComponent(runId)}/channels`);
+}
+
+export function fetchChannelSummary(runId: string): Promise<ChannelSummaryItem[]> {
+  return requestJson<ChannelSummaryItem[]>(`/api/runs/${encodeURIComponent(runId)}/channels/summary`);
+}
+
+export function fetchChannelsFull(runId: string): Promise<ChannelCatalogItem[]> {
   return requestJson<ChannelCatalogItem[]>(`/api/runs/${encodeURIComponent(runId)}/channels`);
 }
 
@@ -252,7 +333,9 @@ export function importMt2File(file: File): Promise<TrackMapIndexEntry> {
       const text = await response.text();
       throw new Error(text || `Import failed: ${response.status}`);
     }
-    return response.json() as Promise<TrackMapIndexEntry>;
+    const payload = await response.json() as TrackMapIndexEntry;
+    invalidateApiCache("/api/track-maps");
+    return payload;
   }).catch((err: unknown) => {
     if (err instanceof DOMException && err.name === "AbortError") {
       throw new Error(timeoutErrorMessage(MAP_IMPORT_TIMEOUT_MS, "Track map import"));
@@ -267,6 +350,9 @@ export function importMt2FileFromPath(filePath: string): Promise<TrackMapIndexEn
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path: filePath }),
+  }).then((payload) => {
+    invalidateApiCache("/api/track-maps");
+    return payload;
   });
 }
 
@@ -274,6 +360,9 @@ export function importMt2Folder(folderPath: string): Promise<{ imported: number;
   return mapImportJson<{ imported: number; entries: TrackMapIndexEntry[] }>("/api/imports/mt2-folder", {
     method: "POST",
     body: JSON.stringify({ folder_path: folderPath }),
+  }).then((payload) => {
+    invalidateApiCache("/api/track-maps");
+    return payload;
   });
 }
 

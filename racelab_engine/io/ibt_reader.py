@@ -236,6 +236,58 @@ def _read_records_from_data(
     return cast(list[Mapping[str, object]], rows)
 
 
+# Precompiled struct formats for columnar fast path
+_STRUCT_FORMATS: dict[int, struct.Struct] = {
+    1: struct.Struct("<?"),
+    2: struct.Struct("<i"),
+    3: struct.Struct("<I"),
+    4: struct.Struct("<f"),
+    5: struct.Struct("<d"),
+}
+
+
+def _read_records_columnar(
+    data: bytes,
+    header: IBTHeader,
+    definitions: list[IBTVariableDefinition],
+    variables: Collection[str] | None = None,
+) -> dict[str, list[Any]]:
+    """Fast columnar decoder using precompiled structs and memoryview."""
+    record_count = header.record_count
+    record_len = header.record_length
+    data_offset = header.data_offset
+    if record_count is None or record_len is None or data_offset is None:
+        raise IBTParseError("Header is missing telemetry record offsets.")
+
+    selected = [d for d in definitions if variables is None or d.name in variables]
+    columns: dict[str, list[Any]] = {d.name: [None] * record_count for d in selected}
+    columns["sample_index"] = list(range(record_count))
+    mv = memoryview(data)
+
+    for row_idx in range(record_count):
+        rec_start = data_offset + row_idx * record_len
+        for defn in selected:
+            dt = defn.data_type_id
+            if dt is None:
+                raise IBTParseError(f"Missing data type ID for {defn.name}.")
+            if dt == 0:
+                raw = bytes(mv[rec_start + defn.offset : rec_start + defn.offset + max(1, defn.count)])
+                value = _decode_c_string(raw)
+            elif dt in _STRUCT_FORMATS:
+                count = max(1, defn.count)
+                fmt = _STRUCT_FORMATS[dt]
+                if count == 1:
+                    value = fmt.unpack_from(mv, rec_start + defn.offset)[0]
+                else:
+                    size = fmt.size
+                    value = [fmt.unpack_from(mv, rec_start + defn.offset + i * size)[0] for i in range(count)]
+            else:
+                raise IBTParseError(f"Unsupported iRacing variable type {dt} for {defn.name}.")
+            columns[defn.name][row_idx] = value
+
+    return columns
+
+
 def read_records(path: str | Path, variables: Collection[str] | None = None) -> list[Mapping[str, object]]:
     """Decode telemetry records from an `.ibt` file.
 
@@ -257,11 +309,43 @@ def read_normalized_records(path: str | Path) -> tuple[list[dict[str, Any]], lis
     definitions = _parse_variable_definitions(data, header)
     available = {definition.name for definition in definitions}
     missing = [channel for channel in CORE_REQUIRED_CHANNELS if channel not in available]
+    target_vars = [channel for channel in TARGET_CHANNELS if channel in available]
+
+    # ── Columnar decoder (default, env-overridable) ─────────────
+    import os
+    import logging
+    _dec_log = logging.getLogger(__name__)
+    decoder_mode = os.environ.get("RACELAB_IBT_DECODER", "").strip().lower()
+    use_columnar = decoder_mode != "row"
+
+    if use_columnar:
+        try:
+            t0 = time.perf_counter()
+            columns = _read_records_columnar(data, header, definitions, variables=target_vars)
+            from racelab_engine.analysis.vectorized_channels import normalize_telemetry_frame, frame_to_rows
+            df = normalize_telemetry_frame(columns)
+            result = frame_to_rows(df)
+            dt = time.perf_counter() - t0
+            _dec_log.info(
+                "decoder=columnar rows=%d channels=%d time=%.3fs",
+                len(result), len(columns), dt,
+            )
+            if result and "Speed" not in result[0]:
+                # Preserve legacy test/read contract that includes raw alias keys.
+                result = normalize_telemetry_rows(result)
+            if result and "Speed" not in result[0]:
+                for row in result:
+                    speed_mps = row.get("speed_mps")
+                    if speed_mps is None and row.get("speed_mph") is not None:
+                        speed_mps = float(row["speed_mph"]) / 2.23693629
+                    row["Speed"] = speed_mps
+            return result, missing
+        except Exception:
+            _dec_log.warning("Columnar decoder failed, falling back to row decoder", exc_info=True)
+
     raw_rows = _read_records_from_data(
-        data,
-        header,
-        definitions,
-        variables=[channel for channel in TARGET_CHANNELS if channel in available],
+        data, header, definitions,
+        variables=target_vars,
     )
     return normalize_telemetry_rows(raw_rows), missing
 
@@ -398,17 +482,25 @@ def import_ibt(path: str | Path) -> IBTImportResult:
         missing = [channel for channel in CORE_REQUIRED_CHANNELS if channel not in available]
 
         t0 = time.time()
-        raw_rows = _read_records_from_data(
-            data,
-            header,
-            definitions,
-            variables=[channel for channel in TARGET_CHANNELS if channel in available],
-        )
-        _log.info("IBT decoder: %d records decoded in %.3fs", len(raw_rows), time.time() - t0)
-
-        t0 = time.time()
-        rows = normalize_telemetry_rows(raw_rows)
-        _log.info("IBT decoder: normalized %d rows in %.3fs", len(rows), time.time() - t0)
+        try:
+            columns = _read_records_columnar(
+                data, header, definitions,
+                variables=[channel for channel in TARGET_CHANNELS if channel in available],
+            )
+            from racelab_engine.analysis.vectorized_channels import normalize_telemetry_frame, frame_to_rows
+            df = normalize_telemetry_frame(columns)
+            rows = frame_to_rows(df)
+            _log.info("IBT decoder (columnar): %d records + normalized in %.3fs", len(rows), time.time() - t0)
+        except Exception:
+            _log.debug("Columnar fast path failed, using row decoder", exc_info=True)
+            raw_rows = _read_records_from_data(
+                data, header, definitions,
+                variables=[channel for channel in TARGET_CHANNELS if channel in available],
+            )
+            _log.info("IBT decoder: %d records decoded in %.3fs", len(raw_rows), time.time() - t0)
+            t0 = time.time()
+            rows = normalize_telemetry_rows(raw_rows)
+            _log.info("IBT decoder: normalized %d rows in %.3fs", len(rows), time.time() - t0)
 
         t0 = time.time()
         overview = _build_overview(file_path, fingerprint.sha256, header, session_yaml, rows, missing)

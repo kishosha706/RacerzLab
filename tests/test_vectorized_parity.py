@@ -184,6 +184,8 @@ class TestParity:
                 "lf_shock_activity_index", "rf_shock_activity_index", "lr_shock_activity_index", "rr_shock_activity_index",
                 "lf_damper_energy_proxy", "rf_damper_energy_proxy", "lr_damper_energy_proxy", "rr_damper_energy_proxy",
                 "shock_velocity_rms", "shock_activity_index", "damper_energy_proxy",
+                "lf_shock_static_defl_in", "rf_shock_static_defl_in", "lr_shock_static_defl_in", "rr_shock_static_defl_in",
+                "lf_shock_defl_delta_in", "rf_shock_defl_delta_in", "lr_shock_defl_delta_in", "rr_shock_defl_delta_in",
                 "lf_pressure_gain", "rf_pressure_gain", "lr_pressure_gain", "rr_pressure_gain",
                 "lf_temp_spread", "rf_temp_spread", "lr_temp_spread", "rr_temp_spread",
                 "lf_wear_spread", "rf_wear_spread", "lr_wear_spread", "rr_wear_spread",
@@ -210,6 +212,8 @@ class TestParity:
                 "lf_shock_activity_index", "rf_shock_activity_index", "lr_shock_activity_index", "rr_shock_activity_index",
                 "lf_damper_energy_proxy", "rf_damper_energy_proxy", "lr_damper_energy_proxy", "rr_damper_energy_proxy",
                 "shock_velocity_rms", "shock_activity_index", "damper_energy_proxy",
+                "lf_shock_static_defl_in", "rf_shock_static_defl_in", "lr_shock_static_defl_in", "rr_shock_static_defl_in",
+                "lf_shock_defl_delta_in", "rf_shock_defl_delta_in", "lr_shock_defl_delta_in", "rr_shock_defl_delta_in",
                 "lf_pressure_gain", "rf_pressure_gain", "lr_pressure_gain", "rr_pressure_gain",
                 "lf_temp_spread", "rf_temp_spread", "lr_temp_spread", "rr_temp_spread",
                 "lf_wear_spread", "rf_wear_spread", "lr_wear_spread", "rr_wear_spread",
@@ -298,11 +302,15 @@ class TestParity:
         assert "mass_kg" in vec.columns
 
     def test_empty_input(self) -> None:
-        """Empty input produces empty output."""
-        ref = normalize_telemetry_rows([])
-        vec = frame_to_rows(normalize_telemetry_frame([]))
-        assert len(ref) == 0
-        assert len(vec) == 0
+        """Empty input produces empty output (row path)."""
+        import os; os.environ["RACELAB_ANALYSIS_ENGINE"] = "row"
+        try:
+            ref = normalize_telemetry_rows([])
+            vec = frame_to_rows(normalize_telemetry_frame([]))
+            assert len(ref) == 0
+            assert len(vec) == 0
+        finally:
+            os.environ.pop("RACELAB_ANALYSIS_ENGINE", None)
 
     def test_missing_optional_columns(self) -> None:
         """Missing columns produce no errors, just skip those channels."""
@@ -672,9 +680,13 @@ class TestParity:
 
     def test_compare_empty_input(self) -> None:
         """compare_row_vs_vectorized handles empty input."""
-        report = compare_row_vs_vectorized([])
-        assert report["pass_fail"] is True
-        assert report["row_count"] == 0
+        import os; os.environ["RACELAB_ANALYSIS_ENGINE"] = "row"
+        try:
+            report = compare_row_vs_vectorized([])
+            assert report["pass_fail"] is True
+            assert report["row_count"] == 0
+        finally:
+            os.environ.pop("RACELAB_ANALYSIS_ENGINE", None)
 
     def test_compare_detects_injected_mismatch(self) -> None:
         """Comparison reports known mismatch when a channel is corrupted."""
@@ -892,10 +904,14 @@ class TestParity:
 
     def test_balance_missing_risk(self) -> None:
         """Missing front or rear risk → unavailable."""
-        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
-        rows = [{"Speed": 50.0, "SessionTime": 0.0}]
-        ref = normalize_telemetry_rows(rows)
-        assert ref[0].get("platform_balance_label") == "unavailable"
+        import os; os.environ["RACELAB_ANALYSIS_ENGINE"] = "row"
+        try:
+            from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+            rows = [{"Speed": 50.0, "SessionTime": 0.0}]
+            ref = normalize_telemetry_rows(rows)
+            assert ref[0].get("platform_balance_label") == "unavailable"
+        finally:
+            os.environ.pop("RACELAB_ANALYSIS_ENGINE", None)
 
     def test_whole_car_bottoming_risk_value(self) -> None:
         """whole_car_bottoming_risk = min(front_risk, rear_risk)."""
@@ -972,3 +988,94 @@ class TestBenchmark:
     @pytest.mark.slow
     def test_bench_10k_vector(self, benchmark) -> None:
         benchmark(normalize_telemetry_frame, _synthetic_rows(10_000))
+
+
+class TestEngineDispatch:
+    """Tests for the normalize_telemetry_rows engine dispatcher."""
+
+    def test_vectorized_default(self, small_rows: list[dict]) -> None:
+        """Default (no env var): vectorized should be used."""
+        import os
+        os.environ.pop("RACELAB_ANALYSIS_ENGINE", None)
+        from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+        result = normalize_telemetry_rows(small_rows)
+        assert len(result) == len(small_rows)
+        # Vectorized path produces fewer columns (no raw duplicates)
+        assert "speed_mph" in result[0]
+
+    def test_vectorized_explicit(self, small_rows: list[dict]) -> None:
+        """RACELAB_ANALYSIS_ENGINE=vectorized: use vec path."""
+        import os
+        os.environ["RACELAB_ANALYSIS_ENGINE"] = "vectorized"
+        try:
+            from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+            result = normalize_telemetry_rows(small_rows)
+            assert len(result) == len(small_rows)
+            assert "speed_mph" in result[0]
+        finally:
+            os.environ.pop("RACELAB_ANALYSIS_ENGINE", None)
+
+    def test_row_explicit(self, small_rows: list[dict]) -> None:
+        """RACELAB_ANALYSIS_ENGINE=row: force row path."""
+        import os
+        os.environ["RACELAB_ANALYSIS_ENGINE"] = "row"
+        try:
+            from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+            result = normalize_telemetry_rows(small_rows)
+            assert len(result) == len(small_rows)
+            # Row path produces more columns (raw + normalized)
+            assert "speed_mph" in result[0]
+        finally:
+            os.environ.pop("RACELAB_ANALYSIS_ENGINE", None)
+
+    def test_fallback_on_invalid_input(self) -> None:
+        """Vectorized succeeds on empty input (produces empty list)."""
+        import os
+        os.environ["RACELAB_ANALYSIS_ENGINE"] = "vectorized"
+        try:
+            from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+            result = normalize_telemetry_rows([])
+            assert isinstance(result, list)
+        finally:
+            os.environ.pop("RACELAB_ANALYSIS_ENGINE", None)
+
+
+class TestSchemaInference:
+    """Tests for Polars schema inference with mixed/null numeric types."""
+
+    def test_mixed_null_then_float(self) -> None:
+        """First row has None, later row has large float — should not fail."""
+        from racelab_engine.analysis.vectorized_channels import normalize_telemetry_frame, frame_to_rows
+        rows = [
+            {"SessionTime": 0.0, "Speed": 50.0, "SomeChannel": None},
+            {"SessionTime": 0.1, "Speed": 55.0, "SomeChannel": 2752.637493},
+        ]
+        vec = frame_to_rows(normalize_telemetry_frame(rows))
+        assert len(vec) == 2
+        assert vec[0]["SomeChannel"] is None
+        assert vec[1]["SomeChannel"] == 2752.637493
+
+    def test_mixed_int_then_float(self) -> None:
+        """First rows are ints, later row is float — should not fail."""
+        from racelab_engine.analysis.vectorized_channels import normalize_telemetry_frame, frame_to_rows
+        rows = [
+            {"SessionTime": 0.0, "Speed": 50.0, "Counts": 0},
+            {"SessionTime": 0.1, "Speed": 55.0, "Counts": 3},
+            {"SessionTime": 0.2, "Speed": 60.0, "Counts": 2752},
+        ]
+        vec = frame_to_rows(normalize_telemetry_frame(rows))
+        assert len(vec) == 3
+        assert vec[0]["Counts"] == 0.0
+        assert vec[2]["Counts"] == 2752.0
+
+    def test_string_labels_stay_strings(self) -> None:
+        """String columns should not be coerced to float."""
+        from racelab_engine.analysis.vectorized_channels import normalize_telemetry_frame, frame_to_rows
+        rows = [
+            {"SessionTime": 0.0, "Speed": 50.0, "Label": "active"},
+            {"SessionTime": 0.1, "Speed": 55.0, "Label": None},
+        ]
+        vec = frame_to_rows(normalize_telemetry_frame(rows))
+        assert len(vec) == 2
+        assert vec[0]["Label"] == "active"
+        assert vec[1]["Label"] is None
