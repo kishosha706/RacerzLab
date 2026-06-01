@@ -9,6 +9,17 @@ from statistics import mean
 from typing import Any, Collection, Mapping, cast
 
 _log = logging.getLogger(__name__)
+LAST_IMPORT_PROFILE: dict[str, Any] = {}
+
+
+def _subprofile_enabled() -> bool:
+    import os
+    return os.environ.get("RACELAB_IMPORT_SUBPROFILE", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _var_subprofile_enabled() -> bool:
+    import os
+    return os.environ.get("RACELAB_IMPORT_VAR_PROFILE", "").strip().lower() in {"1", "true", "yes", "on"}
 
 from racelab_engine.analysis.calculated_channels import (
     CORE_REQUIRED_CHANNELS,
@@ -22,7 +33,7 @@ from racelab_engine.analysis.lap_detection import detect_laps
 from racelab_engine.analysis.platform import detect_platform_events
 from racelab_engine.io.file_fingerprint import fingerprint_file
 from racelab_engine.io.ibt_types import IBTHeader, IBTImportResult, IBTVariableDefinition, ImportStatus
-from racelab_engine.io.session_yaml import extract_session_summary, extract_setup_snapshot
+from racelab_engine.io.session_yaml import extract_session_summary, extract_setup_snapshot, parse_session_yaml
 from racelab_engine.models.session import RunOverview
 
 
@@ -49,8 +60,6 @@ DATA_TYPE_SIZES = {
 }
 
 TARGET_CHANNELS = list(dict.fromkeys(HIGH_VALUE_RAW_CHANNELS))
-
-
 def _read_bytes(path: str | Path) -> bytes:
     file_path = Path(path)
     if not file_path.exists():
@@ -177,6 +186,16 @@ def read_session_yaml(path: str | Path) -> str:
     return data[start:end].split(b"\0", 1)[0].decode("utf-8", errors="replace")
 
 
+def _extract_session_yaml_from_data(data: bytes, header: IBTHeader) -> str:
+    if header.session_info_offset is None or header.session_info_length is None:
+        raise IBTParseError("Header is missing session YAML offsets.")
+    start = header.session_info_offset
+    end = start + header.session_info_length
+    if end > len(data):
+        raise IBTParseError("Session YAML block is outside the file.")
+    return data[start:end].split(b"\0", 1)[0].decode("utf-8", errors="replace")
+
+
 def _decode_scalar(data: bytes, absolute_offset: int, definition: IBTVariableDefinition) -> Any:
     data_type_id = definition.data_type_id
     if data_type_id == 0:
@@ -251,6 +270,7 @@ def _read_records_columnar(
     header: IBTHeader,
     definitions: list[IBTVariableDefinition],
     variables: Collection[str] | None = None,
+    profile_out: dict[str, float] | None = None,
 ) -> dict[str, list[Any]]:
     """Fast columnar decoder using precompiled structs and memoryview."""
     record_count = header.record_count
@@ -259,32 +279,89 @@ def _read_records_columnar(
     if record_count is None or record_len is None or data_offset is None:
         raise IBTParseError("Header is missing telemetry record offsets.")
 
+    profile_enabled = profile_out is not None
+    var_profile_enabled = profile_enabled and _var_subprofile_enabled()
+    t_plan = time.perf_counter() if profile_enabled else 0.0
     selected = [d for d in definitions if variables is None or d.name in variables]
+    profile_loop_by_kind: dict[str, float] = {
+        "column_alloc_s": 0.0,
+        "record_loop_total_s": 0.0,
+        "scalar_numeric_decode_s": 0.0,
+        "string_decode_s": 0.0,
+        "array_numeric_decode_s": 0.0,
+    }
+    t_cols = time.perf_counter() if profile_enabled else 0.0
     columns: dict[str, list[Any]] = {d.name: [None] * record_count for d in selected}
     columns["sample_index"] = list(range(record_count))
+    if profile_enabled:
+        profile_loop_by_kind["column_alloc_s"] = time.perf_counter() - t_cols
     mv = memoryview(data)
 
-    for row_idx in range(record_count):
-        rec_start = data_offset + row_idx * record_len
-        for defn in selected:
-            dt = defn.data_type_id
-            if dt is None:
-                raise IBTParseError(f"Missing data type ID for {defn.name}.")
-            if dt == 0:
-                raw = bytes(mv[rec_start + defn.offset : rec_start + defn.offset + max(1, defn.count)])
-                value = _decode_c_string(raw)
-            elif dt in _STRUCT_FORMATS:
-                count = max(1, defn.count)
-                fmt = _STRUCT_FORMATS[dt]
-                if count == 1:
-                    value = fmt.unpack_from(mv, rec_start + defn.offset)[0]
-                else:
-                    size = fmt.size
-                    value = [fmt.unpack_from(mv, rec_start + defn.offset + i * size)[0] for i in range(count)]
-            else:
-                raise IBTParseError(f"Unsupported iRacing variable type {dt} for {defn.name}.")
-            columns[defn.name][row_idx] = value
+    scalar_plans: list[tuple[str, list[Any], int, struct.Struct]] = []
+    string_plans: list[tuple[str, list[Any], int, int]] = []
+    array_plans: list[tuple[str, list[Any], int, int, struct.Struct]] = []
+    type_counts: dict[str, int] = {"scalar": 0, "string": 0, "array": 0}
+    for defn in selected:
+        dt = defn.data_type_id
+        if dt is None:
+            raise IBTParseError(f"Missing data type ID for {defn.name}.")
+        count = max(1, defn.count)
+        if dt == 0:
+            string_plans.append((defn.name, columns[defn.name], defn.offset, count))
+            type_counts["string"] += 1
+            continue
+        fmt = _STRUCT_FORMATS.get(dt)
+        if fmt is None:
+            raise IBTParseError(f"Unsupported iRacing variable type {dt} for {defn.name}.")
+        if count == 1:
+            scalar_plans.append((defn.name, columns[defn.name], defn.offset, fmt))
+            type_counts["scalar"] += 1
+        else:
+            array_plans.append((defn.name, columns[defn.name], defn.offset, count, fmt))
+            type_counts["array"] += 1
+    if profile_enabled:
+        profile_out["decode_columnar_decode_plan_s"] = time.perf_counter() - t_plan
+        profile_out["decode_columnar_variable_count"] = float(len(selected))
+        profile_out["decode_columnar_record_count"] = float(record_count)
+        profile_out["decode_columnar_estimated_scalar_values"] = float(record_count * len(selected))
+        profile_out["decode_columnar_type_count_scalar"] = float(type_counts["scalar"])
+        profile_out["decode_columnar_type_count_string"] = float(type_counts["string"])
+        profile_out["decode_columnar_type_count_array"] = float(type_counts["array"])
 
+    per_var_s: dict[str, float] = {}
+    t_loop_total = time.perf_counter() if profile_enabled else 0.0
+    rec_start = data_offset
+    for row_idx in range(record_count):
+        for name, out_col, offset, count in string_plans:
+            abs_off = rec_start + offset
+            var_t0 = time.perf_counter() if var_profile_enabled else 0.0
+            out_col[row_idx] = _decode_c_string(bytes(mv[abs_off : abs_off + count]))
+            if var_profile_enabled:
+                profile_loop_by_kind["string_decode_s"] += time.perf_counter() - var_t0
+        for name, out_col, offset, fmt in scalar_plans:
+            abs_off = rec_start + offset
+            var_t0 = time.perf_counter() if var_profile_enabled else 0.0
+            out_col[row_idx] = fmt.unpack_from(mv, abs_off)[0]
+            if var_profile_enabled:
+                profile_loop_by_kind["scalar_numeric_decode_s"] += time.perf_counter() - var_t0
+        for name, out_col, offset, count, fmt in array_plans:
+            abs_off = rec_start + offset
+            var_t0 = time.perf_counter() if var_profile_enabled else 0.0
+            size = fmt.size
+            out_col[row_idx] = [fmt.unpack_from(mv, abs_off + i * size)[0] for i in range(count)]
+            if var_profile_enabled:
+                profile_loop_by_kind["array_numeric_decode_s"] += time.perf_counter() - var_t0
+            if var_profile_enabled:
+                per_var_s[name] = per_var_s.get(name, 0.0) + (time.perf_counter() - var_t0)
+        rec_start += record_len
+
+    if profile_enabled:
+        profile_loop_by_kind["record_loop_total_s"] = time.perf_counter() - t_loop_total
+        profile_out.update({f"decode_columnar_{k}": v for k, v in profile_loop_by_kind.items()})
+        if var_profile_enabled and per_var_s:
+            top = sorted(per_var_s.items(), key=lambda item: item[1], reverse=True)[:10]
+            for idx, (name, seconds) in enumerate(top, start=1):
+                profile_out[f"decode_var_top_{idx:02d}_{name}_s"] = seconds
     return columns
 
 
@@ -383,11 +460,18 @@ def _build_overview(
     file_hash: str,
     header: IBTHeader,
     session_yaml: str,
-    rows: list[dict[str, Any]],
+    telemetry_table: Any,
     missing_channels: list[str],
 ) -> RunOverview:
+    profile: dict[str, float] = {}
+    t0 = time.perf_counter()
     run_id = _slug_run_id(path, file_hash)
-    session = extract_session_summary(session_yaml, run_id=run_id)
+    profile["overview_slug_run_id_s"] = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    parsed_yaml = parse_session_yaml(session_yaml)
+    profile["overview_session_yaml_parse_s"] = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    session = extract_session_summary(session_yaml, run_id=run_id, parsed_data=parsed_yaml)
     session = session.model_copy(
         update={
             "source_file": str(path),
@@ -398,15 +482,34 @@ def _build_overview(
             "duration_seconds": header.duration_seconds,
         }
     )
-    setup = extract_setup_snapshot(session_yaml, run_id=run_id)
-    laps = classify_laps(detect_laps(rows, run_id=run_id))
+    profile["overview_session_extract_s"] = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    setup = extract_setup_snapshot(session_yaml, run_id=run_id, parsed_data=parsed_yaml)
+    profile["overview_setup_extract_s"] = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    detected_laps = detect_laps(telemetry_table, run_id=run_id)
+    profile["overview_lap_detect_s"] = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    laps = classify_laps(detected_laps)
+    profile["overview_lap_classify_s"] = time.perf_counter() - t0
+    t0 = time.perf_counter()
     useful_laps = [lap for lap in laps if lap.is_useful]
     best_lap = min(useful_laps, key=lambda lap: lap.lap_time or 999999.0) if useful_laps else None
-    platform_events = detect_platform_events(rows, run_id=run_id)
-    best_lap_rows = [row for row in rows if best_lap is not None and row.get("lap") == best_lap.lap_number]
-    drag_events = detect_drag_scrub_risk_zones(best_lap_rows, run_id=run_id, lap_number=best_lap.lap_number if best_lap else None)
+    profile["overview_best_lap_pick_s"] = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    platform_events = detect_platform_events(telemetry_table, run_id=run_id)
+    profile["overview_platform_events_s"] = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    drag_events = detect_drag_scrub_risk_zones(
+        telemetry_table,
+        run_id=run_id,
+        lap_number=best_lap.lap_number if best_lap else None,
+    )
+    profile["overview_drag_scrub_s"] = time.perf_counter() - t0
+    t0 = time.perf_counter()
     events = platform_events + drag_events
     recommendations = build_recommendations(run_id, [event for event in events if event.valid_for_tuning])
+    profile["overview_recommendations_s"] = time.perf_counter() - t0
     invalid_scrapes = [
         event for event in platform_events if event.event_type == "PLATFORM_SCRAPE" and not event.valid_for_tuning
     ]
@@ -420,7 +523,8 @@ def _build_overview(
     if invalid_scrapes:
         warnings.append("At least one low/negative splitter event occurred in slowdown context and is not valid setup evidence.")
 
-    return RunOverview(
+    t0 = time.perf_counter()
+    out = RunOverview(
         run_id=run_id,
         session=session,
         best_useful_lap=best_lap,
@@ -441,6 +545,10 @@ def _build_overview(
             else "Import a complete run with at-speed telemetry before making setup conclusions."
         ),
     )
+    profile["overview_model_build_s"] = time.perf_counter() - t0
+    profile["overview_total_s"] = sum(profile.values())
+    globals()["LAST_IMPORT_PROFILE"].update(profile)
+    return out
 
 
 def import_ibt(path: str | Path) -> IBTImportResult:
@@ -458,52 +566,132 @@ def import_ibt(path: str | Path) -> IBTImportResult:
             )
         )
 
+    globals()["LAST_IMPORT_PROFILE"] = {}
     fingerprint = fingerprint_file(file_path)
+    profile_enabled = _subprofile_enabled()
     try:
         t0 = time.time()
         data = _read_bytes(file_path)
+        if profile_enabled:
+            LAST_IMPORT_PROFILE["decode_file_read_s"] = time.time() - t0
         _log.info("IBT decoder: read %d bytes in %.3fs", len(data), time.time() - t0)
 
         t0 = time.time()
         header = _parse_header(data, len(data))
+        if profile_enabled:
+            LAST_IMPORT_PROFILE["decode_header_parse_s"] = time.time() - t0
         _log.info("IBT decoder: header parsed in %.3fs (vars=%s, records=%s, rate=%sHz)",
                   time.time() - t0, header.variable_count, header.record_count, header.telemetry_rate_hz)
 
         t0 = time.time()
         definitions = _parse_variable_definitions(data, header)
+        if profile_enabled:
+            LAST_IMPORT_PROFILE["decode_var_defs_s"] = time.time() - t0
         _log.info("IBT decoder: %d variable definitions parsed in %.3fs", len(definitions), time.time() - t0)
 
         t0 = time.time()
-        session_yaml = read_session_yaml(file_path)
+        session_yaml = _extract_session_yaml_from_data(data, header)
+        if profile_enabled:
+            LAST_IMPORT_PROFILE["decode_session_yaml_s"] = time.time() - t0
         _log.info("IBT decoder: session YAML extracted in %.3fs (%d chars)",
                   time.time() - t0, len(session_yaml))
 
         available = {definition.name for definition in definitions}
         missing = [channel for channel in CORE_REQUIRED_CHANNELS if channel not in available]
 
-        t0 = time.time()
-        try:
-            columns = _read_records_columnar(
-                data, header, definitions,
-                variables=[channel for channel in TARGET_CHANNELS if channel in available],
-            )
-            from racelab_engine.analysis.vectorized_channels import normalize_telemetry_frame, frame_to_rows
-            df = normalize_telemetry_frame(columns)
-            rows = frame_to_rows(df)
-            _log.info("IBT decoder (columnar): %d records + normalized in %.3fs", len(rows), time.time() - t0)
-        except Exception:
-            _log.debug("Columnar fast path failed, using row decoder", exc_info=True)
-            raw_rows = _read_records_from_data(
-                data, header, definitions,
-                variables=[channel for channel in TARGET_CHANNELS if channel in available],
-            )
-            _log.info("IBT decoder: %d records decoded in %.3fs", len(raw_rows), time.time() - t0)
-            t0 = time.time()
-            rows = normalize_telemetry_rows(raw_rows)
-            _log.info("IBT decoder: normalized %d rows in %.3fs", len(rows), time.time() - t0)
+        import os
+        decoder_mode = os.environ.get("RACELAB_IBT_DECODER", "").strip().lower()
+        use_columnar = decoder_mode != "row"
+        target_vars = [channel for channel in TARGET_CHANNELS if channel in available]
+
+        from racelab_engine.analysis.vectorized_channels import (
+            get_analysis_engine_mode,
+            normalize_telemetry_frame,
+        )
+        analysis_mode = get_analysis_engine_mode()
+        normalized_frame = None
+        rows: list[dict[str, Any]]
+        overview_table: Any | None = None
+        if profile_enabled:
+            LAST_IMPORT_PROFILE["normalized_frame_available"] = 0.0
+            LAST_IMPORT_PROFILE["rows_materialized_during_import"] = 0.0
+            LAST_IMPORT_PROFILE["frame_to_rows_count"] = 0.0
+            LAST_IMPORT_PROFILE["frame_to_rows_s"] = 0.0
+            LAST_IMPORT_PROFILE["frame_to_rows_reason"] = "none"
+            LAST_IMPORT_PROFILE["cache_write_from_frame"] = 0.0
 
         t0 = time.time()
-        overview = _build_overview(file_path, fingerprint.sha256, header, session_yaml, rows, missing)
+        if use_columnar:
+            try:
+                t_loop = time.time()
+                columns = _read_records_columnar(
+                    data, header, definitions,
+                    variables=target_vars,
+                    profile_out=LAST_IMPORT_PROFILE if profile_enabled else None,
+                )
+                if profile_enabled:
+                    LAST_IMPORT_PROFILE["decode_columnar_loop_s"] = time.time() - t_loop
+                if analysis_mode == "row":
+                    import polars as pl
+                    raw_rows = pl.DataFrame(columns, strict=False).to_dicts()
+                    rows = normalize_telemetry_rows(raw_rows)
+                    _log.info(
+                        "IBT decoder (columnar+row-normalize): %d records in %.3fs",
+                        len(rows),
+                        time.time() - t0,
+                    )
+                else:
+                    t_norm = time.time()
+                    df = normalize_telemetry_frame(columns)
+                    normalized_frame = df
+                    overview_table = df
+                    if profile_enabled:
+                        LAST_IMPORT_PROFILE["normalized_frame_available"] = 1.0
+                        LAST_IMPORT_PROFILE["normalize_vectorized_frame_s"] = time.time() - t_norm
+                        try:
+                            from racelab_engine.analysis import vectorized_channels as _vec_mod
+                            for _k, _v in (getattr(_vec_mod, "LAST_NORMALIZE_PROFILE", {}) or {}).items():
+                                if isinstance(_v, (int, float)):
+                                    LAST_IMPORT_PROFILE[_k] = float(_v)
+                        except Exception:
+                            pass
+                    rows = []
+                    _log.info("IBT decoder (columnar+vectorized): %d records in %.3fs", len(rows), time.time() - t0)
+            except Exception:
+                _log.debug("Columnar fast path failed, using row decoder", exc_info=True)
+                raw_rows = _read_records_from_data(
+                    data, header, definitions,
+                    variables=target_vars,
+                )
+                _log.info("IBT decoder (row): %d records decoded in %.3fs", len(raw_rows), time.time() - t0)
+                t0 = time.time()
+                rows = normalize_telemetry_rows(raw_rows)
+                overview_table = rows
+                if profile_enabled:
+                    LAST_IMPORT_PROFILE["decode_row_normalize_s"] = time.time() - t0
+                    LAST_IMPORT_PROFILE["frame_to_rows_reason"] = "row_decoder_fallback"
+                _log.info("IBT decoder (row normalize): %d rows in %.3fs", len(rows), time.time() - t0)
+        else:
+            raw_rows = _read_records_from_data(
+                data, header, definitions,
+                variables=target_vars,
+            )
+            _log.info("IBT decoder (forced row): %d records decoded in %.3fs", len(raw_rows), time.time() - t0)
+            t0 = time.time()
+            rows = normalize_telemetry_rows(raw_rows)
+            overview_table = rows
+            if profile_enabled:
+                LAST_IMPORT_PROFILE["decode_row_normalize_s"] = time.time() - t0
+                LAST_IMPORT_PROFILE["frame_to_rows_reason"] = "forced_row_decoder"
+            _log.info("IBT decoder (forced row normalize): %d rows in %.3fs", len(rows), time.time() - t0)
+
+        t0 = time.time()
+        if overview_table is None:
+            overview_table = rows
+        if profile_enabled and normalized_frame is not None:
+            LAST_IMPORT_PROFILE["overview_consumers_frame_native"] = 1.0
+            LAST_IMPORT_PROFILE["overview_legacy_consumers_remaining"] = "none"
+        overview = _build_overview(file_path, fingerprint.sha256, header, session_yaml, overview_table, missing)
         _log.info("IBT decoder: overview built in %.3fs (laps=%d, events=%d)",
                   time.time() - t0, len(overview.laps), len(overview.events))
     except (OSError, IBTParseError, struct.error, UnicodeDecodeError) as exc:
@@ -518,7 +706,7 @@ def import_ibt(path: str | Path) -> IBTImportResult:
             ),
         )
 
-    return IBTImportResult(
+    out = IBTImportResult(
         fingerprint=fingerprint,
         header=header,
         variable_definitions=definitions,
@@ -550,3 +738,6 @@ def import_ibt(path: str | Path) -> IBTImportResult:
             ],
         ),
     )
+    if normalized_frame is not None:
+        out.set_normalized_frame(normalized_frame)
+    return out

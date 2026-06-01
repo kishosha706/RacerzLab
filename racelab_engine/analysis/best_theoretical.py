@@ -6,7 +6,6 @@ then assembles a theoretical best lap from those segments.
 
 Rules:
 - Only complete useful laps
-- Only clean/solo or likely solo laps (exclude DRAFT_AFFECTED)
 - Only segments with valid confidence
 - Exclude cooldown/out/invalid laps
 """
@@ -33,8 +32,6 @@ class BestTheoreticalResult:
 def _is_lap_valid(classification_tags: list[str]) -> tuple[bool, str | None]:
     """Check if a lap is valid for theoretical best calculation."""
     tags = [t.upper() for t in classification_tags]
-    if "DRAFT_AFFECTED" in tags:
-        return False, "Draft affected"
     if "OUT_LAP" in tags:
         return False, "Out lap"
     if "COOLDOWN" in tags:

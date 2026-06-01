@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 
 from api.routes_runs import repository
 from racelab_engine.analysis.lap_windows import compute_lap_windows_response
@@ -16,23 +16,17 @@ def get_laps(run_id: str) -> list[LapSummary]:
 
 
 @router.get("/{run_id}/lap-windows", response_model=LapWindowsResponse)
-def get_lap_windows(
-    run_id: str,
-    include_draft: bool = Query(False, description="Include DRAFT_AFFECTED laps"),
-) -> LapWindowsResponse:
-    """Compute fastest individual laps, best consecutive windows, and degradation."""
+def get_lap_windows(run_id: str) -> LapWindowsResponse:
     if not (laps := repository().get_laps(run_id)):
         raise HTTPException(404, f"No laps found for run {run_id}")
-    return compute_lap_windows_response(laps, include_draft=include_draft)
+    return compute_lap_windows_response(laps)
 
 
 @router.post("/laps/compare-selection")
 def validate_compare_selection(req: LapCompareSelection) -> LapCompareSelection:
-    """Validate a lap pair for comparison readiness."""
     repo = repository()
     bl_laps = repo.get_laps(req.baseline_run_id)
     t_laps = repo.get_laps(req.test_run_id)
-
     if not bl_laps:
         raise HTTPException(404, f"Baseline run not found: {req.baseline_run_id}")
     if not t_laps:
@@ -40,7 +34,6 @@ def validate_compare_selection(req: LapCompareSelection) -> LapCompareSelection:
 
     bl_lap = next((l for l in bl_laps if l.lap_number == req.baseline_lap), None)
     t_lap = next((l for l in t_laps if l.lap_number == req.test_lap), None)
-
     if bl_lap is None:
         raise HTTPException(404, f"Baseline lap {req.baseline_lap} not found")
     if t_lap is None:
@@ -48,13 +41,10 @@ def validate_compare_selection(req: LapCompareSelection) -> LapCompareSelection:
 
     warnings: list[str] = []
     can_compare = True
-
-    # Same run/lap check
     if req.baseline_run_id == req.test_run_id and req.baseline_lap == req.test_lap:
-        warnings.append("Same run and lap selected — reference mode only.")
+        warnings.append("Same run and lap selected - reference mode only.")
         can_compare = False
 
-    # Different car/track
     bl_session = repo.get_session(req.baseline_run_id)
     t_session = repo.get_session(req.test_run_id)
     if bl_session and t_session:
@@ -65,14 +55,6 @@ def validate_compare_selection(req: LapCompareSelection) -> LapCompareSelection:
             warnings.append(f"Different tracks: {bl_session.track_name} vs {t_session.track_name}")
             can_compare = False
 
-    # Draft status
-    bl_tags = [t.upper() for t in bl_lap.classification_tags]
-    t_tags = [t.upper() for t in t_lap.classification_tags]
-    if "DRAFT_AFFECTED" in bl_tags or "DRAFT_AFFECTED" in t_tags:
-        warnings.append("One or both laps are draft-affected — comparison may not reflect setup alone.")
-        can_compare = False
-
-    # Invalid lap
     if not bl_lap.is_useful:
         warnings.append(f"Baseline lap {req.baseline_lap} is not useful.")
         can_compare = False

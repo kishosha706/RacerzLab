@@ -25,7 +25,7 @@ type LapsTabProps = {
 };
 
 type LapsSubview = "current" | "windows" | "all_sessions" | "baselines" | "basket";
-type StintMode = "ev" | "delta" | "draft" | "falloff";
+type StintMode = "ev" | "delta" | "falloff";
 
 type EvidenceDescriptor = {
   id: string;
@@ -78,7 +78,6 @@ function classifyPaceTrust(
   warnings: string[] | undefined,
 ): string {
   const upper = (warnings ?? []).map((warning) => warning.toUpperCase());
-  if (upper.some((warning) => warning.includes("DRAFT"))) return "Fast but draft-limited";
   if (upper.some((warning) => warning.includes("INSUFFICIENT") || warning.includes("ONLY"))) return "Limited sample size";
   if (paceScore != null && trustScore != null) {
     if (paceScore >= 70 && trustScore < 50) return "Fast but not trustworthy";
@@ -88,14 +87,8 @@ function classifyPaceTrust(
   return "Use with caution";
 }
 
-function hasDraft(tags: string[] | undefined): boolean {
-  return (tags ?? []).some((tag) => tag.toUpperCase().includes("DRAFT"));
-}
-
 function lapTrustTier(lap: LapSummary): string {
   if (!lap.is_useful) return "Invalid";
-  if (hasDraft(lap.classification_tags)) return "Draft affected";
-  if ((lap.classification_tags ?? []).includes("LIKELY_SOLO")) return "High";
   return "Usable";
 }
 
@@ -109,16 +102,13 @@ function windowTrustTier(window: LapWindowSummary): string {
 
 function lapFlags(lap: LapSummary): string[] {
   const flags: string[] = [];
-  if (hasDraft(lap.classification_tags)) flags.push("Draft");
   if (!lap.is_useful) flags.push("Invalid");
-  if ((lap.classification_tags ?? []).includes("LIKELY_SOLO")) flags.push("Clean");
   if (lap.lap_type !== "timed") flags.push(lap.lap_type);
   return flags;
 }
 
 function windowFlags(window: LapWindowSummary): string[] {
   const flags: string[] = [];
-  if (hasDraft(window.classification_tags) || window.draft_status_summary === "DRAFT_AFFECTED") flags.push("Draft");
   if (window.valid_lap_count < window.window_size) flags.push("Excluded laps");
   if (window.falloff_sec != null) flags.push(`${window.window_size} lap block`);
   return flags;
@@ -133,7 +123,6 @@ function trustReasonChips(
   const chips: string[] = [];
   const upperWarnings = (warnings ?? []).map((warning) => warning.toUpperCase());
   const upperTags = (tags ?? []).map((tag) => tag.toUpperCase());
-  if (upperTags.some((tag) => tag.includes("DRAFT")) || upperWarnings.some((warning) => warning.includes("DRAFT"))) chips.push("Draft");
   if (upperWarnings.some((warning) => warning.includes("INVALID") || warning.includes("INSUFFICIENT") || warning.includes("ONLY"))) chips.push("Few laps");
   if (upperWarnings.some((warning) => warning.includes("SHORT"))) chips.push("Short window");
   if (upperWarnings.some((warning) => warning.includes("TIRE") || warning.includes("TEMP"))) chips.push("Tire data");
@@ -168,9 +157,7 @@ type RepresentativeLapInfo = {
 
 function bestEvidenceLapInSet(laps: LapSummary[]): LapSummary | null {
   const usefulLaps = laps.filter((lap) => lap.is_useful);
-  const cleanUsefulLaps = usefulLaps.filter((lap) => !hasDraft(lap.classification_tags));
-  const cleanSolo = cleanUsefulLaps.filter((lap) => (lap.classification_tags ?? []).includes("LIKELY_SOLO"));
-  const source = cleanSolo.length > 0 ? cleanSolo : cleanUsefulLaps.length > 0 ? cleanUsefulLaps : usefulLaps;
+  const source = usefulLaps;
   return [...source]
     .filter((lap) => lap.lap_time != null)
     .sort((left, right) => (left.lap_time ?? 9999) - (right.lap_time ?? 9999))[0] ?? null;
@@ -252,7 +239,6 @@ function describeSelection(
         valid_lap_count: 0,
         excluded_laps: [],
         classification_tags: [],
-        draft_status_summary: "UNKNOWN_DRAFT_STATUS",
         platform_risk_peak: null,
         rear_platform_risk_peak: null,
         whole_car_bottoming_peak: null,
@@ -351,7 +337,6 @@ export function LapsTab({ overview }: LapsTabProps) {
 
   const [windowsData, setWindowsData] = useState<LapWindowsResponse | null>(null);
   const [expandedLap, setExpandedLap] = useState<number | null>(null);
-  const [includeDraft, setIncludeDraft] = useState(false);
   const [stintMode, setStintMode] = useState<StintMode>("ev");
   const [subview, setSubview] = useState<LapsSubview>("current");
   const [allRuns, setAllRuns] = useState<RunListItem[]>([]);
@@ -371,10 +356,10 @@ export function LapsTab({ overview }: LapsTabProps) {
   }, [subview]);
 
   useEffect(() => {
-    fetchLapWindows(overview.run_id, includeDraft)
+    fetchLapWindows(overview.run_id)
       .then(setWindowsData)
       .catch(() => setWindowsData(null));
-  }, [overview.run_id, includeDraft]);
+  }, [overview.run_id]);
 
   const bestTime = useMemo(() => {
     const times = laps.filter((lap) => lap.lap_time != null).map((lap) => lap.lap_time as number);
@@ -382,10 +367,7 @@ export function LapsTab({ overview }: LapsTabProps) {
   }, [laps]);
 
   const usefulLaps = useMemo(() => laps.filter((lap) => lap.is_useful), [laps]);
-  const cleanUsefulLaps = useMemo(
-    () => usefulLaps.filter((lap) => !hasDraft(lap.classification_tags)),
-    [usefulLaps],
-  );
+  const cleanUsefulLaps = useMemo(() => usefulLaps, [usefulLaps]);
 
   const fastestUsableLap = useMemo(
     () => [...usefulLaps].filter((lap) => lap.lap_time != null).sort((left, right) => (left.lap_time ?? 9999) - (right.lap_time ?? 9999))[0] ?? null,
@@ -393,8 +375,7 @@ export function LapsTab({ overview }: LapsTabProps) {
   );
 
   const bestEvidenceLap = useMemo(() => {
-    const cleanSolo = cleanUsefulLaps.filter((lap) => (lap.classification_tags ?? []).includes("LIKELY_SOLO"));
-    const source = cleanSolo.length > 0 ? cleanSolo : cleanUsefulLaps.length > 0 ? cleanUsefulLaps : usefulLaps;
+    const source = cleanUsefulLaps.length > 0 ? cleanUsefulLaps : usefulLaps;
     return [...source].filter((lap) => lap.lap_time != null).sort((left, right) => (left.lap_time ?? 9999) - (right.lap_time ?? 9999))[0] ?? null;
   }, [cleanUsefulLaps, usefulLaps]);
 
@@ -513,7 +494,6 @@ export function LapsTab({ overview }: LapsTabProps) {
     overview.session.setup_name ?? null,
     lap.lap_time ?? null,
     lap.classification_tags ?? [],
-    hasDraft(lap.classification_tags) ? "DRAFT_AFFECTED" : "LIKELY_SOLO",
     null,
     overview.session.import_time ?? null,
     overview.session.session_type ?? null,
@@ -534,7 +514,6 @@ export function LapsTab({ overview }: LapsTabProps) {
     overview.session.setup_name ?? null,
     window.average_lap_time ?? null,
     window.classification_tags ?? [],
-    window.draft_status_summary,
     window.setup_usefulness_score ?? null,
     overview.session.import_time ?? null,
     overview.session.session_type ?? null,
@@ -703,10 +682,6 @@ export function LapsTab({ overview }: LapsTabProps) {
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <span className="muted">{overview.session.track_display_name ?? overview.session.track_name} - {overview.session.car_name}</span>
-            <label className="toggle-label" style={{ fontSize: 11 }}>
-              <input type="checkbox" checked={includeDraft} onChange={() => setIncludeDraft(!includeDraft)} />
-              Include Draft
-            </label>
           </div>
         </div>
         <div className="laps-chip-row" style={{ marginTop: 8 }}>
@@ -839,20 +814,20 @@ export function LapsTab({ overview }: LapsTabProps) {
               <h2><CheckCircle2 size={16} /> Stint Map Truthfulness</h2>
             </div>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {(["ev", "delta", "draft", "falloff"] as StintMode[]).map((mode) => (
+              {(["ev", "delta", "falloff"] as StintMode[]).map((mode) => (
                 <button
                   key={mode}
                   className={`setup-diff-toggle-btn ${stintMode === mode ? "active" : ""}`}
                   onClick={() => setStintMode(mode)}
                 >
-                  {mode === "ev" ? "Eng Value" : mode === "delta" ? "Delta" : mode === "draft" ? "Draft" : "Falloff"}
+                  {mode === "ev" ? "Eng Value" : mode === "delta" ? "Delta" : "Falloff"}
                 </button>
               ))}
             </div>
           </div>
           <div className="laps-chip-row" style={{ marginBottom: 8 }}>
             <span className="lap-flag-badge">
-              Basis: {stintMode === "delta" || stintMode === "draft" ? "Lap-level" : stintMode === "ev" ? "Window-level" : "Run-level"}
+              Basis: {stintMode === "delta" ? "Lap-level" : stintMode === "ev" ? "Window-level" : "Run-level"}
             </span>
             {stintMode === "ev" && bestWindow && (
               <span className="lap-flag-badge" style={{ background: "rgba(56,189,248,0.12)", color: "#38bdf8" }}>
@@ -898,8 +873,7 @@ export function LapsTab({ overview }: LapsTabProps) {
             >
               {laps.map((lap) => {
                 const tags = lap.classification_tags ?? [];
-                const draft = hasDraft(tags);
-                const isValid = lap.is_useful && !draft;
+                const isValid = lap.is_useful;
                 const isSelectedLap = selection.selectedLapScope !== "lap_window" && selection.selectedLap === lap.lap_number;
                 const inSelectedWindow = selectedWindow?.start != null && selectedWindow.end != null
                   ? lap.lap_number >= selectedWindow.start && lap.lap_number <= selectedWindow.end
@@ -914,12 +888,9 @@ export function LapsTab({ overview }: LapsTabProps) {
                   else if (delta < 0.1) background = "#22c55e";
                   else if (delta < 0.5) background = "#f59e0b";
                   else background = "#ef4444";
-                } else if (stintMode === "draft") {
-                  background = draft ? "#f59e0b" : isValid ? "#22c55e" : "#4a5568";
                 }
 
                 const markers: string[] = [];
-                if (draft) markers.push("D");
                 if (!lap.is_useful) markers.push("!");
                 if (lap.lap_type === "out") markers.push("O");
                 if (lap.lap_type === "in") markers.push("I");
@@ -942,7 +913,7 @@ export function LapsTab({ overview }: LapsTabProps) {
           </div>
           <div className="laps-stint-legend">
             <span className="laps-stint-legend-item"><span className="laps-stint-legend-swatch" style={{ background: "#22c55e" }} /> Fast / clean</span>
-            <span className="laps-stint-legend-item"><span className="laps-stint-legend-swatch" style={{ background: "#f59e0b" }} /> Warning / draft</span>
+            <span className="laps-stint-legend-item"><span className="laps-stint-legend-swatch" style={{ background: "#f59e0b" }} /> Warning</span>
             <span className="laps-stint-legend-item"><span className="laps-stint-legend-swatch" style={{ background: "#ef4444" }} /> Slow / invalid</span>
             <span className="laps-stint-legend-item"><span className="laps-stint-legend-swatch" style={{ outline: "2px solid var(--cyan)", background: "transparent" }} /> Selected lap</span>
             <span className="laps-stint-legend-item"><span className="laps-stint-legend-swatch" style={{ border: "1px solid var(--cyan)", background: "transparent" }} /> Selected window</span>
@@ -959,11 +930,6 @@ export function LapsTab({ overview }: LapsTabProps) {
             {windowsData.degradation.falloff_early_to_late != null && (
               <span className="lap-flag-badge" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>
                 Falloff +{windowsData.degradation.falloff_early_to_late.toFixed(2)}s
-              </span>
-            )}
-            {windowsData.degradation.draft_warning && (
-              <span className="lap-flag-badge" style={{ background: "rgba(239,68,68,0.12)", color: "#ef4444" }}>
-                {windowsData.degradation.draft_warning}
               </span>
             )}
           </div>
@@ -1077,7 +1043,6 @@ export function LapsTab({ overview }: LapsTabProps) {
                             run.setup_name ?? null,
                             run.best_lap_time_s ?? null,
                             [],
-                            "UNKNOWN_DRAFT_STATUS",
                             null,
                             run.imported_at ?? null,
                             null,
@@ -1098,7 +1063,6 @@ export function LapsTab({ overview }: LapsTabProps) {
                             run.setup_name ?? null,
                             run.best_lap_time_s ?? null,
                             [],
-                            "UNKNOWN_DRAFT_STATUS",
                             null,
                             run.imported_at ?? null,
                             null,

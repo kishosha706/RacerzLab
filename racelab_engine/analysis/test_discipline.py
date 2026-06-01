@@ -40,7 +40,7 @@ def score_test_discipline(
 
     if context_problems > 0:
         score = max(0, score - 15 * context_problems)
-        negative.append(f"{context_problems} context problem(s) detected (weather, draft, run length).")
+        negative.append(f"{context_problems} context problem(s) detected (weather, run length).")
 
     if score < 25:
         label = "invalid"
@@ -60,3 +60,4 @@ def score_test_discipline(
         score=score, label=label, positive_factors=positive,
         negative_factors=negative, recommendation=recommendation,
     )
+

@@ -16,7 +16,6 @@ class LapQualitySummary(BaseModel):
     is_complete: bool = False
     is_useful: bool = False
     classification_tags: list[str] = Field(default_factory=list)
-    draft_status: str = "UNKNOWN_DRAFT_STATUS"
     valid_for_compare: bool = False
     invalid_reasons: list[str] = Field(default_factory=list)
     avg_speed_mph: Optional[float] = None
@@ -59,7 +58,6 @@ class LapWindowSummary(BaseModel):
     valid_lap_count: int = 0
     excluded_laps: list[dict[str, Any]] = Field(default_factory=list)
     classification_tags: list[str] = Field(default_factory=list)
-    draft_status_summary: str = "UNKNOWN_DRAFT_STATUS"
     platform_risk_peak: Optional[float] = None
     rear_platform_risk_peak: Optional[float] = None
     whole_car_bottoming_peak: Optional[float] = None
@@ -93,7 +91,6 @@ class LapDegradationSummary(BaseModel):
     tire_stress_trend: str = "unknown"
     platform_stress_trend: str = "unknown"
     cooling_stress_trend: str = "unknown"
-    draft_warning: Optional[str] = None
     confidence_score: float = 0.0
     coaching_message: Optional[str] = None
 

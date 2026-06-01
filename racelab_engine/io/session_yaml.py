@@ -121,8 +121,12 @@ def _gather_session_data(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def extract_session_summary(yaml_text: str, run_id: str = "unassigned") -> SessionSummary:
-    data = parse_session_yaml(yaml_text)
+def extract_session_summary(
+    yaml_text: str,
+    run_id: str = "unassigned",
+    parsed_data: dict[str, Any] | None = None,
+) -> SessionSummary:
+    data = parsed_data if parsed_data is not None else parse_session_yaml(yaml_text)
     g = _gather_session_data(data)
     w, dr, _de, si, cs, we = g["weekend"], g["driver"], g["driver_entry"], g["session_info"], g["current_session"], g["weather"]
 
@@ -243,8 +247,12 @@ def _setup_extracted_values(car_setup: dict[str, Any], source: dict[str, Any], y
     }
 
 
-def extract_setup_snapshot(yaml_text: str, run_id: str = "unassigned") -> SetupSnapshot:
-    data = parse_session_yaml(yaml_text)
+def extract_setup_snapshot(
+    yaml_text: str,
+    run_id: str = "unassigned",
+    parsed_data: dict[str, Any] | None = None,
+) -> SetupSnapshot:
+    data = parsed_data if parsed_data is not None else parse_session_yaml(yaml_text)
     car_setup = _nested(data, "CarSetup")
     driver = _nested(data, "DriverInfo")
     source = car_setup or data

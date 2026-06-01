@@ -90,6 +90,13 @@ export const TRACE_WORKBENCH_CHANNELS = [
   "lr_damper_energy_proxy", "rr_damper_energy_proxy",
   "shock_velocity_rms", "shock_activity_index", "damper_energy_proxy",
 
+  // ── Diffuser geometry ──
+  "front_center_rh_in", "lr_height_rub_block_in", "rear_center_rh_in",
+  "center_rake_in", "smooth_center_rake_in",
+  "diffuser_track_width_in", "diffuser_wheelbase_in",
+  "diffuser_base_volume_ft3", "diffuser_wedge_volume_ft3",
+  "diffuser_volume_ft3", "smooth_diffuser_volume_ft3",
+
   // ── GPS / track fallback ──
   "track_x_m", "track_y_m", "track_x_ft", "track_y_ft",
 ];

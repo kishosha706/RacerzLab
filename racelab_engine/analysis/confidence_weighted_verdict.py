@@ -66,7 +66,7 @@ def apply_confidence_weights(
 
     # Context penalties
     if context_problems > 0:
-        penalties.append(f"{context_problems} context problem(s) (weather, draft, run length).")
+        penalties.append(f"{context_problems} context problem(s) (weather, run length).")
         confidence -= 0.1 * context_problems
 
     # Transient penalty
@@ -118,3 +118,4 @@ def apply_confidence_weights(
         boosts=boosts,
         recommendation=recommendation,
     )
+

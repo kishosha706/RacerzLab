@@ -217,9 +217,6 @@ export function humanizeWorkspaceLabel(ws: string): string {
 export function humanizeClassificationTag(tag: string): string {
   const map: Record<string, string> = {
     SOLO_CLEAN: "Solo",
-    LIKELY_SOLO: "Solo",
-    DRAFT_AFFECTED: "Draft",
-    POSSIBLE_DRAFT_ASSIST: "Possible Draft",
     OUT_LAP: "Out Lap",
     COOLDOWN: "Cooldown",
     PIT_ROAD: "Pit Road",
@@ -235,16 +232,13 @@ export function humanizeClassificationTag(tag: string): string {
     LINE_TEST: "Line Test",
     NO_SETUP_CONCLUSION: "No Setup",
     PARTIAL: "Partial",
-    UNKNOWN_DRAFT_STATUS: "Unknown",
   };
   return map[tag] ?? tag.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
 /** Classify a lap by its tags for display. Returns { label, color, tone }. */
 export function classifyLapTags(tags: string[]): { label: string; color: string } | null {
-  if (tags.includes("DRAFT_AFFECTED")) return { label: "Draft", color: "#f59e0b" };
-  if (tags.includes("POSSIBLE_DRAFT_ASSIST")) return { label: "Draft?", color: "#f59e0b" };
-  if (tags.includes("SOLO_CLEAN") || tags.includes("LIKELY_SOLO")) return { label: "Solo", color: "#22c55e" };
+  if (tags.includes("SOLO_CLEAN")) return { label: "Solo", color: "#22c55e" };
   if (tags.includes("OUT_LAP")) return { label: "Out", color: "#8d9aaa" };
   if (tags.includes("COOLDOWN")) return { label: "Cool", color: "#8d9aaa" };
   if (tags.includes("PIT_ROAD")) return { label: "Pit", color: "#8d9aaa" };

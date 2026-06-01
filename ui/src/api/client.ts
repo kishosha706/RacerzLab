@@ -422,11 +422,8 @@ export function fetchRunLapList(runId: string): Promise<RunLapList> {
   return requestJson<RunLapList>(`/api/sessions/runs/${encodeURIComponent(runId)}/laps`);
 }
 
-export function fetchLapWindows(runId: string, includeDraft = false): Promise<LapWindowsResponse> {
-  const params = new URLSearchParams();
-  if (includeDraft) params.set("include_draft", "true");
-  const suffix = params.toString() ? `?${params.toString()}` : "";
-  return requestJson<LapWindowsResponse>(`/api/runs/${encodeURIComponent(runId)}/lap-windows${suffix}`);
+export function fetchLapWindows(runId: string): Promise<LapWindowsResponse> {
+  return requestJson<LapWindowsResponse>(`/api/runs/${encodeURIComponent(runId)}/lap-windows`);
 }
 
 export interface TelemetryFileEntry {

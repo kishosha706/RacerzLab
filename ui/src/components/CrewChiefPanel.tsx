@@ -12,7 +12,7 @@ type CrewChiefPanelProps = {
 
 function warnColor(text: string): string {
   const t = text.toLowerCase();
-  if (/draft|invalid|worsen/.test(t)) return "#f59e0b";
+  if (/invalid|worsen/.test(t)) return "#f59e0b";
   if (/risk|critical|danger/.test(t)) return "#ef4444";
   return "#38bdf8";
 }
@@ -86,3 +86,4 @@ export function CrewChiefPanel({ overview, onOpenMap, onOpenPlatform, onOpenSetu
     </aside>
   );
 }
+

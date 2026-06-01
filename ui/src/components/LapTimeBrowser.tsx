@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle, Clock, Flag, XCircle } from "lucide-react";
+import {  CheckCircle, Clock, Flag, XCircle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { fetchRunLapList } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
@@ -68,9 +68,7 @@ export function LapTimeBrowser({ runId }: LapTimeBrowserProps) {
         {lapList.laps.map((lap) => {
           const isSelected = selection.selectedLap === lap.lap_number;
           const isBest = lap.delta_display === "BEST";
-          const tags = lap.classification_tags ?? [];
-          const hasDraftFlag = tags.some((t) => t.includes("DRAFT")) || (lap.warnings?.some((w) => w.toLowerCase().includes("draft")) ?? false);
-          const hasInvalidFlag = !lap.is_useful || (lap.invalid_reasons?.length ?? 0) > 0;
+          const tags = lap.classification_tags ?? [];          const hasInvalidFlag = !lap.is_useful || (lap.invalid_reasons?.length ?? 0) > 0;
           return (
             <button
               key={lap.lap_id}
@@ -91,13 +89,7 @@ export function LapTimeBrowser({ runId }: LapTimeBrowserProps) {
                 <span className="lap-type-badge" style={{ background: `${LAP_TYPE_COLORS[lap.lap_type] ?? "#6b7280"}20`, color: LAP_TYPE_COLORS[lap.lap_type] ?? "#6b7280" }}>
                   {LAP_TYPE_LABELS[lap.lap_type] ?? lap.lap_type}
                 </span>
-                {/* Draft flag */}
-                {hasDraftFlag && (
-                  <span className="lap-flag-badge lap-flag-draft" title="Draft suspected">
-                    <AlertTriangle size={10} /> Draft
-                  </span>
-                )}
-                {/* Invalid flag */}
+                                {/* Invalid flag */}
                 {hasInvalidFlag && (
                   <span className="lap-flag-badge lap-flag-invalid" title="Invalid for clean comparison">
                     <XCircle size={10} /> Invalid
@@ -111,7 +103,10 @@ export function LapTimeBrowser({ runId }: LapTimeBrowserProps) {
           );
         })}
       </div>
-      {/* TODO: If backend provides draft-suspected or dirty/invalid flags, show Draft Suspected / Dirty badges */}
+      {}
     </div>
   );
 }
+
+
+

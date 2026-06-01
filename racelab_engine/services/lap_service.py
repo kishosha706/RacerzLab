@@ -54,8 +54,6 @@ def _collect_invalid_reasons(lap: LapSummary) -> list[str]:
         "PIT_ROAD": "Pit road included",
         "WRECK_OR_SPIN": "Wreck or spin detected",
         "INVALID_SPEED_EVENT": "Invalid speed event",
-        "DRAFT_AFFECTED": "Draft affected",
-        "POSSIBLE_DRAFT_ASSIST": "Possible draft assist",
     }
     for tag, reason in tag_reason_map.items():
         if tag in tags_upper:

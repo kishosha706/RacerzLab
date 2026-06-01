@@ -1,13 +1,13 @@
 /** Internal workbench sub-navigation for PlatformTab. */
 export type WorkbenchView =
-  | "balance" | "rear_scrape" | "aero_load" | "scrub_steering"
+  | "balance" | "rear_scrape" | "aero_load" | "scrub_steering" | "diffuser"
   | "tires" | "shocks" | "grade_pull";
 
 export const WORKBENCH_VIEWS: { id: WorkbenchView; label: string; icon: string }[] = [
   { id: "balance", label: "Balance", icon: "⚖" },
-  { id: "rear_scrape", label: "Rear Scrape", icon: "R" },
+  { id: "scrub_steering", label: "Rear Scrape / Scrub", icon: "↯" },
   { id: "aero_load", label: "Aero Load", icon: "🌊" },
-  { id: "scrub_steering", label: "Scrub / Steering", icon: "↩" },
+  { id: "diffuser", label: "Diffuser", icon: "▱" },
   { id: "tires", label: "Tires", icon: "◯" },
   { id: "shocks", label: "Shocks", icon: "〰" },
   { id: "grade_pull", label: "Grade / Pull", icon: "⛰" },

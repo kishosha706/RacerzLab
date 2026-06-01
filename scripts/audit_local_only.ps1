@@ -49,6 +49,23 @@ $RuntimeFiles = @(
   "scripts"
 )
 
+$ImportAuditRan = $false
+if (Test-Path "scripts\audit_import_pipeline_contracts.py") {
+  $ImportAuditRan = $true
+  $env:PYTHONPATH = "."
+  $importAuditOutput = & python -B scripts\audit_import_pipeline_contracts.py 2>&1
+  Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+  $importAuditExit = $LASTEXITCODE
+  if ($importAuditExit -eq 2) {
+    Write-Host "Import pipeline contract audit: SKIP (no fixture found)."
+  } elseif ($importAuditExit -ne 0) {
+    Add-Failure "Import pipeline contract audit failed."
+    Write-Host $importAuditOutput
+  } else {
+    Write-Host $importAuditOutput
+  }
+}
+
 foreach ($path in $RuntimeFiles) {
   if (-not (Test-Path $path)) {
     continue
@@ -82,6 +99,10 @@ if ($Failures.Count -gt 0) {
     Write-Host " - $failure"
   }
   exit 1
+}
+
+if (-not $ImportAuditRan) {
+  Write-Host "Import pipeline contract audit: SKIP (helper script missing)."
 }
 
 Write-Host "Local-only audit passed."

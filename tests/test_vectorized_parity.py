@@ -499,6 +499,28 @@ class TestParity:
         ref, vec = self._run_both(medium_rows)
         self._assert_parity(ref, vec, {"drag_scrub_suspicion"})
 
+    def test_drag_scrub_suspicion_threshold_edges_parity(self) -> None:
+        """Parity around speed/throttle/brake gates and just-over-threshold cases."""
+        rows = [
+            _synthetic_row(speed_mps=67.0, throttle_01=0.95, brake_01=0.0),   # ~149.9 mph gate miss
+            _synthetic_row(speed_mps=67.2, throttle_01=0.95, brake_01=0.0),   # gate hit
+            _synthetic_row(speed_mps=70.0, throttle_01=0.949, brake_01=0.0),  # throttle gate miss
+            _synthetic_row(speed_mps=70.0, throttle_01=0.95, brake_01=0.051), # brake gate miss
+            _synthetic_row(speed_mps=70.0, throttle_01=0.95, brake_01=0.05),  # brake edge hit
+        ]
+        ref, vec = self._run_both(rows)
+        self._assert_parity(ref, vec, {"drag_scrub_suspicion"})
+
+    def test_drag_scrub_suspicion_missing_inputs_parity(self) -> None:
+        """Missing resistance/steering/yaw inputs keep row/vectorized parity."""
+        rows = [
+            {"Speed": 70.0, "SessionTime": 0.00, "Throttle": 1.0, "Brake": 0.0, "SteeringWheelAngle": None},
+            {"Speed": 72.0, "SessionTime": 0.02, "Throttle": 1.0, "Brake": 0.0, "SteeringWheelAngle": None},
+            {"Speed": 75.0, "SessionTime": 0.04, "Throttle": 1.0, "Brake": 0.0, "SteeringWheelAngle": 0.05},
+        ]
+        ref, vec = self._run_both(rows)
+        self._assert_parity(ref, vec, {"drag_scrub_suspicion"})
+
     def test_resistance_indices_missing_columns(self) -> None:
         """Missing columns should not crash resistance indices."""
         rows = [{"Speed": 50.0, "SessionTime": 0.0}]
@@ -628,10 +650,10 @@ class TestParity:
 
     # ── Feature flag tests ────────────────────────────────────
 
-    def test_feature_flag_defaults_to_row(self) -> None:
-        """get_analysis_engine_mode() returns 'row' with no env."""
+    def test_feature_flag_defaults_to_vectorized(self) -> None:
+        """get_analysis_engine_mode() returns 'vectorized' with no env."""
         mode = get_analysis_engine_mode()
-        assert mode == "row"
+        assert mode == "vectorized"
 
     def test_feature_flag_override_vectorized(self) -> None:
         """Explicit override 'vectorized' is accepted."""
@@ -644,12 +666,12 @@ class TestParity:
         assert mode == "row"
 
     def test_feature_flag_invalid_override_falls_back(self) -> None:
-        """Invalid override falls back to 'row'."""
+        """Invalid override falls back to 'vectorized'."""
         import warnings
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             mode = get_analysis_engine_mode(override="invalid_mode")
-            assert mode == "row"
+            assert mode == "vectorized"
             assert len(w) == 1
             assert "Invalid analysis engine override" in str(w[0].message)
 
@@ -660,13 +682,13 @@ class TestParity:
         assert mode == "vectorized"
 
     def test_feature_flag_env_var_invalid(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Invalid env var falls back to 'row'."""
+        """Invalid env var falls back to 'vectorized'."""
         import warnings
         monkeypatch.setenv("RACELAB_ANALYSIS_ENGINE", "garbage")
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             mode = get_analysis_engine_mode()
-            assert mode == "row"
+            assert mode == "vectorized"
             assert len(w) == 1
             assert "Invalid RACELAB_ANALYSIS_ENGINE" in str(w[0].message)
 

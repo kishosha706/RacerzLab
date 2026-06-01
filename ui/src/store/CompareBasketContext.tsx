@@ -5,7 +5,7 @@
  * - baseline slot
  * - test slot
  * - optional queued items
- * - validation warnings (different car, track, draft, etc.)
+ * - validation warnings (different car, track, etc.)
  */
 
 import { createContext, useCallback, useContext, useEffect, useReducer, type ReactNode } from "react";
@@ -25,7 +25,6 @@ export interface BasketItem {
   setup_label: string | null;
   lap_time: number | null;
   classification_tags: string[];
-  draft_status: string;
   engineering_value: number | null;
   /** Cross-session support */
   date: string | null;
@@ -153,12 +152,6 @@ export function CompareBasketProvider({ children }: { children: ReactNode }) {
     if (baseline.track && test.track && baseline.track !== test.track) {
       w.push("Different track — comparison may not be meaningful.");
     }
-    if (test.draft_status === "DRAFT_AFFECTED") {
-      w.push("Test lap is draft-affected — setup conclusions limited.");
-    }
-    if (baseline.draft_status === "DRAFT_AFFECTED") {
-      w.push("Baseline lap is draft-affected — reference may not be clean.");
-    }
     if (sameEvidenceScope(baseline, test)) {
       w.push(
         baseline.lap_scope === "lap_window"
@@ -220,3 +213,5 @@ export function useCompareBasket() {
   if (!ctx) throw new Error("useCompareBasket must be used within CompareBasketProvider");
   return ctx;
 }
+
+

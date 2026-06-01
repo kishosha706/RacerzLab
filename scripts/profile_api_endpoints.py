@@ -98,9 +98,23 @@ def main() -> None:
                 )
             )
 
+    by_endpoint = {p.endpoint: p for p in profiles}
     summary = {
         "run_id": run_id,
         "lap": lap,
+        "timing_ms": {
+            "run_open": by_endpoint.get("run/open").duration_ms if by_endpoint.get("run/open") else None,
+            "overview": by_endpoint.get("run/open").duration_ms if by_endpoint.get("run/open") else None,
+            "laps": by_endpoint.get("laps").duration_ms if by_endpoint.get("laps") else None,
+            "events": by_endpoint.get("events").duration_ms if by_endpoint.get("events") else None,
+            "setup": by_endpoint.get("setup snapshot").duration_ms if by_endpoint.get("setup snapshot") else None,
+            "channels_cold": by_endpoint.get("channels").duration_ms if by_endpoint.get("channels") else None,
+            "channels_repeat": by_endpoint.get("channels").duplicate_call_ms if by_endpoint.get("channels") else None,
+            "trace": by_endpoint.get("trace").duration_ms if by_endpoint.get("trace") else None,
+            "platform_events": by_endpoint.get("platform-events").duration_ms if by_endpoint.get("platform-events") else None,
+        },
+        "trace_lazy_inferred": True,
+        "trace_lazy_inferred_note": "Inferred because run/open and trace are separate endpoints and trace is requested independently.",
         "profiles": [profile.__dict__ for profile in profiles],
     }
     print(json.dumps(summary, indent=2))

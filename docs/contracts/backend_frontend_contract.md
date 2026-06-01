@@ -116,12 +116,8 @@ This document defines the contract between the RaceLab Garage Python backend (Fa
 | `completed` | Completed |
 | `cancelled` | Cancelled |
 
-### Draft Status Values
 | Backend Value | Meaning |
 |---|---|
-| `LIKELY_SOLO` | No draft detected |
-| `DRAFT_AFFECTED` | Draft detected |
-| `UNKNOWN_DRAFT_STATUS` | Draft status unknown |
 
 ### Import Status Values
 | Backend Value | Meaning |
@@ -275,3 +271,4 @@ The `aggregate_tire_comparison()` and `aggregate_shock_comparison()` functions o
 | `session_date` not displayed in LapsTab expanded view | Laps | Field on LapQualitySummary, not LapSummary | Low |
 | NotebookTab filter/columns improvements | Notebook | Larger UI change — deferred | Low |
 | Dynamic track-type scoring | Analysis | Waiting for more real .ibt validation | Medium |
+

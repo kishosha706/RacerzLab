@@ -31,7 +31,6 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **Persistent Evidence Inspector** — right-side Crew Chief panel with event selection, evidence cards, setup linkage, and next-action buttons
 - **Local SQLite persistence** — imported runs, laps, events, setup snapshots, recommendations, segments, notebook findings, test plans, and RaceLab sessions stored locally
 - **112+ calculated channels** — ride heights, rake, dynamic pressure, tire pressure gain, temp/wear spread, slip ratio, shock velocity/activity/RMS, damper energy, motion g-conversions, platform pitch/roll estimates, kinematic slip angles, dynamic grade, aero load index, drag/scrub suspicion, platform compression, stability scores, rear scrape detection, platform balance classification
-- **Draft detection** — `classify_draft_status()` returning LIKELY_SOLO/POSSIBLE_DRAFT_ASSIST/DRAFT_AFFECTED/UNKNOWN_DRAFT_STATUS using speed/RPM ratio anomalies and segment speed jumps
 - **Signal smoothing helpers** — Savitzky-Golay 5-point and centered SMA smoothing (opt-in, pure Python, zero-phase)
 - **Vehicle Dynamics Engine** — 6 physics modules: aero coefficients, tire dynamics (slip angles, understeer gradient), vehicle dynamics (weight transfer, brake energy), geometry (pitch/roll with motion ratios), estimate confidence, physics inputs
 - **Vectorized Analysis Pipeline** — parallel Polars path (opt-in via `RACELAB_ANALYSIS_ENGINE` env var) with 26× speedup at 10k rows, 111 core channels, full parity with row path across 38 synthetic tests + real Talladega validation. Row engine remains production default.
@@ -196,3 +195,4 @@ GET  /api/sessions/runs/{run_id}/laps (standalone lap list)
 See `AGENTS.md` for product rules (evidence first, no junk-lap conclusions, proxy honesty, one change at a time, draft vs solo separation).
 
 See `racelab_engine/analysis/DESIGN_NOTES_vectorized_future.md` for the vectorized engine adoption plan and validation status.
+

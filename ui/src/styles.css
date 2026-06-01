@@ -345,7 +345,9 @@ th {
 
 .trace-panel-wrapper {
   position: relative;
+  width: 100%;
   min-width: 0;
+  overflow: hidden;
 }
 
 .trace-cursor-line {
@@ -2813,10 +2815,6 @@ td {
   text-transform: uppercase;
   letter-spacing: 0.02em;
 }
-.lap-flag-draft {
-  background: rgba(245, 158, 11, 0.15);
-  color: var(--amber);
-}
 .lap-flag-invalid {
   background: rgba(239, 68, 68, 0.15);
   color: var(--red);
@@ -3872,9 +3870,6 @@ button:focus:not(:focus-visible) {
 .laps-stint-block.invalid {
   opacity: 0.4;
 }
-.laps-stint-block.draft {
-  border: 1px dashed var(--amber);
-}
 .laps-stint-block.window-outline {
   box-shadow: 0 0 0 1px var(--cyan);
 }
@@ -4700,3 +4695,4 @@ button:focus:not(:focus-visible) {
 @media (prefers-reduced-motion: reduce) {
   .gr-corner.glow .gr-corner-head { transition: none; }
 }
+

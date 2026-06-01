@@ -39,13 +39,8 @@ response shapes, status values, enum mappings, and known gaps.
 
 ## Canonical Status Values
 
-### Draft Statuses
 | Value | Meaning | Frontend Constant |
 |---|---|---|
-| `LIKELY_SOLO` | Clean air, no draft detected | `"LIKELY_SOLO"` |
-| `POSSIBLE_DRAFT_ASSIST` | Possible draft influence | `"POSSIBLE_DRAFT_ASSIST"` |
-| `DRAFT_AFFECTED` | Confirmed draft | `"DRAFT_AFFECTED"` |
-| `UNKNOWN_DRAFT_STATUS` | Cannot determine | `"UNKNOWN_DRAFT_STATUS"` |
 
 ### Lap Classification Tags
 | Value | Meaning |
@@ -55,9 +50,6 @@ response shapes, status values, enum mappings, and known gaps.
 | `PIT_ROAD` | Lap includes pit entry/exit |
 | `WRECK_OR_SPIN` | Incident detected |
 | `INVALID_SPEED_EVENT` | Speed anomaly |
-| `DRAFT_AFFECTED` | Draft influence |
-| `POSSIBLE_DRAFT_ASSIST` | Possible draft |
-| `LIKELY_SOLO` | Clean lap |
 | `SOLO_CLEAN` | Verified clean lap |
 
 ### Verdict Kinds
@@ -217,3 +209,4 @@ These values exist only in frontend state, never produced by backend:
 | `TestPlan` | `types/compare.ts` | `TestPlan` |
 | `SetupMemorySummary` | `types/compare.ts` | `SetupMemorySummary` |
 | `VerdictKind` | `types/compare.ts` | `VerdictKind` |
+

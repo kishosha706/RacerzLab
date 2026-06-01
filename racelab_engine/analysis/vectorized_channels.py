@@ -33,6 +33,8 @@ See Also
 from __future__ import annotations
 
 import math
+import os
+import time
 from typing import Any
 
 import polars as pl
@@ -57,6 +59,11 @@ from racelab_engine.analysis.units import (
 
 _ENGINE_ENV_VAR = "RACELAB_ANALYSIS_ENGINE"
 _VALID_MODES = frozenset({"row", "vectorized"})
+LAST_NORMALIZE_PROFILE: dict[str, float] = {}
+
+
+def _normalize_subprofile_enabled() -> bool:
+    return os.environ.get("RACELAB_IMPORT_SUBPROFILE", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def get_analysis_engine_mode(override: str | None = None) -> str:
@@ -65,7 +72,7 @@ def get_analysis_engine_mode(override: str | None = None) -> str:
     Resolution order:
     1. *override* argument if provided and valid
     2. ``RACELAB_ANALYSIS_ENGINE`` env var if set and valid
-    3. ``"row"`` (default)
+    3. ``"vectorized"`` (default)
 
     Parameters
     ----------
@@ -84,10 +91,10 @@ def get_analysis_engine_mode(override: str | None = None) -> str:
         if override in _VALID_MODES:
             return override
         warnings.warn(
-            f"Invalid analysis engine override {override!r}, falling back to 'row'",
+            f"Invalid analysis engine override {override!r}, falling back to 'vectorized'",
             stacklevel=2,
         )
-        return "row"
+        return "vectorized"
 
     env_val = os.environ.get(_ENGINE_ENV_VAR)
     if env_val is not None:
@@ -95,10 +102,10 @@ def get_analysis_engine_mode(override: str | None = None) -> str:
         if env_lower in _VALID_MODES:
             return env_lower
         warnings.warn(
-            f"Invalid {_ENGINE_ENV_VAR}={env_val!r}, falling back to 'row'",
+            f"Invalid {_ENGINE_ENV_VAR}={env_val!r}, falling back to 'vectorized'",
             stacklevel=2,
         )
-    return "row"
+    return "vectorized"
 
 
 # ── Comparison helper ────────────────────────────────────────────
@@ -496,6 +503,8 @@ def normalize_telemetry_frame(
     geometry: dict[str, float] | None = None,
 ) -> pl.DataFrame:
     """Vectorised normalizer. Accepts DataFrame, list[dict], or dict[str,list]."""
+    profile_enabled = _normalize_subprofile_enabled()
+    profile: dict[str, float] = {}
     if isinstance(data, pl.DataFrame):
         df = data.clone()
     elif isinstance(data, dict):
@@ -506,9 +515,13 @@ def normalize_telemetry_frame(
         raise TypeError(f"Unsupported data type: {type(data)}")
 
     # ── 1. Alias raw iRacing names to normalised names ──────────
+    t0 = time.perf_counter()
     df = _apply_aliases(df)
+    if profile_enabled:
+        profile["normalize_apply_aliases_s"] = time.perf_counter() - t0
 
     # ── 2. Inject geometry constants ────────────────────────────
+    t0 = time.perf_counter()
     if geometry:
         physics_keys = [
             "mass_kg", "cg_height_m", "wheelbase_m", "front_track_width_m",
@@ -518,41 +531,54 @@ def normalize_telemetry_frame(
         for k in physics_keys:
             if k in geometry and k not in df.columns:
                 df = df.with_columns(pl.lit(geometry[k]).alias(k))
+    if profile_enabled:
+        profile["normalize_geometry_injection_s"] = time.perf_counter() - t0
 
     # ── 3. Core calculated channels ─────────────────────────────
-    df = calculate_core_channels_frame(df)
+    df = calculate_core_channels_frame(df, profile_out=profile if profile_enabled else None)
+    if profile_enabled:
+        profile["normalize_total_s"] = sum(profile.values())
+        globals()["LAST_NORMALIZE_PROFILE"] = profile
 
     return df
 
 
-def calculate_core_channels_frame(df: pl.DataFrame) -> pl.DataFrame:
+def calculate_core_channels_frame(df: pl.DataFrame, profile_out: dict[str, float] | None = None) -> pl.DataFrame:
     """Add core calculated channels to *df* in-place (returns new frame).
 
     This is the vectorised equivalent of
     ``_apply_row_calculations`` + ``_apply_derivatives`` + ``_apply_rolling_aggregates``.
     """
-    df = _convert_distances(df)
-    df = _convert_speed(df)
-    df = _convert_inputs(df)
-    df = _convert_ride_heights(df)
-    df = _convert_shocks(df)
-    df = _compute_dynamic_pressure(df)
-    df = _compute_slip_ratios(df)
-    df = _compute_g_values(df)
-    df = _compute_speed_derivatives(df)
-    df = _compute_aero_load_index(df)
-    df = _compute_ride_height_averages(df)
-    df = _compute_risk_scores(df)
-    df = _compute_wheel_speed_mismatch(df)
-    df = _compute_stability_scores(df)
-    df = _compute_resistance_indices(df)
-    df = _compute_compression_index(df)
-    df = _compute_shock_rolling_aggregates(df)
-    df = _compute_tire_derived(df)
-    df = _compute_scrub_proxies(df)
-    df = _compute_dynamic_pressure_lap_index(df)
-    df = _compute_dynamic_grade(df)
-    df = _apply_gps_projection(df)
+    def _stage(name: str, fn) -> None:
+        nonlocal df
+        t0 = time.perf_counter()
+        df = fn(df)
+        if profile_out is not None:
+            profile_out[f"normalize_stage_{name}_s"] = time.perf_counter() - t0
+
+    _stage("convert_distances", _convert_distances)
+    _stage("convert_speed", _convert_speed)
+    _stage("convert_inputs", _convert_inputs)
+    _stage("convert_ride_heights", _convert_ride_heights)
+    _stage("convert_shocks", _convert_shocks)
+    _stage("compute_dynamic_pressure", _compute_dynamic_pressure)
+    _stage("compute_slip_ratios", _compute_slip_ratios)
+    _stage("compute_g_values", _compute_g_values)
+    _stage("compute_speed_derivatives", _compute_speed_derivatives)
+    _stage("compute_aero_load_index", _compute_aero_load_index)
+    _stage("compute_ride_height_averages", _compute_ride_height_averages)
+    _stage("compute_risk_scores", _compute_risk_scores)
+    _stage("compute_wheel_speed_mismatch", _compute_wheel_speed_mismatch)
+    _stage("compute_stability_scores", _compute_stability_scores)
+    _stage("compute_resistance_indices", _compute_resistance_indices)
+    _stage("compute_compression_index", _compute_compression_index)
+    _stage("compute_shock_rolling_aggregates", _compute_shock_rolling_aggregates)
+    _stage("compute_tire_derived", _compute_tire_derived)
+    _stage("compute_scrub_proxies", _compute_scrub_proxies)
+    _stage("compute_dynamic_pressure_lap_index", _compute_dynamic_pressure_lap_index)
+    _stage("compute_dynamic_grade", _compute_dynamic_grade)
+    _stage("compute_diffuser_geometry", _compute_diffuser_geometry)
+    _stage("apply_gps_projection", _apply_gps_projection)
     return df
 
 
@@ -1116,13 +1142,11 @@ def _compute_resistance_indices(df: pl.DataFrame) -> pl.DataFrame:
         DRAG_SCRUB_MIN_SPEED_MPH, FULL_THROTTLE_PCT, LOW_BRAKE_PCT,
         RESISTANCE_COEFF_CRITICAL,
     )
-    from racelab_engine.analysis.drag_scrub import (
-        aero_normalized_resistance, compute_drag_scrub_index,
-    )
+    def col_or_zero(name: str) -> pl.Expr:
+        return pl.col(name) if name in df.columns else pl.lit(0.0, dtype=pl.Float64)
 
     # full_throttle_resistance_index
-    has_ft = {"speed_mph", "throttle_pct", "brake_pct",
-              "speed_rate_mph_s", "dynamic_pressure_psf"}.issubset(df.columns)
+    has_ft = {"speed_mph", "throttle_pct", "brake_pct"}.issubset(df.columns)
     if has_ft:
         speed = pl.col("speed_mph")
         throttle = pl.col("throttle_pct")
@@ -1137,10 +1161,9 @@ def _compute_resistance_indices(df: pl.DataFrame) -> pl.DataFrame:
         )
 
         # aero_normalized_resistance: decel_mph_s / dynamic_pressure_psf
-        decel = pl.col("speed_rate_mph_s").clip(lower_bound=0.0)  # max(0, -x) handled via sign
         # Row path uses max(0, -speed_rate_mph_s). We use negative since decel is negative.
-        decel_pos = (-pl.col("speed_rate_mph_s")).clip(lower_bound=0.0)
-        dp_psf = pl.col("dynamic_pressure_psf").clip(lower_bound=1.0)
+        decel_pos = (-col_or_zero("speed_rate_mph_s")).clip(lower_bound=0.0)
+        dp_psf = col_or_zero("dynamic_pressure_psf").clip(lower_bound=1.0)
         resistance_coeff = decel_pos / dp_psf
         resistance_index = (resistance_coeff / RESISTANCE_COEFF_CRITICAL).clip(0.0, 1.0)
 
@@ -1155,29 +1178,30 @@ def _compute_resistance_indices(df: pl.DataFrame) -> pl.DataFrame:
         )
         df = df.with_columns(ft_index)
 
-    # drag_scrub_suspicion — use the shared module's row-based function via map_rows
-    # This is the one place we accept a Python UDF because the logic is complex
-    # and shared with the row path.
-    drag_cols = {"speed_mph", "throttle_pct", "brake_pct",
-                 "speed_rate_mph_s", "dynamic_pressure_psf",
-                 "abs_steering_deg", "yaw_rate", "cfs_risk_score"}
+    # drag_scrub_suspicion — vectorized mirror of compute_drag_scrub_index
+    drag_cols = {"speed_mph", "throttle_pct", "brake_pct"}
     if drag_cols.issubset(df.columns):
-        row_idx = pl.int_range(0, df.height, dtype=pl.Int64)
-        drag_expr = pl.struct(
-            pl.col("speed_mph"),
-            pl.col("throttle_pct"),
-            pl.col("brake_pct"),
-            pl.col("speed_rate_mph_s"),
-            pl.col("dynamic_pressure_psf"),
-            pl.col("abs_steering_deg"),
-            pl.col("yaw_rate"),
-            pl.col("cfs_risk_score"),
-        ).map_elements(
-            lambda s: compute_drag_scrub_index(s),
-            return_dtype=pl.Float64,
+        speed = pl.col("speed_mph").fill_null(0.0)
+        throttle = pl.col("throttle_pct").fill_null(0.0)
+        brake = pl.col("brake_pct").fill_null(0.0)
+        speed_rate = col_or_zero("speed_rate_mph_s").fill_null(0.0)
+        dyn_psf = col_or_zero("dynamic_pressure_psf").fill_null(0.0)
+        steering = col_or_zero("abs_steering_deg").fill_null(0.0).abs()
+        yaw_rate = col_or_zero("yaw_rate").fill_null(0.0).abs()
+        cfs_risk = col_or_zero("cfs_risk_score").fill_null(0.0).clip(lower_bound=0.0, upper_bound=1.0)
+
+        resistance_coeff = ((-speed_rate).clip(lower_bound=0.0)) / dyn_psf.clip(lower_bound=1.0)
+        resistance_index = (resistance_coeff / RESISTANCE_COEFF_CRITICAL).clip(0.0, 1.0)
+        steering_index = (steering / 15.0).clip(0.0, 1.0)
+        yaw_index = yaw_rate.clip(0.0, 1.0)
+
+        index = (resistance_index * 0.45) + (steering_index * 0.20) + (yaw_index * 0.15) + (cfs_risk * 0.10)
+        gate = (
+            (speed >= DRAG_SCRUB_MIN_SPEED_MPH)
+            & (throttle >= FULL_THROTTLE_PCT)
+            & (brake <= LOW_BRAKE_PCT)
         )
-        # Row path skips first row (via _init_derivative_row continue)
-        row_idx = pl.int_range(0, df.height, dtype=pl.Int64)
+        drag_expr = pl.when(gate).then(index.clip(0.0, 1.0)).otherwise(0.0)
         drag_expr = pl.when(row_idx == 0).then(None).otherwise(drag_expr).alias("drag_scrub_suspicion")
         df = df.with_columns(drag_expr)
 
@@ -1408,11 +1432,7 @@ def _compute_dynamic_grade(df: pl.DataFrame) -> pl.DataFrame:
     sin_theta = ((ax - dvdt) / 9.81).clip(-1.0, 1.0)
     has_data = ax.is_not_null() & dvdt.is_not_null()
 
-    # Polars doesn't have asin, use map_elements
-    grade_rad_expr = pl.struct(sin_theta.alias("sin_theta")).map_elements(
-        lambda s: math.asin(s["sin_theta"]) if s["sin_theta"] is not None else None,
-        return_dtype=pl.Float64,
-    )
+    grade_rad_expr = sin_theta.arcsin()
     grade_rad = pl.when(has_data).then(grade_rad_expr).otherwise(None)
     grade_deg = pl.when(has_data).then(grade_rad_expr * (180.0 / math.pi)).otherwise(None)
 
@@ -1455,6 +1475,74 @@ def _compute_dynamic_grade(df: pl.DataFrame) -> pl.DataFrame:
             pl.col("speed_rate_mph_s") - grade_accel_mph_s
         ).otherwise(None)
         df = df.with_columns(corrected_speed_loss.alias("grade_corrected_speed_loss_mph_s"))
+
+    return df
+
+
+# ── diffuser geometry (Roger's diffuser geometry math) ────────────
+
+_DIFFUSER_FALLBACK_WHEELBASE_IN_V = 110.0
+_DIFFUSER_FALLBACK_TRACK_WIDTH_IN_V = 79.0
+_DIFFUSER_RUB_BLOCK_CORRECTION_IN_V = 0.5
+_CUBIC_INCHES_PER_FT3_V = 1728.0
+_DIFFUSER_SMOOTH_WINDOW_V = 20
+
+
+def _compute_diffuser_geometry(df: pl.DataFrame) -> pl.DataFrame:
+    """Compute diffuser geometry channels (vectorized)."""
+    needed = {"lf_ride_height_in", "rf_ride_height_in", "lr_ride_height_in", "rr_ride_height_in"}
+    if not needed.issubset(df.columns):
+        return df
+
+    wb_in = _DIFFUSER_FALLBACK_WHEELBASE_IN_V
+    tw_in = _DIFFUSER_FALLBACK_TRACK_WIDTH_IN_V
+    if "wheelbase_m" in df.columns and df.height > 0:
+        wb_m = df["wheelbase_m"].item(0)
+        if wb_m is not None and wb_m > 0:
+            wb_in = wb_m * 39.37007874
+    if "rear_track_width_m" in df.columns and df.height > 0:
+        tw_m = df["rear_track_width_m"].item(0)
+        if tw_m is not None and tw_m > 0:
+            tw_in = tw_m * 39.37007874
+    elif "front_track_width_m" in df.columns and df.height > 0:
+        tw_m = df["front_track_width_m"].item(0)
+        if tw_m is not None and tw_m > 0:
+            tw_in = tw_m * 39.37007874
+
+    rub = _DIFFUSER_RUB_BLOCK_CORRECTION_IN_V
+    ft3 = _CUBIC_INCHES_PER_FT3_V
+    window = _DIFFUSER_SMOOTH_WINDOW_V
+
+    lf = pl.col("lf_ride_height_in"); rf = pl.col("rf_ride_height_in")
+    lr = pl.col("lr_ride_height_in"); rr = pl.col("rr_ride_height_in")
+    has_all = lf.is_not_null() & rf.is_not_null() & lr.is_not_null() & rr.is_not_null()
+
+    front_c = (rf + lf) / 2.0
+    lr_rub = lr - rub
+    rear_c = (rr + lr_rub) / 2.0
+    rake = rear_c - front_c
+
+    base_vol = front_c * wb_in * tw_in / ft3
+    diag = (wb_in ** 2 + pl.when(rake < 0).then(rake ** 2 / 2.0).otherwise(0.0)).sqrt()
+    wedge_vol = pl.when(rake < 0).then(tw_in * (-rake) * diag / ft3).otherwise(0.0)
+    total_vol = base_vol + wedge_vol
+
+    df = df.with_columns([
+        pl.when(has_all).then(front_c).otherwise(None).alias("front_center_rh_in"),
+        pl.when(has_all).then(lr_rub).otherwise(None).alias("lr_height_rub_block_in"),
+        pl.when(has_all).then(rear_c).otherwise(None).alias("rear_center_rh_in"),
+        pl.when(has_all).then(rake).otherwise(None).alias("center_rake_in"),
+        pl.lit(tw_in).alias("diffuser_track_width_in"),
+        pl.lit(wb_in).alias("diffuser_wheelbase_in"),
+        pl.when(has_all).then(base_vol).otherwise(None).alias("diffuser_base_volume_ft3"),
+        pl.when(has_all).then(wedge_vol).otherwise(None).alias("diffuser_wedge_volume_ft3"),
+        pl.when(has_all).then(total_vol).otherwise(None).alias("diffuser_volume_ft3"),
+    ])
+
+    df = df.with_columns(
+        pl.col("center_rake_in").rolling_mean(window_size=window, min_samples=1).alias("smooth_center_rake_in"),
+        pl.col("diffuser_volume_ft3").rolling_mean(window_size=window, min_samples=1).alias("smooth_diffuser_volume_ft3"),
+    )
 
     return df
 

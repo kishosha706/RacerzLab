@@ -1,4 +1,4 @@
-/** Centralized channel metadata helper for consistent UI display. */
+﻿/** Centralized channel metadata helper for consistent UI display. */
 
 export interface ChannelUiMeta {
   label: string;
@@ -11,50 +11,50 @@ export interface ChannelUiMeta {
 }
 
 const CHANNEL_META: Record<string, ChannelUiMeta> = {
-  // ── Controls ──
+  // â”€â”€ Controls â”€â”€
   throttle_pct: { label: "Throttle", unit: "%", isProxy: false, isEstimate: false, category: "controls", precision: 1 },
   brake_pct: { label: "Brake", unit: "%", isProxy: false, isEstimate: false, category: "controls", precision: 1 },
-  steering_deg: { label: "Steering", unit: "°", isProxy: false, isEstimate: false, category: "controls", precision: 1 },
-  abs_steering_deg: { label: "|Steering|", unit: "°", isProxy: false, isEstimate: false, category: "controls", precision: 1 },
-  abs_lat_accel: { label: "|Lat Accel|", unit: "m/s²", isProxy: false, isEstimate: false, category: "controls", precision: 2 },
+  steering_deg: { label: "Steering", unit: "Â°", isProxy: false, isEstimate: false, category: "controls", precision: 1 },
+  abs_steering_deg: { label: "|Steering|", unit: "Â°", isProxy: false, isEstimate: false, category: "controls", precision: 1 },
+  abs_lat_accel: { label: "|Lat Accel|", unit: "m/sÂ²", isProxy: false, isEstimate: false, category: "controls", precision: 2 },
   lat_accel_g: { label: "Lat Accel", unit: "g", isProxy: false, isEstimate: false, category: "controls", precision: 2 },
   long_accel_g: { label: "Long Accel", unit: "g", isProxy: false, isEstimate: false, category: "controls", precision: 2 },
   vert_accel_g: { label: "Vert Accel", unit: "g", isProxy: false, isEstimate: false, category: "controls", precision: 2 },
 
-  // ── Speed / pull ──
+  // â”€â”€ Speed / pull â”€â”€
   speed_mph: { label: "Speed", unit: "mph", isProxy: false, isEstimate: false, category: "speed", precision: 1 },
   speed_fps: { label: "Speed", unit: "ft/s", isProxy: false, isEstimate: false, category: "speed", precision: 1 },
   speed_rate_mph_s: { label: "Speed Rate", unit: "mph/s", isProxy: false, isEstimate: false, category: "speed", precision: 2 },
   speed_rate_mph_1000ft: { label: "Speed Rate", unit: "mph/1000ft", isProxy: false, isEstimate: false, category: "speed", precision: 2 },
-  speed_rate_mps2: { label: "Speed Rate", unit: "m/s²", isProxy: false, isEstimate: false, category: "speed", precision: 2 },
+  speed_rate_mps2: { label: "Speed Rate", unit: "m/sÂ²", isProxy: false, isEstimate: false, category: "speed", precision: 2 },
   rpm: { label: "RPM", unit: "rpm", isProxy: false, isEstimate: false, category: "speed", precision: 0 },
   gear: { label: "Gear", unit: "", isProxy: false, isEstimate: false, category: "speed", precision: 0 },
   lap_dist_pct_100: { label: "Position", unit: "%", isProxy: false, isEstimate: false, category: "speed", precision: 1 },
 
-  // ── Grade ──
+  // â”€â”€ Grade â”€â”€
   dynamic_grade_rad: { label: "Grade", unit: "rad", isProxy: true, isEstimate: true, category: "grade", precision: 3,
     warning: "Estimated from acceleration vs speed derivative, not surveyed elevation." },
-  dynamic_grade_deg: { label: "Grade", unit: "°", isProxy: true, isEstimate: true, category: "grade", precision: 1,
+  dynamic_grade_deg: { label: "Grade", unit: "Â°", isProxy: true, isEstimate: true, category: "grade", precision: 1,
     warning: "Estimated from acceleration vs speed derivative, not surveyed elevation." },
   grade_context_label: { label: "Grade Context", unit: "", isProxy: true, isEstimate: true, category: "grade", precision: 0 },
-  grade_corrected_long_accel_mps2: { label: "Grade-Corrected Long Accel", unit: "m/s²", isProxy: true, isEstimate: true, category: "grade", precision: 2 },
+  grade_corrected_long_accel_mps2: { label: "Grade-Corrected Long Accel", unit: "m/sÂ²", isProxy: true, isEstimate: true, category: "grade", precision: 2 },
   grade_force_proxy_n: { label: "Grade Force", unit: "N", isProxy: true, isEstimate: true, category: "grade", precision: 0,
-    warning: "Proxy — requires vehicle mass. Grade is inferred, not measured." },
+    warning: "Proxy â€” requires vehicle mass. Grade is inferred, not measured." },
   grade_corrected_speed_loss_mph_s: { label: "Grade-Corrected Speed Loss", unit: "mph/s", isProxy: true, isEstimate: true, category: "grade", precision: 2 },
 
-  // ── Dynamic pressure / aero ──
+  // â”€â”€ Dynamic pressure / aero â”€â”€
   dynamic_pressure_pa: { label: "Dynamic Pressure", unit: "Pa", isProxy: false, isEstimate: false, category: "aero", precision: 0 },
   dynamic_pressure_psf: { label: "Dynamic Pressure", unit: "psf", isProxy: false, isEstimate: false, category: "aero", precision: 1 },
   dynamic_pressure_lap_index: { label: "DP Lap Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
-    warning: "Lap-relative — not comparable across runs." },
+    warning: "Lap-relative â€” not comparable across runs." },
   dynamic_pressure_index: { label: "DP Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
-    warning: "Lap-relative — not comparable across runs." },
+    warning: "Lap-relative â€” not comparable across runs." },
   aero_load_index: { label: "Aero Load Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
-    warning: "Proxy — not a direct force measurement." },
+    warning: "Proxy â€” not a direct force measurement." },
   aero_load_index_180mph: { label: "Aero Load Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
-    warning: "Proxy — not a direct force measurement." },
+    warning: "Proxy â€” not a direct force measurement." },
 
-  // ── Ride heights / platform ──
+  // â”€â”€ Ride heights / platform â”€â”€
   cfs_ride_height_in: { label: "CFS Ride Height", unit: "in", isProxy: false, isEstimate: false, category: "platform", precision: 3 },
   cfs_ride_height_mm: { label: "CFS Ride Height", unit: "mm", isProxy: false, isEstimate: false, category: "platform", precision: 1 },
   cfsr_height_mm: { label: "CFS Ride Height", unit: "mm", isProxy: false, isEstimate: false, category: "platform", precision: 1 },
@@ -75,16 +75,16 @@ const CHANNEL_META: Record<string, ChannelUiMeta> = {
   left_avg_rh_in: { label: "Left Avg RH", unit: "in", isProxy: false, isEstimate: false, category: "platform", precision: 2 },
   right_avg_rh_in: { label: "Right Avg RH", unit: "in", isProxy: false, isEstimate: false, category: "platform", precision: 2 },
 
-  // ── Platform angles / roll ──
-  platform_pitch_deg_from_rh: { label: "Platform Pitch", unit: "°", isProxy: true, isEstimate: true, category: "platform", precision: 2,
-    warning: "Estimate from ride heights — assumes 1:1 motion ratio." },
-  platform_roll_deg_from_rh: { label: "Platform Roll", unit: "°", isProxy: true, isEstimate: true, category: "platform", precision: 2,
-    warning: "Estimate from ride heights — assumes 1:1 motion ratio." },
-  front_platform_roll_deg_from_rh: { label: "Front Roll", unit: "°", isProxy: true, isEstimate: true, category: "platform", precision: 2 },
-  rear_platform_roll_deg_from_rh: { label: "Rear Roll", unit: "°", isProxy: true, isEstimate: true, category: "platform", precision: 2 },
-  platform_roll_balance_deg: { label: "Roll Balance", unit: "°", isProxy: true, isEstimate: true, category: "platform", precision: 2 },
+  // â”€â”€ Platform angles / roll â”€â”€
+  platform_pitch_deg_from_rh: { label: "Platform Pitch", unit: "Â°", isProxy: true, isEstimate: true, category: "platform", precision: 2,
+    warning: "Estimate from ride heights â€” assumes 1:1 motion ratio." },
+  platform_roll_deg_from_rh: { label: "Platform Roll", unit: "Â°", isProxy: true, isEstimate: true, category: "platform", precision: 2,
+    warning: "Estimate from ride heights â€” assumes 1:1 motion ratio." },
+  front_platform_roll_deg_from_rh: { label: "Front Roll", unit: "Â°", isProxy: true, isEstimate: true, category: "platform", precision: 2 },
+  rear_platform_roll_deg_from_rh: { label: "Rear Roll", unit: "Â°", isProxy: true, isEstimate: true, category: "platform", precision: 2 },
+  platform_roll_balance_deg: { label: "Roll Balance", unit: "Â°", isProxy: true, isEstimate: true, category: "platform", precision: 2 },
 
-  // ── Risk / stability ──
+  // â”€â”€ Risk / stability â”€â”€
   cfs_risk_score: { label: "CFS Risk", unit: "score", isProxy: true, isEstimate: true, category: "platform", precision: 2 },
   platform_risk_score: { label: "Platform Risk", unit: "score", isProxy: true, isEstimate: true, category: "platform", precision: 2 },
   platform_stability_score: { label: "Platform Stability", unit: "score", isProxy: true, isEstimate: true, category: "platform", precision: 3 },
@@ -92,7 +92,7 @@ const CHANNEL_META: Record<string, ChannelUiMeta> = {
   platform_compression_index: { label: "Platform Compression", unit: "index", isProxy: true, isEstimate: true, category: "platform", precision: 3 },
   full_throttle_resistance_index: { label: "Full-Throttle Resistance", unit: "index", isProxy: true, isEstimate: true, category: "scrub", precision: 3 },
 
-  // ── Rear scrape ──
+  // â”€â”€ Rear scrape â”€â”€
   rear_min_ride_height_mm: { label: "Rear Min RH", unit: "mm", isProxy: true, isEstimate: true, category: "platform", precision: 1 },
   rear_min_ride_height_in: { label: "Rear Min RH", unit: "in", isProxy: true, isEstimate: true, category: "platform", precision: 2 },
   rear_scrape_margin_mm: { label: "Rear Scrape Margin", unit: "mm", isProxy: true, isEstimate: true, category: "platform", precision: 1 },
@@ -101,39 +101,39 @@ const CHANNEL_META: Record<string, ChannelUiMeta> = {
   rear_scrape_side: { label: "Rear Scrape Side", unit: "code", isProxy: true, isEstimate: true, category: "platform", precision: 0 },
   rear_scrape_side_label: { label: "Rear Scrape Side", unit: "", isProxy: true, isEstimate: true, category: "platform", precision: 0 },
 
-  // ── Platform balance ──
+  // â”€â”€ Platform balance â”€â”€
   front_platform_risk_score: { label: "Front Platform Risk", unit: "score", isProxy: true, isEstimate: true, category: "platform", precision: 2 },
   rear_platform_risk_score: { label: "Rear Platform Risk", unit: "score", isProxy: true, isEstimate: true, category: "platform", precision: 2 },
   whole_car_bottoming_risk: { label: "Whole-Car Bottoming", unit: "score", isProxy: true, isEstimate: true, category: "platform", precision: 2 },
   platform_balance_label: { label: "Platform Balance", unit: "", isProxy: false, isEstimate: false, category: "platform", precision: 0 },
   platform_balance_explanation: { label: "Balance Explanation", unit: "", isProxy: false, isEstimate: false, category: "platform", precision: 0 },
 
-  // ── Aero/load proxies ──
+  // â”€â”€ Aero/load proxies â”€â”€
   front_load_proxy_n: { label: "Front Load", unit: "N", isProxy: true, isEstimate: true, category: "aero", precision: 0,
-    warning: "Proxy — requires setup spring rates and ride heights." },
+    warning: "Proxy â€” requires setup spring rates and ride heights." },
   rear_load_proxy_n: { label: "Rear Load", unit: "N", isProxy: true, isEstimate: true, category: "aero", precision: 0,
-    warning: "Proxy — requires setup spring rates and ride heights." },
+    warning: "Proxy â€” requires setup spring rates and ride heights." },
   front_aero_proxy_n: { label: "Front Aero", unit: "N", isProxy: true, isEstimate: true, category: "aero", precision: 0,
-    warning: "Proxy — not a direct force measurement." },
+    warning: "Proxy â€” not a direct force measurement." },
   rear_aero_proxy_n: { label: "Rear Aero", unit: "N", isProxy: true, isEstimate: true, category: "aero", precision: 0,
-    warning: "Proxy — not a direct force measurement." },
+    warning: "Proxy â€” not a direct force measurement." },
   rear_downforce_proxy_n: { label: "Rear Downforce", unit: "N", isProxy: true, isEstimate: true, category: "aero", precision: 0,
-    warning: "Proxy — not a direct force measurement." },
+    warning: "Proxy â€” not a direct force measurement." },
   rear_platform_proxy_n: { label: "Rear Platform", unit: "N", isProxy: true, isEstimate: true, category: "aero", precision: 0 },
   rear_diffuser_proxy_n: { label: "Rear Diffuser", unit: "N", isProxy: true, isEstimate: true, category: "aero", precision: 0,
-    warning: "Very low confidence — not a direct force measurement." },
+    warning: "Very low confidence â€” not a direct force measurement." },
   aero_balance_front_pct: { label: "Aero Balance Front", unit: "%", isProxy: true, isEstimate: true, category: "aero", precision: 1 },
 
-  // ── Drag / scrub / steering ──
+  // â”€â”€ Drag / scrub / steering â”€â”€
   drag_scrub_suspicion: { label: "Drag/Scrub Suspicion", unit: "index", isProxy: true, isEstimate: true, category: "scrub", precision: 3 },
   front_scrub_proxy: { label: "Front Scrub", unit: "proxy", isProxy: true, isEstimate: true, category: "scrub", precision: 3 },
   rear_scrub_proxy: { label: "Rear Scrub", unit: "proxy", isProxy: true, isEstimate: true, category: "scrub", precision: 3 },
   yaw_error_proxy: { label: "Yaw Error", unit: "rad/s", isProxy: true, isEstimate: true, category: "scrub", precision: 3 },
-  ackermann_steering_expected_deg: { label: "Ackermann Expected", unit: "°", isProxy: true, isEstimate: true, category: "scrub", precision: 2 },
-  ackermann_steering_error_deg: { label: "Ackermann Error", unit: "°", isProxy: true, isEstimate: true, category: "scrub", precision: 2 },
+  ackermann_steering_expected_deg: { label: "Ackermann Expected", unit: "Â°", isProxy: true, isEstimate: true, category: "scrub", precision: 2 },
+  ackermann_steering_error_deg: { label: "Ackermann Error", unit: "Â°", isProxy: true, isEstimate: true, category: "scrub", precision: 2 },
   ackermann_scrub_proxy: { label: "Ackermann Scrub", unit: "proxy", isProxy: true, isEstimate: true, category: "scrub", precision: 3 },
 
-  // ── Slip ratios / wheel speed ──
+  // â”€â”€ Slip ratios / wheel speed â”€â”€
   lf_slip_ratio: { label: "LF Slip", unit: "ratio", isProxy: true, isEstimate: true, category: "tires", precision: 3 },
   rf_slip_ratio: { label: "RF Slip", unit: "ratio", isProxy: true, isEstimate: true, category: "tires", precision: 3 },
   lr_slip_ratio: { label: "LR Slip", unit: "ratio", isProxy: true, isEstimate: true, category: "tires", precision: 3 },
@@ -150,7 +150,7 @@ const CHANNEL_META: Record<string, ChannelUiMeta> = {
   front_wheel_speed_mismatch_corrected: { label: "Front Mismatch (corr)", unit: "m/s", isProxy: false, isEstimate: false, category: "scrub", precision: 2 },
   rear_wheel_speed_mismatch_corrected: { label: "Rear Mismatch (corr)", unit: "m/s", isProxy: false, isEstimate: false, category: "scrub", precision: 2 },
 
-  // ── Tires ──
+  // â”€â”€ Tires â”€â”€
   lf_pressure: { label: "LF Pressure", unit: "psi", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
   rf_pressure: { label: "RF Pressure", unit: "psi", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
   lr_pressure: { label: "LR Pressure", unit: "psi", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
@@ -159,51 +159,51 @@ const CHANNEL_META: Record<string, ChannelUiMeta> = {
   rf_pressure_gain: { label: "RF Pressure Gain", unit: "psi", isProxy: true, isEstimate: true, category: "tires", precision: 2 },
   lr_pressure_gain: { label: "LR Pressure Gain", unit: "psi", isProxy: true, isEstimate: true, category: "tires", precision: 2 },
   rr_pressure_gain: { label: "RR Pressure Gain", unit: "psi", isProxy: true, isEstimate: true, category: "tires", precision: 2 },
-  // ── Tire temperatures (measured from iRacing telemetry) ──
-  lf_temp_inner: { label: "LF Temp Inner", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  lf_temp_middle: { label: "LF Temp Middle", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  lf_temp_outer: { label: "LF Temp Outer", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  rf_temp_inner: { label: "RF Temp Inner", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  rf_temp_middle: { label: "RF Temp Middle", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  rf_temp_outer: { label: "RF Temp Outer", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  lr_temp_inner: { label: "LR Temp Inner", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  lr_temp_middle: { label: "LR Temp Middle", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  lr_temp_outer: { label: "LR Temp Outer", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  rr_temp_inner: { label: "RR Temp Inner", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  rr_temp_middle: { label: "RR Temp Middle", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  rr_temp_outer: { label: "RR Temp Outer", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  // ── Tire carcass temperatures (measured) ──
-  lf_carcass_temp_l: { label: "LF Carcass L", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  lf_carcass_temp_m: { label: "LF Carcass M", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  lf_carcass_temp_r: { label: "LF Carcass R", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  rf_carcass_temp_l: { label: "RF Carcass L", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  rf_carcass_temp_m: { label: "RF Carcass M", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  rf_carcass_temp_r: { label: "RF Carcass R", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  lr_carcass_temp_l: { label: "LR Carcass L", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  lr_carcass_temp_m: { label: "LR Carcass M", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  lr_carcass_temp_r: { label: "LR Carcass R", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  rr_carcass_temp_l: { label: "RR Carcass L", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  rr_carcass_temp_m: { label: "RR Carcass M", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  rr_carcass_temp_r: { label: "RR Carcass R", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  // ── Tire temp spread (calculated from measured temps) ──
-  lf_temp_spread: { label: "LF Temp Spread", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  rf_temp_spread: { label: "RF Temp Spread", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  lr_temp_spread: { label: "LR Temp Spread", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
-  rr_temp_spread: { label: "RR Temp Spread", unit: "°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  // â”€â”€ Tire temperatures (measured from iRacing telemetry) â”€â”€
+  lf_temp_inner: { label: "LF Temp Inner", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  lf_temp_middle: { label: "LF Temp Middle", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  lf_temp_outer: { label: "LF Temp Outer", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  rf_temp_inner: { label: "RF Temp Inner", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  rf_temp_middle: { label: "RF Temp Middle", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  rf_temp_outer: { label: "RF Temp Outer", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  lr_temp_inner: { label: "LR Temp Inner", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  lr_temp_middle: { label: "LR Temp Middle", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  lr_temp_outer: { label: "LR Temp Outer", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  rr_temp_inner: { label: "RR Temp Inner", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  rr_temp_middle: { label: "RR Temp Middle", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  rr_temp_outer: { label: "RR Temp Outer", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  // â”€â”€ Tire carcass temperatures (measured) â”€â”€
+  lf_carcass_temp_l: { label: "LF Carcass L", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  lf_carcass_temp_m: { label: "LF Carcass M", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  lf_carcass_temp_r: { label: "LF Carcass R", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  rf_carcass_temp_l: { label: "RF Carcass L", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  rf_carcass_temp_m: { label: "RF Carcass M", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  rf_carcass_temp_r: { label: "RF Carcass R", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  lr_carcass_temp_l: { label: "LR Carcass L", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  lr_carcass_temp_m: { label: "LR Carcass M", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  lr_carcass_temp_r: { label: "LR Carcass R", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  rr_carcass_temp_l: { label: "RR Carcass L", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  rr_carcass_temp_m: { label: "RR Carcass M", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  rr_carcass_temp_r: { label: "RR Carcass R", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  // â”€â”€ Tire temp spread (calculated from measured temps) â”€â”€
+  lf_temp_spread: { label: "LF Temp Spread", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  rf_temp_spread: { label: "RF Temp Spread", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  lr_temp_spread: { label: "LR Temp Spread", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
+  rr_temp_spread: { label: "RR Temp Spread", unit: "Â°C", isProxy: false, isEstimate: false, category: "tires", precision: 1 },
   lf_wear_spread: { label: "LF Wear Spread", unit: "mm", isProxy: true, isEstimate: true, category: "tires", precision: 2 },
   rf_wear_spread: { label: "RF Wear Spread", unit: "mm", isProxy: true, isEstimate: true, category: "tires", precision: 2 },
   lr_wear_spread: { label: "LR Wear Spread", unit: "mm", isProxy: true, isEstimate: true, category: "tires", precision: 2 },
   rr_wear_spread: { label: "RR Wear Spread", unit: "mm", isProxy: true, isEstimate: true, category: "tires", precision: 2 },
-  lf_camber_temp_bias_c: { label: "LF Camber Bias", unit: "°C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
-  rf_camber_temp_bias_c: { label: "RF Camber Bias", unit: "°C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
-  lr_camber_temp_bias_c: { label: "LR Camber Bias", unit: "°C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
-  rr_camber_temp_bias_c: { label: "RR Camber Bias", unit: "°C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
+  lf_camber_temp_bias_c: { label: "LF Camber Bias", unit: "Â°C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
+  rf_camber_temp_bias_c: { label: "RF Camber Bias", unit: "Â°C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
+  lr_camber_temp_bias_c: { label: "LR Camber Bias", unit: "Â°C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
+  rr_camber_temp_bias_c: { label: "RR Camber Bias", unit: "Â°C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
   lf_camber_bias_label: { label: "LF Camber", unit: "", isProxy: true, isEstimate: true, category: "tires", precision: 0 },
   rf_camber_bias_label: { label: "RF Camber", unit: "", isProxy: true, isEstimate: true, category: "tires", precision: 0 },
   lr_camber_bias_label: { label: "LR Camber", unit: "", isProxy: true, isEstimate: true, category: "tires", precision: 0 },
   rr_camber_bias_label: { label: "RR Camber", unit: "", isProxy: true, isEstimate: true, category: "tires", precision: 0 },
 
-  // ── Shocks ──
+  // â”€â”€ Shocks â”€â”€
   lf_shock_defl_in: { label: "LF Shock Defl", unit: "in", isProxy: false, isEstimate: false, category: "shocks", precision: 2 },
   rf_shock_defl_in: { label: "RF Shock Defl", unit: "in", isProxy: false, isEstimate: false, category: "shocks", precision: 2 },
   lr_shock_defl_in: { label: "LR Shock Defl", unit: "in", isProxy: false, isEstimate: false, category: "shocks", precision: 2 },
@@ -237,11 +237,24 @@ const CHANNEL_META: Record<string, ChannelUiMeta> = {
   damper_energy_proxy: { label: "Damper Energy", unit: "index", isProxy: true, isEstimate: true, category: "shocks", precision: 3 },
   damper_work_proxy: { label: "Damper Work", unit: "index", isProxy: true, isEstimate: true, category: "shocks", precision: 3 },
 
-  // ── GPS / track ──
+  // â”€â”€ GPS / track â”€â”€
   track_x_m: { label: "Track X", unit: "m", isProxy: false, isEstimate: false, category: "gps", precision: 1 },
   track_y_m: { label: "Track Y", unit: "m", isProxy: false, isEstimate: false, category: "gps", precision: 1 },
   track_x_ft: { label: "Track X", unit: "ft", isProxy: false, isEstimate: false, category: "gps", precision: 0 },
   track_y_ft: { label: "Track Y", unit: "ft", isProxy: false, isEstimate: false, category: "gps", precision: 0 },
+
+  // -- Diffuser geometry --
+  front_center_rh_in: { label: "Front Center RH", unit: "in", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
+  lr_height_rub_block_in: { label: "LR Height - Rub Block", unit: "in", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
+  rear_center_rh_in: { label: "Rear Center RH", unit: "in", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
+  center_rake_in: { label: "Center Rake", unit: "in", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
+  smooth_center_rake_in: { label: "Smooth Center Rake", unit: "in", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
+  diffuser_track_width_in: { label: "Diffuser Track Width", unit: "in", isProxy: false, isEstimate: true, category: "diffuser", precision: 2 },
+  diffuser_wheelbase_in: { label: "Diffuser Wheelbase", unit: "in", isProxy: false, isEstimate: true, category: "diffuser", precision: 2 },
+  diffuser_base_volume_ft3: { label: "Diffuser Base Volume", unit: "ft³", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
+  diffuser_wedge_volume_ft3: { label: "Diffuser Wedge Volume", unit: "ft³", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
+  diffuser_volume_ft3: { label: "Diffuser Volume", unit: "ft³", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
+  smooth_diffuser_volume_ft3: { label: "Smooth Diffuser Volume", unit: "ft³", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
 };
 
 export function getChannelUiMeta(channel: string): ChannelUiMeta | null {
@@ -261,7 +274,7 @@ export function isMissingValue(value: unknown): boolean {
 }
 
 export function displayUnavailable(reason?: string): string {
-  return reason ? `Unavailable — ${reason}` : "Unavailable";
+  return reason ? `Unavailable â€” ${reason}` : "Unavailable";
 }
 
 /** Get a human-readable disclaimer for a proxy/estimate channel. */
@@ -288,10 +301,10 @@ export function getChannelLabel(channel: string): string {
  * Get a consolidated confidence level for a channel.
  *
  * Returns one of:
- * - "measured" — direct sensor reading (isProxy=false, isEstimate=false)
- * - "calculated" — derived from measured channels (isProxy=false, isEstimate=false)
- * - "estimate" — inferred with moderate confidence (isEstimate=true)
- * - "proxy" — low-confidence approximation (isProxy=true)
+ * - "measured" â€” direct sensor reading (isProxy=false, isEstimate=false)
+ * - "calculated" â€” derived from measured channels (isProxy=false, isEstimate=false)
+ * - "estimate" â€” inferred with moderate confidence (isEstimate=true)
+ * - "proxy" â€” low-confidence approximation (isProxy=true)
  *
  * Keeps isProxy/isEstimate fields for backward compatibility.
  */
@@ -317,3 +330,4 @@ export function getLegendLabel(channel: string, mode: "race" | "learning" = "rac
   }
   return label;
 }
+

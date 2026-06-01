@@ -255,7 +255,7 @@ def detect_worst_speed_loss(rows: list[dict[str, Any]]) -> PlatformEvent | None:
         primary_unit="mph/1000ft" if rate_1000ft is not None else "mph/s",
         channels_used=["speed_rate_mph_1000ft", "speed_rate_mph_s", "speed_mph", "throttle_pct", "brake_pct"],
         evidence=evidence,
-        recommended_action="Investigate platform, scrub, gearing, wind, or draft behavior. Compare speed at same track position on next run.",
+        recommended_action="Investigate platform, scrub, gearing, wind, or traffic behavior. Compare speed at same track position on next run.",
     )
 
 
@@ -716,3 +716,4 @@ def detect_platform_events(
             events.append(event)
 
     return events
+

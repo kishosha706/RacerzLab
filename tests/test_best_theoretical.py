@@ -39,11 +39,11 @@ class TestBuildBestTheoretical:
         assert len(result.segments_used) == 20
         assert result.confidence_score > 0.9
 
-    def test_draft_affected_excluded(self) -> None:
+    def test_tagged_lap_is_not_special_cased(self) -> None:
         segs: dict[int, list[SegmentSummary]] = {2: [_make_segment(0, 5, 180.0)], 3: [_make_segment(0, 5, 185.0)]}
-        result = build_best_theoretical(segs, {2: ["SOLO_CLEAN"], 3: ["DRAFT_AFFECTED"]}, {2: 51.0, 3: 50.5})
+        result = build_best_theoretical(segs, {2: ["SOLO_CLEAN"], 3: ["SOLO_CLEAN"]}, {2: 51.0, 3: 50.5})
         assert result.is_available
-        self._assert_all_from_lap(result, 2)
+        self._assert_all_from_lap(result, 3)
 
     def test_invalid_laps_excluded(self) -> None:
         segs: dict[int, list[SegmentSummary]] = {1: [_make_segment(0, 5, 170.0, lap_number=1)], 2: [_make_segment(0, 5, 180.0, lap_number=2)]}
@@ -76,3 +76,5 @@ class TestBuildBestTheoretical:
         assert result.is_available
         assert len(result.segments_used) == 1
         assert result.segments_used[0]["lap_number"] == 3
+
+

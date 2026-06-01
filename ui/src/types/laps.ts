@@ -8,7 +8,6 @@ export interface LapQualitySummary {
   is_complete: boolean;
   is_useful: boolean;
   classification_tags: string[];
-  draft_status: string;
   valid_for_compare: boolean;
   invalid_reasons: string[];
   avg_speed_mph: number | null;
@@ -50,7 +49,6 @@ export interface LapWindowSummary {
   valid_lap_count: number;
   excluded_laps: Array<{ lap_number: number; reason: string }>;
   classification_tags: string[];
-  draft_status_summary: string;
   platform_risk_peak: number | null;
   rear_platform_risk_peak: number | null;
   whole_car_bottoming_peak: number | null;
@@ -83,7 +81,6 @@ export interface LapDegradationSummary {
   tire_stress_trend: string;
   platform_stress_trend: string;
   cooling_stress_trend: string;
-  draft_warning: string | null;
   confidence_score: number;
   coaching_message: string | null;
 }

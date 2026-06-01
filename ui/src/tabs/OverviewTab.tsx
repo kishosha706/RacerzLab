@@ -119,9 +119,7 @@ export function OverviewTab({ overview }: OverviewTabProps) {
     [overview.events],
   );
 
-  const usefulCount = overview.laps.filter((l) => l.is_useful).length;
-  const draftCount = overview.laps.filter((l) => (l.classification_tags ?? []).some((tag) => tag.includes("DRAFT"))).length;
-  const invalidCount = overview.laps.filter((l) => !l.is_useful).length;
+  const usefulCount = overview.laps.filter((l) => l.is_useful).length;  const invalidCount = overview.laps.filter((l) => !l.is_useful).length;
   const systemCounts = useMemo(() => {
     const systems = [
       { key: "platform", label: "Platform", match: /PLATFORM|SPLITTER|BOTTOM|RIDE/i },
@@ -287,8 +285,7 @@ export function OverviewTab({ overview }: OverviewTabProps) {
         <div className="overview-trust-system-grid">
           <div className="overview-trust-summary">
             <span>Useful {usefulCount}</span>
-            <span>Draft {draftCount}</span>
-            <span>Invalid {invalidCount}</span>
+                        <span>Invalid {invalidCount}</span>
           </div>
           <div className="overview-system-counts">
             {systemCounts.map((system) => (
@@ -359,3 +356,4 @@ export function OverviewTab({ overview }: OverviewTabProps) {
     </div>
   );
 }
+

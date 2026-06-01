@@ -19,6 +19,7 @@ from racelab_engine.analysis.calculated_channels import (
     normalize_telemetry_rows,
 )
 from racelab_engine.analysis.constants import FORCE_PROXY_WARNING, FORCE_PROXY_CHANNELS
+from racelab_engine.io import ibt_reader as ibt_mod
 from racelab_engine.io.ibt_reader import import_ibt
 from racelab_engine.io.ibt_types import IBTImportResult, IBTVariableDefinition
 from racelab_engine.models.event import TelemetryEvent
@@ -133,7 +134,6 @@ class _ChannelSummaryCacheEntry:
 _CHANNEL_SUMMARY_CACHE: dict[tuple[str, str], _ChannelSummaryCacheEntry] = {}
 _CHANNEL_SUMMARY_CACHE_MAX = 24
 _CHANNEL_SCHEMA_VERSION = "v2"
-
 
 def default_data_dir() -> Path:
     return Path(os.environ.get("RACELAB_DATA_DIR", "data"))
@@ -315,7 +315,13 @@ def read_channel_metadata(run_id: str, data_dir: str | Path | None = None) -> li
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
 
 
-def write_telemetry_cache(run_id: str, rows: list[dict[str, Any]], data_dir: str | Path | None = None) -> TelemetryCacheResult:
+def write_telemetry_cache(
+    run_id: str,
+    rows: list[dict[str, Any]],
+    normalized_frame: Any | None = None,
+    data_dir: str | Path | None = None,
+    profile_out: dict[str, float] | None = None,
+) -> TelemetryCacheResult:
     """Write telemetry cache — uses Polars direct write for speed."""
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
     data_root.mkdir(parents=True, exist_ok=True)
@@ -325,21 +331,42 @@ def write_telemetry_cache(run_id: str, rows: list[dict[str, Any]], data_dir: str
         path = parquet_path(data_root, run_id)
         path.parent.mkdir(parents=True, exist_ok=True)
 
+        if normalized_frame is not None and hasattr(normalized_frame, "write_parquet"):
+            t0 = time.perf_counter()
+            normalized_frame.write_parquet(path, compression="snappy")
+            if profile_out is not None:
+                profile_out["cache_write_from_frame"] = 1.0
+                profile_out["cache_dataframe_and_parquet_write_s"] = time.perf_counter() - t0
+                profile_out["cache_schema_inference_mode"] = -2.0
+            _invalidate_run_cache(data_root, run_id)
+            return TelemetryCacheResult(path=path, format="parquet", used_fallback=False)
+
         if not rows:
             pl.DataFrame().write_parquet(path)
             return TelemetryCacheResult(path=path, format="parquet", used_fallback=False)
 
         # Fast path: use first row keys (all vec output columns are scalar)
         # Skip _scalar_columns() full scan — saves ~5s on 54K rows
+        t0 = time.perf_counter()
         columns = list(rows[0].keys())
+        if profile_out is not None:
+            profile_out["cache_scalar_column_selection_s"] = time.perf_counter() - t0
+        t0 = time.perf_counter()
         try:
             pl.from_dicts(rows, infer_schema_length=5000).write_parquet(
                 path, compression="snappy",
             )
+            if profile_out is not None:
+                profile_out["cache_dataframe_and_parquet_write_s"] = time.perf_counter() - t0
+                profile_out["cache_schema_inference_mode"] = 5000.0
         except Exception:
+            t0 = time.perf_counter()
             pl.from_dicts(rows, infer_schema_length=None).write_parquet(
                 path, compression="snappy",
             )
+            if profile_out is not None:
+                profile_out["cache_dataframe_and_parquet_write_s"] = time.perf_counter() - t0
+                profile_out["cache_schema_inference_mode"] = -1.0
         _invalidate_run_cache(data_root, run_id)
         return TelemetryCacheResult(path=path, format="parquet", used_fallback=False)
 
@@ -347,9 +374,15 @@ def write_telemetry_cache(run_id: str, rows: list[dict[str, Any]], data_dir: str
         pd = importlib.import_module("pandas")
         path = parquet_path(data_root, run_id)
         path.parent.mkdir(parents=True, exist_ok=True)
+        t0 = time.perf_counter()
         columns = list(rows[0].keys()) if rows else []
         data = [{column: row.get(column) for column in columns} for row in rows]
+        if profile_out is not None:
+            profile_out["cache_scalar_column_selection_s"] = time.perf_counter() - t0
+        t0 = time.perf_counter()
         pd.DataFrame(data).to_parquet(path)
+        if profile_out is not None:
+            profile_out["cache_dataframe_and_parquet_write_s"] = time.perf_counter() - t0
         _invalidate_run_cache(data_root, run_id)
         return TelemetryCacheResult(path=path, format="parquet", used_fallback=False)
     cache_result = _write_csv(rows, csv_path(data_root, run_id))
@@ -947,89 +980,93 @@ class ImportService:
     def __init__(self, db_path: str | Path | None = None, data_dir: str | Path | None = None):
         self.repository = RaceLabRepository(db_path)
         self.data_dir = Path(data_dir) if data_dir is not None else default_data_dir()
+        self.last_import_timings: dict[str, float] = {}
 
-    def import_ibt_file(self, path: str | Path) -> tuple[IBTImportResult, TelemetryCacheResult | None]:
+    def import_ibt_file(
+        self,
+        path: str | Path,
+    ) -> tuple[IBTImportResult, TelemetryCacheResult | None]:
         _log = logging.getLogger(__name__)
-        t0 = time.time()
+        t0 = time.perf_counter()
         result = import_ibt(path)
-        _timings: dict[str, float] = {"decode_ibt": time.time() - t0}
+        _timings: dict[str, Any] = {"decode_ibt": time.perf_counter() - t0}
+        for k, v in (getattr(ibt_mod, "LAST_IMPORT_PROFILE", {}) or {}).items():
+            if isinstance(v, (int, float)):
+                _timings[f"decode_sub_{k}"] = float(v)
+            elif isinstance(v, str) and k == "frame_to_rows_reason":
+                _timings[f"decode_sub_{k}"] = v  # type: ignore[assignment]
+            elif isinstance(v, str) and k == "overview_legacy_consumers_remaining":
+                _timings[f"decode_sub_{k}"] = v  # type: ignore[assignment]
 
         if result.overview is None:
+            self.last_import_timings = dict(_timings)
             return result, None
 
         run_id = result.overview.run_id
 
-        t0 = time.time()
-        cache_result = write_telemetry_cache(run_id, result.records, self.data_dir)
-        _timings["write_parquet_cache"] = time.time() - t0
+        t0 = time.perf_counter()
+        cache_profile: dict[str, float] = {}
+        normalized_frame = getattr(result, "get_normalized_frame", lambda: None)()
+        cache_result = write_telemetry_cache(
+            run_id,
+            result.records,
+            normalized_frame=normalized_frame,
+            data_dir=self.data_dir,
+            profile_out=cache_profile,
+        )
+        _timings["write_parquet_cache"] = time.perf_counter() - t0
+        for k, v in cache_profile.items():
+            _timings[k] = float(v)
 
-        t0 = time.time()
+        t0 = time.perf_counter()
         write_channel_metadata(result.overview.run_id, result.variable_definitions, self.data_dir)
-        _timings["write_channel_metadata"] = time.time() - t0
+        _timings["write_channel_metadata"] = time.perf_counter() - t0
 
-        t0 = time.time()
+        t0 = time.perf_counter()
         self.repository.save_import(result.overview, result.fingerprint)
-        _timings["save_run_metadata"] = time.time() - t0
+        _timings["save_run_metadata"] = time.perf_counter() - t0
 
         # ── Post-import analysis ──────────────────────────────────
-        rows = result.records  # use in-memory, avoid disk re-read
+        rows_or_frame: Any = normalized_frame if normalized_frame is not None else result.records
         # 1. Build and persist segments
-        t0 = time.time()
+        t0 = time.perf_counter()
         try:
             from racelab_engine.analysis.segments import build_fixed_pct_segments
             from racelab_engine.models.segment import SegmentSummary as ModelSegment
-            if raw_segments := build_fixed_pct_segments(rows, run_id=run_id):
+            segment_profile: dict[str, float] = {}
+            if raw_segments := build_fixed_pct_segments(rows_or_frame, run_id=run_id, profile_out=segment_profile):
                 model_segments = [
                     ModelSegment(**seg.model_dump()) for seg in raw_segments
                 ]
                 self.repository.save_segments(run_id, model_segments)
                 _log.info("Saved %d segments for run %s", len(model_segments), run_id)
+            for k, v in segment_profile.items():
+                _timings[f"segment_sub_{k}"] = float(v)
         except Exception as exc:
             _log.warning("Segment persistence failed for run %s: %s", run_id, exc)
-        _timings["segment_building"] = time.time() - t0
+        _timings["segment_building"] = time.perf_counter() - t0
 
-        # 2. Run draft detection on each useful lap
-        t0 = time.time()
-        try:
-            from racelab_engine.analysis.draft_detection import classify_draft_status
-            tags_updated = False
-            for lap in result.overview.laps:
-                if not lap.is_useful:
-                    continue
-                draft = classify_draft_status(rows, lap_number=lap.lap_number)
-                if draft.status.value != "UNKNOWN_DRAFT_STATUS":
-                    tag = draft.status.value
-                    if not lap.classification_tags:
-                        lap.classification_tags = []
-                    if tag not in lap.classification_tags:
-                        lap.classification_tags.append(tag)
-                        tags_updated = True
-                    if draft.warnings:
-                        for w in draft.warnings:
-                            if w not in result.overview.warnings:
-                                result.overview.warnings.append(w)
-            if tags_updated:
-                self.repository.save_import(result.overview, result.fingerprint)
-                _log.info("Draft tags updated for run %s", run_id)
-        except Exception as exc:
-            _log.warning("Draft detection failed for run %s: %s", run_id, exc)
-        _timings["draft_detection"] = time.time() - t0
-
-        _log.info("Import stage timings for %s: %s", run_id,
-                  " | ".join(f"{k}={v:.2f}s" for k, v in sorted(_timings.items(), key=lambda x: -x[1])))
+        numeric_timings = [(k, v) for k, v in _timings.items() if isinstance(v, (int, float))]
+        _log.info(
+            "Import stage timings for %s: %s",
+            run_id,
+            " | ".join(f"{k}={float(v):.2f}s" for k, v in sorted(numeric_timings, key=lambda x: -float(x[1]))),
+        )
+        self.last_import_timings = dict(_timings)
 
         implemented = list(result.status.implemented)
         for item in ["SQLite persistence", f"telemetry cache persistence ({cache_result.format})",
-                      "segment persistence", "draft detection"]:
+                      "segment persistence"]:
             if item not in implemented:
                 implemented.append(item)
+        status_message = (
+            "Imported and persisted iRacing .ibt header, variable definitions, "
+            "session YAML, MVP telemetry channels, analysis summaries, "
+            "telemetry cache, and segments."
+        )
         result.status = result.status.model_copy(
             update={
-                "message": (
-                    "Imported and persisted iRacing .ibt header, variable definitions, "
-                    "session YAML, MVP telemetry channels, analysis summaries, "
-                    "telemetry cache, segments, and draft detection."
-                ),
+                "message": status_message,
                 "implemented": implemented,
                 "remaining": [
                     item for item in result.status.remaining if item != "persist normalized telemetry cache"

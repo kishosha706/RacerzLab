@@ -248,6 +248,36 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "dynamic_pressure_lap_index", label: "Lap Index", color: "#60a5fa" },
     ] },
   ],
+  "Rear Scrape / Scrub": [
+    { label: "Rear Min / Scrape [mm]", channels: [
+      { name: "rear_min_ride_height_mm", label: "Min RH", color: "#22d3ee" },
+      { name: "rear_scrape_margin_mm", label: "Margin", color: "#f97316" },
+    ] },
+    { label: "Scrape / Contact Risk", channels: [
+      { name: "rear_scrape_risk_score", label: "Scrape Risk", color: "#ef4444" },
+      { name: "rear_platform_contact_risk", label: "Contact Risk", color: "#f59e0b" },
+    ] },
+    { label: "Scrub / Resistance", channels: [
+      { name: "drag_scrub_suspicion", label: "Scrub", color: "#ef4444" },
+      { name: "full_throttle_resistance_index", label: "Resistance", color: "#f97316" },
+      { name: "front_scrub_proxy", label: "F-Scrub", color: "#a78bfa" },
+      { name: "rear_scrub_proxy", label: "R-Scrub", color: "#38bdf8" },
+    ] },
+    { label: "Steering / Yaw", channels: [
+      { name: "abs_steering_deg", label: "Steering", color: "#22c55e" },
+      { name: "yaw_error_proxy", label: "Yaw Error", color: "#f59e0b" },
+      { name: "ackermann_scrub_proxy", label: "Ackermann", color: "#a78bfa" },
+    ] },
+  ],
+  Diffuser: [
+    { label: "Ground Speed [mph]", channels: [{ name: "speed_mph", label: "Speed", color: "#22c55e" }] },
+    { label: "Front Center RH [in]", channels: [{ name: "front_center_rh_in", label: "Front Center", color: "#38bdf8" }] },
+    { label: "Rear Center RH [in]", channels: [{ name: "rear_center_rh_in", label: "Rear Center", color: "#a78bfa" }] },
+    { label: "Smooth Diffuser Volume [ft³]", channels: [{ name: "smooth_diffuser_volume_ft3", label: "Smooth Vol", color: "#4ade80" }] },
+    { label: "Diffuser Base Volume [ft³]", channels: [{ name: "diffuser_base_volume_ft3", label: "Base Vol", color: "#60a5fa" }] },
+    { label: "Diffuser Wedge Volume [ft³]", channels: [{ name: "diffuser_wedge_volume_ft3", label: "Wedge Vol", color: "#f97316" }] },
+    { label: "Smooth Center Rake [in]", channels: [{ name: "smooth_center_rake_in", label: "Center Rake", color: "#c084fc" }] },
+  ],
 };
 
 function asPayload(trace: TraceResponse | null, channel: string): TraceChannelPayload | null {
@@ -559,18 +589,23 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
 
   const presetFromView: Record<WorkbenchView, string> = {
     balance: "Platform / Rake / Ride Height",
-    rear_scrape: "Rear Scrape",
+    rear_scrape: "Rear Scrape / Scrub",
     aero_load: "Aero Load",
-    scrub_steering: "Drag / Scrub",
+    scrub_steering: "Rear Scrape / Scrub",
     tires: "Tires",
     shocks: "Shocks",
     grade_pull: "Grade / Pull",
+    diffuser: "Diffuser",
   };
   const preset = presetFromView[workbenchView] ?? "Platform / Rake / Ride Height";
+  const presetRef = useRef(preset);
+  useEffect(() => {
+    presetRef.current = preset;
+  }, [preset]);
   const handleViewChange = useCallback((view: WorkbenchView) => {
     setWorkbenchView(view);
     setHoverSampleIndex(null);
-  }, []);
+  }, [setWorkbenchView, setHoverSampleIndex]);
   const xs = useMemo(() => xValues(trace), [trace]);
 
   useEffect(() => {
@@ -590,6 +625,10 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
     [overview.events],
   );
   const rows = useMemo(() => PRESET_ROWS[preset] ?? PRESET_ROWS["Platform / Rake / Ride Height"], [preset]);
+  const rowsRef = useRef<ChartRow[]>(rows);
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
   const windowContextActive = selection.selectedLapScope === "lap_window"
     && selection.selectedLapWindowStart != null
     && selection.selectedLapWindowEnd != null;
@@ -874,6 +913,10 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
     },
     [showCursorLine, xs],
   );
+  const positionCursorLineForIndexRef = useRef(positionCursorLineForIndex);
+  useEffect(() => {
+    positionCursorLineForIndexRef.current = positionCursorLineForIndex;
+  }, [positionCursorLineForIndex]);
 
   const commitHoverSample = useCallback((index: number | null) => {
     pendingHoverSampleIndexRef.current = index;
@@ -892,7 +935,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
   useEffect(() => {
     if (readoutSource === "Default" && clickedSampleIndex == null && hoverSampleIndex == null) return;
     positionCursorLineForIndex(selectedIndex, readoutSource === "Locked");
-  }, [clickedSampleIndex, hoverSampleIndex, positionCursorLineForIndex, readoutSource, selectedIndex]);
+  }, [clickedSampleIndex, hoverSampleIndex, positionCursorLineForIndex, readoutSource, selectedIndex, preset]);
 
   // ── jump button click flash ──────────────────────────────────
   const [jumpedBtn, setJumpedBtn] = useState<string | null>(null);
@@ -913,22 +956,44 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
   useEffect(() => {
     const node = chartNode.current;
     if (!node) return;
-    const chart = echarts.init(node, "dark", {
-      width: Math.max(node.clientWidth, 1024),
-      height: Math.max(node.clientHeight, 420),
-    });
+    const chart = echarts.init(node, "dark");
     chartRef.current = chart;
 
-    const indexFromPoint = (offsetX: number): number | null => {
+    const GRID_RIGHT = 36;
+    const GRID_TOP = 50;
+
+    const indexFromPoint = (offsetX: number, offsetY: number): number | null => {
+      if (!Number.isFinite(offsetX) || !Number.isFinite(offsetY)) return null;
       const xsRef = latestXsRef.current;
+      if (xsRef.length === 0) return null;
+      const gl = gridLeftRef.current;
+      const right = node.clientWidth - GRID_RIGHT;
+      if (right <= gl || offsetX < gl || offsetX > right) return null;
+
+      // Y hit-test: is cursor inside any row grid?
+      const sectionRowConfigH: Record<string, { height: number; gap: number }> = {
+        "Platform / Rake / Ride Height": { height: 100, gap: 12 },
+        "Rear Scrape / Scrub": { height: 104, gap: 12 },
+        "Aero Load": { height: 104, gap: 12 },
+        "Tires": { height: 130, gap: 12 },
+        "Shocks": { height: 120, gap: 12 },
+        "Grade / Pull": { height: 104, gap: 12 },
+        "Diffuser": { height: 104, gap: 12 },
+      };
+      const cfg = sectionRowConfigH[presetRef.current] ?? { height: 100, gap: 12 };
+      const ROW_H = cfg.height; const ROW_GAP = cfg.gap; const nRows = rowsRef.current.length;
+      let insideGrid = false;
+      for (let i = 0; i < nRows; i++) {
+        const top = GRID_TOP + i * (ROW_H + ROW_GAP);
+        if (offsetY >= top && offsetY <= top + ROW_H) { insideGrid = true; break; }
+      }
+      if (!insideGrid) return null;
+
+      const ratio = (offsetX - gl) / (right - gl);
       const finiteXs = xsRef.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
       if (finiteXs.length === 0) return null;
       const minX = finiteXs[0];
       const maxX = finiteXs[finiteXs.length - 1];
-      const plotLeft = gridLeftRef.current;
-      const plotRight = node.clientWidth - 24;
-      if (plotRight <= plotLeft) return null;
-      const ratio = Math.max(0, Math.min(1, (offsetX - plotLeft) / (plotRight - plotLeft)));
       const zoom = (chart.getOption().dataZoom as any[] | undefined)?.[0] ?? {};
       const startValue = typeof zoom.startValue === "number"
         ? zoom.startValue
@@ -939,68 +1004,53 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
       return nearestIndexByFt(xsRef, startValue + ratio * (endValue - startValue));
     };
 
-    const handleMove = (event: any) => {
-      const offsetX = typeof event.offsetX === "number" ? event.offsetX : event.zrX;
-      const offsetY = typeof event.offsetY === "number" ? event.offsetY : event.zrY;
-      if (typeof offsetX !== "number" || typeof offsetY !== "number") return;
-      const index = indexFromPoint(offsetX);
-      if (index == null) return;
-      showCursorLineRef.current(offsetX, clickedSampleIndexRef.current != null);
+    // Single pointer path: DOM pointer events only
+    const handlePointerMove = (event: PointerEvent) => {
+      const rect = node.getBoundingClientRect();
+      const ox = event.clientX - rect.left;
+      const oy = event.clientY - rect.top;
+      const index = indexFromPoint(ox, oy);
+      if (index == null) {
+        if (clickedSampleIndexRef.current == null) {
+          commitHoverSampleRef.current(null);
+          hideCursorLineRef.current();
+        }
+        return;
+      }
+      showCursorLineRef.current(ox, clickedSampleIndexRef.current != null);
       if (clickedSampleIndexRef.current == null) {
         commitHoverSampleRef.current(index);
       }
     };
 
-    const handleClick = (event: any) => {
-      const offsetX = typeof event.offsetX === "number" ? event.offsetX : event.zrX;
-      const offsetY = typeof event.offsetY === "number" ? event.offsetY : event.zrY;
-      if (typeof offsetX !== "number" || typeof offsetY !== "number") return;
-      const index = indexFromPoint(offsetX);
+    const handlePointerDown = (event: PointerEvent) => {
+      const rect = node.getBoundingClientRect();
+      const ox = event.clientX - rect.left;
+      const oy = event.clientY - rect.top;
+      const index = indexFromPoint(ox, oy);
       if (index == null) return;
       setClickedSampleIndex(index);
       setHoverSampleIndex(null);
       updateCursorRef.current(index);
-      showCursorLineRef.current(offsetX, true);
+      showCursorLineRef.current(ox, true);
     };
 
-    const handleGlobalOut = () => {
+    const handlePointerLeave = () => {
       if (clickedSampleIndexRef.current == null) {
         commitHoverSampleRef.current(null);
         hideCursorLineRef.current();
       }
     };
 
-    const handleDomMove = (event: MouseEvent) => {
-      const rect = node.getBoundingClientRect();
-      handleMove({ offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top });
-    };
+    // ResizeObserver for responsive sizing
+    const ro = new ResizeObserver(() => {
+      if (!chartNode.current || chart.isDisposed()) return;
+      chart.resize({ width: chartNode.current.clientWidth, height: chartNode.current.clientHeight });
+      const idx = clickedSampleIndexRef.current ?? hoverSampleIndexRef.current;
+      if (idx != null) positionCursorLineForIndexRef.current(idx, clickedSampleIndexRef.current != null);
+    });
+    ro.observe(node);
 
-    const handleDomClick = (event: MouseEvent) => {
-      const rect = node.getBoundingClientRect();
-      handleClick({ offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top });
-    };
-
-    const pointInChart = (event: MouseEvent) => {
-      const rect = node.getBoundingClientRect();
-      if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) {
-        return null;
-      }
-      return { offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
-    };
-
-    const handleWindowMove = (event: MouseEvent) => {
-      const point = pointInChart(event);
-      if (!point) return;
-      handleMove(point);
-    };
-
-    const handleWindowClick = (event: MouseEvent) => {
-      const point = pointInChart(event);
-      if (!point) return;
-      handleClick(point);
-    };
-
-    const zr = chart.getZr();
     const handleDataZoom = () => {
       const zoom = (chart.getOption().dataZoom as any[] | undefined)?.[0] ?? {};
       zoomRangeRef.current = {
@@ -1008,30 +1058,18 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
         endValue: typeof zoom.endValue === "number" ? zoom.endValue : undefined,
       };
     };
-    const resize = () => chart.resize();
 
     chart.on("datazoom", handleDataZoom);
-    zr.on("mousemove", handleMove);
-    zr.on("click", handleClick);
-    zr.on("globalout", handleGlobalOut);
-    node.addEventListener("mousemove", handleDomMove);
-    node.addEventListener("click", handleDomClick);
-    node.addEventListener("mouseleave", handleGlobalOut);
-    window.addEventListener("mousemove", handleWindowMove, { passive: true });
-    window.addEventListener("click", handleWindowClick, { capture: true, passive: true });
-    window.addEventListener("resize", resize);
+    node.addEventListener("pointermove", handlePointerMove);
+    node.addEventListener("pointerdown", handlePointerDown);
+    node.addEventListener("pointerleave", handlePointerLeave);
 
     return () => {
-      window.removeEventListener("resize", resize);
-      window.removeEventListener("mousemove", handleWindowMove);
-      window.removeEventListener("click", handleWindowClick, true);
-      zr.off("mousemove", handleMove);
-      zr.off("click", handleClick);
-      zr.off("globalout", handleGlobalOut);
+      ro.disconnect();
       chart.off("datazoom", handleDataZoom);
-      node.removeEventListener("mousemove", handleDomMove);
-      node.removeEventListener("click", handleDomClick);
-      node.removeEventListener("mouseleave", handleGlobalOut);
+      node.removeEventListener("pointermove", handlePointerMove);
+      node.removeEventListener("pointerdown", handlePointerDown);
+      node.removeEventListener("pointerleave", handlePointerLeave);
       if (hoverRafRef.current != null) {
         cancelAnimationFrame(hoverRafRef.current);
         hoverRafRef.current = null;
@@ -1039,7 +1077,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
       chart.dispose();
       if (chartRef.current === chart) chartRef.current = null;
     };
-  }, []);
+  }, []);;
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -1047,9 +1085,9 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
 
     const sectionRowConfig: Record<string, { height: number; gap: number }> = {
       "Platform / Rake / Ride Height": { height: 100, gap: 12 },
-      "Rear Scrape": { height: 104, gap: 12 },
+      "Rear Scrape / Scrub": { height: 104, gap: 12 },
       "Aero Load": { height: 104, gap: 12 },
-      "Drag / Scrub": { height: 104, gap: 12 },
+      "Diffuser": { height: 104, gap: 12 },
       "Tires": { height: 130, gap: 12 },
       "Shocks": { height: 120, gap: 12 },
       "Grade / Pull": { height: 104, gap: 12 },
@@ -1061,10 +1099,11 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
     const GRID_LEFT = isTires ? 130 : 100;
     const LABEL_LEFT = 4;
     gridLeftRef.current = GRID_LEFT;
+    const GRID_RIGHT = 36;
 
     const grid = rows.map((_, index) => ({
       left: GRID_LEFT,
-      right: 20,
+      right: GRID_RIGHT,
       top: 50 + index * (ROW_H + ROW_GAP),
       height: ROW_H,
     }));
@@ -1259,6 +1298,12 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
     };
     chart.setOption(option, { notMerge: false, lazyUpdate: true, replaceMerge: ["series", "xAxis", "yAxis", "grid", "graphic"] });
     chart.resize();
+
+    // Reposition locked cursor after chart re-render to match new grid layout
+    const lockedSampleIdx = clickedSampleIndexRef.current;
+    if (lockedSampleIdx != null) {
+      positionCursorLineForIndexRef.current(lockedSampleIdx, true);
+    }
   }, [legacyEvents, platformEvents, preset, rows, trace, xs]);
 
   // ── Escape key clears clicked sample ─────────────────────────
@@ -1506,16 +1551,25 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
     </div>
   );
 
-  const renderRearScrapePanel = () => (
+  const renderRearScrapeScrubPanel = () => (
     <div className="engineering-panel">
+      {/* ── Metric cards ── */}
       <div className="engineering-panel-grid">
+        {/* Rear scrape group */}
         <EngineeringMetricCard title="Rear Min Ride Height" channelName="rear_min_ride_height_mm" value={latest("rear_min_ride_height_mm")} color="#22d3ee" />
         <EngineeringMetricCard title="Rear Scrape Margin" channelName="rear_scrape_margin_mm" value={latest("rear_scrape_margin_mm")} color="#f97316" />
         <EngineeringMetricCard title="Rear Scrape Risk" channelName="rear_scrape_risk_score" value={latest("rear_scrape_risk_score")} riskValue={latest("rear_scrape_risk_score") as number | null} color="#ef4444" />
         <EngineeringMetricCard title="Rear Contact Risk" channelName="rear_platform_contact_risk" value={latest("rear_platform_contact_risk")} riskValue={latest("rear_platform_contact_risk") as number | null} color="#f59e0b" />
-        <EngineeringMetricCard title="Rear Scrape Side" channelName="rear_scrape_side_label" value={safeStringValue(latest("rear_scrape_side_label"))} color="#a78bfa" />
+        {/* Scrub/resistance group */}
+        <EngineeringMetricCard title="Drag/Scrub Suspicion" channelName="drag_scrub_suspicion" value={latest("drag_scrub_suspicion")} riskValue={latest("drag_scrub_suspicion") as number | null} color="#ef4444" />
+        <EngineeringMetricCard title="Full-Throttle Resistance" channelName="full_throttle_resistance_index" value={latest("full_throttle_resistance_index")} riskValue={latest("full_throttle_resistance_index") as number | null} color="#f97316" />
+        <EngineeringMetricCard title="Grade-Corrected Speed Loss" channelName="grade_corrected_speed_loss_mph_s" value={latest("grade_corrected_speed_loss_mph_s")} subtitle={`Raw: ${formatChannelValue(latest("speed_rate_mph_s") as number, "mph/s")}`} color="#22c55e" />
+        {/* Steering/yaw context */}
+        <EngineeringMetricCard title="Ackermann Steering Error" value={`${formatChannelValue(latest("ackermann_steering_error_deg") as number, "°")} error`} subtitle={`Expected: ${formatChannelValue(latest("ackermann_steering_expected_deg") as number, "°")} · Scrub proxy: ${formatChannelValue(latest("ackermann_scrub_proxy") as number, "proxy")}`} channelName="ackermann_scrub_proxy" color="#a78bfa" />
+        <EngineeringMetricCard title="Yaw / Scrub" value={`Yaw error: ${formatChannelValue(latest("yaw_error_proxy") as number, "rad/s")}`} subtitle={`Front scrub: ${formatChannelValue(latest("front_scrub_proxy") as number, "proxy")} · Rear: ${formatChannelValue(latest("rear_scrub_proxy") as number, "proxy")}`} channelName="yaw_error_proxy" color="#38bdf8" />
       </div>
-      {/* Jump to worst scrape */}
+
+      {/* ── Jump buttons ── */}
       <div className="toolbar-actions" style={{ marginTop: 6 }}>
         <button className={`secondary-button${jumpedBtn === "worst_scrape" ? " jump-clicked" : ""}`} onClick={() => {
           const scrapeVals = values(trace, "rear_scrape_risk_score") as (number | null)[];
@@ -1524,26 +1578,53 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
           scrapeVals.forEach((v, i) => { if (typeof v === "number" && v > worstVal) { worstVal = v; worstIdx = i; } });
           handleJumpClick("worst_scrape", worstIdx);
         }}>
-          <Activity size={14} /> Jump to Worst Scrape Risk
+          <Activity size={14} /> Jump to Worst Rear Scrape
+        </button>
+        <button className={`secondary-button${jumpedBtn === "worst_scrub" ? " jump-clicked" : ""}`} onClick={() => {
+          const scrubVals = values(trace, "drag_scrub_suspicion") as (number | null)[];
+          let worstIdx: number | null = null;
+          let worstVal = -Infinity;
+          scrubVals.forEach((v, i) => { if (typeof v === "number" && v > worstVal) { worstVal = v; worstIdx = i; } });
+          handleJumpClick("worst_scrub", worstIdx);
+        }}>
+          <Activity size={14} /> Jump to Max Scrub
+        </button>
+        <button className={`secondary-button${jumpedBtn === "worst_resistance" ? " jump-clicked" : ""}`} onClick={() => {
+          const resVals = values(trace, "full_throttle_resistance_index") as (number | null)[];
+          let worstIdx: number | null = null;
+          let worstVal = -Infinity;
+          resVals.forEach((v, i) => { if (typeof v === "number" && v > worstVal) { worstVal = v; worstIdx = i; } });
+          handleJumpClick("worst_resistance", worstIdx);
+        }}>
+          <Activity size={14} /> Jump to Worst Resistance
         </button>
       </div>
-      <div style={{ marginTop: 6 }}>
-        <span style={{ fontSize: 9, color: "#8d9aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Rear Risk Corridor</span>
+
+      {/* ── Combined corridor ── */}
+      <div style={{ marginTop: 8 }}>
+        <span style={{ fontSize: 9, color: "#8d9aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Rear Scrape / Scrub Corridor</span>
         {trace && xs.length > 1 ? (
           <RiskCorridorSVG
-            channels={["rear_scrape_risk_score", "rear_platform_contact_risk"]}
+            channels={["rear_scrape_risk_score", "rear_platform_contact_risk", "drag_scrub_suspicion", "full_throttle_resistance_index", "rear_scrub_proxy"]}
             trace={trace}
             xs={xs}
             selectedIndex={selectedIndex}
             onJump={(idx) => jumpToIndex(idx)}
-            height={28}
+            height={64}
           />
         ) : (
           <p className="muted" style={{ fontSize: 9 }}>Risk corridor unavailable.</p>
         )}
       </div>
-      {setupAction(["lr_ride_height_mm", "rr_ride_height_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm", "lr_packer_mm", "rr_packer_mm"], "Rear Platform Setup", true)}
-      <p className="section-note" style={{ marginTop: 8 }}>Rear scrape uses existing rear ride-height, scrape-margin, and contact-risk channels. Unavailable values remain unavailable rather than being treated as safe.</p>
+
+      {/* ── Setup actions ── */}
+      {setupAction(["lr_ride_height_mm", "rr_ride_height_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm", "lr_packer_mm", "rr_packer_mm"], "Rear Platform Setup", false)}
+      {setupAction(["steering_ratio", "steering_offset_deg", "front_arb_rating", "cross_weight_pct"], "Steering / Front Geometry Setup", false)}
+
+      {/* ── Section note ── */}
+      <p className="section-note" style={{ marginTop: 8 }}>
+        Rear scrape and scrub are grouped because both represent potential speed loss/resistance. Rear scrape comes from platform/ride-height contact risk; scrub comes from steering/yaw/tire resistance proxies. Missing telemetry remains unavailable, never safe or zero.
+      </p>
     </div>
   );
 
@@ -1606,58 +1687,6 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
     );
   };
 
-  const renderScrubPanel = () => (
-    <div className="engineering-panel">
-      <div className="engineering-panel-grid">
-        <EngineeringMetricCard title="Drag/Scrub Suspicion" channelName="drag_scrub_suspicion" value={latest("drag_scrub_suspicion")} riskValue={latest("drag_scrub_suspicion") as number | null} color="#ef4444" />
-        <EngineeringMetricCard title="Full-Throttle Resistance" channelName="full_throttle_resistance_index" value={latest("full_throttle_resistance_index")} riskValue={latest("full_throttle_resistance_index") as number | null} color="#f97316" />
-        <EngineeringMetricCard title="Ackermann Steering Error" value={`${formatChannelValue(latest("ackermann_steering_error_deg") as number, "°")} error`} subtitle={`Expected: ${formatChannelValue(latest("ackermann_steering_expected_deg") as number, "°")} · Scrub proxy: ${formatChannelValue(latest("ackermann_scrub_proxy") as number, "proxy")}`} channelName="ackermann_scrub_proxy" color="#a78bfa" />
-        <EngineeringMetricCard title="Yaw / Scrub" value={`Yaw error: ${formatChannelValue(latest("yaw_error_proxy") as number, "rad/s")}`} subtitle={`Front scrub: ${formatChannelValue(latest("front_scrub_proxy") as number, "proxy")} · Rear: ${formatChannelValue(latest("rear_scrub_proxy") as number, "proxy")}`} channelName="yaw_error_proxy" color="#38bdf8" />
-        <EngineeringMetricCard title="Wheel Mismatch" value={`Front: ${formatChannelValue(latest("front_wheel_speed_mismatch_corrected") as number, "m/s")}`} subtitle={`Rear: ${formatChannelValue(latest("rear_wheel_speed_mismatch_corrected") as number, "m/s")}`} color="#f59e0b" />
-        <EngineeringMetricCard title="Grade-Corrected Speed Loss" channelName="grade_corrected_speed_loss_mph_s" value={latest("grade_corrected_speed_loss_mph_s")} subtitle={`Raw: ${formatChannelValue(latest("speed_rate_mph_s") as number, "mph/s")}`} color="#22c55e" />
-      </div>
-      {/* Scrub/Resistance risk corridor */}
-      <div style={{ marginTop: 8 }}>
-        <span style={{ fontSize: 9, color: "#8d9aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Scrub / Resistance Corridor</span>
-        {trace && xs.length > 1 ? (
-          <RiskCorridorSVG
-            channels={["drag_scrub_suspicion", "full_throttle_resistance_index", "front_scrub_proxy", "rear_scrub_proxy"]}
-            trace={trace}
-            xs={xs}
-            selectedIndex={selectedIndex}
-            onJump={(idx) => jumpToIndex(idx)}
-            height={52}
-          />
-        ) : (
-          <p className="muted" style={{ fontSize: 9 }}>Scrub corridor unavailable: missing risk channels.</p>
-        )}
-      </div>
-      {/* Jump to worst scrub/resistance */}
-      <div className="toolbar-actions" style={{ marginTop: 6 }}>
-        <button className={`secondary-button${jumpedBtn === "worst_scrub" ? " jump-clicked" : ""}`} onClick={() => {
-          const scrubVals = values(trace, "drag_scrub_suspicion") as (number | null)[];
-          let worstIdx: number | null = null;
-          let worstVal = -Infinity;
-          scrubVals.forEach((v, i) => { if (typeof v === "number" && v > worstVal) { worstVal = v; worstIdx = i; } });
-          handleJumpClick("worst_scrub", worstIdx);
-        }}>
-          <Activity size={14} /> Jump to Max Scrub
-        </button>
-        <button className={`secondary-button${jumpedBtn === "worst_resistance" ? " jump-clicked" : ""}`} onClick={() => {
-          const resVals = values(trace, "full_throttle_resistance_index") as (number | null)[];
-          let worstIdx: number | null = null;
-          let worstVal = -Infinity;
-          resVals.forEach((v, i) => { if (typeof v === "number" && v > worstVal) { worstVal = v; worstIdx = i; } });
-          handleJumpClick("worst_resistance", worstIdx);
-        }}>
-          <Activity size={14} /> Jump to Worst Resistance
-        </button>
-      </div>
-      {setupAction(["steering_ratio", "steering_offset_deg", "front_arb_rating", "cross_weight_pct"], "Steering / Front Geometry Setup", true)}
-      <p className="section-note" style={{ marginTop: 8 }}>Extra steering beyond track radius suggests tire scrub. Grade-corrected speed loss removes estimated uphill/downhill effect. Corrected wheel mismatch subtracts yaw-rate geometry so ovals do not look like false slip.</p>
-    </div>
-  );
-
   const renderTiresPanel = () => (
     <div className="engineering-panel">
       <p className="section-note" style={{ fontSize: 10, marginBottom: 6 }}>
@@ -1713,6 +1742,55 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
     </div>
   );
 
+  const renderDiffuserPanel = () => (
+    <div className="engineering-panel">
+      <div className="engineering-panel-grid">
+        <EngineeringMetricCard title="Front Center RH" channelName="front_center_rh_in" value={latest("front_center_rh_in")} color="#38bdf8" />
+        <EngineeringMetricCard title="Rear Center RH" channelName="rear_center_rh_in" value={latest("rear_center_rh_in")} color="#a78bfa" />
+        <EngineeringMetricCard title="Center Rake" channelName="center_rake_in" value={latest("center_rake_in")} color="#c084fc" />
+        <EngineeringMetricCard title="Smooth Center Rake" channelName="smooth_center_rake_in" value={latest("smooth_center_rake_in")} color="#c084fc" />
+        <EngineeringMetricCard title="Smooth Diffuser Volume" channelName="smooth_diffuser_volume_ft3" value={latest("smooth_diffuser_volume_ft3")} color="#4ade80" />
+        <EngineeringMetricCard title="Diffuser Base Volume" channelName="diffuser_base_volume_ft3" value={latest("diffuser_base_volume_ft3")} color="#60a5fa" />
+        <EngineeringMetricCard title="Diffuser Wedge Volume" channelName="diffuser_wedge_volume_ft3" value={latest("diffuser_wedge_volume_ft3")} color="#f97316" />
+        <EngineeringMetricCard title="Diffuser Volume" channelName="diffuser_volume_ft3" value={latest("diffuser_volume_ft3")} color="#22c55e" />
+        <EngineeringMetricCard title="Diffuser Track Width" channelName="diffuser_track_width_in" value={latest("diffuser_track_width_in")} subtitle={`Wheelbase: ${formatChannelValue(latest("diffuser_wheelbase_in") as number, "in")}`} color="#8d9aaa" />
+      </div>
+      {/* Jump buttons */}
+      <div className="toolbar-actions" style={{ marginTop: 6 }}>
+        <button className={`secondary-button${jumpedBtn === "min_diffuser_vol" ? " jump-clicked" : ""}`} onClick={() => {
+          const vals = values(trace, "smooth_diffuser_volume_ft3") as (number | null)[];
+          let worstIdx: number | null = null;
+          let worstVal = Infinity;
+          vals.forEach((v, i) => { if (typeof v === "number" && v < worstVal) { worstVal = v; worstIdx = i; } });
+          handleJumpClick("min_diffuser_vol", worstIdx);
+        }}>
+          <Activity size={14} /> Jump to Min Smooth Diffuser Volume
+        </button>
+        <button className={`secondary-button${jumpedBtn === "worst_wedge" ? " jump-clicked" : ""}`} onClick={() => {
+          const vals = values(trace, "diffuser_wedge_volume_ft3") as (number | null)[];
+          let worstIdx: number | null = null;
+          let worstVal = -Infinity;
+          vals.forEach((v, i) => { if (typeof v === "number" && v > worstVal) { worstVal = v; worstIdx = i; } });
+          handleJumpClick("worst_wedge", worstIdx);
+        }}>
+          <Activity size={14} /> Jump to Max Wedge Volume
+        </button>
+        <button className={`secondary-button${jumpedBtn === "lowest_rear_crh" ? " jump-clicked" : ""}`} onClick={() => {
+          const vals = values(trace, "rear_center_rh_in") as (number | null)[];
+          let worstIdx: number | null = null;
+          let worstVal = Infinity;
+          vals.forEach((v, i) => { if (typeof v === "number" && v < worstVal) { worstVal = v; worstIdx = i; } });
+          handleJumpClick("lowest_rear_crh", worstIdx);
+        }}>
+          <Activity size={14} /> Jump to Lowest Rear Center RH
+        </button>
+      </div>
+      <p className="section-note" style={{ marginTop: 8 }}>
+        Diffuser channels are derived from ride-height geometry and resolved vehicle geometry. They describe underbody volume/rake shape, not direct aerodynamic force. Missing ride-height telemetry remains unavailable and is never treated as zero.
+      </p>
+    </div>
+  );
+
   const renderGradePanel = () => (
     <div className="engineering-panel">
       <div className="engineering-panel-grid">
@@ -1731,12 +1809,13 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
   const renderEngineeringPanel = () => {
     switch (workbenchView) {
       case "balance": return renderBalancePanel();
-      case "rear_scrape": return renderRearScrapePanel();
+      case "rear_scrape": return renderRearScrapeScrubPanel();
       case "aero_load": return renderAeroPanel();
-      case "scrub_steering": return renderScrubPanel();
+      case "scrub_steering": return renderRearScrapeScrubPanel();
       case "tires": return renderTiresPanel();
       case "shocks": return renderShocksPanel();
       case "grade_pull": return renderGradePanel();
+      case "diffuser": return renderDiffuserPanel();
       default: return renderBalancePanel();
     }
   };

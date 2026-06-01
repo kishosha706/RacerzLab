@@ -376,6 +376,18 @@ CALCULATED_CHANNEL_UNITS: dict[str, str] = {
     "whole_car_bottoming_risk": "score",
     "platform_balance_label": "label",
     "platform_balance_explanation": "label",
+    # ── diffuser geometry ──
+    "front_center_rh_in": "in",
+    "rear_center_rh_in": "in",
+    "lr_height_rub_block_in": "in",
+    "center_rake_in": "in",
+    "smooth_center_rake_in": "in",
+    "diffuser_track_width_in": "in",
+    "diffuser_wheelbase_in": "in",
+    "diffuser_base_volume_ft3": "ft³",
+    "diffuser_wedge_volume_ft3": "ft³",
+    "diffuser_volume_ft3": "ft³",
+    "smooth_diffuser_volume_ft3": "ft³",
 }
 
 
@@ -1797,6 +1809,117 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
         "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
     },
+    # ── diffuser geometry (Roger's diffuser geometry math) ──
+    "front_center_rh_in": {
+        "label": "Front Center RH",
+        "unit": "in",
+        "category": "diffuser",
+        "source_nature": "derived",
+        "precision": 2,
+        "description": "Average front ride height: (rf_ride_height_in + lf_ride_height_in) / 2.",
+        "formula": "(rf_ride_height_in + lf_ride_height_in) / 2",
+        "dependencies": ["rf_ride_height_in", "lf_ride_height_in"],
+    },
+    "rear_center_rh_in": {
+        "label": "Rear Center RH",
+        "unit": "in",
+        "category": "diffuser",
+        "source_nature": "derived",
+        "precision": 2,
+        "description": "Average rear ride height: (rr_ride_height_in + lr_height_rub_block_in) / 2 with 0.5 in rub-block correction on LR.",
+        "formula": "(rr_ride_height_in + lr_ride_height_in - 0.5) / 2",
+        "dependencies": ["rr_ride_height_in", "lr_ride_height_in"],
+    },
+    "lr_height_rub_block_in": {
+        "label": "LR Height — Rub Block",
+        "unit": "in",
+        "category": "diffuser",
+        "source_nature": "derived",
+        "precision": 2,
+        "description": "Left-rear ride height with 0.5 in rub-block correction subtracted.",
+        "formula": "lr_ride_height_in - 0.5",
+        "dependencies": ["lr_ride_height_in"],
+    },
+    "center_rake_in": {
+        "label": "Center Rake",
+        "unit": "in",
+        "category": "diffuser",
+        "source_nature": "derived",
+        "precision": 2,
+        "description": "Rake angle proxy: rear_center_rh_in - front_center_rh_in.",
+        "formula": "rear_center_rh_in - front_center_rh_in",
+        "dependencies": ["rear_center_rh_in", "front_center_rh_in"],
+    },
+    "smooth_center_rake_in": {
+        "label": "Smooth Center Rake",
+        "unit": "in",
+        "category": "diffuser",
+        "source_nature": "derived",
+        "precision": 2,
+        "description": "Trailing/causal smooth of center_rake_in (window 20 samples).",
+        "formula": "rolling smooth of center_rake_in, window 20",
+        "dependencies": ["center_rake_in"],
+    },
+    "diffuser_track_width_in": {
+        "label": "Diffuser Track Width Used",
+        "unit": "in",
+        "category": "diffuser",
+        "source_nature": "derived",
+        "precision": 2,
+        "description": "Resolved vehicle track width for diffuser calculation. Prefers rear_track_width_m from geometry; falls back to 79 in with assumption label.",
+        "formula": "Resolved from geometry or fallback 79 in",
+        "dependencies": ["rear_track_width_m", "front_track_width_m"],
+    },
+    "diffuser_wheelbase_in": {
+        "label": "Diffuser Wheelbase Used",
+        "unit": "in",
+        "category": "diffuser",
+        "source_nature": "derived",
+        "precision": 2,
+        "description": "Resolved vehicle wheelbase for diffuser calculation. Prefers wheelbase_m from geometry; falls back to 110 in.",
+        "formula": "Resolved from geometry or fallback 110 in",
+        "dependencies": ["wheelbase_m"],
+    },
+    "diffuser_base_volume_ft3": {
+        "label": "Diffuser Base Volume",
+        "unit": "ft³",
+        "category": "diffuser",
+        "source_nature": "derived",
+        "precision": 2,
+        "description": "Base diffuser volume: (front_center_rh_in * wheelbase_in * track_width_in) / 1728.",
+        "formula": "(front_center_rh_in * diffuser_wheelbase_in * diffuser_track_width_in) / 1728",
+        "dependencies": ["front_center_rh_in", "diffuser_wheelbase_in", "diffuser_track_width_in"],
+    },
+    "diffuser_wedge_volume_ft3": {
+        "label": "Diffuser Wedge Volume",
+        "unit": "ft³",
+        "category": "diffuser",
+        "source_nature": "derived",
+        "precision": 2,
+        "description": "Wedge diffuser volume from rake delta and diagonal length.",
+        "formula": "(track_width_in * rake_delta * sqrt(wb² + rake_delta²/2)) / 1728",
+        "dependencies": ["diffuser_track_width_in", "diffuser_wheelbase_in", "front_center_rh_in", "rear_center_rh_in"],
+    },
+    "diffuser_volume_ft3": {
+        "label": "Diffuser Volume",
+        "unit": "ft³",
+        "category": "diffuser",
+        "source_nature": "derived",
+        "precision": 2,
+        "description": "Total diffuser volume: base + wedge.",
+        "formula": "diffuser_base_volume_ft3 + diffuser_wedge_volume_ft3",
+        "dependencies": ["diffuser_base_volume_ft3", "diffuser_wedge_volume_ft3"],
+    },
+    "smooth_diffuser_volume_ft3": {
+        "label": "Smooth Diffuser Volume",
+        "unit": "ft³",
+        "category": "diffuser",
+        "source_nature": "derived",
+        "precision": 2,
+        "description": "Trailing/causal smooth of diffuser_volume_ft3 (window 20 samples).",
+        "formula": "rolling smooth of diffuser_volume_ft3, window 20",
+        "dependencies": ["diffuser_volume_ft3"],
+    },
 }
 
 
@@ -2477,6 +2600,117 @@ def _apply_row_calculations(item: dict[str, Any]) -> None:
     _compute_camber_bias(item)
 
 
+# ── diffuser geometry (Roger's diffuser geometry math) ────────────
+
+_DIFFUSER_FALLBACK_WHEELBASE_IN = 110.0
+_DIFFUSER_FALLBACK_TRACK_WIDTH_IN = 79.0
+_DIFFUSER_RUB_BLOCK_CORRECTION_IN = 0.5
+_CUBIC_INCHES_PER_FT3 = 1728.0
+_DIFFUSER_SMOOTH_WINDOW = 20
+
+
+def _resolve_diffuser_geometry(
+    geometry: Mapping[str, float] | None,
+    default_wb: float = _DIFFUSER_FALLBACK_WHEELBASE_IN,
+    default_tw: float = _DIFFUSER_FALLBACK_TRACK_WIDTH_IN,
+) -> tuple[float, float]:
+    """Resolve wheelbase and track-width in inches for diffuser computation."""
+    if geometry:
+        wb_m = geometry.get("wheelbase_m")
+        if wb_m is not None and wb_m > 0:
+            wb_in = wb_m * 39.37007874
+        else:
+            wb_in = default_wb
+
+        rear_tw_m = geometry.get("rear_track_width_m")
+        front_tw_m = geometry.get("front_track_width_m")
+        if rear_tw_m is not None and rear_tw_m > 0:
+            tw_in = rear_tw_m * 39.37007874
+        elif front_tw_m is not None and front_tw_m > 0:
+            tw_in = front_tw_m * 39.37007874
+        else:
+            tw_in = default_tw
+    else:
+        wb_in = default_wb
+        tw_in = default_tw
+    return wb_in, tw_in
+
+
+def _compute_diffuser_channels(
+    rows: list[dict[str, Any]],
+    geometry: Mapping[str, float] | None = None,
+) -> None:
+    """Compute diffuser geometry channels on all rows (row path)."""
+    if not rows:
+        return
+
+    wb_in, tw_in = _resolve_diffuser_geometry(geometry)
+    rub = _DIFFUSER_RUB_BLOCK_CORRECTION_IN
+    ft3_div = _CUBIC_INCHES_PER_FT3
+
+    # Per-row volume calc
+    volumes: list[float] = []
+    for row in rows:
+        lf = row.get("lf_ride_height_in")
+        rf = row.get("rf_ride_height_in")
+        lr = row.get("lr_ride_height_in")
+        rr = row.get("rr_ride_height_in")
+        if any(v is None for v in (lf, rf, lr, rr)):
+            row["front_center_rh_in"] = None
+            row["lr_height_rub_block_in"] = None
+            row["rear_center_rh_in"] = None
+            row["center_rake_in"] = None
+            row["diffuser_track_width_in"] = tw_in
+            row["diffuser_wheelbase_in"] = wb_in
+            row["diffuser_base_volume_ft3"] = None
+            row["diffuser_wedge_volume_ft3"] = None
+            row["diffuser_volume_ft3"] = None
+            volumes.append(float("nan"))
+            continue
+
+        front_c = (rf + lf) / 2.0
+        lr_rub = lr - rub
+        rear_c = (rr + lr_rub) / 2.0
+        rake = rear_c - front_c
+
+        row["front_center_rh_in"] = front_c
+        row["lr_height_rub_block_in"] = lr_rub
+        row["rear_center_rh_in"] = rear_c
+        row["center_rake_in"] = rake
+        row["diffuser_track_width_in"] = tw_in
+        row["diffuser_wheelbase_in"] = wb_in
+
+        base_vol = (front_c * wb_in * tw_in) / ft3_div
+        row["diffuser_base_volume_ft3"] = base_vol
+
+        import math
+        diag = math.sqrt(wb_in ** 2 + (rake ** 2) / 2.0)
+        wedge_vol = (tw_in * abs(rake) * diag) / ft3_div if rake < 0 else 0.0
+        row["diffuser_wedge_volume_ft3"] = wedge_vol
+
+        total_vol = base_vol + wedge_vol
+        row["diffuser_volume_ft3"] = total_vol
+        volumes.append(total_vol)
+
+    # Trailing/causal rolling smooths
+    window = _DIFFUSER_SMOOTH_WINDOW
+    for i in range(len(rows)):
+        if rows[i].get("center_rake_in") is not None:
+            start = max(0, i - window + 1)
+            rake_vals = [rows[j]["center_rake_in"] for j in range(start, i + 1) if rows[j].get("center_rake_in") is not None]
+            rows[i]["smooth_center_rake_in"] = sum(rake_vals) / len(rake_vals) if rake_vals else None
+        else:
+            rows[i]["smooth_center_rake_in"] = None
+
+        vol = volumes[i]
+        if not (vol != vol):  # not NaN
+            start = max(0, i - window + 1)
+            vol_vals = [v for v in volumes[start:i + 1] if not (v != v)]
+            rows[i]["smooth_diffuser_volume_ft3"] = sum(vol_vals) / len(vol_vals) if vol_vals else None
+        else:
+            rows[i]["smooth_diffuser_volume_ft3"] = None
+
+
 def _compute_g_values(item: dict[str, Any]) -> None:
     """Convert m/s² accelerations to g units."""
     for ch in ["lat_accel", "long_accel", "vert_accel"]:
@@ -2764,6 +2998,7 @@ def normalize_telemetry_rows(
         normalized.append(item)
 
     _apply_derivatives(normalized)
+    _compute_diffuser_channels(normalized, geometry)
     _apply_rolling_aggregates(normalized)
     _apply_gps_projection(normalized)
 

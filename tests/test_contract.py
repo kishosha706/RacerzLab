@@ -75,14 +75,14 @@ class TestLapSummaryShape:
         lap = LapSummary(
             lap_id="test", run_id="run1", lap_number=1,
             lap_time=92.345, is_useful=True,
-            classification_tags=["LIKELY_SOLO"],
+            classification_tags=["SOLO_CLEAN"],
             confidence_notes=["Good data quality"],
         )
         d = lap.model_dump()
         assert d["lap_id"] == "test"
         assert d["lap_time"] == 92.345
         assert d["is_useful"] is True
-        assert d["classification_tags"] == ["LIKELY_SOLO"]
+        assert d["classification_tags"] == ["SOLO_CLEAN"]
         assert d["confidence_notes"] == ["Good data quality"]
 
 
@@ -91,7 +91,6 @@ class TestLapQualitySummaryShape:
 
     def test_required_fields(self):
         lq = LapQualitySummary(run_id="run1", lap_number=1)
-        assert lq.draft_status == "UNKNOWN_DRAFT_STATUS"
         assert lq.valid_for_compare is False
         assert lq.invalid_reasons == []
         assert lq.classification_tags == []
@@ -142,10 +141,8 @@ class TestLapDegradationSummaryShape:
     def test_warning_fields(self):
         ld = LapDegradationSummary(
             run_id="run1", lap_count=20,
-            draft_warning="Draft detected in early laps",
             coaching_message="Consider longer run for tire falloff analysis",
         )
-        assert ld.draft_warning == "Draft detected in early laps"
         assert ld.coaching_message == "Consider longer run for tire falloff analysis"
 
 
@@ -719,3 +716,4 @@ class TestImportValidation:
         finally:
             import os
             os.unlink(path)
+

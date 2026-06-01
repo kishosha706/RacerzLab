@@ -125,10 +125,10 @@ function cornerMini(c: CornerName, m: CornerMetric | undefined) {
 
 // ── Sub-views ───────────────────────────────────────────────
 
-function VerdictView({ verdict: v, disc, wci, confidence, draftWarning, weatherWarning, onSaveFinding, onStageNextTest, onOpenMap, saving, saveStatus, isSelfCompare }: {
+function VerdictView({ verdict: v, disc, wci, confidence, weatherWarning, onSaveFinding, onStageNextTest, onOpenMap, saving, saveStatus, isSelfCompare }: {
   verdict: DidItWorkVerdict | null; disc: { score: number; label: string } | null;
   wci: WholeCarIndex | null; confidence: number;
-  draftWarning?: string | null; weatherWarning?: string | null;
+  weatherWarning?: string | null;
   onSaveFinding?: () => void; onStageNextTest?: () => void; onOpenMap?: () => void;
   saving?: boolean; saveStatus?: string | null; isSelfCompare?: boolean;
 }) {
@@ -148,7 +148,6 @@ function VerdictView({ verdict: v, disc, wci, confidence, draftWarning, weatherW
         causeBucket={v.cause_bucket}
         requiredNextData={v.required_next_data}
         doNotChangeWarnings={v.do_not_change_warnings}
-        draftWarning={draftWarning}
         weatherWarning={weatherWarning}
         onSaveFinding={isSelfCompare ? undefined : onSaveFinding}
         onStageNextTest={isSelfCompare ? undefined : onStageNextTest}
@@ -689,7 +688,6 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
           <VerdictView
             verdict={result.verdict} disc={result.test_discipline}
             wci={result.whole_car_index} confidence={result.confidence_score}
-            draftWarning={preview?.context_changes?.find(c => c.key === "draft" || c.key === "draft_status")?.warning ?? null}
             weatherWarning={preview?.context_changes?.find(c => c.key === "weather")?.warning ?? null}
             onSaveFinding={() => {
               const isDup = saveStatus === "Finding already saved. Click again to save duplicate.";

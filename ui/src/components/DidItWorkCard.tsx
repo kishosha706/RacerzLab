@@ -28,9 +28,7 @@ export interface DidItWorkCardProps {
   requiredNextData?: string[];
   doNotChangeWarnings?: string[];
   setupChanges?: Array<{ label: string; baseline_value: unknown; test_value: unknown }>;
-  contextWarnings?: Array<{ label: string; warning: string }>;
-  draftWarning?: string | null;
-  weatherWarning?: string | null;
+  contextWarnings?: Array<{ label: string; warning: string }>;  weatherWarning?: string | null;
   tireContext?: TireContextProps | null;
   /** Callbacks */
   onSaveFinding?: () => void;
@@ -77,7 +75,7 @@ export function DidItWorkCard({
   targetZoneDeltaMph, splitterDeltaMm, platformRiskDelta, scrubDelta,
   evidence, warnings, nextStep, successMetric,
   causeBucket, requiredNextData, doNotChangeWarnings,
-  setupChanges, contextWarnings, draftWarning, weatherWarning,
+  setupChanges, contextWarnings, weatherWarning,
   tireContext,
   onSaveFinding, onCreateTestPlan, onStageNextTest, onOpenSetup, onOpenEvidence, onOpenMap,
   saving, saveStatus, disabled,
@@ -135,13 +133,11 @@ export function DidItWorkCard({
       </div>
 
       {/* ── Context warnings (grouped) ── */}
-      {(draftWarning || weatherWarning || (contextWarnings?.length ?? 0) > 0) && (
+      {(weatherWarning || (contextWarnings?.length ?? 0) > 0) && (
         <div className="diw-context-warnings">
           <h4 style={{ fontSize: 11, color: "#8d9aaa", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 4px" }}>
             <AlertTriangle size={12} /> Context Warnings
-          </h4>
-          {draftWarning && <p className="warning-line"><AlertTriangle size={12} /> {draftWarning}</p>}
-          {weatherWarning && <p className="warning-line"><AlertTriangle size={12} /> {weatherWarning}</p>}
+          </h4>          {weatherWarning && <p className="warning-line"><AlertTriangle size={12} /> {weatherWarning}</p>}
           {contextWarnings?.map(cw => (
             <p key={cw.label} className="warning-line"><AlertTriangle size={12} /> {cw.warning}</p>
           ))}
@@ -312,3 +308,4 @@ export function DidItWorkCard({
     </div>
   );
 }
+

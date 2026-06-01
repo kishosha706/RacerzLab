@@ -13,7 +13,6 @@ Last updated: 2026-05-28
 | ID | Area | Gap |
 |---|---|---|
 | GAP-EVT-001 | Labels | MIN_REAR_RIDE_HEIGHT label missing |
-| GAP-TAG-001 | Labels | UNKNOWN_DRAFT_STATUS label missing |
 | GAP-SESS-001 | RunContextBar | Session metadata hidden |
 | GAP-REC-001 | OverviewTab | Recommendations not rendered |
 | GAP-CHAN-001 | RawChannelsTab | is_proxy not displayed |
@@ -134,3 +133,4 @@ The `aggregate_tire_comparison()` and `aggregate_shock_comparison()` functions o
 - **Avoided**: "Tire degradation caused the slowdown." / "Adjust rebound because damper energy increased."
 - Damper energy is explicitly labeled as proxy.
 - Short runs get low confidence with explicit warning.
+
