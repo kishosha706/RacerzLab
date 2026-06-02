@@ -49,7 +49,7 @@ function formatStamp(isoString: string): string {
 }
 
 type ImportPanelProps = {
-  onImportComplete: (runId?: string | null, trackMap?: TrackMapResolution | null) => void;
+  onImportComplete: (runId?: string | null, trackMap?: TrackMapResolution | null) => void | Promise<void>;
   importing: boolean;
   importStage: string | null;
   error: string | null;
@@ -77,11 +77,12 @@ function saveRecent(key: string, entries: RecentEntry[]) {
 }
 
 /** Add to recent list only after successful import. */
-function addRecentAfterImport(key: string, path: string, name: string) {
+function addRecentAfterImport(key: string, path: string, name: string): RecentEntry[] {
   const entries = loadRecent(key);
   const filtered = entries.filter((e) => e.path !== path);
   filtered.unshift({ path, name, importedAt: new Date().toISOString() });
   saveRecent(key, filtered);
+  return filtered.slice(0, MAX_RECENT);
 }
 
 export function ImportPanel({
@@ -89,8 +90,8 @@ export function ImportPanel({
   fileInputRef, onFileSelected, onImportClick,
 }: ImportPanelProps) {
   const desktop = isTauri();
-  const [recentTelemetry] = useState<RecentEntry[]>(() => loadRecent(RECENT_TELEMETRY_KEY));
-  const [recentMaps] = useState<RecentEntry[]>(() => loadRecent(RECENT_MAPS_KEY));
+  const [recentTelemetry, setRecentTelemetry] = useState<RecentEntry[]>(() => loadRecent(RECENT_TELEMETRY_KEY));
+  const [recentMaps, setRecentMaps] = useState<RecentEntry[]>(() => loadRecent(RECENT_MAPS_KEY));
   const [telemetryFolder, setTelemetryFolder] = useState<string | null>(() => {
     try { return localStorage.getItem(TELEMETRY_FOLDER_KEY); }
     catch { return null; }
@@ -108,6 +109,11 @@ export function ImportPanel({
   const displayedError = nativeError ?? error;
   const displayedStatus = nativeStatus ?? status;
 
+  const completeImport = useCallback(async (runId?: string | null, trackMap?: TrackMapResolution | null) => {
+    setNativeStage(runId ? "Opening cockpit..." : "Refreshing local library...");
+    await onImportComplete(runId, trackMap);
+  }, [onImportComplete]);
+
   // ── Native telemetry file picker (primary) ────────────────────
   const handleNativeTelemetryPick = useCallback(async () => {
     importDebug.start("picker_opened", { source: "native_file" });
@@ -123,7 +129,7 @@ export function ImportPanel({
     const fileName = result.filePath.split(/[/\\]/).pop() ?? result.filePath;
     importDebug.log("picker_selected", { source: "native_file", fileName });
     setNativeBusy(true);
-    setNativeStage("Importing telemetry...");
+    setNativeStage("Reading .ibt and decoding telemetry...");
     setNativeError(null);
     setNativeStatus(null);
     try {
@@ -135,11 +141,11 @@ export function ImportPanel({
         track_map_status: resp.track_map?.status,
       });
       // Only add to recent AFTER successful import
-      addRecentAfterImport(RECENT_TELEMETRY_KEY, result.filePath, fileName);
+      setRecentTelemetry(addRecentAfterImport(RECENT_TELEMETRY_KEY, result.filePath, fileName));
       importDebug.log("recent_file_saved", { source: "native_file", fileName });
       setNativeStatus(resp.status.message);
       importDebug.log("on_import_complete_called", { runId: resp.run_id });
-      onImportComplete(resp.run_id, resp.track_map ?? null);
+      await completeImport(resp.run_id, resp.track_map ?? null);
     } catch (caught) {
       const msg = caught instanceof Error ? caught.message : "Import failed";
       importDebug.error("import_request_finished", msg, { source: "native_file", fileName });
@@ -148,7 +154,7 @@ export function ImportPanel({
       setNativeBusy(false);
       setNativeStage(null);
     }
-  }, [onImportComplete]);
+  }, [completeImport]);
 
   // ── Native track map picker (secondary/fallback) ──────────────
   const handleNativeMapPick = useCallback(async () => {
@@ -165,17 +171,17 @@ export function ImportPanel({
     const fileName = result.filePath.split(/[/\\]/).pop() ?? result.filePath;
     importDebug.log("picker_selected", { source: "native_map", fileName });
     setNativeBusy(true);
-    setNativeStage("Importing track map...");
+    setNativeStage("Reading track map...");
     setNativeError(null);
     setNativeStatus(null);
     try {
       importDebug.start("import_request_started", { source: "native_map", fileName });
       await importMt2FileFromPath(result.filePath);
       importDebug.success("import_request_finished", { source: "native_map", fileName });
-      addRecentAfterImport(RECENT_MAPS_KEY, result.filePath, fileName);
+      setRecentMaps(addRecentAfterImport(RECENT_MAPS_KEY, result.filePath, fileName));
       importDebug.log("recent_file_saved", { source: "native_map", fileName });
       setNativeStatus("Track map import complete.");
-      onImportComplete(null, null);
+      await completeImport(null, null);
     } catch (caught) {
       const msg = caught instanceof Error ? caught.message : "Import failed";
       importDebug.error("import_request_finished", msg, { source: "native_map", fileName });
@@ -184,7 +190,7 @@ export function ImportPanel({
       setNativeBusy(false);
       setNativeStage(null);
     }
-  }, [onImportComplete]);
+  }, [completeImport]);
 
   // ── Native folder picker ──────────────────────────────────────
   const handleNativeFolderPick = useCallback(async () => {
@@ -230,18 +236,18 @@ export function ImportPanel({
         setNativeStage(null);
         return;
       }
-      setNativeStage("Importing telemetry...");
+      setNativeStage("Reading .ibt and decoding telemetry...");
       importDebug.start("import_request_started", { source: "folder_latest", fileName: newest.name });
       const resp = await importIbtFileFromPath(newest.path);
       importDebug.success("import_request_finished", {
         source: "folder_latest", fileName: newest.name,
         run_id: resp.run_id,
       });
-      addRecentAfterImport(RECENT_TELEMETRY_KEY, newest.path, newest.name);
+      setRecentTelemetry(addRecentAfterImport(RECENT_TELEMETRY_KEY, newest.path, newest.name));
       importDebug.log("recent_file_saved", { source: "folder_latest", fileName: newest.name });
       setNativeStatus(resp.status.message);
       importDebug.log("on_import_complete_called", { runId: resp.run_id });
-      onImportComplete(resp.run_id, resp.track_map ?? null);
+      await completeImport(resp.run_id, resp.track_map ?? null);
     } catch (caught) {
       const msg = caught instanceof Error ? caught.message : "Import failed";
       importDebug.error("import_request_finished", msg, { source: "folder_latest" });
@@ -251,22 +257,35 @@ export function ImportPanel({
       setFolderImporting(false);
       setNativeStage(null);
     }
-  }, [telemetryFolder, onImportComplete]);
+  }, [telemetryFolder, completeImport]);
 
   // ── Click recent file ─────────────────────────────────────────
   const handleRecentClick = useCallback(async (entry: RecentEntry) => {
     importDebug.log("recent_file_clicked", { fileName: entry.name });
+    setNativeBusy(true);
+    setNativeError(null);
+    setNativeStatus(null);
     try {
       if (entry.path.endsWith(".mt2")) {
+        setNativeStage("Reading track map...");
         await importMt2FileFromPath(entry.path);
-        onImportComplete(null, null);
+        setRecentMaps(addRecentAfterImport(RECENT_MAPS_KEY, entry.path, entry.name));
+        await completeImport(null, null);
       } else {
+        setNativeStage("Reading .ibt and decoding telemetry...");
         const resp = await importIbtFileFromPath(entry.path);
+        setRecentTelemetry(addRecentAfterImport(RECENT_TELEMETRY_KEY, entry.path, entry.name));
         importDebug.log("on_import_complete_called", { runId: resp.run_id });
-        onImportComplete(resp.run_id, resp.track_map ?? null);
+        await completeImport(resp.run_id, resp.track_map ?? null);
       }
-    } catch { /* parent handles error display */ }
-  }, [onImportComplete]);
+    } catch (caught) {
+      setNativeError(caught instanceof Error ? caught.message : "Import failed");
+    }
+    finally {
+      setNativeBusy(false);
+      setNativeStage(null);
+    }
+  }, [completeImport]);
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
 

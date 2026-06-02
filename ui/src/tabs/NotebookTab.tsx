@@ -1,4 +1,4 @@
-﻿import { AlertTriangle, BarChart3, BookOpen, CheckCircle2, Clipboard, Layers, List, MapPin, RotateCcw, Wrench } from "lucide-react";
+import { AlertTriangle, BarChart3, BookOpen, CheckCircle2, Clipboard, Layers, List, MapPin, RotateCcw, Wrench } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useCompareBasket } from "../store/CompareBasketContext";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
@@ -38,7 +38,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 function formatVal(v: number | null | undefined, digits = 2): string {
-  return v != null && !Number.isNaN(v) ? v.toFixed(digits) : "â€”";
+  return v != null && !Number.isNaN(v) ? v.toFixed(digits) : "-";
 }
 
 export function NotebookTab() {
@@ -190,7 +190,7 @@ export function NotebookTab() {
     ? undefined
     : "Not available for this run";
 
-  // â”€â”€ render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // -- render --------------------------------------------------
   return (
     <section className="notebook-tab">
       <header className="notebook-header">
@@ -206,6 +206,24 @@ export function NotebookTab() {
 
       {view === "findings" && (
         <div className="notebook-findings">
+          <div className="setup-memory-grid" style={{ marginBottom: 10 }}>
+            <div className="memory-card">
+              <span className="memory-stat">{findings.length}</span>
+              <span className="memory-label">Findings</span>
+            </div>
+            <div className="memory-card" style={{ borderLeftColor: "#ef4444" }}>
+              <span className="memory-stat">{findings.filter((finding) => finding.verdict === "undo").length}</span>
+              <span className="memory-label">High</span>
+            </div>
+            <div className="memory-card" style={{ borderLeftColor: "#f59e0b" }}>
+              <span className="memory-stat">{findings.filter((finding) => finding.verdict === "retest").length}</span>
+              <span className="memory-label">Watch</span>
+            </div>
+            <div className="memory-card" style={{ borderLeftColor: "#22c55e" }}>
+              <span className="memory-stat">{findings.filter((finding) => finding.status === "confirmed").length}</span>
+              <span className="memory-label">Confirmed</span>
+            </div>
+          </div>
           <div className="notebook-filters">
             <input placeholder="Car" value={filterCar} onChange={(e) => setFilterCar(e.target.value)} className="filter-input" />
             <input placeholder="Track" value={filterTrack} onChange={(e) => setFilterTrack(e.target.value)} className="filter-input" />
@@ -227,7 +245,7 @@ export function NotebookTab() {
             <button className="secondary-button" onClick={loadFindings}><RotateCcw size={14} /> Refresh</button>
           </div>
 
-          {loading && <p className="muted">Loading findingsâ€¦</p>}
+          {loading && <p className="muted">Loading findings...</p>}
 
           {!loading && findings.length === 0 && (
             <div className="notebook-empty">
@@ -239,32 +257,34 @@ export function NotebookTab() {
             <table className="compact-table">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Car</th>
-                  <th>Track</th>
-                  <th>Verdict</th>
-                  <th>Confidence</th>
-                  <th>Headline</th>
+                  <th>Severity</th>
+                  <th>Verdict / Finding Title</th>
+                  <th>Run / Track / Car</th>
+                  <th>Lap / Window / Zone</th>
+                  <th>Evidence Type</th>
                   <th>Status</th>
-                  <th />
+                  <th>Last Updated</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {findings.map((f) => (
                   <tr key={f.finding_id} className="finding-row" onClick={() => handleSelectFinding(f)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleSelectFinding(f); } }} tabIndex={0} role="button" aria-label={`Open finding: ${f.summary_headline ?? f.finding_id}`}>
-                    <td className="cell-val">{f.created_at?.slice(0, 10) ?? "â€”"}</td>
-                    <td className="cell-label">{f.car_name ?? "â€”"}</td>
-                    <td className="cell-label">{f.track_name ?? "â€”"}</td>
-                    <td className="cell-delta" style={{ color: VERDICT_COLORS[f.verdict ?? ""] ?? "#8d9aaa" }}>
-                      {f.verdict?.replace(/_/g, " ") ?? "â€”"}
+                    <td className="cell-delta" style={{ color: (f.verdict === "undo" ? "#ef4444" : f.verdict === "retest" ? "#f59e0b" : "#22c55e") }}>
+                      {f.verdict === "undo" ? "HIGH" : f.verdict === "retest" ? "WATCH" : "INFO"}
                     </td>
-                    <td className="cell-val">{formatVal(f.confidence_score * 100, 0)}%</td>
-                    <td className="cell-val">{f.summary_headline ?? "â€”"}</td>
+                    <td className="cell-val">{(f.verdict?.replace(/_/g, " ") ?? "-").toUpperCase()} - {f.summary_headline ?? "-"}</td>
+                    <td className="cell-label">{f.baseline_run_id?.slice(0, 8) ?? "-"} - {f.track_name ?? "-"} - {f.car_name ?? "-"}</td>
+                    <td className="cell-val">
+                      L{f.baseline_lap ?? "-"} / L{f.test_lap ?? "-"} - {f.target_zone_start_pct.toFixed(1)}-{f.target_zone_end_pct.toFixed(1)}%
+                    </td>
+                    <td className="cell-val">{f.target_zone_classification ?? "comparison"}</td>
                     <td>
                       <span className="status-badge" style={{ color: STATUS_COLORS[f.status] ?? "#8d9aaa" }}>
                         {f.status}
                       </span>
                     </td>
+                    <td className="cell-val">{f.updated_at?.slice(0, 10) ?? "-"}</td>
                     <td>
                       <button className="secondary-button" onClick={(e) => { e.stopPropagation(); handleCreateTestPlan(f.finding_id); }}>
                         <List size={12} /> Plan
@@ -281,7 +301,7 @@ export function NotebookTab() {
       {view === "finding-detail" && selectedFinding && (
         <div className="notebook-detail">
           <button className="secondary-button" onClick={() => setView("findings")} style={{ marginBottom: 12 }}>
-            â† Back to Findings
+            Back to Findings
           </button>
 
           {detailStatus && (
@@ -297,10 +317,10 @@ export function NotebookTab() {
                 {selectedFinding.verdict?.replace(/_/g, " ").toUpperCase()}
               </span>
               <span>Confidence: {formatVal(selectedFinding.confidence_score * 100, 0)}%</span>
-              <span>Tier: {selectedFinding.confidence_tier ?? "â€”"}</span>
-              <span>Classification: {selectedFinding.target_zone_classification ?? "â€”"}</span>
+              <span>Tier: {selectedFinding.confidence_tier ?? "-"}</span>
+              <span>Classification: {selectedFinding.target_zone_classification ?? "-"}</span>
             </div>
-            <p className="finding-car-track">{selectedFinding.car_name} @ {selectedFinding.track_name} â€” {selectedFinding.setup_name}</p>
+            <p className="finding-car-track">{selectedFinding.car_name} @ {selectedFinding.track_name} - {selectedFinding.setup_name}</p>
           </div>
 
           {selectedFinding.key_takeaways.length > 0 && (
@@ -321,7 +341,7 @@ export function NotebookTab() {
             <div className="insight-section">
               <h4>Sector Deltas</h4>
               <table className="compact-table">
-                <thead><tr><th>Sector</th><th>Speed Î”</th><th>CFS Î”</th></tr></thead>
+                <thead><tr><th>Sector</th><th>Speed Delta</th><th>CFS Delta</th></tr></thead>
                 <tbody>
                   {selectedFinding.sector_summaries.map((s, i: number) => {
                     const row = s as FindingSectorSummary;
@@ -348,8 +368,8 @@ export function NotebookTab() {
                     const row = s as FindingSetupChange;
                     return (
                       <tr key={i}>
-                        <td className="cell-label">{row.label ?? "—"}</td>
-                        <td className="cell-delta">{row.delta ?? "—"}</td>
+                        <td className="cell-label">{row.label ?? "-"}</td>
+                        <td className="cell-delta">{row.delta ?? "-"}</td>
                       </tr>
                     );
                   })}
@@ -370,7 +390,7 @@ export function NotebookTab() {
             <p className="insight-recommendation"><strong>Next:</strong> {selectedFinding.next_step}</p>
           )}
 
-          {/* â”€â”€ Notes editor â”€â”€ */}
+          {/* -- Notes editor -- */}
           <div className="insight-section">
             <h4>Notes</h4>
             <textarea
@@ -378,11 +398,11 @@ export function NotebookTab() {
               value={editNotes}
               onChange={(e) => setEditNotes(e.target.value)}
               rows={4}
-              placeholder="Add notes about this findingâ€¦"
+              placeholder="Add notes about this finding..."
             />
           </div>
 
-          {/* â”€â”€ Tags editor â”€â”€ */}
+          {/* -- Tags editor -- */}
           <div className="insight-section">
             <h4>Tags</h4>
             <input
@@ -394,7 +414,7 @@ export function NotebookTab() {
             />
           </div>
 
-          {/* â”€â”€ Actions â”€â”€ */}
+          {/* -- Actions -- */}
           <div className="finding-actions">
             <div className="selector-group">
               <label>Status</label>
@@ -407,11 +427,11 @@ export function NotebookTab() {
               </select>
             </div>
             <button className="secondary-button" onClick={handleSaveDetail} disabled={savingDetail}>
-              {savingDetail ? "Savingâ€¦" : "Save Changes"}
+              {savingDetail ? "Saving..." : "Save Changes"}
             </button>
           </div>
 
-          {/* â”€â”€ Relaunch actions â”€â”€ */}
+          {/* -- Relaunch actions -- */}
           <div className="toolbar-actions" style={{ marginTop: 12, flexWrap: "wrap" }}>
             <span className="section-note" style={{ fontSize: 10, color: "#8d9aaa", marginRight: 4, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
               Revisit:
@@ -514,7 +534,7 @@ export function NotebookTab() {
             </button>
           </div>
 
-          {/* â”€â”€ Test plan status â”€â”€ */}
+          {/* -- Test plan status -- */}
           {selectedFinding.next_step && (
             <p className="insight-recommendation" style={{ marginTop: 12 }}>
               <strong>Next test:</strong> {selectedFinding.next_step}
@@ -535,8 +555,8 @@ export function NotebookTab() {
                     <td className="cell-val">{p.created_at?.slice(0, 10)}</td>
                     <td className="cell-label">{p.car_name}</td>
                     <td className="cell-label">{p.track_name}</td>
-                    <td className="cell-val">{p.goal ?? "â€”"}</td>
-                    <td className="cell-val">{p.change_to_try ?? "â€”"}</td>
+                    <td className="cell-val">{p.goal ?? "-"}</td>
+                    <td className="cell-val">{p.change_to_try ?? "-"}</td>
                     <td className="cell-delta">{p.status}</td>
                   </tr>
                 ))}

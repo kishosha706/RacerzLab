@@ -1,5 +1,5 @@
 /**
- * Import debug logger — local-only instrumentation for diagnosing import failures.
+ * Import debug logger - local-only instrumentation for diagnosing import failures.
  *
  * Stores last 50 entries in memory. Optionally persists to localStorage
  * when DEBUG_IMPORT=1 is set.
@@ -35,7 +35,7 @@ function persist(entries: ImportDebugEntry[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(-MAX_ENTRIES)));
   } catch {
-    // localStorage full — ignore
+    // localStorage full - ignore
   }
 }
 

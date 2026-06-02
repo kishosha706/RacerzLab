@@ -92,14 +92,51 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const [selectedArea, setSelectedArea] = useState<string | null>(null);
   const inspectorRef = useRef<HTMLDivElement>(null);
+  const loadSeqRef = useRef(0);
   const { selection, focusEvidence, setWorkspace } = useTelemetrySelection();
 
-  useEffect(() => { fetchTrackMaps().then(setAvailableMaps).catch(()=>{}); }, []);
   useEffect(() => {
-    if (!runId) { setPkg(null); return; }
-    setLoading(true); setError(null);
-    fetchRunTrackMapPackage(runId, { lap: lap??undefined, target_zone_start_pct: targetZoneStartPct, target_zone_end_pct: targetZoneEndPct, preferred_map_id: preferredMapId??undefined })
-      .then(setPkg).catch((e)=>setError(e instanceof Error?e.message:"Failed to load track map")).finally(()=>setLoading(false));
+    let cancelled = false;
+    fetchTrackMaps()
+      .then((maps) => {
+        if (!cancelled) setAvailableMaps(maps);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const seq = ++loadSeqRef.current;
+    if (!runId) {
+      setPkg(null);
+      setLoading(false);
+      setError(null);
+      return () => { cancelled = true; };
+    }
+    setLoading(true);
+    setError(null);
+    fetchRunTrackMapPackage(runId, {
+      lap: lap ?? undefined,
+      target_zone_start_pct: targetZoneStartPct,
+      target_zone_end_pct: targetZoneEndPct,
+      preferred_map_id: preferredMapId ?? undefined,
+    })
+      .then((nextPkg) => {
+        if (!cancelled && seq === loadSeqRef.current) setPkg(nextPkg);
+      })
+      .catch((e) => {
+        if (!cancelled && seq === loadSeqRef.current) {
+          setError(e instanceof Error ? e.message : "Failed to load track map");
+        }
+      })
+      .finally(() => {
+        if (!cancelled && seq === loadSeqRef.current) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [runId, lap, targetZoneStartPct, targetZoneEndPct, preferredMapId]);
 
   const points = pkg?.map?.points ?? [];
@@ -260,6 +297,10 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
       }),
     [overlays, activeLayers, severityFilter, problemFocus],
   );
+  const orderedVisibleOverlays = useMemo(
+    () => [...visibleOverlays].sort((a, b) => (SEVERITY_RANK[b.severity ?? "info"] ?? 99) - (SEVERITY_RANK[a.severity ?? "info"] ?? 99)),
+    [visibleOverlays],
+  );
 
   const selectedHidden =
     inspector.kind === "overlay" &&
@@ -353,7 +394,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
         );
         return { key, sectionName, phase, count: evts.length, worst, events: evts };
       })
-      .sort((a, b) => a.count - b.count);
+      .sort((a, b) => b.count - a.count);
   }, [visibleOverlays, getLocation]);
 
   // ── Copy summary ─────────────────────────────────────────────
@@ -529,8 +570,8 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
               <select
                 className="trackmap-select"
                 size={Math.min(8, filtered.length)}
+                value={preferredMapId ?? ""}
                 onChange={(e) => setPreferredMap(e.target.value)}
-                defaultValue=""
               >
                 <option value="" disabled>Select a track map…</option>
                 {filtered.map((m) => (
@@ -675,6 +716,56 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
           </div>
         )}
 
+        <div className="trackmap-mode-row" style={{ marginBottom: 8 }}>
+          <label className="muted" style={{ fontSize: 11 }}>
+            Overlay Layer
+            <select
+              className="trackmap-select trackmap-select-sm"
+              value={activePreset}
+              onChange={(e) => applyPreset(e.target.value as typeof activePreset)}
+              style={{ marginLeft: 6 }}
+            >
+              <option value="all">Events / Severity</option>
+              <option value="drag_scrub">Scrub Risk</option>
+              <option value="platform">Platform Risk</option>
+              <option value="aero">Ride Height / Aero</option>
+              <option value="shocks">Shock Activity</option>
+            </select>
+          </label>
+          <label className="muted" style={{ fontSize: 11 }}>
+            Severity
+            <select className="trackmap-select trackmap-select-sm" value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value as SeverityLevel)} style={{ marginLeft: 6 }}>
+              <option value="all">All</option>
+              <option value="critical">Critical</option>
+              <option value="high">High+</option>
+              <option value="watch">Watch+</option>
+              <option value="info">Info+</option>
+            </select>
+          </label>
+          {selectedAreaSection && (
+            <span className="lap-flag-badge">
+              {selectedAreaLabel ?? selectedAreaSection.section_id}
+            </span>
+          )}
+          {selectedAreaSection && (
+            <button
+              className="trackmap-action-btn"
+              onClick={() => {
+                focusEvidence(buildSectionEvidence(selectedAreaSection), "compare");
+                setWorkspace("compare", "track_map");
+              }}
+              title="Open Compare using the selected zone"
+            >
+              <Crosshair size={12} /> Compare Selected Zone
+            </button>
+          )}
+          {preferredMapId && (
+            <button className="trackmap-action-btn" onClick={clearPreferredMap} aria-label="Reset manual map selection">
+              <X size={10} /> Reset
+            </button>
+          )}
+        </div>
+
         {/* ── Mode row ── */}
         <div className="trackmap-mode-row">
           <div className="trackmap-quick-actions">
@@ -778,7 +869,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                   </g>
                 );
               })}
-            {visibleOverlays
+            {orderedVisibleOverlays
               .filter((o) => o.kind === "platform_event" && o.x != null && o.y != null)
               .map((o) => {
                 const loc = getLocation(o.lap_pct);
@@ -827,7 +918,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                 );
               })}
           </svg>
-          {visibleOverlays.filter((o) => o.kind === "platform_event").length === 0 && overlays.length > 0 && (
+          {orderedVisibleOverlays.filter((o) => o.kind === "platform_event").length === 0 && overlays.length > 0 && (
             <div className="trackmap-empty-map-overlay"><Info size={14} /><span>No visible events for active layers.</span></div>
           )}
         </div>
@@ -862,7 +953,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                 </button>
               );
             })}
-            {visibleOverlays
+            {orderedVisibleOverlays
               .filter((o) => o.kind === "platform_event" && o.lap_pct != null)
               .map((o) => {
                 const loc = getLocation(o.lap_pct);
@@ -1054,7 +1145,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
         </div>
 
         {/* ── Fallback events ── */}
-        {visibleOverlays.filter((o) => o.kind === "platform_event" && o.x == null).length > 0 && (
+        {orderedVisibleOverlays.filter((o) => o.kind === "platform_event" && o.x == null).length > 0 && (
           <div className="map-fallback-events">
             <h4>Events (lap-distance only)</h4>
             {visibleOverlays
@@ -1137,7 +1228,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
             {!match && availableMaps.length > 0 && (
               <div className="trackmap-manual-select" style={{ marginTop: 12 }}>
                 <p className="muted" style={{ marginBottom: 6 }}>Or pick a map manually:</p>
-                <select className="trackmap-select" onChange={(e) => setPreferredMap(e.target.value)} defaultValue="">
+                <select className="trackmap-select" value={preferredMapId ?? ""} onChange={(e) => setPreferredMap(e.target.value)}>
                   <option value="" disabled>Select a track map…</option>
                   {availableMaps.map((m) => (
                     <option key={m.map_id} value={m.map_id}>{m.display_name}</option>

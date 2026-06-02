@@ -459,29 +459,47 @@ def read_telemetry_rows(
     run_id: str,
     data_dir: str | Path | None = None,
     lap: int | None = None,
+    columns: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
     parquet = parquet_path(data_root, run_id)
     csv_file = csv_path(data_root, run_id)
     signature = _source_signature(parquet, csv_file)
     key = _cache_key(data_root, run_id)
+    requested_columns = list(dict.fromkeys(columns or []))
+
+    def _filter_rows(source_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        scoped_rows = source_rows if lap is None else [row for row in source_rows if row.get("lap") == lap]
+        if not requested_columns:
+            return scoped_rows
+        return [{column: row.get(column) for column in requested_columns} for row in scoped_rows]
 
     with _TELEMETRY_ROWS_CACHE_LOCK:
         entry = _TELEMETRY_ROWS_CACHE.get(key)
         if entry is not None and entry.signature == signature:
             entry.last_access = time.time()
-            rows = entry.rows
-            return rows if lap is None else [row for row in rows if row.get("lap") == lap]
+            return _filter_rows(entry.rows)
         if entry is not None and entry.signature != signature:
             _TELEMETRY_ROWS_CACHE.pop(key, None)
 
-    # Fast miss path for lap-scoped calls: avoid reading full parquet into memory.
-    if lap is not None and parquet.exists() and importlib.util.find_spec("polars") is not None:
+    # Fast miss path for lap/column-scoped calls: avoid reading full parquet into memory.
+    if (lap is not None or requested_columns) and parquet.exists() and importlib.util.find_spec("polars") is not None:
         pl = importlib.import_module("polars")
-        df = pl.read_parquet(parquet)
-        if "lap" in df.columns:
-            df = df.filter(pl.col("lap") == lap)
-        return _normalize_if_needed([dict(row) for row in df.to_dicts()])
+        schema = pl.read_parquet_schema(parquet)
+        available_columns = set(schema.keys())
+        read_columns = requested_columns or list(schema.keys())
+        if lap is not None and "lap" in available_columns and "lap" not in read_columns:
+            read_columns = [*read_columns, "lap"]
+        safe_columns = [column for column in read_columns if column in available_columns]
+        if not safe_columns:
+            return []
+        frame = pl.scan_parquet(parquet).select(safe_columns)
+        if lap is not None and "lap" in safe_columns:
+            frame = frame.filter(pl.col("lap") == lap)
+        rows = frame.collect().to_dicts()
+        if requested_columns:
+            return [{column: row.get(column) for column in requested_columns} for row in rows]
+        return _normalize_if_needed([dict(row) for row in rows])
 
     if parquet.exists() and importlib.util.find_spec("polars") is not None:
         pl = importlib.import_module("polars")
@@ -500,7 +518,7 @@ def read_telemetry_rows(
                 ]
             rows = _normalize_if_needed(rows)
 
-    if signature is not None:
+    if signature is not None and not requested_columns:
         with _TELEMETRY_ROWS_CACHE_LOCK:
             _TELEMETRY_ROWS_CACHE[key] = _TelemetryRowsCacheEntry(
                 signature=signature,
@@ -509,7 +527,7 @@ def read_telemetry_rows(
             )
             _evict_if_needed()
 
-    return rows if lap is None else [row for row in rows if row.get("lap") == lap]
+    return _filter_rows(rows)
 
 
 def _channel_stats(rows: list[dict[str, Any]], channel: str) -> dict[str, Any]:

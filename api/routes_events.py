@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 
 from api.routes_runs import repository
 from api.schemas import PlatformEventItem
-from racelab_engine.analysis.platform_events import detect_platform_events
+from racelab_engine.analysis.platform_events import PLATFORM_EVENT_COLUMNS, detect_platform_events
 from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.services.import_service import csv_path, default_data_dir, parquet_path, read_telemetry_rows
 
@@ -27,8 +27,6 @@ class _PlatformEventsCacheEntry:
 _PLATFORM_EVENTS_CACHE: dict[tuple[str, int | None, str | None], _PlatformEventsCacheEntry] = {}
 _PLATFORM_EVENTS_CACHE_LOCK = RLock()
 _PLATFORM_EVENTS_CACHE_MAX = 64
-
-
 def _source_signature(run_id: str) -> tuple[str, int, int] | None:
     data_root = default_data_dir()
     parquet = parquet_path(data_root, run_id)
@@ -69,7 +67,7 @@ def get_platform_events(
             entry.last_access = time.time()
             return entry.payload
 
-    rows = read_telemetry_rows(run_id, lap=lap)
+    rows = read_telemetry_rows(run_id, lap=lap, columns=PLATFORM_EVENT_COLUMNS)
     if not rows:
         return []
 

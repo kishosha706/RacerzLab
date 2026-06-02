@@ -80,6 +80,8 @@ function CockpitShell() {
   const [error, setError] = useState<string | null>(null);
   const [priorityRailOpen, setPriorityRailOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const loadSelectedRunSeqRef = useRef(0);
 
   const { selection, loadRun, selectLap, setWorkspace } = useTelemetrySelection();
   const selectedTraceLap = selection.selectedRepresentativeLap ?? selection.selectedLap ?? null;
@@ -116,11 +118,15 @@ function CockpitShell() {
   useKeyboardShortcuts(platformEvents, setWorkspace, {
     onTogglePriorityRail: () => setPriorityRailOpen((open) => !open),
     onToggleInspector: () => setInspectorOpen((open) => !open),
+    onShowShortcuts: () => setShortcutsOpen(true),
+    onHideShortcuts: () => setShortcutsOpen(false),
+    shortcutsOpen,
   });
 
   // ── load a run ──────────────────────────────────────────────
   const loadSelectedRun = useCallback(
     async (runId: string) => {
+      const seq = ++loadSelectedRunSeqRef.current;
       setLoading(true);
       setError(null);
       try {
@@ -132,16 +138,18 @@ function CockpitShell() {
           fetchSetup(runId).catch(() => base.setup_snapshot ?? null),
           fetchChannelSummary(runId).catch(() => []),
         ]);
+        if (seq !== loadSelectedRunSeqRef.current) return;
         setOverview({ ...base, laps, events, setup_snapshot: setup });
         setChannels(channelCatalog.map((item) => toCatalogShape(item)));
         setChannelsHaveFullCatalog(false);
-        setTrace(null);        // reset; loaded lazily in effect below
-        setPlatformEvents([]);  // reset; loaded lazily in effect below
+        setTrace(null);
+        setPlatformEvents([]);
         loadRun(runId, bestLap ?? null);
       } catch (caught) {
+        if (seq !== loadSelectedRunSeqRef.current) return;
         setError(caught instanceof Error ? caught.message : "Failed to load run.");
       } finally {
-        setLoading(false);
+        if (seq === loadSelectedRunSeqRef.current) setLoading(false);
       }
     },
     [loadRun, toCatalogShape],
@@ -216,9 +224,9 @@ function CockpitShell() {
     try {
       const ext = file.name.split(".").pop()?.toLowerCase();
       if (ext === "mt2") {
-        setImportStage("Importing track map…");
+        setImportStage("Reading track map...");
         const entry = await importMt2File(file);
-        setImportStage("Saving local copy…");
+        setImportStage("Saving local map index...");
         const dupNote = entry.import_status === "already_indexed" ? " (already indexed; refreshed cache)" : "";
         setStatus(`Parsed .mt2 centerline: ${entry.points_count?.toLocaleString()} points, ${entry.markers_count} markers, ${entry.sections_count} sections.${dupNote}`);
         setImportStage(null);
@@ -226,12 +234,12 @@ function CockpitShell() {
         setLoading(false);
         return;
       }
-      setImportStage("Importing telemetry…");
+      setImportStage("Reading .ibt and decoding telemetry...");
       const result = await importIbtFile(file);
-      setImportStage("Saving local copy…");
       if (result.run_id) {
-        setImportStage("Building analysis…");
+        setImportStage("Normalizing channels, building laps/events, and writing cache...");
       }
+      setImportStage("Opening cockpit...");
       await openImportedRun(result.run_id, result.track_map ?? null);
       setImportStage(null);
     } catch (caught) {
@@ -252,6 +260,7 @@ function CockpitShell() {
     const targetLap = selectedTraceLap ?? overview.best_useful_lap?.lap_number ?? null;
     if (targetLap == null) return;
     let cancelled = false;
+    setPlatformEvents([]);
     fetchPlatformEvents(overview.run_id, { lap: targetLap })
       .then((nextPlatformEvents) => {
         if (!cancelled) setPlatformEvents(nextPlatformEvents);
@@ -271,6 +280,7 @@ function CockpitShell() {
     if (trace?.run_id === overview.run_id && trace?.lap === targetLap) return;
 
     let cancelled = false;
+    setTrace(null);
     fetchTrace(overview.run_id, {
       lap: targetLap,
       x: "lap_dist_ft",
@@ -281,7 +291,9 @@ function CockpitShell() {
       .then((nextTrace) => {
         if (!cancelled) setTrace(nextTrace);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setTrace(null);
+      });
 
     return () => {
       cancelled = true;
@@ -392,12 +404,12 @@ function CockpitShell() {
         <nav className="workspace-nav-rail">
           {([
             ["overview", "Overview", Gauge],
-            ["map", "Map", MapPin],
             ["laps", "Laps", Clock],
             ["platform_trace", "Platform", Layers],
+            ["map", "Track Map", MapPin],
             ["setup_impact", "Setup", Wrench],
             ["compare", "Compare", GitCompare],
-            ["notebook", "Notes", List],
+            ["notebook", "Notebook", List],
           ] as const).map(([key, label, Icon]) => (
             <button
               key={key}
@@ -450,6 +462,34 @@ function CockpitShell() {
 
       <EventTimeline platformEvents={platformEvents} />
       <CompareBasket />
+      {shortcutsOpen && (
+        <div className="shortcut-modal-backdrop" role="presentation" onClick={() => setShortcutsOpen(false)}>
+          <section
+            className="shortcut-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Keyboard shortcuts"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="shortcut-modal-header">
+              <h2>Keyboard Shortcuts</h2>
+              <button className="shortcut-modal-close" onClick={() => setShortcutsOpen(false)} aria-label="Close keyboard shortcuts">x</button>
+            </header>
+            <div className="shortcut-grid">
+              <span>?</span><p>Open shortcuts</p>
+              <span>Esc</span><p>Clear evidence focus</p>
+              <span>Left / Right</span><p>Step through events</p>
+              <span>P</span><p>Open Platform</p>
+              <span>M</span><p>Open Track Map</p>
+              <span>O</span><p>Open Overview</p>
+              <span>C</span><p>Open Compare</p>
+              <span>N</span><p>Open Notebook</p>
+              <span>L</span><p>Toggle race/learning mode</p>
+              <span>[ / ]</span><p>Toggle rails</p>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

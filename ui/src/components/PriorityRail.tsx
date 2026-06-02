@@ -40,7 +40,6 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
     const v: PlatformEventItem[] = [];
     const inv: PlatformEventItem[] = [];
     for (const e of events) {
-      // Proxy-based events with very low confidence go to invalid
       if (e.severity === "info" && e.confidence === "low") {
         inv.push(e);
       } else {
@@ -48,15 +47,24 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
       }
     }
     v.sort((a, b) => {
-      const catA = CATEGORY_ORDER[CATEGORY_LABELS[a.event_type] ?? "Platform"] ?? 99;
-      const catB = CATEGORY_ORDER[CATEGORY_LABELS[b.event_type] ?? "Platform"] ?? 99;
-      if (catA !== catB) return catA - catB;
       const sevA = SEVERITY_ORDER[a.severity] ?? 99;
       const sevB = SEVERITY_ORDER[b.severity] ?? 99;
-      return sevA - sevB;
+      if (sevA !== sevB) return sevA - sevB;
+
+      const selectedA = selection.selectedEventId != null && a.event_id === selection.selectedEventId ? -1 : 0;
+      const selectedB = selection.selectedEventId != null && b.event_id === selection.selectedEventId ? -1 : 0;
+      if (selectedA !== selectedB) return selectedA - selectedB;
+
+      const lapDeltaA = selectedLap != null && a.lap != null ? Math.abs(a.lap - selectedLap) : 999;
+      const lapDeltaB = selectedLap != null && b.lap != null ? Math.abs(b.lap - selectedLap) : 999;
+      if (lapDeltaA !== lapDeltaB) return lapDeltaA - lapDeltaB;
+
+      const catA = CATEGORY_ORDER[CATEGORY_LABELS[a.event_type] ?? "Platform"] ?? 99;
+      const catB = CATEGORY_ORDER[CATEGORY_LABELS[b.event_type] ?? "Platform"] ?? 99;
+      return catA - catB;
     });
     return { valid: v, invalid: inv };
-  }, [events]);
+  }, [events, selectedLap, selection.selectedEventId]);
 
   const buildPriorityEvidence = useCallback((event: PlatformEventItem): Partial<EvidenceContext> => {
     const sampleIndex =
@@ -77,7 +85,7 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
       sampleIndex,
       lapDistFt: event.lap_dist_ft,
       lapPct: event.lap_pct,
-      trustTier: selection.selectedTrustTier ?? null,
+      trustTier: event.confidence ?? null,
       lockState: (hasLocation ? "locked" : "none") as "locked" | "none",
       valueBasis: (hasLocation ? "selected_sample" : "run_level") as "selected_sample" | "run_level",
       selectionSource: "priority_stack",
@@ -88,7 +96,16 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
     focusEvidence(buildPriorityEvidence(event), eventWorkspace(event.event_type) as Parameters<typeof setWorkspace>[0]);
   }, [buildPriorityEvidence, focusEvidence, setWorkspace]);
 
-  /** Map event type to a category icon for accessibility (color + icon). */
+  const secondaryWorkspace = useCallback((eventType: string): Workspace => {
+    if (/TIRE|SHOCK|DAMPER|CAMBER|PRESSURE/i.test(eventType)) return "setup_impact";
+    if (/SCRUB|SPEED|DRAG|YAW|STEER/i.test(eventType)) return "compare";
+    return "map";
+  }, []);
+
+  const handleSecondaryAction = useCallback((event: PlatformEventItem) => {
+    focusEvidence(buildPriorityEvidence(event), secondaryWorkspace(event.event_type));
+  }, [buildPriorityEvidence, focusEvidence, secondaryWorkspace]);
+
   const categoryIcon = (eventType: string, size = 12) => {
     const cat = CATEGORY_LABELS[eventType] ?? "";
     if (cat.includes("Platform") || cat.includes("Rear")) return <Gauge size={size} />;
@@ -98,7 +115,6 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
     return <Shield size={size} />;
   };
 
-  // ── decision-first suggestion ──────────────────────────────
   const suggestion = useMemo(() => {
     if (valid.length === 0) {
       return { question: "No priority events", action: "Review Overview", workspace: "overview" as const };
@@ -135,7 +151,6 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
         <span className="rail-count">{valid.length} events</span>
       </header>
 
-      {/* decision-first next-action card */}
       <div className="rail-next-action">
         <div className="nbc-body" style={{ flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
           <span style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--muted)", fontSize: "0.68rem", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.5px" }}>
@@ -168,25 +183,29 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
             className={`priority-card ${selection.selectedEventId === event.event_id ? "active" : ""}`}
             data-severity={event.severity}
             onClick={() => handleClick(event)}
+            onDoubleClick={() => handleSecondaryAction(event)}
             aria-label={`${event.title}, ${event.severity}, ${event.lap_dist_ft != null ? `${Math.round(event.lap_dist_ft)} feet` : "unknown location"}`}
           >
             <span className="priority-rank">{idx + 1}</span>
             <span className="priority-colour" style={{ backgroundColor: SEVERITY_COLOURS[event.severity] ?? "#8d9aaa" }} />
             <div className="priority-body">
-              <div className="priority-title-row">
-                <strong>{event.title}</strong>
-                {event.is_proxy_based && <ProxyBadge kind="proxy" />}
-              </div>
-              <span className="priority-category">{categoryIcon(event.event_type)} {CATEGORY_LABELS[event.event_type] ?? event.event_type}</span>
-              <span className="priority-location">
-                {event.lap_dist_ft != null ? `${event.lap_dist_ft.toFixed(0)} ft` : "Unknown location"}
-              </span>
               <span className="priority-severity" style={{ color: SEVERITY_COLOURS[event.severity] }}>
                 <AlertTriangle size={12} /> {event.severity.toUpperCase()}
+              </span>
+              <span className="priority-category">{categoryIcon(event.event_type)} {CATEGORY_LABELS[event.event_type] ?? event.event_type}</span>
+              <span className="priority-location">
+                Lap {event.lap ?? "n/a"} - {event.lap_dist_ft != null ? `${event.lap_dist_ft.toFixed(0)} ft` : "location unavailable"}
+              </span>
+              <div className="priority-title-row">
+                <strong>{event.title}</strong>
+              </div>
+              <span className="muted" style={{ fontSize: 11 }}>
+                {event.recommended_action ?? event.evidence?.[0] ?? "Open this event for detailed evidence."}
               </span>
               <span className="priority-next">
                 <ArrowRight size={12} /> Open {CATEGORY_LABELS[event.event_type] ?? "Trace"}
               </span>
+              {event.is_proxy_based && <ProxyBadge kind="proxy" />}
             </div>
           </button>
         ))}
@@ -210,7 +229,7 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
                   <span className="priority-colour" style={{ backgroundColor: "#6b7280" }} />
                   <div className="priority-body">
                     <strong>{event.title}</strong>
-                    <span className="priority-category">{event.severity} · {event.confidence} confidence</span>
+                    <span className="priority-category">{event.severity} - {event.confidence} confidence</span>
                   </div>
                 </button>
               ))}

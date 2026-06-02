@@ -162,22 +162,22 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
     { label: "Grade Force Proxy", channels: [{ name: "grade_force_proxy_n", label: "Force", color: "#f59e0b" }] },
   ],
   "Tires": [
-    { label: "LF Tire Temps [°C]", channels: [
+    { label: "LF Tire Temps [C]", channels: [
       { name: "lf_temp_inner", label: "Inner", color: "#4ade80" },
       { name: "lf_temp_middle", label: "Middle", color: "#22c55e" },
       { name: "lf_temp_outer", label: "Outer", color: "#16a34a" },
     ] },
-    { label: "RF Tire Temps [°C]", channels: [
+    { label: "RF Tire Temps [C]", channels: [
       { name: "rf_temp_inner", label: "Inner", color: "#ef4444" },
       { name: "rf_temp_middle", label: "Middle", color: "#dc2626" },
       { name: "rf_temp_outer", label: "Outer", color: "#b91c1c" },
     ] },
-    { label: "LR Tire Temps [°C]", channels: [
+    { label: "LR Tire Temps [C]", channels: [
       { name: "lr_temp_inner", label: "Inner", color: "#eab308" },
       { name: "lr_temp_middle", label: "Middle", color: "#ca8a04" },
       { name: "lr_temp_outer", label: "Outer", color: "#a16207" },
     ] },
-    { label: "RR Tire Temps [°C]", channels: [
+    { label: "RR Tire Temps [C]", channels: [
       { name: "rr_temp_inner", label: "Inner", color: "#22d3ee" },
       { name: "rr_temp_middle", label: "Middle", color: "#06b6d4" },
       { name: "rr_temp_outer", label: "Outer", color: "#0891b2" },
@@ -194,7 +194,7 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "lr_pressure_gain", label: "LR", color: "#eab308" },
       { name: "rr_pressure_gain", label: "RR", color: "#22d3ee" },
     ] },
-    { label: "Temp Spread [°C]", channels: [
+    { label: "Temp Spread [C]", channels: [
       { name: "lf_temp_spread", label: "LF", color: "#4ade80" },
       { name: "rf_temp_spread", label: "RF", color: "#ef4444" },
       { name: "lr_temp_spread", label: "LR", color: "#eab308" },
@@ -274,9 +274,9 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
     { label: "Ground Speed [mph]", channels: [{ name: "speed_mph", label: "Speed", color: "#22c55e" }] },
     { label: "Front Center RH [in]", channels: [{ name: "front_center_rh_in", label: "Front Center", color: "#38bdf8" }] },
     { label: "Rear Center RH [in]", channels: [{ name: "rear_center_rh_in", label: "Rear Center", color: "#a78bfa" }] },
-    { label: "Smooth Diffuser Volume [ft³]", channels: [{ name: "smooth_diffuser_volume_ft3", label: "Smooth Vol", color: "#4ade80" }] },
-    { label: "Diffuser Base Volume [ft³]", channels: [{ name: "diffuser_base_volume_ft3", label: "Base Vol", color: "#60a5fa" }] },
-    { label: "Diffuser Wedge Volume [ft³]", channels: [{ name: "diffuser_wedge_volume_ft3", label: "Wedge Vol", color: "#f97316" }] },
+    { label: "Smooth Diffuser Volume [ft3]", channels: [{ name: "smooth_diffuser_volume_ft3", label: "Smooth Vol", color: "#4ade80" }] },
+    { label: "Diffuser Base Volume [ft3]", channels: [{ name: "diffuser_base_volume_ft3", label: "Base Vol", color: "#60a5fa" }] },
+    { label: "Diffuser Wedge Volume [ft3]", channels: [{ name: "diffuser_wedge_volume_ft3", label: "Wedge Vol", color: "#f97316" }] },
     { label: "Smooth Center Rake [in]", channels: [{ name: "smooth_center_rake_in", label: "Center Rake", color: "#c084fc" }] },
   ],
 };
@@ -294,7 +294,7 @@ function values(trace: TraceResponse | null, channel: string): Array<number | st
 function xValues(trace: TraceResponse | null): Array<number | null> {
   if (!trace) return [];
   if (Array.isArray(trace.x)) return trace.x;
-  return (trace as any).x?.lap_dist_ft ?? trace.x_by_name?.lap_dist_ft ?? trace.x_by_name?.lap_dist_pct ?? [];
+  return trace.x.lap_dist_ft ?? trace.x_by_name?.lap_dist_ft ?? trace.x_by_name?.lap_dist_pct ?? [];
 }
 
 function valueAt(trace: TraceResponse | null, channel: string, index: number | null | undefined): number | null {
@@ -589,10 +589,11 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
   const [clickedSampleIndex, setClickedSampleIndex] = useState<number | null>(null);
   const [hoverSampleIndex, setHoverSampleIndex] = useState<number | null>(null);
   const [tireMapMode, setTireMapMode] = useState<any>("pressure");
-  const [workbenchView, setWorkbenchView] = useState<WorkbenchView>(initialWorkbenchView);
+  const normalizedInitialView = initialWorkbenchView === "scrub_steering" ? "rear_scrape" : initialWorkbenchView;
+  const [workbenchView, setWorkbenchView] = useState<WorkbenchView>(normalizedInitialView);
   useEffect(() => {
-    setWorkbenchView(initialWorkbenchView);
-  }, [initialWorkbenchView]);
+    setWorkbenchView(normalizedInitialView);
+  }, [normalizedInitialView]);
 
   const presetFromView: Record<WorkbenchView, string> = {
     balance: "Platform / Rake / Ride Height",
@@ -1562,18 +1563,14 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
     <div className="engineering-panel">
       {/* ── Metric cards ── */}
       <div className="engineering-panel-grid">
-        {/* Rear scrape group */}
-        <EngineeringMetricCard title="Rear Min Ride Height" channelName="rear_min_ride_height_mm" value={latest("rear_min_ride_height_mm")} color="#22d3ee" />
         <EngineeringMetricCard title="Rear Scrape Margin" channelName="rear_scrape_margin_mm" value={latest("rear_scrape_margin_mm")} color="#f97316" />
         <EngineeringMetricCard title="Rear Scrape Risk" channelName="rear_scrape_risk_score" value={latest("rear_scrape_risk_score")} riskValue={latest("rear_scrape_risk_score") as number | null} color="#ef4444" />
         <EngineeringMetricCard title="Rear Contact Risk" channelName="rear_platform_contact_risk" value={latest("rear_platform_contact_risk")} riskValue={latest("rear_platform_contact_risk") as number | null} color="#f59e0b" />
-        {/* Scrub/resistance group */}
         <EngineeringMetricCard title="Drag/Scrub Suspicion" channelName="drag_scrub_suspicion" value={latest("drag_scrub_suspicion")} riskValue={latest("drag_scrub_suspicion") as number | null} color="#ef4444" />
         <EngineeringMetricCard title="Full-Throttle Resistance" channelName="full_throttle_resistance_index" value={latest("full_throttle_resistance_index")} riskValue={latest("full_throttle_resistance_index") as number | null} color="#f97316" />
         <EngineeringMetricCard title="Grade-Corrected Speed Loss" channelName="grade_corrected_speed_loss_mph_s" value={latest("grade_corrected_speed_loss_mph_s")} subtitle={`Raw: ${formatChannelValue(latest("speed_rate_mph_s") as number, "mph/s")}`} color="#22c55e" />
-        {/* Steering/yaw context */}
-        <EngineeringMetricCard title="Ackermann Steering Error" value={`${formatChannelValue(latest("ackermann_steering_error_deg") as number, "°")} error`} subtitle={`Expected: ${formatChannelValue(latest("ackermann_steering_expected_deg") as number, "°")} · Scrub proxy: ${formatChannelValue(latest("ackermann_scrub_proxy") as number, "proxy")}`} channelName="ackermann_scrub_proxy" color="#a78bfa" />
-        <EngineeringMetricCard title="Yaw / Scrub" value={`Yaw error: ${formatChannelValue(latest("yaw_error_proxy") as number, "rad/s")}`} subtitle={`Front scrub: ${formatChannelValue(latest("front_scrub_proxy") as number, "proxy")} · Rear: ${formatChannelValue(latest("rear_scrub_proxy") as number, "proxy")}`} channelName="yaw_error_proxy" color="#38bdf8" />
+        <EngineeringMetricCard title="Yaw Error" value={formatChannelValue(latest("yaw_error_proxy") as number, "rad/s")} channelName="yaw_error_proxy" color="#38bdf8" />
+        <EngineeringMetricCard title="Rear Scrub Proxy" value={formatChannelValue(latest("rear_scrub_proxy") as number, "proxy")} channelName="rear_scrub_proxy" color="#a78bfa" />
       </div>
 
       {/* ── Jump buttons ── */}
@@ -1754,13 +1751,12 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
       <div className="engineering-panel-grid">
         <EngineeringMetricCard title="Front Center RH" channelName="front_center_rh_in" value={latest("front_center_rh_in")} color="#38bdf8" />
         <EngineeringMetricCard title="Rear Center RH" channelName="rear_center_rh_in" value={latest("rear_center_rh_in")} color="#a78bfa" />
-        <EngineeringMetricCard title="Center Rake" channelName="center_rake_in" value={latest("center_rake_in")} color="#c084fc" />
         <EngineeringMetricCard title="Smooth Center Rake" channelName="smooth_center_rake_in" value={latest("smooth_center_rake_in")} color="#c084fc" />
         <EngineeringMetricCard title="Smooth Diffuser Volume" channelName="smooth_diffuser_volume_ft3" value={latest("smooth_diffuser_volume_ft3")} color="#4ade80" />
         <EngineeringMetricCard title="Diffuser Base Volume" channelName="diffuser_base_volume_ft3" value={latest("diffuser_base_volume_ft3")} color="#60a5fa" />
         <EngineeringMetricCard title="Diffuser Wedge Volume" channelName="diffuser_wedge_volume_ft3" value={latest("diffuser_wedge_volume_ft3")} color="#f97316" />
-        <EngineeringMetricCard title="Diffuser Volume" channelName="diffuser_volume_ft3" value={latest("diffuser_volume_ft3")} color="#22c55e" />
-        <EngineeringMetricCard title="Diffuser Track Width" channelName="diffuser_track_width_in" value={latest("diffuser_track_width_in")} subtitle={`Wheelbase: ${formatChannelValue(latest("diffuser_wheelbase_in") as number, "in")}`} color="#8d9aaa" />
+        <EngineeringMetricCard title="Track Width Used" channelName="diffuser_track_width_in" value={latest("diffuser_track_width_in")} color="#8d9aaa" />
+        <EngineeringMetricCard title="Wheelbase Used" channelName="diffuser_wheelbase_in" value={latest("diffuser_wheelbase_in")} color="#8d9aaa" />
       </div>
       {/* Jump buttons */}
       <div className="toolbar-actions" style={{ marginTop: 6 }}>
@@ -1792,6 +1788,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
           <Activity size={14} /> Jump to Lowest Rear Center RH
         </button>
       </div>
+      {setupAction(["lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm", "lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm", "cross_weight_pct"], "Diffuser Geometry Setup", true)}
       <p className="section-note" style={{ marginTop: 8 }}>
         Diffuser channels are derived from ride-height geometry and resolved vehicle geometry. They describe underbody volume/rake shape, not direct aerodynamic force. Missing ride-height telemetry remains unavailable and is never treated as zero.
       </p>

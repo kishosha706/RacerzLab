@@ -17,6 +17,9 @@ export function useKeyboardShortcuts(
   options?: {
     onTogglePriorityRail?: () => void;
     onToggleInspector?: () => void;
+    onShowShortcuts?: () => void;
+    onHideShortcuts?: () => void;
+    shortcutsOpen?: boolean;
   },
 ) {
   const { selection, focusEvidence, setMode } = useTelemetrySelection();
@@ -30,8 +33,17 @@ export function useKeyboardShortcuts(
       if (e.ctrlKey || e.metaKey) return; // pass browser shortcuts through
 
       const key = e.key;
+      if (options?.shortcutsOpen && key === "Escape") {
+        e.preventDefault();
+        options.onHideShortcuts?.();
+        return;
+      }
 
       switch (key) {
+        case "?":
+          e.preventDefault();
+          options?.onShowShortcuts?.();
+          break;
         case "Escape":
           focusEvidence({ eventId: null, selectionSource: "manual" });
           break;
@@ -71,7 +83,7 @@ export function useKeyboardShortcuts(
           const dir = key === "ArrowLeft" ? -1 : 1;
           const filtered = platformEvents.filter((evt) => {
             if (!selection.selectedLap) return true;
-            return (evt as any).lap === selection.selectedLap;
+            return evt.lap === selection.selectedLap;
           });
           if (filtered.length === 0) return;
           const currentIdx = filtered.findIndex((evt) => evt.event_id === selection.selectedEventId);
@@ -91,7 +103,7 @@ export function useKeyboardShortcuts(
             selectionSource: "event_timeline",
             lockState: (hasLocation ? "locked" : "none") as "locked" | "none",
             valueBasis: (hasLocation ? "selected_sample" : "run_level") as "selected_sample" | "run_level",
-          }, "platform_trace");
+          });
           break;
         }
       }

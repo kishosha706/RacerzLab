@@ -209,7 +209,10 @@ export type ChannelCatalogItem = {
 export type ChannelSummaryItem = {
   name: string;
   label?: string | null;
+  description?: string | null;
   unit?: string | null;
+  type?: string | null;
+  count?: number;
   is_raw: boolean;
   is_calculated: boolean;
   is_proxy: boolean;
@@ -233,7 +236,8 @@ export type TraceResponse = {
   x_name?: string | null;
   x_unit?: string | null;
   x: Array<number | null> | {
-    lap_dist_pct: Array<number | null>;
+    lap_dist_ft?: Array<number | null>;
+    lap_dist_pct?: Array<number | null>;
   };
   x_by_name?: Record<string, Array<number | null>> | null;
   channels: Record<string, Array<number | null> | TraceChannelPayload>;

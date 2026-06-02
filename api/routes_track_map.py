@@ -9,8 +9,8 @@ from pydantic import BaseModel
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from api.routes_runs import repository
+from racelab_engine.analysis.platform_events import PLATFORM_EVENT_COLUMNS
 from racelab_engine.services.track_map_service import (
-    import_mt2_file,
     import_mt2_folder,
     list_track_maps,
     get_track_map,
@@ -187,7 +187,7 @@ def run_track_map_package(
     with suppress(Exception):
         from racelab_engine.analysis.platform_events import detect_platform_events
         from racelab_engine.services.import_service import read_telemetry_rows
-        rows = read_telemetry_rows(run_id)
+        rows = read_telemetry_rows(run_id, lap=lap, columns=PLATFORM_EVENT_COLUMNS)
         if rows and (all_events := detect_platform_events(rows, lap=lap)):
             platform_events = [e.as_dict() for e in all_events]
 

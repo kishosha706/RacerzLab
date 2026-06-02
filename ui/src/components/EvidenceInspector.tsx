@@ -32,7 +32,6 @@ export function EvidenceInspector({ overview, platformEvents, channels, collapse
     [channels, selection.selectedChannel],
   );
 
-  // Evidence Anchor Beam: pulse when event selection changes
   useEffect(() => {
     if (selection.selectedEventId && selection.selectedEventId !== prevEventRef.current) {
       setJustAnchored(true);
@@ -92,7 +91,7 @@ function RunInspector({ overview, channels, collapsed, onToggle }: { overview: R
           <h4>Window Scope</h4>
           <p className="inspector-source-item">
             Selected window: Laps {selection.selectedLapWindowStart}-{selection.selectedLapWindowEnd}
-            {selection.selectedRepresentativeLap != null ? ` · Rep Lap ${selection.selectedRepresentativeLap}` : ""}
+            {selection.selectedRepresentativeLap != null ? ` - Rep Lap ${selection.selectedRepresentativeLap}` : ""}
           </p>
           <p className="inspector-source-item muted">
             Basis: selected window. Lap-level tabs still anchor to the representative lap.
@@ -105,7 +104,7 @@ function RunInspector({ overview, channels, collapsed, onToggle }: { overview: R
         {selection.selectedLapDistFt != null && (
           <p className="inspector-source-item">
             <MapPin size={12} /> {selection.selectedLapDistFt.toFixed(0)} ft
-            {selection.selectedLapPct != null ? ` · ${selection.selectedLapPct.toFixed(1)}% lap` : ""}
+            {selection.selectedLapPct != null ? ` - ${selection.selectedLapPct.toFixed(1)}% lap` : ""}
           </p>
         )}
         {activeZoneLabel && (
@@ -199,11 +198,12 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
       sampleIndex: eventSampleIndex,
       lapDistFt: event.lap_dist_ft,
       lapPct: event.lap_pct,
+      trustTier: event.confidence ?? null,
       selectionSource: eventSource,
       lockState: eventHasLocation ? "locked" : "none",
       valueBasis: eventHasLocation ? "selected_sample" : "run_level",
     }, workspace);
-  }, [event.event_id, event.lap, event.lap_dist_ft, event.lap_pct, eventSampleIndex, eventHasLocation, eventSource, focusEvidence, selection]);
+  }, [event.event_id, event.lap, event.lap_dist_ft, event.lap_pct, eventSampleIndex, eventHasLocation, eventSource, focusEvidence, selection, event.confidence]);
 
   const handleOpenPlatform = useCallback(() => focusEventEvidence("platform_trace"), [focusEventEvidence]);
   const handleOpenMap = useCallback(() => focusEventEvidence("map"), [focusEventEvidence]);
@@ -217,6 +217,7 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
       sampleIndex: eventSampleIndex,
       lapDistFt: event.lap_dist_ft,
       lapPct: event.lap_pct,
+      trustTier: event.confidence ?? null,
       selectionSource: eventSource,
       lockState: eventHasLocation ? "locked" : "none",
       valueBasis: eventHasLocation ? "selected_sample" : "run_level",
@@ -229,18 +230,23 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
 
   return (
     <InspectorShell title={event.title} icon={<Crosshair size={16} />} collapsed={collapsed} onToggle={onToggle}>
-      {showAnchorBadge && <span className="anchor-evidence-badge"><Crosshair size={10} /> Anchored Evidence</span>}
+      <div className="inspector-source-stack">
+        <h4>Current Evidence Anchor</h4>
+        {showAnchorBadge && <span className="anchor-evidence-badge"><Crosshair size={10} /> Anchored Evidence</span>}
+        <p className="inspector-source-item">
+          Lap {event.lap ?? "n/a"}{eventSampleIndex != null ? ` - Sample ${eventSampleIndex}` : ""}{event.lap_dist_ft != null ? ` - ${event.lap_dist_ft.toFixed(0)} ft` : ""}
+        </p>
+      </div>
 
-      {/* Source Stack: Where */}
       <div className="inspector-source-stack">
         <h4>Where</h4>
         <p className="inspector-source-item">
-          <MapPin size={12} /> Lap {event.lap ?? "n/a"}{event.lap_dist_ft != null ? ` · ${event.lap_dist_ft.toFixed(0)} ft` : ""}
+          <MapPin size={12} /> Lap {event.lap ?? "n/a"}{event.lap_dist_ft != null ? ` - ${event.lap_dist_ft.toFixed(0)} ft` : ""}
         </p>
         {eventWithinSelectedWindow && (
           <p className="inspector-source-item muted">
             Parent window: Laps {selection.selectedLapWindowStart}-{selection.selectedLapWindowEnd}
-            {event.lap != null ? ` · Rep Lap ${event.lap}` : ""}
+            {event.lap != null ? ` - Rep Lap ${event.lap}` : ""}
           </p>
         )}
         {activeZoneLabel && (
@@ -251,7 +257,6 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
         <p className="inspector-source-item muted">Source: {humanizeSelectionSource(eventSource)}</p>
       </div>
 
-      {/* Source Stack: What */}
       <div className="inspector-source-stack">
         <h4>What</h4>
         <div className="inspector-meta">
@@ -264,7 +269,18 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
         <p className="inspector-source-item">{event.title}</p>
       </div>
 
-      {/* Source Stack: Evidence */}
+      <div className="inspector-source-stack">
+        <h4>Trust / Basis</h4>
+        <p className="inspector-source-item">Value basis: {eventHasLocation ? "selected_sample" : "run_level"}</p>
+        <p className="inspector-source-item">Confidence: {event.confidence}</p>
+        {event.is_proxy_based && <p className="inspector-source-item muted">Proxy/estimate evidence is active for this event.</p>}
+      </div>
+
+      <div className="inspector-source-stack">
+        <h4>Nearest Event</h4>
+        <p className="inspector-source-item">{event.event_id}</p>
+      </div>
+
       {event.evidence.length > 0 && (
         <div className="inspector-source-stack">
           <h4>Evidence</h4>
@@ -279,7 +295,6 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
         </div>
       )}
 
-      {/* Source Stack: Related Setup */}
       <div className="inspector-source-stack">
         <h4>Related Setup</h4>
         {event.channels_used.length > 0 ? (
@@ -289,22 +304,21 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
         )}
       </div>
 
-      {/* Source Stack: Decision */}
       <div className="inspector-source-stack">
-        <h4>Decision</h4>
+        <h4>Actions</h4>
         <div className="diw-actions" style={{ marginTop: 4 }}>
           <button className="trackmap-action-btn" onClick={handleOpenPlatform} title="Open Platform">
-            <Layers size={10} /> Platform
+            <Layers size={10} /> Open Platform
           </button>
           <button className="trackmap-action-btn" onClick={handleOpenMap} title="Open Map">
-            <MapPin size={10} /> Map
+            <MapPin size={10} /> Open Map
           </button>
           <button className="trackmap-action-btn" onClick={handleOpenSetup} title="Open Setup with event focus">
-            <Wrench size={10} /> Setup
+            <Wrench size={10} /> Open Setup
           </button>
           {(selection.selectedZoneStartPct != null && selection.selectedZoneEndPct != null) && (
             <button className="trackmap-action-btn" onClick={() => setWorkspace("compare", eventSource)} title="Open Compare with the selected area">
-              <GitCompare size={10} /> Compare
+              <GitCompare size={10} /> Open Compare
             </button>
           )}
           <button className="trackmap-action-btn" onClick={handleStageTest} title="Stage Test">
@@ -349,7 +363,13 @@ function ChannelInspector({ channel, collapsed, onToggle }: { channel: ChannelCa
 function InspectorShell({ title, icon, children, collapsed, onToggle }: { title: string; icon: React.ReactNode; children?: React.ReactNode; collapsed?: boolean; onToggle?: () => void }) {
   return (
     <aside className={`evidence-inspector${collapsed ? " collapsed" : ""}`}>
-      <button className="inspector-collapse-btn" onClick={onToggle} title={collapsed ? "Expand Inspector" : "Collapse Inspector"}>
+      <button
+        className="inspector-collapse-btn"
+        onClick={onToggle}
+        title={collapsed ? "Expand Inspector" : "Collapse Inspector"}
+        aria-label={collapsed ? "Expand Inspector" : "Collapse Inspector"}
+        aria-expanded={!collapsed}
+      >
         {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
       </button>
       <header className="inspector-header">

@@ -1,5 +1,6 @@
 import { AlertTriangle, ChevronDown, ChevronRight, Crosshair, Gauge, Layers, MapPin, Sliders, Wrench } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { fetchSetup } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useCompareBasket } from "../store/CompareBasketContext";
 import type { RunOverview, SetupSnapshot } from "../types/telemetry";
@@ -51,6 +52,55 @@ function evCorner(s: SetupSnapshot, c: string, k: string): number | null {
     return (typeof v === "number" && Number.isFinite(v)) ? v : null;
   }
   return null;
+}
+
+type SetupDiffValue = string | number | null;
+
+type SetupDiffField = {
+  key: string;
+  group: string;
+  label: string;
+  unit?: string;
+  decimals?: number;
+  value: (setup: SetupSnapshot) => SetupDiffValue;
+};
+
+const SETUP_DIFF_FIELDS: SetupDiffField[] = [
+  { key: "lf_ride_height_mm", group: "Front platform", label: "LF Ride Height", unit: "in", decimals: 3, value: (s) => imp(s.lf_ride_height_mm ?? null, MM_IN, 3) },
+  { key: "rf_ride_height_mm", group: "Front platform", label: "RF Ride Height", unit: "in", decimals: 3, value: (s) => imp(s.rf_ride_height_mm ?? null, MM_IN, 3) },
+  { key: "lr_ride_height_mm", group: "Rear platform", label: "LR Ride Height", unit: "in", decimals: 3, value: (s) => imp(s.lr_ride_height_mm ?? null, MM_IN, 3) },
+  { key: "rr_ride_height_mm", group: "Rear platform", label: "RR Ride Height", unit: "in", decimals: 3, value: (s) => imp(s.rr_ride_height_mm ?? null, MM_IN, 3) },
+  { key: "lf_front_spring_n_per_mm", group: "Springs", label: "LF Spring", unit: "lb/in", decimals: 0, value: (s) => imp(s.lf_front_spring_n_per_mm ?? null, NMM_LB, 0) },
+  { key: "rf_front_spring_n_per_mm", group: "Springs", label: "RF Spring", unit: "lb/in", decimals: 0, value: (s) => imp(s.rf_front_spring_n_per_mm ?? null, NMM_LB, 0) },
+  { key: "lr_rear_spring_n_per_mm", group: "Springs", label: "LR Spring", unit: "lb/in", decimals: 0, value: (s) => imp(s.lr_rear_spring_n_per_mm ?? null, NMM_LB, 0) },
+  { key: "rr_rear_spring_n_per_mm", group: "Springs", label: "RR Spring", unit: "lb/in", decimals: 0, value: (s) => imp(s.rr_rear_spring_n_per_mm ?? null, NMM_LB, 0) },
+  { key: "nose_weight_percent", group: "Weight", label: "Nose Weight", unit: "%", decimals: 1, value: (s) => s.nose_weight_percent ?? null },
+  { key: "cross_weight_percent", group: "Weight", label: "Cross Weight", unit: "%", decimals: 1, value: (s) => s.cross_weight_percent ?? null },
+  { key: "tape_percent", group: "Aero/cooling", label: "Tape", unit: "%", decimals: 0, value: (s) => s.tape_percent ?? null },
+  { key: "rear_end_ratio", group: "Gearing", label: "Rear Gear", unit: ":1", decimals: 3, value: (s) => s.rear_end_ratio ?? null },
+  { key: "front_brake_bias_percent", group: "Controls", label: "Brake Bias", unit: "%", decimals: 1, value: (s) => s.front_brake_bias_percent ?? null },
+  { key: "steering_ratio", group: "Controls", label: "Steering Ratio", value: (s) => s.steering_ratio ?? deriveSteeringRatio(evNum(s, "steering_pinion_mm")) },
+  { key: "steering_offset_deg", group: "Controls", label: "Steering Offset", unit: "deg", decimals: 2, value: (s) => s.steering_offset_deg ?? null },
+];
+
+function sameDiffValue(left: SetupDiffValue, right: SetupDiffValue): boolean {
+  if (left == null && right == null) return true;
+  if (left == null || right == null) return false;
+  if (typeof left === "number" && typeof right === "number") {
+    return Math.abs(left - right) < 1e-9;
+  }
+  return String(left) === String(right);
+}
+
+function formatDiffValue(value: SetupDiffValue, unit?: string): string {
+  if (value == null || (typeof value === "number" && !Number.isFinite(value))) return "Unavailable";
+  return `${value}${unit ? ` ${unit}` : ""}`;
+}
+
+function formatDelta(baseline: SetupDiffValue, current: SetupDiffValue, decimals = 3): string {
+  if (typeof baseline !== "number" || typeof current !== "number") return "changed";
+  const delta = current - baseline;
+  return `${delta >= 0 ? "+" : ""}${delta.toFixed(decimals)}`;
 }
 
 // ── Field Row ────────────────────────────────────────────────────
@@ -122,6 +172,9 @@ export function SetupTab({ overview }: SetupTabProps) {
   const { basket } = useCompareBasket();
   const [diffMode, setDiffMode] = useState<"current" | "diff">("current");
   const [arbOpen, setArbOpen] = useState(false);
+  const [baselineSetup, setBaselineSetup] = useState<SetupSnapshot | null>(null);
+  const [baselineSetupLoading, setBaselineSetupLoading] = useState(false);
+  const [baselineSetupError, setBaselineSetupError] = useState<string | null>(null);
 
   const selectedEvent = useMemo(() => {
     if (!selection.selectedEventId) return null;
@@ -146,6 +199,60 @@ export function SetupTab({ overview }: SetupTabProps) {
   }, [selectedEvent]);
 
   const showDiffUnavailable = diffMode === "diff" && (!basket.baseline || !basket.baseline.has_setup_snapshot);
+  const setupDiffRows = useMemo(() => {
+    if (!setup || !baselineSetup) return [];
+    return SETUP_DIFF_FIELDS
+      .map((field) => {
+        const baseline = field.value(baselineSetup);
+        const current = field.value(setup);
+        return {
+          ...field,
+          baseline,
+          current,
+          changed: !sameDiffValue(baseline, current),
+          delta: formatDelta(baseline, current, field.decimals),
+        };
+      })
+      .filter((row) => row.changed);
+  }, [baselineSetup, setup]);
+
+  useEffect(() => {
+    const baselineRunId = basket.baseline?.run_id ?? null;
+    const canLoadBaseline = diffMode === "diff" && baselineRunId && basket.baseline?.has_setup_snapshot;
+    if (!canLoadBaseline) {
+      setBaselineSetup(null);
+      setBaselineSetupLoading(false);
+      setBaselineSetupError(null);
+      return;
+    }
+    if (baselineRunId === overview.run_id) {
+      setBaselineSetup(overview.setup_snapshot ?? null);
+      setBaselineSetupLoading(false);
+      setBaselineSetupError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setBaselineSetupLoading(true);
+    setBaselineSetupError(null);
+    fetchSetup(baselineRunId)
+      .then((nextSetup) => {
+        if (cancelled) return;
+        setBaselineSetup(nextSetup);
+      })
+      .catch((caught) => {
+        if (cancelled) return;
+        setBaselineSetup(null);
+        setBaselineSetupError(caught instanceof Error ? caught.message : "Baseline setup could not be loaded.");
+      })
+      .finally(() => {
+        if (!cancelled) setBaselineSetupLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [basket.baseline, diffMode, overview.run_id, overview.setup_snapshot]);
 
   const handlePlatform = useCallback(() => setWorkspace("platform_trace", "setup_table"), [setWorkspace]);
   const handleMap = useCallback(() => setWorkspace("map", "setup_table"), [setWorkspace]);
@@ -177,7 +284,7 @@ export function SetupTab({ overview }: SetupTabProps) {
 
   return (
     <section className="garage-board">
-      {/* ── Top Bar ── */}
+      {/* 1) Setup Context / Evidence Focus strip */}
       <div className="gr-topbar">
         <div className="gr-topbar-left">
           <Sliders size={16} />
@@ -203,38 +310,21 @@ export function SetupTab({ overview }: SetupTabProps) {
                 {isInferred ? "Inferred" : "Explicit"}
               </span>
               {focusZone !== "none" && <span className="gr-ev-tag explicit">{focusZone === "all" ? "Front/Rear" : focusZone.charAt(0).toUpperCase() + focusZone.slice(1)}</span>}
-              <button className="gr-icon-btn" onClick={handlePlatform} aria-label="Open platform trace"><Layers size={12} /></button>
-              <button className="gr-icon-btn" onClick={handleMap} aria-label="Open track map"><MapPin size={12} /></button>
             </div>
           )}
-          <div className="gr-diff-tabs" role="tablist" aria-label="Setup view mode">
-            <button
-              className={`gr-diff-tab ${diffMode === "current" ? "active" : ""}`}
-              onClick={() => setDiffMode("current")}
-              role="tab" aria-selected={diffMode === "current"}
-              aria-pressed={diffMode === "current"}
-            >Current</button>
-            <button
-              className={`gr-diff-tab ${diffMode === "diff" ? "active" : ""}`}
-              onClick={() => setDiffMode("diff")}
-              role="tab" aria-selected={diffMode === "diff"}
-              aria-pressed={diffMode === "diff"}
-            >Diff</button>
-          </div>
         </div>
       </div>
 
-      {showDiffUnavailable && (
-        <div className="map-warning-banner" role="alert" style={{ marginBottom: 10 }}>
-          <AlertTriangle size={14} />
-          <span>Diff unavailable — no real baseline snapshot selected. Current setup values are shown.</span>
-        </div>
-      )}
+      {/* 2) 2x2 Corner Board */}
+      <div className="gr-corners">
+        <CornerPanel label="LEFT FRONT" corner="lf" setup={setup} glow={focusZone === "front" || focusZone === "all" || focusZone === "steering"} />
+        <CornerPanel label="RIGHT FRONT" corner="rf" setup={setup} glow={focusZone === "front" || focusZone === "all" || focusZone === "steering"} />
+        <CornerPanel label="LEFT REAR" corner="lr" setup={setup} glow={focusZone === "rear" || focusZone === "all"} />
+        <CornerPanel label="RIGHT REAR" corner="rr" setup={setup} glow={focusZone === "rear" || focusZone === "all"} />
+      </div>
 
-      {/* ── Top Row ── */}
+      {/* 3) Top Controls / Balance / ARB-Diff row */}
       <div className="gr-toprow">
-
-        {/* Steering / Controls */}
         <div className="gr-card">
           <div className="gr-card-head"><Gauge size={12} /> Steering / Controls</div>
           <div className="gr-card-body">
@@ -301,12 +391,74 @@ export function SetupTab({ overview }: SetupTabProps) {
         </div>
       </div>
 
-      {/* ── Four Corner Panels — 2×2 ── */}
-      <div className="gr-corners">
-        <CornerPanel label="LEFT FRONT"   corner="lf" setup={setup} glow={focusZone === "front" || focusZone === "all" || focusZone === "steering"} />
-        <CornerPanel label="RIGHT FRONT"  corner="rf" setup={setup} glow={focusZone === "front" || focusZone === "all" || focusZone === "steering"} />
-        <CornerPanel label="LEFT REAR"    corner="lr" setup={setup} glow={focusZone === "rear"  || focusZone === "all"} />
-        <CornerPanel label="RIGHT REAR"   corner="rr" setup={setup} glow={focusZone === "rear"  || focusZone === "all"} />
+      {/* 4) Diff Mode / Baseline Warning */}
+      <div className="gr-diff-tabs" role="tablist" aria-label="Setup view mode" style={{ marginBottom: 10 }}>
+        <button
+          className={`gr-diff-tab ${diffMode === "current" ? "active" : ""}`}
+          onClick={() => setDiffMode("current")}
+          role="tab"
+          aria-selected={diffMode === "current"}
+          aria-pressed={diffMode === "current"}
+        >
+          Current
+        </button>
+        <button
+          className={`gr-diff-tab ${diffMode === "diff" ? "active" : ""}`}
+          onClick={() => setDiffMode("diff")}
+          role="tab"
+          aria-selected={diffMode === "diff"}
+          aria-pressed={diffMode === "diff"}
+        >
+          Diff
+        </button>
+      </div>
+      {showDiffUnavailable && (
+        <div className="map-warning-banner" role="alert" style={{ marginBottom: 10 }}>
+          <AlertTriangle size={14} />
+          <span>Diff unavailable - no real baseline snapshot selected. Current setup values are shown.</span>
+        </div>
+      )}
+      {diffMode === "diff" && basket.baseline?.has_setup_snapshot && (
+        <div className="setup-diff-list" aria-live="polite">
+          {baselineSetupLoading && (
+            <p className="setup-diff-empty">Loading baseline setup...</p>
+          )}
+          {baselineSetupError && (
+            <div className="map-warning-banner" role="alert">
+              <AlertTriangle size={14} />
+              <span>{baselineSetupError}</span>
+            </div>
+          )}
+          {!baselineSetupLoading && !baselineSetupError && baselineSetup && setupDiffRows.length === 0 && (
+            <p className="setup-diff-empty">No setup changes detected against {basket.baseline.label}.</p>
+          )}
+          {!baselineSetupLoading && !baselineSetupError && setupDiffRows.length > 0 && (
+            <>
+              <div className="setup-diff-group-label">Baseline: {basket.baseline.label}</div>
+              {setupDiffRows.map((row) => (
+                <div key={row.key} className="setup-diff-row changed">
+                  <span>{row.group} / {row.label}</span>
+                  <span className="setup-diff-values">
+                    <span className="setup-diff-baseline">{formatDiffValue(row.baseline, row.unit)}</span>
+                    <span className="setup-diff-arrow">to</span>
+                    <span className="setup-diff-test">{formatDiffValue(row.current, row.unit)}</span>
+                    <span className="setup-diff-test">({row.delta})</span>
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 5) Related Evidence Links */}
+      <div className="toolbar-actions">
+        <button className="secondary-button" onClick={handlePlatform}>
+          <Layers size={14} /> Open Platform
+        </button>
+        <button className="secondary-button" onClick={handleMap}>
+          <MapPin size={14} /> Open Map
+        </button>
       </div>
     </section>
   );

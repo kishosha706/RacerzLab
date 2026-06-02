@@ -68,7 +68,7 @@ export function LapTimeBrowser({ runId }: LapTimeBrowserProps) {
         {lapList.laps.map((lap) => {
           const isSelected = selection.selectedLap === lap.lap_number;
           const isBest = lap.delta_display === "BEST";
-          const tags = lap.classification_tags ?? [];          const hasInvalidFlag = !lap.is_useful || (lap.invalid_reasons?.length ?? 0) > 0;
+          const hasInvalidFlag = !lap.is_useful || (lap.invalid_reasons?.length ?? 0) > 0;
           return (
             <button
               key={lap.lap_id}

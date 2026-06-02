@@ -123,7 +123,8 @@ function trustReasonChips(
   const chips: string[] = [];
   const upperWarnings = (warnings ?? []).map((warning) => warning.toUpperCase());
   const upperTags = (tags ?? []).map((tag) => tag.toUpperCase());
-  if (upperWarnings.some((warning) => warning.includes("INVALID") || warning.includes("INSUFFICIENT") || warning.includes("ONLY"))) chips.push("Few laps");
+  if (upperWarnings.some((warning) => warning.includes("INVALID") || warning.includes("INSUFFICIENT") || warning.includes("ONLY"))
+    || upperTags.some((tag) => tag.includes("INVALID") || tag.includes("INCOMPLETE"))) chips.push("Few laps");
   if (upperWarnings.some((warning) => warning.includes("SHORT"))) chips.push("Short window");
   if (upperWarnings.some((warning) => warning.includes("TIRE") || warning.includes("TEMP"))) chips.push("Tire data");
   if (upperWarnings.some((warning) => warning.includes("PLATFORM"))) chips.push("Platform data");
@@ -608,14 +609,20 @@ export function LapsTab({ overview }: LapsTabProps) {
           <button className="secondary-button" onClick={handlePlatform} disabled={!canOpenPlatform} title={canOpenPlatform ? "Open Platform with this evidence context" : disabledReason} aria-label="Open evidence in Platform">
             <Layers size={14} /> Open Platform
           </button>
+          <button className="secondary-button" onClick={handleMap} disabled={!canStage} title={canStage ? "Open Map with this evidence context" : disabledReason} aria-label="Open evidence on Map">
+            <MapPin size={14} /> Open Map
+          </button>
         </div>
       );
     }
 
     return (
       <div className={`laps-action-row${compact ? " compact" : ""}`}>
-        <button className="secondary-button" onClick={handleSelect} disabled={!canStage} title={canStage ? "Use this evidence as current selection" : disabledReason} aria-label={isWindow ? "Select window evidence" : "Select lap evidence"}>
-          <Target size={14} /> {isWindow ? "Select Window" : "Select Evidence"}
+        <button className="secondary-button" onClick={handleBaseline} disabled={!canStage} title={canStage ? "Stage as compare baseline" : disabledReason} aria-label="Set baseline from evidence">
+          <Clock size={14} /> Baseline
+        </button>
+        <button className="secondary-button" onClick={handleTest} disabled={!canStage} title={canStage ? "Stage as compare test" : disabledReason} aria-label="Set test from evidence">
+          <Gauge size={14} /> Test
         </button>
         <button className="secondary-button" onClick={handlePlatform} disabled={!canOpenPlatform} title={canOpenPlatform ? "Open Platform with this evidence context" : disabledReason} aria-label="Open evidence in Platform">
           <Layers size={14} /> Platform
@@ -623,11 +630,8 @@ export function LapsTab({ overview }: LapsTabProps) {
         <button className="secondary-button" onClick={handleMap} disabled={!canStage} title={canStage ? "Open Map with this evidence context" : disabledReason} aria-label="Open evidence on Map">
           <MapPin size={14} /> Map
         </button>
-        <button className="secondary-button" onClick={handleBaseline} disabled={!canStage} title={canStage ? "Stage as compare baseline" : disabledReason} aria-label="Set baseline from evidence">
-          <Clock size={14} /> Baseline
-        </button>
-        <button className="secondary-button" onClick={handleTest} disabled={!canStage} title={canStage ? "Stage as compare test" : disabledReason} aria-label="Set test from evidence">
-          <Gauge size={14} /> Test
+        <button className="secondary-button" onClick={handleSelect} disabled={!canStage} title={canStage ? "Use this evidence as current selection" : disabledReason} aria-label={isWindow ? "Select window evidence" : "Select lap evidence"}>
+          <Target size={14} /> {isWindow ? "Select Window" : "Select Evidence"}
         </button>
         <button className="secondary-button" onClick={handleBasket} disabled={!canStage} title={canStage ? "Add evidence to Compare Basket queue" : disabledReason} aria-label="Add evidence to Compare Basket">
           <BarChart3 size={14} /> Basket
@@ -916,7 +920,6 @@ export function LapsTab({ overview }: LapsTabProps) {
               style={{ gridTemplateColumns: `repeat(${laps.length}, minmax(24px, 1fr))` }}
             >
               {laps.map((lap) => {
-                const tags = lap.classification_tags ?? [];
                 const isValid = lap.is_useful;
                 const isSelectedLap = selection.selectedLapScope !== "lap_window" && selection.selectedLap === lap.lap_number;
                 const inSelectedWindow = selectedWindow?.start != null && selectedWindow.end != null
@@ -1233,22 +1236,22 @@ export function LapsTab({ overview }: LapsTabProps) {
             <span className="eyebrow">Task 6</span>
             <h2><List size={16} /> All Laps</h2>
             <p className="section-note">
-              Explicit row actions preserve evidence identity better than hidden row-click behavior. Expand buttons remain keyboard-safe.
+              Evidence-first lap list. Use this to stage baseline/test before drilling into Platform or Map.
             </p>
           </div>
           <table className="compact-table" style={{ marginTop: 0 }}>
             <thead>
               <tr>
-                <th>Expand</th>
-                <th>#</th>
-                <th>Time</th>
-                <th>Delta</th>
-                <th>Trust</th>
-                <th>Engineering</th>
-                <th>Flags</th>
-                <th>Best Window</th>
-                <th>Compare</th>
-                <th>Selection</th>
+                <th>Lap #</th>
+                <th>Lap Time</th>
+                <th>Classification</th>
+                <th>Quality / Trust Tier</th>
+                <th>Top Event Count</th>
+                <th>Min Speed</th>
+                <th>Max Speed</th>
+                <th>Platform Risk</th>
+                <th>Scrub Risk</th>
+                <th>Tire Summary</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -1265,40 +1268,32 @@ export function LapsTab({ overview }: LapsTabProps) {
                 return (
                   <React.Fragment key={lap.lap_id}>
                     <tr data-lap-row={lap.lap_number} className={isSelectedLap ? "selected-row" : ""} style={{ opacity: lap.is_useful ? 1 : 0.72 }}>
-                      <td>
-                        <button
-                          className="secondary-button"
-                          onClick={() => setExpandedLap(isExpanded ? null : lap.lap_number)}
-                          aria-expanded={isExpanded}
-                          aria-label={`${isExpanded ? "Collapse" : "Expand"} lap ${lap.lap_number} details`}
-                        >
-                          {isExpanded ? "Hide" : "Show"}
-                        </button>
-                      </td>
                       <td>{lap.lap_number}</td>
-                      <td style={{ fontWeight: 600 }}>{formatTime(lap.lap_time)}</td>
-                      <td style={{ color: formatDelta(lap.lap_time, bestTime) === "BEST" ? "#22c55e" : "#8d9aaa" }}>{formatDelta(lap.lap_time, bestTime)}</td>
-                      <td>{lapTrustTier(lap)}</td>
-                      <td>{lap.min_splitter_mm != null ? `${lap.min_splitter_mm.toFixed(1)} mm` : "Unavailable"}</td>
+                      <td style={{ fontWeight: 600 }}>{formatTime(lap.lap_time)} <span className="muted">({formatDelta(lap.lap_time, bestTime)})</span></td>
+                      <td>{lap.classification_tags?.join(", ") || lap.lap_type || "-"}</td>
                       <td>
                         <div className="laps-chip-row">
-                          {lapFlags(lap).map((flag) => <span key={flag} className="lap-flag-badge">{flag}</span>)}
+                          <span className="lap-flag-badge">{lapTrustTier(lap)}</span>
+                          {role && <span className="lap-flag-badge">{role}</span>}
+                          {inSelectedWindow && <span className="lap-flag-badge">In selected window</span>}
+                          {memberships.slice(0, 1).map((membership) => <span key={membership} className="lap-flag-badge">{membership}</span>)}
                         </div>
                       </td>
-                      <td>
-                        <div className="laps-chip-row">
-                          {memberships.length > 0 ? memberships.map((membership) => <span key={membership} className="lap-flag-badge">{membership}</span>) : <span className="muted">-</span>}
-                        </div>
-                      </td>
-                      <td>{role ?? "-"}</td>
-                      <td>{isSelectedLap ? "Selected lap" : inSelectedWindow ? "In selected window" : "-"}</td>
+                      <td>{lap.confidence_notes?.length ?? 0}</td>
+                      <td><ValueDisplay value={lap.min_speed_mph} unit="mph" precision={1} /></td>
+                      <td><ValueDisplay value={lap.max_speed_mph} unit="mph" precision={1} /></td>
+                      <td>{(lap.classification_tags ?? []).some((tag) => /platform|scrape|bottom/i.test(tag)) ? "Watch" : "Low"}</td>
+                      <td>{(lap.classification_tags ?? []).some((tag) => /scrub|drag|yaw|steer/i.test(tag)) ? "Watch" : "Low"}</td>
+                      <td>{(lap.classification_tags ?? []).some((tag) => /tire|temp|pressure|camber/i.test(tag)) ? "Tagged" : "Clear"}</td>
                       <td>
                         <div className="laps-action-row compact">
-                          <button className="secondary-button" onClick={() => focusLapEvidence(lap)} aria-label={`Select lap ${lap.lap_number}`}>Select</button>
-                          <button className="secondary-button" onClick={() => focusLapEvidence(lap, "platform_trace")} aria-label={`Open lap ${lap.lap_number} in Platform`}>Platform</button>
-                          <button className="secondary-button" onClick={() => focusLapEvidence(lap, "map")} aria-label={`Open lap ${lap.lap_number} on Map`}>Map</button>
                           <button className="secondary-button" onClick={() => setBaseline(makeLapBasket(lap, `Baseline Lap ${lap.lap_number}`))}>Baseline</button>
                           <button className="secondary-button" onClick={() => setTest(makeLapBasket(lap, `Test Lap ${lap.lap_number}`))}>Test</button>
+                          <button className="secondary-button" onClick={() => focusLapEvidence(lap, "platform_trace")} aria-label={`Open lap ${lap.lap_number} in Platform`}>Platform</button>
+                          <button className="secondary-button" onClick={() => focusLapEvidence(lap, "map")} aria-label={`Open lap ${lap.lap_number} on Map`}>Map</button>
+                          <button className="secondary-button" onClick={() => setExpandedLap(isExpanded ? null : lap.lap_number)} aria-expanded={isExpanded} aria-label={`${isExpanded ? "Collapse" : "Expand"} lap ${lap.lap_number} details`}>
+                            {isExpanded ? "Hide" : "Details"}
+                          </button>
                           <button className="secondary-button" onClick={() => addToQueue(makeLapBasket(lap, `Lap ${lap.lap_number}`))}>Basket</button>
                         </div>
                       </td>

@@ -1,16 +1,22 @@
 /** Internal workbench sub-navigation for PlatformTab. */
 export type WorkbenchView =
-  | "balance" | "rear_scrape" | "aero_load" | "scrub_steering" | "diffuser"
-  | "tires" | "shocks" | "grade_pull";
+  | "balance"
+  | "rear_scrape"
+  | "aero_load"
+  | "scrub_steering"
+  | "diffuser"
+  | "tires"
+  | "shocks"
+  | "grade_pull";
 
 export const WORKBENCH_VIEWS: { id: WorkbenchView; label: string; icon: string }[] = [
-  { id: "balance", label: "Balance", icon: "⚖" },
-  { id: "scrub_steering", label: "Rear Scrape / Scrub", icon: "↯" },
-  { id: "aero_load", label: "Aero Load", icon: "🌊" },
-  { id: "diffuser", label: "Diffuser", icon: "▱" },
-  { id: "tires", label: "Tires", icon: "◯" },
-  { id: "shocks", label: "Shocks", icon: "〰" },
-  { id: "grade_pull", label: "Grade / Pull", icon: "⛰" },
+  { id: "balance", label: "Balance", icon: "BAL" },
+  { id: "rear_scrape", label: "Rear Scrape / Scrub", icon: "SCR" },
+  { id: "diffuser", label: "Diffuser", icon: "DIF" },
+  { id: "aero_load", label: "Aero Load", icon: "AER" },
+  { id: "grade_pull", label: "Grade / Pull", icon: "GRD" },
+  { id: "tires", label: "Tires", icon: "TIR" },
+  { id: "shocks", label: "Shocks", icon: "SHK" },
 ];
 
 type WorkbenchSubnavProps = {

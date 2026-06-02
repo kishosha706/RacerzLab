@@ -1,5 +1,5 @@
 import { Copy, Info, Pin, Search } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { getChannelConfidenceLevel, getChannelDisclaimer } from "../utils/channelMeta";
 import type { ChannelCatalogItem, RunOverview, TraceResponse } from "../types/telemetry";
@@ -158,7 +158,7 @@ export function RawChannelsTab({ overview, trace, channels }: RawChannelsTabProp
               const isExpanded = expandedChannel === channel.name;
               const disclaimer = getChannelDisclaimer(channel.name);
               return (
-                <>
+                <Fragment key={channel.name}>
                   <tr key={channel.name} style={{ background: pinnedChannels.includes(channel.name) ? "rgba(56,189,248,0.04)" : undefined }}>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -247,7 +247,7 @@ export function RawChannelsTab({ overview, trace, channels }: RawChannelsTabProp
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               );
             })}
           </tbody>

@@ -85,7 +85,10 @@ class ChannelCatalogItem(BaseModel):
 class ChannelSummaryItem(BaseModel):
     name: str
     label: Optional[str] = None
+    description: Optional[str] = None
     unit: Optional[str] = None
+    type: Optional[str] = None
+    count: int = 1
     is_raw: bool = False
     is_calculated: bool = False
     is_proxy: bool = False

@@ -1,4 +1,4 @@
-// ── Compare Tab TypeScript types ───────────────────────────
+// -- Compare Tab TypeScript types ---------------------------
 // Matches verified /api/compare response shape.
 
 export interface ChannelDeltaStats {
@@ -172,7 +172,7 @@ export interface CompareResponse {
   confidence_score: number;
 }
 
-// ── Delta Trace types ──────────────────────────────────────
+// -- Delta Trace types --------------------------------------
 
 export interface DeltaTraceRequest {
   baseline_run_id: string;
@@ -222,7 +222,7 @@ export interface DeltaTraceResponse {
   missing_channels: string[];
 }
 
-// ── Comparison Insights types ──────────────────────────────
+// -- Comparison Insights types ------------------------------
 
 export interface TraceAnnotation {
   id: string;
@@ -302,7 +302,7 @@ export interface ComparisonInsightsResponse {
   missing_channels: string[];
 }
 
-// ── Notebook types ─────────────────────────────────────────
+// -- Notebook types -----------------------------------------
 
 export interface NotebookFinding {
   finding_id: string;

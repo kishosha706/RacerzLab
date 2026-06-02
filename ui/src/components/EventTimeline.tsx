@@ -12,7 +12,6 @@ type EventTimelineProps = {
 const CLUSTER_THRESHOLD_PCT = 0.25;
 const PLAYBACK_SPEEDS = [0.5, 1, 2] as const;
 
-/** Assign staggered vertical offsets to events that cluster within threshold. */
 type StaggeredEvent = PlatformEventItem & { staggerOffset: number; _lapPct: number };
 
 function staggerMarkers(events: PlatformEventItem[]): StaggeredEvent[] {
@@ -20,18 +19,15 @@ function staggerMarkers(events: PlatformEventItem[]): StaggeredEvent[] {
     .filter((e) => e.lap_pct != null)
     .map((e) => ({ ...e, _lapPct: e.lap_pct! }));
 
-  // Sort by lap_pct
   withPct.sort((a, b) => a._lapPct - b._lapPct);
 
   const result: StaggeredEvent[] = [];
   let clusterStart = 0;
 
   for (let i = 0; i < withPct.length; i++) {
-    // Detect cluster boundary
     if (i === withPct.length - 1 || withPct[i + 1]._lapPct - withPct[i]._lapPct > CLUSTER_THRESHOLD_PCT) {
       const clusterSize = i - clusterStart + 1;
       for (let j = clusterStart; j <= i; j++) {
-        // Offset within cluster: center around 0, spread by 10px per item
         const offset = (j - clusterStart - (clusterSize - 1) / 2) * 10;
         result.push({ ...withPct[j], staggerOffset: offset });
       }
@@ -50,7 +46,6 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
   const indexRef = useRef(0);
   const staggered = useMemo(() => staggerMarkers(platformEvents), [platformEvents]);
 
-  // ── Playback logic ───────────────────────────────────────────
   const sorted = useMemo(
     () => [...platformEvents].filter((e) => e.lap_pct != null).sort((a, b) => (a.lap_pct ?? 0) - (b.lap_pct ?? 0)),
     [platformEvents],
@@ -65,7 +60,10 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
     const event = sorted[index];
     if (!event) return;
     indexRef.current = index;
-    setHover(event.lap_pct ?? null, typeof event.sample_index === "number" && Number.isFinite(event.sample_index) && event.sample_index >= 0 ? event.sample_index : null);
+    const sampleIndex = typeof event.sample_index === "number" && Number.isFinite(event.sample_index) && event.sample_index >= 0
+      ? event.sample_index
+      : null;
+    setHover(event.lap_pct ?? null, sampleIndex);
   }, [sorted, setHover]);
 
   const buildTimelineEvidence = useCallback((event: PlatformEventItem) => {
@@ -80,6 +78,7 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
       sampleIndex: validSampleIdx,
       lapDistFt: event.lap_dist_ft,
       lapPct: event.lap_pct,
+      trustTier: event.confidence ?? null,
       selectionSource: "event_timeline" as const,
       lockState: (hasLocation ? "locked" : "none") as "locked" | "none",
       valueBasis: (hasLocation ? "selected_sample" : "run_level") as "selected_sample" | "run_level",
@@ -89,7 +88,8 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
   const commitEvent = useCallback((index: number) => {
     const event = sorted[index];
     if (!event) return;
-    focusEvidence(buildTimelineEvidence(event), "platform_trace");
+    indexRef.current = index;
+    focusEvidence(buildTimelineEvidence(event));
   }, [sorted, focusEvidence, buildTimelineEvidence]);
 
   const togglePlay = useCallback(() => {
@@ -108,7 +108,6 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
     commitEvent(next);
   }, [sorted, commitEvent]);
 
-  // Playback RAF loop
   useEffect(() => {
     if (!playing || sorted.length === 0) {
       if (playbackRef.current != null) {
@@ -130,7 +129,6 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
       const next = (indexRef.current + 1) % sorted.length;
       stepTo(next);
       if (next === 0) {
-        // Looped — commit the last event and stop
         commitEvent(sorted.length - 1);
         setPlaying(false);
         return;
@@ -144,18 +142,43 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
     };
   }, [playing, speed, sorted, stepTo, commitEvent]);
 
-  // Keyboard shortcut: Space to toggle play
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === " " && sorted.length > 0) {
+      if (sorted.length === 0) return;
+
+      if (e.key === " ") {
         e.preventDefault();
         togglePlay();
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setPlaying(false);
+        stepTo(Math.max(0, indexRef.current - 1));
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setPlaying(false);
+        stepTo(Math.min(sorted.length - 1, indexRef.current + 1));
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        setPlaying(false);
+        commitEvent(indexRef.current);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setPlaying(false);
+        setHover(null, null);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [togglePlay, sorted]);
+  }, [togglePlay, sorted, stepTo, commitEvent, setHover]);
 
   if (platformEvents.length === 0) return null;
 
@@ -165,11 +188,10 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
     <footer className="event-timeline">
       <div className="timeline-header">
         <span className="timeline-label">Lap Storyline</span>
-        <span className="timeline-shortcuts">Esc clear · ←/→ events · L mode · Space play</span>
-        <span className="timeline-lap">Lap {selection.selectedLap ?? "—"}</span>
+        <span className="timeline-shortcuts">Esc clear hover - Left/Right browse - Enter commit - Space play</span>
+        <span className="timeline-lap">Lap {selection.selectedLap ?? "-"}</span>
       </div>
 
-      {/* ── Playback controls ── */}
       <div className="playback-controls">
         <button className="playback-btn" onClick={stepPrev} title="Previous event" aria-label="Previous event">
           <SkipBack size={14} />
@@ -200,7 +222,6 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
       </div>
 
       <div className="timeline-track">
-        {/* percentage markers */}
         {[0, 25, 50, 75, 100].map((pct) => (
           <span key={pct} className="timeline-pct-marker" style={{ left: `${pct}%` }}>
             <span className="timeline-pct-label">{pct}%</span>
@@ -208,25 +229,30 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
           </span>
         ))}
 
-        {/* event markers with staggering */}
         {staggered.map((event) => {
           const left = Math.max(0, Math.min(100, event._lapPct));
           const isActive = selection.selectedEventId === event.event_id;
           const colour = SEVERITY_COLOURS[event.severity] ?? "#8d9aaa";
-          const shape = EVENT_SHAPES[event.event_type] ?? "●";
+          const shape = EVENT_SHAPES[event.event_type] ?? "*";
 
           return (
             <button
               key={event.event_id}
               className={`timeline-marker ${isActive ? "active" : ""}`}
               style={{ left: `${left}%`, top: `${event.staggerOffset}px`, color: colour }}
-              title={`${event.title} — ${event.severity}`}
+              title={`${event.title} - ${event.severity}`}
               aria-label={`${event.title}, ${event.severity}, ${left.toFixed(1)} percent lap`}
               onClick={() => {
                 const idx = sorted.findIndex((e) => e.event_id === event.event_id);
-                if (idx >= 0) indexRef.current = idx;
-                focusEvidence(buildTimelineEvidence(event), "platform_trace");
+                if (idx >= 0) commitEvent(idx);
               }}
+              onMouseEnter={() => {
+                const sampleIndex = typeof event.sample_index === "number" && Number.isFinite(event.sample_index) && event.sample_index >= 0
+                  ? event.sample_index
+                  : null;
+                setHover(event.lap_pct ?? null, sampleIndex);
+              }}
+              onMouseLeave={() => setHover(null, null)}
             >
               <span className="timeline-shape" style={{ color: colour }}>{shape}</span>
             </button>

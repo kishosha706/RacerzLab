@@ -24,6 +24,50 @@ EventType = Literal[
 Severity = Literal["info", "watch", "high", "critical"]
 Confidence = Literal["low", "medium", "high"]
 
+PLATFORM_EVENT_COLUMNS = [
+    "lap",
+    "lap_dist_ft",
+    "lap_dist_m",
+    "lap_dist_pct_100",
+    "track_x_ft",
+    "track_y_ft",
+    "speed_mph",
+    "throttle_pct",
+    "brake_pct",
+    "cfs_ride_height_in",
+    "cfs_ride_height_mm",
+    "cfs_risk_score",
+    "drag_scrub_suspicion",
+    "full_throttle_resistance_index",
+    "abs_steering_deg",
+    "abs_lat_accel",
+    "center_rake_fs_in",
+    "rear_avg_rh_in",
+    "side_rake_in",
+    "platform_compression_index",
+    "shock_activity_index",
+    "lf_shock_velocity_rms",
+    "rf_shock_velocity_rms",
+    "lr_shock_velocity_rms",
+    "rr_shock_velocity_rms",
+    "rear_min_ride_height_mm",
+    "rear_min_ride_height_in",
+    "rear_scrape_margin_mm",
+    "rear_scrape_side",
+    "rear_scrape_side_label",
+    "rear_scrape_risk_score",
+    "lr_ride_height_mm",
+    "rr_ride_height_mm",
+    "rear_split_in",
+    "whole_car_bottoming_risk",
+    "front_platform_risk_score",
+    "rear_platform_risk_score",
+    "platform_balance_label",
+    "platform_balance_explanation",
+    "dynamic_pressure_psf",
+    "air_density",
+]
+
 
 @dataclass(frozen=True)
 class PlatformEvent:
