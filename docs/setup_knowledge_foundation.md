@@ -31,6 +31,10 @@ candidate diversity, package dependency wording, phase-specific shock/platform
 language, stricter validator checks, and query examples for common garage
 complaints.
 
+Milestone 3B adds the Evidence Adapter: a local run-context layer that inspects
+available evidence, detects conservative car/track family hints, and feeds real
+evidence flags into the deterministic matcher.
+
 ## Schema And Data
 
 Core schema sections:
@@ -148,6 +152,7 @@ Validate: exit_yaw, center_speed, tire_trend
 Watch for: tight_center, tight_exit, drag_scrub
 ```
 
-Next milestone: Evidence Adapter. It should translate local telemetry, Compare
-results, setup snapshots, and notebook context into the evidence tags consumed
-by this deterministic layer.
+The next layer after source digestion is now implemented: the Evidence Adapter
+translates local telemetry context, Compare run presence, setup snapshots, and
+track-map availability into the evidence tags consumed by this deterministic
+matcher. See `docs/setup_evidence_adapter.md`.

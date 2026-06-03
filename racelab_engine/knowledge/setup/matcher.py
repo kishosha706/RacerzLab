@@ -1,19 +1,35 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from .loader import SetupKnowledge, load_setup_knowledge
 from .schema import SetupEffect, SymptomVocabularyEntry
 
 
 RISK_WEIGHT = {"low": 0.35, "medium": 0.2, "high": 0.0}
+LEGACY_DISABLED_AREAS = {"track_bar", "truck_arm_mount", "bump_stop", "packer"}
 EVIDENCE_ALIASES = {
     "platform_trace": {"platform", "front_platform", "rear_platform", "diffuser_proxy", "ride_height_trace"},
     "platform": {"platform", "front_platform", "rear_platform", "diffuser_proxy"},
     "tire_temps": {"tire_temp", "tire_trend", "tire_temps"},
+    "tire_pressure": {"pressure_gain", "tire_pressure_gain", "tire_trend"},
+    "tire_wear": {"wear"},
     "tires": {"tire_temp", "tire_trend", "tire_temps"},
     "shocks": {"shock_histogram"},
-    "compare_baseline": {"lap_falloff", "speed_trace", "yaw"},
+    "lap_windows": {"phase", "selected_lap_window", "lap_falloff"},
+    "front_ride_height_platform": {"front_platform", "cfs_front_feed"},
+    "rear_ride_height_platform": {"rear_platform"},
+    "rear_scrape_scrub": {"rear_scrape_scrub", "scrape", "yaw_scrub_steering"},
+    "driver_input": {"driver_inputs", "throttle", "steering", "yaw", "brake_trace"},
+    "brake_trace": {"brake_trace"},
+    "throttle_trace": {"throttle", "throttle_pickup"},
+    "steering_trace": {"steering"},
+    "yaw_trace": {"yaw"},
+    "rpm_gear_trace": {"rpm", "rpm_gear_limiter"},
+    "track_map": {"track_map_zone", "selected_zone"},
+    "compare_baseline": {"compare_baseline_test"},
+    "compare_test": {"compare_baseline_test"},
 }
 
 
@@ -88,6 +104,8 @@ def parse_symptom(raw_symptom: str, knowledge: SetupKnowledge) -> SymptomVocabul
 def _applies_to_car(effect: SetupEffect, car_family: str, disabled_areas: set[str]) -> bool:
     if effect.setup_area in disabled_areas or car_family in effect.disabled_for:
         return False
+    if car_family == "unknown":
+        return "all" in effect.applies_to
     return "all" in effect.applies_to or car_family in effect.applies_to
 
 
@@ -102,9 +120,29 @@ def _expand_evidence(evidence: list[str] | None) -> set[str]:
     return expanded
 
 
-def _readiness(required: list[str], matched: list[str]) -> str:
+def _key_required_evidence(effect: SetupEffect) -> list[str]:
+    message = effect.evidence_missing_message.lower()
+    hinted = [
+        token
+        for token in re.findall(r"[a-z0-9_]+", message)
+        if token in effect.evidence_required
+    ]
+    if hinted:
+        return list(dict.fromkeys(hinted))
+    prioritized = [item for item in effect.evidence_priority if item in effect.evidence_required]
+    if prioritized:
+        return [prioritized[0]]
+    return effect.evidence_required[:1]
+
+
+def _readiness(effect: SetupEffect, matched: list[str]) -> str:
+    required = effect.evidence_required
     if not required:
         return "ready"
+    matched_set = set(matched)
+    key_required = _key_required_evidence(effect)
+    if any(item not in matched_set for item in key_required):
+        return "missing_key_evidence"
     if len(matched) == len(required):
         return "ready"
     if matched:
@@ -175,7 +213,7 @@ def _score_effect(
     score += RISK_WEIGHT.get(effect.coupling_risk, 0.0)
     matched = sorted(set(effect.evidence_required) & evidence)
     missing = [item for item in effect.evidence_required if item not in evidence]
-    readiness = _readiness(effect.evidence_required, matched)
+    readiness = _readiness(effect, matched)
     if readiness == "ready":
         score += 1.0
         reasons.append("evidence ready")
@@ -205,14 +243,19 @@ def query_setup_knowledge(
 ) -> SetupQueryResult:
     knowledge = knowledge or load_setup_knowledge()
     capabilities = knowledge.car_capability_by_family.get(car_family)
-    if capabilities is None:
+    if capabilities is None and car_family != "unknown":
         raise ValueError(f"Unknown car family: {car_family}")
     if package_archetype and package_archetype not in {item.archetype_id for item in knowledge.package_archetypes}:
         raise ValueError(f"Unknown package archetype: {package_archetype}")
     parsed = parse_symptom(symptom, knowledge)
     parsed_phase = phase or parsed.phase
     evidence_set = _expand_evidence(evidence)
-    disabled_areas = set(capabilities.disabled_setup_areas)
+    if capabilities is None:
+        disabled_setup_areas = sorted(LEGACY_DISABLED_AREAS)
+        disabled_areas = set(disabled_setup_areas)
+    else:
+        disabled_setup_areas = capabilities.disabled_setup_areas
+        disabled_areas = set(disabled_setup_areas)
 
     ranked: list[RankedSetupEffect] = []
     disabled: list[SetupEffect] = []
@@ -266,7 +309,7 @@ def query_setup_knowledge(
         evidence_missing={item.effect.effect_id: item.evidence_missing for item in candidates if item.missing_evidence},
         disabled_by_car_capability=disabled,
         disabled_effects_due_to_car=disabled,
-        disabled_setup_areas=capabilities.disabled_setup_areas,
+        disabled_setup_areas=disabled_setup_areas,
         one_change_test_plan=[item.one_change_test_plan for item in candidates],
         warnings=[item.warning for item in candidates if item.warning],
         clarification_question=parsed.clarification_question,

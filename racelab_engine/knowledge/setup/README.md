@@ -62,9 +62,9 @@ static rake alone.
 Shock histograms are evidence, not a command. Low-speed shock changes belong to
 driver-input transitions such as braking, brake release, steering input, and
 throttle pickup. High-speed shock changes belong to bumps, dips, curbs, banking
-transitions, and sharp platform events. The future Evidence Adapter should map
-local traces into those evidence tags without changing the deterministic setup
-logic.
+transitions, and sharp platform events. The Evidence Adapter now maps local
+trace metadata into those evidence tags without changing the deterministic
+setup logic.
 
 ## Commands
 
@@ -81,8 +81,8 @@ Milestone 1 created the local schema, seed data, validator, matcher, query CLI,
 and tests. Milestone 2 enriched ranking with package context, evidence
 readiness, clearer effect/counter-effect explanations, ARB specificity, and
 Next Gen platform wording. The pre-3B quality pass tightened phase specificity,
-package dependency notes, candidate diversity, and validation checks before the
-Evidence Adapter.
+package dependency notes, candidate diversity, and validation checks. Milestone
+3B adds the run-aware Evidence Adapter and run-context query CLI.
 
 ## Example Output
 
@@ -100,6 +100,7 @@ Validate: exit_yaw, center_speed, tire_trend
 Watch for: tight_center, tight_exit, drag_scrub
 ```
 
-The next milestone is the Evidence Adapter: mapping real local telemetry,
-Compare output, setup snapshots, and notebook context into the placeholder
-evidence tags this layer already understands.
+The run-context layer is now in place: the Evidence Adapter maps real local
+telemetry, Compare output, setup snapshots, and notebook context into the
+placeholder evidence tags this layer already understands. See
+`docs/setup_evidence_adapter.md` for details.

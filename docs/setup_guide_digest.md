@@ -43,6 +43,7 @@ CFS/front-feed notes that mention an approximately 0.5 inch opening are stored
 as `needs_review` until verified. They are not accepted rules and should not be
 used as setup logic before verification.
 
-Next milestone: Evidence Adapter. It should translate local telemetry, Compare
-output, setup snapshots, and notebook context into existing evidence tags
-without inventing new setup rules outside the reviewed matrix-backed records.
+Next step after source digestion is now implemented: the Evidence Adapter
+translates local telemetry, Compare output, setup snapshots, and notebook
+context into existing evidence tags without inventing new setup rules outside
+the reviewed matrix-backed records. See `docs/setup_evidence_adapter.md`.
