@@ -1,14 +1,616 @@
 [
-  {"archetype_id": "low_platform_speed_package", "name": "Low platform speed package", "applies_to": ["all"], "why_fast": "Keeps the car in a low, efficient platform window when the track and setup support it.", "common_risks": ["front_platform_contact", "rear_scrape"], "compensators": ["platform support", "shock control"], "watch_evidence": ["speed_trace", "scrape", "ride_height"], "complaint_patterns": ["bottoming", "splitter hitting"]},
-  {"archetype_id": "front_feed_diffuser_package", "name": "Front feed diffuser package", "applies_to": ["next_gen"], "why_fast": "Uses front platform consistency to support derived diffuser feed behavior.", "common_risks": ["front_feed_instability", "diffuser_instability"], "compensators": ["front support", "selected-zone shock control"], "watch_evidence": ["front_platform", "diffuser_proxy", "speed_loss"], "complaint_patterns": ["pack unstable"]},
-  {"archetype_id": "high_front_low_rear_diffuser_feed_package", "name": "High-front low-rear feed package", "applies_to": ["next_gen"], "why_fast": "Can keep front feed and rear outlet behavior in a useful relationship for a specific track state.", "common_risks": ["rear_scrape", "diffuser_choke_or_stall"], "compensators": ["rear support", "scrape margin"], "watch_evidence": ["front_height", "rear_height", "diffuser_proxy"], "complaint_patterns": ["rear scrape", "drags down straight"]},
-  {"archetype_id": "high_cross_stability_package", "name": "High cross stability package", "applies_to": ["all"], "why_fast": "Prioritizes rear security and driver confidence off the corner.", "common_risks": ["tight_center", "drag_scrub"], "compensators": ["front compliance", "rear ARB trim"], "watch_evidence": ["exit_yaw", "center_speed", "tire_trend"], "complaint_patterns": ["bound up", "tight center"]},
-  {"archetype_id": "free_center_rotation_package", "name": "Free center rotation package", "applies_to": ["all"], "why_fast": "Reduces steering demand and lets the car finish the corner.", "common_risks": ["loose_exit", "tire_overwork"], "compensators": ["rear stability", "pressure tuning"], "watch_evidence": ["center_speed", "exit_yaw"], "complaint_patterns": ["loose off"]},
-  {"archetype_id": "long_run_tire_protection_package", "name": "Long-run tire protection package", "applies_to": ["all"], "why_fast": "Trades a little peak feel for repeatable tire trend.", "common_risks": ["short_run_laziness", "low_straight_speed"], "compensators": ["pressure trim", "camber trim"], "watch_evidence": ["lap_falloff", "tire_temp"], "complaint_patterns": ["falls off", "burns RF"]},
-  {"archetype_id": "qualifying_speed_package", "name": "Qualifying speed package", "applies_to": ["all"], "why_fast": "Optimizes short-run speed and low-lap tire state.", "common_risks": ["long_run_falloff", "platform_contact"], "compensators": ["one-lap validation", "scrape check"], "watch_evidence": ["short_run_delta", "speed_trace"], "complaint_patterns": ["draggy"]},
-  {"archetype_id": "pack_stability_package", "name": "Pack stability package", "applies_to": ["all"], "why_fast": "Keeps the car predictable in traffic and turbulent platform states.", "common_risks": ["tight_center", "low_straight_speed"], "compensators": ["platform support", "shock tuning"], "watch_evidence": ["correction_count", "platform"], "complaint_patterns": ["pack unstable"]},
-  {"archetype_id": "bumpy_track_compliance_package", "name": "Bumpy track compliance package", "applies_to": ["all"], "why_fast": "Lets the car absorb track impacts without losing the platform window.", "common_risks": ["platform_feed_issue", "shock_overactive"], "compensators": ["HS shock tuning", "spring support"], "watch_evidence": ["bump_trace", "shock_histogram"], "complaint_patterns": ["shock too busy"]},
-  {"archetype_id": "shock_controlled_platform_package", "name": "Shock-controlled platform package", "applies_to": ["all"], "why_fast": "Uses dampers to shape transient platform behavior after the static package is close.", "common_risks": ["over-controlled transition"], "compensators": ["selected-zone evidence"], "watch_evidence": ["shock_histogram", "driver_inputs"], "complaint_patterns": ["snaps loose"]},
-  {"archetype_id": "spring_controlled_platform_package", "name": "Spring-controlled platform package", "applies_to": ["all"], "why_fast": "Uses spring support as the primary platform structure.", "common_risks": ["tire_overwork", "tight_center"], "compensators": ["ARB trim", "pressure trim"], "watch_evidence": ["ride_height", "tire_trend"], "complaint_patterns": ["front feed unstable"]},
-  {"archetype_id": "arb_led_package", "name": "ARB-led package", "applies_to": ["all"], "why_fast": "Uses bar diameter and arm position as the main roll balance architecture.", "common_risks": ["high coupling", "phase tradeoff"], "compensators": ["pressure and shock trim"], "watch_evidence": ["setup_snapshot", "center_speed", "exit_yaw"], "complaint_patterns": ["tight center", "loose off"]}
+  {
+    "archetype_id": "low_platform_speed_package",
+    "name": "Low platform speed package",
+    "applies_to": [
+      "all"
+    ],
+    "why_fast": "Keeps the car in a low, efficient platform window when the track and setup support it.",
+    "common_risks": [
+      "front_platform_contact",
+      "rear_scrape"
+    ],
+    "compensators": [
+      "platform support",
+      "shock control"
+    ],
+    "watch_evidence": [
+      "speed_trace",
+      "scrape",
+      "ride_height"
+    ],
+    "complaint_patterns": [
+      "bottoming",
+      "splitter hitting"
+    ],
+    "diagnostic_questions": [
+      "Is the complaint consistent with the low platform speed package pattern?"
+    ],
+    "likely_driver_complaints": [
+      "bottoming",
+      "splitter hitting"
+    ],
+    "stabilizers": [
+      "platform support",
+      "shock control"
+    ],
+    "failure_modes": [
+      "front_platform_contact",
+      "rear_scrape"
+    ],
+    "recommended_evidence_order": [
+      "speed_trace",
+      "scrape",
+      "ride_height"
+    ],
+    "what_it_looks_like": "Keeps the car in a low, efficient platform window when the track and setup support it.",
+    "setup_areas_commonly_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ],
+    "driver_facing_explanation": "Keeps the car in a low, efficient platform window when the track and setup support it."
+  },
+  {
+    "archetype_id": "front_feed_diffuser_package",
+    "name": "Front feed diffuser package",
+    "applies_to": [
+      "next_gen"
+    ],
+    "why_fast": "Uses front platform consistency to support derived diffuser feed behavior.",
+    "common_risks": [
+      "front_feed_instability",
+      "diffuser_instability"
+    ],
+    "compensators": [
+      "front support",
+      "selected-zone shock control"
+    ],
+    "watch_evidence": [
+      "front_platform",
+      "diffuser_proxy",
+      "speed_loss"
+    ],
+    "complaint_patterns": [
+      "pack unstable"
+    ],
+    "diagnostic_questions": [
+      "Is the complaint consistent with the front feed diffuser package pattern?"
+    ],
+    "likely_driver_complaints": [
+      "pack unstable"
+    ],
+    "stabilizers": [
+      "front support",
+      "selected-zone shock control"
+    ],
+    "failure_modes": [
+      "front_feed_instability",
+      "diffuser_instability"
+    ],
+    "recommended_evidence_order": [
+      "front_platform",
+      "diffuser_proxy",
+      "speed_loss"
+    ],
+    "what_it_looks_like": "Uses front platform consistency to support derived diffuser feed behavior.",
+    "setup_areas_commonly_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ],
+    "driver_facing_explanation": "Uses front platform consistency to support derived diffuser feed behavior."
+  },
+  {
+    "archetype_id": "high_front_low_rear_diffuser_feed_package",
+    "name": "High-front low-rear feed package",
+    "applies_to": [
+      "next_gen"
+    ],
+    "why_fast": "Can keep front feed and rear outlet behavior in a useful relationship for a specific track state.",
+    "common_risks": [
+      "rear_scrape",
+      "diffuser_choke_or_stall"
+    ],
+    "compensators": [
+      "rear support",
+      "scrape margin"
+    ],
+    "watch_evidence": [
+      "front_height",
+      "rear_height",
+      "diffuser_proxy"
+    ],
+    "complaint_patterns": [
+      "rear scrape",
+      "drags down straight"
+    ],
+    "diagnostic_questions": [
+      "Is the complaint consistent with the high-front low-rear feed package pattern?"
+    ],
+    "likely_driver_complaints": [
+      "rear scrape",
+      "drags down straight"
+    ],
+    "stabilizers": [
+      "rear support",
+      "scrape margin"
+    ],
+    "failure_modes": [
+      "rear_scrape",
+      "diffuser_choke_or_stall"
+    ],
+    "recommended_evidence_order": [
+      "front_height",
+      "rear_height",
+      "diffuser_proxy"
+    ],
+    "what_it_looks_like": "Can keep front feed and rear outlet behavior in a useful relationship for a specific track state.",
+    "setup_areas_commonly_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ],
+    "driver_facing_explanation": "Can keep front feed and rear outlet behavior in a useful relationship for a specific track state."
+  },
+  {
+    "archetype_id": "high_cross_stability_package",
+    "name": "High cross stability package",
+    "applies_to": [
+      "all"
+    ],
+    "why_fast": "Prioritizes rear security and driver confidence off the corner.",
+    "common_risks": [
+      "tight_center",
+      "drag_scrub"
+    ],
+    "compensators": [
+      "front compliance",
+      "rear ARB trim"
+    ],
+    "watch_evidence": [
+      "exit_yaw",
+      "center_speed",
+      "tire_trend"
+    ],
+    "complaint_patterns": [
+      "bound up",
+      "tight center"
+    ],
+    "diagnostic_questions": [
+      "Is the complaint consistent with the high cross stability package pattern?"
+    ],
+    "likely_driver_complaints": [
+      "bound up",
+      "tight center"
+    ],
+    "stabilizers": [
+      "front compliance",
+      "rear ARB trim"
+    ],
+    "failure_modes": [
+      "tight_center",
+      "drag_scrub"
+    ],
+    "recommended_evidence_order": [
+      "exit_yaw",
+      "center_speed",
+      "tire_trend"
+    ],
+    "what_it_looks_like": "Prioritizes rear security and driver confidence off the corner.",
+    "setup_areas_commonly_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ],
+    "driver_facing_explanation": "Prioritizes rear security and driver confidence off the corner."
+  },
+  {
+    "archetype_id": "free_center_rotation_package",
+    "name": "Free center rotation package",
+    "applies_to": [
+      "all"
+    ],
+    "why_fast": "Reduces steering demand and lets the car finish the corner.",
+    "common_risks": [
+      "loose_exit",
+      "tire_overwork"
+    ],
+    "compensators": [
+      "rear stability",
+      "pressure tuning"
+    ],
+    "watch_evidence": [
+      "center_speed",
+      "exit_yaw"
+    ],
+    "complaint_patterns": [
+      "loose off"
+    ],
+    "diagnostic_questions": [
+      "Is the complaint consistent with the free center rotation package pattern?"
+    ],
+    "likely_driver_complaints": [
+      "loose off"
+    ],
+    "stabilizers": [
+      "rear stability",
+      "pressure tuning"
+    ],
+    "failure_modes": [
+      "loose_exit",
+      "tire_overwork"
+    ],
+    "recommended_evidence_order": [
+      "center_speed",
+      "exit_yaw"
+    ],
+    "what_it_looks_like": "Reduces steering demand and lets the car finish the corner.",
+    "setup_areas_commonly_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ],
+    "driver_facing_explanation": "Reduces steering demand and lets the car finish the corner."
+  },
+  {
+    "archetype_id": "long_run_tire_protection_package",
+    "name": "Long-run tire protection package",
+    "applies_to": [
+      "all"
+    ],
+    "why_fast": "Trades a little peak feel for repeatable tire trend.",
+    "common_risks": [
+      "short_run_laziness",
+      "low_straight_speed"
+    ],
+    "compensators": [
+      "pressure trim",
+      "camber trim"
+    ],
+    "watch_evidence": [
+      "lap_falloff",
+      "tire_temp"
+    ],
+    "complaint_patterns": [
+      "falls off",
+      "burns RF"
+    ],
+    "diagnostic_questions": [
+      "Is the complaint consistent with the long-run tire protection package pattern?"
+    ],
+    "likely_driver_complaints": [
+      "falls off",
+      "burns RF"
+    ],
+    "stabilizers": [
+      "pressure trim",
+      "camber trim"
+    ],
+    "failure_modes": [
+      "short_run_laziness",
+      "low_straight_speed"
+    ],
+    "recommended_evidence_order": [
+      "lap_falloff",
+      "tire_temp"
+    ],
+    "what_it_looks_like": "Trades a little peak feel for repeatable tire trend.",
+    "setup_areas_commonly_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ],
+    "driver_facing_explanation": "Trades a little peak feel for repeatable tire trend."
+  },
+  {
+    "archetype_id": "qualifying_speed_package",
+    "name": "Qualifying speed package",
+    "applies_to": [
+      "all"
+    ],
+    "why_fast": "Optimizes short-run speed and low-lap tire state.",
+    "common_risks": [
+      "long_run_falloff",
+      "platform_contact"
+    ],
+    "compensators": [
+      "one-lap validation",
+      "scrape check"
+    ],
+    "watch_evidence": [
+      "short_run_delta",
+      "speed_trace"
+    ],
+    "complaint_patterns": [
+      "draggy"
+    ],
+    "diagnostic_questions": [
+      "Is the complaint consistent with the qualifying speed package pattern?"
+    ],
+    "likely_driver_complaints": [
+      "draggy"
+    ],
+    "stabilizers": [
+      "one-lap validation",
+      "scrape check"
+    ],
+    "failure_modes": [
+      "long_run_falloff",
+      "platform_contact"
+    ],
+    "recommended_evidence_order": [
+      "short_run_delta",
+      "speed_trace"
+    ],
+    "what_it_looks_like": "Optimizes short-run speed and low-lap tire state.",
+    "setup_areas_commonly_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ],
+    "driver_facing_explanation": "Optimizes short-run speed and low-lap tire state."
+  },
+  {
+    "archetype_id": "pack_stability_package",
+    "name": "Pack stability package",
+    "applies_to": [
+      "all"
+    ],
+    "why_fast": "Keeps the car predictable in traffic and turbulent platform states.",
+    "common_risks": [
+      "tight_center",
+      "low_straight_speed"
+    ],
+    "compensators": [
+      "platform support",
+      "shock tuning"
+    ],
+    "watch_evidence": [
+      "correction_count",
+      "platform"
+    ],
+    "complaint_patterns": [
+      "pack unstable"
+    ],
+    "diagnostic_questions": [
+      "Is the complaint consistent with the pack stability package pattern?"
+    ],
+    "likely_driver_complaints": [
+      "pack unstable"
+    ],
+    "stabilizers": [
+      "platform support",
+      "shock tuning"
+    ],
+    "failure_modes": [
+      "tight_center",
+      "low_straight_speed"
+    ],
+    "recommended_evidence_order": [
+      "correction_count",
+      "platform"
+    ],
+    "what_it_looks_like": "Keeps the car predictable in traffic and turbulent platform states.",
+    "setup_areas_commonly_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ],
+    "driver_facing_explanation": "Keeps the car predictable in traffic and turbulent platform states."
+  },
+  {
+    "archetype_id": "bumpy_track_compliance_package",
+    "name": "Bumpy track compliance package",
+    "applies_to": [
+      "all"
+    ],
+    "why_fast": "Lets the car absorb track impacts without losing the platform window.",
+    "common_risks": [
+      "platform_feed_issue",
+      "shock_overactive"
+    ],
+    "compensators": [
+      "HS shock tuning",
+      "spring support"
+    ],
+    "watch_evidence": [
+      "bump_trace",
+      "shock_histogram"
+    ],
+    "complaint_patterns": [
+      "shock too busy"
+    ],
+    "diagnostic_questions": [
+      "Is the complaint consistent with the bumpy track compliance package pattern?"
+    ],
+    "likely_driver_complaints": [
+      "shock too busy"
+    ],
+    "stabilizers": [
+      "HS shock tuning",
+      "spring support"
+    ],
+    "failure_modes": [
+      "platform_feed_issue",
+      "shock_overactive"
+    ],
+    "recommended_evidence_order": [
+      "bump_trace",
+      "shock_histogram"
+    ],
+    "what_it_looks_like": "Lets the car absorb track impacts without losing the platform window.",
+    "setup_areas_commonly_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ],
+    "driver_facing_explanation": "Lets the car absorb track impacts without losing the platform window."
+  },
+  {
+    "archetype_id": "shock_controlled_platform_package",
+    "name": "Shock-controlled platform package",
+    "applies_to": [
+      "all"
+    ],
+    "why_fast": "Uses dampers to shape transient platform behavior after the static package is close.",
+    "common_risks": [
+      "over-controlled transition"
+    ],
+    "compensators": [
+      "selected-zone evidence"
+    ],
+    "watch_evidence": [
+      "shock_histogram",
+      "driver_inputs"
+    ],
+    "complaint_patterns": [
+      "snaps loose"
+    ],
+    "diagnostic_questions": [
+      "Is the complaint consistent with the shock-controlled platform package pattern?"
+    ],
+    "likely_driver_complaints": [
+      "snaps loose"
+    ],
+    "stabilizers": [
+      "selected-zone evidence"
+    ],
+    "failure_modes": [
+      "over-controlled transition"
+    ],
+    "recommended_evidence_order": [
+      "shock_histogram",
+      "driver_inputs"
+    ],
+    "what_it_looks_like": "Uses dampers to shape transient platform behavior after the static package is close.",
+    "setup_areas_commonly_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ],
+    "driver_facing_explanation": "Uses dampers to shape transient platform behavior after the static package is close."
+  },
+  {
+    "archetype_id": "spring_controlled_platform_package",
+    "name": "Spring-controlled platform package",
+    "applies_to": [
+      "all"
+    ],
+    "why_fast": "Uses spring support as the primary platform structure.",
+    "common_risks": [
+      "tire_overwork",
+      "tight_center"
+    ],
+    "compensators": [
+      "ARB trim",
+      "pressure trim"
+    ],
+    "watch_evidence": [
+      "ride_height",
+      "tire_trend"
+    ],
+    "complaint_patterns": [
+      "front feed unstable"
+    ],
+    "diagnostic_questions": [
+      "Is the complaint consistent with the spring-controlled platform package pattern?"
+    ],
+    "likely_driver_complaints": [
+      "front feed unstable"
+    ],
+    "stabilizers": [
+      "ARB trim",
+      "pressure trim"
+    ],
+    "failure_modes": [
+      "tire_overwork",
+      "tight_center"
+    ],
+    "recommended_evidence_order": [
+      "ride_height",
+      "tire_trend"
+    ],
+    "what_it_looks_like": "Uses spring support as the primary platform structure.",
+    "setup_areas_commonly_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ],
+    "driver_facing_explanation": "Uses spring support as the primary platform structure."
+  },
+  {
+    "archetype_id": "arb_led_package",
+    "name": "ARB-led package",
+    "applies_to": [
+      "all"
+    ],
+    "why_fast": "Uses bar diameter and arm position as the main roll balance architecture.",
+    "common_risks": [
+      "high coupling",
+      "phase tradeoff"
+    ],
+    "compensators": [
+      "pressure and shock trim"
+    ],
+    "watch_evidence": [
+      "setup_snapshot",
+      "center_speed",
+      "exit_yaw"
+    ],
+    "complaint_patterns": [
+      "tight center",
+      "loose off"
+    ],
+    "diagnostic_questions": [
+      "Is the complaint consistent with the arb-led package pattern?"
+    ],
+    "likely_driver_complaints": [
+      "tight center",
+      "loose off"
+    ],
+    "stabilizers": [
+      "pressure and shock trim"
+    ],
+    "failure_modes": [
+      "high coupling",
+      "phase tradeoff"
+    ],
+    "recommended_evidence_order": [
+      "setup_snapshot",
+      "center_speed",
+      "exit_yaw"
+    ],
+    "what_it_looks_like": "Uses bar diameter and arm position as the main roll balance architecture.",
+    "setup_areas_commonly_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ],
+    "driver_facing_explanation": "Uses bar diameter and arm position as the main roll balance architecture."
+  }
 ]

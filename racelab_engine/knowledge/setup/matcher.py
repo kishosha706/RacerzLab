@@ -6,7 +6,15 @@ from .loader import SetupKnowledge, load_setup_knowledge
 from .schema import SetupEffect, SymptomVocabularyEntry
 
 
-RISK_WEIGHT = {"low": 0.3, "medium": 0.2, "medium/high": 0.1, "high": 0.0}
+RISK_WEIGHT = {"low": 0.35, "medium": 0.2, "high": 0.0}
+EVIDENCE_ALIASES = {
+    "platform_trace": {"platform", "front_platform", "rear_platform", "diffuser_proxy", "ride_height_trace"},
+    "platform": {"platform", "front_platform", "rear_platform", "diffuser_proxy"},
+    "tire_temps": {"tire_temp", "tire_trend", "tire_temps"},
+    "tires": {"tire_temp", "tire_trend", "tire_temps"},
+    "shocks": {"shock_histogram"},
+    "compare_baseline": {"lap_falloff", "speed_trace", "yaw"},
+}
 
 
 @dataclass(frozen=True)
@@ -15,15 +23,29 @@ class RankedSetupEffect:
     score: float
     evidence_matched: list[str]
     missing_evidence: list[str]
+    readiness: str
+    ranking_reasons: list[str]
+    evidence_missing: list[str]
+    one_change_test_plan: str
+    warning: str | None = None
 
 
 @dataclass(frozen=True)
 class SetupQueryResult:
     parsed_symptom: SymptomVocabularyEntry
+    parsed_phase: str
+    ambiguity: bool
     candidate_effects: list[RankedSetupEffect]
+    ranking_reasons: dict[str, list[str]]
+    evidence_missing: dict[str, list[str]]
+    disabled_by_car_capability: list[SetupEffect]
     disabled_effects_due_to_car: list[SetupEffect]
     disabled_setup_areas: list[str]
+    one_change_test_plan: list[str]
+    warnings: list[str]
     clarification_question: str | None
+    package_archetype: str | None = None
+    track_family: str | None = None
 
 
 def parse_symptom(raw_symptom: str, knowledge: SetupKnowledge) -> SymptomVocabularyEntry:
@@ -36,6 +58,30 @@ def parse_symptom(raw_symptom: str, knowledge: SetupKnowledge) -> SymptomVocabul
         phrase = entry.phrase.lower()
         if phrase in normalized or normalized in phrase:
             return entry
+    if "loose" in normalized or "free" in normalized:
+        if "off" in normalized or "throttle" in normalized:
+            target = "loose off"
+        elif "in" in normalized or "brake" in normalized:
+            target = "loose in"
+        elif "center" in normalized or "middle" in normalized or "rolling" in normalized:
+            target = "loose center"
+        else:
+            target = "loose"
+        return next(entry for entry in entries if entry.phrase == target)
+    if "tight" in normalized or "push" in normalized:
+        if "off" in normalized or "throttle" in normalized:
+            target = "tight off"
+        elif "in" in normalized or "apex" in normalized:
+            target = "tight in"
+        elif "center" in normalized or "middle" in normalized or "rolling" in normalized:
+            target = "tight center"
+        else:
+            target = "tight"
+        return next(entry for entry in entries if entry.phrase == target)
+    if any(term in normalized for term in ["straight", "draggy", "pulls slow"]):
+        return next(entry for entry in entries if entry.phrase == "draggy")
+    if any(term in normalized for term in ["bottoming", "scrape", "hitting"]):
+        return next(entry for entry in entries if entry.phrase == "scrapes")
     raise ValueError(f"No setup symptom vocabulary match for: {raw_symptom!r}")
 
 
@@ -45,28 +91,105 @@ def _applies_to_car(effect: SetupEffect, car_family: str, disabled_areas: set[st
     return "all" in effect.applies_to or car_family in effect.applies_to
 
 
+def _expand_evidence(evidence: list[str] | None) -> set[str]:
+    expanded: set[str] = set()
+    for item in evidence or []:
+        normalized = item.strip()
+        if not normalized:
+            continue
+        expanded.add(normalized)
+        expanded.update(EVIDENCE_ALIASES.get(normalized, set()))
+    return expanded
+
+
+def _readiness(required: list[str], matched: list[str]) -> str:
+    if not required:
+        return "ready"
+    if len(matched) == len(required):
+        return "ready"
+    if matched:
+        return "partially_ready"
+    return "missing_key_evidence"
+
+
+def _format_reason(template: str, *, parsed: SymptomVocabularyEntry, phase: str, effect: SetupEffect, readiness: str, package_archetype: str | None) -> str:
+    return (
+        f"Matches {parsed.canonical_symptom} in {phase}; "
+        f"strength {effect.effect_strength}, risk {effect.coupling_risk}, evidence {readiness}"
+    )
+
+
+def _one_change_test(effect: SetupEffect) -> str:
+    validate = ", ".join(effect.validation_targets)
+    watch = ", ".join(effect.watch_for_targets) if effect.watch_for_targets else "phase balance"
+    if effect.exact_value_policy == "reference_only":
+        return (
+            f"This is a package-level lever. Test only one package change: {effect.direction}. "
+            f"Effect: {effect.effect} Counter-effect: {effect.counter_effect} "
+            f"Watch: {watch}. Validate: {validate}."
+        )
+    return (
+        f"Try one small swing: {effect.direction}. Effect: {effect.effect} "
+        f"Counter-effect: {effect.counter_effect} Watch: {watch}. Validate: {validate}."
+    )
+
+
 def _score_effect(
     effect: SetupEffect,
     parsed: SymptomVocabularyEntry,
     phase: str | None,
     evidence: set[str],
-) -> tuple[float, list[str], list[str]]:
+    package_archetype: str | None,
+    track_family: str | None,
+) -> tuple[float, list[str], list[str], str, list[str], list[str]]:
     score = float(effect.effect_strength)
+    reasons: list[str] = []
+    warnings: list[str] = []
     if parsed.canonical_symptom in effect.helps:
         score += 8.0
+        reasons.append(f"direct symptom match: {parsed.canonical_symptom}")
     if any(item in effect.helps for item in parsed.possible_secondary):
         score += 1.5
-    if parsed.phase in effect.driver_phrase or parsed.phase in effect.validation_targets:
+        reasons.append("matches secondary symptom context")
+    active_phase = phase or parsed.phase
+    if active_phase in effect.driver_phrase or active_phase in effect.helps_phases:
         score += 1.0
-    if phase and phase in effect.driver_phrase:
-        score += 1.0
+        reasons.append(f"phase match: {active_phase}")
     if parsed.canonical_symptom in effect.can_hurt:
         score -= 6.0
+        warnings.append(f"avoid conflict: can hurt {parsed.canonical_symptom}")
+    if active_phase in effect.can_hurt_phases and parsed.canonical_symptom not in effect.helps:
+        score -= 0.5
+    if package_archetype:
+        if package_archetype in effect.setup_package_tags:
+            score += 1.2
+            reasons.append(f"package match: {package_archetype}")
+        else:
+            score -= 0.3
+    if track_family:
+        if track_family in effect.track_family_tags:
+            score += 0.6
+            reasons.append(f"track-family match: {track_family}")
+        elif effect.track_family_tags:
+            score -= 0.2
     score += RISK_WEIGHT.get(effect.coupling_risk, 0.0)
     matched = sorted(set(effect.evidence_required) & evidence)
     missing = [item for item in effect.evidence_required if item not in evidence]
-    score += min(len(matched), 3) * 0.2
-    return score, matched, missing
+    readiness = _readiness(effect.evidence_required, matched)
+    if readiness == "ready":
+        score += 1.0
+        reasons.append("evidence ready")
+    elif readiness == "partially_ready":
+        score += 0.25
+        score -= min(len(missing), 3) * 0.15
+        reasons.append("partially ready evidence")
+    else:
+        score -= 0.9
+        warnings.append(effect.evidence_missing_message)
+        reasons.append("missing key evidence")
+    if any(condition in parsed.canonical_symptom for condition in effect.avoid_when):
+        score -= 1.0
+    return score, matched, missing, readiness, reasons, warnings
 
 
 def query_setup_knowledge(
@@ -74,6 +197,8 @@ def query_setup_knowledge(
     car_family: str,
     symptom: str,
     phase: str | None = None,
+    track_family: str | None = None,
+    package_archetype: str | None = None,
     evidence: list[str] | None = None,
     limit: int = 5,
     knowledge: SetupKnowledge | None = None,
@@ -82,8 +207,11 @@ def query_setup_knowledge(
     capabilities = knowledge.car_capability_by_family.get(car_family)
     if capabilities is None:
         raise ValueError(f"Unknown car family: {car_family}")
+    if package_archetype and package_archetype not in {item.archetype_id for item in knowledge.package_archetypes}:
+        raise ValueError(f"Unknown package archetype: {package_archetype}")
     parsed = parse_symptom(symptom, knowledge)
-    evidence_set = {item.strip() for item in evidence or [] if item.strip()}
+    parsed_phase = phase or parsed.phase
+    evidence_set = _expand_evidence(evidence)
     disabled_areas = set(capabilities.disabled_setup_areas)
 
     ranked: list[RankedSetupEffect] = []
@@ -93,15 +221,94 @@ def query_setup_knowledge(
             if effect.setup_area in disabled_areas or car_family in effect.disabled_for:
                 disabled.append(effect)
             continue
-        score, matched, missing = _score_effect(effect, parsed, phase, evidence_set)
+        score, matched, missing, readiness, reasons, warnings = _score_effect(
+            effect,
+            parsed,
+            phase,
+            evidence_set,
+            package_archetype,
+            track_family,
+        )
         if score >= 4.0:
-            ranked.append(RankedSetupEffect(effect, score, matched, missing))
+            ranked.append(
+                RankedSetupEffect(
+                    effect=effect,
+                    score=score,
+                    evidence_matched=matched,
+                    missing_evidence=missing,
+                    readiness=readiness,
+                    ranking_reasons=[
+                        _format_reason(
+                            effect.why_ranked_template,
+                            parsed=parsed,
+                            phase=parsed_phase,
+                            effect=effect,
+                            readiness=readiness,
+                            package_archetype=package_archetype,
+                        ),
+                        *reasons,
+                    ],
+                    evidence_missing=[effect.evidence_missing_message] if readiness == "missing_key_evidence" else [f"Missing evidence: {item}" for item in missing],
+                    one_change_test_plan=_one_change_test(effect),
+                    warning="; ".join(warnings) if warnings else None,
+                )
+            )
 
     ranked.sort(key=lambda item: (-item.score, -item.effect.effect_strength, item.effect.coupling_risk, item.effect.effect_id))
+    candidates = ranked[:limit]
+    ambiguity = parsed.clarification_question is not None
     return SetupQueryResult(
         parsed_symptom=parsed,
-        candidate_effects=ranked[:limit],
+        parsed_phase=parsed_phase,
+        ambiguity=ambiguity,
+        candidate_effects=candidates,
+        ranking_reasons={item.effect.effect_id: item.ranking_reasons for item in candidates},
+        evidence_missing={item.effect.effect_id: item.evidence_missing for item in candidates if item.missing_evidence},
+        disabled_by_car_capability=disabled,
         disabled_effects_due_to_car=disabled,
         disabled_setup_areas=capabilities.disabled_setup_areas,
+        one_change_test_plan=[item.one_change_test_plan for item in candidates],
+        warnings=[item.warning for item in candidates if item.warning],
         clarification_question=parsed.clarification_question,
+        package_archetype=package_archetype,
+        track_family=track_family,
     )
+
+
+def query_result_to_dict(result: SetupQueryResult) -> dict:
+    return {
+        "parsed_symptom": result.parsed_symptom.model_dump(),
+        "parsed_phase": result.parsed_phase,
+        "confidence": result.parsed_symptom.confidence_prior,
+        "ambiguity": result.ambiguity,
+        "clarification_question": result.clarification_question,
+        "package_archetype": result.package_archetype,
+        "track_family": result.track_family,
+        "candidates": [
+        {
+            "effect_id": item.effect.effect_id,
+            "setup_area": item.effect.setup_area,
+            "direction": item.effect.direction,
+            "strength": item.effect.effect_strength,
+            "risk": item.effect.coupling_risk,
+            "readiness": item.readiness,
+            "score": round(item.score, 3),
+            "effect": item.effect.effect,
+            "counter_effect": item.effect.counter_effect,
+            "why_ranked": item.ranking_reasons,
+            "evidence_present": item.evidence_matched,
+            "evidence_missing": item.missing_evidence,
+            "one_change_test": item.one_change_test_plan,
+            "validate_with": item.effect.validation_targets,
+            "watch_for": item.effect.watch_for_targets,
+            "avoid_when": item.effect.avoid_when,
+        }
+        for item in result.candidate_effects
+        ],
+        "disabled_by_capability": [
+            {"effect_id": effect.effect_id, "setup_area": effect.setup_area, "direction": effect.direction}
+            for effect in result.disabled_by_car_capability
+        ],
+        "disabled_setup_areas": result.disabled_setup_areas,
+        "warnings": result.warnings,
+    }

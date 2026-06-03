@@ -1,8 +1,327 @@
 [
-  {"requirement_id": "loose_exit_cross", "symptom": "loose_exit", "setup_area": "cross_weight", "required_evidence": ["phase", "yaw", "throttle", "setup_snapshot"], "optional_evidence": ["tire_trend"], "insufficient_wording": "Need exit-phase yaw/throttle and setup snapshot before judging cross."},
-  {"requirement_id": "loose_exit_rear_platform", "symptom": "loose_exit", "setup_area": "rear_ride_height_platform", "required_evidence": ["rear_platform", "throttle", "yaw"], "optional_evidence": ["diffuser_proxy", "scrape"], "insufficient_wording": "Need rear platform and throttle-on yaw context before changing rear support."},
-  {"requirement_id": "tight_center_cross", "symptom": "tight_center", "setup_area": "cross_weight", "required_evidence": ["phase", "yaw", "setup_snapshot"], "optional_evidence": ["tire_trend"], "insufficient_wording": "Need center-phase evidence before reducing cross."},
-  {"requirement_id": "low_speed_toe", "symptom": "low_straight_speed", "setup_area": "toe", "required_evidence": ["setup_snapshot", "speed_trace"], "optional_evidence": ["steering"], "insufficient_wording": "Need setup and speed trace before calling it scrub."},
-  {"requirement_id": "front_contact_support", "symptom": "front_platform_contact", "setup_area": "front_ride_height_platform", "required_evidence": ["front_platform", "scrape"], "optional_evidence": ["speed_trace"], "insufficient_wording": "Need front platform/contact evidence before adding support."},
-  {"requirement_id": "shock_transition", "symptom": "shock_overactive", "setup_area": "ls_rebound", "required_evidence": ["shock_histogram", "driver_inputs"], "optional_evidence": ["selected_zone"], "insufficient_wording": "Need selected-zone shock evidence before using shock trim."}
+  {
+    "requirement_id": "loose_exit_cross",
+    "symptom": "loose_exit",
+    "setup_area": "cross_weight",
+    "required_evidence": [
+      "phase",
+      "yaw",
+      "throttle",
+      "setup_snapshot"
+    ],
+    "optional_evidence": [
+      "tire_trend"
+    ],
+    "insufficient_wording": "Need exit-phase yaw/throttle and setup snapshot before judging cross.",
+    "evidence_groups": [
+      {
+        "group_id": "phase",
+        "label": "Phase",
+        "required": true,
+        "channels_or_context": [
+          "phase"
+        ],
+        "missing_message": "Missing key evidence: phase.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "yaw",
+        "label": "Yaw",
+        "required": true,
+        "channels_or_context": [
+          "yaw"
+        ],
+        "missing_message": "Missing key evidence: yaw.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "throttle",
+        "label": "Throttle",
+        "required": true,
+        "channels_or_context": [
+          "throttle"
+        ],
+        "missing_message": "Missing key evidence: throttle.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "setup_snapshot",
+        "label": "Setup Snapshot",
+        "required": true,
+        "channels_or_context": [
+          "setup_snapshot"
+        ],
+        "missing_message": "Missing key evidence: setup_snapshot.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "tire_trend",
+        "label": "Tire Trend",
+        "required": false,
+        "channels_or_context": [
+          "tire_trend"
+        ],
+        "missing_message": "Optional evidence not present: tire_trend.",
+        "confidence_boost": 0.15
+      }
+    ]
+  },
+  {
+    "requirement_id": "loose_exit_rear_platform",
+    "symptom": "loose_exit",
+    "setup_area": "rear_ride_height_platform",
+    "required_evidence": [
+      "rear_platform",
+      "throttle",
+      "yaw"
+    ],
+    "optional_evidence": [
+      "diffuser_proxy",
+      "scrape"
+    ],
+    "insufficient_wording": "Need rear platform and throttle-on yaw context before changing rear support.",
+    "evidence_groups": [
+      {
+        "group_id": "rear_platform",
+        "label": "Rear Platform",
+        "required": true,
+        "channels_or_context": [
+          "rear_platform"
+        ],
+        "missing_message": "Missing key evidence: rear_platform.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "throttle",
+        "label": "Throttle",
+        "required": true,
+        "channels_or_context": [
+          "throttle"
+        ],
+        "missing_message": "Missing key evidence: throttle.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "yaw",
+        "label": "Yaw",
+        "required": true,
+        "channels_or_context": [
+          "yaw"
+        ],
+        "missing_message": "Missing key evidence: yaw.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "diffuser_proxy",
+        "label": "Diffuser Proxy",
+        "required": false,
+        "channels_or_context": [
+          "diffuser_proxy"
+        ],
+        "missing_message": "Optional evidence not present: diffuser_proxy.",
+        "confidence_boost": 0.15
+      },
+      {
+        "group_id": "scrape",
+        "label": "Scrape",
+        "required": false,
+        "channels_or_context": [
+          "scrape"
+        ],
+        "missing_message": "Optional evidence not present: scrape.",
+        "confidence_boost": 0.15
+      }
+    ]
+  },
+  {
+    "requirement_id": "tight_center_cross",
+    "symptom": "tight_center",
+    "setup_area": "cross_weight",
+    "required_evidence": [
+      "phase",
+      "yaw",
+      "setup_snapshot"
+    ],
+    "optional_evidence": [
+      "tire_trend"
+    ],
+    "insufficient_wording": "Need center-phase evidence before reducing cross.",
+    "evidence_groups": [
+      {
+        "group_id": "phase",
+        "label": "Phase",
+        "required": true,
+        "channels_or_context": [
+          "phase"
+        ],
+        "missing_message": "Missing key evidence: phase.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "yaw",
+        "label": "Yaw",
+        "required": true,
+        "channels_or_context": [
+          "yaw"
+        ],
+        "missing_message": "Missing key evidence: yaw.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "setup_snapshot",
+        "label": "Setup Snapshot",
+        "required": true,
+        "channels_or_context": [
+          "setup_snapshot"
+        ],
+        "missing_message": "Missing key evidence: setup_snapshot.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "tire_trend",
+        "label": "Tire Trend",
+        "required": false,
+        "channels_or_context": [
+          "tire_trend"
+        ],
+        "missing_message": "Optional evidence not present: tire_trend.",
+        "confidence_boost": 0.15
+      }
+    ]
+  },
+  {
+    "requirement_id": "low_speed_toe",
+    "symptom": "low_straight_speed",
+    "setup_area": "toe",
+    "required_evidence": [
+      "setup_snapshot",
+      "speed_trace"
+    ],
+    "optional_evidence": [
+      "steering"
+    ],
+    "insufficient_wording": "Need setup and speed trace before calling it scrub.",
+    "evidence_groups": [
+      {
+        "group_id": "setup_snapshot",
+        "label": "Setup Snapshot",
+        "required": true,
+        "channels_or_context": [
+          "setup_snapshot"
+        ],
+        "missing_message": "Missing key evidence: setup_snapshot.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "speed_trace",
+        "label": "Speed Trace",
+        "required": true,
+        "channels_or_context": [
+          "speed_trace"
+        ],
+        "missing_message": "Missing key evidence: speed_trace.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "steering",
+        "label": "Steering",
+        "required": false,
+        "channels_or_context": [
+          "steering"
+        ],
+        "missing_message": "Optional evidence not present: steering.",
+        "confidence_boost": 0.15
+      }
+    ]
+  },
+  {
+    "requirement_id": "front_contact_support",
+    "symptom": "front_platform_contact",
+    "setup_area": "front_ride_height_platform",
+    "required_evidence": [
+      "front_platform",
+      "scrape"
+    ],
+    "optional_evidence": [
+      "speed_trace"
+    ],
+    "insufficient_wording": "Need front platform/contact evidence before adding support.",
+    "evidence_groups": [
+      {
+        "group_id": "front_platform",
+        "label": "Front Platform",
+        "required": true,
+        "channels_or_context": [
+          "front_platform"
+        ],
+        "missing_message": "Missing key evidence: front_platform.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "scrape",
+        "label": "Scrape",
+        "required": true,
+        "channels_or_context": [
+          "scrape"
+        ],
+        "missing_message": "Missing key evidence: scrape.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "speed_trace",
+        "label": "Speed Trace",
+        "required": false,
+        "channels_or_context": [
+          "speed_trace"
+        ],
+        "missing_message": "Optional evidence not present: speed_trace.",
+        "confidence_boost": 0.15
+      }
+    ]
+  },
+  {
+    "requirement_id": "shock_transition",
+    "symptom": "shock_overactive",
+    "setup_area": "ls_rebound",
+    "required_evidence": [
+      "shock_histogram",
+      "driver_inputs"
+    ],
+    "optional_evidence": [
+      "selected_zone"
+    ],
+    "insufficient_wording": "Need selected-zone shock evidence before using shock trim.",
+    "evidence_groups": [
+      {
+        "group_id": "shock_histogram",
+        "label": "Shock Histogram",
+        "required": true,
+        "channels_or_context": [
+          "shock_histogram"
+        ],
+        "missing_message": "Missing key evidence: shock_histogram.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "driver_inputs",
+        "label": "Driver Inputs",
+        "required": true,
+        "channels_or_context": [
+          "driver_inputs"
+        ],
+        "missing_message": "Missing key evidence: driver_inputs.",
+        "confidence_boost": 0.35
+      },
+      {
+        "group_id": "selected_zone",
+        "label": "Selected Zone",
+        "required": false,
+        "channels_or_context": [
+          "selected_zone"
+        ],
+        "missing_message": "Optional evidence not present: selected_zone.",
+        "confidence_boost": 0.15
+      }
+    ]
+  }
 ]

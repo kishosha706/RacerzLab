@@ -1,37 +1,1239 @@
 [
-  {"phrase": "tight", "canonical_symptom": "tight_center", "phase": "center", "balance": "understeer", "confidence_prior": 0.55, "possible_secondary": ["tight_entry", "tight_exit"], "clarification_question": "Is it tight on entry, center, or throttle-off exit?"},
-  {"phrase": "push", "canonical_symptom": "tight_center", "phase": "center", "balance": "understeer", "confidence_prior": 0.6, "possible_secondary": ["tight_entry", "tight_exit"], "clarification_question": "Where does the push first show up?"},
-  {"phrase": "plowing", "canonical_symptom": "tight_center", "phase": "center", "balance": "understeer", "confidence_prior": 0.7, "possible_secondary": ["front_feed_instability"], "clarification_question": null},
-  {"phrase": "bound up", "canonical_symptom": "tight_center", "phase": "center", "balance": "understeer", "confidence_prior": 0.7, "possible_secondary": ["drag_scrub", "tire_overwork"], "clarification_question": null},
-  {"phrase": "washed up track", "canonical_symptom": "tight_exit", "phase": "exit", "balance": "understeer", "confidence_prior": 0.7, "possible_secondary": ["drag_scrub"], "clarification_question": null},
-  {"phrase": "lazy", "canonical_symptom": "tight_entry", "phase": "turn_in", "balance": "understeer", "confidence_prior": 0.55, "possible_secondary": ["low_straight_speed"], "clarification_question": "Lazy to point, lazy to accelerate, or both?"},
-  {"phrase": "won't rotate", "canonical_symptom": "tight_center", "phase": "center", "balance": "understeer", "confidence_prior": 0.75, "possible_secondary": ["drag_scrub"], "clarification_question": null},
-  {"phrase": "won't point", "canonical_symptom": "tight_entry", "phase": "turn_in", "balance": "understeer", "confidence_prior": 0.75, "possible_secondary": ["front_feed_instability"], "clarification_question": null},
-  {"phrase": "tight in", "canonical_symptom": "tight_entry", "phase": "entry", "balance": "understeer", "confidence_prior": 0.85, "possible_secondary": ["front_feed_instability"], "clarification_question": null},
-  {"phrase": "tight center", "canonical_symptom": "tight_center", "phase": "center", "balance": "understeer", "confidence_prior": 0.9, "possible_secondary": ["drag_scrub"], "clarification_question": null},
-  {"phrase": "tight off", "canonical_symptom": "tight_exit", "phase": "exit", "balance": "understeer", "confidence_prior": 0.9, "possible_secondary": ["poor_drive_off"], "clarification_question": null},
-  {"phrase": "free", "canonical_symptom": "loose_center", "phase": "center", "balance": "oversteer", "confidence_prior": 0.55, "possible_secondary": ["loose_entry", "loose_exit"], "clarification_question": "Is it free into the corner, in the center, or on throttle?"},
-  {"phrase": "loose", "canonical_symptom": "loose_center", "phase": "center", "balance": "oversteer", "confidence_prior": 0.55, "possible_secondary": ["loose_entry", "loose_exit"], "clarification_question": "Where does the rear first step out?"},
-  {"phrase": "loose in", "canonical_symptom": "loose_entry", "phase": "entry", "balance": "oversteer", "confidence_prior": 0.9, "possible_secondary": ["brake_entry_instability"], "clarification_question": null},
-  {"phrase": "loose center", "canonical_symptom": "loose_center", "phase": "center", "balance": "oversteer", "confidence_prior": 0.9, "possible_secondary": ["unstable_entry"], "clarification_question": null},
-  {"phrase": "loose off", "canonical_symptom": "loose_exit", "phase": "exit", "balance": "oversteer", "confidence_prior": 0.92, "possible_secondary": ["poor_drive_off", "unstable_exit"], "clarification_question": null},
-  {"phrase": "snaps loose", "canonical_symptom": "unstable_exit", "phase": "transition", "balance": "oversteer", "confidence_prior": 0.85, "possible_secondary": ["shock_overactive", "loose_exit"], "clarification_question": null},
-  {"phrase": "rear stepping out", "canonical_symptom": "loose_exit", "phase": "exit", "balance": "oversteer", "confidence_prior": 0.85, "possible_secondary": ["unstable_exit"], "clarification_question": null},
-  {"phrase": "skating", "canonical_symptom": "loose_center", "phase": "center", "balance": "oversteer", "confidence_prior": 0.7, "possible_secondary": ["tire_overwork"], "clarification_question": null},
-  {"phrase": "burns RF", "canonical_symptom": "tire_overwork", "phase": "long_run", "balance": "tire", "confidence_prior": 0.85, "possible_secondary": ["tight_center", "long_run_falloff"], "clarification_question": null},
-  {"phrase": "falls off", "canonical_symptom": "long_run_falloff", "phase": "long_run", "balance": "run_trend", "confidence_prior": 0.85, "possible_secondary": ["tire_overwork"], "clarification_question": null},
-  {"phrase": "lacks drive", "canonical_symptom": "poor_drive_off", "phase": "exit", "balance": "traction", "confidence_prior": 0.8, "possible_secondary": ["loose_exit", "tight_exit"], "clarification_question": null},
-  {"phrase": "drags down straight", "canonical_symptom": "low_straight_speed", "phase": "straight", "balance": "speed", "confidence_prior": 0.8, "possible_secondary": ["drag_scrub"], "clarification_question": null},
-  {"phrase": "draggy", "canonical_symptom": "low_straight_speed", "phase": "straight", "balance": "speed", "confidence_prior": 0.8, "possible_secondary": ["drag_scrub"], "clarification_question": null},
-  {"phrase": "bottoming", "canonical_symptom": "front_platform_contact", "phase": "straight", "balance": "platform", "confidence_prior": 0.75, "possible_secondary": ["diffuser_choke_or_stall"], "clarification_question": null},
-  {"phrase": "splitter hitting", "canonical_symptom": "front_platform_contact", "phase": "straight", "balance": "platform", "confidence_prior": 0.85, "possible_secondary": ["front_feed_instability"], "clarification_question": null},
-  {"phrase": "rear scrape", "canonical_symptom": "rear_scrape", "phase": "straight", "balance": "platform", "confidence_prior": 0.85, "possible_secondary": ["diffuser_choke_or_stall"], "clarification_question": null},
-  {"phrase": "pack unstable", "canonical_symptom": "platform_feed_issue", "phase": "transition", "balance": "platform", "confidence_prior": 0.75, "possible_secondary": ["diffuser_instability", "front_feed_instability"], "clarification_question": null},
-  {"phrase": "unstable in", "canonical_symptom": "unstable_entry", "phase": "entry", "balance": "stability", "confidence_prior": 0.8, "possible_secondary": ["loose_entry", "brake_entry_instability"], "clarification_question": null},
-  {"phrase": "scrubbing speed", "canonical_symptom": "drag_scrub", "phase": "straight", "balance": "speed", "confidence_prior": 0.75, "possible_secondary": ["low_straight_speed", "tight_center"], "clarification_question": null},
-  {"phrase": "diffuser unstable", "canonical_symptom": "diffuser_instability", "phase": "transition", "balance": "platform", "confidence_prior": 0.7, "possible_secondary": ["platform_feed_issue"], "clarification_question": null},
-  {"phrase": "shock too busy", "canonical_symptom": "shock_overactive", "phase": "transition", "balance": "shock", "confidence_prior": 0.7, "possible_secondary": ["platform_feed_issue"], "clarification_question": null},
-  {"phrase": "loose under brake", "canonical_symptom": "brake_entry_instability", "phase": "braking", "balance": "brake", "confidence_prior": 0.85, "possible_secondary": ["loose_entry"], "clarification_question": null},
-  {"phrase": "diffuser choked", "canonical_symptom": "diffuser_choke_or_stall", "phase": "straight", "balance": "platform", "confidence_prior": 0.7, "possible_secondary": ["rear_scrape", "front_platform_contact"], "clarification_question": null},
-  {"phrase": "front feed unstable", "canonical_symptom": "front_feed_instability", "phase": "entry", "balance": "platform", "confidence_prior": 0.7, "possible_secondary": ["front_platform_contact"], "clarification_question": null}
+  {
+    "phrase": "tight",
+    "canonical_symptom": "tight_center",
+    "phase": "center",
+    "balance": "understeer",
+    "confidence_prior": 0.55,
+    "possible_secondary": [
+      "tight_entry",
+      "tight_exit"
+    ],
+    "clarification_question": "Is it tight on entry, center, or throttle-off exit?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "center"
+    ],
+    "clarification_options": [
+      "entry",
+      "center",
+      "exit"
+    ],
+    "common_secondary_symptoms": [
+      "tight_entry",
+      "tight_exit"
+    ]
+  },
+  {
+    "phrase": "push",
+    "canonical_symptom": "tight_center",
+    "phase": "center",
+    "balance": "understeer",
+    "confidence_prior": 0.6,
+    "possible_secondary": [
+      "tight_entry",
+      "tight_exit"
+    ],
+    "clarification_question": "Where does the push first show up?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "center"
+    ],
+    "clarification_options": [
+      "entry",
+      "center",
+      "exit"
+    ],
+    "common_secondary_symptoms": [
+      "tight_entry",
+      "tight_exit"
+    ]
+  },
+  {
+    "phrase": "plowing",
+    "canonical_symptom": "tight_center",
+    "phase": "center",
+    "balance": "understeer",
+    "confidence_prior": 0.7,
+    "possible_secondary": [
+      "front_feed_instability"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "center"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "front_feed_instability"
+    ]
+  },
+  {
+    "phrase": "bound up",
+    "canonical_symptom": "tight_center",
+    "phase": "center",
+    "balance": "understeer",
+    "confidence_prior": 0.7,
+    "possible_secondary": [
+      "drag_scrub",
+      "tire_overwork"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "center"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "drag_scrub",
+      "tire_overwork"
+    ]
+  },
+  {
+    "phrase": "washed up track",
+    "canonical_symptom": "tight_exit",
+    "phase": "exit",
+    "balance": "understeer",
+    "confidence_prior": 0.7,
+    "possible_secondary": [
+      "drag_scrub"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "drag_scrub"
+    ]
+  },
+  {
+    "phrase": "lazy",
+    "canonical_symptom": "tight_entry",
+    "phase": "turn_in",
+    "balance": "understeer",
+    "confidence_prior": 0.55,
+    "possible_secondary": [
+      "low_straight_speed"
+    ],
+    "clarification_question": "Lazy to point, lazy to accelerate, or both?",
+    "raw_intensity_hint": "mild",
+    "trigger_hint": [
+      "turn_in"
+    ],
+    "clarification_options": [
+      "entry",
+      "center",
+      "exit"
+    ],
+    "common_secondary_symptoms": [
+      "low_straight_speed"
+    ]
+  },
+  {
+    "phrase": "won't rotate",
+    "canonical_symptom": "tight_center",
+    "phase": "center",
+    "balance": "understeer",
+    "confidence_prior": 0.75,
+    "possible_secondary": [
+      "drag_scrub"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "center"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "drag_scrub"
+    ]
+  },
+  {
+    "phrase": "won't point",
+    "canonical_symptom": "tight_entry",
+    "phase": "turn_in",
+    "balance": "understeer",
+    "confidence_prior": 0.75,
+    "possible_secondary": [
+      "front_feed_instability"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "turn_in"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "front_feed_instability"
+    ]
+  },
+  {
+    "phrase": "tight in",
+    "canonical_symptom": "tight_entry",
+    "phase": "entry",
+    "balance": "understeer",
+    "confidence_prior": 0.85,
+    "possible_secondary": [
+      "front_feed_instability"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "entry"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "front_feed_instability"
+    ]
+  },
+  {
+    "phrase": "tight center",
+    "canonical_symptom": "tight_center",
+    "phase": "center",
+    "balance": "understeer",
+    "confidence_prior": 0.9,
+    "possible_secondary": [
+      "drag_scrub"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "center"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "drag_scrub"
+    ]
+  },
+  {
+    "phrase": "tight off",
+    "canonical_symptom": "tight_exit",
+    "phase": "exit",
+    "balance": "understeer",
+    "confidence_prior": 0.9,
+    "possible_secondary": [
+      "poor_drive_off"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "poor_drive_off"
+    ]
+  },
+  {
+    "phrase": "free",
+    "canonical_symptom": "loose_center",
+    "phase": "center",
+    "balance": "oversteer",
+    "confidence_prior": 0.55,
+    "possible_secondary": [
+      "loose_entry",
+      "loose_exit"
+    ],
+    "clarification_question": "Is it free into the corner, in the center, or on throttle?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "center"
+    ],
+    "clarification_options": [
+      "entry",
+      "center",
+      "exit"
+    ],
+    "common_secondary_symptoms": [
+      "loose_entry",
+      "loose_exit"
+    ]
+  },
+  {
+    "phrase": "loose",
+    "canonical_symptom": "loose_center",
+    "phase": "center",
+    "balance": "oversteer",
+    "confidence_prior": 0.55,
+    "possible_secondary": [
+      "loose_entry",
+      "loose_exit"
+    ],
+    "clarification_question": "Where does the rear first step out?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "center"
+    ],
+    "clarification_options": [
+      "entry",
+      "center",
+      "exit"
+    ],
+    "common_secondary_symptoms": [
+      "loose_entry",
+      "loose_exit"
+    ]
+  },
+  {
+    "phrase": "loose in",
+    "canonical_symptom": "loose_entry",
+    "phase": "entry",
+    "balance": "oversteer",
+    "confidence_prior": 0.9,
+    "possible_secondary": [
+      "brake_entry_instability"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "entry"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "brake_entry_instability"
+    ]
+  },
+  {
+    "phrase": "loose center",
+    "canonical_symptom": "loose_center",
+    "phase": "center",
+    "balance": "oversteer",
+    "confidence_prior": 0.9,
+    "possible_secondary": [
+      "unstable_entry"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "center"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "unstable_entry"
+    ]
+  },
+  {
+    "phrase": "loose off",
+    "canonical_symptom": "loose_exit",
+    "phase": "exit",
+    "balance": "oversteer",
+    "confidence_prior": 0.92,
+    "possible_secondary": [
+      "poor_drive_off",
+      "unstable_exit"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "poor_drive_off",
+      "unstable_exit"
+    ]
+  },
+  {
+    "phrase": "snaps loose",
+    "canonical_symptom": "unstable_exit",
+    "phase": "transition",
+    "balance": "oversteer",
+    "confidence_prior": 0.85,
+    "possible_secondary": [
+      "shock_overactive",
+      "loose_exit"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "severe",
+    "trigger_hint": [
+      "transition"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "shock_overactive",
+      "loose_exit"
+    ]
+  },
+  {
+    "phrase": "rear stepping out",
+    "canonical_symptom": "loose_exit",
+    "phase": "exit",
+    "balance": "oversteer",
+    "confidence_prior": 0.85,
+    "possible_secondary": [
+      "unstable_exit"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "unstable_exit"
+    ]
+  },
+  {
+    "phrase": "skating",
+    "canonical_symptom": "loose_center",
+    "phase": "center",
+    "balance": "oversteer",
+    "confidence_prior": 0.7,
+    "possible_secondary": [
+      "tire_overwork"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "center"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "tire_overwork"
+    ]
+  },
+  {
+    "phrase": "burns RF",
+    "canonical_symptom": "tire_overwork",
+    "phase": "long_run",
+    "balance": "tire",
+    "confidence_prior": 0.85,
+    "possible_secondary": [
+      "tight_center",
+      "long_run_falloff"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "severe",
+    "trigger_hint": [
+      "long_run"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "tight_center",
+      "long_run_falloff"
+    ]
+  },
+  {
+    "phrase": "falls off",
+    "canonical_symptom": "long_run_falloff",
+    "phase": "long_run",
+    "balance": "run_trend",
+    "confidence_prior": 0.85,
+    "possible_secondary": [
+      "tire_overwork"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "long_run"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "tire_overwork"
+    ]
+  },
+  {
+    "phrase": "lacks drive",
+    "canonical_symptom": "poor_drive_off",
+    "phase": "exit",
+    "balance": "traction",
+    "confidence_prior": 0.8,
+    "possible_secondary": [
+      "loose_exit",
+      "tight_exit"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "loose_exit",
+      "tight_exit"
+    ]
+  },
+  {
+    "phrase": "drags down straight",
+    "canonical_symptom": "low_straight_speed",
+    "phase": "straight",
+    "balance": "speed",
+    "confidence_prior": 0.8,
+    "possible_secondary": [
+      "drag_scrub"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "straight"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "drag_scrub"
+    ]
+  },
+  {
+    "phrase": "draggy",
+    "canonical_symptom": "low_straight_speed",
+    "phase": "straight",
+    "balance": "speed",
+    "confidence_prior": 0.8,
+    "possible_secondary": [
+      "drag_scrub"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "mild",
+    "trigger_hint": [
+      "straight"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "drag_scrub"
+    ]
+  },
+  {
+    "phrase": "bottoming",
+    "canonical_symptom": "front_platform_contact",
+    "phase": "straight",
+    "balance": "platform",
+    "confidence_prior": 0.75,
+    "possible_secondary": [
+      "diffuser_choke_or_stall"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "severe",
+    "trigger_hint": [
+      "straight"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "diffuser_choke_or_stall"
+    ]
+  },
+  {
+    "phrase": "splitter hitting",
+    "canonical_symptom": "front_platform_contact",
+    "phase": "straight",
+    "balance": "platform",
+    "confidence_prior": 0.85,
+    "possible_secondary": [
+      "front_feed_instability"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "straight"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "front_feed_instability"
+    ]
+  },
+  {
+    "phrase": "rear scrape",
+    "canonical_symptom": "rear_scrape",
+    "phase": "straight",
+    "balance": "platform",
+    "confidence_prior": 0.85,
+    "possible_secondary": [
+      "diffuser_choke_or_stall"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "straight"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "diffuser_choke_or_stall"
+    ]
+  },
+  {
+    "phrase": "pack unstable",
+    "canonical_symptom": "platform_feed_issue",
+    "phase": "transition",
+    "balance": "platform",
+    "confidence_prior": 0.75,
+    "possible_secondary": [
+      "diffuser_instability",
+      "front_feed_instability"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "transition"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "diffuser_instability",
+      "front_feed_instability"
+    ]
+  },
+  {
+    "phrase": "unstable in",
+    "canonical_symptom": "unstable_entry",
+    "phase": "entry",
+    "balance": "stability",
+    "confidence_prior": 0.8,
+    "possible_secondary": [
+      "loose_entry",
+      "brake_entry_instability"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "entry"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "loose_entry",
+      "brake_entry_instability"
+    ]
+  },
+  {
+    "phrase": "scrubbing speed",
+    "canonical_symptom": "drag_scrub",
+    "phase": "straight",
+    "balance": "speed",
+    "confidence_prior": 0.75,
+    "possible_secondary": [
+      "low_straight_speed",
+      "tight_center"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "straight"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "low_straight_speed",
+      "tight_center"
+    ]
+  },
+  {
+    "phrase": "diffuser unstable",
+    "canonical_symptom": "diffuser_instability",
+    "phase": "transition",
+    "balance": "platform",
+    "confidence_prior": 0.7,
+    "possible_secondary": [
+      "platform_feed_issue"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "transition"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "platform_feed_issue"
+    ]
+  },
+  {
+    "phrase": "shock too busy",
+    "canonical_symptom": "shock_overactive",
+    "phase": "transition",
+    "balance": "shock",
+    "confidence_prior": 0.7,
+    "possible_secondary": [
+      "platform_feed_issue"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "transition"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "platform_feed_issue"
+    ]
+  },
+  {
+    "phrase": "loose under brake",
+    "canonical_symptom": "brake_entry_instability",
+    "phase": "braking",
+    "balance": "brake",
+    "confidence_prior": 0.85,
+    "possible_secondary": [
+      "loose_entry"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "braking"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "loose_entry"
+    ]
+  },
+  {
+    "phrase": "diffuser choked",
+    "canonical_symptom": "diffuser_choke_or_stall",
+    "phase": "straight",
+    "balance": "platform",
+    "confidence_prior": 0.7,
+    "possible_secondary": [
+      "rear_scrape",
+      "front_platform_contact"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "straight"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "rear_scrape",
+      "front_platform_contact"
+    ]
+  },
+  {
+    "phrase": "front feed unstable",
+    "canonical_symptom": "front_feed_instability",
+    "phase": "entry",
+    "balance": "platform",
+    "confidence_prior": 0.7,
+    "possible_secondary": [
+      "front_platform_contact"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "entry"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "front_platform_contact"
+    ]
+  },
+  {
+    "phrase": "tight all the way",
+    "canonical_symptom": "tight_center",
+    "phase": "whole_run",
+    "balance": "understeer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "tight_entry",
+      "tight_exit"
+    ],
+    "clarification_question": "Is it worst on entry, center, or throttle-off exit?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "whole_run"
+    ],
+    "clarification_options": [
+      "entry",
+      "center",
+      "exit"
+    ],
+    "common_secondary_symptoms": [
+      "tight_entry",
+      "tight_exit"
+    ]
+  },
+  {
+    "phrase": "tight rolling center",
+    "canonical_symptom": "tight_center",
+    "phase": "center",
+    "balance": "understeer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "drag_scrub"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "center"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "drag_scrub"
+    ]
+  },
+  {
+    "phrase": "tight under throttle",
+    "canonical_symptom": "tight_exit",
+    "phase": "exit",
+    "balance": "understeer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "poor_drive_off"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "poor_drive_off"
+    ]
+  },
+  {
+    "phrase": "lazy off",
+    "canonical_symptom": "poor_drive_off",
+    "phase": "exit",
+    "balance": "traction",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "tight_exit",
+      "low_straight_speed"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "tight_exit",
+      "low_straight_speed"
+    ]
+  },
+  {
+    "phrase": "won't stay on bottom",
+    "canonical_symptom": "tight_center",
+    "phase": "center",
+    "balance": "understeer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "tight_exit",
+      "drag_scrub"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "center"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "tight_exit",
+      "drag_scrub"
+    ]
+  },
+  {
+    "phrase": "misses apex",
+    "canonical_symptom": "tight_entry",
+    "phase": "turn_in",
+    "balance": "understeer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "front_feed_instability"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "turn_in"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "front_feed_instability"
+    ]
+  },
+  {
+    "phrase": "pushes up",
+    "canonical_symptom": "tight_exit",
+    "phase": "exit",
+    "balance": "understeer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "tight_center"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "tight_center"
+    ]
+  },
+  {
+    "phrase": "free in",
+    "canonical_symptom": "loose_entry",
+    "phase": "entry",
+    "balance": "oversteer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "brake_entry_instability"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "entry"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "brake_entry_instability"
+    ]
+  },
+  {
+    "phrase": "free off",
+    "canonical_symptom": "loose_exit",
+    "phase": "exit",
+    "balance": "oversteer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "poor_drive_off"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "poor_drive_off"
+    ]
+  },
+  {
+    "phrase": "sideways off",
+    "canonical_symptom": "loose_exit",
+    "phase": "exit",
+    "balance": "oversteer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "unstable_exit"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "unstable_exit"
+    ]
+  },
+  {
+    "phrase": "snaps loose on throttle",
+    "canonical_symptom": "unstable_exit",
+    "phase": "transition",
+    "balance": "oversteer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "loose_exit",
+      "shock_overactive"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "transition"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "loose_exit",
+      "shock_overactive"
+    ]
+  },
+  {
+    "phrase": "wheel hop",
+    "canonical_symptom": "shock_overactive",
+    "phase": "transition",
+    "balance": "shock",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "brake_entry_instability"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "transition"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "brake_entry_instability"
+    ]
+  },
+  {
+    "phrase": "chatters",
+    "canonical_symptom": "shock_overactive",
+    "phase": "transition",
+    "balance": "shock",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "platform_feed_issue"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "transition"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "platform_feed_issue"
+    ]
+  },
+  {
+    "phrase": "skating over bumps",
+    "canonical_symptom": "shock_overactive",
+    "phase": "transition",
+    "balance": "shock",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "platform_feed_issue",
+      "loose_center"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "transition"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "platform_feed_issue",
+      "loose_center"
+    ]
+  },
+  {
+    "phrase": "too planted",
+    "canonical_symptom": "tight_center",
+    "phase": "center",
+    "balance": "understeer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "drag_scrub"
+    ],
+    "clarification_question": "Does planted mean secure but slow, or bound up and tight?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "center"
+    ],
+    "clarification_options": [
+      "secure but slow",
+      "bound up",
+      "tight off"
+    ],
+    "common_secondary_symptoms": [
+      "drag_scrub"
+    ]
+  },
+  {
+    "phrase": "too stuck",
+    "canonical_symptom": "tight_center",
+    "phase": "center",
+    "balance": "understeer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "drag_scrub"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "center"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "drag_scrub"
+    ]
+  },
+  {
+    "phrase": "won't take a set",
+    "canonical_symptom": "unstable_entry",
+    "phase": "entry",
+    "balance": "stability",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "front_feed_instability",
+      "shock_overactive"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "entry"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "front_feed_instability",
+      "shock_overactive"
+    ]
+  },
+  {
+    "phrase": "takes too long to set",
+    "canonical_symptom": "unstable_entry",
+    "phase": "entry",
+    "balance": "stability",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "shock_overactive"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "entry"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "shock_overactive"
+    ]
+  },
+  {
+    "phrase": "nose falls over",
+    "canonical_symptom": "front_feed_instability",
+    "phase": "entry",
+    "balance": "platform",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "front_platform_contact"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "entry"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "front_platform_contact"
+    ]
+  },
+  {
+    "phrase": "rear hikes up",
+    "canonical_symptom": "loose_entry",
+    "phase": "entry",
+    "balance": "oversteer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "brake_entry_instability",
+      "shock_overactive"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "entry"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "brake_entry_instability",
+      "shock_overactive"
+    ]
+  },
+  {
+    "phrase": "RF angry",
+    "canonical_symptom": "tire_overwork",
+    "phase": "long_run",
+    "balance": "tire",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "tight_center",
+      "long_run_falloff"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "long_run"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "tight_center",
+      "long_run_falloff"
+    ]
+  },
+  {
+    "phrase": "LR loaded",
+    "canonical_symptom": "tight_exit",
+    "phase": "exit",
+    "balance": "understeer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "drag_scrub"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "drag_scrub"
+    ]
+  },
+  {
+    "phrase": "burns right rear",
+    "canonical_symptom": "tire_overwork",
+    "phase": "long_run",
+    "balance": "tire",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "loose_exit",
+      "long_run_falloff"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "long_run"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "loose_exit",
+      "long_run_falloff"
+    ]
+  },
+  {
+    "phrase": "rear won't stay under me",
+    "canonical_symptom": "loose_exit",
+    "phase": "exit",
+    "balance": "oversteer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "unstable_exit",
+      "poor_drive_off"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "unstable_exit",
+      "poor_drive_off"
+    ]
+  },
+  {
+    "phrase": "pulls slow",
+    "canonical_symptom": "low_straight_speed",
+    "phase": "straight",
+    "balance": "speed",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "drag_scrub"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "straight"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "drag_scrub"
+    ]
+  },
+  {
+    "phrase": "scrapes",
+    "canonical_symptom": "front_platform_contact",
+    "phase": "straight",
+    "balance": "platform",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "rear_scrape"
+    ],
+    "clarification_question": "Is the contact mainly front splitter contact or rear scrape?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "straight"
+    ],
+    "clarification_options": [
+      "front",
+      "rear",
+      "unknown"
+    ],
+    "common_secondary_symptoms": [
+      "rear_scrape"
+    ]
+  }
 ]

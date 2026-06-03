@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -33,6 +35,10 @@ class SymptomVocabularyEntry(KnowledgeModel):
     confidence_prior: float = Field(ge=0.0, le=1.0)
     possible_secondary: list[str]
     clarification_question: str | None = None
+    raw_intensity_hint: Literal["mild", "medium", "severe"] | None = None
+    trigger_hint: list[str]
+    clarification_options: list[str]
+    common_secondary_symptoms: list[str]
 
 
 class EffectivenessScaleEntry(KnowledgeModel):
@@ -53,6 +59,12 @@ class SetupArea(KnowledgeModel):
     evidence_required: list[str]
     validation_targets: list[str]
     notes: list[str]
+    package_role: list[str]
+    car_specific_notes: dict[str, str]
+    available_when: list[str]
+    unavailable_when: list[str]
+    common_confusions: list[str]
+    static_or_live: Literal["static_setup", "live_telemetry", "derived_proxy", "mixed"]
 
 
 class SetupEffect(KnowledgeModel):
@@ -73,6 +85,25 @@ class SetupEffect(KnowledgeModel):
     validation_targets: list[str]
     small_swing_hint: str
     cautions: list[str]
+    primary_effects: list[str]
+    counter_effects: list[str]
+    helps_phases: list[str]
+    can_hurt_phases: list[str]
+    setup_package_tags: list[str]
+    track_family_tags: list[str]
+    driver_facing_summary: str
+    why_ranked_template: str
+    one_change_test_template: str
+    expected_improvement_targets: list[str]
+    watch_for_targets: list[str]
+    evidence_priority: list[str]
+    evidence_missing_message: str
+    preferred_when: list[str]
+    avoid_when: list[str]
+    exact_value_policy: Literal["none", "small_swing", "reference_only"]
+    can_show_delta: bool
+    delta_label: str | None = None
+    caution_level: Literal["low", "medium", "high"]
 
 
 class PackageArchetype(KnowledgeModel):
@@ -84,6 +115,23 @@ class PackageArchetype(KnowledgeModel):
     compensators: list[str]
     watch_evidence: list[str]
     complaint_patterns: list[str]
+    diagnostic_questions: list[str]
+    likely_driver_complaints: list[str]
+    stabilizers: list[str]
+    failure_modes: list[str]
+    recommended_evidence_order: list[str]
+    what_it_looks_like: str
+    setup_areas_commonly_involved: list[str]
+    driver_facing_explanation: str
+
+
+class EvidenceGroup(KnowledgeModel):
+    group_id: str
+    label: str
+    required: bool
+    channels_or_context: list[str]
+    missing_message: str
+    confidence_boost: float = 0.0
 
 
 class EvidenceRequirement(KnowledgeModel):
@@ -93,6 +141,7 @@ class EvidenceRequirement(KnowledgeModel):
     required_evidence: list[str]
     optional_evidence: list[str]
     insufficient_wording: str
+    evidence_groups: list[EvidenceGroup]
 
 
 class NextGenPlatformRule(KnowledgeModel):
