@@ -121,10 +121,18 @@ HIGH_VALUE_RAW_CHANNELS = [
     "RFrideHeight",
     "LRrideHeight",
     "RRrideHeight",
+    "LFshockDefl",
+    "RFshockDefl",
+    "LRshockDefl",
+    "RRshockDefl",
     "LFSHshockDefl",
     "RFSHshockDefl",
     "LRSHshockDefl",
     "RRSHshockDefl",
+    "LFshockVel",
+    "RFshockVel",
+    "LRshockVel",
+    "RRshockVel",
     "LFSHshockVel",
     "RFSHshockVel",
     "LRSHshockVel",
@@ -226,6 +234,14 @@ CALCULATED_CHANNEL_UNITS: dict[str, str] = {
     "rf_shock_defl_in": "in",
     "lr_shock_defl_in": "in",
     "rr_shock_defl_in": "in",
+    "lf_shock_static_defl_in": "in",
+    "rf_shock_static_defl_in": "in",
+    "lr_shock_static_defl_in": "in",
+    "rr_shock_static_defl_in": "in",
+    "lf_shock_defl_delta_in": "in",
+    "rf_shock_defl_delta_in": "in",
+    "lr_shock_defl_delta_in": "in",
+    "rr_shock_defl_delta_in": "in",
     "lf_shock_vel_in_s": "in/s",
     "rf_shock_vel_in_s": "in/s",
     "lr_shock_vel_in_s": "in/s",
@@ -2054,6 +2070,10 @@ _RIDE_HEIGHT_RAW_KEYS: dict[str, str] = {
 }
 
 _SHOCK_DEFL_KEYS: dict[str, str] = {
+    "LFshockDefl": "lf_shock_defl",
+    "RFshockDefl": "rf_shock_defl",
+    "LRshockDefl": "lr_shock_defl",
+    "RRshockDefl": "rr_shock_defl",
     "LFSHshockDefl": "lf_shock_defl",
     "RFSHshockDefl": "rf_shock_defl",
     "LRSHshockDefl": "lr_shock_defl",
@@ -2061,11 +2081,19 @@ _SHOCK_DEFL_KEYS: dict[str, str] = {
 }
 
 _SHOCK_VEL_KEYS: dict[str, str] = {
+    "LFshockVel": "lf_shock_vel",
+    "RFshockVel": "rf_shock_vel",
+    "LRshockVel": "lr_shock_vel",
+    "RRshockVel": "rr_shock_vel",
     "LFSHshockVel": "lf_shock_vel",
     "RFSHshockVel": "rf_shock_vel",
     "LRSHshockVel": "lr_shock_vel",
     "RRSHshockVel": "rr_shock_vel",
 }
+
+_SHOCK_CORNERS: tuple[str, ...] = ("lf", "rf", "lr", "rr")
+_SHOCK_STATIC_THROTTLE_MIN_PCT = 10.0
+_SHOCK_DELTA_SMOOTH_WINDOW = 16
 
 # ── tire variable aliases ────────────────────────────────────
 _TIRE_PRESSURE_KEYS: dict[str, str] = {
@@ -2202,6 +2230,76 @@ def _convert_shocks(item: dict[str, Any]) -> None:
         if value_m_s is not None:
             item.setdefault(prefix, value_m_s)
             _set_number(item, f"{prefix}_in_s", value_m_s * M_TO_IN)
+
+
+def _shock_static_candidate(row: dict[str, Any]) -> bool:
+    throttle_pct = _number(row.get("throttle_pct"))
+    if throttle_pct is None:
+        throttle_raw = _number(row.get("throttle_01"))
+        throttle_pct = input_01_to_percent(throttle_raw) if throttle_raw is not None else None
+    return throttle_pct is not None and throttle_pct > _SHOCK_STATIC_THROTTLE_MIN_PCT
+
+
+def _derive_missing_shock_velocities(rows: list[dict[str, Any]]) -> None:
+    previous: dict[str, Any] | None = None
+    for row in rows:
+        if previous is None:
+            previous = row
+            continue
+        session_time = _number(row.get("session_time"))
+        previous_time = _number(previous.get("session_time"))
+        if session_time is None or previous_time is None:
+            previous = row
+            continue
+        dt = session_time - previous_time
+        if dt <= 0:
+            previous = row
+            continue
+
+        for corner in _SHOCK_CORNERS:
+            velocity_key = f"{corner}_shock_vel_in_s"
+            if _number(row.get(velocity_key)) is not None:
+                continue
+            deflection_key = f"{corner}_shock_defl_in"
+            current_deflection = _number(row.get(deflection_key))
+            previous_deflection = _number(previous.get(deflection_key))
+            if current_deflection is None or previous_deflection is None:
+                continue
+            row[velocity_key] = (current_deflection - previous_deflection) / dt
+        previous = row
+
+
+def _apply_shock_static_and_delta(rows: list[dict[str, Any]]) -> None:
+    for corner in _SHOCK_CORNERS:
+        deflection_key = f"{corner}_shock_defl_in"
+        static_key = f"{corner}_shock_static_defl_in"
+        delta_key = f"{corner}_shock_defl_delta_in"
+
+        baseline = next(
+            (
+                _number(row.get(deflection_key))
+                for row in rows
+                if _number(row.get(deflection_key)) is not None and _shock_static_candidate(row)
+            ),
+            None,
+        )
+        if baseline is None:
+            continue
+
+        delta_buffer: list[float] = []
+        for row in rows:
+            row[static_key] = baseline
+            deflection = _number(row.get(deflection_key))
+            if deflection is not None:
+                delta_buffer.append(deflection - baseline)
+                if len(delta_buffer) > _SHOCK_DELTA_SMOOTH_WINDOW:
+                    delta_buffer.pop(0)
+                row[delta_key] = sum(delta_buffer) / len(delta_buffer)
+
+
+def _finalize_shock_channels(rows: list[dict[str, Any]]) -> None:
+    _derive_missing_shock_velocities(rows)
+    _apply_shock_static_and_delta(rows)
 
 
 def _convert_tires(item: dict[str, Any]) -> None:
@@ -2549,7 +2647,9 @@ def _compute_compression_index(row: dict[str, Any]) -> None:
 
 def _update_shock_buffers(row: dict[str, Any], buffers: dict[str, list[float]], corners: tuple[str, ...], window: int) -> None:
     for corner in corners:
-        sv = _number(row.get(f"{corner}_shock_vel_in_s")) or 0.0
+        sv = _number(row.get(f"{corner}_shock_vel_in_s"))
+        if sv is None:
+            continue
         buffers[f"{corner}_sv"].append(sv)
         if len(buffers[f"{corner}_sv"]) > window:
             buffers[f"{corner}_sv"].pop(0)
@@ -2574,8 +2674,10 @@ def _compute_component_averages(rows: list[dict[str, Any]], corners: tuple[str, 
         if not corner_keys:
             continue
         for row in rows:
-            values = [_number(row.get(key)) or 0.0 for key in corner_keys]
-            row[component] = sum(values) / len(values)
+            values = [_number(row.get(key)) for key in corner_keys]
+            numeric_values = [value for value in values if value is not None]
+            if numeric_values:
+                row[component] = sum(numeric_values) / len(numeric_values)
 
 
 def _apply_row_calculations(item: dict[str, Any]) -> None:
@@ -2943,7 +3045,13 @@ def _grade_context_label(grade_deg: float) -> str:
 
 def _apply_rolling_aggregates(rows: list[dict[str, Any]], window: int = 60) -> None:
     """Compute trailing-window shock RMS, activity, damper energy, and shock_activity_index."""
-    corners = ("lf", "rf", "lr", "rr")
+    corners = tuple(
+        corner
+        for corner in _SHOCK_CORNERS
+        if any(_number(row.get(f"{corner}_shock_vel_in_s")) is not None for row in rows)
+    )
+    if not corners:
+        return
     buffers: dict[str, list[float]] = {f"{c}_sv": [] for c in corners}
 
     for row in rows:
@@ -2998,6 +3106,7 @@ def normalize_telemetry_rows(
         normalized.append(item)
 
     _apply_derivatives(normalized)
+    _finalize_shock_channels(normalized)
     _compute_diffuser_channels(normalized, geometry)
     _apply_rolling_aggregates(normalized)
     _apply_gps_projection(normalized)

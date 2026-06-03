@@ -21,7 +21,7 @@ function imp(v: number | null, c: number, d: number): number | null {
 }
 
 // ── Steering pinion → ratio lookup ───────────────────────────────
-// Source: MoTeC Slip Angles steering pinion constants (mm/rev)
+// Steering pinion constants (mm/rev)
 const PINION_TO_RATIO: Record<number, string> = {
   40: "31:1", 46.5: "27.5:1", 53: "24:1", 60: "20.5:1",
   67: "18.5:1", 73: "17:1", 80: "15.5:1",
@@ -273,7 +273,7 @@ export function SetupTab({ overview }: SetupTabProps) {
   const car = overview.session.car_name ?? "Unknown Car";
   const track = overview.session.track_display_name ?? overview.session.track_name ?? "";
 
-  // Steering: true ratio wins; fallback to pinion-derived ratio (MoTeC Slip Angles)
+  // Steering: true ratio wins; fallback to pinion-derived ratio.
   const rawRatio = setup.steering_ratio;
   const pinion  = evNum(setup, "steering_pinion_mm");
   const derivedRatio = (!rawRatio || rawRatio === "") ? deriveSteeringRatio(pinion) : null;

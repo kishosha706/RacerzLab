@@ -60,6 +60,76 @@ DATA_TYPE_SIZES = {
 }
 
 TARGET_CHANNELS = list(dict.fromkeys(HIGH_VALUE_RAW_CHANNELS))
+
+_CANONICAL_SHOCK_DEFL_CHANNELS: tuple[str, ...] = (
+    "LFshockDefl",
+    "RFshockDefl",
+    "LRshockDefl",
+    "RRshockDefl",
+)
+_LEGACY_SHOCK_DEFL_CHANNELS: tuple[str, ...] = (
+    "LFSHshockDefl",
+    "RFSHshockDefl",
+    "LRSHshockDefl",
+    "RRSHshockDefl",
+)
+_CANONICAL_SHOCK_VEL_CHANNELS: tuple[str, ...] = (
+    "LFshockVel",
+    "RFshockVel",
+    "LRshockVel",
+    "RRshockVel",
+)
+_LEGACY_SHOCK_VEL_CHANNELS: tuple[str, ...] = (
+    "LFSHshockVel",
+    "RFSHshockVel",
+    "LRSHshockVel",
+    "RRSHshockVel",
+)
+_ALL_SHOCK_MOVEMENT_CHANNELS: frozenset[str] = frozenset(
+    [
+        *_CANONICAL_SHOCK_DEFL_CHANNELS,
+        *_LEGACY_SHOCK_DEFL_CHANNELS,
+        *_CANONICAL_SHOCK_VEL_CHANNELS,
+        *_LEGACY_SHOCK_VEL_CHANNELS,
+    ]
+)
+_SHOCK_MOVEMENT_UNAVAILABLE_WARNING = (
+    "Shock movement telemetry is unavailable for this run. "
+    "Garage damper settings from the setup snapshot can still be shown, "
+    "but shock velocity/deflection analysis may be limited."
+)
+
+
+def _shock_movement_telemetry_available(available_channels: Collection[str]) -> bool:
+    return any(channel in available_channels for channel in _ALL_SHOCK_MOVEMENT_CHANNELS)
+
+
+def _build_missing_optional_warnings(
+    missing_channels: list[str],
+    available_channels: Collection[str],
+) -> list[str]:
+    warnings: list[str] = []
+    non_shock_missing = [channel for channel in missing_channels if channel not in _ALL_SHOCK_MOVEMENT_CHANNELS]
+    if non_shock_missing:
+        warnings.append(f"Missing optional channels: {', '.join(non_shock_missing)}.")
+    if not _shock_movement_telemetry_available(available_channels):
+        warnings.append(_SHOCK_MOVEMENT_UNAVAILABLE_WARNING)
+    return warnings
+
+
+def _collect_missing_channels(available_channels: Collection[str]) -> list[str]:
+    shock_available = _shock_movement_telemetry_available(available_channels)
+    missing: list[str] = []
+    for channel in CORE_REQUIRED_CHANNELS:
+        if channel in _ALL_SHOCK_MOVEMENT_CHANNELS:
+            if shock_available:
+                continue
+        elif channel in available_channels:
+            continue
+        missing.append(channel)
+    return missing
+
+
 def _read_bytes(path: str | Path) -> bytes:
     file_path = Path(path)
     if not file_path.exists():
@@ -462,6 +532,7 @@ def _build_overview(
     session_yaml: str,
     telemetry_table: Any,
     missing_channels: list[str],
+    available_channels: Collection[str],
 ) -> RunOverview:
     profile: dict[str, float] = {}
     t0 = time.perf_counter()
@@ -518,8 +589,7 @@ def _build_overview(
         "Short runs cannot support strong tire degradation or cooling conclusions.",
         "Do not overclaim exact aerodynamic drag force from .ibt telemetry.",
     ]
-    if missing_channels:
-        warnings.append(f"Missing optional channels: {', '.join(missing_channels)}.")
+    warnings.extend(_build_missing_optional_warnings(missing_channels, available_channels))
     if invalid_scrapes:
         warnings.append("At least one low/negative splitter event occurred in slowdown context and is not valid setup evidence.")
 
@@ -597,7 +667,7 @@ def import_ibt(path: str | Path) -> IBTImportResult:
                   time.time() - t0, len(session_yaml))
 
         available = {definition.name for definition in definitions}
-        missing = [channel for channel in CORE_REQUIRED_CHANNELS if channel not in available]
+        missing = _collect_missing_channels(available)
 
         import os
         decoder_mode = os.environ.get("RACELAB_IBT_DECODER", "").strip().lower()
@@ -691,7 +761,7 @@ def import_ibt(path: str | Path) -> IBTImportResult:
         if profile_enabled and normalized_frame is not None:
             LAST_IMPORT_PROFILE["overview_consumers_frame_native"] = 1.0
             LAST_IMPORT_PROFILE["overview_legacy_consumers_remaining"] = "none"
-        overview = _build_overview(file_path, fingerprint.sha256, header, session_yaml, overview_table, missing)
+        overview = _build_overview(file_path, fingerprint.sha256, header, session_yaml, overview_table, missing, available)
         _log.info("IBT decoder: overview built in %.3fs (laps=%d, events=%d)",
                   time.time() - t0, len(overview.laps), len(overview.events))
     except (OSError, IBTParseError, struct.error, UnicodeDecodeError) as exc:
@@ -733,7 +803,7 @@ def import_ibt(path: str | Path) -> IBTImportResult:
             ],
             warnings=[
                 "No .sto decoding is claimed.",
-                "No .mt2 decoding is claimed.",
+                "No track map decoding is claimed.",
                 "Exact aerodynamic drag force is not inferred from .ibt telemetry.",
             ],
         ),

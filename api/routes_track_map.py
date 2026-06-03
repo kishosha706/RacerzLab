@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from pydantic import BaseModel
@@ -36,11 +37,83 @@ def _get_track_name(overview) -> str:
     return ""
 
 
+def _public_track_map_summary(entry: dict[str, Any] | None) -> dict[str, Any] | None:
+    if entry is None:
+        return None
+    return {
+        "map_id": entry.get("map_id"),
+        "track_key": entry.get("track_key"),
+        "layout_key": entry.get("layout_key"),
+        "display_name": entry.get("display_name"),
+        "points_count": entry.get("points_count"),
+        "markers_count": entry.get("markers_count"),
+        "sections_count": entry.get("sections_count"),
+        "distance_ft": entry.get("distance_ft"),
+        "warnings": entry.get("warnings", []),
+        "status": entry.get("status"),
+        "supported": entry.get("supported"),
+        "partial": entry.get("partial"),
+        "match_confidence": entry.get("match_confidence"),
+        "match_score": entry.get("match_score"),
+        "import_status": entry.get("import_status"),
+    }
+
+
+def _public_track_map_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "track_name": metadata.get("track_name"),
+        "display_name": metadata.get("display_name"),
+        "closed": metadata.get("closed"),
+        "clockwise_flag": metadata.get("clockwise_flag"),
+        "x_over": metadata.get("x_over"),
+        "z_rotation_rad": metadata.get("z_rotation_rad"),
+        "distance_m": metadata.get("distance_m"),
+        "distance_ft": metadata.get("distance_ft"),
+        "distance_miles": metadata.get("distance_miles"),
+        "origin": metadata.get("origin"),
+        "has_boundaries": metadata.get("has_boundaries"),
+        "has_sections": metadata.get("has_sections"),
+        "has_markers": metadata.get("has_markers"),
+        "warnings": metadata.get("warnings", []),
+    }
+
+
+def _public_track_map_payload(track_map: dict[str, Any] | None) -> dict[str, Any] | None:
+    if track_map is None:
+        return None
+    return {
+        "map_id": track_map.get("map_id"),
+        "metadata": _public_track_map_metadata(track_map.get("metadata", {})),
+        "bounds": track_map.get("bounds"),
+        "points": track_map.get("points", []),
+        "markers": track_map.get("markers", []),
+        "sections": track_map.get("sections", []),
+        "status": track_map.get("status"),
+        "supported": track_map.get("supported"),
+        "partial": track_map.get("partial"),
+        "warnings": track_map.get("warnings", []),
+    }
+
+
+def _public_track_map_package(package: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "run_id": package.get("run_id"),
+        "lap": package.get("lap"),
+        "map": _public_track_map_payload(package.get("map")),
+        "match": _public_track_map_summary(package.get("match")),
+        "overlays": package.get("overlays", []),
+        "sections": package.get("sections", []),
+        "markers": package.get("markers", []),
+        "target_zone": package.get("target_zone"),
+        "warnings": package.get("warnings", []),
+    }
+
+
 # ── import ────────────────────────────────────────────────────
 
 @router.post("/imports/mt2")
 async def import_mt2_endpoint(request: Request) -> dict:
-    """Import an .mt2 track map file.
+    """Import a track map file.
 
     Primary path: multipart file upload (used by the browser UI).
     Secondary path: JSON {path: ...} (used by Tauri native picker).
@@ -55,18 +128,18 @@ async def import_mt2_endpoint(request: Request) -> dict:
             raise HTTPException(400, "Missing file in upload.")
         file: UploadFile | StarletteUploadFile = raw_file
         if not file.filename or not file.filename.lower().endswith(".mt2"):
-            raise HTTPException(400, "Unsupported file type. Please select an .mt2 track map file.")
+            raise HTTPException(400, "Unsupported file type. Please select a track map file.")
         safe_name = file.filename
         content = await file.read()
         if len(content) > MAX_MT2_SIZE_BYTES:
-            raise HTTPException(413, f".mt2 file is too large. Maximum size is {MAX_MT2_SIZE_BYTES // (1024*1024)} MB.")
+            raise HTTPException(413, f"Track map file is too large. Maximum size is {MAX_MT2_SIZE_BYTES // (1024*1024)} MB.")
         try:
             entry = save_and_import_mt2_upload(safe_name, content)
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
         except Exception as e:
-            raise HTTPException(422, f"Failed to parse .mt2: {e}") from e
-        return entry
+            raise HTTPException(422, f"Failed to parse track map file: {e}") from e
+        return _public_track_map_summary(entry)
 
     if "application/json" in content_type:
         # JSON path import (Tauri native picker)
@@ -86,7 +159,7 @@ async def import_mt2_endpoint(request: Request) -> dict:
         if os.path.isdir(resolved):
             raise HTTPException(400, "Path is a directory, not a file.")
         if not resolved.lower().endswith(".mt2"):
-            raise HTTPException(400, "Path must point to an .mt2 file.")
+            raise HTTPException(400, "Path must point to a track map file.")
         if ".." in path_or_file or path_or_file.startswith("~"):
             raise HTTPException(400, "Path traversal is not allowed.")
         try:
@@ -95,8 +168,8 @@ async def import_mt2_endpoint(request: Request) -> dict:
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
         except Exception as e:
-            raise HTTPException(422, f"Failed to parse .mt2: {e}") from e
-        return entry
+            raise HTTPException(422, f"Failed to parse track map file: {e}") from e
+        return _public_track_map_summary(entry)
 
     raise HTTPException(400, "Unsupported Content-Type. Use multipart/form-data or application/json.")
 
@@ -121,14 +194,14 @@ async def import_mt2_folder_endpoint(req: ImportMt2FolderRequest) -> dict:
         raise HTTPException(400, str(e)) from e
     except Exception as e:
         raise HTTPException(422, str(e)) from e
-    return {"imported": len(entries), "entries": entries}
+    return {"imported": len(entries), "entries": [_public_track_map_summary(entry) for entry in entries]}
 
 
 # ── query ─────────────────────────────────────────────────────
 
 @router.get("/track-maps")
 def list_track_maps_endpoint() -> list[dict]:
-    return list_track_maps()
+    return [_public_track_map_summary(entry) for entry in list_track_maps()]
 
 
 @router.get("/track-maps/{map_id}")
@@ -136,7 +209,7 @@ def get_track_map_endpoint(map_id: str) -> dict:
     tm = get_track_map(map_id)
     if tm is None:
         raise HTTPException(404, f"Track map not found: {map_id}")
-    return tm.as_dict()
+    return _public_track_map_payload(tm.as_dict())
 
 
 @router.get("/runs/{run_id}/track-map-match")
@@ -149,7 +222,7 @@ def run_track_map_match(run_id: str, preferred_map_id: str | None = None) -> dic
     match = find_best_map_for_run(run_id, track_name, preferred_map_id=preferred_map_id)
     if preferred_map_id and match is None:
         raise HTTPException(404, f"Track map not found: {preferred_map_id}")
-    return {"run_id": run_id, "track_name": track_name, "match": match}
+    return {"run_id": run_id, "track_name": track_name, "match": _public_track_map_summary(match)}
 
 
 @router.get("/runs/{run_id}/track-map-package")
@@ -173,13 +246,13 @@ def run_track_map_package(
 
     map_id = match.get("map_id") if match else None
     if not map_id:
-        return {
+        return _public_track_map_package({
             "run_id": run_id, "lap": lap,
             "map": None, "match": match,
             "overlays": [], "sections": [], "markers": [],
             "target_zone": None,
             "warnings": ["No track map matched for this run."],
-        }
+        })
 
     # Get platform events for overlay
     platform_events: list[dict] | None = None
@@ -198,4 +271,4 @@ def run_track_map_package(
         target_zone_end_pct=target_zone_end_pct,
     )
     pkg["match"] = match
-    return pkg
+    return _public_track_map_package(pkg)

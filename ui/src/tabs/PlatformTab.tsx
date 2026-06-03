@@ -7,6 +7,7 @@ import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
 import { CornerTireMap } from "../components/CornerTireMap";
 import { CornerBarChart } from "../components/CornerBarChart";
 import { ShockHistogram } from "../components/ShockHistogram";
+import type { ShockSetupField } from "../components/ShockHistogram";
 import { WorkbenchSubnav } from "../components/WorkbenchSubnav";
 import type { WorkbenchView } from "../components/WorkbenchSubnav";
 import { ProxyBadge } from "../components/ProxyBadge";
@@ -18,6 +19,7 @@ import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
 import type {
   PlatformEventItem,
   RunOverview,
+  SetupSnapshot,
   TelemetryEvent,
   TraceChannelPayload,
   TraceResponse,
@@ -44,25 +46,47 @@ type ChartRow = {
   max?: number;
 };
 
+type ShockCornerKey = "lf" | "rf" | "lr" | "rr";
+
+type ShockCornerDefinition = {
+  key: ShockCornerKey;
+  label: string;
+  color: string;
+};
+
+type ShockPanelModel = ShockCornerDefinition & {
+  samples: number[];
+  setupFields: ShockSetupField[];
+  unavailableReason?: string;
+};
+
+const SHOCK_BUCKET_THRESHOLD_IN_S = 1;
+const SHOCK_FIXED_AXIS_LIMIT_IN_S = 10;
+const SHOCK_CORNERS: ShockCornerDefinition[] = [
+  { key: "lf", label: "LF", color: "#4ade80" },
+  { key: "rf", label: "RF", color: "#ef4444" },
+  { key: "lr", label: "LR", color: "#eab308" },
+  { key: "rr", label: "RR", color: "#22d3ee" },
+];
+
+function numericTraceValues(trace: TraceResponse | null, channel: string): number[] {
+  return getTraceValues(trace, channel).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+}
+
+function setupCornerNumber(setup: SetupSnapshot | null | undefined, corner: ShockCornerKey, key: string): number | null {
+  const cornerValues = setup?.extracted_values?.[corner];
+  if (typeof cornerValues !== "object" || cornerValues == null) return null;
+  const value = (cornerValues as Record<string, unknown>)[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatSetupClicks(value: number | null): string {
+  if (value == null) return "Unavailable";
+  return `${value.toFixed(0)} clk`;
+}
+
 const PRESET_ROWS: Record<string, ChartRow[]> = {
   "Platform / Rake / Ride Height": [
-    { label: "Throttle / Brake [%]", channels: [{ name: "throttle_pct", label: "Throttle", color: "#22c55e" }, { name: "brake_pct", label: "Brake", color: "#ef4444" }], min: 0, max: 105 },
-    { label: "Center Rake FS [in]", channels: [{ name: "center_rake_fs_in", label: "Center Rake", color: "#4ade80" }] },
-    { label: "Side Rake [in]", channels: [{ name: "side_rake_in", label: "Side Rake", color: "#f59e0b" }] },
-    { label: "Front / Rear Avg RH [in]", channels: [
-      { name: "front_avg_rh_in", label: "Front Avg", color: "#38bdf8" },
-      { name: "rear_avg_rh_in", label: "Rear Avg", color: "#a78bfa" },
-    ] },
-    { label: "Rear Min / Scrape [mm]", channels: [
-      { name: "rear_min_ride_height_mm", label: "Rear Min", color: "#22d3ee" },
-      { name: "rear_scrape_margin_mm", label: "Scrape Margin", color: "#f97316" },
-    ] },
-    { label: "Platform Risk", channels: [
-      { name: "cfs_risk_score", label: "CFS Risk", color: "#ef4444" },
-      { name: "platform_compression_index", label: "Compression", color: "#f97316" },
-      { name: "whole_car_bottoming_risk", label: "Bottoming", color: "#f59e0b" },
-      { name: "rear_platform_contact_risk", label: "Rear Contact", color: "#a78bfa" },
-    ], min: 0, max: 1 },
     { label: "CFS / LF / RF Ride Height [in]", channels: [
       { name: "cfs_ride_height_in", label: "CFS", color: "#4ade80" },
       { name: "lf_ride_height_in", label: "LF", color: "#eab308" },
@@ -72,6 +96,12 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "lr_ride_height_in", label: "LR", color: "#eab308" },
       { name: "rr_ride_height_in", label: "RR", color: "#22d3ee" },
     ] },
+    { label: "Front / Rear Avg RH [in]", channels: [
+      { name: "front_avg_rh_in", label: "Front Avg", color: "#38bdf8" },
+      { name: "rear_avg_rh_in", label: "Rear Avg", color: "#a78bfa" },
+    ] },
+    { label: "Center Rake [in]", channels: [{ name: "center_rake_fs_in", label: "Center Rake", color: "#4ade80" }] },
+    { label: "Side Rake [in]", channels: [{ name: "side_rake_in", label: "Side Rake", color: "#f59e0b" }] },
   ],
   "Rear Scrape": [
     { label: "Rear Min / Scrape Margin [mm]", channels: [
@@ -1278,6 +1308,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
         top: 0,
         left: 18,
         right: 18,
+        data: rows.flatMap((row) => row.channels.map((channel) => channel.label)),
         itemWidth: 10,
         itemHeight: 8,
         itemGap: 10,
@@ -1304,7 +1335,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
       axisPointer: { link: [{ xAxisIndex: rows.map((_, i) => i) }], snap: false },
       series,
     };
-    chart.setOption(option, { notMerge: false, lazyUpdate: true, replaceMerge: ["series", "xAxis", "yAxis", "grid", "graphic"] });
+    chart.setOption(option, { notMerge: false, lazyUpdate: true, replaceMerge: ["series", "legend", "xAxis", "yAxis", "grid", "graphic"] });
     chart.resize();
 
     // Reposition locked cursor after chart re-render to match new grid layout
@@ -1445,7 +1476,43 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
       ? "Hover sample"
       : "Latest sample";
 
-  const summaryItems = [
+  const shockSetupSnapshot = overview.setup_snapshot ?? null;
+  const shockDistributionModeLabel = "Full Lap Distribution";
+
+  const shockCornerModels = useMemo<ShockPanelModel[]>(() => (
+    SHOCK_CORNERS.map((corner) => {
+      const samples = numericTraceValues(trace, `${corner.key}_shock_vel_in_s`);
+      const setupFields: ShockSetupField[] = [
+        { label: "LS Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "ls_compression")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "ls_compression") == null },
+        { label: "HS Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_compression")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_compression") == null },
+        { label: "HS-S Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_comp_slope")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_comp_slope") == null },
+        { label: "LS Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "ls_rebound")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "ls_rebound") == null },
+        { label: "HS Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_rebound")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_rebound") == null },
+        { label: "HS-S Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_reb_slope")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_reb_slope") == null },
+      ];
+      return {
+        ...corner,
+        samples,
+        setupFields,
+        unavailableReason: samples.length === 0
+          ? "Shock movement telemetry unavailable for this run."
+          : undefined,
+      };
+    })
+  ), [shockSetupSnapshot, trace]);
+
+  const hasAnyShockTelemetry = shockCornerModels.some((corner) => corner.samples.length > 0);
+  const sharedShockAxisLimit = SHOCK_FIXED_AXIS_LIMIT_IN_S;
+
+  const platformGeometrySummaryItems = [
+    { label: "CFS", value: selected.cfsIn != null ? `${selected.cfsIn.toFixed(3)} in` : "Unavailable", badge: "measured", severity: riskLabel(selected.cfsIn).toLowerCase() },
+    { label: "LF / RF", value: selected.lf != null || selected.rf != null ? `${fmt(selected.lf, 3)} / ${fmt(selected.rf, 3)} in` : "Unavailable", badge: "measured", severity: selected.lf != null || selected.rf != null ? "safe" : "missing" },
+    { label: "LR / RR", value: selected.lr != null || selected.rr != null ? `${fmt(selected.lr, 3)} / ${fmt(selected.rr, 3)} in` : "Unavailable", badge: "measured", severity: selected.lr != null || selected.rr != null ? "safe" : "missing" },
+    { label: "Rake", value: selected.centerRake != null || selected.sideRake != null ? `${fmt(selected.centerRake, 2)} / ${fmt(selected.sideRake, 3)} in` : "Unavailable", badge: "calculated", severity: "safe" },
+    { label: "Selected", value: selected.distanceFt != null ? `Lap ${trace?.lap ?? "n/a"} @ ${selected.distanceFt.toFixed(0)} ft` : `Lap ${trace?.lap ?? "n/a"}`, badge: readoutSource.toLowerCase(), severity: selected.distanceFt != null ? "safe" : "missing" },
+  ];
+
+  const diagnosticSummaryItems = [
     { label: "CFS", value: selected.cfsIn != null ? `${selected.cfsIn.toFixed(3)} in` : "Unavailable", badge: "measured", severity: riskLabel(selected.cfsIn).toLowerCase() },
     { label: "Rear min", value: selected.rearMinMm != null ? `${selected.rearMinMm.toFixed(1)} mm` : "Unavailable", badge: "calculated", severity: semanticSeverity(selected.rearScrapeMarginMm != null ? 1 - Math.max(0, Math.min(1, selected.rearScrapeMarginMm / 25)) : null) },
     { label: "Rake", value: selected.centerRake != null || selected.sideRake != null ? `${fmt(selected.centerRake, 2)} / ${fmt(selected.sideRake, 3)} in` : "Unavailable", badge: "calculated", severity: "safe" },
@@ -1455,6 +1522,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
     { label: "Scrub", value: selected.dragScrub != null ? selected.dragScrub.toFixed(2) : "Unavailable", badge: "proxy", severity: semanticSeverity(selected.dragScrub) },
     { label: "Selected", value: selected.distanceFt != null ? `Lap ${trace?.lap ?? "n/a"} @ ${selected.distanceFt.toFixed(0)} ft` : `Lap ${trace?.lap ?? "n/a"}`, badge: readoutSource.toLowerCase(), severity: selected.distanceFt != null ? "safe" : "missing" },
   ];
+  const summaryItems = workbenchView === "balance" ? platformGeometrySummaryItems : diagnosticSummaryItems;
 
   const riskSegments = useMemo(() => {
     const riskChannels = [
@@ -1531,29 +1599,13 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
   const renderBalancePanel = () => (
     <div className="engineering-panel">
       <div className="engineering-panel-grid">
-        <EngineeringMetricCard title="Front Platform Risk" channelName="front_platform_risk_score" value={latest("front_platform_risk_score")} riskValue={latest("front_platform_risk_score") as number | null} color="#38bdf8" />
-        <EngineeringMetricCard title="Rear Platform Risk" channelName="rear_platform_risk_score" value={latest("rear_platform_risk_score")} riskValue={latest("rear_platform_risk_score") as number | null} color="#a78bfa" />
-        <EngineeringMetricCard title="Whole-Car Bottoming" channelName="whole_car_bottoming_risk" value={latest("whole_car_bottoming_risk")} riskValue={latest("whole_car_bottoming_risk") as number | null} color="#ef4444" />
-        <EngineeringMetricCard title="Platform Balance" value={safeStringValue(latest("platform_balance_label"))} subtitle={safeStringValue(latest("platform_balance_explanation"))} color="#22c55e" />
-        <EngineeringMetricCard title="Rear Scrape Side" value={safeStringValue(latest("rear_scrape_side_label"))} subtitle={latest("rear_scrape_margin_mm") != null ? `${formatChannelValue(latest("rear_scrape_margin_mm") as number, "mm")} margin` : undefined} channelName="rear_scrape_side_label" color="#f59e0b" />
-        <EngineeringMetricCard title="Roll Balance" value={`Front ${formatChannelValue(latest("front_platform_roll_deg_from_rh") as number, "°")} / Rear ${formatChannelValue(latest("rear_platform_roll_deg_from_rh") as number, "°")}`} subtitle={`Balance: ${formatChannelValue(latest("platform_roll_balance_deg") as number, "°")}`} channelName="platform_roll_balance_deg" color="#a78bfa" />
-        <EngineeringMetricCard title="Rake / Pitch" value={`Rake ${formatChannelValue(latest("center_rake_fs_in") as number, "in")}`} subtitle={`Pitch ${formatChannelValue(latest("platform_pitch_deg_from_rh") as number, "°")}`} color="#4ade80" />
-      </div>
-      {/* Multi-lane risk corridor */}
-      <div style={{ marginTop: 8 }}>
-        <span style={{ fontSize: 9, color: "#8d9aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Platform Risk Corridor</span>
-        {trace && xs.length > 1 ? (
-          <RiskCorridorSVG
-            channels={["cfs_risk_score", "platform_compression_index", "whole_car_bottoming_risk", "rear_platform_contact_risk"]}
-            trace={trace}
-            xs={xs}
-            selectedIndex={selectedIndex}
-            onJump={(idx) => jumpToIndex(idx)}
-            height={52}
-          />
-        ) : (
-          <p className="muted" style={{ fontSize: 9 }}>Risk corridor unavailable: missing trace channels.</p>
-        )}
+        <EngineeringMetricCard title="CFS Ride Height" channelName="cfs_ride_height_in" value={latest("cfs_ride_height_in")} color="#4ade80" />
+        <EngineeringMetricCard title="Front Ride Heights" value={`LF ${formatChannelValue(latest("lf_ride_height_in") as number, "in")} / RF ${formatChannelValue(latest("rf_ride_height_in") as number, "in")}`} color="#38bdf8" />
+        <EngineeringMetricCard title="Rear Ride Heights" value={`LR ${formatChannelValue(latest("lr_ride_height_in") as number, "in")} / RR ${formatChannelValue(latest("rr_ride_height_in") as number, "in")}`} color="#22d3ee" />
+        <EngineeringMetricCard title="Front / Rear Avg RH" value={`Front ${formatChannelValue(latest("front_avg_rh_in") as number, "in")} / Rear ${formatChannelValue(latest("rear_avg_rh_in") as number, "in")}`} color="#a78bfa" />
+        <EngineeringMetricCard title="Center Rake" channelName="center_rake_fs_in" value={latest("center_rake_fs_in")} color="#4ade80" />
+        <EngineeringMetricCard title="Side Rake" channelName="side_rake_in" value={latest("side_rake_in")} color="#f59e0b" />
+        <EngineeringMetricCard title="Roll / Pitch" value={`Roll ${formatChannelValue(latest("platform_roll_deg_from_rh") as number, "°")}`} subtitle={`Pitch ${formatChannelValue(latest("platform_pitch_deg_from_rh") as number, "°")}`} color="#a78bfa" />
       </div>
       {setupAction(["lf_ride_height_mm", "rf_ride_height_mm", "nose_weight_pct", "cross_weight_pct"], "Platform / Ride Height Setup", true)}
     </div>
@@ -1716,33 +1768,50 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
   );
 
   const renderShocksPanel = () => (
-    <div className="engineering-panel">
-      <div className="basis-label" style={{ fontSize: 9, color: "#8d9aaa", marginBottom: 4 }}>
-        <span className="lap-flag-badge" style={{ background: "rgba(141,154,170,0.12)", color: "#8d9aaa", fontSize: 9, padding: "1px 6px" }}>
-          Histograms: Full-lap distribution
-        </span>
+    <div className="engineering-panel shock-workstation">
+      <header className="shock-workstation-header">
+        <div>
+          <h3>Shocks</h3>
+          <p className="section-note">
+            Live shock velocity/deflection telemetry from the run. Setup damper clicks shown separately when available.
+          </p>
+        </div>
+        <div className="shock-workstation-badges">
+          <span className="lap-flag-badge">{shockDistributionModeLabel}</span>
+          <span className="lap-flag-badge">Shared axis ±{sharedShockAxisLimit.toFixed(1)} in/s</span>
+        </div>
+      </header>
+
+      {!hasAnyShockTelemetry && (
+        <div className="shock-workstation-warning" role="status">
+          <AlertTriangle size={14} />
+          <span>
+            Shock movement telemetry is unavailable for this run. Garage damper settings may still exist in Setup, but live shock deflection/velocity analysis is unavailable.
+          </span>
+        </div>
+      )}
+
+      <div className="shock-workstation-toolbar" aria-label="Shock histogram range summary">
+        <p className="shock-range-note">
+          Histograms use a fixed -{sharedShockAxisLimit.toFixed(1)} to +{sharedShockAxisLimit.toFixed(1)} in/s range, 0.50 in/s bins, labels every 1.0 in/s, and ±{SHOCK_BUCKET_THRESHOLD_IN_S.toFixed(1)} in/s hi/lo boundaries.
+        </p>
       </div>
-      {/* Four-corner shock velocity histograms */}
-      <div className="shock-histogram-grid">
-        <ShockHistogram trace={trace} channelName="lf_shock_vel_in_s" corner="LF" color="#4ade80" />
-        <ShockHistogram trace={trace} channelName="rf_shock_vel_in_s" corner="RF" color="#ef4444" />
-        <ShockHistogram trace={trace} channelName="lr_shock_vel_in_s" corner="LR" color="#eab308" />
-        <ShockHistogram trace={trace} channelName="rr_shock_vel_in_s" corner="RR" color="#22d3ee" />
+
+      <div className="shock-workstation-grid">
+        {shockCornerModels.map((corner) => (
+          <ShockHistogram
+            key={corner.key}
+            corner={corner.label}
+            color={corner.color}
+            samples={corner.samples}
+            axisLimit={sharedShockAxisLimit}
+            bucketThreshold={SHOCK_BUCKET_THRESHOLD_IN_S}
+            setupFields={corner.setupFields}
+            setupSide={corner.key === "rf" || corner.key === "rr" ? "right" : "left"}
+            unavailableReason={corner.unavailableReason}
+          />
+        ))}
       </div>
-      {/* Four-corner activity bars */}
-      <div className="engineering-panel-grid" style={{ marginBottom: 8 }}>
-        <CornerBarChart trace={trace} channelPrefix="lf_shock_activity_index" label="Shock Activity" color="#a78bfa" decimals={3} />
-        <CornerBarChart trace={trace} channelPrefix="lf_damper_energy_proxy" label="Damper Energy" color="#c084fc" decimals={3} />
-      </div>
-      <div className="engineering-panel-grid">
-        <EngineeringMetricCard title="Shock Velocity RMS" channelName="shock_velocity_rms" value={latest("shock_velocity_rms")} riskValue={scaledRisk(latest("shock_velocity_rms") as number | null, 5)} color="#38bdf8" />
-        <EngineeringMetricCard title="Shock Activity" channelName="shock_activity_index" value={latest("shock_activity_index")} riskValue={scaledRisk(latest("shock_activity_index") as number | null, 10)} color="#a78bfa" />
-        <EngineeringMetricCard title="Damper Energy Proxy" channelName="damper_energy_proxy" value={latest("damper_energy_proxy")} color="#c084fc" />
-        <EngineeringMetricCard title="Platform Stability" value={`Stability: ${formatChannelValue(latest("platform_stability_score") as number, "index")}`} subtitle={`Rake stability: ${formatChannelValue(latest("rake_stability_score") as number, "index")}`} channelName="platform_stability_score" riskValue={latest("platform_stability_score") as number | null} color="#22c55e" />
-        <EngineeringMetricCard title="Platform Compression" channelName="platform_compression_index" value={latest("platform_compression_index")} riskValue={latest("platform_compression_index") as number | null} color="#f97316" />
-      </div>
-      {setupAction(["lf_rebound_per_click", "rf_rebound_per_click", "lr_rebound_per_click", "rr_rebound_per_click", "lf_compression_per_click", "rf_compression_per_click", "lr_compression_per_click", "rr_compression_per_click"], "Dampers / Springs Setup", true)}
-      <p className="section-note" style={{ marginTop: 8 }}>Frequency-domain shock analysis can later split aero oscillation from bump activity. Histograms show velocity distribution per corner.</p>
     </div>
   );
 
@@ -1910,27 +1979,29 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
           </div>
         ))}
       </div>
-      <div className="platform-risk-strip" aria-label="Platform risk over lap distance">
-        {riskSegments.length === 0 ? (
-          <span className="risk-strip-empty">Risk strip unavailable: required risk channels are missing.</span>
-        ) : (
-          riskSegments.map((segment) => {
-            const isSelected = selectedIndex >= segment.startIndex && selectedIndex <= segment.endIndex;
-            const dist = xs[Math.floor((segment.startIndex + segment.endIndex) / 2)];
-            return (
-              <button
-                key={`${segment.startIndex}-${segment.endIndex}`}
-                className={`risk-strip-segment${isSelected ? " selected" : ""}`}
-                data-severity={segment.severity}
-                style={{ width: `${100 / riskSegments.length}%` }}
-                title={dist != null ? `${Math.round(dist).toLocaleString()} ft | risk ${segment.risk?.toFixed(2) ?? "unavailable"}` : "Risk unavailable"}
-                onClick={() => jumpToIndex(Math.floor((segment.startIndex + segment.endIndex) / 2))}
-                aria-label={dist != null ? `Jump to ${Math.round(dist)} feet` : "Risk segment unavailable"}
-              />
-            );
-          })
-        )}
-      </div>
+      {workbenchView !== "balance" && (
+        <div className="platform-risk-strip" aria-label="Platform risk over lap distance">
+          {riskSegments.length === 0 ? (
+            <span className="risk-strip-empty">Risk strip unavailable: required risk channels are missing.</span>
+          ) : (
+            riskSegments.map((segment) => {
+              const isSelected = selectedIndex >= segment.startIndex && selectedIndex <= segment.endIndex;
+              const dist = xs[Math.floor((segment.startIndex + segment.endIndex) / 2)];
+              return (
+                <button
+                  key={`${segment.startIndex}-${segment.endIndex}`}
+                  className={`risk-strip-segment${isSelected ? " selected" : ""}`}
+                  data-severity={segment.severity}
+                  style={{ width: `${100 / riskSegments.length}%` }}
+                  title={dist != null ? `${Math.round(dist).toLocaleString()} ft | risk ${segment.risk?.toFixed(2) ?? "unavailable"}` : "Risk unavailable"}
+                  onClick={() => jumpToIndex(Math.floor((segment.startIndex + segment.endIndex) / 2))}
+                  aria-label={dist != null ? `Jump to ${Math.round(dist)} feet` : "Risk segment unavailable"}
+                />
+              );
+            })
+          )}
+        </div>
+      )}
       <WorkbenchSubnav active={workbenchView} onChange={handleViewChange} />
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
         <span className="laps-stint-legend-item" style={{ fontSize: 10, color: "#8d9aaa", fontWeight: 600 }}>

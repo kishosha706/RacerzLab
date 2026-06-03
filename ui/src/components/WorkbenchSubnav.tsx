@@ -36,7 +36,7 @@ export function WorkbenchSubnav({ active, onChange }: WorkbenchSubnavProps) {
           aria-label={`Show ${v.label} platform section`}
         >
           <span className="workbench-subnav-icon">{v.icon}</span>
-          <span>{v.label}</span>
+          <span className="workbench-subnav-label">{v.label}</span>
         </button>
       ))}
     </nav>

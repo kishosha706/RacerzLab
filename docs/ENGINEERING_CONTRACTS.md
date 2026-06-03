@@ -4,19 +4,19 @@ Last updated: 2026-05-26
 
 ---
 
-## 0. Track Map (.mt2) Contract
+## 0. Track Map File Contract
 
 ### Source of truth
-- `.mt2` files are MoTeCTrackV2 structured binary files.
+- Track map files use a structured binary source format.
 - They provide centerline geometry (x, y, z, distance, heading) — NOT GPS coordinates.
 - No left/right boundaries, track width, banking, or meaningful altitude variation.
-- All `.mt2` geometry is relative to an arbitrary local origin, not real-world GPS.
+- All imported track map geometry is relative to an arbitrary local origin, not real-world GPS.
 
 ### Import flow
-- Frontend sends `.mt2` file bytes via `multipart/form-data` to `POST /api/imports/mt2`.
-- Backend parses binary, extracts centerline points + markers + sections, caches parsed JSON.
-- Parsed maps are indexed in `data/track_maps/track_map_index.json`.
-- Folder import available at `POST /api/imports/mt2-folder` for bulk import.
+- Frontend sends track map file bytes via `multipart/form-data` to the track-map import endpoint.
+- Backend parses binary, extracts centerline points + markers + sections, and stores a canonical track map in the local RacerZLab cached map directory.
+- Canonical track maps are indexed in `data/track_maps/track_map_index.json`.
+- Folder import is available through the track-map folder import endpoint for bulk import.
 
 ### Track matching
 - Track names are normalized via `normalize_track_key()` (removes suffixes, maps known aliases).
@@ -26,20 +26,20 @@ Last updated: 2026-05-26
 
 ### Overlay alignment
 - All overlay markers align by `lap_pct` / `distance_ft`, never by sample index.
-- Platform events are mapped to `.mt2` x/y via `interpolate_at_pct()`.
+- Platform events are mapped to canonical track map x/y via `interpolate_at_pct()`.
 - Target zone is rendered as a highlighted path segment.
-- If `.mt2` is unavailable, fall back to lap-distance event list (no spatial rendering).
+- If no track map file is available, fall back to lap-distance event list (no spatial rendering).
 
 ### Missing data
-- `.mt2` files without markers or sections still render centerline.
-- Unknown/unsupported `.mt2` variants return `status: "unsupported"` with warnings.
+- Track map files without markers or sections still render centerline.
+- Unknown/unsupported track map file variants return `status: "unsupported"` with warnings.
 - No GPS → `origin.gps_supported: false`.
 - No boundaries → `has_boundaries: false`.
 - No banking/width → warnings list explains limitations.
 
 ### Local-only
-- `.mt2` files are saved to `data/imports/mt2/`.
-- Parsed JSON cache saved to `data/track_maps/`.
+- Repo-local source track map files are not retained after import.
+- Canonical track maps are saved to `data/track_maps/`.
 - No external map tiles, CDN services, or GPS APIs.
 - SVG rendering is local-only — no Mapbox, Google Maps, or OpenStreetMap.
 
@@ -50,7 +50,7 @@ Last updated: 2026-05-26
 - App runs entirely on the user's machine.
 - Backend bound to `127.0.0.1` only.
 - No cloud sync, auth, analytics, telemetry upload, or external runtime APIs.
-- `.ibt`, `.sto`, `.mt2`, setup snapshots, telemetry, and reports never leave the machine.
+- `.ibt`, `.sto`, track map files, setup snapshots, telemetry, and reports never leave the machine.
 - Imported `.ibt` files are saved locally to `data/imports/ibt/<safe_name>`.
 
 ---
@@ -171,16 +171,16 @@ The Notebook should save existing comparison/insight payloads as-is from the API
 - Runs all 5 insight engines: trace annotations, correlations, target zone classification, confidence-weighted verdict, sector intelligence
 - Returns `ComparisonInsightsResponse` with `annotations`, `correlations`, `target_zone_classification`, `confidence_weighted_verdict`, `sectors`, `summary_headline`, `key_takeaways`
 
-### POST /api/imports/mt2
-- Multipart file upload for `.mt2` track map files
+### POST /api/imports/track-map
+- Multipart file upload for track map files
 - Returns `TrackMapIndexEntry` with points/markers/sections counts
 
-### POST /api/imports/mt2-folder
-- JSON body `{folder_path: string}` — bulk import all `.mt2` files from a directory
+### POST /api/imports/track-map-folder
+- JSON body `{folder_path: string}` — bulk import all track map files from a directory
 - Returns `{imported: number, entries: TrackMapIndexEntry[]}`
 
 ### GET /api/track-maps
-- Lists all imported track maps from index
+- Lists all imported track maps from the canonical track map index
 
 ### GET /api/track-maps/{map_id}
 - Returns full `TrackMap` with all points, markers, sections
@@ -257,7 +257,7 @@ The Notebook should save existing comparison/insight payloads as-is from the API
 ### Yaw-error scrub proxy
 - `front_scrub_proxy` is a composite: slip mismatch (30%) + steering/lat (25%) + yaw error (45%).
 - Yaw error = `max(0, theoretical_yaw_rate - actual_yaw_rate)` where theoretical comes from track curvature when available.
-- When `.mt2` curvature data is available, the yaw-error component enables understeer detection.
+- When imported track map curvature data is available, the yaw-error component enables understeer detection.
 - When curvature is unavailable, yaw error defaults to 0 and the proxy falls back to slip + steering components.
 
 ### Geometry estimates

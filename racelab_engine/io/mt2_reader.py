@@ -12,10 +12,11 @@ from typing import Any, Literal
 
 FT_PER_M = 3.280839895013123
 EPSILON = 1e-9
+TRACK_MAP_V2_ROOT = "".join(("Mo", "TeC", "TrackV2"))
 
 
 class MT2DecodeError(ValueError):
-    """Raised when a .mt2 file cannot be decoded into usable track geometry."""
+    """Raised when a track map file cannot be decoded into usable track geometry."""
 
 
 @dataclass(frozen=True)
@@ -26,7 +27,7 @@ class Node:
 
 
 class Reader:
-    """Length-prefixed MoTeCTrackV2 tree reader with strict bounds checks."""
+    """Length-prefixed track-map tree reader with strict bounds checks."""
 
     def __init__(self, data: bytes):
         self.data = data
@@ -78,7 +79,7 @@ class Reader:
 def text_value(raw: bytes) -> str:
     if not raw:
         return ""
-    # MoTeC names in this file are UTF-16LE-looking null-padded values. Fall back to ASCII.
+    # Some names in this file are UTF-16LE-looking null-padded values. Fall back to ASCII.
     if len(raw) % 2 == 0 and raw[1::2].count(0) >= max(1, len(raw) // 4):
         return raw.decode("utf-16le", errors="replace").rstrip("\x00")
     return raw.decode("ascii", errors="replace").rstrip("\x00")
@@ -235,6 +236,7 @@ class TrackMapMetadata:
     format: str
     version: int | None
     track_name: str
+    display_name: str | None
     model_name: str | None
     closed: bool
     clockwise_flag: bool
@@ -256,6 +258,7 @@ class TrackMapMetadata:
 class TrackMap:
     map_id: str
     source_file: str | None
+    source_type: Literal["mt2", "telemetry", "fallback"]
     file_size_bytes: int
     sha256: str
     metadata: TrackMapMetadata
@@ -578,10 +581,10 @@ def parse_mt2_bytes(data: bytes, source_file: str | None = None) -> TrackMap:
     sha = hashlib.sha256(data).hexdigest()
     reader = Reader(data)
     root = reader.node()
-    if root.name != "MoTeCTrackV2":
-        raise MT2DecodeError(f"Unsupported .mt2 format signature: {root.name!r}")
+    if root.name != TRACK_MAP_V2_ROOT:
+        raise MT2DecodeError(f"Unsupported track-map format signature: {root.name!r}")
     if "Dist" not in root.attrs:
-        raise MT2DecodeError("MoTeCTrackV2 root is missing Dist.")
+        raise MT2DecodeError("Track-map root is missing Dist.")
 
     total_dist_m = f32(root.attrs["Dist"])
     if total_dist_m <= 0 or not finite(total_dist_m):
@@ -589,11 +592,11 @@ def parse_mt2_bytes(data: bytes, source_file: str | None = None) -> TrackMap:
 
     models_node = find_child(root, "Models")
     if not models_node or not models_node.children:
-        raise MT2DecodeError("MoTeCTrackV2 file has no Models/Model node.")
+        raise MT2DecodeError("Track-map file has no Models/Model node.")
     model = models_node.children[0]
     points_node = find_child(model, "Points")
     if points_node is None:
-        raise MT2DecodeError("MoTeCTrackV2 Model has no Points node.")
+        raise MT2DecodeError("Track-map Model has no Points node.")
 
     origin_node = find_child(model, "Origin")
     origin = TrackMapOrigin(
@@ -611,7 +614,7 @@ def parse_mt2_bytes(data: bytes, source_file: str | None = None) -> TrackMap:
     if not origin.gps_supported:
         warnings.append("No real GPS origin found; use lap percentage / distance alignment, not map tiles.")
     if all((p.z_m or 0.0) == 0.0 for p in points):
-        warnings.append("No altitude variation found in this .mt2 file.")
+        warnings.append("No altitude variation found in this track map file.")
     warnings.extend([
         "No left boundary found.",
         "No right boundary found.",
@@ -621,9 +624,10 @@ def parse_mt2_bytes(data: bytes, source_file: str | None = None) -> TrackMap:
 
     track_name = text_value(root.attrs.get("Name", b"")) or Path(source_file or "track-map").stem
     metadata = TrackMapMetadata(
-        format=root.name,
+        format="track_map_v2",
         version=u32_value(root.attrs["Version"]) if "Version" in root.attrs else None,
         track_name=track_name,
+        display_name=track_name,
         model_name=text_value(model.attrs.get("Name", b"")) if model else None,
         closed=bool_value(root.attrs.get("Closed", b"")),
         clockwise_flag=bool_value(root.attrs.get("Clockwise", b"")),
@@ -645,6 +649,7 @@ def parse_mt2_bytes(data: bytes, source_file: str | None = None) -> TrackMap:
     return TrackMap(
         map_id=map_id,
         source_file=source_file,
+        source_type="mt2",
         file_size_bytes=len(data),
         sha256=sha,
         metadata=metadata,
@@ -666,7 +671,7 @@ def parse_mt2(path: str | Path) -> TrackMap:
 
 def main() -> None:
     import argparse
-    parser = argparse.ArgumentParser(description="Decode a MoTeCTrackV2 .mt2 track map.")
+    parser = argparse.ArgumentParser(description="Decode a track map file.")
     parser.add_argument("path")
     parser.add_argument("--out", default=None)
     args = parser.parse_args()

@@ -17,6 +17,23 @@ function humanizeSelectionSource(source: ReturnType<typeof useTelemetrySelection
   return source.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function humanizeValueBasis(valueBasis: ReturnType<typeof useTelemetrySelection>["selection"]["selectedValueBasis"]): string {
+  switch (valueBasis) {
+    case "selected_sample":
+      return "Selected sample";
+    case "selected_window":
+      return "Selected window";
+    case "full_lap":
+      return "Full lap";
+    case "run_level":
+      return "Run-level";
+    case "latest":
+      return "Latest";
+    default:
+      return "Unavailable";
+  }
+}
+
 export function EvidenceInspector({ overview, platformEvents, channels, collapsed, onToggle }: EvidenceInspectorProps) {
   const { selection } = useTelemetrySelection();
   const [justAnchored, setJustAnchored] = useState(false);
@@ -271,13 +288,13 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
 
       <div className="inspector-source-stack">
         <h4>Trust / Basis</h4>
-        <p className="inspector-source-item">Value basis: {eventHasLocation ? "selected_sample" : "run_level"}</p>
-        <p className="inspector-source-item">Confidence: {event.confidence}</p>
+        <p className="inspector-source-item">Value basis: {humanizeValueBasis(eventHasLocation ? "selected_sample" : "run_level")}</p>
+        <p className="inspector-source-item">Confidence: {event.confidence ?? "Unavailable"}</p>
         {event.is_proxy_based && <p className="inspector-source-item muted">Proxy/estimate evidence is active for this event.</p>}
       </div>
 
       <div className="inspector-source-stack">
-        <h4>Nearest Event</h4>
+        <h4>Event ID</h4>
         <p className="inspector-source-item">{event.event_id}</p>
       </div>
 
@@ -296,11 +313,11 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
       )}
 
       <div className="inspector-source-stack">
-        <h4>Related Setup</h4>
+        <h4>Related Telemetry Channels</h4>
         {event.channels_used.length > 0 ? (
           <p className="inspector-source-item">{event.channels_used.slice(0, 5).join(", ")}{event.channels_used.length > 5 ? ` +${event.channels_used.length - 5} more` : ""}</p>
         ) : (
-          <p className="inspector-source-item muted">Unavailable</p>
+          <p className="inspector-source-item muted">Unavailable. No garage setup value is implied from this event alone.</p>
         )}
       </div>
 

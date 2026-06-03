@@ -95,4 +95,5 @@ desktop.ini
 *.bak
 *.tmp
 *.old
+# Canonical track map cache is local-only
 data/track_maps/

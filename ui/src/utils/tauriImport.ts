@@ -42,7 +42,7 @@ export async function pickTelemetryFile(): Promise<NativeImportResult> {
 }
 
 /**
- * Open a native file picker for .mt2 track map files.
+ * Open a native file picker for track map files.
  */
 export async function pickTrackMapFile(): Promise<NativeImportResult> {
   if (!isTauri()) {
@@ -53,7 +53,7 @@ export async function pickTrackMapFile(): Promise<NativeImportResult> {
       multiple: false,
       filters: [
         {
-          name: "MoTeC Track Map",
+          name: "Track Map File",
           extensions: ["mt2"],
         },
       ],

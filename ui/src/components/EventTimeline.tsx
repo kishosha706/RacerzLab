@@ -40,6 +40,8 @@ function staggerMarkers(events: PlatformEventItem[]): StaggeredEvent[] {
 
 export function EventTimeline({ platformEvents }: EventTimelineProps) {
   const { selection, focusEvidence, setHover, setPlaybackActive } = useTelemetrySelection();
+  const [browseIndex, setBrowseIndex] = useState<number | null>(null);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<number>(1);
   const playbackRef = useRef<number | null>(null);
@@ -56,15 +58,26 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
     return () => setPlaybackActive(false);
   }, [playing, setPlaybackActive]);
 
+  const setPreviewHover = useCallback((event: PlatformEventItem | null) => {
+    if (!event) {
+      setHover(null, null);
+      return;
+    }
+    const sampleIndex =
+      typeof event.sample_index === "number" && Number.isFinite(event.sample_index) && event.sample_index >= 0
+        ? event.sample_index
+        : null;
+    setHover(event.lap_pct ?? null, sampleIndex);
+  }, [setHover]);
+
   const stepTo = useCallback((index: number) => {
     const event = sorted[index];
     if (!event) return;
     indexRef.current = index;
-    const sampleIndex = typeof event.sample_index === "number" && Number.isFinite(event.sample_index) && event.sample_index >= 0
-      ? event.sample_index
-      : null;
-    setHover(event.lap_pct ?? null, sampleIndex);
-  }, [sorted, setHover]);
+    setBrowseIndex(index);
+    setHoveredIndex(null);
+    setPreviewHover(event);
+  }, [sorted, setPreviewHover]);
 
   const buildTimelineEvidence = useCallback((event: PlatformEventItem) => {
     const validSampleIdx = typeof event.sample_index === "number" && Number.isFinite(event.sample_index) && event.sample_index >= 0 ? event.sample_index : null;
@@ -89,24 +102,33 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
     const event = sorted[index];
     if (!event) return;
     indexRef.current = index;
+    setBrowseIndex(index);
+    setHoveredIndex(null);
     focusEvidence(buildTimelineEvidence(event));
   }, [sorted, focusEvidence, buildTimelineEvidence]);
 
   const togglePlay = useCallback(() => {
-    setPlaying((p) => !p);
-  }, []);
+    if (sorted.length === 0) return;
+    setPlaying((p) => {
+      if (p) return false;
+      if (indexRef.current >= sorted.length - 1) {
+        stepTo(0);
+      }
+      return true;
+    });
+  }, [sorted.length, stepTo]);
 
   const stepPrev = useCallback(() => {
     setPlaying(false);
     const next = Math.max(0, indexRef.current - 1);
-    commitEvent(next);
-  }, [commitEvent]);
+    stepTo(next);
+  }, [stepTo]);
 
   const stepNext = useCallback(() => {
     setPlaying(false);
     const next = Math.min(sorted.length - 1, indexRef.current + 1);
-    commitEvent(next);
-  }, [sorted, commitEvent]);
+    stepTo(next);
+  }, [sorted.length, stepTo]);
 
   useEffect(() => {
     if (!playing || sorted.length === 0) {
@@ -126,13 +148,13 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
         return;
       }
       lastTime = now;
-      const next = (indexRef.current + 1) % sorted.length;
-      stepTo(next);
-      if (next === 0) {
-        commitEvent(sorted.length - 1);
+      const next = indexRef.current + 1;
+      if (next >= sorted.length) {
         setPlaying(false);
+        playbackRef.current = null;
         return;
       }
+      stepTo(next);
       playbackRef.current = requestAnimationFrame(tick);
     };
 
@@ -146,6 +168,7 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (sorted.length === 0) return;
+      if (e.target instanceof HTMLElement && e.target.closest("button, select, [contenteditable='true']")) return;
 
       if (e.key === " ") {
         e.preventDefault();
@@ -173,6 +196,8 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
       if (e.key === "Escape") {
         e.preventDefault();
         setPlaying(false);
+        setHoveredIndex(null);
+        setBrowseIndex(null);
         setHover(null, null);
       }
     };
@@ -180,15 +205,38 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
     return () => window.removeEventListener("keydown", handler);
   }, [togglePlay, sorted, stepTo, commitEvent, setHover]);
 
+  useEffect(() => {
+    if (sorted.length === 0) {
+      indexRef.current = 0;
+      setBrowseIndex(null);
+      setHoveredIndex(null);
+      return;
+    }
+
+    const selectedIndex = selection.selectedEventId == null
+      ? -1
+      : sorted.findIndex((event) => event.event_id === selection.selectedEventId);
+    if (selectedIndex >= 0 && browseIndex == null && hoveredIndex == null) {
+      indexRef.current = selectedIndex;
+    } else if (indexRef.current >= sorted.length) {
+      indexRef.current = sorted.length - 1;
+    }
+  }, [sorted, selection.selectedEventId, browseIndex, hoveredIndex]);
+
   if (platformEvents.length === 0) return null;
 
-  const currentEvent = sorted[indexRef.current];
+  const selectedIndex = selection.selectedEventId == null
+    ? -1
+    : sorted.findIndex((event) => event.event_id === selection.selectedEventId);
+  const previewIndex = hoveredIndex ?? browseIndex;
+  const currentIndex = previewIndex ?? (selectedIndex >= 0 ? selectedIndex : indexRef.current);
+  const currentEvent = sorted[currentIndex];
 
   return (
     <footer className="event-timeline">
       <div className="timeline-header">
         <span className="timeline-label">Lap Storyline</span>
-        <span className="timeline-shortcuts">Esc clear hover - Left/Right browse - Enter commit - Space play</span>
+        <span className="timeline-shortcuts">Esc clear preview - Left/Right browse - Enter commit - Space play</span>
         <span className="timeline-lap">Lap {selection.selectedLap ?? "-"}</span>
       </div>
 
@@ -232,13 +280,14 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
         {staggered.map((event) => {
           const left = Math.max(0, Math.min(100, event._lapPct));
           const isActive = selection.selectedEventId === event.event_id;
+          const isBrowsed = previewIndex != null && sorted[previewIndex]?.event_id === event.event_id;
           const colour = SEVERITY_COLOURS[event.severity] ?? "#8d9aaa";
           const shape = EVENT_SHAPES[event.event_type] ?? "*";
 
           return (
             <button
               key={event.event_id}
-              className={`timeline-marker ${isActive ? "active" : ""}`}
+              className={`timeline-marker${isActive ? " active" : ""}${isBrowsed ? " browsed" : ""}`}
               style={{ left: `${left}%`, top: `${event.staggerOffset}px`, color: colour }}
               title={`${event.title} - ${event.severity}`}
               aria-label={`${event.title}, ${event.severity}, ${left.toFixed(1)} percent lap`}
@@ -247,12 +296,20 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
                 if (idx >= 0) commitEvent(idx);
               }}
               onMouseEnter={() => {
-                const sampleIndex = typeof event.sample_index === "number" && Number.isFinite(event.sample_index) && event.sample_index >= 0
-                  ? event.sample_index
-                  : null;
-                setHover(event.lap_pct ?? null, sampleIndex);
+                const idx = sorted.findIndex((e) => e.event_id === event.event_id);
+                if (idx >= 0) {
+                  setHoveredIndex(idx);
+                  setPreviewHover(event);
+                }
               }}
-              onMouseLeave={() => setHover(null, null)}
+              onMouseLeave={() => {
+                setHoveredIndex(null);
+                if (browseIndex != null) {
+                  setPreviewHover(sorted[browseIndex] ?? null);
+                } else {
+                  setHover(null, null);
+                }
+              }}
             >
               <span className="timeline-shape" style={{ color: colour }}>{shape}</span>
             </button>

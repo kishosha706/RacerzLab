@@ -23,6 +23,7 @@ from racelab_engine.analysis.vectorized_channels import (
     get_analysis_engine_mode,
     compare_row_vs_vectorized,
 )
+from racelab_engine.analysis.units import M_TO_IN
 
 # ── Helpers ──────────────────────────────────────────────────────
 
@@ -647,6 +648,161 @@ class TestParity:
         vec = frame_to_rows(normalize_telemetry_frame(rows))
         assert len(ref) == 1
         assert len(vec) == 1
+        assert all("lf_shock_vel_in_s" not in row for row in ref)
+        assert "lf_shock_vel_in_s" not in normalize_telemetry_frame(rows).columns
+        assert all("shock_velocity_rms" not in row for row in ref)
+        assert "shock_velocity_rms" not in normalize_telemetry_frame(rows).columns
+
+    def test_canonical_shock_aliases_normalize(self) -> None:
+        rows = [
+            _synthetic_row(
+                session_time=0.0,
+                throttle_01=0.0,
+                brake_01=0.0,
+                LFshockDefl=0.10,
+                RFshockDefl=0.11,
+                LRshockDefl=0.12,
+                RRshockDefl=0.13,
+                LFshockVel=0.20,
+                RFshockVel=0.21,
+                LRshockVel=0.22,
+                RRshockVel=0.23,
+            ),
+            _synthetic_row(
+                session_time=1.0,
+                throttle_01=0.0,
+                brake_01=0.0,
+                LFshockDefl=0.105,
+                RFshockDefl=0.115,
+                LRshockDefl=0.125,
+                RRshockDefl=0.135,
+                LFshockVel=0.24,
+                RFshockVel=0.25,
+                LRshockVel=0.26,
+                RRshockVel=0.27,
+            ),
+        ]
+        ref, vec = self._run_both(rows)
+        self._assert_parity(
+            ref,
+            vec,
+            {
+                "lf_shock_defl_in", "rf_shock_defl_in", "lr_shock_defl_in", "rr_shock_defl_in",
+                "lf_shock_vel_in_s", "rf_shock_vel_in_s", "lr_shock_vel_in_s", "rr_shock_vel_in_s",
+            },
+        )
+        assert ref[0]["lf_shock_defl_in"] == pytest.approx(0.10 * M_TO_IN)
+        assert ref[0]["lf_shock_vel_in_s"] == pytest.approx(0.20 * M_TO_IN)
+
+    def test_legacy_shock_aliases_normalize(self) -> None:
+        rows = [
+            _synthetic_row(
+                session_time=0.0,
+                throttle_01=0.0,
+                brake_01=0.0,
+                LFSHshockDefl=0.10,
+                RFSHshockDefl=0.11,
+                LRSHshockDefl=0.12,
+                RRSHshockDefl=0.13,
+                LFSHshockVel=0.20,
+                RFSHshockVel=0.21,
+                LRSHshockVel=0.22,
+                RRSHshockVel=0.23,
+            ),
+            _synthetic_row(
+                session_time=1.0,
+                throttle_01=0.0,
+                brake_01=0.0,
+                LFSHshockDefl=0.105,
+                RFSHshockDefl=0.115,
+                LRSHshockDefl=0.125,
+                RRSHshockDefl=0.135,
+                LFSHshockVel=0.24,
+                RFSHshockVel=0.25,
+                LRSHshockVel=0.26,
+                RRSHshockVel=0.27,
+            ),
+        ]
+        ref, vec = self._run_both(rows)
+        self._assert_parity(
+            ref,
+            vec,
+            {
+                "lf_shock_defl_in", "rf_shock_defl_in", "lr_shock_defl_in", "rr_shock_defl_in",
+                "lf_shock_vel_in_s", "rf_shock_vel_in_s", "lr_shock_vel_in_s", "rr_shock_vel_in_s",
+            },
+        )
+        assert ref[0]["lf_shock_defl_in"] == pytest.approx(0.10 * M_TO_IN)
+        assert ref[0]["lf_shock_vel_in_s"] == pytest.approx(0.20 * M_TO_IN)
+
+    def test_shock_velocity_derives_from_deflection_when_raw_velocity_missing(self) -> None:
+        rows = [
+            _synthetic_row(
+                session_time=0.0,
+                throttle_01=0.0,
+                brake_01=0.0,
+                LFshockDefl=0.10,
+                RFshockDefl=0.20,
+                LRshockDefl=0.30,
+                RRshockDefl=0.40,
+            ),
+            _synthetic_row(
+                session_time=1.0,
+                throttle_01=0.2,
+                brake_01=0.0,
+                LFshockDefl=0.11,
+                RFshockDefl=0.22,
+                LRshockDefl=0.31,
+                RRshockDefl=0.43,
+            ),
+        ]
+        ref, vec = self._run_both(rows)
+        self._assert_parity(
+            ref,
+            vec,
+            {
+                "lf_shock_vel_in_s", "rf_shock_vel_in_s", "lr_shock_vel_in_s", "rr_shock_vel_in_s",
+                "lf_shock_static_defl_in", "rf_shock_static_defl_in", "lr_shock_static_defl_in", "rr_shock_static_defl_in",
+                "lf_shock_defl_delta_in", "rf_shock_defl_delta_in", "lr_shock_defl_delta_in", "rr_shock_defl_delta_in",
+            },
+        )
+        assert ref[0].get("lf_shock_vel_in_s") is None
+        assert vec[0].get("lf_shock_vel_in_s") is None
+        assert ref[1]["lf_shock_vel_in_s"] == pytest.approx((0.11 - 0.10) * M_TO_IN)
+        assert ref[0]["lf_shock_static_defl_in"] == pytest.approx(0.11 * M_TO_IN)
+        assert vec[0]["lf_shock_static_defl_in"] == pytest.approx(0.11 * M_TO_IN)
+        assert ref[1]["lf_shock_static_defl_in"] == pytest.approx(0.11 * M_TO_IN)
+        assert ref[0]["lf_shock_defl_delta_in"] == pytest.approx((-0.01) * M_TO_IN)
+        assert ref[1]["lf_shock_defl_delta_in"] == pytest.approx(((-0.01) + 0.0) / 2.0 * M_TO_IN)
+
+    def test_shock_static_deflection_uses_first_throttle_over_10_pct(self) -> None:
+        rows = [
+            _synthetic_row(session_time=0.0, throttle_01=0.0, LFshockDefl=0.10),
+            _synthetic_row(session_time=1.0, throttle_01=0.09, LFshockDefl=0.11),
+            _synthetic_row(session_time=2.0, throttle_01=0.12, LFshockDefl=0.13),
+            _synthetic_row(session_time=3.0, throttle_01=0.50, LFshockDefl=0.17),
+        ]
+        ref, vec = self._run_both(rows)
+        self._assert_parity(ref, vec, {"lf_shock_static_defl_in", "lf_shock_defl_delta_in"})
+        expected_static = 0.13 * M_TO_IN
+        assert ref[0]["lf_shock_static_defl_in"] == pytest.approx(expected_static)
+        assert ref[1]["lf_shock_static_defl_in"] == pytest.approx(expected_static)
+        assert ref[2]["lf_shock_static_defl_in"] == pytest.approx(expected_static)
+        assert ref[0]["lf_shock_defl_delta_in"] == pytest.approx((0.10 - 0.13) * M_TO_IN)
+        assert ref[2]["lf_shock_defl_delta_in"] == pytest.approx(((0.10 - 0.13) + (0.11 - 0.13) + 0.0) / 3.0 * M_TO_IN)
+        expected_last_delta = ((0.10 - 0.13) + (0.11 - 0.13) + 0.0 + (0.17 - 0.13)) / 4.0 * M_TO_IN
+        assert ref[3]["lf_shock_defl_delta_in"] == pytest.approx(expected_last_delta)
+
+    def test_shock_static_and_delta_stay_unavailable_without_throttle_trigger(self) -> None:
+        rows = [
+            _synthetic_row(session_time=0.0, throttle_01=0.0, LFshockDefl=0.10),
+            _synthetic_row(session_time=1.0, throttle_01=0.05, LFshockDefl=0.11),
+            _synthetic_row(session_time=2.0, throttle_01=0.09, LFshockDefl=0.12),
+        ]
+        ref, vec = self._run_both(rows)
+        self._assert_parity(ref, vec, {"lf_shock_static_defl_in", "lf_shock_defl_delta_in"})
+        assert all(row.get("lf_shock_static_defl_in") is None for row in ref)
+        assert all(row.get("lf_shock_defl_delta_in") is None for row in ref)
 
     # ── Feature flag tests ────────────────────────────────────
 

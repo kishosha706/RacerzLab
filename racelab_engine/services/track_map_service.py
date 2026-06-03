@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -15,9 +14,11 @@ from racelab_engine.io.mt2_reader import (
     MT2DecodeError,
 )
 from racelab_engine.analysis.track_matching import (
+    build_match_aliases,
     normalize_track_key,
     infer_layout_key,
     match_track_map_for_run,
+    suggest_track_map_display_name,
 )
 
 DEFAULT_DATA_DIR = Path("data")
@@ -69,51 +70,67 @@ def _save_index(entries: list[dict[str, Any]]) -> None:
     _index_path().write_text(json.dumps(entries, indent=2, default=str), encoding="utf-8")
 
 
+def _find_index_entry(entries: list[dict[str, Any]], *, map_id: str | None = None, sha256: str | None = None) -> int | None:
+    for i, entry in enumerate(entries):
+        if map_id and entry.get("map_id") == map_id:
+            return i
+        if sha256 and entry.get("sha256") == sha256:
+            return i
+    return None
+
+
 def _upsert_index_entry(entry: dict[str, Any]) -> bool:
     """Insert or update an index entry. Returns True if new (inserted), False if updated."""
     entries = _load_index()
-    for i, e in enumerate(entries):
-        if e.get("map_id") == entry["map_id"]:
-            entries[i] = entry
-            _save_index(entries)
-            return False  # updated
+    existing_index = _find_index_entry(entries, map_id=entry["map_id"], sha256=entry.get("sha256"))
+    if existing_index is not None:
+        entries[existing_index] = entry
+        _save_index(entries)
+        return False  # updated
     entries.append(entry)
     _save_index(entries)
     return True  # inserted
 
 
-# ── import ────────────────────────────────────────────────────
+def _canonical_cache_dict(track_map: TrackMap) -> dict[str, Any]:
+    data = track_map.as_dict()
+    layout_key = infer_layout_key(Path(track_map.source_file or "").name if track_map.source_file else None)
+    if metadata := data.get("metadata"):
+        metadata["display_name"] = suggest_track_map_display_name(
+            metadata.get("display_name") or metadata.get("track_name"),
+            source_filename=Path(track_map.source_file or "").name if track_map.source_file else None,
+            map_id=track_map.map_id,
+            layout_key=layout_key,
+        )["suggested_display_name"]
+    data["source_file"] = None
+    data["source_hash"] = track_map.sha256
+    return data
 
-def import_mt2_file(path: Path) -> dict[str, Any]:
-    """Import a single .mt2 file: copy, parse, cache, index. Returns index entry dict."""
-    if path.suffix.lower() != ".mt2":
-        raise ValueError("Unsupported file type. Please select an .mt2 track map file.")
 
-    safe_name = _sanitize_filename(path.name)
-    dest = _mt2_imports_dir() / safe_name
-    data = path.read_bytes()
-    dest.write_bytes(data)
-
-    sha = hashlib.sha256(data).hexdigest()
-    track_map = parse_mt2_bytes(data, source_file=str(path))
-
-    # Cache parsed JSON
-    cache_path = _track_maps_dir() / f"{track_map.map_id}.json"
-    cache_path.write_text(json.dumps(track_map.as_dict(), indent=2, default=str), encoding="utf-8")
-
+def _canonical_index_entry(
+    track_map: TrackMap,
+    *,
+    source_filename: str,
+    cache_path: Path,
+) -> dict[str, Any]:
     track_name = track_map.metadata.track_name
     track_key = normalize_track_key(track_name)
-    layout_key = infer_layout_key(path.name)
-
-    entry = {
+    layout_key = infer_layout_key(source_filename)
+    display_name = suggest_track_map_display_name(
+        track_map.metadata.display_name or track_name,
+        source_filename=source_filename,
+        map_id=track_map.map_id,
+        layout_key=layout_key,
+    )["suggested_display_name"]
+    return {
         "map_id": track_map.map_id,
         "track_key": track_key,
         "layout_key": layout_key,
-        "display_name": f"{track_name} ({layout_key})",
-        "source_filename": path.name,
-        "local_path": str(dest),
+        "display_name": display_name,
+        "source_filename": source_filename,
         "cache_path": str(cache_path),
-        "source_type": "mt2",
+        "source_type": track_map.source_type,
+        "source_removed": True,
         "status": track_map.status,
         "supported": track_map.supported,
         "partial": track_map.partial,
@@ -121,26 +138,160 @@ def import_mt2_file(path: Path) -> dict[str, Any]:
         "markers_count": len(track_map.markers),
         "sections_count": len(track_map.sections),
         "distance_ft": track_map.metadata.distance_ft,
-        "match_aliases": [track_name.lower(), track_key, path.stem.lower()],
+        "match_aliases": build_match_aliases(display_name, source_filename, layout_key),
         "warnings": track_map.warnings,
-        "sha256": sha,
-        "file_size_bytes": len(data),
+        "sha256": track_map.sha256,
+        "source_hash": track_map.sha256,
+        "file_size_bytes": track_map.file_size_bytes,
     }
+
+
+def _normalize_index_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(entry)
+    source_hash = normalized.get("source_hash") or normalized.get("sha256")
+    if source_hash:
+        normalized["source_hash"] = source_hash
+        normalized["sha256"] = normalized.get("sha256", source_hash)
+    display_cleanup = suggest_track_map_display_name(
+        normalized.get("display_name"),
+        source_filename=normalized.get("source_filename"),
+        map_id=normalized.get("map_id"),
+        layout_key=normalized.get("layout_key"),
+    )
+    if display_cleanup["suggested_display_name"]:
+        normalized["display_name"] = display_cleanup["suggested_display_name"]
+        normalized["match_aliases"] = build_match_aliases(
+            normalized["display_name"],
+            str(normalized.get("source_filename", "")),
+            str(normalized.get("layout_key", "default")),
+        )
+    normalized["source_removed"] = True
+    normalized.pop("local_path", None)
+    return normalized
+
+
+def _retained_source_path(entry: dict[str, Any]) -> Path | None:
+    local_path = entry.get("local_path")
+    if not local_path:
+        return None
+    try:
+        return Path(local_path)
+    except (TypeError, ValueError):
+        return None
+
+
+def _delete_retained_source_file(entry: dict[str, Any]) -> bool:
+    retained_path = _retained_source_path(entry)
+    cache_path_value = entry.get("cache_path")
+    if retained_path is None or not cache_path_value:
+        return False
+    cache_path = Path(cache_path_value)
+    if not cache_path.exists() or not retained_path.exists() or retained_path.suffix.lower() != ".mt2":
+        return False
+    retained_path.unlink()
+    return True
+
+
+def _sanitize_canonical_cache(entry: dict[str, Any]) -> bool:
+    cache_path_value = entry.get("cache_path")
+    if not cache_path_value:
+        return False
+    cache_path = Path(cache_path_value)
+    if not cache_path.exists():
+        return False
+    try:
+        data = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+
+    original = json.dumps(data, sort_keys=True)
+    data["source_file"] = None
+    if "sha256" in data and "source_hash" not in data:
+        data["source_hash"] = data["sha256"]
+    if metadata := data.get("metadata"):
+        metadata["display_name"] = suggest_track_map_display_name(
+            metadata.get("display_name") or metadata.get("track_name"),
+            source_filename=entry.get("source_filename"),
+            map_id=entry.get("map_id"),
+            layout_key=entry.get("layout_key"),
+        )["suggested_display_name"]
+
+    if json.dumps(data, sort_keys=True) == original:
+        return False
+    cache_path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    return True
+
+
+def cleanup_track_map_storage() -> dict[str, int]:
+    entries = _load_index()
+    if not entries:
+        return {"entries_updated": 0, "source_files_removed": 0, "cache_files_updated": 0}
+
+    normalized_entries: list[dict[str, Any]] = []
+    entries_updated = 0
+    source_files_removed = 0
+    cache_files_updated = 0
+    for entry in entries:
+        if _delete_retained_source_file(entry):
+            source_files_removed += 1
+        if _sanitize_canonical_cache(entry):
+            cache_files_updated += 1
+        normalized = _normalize_index_entry(entry)
+        if normalized != entry:
+            entries_updated += 1
+        normalized_entries.append(normalized)
+
+    if entries_updated or source_files_removed:
+        _save_index(normalized_entries)
+    return {
+        "entries_updated": entries_updated,
+        "source_files_removed": source_files_removed,
+        "cache_files_updated": cache_files_updated,
+    }
+
+
+# ── import ────────────────────────────────────────────────────
+
+def import_mt2_file(path: Path) -> dict[str, Any]:
+    """Import a single track map file into the canonical local cache."""
+    if path.suffix.lower() != ".mt2":
+        raise ValueError("Unsupported file type. Please select a track map file.")
+
+    data = path.read_bytes()
+    track_map = parse_mt2_bytes(data, source_file=str(path))
+
+    # Cache canonical RacerZLab track-map JSON
+    cache_path = _track_maps_dir() / f"{track_map.map_id}.json"
+    cache_path.write_text(json.dumps(_canonical_cache_dict(track_map), indent=2, default=str), encoding="utf-8")
+
+    entry = _canonical_index_entry(
+        track_map,
+        source_filename=path.name,
+        cache_path=cache_path,
+    )
     is_new = _upsert_index_entry(entry)
     entry["import_status"] = "indexed" if is_new else "already_indexed"
     return entry
 
 
 def save_and_import_mt2_upload(filename: str, data: bytes) -> dict[str, Any]:
-    """Save uploaded .mt2 bytes to local imports dir, then parse and index."""
+    """Parse uploaded track map bytes and write only the canonical local cache."""
     safe_name = _sanitize_filename(filename)
-    dest = _mt2_imports_dir() / safe_name
-    dest.write_bytes(data)
-    return import_mt2_file(dest)
+    track_map = parse_mt2_bytes(data, source_file=safe_name)
+    cache_path = _track_maps_dir() / f"{track_map.map_id}.json"
+    cache_path.write_text(json.dumps(_canonical_cache_dict(track_map), indent=2, default=str), encoding="utf-8")
+    entry = _canonical_index_entry(
+        track_map,
+        source_filename=safe_name,
+        cache_path=cache_path,
+    )
+    is_new = _upsert_index_entry(entry)
+    entry["import_status"] = "indexed" if is_new else "already_indexed"
+    return entry
 
 
 def import_mt2_folder(folder_path: str | Path) -> list[dict[str, Any]]:
-    """Import all .mt2 files from a local folder."""
+    """Import all supported track map files from a local folder."""
     p = Path(folder_path)
     if not p.is_dir():
         raise ValueError(f"Not a directory: {folder_path}")
@@ -154,7 +305,7 @@ def import_mt2_folder(folder_path: str | Path) -> list[dict[str, Any]]:
             errors.append(f"{f.name}: {exc}")
     # If nothing succeeded, raise
     if not entries and errors:
-        raise RuntimeError(f"All .mt2 imports failed: {'; '.join(errors[:5])}")
+        raise RuntimeError(f"All track map imports failed: {'; '.join(errors[:5])}")
     return entries
 
 
@@ -194,6 +345,7 @@ def _dict_to_track_map(d: dict[str, Any]) -> TrackMap:
         format=meta["format"],
         version=meta.get("version"),
         track_name=meta["track_name"],
+        display_name=meta.get("display_name"),
         model_name=meta.get("model_name"),
         closed=meta["closed"],
         clockwise_flag=meta["clockwise_flag"],
@@ -219,8 +371,9 @@ def _dict_to_track_map(d: dict[str, Any]) -> TrackMap:
     return TrackMap(
         map_id=d["map_id"],
         source_file=d.get("source_file"),
+        source_type=d.get("source_type", "mt2"),
         file_size_bytes=d.get("file_size_bytes", 0),
-        sha256=d.get("sha256", ""),
+        sha256=d.get("sha256", d.get("source_hash", "")),
         metadata=metadata,
         bounds=bounds,
         points=points,
@@ -239,7 +392,13 @@ def find_best_map_for_run(run_id: str, track_name: str, layout: str | None = Non
     If *preferred_map_id* is provided, it bypasses autodetection entirely.
     """
     entries = _load_index()
-    return match_track_map_for_run(track_name, layout, entries, preferred_map_id=preferred_map_id)
+    return match_track_map_for_run(
+        track_name,
+        layout,
+        entries,
+        preferred_map_id=preferred_map_id,
+        run_context=run_id,
+    )
 
 
 # ── overlay builders ─────────────────────────────────────────

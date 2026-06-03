@@ -82,6 +82,8 @@ export const TRACE_WORKBENCH_CHANNELS = [
   // ── Shocks ──
   "lf_shock_defl_in", "rf_shock_defl_in", "lr_shock_defl_in", "rr_shock_defl_in",
   "lf_shock_vel_in_s", "rf_shock_vel_in_s", "lr_shock_vel_in_s", "rr_shock_vel_in_s",
+  "lf_shock_static_defl_in", "rf_shock_static_defl_in", "lr_shock_static_defl_in", "rr_shock_static_defl_in",
+  "lf_shock_defl_delta_in", "rf_shock_defl_delta_in", "lr_shock_defl_delta_in", "rr_shock_defl_delta_in",
   "lf_shock_velocity_rms", "rf_shock_velocity_rms",
   "lr_shock_velocity_rms", "rr_shock_velocity_rms",
   "lf_shock_activity_index", "rf_shock_activity_index",

@@ -183,13 +183,13 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
                     map_id=match.get("map_id"),
                     map_name=match.get("display_name"),
                     confidence=conf,
-                    message=f"Matched {match.get('display_name', 'track map')} from local map index.",
+                    message=f"Matched imported map {match.get('display_name', 'track map')} from the local RacerZLab map index.",
                 )
                 _log.info("[%s] Track map matched: %s (confidence=%s)", req_id, match.get("display_name"), conf)
             else:
                 track_map_resolution = TrackMapResolution(
                     status="missing",
-                    message="No matching track map found in local index. Import a .mt2 file or choose a map manually.",
+                    message="No matching track map found in the local RacerZLab map index. Import a track map file or choose an imported map manually.",
                 )
                 _log.info("[%s] Track map not found for track: %s", req_id, track_name)
         except Exception as exc:

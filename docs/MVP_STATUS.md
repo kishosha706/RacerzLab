@@ -35,7 +35,7 @@ The following require fresh code/test profiling verification before being called
 ## Known Limitations (Still Applicable)
 
 - `.sto` decoding is not implemented.
-- `.mt2` support is centerline-focused and partial.
+- Track map support is centerline-focused and partial.
 - Aero/downforce/drag values are proxy/relative only.
 - No cloud sync (local-first by design).
 

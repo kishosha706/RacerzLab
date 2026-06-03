@@ -633,6 +633,10 @@ _SLIP_RAW_KEYS: list[str] = ["LFspeed", "RFspeed", "LRspeed", "RRspeed"]
 _SLIP_TARGETS: list[str] = ["lf_slip_ratio", "rf_slip_ratio", "lr_slip_ratio", "rr_slip_ratio"]
 
 _SHOCK_DEFL_RAW_KEYS: dict[str, str] = {
+    "LFshockDefl": "lf_shock_defl",
+    "RFshockDefl": "rf_shock_defl",
+    "LRshockDefl": "lr_shock_defl",
+    "RRshockDefl": "rr_shock_defl",
     "LFSHshockDefl": "lf_shock_defl",
     "RFSHshockDefl": "rf_shock_defl",
     "LRSHshockDefl": "lr_shock_defl",
@@ -640,11 +644,19 @@ _SHOCK_DEFL_RAW_KEYS: dict[str, str] = {
 }
 
 _SHOCK_VEL_RAW_KEYS: dict[str, str] = {
+    "LFshockVel": "lf_shock_vel",
+    "RFshockVel": "rf_shock_vel",
+    "LRshockVel": "lr_shock_vel",
+    "RRshockVel": "rr_shock_vel",
     "LFSHshockVel": "lf_shock_vel",
     "RFSHshockVel": "rf_shock_vel",
     "LRSHshockVel": "lr_shock_vel",
     "RRSHshockVel": "rr_shock_vel",
 }
+
+_SHOCK_CORNERS: tuple[str, ...] = ("lf", "rf", "lr", "rr")
+_SHOCK_STATIC_THROTTLE_MIN_PCT = 10.0
+_SHOCK_DELTA_SMOOTH_WINDOW = 16
 
 # Tire column aliases — matches _convert_tires in calculated_channels.py
 _TIRE_ALIAS_MAP: dict[str, str] = {
@@ -1085,6 +1097,56 @@ def _convert_shocks(df: pl.DataFrame) -> pl.DataFrame:
             (pl.col(raw_key) * M_TO_IN).alias(f"{prefix}_in_s"),
         )
 
+    if "session_time" in df.columns:
+        dt = pl.col("session_time") - pl.col("session_time").shift(1)
+        dt_ok = dt > 0
+        for corner in _SHOCK_CORNERS:
+            velocity_col = f"{corner}_shock_vel_in_s"
+            deflection_col = f"{corner}_shock_defl_in"
+            if velocity_col in df.columns or deflection_col not in df.columns:
+                continue
+            df = df.with_columns(
+                pl.when(dt_ok)
+                .then((pl.col(deflection_col) - pl.col(deflection_col).shift(1)) / dt)
+                .otherwise(None)
+                .alias(velocity_col)
+            )
+
+    throttle_expr = None
+    if "throttle_pct" in df.columns:
+        throttle_expr = pl.col("throttle_pct")
+    elif "throttle_01" in df.columns:
+        throttle_expr = pl.col("throttle_01") * 100.0
+
+    brake_expr = None
+    if "brake_pct" in df.columns:
+        brake_expr = pl.col("brake_pct")
+    elif "brake_01" in df.columns:
+        brake_expr = pl.col("brake_01") * 100.0
+
+    for corner in _SHOCK_CORNERS:
+        deflection_col = f"{corner}_shock_defl_in"
+        if deflection_col not in df.columns or throttle_expr is None:
+            continue
+
+        baseline_filter = (
+            pl.col(deflection_col).is_not_null()
+            & (throttle_expr > _SHOCK_STATIC_THROTTLE_MIN_PCT)
+        )
+        baseline_frame = df.filter(baseline_filter).select(pl.col(deflection_col)).head(1)
+        if baseline_frame.height == 0:
+            continue
+
+        baseline = baseline_frame[deflection_col].item(0)
+        if baseline is None:
+            continue
+
+        delta_raw = pl.col(deflection_col) - float(baseline)
+        df = df.with_columns(
+            pl.lit(float(baseline)).alias(f"{corner}_shock_static_defl_in"),
+            delta_raw.rolling_mean(window_size=_SHOCK_DELTA_SMOOTH_WINDOW, min_samples=1).alias(f"{corner}_shock_defl_delta_in"),
+        )
+
     return df
 
 
@@ -1251,50 +1313,34 @@ def _compute_shock_rolling_aggregates(df: pl.DataFrame) -> pl.DataFrame:
     differences in the first ~60 rows.  After the window fills, results
     converge.
 
-    NOTE: The row path uses `or 0.0` for missing shock velocities, so
-    None values are treated as 0.0.  We match this with fill_null(0.0).
+    Missing shock telemetry stays unavailable; it is never converted to zero.
     """
-    corners = ("lf", "rf", "lr", "rr")
+    corners = tuple(corner for corner in _SHOCK_CORNERS if f"{corner}_shock_vel_in_s" in df.columns)
     window = _SHOCK_ROLLING_WINDOW
+    if not corners:
+        return df
 
     for c in corners:
         sv_col = f"{c}_shock_vel_in_s"
-        if sv_col not in df.columns:
-            continue
-
-        sv = pl.col(sv_col).fill_null(0.0)
+        sv = pl.col(sv_col)
         sv_sq = sv * sv
 
-        # Rolling mean of squared values → RMS
-        # Row path: sqrt(mean(sv^2 over buffer))
         rms = sv_sq.rolling_mean(window_size=window, min_samples=1).sqrt()
         df = df.with_columns(rms.alias(f"{c}_shock_velocity_rms"))
 
-        # Rolling activity: mean(abs(sv)) + peak*0.3
-        # Row path: sum(abs(sv))/len(buf) + max(abs(sv))*0.3
         abs_sv = sv.abs()
         mean_abs = abs_sv.rolling_mean(window_size=window, min_samples=1)
         peak = abs_sv.rolling_max(window_size=window, min_samples=1)
         activity = mean_abs + peak * 0.3
         df = df.with_columns(activity.alias(f"{c}_shock_activity_index"))
 
-        # Rolling energy: sum(sv^2 over buffer)
-        # Row path: sum(v*v for v in buf)
         energy = sv_sq.rolling_sum(window_size=window, min_samples=1)
         df = df.with_columns(energy.alias(f"{c}_damper_energy_proxy"))
 
-    # Component averages (mean across 4 corners)
-    # Row path always produces these (defaults to 0.0 when no shock columns)
-    any_corner = any(f"{c}_shock_vel_in_s" in df.columns for c in corners)
     for component in ("shock_velocity_rms", "shock_activity_index", "damper_energy_proxy"):
         if corner_cols := [f"{c}_{component}" for c in corners if f"{c}_{component}" in df.columns]:
-            avg_expr = pl.mean_horizontal(
-                *[pl.col(col).fill_null(0.0) for col in corner_cols]
-            )
+            avg_expr = pl.mean_horizontal(*[pl.col(col) for col in corner_cols])
             df = df.with_columns(avg_expr.alias(component))
-        elif not any_corner and df.height > 0:
-            # No shock columns at all — produce 0.0 to match row path
-            df = df.with_columns(pl.lit(0.0, dtype=pl.Float64).alias(component))
 
     # damper_work_proxy is an alias for damper_energy_proxy
     if "damper_energy_proxy" in df.columns and "damper_work_proxy" not in df.columns:

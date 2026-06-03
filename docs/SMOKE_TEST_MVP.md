@@ -22,7 +22,7 @@ cd racelab-garage
 - Verify: cockpit shell loads with empty state
 
 ## 3. Import Baseline Run
-- Click "Import .ibt" or use the file selector
+- Click the telemetry import action or use the file selector
 - Select a baseline `.ibt` file
 - Verify: run appears in run list dropdown
 - Verify: overview shows track, car, lap count
@@ -46,17 +46,17 @@ cd racelab-garage
 - Verify: clicking a lap selects it and updates the trace
 - Click "Laps" again to close sidebar
 
-## 7. Import .mt2 Track Map
-- Click "Import .ibt" and select an `.mt2` file
-- Verify: status shows "Parsed .mt2 centerline: N points, M markers, S sections."
-- Verify: no crash for unsupported `.mt2` variants (graceful warning)
+## 7. Import Track Map File
+- Click the track map import action and select a track map file
+- Verify: status shows the imported track map centerline point, marker, and section counts
+- Verify: no crash for unsupported track map file variants (graceful warning)
 
 ## 8. Track Map View
 - Navigate to "Map" in the nav rail
 - Verify: "Loaded Run" identity section shows track name, car name, setup name from .ibt
-- Verify: "Matched Map" section shows .mt2 filename with confidence badge (green=high, amber=medium)
+- Verify: "Matched Map" section shows the imported map name with confidence badge (green=high, amber=medium)
 - Verify: SVG centerline path renders
-- Verify: markers toggle shows/hides .mt2 markers
+- Verify: markers toggle shows/hides imported map markers
 - Verify: events toggle shows/hides platform event overlays
 - Verify: target zone toggle shows/hides highlighted path segment
 - Verify: warnings displayed for missing GPS/boundaries/banking

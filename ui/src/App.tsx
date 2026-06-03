@@ -228,7 +228,7 @@ function CockpitShell() {
         const entry = await importMt2File(file);
         setImportStage("Saving local map index...");
         const dupNote = entry.import_status === "already_indexed" ? " (already indexed; refreshed cache)" : "";
-        setStatus(`Parsed .mt2 centerline: ${entry.points_count?.toLocaleString()} points, ${entry.markers_count} markers, ${entry.sections_count} sections.${dupNote}`);
+        setStatus(`Imported track map: ${entry.points_count?.toLocaleString()} centerline points, ${entry.markers_count} markers, ${entry.sections_count} sections.${dupNote}`);
         setImportStage(null);
         setImporting(false);
         setLoading(false);
@@ -416,6 +416,7 @@ function CockpitShell() {
               className={`nav-rail-item ${selection.selectedWorkspace === key ? "active" : ""}`}
               onClick={() => setWorkspace(key, "manual")}
               title={label}
+              aria-current={selection.selectedWorkspace === key ? "page" : undefined}
             >
               <Icon size={17} />
               <span>{label}</span>
@@ -473,7 +474,7 @@ function CockpitShell() {
           >
             <header className="shortcut-modal-header">
               <h2>Keyboard Shortcuts</h2>
-              <button className="shortcut-modal-close" onClick={() => setShortcutsOpen(false)} aria-label="Close keyboard shortcuts">x</button>
+              <button className="shortcut-modal-close" onClick={() => setShortcutsOpen(false)} aria-label="Close keyboard shortcuts">X</button>
             </header>
             <div className="shortcut-grid">
               <span>?</span><p>Open shortcuts</p>

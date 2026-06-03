@@ -7,7 +7,7 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 ## Current MVP Features
 
 - **Real .ibt ingestion** — binary parser for iRacing telemetry files with 275+ variables
-- **.mt2 Track Map support** — MoTeCTrackV2 binary parser, centerline geometry, markers, sections, curvature derivation, distance-based interpolation, SVG rendering with platform event overlays and target zone highlighting
+- **Track Map File support** — track map file parser, centerline geometry, markers, sections, curvature derivation, distance-based interpolation, SVG rendering with platform event overlays and target zone highlighting
 - **Track Map Cockpit** — two-panel layout (map + inspector), 16 data-aware layer toggles with live counts, heatmap modes (Normal/Density/Severity), section summary cards, mini event timeline, analysis summary panel, manual map association, 82 indexed maps
 - **Track Map matching** — automatic track name normalization and scoring-based map-to-run matching with optional manual override
 - **Session Manager** — create/list/get/update/delete/archive RaceLab sessions, add/remove runs, startup screen with New/Open/Delete
@@ -16,7 +16,7 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **Pace Quality Scoring** — three-dimension system: Performance (speed/consistency/falloff/stress), Trust (validity/completeness/window/context), Engineering Value (combined). Percentage-based thresholds, caps for wreck/pit/<60% valid laps, deductions for missing data.
 - **Compare Basket** — persistent bottom-right drawer for collecting laps/runs to compare. Baseline/test slots with readiness state (ready/caution/not_valid/reference_mode), cross-session support, validation warnings, Swap/Clear/Open Compare. Persists to localStorage across app restarts.
 - **All Sessions / Baselines** — browse all imported runs with Add as Baseline/Test actions. Recommended baseline candidates (fastest clean lap, most recent run, best 10-lap EV window).
-- **Platform/Aero Workbench** — MoTeC-style stacked chart workbench (ECharts) with Platform/Rake, Speed/RPM, Drag/Scrub, Tires, Shocks, Grade/Pull subviews. Event markArea annotation bands.
+- **Platform/Aero Workbench** — stacked telemetry chart workbench (ECharts) with Platform/Rake, Speed/RPM, Drag/Scrub, Tires, Shocks, Grade/Pull subviews. Event markArea annotation bands.
 - **Compare Workbook** — baseline vs test lap comparison by lap percentage with verdict, whole-car index, four corners, tires, shocks, driver, engine, and delta traces views
 - **Did-It-Work Card** — standalone verdict component with evidence, test discipline score, target-zone/splitter/scrub deltas, warnings, setup changes, and action buttons (Save Finding, Stage Next Test, Create Test, Open Setup, Open Map, Open Evidence)
 - **Delta Traces** — per-channel delta traces with target zone highlighting (Speed/Platform, Ride Height, Tire presets)
@@ -68,7 +68,7 @@ Production desktop build:
 .\scripts\build_desktop.ps1
 ```
 
-User `.ibt`, `.sto`, `.mt2`, reports, cache files, setup snapshots, Notebook findings, and SQLite data stay on this machine.
+User `.ibt`, `.sto`, track map files, reports, cache files, setup snapshots, Notebook findings, and SQLite data stay on this machine.
 
 ---
 
@@ -105,7 +105,7 @@ See [TESTING.md](TESTING.md) for full details.
 1. **Create or open a RaceLab session** — via the startup screen
 2. **Import baseline .ibt** — via file picker or `POST /api/imports/ibt`
 3. **Import test .ibt** — your experimental setup or driving change
-4. **Import .mt2 track map** — via file picker or folder import for spatial overlays
+4. **Import a track map file** — via file picker or folder import for spatial overlays
 5. **Browse Laps** — view lap table, stint map, Performance/Trust/Engineering Value badges
 6. **Add to Compare Basket** — set baseline/test from Laps, All Sessions, or Baselines views
 7. **Open Platform Workbench** — inspect ride heights, rake, dynamic pressure, tire pressure/temp/slip via ECharts
@@ -135,8 +135,8 @@ See [TESTING.md](TESTING.md) for full details.
 ```
 GET  /api/health
 POST /api/imports/ibt (multipart upload; JSON {path} is dev/local-only)
-POST /api/imports/mt2 (multipart upload)
-POST /api/imports/mt2-folder (JSON {folder_path})
+POST /api/imports/track-map (multipart upload)
+POST /api/imports/track-map-folder (JSON {folder_path})
 GET  /api/track-maps
 GET  /api/track-maps/{id}
 GET  /api/runs/{id}/track-map-match
@@ -178,12 +178,12 @@ GET  /api/sessions/runs/{run_id}/laps (standalone lap list)
 ## Known Limitations
 
 - `.sto` setup file decoding is not yet implemented
-- `.mt2` decoding is partial/centerline only — no GPS, boundaries, banking, or track width
+- Track map decoding is partial/centerline only — no GPS, boundaries, banking, or track width
 - Aero/downforce/drag values are **proxy/relative only** — no exact force measurement exists in `.ibt`
 - Tire wear/falloff conclusions require longer runs for confidence
 - Tire temp/wear data may be unavailable on short runs
 - No cloud sync — all data is local only
-- Native Tauri file dialogs scaffolded and wired for .ibt/.mt2 import; browser file input preserved as fallback
+- Native Tauri file dialogs scaffolded and wired for `.ibt` and track map file import; browser file input preserved as fallback
 - No setup editor or live setup comparison
 - Vectorized engine validated on Talladega oval only — road course and short-track real .ibt samples pending
 - Dynamic track-type weighting deferred — insufficient .ibt variety for validation

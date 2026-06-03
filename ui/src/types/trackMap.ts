@@ -70,10 +70,8 @@ export interface TrackMapOrigin {
 }
 
 export interface TrackMapMetadata {
-  format: string;
-  version: number | null;
   track_name: string;
-  model_name: string | null;
+  display_name: string | null;
   closed: boolean;
   clockwise_flag: boolean;
   x_over: boolean;
@@ -81,8 +79,6 @@ export interface TrackMapMetadata {
   distance_m: number;
   distance_ft: number;
   distance_miles: number;
-  point_record: string[];
-  units: Record<string, string>;
   origin: TrackMapOrigin;
   has_boundaries: boolean;
   has_sections: boolean;
@@ -92,9 +88,6 @@ export interface TrackMapMetadata {
 
 export interface TrackMap {
   map_id: string;
-  source_file: string | null;
-  file_size_bytes: number;
-  sha256: string;
   metadata: TrackMapMetadata;
   bounds: TrackMapBounds;
   points: TrackMapPoint[];
@@ -111,10 +104,6 @@ export interface TrackMapIndexEntry {
   track_key: string;
   layout_key: string;
   display_name: string;
-  source_filename: string;
-  local_path: string;
-  cache_path: string;
-  source_type: "mt2" | "telemetry" | "fallback";
   status: string;
   supported: boolean;
   partial: boolean;
@@ -122,7 +111,6 @@ export interface TrackMapIndexEntry {
   markers_count: number;
   sections_count: number;
   distance_ft: number;
-  match_aliases: string[];
   warnings: string[];
   match_confidence?: string;
   match_score?: number;

@@ -4,13 +4,13 @@
  * Desktop mode (Tauri):
  * - "Choose Telemetry File" — native .ibt/.sto picker (primary)
  * - "Scan Telemetry Folder" — native folder picker, scans for .ibt files
- * - "Manage Track Maps" — native .mt2 picker (secondary/fallback)
+ * - "Manage Track Maps" — native track map file picker (secondary/fallback)
  *
  * Browser mode:
- * - Hidden file input for .ibt/.sto/.mt2 (existing behavior)
- * - "Import .ibt" button
+ * - Hidden file input for supported telemetry/setup/map files (existing behavior)
+ * - "Import telemetry" button
  *
- * Track maps are applied automatically when a matching local .mt2 is found.
+ * Imported track maps are applied automatically when a matching local RacerZLab cached map is found.
  */
 
 import { Bug, ChevronDown, ChevronRight, Copy, Folder, HardDrive, MapPin, Monitor, Upload, X } from "lucide-react";
@@ -180,7 +180,7 @@ export function ImportPanel({
       importDebug.success("import_request_finished", { source: "native_map", fileName });
       setRecentMaps(addRecentAfterImport(RECENT_MAPS_KEY, result.filePath, fileName));
       importDebug.log("recent_file_saved", { source: "native_map", fileName });
-      setNativeStatus("Track map import complete.");
+      setNativeStatus("Track map import complete. Saved to the local map cache.");
       await completeImport(null, null);
     } catch (caught) {
       const msg = caught instanceof Error ? caught.message : "Import failed";
@@ -310,7 +310,7 @@ export function ImportPanel({
               }}
             />
             <button className="secondary-button" onClick={onImportClick} disabled={busy}>
-              {displayedStage ?? (busy ? "Importing…" : "Import .ibt or .mt2")}
+              {displayedStage ?? (busy ? "Importing…" : "Import telemetry or track map")}
             </button>
           </div>
         )}
@@ -382,7 +382,7 @@ export function ImportPanel({
                 </button>
               </div>
               <p className="muted" style={{ fontSize: 11, margin: "2px 0 4px" }}>
-                Track maps are applied automatically when a matching local .mt2 is found.
+                Imported track maps are applied automatically when RacerZLab finds a local match.
               </p>
             </>
           )}

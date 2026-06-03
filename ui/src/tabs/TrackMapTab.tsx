@@ -2,7 +2,15 @@ import {
   Crosshair, Info, Layers, Map as MapIcon, Pin, PinOff, Search, X, Copy,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { TrackMapIndexEntry, TrackMapOverlayMarker, TrackMapPackage, TrackMapSection } from "../types/trackMap";
+import type {
+  TrackMapBounds,
+  TrackMapIndexEntry,
+  TrackMapMarker,
+  TrackMapOverlayMarker,
+  TrackMapPackage,
+  TrackMapPoint,
+  TrackMapSection,
+} from "../types/trackMap";
 import { fetchRunTrackMapPackage, fetchTrackMaps } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { buildWindowEvidence } from "../utils/evidenceFocus";
@@ -53,6 +61,128 @@ const CATEGORY_LABELS: Record<string, string> = {
   all_events: "Other Events", delta: "Delta", insights: "Insights",
   tires: "Tires", notebook: "Notebook",
 };
+
+const MAP_PADDING_RATIO = 0.06;
+const MAP_MIN_PADDING = 24;
+
+type DrawablePoint = {
+  source: TrackMapPoint;
+  x: number;
+  y: number;
+  lapPct: number | null;
+};
+
+type DrawableMarker = TrackMapMarker & { x: number; y: number };
+type DrawableOverlay = TrackMapOverlayMarker & { x: number; y: number };
+
+type NumericBounds = {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  width: number;
+  height: number;
+};
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function getTrackPointCoordinate(point: Pick<TrackMapPoint, "x" | "y" | "x_m" | "y_m">): { x: number; y: number } | null {
+  const x = isFiniteNumber(point.x_m) ? point.x_m : isFiniteNumber(point.x) ? point.x : null;
+  const y = isFiniteNumber(point.y_m) ? point.y_m : isFiniteNumber(point.y) ? point.y : null;
+  if (x == null || y == null) return null;
+  return { x, y };
+}
+
+function getXYCoordinate(point: { x?: number | null; y?: number | null }): { x: number; y: number } | null {
+  if (!isFiniteNumber(point.x) || !isFiniteNumber(point.y)) return null;
+  return { x: point.x, y: point.y };
+}
+
+function getBoundsFromPoints(points: Array<{ x: number; y: number }>): NumericBounds | null {
+  if (points.length < 2) return null;
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const width = maxX - minX;
+  const height = maxY - minY;
+  if (!(width > 0) || !(height > 0)) return null;
+  return { minX, maxX, minY, maxY, width, height };
+}
+
+function getBoundsFromCanonicalBounds(bounds: TrackMapBounds | null | undefined): NumericBounds | null {
+  if (!bounds) return null;
+  if (
+    !isFiniteNumber(bounds.min_x_m) ||
+    !isFiniteNumber(bounds.max_x_m) ||
+    !isFiniteNumber(bounds.min_y_m) ||
+    !isFiniteNumber(bounds.max_y_m)
+  ) {
+    return null;
+  }
+  const width = bounds.max_x_m - bounds.min_x_m;
+  const height = bounds.max_y_m - bounds.min_y_m;
+  if (!(width > 0) || !(height > 0)) return null;
+  return {
+    minX: bounds.min_x_m,
+    maxX: bounds.max_x_m,
+    minY: bounds.min_y_m,
+    maxY: bounds.max_y_m,
+    width,
+    height,
+  };
+}
+
+function mergeBounds(primary: NumericBounds | null, secondary: NumericBounds | null): NumericBounds | null {
+  if (primary == null) return secondary;
+  if (secondary == null) return primary;
+  const minX = Math.min(primary.minX, secondary.minX);
+  const maxX = Math.max(primary.maxX, secondary.maxX);
+  const minY = Math.min(primary.minY, secondary.minY);
+  const maxY = Math.max(primary.maxY, secondary.maxY);
+  const width = maxX - minX;
+  const height = maxY - minY;
+  if (!(width > 0) || !(height > 0)) return null;
+  return { minX, maxX, minY, maxY, width, height };
+}
+
+function buildSvgPath(points: Array<{ x: number; y: number }>): string {
+  if (points.length < 2) return "";
+  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+}
+
+function collectLapRangePoints(points: DrawablePoint[], section: TrackMapSection): DrawablePoint[] {
+  return points.filter((point) => {
+    if (!isFiniteNumber(point.lapPct)) return false;
+    return section.wraps_start_finish
+      ? point.lapPct >= section.start_lap_pct || point.lapPct <= section.end_lap_pct
+      : point.lapPct >= section.start_lap_pct && point.lapPct <= section.end_lap_pct;
+  });
+}
+
+function circularLapDifference(a: number, b: number): number {
+  const diff = Math.abs(a - b);
+  return Math.min(diff, 100 - diff);
+}
+
+function interpolatePointAtLapPct(points: DrawablePoint[], lapPct: number | null | undefined): { x: number; y: number } | null {
+  if (!isFiniteNumber(lapPct) || points.length < 2) return null;
+  let bestPoint: DrawablePoint | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const point of points) {
+    if (!isFiniteNumber(point.lapPct)) continue;
+    const distance = circularLapDifference(point.lapPct, lapPct);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestPoint = point;
+    }
+  }
+  return bestPoint ? { x: bestPoint.x, y: bestPoint.y } : null;
+}
 
 function groupEventsByCategory(events: TrackMapOverlayMarker[]): CategoryGroup[] {
   const m = new Map<LayerId, TrackMapOverlayMarker[]>();
@@ -142,10 +272,94 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
   const points = pkg?.map?.points ?? [];
   const bounds = pkg?.map?.bounds;
   const overlays = pkg?.overlays ?? [];
-  const markers = pkg?.map?.markers ?? [];
-  const sections = pkg?.map?.sections ?? [];
+  const markers = pkg?.markers?.length ? pkg.markers : pkg?.map?.markers ?? [];
+  const sections = pkg?.sections?.length ? pkg.sections : pkg?.map?.sections ?? [];
   const metadata = pkg?.map?.metadata;
   const match = pkg?.match;
+  const hasMap = pkg?.map != null;
+  const isMapLoading = loading;
+  const mapError = error;
+  const hasPoints = points.length > 0;
+
+  const drawablePoints = useMemo<DrawablePoint[]>(
+    () =>
+      points
+        .filter((point) => point.kind === "centerline" || point.kind === "unknown")
+        .map((point) => {
+          const coordinate = getTrackPointCoordinate(point);
+          if (!coordinate) return null;
+          return {
+            source: point,
+            x: coordinate.x,
+            y: coordinate.y,
+            lapPct: point.lap_pct,
+          };
+        })
+        .filter((point): point is DrawablePoint => point != null),
+    [points],
+  );
+
+  const boundsFromPayload = useMemo(() => getBoundsFromCanonicalBounds(bounds), [bounds]);
+  const boundsFromPoints = useMemo(() => getBoundsFromPoints(drawablePoints), [drawablePoints]);
+  const mergedBounds = useMemo(() => mergeBounds(boundsFromPayload, boundsFromPoints), [boundsFromPayload, boundsFromPoints]);
+  const hasBounds = mergedBounds != null;
+
+  const svgViewport = useMemo(() => {
+    if (!mergedBounds) return null;
+    const maxDimension = Math.max(mergedBounds.width, mergedBounds.height);
+    const padding = Math.max(maxDimension * MAP_PADDING_RATIO, MAP_MIN_PADDING);
+    const width = mergedBounds.width + padding * 2;
+    const height = mergedBounds.height + padding * 2;
+    if (!(width > 0) || !(height > 0)) return null;
+    return {
+      ...mergedBounds,
+      padding,
+      viewBox: `${mergedBounds.minX - padding} ${mergedBounds.minY - padding} ${width} ${height}`,
+    };
+  }, [mergedBounds]);
+
+  const pointPath = useMemo(() => buildSvgPath(drawablePoints), [drawablePoints]);
+  const hasDrawableTrack = drawablePoints.length > 1 && svgViewport != null && pointPath.length > 0;
+  const currentMapId = pkg?.map?.map_id ?? "track-map";
+
+  const markerPositionsByName = useMemo(() => {
+    const entries = new Map<string, { x: number; y: number }>();
+    markers.forEach((marker) => {
+      const coordinate = getXYCoordinate(marker);
+      if (coordinate) entries.set(marker.name, coordinate);
+    });
+    return entries;
+  }, [markers]);
+
+  const drawableMarkers = useMemo<DrawableMarker[]>(
+    () =>
+      markers
+        .map((marker) => {
+          const coordinate = getXYCoordinate(marker);
+          return coordinate ? { ...marker, x: coordinate.x, y: coordinate.y } : null;
+        })
+        .filter((marker): marker is DrawableMarker => marker != null),
+    [markers],
+  );
+
+  useEffect(() => {
+    if (isMapLoading) {
+      setInspector({ kind: "none" });
+      setSelectedArea(null);
+    }
+  }, [isMapLoading, runId, lap, preferredMapId]);
+
+  useEffect(() => {
+    if (selectedArea && !sections.some((section) => section.section_id === selectedArea)) {
+      setSelectedArea(null);
+    }
+    if (inspector.kind === "section" && !sections.some((section) => section.section_id === inspector.section.section_id)) {
+      setInspector({ kind: "none" });
+    }
+    if (inspector.kind === "overlay" && !overlays.some((overlay) => overlay.marker_id === inspector.overlay.marker_id)) {
+      setInspector({ kind: "none" });
+    }
+  }, [currentMapId, sections, overlays, selectedArea, inspector]);
 
   const getLocation = useCallback(
     (lapPct: number | null | undefined) => calculateTrackLocation(lapPct, sections),
@@ -168,6 +382,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
     const span = (section.end_lap_pct - section.start_lap_pct + 100) % 100;
     return (section.start_lap_pct + span / 2) % 100;
   }, []);
+  const sectionValueBasis = windowContextActive ? "selected_window" as const : "full_lap" as const;
 
   const buildSectionEvidence = useCallback((section: TrackMapSection) => ({
     runId,
@@ -181,11 +396,12 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
     zoneLabel: describeLapPctRangeAsLocations(section.start_lap_pct, section.end_lap_pct, sections),
     zoneStartPct: section.start_lap_pct,
     zoneEndPct: section.end_lap_pct,
+    channelId: null,
     selectionSource: "track_map" as const,
     lockState: "locked" as const,
-    valueBasis: selection.selectedLapScope === "lap_window" ? "selected_window" as const : "full_lap" as const,
-    trustTier: selection.selectedTrustTier ?? null,
-  }), [representativeLap, runId, sectionMidLapPct, sections, selection]);
+    valueBasis: sectionValueBasis,
+    trustTier: null,
+  }), [representativeLap, runId, sectionMidLapPct, sections, sectionValueBasis, selection]);
 
   const buildOverlayEvidence = useCallback((overlay: TrackMapOverlayMarker) => {
     const loc = getLocation(overlay.lap_pct);
@@ -201,10 +417,11 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
       zoneLabel: loc.friendly_section_name !== "Unknown section" ? loc.friendly_section_name : null,
       zoneStartPct: loc.start_lap_pct ?? null,
       zoneEndPct: loc.end_lap_pct ?? null,
+      channelId: null,
       selectionSource: "track_map" as const,
       lockState: "locked" as const,
       valueBasis: "selected_sample" as const,
-      trustTier: selection.selectedTrustTier ?? null,
+      trustTier: overlay.confidence ?? null,
     };
   }, [getLocation, representativeLap, runId, selection]);
 
@@ -483,42 +700,74 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
   }, [heatmap, sectionStats]);
 
   // ── SVG ──
-  const viewBox = useMemo(() => {
-    if (!bounds) return "0 0 800 600";
-    const p = 50;
-    return `${bounds.min_x_m - p} ${bounds.min_y_m - p} ${bounds.width_m + p * 2} ${bounds.height_m + p * 2}`;
-  }, [bounds]);
-
-  const pointPath = useMemo(
-    () =>
-      points.length
-        ? points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x ?? p.x_m} ${p.y ?? p.y_m}`).join(" ")
-        : "",
-    [points],
-  );
+  const clipPathId = useMemo(() => `trackmap-clip-${currentMapId.replace(/[^a-zA-Z0-9_-]/g, "-")}`, [currentMapId]);
+  const gridPatternId = useMemo(() => `trackmap-grid-${currentMapId.replace(/[^a-zA-Z0-9_-]/g, "-")}`, [currentMapId]);
 
   const tzPath = useMemo(() => {
-    const tz = overlays.find((o) => o.kind === "target_zone");
-    const pts = tz?.points;
-    if (!pts || pts.length < 2) return null;
-    return pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
-  }, [overlays]);
+    const explicitPoints =
+      pkg?.target_zone?.points
+        ?.map((point) => getXYCoordinate(point))
+        .filter((point): point is { x: number; y: number } => point != null) ?? [];
+    if (explicitPoints.length >= 2) return buildSvgPath(explicitPoints);
+
+    const targetOverlay = overlays.find((overlay) => overlay.kind === "target_zone");
+    const overlayPoints =
+      targetOverlay?.points
+        ?.map((point) => getXYCoordinate(point))
+        .filter((point): point is { x: number; y: number } => point != null) ?? [];
+    if (overlayPoints.length >= 2) return buildSvgPath(overlayPoints);
+
+    const startPct = pkg?.target_zone?.start_pct ?? targetOverlay?.start_pct ?? null;
+    const endPct = pkg?.target_zone?.end_pct ?? targetOverlay?.end_pct ?? null;
+    if (!isFiniteNumber(startPct) || !isFiniteNumber(endPct) || drawablePoints.length < 2) return null;
+    const wraps = startPct > endPct;
+    const zonePoints = drawablePoints.filter((point) =>
+      point.lapPct == null
+        ? false
+        : wraps
+          ? point.lapPct >= startPct || point.lapPct <= endPct
+          : point.lapPct >= startPct && point.lapPct <= endPct,
+    );
+    return buildSvgPath(zonePoints);
+  }, [pkg?.target_zone, overlays, drawablePoints]);
 
   const sectionPolylines = useMemo(() => {
-    if (!activeLayers.has("sections") || !sections.length) return [];
+    if (!activeLayers.has("sections") || !sections.length || !hasDrawableTrack) return [];
     return sections
       .map((s) => {
-        const sp = points.filter((p) => {
-          if (p.lap_pct == null) return false;
-          return s.wraps_start_finish
-            ? p.lap_pct >= s.start_lap_pct || p.lap_pct <= s.end_lap_pct
-            : p.lap_pct >= s.start_lap_pct && p.lap_pct <= s.end_lap_pct;
-        });
-        const d = sp.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x ?? p.x_m} ${p.y ?? p.y_m}`).join(" ");
-        return { section: s, d, count: sp.length };
+        const sectionPoints = collectLapRangePoints(drawablePoints, s);
+        const midpoint = interpolatePointAtLapPct(drawablePoints, sectionMidLapPct(s));
+        const startMarker = markerPositionsByName.get(s.start_marker) ?? null;
+        const endMarker = markerPositionsByName.get(s.end_marker) ?? null;
+        const label =
+          midpoint ??
+          (startMarker && endMarker
+            ? { x: (startMarker.x + endMarker.x) / 2, y: (startMarker.y + endMarker.y) / 2 }
+            : startMarker ?? endMarker);
+        return { section: s, d: buildSvgPath(sectionPoints), count: sectionPoints.length, label };
       })
-      .filter((sp) => sp.count > 1);
-  }, [points, sections, activeLayers]);
+      .filter((sp) => sp.count > 1 && sp.d.length > 0);
+  }, [activeLayers, sections, hasDrawableTrack, drawablePoints, sectionMidLapPct, markerPositionsByName]);
+
+  const drawableOverlayEvents = useMemo<DrawableOverlay[]>(
+    () =>
+      orderedVisibleOverlays
+        .filter((overlay) => overlay.kind === "platform_event")
+        .map((overlay) => {
+          const coordinate = getXYCoordinate(overlay) ?? interpolatePointAtLapPct(drawablePoints, overlay.lap_pct);
+          return coordinate ? { ...overlay, x: coordinate.x, y: coordinate.y } : null;
+        })
+        .filter((overlay): overlay is DrawableOverlay => overlay != null),
+    [orderedVisibleOverlays, drawablePoints],
+  );
+
+  const mapWarnings = useMemo(
+    () =>
+      [...(pkg?.warnings ?? []), ...(pkg?.map?.warnings ?? []), ...(metadata?.warnings ?? [])].filter(
+        (warning, index, source) => source.indexOf(warning) === index,
+      ),
+    [pkg?.warnings, pkg?.map?.warnings, metadata?.warnings],
+  );
 
   // ── Empty states ─────────────────────────────────────────────
   if (!runId)
@@ -528,34 +777,35 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
         <p className="muted">No run loaded. Import an .ibt file to view telemetry events on a track map.</p>
       </section>
     );
-  if (loading)
+  if (isMapLoading)
     return (
       <section className="notebook-tab">
         <h2><MapIcon size={18} /> Track Map</h2>
-        <p className="muted">Loading track map…</p>
+        <p className="muted">Loading track map...</p>
       </section>
     );
-  if (error)
+  if (mapError)
     return (
       <section className="notebook-tab">
         <h2><MapIcon size={18} /> Track Map</h2>
-        <p className="error-text">{error}</p>
+        <p className="error-text">{mapError}</p>
       </section>
     );
-  if (!pkg?.map) {
+  if (!hasMap) {
     const filtered = availableMaps.filter(
       (m) =>
         !mapSearch ||
         m.display_name.toLowerCase().includes(mapSearch.toLowerCase()) ||
         m.track_key.toLowerCase().includes(mapSearch.toLowerCase()) ||
-        m.source_filename.toLowerCase().includes(mapSearch.toLowerCase()),
+        m.layout_key.toLowerCase().includes(mapSearch.toLowerCase()),
     );
     return (
       <section className="notebook-tab">
         <h2><MapIcon size={18} /> Track Map</h2>
         <div className="notebook-empty">
-          <p>No matching track map found. Import a local .mt2 map or choose one manually.</p>
-          <p className="muted">Choose a track map manually:</p>
+          <p>No local RacerZLab cached map matched this run.</p>
+          <p className="muted">Import a track map file or choose an imported map manually.</p>
+          <p className="muted">Choose an imported map manually:</p>
           <div className="trackmap-manual-select">
             <div className="trackmap-search-row">
               <Search size={14} className="muted" />
@@ -577,7 +827,6 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                 {filtered.map((m) => (
                   <option key={m.map_id} value={m.map_id}>
                     {m.display_name} — {m.distance_ft.toFixed(0)} ft
-                    {m.source_type === "mt2" ? " · .mt2" : ""}
                     {m.partial ? " · partial" : ""}
                   </option>
                 ))}
@@ -593,6 +842,14 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
 
   const selSecId = inspector.kind === "section" ? inspector.section.section_id : selectedArea;
   const selOvlId = inspector.kind === "overlay" ? inspector.overlay.marker_id : null;
+  const visiblePlatformOverlayCount = orderedVisibleOverlays.filter((overlay) => overlay.kind === "platform_event").length;
+  const mapEmptyMessage = !hasPoints
+    ? "Imported map has no drawable centerline points."
+    : !hasBounds
+      ? "Imported map has no usable centerline bounds."
+    : !hasDrawableTrack
+      ? "Imported map has no drawable centerline points."
+      : null;
 
   return (
     <section className="trackmap-cockpit">
@@ -601,7 +858,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
         <header className="trackmap-header">
           <h2><MapIcon size={18} /> {metadata?.track_name ?? "Track Map"}</h2>
           <div className="trackmap-header-stats">
-            <span className="source-badge source-mt2">.mt2</span>
+            <span className="source-badge source-mt2">Imported map</span>
             {metadata && <span>{metadata.distance_miles.toFixed(2)} mi · {metadata.distance_ft.toFixed(0)} ft</span>}
             <span>{points.length.toLocaleString()} pts</span>
             <span>{markers.length} mk · {sections.length} sec</span>
@@ -610,6 +867,9 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
             {trackName && <span className="muted">{trackName}</span>}
             {carName && <span className="muted">— {carName}</span>}
             {setupName && <span className="muted">· {setupName}</span>}
+          </div>
+          <div className="trackmap-header-run">
+            <span className="muted">Using local RacerZLab cached map data for matching, overlays, and interpolation.</span>
           </div>
           {windowContextActive && (
             <p className="scope-banner">
@@ -621,7 +881,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
               <span className="map-confidence-badge" data-confidence={match.match_confidence ?? "medium"}>
                 {match.match_confidence ?? "medium"}
               </span>
-              <span className="muted">{match.source_filename ?? match.display_name}</span>
+              <span className="muted">{match.display_name}</span>
               {lap != null && <span className="muted">· Lap {lap}</span>}
               {preferredMapId && (
                 <button className="trackmap-action-btn" onClick={clearPreferredMap} title="Clear manual map" aria-label="Clear manual map selection">
@@ -701,7 +961,17 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
         )}
 
         {metadata && !metadata.origin.gps_supported && (
-          <div className="map-warning-banner"><Info size={14} /><span>Centerline-only .mt2 map — no boundaries, banking, GPS, or track width found.</span></div>
+          <div className="map-warning-banner"><Info size={14} /><span>Centerline-only imported map — no boundaries, banking, GPS, or track width found.</span></div>
+        )}
+
+        {mapWarnings.length > 0 && (
+          <div className="trackmap-warning-row" aria-label="Track map warnings">
+            {mapWarnings.map((warning) => (
+              <span key={`${currentMapId}-${warning}`} className="trackmap-warning-chip">
+                {warning}
+              </span>
+            ))}
+          </div>
         )}
 
         {/* ── Target zone translation ── */}
@@ -742,12 +1012,12 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
               <option value="info">Info+</option>
             </select>
           </label>
-          {selectedAreaSection && (
+          {selectedAreaSection && hasDrawableTrack && (
             <span className="lap-flag-badge">
               {selectedAreaLabel ?? selectedAreaSection.section_id}
             </span>
           )}
-          {selectedAreaSection && (
+          {selectedAreaSection && hasDrawableTrack && (
             <button
               className="trackmap-action-btn"
               onClick={() => {
@@ -777,7 +1047,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
           <button className={`trackmap-action-btn${problemFocus ? " active" : ""}`} onClick={() => setProblemFocus((p) => !p)} title="Toggle Problem Focus">
             F
           </button>
-          {selectedAreaSection && (
+          {selectedAreaSection && hasDrawableTrack && (
             <button
               className="trackmap-action-btn"
               onClick={() => {
@@ -815,19 +1085,71 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
         </div>
 
         {/* ── SVG ── */}
-        <div className="track-map-svg-container">
-          <svg viewBox={viewBox} className="track-map-svg">
+        <div className="trackmap-canvas">
+          {hasDrawableTrack && svgViewport ? (
+            <svg
+              viewBox={svgViewport.viewBox}
+              className="trackmap-svg"
+              preserveAspectRatio="xMidYMid meet"
+            >
             <title>Track Map — {metadata?.track_name ?? "Unknown"}</title>
-            <path d={pointPath} fill="none" stroke="#4ade80" strokeWidth={4} strokeOpacity={0.7} />
-            {activeLayers.has("target_zone") && tzPath && (
-              <path d={tzPath} fill="none" stroke="#22c55e" strokeWidth={8} strokeOpacity={0.4} />
-            )}
-            {sectionPolylines.map((sp) => {
+            <defs>
+              <pattern id={gridPatternId} width="64" height="64" patternUnits="userSpaceOnUse">
+                <path d="M 64 0 L 0 0 0 64" fill="none" stroke="#142132" strokeWidth="1" />
+              </pattern>
+              <clipPath id={clipPathId}>
+                <rect
+                  x={svgViewport.minX - svgViewport.padding}
+                  y={svgViewport.minY - svgViewport.padding}
+                  width={svgViewport.width + svgViewport.padding * 2}
+                  height={svgViewport.height + svgViewport.padding * 2}
+                />
+              </clipPath>
+            </defs>
+            <g className="trackmap-layer" clipPath={`url(#${clipPathId})`}>
+              <rect
+                x={svgViewport.minX - svgViewport.padding}
+                y={svgViewport.minY - svgViewport.padding}
+                width={svgViewport.width + svgViewport.padding * 2}
+                height={svgViewport.height + svgViewport.padding * 2}
+                fill={`url(#${gridPatternId})`}
+                opacity={0.35}
+              />
+              <path
+                d={pointPath}
+                fill="none"
+                stroke="#7dd3fc"
+                strokeWidth={8}
+                strokeOpacity={0.15}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d={pointPath}
+                fill="none"
+                stroke="#38bdf8"
+                strokeWidth={3.5}
+                strokeOpacity={0.95}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              {activeLayers.has("target_zone") && tzPath && (
+                <path
+                  d={tzPath}
+                  fill="none"
+                  stroke="#22c55e"
+                  strokeWidth={8}
+                  strokeOpacity={0.45}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
+              {sectionPolylines.map((sp) => {
               const stat = sectionStats.find((ss) => ss.section.section_id === sp.section.section_id);
               const loc = getLocation(sp.section.start_lap_pct);
               return (
                 <g
-                  key={sp.section.section_id}
+                  key={`${currentMapId}-${sp.section.section_id}`}
                   style={{ cursor: "pointer" }}
                   onClick={() => handleSectionClick(sp.section)}
                   role="button"
@@ -853,37 +1175,43 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                     strokeOpacity={selSecId === sp.section.section_id ? 0.9 : heatmap === "normal" ? 0.45 : 0.7}
                     strokeLinecap="round" strokeLinejoin="round"
                   />
+                  {sp.label && (
+                    <text x={sp.label.x} y={sp.label.y} className="trackmap-label" textAnchor="middle" dy="-8">
+                      {loc.short_label}
+                    </text>
+                  )}
                 </g>
               );
             })}
             {activeLayers.has("markers") &&
-              markers.map((m) => {
-                const loc = getLocation(m.lap_pct);
+              drawableMarkers.map((marker) => {
+                const loc = getLocation(marker.lap_pct);
+                const m = marker;
                 return (
-                  <g key={m.marker_id}>
+                  <g key={`${currentMapId}-${marker.marker_id}`}>
                     <title>{loc.display_label} — {m.distance_ft?.toFixed(0)} ft</title>
-                    <circle cx={m.x} cy={m.y} r={4} fill="#38bdf8" />
-                    <text x={m.x + 6} y={m.y - 6} fill="#8d9aaa" fontSize={9} fontFamily="Inter, sans-serif">
+                    <circle cx={marker.x} cy={marker.y} r={3.5} fill="#38bdf8" />
+                    <text x={marker.x + 6} y={marker.y - 6} className="trackmap-label">
                       {loc.short_label}
                     </text>
                   </g>
                 );
               })}
-            {orderedVisibleOverlays
-              .filter((o) => o.kind === "platform_event" && o.x != null && o.y != null)
-              .map((o) => {
-                const loc = getLocation(o.lap_pct);
+            {drawableOverlayEvents
+              .map((overlay) => {
+                const loc = getLocation(overlay.lap_pct);
+                const o = overlay;
                 return (
                   <g
-                    key={o.marker_id}
+                    key={`${currentMapId}-${overlay.marker_id}`}
                     style={{ cursor: "pointer" }}
-                    onClick={() => handleOverlayClick(o)}
+                    onClick={() => handleOverlayClick(overlay)}
                     role="button"
                     tabIndex={0}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        handleOverlayClick(o);
+                        handleOverlayClick(overlay);
                       }
                     }}
                     aria-label={`${o.label} — ${loc.display_label} — ${o.severity ?? "info"}`}
@@ -895,7 +1223,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                     {/* Glow ring for selected marker */}
                     {selOvlId === o.marker_id && (
                       <circle
-                        cx={o.x!} cy={o.y!}
+                        cx={overlay.x} cy={overlay.y}
                         r={9}
                         fill="none"
                         stroke="#38bdf8"
@@ -905,26 +1233,42 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                       />
                     )}
                     <circle
-                      cx={o.x!} cy={o.y!}
-                      r={selOvlId === o.marker_id ? 7 : 5}
-                      fill={o.color ?? "#f59e0b"}
-                      stroke={selOvlId === o.marker_id ? "#fff" : "#0a0d14"}
-                      strokeWidth={selOvlId === o.marker_id ? 2.5 : 1.5}
+                      cx={overlay.x} cy={overlay.y}
+                      r={selOvlId === overlay.marker_id ? 7 : 5}
+                      fill={overlay.color ?? "#f59e0b"}
+                      stroke={selOvlId === overlay.marker_id ? "#fff" : "#0a0d14"}
+                      strokeWidth={selOvlId === overlay.marker_id ? 2.5 : 1.5}
                     />
-                    <text x={(o.x ?? 0) + 8} y={(o.y ?? 0) + 4} fill={o.color ?? "#f59e0b"} fontSize={9} fontFamily="Inter, sans-serif">
+                    <text x={overlay.x + 8} y={overlay.y + 4} className="trackmap-label" fill={overlay.color ?? "#f59e0b"}>
                       {o.symbol ?? "◆"} {loc.short_label}
                     </text>
                   </g>
                 );
               })}
-          </svg>
-          {orderedVisibleOverlays.filter((o) => o.kind === "platform_event").length === 0 && overlays.length > 0 && (
+              </g>
+            </svg>
+          ) : (
+            <div className="trackmap-empty">
+              <Info size={18} />
+              <div>
+                <strong>Track map unavailable</strong>
+                <p>{mapEmptyMessage ?? "Imported map has no drawable centerline points."}</p>
+                <p className="muted">
+                  {hasBounds
+                    ? "The current package includes a map, but the centerline could not be drawn safely."
+                    : "The current package does not include usable drawable bounds, so the map canvas stays hidden instead of faking geometry."}
+                </p>
+              </div>
+            </div>
+          )}
+          {hasDrawableTrack && visiblePlatformOverlayCount === 0 && overlays.length > 0 && (
             <div className="trackmap-empty-map-overlay"><Info size={14} /><span>No visible events for active layers.</span></div>
           )}
         </div>
 
         {/* ── Section Heat Strip (risk-colored timeline) ── */}
-        <div className="trackmap-timeline">
+        {hasDrawableTrack && (
+          <div className="trackmap-timeline">
           <div className="trackmap-timeline-bar">
             {sectionStats.map((s) => {
               const loc = getLocation(s.section.start_lap_pct);
@@ -980,10 +1324,11 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
               );
             })}
           </div>
-        </div>
+          </div>
+        )}
 
         {/* ── Location Jump Chips ── */}
-        {sections.length > 0 && (
+        {hasDrawableTrack && sections.length > 0 && (
           <div className="trackmap-jump-chips">
             <h4>Jump to Area</h4>
             <div className="trackmap-jump-chip-list">
@@ -1057,7 +1402,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
         )}
 
         {/* ── Area Drilldown ── */}
-        {sectionStats.length > 0 && (
+        {hasDrawableTrack && sectionStats.length > 0 && (
           <div className="trackmap-area-drilldown">
             <h4>Area Drilldown <span className="muted" style={{ fontWeight: 400, fontSize: 10 }}>Based on active filters.</span></h4>
             <div className="trackmap-drilldown-table">
@@ -1113,7 +1458,8 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
         )}
 
         {/* ── Section cards ── */}
-        <div className="trackmap-section-cards">
+        {hasDrawableTrack && (
+          <div className="trackmap-section-cards">
           <h4>Areas</h4>
           <div className="trackmap-section-cards-grid">
             {(problemFocus ? [...sectionStats].sort((a, b) => b.riskScore - a.riskScore) : sectionStats).slice(0, 12).map((s) => {
@@ -1142,7 +1488,8 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
               );
             })}
           </div>
-        </div>
+          </div>
+        )}
 
         {/* ── Fallback events ── */}
         {orderedVisibleOverlays.filter((o) => o.kind === "platform_event" && o.x == null).length > 0 && (
@@ -1264,6 +1611,15 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                   </>
                 )}
               </div>
+              <div className="inspector-evidence" style={{ marginTop: 12 }}>
+                <div className="inspector-block">
+                  <label>Trust / Basis</label>
+                  <div className="inspector-block-content">
+                    <span>Basis: {sectionValueBasis === "selected_window" ? "Selected window area anchor" : "Full-lap area anchor"}</span>
+                    <span className="muted" style={{ fontSize: 11 }}>Confidence unavailable until you select a specific event or trace sample.</span>
+                  </div>
+                </div>
+              </div>
               <div className="diw-actions" style={{ marginTop: 12 }}>
                 <button
                   className="trackmap-action-btn"
@@ -1379,6 +1735,8 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                 {o.event_type && <span className="inspector-badge">{o.event_type}</span>}
                 <button
                   className="trackmap-action-btn"
+                  aria-pressed={isPinned}
+                  aria-label={isPinned ? `Unpin ${o.label}` : `Pin ${o.label}`}
                   onClick={() => togglePin(o.marker_id)}
                   title={isPinned ? "Unpin" : "Pin"}
                   style={{ marginLeft: "auto" }}
@@ -1431,6 +1789,15 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                   <span className="inspector-badge inspector-badge-sm" data-severity={o.severity ?? "info"}>{o.severity ?? "info"}</span>
                   {o.confidence && <span className="muted" style={{ marginLeft: 6 }}>confidence: {o.confidence}</span>}
                   {o.source_type && <span className="muted" style={{ marginLeft: 6 }}>source: {o.source_type}</span>}
+                </div>
+                <div className="inspector-block">
+                  <label>Trust / Basis</label>
+                  <div className="inspector-block-content">
+                    <span>Basis: selected map location</span>
+                    <span className="muted" style={{ fontSize: 11 }}>
+                      {o.confidence ? `Trust tier: ${o.confidence}` : "Trust tier unavailable for this overlay."}
+                    </span>
+                  </div>
                 </div>
                 {o.description && (
                   <div className="inspector-block"><label>Description</label><span>{o.description}</span></div>

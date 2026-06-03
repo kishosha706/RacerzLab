@@ -159,7 +159,7 @@ def aero_residual_load_proxy_n(
     )
 
 
-# ── Curvature / yaw math (pure functions, no .mt2 dependency) ─
+# ── Curvature / yaw math (pure functions, no track-map file dependency) ─
 
 def curvature_from_heading_distance(
     prev_heading_rad: float,

@@ -344,7 +344,7 @@ export function importMt2File(file: File): Promise<TrackMapIndexEntry> {
   });
 }
 
-/** Import an .mt2 file from a local filesystem path (Tauri native picker). */
+/** Import a track map file from a local filesystem path (Tauri native picker). */
 export function importMt2FileFromPath(filePath: string): Promise<TrackMapIndexEntry> {
   return mapImportJson<TrackMapIndexEntry>("/api/imports/mt2", {
     method: "POST",
