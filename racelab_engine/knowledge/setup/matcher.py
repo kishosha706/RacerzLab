@@ -255,7 +255,7 @@ def query_setup_knowledge(
             )
 
     ranked.sort(key=lambda item: (-item.score, -item.effect.effect_strength, item.effect.coupling_risk, item.effect.effect_id))
-    candidates = ranked[:limit]
+    candidates = _diversify_candidates(ranked, limit)
     ambiguity = parsed.clarification_question is not None
     return SetupQueryResult(
         parsed_symptom=parsed,
@@ -273,6 +273,28 @@ def query_setup_knowledge(
         package_archetype=package_archetype,
         track_family=track_family,
     )
+
+
+def _diversify_candidates(ranked: list[RankedSetupEffect], limit: int) -> list[RankedSetupEffect]:
+    selected: list[RankedSetupEffect] = []
+    seen_areas: set[str] = set()
+    for item in ranked:
+        if len(selected) >= limit:
+            break
+        if item.effect.setup_area in seen_areas:
+            continue
+        selected.append(item)
+        seen_areas.add(item.effect.setup_area)
+    if len(selected) >= limit:
+        return selected
+    selected_ids = {item.effect.effect_id for item in selected}
+    for item in ranked:
+        if len(selected) >= limit:
+            break
+        if item.effect.effect_id not in selected_ids:
+            selected.append(item)
+            selected_ids.add(item.effect.effect_id)
+    return selected
 
 
 def query_result_to_dict(result: SetupQueryResult) -> dict:

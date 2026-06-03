@@ -84,8 +84,8 @@ Generated from reviewed local JSON records derived from the RacerZLab master set
 - Arm positions: P1, P2, P3, P4, P5
 
 ## Next Gen Diffuser / Front Feed Rules
-- Front and rear platform wording: Front ride-height platform helps define diffuser feed. Rear ride-height platform helps define diffuser outlet/expansion and scrape/choke context. Diffuser metrics are derived geometry proxies, not measured downforce.
-- CFS and front feed matter: CFS/front feed evidence matters when interpreting Next Gen platform complaints.
+- Front and rear platform wording: Front ride-height platform helps define diffuser feed. Rear ride-height platform helps define diffuser outlet/expansion and scrape/choke behavior. Diffuser metrics are derived geometry proxies, not measured downforce.
+- CFS and front feed matter: CFS/front ride-height platform evidence matters because the front platform helps define diffuser feed; read it with rear platform, scrape, speed loss, and derived diffuser proxy context.
 - Rear height is not alone: Rear height alone does not determine rear aero behavior; read it with front feed, diffuser outlet/expansion context, scrape, and speed loss.
 - Front higher is contextual: A front platform that is higher than the rear is not automatically wrong; the useful question is whether the feed, scrape margin, and speed trend agree.
 - Lower is contextual: Lower is not automatically faster if it creates contact, unstable feed, or speed loss.

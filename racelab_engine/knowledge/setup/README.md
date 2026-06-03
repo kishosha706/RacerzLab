@@ -31,6 +31,18 @@ avoid/preferred conditions, and exact-value policy. Package-level levers such as
 ARB diameter are treated as reference/package tests. Fine-tuning levers can be
 shown as small-swing tests when explicitly marked.
 
+Effect/counter-effect wording is part of the decision quality contract. A
+candidate should say what symptom it is trying to help, which phase it applies
+to, what can get worse, what evidence should support it, and what to validate
+after the test. Strength and risk are separate: strength describes the size of
+the setup lever, while coupling risk describes how many phases or systems the
+lever can disturb.
+
+Setup packages matter because a single garage value can be normal in one package
+and wrong in another. The ranker can use package tags, preferred conditions, and
+avoid conditions to keep crossweight, platform, ARB, tire, spring, and shock
+suggestions tied to the surrounding setup.
+
 Next Gen disables `track_bar`, `truck_arm_mount`, `bump_stop`, and `packer`.
 Those areas remain available for legacy oval knowledge when the selected car
 family supports them.
@@ -42,8 +54,17 @@ Next Gen ARB constraints:
 - Diameter, arm, preload, and attach state are separate setup areas.
 
 Diffuser/platform wording treats proxy channels as derived comparison signals,
-not force measurements. Ride-height, collar, or spring changes should not be
-suggested from static rake alone.
+not force measurements. Front ride-height platform helps define diffuser feed.
+Rear ride-height platform helps define outlet/expansion and scrape/choke
+context. Ride-height, collar, or spring changes should not be suggested from
+static rake alone.
+
+Shock histograms are evidence, not a command. Low-speed shock changes belong to
+driver-input transitions such as braking, brake release, steering input, and
+throttle pickup. High-speed shock changes belong to bumps, dips, curbs, banking
+transitions, and sharp platform events. The future Evidence Adapter should map
+local traces into those evidence tags without changing the deterministic setup
+logic.
 
 ## Commands
 
@@ -59,7 +80,9 @@ python -B scripts/query_setup_knowledge.py --car-family next_gen --symptom "loos
 Milestone 1 created the local schema, seed data, validator, matcher, query CLI,
 and tests. Milestone 2 enriched ranking with package context, evidence
 readiness, clearer effect/counter-effect explanations, ARB specificity, and
-Next Gen platform wording.
+Next Gen platform wording. The pre-3B quality pass tightened phase specificity,
+package dependency notes, candidate diversity, and validation checks before the
+Evidence Adapter.
 
 ## Example Output
 
@@ -74,6 +97,7 @@ Counter-effect: May bind the center or add scrub if the car was already loaded t
 Evidence: missing key evidence
 One-change test: Try one small swing: Add a little cross...
 Validate: exit_yaw, center_speed, tire_trend
+Watch for: tight_center, tight_exit, drag_scrub
 ```
 
 The next milestone is the Evidence Adapter: mapping real local telemetry,

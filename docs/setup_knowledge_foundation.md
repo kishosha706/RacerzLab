@@ -26,6 +26,11 @@ package archetype context, evidence readiness, expanded vocabulary, Next Gen
 platform rules, ARB specificity, JSON output, and clearer one-change test
 language.
 
+The pre-3B quality pass tightened decision quality before the Evidence Adapter:
+candidate diversity, package dependency wording, phase-specific shock/platform
+language, stricter validator checks, and query examples for common garage
+complaints.
+
 ## Schema And Data
 
 Core schema sections:
@@ -55,6 +60,14 @@ The matcher ranks candidates with:
 - package archetype and track-family tags
 - avoid/preferred conditions
 - ambiguity and clarification questions
+
+Effect/counter-effect wording is not filler. It tells the future assistant what
+the swing is trying to help, what can get worse, which phase to judge, what
+evidence should support the call, and what to validate afterward. Strength is
+the lever size: `5` is a major package lever, `4` is a strong balance/platform
+lever, `3` is a medium phase-specific lever, `2` is fine tuning, and `1` is
+driver feel or polish. Risk describes coupling: low is localized, medium is
+phase/system-sensitive, and high can move multiple phases or the full package.
 
 Readiness labels are `ready`, `partially_ready`, and
 `missing_key_evidence`. Missing evidence lowers confidence but does not hide a
@@ -92,11 +105,23 @@ load/detail swing, and attach state is a setup/procedure state.
 Next Gen platform rules emphasize CFS/front ride-height platform, rear
 ride-height platform, smooth rake, diffuser volume proxy, scrape, and speed
 loss together. Diffuser proxy channels are derived geometry/proxy signals, not
-force measurements.
+force measurements. Front ride-height platform helps define diffuser feed. Rear
+ride-height platform helps define outlet/expansion and scrape/choke behavior.
+Rear height alone does not determine rear aero behavior, front higher than rear
+is not automatically wrong, lower is not automatically faster, and static rake
+sign does not decide if a setup is good.
 
 Shock interpretation distinguishes compression/shortening, rebound/extending,
 low-speed body-motion regions, high-speed bump/impact regions, and selected-zone
-histogram evidence.
+histogram evidence. A shock histogram is evidence, not a setup command; it must
+agree with the complaint phase, driver inputs, platform trace, and same-zone
+behavior before ranking a shock swing high.
+
+Setup packages are first-class context. Crossweight, platform, spring, shock,
+ARB, toe, tire-pressure, and tire-protection candidates can be right or wrong
+depending on the package they live in. The matcher keeps package tags and
+preferred/avoid conditions available so the Evidence Adapter can feed package
+context without adding new setup logic.
 
 ## Examples
 
@@ -120,6 +145,7 @@ Counter-effect: May bind the center or add scrub if the car was already loaded t
 Evidence: missing key evidence
 One-change test: Try one small swing: Add a little cross...
 Validate: exit_yaw, center_speed, tire_trend
+Watch for: tight_center, tight_exit, drag_scrub
 ```
 
 Next milestone: Evidence Adapter. It should translate local telemetry, Compare

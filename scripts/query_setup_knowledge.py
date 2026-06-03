@@ -95,6 +95,10 @@ def main() -> int:
         print(f"Validate: {', '.join(effect.validation_targets)}")
         if effect.watch_for_targets:
             print(f"Watch for: {', '.join(effect.watch_for_targets)}")
+        if effect.setup_package_tags:
+            print(f"Package notes: {', '.join(effect.setup_package_tags)}")
+        if effect.preferred_when:
+            print(f"Preferred when: {', '.join(effect.preferred_when)}")
         if effect.avoid_when:
             print(f"Avoid when: {', '.join(effect.avoid_when)}")
 

@@ -5,7 +5,7 @@
     "applies_to": [
       "all"
     ],
-    "why_fast": "Keeps the car in a low, efficient platform window when the track and setup support it.",
+    "why_fast": "Keeps the car in a low, efficient platform window only when contact, speed trace, and dynamic platform evidence agree.",
     "common_risks": [
       "front_platform_contact",
       "rear_scrape"
@@ -24,7 +24,8 @@
       "splitter hitting"
     ],
     "diagnostic_questions": [
-      "Is the complaint consistent with the low platform speed package pattern?"
+      "Does speed loss line up with front or rear platform contact?",
+      "Is the low platform clean in the same zone as the complaint?"
     ],
     "likely_driver_complaints": [
       "bottoming",
@@ -39,9 +40,10 @@
       "rear_scrape"
     ],
     "recommended_evidence_order": [
-      "speed_trace",
+      "platform_trace",
       "scrape",
-      "ride_height"
+      "speed_trace",
+      "setup_snapshot"
     ],
     "what_it_looks_like": "Keeps the car in a low, efficient platform window when the track and setup support it.",
     "setup_areas_commonly_involved": [
@@ -51,7 +53,7 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Keeps the car in a low, efficient platform window when the track and setup support it.",
+    "driver_facing_explanation": "Low platform can be fast, but lower is not automatically faster. Check scrape, speed loss, and ride-height trace by zone.",
     "disabled_for": [],
     "source_ids": [
       "racerzlab_master_setup_matrix_v1"
@@ -70,7 +72,7 @@
     "applies_to": [
       "next_gen"
     ],
-    "why_fast": "Uses front platform consistency to support derived diffuser feed behavior.",
+    "why_fast": "Uses front ride-height platform consistency to help define derived diffuser feed behavior.",
     "common_risks": [
       "front_feed_instability",
       "diffuser_instability"
@@ -88,7 +90,8 @@
       "pack unstable"
     ],
     "diagnostic_questions": [
-      "Is the complaint consistent with the front feed diffuser package pattern?"
+      "Does front platform behavior agree with diffuser proxy and speed trend?",
+      "Is the issue feed instability, scrape/choke, or a pure balance complaint?"
     ],
     "likely_driver_complaints": [
       "pack unstable"
@@ -103,8 +106,10 @@
     ],
     "recommended_evidence_order": [
       "front_platform",
+      "rear_platform",
       "diffuser_proxy",
-      "speed_loss"
+      "scrape",
+      "speed_trace"
     ],
     "what_it_looks_like": "Uses front platform consistency to support derived diffuser feed behavior.",
     "setup_areas_commonly_involved": [
@@ -114,7 +119,7 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Uses front platform consistency to support derived diffuser feed behavior.",
+    "driver_facing_explanation": "Front ride-height platform helps define diffuser feed; rear platform helps outlet/expansion context. The proxy is geometry context, not measured downforce.",
     "disabled_for": [],
     "source_ids": [
       "racerzlab_master_setup_matrix_v1"
@@ -133,7 +138,7 @@
     "applies_to": [
       "next_gen"
     ],
-    "why_fast": "Can keep front feed and rear outlet behavior in a useful relationship for a specific track state.",
+    "why_fast": "Can work when front feed, rear outlet/expansion, scrape margin, and speed trend agree for that track state.",
     "common_risks": [
       "rear_scrape",
       "diffuser_choke_or_stall"
@@ -152,7 +157,8 @@
       "drags down straight"
     ],
     "diagnostic_questions": [
-      "Is the complaint consistent with the high-front low-rear feed package pattern?"
+      "Do front feed and rear outlet/expansion traces agree by zone?",
+      "Is there scrape or speed loss that turns the package against itself?"
     ],
     "likely_driver_complaints": [
       "rear scrape",
@@ -167,9 +173,11 @@
       "diffuser_choke_or_stall"
     ],
     "recommended_evidence_order": [
-      "front_height",
-      "rear_height",
-      "diffuser_proxy"
+      "front_platform",
+      "rear_platform",
+      "diffuser_proxy",
+      "scrape",
+      "speed_trace"
     ],
     "what_it_looks_like": "Can keep front feed and rear outlet behavior in a useful relationship for a specific track state.",
     "setup_areas_commonly_involved": [
@@ -179,7 +187,7 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Can keep front feed and rear outlet behavior in a useful relationship for a specific track state.",
+    "driver_facing_explanation": "Front higher than rear is not automatically wrong, and static rake sign does not decide the setup. Read dynamic traces by zone.",
     "disabled_for": [],
     "source_ids": [
       "racerzlab_master_setup_matrix_v1"
@@ -198,7 +206,7 @@
     "applies_to": [
       "all"
     ],
-    "why_fast": "Prioritizes rear security and driver confidence off the corner.",
+    "why_fast": "Prioritizes entry and exit security through diagonal support, with center-bind and scrub as the tradeoff.",
     "common_risks": [
       "tight_center",
       "drag_scrub"
@@ -217,7 +225,8 @@
       "tight center"
     ],
     "diagnostic_questions": [
-      "Is the complaint consistent with the high cross stability package pattern?"
+      "Is the driver asking for security or rotation?",
+      "Do center speed, steering demand, and tire trend show bind?"
     ],
     "likely_driver_complaints": [
       "bound up",
@@ -232,7 +241,9 @@
       "drag_scrub"
     ],
     "recommended_evidence_order": [
-      "exit_yaw",
+      "setup_snapshot",
+      "yaw",
+      "throttle",
       "center_speed",
       "tire_trend"
     ],
@@ -244,7 +255,7 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Prioritizes rear security and driver confidence off the corner.",
+    "driver_facing_explanation": "High cross can calm loose entry or drive-off, but it can bind center or add steering scrub if the car is already secure.",
     "disabled_for": [],
     "source_ids": [
       "racerzlab_master_setup_matrix_v1"
@@ -324,7 +335,7 @@
     "applies_to": [
       "all"
     ],
-    "why_fast": "Trades a little peak feel for repeatable tire trend.",
+    "why_fast": "Protects tire work and balance over comparable long-run laps instead of chasing one short-run feel.",
     "common_risks": [
       "short_run_laziness",
       "low_straight_speed"
@@ -342,7 +353,8 @@
       "burns RF"
     ],
     "diagnostic_questions": [
-      "Is the complaint consistent with the long-run tire protection package pattern?"
+      "Does the tire trend repeat after the run stabilizes?",
+      "Is the heat from balance, scrub, platform contact, or pressure support?"
     ],
     "likely_driver_complaints": [
       "falls off",
@@ -357,8 +369,11 @@
       "low_straight_speed"
     ],
     "recommended_evidence_order": [
+      "tire_temps",
+      "tire_trend",
       "lap_falloff",
-      "tire_temp"
+      "steering",
+      "setup_snapshot"
     ],
     "what_it_looks_like": "Trades a little peak feel for repeatable tire trend.",
     "setup_areas_commonly_involved": [
@@ -368,7 +383,7 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Trades a little peak feel for repeatable tire trend.",
+    "driver_facing_explanation": "Use tire temperature, pressure trend, lap falloff, and driver corrections together before calling a tire-protection swing.",
     "disabled_for": [],
     "source_ids": [
       "racerzlab_master_setup_matrix_v1"
@@ -509,7 +524,7 @@
     "applies_to": [
       "all"
     ],
-    "why_fast": "Lets the car absorb track impacts without losing the platform window.",
+    "why_fast": "Keeps the car compliant over bumps, dips, curbs, or banking transitions without giving away platform support.",
     "common_risks": [
       "platform_feed_issue",
       "shock_overactive"
@@ -526,7 +541,8 @@
       "shock too busy"
     ],
     "diagnostic_questions": [
-      "Is the complaint consistent with the bumpy track compliance package pattern?"
+      "Is the upset tied to a bump, dip, curb, or banking transition?",
+      "Does compliance help without adding platform contact?"
     ],
     "likely_driver_complaints": [
       "shock too busy"
@@ -540,8 +556,11 @@
       "shock_overactive"
     ],
     "recommended_evidence_order": [
+      "track_map_zone",
+      "shock_histogram",
       "bump_trace",
-      "shock_histogram"
+      "platform_trace",
+      "driver_inputs"
     ],
     "what_it_looks_like": "Lets the car absorb track impacts without losing the platform window.",
     "setup_areas_commonly_involved": [
@@ -551,7 +570,7 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Lets the car absorb track impacts without losing the platform window.",
+    "driver_facing_explanation": "High-speed shock work belongs to sharp track events and recovery zones, not generic balance complaints.",
     "disabled_for": [],
     "source_ids": [
       "racerzlab_master_setup_matrix_v1"
@@ -570,7 +589,7 @@
     "applies_to": [
       "all"
     ],
-    "why_fast": "Uses dampers to shape transient platform behavior after the static package is close.",
+    "why_fast": "Uses shock timing to manage driver-input transitions and platform recovery after the main spring/height package is in range.",
     "common_risks": [
       "over-controlled transition"
     ],
@@ -585,7 +604,8 @@
       "snaps loose"
     ],
     "diagnostic_questions": [
-      "Is the complaint consistent with the shock-controlled platform package pattern?"
+      "Is this a driver-input transition, a bump/curb event, or a bigger platform/spring problem?",
+      "Does the shock trace agree with yaw, throttle, brake, or scrape in the same zone?"
     ],
     "likely_driver_complaints": [
       "snaps loose"
@@ -598,7 +618,10 @@
     ],
     "recommended_evidence_order": [
       "shock_histogram",
-      "driver_inputs"
+      "track_map_zone",
+      "driver_inputs",
+      "platform_trace",
+      "yaw"
     ],
     "what_it_looks_like": "Uses dampers to shape transient platform behavior after the static package is close.",
     "setup_areas_commonly_involved": [
@@ -608,7 +631,7 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Uses dampers to shape transient platform behavior after the static package is close.",
+    "driver_facing_explanation": "Shock histograms support the call; they do not command it by themselves. Match the shock trace to the same phase and zone as the complaint.",
     "disabled_for": [],
     "source_ids": [
       "racerzlab_master_setup_matrix_v1"

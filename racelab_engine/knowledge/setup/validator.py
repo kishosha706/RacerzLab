@@ -61,7 +61,7 @@ def validate_setup_knowledge(knowledge) -> list[str]:
                 problems.append(f"Disabled Next Gen area {area.setup_area} needs a safe unavailable car-specific note")
 
     for effect in knowledge.setup_effects:
-        problems.extend(_validate_effect(effect, area_ids, canonical_symptoms, package_ids, source_ids))
+        problems.extend(_validate_effect(effect, area_ids, phases, canonical_symptoms, package_ids, source_ids))
 
     for req in knowledge.evidence_requirements:
         if req.setup_area not in area_ids:
@@ -98,6 +98,7 @@ def _contains_banned_certainty(text: str) -> bool:
 def _validate_effect(
     effect: SetupEffect,
     area_ids: set[str],
+    phases: set[str],
     canonical_symptoms: set[str],
     package_ids: set[str],
     source_ids: set[str],
@@ -115,6 +116,18 @@ def _validate_effect(
         problems.append(f"Effect {effect.effect_id} is missing counter_effects")
     if not effect.validation_targets:
         problems.append(f"Effect {effect.effect_id} is missing validation_targets")
+    if not effect.watch_for_targets:
+        problems.append(f"Effect {effect.effect_id} is missing watch_for_targets")
+    if not effect.helps_phases:
+        problems.append(f"Effect {effect.effect_id} is missing helps_phases")
+    if not effect.can_hurt_phases:
+        problems.append(f"Effect {effect.effect_id} is missing can_hurt_phases")
+    unknown_help_phases = set(effect.helps_phases) - phases
+    unknown_hurt_phases = set(effect.can_hurt_phases) - phases
+    if unknown_help_phases:
+        problems.append(f"Effect {effect.effect_id} references unknown helps_phases: {sorted(unknown_help_phases)}")
+    if unknown_hurt_phases:
+        problems.append(f"Effect {effect.effect_id} references unknown can_hurt_phases: {sorted(unknown_hurt_phases)}")
     if not effect.evidence_required:
         problems.append(f"Effect {effect.effect_id} is missing evidence_required")
     if effect.exact_value_policy not in EXACT_VALUE_POLICIES:
@@ -157,6 +170,8 @@ def _validate_effect(
         problems.append(f"Effect {effect.effect_id} contains guaranteed-fix wording")
     if "measured downforce" in text:
         problems.append(f"Effect {effect.effect_id} claims or repeats measured downforce wording")
+    if "histogram alone proves" in text or "histogram alone confirms" in text:
+        problems.append(f"Effect {effect.effect_id} overstates shock histogram evidence")
     if any(term in text for term in MULTI_MAJOR_TERMS):
         problems.append(f"Effect {effect.effect_id} suggests multiple major changes")
     return problems

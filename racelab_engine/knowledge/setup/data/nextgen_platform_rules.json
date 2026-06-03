@@ -3,7 +3,7 @@
     "rule_id": "front_rear_diffuser_wording",
     "title": "Front and rear platform wording",
     "truth_level": "high",
-    "wording": "Front ride-height platform helps define diffuser feed. Rear ride-height platform helps define diffuser outlet/expansion and scrape/choke context. Diffuser metrics are derived geometry proxies, not measured downforce.",
+    "wording": "Front ride-height platform helps define diffuser feed. Rear ride-height platform helps define diffuser outlet/expansion and scrape/choke behavior. Diffuser metrics are derived geometry proxies, not measured downforce.",
     "evidence_required": [
       "front_platform",
       "rear_platform",
@@ -19,14 +19,18 @@
     "rule_id": "cfs_front_feed_matters",
     "title": "CFS and front feed matter",
     "truth_level": "high",
-    "wording": "CFS/front feed evidence matters when interpreting Next Gen platform complaints.",
+    "wording": "CFS/front ride-height platform evidence matters because the front platform helps define diffuser feed; read it with rear platform, scrape, speed loss, and derived diffuser proxy context.",
     "evidence_required": [
       "front_height",
       "front_platform",
-      "diffuser_proxy"
+      "rear_platform",
+      "diffuser_proxy",
+      "scrape",
+      "speed_trace"
     ],
     "do_not_say": [
-      "rear ride height explains the whole aero state"
+      "rear ride height explains the whole aero state",
+      "CFS half-inch opening is accepted fact"
     ]
   },
   {

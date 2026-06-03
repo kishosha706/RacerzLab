@@ -1,7 +1,9 @@
 [
   {
     "principle_id": "baseline_first",
-    "source_ids": ["racerzlab_master_setup_matrix_v1"],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
     "title": "Baseline first",
     "racerzlab_wording": "Start from a known baseline or reference package before judging a swing.",
     "source_summary": "The matrix says setup work starts from a known baseline.",
@@ -10,18 +12,29 @@
     "setup_areas": [],
     "phases": [],
     "symptoms": [],
-    "evidence_links": ["setup_snapshot"],
+    "evidence_links": [
+      "setup_snapshot"
+    ],
     "confidence": "high",
     "review_status": "accepted",
-    "cautions": ["Do not turn this into an exact-value recommendation."],
-    "do_not_overclaim": ["Do not claim certainty without a baseline."],
+    "cautions": [
+      "Do not turn this into an exact-value recommendation."
+    ],
+    "do_not_overclaim": [
+      "Do not claim certainty without a baseline."
+    ],
     "short_ui_wording": "Baseline first.",
     "why_it_matters": "Without a known package, setup changes are hard to compare.",
-    "mistakes_to_avoid": ["Judging one setup value alone", "Skipping setup snapshot context"]
+    "mistakes_to_avoid": [
+      "Judging one setup value alone",
+      "Skipping setup snapshot context"
+    ]
   },
   {
     "principle_id": "one_change_at_a_time",
-    "source_ids": ["racerzlab_master_setup_matrix_v1"],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
     "title": "One change at a time",
     "racerzlab_wording": "Make one clear setup swing, then compare the result before stacking changes.",
     "source_summary": "The matrix requires one change at a time unless the user marks an experiment.",
@@ -30,18 +43,29 @@
     "setup_areas": [],
     "phases": [],
     "symptoms": [],
-    "evidence_links": ["compare_baseline"],
+    "evidence_links": [
+      "compare_baseline"
+    ],
     "confidence": "high",
     "review_status": "accepted",
-    "cautions": ["Do not recommend multiple major package levers as one test."],
-    "do_not_overclaim": ["Do not say which change worked if changes were stacked."],
+    "cautions": [
+      "Do not recommend multiple major package levers as one test."
+    ],
+    "do_not_overclaim": [
+      "Do not say which change worked if changes were stacked."
+    ],
     "short_ui_wording": "One swing, then compare.",
     "why_it_matters": "Stacked changes hide the cause of the improvement or regression.",
-    "mistakes_to_avoid": ["Stacking major changes", "Calling a result proven without compare evidence"]
+    "mistakes_to_avoid": [
+      "Stacking major changes",
+      "Calling a result proven without compare evidence"
+    ]
   },
   {
     "principle_id": "counter_effect_required",
-    "source_ids": ["racerzlab_master_setup_matrix_v1"],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
     "title": "Every change has a counter-effect",
     "racerzlab_wording": "Every candidate must explain what it can help and what it may hurt.",
     "source_summary": "The matrix frames setup work as effect and counter-effect.",
@@ -53,55 +77,100 @@
     "evidence_links": [],
     "confidence": "high",
     "review_status": "accepted",
-    "cautions": ["A setup swing without a counter-effect is incomplete."],
-    "do_not_overclaim": ["Do not present a setup change as a one-way fix."],
+    "cautions": [
+      "A setup swing without a counter-effect is incomplete."
+    ],
+    "do_not_overclaim": [
+      "Do not present a setup change as a one-way fix."
+    ],
     "short_ui_wording": "Show the tradeoff.",
     "why_it_matters": "A change that helps one phase can hurt another.",
-    "mistakes_to_avoid": ["Hiding phase tradeoffs"]
+    "mistakes_to_avoid": [
+      "Hiding phase tradeoffs"
+    ]
   },
   {
     "principle_id": "validate_comparable_windows",
-    "source_ids": ["racerzlab_master_setup_matrix_v1"],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
     "title": "Validate comparable windows",
     "racerzlab_wording": "Judge a test in the same phase, zone, lap type, and run context.",
     "source_summary": "The matrix emphasizes comparable windows and later Compare validation.",
     "domain": "setup_process",
     "car_scope": "all",
     "setup_areas": [],
-    "phases": ["entry", "center", "exit", "straight", "long_run"],
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "long_run"
+    ],
     "symptoms": [],
-    "evidence_links": ["track_map_zone", "compare_baseline"],
+    "evidence_links": [
+      "track_map_zone",
+      "compare_baseline"
+    ],
     "confidence": "high",
     "review_status": "accepted",
-    "cautions": ["Do not compare unrelated zones or laps."],
-    "do_not_overclaim": ["Do not say a change worked from mismatched windows."],
+    "cautions": [
+      "Do not compare unrelated zones or laps."
+    ],
+    "do_not_overclaim": [
+      "Do not say a change worked from mismatched windows."
+    ],
     "short_ui_wording": "Compare like with like.",
     "why_it_matters": "Different windows can make a good change look bad or a bad change look good.",
-    "mistakes_to_avoid": ["Comparing out laps to hot laps", "Using whole-lap averages for phase complaints"]
+    "mistakes_to_avoid": [
+      "Comparing out laps to hot laps",
+      "Using whole-lap averages for phase complaints"
+    ]
   },
   {
     "principle_id": "do_not_judge_cold_out_laps",
-    "source_ids": ["racerzlab_master_setup_matrix_v1"],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
     "title": "Do not judge cold or out laps",
     "racerzlab_wording": "Treat cold, out-lap, and transition laps as context, not proof.",
     "source_summary": "The matrix warns against judging from non-comparable lap states.",
     "domain": "setup_process",
     "car_scope": "all",
-    "setup_areas": ["tire_pressure"],
-    "phases": ["short_run", "whole_run"],
-    "symptoms": ["long_run_falloff", "tire_overwork"],
-    "evidence_links": ["tire_temps", "lap_falloff"],
+    "setup_areas": [
+      "tire_pressure"
+    ],
+    "phases": [
+      "short_run",
+      "whole_run"
+    ],
+    "symptoms": [
+      "long_run_falloff",
+      "tire_overwork"
+    ],
+    "evidence_links": [
+      "tire_temps",
+      "lap_falloff"
+    ],
     "confidence": "high",
     "review_status": "accepted",
-    "cautions": ["Cold state can exaggerate balance."],
-    "do_not_overclaim": ["Do not validate a setup swing from cold-lap behavior alone."],
+    "cautions": [
+      "Cold state can exaggerate balance."
+    ],
+    "do_not_overclaim": [
+      "Do not validate a setup swing from cold-lap behavior alone."
+    ],
     "short_ui_wording": "Do not judge cold laps.",
     "why_it_matters": "Tire and platform state are not stable yet.",
-    "mistakes_to_avoid": ["Treating out-lap balance as race balance"]
+    "mistakes_to_avoid": [
+      "Treating out-lap balance as race balance"
+    ]
   },
   {
     "principle_id": "fast_setups_are_packages",
-    "source_ids": ["racerzlab_master_setup_matrix_v1"],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
     "title": "Fast setups are packages",
     "racerzlab_wording": "Do not judge one garage number alone; read the setup as a package.",
     "source_summary": "The matrix says a fast setup is a package, not one isolated value.",
@@ -110,58 +179,107 @@
     "setup_areas": [],
     "phases": [],
     "symptoms": [],
-    "evidence_links": ["setup_snapshot"],
+    "evidence_links": [
+      "setup_snapshot"
+    ],
     "confidence": "high",
     "review_status": "accepted",
-    "cautions": ["One value can be unusual yet fit the package."],
-    "do_not_overclaim": ["Do not call a value wrong by itself."],
+    "cautions": [
+      "One value can be unusual yet fit the package."
+    ],
+    "do_not_overclaim": [
+      "Do not call a value wrong by itself."
+    ],
     "short_ui_wording": "Read the whole package.",
     "why_it_matters": "Setup systems interact across phases.",
-    "mistakes_to_avoid": ["Single-value diagnosis"]
+    "mistakes_to_avoid": [
+      "Single-value diagnosis"
+    ]
   },
   {
     "principle_id": "static_is_not_dynamic",
-    "source_ids": ["racerzlab_master_setup_matrix_v1"],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
     "title": "Static is not dynamic",
-    "racerzlab_wording": "Garage values are static setup; platform, tires, shocks, and yaw are live behavior.",
+    "racerzlab_wording": "Garage values are static setup; platform, tires, shocks, speed, and yaw are live behavior that must be checked by zone.",
     "source_summary": "The matrix separates static garage setup from live telemetry evidence.",
     "domain": "general",
     "car_scope": "all",
-    "setup_areas": ["ride_height", "shock_collar", "spring_rate"],
+    "setup_areas": [
+      "ride_height",
+      "shock_collar",
+      "spring_rate"
+    ],
     "phases": [],
     "symptoms": [],
-    "evidence_links": ["setup_snapshot", "platform_trace"],
+    "evidence_links": [
+      "setup_snapshot",
+      "platform_trace"
+    ],
     "confidence": "high",
     "review_status": "accepted",
-    "cautions": ["Do not fill missing live evidence with zero."],
-    "do_not_overclaim": ["Do not treat static rake as dynamic platform behavior."],
+    "cautions": [
+      "Do not fill missing live evidence with zero."
+    ],
+    "do_not_overclaim": [
+      "Do not treat static rake as dynamic platform behavior."
+    ],
     "short_ui_wording": "Static setup is not telemetry.",
-    "why_it_matters": "The car behaves dynamically on track.",
-    "mistakes_to_avoid": ["Confusing garage numbers with traces"]
+    "why_it_matters": "A static number can be reasonable while the dynamic platform is wrong, or unusual while the on-track window is clean.",
+    "mistakes_to_avoid": [
+      "Confusing garage numbers with traces"
+    ]
   },
   {
     "principle_id": "proxy_is_not_measurement",
-    "source_ids": ["racerzlab_master_setup_matrix_v1"],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
     "title": "Proxy is not measurement",
-    "racerzlab_wording": "Diffuser and platform proxy channels are derived geometry indicators, not measured downforce.",
-    "source_summary": "The matrix forbids claiming measured downforce from diffuser/platform proxies.",
+    "racerzlab_wording": "Diffuser metrics are derived geometry proxies, not measured downforce; use them with front platform, rear platform, scrape, and speed trend.",
+    "source_summary": "Proxy and platform channels are comparison context for diffuser feed/outlet behavior, not direct force measurement.",
     "domain": "aero_platform",
     "car_scope": "next_gen",
-    "setup_areas": ["diffuser_platform", "front_ride_height_platform", "rear_ride_height_platform"],
-    "phases": ["straight", "center", "exit"],
-    "symptoms": ["diffuser_instability", "low_straight_speed", "rear_scrape"],
-    "evidence_links": ["diffuser_proxy", "platform_trace"],
+    "setup_areas": [
+      "diffuser_platform",
+      "front_ride_height_platform",
+      "rear_ride_height_platform"
+    ],
+    "phases": [
+      "straight",
+      "center",
+      "exit"
+    ],
+    "symptoms": [
+      "diffuser_instability",
+      "low_straight_speed",
+      "rear_scrape"
+    ],
+    "evidence_links": [
+      "diffuser_proxy",
+      "platform_trace"
+    ],
     "confidence": "high",
     "review_status": "accepted",
-    "cautions": ["Use proxy channels as comparison context only."],
-    "do_not_overclaim": ["Do not say diffuser proxy measures downforce."],
+    "cautions": [
+      "Use proxy channels as comparison context only."
+    ],
+    "do_not_overclaim": [
+      "Do not say diffuser proxy measures downforce."
+    ],
     "short_ui_wording": "Proxy is not downforce.",
-    "why_it_matters": "Proxy overclaims create false certainty.",
-    "mistakes_to_avoid": ["Calling derived geometry force measurement"]
+    "why_it_matters": "Proxy overclaims create false certainty and bad setup calls.",
+    "mistakes_to_avoid": [
+      "Calling derived geometry force measurement",
+      "Using static rake sign as the decision"
+    ]
   },
   {
     "principle_id": "save_the_lesson",
-    "source_ids": ["racerzlab_master_setup_matrix_v1"],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
     "title": "Save the lesson",
     "racerzlab_wording": "After a compare, keep the helped/hurt lesson for future context.",
     "source_summary": "The matrix points toward quiet memory after validation.",
@@ -170,38 +288,74 @@
     "setup_areas": [],
     "phases": [],
     "symptoms": [],
-    "evidence_links": ["compare_baseline", "driver_survey_result_later"],
+    "evidence_links": [
+      "compare_baseline",
+      "driver_survey_result_later"
+    ],
     "confidence": "medium",
     "review_status": "accepted",
-    "cautions": ["Memory should record evidence-backed lessons, not guesses."],
-    "do_not_overclaim": ["Do not save missing-evidence assumptions as facts."],
+    "cautions": [
+      "Memory should record evidence-backed lessons, not guesses."
+    ],
+    "do_not_overclaim": [
+      "Do not save missing-evidence assumptions as facts."
+    ],
     "short_ui_wording": "Save helped/hurt lessons.",
     "why_it_matters": "Validated history improves future ranking.",
-    "mistakes_to_avoid": ["Saving unverified guesses"]
+    "mistakes_to_avoid": [
+      "Saving unverified guesses"
+    ]
   },
   {
     "principle_id": "exit_first_flow",
-    "source_ids": ["racerzlab_master_setup_matrix_v1", "oval_setup_flowchart"],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_flowchart"
+    ],
     "title": "Exit grip first, entry balance second, driver feel last",
     "racerzlab_wording": "Prioritize drive-off security and speed before entry polish or driver-feel levers.",
     "source_summary": "The matrix flowchart ranks exit grip, then entry balance, then driver preference.",
     "domain": "setup_process",
     "car_scope": "all",
-    "setup_areas": ["diff_preload", "tire_pressure", "cross_weight", "caster"],
-    "phases": ["exit", "entry", "turn_in"],
-    "symptoms": ["loose_exit", "poor_drive_off", "tight_entry"],
-    "evidence_links": ["throttle_pickup", "entry_yaw"],
+    "setup_areas": [
+      "diff_preload",
+      "tire_pressure",
+      "cross_weight",
+      "caster"
+    ],
+    "phases": [
+      "exit",
+      "entry",
+      "turn_in"
+    ],
+    "symptoms": [
+      "loose_exit",
+      "poor_drive_off",
+      "tight_entry"
+    ],
+    "evidence_links": [
+      "throttle_pickup",
+      "entry_yaw"
+    ],
     "confidence": "high",
     "review_status": "accepted",
-    "cautions": ["Driver-feel changes should not outrank missing drive-off grip."],
-    "do_not_overclaim": ["Do not tune comfort while the car lacks drive."],
+    "cautions": [
+      "Driver-feel changes should not outrank missing drive-off grip."
+    ],
+    "do_not_overclaim": [
+      "Do not tune comfort while the car lacks drive."
+    ],
     "short_ui_wording": "Exit first, entry second, feel last.",
     "why_it_matters": "Drive-off grip often controls lap time and setup direction.",
-    "mistakes_to_avoid": ["Chasing caster while exit grip is failing"]
+    "mistakes_to_avoid": [
+      "Chasing caster while exit grip is failing"
+    ]
   },
   {
     "principle_id": "one_small_swing_language",
-    "source_ids": ["racerzlab_master_setup_matrix_v1"],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
     "title": "One small swing language",
     "racerzlab_wording": "Driver-facing output should say try one small swing, effect, counter-effect, watch, and validate.",
     "source_summary": "The matrix defines crew-chief response style.",
@@ -213,10 +367,17 @@
     "evidence_links": [],
     "confidence": "high",
     "review_status": "accepted",
-    "cautions": ["Do not sound like a robotic AI report."],
-    "do_not_overclaim": ["Do not say guaranteed or exact universal values."],
+    "cautions": [
+      "Do not sound like a robotic AI report."
+    ],
+    "do_not_overclaim": [
+      "Do not say guaranteed or exact universal values."
+    ],
     "short_ui_wording": "Effect, counter-effect, watch, validate.",
     "why_it_matters": "Plain crew-chief language keeps setup work disciplined.",
-    "mistakes_to_avoid": ["Robotic phrasing", "No counter-effect"]
+    "mistakes_to_avoid": [
+      "Robotic phrasing",
+      "No counter-effect"
+    ]
   }
 ]
