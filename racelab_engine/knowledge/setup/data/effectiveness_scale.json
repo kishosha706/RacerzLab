@@ -1,0 +1,7 @@
+[
+  {"value": 1, "label": "Driver feel / small polish", "meaning": "Small feel change that needs clean back-to-back evidence."},
+  {"value": 2, "label": "Fine tuning", "meaning": "Useful trim when the main balance is already close."},
+  {"value": 3, "label": "Medium phase-specific lever", "meaning": "Noticeable change focused on one phase or transition."},
+  {"value": 4, "label": "Strong balance/platform lever", "meaning": "Large enough to move balance and create meaningful counter-effects."},
+  {"value": 5, "label": "Major package lever", "meaning": "Package-level change with broad coupling risk."}
+]

@@ -1,0 +1,23 @@
+[
+  {
+    "car_family": "next_gen",
+    "applies_to": ["NASCAR Next Gen oval"],
+    "available_setup_areas": ["tire_pressure", "camber", "caster", "toe", "spring_rate", "shock_collar", "ride_height", "front_ride_height_platform", "rear_ride_height_platform", "diffuser_platform", "cross_weight", "nose_weight", "front_arb_diameter", "front_arb_arm", "front_arb_preload", "front_arb_attach", "rear_arb_diameter", "rear_arb_arm", "rear_arb_preload", "rear_arb_attach", "brake_bias", "ls_compression", "hs_compression", "hs_comp_slope", "ls_rebound", "hs_rebound", "hs_reb_slope", "diff_preload", "final_drive"],
+    "disabled_setup_areas": ["track_bar", "truck_arm_mount", "bump_stop", "packer"],
+    "discrete_options": {
+      "front_arb_diameter": ["1.375", "2.000"],
+      "rear_arb_diameter": ["1.375", "2.000"],
+      "front_arb_arm": ["P1", "P2", "P3", "P4", "P5"],
+      "rear_arb_arm": ["P1", "P2", "P3", "P4", "P5"]
+    },
+    "notes": ["Track bar, truck arm, bump stop, and packer guidance is preserved globally but gated off for Next Gen."]
+  },
+  {
+    "car_family": "legacy_oval_generic",
+    "applies_to": ["legacy oval stock cars", "car-specific oval packages"],
+    "available_setup_areas": ["tire_pressure", "camber", "caster", "toe", "spring_rate", "shock_collar", "ride_height", "front_ride_height_platform", "rear_ride_height_platform", "diffuser_platform", "cross_weight", "nose_weight", "front_arb_diameter", "front_arb_arm", "front_arb_preload", "front_arb_attach", "rear_arb_diameter", "rear_arb_arm", "rear_arb_preload", "rear_arb_attach", "brake_bias", "ls_compression", "hs_compression", "hs_comp_slope", "ls_rebound", "hs_rebound", "hs_reb_slope", "diff_preload", "final_drive", "track_bar", "truck_arm_mount", "bump_stop", "packer"],
+    "disabled_setup_areas": [],
+    "discrete_options": {},
+    "notes": ["Legacy-only areas are car_specific and should be checked against the actual garage before suggesting a test."]
+  }
+]

@@ -1,0 +1,8 @@
+[
+  {"requirement_id": "loose_exit_cross", "symptom": "loose_exit", "setup_area": "cross_weight", "required_evidence": ["phase", "yaw", "throttle", "setup_snapshot"], "optional_evidence": ["tire_trend"], "insufficient_wording": "Need exit-phase yaw/throttle and setup snapshot before judging cross."},
+  {"requirement_id": "loose_exit_rear_platform", "symptom": "loose_exit", "setup_area": "rear_ride_height_platform", "required_evidence": ["rear_platform", "throttle", "yaw"], "optional_evidence": ["diffuser_proxy", "scrape"], "insufficient_wording": "Need rear platform and throttle-on yaw context before changing rear support."},
+  {"requirement_id": "tight_center_cross", "symptom": "tight_center", "setup_area": "cross_weight", "required_evidence": ["phase", "yaw", "setup_snapshot"], "optional_evidence": ["tire_trend"], "insufficient_wording": "Need center-phase evidence before reducing cross."},
+  {"requirement_id": "low_speed_toe", "symptom": "low_straight_speed", "setup_area": "toe", "required_evidence": ["setup_snapshot", "speed_trace"], "optional_evidence": ["steering"], "insufficient_wording": "Need setup and speed trace before calling it scrub."},
+  {"requirement_id": "front_contact_support", "symptom": "front_platform_contact", "setup_area": "front_ride_height_platform", "required_evidence": ["front_platform", "scrape"], "optional_evidence": ["speed_trace"], "insufficient_wording": "Need front platform/contact evidence before adding support."},
+  {"requirement_id": "shock_transition", "symptom": "shock_overactive", "setup_area": "ls_rebound", "required_evidence": ["shock_histogram", "driver_inputs"], "optional_evidence": ["selected_zone"], "insufficient_wording": "Need selected-zone shock evidence before using shock trim."}
+]
