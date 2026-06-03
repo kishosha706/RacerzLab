@@ -256,3 +256,7 @@ The adapter preserves conservative wording:
 This milestone stops at the internal layer and CLI. A later UI can reuse the
 same `RunEvidenceContext` and `RunContextSetupQueryResult` objects without
 changing the deterministic matcher.
+
+The next backend layer on top of it is the Dial-In Query Service, which keeps
+these evidence factors hidden by default and returns a cleaner driver-facing
+payload.

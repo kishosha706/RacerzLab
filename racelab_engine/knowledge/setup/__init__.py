@@ -1,5 +1,7 @@
 """Deterministic setup knowledge for local RacerZLab guidance."""
 
+from .dial_in_schema import Clarification, DialInResponse, DialInSwing, HiddenEvidenceSummary
+from .dial_in_service import build_dial_in_response
 from .evidence_adapter import (
     RunContextSetupQueryResult,
     build_run_evidence_context,
@@ -12,11 +14,16 @@ from .matcher import SetupQueryResult, query_setup_knowledge
 
 __all__ = [
     "CandidateEvidenceReadiness",
+    "Clarification",
+    "DialInResponse",
+    "DialInSwing",
+    "HiddenEvidenceSummary",
     "RunContextSetupQueryResult",
     "RunEvidenceContext",
     "RunEvidenceGroup",
     "SetupKnowledge",
     "SetupQueryResult",
+    "build_dial_in_response",
     "build_run_evidence_context",
     "load_setup_knowledge",
     "query_setup_for_run_context",
