@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from racelab_engine.io.ibt_types import ImportStatus
 
@@ -51,6 +51,17 @@ class RunListItem(BaseModel):
     lap_count: Optional[int] = None
     has_setup_snapshot: bool = False
     primary_issue: Optional[str] = None
+
+
+class DialInRequest(BaseModel):
+    complaint: str
+    baseline_run_id: Optional[str] = None
+    test_run_id: Optional[str] = None
+    car_family: Optional[str] = None
+    track_family: Optional[str] = None
+    package_archetype: Optional[str] = None
+    limit: int = Field(default=3, ge=1, le=10)
+    include_debug_evidence: bool = False
 
 
 class ReportResponse(BaseModel):

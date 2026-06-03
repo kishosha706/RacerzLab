@@ -2,6 +2,8 @@ import type {
   ImportIbtResponse,
   ChannelCatalogItem,
   ChannelSummaryItem,
+  DialInRequest,
+  DialInResponse,
   LapSummary,
   PlatformEventItem,
   RunListItem,
@@ -246,6 +248,13 @@ export function fetchEvents(runId: string, options?: { lap?: number; type?: stri
 
 export function fetchSetup(runId: string): Promise<SetupSnapshot> {
   return requestJson<SetupSnapshot>(`/api/runs/${encodeURIComponent(runId)}/setup`);
+}
+
+export function analyzeRunDialIn(runId: string, payload: DialInRequest): Promise<DialInResponse> {
+  return requestJson<DialInResponse>(`/api/runs/${encodeURIComponent(runId)}/dial-in`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function fetchChannels(runId: string): Promise<ChannelCatalogItem[]> {

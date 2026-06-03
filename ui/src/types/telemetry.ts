@@ -147,6 +147,66 @@ export type RunOverview = {
   next_test?: string | null;
 };
 
+export type DialInClarification = {
+  needed: boolean;
+  question?: string | null;
+  options: string[];
+};
+
+export type DialInSwing = {
+  id: string;
+  title: string;
+  setup_area: string;
+  strength_label: string;
+  risk_label: string;
+  effect: string;
+  counter_effect: string;
+  one_change_test: string;
+  validate_with: string[];
+  watch_for: string[];
+  readiness_label: string;
+  disabled_reason?: string | null;
+  debug?: Record<string, unknown> | null;
+};
+
+export type HiddenEvidenceSummary = {
+  evidence_flags: string[];
+  evidence_groups?: unknown[];
+  present_evidence: string[];
+  missing_evidence: string[];
+  readiness_by_candidate?: unknown[];
+  ranking_reasons?: Record<string, string[]>;
+  disabled_by_capability?: Array<Record<string, string>>;
+};
+
+export type DialInResponse = {
+  run_id: string;
+  complaint_raw: string;
+  interpreted_symptom?: string | null;
+  interpreted_phase?: string | null;
+  balance_direction?: string | null;
+  confidence_label: string;
+  readiness_label: string;
+  driver_message: string;
+  top_swings: DialInSwing[];
+  next_step?: string | null;
+  validation_summary?: string | null;
+  clarification: DialInClarification;
+  hidden_evidence_summary?: HiddenEvidenceSummary | null;
+  warnings: string[];
+};
+
+export type DialInRequest = {
+  complaint: string;
+  baseline_run_id?: string | null;
+  test_run_id?: string | null;
+  car_family?: string | null;
+  track_family?: string | null;
+  package_archetype?: string | null;
+  limit?: number;
+  include_debug_evidence?: boolean;
+};
+
 export type TelemetryCursor = {
   selected_run_id?: string | null;
   selected_lap?: number | null;

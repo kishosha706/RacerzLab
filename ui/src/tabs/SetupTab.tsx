@@ -1,9 +1,9 @@
-import { AlertTriangle, ChevronDown, ChevronRight, Crosshair, Gauge, Layers, MapPin, Sliders, Wrench } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, ClipboardList, Crosshair, Gauge, Layers, MapPin, Search, Sliders, Wrench, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchSetup } from "../api/client";
+import { analyzeRunDialIn, fetchSetup } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useCompareBasket } from "../store/CompareBasketContext";
-import type { RunOverview, SetupSnapshot } from "../types/telemetry";
+import type { DialInResponse, RunOverview, SetupSnapshot } from "../types/telemetry";
 
 type SetupTabProps = { overview: RunOverview };
 
@@ -101,6 +101,228 @@ function formatDelta(baseline: SetupDiffValue, current: SetupDiffValue, decimals
   if (typeof baseline !== "number" || typeof current !== "number") return "changed";
   const delta = current - baseline;
   return `${delta >= 0 ? "+" : ""}${delta.toFixed(decimals)}`;
+}
+
+function cleanLabel(value: string | null | undefined, fallback = "Not mapped"): string {
+  if (!value) return fallback;
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function dialInTone(label: string): "good" | "warn" | "neutral" {
+  const normalized = label.toLowerCase();
+  if (normalized.includes("ready") || normalized.includes("clear")) return "good";
+  if (normalized.includes("need") || normalized.includes("partial") || normalized.includes("risk")) return "warn";
+  return "neutral";
+}
+
+function dialInEvidenceHints(response: DialInResponse): string[] {
+  const hints = new Set<string>();
+  const nextStep = response.next_step ?? "";
+  if (nextStep.includes("Compare baseline is missing")) {
+    hints.add("Add a compare baseline to tighten the ranking.");
+  }
+  if (nextStep.includes("Compare test run is missing")) {
+    hints.add("Add the test run to compare like-for-like laps.");
+  }
+  for (const warning of response.warnings) {
+    const lower = warning.toLowerCase();
+    if (lower.includes("car family could not be resolved")) hints.add("Car family is generic, so unsupported legacy-only areas stay filtered.");
+    if (lower.includes("track family could not be resolved")) hints.add("Track family is generic, so the guide stays conservative.");
+  }
+  for (const swing of response.top_swings) {
+    if (!swing.readiness_label.toLowerCase().includes("need")) continue;
+    const area = swing.setup_area.toLowerCase();
+    if (area.includes("shock") || area.includes("damper")) {
+      hints.add("Shock movement evidence is missing for damper-specific confidence.");
+    }
+    if (area.includes("platform") || area.includes("ride") || area.includes("diffuser") || area.includes("rake")) {
+      hints.add("Platform trace evidence is missing for aero/platform confidence.");
+    }
+  }
+  return [...hints];
+}
+
+function DialInPanel({ overview, baselineRunId }: { overview: RunOverview; baselineRunId?: string | null }) {
+  const storageKey = `racerzlab:dial-in:${overview.run_id}`;
+  const [complaint, setComplaint] = useState("");
+  const [response, setResponse] = useState<DialInResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      setComplaint(window.sessionStorage.getItem(storageKey) ?? "");
+    } catch {
+      setComplaint("");
+    }
+    setResponse(null);
+    setError(null);
+  }, [storageKey]);
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(storageKey, complaint);
+    } catch {
+      // Session storage is a convenience only.
+    }
+  }, [complaint, storageKey]);
+
+  const submitDialIn = useCallback(async () => {
+    const trimmed = complaint.trim();
+    if (!trimmed || loading) return;
+    const usableBaseline = baselineRunId && baselineRunId !== overview.run_id ? baselineRunId : undefined;
+    setLoading(true);
+    setError(null);
+    try {
+      const nextResponse = await analyzeRunDialIn(overview.run_id, {
+        complaint: trimmed,
+        baseline_run_id: usableBaseline,
+        limit: 3,
+        include_debug_evidence: false,
+      });
+      setResponse(nextResponse);
+    } catch (caught) {
+      setResponse(null);
+      setError(caught instanceof Error ? caught.message : "Dial-in request failed.");
+    } finally {
+      setLoading(false);
+    }
+  }, [baselineRunId, complaint, loading, overview.run_id]);
+
+  const clearDialIn = useCallback(() => {
+    setComplaint("");
+    setResponse(null);
+    setError(null);
+  }, []);
+
+  const hints = response ? dialInEvidenceHints(response) : [];
+  const canSubmit = complaint.trim().length > 0 && !loading;
+
+  return (
+    <section className="dialin-panel" aria-labelledby="dialin-title">
+      <div className="dialin-header">
+        <div>
+          <h2 id="dialin-title"><ClipboardList size={15} /> Dial-In Assistant</h2>
+          <p>{overview.session.car_name ?? "Unknown car"}{overview.session.track_display_name || overview.session.track_name ? ` - ${overview.session.track_display_name ?? overview.session.track_name}` : ""}</p>
+        </div>
+        <span className="dialin-readonly">Read-only</span>
+      </div>
+
+      <form
+        className="dialin-input-row"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submitDialIn();
+        }}
+      >
+        <input
+          className="dialin-input"
+          value={complaint}
+          onChange={(event) => setComplaint(event.target.value)}
+          placeholder="Loose off, tight center, rear scrape..."
+          aria-label="Driver complaint"
+        />
+        <button className="secondary-button" type="submit" disabled={!canSubmit} title="Analyze complaint">
+          <Search size={14} /> {loading ? "Analyzing" : "Analyze"}
+        </button>
+        <button className="secondary-button" type="button" onClick={clearDialIn} disabled={!complaint && !response && !error} title="Clear complaint">
+          <X size={14} /> Clear
+        </button>
+      </form>
+
+      {error && (
+        <div className="dialin-alert" role="alert">
+          <AlertTriangle size={14} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {!response && !error && (
+        <div className="dialin-empty">Enter the driver feel and the corner phase to get up to three one-change setup swings.</div>
+      )}
+
+      {response && (
+        <div className="dialin-result">
+          <div className="dialin-summary-grid">
+            <div>
+              <span>Interpreted</span>
+              <strong>{cleanLabel(response.interpreted_symptom)}</strong>
+            </div>
+            <div>
+              <span>Phase</span>
+              <strong>{cleanLabel(response.interpreted_phase, "Needs phase")}</strong>
+            </div>
+            <div>
+              <span>Confidence</span>
+              <strong className={`dialin-pill ${dialInTone(response.confidence_label)}`}>{response.confidence_label}</strong>
+            </div>
+            <div>
+              <span>Readiness</span>
+              <strong className={`dialin-pill ${dialInTone(response.readiness_label)}`}>{response.readiness_label}</strong>
+            </div>
+          </div>
+
+          <p className="dialin-driver-message">{response.driver_message}</p>
+
+          {response.clarification.needed && (
+            <div className="dialin-clarification">
+              <strong>{response.clarification.question ?? "Clarify the complaint phase."}</strong>
+              <div className="dialin-chip-row">
+                {response.clarification.options.map((option) => (
+                  <span className="dialin-chip" key={option}>{option}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!response.clarification.needed && response.top_swings.length > 0 && (
+            <div className="dialin-swings">
+              {response.top_swings.slice(0, 3).map((swing) => (
+                <article className="dialin-swing-card" key={swing.id}>
+                  <header>
+                    <div>
+                      <span>{cleanLabel(swing.setup_area, "Setup area")}</span>
+                      <h3>{swing.title}</h3>
+                    </div>
+                    <div className="dialin-card-pills">
+                      <span className="dialin-mini-pill">{swing.strength_label}</span>
+                      <span className={`dialin-mini-pill ${dialInTone(swing.risk_label)}`}>{swing.risk_label}</span>
+                      <span className={`dialin-mini-pill ${dialInTone(swing.readiness_label)}`}>{swing.readiness_label}</span>
+                    </div>
+                  </header>
+                  <div className="dialin-action-grid">
+                    <div><span>Effect</span><p>{swing.effect}</p></div>
+                    <div><span>Counter-effect</span><p>{swing.counter_effect}</p></div>
+                    <div><span>One-change test</span><p>{swing.one_change_test}</p></div>
+                    <div>
+                      <span>Validate</span>
+                      <p>{swing.validate_with.join(", ") || "Like-for-like laps"}</p>
+                    </div>
+                    <div>
+                      <span>Watch</span>
+                      <p>{swing.watch_for.join(", ") || "Balance shift"}</p>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+
+          <div className="dialin-evidence-status">
+            <span>Evidence status</span>
+            <strong>{response.validation_summary ?? response.next_step ?? response.readiness_label}</strong>
+            {hints.length > 0 && (
+              <div className="dialin-chip-row">
+                {hints.map((hint) => <span className="dialin-chip" key={hint}>{hint}</span>)}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
 }
 
 // ── Field Row ────────────────────────────────────────────────────
@@ -256,16 +478,20 @@ export function SetupTab({ overview }: SetupTabProps) {
 
   const handlePlatform = useCallback(() => setWorkspace("platform_trace", "setup_table"), [setWorkspace]);
   const handleMap = useCallback(() => setWorkspace("map", "setup_table"), [setWorkspace]);
+  const dialInPanel = <DialInPanel overview={overview} baselineRunId={basket.baseline?.run_id ?? null} />;
 
   if (!setup) {
     return (
-      <section className="workspace-section">
-        <h2>Setup Board</h2>
-        <div className="gr-empty">
-          <Sliders size={40} style={{ opacity: 0.2 }} />
-          <p style={{ fontSize: 13, color: "#8d9aaa", marginTop: 8 }}>No setup snapshot available.</p>
-          <p className="section-note">Import a run with a CarSetup section to populate the setup board.</p>
-        </div>
+      <section className="garage-board">
+        {dialInPanel}
+        <section className="workspace-section">
+          <h2>Setup Board</h2>
+          <div className="gr-empty">
+            <Sliders size={40} style={{ opacity: 0.2 }} />
+            <p style={{ fontSize: 13, color: "#8d9aaa", marginTop: 8 }}>No setup snapshot available.</p>
+            <p className="section-note">Import a run with a CarSetup section to populate the setup board.</p>
+          </div>
+        </section>
       </section>
     );
   }
@@ -314,6 +540,8 @@ export function SetupTab({ overview }: SetupTabProps) {
           )}
         </div>
       </div>
+
+      {dialInPanel}
 
       {/* 2) 2x2 Corner Board */}
       <div className="gr-corners">

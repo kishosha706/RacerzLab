@@ -4,7 +4,9 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 
-from api.schemas import ChannelCatalogItem, ChannelSummaryItem, RunListItem, TraceResponse
+from api.schemas import ChannelCatalogItem, ChannelSummaryItem, DialInRequest, RunListItem, TraceResponse
+from racelab_engine.knowledge.setup.dial_in_schema import DialInResponse
+from racelab_engine.knowledge.setup.dial_in_service import build_dial_in_response
 from racelab_engine.models.session import RunOverview
 from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.services.import_service import build_channel_catalog, build_channel_summary, build_trace_payload
@@ -40,6 +42,25 @@ def get_setup(run_id: str) -> SetupSnapshot:
     if setup is None:
         raise HTTPException(status_code=404, detail=f"Setup snapshot not found for run: {run_id}")
     return setup
+
+
+@router.post("/{run_id}/dial-in", response_model=DialInResponse, response_model_exclude_none=True)
+def dial_in(run_id: str, request: DialInRequest) -> DialInResponse:
+    get_run_or_404(run_id)
+    try:
+        return build_dial_in_response(
+            run_id,
+            request.complaint,
+            car_family_override=request.car_family,
+            track_family_override=request.track_family,
+            baseline_run_id=request.baseline_run_id,
+            test_run_id=request.test_run_id,
+            package_archetype=request.package_archetype,
+            limit=request.limit,
+            include_debug_evidence=request.include_debug_evidence,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/{run_id}/channels", response_model=list[ChannelCatalogItem])
