@@ -216,6 +216,27 @@ def test_next_gen_run_context_query_never_returns_legacy_areas(tmp_path: Path, m
     assert {item.effect.setup_area for item in result.setup_query.candidate_effects}.isdisjoint({"track_bar", "truck_arm_mount", "bump_stop", "packer"})
 
 
+def test_unknown_car_run_context_query_never_returns_legacy_areas(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        car_name="Mystery Prototype Car",
+        channels={
+            "cfs_ride_height_in": 1.5,
+            "lf_ride_height_in": 2.0,
+            "rf_ride_height_in": 2.1,
+            "lr_ride_height_in": 3.0,
+            "rr_ride_height_in": 2.9,
+            "front_center_rh_in": 1.8,
+            "rear_center_rh_in": 2.5,
+            "throttle_pct": 100.0,
+            "yaw_rate": 1.2,
+        },
+    )
+    result = query_setup_for_run_context("run-1", "tight center", limit=20)
+    assert {item.effect.setup_area for item in result.setup_query.candidate_effects}.isdisjoint({"track_bar", "truck_arm_mount", "bump_stop", "packer"})
+
+
 def test_shock_effects_show_missing_key_evidence_without_shock_histogram(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_env(monkeypatch, tmp_path)
     _seed_run(
@@ -296,6 +317,41 @@ def test_cli_json_returns_stable_keys(tmp_path: Path, monkeypatch: pytest.Monkey
     assert {"run_id", "car_family", "track_family", "evidence_flags", "evidence_groups", "parsed_symptom", "candidates", "candidate_readiness"}.issubset(payload)
 
 
+def test_cli_show_evidence_outputs_present_missing_and_notes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    data_dir, db_path = _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        channels={
+            "front_center_rh_in": 1.8,
+            "rear_center_rh_in": 2.5,
+            "smooth_center_rake_in": 0.6,
+            "diffuser_volume_ft3": 11.5,
+        },
+    )
+    env = os.environ.copy()
+    env["RACELAB_DATA_DIR"] = str(data_dir)
+    env["RACELAB_DB_PATH"] = str(db_path)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "scripts/query_setup_with_run_context.py",
+            "--run-id",
+            "run-1",
+            "--symptom",
+            "loose off",
+            "--show-evidence",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert "evidence_flags:" in completed.stdout
+    assert "present:" in completed.stdout
+    assert "notes:" in completed.stdout
+
+
 def test_query_with_run_context_returns_parsed_symptom_and_candidates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_env(monkeypatch, tmp_path)
     _seed_run(
@@ -316,6 +372,24 @@ def test_query_with_run_context_returns_parsed_symptom_and_candidates(tmp_path: 
     payload = run_context_result_to_dict(result)
     assert payload["parsed_symptom"]["canonical_symptom"] == "loose_exit"
     assert payload["candidates"]
+
+
+def test_diffuser_proxy_warning_uses_derived_proxy_language(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        channels={
+            "front_center_rh_in": 1.9,
+            "rear_center_rh_in": 2.6,
+            "smooth_center_rake_in": 0.7,
+            "diffuser_volume_ft3": 12.0,
+        },
+    )
+    context = build_run_evidence_context("run-1")
+    diffuser_group = next(group for group in context.evidence_groups if group.group_id == "diffuser_proxy")
+    combined = " ".join([*context.warnings, *diffuser_group.notes]).lower()
+    assert "measured downforce" in combined
+    assert "not measured downforce" in combined
 
 
 def test_adapter_uses_channel_summary_path_without_row_materialization(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

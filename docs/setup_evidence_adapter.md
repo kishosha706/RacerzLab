@@ -194,6 +194,10 @@ python -B scripts/query_setup_with_run_context.py --run-id <RUN_ID> --symptom "r
 python -B scripts/query_setup_with_run_context.py --run-id <RUN_ID> --symptom "loose off" --baseline-run-id <BASELINE> --test-run-id <TEST>
 ```
 
+`--show-evidence` expands each evidence group with present items, missing items,
+and notes so a developer can quickly see why a group is `ready`,
+`partially_ready`, `missing`, or `unavailable`.
+
 Example text shape:
 
 ```text

@@ -232,12 +232,17 @@ def _setup_snapshot_status(snapshot: SetupSnapshot | None) -> tuple[str, list[st
     if snapshot is None:
         return "missing", [], ["setup snapshot metadata"]
     present_items: list[str] = ["setup snapshot metadata"]
+    missing_items: list[str] = []
     if snapshot.extracted_values:
         present_items.append("extracted setup values")
+    else:
+        missing_items.append("extracted setup values")
     if snapshot.setup_json:
         present_items.append("raw setup values")
+    else:
+        missing_items.append("raw setup values")
     status = "ready" if len(present_items) >= 2 else "partially_ready"
-    return status, present_items, [] if status == "ready" else ["extracted setup values"]
+    return status, present_items, [] if status == "ready" else missing_items
 
 
 def _build_group(
@@ -309,6 +314,8 @@ def resolve_track_family(
     if track_family_override:
         return track_family_override
     raw_name = overview.session.track_display_name or overview.session.track_name or overview.session.track_id_or_path
+    if not raw_name:
+        return "unknown"
     layout = infer_layout_key(raw_name)
     if layout in {"road", "roval"}:
         return "road_course"

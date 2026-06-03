@@ -19,25 +19,37 @@ STRENGTH_LABELS = {
 }
 
 
-def _print_evidence_groups(groups: list[dict], *, only_supported: bool = True) -> None:
+def _display_status(status: str) -> str:
+    return status.replace("_", " ")
+
+
+def _print_evidence_groups(groups: list[dict], *, detailed: bool = False, only_supported: bool = True) -> None:
     for group in groups:
         if only_supported and not group["can_support_setup_knowledge"]:
             continue
-        print(f"- {group['group_id']}: {group['status']}")
+        print(f"- {group['group_id']}: {_display_status(group['status'])}")
+        if not detailed:
+            continue
+        if group["present_items"]:
+            print(f"  present: {', '.join(group['present_items'])}")
+        if group["missing_items"]:
+            print(f"  missing: {', '.join(group['missing_items'])}")
+        if group["notes"]:
+            print(f"  notes: {'; '.join(group['notes'])}")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Query setup knowledge with real run evidence context.")
-    parser.add_argument("--run-id", required=True)
-    parser.add_argument("--symptom", required=True)
-    parser.add_argument("--car-family")
-    parser.add_argument("--track-family")
-    parser.add_argument("--baseline-run-id")
-    parser.add_argument("--test-run-id")
-    parser.add_argument("--limit", type=int, default=5)
-    parser.add_argument("--json", action="store_true", dest="as_json")
-    parser.add_argument("--show-evidence", action="store_true")
-    parser.add_argument("--show-disabled", action="store_true")
+    parser.add_argument("--run-id", required=True, help="Run ID to inspect.")
+    parser.add_argument("--symptom", required=True, help="Driver complaint to rank against setup knowledge.")
+    parser.add_argument("--car-family", help="Optional override, e.g. next_gen.")
+    parser.add_argument("--track-family", help="Optional override, e.g. intermediate_oval.")
+    parser.add_argument("--baseline-run-id", help="Optional baseline compare run.")
+    parser.add_argument("--test-run-id", help="Optional test compare run.")
+    parser.add_argument("--limit", type=int, default=5, help="Maximum ranked candidates to return.")
+    parser.add_argument("--json", action="store_true", dest="as_json", help="Emit machine-readable JSON.")
+    parser.add_argument("--show-evidence", action="store_true", help="Show detailed evidence present/missing notes.")
+    parser.add_argument("--show-disabled", action="store_true", help="Show setup areas disabled by car capability.")
     args = parser.parse_args()
 
     result = query_setup_for_run_context(
@@ -60,9 +72,14 @@ def main() -> int:
     print(f"- car_family: {payload['car_family']}")
     print(f"- track: {payload.get('track_name') or 'unknown'}")
     print(f"- track_family: {payload['track_family']}")
+    print(f"- evidence_flags: {', '.join(payload['evidence_flags']) if payload['evidence_flags'] else 'none'}")
     print()
     print("Evidence:")
-    _print_evidence_groups(payload["evidence_groups"], only_supported=not args.show_evidence)
+    _print_evidence_groups(
+        payload["evidence_groups"],
+        detailed=args.show_evidence,
+        only_supported=not args.show_evidence,
+    )
 
     print()
     print("Parsed symptom:")
