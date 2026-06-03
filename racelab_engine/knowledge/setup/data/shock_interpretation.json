@@ -82,5 +82,21 @@
     "cautions": [
       "Use shock changes after the symptom phase is clear."
     ]
+  },
+  {
+    "rule_id": "same_bins_same_zone",
+    "topic": "Shock comparison discipline",
+    "wording": "Use same bins, same selected zone, same lap window, and same scale when comparing shock histograms.",
+    "applies_to": [
+      "all"
+    ],
+    "evidence_required": [
+      "shock_histogram",
+      "selected_zone"
+    ],
+    "cautions": [
+      "Histogram is evidence, not a command.",
+      "Do not say add rebound because the bar is tall."
+    ]
   }
 ]

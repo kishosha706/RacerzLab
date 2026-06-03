@@ -18,6 +18,7 @@ def validate_setup_knowledge(knowledge) -> list[str]:
     phases = {phase.phase_id for phase in knowledge.phase_model}
     canonical_symptoms = {entry.canonical_symptom for entry in knowledge.symptom_vocabulary}
     package_ids = {package.archetype_id for package in knowledge.package_archetypes}
+    source_ids = {source.source_id for source in knowledge.guide_sources}
 
     for cap in knowledge.car_capabilities:
         missing_available = set(cap.available_setup_areas) - area_ids
@@ -60,13 +61,15 @@ def validate_setup_knowledge(knowledge) -> list[str]:
                 problems.append(f"Disabled Next Gen area {area.setup_area} needs a safe unavailable car-specific note")
 
     for effect in knowledge.setup_effects:
-        problems.extend(_validate_effect(effect, area_ids, canonical_symptoms, package_ids))
+        problems.extend(_validate_effect(effect, area_ids, canonical_symptoms, package_ids, source_ids))
 
     for req in knowledge.evidence_requirements:
         if req.setup_area not in area_ids:
             problems.append(f"Evidence requirement {req.requirement_id} references unknown setup area {req.setup_area}")
         if req.symptom not in canonical_symptoms:
             problems.append(f"Evidence requirement {req.requirement_id} references unknown symptom {req.symptom}")
+
+    problems.extend(_validate_guide_sources(knowledge, source_ids, area_ids))
 
     for rule in knowledge.nextgen_platform_rules:
         text = " ".join([rule.wording, *rule.do_not_say]).lower()
@@ -97,6 +100,7 @@ def _validate_effect(
     area_ids: set[str],
     canonical_symptoms: set[str],
     package_ids: set[str],
+    source_ids: set[str],
 ) -> list[str]:
     problems: list[str] = []
     if effect.setup_area not in area_ids:
@@ -115,6 +119,12 @@ def _validate_effect(
         problems.append(f"Effect {effect.effect_id} is missing evidence_required")
     if effect.exact_value_policy not in EXACT_VALUE_POLICIES:
         problems.append(f"Effect {effect.effect_id} has invalid exact_value_policy")
+    if not effect.source_ids:
+        problems.append(f"Effect {effect.effect_id} is missing source_ids")
+    else:
+        missing_sources = set(effect.source_ids) - source_ids
+        if missing_sources:
+            problems.append(f"Effect {effect.effect_id} references unknown source_ids: {sorted(missing_sources)}")
     if not 1 <= effect.effect_strength <= 5:
         problems.append(f"Effect {effect.effect_id} has invalid effect_strength")
     if effect.coupling_risk not in COUPLING_RISKS:
@@ -149,4 +159,60 @@ def _validate_effect(
         problems.append(f"Effect {effect.effect_id} claims or repeats measured downforce wording")
     if any(term in text for term in MULTI_MAJOR_TERMS):
         problems.append(f"Effect {effect.effect_id} suggests multiple major changes")
+    return problems
+
+
+def _validate_source_ids(record_id: str, source_refs: list[str], source_ids: set[str]) -> list[str]:
+    missing = set(source_refs) - source_ids
+    if missing:
+        return [f"{record_id} references unknown source_ids: {sorted(missing)}"]
+    return []
+
+
+def _validate_guide_sources(knowledge, source_ids: set[str], area_ids: set[str]) -> list[str]:
+    problems: list[str] = []
+    for principle in knowledge.guide_principles:
+        problems.extend(_validate_source_ids(f"Guide principle {principle.principle_id}", principle.source_ids, source_ids))
+        if principle.review_status == "accepted" and not principle.racerzlab_wording:
+            problems.append(f"Accepted principle {principle.principle_id} lacks RacerZLab-owned wording")
+        text = " ".join([principle.racerzlab_wording, principle.source_summary, principle.short_ui_wording]).lower()
+        if _contains_banned_certainty(text):
+            problems.append(f"Guide principle {principle.principle_id} contains banned certainty wording")
+        if len(principle.source_summary.split()) > 80:
+            problems.append(f"Guide principle {principle.principle_id} source summary is too long for a reviewed digest")
+
+    for term in knowledge.guide_term_definitions:
+        problems.extend(_validate_source_ids(f"Guide term {term.term_id}", term.source_ids, source_ids))
+        if term.review_status == "accepted" and _contains_banned_certainty(term.definition.lower()):
+            problems.append(f"Guide term {term.term_id} contains banned certainty wording")
+        if "measured downforce" in term.definition.lower() and "not measured downforce" not in term.definition.lower():
+            problems.append(f"Guide term {term.term_id} claims measured downforce")
+
+    for mapping in knowledge.guide_setup_mappings:
+        problems.extend(_validate_source_ids(f"Guide mapping {mapping.mapping_id}", mapping.source_ids, source_ids))
+        if mapping.setup_area not in area_ids:
+            problems.append(f"Guide mapping {mapping.mapping_id} references unknown setup area {mapping.setup_area}")
+        if not mapping.counter_effect:
+            problems.append(f"Guide mapping {mapping.mapping_id} lacks counter_effect")
+        if not mapping.validation_targets:
+            problems.append(f"Guide mapping {mapping.mapping_id} lacks validation_targets")
+        if not mapping.evidence_required:
+            problems.append(f"Guide mapping {mapping.mapping_id} lacks evidence_required")
+        text = " ".join([mapping.intended_effect, mapping.counter_effect, *mapping.watch_for]).lower()
+        if _contains_banned_certainty(text):
+            problems.append(f"Guide mapping {mapping.mapping_id} contains banned certainty wording")
+        if "measured downforce" in text:
+            problems.append(f"Guide mapping {mapping.mapping_id} claims measured downforce")
+
+    for item in knowledge.guide_review_queue:
+        problems.extend(_validate_source_ids(f"Guide review item {item.review_id}", item.source_ids, source_ids))
+        if "0.5" in item.safe_wording and item.status != "needs_review":
+            problems.append(f"CFS 0.5 feature {item.review_id} must stay needs_review until verified")
+
+    for package in knowledge.package_archetypes:
+        if package.source_ids:
+            problems.extend(_validate_source_ids(f"Package archetype {package.archetype_id}", package.source_ids, source_ids))
+        if package.archetype_id == "legacy_track_bar_rotation_package" and "next_gen" not in package.disabled_for:
+            problems.append("legacy_track_bar_rotation_package must be disabled for next_gen")
+
     return problems

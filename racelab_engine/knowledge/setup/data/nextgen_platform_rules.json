@@ -3,7 +3,7 @@
     "rule_id": "front_rear_diffuser_wording",
     "title": "Front and rear platform wording",
     "truth_level": "high",
-    "wording": "Front ride-height platform helps define diffuser feed. Rear ride-height platform helps define diffuser outlet/expansion and scrape/choke behavior. Diffuser metrics are derived geometry proxies, not measured downforce.",
+    "wording": "Front ride-height platform helps define diffuser feed. Rear ride-height platform helps define diffuser outlet/expansion and scrape/choke context. Diffuser metrics are derived geometry proxies, not measured downforce.",
     "evidence_required": [
       "front_platform",
       "rear_platform",
@@ -130,6 +130,36 @@
     ],
     "do_not_say": [
       "static rake alone proves the setup direction"
+    ]
+  },
+  {
+    "rule_id": "static_rake_sign_not_decision",
+    "title": "Static rake sign is not the answer",
+    "truth_level": "high",
+    "wording": "Static rake sign does not decide if a setup is good; inspect dynamic traces by zone with speed loss and scrape context.",
+    "evidence_required": [
+      "front_platform",
+      "rear_platform",
+      "speed_trace",
+      "scrape"
+    ],
+    "do_not_say": [
+      "static rake alone proves the setup direction"
+    ]
+  },
+  {
+    "rule_id": "inspect_dynamic_traces_by_zone",
+    "title": "Inspect dynamic traces by zone",
+    "truth_level": "high",
+    "wording": "Inspect platform, shock, tire, speed, and yaw traces in the same corner zone before naming a setup direction.",
+    "evidence_required": [
+      "track_map_zone",
+      "platform_trace",
+      "speed_trace",
+      "yaw"
+    ],
+    "do_not_say": [
+      "one whole-lap number proves the setup direction"
     ]
   }
 ]

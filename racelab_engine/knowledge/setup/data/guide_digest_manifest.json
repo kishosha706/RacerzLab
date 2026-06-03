@@ -1,0 +1,16 @@
+[
+  {
+    "digest_version": "3a.1",
+    "created_at": "2026-06-03T20:16:23.220541+00:00",
+    "source_count": 10,
+    "principle_count": 11,
+    "term_count": 67,
+    "mapping_count": 16,
+    "accepted_count": 94,
+    "needs_review_count": 1,
+    "rejected_count": 0,
+    "notes": [
+      "Generated from RacerZLab Master Setup Matrix v1 as reviewed local JSON records."
+    ]
+  }
+]

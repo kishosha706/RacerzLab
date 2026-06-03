@@ -1,0 +1,1150 @@
+[
+  {
+    "term_id": "driver_tight",
+    "term": "tight",
+    "aliases": [],
+    "canonical_term": "tight_unknown",
+    "definition": "Driver language for tight_unknown; ask for corner phase when generic.",
+    "domain": "driver_language",
+    "phase_hint": null,
+    "symptom_hint": "tight_unknown",
+    "evidence_hint": null,
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": "Which phase: entry, center, or exit?"
+  },
+  {
+    "term_id": "driver_push",
+    "term": "push",
+    "aliases": [],
+    "canonical_term": "tight_unknown",
+    "definition": "Driver language for tight_unknown; ask for corner phase when generic.",
+    "domain": "driver_language",
+    "phase_hint": null,
+    "symptom_hint": "tight_unknown",
+    "evidence_hint": null,
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": "Which phase: entry, center, or exit?"
+  },
+  {
+    "term_id": "driver_loose",
+    "term": "loose",
+    "aliases": [],
+    "canonical_term": "loose_unknown",
+    "definition": "Driver language for loose_unknown; ask for corner phase when generic.",
+    "domain": "driver_language",
+    "phase_hint": null,
+    "symptom_hint": "loose_unknown",
+    "evidence_hint": null,
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": "Which phase: entry, center, or exit?"
+  },
+  {
+    "term_id": "driver_free",
+    "term": "free",
+    "aliases": [],
+    "canonical_term": "loose_unknown",
+    "definition": "Driver language for loose_unknown; ask for corner phase when generic.",
+    "domain": "driver_language",
+    "phase_hint": null,
+    "symptom_hint": "loose_unknown",
+    "evidence_hint": null,
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": "Which phase: entry, center, or exit?"
+  },
+  {
+    "term_id": "entry",
+    "term": "entry",
+    "aliases": [
+      "in"
+    ],
+    "canonical_term": "entry",
+    "definition": "Corner phase/context for entry in the master matrix.",
+    "domain": "phase",
+    "phase_hint": "entry",
+    "symptom_hint": null,
+    "evidence_hint": null,
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "center",
+    "term": "center",
+    "aliases": [
+      "middle",
+      "rolling"
+    ],
+    "canonical_term": "center",
+    "definition": "Corner phase/context for center in the master matrix.",
+    "domain": "phase",
+    "phase_hint": "center",
+    "symptom_hint": null,
+    "evidence_hint": null,
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "exit",
+    "term": "exit",
+    "aliases": [
+      "off"
+    ],
+    "canonical_term": "exit",
+    "definition": "Corner phase/context for exit in the master matrix.",
+    "domain": "phase",
+    "phase_hint": "exit",
+    "symptom_hint": null,
+    "evidence_hint": null,
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "drive_off",
+    "term": "drive off",
+    "aliases": [
+      "throttle pickup"
+    ],
+    "canonical_term": "drive_off",
+    "definition": "Corner phase/context for drive off in the master matrix.",
+    "domain": "phase",
+    "phase_hint": "exit",
+    "symptom_hint": null,
+    "evidence_hint": null,
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "tight_center",
+    "term": "bound up",
+    "aliases": [],
+    "canonical_term": "tight_center",
+    "definition": "Matrix driver phrase for tight_center; use phase and evidence before ranking setup swings.",
+    "domain": "driver_language",
+    "phase_hint": null,
+    "symptom_hint": "tight_center",
+    "evidence_hint": "steering_yaw",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "drag_scrub",
+    "term": "scrub",
+    "aliases": [],
+    "canonical_term": "drag_scrub",
+    "definition": "Matrix driver phrase for drag_scrub; use phase and evidence before ranking setup swings.",
+    "domain": "driver_language",
+    "phase_hint": null,
+    "symptom_hint": "drag_scrub",
+    "evidence_hint": "yaw_scrub_steering",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "low_straight_speed",
+    "term": "drag",
+    "aliases": [],
+    "canonical_term": "low_straight_speed",
+    "definition": "Matrix driver phrase for low_straight_speed; use phase and evidence before ranking setup swings.",
+    "domain": "driver_language",
+    "phase_hint": null,
+    "symptom_hint": "low_straight_speed",
+    "evidence_hint": "speed_loss",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "long_run_falloff",
+    "term": "falls off",
+    "aliases": [],
+    "canonical_term": "long_run_falloff",
+    "definition": "Matrix driver phrase for long_run_falloff; use phase and evidence before ranking setup swings.",
+    "domain": "driver_language",
+    "phase_hint": null,
+    "symptom_hint": "long_run_falloff",
+    "evidence_hint": "lap_falloff",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "platform_contact",
+    "term": "bottoming",
+    "aliases": [],
+    "canonical_term": "platform_contact",
+    "definition": "Matrix driver phrase for front_platform_contact; use phase and evidence before ranking setup swings.",
+    "domain": "driver_language",
+    "phase_hint": null,
+    "symptom_hint": "front_platform_contact",
+    "evidence_hint": "platform_trace",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": "Front or rear contact?"
+  },
+  {
+    "term_id": "splitter_hitting",
+    "term": "splitter hitting",
+    "aliases": [],
+    "canonical_term": "front_platform_contact",
+    "definition": "Matrix driver phrase for front_platform_contact; use phase and evidence before ranking setup swings.",
+    "domain": "driver_language",
+    "phase_hint": null,
+    "symptom_hint": "front_platform_contact",
+    "evidence_hint": "front_ride_height_platform",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "rear_scrape",
+    "term": "rear scrape",
+    "aliases": [],
+    "canonical_term": "rear_scrape",
+    "definition": "Matrix driver phrase for rear_scrape; use phase and evidence before ranking setup swings.",
+    "domain": "driver_language",
+    "phase_hint": null,
+    "symptom_hint": "rear_scrape",
+    "evidence_hint": "rear_ride_height_platform",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "diffuser_instability",
+    "term": "pack unstable",
+    "aliases": [],
+    "canonical_term": "diffuser_instability",
+    "definition": "Matrix driver phrase for diffuser_instability; use phase and evidence before ranking setup swings.",
+    "domain": "driver_language",
+    "phase_hint": null,
+    "symptom_hint": "diffuser_instability",
+    "evidence_hint": "diffuser_proxy",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "platform",
+    "term": "platform",
+    "aliases": [],
+    "canonical_term": "platform",
+    "definition": "platform context from the Next Gen platform section; proxy/evidence wording must treat derived channels as geometry context, not force measurement.",
+    "domain": "platform",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "platform_trace",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "static_ride_height",
+    "term": "static ride height",
+    "aliases": [],
+    "canonical_term": "static_ride_height",
+    "definition": "static ride height context from the Next Gen platform section; proxy/evidence wording must treat derived channels as geometry context, not force measurement.",
+    "domain": "platform",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "dynamic_ride_height",
+    "term": "dynamic ride height",
+    "aliases": [],
+    "canonical_term": "dynamic_ride_height",
+    "definition": "dynamic ride height context from the Next Gen platform section; proxy/evidence wording must treat derived channels as geometry context, not force measurement.",
+    "domain": "platform",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "platform_trace",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "front_ride_height_platform",
+    "term": "front ride-height platform",
+    "aliases": [],
+    "canonical_term": "front_ride_height_platform",
+    "definition": "front ride-height platform context from the Next Gen platform section; proxy/evidence wording must treat derived channels as geometry context, not force measurement.",
+    "domain": "platform",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "front_ride_height_platform",
+    "car_scope": "next_gen",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "rear_ride_height_platform",
+    "term": "rear ride-height platform",
+    "aliases": [],
+    "canonical_term": "rear_ride_height_platform",
+    "definition": "rear ride-height platform context from the Next Gen platform section; proxy/evidence wording must treat derived channels as geometry context, not force measurement.",
+    "domain": "platform",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "rear_ride_height_platform",
+    "car_scope": "next_gen",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "cfs_front_splitter_reference",
+    "term": "CFS / center front splitter / front rub-block reference",
+    "aliases": [],
+    "canonical_term": "cfs_front_splitter_reference",
+    "definition": "CFS / center front splitter / front rub-block reference context from the Next Gen platform section; proxy/evidence wording must treat derived channels as geometry context, not force measurement.",
+    "domain": "aero_platform",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "front_ride_height_platform",
+    "car_scope": "next_gen",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "front_feed",
+    "term": "front feed",
+    "aliases": [],
+    "canonical_term": "front_feed",
+    "definition": "front feed context from the Next Gen platform section; proxy/evidence wording must treat derived channels as geometry context, not force measurement.",
+    "domain": "aero_platform",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "front_ride_height_platform",
+    "car_scope": "next_gen",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "diffuser_feed",
+    "term": "diffuser feed",
+    "aliases": [],
+    "canonical_term": "diffuser_feed",
+    "definition": "diffuser feed context from the Next Gen platform section; proxy/evidence wording must treat derived channels as geometry context, not force measurement.",
+    "domain": "aero_platform",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "diffuser_proxy",
+    "car_scope": "next_gen",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "diffuser_outlet",
+    "term": "diffuser outlet",
+    "aliases": [],
+    "canonical_term": "diffuser_outlet",
+    "definition": "diffuser outlet context from the Next Gen platform section; proxy/evidence wording must treat derived channels as geometry context, not force measurement.",
+    "domain": "aero_platform",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "diffuser_proxy",
+    "car_scope": "next_gen",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "diffuser_expansion",
+    "term": "diffuser expansion",
+    "aliases": [],
+    "canonical_term": "diffuser_expansion",
+    "definition": "diffuser expansion context from the Next Gen platform section; proxy/evidence wording must treat derived channels as geometry context, not force measurement.",
+    "domain": "aero_platform",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "diffuser_proxy",
+    "car_scope": "next_gen",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "diffuser_proxy",
+    "term": "diffuser proxy",
+    "aliases": [],
+    "canonical_term": "diffuser_proxy",
+    "definition": "diffuser proxy context from the Next Gen platform section; proxy/evidence wording must treat derived channels as geometry context, not force measurement.",
+    "domain": "aero_platform",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "diffuser_proxy",
+    "car_scope": "next_gen",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "front_platform_contact_context",
+    "term": "front platform contact",
+    "aliases": [],
+    "canonical_term": "front_platform_contact",
+    "definition": "front platform contact context from the Next Gen platform section; proxy/evidence wording must treat derived channels as geometry context, not force measurement.",
+    "domain": "platform",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "front_ride_height_platform",
+    "car_scope": "next_gen",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "cross_weight",
+    "term": "cross weight",
+    "aliases": [],
+    "canonical_term": "cross_weight",
+    "definition": "Setup system term from the master setup matrix: cross weight.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "nose_weight",
+    "term": "nose weight",
+    "aliases": [],
+    "canonical_term": "nose_weight",
+    "definition": "Setup system term from the master setup matrix: nose weight.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "arb",
+    "term": "ARB / sway bar",
+    "aliases": [],
+    "canonical_term": "arb",
+    "definition": "Setup system term from the master setup matrix: ARB / sway bar.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "front_arb_diameter",
+    "term": "front_arb_diameter",
+    "aliases": [],
+    "canonical_term": "front_arb_diameter",
+    "definition": "Setup system term from the master setup matrix: front_arb_diameter.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "front_arb_arm",
+    "term": "front_arb_arm",
+    "aliases": [],
+    "canonical_term": "front_arb_arm",
+    "definition": "Setup system term from the master setup matrix: front_arb_arm.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "front_arb_preload",
+    "term": "front_arb_preload",
+    "aliases": [],
+    "canonical_term": "front_arb_preload",
+    "definition": "Setup system term from the master setup matrix: front_arb_preload.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "rear_arb_diameter",
+    "term": "rear_arb_diameter",
+    "aliases": [],
+    "canonical_term": "rear_arb_diameter",
+    "definition": "Setup system term from the master setup matrix: rear_arb_diameter.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "rear_arb_arm",
+    "term": "rear_arb_arm",
+    "aliases": [],
+    "canonical_term": "rear_arb_arm",
+    "definition": "Setup system term from the master setup matrix: rear_arb_arm.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "rear_arb_preload",
+    "term": "rear_arb_preload",
+    "aliases": [],
+    "canonical_term": "rear_arb_preload",
+    "definition": "Setup system term from the master setup matrix: rear_arb_preload.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "spring_rate",
+    "term": "spring rate",
+    "aliases": [],
+    "canonical_term": "spring_rate",
+    "definition": "Setup system term from the master setup matrix: spring rate.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "shock_collar",
+    "term": "shock collar / perch",
+    "aliases": [],
+    "canonical_term": "shock_collar",
+    "definition": "Setup system term from the master setup matrix: shock collar / perch.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "tire_pressure",
+    "term": "tire pressure",
+    "aliases": [],
+    "canonical_term": "tire_pressure",
+    "definition": "Setup system term from the master setup matrix: tire pressure.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "pressure_gain",
+    "term": "pressure gain",
+    "aliases": [],
+    "canonical_term": "pressure_gain",
+    "definition": "Setup system term from the master setup matrix: pressure gain.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "camber",
+    "term": "camber",
+    "aliases": [],
+    "canonical_term": "camber",
+    "definition": "Setup system term from the master setup matrix: camber.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "caster",
+    "term": "caster",
+    "aliases": [],
+    "canonical_term": "caster",
+    "definition": "Setup system term from the master setup matrix: caster.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "toe",
+    "term": "toe",
+    "aliases": [],
+    "canonical_term": "toe",
+    "definition": "Setup system term from the master setup matrix: toe.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "brake_bias",
+    "term": "brake bias",
+    "aliases": [],
+    "canonical_term": "brake_bias",
+    "definition": "Setup system term from the master setup matrix: brake bias.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "diff_preload",
+    "term": "diff preload",
+    "aliases": [],
+    "canonical_term": "diff_preload",
+    "definition": "Setup system term from the master setup matrix: diff preload.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "final_drive",
+    "term": "final drive",
+    "aliases": [],
+    "canonical_term": "final_drive",
+    "definition": "Setup system term from the master setup matrix: final drive.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "track_bar",
+    "term": "track bar",
+    "aliases": [],
+    "canonical_term": "track_bar",
+    "definition": "Setup system term from the master setup matrix: track bar.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "legacy_oval",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "truck_arm_mount",
+    "term": "truck arm",
+    "aliases": [],
+    "canonical_term": "truck_arm_mount",
+    "definition": "Setup system term from the master setup matrix: truck arm.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "legacy_oval",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "bump_stop",
+    "term": "bump stop",
+    "aliases": [],
+    "canonical_term": "bump_stop",
+    "definition": "Setup system term from the master setup matrix: bump stop.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "legacy_oval",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "packer",
+    "term": "packer",
+    "aliases": [],
+    "canonical_term": "packer",
+    "definition": "Setup system term from the master setup matrix: packer.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "legacy_oval",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "compression",
+    "term": "bump / compression",
+    "aliases": [],
+    "canonical_term": "compression",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "rebound",
+    "term": "rebound",
+    "aliases": [],
+    "canonical_term": "rebound",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "low_speed_damping",
+    "term": "low-speed damping",
+    "aliases": [],
+    "canonical_term": "low_speed_damping",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "high_speed_damping",
+    "term": "high-speed damping",
+    "aliases": [],
+    "canonical_term": "high_speed_damping",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "shock_shaft_velocity",
+    "term": "shock shaft velocity",
+    "aliases": [],
+    "canonical_term": "shock_shaft_velocity",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "shock_histogram",
+    "term": "shock histogram",
+    "aliases": [],
+    "canonical_term": "shock_histogram",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "average_rebound",
+    "term": "average rebound",
+    "aliases": [],
+    "canonical_term": "average_rebound",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "average_bump",
+    "term": "average bump",
+    "aliases": [],
+    "canonical_term": "average_bump",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "load_variation",
+    "term": "load variation",
+    "aliases": [],
+    "canonical_term": "load_variation",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "overdamped",
+    "term": "overdamped",
+    "aliases": [],
+    "canonical_term": "overdamped",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "underdamped",
+    "term": "underdamped",
+    "aliases": [],
+    "canonical_term": "underdamped",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "digressive",
+    "term": "digressive",
+    "aliases": [],
+    "canonical_term": "digressive",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "linear",
+    "term": "linear",
+    "aliases": [],
+    "canonical_term": "linear",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "progressive",
+    "term": "progressive",
+    "aliases": [],
+    "canonical_term": "progressive",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "slope",
+    "term": "slope",
+    "aliases": [],
+    "canonical_term": "slope",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "hs_slope",
+    "term": "HS slope",
+    "aliases": [],
+    "canonical_term": "hs_slope",
+    "definition": "Damper term from the master matrix; shock histogram is evidence, not a command.",
+    "domain": "shock",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  }
+]

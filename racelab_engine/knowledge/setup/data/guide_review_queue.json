@@ -1,0 +1,17 @@
+[
+  {
+    "review_id": "cfs_half_inch_opening_claim",
+    "item_type": "platform_note",
+    "source_ids": ["user_diffuser_front_feed_notes", "racerzlab_master_setup_matrix_v1"],
+    "proposed_record": {
+      "topic": "CFS/front platform opening",
+      "approx_inches": "0.5"
+    },
+    "reason": "User-provided CFS/front feed feature needs verification before becoming accepted fact.",
+    "risk": "high",
+    "status": "needs_review",
+    "reviewer_notes": "",
+    "safe_wording": "User reports the CFS/front platform may include an approximately 0.5 inch opening/clearance feature that helps feed airflow toward the diffuser. Needs verification before being encoded as fact.",
+    "verification_needed": "Verify against an accepted source before encoding as a factual rule or exact setup value."
+  }
+]

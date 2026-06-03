@@ -1,0 +1,122 @@
+[
+  {
+    "source_id": "iracing_setup_guide",
+    "title": "iRacing Setup Guide",
+    "source_type": "guide",
+    "domain": "general",
+    "car_scope": "all",
+    "file_name": "local_reference",
+    "local_path": "docs/setup_knowledge/racerzlab_master_setup_matrix.md",
+    "page_refs": [],
+    "status": "reviewed",
+    "notes": "Guide concepts summarized through the RacerZLab master setup matrix."
+  },
+  {
+    "source_id": "nascar_nextgen_manual",
+    "title": "NASCAR Next Gen Manual Notes",
+    "source_type": "manual",
+    "domain": "oval",
+    "car_scope": "next_gen",
+    "file_name": "local_reference",
+    "local_path": "docs/setup_knowledge/racerzlab_master_setup_matrix.md",
+    "page_refs": [],
+    "status": "reviewed",
+    "notes": "Next Gen setup availability and ARB constraints summarized through the master matrix."
+  },
+  {
+    "source_id": "shock_tuning_user_guide",
+    "title": "Shock Tuning User Guide Concepts",
+    "source_type": "guide",
+    "domain": "shock",
+    "car_scope": "all",
+    "file_name": "local_reference",
+    "local_path": "docs/setup_knowledge/racerzlab_master_setup_matrix.md",
+    "page_refs": [],
+    "status": "reviewed",
+    "notes": "Damper concepts summarized through the master matrix."
+  },
+  {
+    "source_id": "lowline_oval_setup_guide",
+    "title": "Lowline Oval Setup Guide Concepts",
+    "source_type": "guide",
+    "domain": "oval",
+    "car_scope": "legacy_oval",
+    "file_name": "local_reference",
+    "local_path": "docs/setup_knowledge/racerzlab_master_setup_matrix.md",
+    "page_refs": [],
+    "status": "reviewed",
+    "notes": "Oval setup concepts summarized through the master matrix."
+  },
+  {
+    "source_id": "oval_setup_matrix_v4",
+    "title": "Oval Setup Matrix v4",
+    "source_type": "matrix",
+    "domain": "oval",
+    "car_scope": "all",
+    "file_name": "local_reference",
+    "local_path": "docs/setup_knowledge/racerzlab_master_setup_matrix.md",
+    "page_refs": [],
+    "status": "reviewed",
+    "notes": "Condition-to-adjustment matrix source summarized through the master matrix."
+  },
+  {
+    "source_id": "oval_setup_matrix_v5",
+    "title": "Oval Setup Matrix v5",
+    "source_type": "matrix",
+    "domain": "oval",
+    "car_scope": "all",
+    "file_name": "local_reference",
+    "local_path": "docs/setup_knowledge/racerzlab_master_setup_matrix.md",
+    "page_refs": [],
+    "status": "reviewed",
+    "notes": "Expanded oval condition matrix source summarized through the master matrix."
+  },
+  {
+    "source_id": "oval_setup_flowchart",
+    "title": "Oval Setup Flowchart",
+    "source_type": "flowchart",
+    "domain": "setup_process",
+    "car_scope": "all",
+    "file_name": "local_reference",
+    "local_path": "docs/setup_knowledge/racerzlab_master_setup_matrix.md",
+    "page_refs": [],
+    "status": "reviewed",
+    "notes": "Exit-first, entry-second, driver-feel-last flowchart logic summarized through the master matrix."
+  },
+  {
+    "source_id": "racerzlab_research_report",
+    "title": "RacerZLab Research Report",
+    "source_type": "research_report",
+    "domain": "general",
+    "car_scope": "all",
+    "file_name": "local_reference",
+    "local_path": "docs/setup_knowledge/racerzlab_master_setup_matrix.md",
+    "page_refs": [],
+    "status": "reviewed",
+    "notes": "RacerZLab product logic summarized through the master matrix."
+  },
+  {
+    "source_id": "user_diffuser_front_feed_notes",
+    "title": "User Diffuser Front Feed Notes",
+    "source_type": "user_note",
+    "domain": "aero_platform",
+    "car_scope": "next_gen",
+    "file_name": "local_reference",
+    "local_path": "docs/setup_knowledge/racerzlab_master_setup_matrix.md",
+    "page_refs": [],
+    "status": "reviewed",
+    "notes": "User front-feed/CFS notes captured with review guardrails in the master matrix."
+  },
+  {
+    "source_id": "racerzlab_master_setup_matrix_v1",
+    "title": "RacerZLab Master Setup Matrix v1",
+    "source_type": "research_report",
+    "domain": "oval",
+    "car_scope": "all",
+    "file_name": "racerzlab_master_setup_matrix.md",
+    "local_path": "docs/setup_knowledge/racerzlab_master_setup_matrix.md",
+    "page_refs": [],
+    "status": "accepted",
+    "notes": "Accepted RacerZLab-owned consolidated setup knowledge source."
+  }
+]

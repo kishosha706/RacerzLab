@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -104,6 +104,8 @@ class SetupEffect(KnowledgeModel):
     can_show_delta: bool
     delta_label: str | None = None
     caution_level: Literal["low", "medium", "high"]
+    source_ids: list[str]
+    review_status: Literal["proposed", "accepted", "needs_review", "rejected"]
 
 
 class PackageArchetype(KnowledgeModel):
@@ -123,6 +125,9 @@ class PackageArchetype(KnowledgeModel):
     what_it_looks_like: str
     setup_areas_commonly_involved: list[str]
     driver_facing_explanation: str
+    disabled_for: list[str]
+    source_ids: list[str]
+    setup_areas_involved: list[str]
 
 
 class EvidenceGroup(KnowledgeModel):
@@ -160,3 +165,101 @@ class ShockInterpretationRule(KnowledgeModel):
     applies_to: list[str]
     evidence_required: list[str]
     cautions: list[str]
+
+
+class GuideSource(KnowledgeModel):
+    source_id: str
+    title: str
+    source_type: Literal["manual", "guide", "cheat_sheet", "matrix", "flowchart", "user_note", "research_report"]
+    domain: Literal["oval", "road", "general", "shock", "aero_platform", "tires", "setup_process"]
+    car_scope: Literal["next_gen", "legacy_oval", "road", "all", "unknown"]
+    file_name: str
+    local_path: str
+    page_refs: list[str]
+    status: Literal["raw", "extracted", "reviewed", "accepted", "rejected"]
+    notes: str
+
+
+class GuidePrinciple(KnowledgeModel):
+    principle_id: str
+    source_ids: list[str]
+    title: str
+    racerzlab_wording: str
+    source_summary: str
+    domain: str
+    car_scope: str
+    setup_areas: list[str]
+    phases: list[str]
+    symptoms: list[str]
+    evidence_links: list[str]
+    confidence: Literal["low", "medium", "high"]
+    review_status: Literal["proposed", "accepted", "needs_review", "rejected"]
+    cautions: list[str]
+    do_not_overclaim: list[str]
+    short_ui_wording: str
+    why_it_matters: str
+    mistakes_to_avoid: list[str]
+
+
+class GuideTermDefinition(KnowledgeModel):
+    term_id: str
+    term: str
+    aliases: list[str]
+    canonical_term: str
+    definition: str
+    domain: str
+    phase_hint: str | None = None
+    symptom_hint: str | None = None
+    evidence_hint: str | None = None
+    car_scope: str
+    source_ids: list[str]
+    review_status: Literal["proposed", "accepted", "needs_review", "rejected"]
+    clarification_question: str | None = None
+
+
+class GuideSetupMapping(KnowledgeModel):
+    mapping_id: str
+    source_ids: list[str]
+    setup_area: str
+    symptom: str
+    phase: str
+    direction: str
+    intended_effect: str
+    counter_effect: str
+    effect_strength: int = Field(ge=1, le=5)
+    coupling_risk: Literal["low", "medium", "high"]
+    evidence_required: list[str]
+    validation_targets: list[str]
+    applies_to: list[str]
+    disabled_for: list[str]
+    exact_value_policy: Literal["none", "small_swing", "reference_only"]
+    review_status: Literal["proposed", "accepted", "needs_review", "rejected"]
+    preferred_when: list[str]
+    avoid_when: list[str]
+    watch_for: list[str]
+
+
+class GuideReviewItem(KnowledgeModel):
+    review_id: str
+    item_type: str
+    source_ids: list[str]
+    proposed_record: dict[str, Any]
+    reason: str
+    risk: Literal["low", "medium", "high"]
+    status: Literal["proposed", "accepted", "needs_review", "rejected"]
+    reviewer_notes: str
+    safe_wording: str
+    verification_needed: str
+
+
+class GuideDigestManifest(KnowledgeModel):
+    digest_version: str
+    created_at: str
+    source_count: int
+    principle_count: int
+    term_count: int
+    mapping_count: int
+    accepted_count: int
+    needs_review_count: int
+    rejected_count: int
+    notes: list[str]

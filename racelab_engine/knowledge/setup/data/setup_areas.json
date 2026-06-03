@@ -1232,5 +1232,845 @@
     ],
     "common_confusions": [],
     "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "pressure_split",
+    "system": "setup",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed pressure split context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "setup_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "pressure_gain",
+    "system": "evidence",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed pressure gain context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "pressure_gain"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "evidence_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "live_telemetry"
+  },
+  {
+    "setup_area": "tire_temp_spread",
+    "system": "evidence",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed tire temp spread context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "tire_temp_spread"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "evidence_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "live_telemetry"
+  },
+  {
+    "setup_area": "tire_wear",
+    "system": "evidence",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed tire wear context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "tire_wear"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "evidence_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "live_telemetry"
+  },
+  {
+    "setup_area": "front_toe_response",
+    "system": "setup",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed front toe response context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "setup_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "rear_toe_stability",
+    "system": "setup",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed rear toe stability context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "setup_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "CFS/front_splitter/rub_block_reference",
+    "system": "evidence",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed CFS/front splitter/rub block reference context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "CFS/front_splitter/rub_block_reference"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "evidence_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "derived_proxy"
+  },
+  {
+    "setup_area": "spring_perch",
+    "system": "setup",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed spring perch context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "setup_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "platform_contact",
+    "system": "evidence",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed platform contact context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "platform_contact"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "evidence_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "live_telemetry"
+  },
+  {
+    "setup_area": "front_platform_contact",
+    "system": "evidence",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed front platform contact context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "front_platform_contact"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "evidence_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "live_telemetry"
+  },
+  {
+    "setup_area": "front_spring_support",
+    "system": "setup",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed front spring support context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "setup_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "rear_spring_support",
+    "system": "setup",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed rear spring support context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "setup_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "spring_split",
+    "system": "setup",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed spring split context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "setup_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "corner_weight",
+    "system": "setup",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed corner weight context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "setup_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "ballast",
+    "system": "setup",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed ballast context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "setup_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "front_master_cylinder",
+    "system": "setup",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed front master cylinder context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "setup_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "rear_master_cylinder",
+    "system": "setup",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed rear master cylinder context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "setup_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "shock_histogram",
+    "system": "evidence",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed shock histogram context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "shock_histogram"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "evidence_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "live_telemetry"
+  },
+  {
+    "setup_area": "shock_velocity_rms",
+    "system": "evidence",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed shock velocity rms context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "shock_velocity_rms"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "evidence_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "live_telemetry"
+  },
+  {
+    "setup_area": "shock_deflection_delta",
+    "system": "evidence",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed shock deflection delta context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "shock_deflection_delta"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "evidence_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "live_telemetry"
+  },
+  {
+    "setup_area": "gear_ratio",
+    "system": "setup",
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Matrix-backed gear ratio context for setup digestion.",
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight",
+      "transition",
+      "long_run"
+    ],
+    "evidence_required": [
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "compare_baseline"
+    ],
+    "notes": [
+      "Derived from RacerZLab master setup matrix."
+    ],
+    "package_role": [
+      "setup_context"
+    ],
+    "car_specific_notes": {},
+    "available_when": [
+      "selected car supports this setup area"
+    ],
+    "unavailable_when": [],
+    "common_confusions": [
+      "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "static_setup"
   }
 ]

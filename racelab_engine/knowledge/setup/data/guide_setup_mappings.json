@@ -1,0 +1,626 @@
+[
+  {
+    "mapping_id": "loose_overall_cross_weight",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "cross_weight",
+    "symptom": "loose_overall",
+    "phase": "whole_run",
+    "direction": "add stability/security",
+    "intended_effect": "Calms rear security across the run.",
+    "counter_effect": "May bind center or slow rotation.",
+    "effect_strength": 4,
+    "coupling_risk": "high",
+    "evidence_required": [
+      "yaw",
+      "driver_phase",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "phase_balance",
+      "tire_trend"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "loose_overall is repeatable in whole_run"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May bind center or slow rotation."
+    ]
+  },
+  {
+    "mapping_id": "tight_overall_cross_weight",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "cross_weight",
+    "symptom": "tight_overall",
+    "phase": "whole_run",
+    "direction": "free balance/bind",
+    "intended_effect": "Helps the car rotate instead of carrying steering.",
+    "counter_effect": "May reduce entry or exit security.",
+    "effect_strength": 4,
+    "coupling_risk": "high",
+    "evidence_required": [
+      "steering",
+      "yaw",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "phase_balance",
+      "exit_yaw"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "tight_overall is repeatable in whole_run"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May reduce entry or exit security."
+    ]
+  },
+  {
+    "mapping_id": "loose_entry_brake_bias",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "brake_bias",
+    "symptom": "loose_entry",
+    "phase": "entry",
+    "direction": "add front brake bias",
+    "intended_effect": "Calms rear while getting in.",
+    "counter_effect": "May add entry push.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "brake_trace",
+      "entry_yaw"
+    ],
+    "validation_targets": [
+      "entry_yaw",
+      "brake_stability"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "loose_entry is repeatable in entry"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May add entry push."
+    ]
+  },
+  {
+    "mapping_id": "tight_entry_brake_bias",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "brake_bias",
+    "symptom": "tight_entry",
+    "phase": "entry",
+    "direction": "reduce front brake bias",
+    "intended_effect": "Helps brake/entry rotation.",
+    "counter_effect": "May make rear unstable under brake.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "brake_trace",
+      "entry_yaw"
+    ],
+    "validation_targets": [
+      "entry_rotation",
+      "brake_stability"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "tight_entry is repeatable in entry"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May make rear unstable under brake."
+    ]
+  },
+  {
+    "mapping_id": "loose_center_rear_arb_arm",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "rear_arb_arm",
+    "symptom": "loose_center",
+    "phase": "center",
+    "direction": "soften rear ARB or add rear security",
+    "intended_effect": "Adds rear security in the middle.",
+    "counter_effect": "May tighten center or reduce rotation.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "yaw",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "center_speed",
+      "exit_yaw"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "loose_center is repeatable in center"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May tighten center or reduce rotation."
+    ]
+  },
+  {
+    "mapping_id": "tight_center_cross_weight",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "cross_weight",
+    "symptom": "tight_center",
+    "phase": "center",
+    "direction": "reduce bind/free center",
+    "intended_effect": "Reduces steering demand and helps minimum speed.",
+    "counter_effect": "May loosen entry or exit.",
+    "effect_strength": 4,
+    "coupling_risk": "high",
+    "evidence_required": [
+      "steering",
+      "center_speed",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "center_speed",
+      "exit_yaw"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "tight_center is repeatable in center"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May loosen entry or exit."
+    ]
+  },
+  {
+    "mapping_id": "loose_exit_cross_weight",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "cross_weight",
+    "symptom": "loose_exit",
+    "phase": "exit",
+    "direction": "add exit security",
+    "intended_effect": "Calms throttle-on rear yaw.",
+    "counter_effect": "May bind center or reduce drive-off bite.",
+    "effect_strength": 4,
+    "coupling_risk": "high",
+    "evidence_required": [
+      "throttle",
+      "yaw",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "exit_yaw",
+      "center_speed"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "loose_exit is repeatable in exit"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May bind center or reduce drive-off bite."
+    ]
+  },
+  {
+    "mapping_id": "tight_exit_diff_preload",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "diff_preload",
+    "symptom": "tight_exit",
+    "phase": "exit",
+    "direction": "free center-off/driveline bind",
+    "intended_effect": "Helps drive-off rotation.",
+    "counter_effect": "May loosen throttle application.",
+    "effect_strength": 4,
+    "coupling_risk": "high",
+    "evidence_required": [
+      "throttle",
+      "yaw",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "drive_off",
+      "exit_yaw"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "tight_exit is repeatable in exit"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May loosen throttle application."
+    ]
+  },
+  {
+    "mapping_id": "low_straight_speed_toe",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "toe",
+    "symptom": "low_straight_speed",
+    "phase": "straight",
+    "direction": "reduce scrub after normalizing exit speed",
+    "intended_effect": "Separates scrub from gearing/platform speed loss.",
+    "counter_effect": "May reduce response or stability.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "exit_speed",
+      "throttle",
+      "speed_trace",
+      "steering"
+    ],
+    "validation_targets": [
+      "terminal_speed",
+      "correction_count"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "low_straight_speed is repeatable in straight"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May reduce response or stability."
+    ]
+  },
+  {
+    "mapping_id": "long_run_falloff_tire_pressure",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "tire_pressure",
+    "symptom": "long_run_falloff",
+    "phase": "long_run",
+    "direction": "protect tire trend",
+    "intended_effect": "Protects run pace when tire trend agrees.",
+    "counter_effect": "May give up fire-off speed.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "lap_falloff",
+      "tire_temps",
+      "pressure_gain"
+    ],
+    "validation_targets": [
+      "lap_falloff",
+      "tire_temp"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "long_run_falloff is repeatable in long_run"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May give up fire-off speed."
+    ]
+  },
+  {
+    "mapping_id": "rear_scrape_rear_ride_height_platform",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "rear_ride_height_platform",
+    "symptom": "rear_scrape",
+    "phase": "straight",
+    "direction": "add rear scrape margin",
+    "intended_effect": "Reduces rear contact/choke risk.",
+    "counter_effect": "May alter outlet behavior or tighten exit.",
+    "effect_strength": 4,
+    "coupling_risk": "high",
+    "evidence_required": [
+      "rear_platform",
+      "scrape",
+      "speed_trace"
+    ],
+    "validation_targets": [
+      "scrape",
+      "speed_trace"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "rear_scrape is repeatable in straight"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May alter outlet behavior or tighten exit."
+    ]
+  },
+  {
+    "mapping_id": "front_platform_contact_front_ride_height_platform",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "front_ride_height_platform",
+    "symptom": "front_platform_contact",
+    "phase": "straight",
+    "direction": "add front contact margin",
+    "intended_effect": "Reduces splitter/front platform contact.",
+    "counter_effect": "May reduce front bite.",
+    "effect_strength": 4,
+    "coupling_risk": "high",
+    "evidence_required": [
+      "front_platform",
+      "scrape",
+      "speed_trace"
+    ],
+    "validation_targets": [
+      "front_contact",
+      "center_speed"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "front_platform_contact is repeatable in straight"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May reduce front bite."
+    ]
+  },
+  {
+    "mapping_id": "diffuser_instability_diffuser_platform",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "diffuser_platform",
+    "symptom": "diffuser_instability",
+    "phase": "transition",
+    "direction": "inspect platform/diffuser window",
+    "intended_effect": "Separates platform-window issue from pure balance.",
+    "counter_effect": "May point away from setup change if evidence does not line up.",
+    "effect_strength": 3,
+    "coupling_risk": "high",
+    "evidence_required": [
+      "front_platform",
+      "rear_platform",
+      "diffuser_proxy",
+      "scrape",
+      "speed_trace"
+    ],
+    "validation_targets": [
+      "platform_stability",
+      "speed_loss"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "diffuser_instability is repeatable in transition"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May point away from setup change if evidence does not line up."
+    ]
+  },
+  {
+    "mapping_id": "shock_overactive_hs_compression",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "hs_compression",
+    "symptom": "shock_overactive",
+    "phase": "transition",
+    "direction": "tune bump/compliance only with shock evidence",
+    "intended_effect": "Can calm bump or transition activity.",
+    "counter_effect": "May remove needed platform support.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "shock_histogram",
+      "selected_zone",
+      "platform_trace"
+    ],
+    "validation_targets": [
+      "shock_activity",
+      "correction_count"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "shock_overactive is repeatable in transition"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May remove needed platform support."
+    ]
+  },
+  {
+    "mapping_id": "tire_overwork_camber",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "camber",
+    "symptom": "tire_overwork",
+    "phase": "long_run",
+    "direction": "protect tire contact and temperature trend",
+    "intended_effect": "Can reduce tire abuse over a run.",
+    "counter_effect": "May give up center grip.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "tire_temps",
+      "wear",
+      "lap_falloff"
+    ],
+    "validation_targets": [
+      "tire_temp_spread",
+      "lap_falloff"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "tire_overwork is repeatable in long_run"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May give up center grip."
+    ]
+  },
+  {
+    "mapping_id": "poor_drive_off_diff_preload",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "diff_preload",
+    "symptom": "poor_drive_off",
+    "phase": "exit",
+    "direction": "tune connected throttle pickup",
+    "intended_effect": "Can improve drive-off feel when throttle/yaw evidence agrees.",
+    "counter_effect": "May bind center or loosen exit depending direction.",
+    "effect_strength": 4,
+    "coupling_risk": "high",
+    "evidence_required": [
+      "throttle",
+      "yaw",
+      "rpm"
+    ],
+    "validation_targets": [
+      "drive_off",
+      "exit_speed"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "poor_drive_off is repeatable in exit"
+    ],
+    "avoid_when": [
+      "evidence points to a different phase first"
+    ],
+    "watch_for": [
+      "May bind center or loosen exit depending direction."
+    ]
+  }
+]

@@ -11,6 +11,12 @@ from .schema import (
     CarCapability,
     EffectivenessScaleEntry,
     EvidenceRequirement,
+    GuideDigestManifest,
+    GuidePrinciple,
+    GuideReviewItem,
+    GuideSetupMapping,
+    GuideSource,
+    GuideTermDefinition,
     NextGenPlatformRule,
     PackageArchetype,
     PhaseDefinition,
@@ -39,6 +45,12 @@ class SetupKnowledge:
     evidence_requirements: list[EvidenceRequirement]
     nextgen_platform_rules: list[NextGenPlatformRule]
     shock_interpretation: list[ShockInterpretationRule]
+    guide_sources: list[GuideSource]
+    guide_principles: list[GuidePrinciple]
+    guide_term_definitions: list[GuideTermDefinition]
+    guide_setup_mappings: list[GuideSetupMapping]
+    guide_review_queue: list[GuideReviewItem]
+    guide_digest_manifest: list[GuideDigestManifest]
 
     @property
     def car_capability_by_family(self) -> dict[str, CarCapability]:
@@ -47,6 +59,10 @@ class SetupKnowledge:
     @property
     def setup_area_by_id(self) -> dict[str, SetupArea]:
         return {area.setup_area: area for area in self.setup_areas}
+
+    @property
+    def guide_source_by_id(self) -> dict[str, GuideSource]:
+        return {source.source_id: source for source in self.guide_sources}
 
 
 DATASETS = {
@@ -60,6 +76,12 @@ DATASETS = {
     "evidence_requirements": ("evidence_requirements.json", EvidenceRequirement),
     "nextgen_platform_rules": ("nextgen_platform_rules.json", NextGenPlatformRule),
     "shock_interpretation": ("shock_interpretation.json", ShockInterpretationRule),
+    "guide_sources": ("guide_sources.json", GuideSource),
+    "guide_principles": ("guide_principles.json", GuidePrinciple),
+    "guide_term_definitions": ("guide_term_definitions.json", GuideTermDefinition),
+    "guide_setup_mappings": ("guide_setup_mappings.json", GuideSetupMapping),
+    "guide_review_queue": ("guide_review_queue.json", GuideReviewItem),
+    "guide_digest_manifest": ("guide_digest_manifest.json", GuideDigestManifest),
 }
 
 

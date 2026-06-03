@@ -95,7 +95,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "reduce_crossweight_small",
@@ -188,7 +192,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "add_rf_spring_small",
@@ -279,7 +287,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "reduce_rf_spring_small",
@@ -368,7 +380,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "add_lr_pressure_small",
@@ -460,7 +476,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "reduce_lf_pressure_small",
@@ -547,7 +567,11 @@
     "exact_value_policy": "none",
     "can_show_delta": false,
     "delta_label": null,
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "add_rear_stability_pressure_swing",
@@ -639,7 +663,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "soften_front_arb_arm",
@@ -728,7 +756,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "stiffen_front_arb_arm",
@@ -815,7 +847,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "switch_front_arb_to_soft_bar",
@@ -899,7 +935,11 @@
     "exact_value_policy": "reference_only",
     "can_show_delta": false,
     "delta_label": null,
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "switch_front_arb_to_stiff_bar",
@@ -985,7 +1025,11 @@
     "exact_value_policy": "reference_only",
     "can_show_delta": false,
     "delta_label": null,
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "soften_rear_arb_arm",
@@ -1073,7 +1117,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "stiffen_rear_arb_arm",
@@ -1160,7 +1208,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "add_front_brake_bias_small",
@@ -1242,7 +1294,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "reduce_front_brake_bias_small",
@@ -1325,7 +1381,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "add_front_platform_support",
@@ -1418,7 +1478,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "reduce_front_platform_support",
@@ -1506,7 +1570,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "add_rear_platform_support",
@@ -1603,7 +1671,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "reduce_rear_platform_support",
@@ -1696,7 +1768,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "add_ls_compression_front",
@@ -1785,7 +1861,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "reduce_ls_compression_front",
@@ -1872,7 +1952,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "add_ls_rebound_front",
@@ -1959,7 +2043,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "reduce_ls_rebound_front",
@@ -2046,7 +2134,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "add_ls_rebound_rear",
@@ -2138,7 +2230,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "reduce_ls_rebound_rear",
@@ -2227,7 +2323,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "add_hs_compression",
@@ -2316,7 +2416,11 @@
     "exact_value_policy": "none",
     "can_show_delta": false,
     "delta_label": null,
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "reduce_hs_compression",
@@ -2404,7 +2508,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "add_hs_rebound",
@@ -2487,7 +2595,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "reduce_hs_rebound",
@@ -2573,7 +2685,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "add_rear_toe_stability",
@@ -2661,7 +2777,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "reduce_toe_scrub",
@@ -2751,7 +2871,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "increase_diff_preload",
@@ -2835,7 +2959,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "reduce_diff_preload",
@@ -2922,7 +3050,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "shorter_final_drive",
@@ -3006,7 +3138,11 @@
     "exact_value_policy": "none",
     "can_show_delta": false,
     "delta_label": null,
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "taller_final_drive",
@@ -3085,7 +3221,11 @@
     "exact_value_policy": "none",
     "can_show_delta": false,
     "delta_label": null,
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "raise_track_bar_legacy",
@@ -3171,7 +3311,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "lower_track_bar_legacy",
@@ -3257,7 +3401,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "truck_arm_mount_legacy_swing",
@@ -3343,7 +3491,11 @@
     "exact_value_policy": "none",
     "can_show_delta": false,
     "delta_label": null,
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "bump_stop_or_packer_legacy_support",
@@ -3439,7 +3591,11 @@
     "exact_value_policy": "none",
     "can_show_delta": false,
     "delta_label": null,
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "improve_front_feed_window",
@@ -3538,7 +3694,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "inspect_diffuser_choke_or_scrape",
@@ -3632,7 +3792,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "reduce_platform_contact_small",
@@ -3726,7 +3890,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "soften_front_arb_arm_one_position",
@@ -3816,7 +3984,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "stiffen_front_arb_arm_one_position",
@@ -3906,7 +4078,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "soften_rear_arb_arm_one_position",
@@ -3997,7 +4173,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "stiffen_rear_arb_arm_one_position",
@@ -4087,7 +4267,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "adjust_front_arb_preload_small",
@@ -4178,7 +4362,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "adjust_rear_arb_preload_small",
@@ -4269,7 +4457,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "raise_front_shock_collar_small",
@@ -4357,7 +4549,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "lower_front_shock_collar_small",
@@ -4447,7 +4643,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "raise_rear_shock_collar_small",
@@ -4541,7 +4741,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "lower_rear_shock_collar_small",
@@ -4633,7 +4837,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "protect_rf_long_run_pressure",
@@ -4727,7 +4935,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "protect_rr_long_run_pressure",
@@ -4820,7 +5032,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "add_bumpy_track_compliance",
@@ -4911,7 +5127,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "medium"
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "inspect_toe_scrub_baseline",
@@ -4999,7 +5219,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "tune_diff_preload_for_center_exit",
@@ -5089,7 +5313,11 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   },
   {
     "effect_id": "legacy_packer_support_swing",
@@ -5186,6 +5414,2825 @@
     "exact_value_policy": "small_swing",
     "can_show_delta": true,
     "delta_label": "small test swing",
-    "caution_level": "high"
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "add_left_rear_pressure_small",
+    "setup_area": "tire_pressure",
+    "direction": "Add left-rear pressure support",
+    "driver_phrase": [
+      "exit"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "loose_exit",
+      "poor_drive_off"
+    ],
+    "can_hurt": [
+      "tight_exit",
+      "tire_overwork"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can add rear support for throttle pickup when tire evidence agrees.",
+    "counter_effect": "May tighten late exit or shift tire heat.",
+    "test_language": "Try one small swing: Add left-rear pressure support. Validate exit_yaw, drive_off.",
+    "evidence_required": [
+      "tire_temps",
+      "pressure_gain",
+      "throttle",
+      "yaw"
+    ],
+    "validation_targets": [
+      "exit_yaw",
+      "drive_off"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can add rear support for throttle pickup when tire evidence agrees."
+    ],
+    "counter_effects": [
+      "May tighten late exit or shift tire heat."
+    ],
+    "helps_phases": [
+      "exit"
+    ],
+    "can_hurt_phases": [
+      "exit"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Add left-rear pressure support. Effect: Can add rear support for throttle pickup when tire evidence agrees. Counter-effect: May tighten late exit or shift tire heat. Watch: tight_exit, tire_overwork. Validate: exit_yaw, drive_off.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Add left-rear pressure support. Effect: Can add rear support for throttle pickup when tire evidence agrees. Counter-effect: May tighten late exit or shift tire heat. Watch: tight_exit, tire_overwork. Validate: exit_yaw, drive_off.",
+    "expected_improvement_targets": [
+      "exit_yaw",
+      "drive_off"
+    ],
+    "watch_for_targets": [
+      "tight_exit",
+      "tire_overwork"
+    ],
+    "evidence_priority": [
+      "tire_temps",
+      "pressure_gain",
+      "throttle",
+      "yaw"
+    ],
+    "evidence_missing_message": "Need tire_temps before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "loose_exit is repeatable in exit",
+      "poor_drive_off is repeatable in exit"
+    ],
+    "avoid_when": [
+      "tight_exit is already the main complaint",
+      "tire_overwork is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "reduce_left_front_pressure_small",
+    "setup_area": "tire_pressure",
+    "direction": "Reduce left-front pressure support",
+    "driver_phrase": [
+      "entry",
+      "center"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "tight_entry",
+      "tight_center"
+    ],
+    "can_hurt": [
+      "loose_entry",
+      "tire_overwork"
+    ],
+    "effect_strength": 2,
+    "coupling_risk": "medium",
+    "effect": "Can add front compliance for turn-in or center feel.",
+    "counter_effect": "May overwork the tire or reduce entry security.",
+    "test_language": "Try one small swing: Reduce left-front pressure support. Validate turn_in_response, center_speed.",
+    "evidence_required": [
+      "tire_temps",
+      "steering",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "turn_in_response",
+      "center_speed"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can add front compliance for turn-in or center feel."
+    ],
+    "counter_effects": [
+      "May overwork the tire or reduce entry security."
+    ],
+    "helps_phases": [
+      "entry",
+      "center"
+    ],
+    "can_hurt_phases": [
+      "entry",
+      "center"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Reduce left-front pressure support. Effect: Can add front compliance for turn-in or center feel. Counter-effect: May overwork the tire or reduce entry security. Watch: loose_entry, tire_overwork. Validate: turn_in_response, center_speed.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Reduce left-front pressure support. Effect: Can add front compliance for turn-in or center feel. Counter-effect: May overwork the tire or reduce entry security. Watch: loose_entry, tire_overwork. Validate: turn_in_response, center_speed.",
+    "expected_improvement_targets": [
+      "turn_in_response",
+      "center_speed"
+    ],
+    "watch_for_targets": [
+      "loose_entry",
+      "tire_overwork"
+    ],
+    "evidence_priority": [
+      "tire_temps",
+      "steering",
+      "setup_snapshot"
+    ],
+    "evidence_missing_message": "Need tire_temps before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "tight_entry is repeatable in entry",
+      "tight_center is repeatable in entry"
+    ],
+    "avoid_when": [
+      "loose_entry is already the main complaint",
+      "tire_overwork is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "add_right_front_pressure_support",
+    "setup_area": "tire_pressure",
+    "direction": "Add right-front pressure support",
+    "driver_phrase": [
+      "center",
+      "long_run"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "front_platform_contact",
+      "tire_overwork"
+    ],
+    "can_hurt": [
+      "tight_center"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can support the loaded RF and shape long-run tire work.",
+    "counter_effect": "May reduce front grip if over-supported.",
+    "test_language": "Try one small swing: Add right-front pressure support. Validate tire_temp, center_speed.",
+    "evidence_required": [
+      "rf_tire_temps",
+      "pressure_gain",
+      "steering"
+    ],
+    "validation_targets": [
+      "tire_temp",
+      "center_speed"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can support the loaded RF and shape long-run tire work."
+    ],
+    "counter_effects": [
+      "May reduce front grip if over-supported."
+    ],
+    "helps_phases": [
+      "center",
+      "long_run"
+    ],
+    "can_hurt_phases": [
+      "center",
+      "long_run"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Add right-front pressure support. Effect: Can support the loaded RF and shape long-run tire work. Counter-effect: May reduce front grip if over-supported. Watch: tight_center. Validate: tire_temp, center_speed.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Add right-front pressure support. Effect: Can support the loaded RF and shape long-run tire work. Counter-effect: May reduce front grip if over-supported. Watch: tight_center. Validate: tire_temp, center_speed.",
+    "expected_improvement_targets": [
+      "tire_temp",
+      "center_speed"
+    ],
+    "watch_for_targets": [
+      "tight_center"
+    ],
+    "evidence_priority": [
+      "rf_tire_temps",
+      "pressure_gain",
+      "steering"
+    ],
+    "evidence_missing_message": "Need rf_tire_temps before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "front_platform_contact is repeatable in center",
+      "tire_overwork is repeatable in center"
+    ],
+    "avoid_when": [
+      "tight_center is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "reduce_right_front_pressure_grip",
+    "setup_area": "tire_pressure",
+    "direction": "Reduce right-front pressure for grip",
+    "driver_phrase": [
+      "center"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "tight_center"
+    ],
+    "can_hurt": [
+      "tire_overwork",
+      "front_platform_contact"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can add RF compliance when over-supported.",
+    "counter_effect": "May collapse support or add tire heat.",
+    "test_language": "Try one small swing: Reduce right-front pressure for grip. Validate center_speed, tire_temp.",
+    "evidence_required": [
+      "rf_tire_temps",
+      "steering",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "center_speed",
+      "tire_temp"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can add RF compliance when over-supported."
+    ],
+    "counter_effects": [
+      "May collapse support or add tire heat."
+    ],
+    "helps_phases": [
+      "center"
+    ],
+    "can_hurt_phases": [
+      "center"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Reduce right-front pressure for grip. Effect: Can add RF compliance when over-supported. Counter-effect: May collapse support or add tire heat. Watch: tire_overwork, front_platform_contact. Validate: center_speed, tire_temp.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Reduce right-front pressure for grip. Effect: Can add RF compliance when over-supported. Counter-effect: May collapse support or add tire heat. Watch: tire_overwork, front_platform_contact. Validate: center_speed, tire_temp.",
+    "expected_improvement_targets": [
+      "center_speed",
+      "tire_temp"
+    ],
+    "watch_for_targets": [
+      "tire_overwork",
+      "front_platform_contact"
+    ],
+    "evidence_priority": [
+      "rf_tire_temps",
+      "steering",
+      "setup_snapshot"
+    ],
+    "evidence_missing_message": "Need rf_tire_temps before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "tight_center is repeatable in center"
+    ],
+    "avoid_when": [
+      "tire_overwork is already the main complaint",
+      "front_platform_contact is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "pressure_split_stability_swing",
+    "setup_area": "pressure_split",
+    "direction": "Tune pressure split for stability",
+    "driver_phrase": [
+      "entry",
+      "exit"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "loose_entry",
+      "loose_exit"
+    ],
+    "can_hurt": [
+      "tight_center",
+      "drag_scrub"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can shape support and response with tire evidence.",
+    "counter_effect": "May add bind, drag, or heat.",
+    "test_language": "Try one small swing: Tune pressure split for stability. Validate entry_yaw, exit_yaw.",
+    "evidence_required": [
+      "tire_temps",
+      "pressure_gain",
+      "yaw"
+    ],
+    "validation_targets": [
+      "entry_yaw",
+      "exit_yaw"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can shape support and response with tire evidence."
+    ],
+    "counter_effects": [
+      "May add bind, drag, or heat."
+    ],
+    "helps_phases": [
+      "entry",
+      "exit"
+    ],
+    "can_hurt_phases": [
+      "entry",
+      "exit"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Tune pressure split for stability. Effect: Can shape support and response with tire evidence. Counter-effect: May add bind, drag, or heat. Watch: tight_center, drag_scrub. Validate: entry_yaw, exit_yaw.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Tune pressure split for stability. Effect: Can shape support and response with tire evidence. Counter-effect: May add bind, drag, or heat. Watch: tight_center, drag_scrub. Validate: entry_yaw, exit_yaw.",
+    "expected_improvement_targets": [
+      "entry_yaw",
+      "exit_yaw"
+    ],
+    "watch_for_targets": [
+      "tight_center",
+      "drag_scrub"
+    ],
+    "evidence_priority": [
+      "tire_temps",
+      "pressure_gain",
+      "yaw"
+    ],
+    "evidence_missing_message": "Need tire_temps before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "loose_entry is repeatable in entry",
+      "loose_exit is repeatable in entry"
+    ],
+    "avoid_when": [
+      "tight_center is already the main complaint",
+      "drag_scrub is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "long_run_pressure_protection",
+    "setup_area": "tire_pressure",
+    "direction": "Protect long-run pressure trend",
+    "driver_phrase": [
+      "long_run"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "long_run_falloff",
+      "tire_overwork"
+    ],
+    "can_hurt": [
+      "low_straight_speed"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can protect tire trend over a run.",
+    "counter_effect": "May give up short-run speed.",
+    "test_language": "Try one small swing: Protect long-run pressure trend. Validate lap_falloff, tire_temp.",
+    "evidence_required": [
+      "lap_falloff",
+      "tire_temps",
+      "pressure_gain"
+    ],
+    "validation_targets": [
+      "lap_falloff",
+      "tire_temp"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can protect tire trend over a run."
+    ],
+    "counter_effects": [
+      "May give up short-run speed."
+    ],
+    "helps_phases": [
+      "long_run"
+    ],
+    "can_hurt_phases": [
+      "long_run"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Protect long-run pressure trend. Effect: Can protect tire trend over a run. Counter-effect: May give up short-run speed. Watch: low_straight_speed. Validate: lap_falloff, tire_temp.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Protect long-run pressure trend. Effect: Can protect tire trend over a run. Counter-effect: May give up short-run speed. Watch: low_straight_speed. Validate: lap_falloff, tire_temp.",
+    "expected_improvement_targets": [
+      "lap_falloff",
+      "tire_temp"
+    ],
+    "watch_for_targets": [
+      "low_straight_speed"
+    ],
+    "evidence_priority": [
+      "lap_falloff",
+      "tire_temps",
+      "pressure_gain"
+    ],
+    "evidence_missing_message": "Need lap_falloff before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "long_run_falloff is repeatable in long_run",
+      "tire_overwork is repeatable in long_run"
+    ],
+    "avoid_when": [
+      "low_straight_speed is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "add_lr_spring_support",
+    "setup_area": "spring_rate",
+    "direction": "Add LR spring support",
+    "driver_phrase": [
+      "exit"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "poor_drive_off",
+      "loose_exit"
+    ],
+    "can_hurt": [
+      "tight_center"
+    ],
+    "effect_strength": 4,
+    "coupling_risk": "high",
+    "effect": "Can add drive-off support in the spring package.",
+    "counter_effect": "May bind center or change platform attitude.",
+    "test_language": "Try one small swing: Add LR spring support. Validate drive_off, exit_yaw.",
+    "evidence_required": [
+      "setup_snapshot",
+      "platform_trace",
+      "throttle"
+    ],
+    "validation_targets": [
+      "drive_off",
+      "exit_yaw"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can add drive-off support in the spring package."
+    ],
+    "counter_effects": [
+      "May bind center or change platform attitude."
+    ],
+    "helps_phases": [
+      "exit"
+    ],
+    "can_hurt_phases": [
+      "exit"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Add LR spring support. Effect: Can add drive-off support in the spring package. Counter-effect: May bind center or change platform attitude. Watch: tight_center. Validate: drive_off, exit_yaw.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Add LR spring support. Effect: Can add drive-off support in the spring package. Counter-effect: May bind center or change platform attitude. Watch: tight_center. Validate: drive_off, exit_yaw.",
+    "expected_improvement_targets": [
+      "drive_off",
+      "exit_yaw"
+    ],
+    "watch_for_targets": [
+      "tight_center"
+    ],
+    "evidence_priority": [
+      "setup_snapshot",
+      "platform_trace",
+      "throttle"
+    ],
+    "evidence_missing_message": "Need setup_snapshot before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "poor_drive_off is repeatable in exit",
+      "loose_exit is repeatable in exit"
+    ],
+    "avoid_when": [
+      "tight_center is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "reduce_lr_spring_for_drive",
+    "setup_area": "spring_rate",
+    "direction": "Reduce LR spring for drive compliance",
+    "driver_phrase": [
+      "exit"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "poor_drive_off",
+      "tight_exit"
+    ],
+    "can_hurt": [
+      "loose_exit",
+      "rear_scrape"
+    ],
+    "effect_strength": 4,
+    "coupling_risk": "high",
+    "effect": "Can add compliance for drive if support is excessive.",
+    "counter_effect": "May reduce rear security or platform margin.",
+    "test_language": "Try one small swing: Reduce LR spring for drive compliance. Validate drive_off, rear_height.",
+    "evidence_required": [
+      "setup_snapshot",
+      "platform_trace",
+      "throttle"
+    ],
+    "validation_targets": [
+      "drive_off",
+      "rear_height"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can add compliance for drive if support is excessive."
+    ],
+    "counter_effects": [
+      "May reduce rear security or platform margin."
+    ],
+    "helps_phases": [
+      "exit"
+    ],
+    "can_hurt_phases": [
+      "exit"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Reduce LR spring for drive compliance. Effect: Can add compliance for drive if support is excessive. Counter-effect: May reduce rear security or platform margin. Watch: loose_exit, rear_scrape. Validate: drive_off, rear_height.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Reduce LR spring for drive compliance. Effect: Can add compliance for drive if support is excessive. Counter-effect: May reduce rear security or platform margin. Watch: loose_exit, rear_scrape. Validate: drive_off, rear_height.",
+    "expected_improvement_targets": [
+      "drive_off",
+      "rear_height"
+    ],
+    "watch_for_targets": [
+      "loose_exit",
+      "rear_scrape"
+    ],
+    "evidence_priority": [
+      "setup_snapshot",
+      "platform_trace",
+      "throttle"
+    ],
+    "evidence_missing_message": "Need setup_snapshot before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "poor_drive_off is repeatable in exit",
+      "tight_exit is repeatable in exit"
+    ],
+    "avoid_when": [
+      "loose_exit is already the main complaint",
+      "rear_scrape is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "spring_package_platform_support",
+    "setup_area": "spring_rate",
+    "direction": "Use spring package for platform support",
+    "driver_phrase": [
+      "straight",
+      "center"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "platform_feed_issue",
+      "front_platform_contact"
+    ],
+    "can_hurt": [
+      "tight_center",
+      "tire_overwork"
+    ],
+    "effect_strength": 5,
+    "coupling_risk": "high",
+    "effect": "Can hold the platform window more consistently.",
+    "counter_effect": "May reduce mechanical grip or overwork tires.",
+    "test_language": "Try one small swing: Use spring package for platform support. Validate ride_height_trace, center_speed.",
+    "evidence_required": [
+      "platform_trace",
+      "setup_snapshot",
+      "scrape"
+    ],
+    "validation_targets": [
+      "ride_height_trace",
+      "center_speed"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can hold the platform window more consistently."
+    ],
+    "counter_effects": [
+      "May reduce mechanical grip or overwork tires."
+    ],
+    "helps_phases": [
+      "straight",
+      "center"
+    ],
+    "can_hurt_phases": [
+      "straight",
+      "center"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Use spring package for platform support. Effect: Can hold the platform window more consistently. Counter-effect: May reduce mechanical grip or overwork tires. Watch: tight_center, tire_overwork. Validate: ride_height_trace, center_speed.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Use spring package for platform support. Effect: Can hold the platform window more consistently. Counter-effect: May reduce mechanical grip or overwork tires. Watch: tight_center, tire_overwork. Validate: ride_height_trace, center_speed.",
+    "expected_improvement_targets": [
+      "ride_height_trace",
+      "center_speed"
+    ],
+    "watch_for_targets": [
+      "tight_center",
+      "tire_overwork"
+    ],
+    "evidence_priority": [
+      "platform_trace",
+      "setup_snapshot",
+      "scrape"
+    ],
+    "evidence_missing_message": "Need platform_trace before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "platform_feed_issue is repeatable in straight",
+      "front_platform_contact is repeatable in straight"
+    ],
+    "avoid_when": [
+      "tight_center is already the main complaint",
+      "tire_overwork is already the main complaint"
+    ],
+    "exact_value_policy": "reference_only",
+    "can_show_delta": false,
+    "delta_label": null,
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "spring_package_compliance",
+    "setup_area": "spring_rate",
+    "direction": "Use spring package for compliance",
+    "driver_phrase": [
+      "transition",
+      "long_run"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "shock_overactive",
+      "tire_overwork"
+    ],
+    "can_hurt": [
+      "platform_feed_issue",
+      "front_platform_contact"
+    ],
+    "effect_strength": 4,
+    "coupling_risk": "high",
+    "effect": "Can improve compliance when the package is too harsh.",
+    "counter_effect": "May give up support or contact margin.",
+    "test_language": "Try one small swing: Use spring package for compliance. Validate correction_count, tire_temp.",
+    "evidence_required": [
+      "platform_trace",
+      "tire_temps",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "correction_count",
+      "tire_temp"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can improve compliance when the package is too harsh."
+    ],
+    "counter_effects": [
+      "May give up support or contact margin."
+    ],
+    "helps_phases": [
+      "transition",
+      "long_run"
+    ],
+    "can_hurt_phases": [
+      "transition",
+      "long_run"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Use spring package for compliance. Effect: Can improve compliance when the package is too harsh. Counter-effect: May give up support or contact margin. Watch: platform_feed_issue, front_platform_contact. Validate: correction_count, tire_temp.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Use spring package for compliance. Effect: Can improve compliance when the package is too harsh. Counter-effect: May give up support or contact margin. Watch: platform_feed_issue, front_platform_contact. Validate: correction_count, tire_temp.",
+    "expected_improvement_targets": [
+      "correction_count",
+      "tire_temp"
+    ],
+    "watch_for_targets": [
+      "platform_feed_issue",
+      "front_platform_contact"
+    ],
+    "evidence_priority": [
+      "platform_trace",
+      "tire_temps",
+      "setup_snapshot"
+    ],
+    "evidence_missing_message": "Need platform_trace before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "shock_overactive is repeatable in transition",
+      "tire_overwork is repeatable in transition"
+    ],
+    "avoid_when": [
+      "platform_feed_issue is already the main complaint",
+      "front_platform_contact is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "avoid_static_rake_only_call",
+    "setup_area": "diffuser_platform",
+    "direction": "Avoid static-rake-only platform call",
+    "driver_phrase": [
+      "straight",
+      "transition"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "diffuser_instability",
+      "low_straight_speed"
+    ],
+    "can_hurt": [
+      "front_platform_contact"
+    ],
+    "effect_strength": 2,
+    "coupling_risk": "medium",
+    "effect": "Can keep the diagnosis tied to dynamic evidence instead of one static value.",
+    "counter_effect": "May delay a setup change until the right traces exist.",
+    "test_language": "Try one small swing: Avoid static-rake-only platform call. Validate platform_stability, speed_loss.",
+    "evidence_required": [
+      "front_platform",
+      "rear_platform",
+      "diffuser_proxy",
+      "speed_trace"
+    ],
+    "validation_targets": [
+      "platform_stability",
+      "speed_loss"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can keep the diagnosis tied to dynamic evidence instead of one static value."
+    ],
+    "counter_effects": [
+      "May delay a setup change until the right traces exist."
+    ],
+    "helps_phases": [
+      "straight",
+      "transition"
+    ],
+    "can_hurt_phases": [
+      "straight",
+      "transition"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Avoid static-rake-only platform call. Effect: Can keep the diagnosis tied to dynamic evidence instead of one static value. Counter-effect: May delay a setup change until the right traces exist. Watch: front_platform_contact. Validate: platform_stability, speed_loss.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Avoid static-rake-only platform call. Effect: Can keep the diagnosis tied to dynamic evidence instead of one static value. Counter-effect: May delay a setup change until the right traces exist. Watch: front_platform_contact. Validate: platform_stability, speed_loss.",
+    "expected_improvement_targets": [
+      "platform_stability",
+      "speed_loss"
+    ],
+    "watch_for_targets": [
+      "front_platform_contact"
+    ],
+    "evidence_priority": [
+      "front_platform",
+      "rear_platform",
+      "diffuser_proxy",
+      "speed_trace"
+    ],
+    "evidence_missing_message": "Need front_platform before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "diffuser_instability is repeatable in straight",
+      "low_straight_speed is repeatable in straight"
+    ],
+    "avoid_when": [
+      "front_platform_contact is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "add_front_response_toe_swing",
+    "setup_area": "front_toe_response",
+    "direction": "Add front response toe swing",
+    "driver_phrase": [
+      "turn_in"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "tight_entry",
+      "tight_entry"
+    ],
+    "can_hurt": [
+      "low_straight_speed",
+      "loose_entry"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can sharpen turn-in response.",
+    "counter_effect": "May add scrub or reduce straight stability.",
+    "test_language": "Try one small swing: Add front response toe swing. Validate turn_in_response, straight_speed.",
+    "evidence_required": [
+      "steering",
+      "yaw",
+      "speed_trace"
+    ],
+    "validation_targets": [
+      "turn_in_response",
+      "straight_speed"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can sharpen turn-in response."
+    ],
+    "counter_effects": [
+      "May add scrub or reduce straight stability."
+    ],
+    "helps_phases": [
+      "turn_in"
+    ],
+    "can_hurt_phases": [
+      "turn_in"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Add front response toe swing. Effect: Can sharpen turn-in response. Counter-effect: May add scrub or reduce straight stability. Watch: low_straight_speed, loose_entry. Validate: turn_in_response, straight_speed.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Add front response toe swing. Effect: Can sharpen turn-in response. Counter-effect: May add scrub or reduce straight stability. Watch: low_straight_speed, loose_entry. Validate: turn_in_response, straight_speed.",
+    "expected_improvement_targets": [
+      "turn_in_response",
+      "straight_speed"
+    ],
+    "watch_for_targets": [
+      "low_straight_speed",
+      "loose_entry"
+    ],
+    "evidence_priority": [
+      "steering",
+      "yaw",
+      "speed_trace"
+    ],
+    "evidence_missing_message": "Need steering before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "tight_entry is repeatable in turn_in",
+      "lazy_turn_in is repeatable in turn_in"
+    ],
+    "avoid_when": [
+      "low_straight_speed is already the main complaint",
+      "loose_entry is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "reduce_rear_toe_bind",
+    "setup_area": "rear_toe_stability",
+    "direction": "Reduce rear toe bind",
+    "driver_phrase": [
+      "center",
+      "straight"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "tight_center",
+      "drag_scrub"
+    ],
+    "can_hurt": [
+      "loose_exit",
+      "unstable_exit"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can reduce rear alignment bind or scrub.",
+    "counter_effect": "May reduce rear security.",
+    "test_language": "Try one small swing: Reduce rear toe bind. Validate center_speed, straight_speed.",
+    "evidence_required": [
+      "setup_snapshot",
+      "yaw",
+      "speed_trace"
+    ],
+    "validation_targets": [
+      "center_speed",
+      "straight_speed"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can reduce rear alignment bind or scrub."
+    ],
+    "counter_effects": [
+      "May reduce rear security."
+    ],
+    "helps_phases": [
+      "center",
+      "straight"
+    ],
+    "can_hurt_phases": [
+      "center",
+      "straight"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Reduce rear toe bind. Effect: Can reduce rear alignment bind or scrub. Counter-effect: May reduce rear security. Watch: loose_exit, unstable_exit. Validate: center_speed, straight_speed.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Reduce rear toe bind. Effect: Can reduce rear alignment bind or scrub. Counter-effect: May reduce rear security. Watch: loose_exit, unstable_exit. Validate: center_speed, straight_speed.",
+    "expected_improvement_targets": [
+      "center_speed",
+      "straight_speed"
+    ],
+    "watch_for_targets": [
+      "loose_exit",
+      "unstable_exit"
+    ],
+    "evidence_priority": [
+      "setup_snapshot",
+      "yaw",
+      "speed_trace"
+    ],
+    "evidence_missing_message": "Need setup_snapshot before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "tight_center is repeatable in center",
+      "drag_scrub is repeatable in center"
+    ],
+    "avoid_when": [
+      "loose_exit is already the main complaint",
+      "unstable_exit is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "camber_for_center_grip",
+    "setup_area": "camber",
+    "direction": "Use camber for center grip",
+    "driver_phrase": [
+      "center"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "tight_center"
+    ],
+    "can_hurt": [
+      "tire_overwork",
+      "poor_drive_off"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can improve loaded tire contact in the center.",
+    "counter_effect": "May hurt braking, traction, or tire life.",
+    "test_language": "Try one small swing: Use camber for center grip. Validate center_speed, tire_temp_spread.",
+    "evidence_required": [
+      "tire_temps",
+      "wear",
+      "center_speed"
+    ],
+    "validation_targets": [
+      "center_speed",
+      "tire_temp_spread"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can improve loaded tire contact in the center."
+    ],
+    "counter_effects": [
+      "May hurt braking, traction, or tire life."
+    ],
+    "helps_phases": [
+      "center"
+    ],
+    "can_hurt_phases": [
+      "center"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Use camber for center grip. Effect: Can improve loaded tire contact in the center. Counter-effect: May hurt braking, traction, or tire life. Watch: tire_overwork, poor_drive_off. Validate: center_speed, tire_temp_spread.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Use camber for center grip. Effect: Can improve loaded tire contact in the center. Counter-effect: May hurt braking, traction, or tire life. Watch: tire_overwork, poor_drive_off. Validate: center_speed, tire_temp_spread.",
+    "expected_improvement_targets": [
+      "center_speed",
+      "tire_temp_spread"
+    ],
+    "watch_for_targets": [
+      "tire_overwork",
+      "poor_drive_off"
+    ],
+    "evidence_priority": [
+      "tire_temps",
+      "wear",
+      "center_speed"
+    ],
+    "evidence_missing_message": "Need tire_temps before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "tight_center is repeatable in center"
+    ],
+    "avoid_when": [
+      "tire_overwork is already the main complaint",
+      "poor_drive_off is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "reduce_camber_for_long_run",
+    "setup_area": "camber",
+    "direction": "Reduce aggressive camber for long run",
+    "driver_phrase": [
+      "long_run"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "tire_overwork",
+      "long_run_falloff"
+    ],
+    "can_hurt": [
+      "tight_center"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can improve tire life and longitudinal contact.",
+    "counter_effect": "May reduce peak center grip.",
+    "test_language": "Try one small swing: Reduce aggressive camber for long run. Validate lap_falloff, tire_temp_spread.",
+    "evidence_required": [
+      "tire_temps",
+      "wear",
+      "lap_falloff"
+    ],
+    "validation_targets": [
+      "lap_falloff",
+      "tire_temp_spread"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can improve tire life and longitudinal contact."
+    ],
+    "counter_effects": [
+      "May reduce peak center grip."
+    ],
+    "helps_phases": [
+      "long_run"
+    ],
+    "can_hurt_phases": [
+      "long_run"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Reduce aggressive camber for long run. Effect: Can improve tire life and longitudinal contact. Counter-effect: May reduce peak center grip. Watch: tight_center. Validate: lap_falloff, tire_temp_spread.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Reduce aggressive camber for long run. Effect: Can improve tire life and longitudinal contact. Counter-effect: May reduce peak center grip. Watch: tight_center. Validate: lap_falloff, tire_temp_spread.",
+    "expected_improvement_targets": [
+      "lap_falloff",
+      "tire_temp_spread"
+    ],
+    "watch_for_targets": [
+      "tight_center"
+    ],
+    "evidence_priority": [
+      "tire_temps",
+      "wear",
+      "lap_falloff"
+    ],
+    "evidence_missing_message": "Need tire_temps before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "tire_overwork is repeatable in long_run",
+      "long_run_falloff is repeatable in long_run"
+    ],
+    "avoid_when": [
+      "tight_center is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "caster_driver_feel_entry",
+    "setup_area": "caster",
+    "direction": "Tune caster for driver feel entry",
+    "driver_phrase": [
+      "turn_in"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "tight_entry",
+      "tight_entry"
+    ],
+    "can_hurt": [
+      "low_straight_speed"
+    ],
+    "effect_strength": 2,
+    "coupling_risk": "low",
+    "effect": "Can tune steering weight and entry feel.",
+    "counter_effect": "May add effort or high-speed instability if overdone.",
+    "test_language": "Try one small swing: Tune caster for driver feel entry. Validate turn_in_response.",
+    "evidence_required": [
+      "driver_feedback",
+      "steering"
+    ],
+    "validation_targets": [
+      "turn_in_response"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can tune steering weight and entry feel."
+    ],
+    "counter_effects": [
+      "May add effort or high-speed instability if overdone."
+    ],
+    "helps_phases": [
+      "turn_in"
+    ],
+    "can_hurt_phases": [
+      "turn_in"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Tune caster for driver feel entry. Effect: Can tune steering weight and entry feel. Counter-effect: May add effort or high-speed instability if overdone. Watch: low_straight_speed. Validate: turn_in_response.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Tune caster for driver feel entry. Effect: Can tune steering weight and entry feel. Counter-effect: May add effort or high-speed instability if overdone. Watch: low_straight_speed. Validate: turn_in_response.",
+    "expected_improvement_targets": [
+      "turn_in_response"
+    ],
+    "watch_for_targets": [
+      "low_straight_speed"
+    ],
+    "evidence_priority": [
+      "driver_feedback",
+      "steering"
+    ],
+    "evidence_missing_message": "Need driver_feedback before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "tight_entry is repeatable in turn_in",
+      "lazy_turn_in is repeatable in turn_in"
+    ],
+    "avoid_when": [
+      "low_straight_speed is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "low",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "add_lf_ls_rebound",
+    "setup_area": "ls_rebound",
+    "direction": "Add LF low-speed rebound",
+    "driver_phrase": [
+      "exit",
+      "transition"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "loose_exit",
+      "unstable_exit"
+    ],
+    "can_hurt": [
+      "tight_exit"
+    ],
+    "effect_strength": 2,
+    "coupling_risk": "medium",
+    "effect": "Can slow front release during throttle transition.",
+    "counter_effect": "May hold the front down too long.",
+    "test_language": "Try one small swing: Add LF low-speed rebound. Validate exit_yaw, drive_off.",
+    "evidence_required": [
+      "shock_histogram",
+      "throttle",
+      "yaw"
+    ],
+    "validation_targets": [
+      "exit_yaw",
+      "drive_off"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can slow front release during throttle transition."
+    ],
+    "counter_effects": [
+      "May hold the front down too long."
+    ],
+    "helps_phases": [
+      "exit",
+      "transition"
+    ],
+    "can_hurt_phases": [
+      "exit",
+      "transition"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Add LF low-speed rebound. Effect: Can slow front release during throttle transition. Counter-effect: May hold the front down too long. Watch: tight_exit. Validate: exit_yaw, drive_off.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Add LF low-speed rebound. Effect: Can slow front release during throttle transition. Counter-effect: May hold the front down too long. Watch: tight_exit. Validate: exit_yaw, drive_off.",
+    "expected_improvement_targets": [
+      "exit_yaw",
+      "drive_off"
+    ],
+    "watch_for_targets": [
+      "tight_exit"
+    ],
+    "evidence_priority": [
+      "shock_histogram",
+      "throttle",
+      "yaw"
+    ],
+    "evidence_missing_message": "Need shock_histogram before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "loose_exit is repeatable in exit",
+      "unstable_exit is repeatable in exit"
+    ],
+    "avoid_when": [
+      "tight_exit is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "reduce_lf_ls_rebound",
+    "setup_area": "ls_rebound",
+    "direction": "Reduce LF low-speed rebound",
+    "driver_phrase": [
+      "exit"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "tight_exit",
+      "poor_drive_off"
+    ],
+    "can_hurt": [
+      "loose_exit"
+    ],
+    "effect_strength": 2,
+    "coupling_risk": "medium",
+    "effect": "Can let the front recover sooner.",
+    "counter_effect": "May make transfer too abrupt.",
+    "test_language": "Try one small swing: Reduce LF low-speed rebound. Validate drive_off, exit_yaw.",
+    "evidence_required": [
+      "shock_histogram",
+      "throttle",
+      "yaw"
+    ],
+    "validation_targets": [
+      "drive_off",
+      "exit_yaw"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can let the front recover sooner."
+    ],
+    "counter_effects": [
+      "May make transfer too abrupt."
+    ],
+    "helps_phases": [
+      "exit"
+    ],
+    "can_hurt_phases": [
+      "exit"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Reduce LF low-speed rebound. Effect: Can let the front recover sooner. Counter-effect: May make transfer too abrupt. Watch: loose_exit. Validate: drive_off, exit_yaw.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Reduce LF low-speed rebound. Effect: Can let the front recover sooner. Counter-effect: May make transfer too abrupt. Watch: loose_exit. Validate: drive_off, exit_yaw.",
+    "expected_improvement_targets": [
+      "drive_off",
+      "exit_yaw"
+    ],
+    "watch_for_targets": [
+      "loose_exit"
+    ],
+    "evidence_priority": [
+      "shock_histogram",
+      "throttle",
+      "yaw"
+    ],
+    "evidence_missing_message": "Need shock_histogram before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "tight_exit is repeatable in exit",
+      "poor_drive_off is repeatable in exit"
+    ],
+    "avoid_when": [
+      "loose_exit is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "add_rf_ls_compression",
+    "setup_area": "ls_compression",
+    "direction": "Add RF low-speed compression",
+    "driver_phrase": [
+      "entry"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "front_feed_instability",
+      "loose_entry"
+    ],
+    "can_hurt": [
+      "tight_entry",
+      "tight_center"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can slow RF compression during driver-input platform motion.",
+    "counter_effect": "May make the front reluctant to take grip.",
+    "test_language": "Try one small swing: Add RF low-speed compression. Validate entry_yaw, front_height.",
+    "evidence_required": [
+      "shock_histogram",
+      "steering",
+      "front_platform"
+    ],
+    "validation_targets": [
+      "entry_yaw",
+      "front_height"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can slow RF compression during driver-input platform motion."
+    ],
+    "counter_effects": [
+      "May make the front reluctant to take grip."
+    ],
+    "helps_phases": [
+      "entry"
+    ],
+    "can_hurt_phases": [
+      "entry"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Add RF low-speed compression. Effect: Can slow RF compression during driver-input platform motion. Counter-effect: May make the front reluctant to take grip. Watch: tight_entry, tight_center. Validate: entry_yaw, front_height.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Add RF low-speed compression. Effect: Can slow RF compression during driver-input platform motion. Counter-effect: May make the front reluctant to take grip. Watch: tight_entry, tight_center. Validate: entry_yaw, front_height.",
+    "expected_improvement_targets": [
+      "entry_yaw",
+      "front_height"
+    ],
+    "watch_for_targets": [
+      "tight_entry",
+      "tight_center"
+    ],
+    "evidence_priority": [
+      "shock_histogram",
+      "steering",
+      "front_platform"
+    ],
+    "evidence_missing_message": "Need shock_histogram before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "front_feed_instability is repeatable in entry",
+      "loose_entry is repeatable in entry"
+    ],
+    "avoid_when": [
+      "tight_entry is already the main complaint",
+      "tight_center is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "reduce_rf_ls_compression",
+    "setup_area": "ls_compression",
+    "direction": "Reduce RF low-speed compression",
+    "driver_phrase": [
+      "entry",
+      "center"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "tight_entry",
+      "tight_center"
+    ],
+    "can_hurt": [
+      "front_feed_instability"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can let the front accept load more freely.",
+    "counter_effect": "May add platform movement.",
+    "test_language": "Try one small swing: Reduce RF low-speed compression. Validate turn_in_response, center_speed.",
+    "evidence_required": [
+      "shock_histogram",
+      "steering",
+      "front_platform"
+    ],
+    "validation_targets": [
+      "turn_in_response",
+      "center_speed"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can let the front accept load more freely."
+    ],
+    "counter_effects": [
+      "May add platform movement."
+    ],
+    "helps_phases": [
+      "entry",
+      "center"
+    ],
+    "can_hurt_phases": [
+      "entry",
+      "center"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Reduce RF low-speed compression. Effect: Can let the front accept load more freely. Counter-effect: May add platform movement. Watch: front_feed_instability. Validate: turn_in_response, center_speed.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Reduce RF low-speed compression. Effect: Can let the front accept load more freely. Counter-effect: May add platform movement. Watch: front_feed_instability. Validate: turn_in_response, center_speed.",
+    "expected_improvement_targets": [
+      "turn_in_response",
+      "center_speed"
+    ],
+    "watch_for_targets": [
+      "front_feed_instability"
+    ],
+    "evidence_priority": [
+      "shock_histogram",
+      "steering",
+      "front_platform"
+    ],
+    "evidence_missing_message": "Need shock_histogram before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "tight_entry is repeatable in entry",
+      "tight_center is repeatable in entry"
+    ],
+    "avoid_when": [
+      "front_feed_instability is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "add_rear_ls_rebound",
+    "setup_area": "ls_rebound",
+    "direction": "Add rear low-speed rebound",
+    "driver_phrase": [
+      "exit"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "loose_exit",
+      "unstable_exit"
+    ],
+    "can_hurt": [
+      "poor_drive_off",
+      "tight_exit"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can slow rear extension and calm throttle-on transition.",
+    "counter_effect": "May over-control rear platform.",
+    "test_language": "Try one small swing: Add rear low-speed rebound. Validate exit_yaw, rear_height.",
+    "evidence_required": [
+      "shock_histogram",
+      "throttle",
+      "yaw",
+      "rear_platform"
+    ],
+    "validation_targets": [
+      "exit_yaw",
+      "rear_height"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can slow rear extension and calm throttle-on transition."
+    ],
+    "counter_effects": [
+      "May over-control rear platform."
+    ],
+    "helps_phases": [
+      "exit"
+    ],
+    "can_hurt_phases": [
+      "exit"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Add rear low-speed rebound. Effect: Can slow rear extension and calm throttle-on transition. Counter-effect: May over-control rear platform. Watch: poor_drive_off, tight_exit. Validate: exit_yaw, rear_height.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Add rear low-speed rebound. Effect: Can slow rear extension and calm throttle-on transition. Counter-effect: May over-control rear platform. Watch: poor_drive_off, tight_exit. Validate: exit_yaw, rear_height.",
+    "expected_improvement_targets": [
+      "exit_yaw",
+      "rear_height"
+    ],
+    "watch_for_targets": [
+      "poor_drive_off",
+      "tight_exit"
+    ],
+    "evidence_priority": [
+      "shock_histogram",
+      "throttle",
+      "yaw",
+      "rear_platform"
+    ],
+    "evidence_missing_message": "Need shock_histogram before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "loose_exit is repeatable in exit",
+      "unstable_exit is repeatable in exit"
+    ],
+    "avoid_when": [
+      "poor_drive_off is already the main complaint",
+      "tight_exit is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "reduce_rear_ls_rebound",
+    "setup_area": "ls_rebound",
+    "direction": "Reduce rear low-speed rebound",
+    "driver_phrase": [
+      "exit"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "poor_drive_off",
+      "tight_exit"
+    ],
+    "can_hurt": [
+      "loose_exit"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can let the rear recover more freely.",
+    "counter_effect": "May make rear motion too quick.",
+    "test_language": "Try one small swing: Reduce rear low-speed rebound. Validate drive_off, exit_yaw.",
+    "evidence_required": [
+      "shock_histogram",
+      "throttle",
+      "yaw",
+      "rear_platform"
+    ],
+    "validation_targets": [
+      "drive_off",
+      "exit_yaw"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can let the rear recover more freely."
+    ],
+    "counter_effects": [
+      "May make rear motion too quick."
+    ],
+    "helps_phases": [
+      "exit"
+    ],
+    "can_hurt_phases": [
+      "exit"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Reduce rear low-speed rebound. Effect: Can let the rear recover more freely. Counter-effect: May make rear motion too quick. Watch: loose_exit. Validate: drive_off, exit_yaw.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Reduce rear low-speed rebound. Effect: Can let the rear recover more freely. Counter-effect: May make rear motion too quick. Watch: loose_exit. Validate: drive_off, exit_yaw.",
+    "expected_improvement_targets": [
+      "drive_off",
+      "exit_yaw"
+    ],
+    "watch_for_targets": [
+      "loose_exit"
+    ],
+    "evidence_priority": [
+      "shock_histogram",
+      "throttle",
+      "yaw",
+      "rear_platform"
+    ],
+    "evidence_missing_message": "Need shock_histogram before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "poor_drive_off is repeatable in exit",
+      "tight_exit is repeatable in exit"
+    ],
+    "avoid_when": [
+      "loose_exit is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "add_rear_ls_compression",
+    "setup_area": "ls_compression",
+    "direction": "Add rear low-speed compression",
+    "driver_phrase": [
+      "exit"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "poor_drive_off",
+      "rear_scrape"
+    ],
+    "can_hurt": [
+      "loose_exit",
+      "tight_center"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can add rear support during throttle load.",
+    "counter_effect": "May reduce rear compliance.",
+    "test_language": "Try one small swing: Add rear low-speed compression. Validate drive_off, rear_height.",
+    "evidence_required": [
+      "shock_histogram",
+      "rear_platform",
+      "throttle"
+    ],
+    "validation_targets": [
+      "drive_off",
+      "rear_height"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can add rear support during throttle load."
+    ],
+    "counter_effects": [
+      "May reduce rear compliance."
+    ],
+    "helps_phases": [
+      "exit"
+    ],
+    "can_hurt_phases": [
+      "exit"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Add rear low-speed compression. Effect: Can add rear support during throttle load. Counter-effect: May reduce rear compliance. Watch: loose_exit, tight_center. Validate: drive_off, rear_height.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Add rear low-speed compression. Effect: Can add rear support during throttle load. Counter-effect: May reduce rear compliance. Watch: loose_exit, tight_center. Validate: drive_off, rear_height.",
+    "expected_improvement_targets": [
+      "drive_off",
+      "rear_height"
+    ],
+    "watch_for_targets": [
+      "loose_exit",
+      "tight_center"
+    ],
+    "evidence_priority": [
+      "shock_histogram",
+      "rear_platform",
+      "throttle"
+    ],
+    "evidence_missing_message": "Need shock_histogram before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "poor_drive_off is repeatable in exit",
+      "rear_scrape is repeatable in exit"
+    ],
+    "avoid_when": [
+      "loose_exit is already the main complaint",
+      "tight_center is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "reduce_rear_ls_compression",
+    "setup_area": "ls_compression",
+    "direction": "Reduce rear low-speed compression",
+    "driver_phrase": [
+      "transition",
+      "exit"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "shock_overactive",
+      "tire_overwork"
+    ],
+    "can_hurt": [
+      "rear_scrape",
+      "loose_exit"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can add rear compliance when over-controlled.",
+    "counter_effect": "May reduce platform support.",
+    "test_language": "Try one small swing: Reduce rear low-speed compression. Validate correction_count, rear_height.",
+    "evidence_required": [
+      "shock_histogram",
+      "rear_platform",
+      "tire_temps"
+    ],
+    "validation_targets": [
+      "correction_count",
+      "rear_height"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can add rear compliance when over-controlled."
+    ],
+    "counter_effects": [
+      "May reduce platform support."
+    ],
+    "helps_phases": [
+      "transition",
+      "exit"
+    ],
+    "can_hurt_phases": [
+      "transition",
+      "exit"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Reduce rear low-speed compression. Effect: Can add rear compliance when over-controlled. Counter-effect: May reduce platform support. Watch: rear_scrape, loose_exit. Validate: correction_count, rear_height.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Reduce rear low-speed compression. Effect: Can add rear compliance when over-controlled. Counter-effect: May reduce platform support. Watch: rear_scrape, loose_exit. Validate: correction_count, rear_height.",
+    "expected_improvement_targets": [
+      "correction_count",
+      "rear_height"
+    ],
+    "watch_for_targets": [
+      "rear_scrape",
+      "loose_exit"
+    ],
+    "evidence_priority": [
+      "shock_histogram",
+      "rear_platform",
+      "tire_temps"
+    ],
+    "evidence_missing_message": "Need shock_histogram before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "shock_overactive is repeatable in transition",
+      "tire_overwork is repeatable in transition"
+    ],
+    "avoid_when": [
+      "rear_scrape is already the main complaint",
+      "loose_exit is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "add_hs_compression_for_bumps",
+    "setup_area": "hs_compression",
+    "direction": "Add high-speed compression for bumps",
+    "driver_phrase": [
+      "transition"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "front_platform_contact",
+      "rear_scrape"
+    ],
+    "can_hurt": [
+      "shock_overactive"
+    ],
+    "effect_strength": 2,
+    "coupling_risk": "medium",
+    "effect": "Can add impact support.",
+    "counter_effect": "May make the car harsh.",
+    "test_language": "Try one small swing: Add high-speed compression for bumps. Validate impact_response, platform_contact.",
+    "evidence_required": [
+      "shock_histogram",
+      "bump_trace",
+      "scrape"
+    ],
+    "validation_targets": [
+      "impact_response",
+      "platform_contact"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can add impact support."
+    ],
+    "counter_effects": [
+      "May make the car harsh."
+    ],
+    "helps_phases": [
+      "transition"
+    ],
+    "can_hurt_phases": [
+      "transition"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Add high-speed compression for bumps. Effect: Can add impact support. Counter-effect: May make the car harsh. Watch: shock_overactive. Validate: impact_response, platform_contact.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Add high-speed compression for bumps. Effect: Can add impact support. Counter-effect: May make the car harsh. Watch: shock_overactive. Validate: impact_response, platform_contact.",
+    "expected_improvement_targets": [
+      "impact_response",
+      "platform_contact"
+    ],
+    "watch_for_targets": [
+      "shock_overactive"
+    ],
+    "evidence_priority": [
+      "shock_histogram",
+      "bump_trace",
+      "scrape"
+    ],
+    "evidence_missing_message": "Need shock_histogram before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "front_platform_contact is repeatable in transition",
+      "rear_scrape is repeatable in transition"
+    ],
+    "avoid_when": [
+      "shock_overactive is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "reduce_hs_compression_for_compliance",
+    "setup_area": "hs_compression",
+    "direction": "Reduce high-speed compression for compliance",
+    "driver_phrase": [
+      "transition"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "shock_overactive"
+    ],
+    "can_hurt": [
+      "front_platform_contact",
+      "rear_scrape"
+    ],
+    "effect_strength": 2,
+    "coupling_risk": "medium",
+    "effect": "Can let the car absorb bumps.",
+    "counter_effect": "May blow through travel.",
+    "test_language": "Try one small swing: Reduce high-speed compression for compliance. Validate impact_response, correction_count.",
+    "evidence_required": [
+      "shock_histogram",
+      "bump_trace"
+    ],
+    "validation_targets": [
+      "impact_response",
+      "correction_count"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can let the car absorb bumps."
+    ],
+    "counter_effects": [
+      "May blow through travel."
+    ],
+    "helps_phases": [
+      "transition"
+    ],
+    "can_hurt_phases": [
+      "transition"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Reduce high-speed compression for compliance. Effect: Can let the car absorb bumps. Counter-effect: May blow through travel. Watch: front_platform_contact, rear_scrape. Validate: impact_response, correction_count.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Reduce high-speed compression for compliance. Effect: Can let the car absorb bumps. Counter-effect: May blow through travel. Watch: front_platform_contact, rear_scrape. Validate: impact_response, correction_count.",
+    "expected_improvement_targets": [
+      "impact_response",
+      "correction_count"
+    ],
+    "watch_for_targets": [
+      "front_platform_contact",
+      "rear_scrape"
+    ],
+    "evidence_priority": [
+      "shock_histogram",
+      "bump_trace"
+    ],
+    "evidence_missing_message": "Need shock_histogram before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "shock_overactive is repeatable in transition"
+    ],
+    "avoid_when": [
+      "front_platform_contact is already the main complaint",
+      "rear_scrape is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "add_hs_rebound_control",
+    "setup_area": "hs_rebound",
+    "direction": "Add high-speed rebound control",
+    "driver_phrase": [
+      "transition"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "platform_feed_issue"
+    ],
+    "can_hurt": [
+      "shock_overactive"
+    ],
+    "effect_strength": 2,
+    "coupling_risk": "medium",
+    "effect": "Can slow fast recovery after impacts.",
+    "counter_effect": "May pack down over repeated bumps.",
+    "test_language": "Try one small swing: Add high-speed rebound control. Validate platform_recovery.",
+    "evidence_required": [
+      "shock_histogram",
+      "bump_trace",
+      "platform_trace"
+    ],
+    "validation_targets": [
+      "platform_recovery"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can slow fast recovery after impacts."
+    ],
+    "counter_effects": [
+      "May pack down over repeated bumps."
+    ],
+    "helps_phases": [
+      "transition"
+    ],
+    "can_hurt_phases": [
+      "transition"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Add high-speed rebound control. Effect: Can slow fast recovery after impacts. Counter-effect: May pack down over repeated bumps. Watch: shock_overactive. Validate: platform_recovery.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Add high-speed rebound control. Effect: Can slow fast recovery after impacts. Counter-effect: May pack down over repeated bumps. Watch: shock_overactive. Validate: platform_recovery.",
+    "expected_improvement_targets": [
+      "platform_recovery"
+    ],
+    "watch_for_targets": [
+      "shock_overactive"
+    ],
+    "evidence_priority": [
+      "shock_histogram",
+      "bump_trace",
+      "platform_trace"
+    ],
+    "evidence_missing_message": "Need shock_histogram before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "platform_feed_issue is repeatable in transition"
+    ],
+    "avoid_when": [
+      "shock_overactive is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "reduce_hs_rebound_recovery",
+    "setup_area": "hs_rebound",
+    "direction": "Reduce high-speed rebound for recovery",
+    "driver_phrase": [
+      "transition"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "shock_overactive"
+    ],
+    "can_hurt": [
+      "platform_feed_issue"
+    ],
+    "effect_strength": 2,
+    "coupling_risk": "medium",
+    "effect": "Can help recovery over repeated bumps.",
+    "counter_effect": "May let motion return too fast.",
+    "test_language": "Try one small swing: Reduce high-speed rebound for recovery. Validate platform_recovery.",
+    "evidence_required": [
+      "shock_histogram",
+      "bump_trace",
+      "platform_trace"
+    ],
+    "validation_targets": [
+      "platform_recovery"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can help recovery over repeated bumps."
+    ],
+    "counter_effects": [
+      "May let motion return too fast."
+    ],
+    "helps_phases": [
+      "transition"
+    ],
+    "can_hurt_phases": [
+      "transition"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Reduce high-speed rebound for recovery. Effect: Can help recovery over repeated bumps. Counter-effect: May let motion return too fast. Watch: platform_feed_issue. Validate: platform_recovery.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Reduce high-speed rebound for recovery. Effect: Can help recovery over repeated bumps. Counter-effect: May let motion return too fast. Watch: platform_feed_issue. Validate: platform_recovery.",
+    "expected_improvement_targets": [
+      "platform_recovery"
+    ],
+    "watch_for_targets": [
+      "platform_feed_issue"
+    ],
+    "evidence_priority": [
+      "shock_histogram",
+      "bump_trace",
+      "platform_trace"
+    ],
+    "evidence_missing_message": "Need shock_histogram before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "shock_overactive is repeatable in transition"
+    ],
+    "avoid_when": [
+      "platform_feed_issue is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "slope_more_linear_bumpy",
+    "setup_area": "hs_comp_slope",
+    "direction": "Use more linear high-speed slope for bumpy track",
+    "driver_phrase": [
+      "transition"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "shock_overactive",
+      "platform_feed_issue"
+    ],
+    "can_hurt": [
+      "front_platform_contact"
+    ],
+    "effect_strength": 2,
+    "coupling_risk": "medium",
+    "effect": "Can add high-speed force shape for rougher surfaces.",
+    "counter_effect": "May be harsh on smoother tracks.",
+    "test_language": "Try one small swing: Use more linear high-speed slope for bumpy track. Validate impact_response.",
+    "evidence_required": [
+      "shock_histogram",
+      "track_surface",
+      "bump_trace"
+    ],
+    "validation_targets": [
+      "impact_response"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can add high-speed force shape for rougher surfaces."
+    ],
+    "counter_effects": [
+      "May be harsh on smoother tracks."
+    ],
+    "helps_phases": [
+      "transition"
+    ],
+    "can_hurt_phases": [
+      "transition"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Use more linear high-speed slope for bumpy track. Effect: Can add high-speed force shape for rougher surfaces. Counter-effect: May be harsh on smoother tracks. Watch: front_platform_contact. Validate: impact_response.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Use more linear high-speed slope for bumpy track. Effect: Can add high-speed force shape for rougher surfaces. Counter-effect: May be harsh on smoother tracks. Watch: front_platform_contact. Validate: impact_response.",
+    "expected_improvement_targets": [
+      "impact_response"
+    ],
+    "watch_for_targets": [
+      "front_platform_contact"
+    ],
+    "evidence_priority": [
+      "shock_histogram",
+      "track_surface",
+      "bump_trace"
+    ],
+    "evidence_missing_message": "Need shock_histogram before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "shock_overactive is repeatable in transition",
+      "platform_feed_issue is repeatable in transition"
+    ],
+    "avoid_when": [
+      "front_platform_contact is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "slope_more_digressive_smooth",
+    "setup_area": "hs_comp_slope",
+    "direction": "Use more digressive high-speed slope for smoother track",
+    "driver_phrase": [
+      "transition"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "shock_overactive"
+    ],
+    "can_hurt": [
+      "platform_feed_issue"
+    ],
+    "effect_strength": 2,
+    "coupling_risk": "medium",
+    "effect": "Can absorb smaller disturbances without moving the chassis as much.",
+    "counter_effect": "May lack support on bumpy surfaces.",
+    "test_language": "Try one small swing: Use more digressive high-speed slope for smoother track. Validate impact_response.",
+    "evidence_required": [
+      "shock_histogram",
+      "track_surface"
+    ],
+    "validation_targets": [
+      "impact_response"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can absorb smaller disturbances without moving the chassis as much."
+    ],
+    "counter_effects": [
+      "May lack support on bumpy surfaces."
+    ],
+    "helps_phases": [
+      "transition"
+    ],
+    "can_hurt_phases": [
+      "transition"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Use more digressive high-speed slope for smoother track. Effect: Can absorb smaller disturbances without moving the chassis as much. Counter-effect: May lack support on bumpy surfaces. Watch: platform_feed_issue. Validate: impact_response.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Use more digressive high-speed slope for smoother track. Effect: Can absorb smaller disturbances without moving the chassis as much. Counter-effect: May lack support on bumpy surfaces. Watch: platform_feed_issue. Validate: impact_response.",
+    "expected_improvement_targets": [
+      "impact_response"
+    ],
+    "watch_for_targets": [
+      "platform_feed_issue"
+    ],
+    "evidence_priority": [
+      "shock_histogram",
+      "track_surface"
+    ],
+    "evidence_missing_message": "Need shock_histogram before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "shock_overactive is repeatable in transition"
+    ],
+    "avoid_when": [
+      "platform_feed_issue is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "reduce_front_toe_scrub",
+    "setup_area": "toe",
+    "direction": "Reduce front toe scrub",
+    "driver_phrase": [
+      "straight"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "low_straight_speed",
+      "drag_scrub"
+    ],
+    "can_hurt": [
+      "tight_entry",
+      "loose_entry"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "effect": "Can reduce scrub-related speed loss.",
+    "counter_effect": "May reduce turn-in response or stability.",
+    "test_language": "Try one small swing: Reduce front toe scrub. Validate terminal_speed, steering_correction.",
+    "evidence_required": [
+      "speed_trace",
+      "steering",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "terminal_speed",
+      "steering_correction"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can reduce scrub-related speed loss."
+    ],
+    "counter_effects": [
+      "May reduce turn-in response or stability."
+    ],
+    "helps_phases": [
+      "straight"
+    ],
+    "can_hurt_phases": [
+      "straight"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Reduce front toe scrub. Effect: Can reduce scrub-related speed loss. Counter-effect: May reduce turn-in response or stability. Watch: tight_entry, loose_entry. Validate: terminal_speed, steering_correction.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Reduce front toe scrub. Effect: Can reduce scrub-related speed loss. Counter-effect: May reduce turn-in response or stability. Watch: tight_entry, loose_entry. Validate: terminal_speed, steering_correction.",
+    "expected_improvement_targets": [
+      "terminal_speed",
+      "steering_correction"
+    ],
+    "watch_for_targets": [
+      "tight_entry",
+      "loose_entry"
+    ],
+    "evidence_priority": [
+      "speed_trace",
+      "steering",
+      "setup_snapshot"
+    ],
+    "evidence_missing_message": "Need speed_trace before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "low_straight_speed is repeatable in straight",
+      "drag_scrub is repeatable in straight"
+    ],
+    "avoid_when": [
+      "tight_entry is already the main complaint",
+      "loose_entry is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "medium",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "packer_height_legacy_swing",
+    "setup_area": "packer",
+    "direction": "Tune legacy packer height",
+    "driver_phrase": [
+      "transition"
+    ],
+    "applies_to": [
+      "legacy_oval_generic"
+    ],
+    "disabled_for": [
+      "next_gen"
+    ],
+    "helps": [
+      "front_platform_contact",
+      "platform_feed_issue"
+    ],
+    "can_hurt": [
+      "tight_center",
+      "shock_overactive"
+    ],
+    "effect_strength": 3,
+    "coupling_risk": "high",
+    "effect": "Can change legacy support timing where supported.",
+    "counter_effect": "May create harsh contact or reduce compliance.",
+    "test_language": "Try one small swing: Tune legacy packer height. Validate platform_contact, center_speed.",
+    "evidence_required": [
+      "platform_trace",
+      "travel",
+      "scrape"
+    ],
+    "validation_targets": [
+      "platform_contact",
+      "center_speed"
+    ],
+    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "cautions": [
+      "Use only when symptom phase and evidence agree."
+    ],
+    "primary_effects": [
+      "Can change legacy support timing where supported."
+    ],
+    "counter_effects": [
+      "May create harsh contact or reduce compliance."
+    ],
+    "helps_phases": [
+      "transition"
+    ],
+    "can_hurt_phases": [
+      "transition"
+    ],
+    "setup_package_tags": [],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval",
+      "short_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Tune legacy packer height. Effect: Can change legacy support timing where supported. Counter-effect: May create harsh contact or reduce compliance. Watch: tight_center, shock_overactive. Validate: platform_contact, center_speed.",
+    "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
+    "one_change_test_template": "Try one small swing: Tune legacy packer height. Effect: Can change legacy support timing where supported. Counter-effect: May create harsh contact or reduce compliance. Watch: tight_center, shock_overactive. Validate: platform_contact, center_speed.",
+    "expected_improvement_targets": [
+      "platform_contact",
+      "center_speed"
+    ],
+    "watch_for_targets": [
+      "tight_center",
+      "shock_overactive"
+    ],
+    "evidence_priority": [
+      "platform_trace",
+      "travel",
+      "scrape"
+    ],
+    "evidence_missing_message": "Need platform_trace before ranking this matrix-backed swing high.",
+    "preferred_when": [
+      "front_platform_contact is repeatable in transition",
+      "platform_feed_issue is repeatable in transition"
+    ],
+    "avoid_when": [
+      "tight_center is already the main complaint",
+      "shock_overactive is already the main complaint"
+    ],
+    "exact_value_policy": "small_swing",
+    "can_show_delta": true,
+    "delta_label": "small test swing",
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted"
   }
 ]

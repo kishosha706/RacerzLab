@@ -51,7 +51,18 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Keeps the car in a low, efficient platform window when the track and setup support it."
+    "driver_facing_explanation": "Keeps the car in a low, efficient platform window when the track and setup support it.",
+    "disabled_for": [],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "setup_areas_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ]
   },
   {
     "archetype_id": "front_feed_diffuser_package",
@@ -103,7 +114,18 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Uses front platform consistency to support derived diffuser feed behavior."
+    "driver_facing_explanation": "Uses front platform consistency to support derived diffuser feed behavior.",
+    "disabled_for": [],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "setup_areas_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ]
   },
   {
     "archetype_id": "high_front_low_rear_diffuser_feed_package",
@@ -157,7 +179,18 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Can keep front feed and rear outlet behavior in a useful relationship for a specific track state."
+    "driver_facing_explanation": "Can keep front feed and rear outlet behavior in a useful relationship for a specific track state.",
+    "disabled_for": [],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "setup_areas_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ]
   },
   {
     "archetype_id": "high_cross_stability_package",
@@ -211,7 +244,18 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Prioritizes rear security and driver confidence off the corner."
+    "driver_facing_explanation": "Prioritizes rear security and driver confidence off the corner.",
+    "disabled_for": [],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "setup_areas_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ]
   },
   {
     "archetype_id": "free_center_rotation_package",
@@ -261,7 +305,18 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Reduces steering demand and lets the car finish the corner."
+    "driver_facing_explanation": "Reduces steering demand and lets the car finish the corner.",
+    "disabled_for": [],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "setup_areas_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ]
   },
   {
     "archetype_id": "long_run_tire_protection_package",
@@ -313,7 +368,18 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Trades a little peak feel for repeatable tire trend."
+    "driver_facing_explanation": "Trades a little peak feel for repeatable tire trend.",
+    "disabled_for": [],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "setup_areas_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ]
   },
   {
     "archetype_id": "qualifying_speed_package",
@@ -363,7 +429,18 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Optimizes short-run speed and low-lap tire state."
+    "driver_facing_explanation": "Optimizes short-run speed and low-lap tire state.",
+    "disabled_for": [],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "setup_areas_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ]
   },
   {
     "archetype_id": "pack_stability_package",
@@ -413,7 +490,18 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Keeps the car predictable in traffic and turbulent platform states."
+    "driver_facing_explanation": "Keeps the car predictable in traffic and turbulent platform states.",
+    "disabled_for": [],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "setup_areas_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ]
   },
   {
     "archetype_id": "bumpy_track_compliance_package",
@@ -463,7 +551,18 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Lets the car absorb track impacts without losing the platform window."
+    "driver_facing_explanation": "Lets the car absorb track impacts without losing the platform window.",
+    "disabled_for": [],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "setup_areas_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ]
   },
   {
     "archetype_id": "shock_controlled_platform_package",
@@ -509,7 +608,18 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Uses dampers to shape transient platform behavior after the static package is close."
+    "driver_facing_explanation": "Uses dampers to shape transient platform behavior after the static package is close.",
+    "disabled_for": [],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "setup_areas_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ]
   },
   {
     "archetype_id": "spring_controlled_platform_package",
@@ -559,7 +669,18 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Uses spring support as the primary platform structure."
+    "driver_facing_explanation": "Uses spring support as the primary platform structure.",
+    "disabled_for": [],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "setup_areas_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ]
   },
   {
     "archetype_id": "arb_led_package",
@@ -611,6 +732,182 @@
       "diffuser_platform",
       "front_arb_diameter"
     ],
-    "driver_facing_explanation": "Uses bar diameter and arm position as the main roll balance architecture."
+    "driver_facing_explanation": "Uses bar diameter and arm position as the main roll balance architecture.",
+    "disabled_for": [],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "setup_areas_involved": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform",
+      "front_arb_diameter"
+    ]
+  },
+  {
+    "archetype_id": "tire_pressure_support_package",
+    "name": "Tire pressure support package",
+    "applies_to": [
+      "all"
+    ],
+    "why_fast": "Tire pressure support package captures the package behavior described in the master setup matrix.",
+    "common_risks": [
+      "Phase tradeoff if evidence is incomplete."
+    ],
+    "compensators": [
+      "one small swing",
+      "compare validation"
+    ],
+    "watch_evidence": [
+      "setup_snapshot",
+      "compare_baseline"
+    ],
+    "complaint_patterns": [
+      "falls off"
+    ],
+    "diagnostic_questions": [
+      "Does the evidence match this package pattern?"
+    ],
+    "likely_driver_complaints": [
+      "falls off"
+    ],
+    "stabilizers": [
+      "counter-effect check"
+    ],
+    "failure_modes": [
+      "Wrong phase diagnosis."
+    ],
+    "recommended_evidence_order": [
+      "driver complaint",
+      "setup snapshot",
+      "compare baseline/test"
+    ],
+    "what_it_looks_like": "Tire pressure support package uses tire_pressure, pressure_gain, tire_temp_spread as the common setup context.",
+    "setup_areas_commonly_involved": [
+      "tire_pressure",
+      "pressure_gain",
+      "tire_temp_spread"
+    ],
+    "driver_facing_explanation": "Tire pressure support package is a matrix-backed package archetype, not a universal setup value.",
+    "disabled_for": [],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "setup_areas_involved": [
+      "tire_pressure",
+      "pressure_gain",
+      "tire_temp_spread"
+    ]
+  },
+  {
+    "archetype_id": "toe_scrub_speed_package",
+    "name": "Toe-scrub speed package",
+    "applies_to": [
+      "all"
+    ],
+    "why_fast": "Toe-scrub speed package captures the package behavior described in the master setup matrix.",
+    "common_risks": [
+      "Phase tradeoff if evidence is incomplete."
+    ],
+    "compensators": [
+      "one small swing",
+      "compare validation"
+    ],
+    "watch_evidence": [
+      "setup_snapshot",
+      "compare_baseline"
+    ],
+    "complaint_patterns": [
+      "draggy"
+    ],
+    "diagnostic_questions": [
+      "Does the evidence match this package pattern?"
+    ],
+    "likely_driver_complaints": [
+      "draggy"
+    ],
+    "stabilizers": [
+      "counter-effect check"
+    ],
+    "failure_modes": [
+      "Wrong phase diagnosis."
+    ],
+    "recommended_evidence_order": [
+      "driver complaint",
+      "setup snapshot",
+      "compare baseline/test"
+    ],
+    "what_it_looks_like": "Toe-scrub speed package uses toe, front_toe_response, rear_toe_stability as the common setup context.",
+    "setup_areas_commonly_involved": [
+      "toe",
+      "front_toe_response",
+      "rear_toe_stability"
+    ],
+    "driver_facing_explanation": "Toe-scrub speed package is a matrix-backed package archetype, not a universal setup value.",
+    "disabled_for": [],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "setup_areas_involved": [
+      "toe",
+      "front_toe_response",
+      "rear_toe_stability"
+    ]
+  },
+  {
+    "archetype_id": "legacy_track_bar_rotation_package",
+    "name": "Legacy track-bar rotation package",
+    "applies_to": [
+      "legacy_oval_generic"
+    ],
+    "why_fast": "Legacy track-bar rotation package captures the package behavior described in the master setup matrix.",
+    "common_risks": [
+      "Phase tradeoff if evidence is incomplete."
+    ],
+    "compensators": [
+      "one small swing",
+      "compare validation"
+    ],
+    "watch_evidence": [
+      "setup_snapshot",
+      "compare_baseline"
+    ],
+    "complaint_patterns": [
+      "tight center"
+    ],
+    "diagnostic_questions": [
+      "Does the evidence match this package pattern?"
+    ],
+    "likely_driver_complaints": [
+      "tight center"
+    ],
+    "stabilizers": [
+      "counter-effect check"
+    ],
+    "failure_modes": [
+      "Wrong phase diagnosis."
+    ],
+    "recommended_evidence_order": [
+      "driver complaint",
+      "setup snapshot",
+      "compare baseline/test"
+    ],
+    "what_it_looks_like": "Legacy track-bar rotation package uses track_bar, truck_arm_mount as the common setup context.",
+    "setup_areas_commonly_involved": [
+      "track_bar",
+      "truck_arm_mount"
+    ],
+    "driver_facing_explanation": "Legacy track-bar rotation package is a matrix-backed package archetype, not a universal setup value.",
+    "disabled_for": [
+      "next_gen"
+    ],
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1"
+    ],
+    "setup_areas_involved": [
+      "track_bar",
+      "truck_arm_mount"
+    ]
   }
 ]

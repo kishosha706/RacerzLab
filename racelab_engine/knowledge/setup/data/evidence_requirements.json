@@ -323,5 +323,467 @@
         "confidence_boost": 0.15
       }
     ]
+  },
+  {
+    "requirement_id": "evidence_driver_complaint",
+    "symptom": "loose_exit",
+    "setup_area": "cross_weight",
+    "required_evidence": [
+      "driver_complaint"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need a parsed driver complaint before ranking setup swings.",
+    "evidence_groups": [
+      {
+        "group_id": "driver_complaint",
+        "label": "driver complaint",
+        "required": true,
+        "channels_or_context": [
+          "driver_complaint"
+        ],
+        "missing_message": "Need a parsed driver complaint before ranking setup swings.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_selected_lap_window",
+    "symptom": "tight_center",
+    "setup_area": "cross_weight",
+    "required_evidence": [
+      "selected_lap_window"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need a clean selected-zone window before calling this a setup swing.",
+    "evidence_groups": [
+      {
+        "group_id": "selected_lap_window",
+        "label": "selected lap/window",
+        "required": true,
+        "channels_or_context": [
+          "selected_lap_window"
+        ],
+        "missing_message": "Need a clean selected-zone window before calling this a setup swing.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_track_map_zone",
+    "symptom": "tight_center",
+    "setup_area": "cross_weight",
+    "required_evidence": [
+      "track_map_zone"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need a track-zone context before comparing phases.",
+    "evidence_groups": [
+      {
+        "group_id": "track_map_zone",
+        "label": "track map zone",
+        "required": true,
+        "channels_or_context": [
+          "track_map_zone"
+        ],
+        "missing_message": "Need a track-zone context before comparing phases.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_setup_snapshot",
+    "symptom": "tight_center",
+    "setup_area": "cross_weight",
+    "required_evidence": [
+      "setup_snapshot"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need setup snapshot before comparing static garage levers.",
+    "evidence_groups": [
+      {
+        "group_id": "setup_snapshot",
+        "label": "setup snapshot",
+        "required": true,
+        "channels_or_context": [
+          "setup_snapshot"
+        ],
+        "missing_message": "Need setup snapshot before comparing static garage levers.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_compare_baseline_test",
+    "symptom": "tight_center",
+    "setup_area": "cross_weight",
+    "required_evidence": [
+      "compare_baseline_test"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need Compare baseline before saying it worked.",
+    "evidence_groups": [
+      {
+        "group_id": "compare_baseline_test",
+        "label": "compare baseline/test",
+        "required": true,
+        "channels_or_context": [
+          "compare_baseline_test"
+        ],
+        "missing_message": "Need Compare baseline before saying it worked.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_front_ride_height_platform",
+    "symptom": "front_platform_contact",
+    "setup_area": "front_ride_height_platform",
+    "required_evidence": [
+      "front_ride_height_platform"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need front ride-height trace before making platform/front-feed calls.",
+    "evidence_groups": [
+      {
+        "group_id": "front_ride_height_platform",
+        "label": "front ride-height platform",
+        "required": true,
+        "channels_or_context": [
+          "front_ride_height_platform"
+        ],
+        "missing_message": "Need front ride-height trace before making platform/front-feed calls.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_cfs_front_feed",
+    "symptom": "front_feed_instability",
+    "setup_area": "front_ride_height_platform",
+    "required_evidence": [
+      "cfs_front_feed"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need CFS/front feed context before making front-feed calls.",
+    "evidence_groups": [
+      {
+        "group_id": "cfs_front_feed",
+        "label": "CFS/front feed",
+        "required": true,
+        "channels_or_context": [
+          "cfs_front_feed"
+        ],
+        "missing_message": "Need CFS/front feed context before making front-feed calls.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_rear_ride_height_platform",
+    "symptom": "rear_scrape",
+    "setup_area": "rear_ride_height_platform",
+    "required_evidence": [
+      "rear_ride_height_platform"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need rear ride-height trace before making rear outlet/scrape calls.",
+    "evidence_groups": [
+      {
+        "group_id": "rear_ride_height_platform",
+        "label": "rear ride-height platform",
+        "required": true,
+        "channels_or_context": [
+          "rear_ride_height_platform"
+        ],
+        "missing_message": "Need rear ride-height trace before making rear outlet/scrape calls.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_diffuser_proxy",
+    "symptom": "diffuser_instability",
+    "setup_area": "diffuser_platform",
+    "required_evidence": [
+      "diffuser_proxy"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need diffuser proxy context before calling diffuser behavior.",
+    "evidence_groups": [
+      {
+        "group_id": "diffuser_proxy",
+        "label": "diffuser proxy",
+        "required": true,
+        "channels_or_context": [
+          "diffuser_proxy"
+        ],
+        "missing_message": "Need diffuser proxy context before calling diffuser behavior.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_rear_scrape_scrub",
+    "symptom": "rear_scrape",
+    "setup_area": "rear_ride_height_platform",
+    "required_evidence": [
+      "rear_scrape_scrub"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need scrape/scrub evidence before calling contact drag.",
+    "evidence_groups": [
+      {
+        "group_id": "rear_scrape_scrub",
+        "label": "rear scrape/scrub",
+        "required": true,
+        "channels_or_context": [
+          "rear_scrape_scrub"
+        ],
+        "missing_message": "Need scrape/scrub evidence before calling contact drag.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_tire_temps",
+    "symptom": "tire_overwork",
+    "setup_area": "tire_pressure",
+    "required_evidence": [
+      "tire_temps"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need tire temperature evidence before calling tire work.",
+    "evidence_groups": [
+      {
+        "group_id": "tire_temps",
+        "label": "tire temps",
+        "required": true,
+        "channels_or_context": [
+          "tire_temps"
+        ],
+        "missing_message": "Need tire temperature evidence before calling tire work.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_tire_pressure_gain",
+    "symptom": "long_run_falloff",
+    "setup_area": "tire_pressure",
+    "required_evidence": [
+      "tire_pressure_gain"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need pressure gain before calling pressure trend.",
+    "evidence_groups": [
+      {
+        "group_id": "tire_pressure_gain",
+        "label": "tire pressure gain",
+        "required": true,
+        "channels_or_context": [
+          "tire_pressure_gain"
+        ],
+        "missing_message": "Need pressure gain before calling pressure trend.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_tire_wear",
+    "symptom": "tire_overwork",
+    "setup_area": "camber",
+    "required_evidence": [
+      "tire_wear"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need tire wear trend before calling long-run tire protection.",
+    "evidence_groups": [
+      {
+        "group_id": "tire_wear",
+        "label": "tire wear",
+        "required": true,
+        "channels_or_context": [
+          "tire_wear"
+        ],
+        "missing_message": "Need tire wear trend before calling long-run tire protection.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_shock_histogram",
+    "symptom": "shock_overactive",
+    "setup_area": "ls_rebound",
+    "required_evidence": [
+      "shock_histogram"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need live shock histogram before ranking shock changes high.",
+    "evidence_groups": [
+      {
+        "group_id": "shock_histogram",
+        "label": "shock histogram",
+        "required": true,
+        "channels_or_context": [
+          "shock_histogram"
+        ],
+        "missing_message": "Need live shock histogram before ranking shock changes high.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_shock_rms_activity",
+    "symptom": "shock_overactive",
+    "setup_area": "ls_rebound",
+    "required_evidence": [
+      "shock_rms_activity"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need selected-zone shock activity before calling damper overactivity.",
+    "evidence_groups": [
+      {
+        "group_id": "shock_rms_activity",
+        "label": "shock RMS/activity",
+        "required": true,
+        "channels_or_context": [
+          "shock_rms_activity"
+        ],
+        "missing_message": "Need selected-zone shock activity before calling damper overactivity.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_yaw_scrub_steering",
+    "symptom": "drag_scrub",
+    "setup_area": "toe",
+    "required_evidence": [
+      "yaw_scrub_steering"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need yaw, steering, or scrub evidence before calling drag/scrub.",
+    "evidence_groups": [
+      {
+        "group_id": "yaw_scrub_steering",
+        "label": "yaw/scrub/steering",
+        "required": true,
+        "channels_or_context": [
+          "yaw_scrub_steering"
+        ],
+        "missing_message": "Need yaw, steering, or scrub evidence before calling drag/scrub.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_speed_loss",
+    "symptom": "low_straight_speed",
+    "setup_area": "final_drive",
+    "required_evidence": [
+      "speed_loss"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need speed trace before calling straight speed loss.",
+    "evidence_groups": [
+      {
+        "group_id": "speed_loss",
+        "label": "speed loss",
+        "required": true,
+        "channels_or_context": [
+          "speed_loss"
+        ],
+        "missing_message": "Need speed trace before calling straight speed loss.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_brake_trace",
+    "symptom": "brake_entry_instability",
+    "setup_area": "brake_bias",
+    "required_evidence": [
+      "brake_trace"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need brake trace before calling brake-entry balance.",
+    "evidence_groups": [
+      {
+        "group_id": "brake_trace",
+        "label": "brake trace",
+        "required": true,
+        "channels_or_context": [
+          "brake_trace"
+        ],
+        "missing_message": "Need brake trace before calling brake-entry balance.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_throttle_pickup",
+    "symptom": "poor_drive_off",
+    "setup_area": "diff_preload",
+    "required_evidence": [
+      "throttle_pickup"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need throttle pickup evidence before calling drive-off.",
+    "evidence_groups": [
+      {
+        "group_id": "throttle_pickup",
+        "label": "throttle pickup",
+        "required": true,
+        "channels_or_context": [
+          "throttle_pickup"
+        ],
+        "missing_message": "Need throttle pickup evidence before calling drive-off.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_rpm_gear_limiter",
+    "symptom": "low_straight_speed",
+    "setup_area": "final_drive",
+    "required_evidence": [
+      "rpm_gear_limiter"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need RPM/gear/limiter evidence before calling gearing.",
+    "evidence_groups": [
+      {
+        "group_id": "rpm_gear_limiter",
+        "label": "RPM/gear/limiter",
+        "required": true,
+        "channels_or_context": [
+          "rpm_gear_limiter"
+        ],
+        "missing_message": "Need RPM/gear/limiter evidence before calling gearing.",
+        "confidence_boost": 0.25
+      }
+    ]
+  },
+  {
+    "requirement_id": "evidence_driver_survey_later",
+    "symptom": "loose_exit",
+    "setup_area": "cross_weight",
+    "required_evidence": [
+      "driver_survey_later"
+    ],
+    "optional_evidence": [],
+    "insufficient_wording": "Need driver survey result before saving quiet memory.",
+    "evidence_groups": [
+      {
+        "group_id": "driver_survey_later",
+        "label": "driver survey result later",
+        "required": true,
+        "channels_or_context": [
+          "driver_survey_later"
+        ],
+        "missing_message": "Need driver survey result before saving quiet memory.",
+        "confidence_boost": 0.25
+      }
+    ]
   }
 ]
