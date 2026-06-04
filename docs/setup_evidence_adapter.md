@@ -245,18 +245,22 @@ Tests include a guard that the adapter path does not fall back to
 
 The adapter preserves conservative wording:
 
-- diffuser context is reported as a derived geometry proxy, not measured
-  downforce
+- diffuser context is reported as a derived geometry proxy; normal Dial-In
+  output uses platform/support/front-feed/rear-outlet language instead of
+  force-claim wording
 - garage damper settings do not count as live shock telemetry
 - unknown car family and unknown track family produce warnings rather than hard
   failure
 
-## Future UI Integration
+## Dial-In Integration
 
-This milestone stops at the internal layer and CLI. A later UI can reuse the
-same `RunEvidenceContext` and `RunContextSetupQueryResult` objects without
-changing the deterministic matcher.
+The Dial-In Query Service and Setup tab panel reuse this evidence context but
+hide internals by default. Normal driver-facing output can say things like:
 
-The next backend layer on top of it is the Dial-In Query Service, which keeps
-these evidence factors hidden by default and returns a cleaner driver-facing
-payload.
+- `Data looks clean. High confidence.`
+- `I see some of it, but not all.`
+- `Need a cleaner run before ranking this strongly.`
+- `Compare baseline is missing.`
+
+Raw evidence flags, evidence groups, present/missing lists, ranking reasons,
+source IDs, and channel IDs belong in explicit debug/engineer mode only.

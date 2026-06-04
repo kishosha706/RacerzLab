@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,9 @@ def test_dial_in_api_returns_clean_response_by_default(tmp_path: Path, monkeypat
     assert len(payload["top_swings"]) <= 3
     assert "hidden_evidence_summary" not in payload
     assert "evidence_groups" not in payload
+    dumped = json.dumps(payload).lower()
+    assert "ai recommends" not in dumped
+    assert "guaranteed" not in dumped
 
 
 def test_dial_in_api_can_include_debug_evidence_when_requested(
@@ -42,6 +46,30 @@ def test_dial_in_api_can_include_debug_evidence_when_requested(
     assert payload["hidden_evidence_summary"]["evidence_flags"]
 
 
+def test_dial_in_api_normal_response_hides_diffuser_force_wording(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        channels={
+            "front_center_rh_in": 1.9,
+            "rear_center_rh_in": 2.6,
+            "smooth_center_rake_in": 0.7,
+            "diffuser_volume_ft3": 12.0,
+            "speed_mph": 185.0,
+        },
+    )
+    client = TestClient(app)
+
+    response = client.post("/api/runs/run-1/dial-in", json={"complaint": "rear scrape"})
+
+    assert response.status_code == 200
+    dumped = json.dumps(response.json()).lower()
+    assert "measured downforce" not in dumped
+    assert "hidden_evidence_summary" not in dumped
+
+
 def test_dial_in_api_returns_clarification_without_swings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_env(monkeypatch, tmp_path)
     _seed_run(tmp_path)
@@ -52,6 +80,7 @@ def test_dial_in_api_returns_clarification_without_swings(tmp_path: Path, monkey
     assert response.status_code == 200
     payload = response.json()
     assert payload["clarification"]["needed"] is True
+    assert payload["clarification"]["question"] == "Where is it happening?"
     assert payload["top_swings"] == []
     assert "hidden_evidence_summary" not in payload
 

@@ -51,7 +51,7 @@ def main() -> int:
     print(response.driver_message)
     if response.interpreted_phase:
         print(f"Phase: {response.interpreted_phase}")
-    print(f"Evidence status: {response.readiness_label}")
+    print(f"Data profile: {response.readiness_label}")
     print(f"Confidence: {response.confidence_label}")
 
     if response.clarification.needed:
@@ -67,12 +67,11 @@ def main() -> int:
         print("First swings I'd consider:")
         for index, swing in enumerate(response.top_swings, start=1):
             print(f"{index}. {swing.title}")
-            print(f"   Effect: {swing.effect}")
-            print(f"   Counter-effect: {swing.counter_effect}")
-            print(f"   Test: {swing.one_change_test}")
-            print(f"   Validate: {', '.join(swing.validate_with)}")
-            if swing.watch_for:
-                print(f"   Watch: {', '.join(swing.watch_for)}")
+            print(f"   Goal: {swing.effect}")
+            print(f"   The trade-off: {swing.counter_effect}")
+            print(f"   Your next test: {swing.one_change_test}")
+            watch_targets = list(dict.fromkeys([*swing.validate_with, *swing.watch_for]))
+            print(f"   What to watch for: {', '.join(watch_targets)}")
             print(f"   Readiness: {swing.readiness_label}")
 
     if response.next_step:

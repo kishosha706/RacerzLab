@@ -112,9 +112,17 @@ function cleanLabel(value: string | null | undefined, fallback = "Not mapped"): 
 
 function dialInTone(label: string): "good" | "warn" | "neutral" {
   const normalized = label.toLowerCase();
-  if (normalized.includes("ready") || normalized.includes("clear")) return "good";
-  if (normalized.includes("need") || normalized.includes("partial") || normalized.includes("risk")) return "warn";
+  if (normalized.includes("ready") || normalized.includes("clear") || normalized.includes("clean") || normalized.includes("high")) return "good";
+  if (normalized.includes("need") || normalized.includes("partial") || normalized.includes("risk") || normalized.includes("missing") || normalized.includes("some")) return "warn";
   return "neutral";
+}
+
+function swingKindLabel(strength: string, risk: string): string {
+  const combined = `${strength} ${risk}`.toLowerCase();
+  if (combined.includes("package") || combined.includes("big") || combined.includes("high risk")) return "Big swing";
+  if (combined.includes("balance")) return "Balance swing";
+  if (combined.includes("fine")) return "Fine-tune";
+  return "Feel polish";
 }
 
 function dialInEvidenceHints(response: DialInResponse): string[] {
@@ -200,7 +208,8 @@ function DialInPanel({ overview, baselineRunId }: { overview: RunOverview; basel
   const chooseClarification = useCallback((option: string) => {
     const base = response?.complaint_raw.trim() || complaint.trim();
     const normalized = base.toLowerCase();
-    const nextComplaint = normalized.includes(option.toLowerCase()) ? base : `${base} ${option}`;
+    const refinement = option === "Whole corner" ? "center" : option.toLowerCase();
+    const nextComplaint = normalized.includes(refinement) ? base : `${base} ${refinement}`;
     setComplaint(nextComplaint.trim());
     setResponse(null);
     setError(null);
@@ -213,7 +222,7 @@ function DialInPanel({ overview, baselineRunId }: { overview: RunOverview; basel
     <section className="dialin-panel" aria-labelledby="dialin-title">
       <div className="dialin-header">
         <div>
-          <h2 id="dialin-title"><ClipboardList size={15} /> Dial-In Assistant</h2>
+          <h2 id="dialin-title"><ClipboardList size={15} /> Crew Chief Dial-In</h2>
           <p>{overview.session.car_name ?? "Unknown car"}{overview.session.track_display_name || overview.session.track_name ? ` - ${overview.session.track_display_name ?? overview.session.track_name}` : ""}</p>
         </div>
         <span className="dialin-readonly">Read-only</span>
@@ -233,8 +242,8 @@ function DialInPanel({ overview, baselineRunId }: { overview: RunOverview; basel
           placeholder="Loose off, tight center, rear scrape..."
           aria-label="Driver complaint"
         />
-        <button className="secondary-button" type="submit" disabled={!canSubmit} title="Analyze complaint">
-          <Search size={14} /> {loading ? "Analyzing" : "Analyze"}
+        <button className="secondary-button" type="submit" disabled={!canSubmit} title="Check data and symptoms">
+          <Search size={14} /> {loading ? "Checking run data" : "Check Data & Symptoms"}
         </button>
         <button className="secondary-button" type="button" onClick={clearDialIn} disabled={!complaint && !response && !error} title="Clear complaint">
           <X size={14} /> Clear
@@ -244,12 +253,12 @@ function DialInPanel({ overview, baselineRunId }: { overview: RunOverview; basel
       {error && (
         <div className="dialin-alert" role="alert">
           <AlertTriangle size={14} />
-          <span>{error}</span>
+          <span>I couldn't run Dial-In on this run. Try again or check that the run is loaded.</span>
         </div>
       )}
 
       {!response && !error && (
-        <div className="dialin-empty">Enter the driver feel and the corner phase to get up to three one-change setup swings.</div>
+        <div className="dialin-empty">{loading ? "Checking your complaint against the run data..." : "Tell me what the car is doing, and I'll check the data."}</div>
       )}
 
       {response && (
@@ -268,7 +277,7 @@ function DialInPanel({ overview, baselineRunId }: { overview: RunOverview; basel
               <strong className={`dialin-pill ${dialInTone(response.confidence_label)}`}>{response.confidence_label}</strong>
             </div>
             <div>
-              <span>Readiness</span>
+              <span>Data Profile</span>
               <strong className={`dialin-pill ${dialInTone(response.readiness_label)}`}>{response.readiness_label}</strong>
             </div>
           </div>
@@ -295,7 +304,7 @@ function DialInPanel({ overview, baselineRunId }: { overview: RunOverview; basel
                   <header>
                     <div>
                       <span>{cleanLabel(swing.setup_area, "Setup area")}</span>
-                      <h3>{swing.title}</h3>
+                      <h3>{swingKindLabel(swing.strength_label, swing.risk_label)}: {swing.title}</h3>
                     </div>
                     <div className="dialin-card-pills">
                       <span className="dialin-mini-pill">{swing.strength_label}</span>
@@ -304,16 +313,12 @@ function DialInPanel({ overview, baselineRunId }: { overview: RunOverview; basel
                     </div>
                   </header>
                   <div className="dialin-action-grid">
-                    <div><span>Effect</span><p>{swing.effect}</p></div>
-                    <div><span>Counter-effect</span><p>{swing.counter_effect}</p></div>
-                    <div><span>One-change test</span><p>{swing.one_change_test}</p></div>
+                    <div><span>Goal</span><p>{swing.effect}</p></div>
+                    <div><span>The Trade-off</span><p>{swing.counter_effect}</p></div>
+                    <div><span>Your Next Test</span><p>{swing.one_change_test}</p></div>
                     <div>
-                      <span>Validate</span>
-                      <p>{swing.validate_with.join(", ") || "Like-for-like laps"}</p>
-                    </div>
-                    <div>
-                      <span>Watch</span>
-                      <p>{swing.watch_for.join(", ") || "Balance shift"}</p>
+                      <span>What to watch for</span>
+                      <p>{[...swing.validate_with, ...swing.watch_for].filter((item, index, all) => item && all.indexOf(item) === index).join(", ") || "Balance shift"}</p>
                     </div>
                   </div>
                 </article>
@@ -322,8 +327,8 @@ function DialInPanel({ overview, baselineRunId }: { overview: RunOverview; basel
           )}
 
           <div className="dialin-evidence-status">
-            <span>Evidence status</span>
-            <strong>{response.validation_summary ?? response.next_step ?? response.readiness_label}</strong>
+            <span>Data Profile</span>
+            <strong>{response.next_step ?? response.readiness_label}</strong>
             {hints.length > 0 && (
               <div className="dialin-chip-row">
                 {hints.map((hint) => <span className="dialin-chip" key={hint}>{hint}</span>)}

@@ -5409,6 +5409,12 @@ button:focus:not(:focus-visible) {
   align-items: center;
 }
 
+.dialin-input-row .secondary-button {
+  min-height: 34px;
+  justify-content: center;
+  white-space: normal;
+}
+
 .dialin-input {
   min-width: 0;
   height: 34px;

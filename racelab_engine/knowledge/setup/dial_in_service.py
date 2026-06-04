@@ -9,11 +9,11 @@ from .matcher import RankedSetupEffect, parse_symptom
 
 
 STRENGTH_LABELS = {
-    1: "Driver feel",
-    2: "Fine tuning",
-    3: "Phase-specific",
-    4: "Strong balance lever",
-    5: "Major package lever",
+    1: "Feel polish",
+    2: "Fine-tune",
+    3: "Balance swing",
+    4: "Big swing",
+    5: "Package-level lever",
 }
 RISK_LABELS = {
     "low": "Low risk",
@@ -21,11 +21,13 @@ RISK_LABELS = {
     "high": "High risk",
 }
 CANDIDATE_READINESS_LABELS = {
-    "ready": "Ready",
-    "partially_ready": "Partial",
-    "missing_key_evidence": "Needs key evidence",
+    "ready": "Data clean",
+    "partially_ready": "Some data missing",
+    "missing_key_evidence": "Need cleaner data",
 }
 GENERIC_COMPLAINTS = {"loose", "tight", "push", "free", "bad", "weird", "off"}
+GENERIC_CLARIFICATION_QUESTION = "Where is it happening?"
+GENERIC_CLARIFICATION_OPTIONS = ["Entry", "Center", "Exit", "Whole corner", "On brake", "On throttle"]
 
 
 def _normalize_complaint(value: str) -> str:
@@ -62,12 +64,12 @@ def _evidence_status_hint(context_warnings: list[str], *, baseline_run_id: str |
 
 def _readiness_label(candidate_readiness: list[str], *, missing_hint: str | None) -> str:
     if not candidate_readiness:
-        return "Needs more evidence"
+        return "Need cleaner data"
     if all(item == "ready" for item in candidate_readiness) and not missing_hint:
-        return "Evidence ready"
+        return "Data looks clean"
     if all(item == "missing_key_evidence" for item in candidate_readiness):
-        return "Needs more evidence"
-    return "Evidence partial"
+        return "Need cleaner data"
+    return "I see some of it"
 
 
 def _is_major_package_swing(effect: RankedSetupEffect) -> bool:
@@ -122,17 +124,29 @@ def _validation_summary(swings: list[DialInSwing]) -> str | None:
                 targets.append(target)
     if not targets:
         return None
-    return f"Validate with: {', '.join(targets[:5])}."
+    return f"What to watch for: {', '.join(targets[:5])}."
 
 
 def _readiness_sentence(readiness_label: str) -> str:
-    if readiness_label == "Evidence ready":
-        return "The evidence is ready enough to compare one swing at a time."
-    if readiness_label == "Evidence partial":
-        return "The evidence is partial, so keep this to one small swing and validate it."
-    if readiness_label == "Needs more evidence":
-        return "I need stronger run evidence before I rank setup swings."
+    if readiness_label == "Data looks clean":
+        return "Data looks clean. High confidence."
+    if readiness_label == "I see some of it":
+        return "I see some of it, but not all. Pick one. Just one."
+    if readiness_label == "Need cleaner data":
+        return "Need a cleaner run before ranking this strongly."
     return f"Readiness: {readiness_label}."
+
+
+def _driver_warnings(warnings: list[str], *, include_debug_evidence: bool) -> list[str]:
+    if include_debug_evidence:
+        return warnings
+    cleaned: list[str] = []
+    for warning in warnings:
+        if "measured downforce" in warning.lower():
+            cleaned.append("Derived diffuser geometry proxy is available. Treat it as geometry context.")
+        else:
+            cleaned.append(warning)
+    return cleaned
 
 
 def _driver_message(
@@ -143,12 +157,12 @@ def _driver_message(
     swings: list[DialInSwing],
 ) -> str:
     if not interpreted_symptom:
-        return f'I could not map "{complaint}" to a supported setup complaint yet.'
+        return f'I could not map "{complaint}" to a supported setup complaint yet. Try a cleaner run or narrow the complaint.'
     opening = f"You said {complaint}. I'm reading that as {interpreted_symptom.replace('_', ' ')}."
     if not swings:
         if missing_hint:
-            return f"{opening} I need stronger run evidence before I rank setup swings. {missing_hint}"
-        return f"{opening} I need stronger run evidence before I rank setup swings."
+            return f"{opening} Need a cleaner run before ranking this strongly. {missing_hint}"
+        return f"{opening} Need a cleaner run before ranking this strongly."
     if missing_hint:
         return f"{opening} {_readiness_sentence(readiness_label)} {missing_hint}"
     return f"{opening} {_readiness_sentence(readiness_label)}"
@@ -206,22 +220,28 @@ def build_dial_in_response(
             run_id=run_id,
             complaint_raw=complaint,
             confidence_label=_confidence_label(complaint, needs_clarification=False, supported=False),
-            readiness_label="Needs more evidence",
-            driver_message=f'I could not map "{complaint}" to a supported setup complaint yet.',
-            next_step="Try naming the phase or the main behavior first.",
+            readiness_label="Need cleaner data",
+            driver_message=f'I could not map "{complaint}" to a supported setup complaint yet. Try a cleaner run or narrow the complaint.',
+            next_step="Try naming the phase, trigger, or main behavior first.",
             clarification=Clarification(needed=False),
-            warnings=context.warnings,
+            warnings=_driver_warnings(context.warnings, include_debug_evidence=include_debug_evidence),
         )
 
+    normalized_complaint = _normalize_complaint(complaint)
+    question = parsed.clarification_question
+    options = parsed.clarification_options
+    if question is not None and normalized_complaint in GENERIC_COMPLAINTS:
+        question = GENERIC_CLARIFICATION_QUESTION
+        options = GENERIC_CLARIFICATION_OPTIONS
     clarification = Clarification(
-        needed=parsed.clarification_question is not None,
-        question=parsed.clarification_question,
-        options=parsed.clarification_options,
+        needed=question is not None,
+        question=question,
+        options=options,
     )
     confidence_label = _confidence_label(complaint, needs_clarification=clarification.needed, supported=True)
 
     if clarification.needed:
-        message = f"Before I call a setup swing, I need the phase. {parsed.clarification_question}"
+        message = f"I need to narrow it down. {clarification.question}"
         return DialInResponse(
             run_id=run_id,
             complaint_raw=complaint,
@@ -229,11 +249,11 @@ def build_dial_in_response(
             interpreted_phase=parsed.phase,
             balance_direction=_balance_label(parsed.balance),
             confidence_label=confidence_label,
-            readiness_label="Needs more evidence",
+            readiness_label="Need cleaner data",
             driver_message=message,
-            next_step="Answer the clarification first, then test one change at a time.",
+            next_step="Answer the clarification first. Then pick one change, not a handful.",
             clarification=clarification,
-            warnings=context.warnings,
+            warnings=_driver_warnings(context.warnings, include_debug_evidence=include_debug_evidence),
             hidden_evidence_summary=_hidden_summary(
                 query_setup_for_run_context(
                     run_id,
@@ -273,8 +293,8 @@ def build_dial_in_response(
     )
     readiness_label = _readiness_label([item.readiness for item in selected], missing_hint=missing_hint)
     next_step = "Test one swing at a time and compare like-for-like laps."
-    if readiness_label == "Needs more evidence":
-        next_step = "I can name general areas, but I need stronger run evidence before ranking them high."
+    if readiness_label == "Need cleaner data":
+        next_step = "Data's noisy here. Try a cleaner run or narrow the complaint."
     if missing_hint:
         next_step = f"{next_step} {missing_hint}"
 
@@ -292,5 +312,5 @@ def build_dial_in_response(
         validation_summary=_validation_summary(swings),
         clarification=clarification,
         hidden_evidence_summary=_hidden_summary(query_result, context) if include_debug_evidence else None,
-        warnings=context.warnings,
+        warnings=_driver_warnings(context.warnings, include_debug_evidence=include_debug_evidence),
     )

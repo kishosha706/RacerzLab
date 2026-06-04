@@ -21,8 +21,8 @@ Output:
 - interpreted symptom
 - interpreted phase
 - clean top setup swings
-- one-change test language
-- compact confidence and evidence-readiness labels
+- crew-chief-style next-test language
+- compact confidence and data-profile labels
 - clarification when the complaint is too generic
 
 ## Hidden Evidence Philosophy
@@ -79,13 +79,13 @@ Default output stays short and crew-chief-like. Debug detail is opt-in through
 
 ## Clarification Behavior
 
-Generic complaints such as `loose`, `tight`, `push`, or `free` return
+Generic complaints such as `loose`, `tight`, `push`, `free`, `bad`, or `weird` return
 clarification instead of pretending certainty.
 
 Example:
 
 ```text
-Before I call a setup swing, I need the phase. Where does the rear first step out?
+I need to narrow it down. Where is it happening?
 ```
 
 No high-confidence swing list is returned until the phase is clear.
@@ -104,12 +104,12 @@ car/track/package overrides, a result limit, and `include_debug_evidence`.
 The Setup tab renders the clean response by default:
 
 - interpreted complaint
-- confidence/readiness
+- confidence/data profile
 - up to three setup swings
-- effect and counter-effect
-- one-change test
-- validate/watch targets
-- compact evidence status
+- goal and trade-off
+- your next test
+- what to watch for
+- compact data profile
 
 Clarification options are shown when the complaint is too broad. Selecting an
 option only refines the complaint text; RacerZLab never edits setup files.

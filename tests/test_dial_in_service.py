@@ -31,6 +31,17 @@ def test_generic_loose_returns_clarification_needed(tmp_path: Path, monkeypatch:
     _seed_run(tmp_path)
     response = build_dial_in_response("run-1", "loose")
     assert response.clarification.needed is True
+    assert response.clarification.question == "Where is it happening?"
+    assert response.clarification.options == ["Entry", "Center", "Exit", "Whole corner", "On brake", "On throttle"]
+    assert response.top_swings == []
+
+
+def test_generic_tight_returns_clarification_needed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path)
+    response = build_dial_in_response("run-1", "tight")
+    assert response.clarification.needed is True
+    assert response.clarification.question == "Where is it happening?"
     assert response.top_swings == []
 
 
@@ -87,6 +98,7 @@ def test_driver_response_avoids_bad_product_phrases(tmp_path: Path, monkeypatch:
     text = json.dumps(response.model_dump(exclude_none=True)).lower()
     assert "guaranteed" not in text
     assert "ai recommends" not in text
+    assert "measured downforce" not in text
 
 
 def test_next_gen_response_never_includes_legacy_disabled_areas(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -139,6 +151,25 @@ def test_diffuser_candidate_wording_does_not_claim_measured_downforce(tmp_path: 
     response = build_dial_in_response("run-1", "rear scrape", include_debug_evidence=True)
     combined = " ".join([swing.effect + " " + swing.counter_effect for swing in response.top_swings]).lower()
     assert "measured downforce" not in combined
+
+
+def test_normal_diffuser_response_uses_proxy_safe_language(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        channels={
+            "front_center_rh_in": 1.9,
+            "rear_center_rh_in": 2.6,
+            "smooth_center_rake_in": 0.7,
+            "diffuser_volume_ft3": 12.0,
+            "speed_mph": 185.0,
+        },
+    )
+    response = build_dial_in_response("run-1", "rear scrape")
+    text = json.dumps(response.model_dump(exclude_none=True)).lower()
+    assert "measured downforce" not in text
+    assert "diffuser" in text
+    assert "proxy" in text
 
 
 def test_shock_histogram_wording_does_not_say_proves_setup_change(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
