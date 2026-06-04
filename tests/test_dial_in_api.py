@@ -42,6 +42,20 @@ def test_dial_in_api_can_include_debug_evidence_when_requested(
     assert payload["hidden_evidence_summary"]["evidence_flags"]
 
 
+def test_dial_in_api_returns_clarification_without_swings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path)
+    client = TestClient(app)
+
+    response = client.post("/api/runs/run-1/dial-in", json={"complaint": "loose"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["clarification"]["needed"] is True
+    assert payload["top_swings"] == []
+    assert "hidden_evidence_summary" not in payload
+
+
 def test_dial_in_api_returns_404_for_unknown_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_env(monkeypatch, tmp_path)
     client = TestClient(app)

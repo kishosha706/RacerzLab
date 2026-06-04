@@ -71,6 +71,24 @@ def test_top_swings_include_one_change_test_and_validate_with(tmp_path: Path, mo
     assert first.validate_with
 
 
+def test_one_change_test_uses_concise_driver_language(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, channels={"throttle_pct": 100.0, "yaw_rate": 1.2})
+    response = build_dial_in_response("run-1", "loose off")
+    assert response.top_swings
+    assert "Effect:" not in response.top_swings[0].one_change_test
+    assert "Counter-effect:" not in response.top_swings[0].one_change_test
+
+
+def test_driver_response_avoids_bad_product_phrases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, channels={"throttle_pct": 100.0, "yaw_rate": 1.2})
+    response = build_dial_in_response("run-1", "loose off")
+    text = json.dumps(response.model_dump(exclude_none=True)).lower()
+    assert "guaranteed" not in text
+    assert "ai recommends" not in text
+
+
 def test_next_gen_response_never_includes_legacy_disabled_areas(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_env(monkeypatch, tmp_path)
     _seed_run(

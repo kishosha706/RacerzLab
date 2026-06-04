@@ -5550,6 +5550,18 @@ button:focus:not(:focus-visible) {
   line-height: 1.25;
 }
 
+.dialin-chip-button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.dialin-chip-button:hover,
+.dialin-chip-button:focus-visible {
+  border-color: rgba(56, 189, 248, 0.52);
+  color: #dbeafe;
+  outline: none;
+}
+
 .dialin-swings {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

@@ -75,6 +75,19 @@ python -B scripts/query_setup_knowledge.py --car-family next_gen --symptom "drag
 python -B scripts/query_setup_knowledge.py --car-family next_gen --symptom "loose off" --json
 ```
 
+## Dial-In Driver Response
+
+The Dial-In service and Setup tab panel use this package as a deterministic
+setup brain. Driver-facing output stays clean: interpreted complaint,
+confidence/readiness, up to three setup swings, effect/counter-effect,
+one-change test, and validate/watch targets. Backend evidence can be inspected
+with explicit debug flags, but normal UI/API output hides raw evidence groups,
+ranking scores, source IDs, and channel lists.
+
+Clarification is part of the safety model. Generic complaints such as `loose`
+or `tight` ask for phase before returning setup swings. Unknown car family stays
+conservative and does not unlock legacy-only levers.
+
 ## Milestones
 
 Milestone 1 created the local schema, seed data, validator, matcher, query CLI,
@@ -82,7 +95,9 @@ and tests. Milestone 2 enriched ranking with package context, evidence
 readiness, clearer effect/counter-effect explanations, ARB specificity, and
 Next Gen platform wording. The pre-3B quality pass tightened phase specificity,
 package dependency notes, candidate diversity, and validation checks. Milestone
-3B adds the run-aware Evidence Adapter and run-context query CLI.
+3B added the run-aware Evidence Adapter and run-context query CLI. The Dial-In
+milestone added the clean service contract, API route, CLI, and read-only Setup
+tab panel.
 
 ## Example Output
 

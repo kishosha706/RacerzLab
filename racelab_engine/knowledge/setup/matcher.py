@@ -158,6 +158,11 @@ def _format_reason(template: str, *, parsed: SymptomVocabularyEntry, phase: str,
 
 
 def _one_change_test(effect: SetupEffect) -> str:
+    if effect.test_language:
+        lower = effect.test_language.lower()
+        if "one" in lower or "single" in lower or "package test" in lower:
+            return effect.test_language
+        return f"Try one swing: {effect.test_language}"
     validate = ", ".join(effect.validation_targets)
     watch = ", ".join(effect.watch_for_targets) if effect.watch_for_targets else "phase balance"
     if effect.exact_value_policy == "reference_only":

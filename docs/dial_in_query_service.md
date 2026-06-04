@@ -10,6 +10,7 @@ It sits on top of:
 - local setup knowledge
 - source-backed guide digestion
 - the run-aware Evidence Adapter
+- the read-only Setup tab Dial-In panel
 
 Input:
 
@@ -84,10 +85,34 @@ clarification instead of pretending certainty.
 Example:
 
 ```text
-I need the phase before I would call a swing. Where does the rear first step out?
+Before I call a setup swing, I need the phase. Where does the rear first step out?
 ```
 
 No high-confidence swing list is returned until the phase is clear.
+
+## API and UI
+
+The service is exposed through:
+
+```text
+POST /api/runs/{run_id}/dial-in
+```
+
+The request accepts a driver complaint, optional compare run IDs, optional
+car/track/package overrides, a result limit, and `include_debug_evidence`.
+
+The Setup tab renders the clean response by default:
+
+- interpreted complaint
+- confidence/readiness
+- up to three setup swings
+- effect and counter-effect
+- one-change test
+- validate/watch targets
+- compact evidence status
+
+Clarification options are shown when the complaint is too broad. Selecting an
+option only refines the complaint text; RacerZLab never edits setup files.
 
 ## Candidate Filtering
 
@@ -121,19 +146,7 @@ python -B scripts/query_dial_in.py --run-id <RUN_ID> --complaint "loose" --debug
 
 That mode is for development and inspection, not default driver-facing output.
 
-## Why No UI Yet
-
-This milestone is intentionally backend-only:
-
-- no React panel
-- no crew-chief chat surface
-- no memory layer
-- no survey flow
-
-The service is meant to stabilize the response contract before a read-only UI
-panel or API wrapper is added.
-
 ## Next Step
 
-The natural next step is a read-only Dial-In UI panel that renders the clean
-response by default and only exposes debug evidence in a developer mode.
+The natural next step is quiet memory: storing useful driver feedback and
+validated setup tests after the read-only guidance flow has proven stable.

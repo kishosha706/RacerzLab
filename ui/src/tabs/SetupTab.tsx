@@ -197,6 +197,15 @@ function DialInPanel({ overview, baselineRunId }: { overview: RunOverview; basel
     setError(null);
   }, []);
 
+  const chooseClarification = useCallback((option: string) => {
+    const base = response?.complaint_raw.trim() || complaint.trim();
+    const normalized = base.toLowerCase();
+    const nextComplaint = normalized.includes(option.toLowerCase()) ? base : `${base} ${option}`;
+    setComplaint(nextComplaint.trim());
+    setResponse(null);
+    setError(null);
+  }, [complaint, response]);
+
   const hints = response ? dialInEvidenceHints(response) : [];
   const canSubmit = complaint.trim().length > 0 && !loading;
 
@@ -271,7 +280,9 @@ function DialInPanel({ overview, baselineRunId }: { overview: RunOverview; basel
               <strong>{response.clarification.question ?? "Clarify the complaint phase."}</strong>
               <div className="dialin-chip-row">
                 {response.clarification.options.map((option) => (
-                  <span className="dialin-chip" key={option}>{option}</span>
+                  <button className="dialin-chip dialin-chip-button" key={option} type="button" onClick={() => chooseClarification(option)}>
+                    {option}
+                  </button>
                 ))}
               </div>
             </div>

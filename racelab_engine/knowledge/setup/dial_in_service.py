@@ -125,6 +125,16 @@ def _validation_summary(swings: list[DialInSwing]) -> str | None:
     return f"Validate with: {', '.join(targets[:5])}."
 
 
+def _readiness_sentence(readiness_label: str) -> str:
+    if readiness_label == "Evidence ready":
+        return "The evidence is ready enough to compare one swing at a time."
+    if readiness_label == "Evidence partial":
+        return "The evidence is partial, so keep this to one small swing and validate it."
+    if readiness_label == "Needs more evidence":
+        return "I need stronger run evidence before I rank setup swings."
+    return f"Readiness: {readiness_label}."
+
+
 def _driver_message(
     complaint: str,
     interpreted_symptom: str | None,
@@ -137,11 +147,11 @@ def _driver_message(
     opening = f"You said {complaint}. I'm reading that as {interpreted_symptom.replace('_', ' ')}."
     if not swings:
         if missing_hint:
-            return f"{opening} I can give general areas, but I need stronger evidence before ranking them. {missing_hint}"
-        return f"{opening} I can give general areas, but I need stronger evidence before ranking them."
+            return f"{opening} I need stronger run evidence before I rank setup swings. {missing_hint}"
+        return f"{opening} I need stronger run evidence before I rank setup swings."
     if missing_hint:
-        return f"{opening} {readiness_label}. {missing_hint}"
-    return f"{opening} {readiness_label}."
+        return f"{opening} {_readiness_sentence(readiness_label)} {missing_hint}"
+    return f"{opening} {_readiness_sentence(readiness_label)}"
 
 
 def _hidden_summary(result, context) -> HiddenEvidenceSummary:
@@ -211,7 +221,7 @@ def build_dial_in_response(
     confidence_label = _confidence_label(complaint, needs_clarification=clarification.needed, supported=True)
 
     if clarification.needed:
-        message = f'I need the phase before I would call a swing. {parsed.clarification_question}'
+        message = f"Before I call a setup swing, I need the phase. {parsed.clarification_question}"
         return DialInResponse(
             run_id=run_id,
             complaint_raw=complaint,
@@ -221,7 +231,7 @@ def build_dial_in_response(
             confidence_label=confidence_label,
             readiness_label="Needs more evidence",
             driver_message=message,
-            next_step="Answer the clarification, then test one change at a time.",
+            next_step="Answer the clarification first, then test one change at a time.",
             clarification=clarification,
             warnings=context.warnings,
             hidden_evidence_summary=_hidden_summary(
@@ -262,9 +272,9 @@ def build_dial_in_response(
         test_run_id=test_run_id if context.unavailable_reasons.get("compare_test") else None,
     )
     readiness_label = _readiness_label([item.readiness for item in selected], missing_hint=missing_hint)
-    next_step = "Try one small swing at a time and compare like-for-like laps."
+    next_step = "Test one swing at a time and compare like-for-like laps."
     if readiness_label == "Needs more evidence":
-        next_step = "I can give general areas, but I need stronger run evidence before I rank them high."
+        next_step = "I can name general areas, but I need stronger run evidence before ranking them high."
     if missing_hint:
         next_step = f"{next_step} {missing_hint}"
 
