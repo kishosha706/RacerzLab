@@ -24,6 +24,7 @@ TARGET_LABELS = {
     "center_rotation": "center rotation",
     "center_speed": "center speed",
     "correction_count": "correction count",
+    "cfs_height": "CFS height",
     "drag_scrub": "drag/scrub",
     "drive_off": "drive-off",
     "driver_input_timing": "driver input timing",
@@ -31,6 +32,7 @@ TARGET_LABELS = {
     "entry_stability": "entry stability",
     "entry_yaw": "entry yaw",
     "exit_yaw": "exit yaw",
+    "exit_drive": "exit drive",
     "front_contact": "front contact",
     "front_height": "front height",
     "front_platform_contact": "front platform contact",
@@ -46,14 +48,18 @@ TARGET_LABELS = {
     "platform_stability": "platform stability",
     "poor_drive_off": "poor drive-off",
     "rear_height": "rear height",
+    "rear_float": "rear float",
+    "rear_scrape_margin": "rear scrape margin",
     "rear_slip": "rear slip",
     "rear_tire_trend": "rear tire trend",
+    "rf_tire_temp": "RF tire temp",
     "ride_height_trace": "ride-height trace",
     "scrape": "scrape",
     "speed_loss": "speed loss",
     "speed_trace": "speed trace",
     "steering_correction": "steering correction",
     "steering_trace": "steering trace",
+    "steering_load": "steering load",
     "straight_speed": "straight speed",
     "throttle_pickup": "throttle pickup",
     "tight_center": "tight center",
@@ -65,6 +71,9 @@ TARGET_LABELS = {
     "transition_yaw": "transition yaw",
     "turn_in_response": "turn-in response",
     "unstable_exit": "unstable exit",
+}
+AREA_LABELS = {
+    "final_drive": "rear end ratio",
 }
 
 
@@ -80,6 +89,10 @@ def _display_readiness(readiness: str) -> str:
 
 def _format_target_label(value: str) -> str:
     return TARGET_LABELS.get(value, value.replace("_", " "))
+
+
+def _format_area_label(value: str) -> str:
+    return AREA_LABELS.get(value, value.replace("_", " "))
 
 
 def _format_targets(values: list[str]) -> str:
@@ -136,7 +149,7 @@ def main() -> int:
         present = ", ".join(ranked.evidence_matched) if ranked.evidence_matched else "none"
         print()
         print(f"Candidate {index}: {effect.direction}")
-        print(f"Area: {effect.setup_area}")
+        print(f"Area: {_format_area_label(effect.setup_area)}")
         print(f"Strength: {effect.effect_strength} / {strength_label}")
         print(f"Risk: {effect.coupling_risk}")
         print(f"Effect: {effect.effect}")

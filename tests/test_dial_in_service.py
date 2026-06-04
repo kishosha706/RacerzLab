@@ -140,7 +140,23 @@ def test_driver_response_avoids_bad_product_phrases(tmp_path: Path, monkeypatch:
     text = json.dumps(response.model_dump(exclude_none=True)).lower()
     assert "guaranteed" not in text
     assert "ai recommends" not in text
+    assert "ai interpretation" not in text
+    assert "diagnosis" not in text
+    assert "evidence factor" not in text
+    assert "rank score" not in text
+    assert "confidence float" not in text
+    assert "evidence_id" not in text
+    assert "matcher" not in text
     assert "measured downforce" not in text
+
+
+def test_driver_response_uses_data_profile_language(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, channels={"throttle_pct": 100.0, "yaw_rate": 1.2})
+    response = build_dial_in_response("run-1", "loose off")
+    combined = " ".join([response.readiness_label, response.driver_message, response.next_step or ""]).lower()
+    assert "data profile" in combined or "cleaner run" in combined
+    assert "confidence score" not in combined
 
 
 def test_next_gen_response_never_includes_legacy_disabled_areas(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

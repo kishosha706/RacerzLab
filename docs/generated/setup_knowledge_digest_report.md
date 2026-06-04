@@ -97,11 +97,11 @@ Generated from reviewed local JSON records derived from the RacerZLab master set
 - Inspect dynamic traces by zone: Inspect platform, shock, tire, speed, and yaw traces in the same corner zone before naming a setup direction.
 
 ## Shock Interpretation Rules
-- Compression: Bump/compression means the shock is shortening.
-- Rebound: Rebound means the shock is extending.
-- Low-speed shock range: Low-speed shock movement is the driver-input/body-motion region.
-- High-speed shock range: High-speed shock movement is the bumps/track-impact region.
-- Shock histogram: A shock histogram is evidence: the percent of valid samples in shaft velocity bins. It is not a command by itself.
+- Compression: Bump / compression means the shock is shortening.
+- Rebound: Rebound (extension) means the shock is extending.
+- Low-speed shock range: Low-speed shock movement is the driver/platform movement region.
+- High-speed shock range: High-speed shock movement is the track/bump movement region.
+- Shock histogram: A shock histogram is a live movement signature: the percent of valid samples in shaft velocity bins. It is evidence, not a command by itself.
 - Shock change strength: Shock changes are often fine tuning unless selected-zone evidence points to bumps, transitions, or platform control.
 - Shock comparison discipline: Use same bins, same selected zone, same lap window, and same scale when comparing shock histograms.
 

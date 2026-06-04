@@ -186,7 +186,7 @@
     "disabled_for": [],
     "effect_strength_default": 3,
     "coupling_risk_default": "high",
-    "what_it_changes": "Static preload, ride height, and corner weight together.",
+    "what_it_changes": "Ride height, spring preload, and corner weight together.",
     "phases": [
       "entry",
       "center",
@@ -211,7 +211,7 @@
     ],
     "unavailable_when": [],
     "common_confusions": [
-      "Shock collar changes static preload, ride height, and corner weight together."
+      "Shock collar changes ride height, spring preload, and corner weight together."
     ],
     "static_or_live": "static_setup"
   },
@@ -263,7 +263,7 @@
     "disabled_for": [],
     "effect_strength_default": 4,
     "coupling_risk_default": "high",
-    "what_it_changes": "Front ride-height platform, CFS/front splitter reference, and LF/RF ride-height behavior.",
+    "what_it_changes": "CFS/front feed plus LF/RF ride-height behavior.",
     "phases": [
       "entry",
       "center",
@@ -302,7 +302,7 @@
     "disabled_for": [],
     "effect_strength_default": 4,
     "coupling_risk_default": "high",
-    "what_it_changes": "Rear ride-height platform, diffuser outlet behavior, and throttle-on stability.",
+    "what_it_changes": "Rear outlet/expansion and scrape/choke context.",
     "phases": [
       "center",
       "exit",
@@ -341,7 +341,7 @@
     "disabled_for": [],
     "effect_strength_default": 4,
     "coupling_risk_default": "high",
-    "what_it_changes": "Derived diffuser geometry proxy behavior, not measured downforce.",
+    "what_it_changes": "Derived platform geometry for the diffuser proxy window, not measured downforce.",
     "phases": [
       "center",
       "exit",
@@ -385,7 +385,7 @@
     "disabled_for": [],
     "effect_strength_default": 4,
     "coupling_risk_default": "high",
-    "what_it_changes": "Diagonal load relationship, usually LR + RF, that can add security or bind center.",
+    "what_it_changes": "LR + RF diagonal load relationship that can add security or bind center.",
     "phases": [
       "entry",
       "center",
@@ -459,7 +459,7 @@
     "disabled_for": [],
     "effect_strength_default": 5,
     "coupling_risk_default": "high",
-    "what_it_changes": "Front ARB diameter package choice; this is the big bar stiffness family.",
+    "what_it_changes": "Diameter is the big front bar package choice.",
     "phases": [
       "entry",
       "center"
@@ -497,7 +497,7 @@
     "disabled_for": [],
     "effect_strength_default": 4,
     "coupling_risk_default": "high",
-    "what_it_changes": "Front ARB arm position; this is the smaller stiffness tuning choice.",
+    "what_it_changes": "Front ARB arm position P1-P5; this is the smaller stiffness tuning choice.",
     "phases": [
       "entry",
       "center"
@@ -533,7 +533,7 @@
     "disabled_for": [],
     "effect_strength_default": 3,
     "coupling_risk_default": "high",
-    "what_it_changes": "Front ARB preload detail; this changes static bar load and asymmetry feel.",
+    "what_it_changes": "Front ARB preload changes static/dynamic bar load and can mask ride-height or corner-weight problems.",
     "phases": [
       "entry",
       "center"
@@ -569,7 +569,7 @@
     "disabled_for": [],
     "effect_strength_default": 2,
     "coupling_risk_default": "medium",
-    "what_it_changes": "Procedure and attachment state for the front bar.",
+    "what_it_changes": "Front ARB attach procedure/diagnostic state, not a normal race recommendation.",
     "phases": [
       "entry",
       "center"
@@ -605,7 +605,7 @@
     "disabled_for": [],
     "effect_strength_default": 5,
     "coupling_risk_default": "high",
-    "what_it_changes": "Rear ARB diameter package choice; this is the big bar stiffness family.",
+    "what_it_changes": "Diameter is the big rear bar package choice.",
     "phases": [
       "center",
       "exit"
@@ -643,7 +643,7 @@
     "disabled_for": [],
     "effect_strength_default": 4,
     "coupling_risk_default": "high",
-    "what_it_changes": "Rear ARB arm position; this is the smaller stiffness tuning choice.",
+    "what_it_changes": "Rear ARB arm position P1-P5; this is the smaller stiffness tuning choice.",
     "phases": [
       "center",
       "exit"
@@ -679,7 +679,7 @@
     "disabled_for": [],
     "effect_strength_default": 3,
     "coupling_risk_default": "high",
-    "what_it_changes": "Rear ARB preload detail; this changes static bar load and throttle transition feel.",
+    "what_it_changes": "Rear ARB preload changes static/dynamic bar load and can mask ride-height or corner-weight problems.",
     "phases": [
       "center",
       "exit"
@@ -715,7 +715,7 @@
     "disabled_for": [],
     "effect_strength_default": 2,
     "coupling_risk_default": "medium",
-    "what_it_changes": "Procedure and attachment state for the rear bar.",
+    "what_it_changes": "Rear ARB attach procedure/diagnostic state, not a normal race recommendation.",
     "phases": [
       "center",
       "exit"
@@ -1246,7 +1246,7 @@
     "disabled_for": [],
     "effect_strength_default": 3,
     "coupling_risk_default": "medium",
-    "what_it_changes": "Relationship between tire pressures across an axle or diagonal; name the tire pair before changing it.",
+    "what_it_changes": "LR/RR rear tire pressure relationship when rear split is the target; name the tire pair before changing it.",
     "phases": [
       "entry",
       "center",
@@ -1927,7 +1927,7 @@
     "disabled_for": [],
     "effect_strength_default": 3,
     "coupling_risk_default": "medium",
-    "what_it_changes": "Live shock movement evidence for setup digestion, not garage damper clicks.",
+    "what_it_changes": "Live movement signature; it shows where the shock spent time, not what to change by itself.",
     "phases": [
       "entry",
       "center",

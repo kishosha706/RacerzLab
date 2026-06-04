@@ -21,8 +21,8 @@ RISK_LABELS = {
     "high": "High risk",
 }
 CANDIDATE_READINESS_LABELS = {
-    "ready": "Data clean",
-    "partially_ready": "Some data missing",
+    "ready": "Data profile clean",
+    "partially_ready": "Data profile partial",
     "missing_key_evidence": "Need cleaner data",
 }
 GENERIC_COMPLAINTS = {"loose", "tight", "push", "free", "bad", "weird", "off"}
@@ -66,10 +66,10 @@ def _readiness_label(candidate_readiness: list[str], *, missing_hint: str | None
     if not candidate_readiness:
         return "Need cleaner data"
     if all(item == "ready" for item in candidate_readiness) and not missing_hint:
-        return "Data looks clean"
+        return "Data profile looks clean"
     if all(item == "missing_key_evidence" for item in candidate_readiness):
         return "Need cleaner data"
-    return "I see some of it"
+    return "Data profile is partial"
 
 
 def _is_major_package_swing(effect: RankedSetupEffect) -> bool:
@@ -128,12 +128,12 @@ def _validation_summary(swings: list[DialInSwing]) -> str | None:
 
 
 def _readiness_sentence(readiness_label: str) -> str:
-    if readiness_label == "Data looks clean":
-        return "Data looks clean. High confidence."
-    if readiness_label == "I see some of it":
-        return "I see some of it, but not all. Pick one. Just one."
+    if readiness_label == "Data profile looks clean":
+        return "Data profile looks clean. High confidence."
+    if readiness_label == "Data profile is partial":
+        return "Data profile is partial. Pick one change and validate it."
     if readiness_label == "Need cleaner data":
-        return "Need a cleaner run before ranking this strongly."
+        return "I need a cleaner run to be sure."
     return f"Readiness: {readiness_label}."
 
 
@@ -161,8 +161,8 @@ def _driver_message(
     opening = f"You said {complaint}. I'm reading that as {interpreted_symptom.replace('_', ' ')}."
     if not swings:
         if missing_hint:
-            return f"{opening} Need a cleaner run before ranking this strongly. {missing_hint}"
-        return f"{opening} Need a cleaner run before ranking this strongly."
+            return f"{opening} I need a cleaner run to be sure. {missing_hint}"
+        return f"{opening} I need a cleaner run to be sure."
     if missing_hint:
         return f"{opening} {_readiness_sentence(readiness_label)} {missing_hint}"
     return f"{opening} {_readiness_sentence(readiness_label)}"

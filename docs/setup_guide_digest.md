@@ -26,6 +26,18 @@ outlet/expansion and scrape/choke context, and diffuser metrics are derived
 geometry proxies rather than measured downforce. Shock histogram language stays
 as evidence for a phase/zone-specific call, not proof by itself.
 
+The terminology pass keeps guide output driver-centered. Cross weight is written
+fully, rear tire pressure split names the LR/RR relationship when supported,
+ARB diameter/arm/preload/attach are distinct, shock collar is described as ride
+height plus preload plus corner weight, and NASCAR-facing gearing copy uses
+`rear end ratio`. Added vocabulary examples include `RF is angry`, `won't stay
+on bottom`, `nose is dragging`, `aero wash`, `rear steps out`, and `curb
+instability`.
+
+Hidden evidence remains debug-only. Normal output uses Data Profile and Signals
+language and avoids matcher scores, evidence IDs, raw channels, and software
+phrases such as AI recommendations or diagnosis.
+
 This is local and deterministic. It does not call external AI, add API keys,
 build a crew-chief UI, alter telemetry formulas, change imports, or change
 public API schemas.

@@ -2,7 +2,7 @@
   {
     "rule_id": "compression_shortening",
     "topic": "Compression",
-    "wording": "Bump/compression means the shock is shortening.",
+    "wording": "Bump / compression means the shock is shortening.",
     "applies_to": [
       "all"
     ],
@@ -14,7 +14,7 @@
   {
     "rule_id": "rebound_extending",
     "topic": "Rebound",
-    "wording": "Rebound means the shock is extending.",
+    "wording": "Rebound (extension) means the shock is extending.",
     "applies_to": [
       "all"
     ],
@@ -26,7 +26,7 @@
   {
     "rule_id": "low_speed_region",
     "topic": "Low-speed shock range",
-    "wording": "Low-speed shock movement is the driver-input/body-motion region.",
+    "wording": "Low-speed shock movement is the driver/platform movement region.",
     "applies_to": [
       "all"
     ],
@@ -41,7 +41,7 @@
   {
     "rule_id": "high_speed_region",
     "topic": "High-speed shock range",
-    "wording": "High-speed shock movement is the bumps/track-impact region.",
+    "wording": "High-speed shock movement is the track/bump movement region.",
     "applies_to": [
       "all"
     ],
@@ -56,7 +56,7 @@
   {
     "rule_id": "histogram_definition",
     "topic": "Shock histogram",
-    "wording": "A shock histogram is evidence: the percent of valid samples in shaft velocity bins. It is not a command by itself.",
+    "wording": "A shock histogram is a live movement signature: the percent of valid samples in shaft velocity bins. It is evidence, not a command by itself.",
     "applies_to": [
       "all"
     ],

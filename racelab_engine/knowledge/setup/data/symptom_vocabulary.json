@@ -804,12 +804,16 @@
       "tight_exit",
       "drag_scrub"
     ],
-    "clarification_question": null,
+    "clarification_question": "Does it push as soon as you touch the gas?",
     "raw_intensity_hint": "medium",
     "trigger_hint": [
       "center"
     ],
-    "clarification_options": [],
+    "clarification_options": [
+      "pushes on gas",
+      "pushes rolling center",
+      "drifts up late"
+    ],
     "common_secondary_symptoms": [
       "tight_exit",
       "drag_scrub"
@@ -1034,7 +1038,7 @@
   },
   {
     "phrase": "won't take a set",
-    "canonical_symptom": "unstable_entry",
+    "canonical_symptom": "platform_instability",
     "phase": "entry",
     "balance": "stability",
     "confidence_prior": 0.78,
@@ -1042,12 +1046,16 @@
       "front_feed_instability",
       "shock_overactive"
     ],
-    "clarification_question": null,
+    "clarification_question": "Does it feel like it is floating, or just slow to point?",
     "raw_intensity_hint": "medium",
     "trigger_hint": [
       "entry"
     ],
-    "clarification_options": [],
+    "clarification_options": [
+      "floating",
+      "slow to point",
+      "bouncing"
+    ],
     "common_secondary_symptoms": [
       "front_feed_instability",
       "shock_overactive"
@@ -1122,12 +1130,16 @@
       "tight_center",
       "long_run_falloff"
     ],
-    "clarification_question": null,
+    "clarification_question": "Are you seeing high RF temps, wear, or just a push?",
     "raw_intensity_hint": "medium",
     "trigger_hint": [
       "long_run"
     ],
-    "clarification_options": [],
+    "clarification_options": [
+      "high RF temps",
+      "RF wear",
+      "push"
+    ],
     "common_secondary_symptoms": [
       "tight_center",
       "long_run_falloff"
@@ -1150,6 +1162,445 @@
     "clarification_options": [],
     "common_secondary_symptoms": [
       "drag_scrub"
+    ]
+  },
+  {
+    "phrase": "RF is angry",
+    "canonical_symptom": "tire_overwork",
+    "phase": "long_run",
+    "balance": "tire",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "tight_center",
+      "drag_scrub"
+    ],
+    "clarification_question": "Are you seeing high RF temps, wear, or just a push?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "long_run",
+      "center"
+    ],
+    "clarification_options": [
+      "high RF temps",
+      "RF wear",
+      "push"
+    ],
+    "common_secondary_symptoms": [
+      "tight_center",
+      "drag_scrub"
+    ]
+  },
+  {
+    "phrase": "LR is loaded",
+    "canonical_symptom": "tight_exit",
+    "phase": "exit",
+    "balance": "understeer",
+    "confidence_prior": 0.74,
+    "possible_secondary": [
+      "cross_weight",
+      "drag_scrub"
+    ],
+    "clarification_question": "Is the car bound up on exit, or is the LR just showing load in the data?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit"
+    ],
+    "clarification_options": [
+      "bound up exit",
+      "data-only load",
+      "tight center"
+    ],
+    "common_secondary_symptoms": [
+      "tight_center",
+      "drag_scrub"
+    ]
+  },
+  {
+    "phrase": "nose is dragging",
+    "canonical_symptom": "front_platform_contact",
+    "phase": "entry",
+    "balance": "platform",
+    "confidence_prior": 0.8,
+    "possible_secondary": [
+      "front_feed_instability",
+      "low_straight_speed"
+    ],
+    "clarification_question": "Is it bouncing, sparking, or a constant drag?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "entry",
+      "straight"
+    ],
+    "clarification_options": [
+      "bouncing",
+      "sparking",
+      "constant drag"
+    ],
+    "common_secondary_symptoms": [
+      "front_feed_instability",
+      "low_straight_speed"
+    ]
+  },
+  {
+    "phrase": "lazy turn-in",
+    "canonical_symptom": "tight_entry",
+    "phase": "turn_in",
+    "balance": "understeer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "front_feed_instability",
+      "steering_response"
+    ],
+    "clarification_question": "Is it slow to point, or does it point then wash?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "turn_in",
+      "entry"
+    ],
+    "clarification_options": [
+      "slow to point",
+      "points then washes",
+      "only in traffic"
+    ],
+    "common_secondary_symptoms": [
+      "front_feed_instability"
+    ]
+  },
+  {
+    "phrase": "no drive off",
+    "canonical_symptom": "poor_drive_off",
+    "phase": "exit",
+    "balance": "traction",
+    "confidence_prior": 0.82,
+    "possible_secondary": [
+      "loose_exit",
+      "tight_exit"
+    ],
+    "clarification_question": "Is it spinning, lazy, or bound up when you pick up throttle?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit",
+      "throttle"
+    ],
+    "clarification_options": [
+      "spinning",
+      "lazy",
+      "bound up"
+    ],
+    "common_secondary_symptoms": [
+      "loose_exit",
+      "tight_exit"
+    ]
+  },
+  {
+    "phrase": "splitter dragging",
+    "canonical_symptom": "front_platform_contact",
+    "phase": "straight",
+    "balance": "platform",
+    "confidence_prior": 0.82,
+    "possible_secondary": [
+      "front_feed_instability",
+      "low_straight_speed"
+    ],
+    "clarification_question": "Is the splitter touching constantly, or only in a high-load zone?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "straight",
+      "entry"
+    ],
+    "clarification_options": [
+      "constant",
+      "high-load zone",
+      "unknown"
+    ],
+    "common_secondary_symptoms": [
+      "front_feed_instability",
+      "low_straight_speed"
+    ]
+  },
+  {
+    "phrase": "slow in traffic",
+    "canonical_symptom": "aero_understeer",
+    "phase": "center",
+    "balance": "platform",
+    "confidence_prior": 0.74,
+    "possible_secondary": [
+      "platform_instability",
+      "tight_center"
+    ],
+    "clarification_question": "Is it worse in traffic than clean air?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "traffic",
+      "center"
+    ],
+    "clarification_options": [
+      "traffic only",
+      "same solo",
+      "worse behind cars"
+    ],
+    "common_secondary_symptoms": [
+      "platform_instability",
+      "tight_center"
+    ]
+  },
+  {
+    "phrase": "aero wash",
+    "canonical_symptom": "aero_understeer",
+    "phase": "center",
+    "balance": "platform",
+    "confidence_prior": 0.74,
+    "possible_secondary": [
+      "platform_instability",
+      "tight_center"
+    ],
+    "clarification_question": "Is it worse in traffic or solo?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "traffic",
+      "center"
+    ],
+    "clarification_options": [
+      "traffic",
+      "solo",
+      "both"
+    ],
+    "common_secondary_symptoms": [
+      "platform_instability",
+      "tight_center"
+    ]
+  },
+  {
+    "phrase": "rear steps out",
+    "canonical_symptom": "loose_exit",
+    "phase": "exit",
+    "balance": "oversteer",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "unstable_exit"
+    ],
+    "clarification_question": "Is it on throttle pickup, brake release, or steady state?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit",
+      "transition"
+    ],
+    "clarification_options": [
+      "throttle pickup",
+      "brake release",
+      "steady state"
+    ],
+    "common_secondary_symptoms": [
+      "unstable_exit"
+    ]
+  },
+  {
+    "phrase": "entry understeer",
+    "canonical_symptom": "tight_entry",
+    "phase": "entry",
+    "balance": "understeer",
+    "confidence_prior": 0.82,
+    "possible_secondary": [
+      "front_feed_instability"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "entry"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "front_feed_instability"
+    ]
+  },
+  {
+    "phrase": "mid-corner understeer",
+    "canonical_symptom": "tight_center",
+    "phase": "center",
+    "balance": "understeer",
+    "confidence_prior": 0.82,
+    "possible_secondary": [
+      "drag_scrub"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "center"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "drag_scrub"
+    ]
+  },
+  {
+    "phrase": "power oversteer",
+    "canonical_symptom": "loose_exit",
+    "phase": "exit",
+    "balance": "oversteer",
+    "confidence_prior": 0.82,
+    "possible_secondary": [
+      "poor_drive_off",
+      "unstable_exit"
+    ],
+    "clarification_question": null,
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "exit",
+      "throttle"
+    ],
+    "clarification_options": [],
+    "common_secondary_symptoms": [
+      "poor_drive_off",
+      "unstable_exit"
+    ]
+  },
+  {
+    "phrase": "lift-off oversteer",
+    "canonical_symptom": "loose_entry",
+    "phase": "entry",
+    "balance": "oversteer",
+    "confidence_prior": 0.8,
+    "possible_secondary": [
+      "brake_entry_instability"
+    ],
+    "clarification_question": "Is it on lift only, or after brake pressure starts?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "entry",
+      "brake_release"
+    ],
+    "clarification_options": [
+      "lift only",
+      "on brake",
+      "brake release"
+    ],
+    "common_secondary_symptoms": [
+      "brake_entry_instability"
+    ]
+  },
+  {
+    "phrase": "trailing-throttle oversteer",
+    "canonical_symptom": "loose_entry",
+    "phase": "entry",
+    "balance": "oversteer",
+    "confidence_prior": 0.8,
+    "possible_secondary": [
+      "brake_entry_instability"
+    ],
+    "clarification_question": "Is it on lift only, or after brake pressure starts?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "entry",
+      "brake_release"
+    ],
+    "clarification_options": [
+      "lift only",
+      "on brake",
+      "brake release"
+    ],
+    "common_secondary_symptoms": [
+      "brake_entry_instability"
+    ]
+  },
+  {
+    "phrase": "brake instability",
+    "canonical_symptom": "brake_entry_instability",
+    "phase": "entry",
+    "balance": "braking",
+    "confidence_prior": 0.8,
+    "possible_secondary": [
+      "loose_entry"
+    ],
+    "clarification_question": "Is it rear instability, lockup, or wheel hop?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "braking",
+      "entry"
+    ],
+    "clarification_options": [
+      "rear instability",
+      "lockup",
+      "wheel hop"
+    ],
+    "common_secondary_symptoms": [
+      "loose_entry",
+      "shock_overactive"
+    ]
+  },
+  {
+    "phrase": "curb instability",
+    "canonical_symptom": "shock_overactive",
+    "phase": "transition",
+    "balance": "shock",
+    "confidence_prior": 0.76,
+    "possible_secondary": [
+      "platform_instability"
+    ],
+    "clarification_question": "Is it only over curbs or also over bumps?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "curb",
+      "transition"
+    ],
+    "clarification_options": [
+      "curbs only",
+      "bumps too",
+      "platform contact"
+    ],
+    "common_secondary_symptoms": [
+      "platform_instability"
+    ]
+  },
+  {
+    "phrase": "platform instability",
+    "canonical_symptom": "platform_instability",
+    "phase": "transition",
+    "balance": "platform",
+    "confidence_prior": 0.78,
+    "possible_secondary": [
+      "front_feed_instability",
+      "diffuser_instability"
+    ],
+    "clarification_question": "Is it front feed, rear platform, or over bumps?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "transition",
+      "platform"
+    ],
+    "clarification_options": [
+      "front feed",
+      "rear platform",
+      "bumps"
+    ],
+    "common_secondary_symptoms": [
+      "front_feed_instability",
+      "diffuser_instability"
+    ]
+  },
+  {
+    "phrase": "unstable over crest",
+    "canonical_symptom": "platform_instability",
+    "phase": "transition",
+    "balance": "platform",
+    "confidence_prior": 0.76,
+    "possible_secondary": [
+      "shock_overactive",
+      "loose_entry"
+    ],
+    "clarification_question": "Is the instability on compression, crest release, or landing?",
+    "raw_intensity_hint": "medium",
+    "trigger_hint": [
+      "crest",
+      "transition"
+    ],
+    "clarification_options": [
+      "compression",
+      "crest release",
+      "landing"
+    ],
+    "common_secondary_symptoms": [
+      "shock_overactive",
+      "loose_entry"
     ]
   },
   {

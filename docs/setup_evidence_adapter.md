@@ -257,10 +257,12 @@ The adapter preserves conservative wording:
 The Dial-In Query Service and Setup tab panel reuse this evidence context but
 hide internals by default. Normal driver-facing output can say things like:
 
-- `Data looks clean. High confidence.`
-- `I see some of it, but not all.`
-- `Need a cleaner run before ranking this strongly.`
+- `Data profile looks clean. High confidence.`
+- `Data profile is partial.`
+- `I need a cleaner run to be sure.`
 - `Compare baseline is missing.`
+- `Live shock data is missing.`
+- `Tire data is too short for a strong read.`
 
 Raw evidence flags, evidence groups, present/missing lists, ranking reasons,
 source IDs, and channel IDs belong in explicit debug/engineer mode only.

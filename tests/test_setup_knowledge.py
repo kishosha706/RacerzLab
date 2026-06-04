@@ -75,6 +75,31 @@ def test_loose_off_next_gen_ranks_expected_candidate_styles():
     assert {"cross_weight", "rear_ride_height_platform", "tire_pressure", "ls_rebound"}.issubset(areas)
 
 
+def test_racing_terms_parse_to_expected_context():
+    knowledge = load_setup_knowledge()
+    expected = {
+        "won't stay on bottom": ("tight_center", "center", "Does it push as soon as you touch the gas?"),
+        "RF is angry": ("tire_overwork", "long_run", "Are you seeing high RF temps, wear, or just a push?"),
+        "nose is dragging": ("front_platform_contact", "entry", "Is it bouncing, sparking, or a constant drag?"),
+        "won't take a set": ("platform_instability", "entry", "Does it feel like it is floating, or just slow to point?"),
+        "aero wash": ("aero_understeer", "center", "Is it worse in traffic or solo?"),
+        "rear steps out": ("loose_exit", "exit", "Is it on throttle pickup, brake release, or steady state?"),
+        "entry understeer": ("tight_entry", "entry", None),
+        "mid-corner understeer": ("tight_center", "center", None),
+        "power oversteer": ("loose_exit", "exit", None),
+        "lift-off oversteer": ("loose_entry", "entry", "Is it on lift only, or after brake pressure starts?"),
+        "brake instability": ("brake_entry_instability", "entry", "Is it rear instability, lockup, or wheel hop?"),
+        "curb instability": ("shock_overactive", "transition", "Is it only over curbs or also over bumps?"),
+        "platform instability": ("platform_instability", "transition", "Is it front feed, rear platform, or over bumps?"),
+        "unstable over crest": ("platform_instability", "transition", "Is the instability on compression, crest release, or landing?"),
+    }
+    for phrase, (symptom, phase, question) in expected.items():
+        parsed = parse_symptom(phrase, knowledge)
+        assert parsed.canonical_symptom == symptom
+        assert parsed.phase == phase
+        assert parsed.clarification_question == question
+
+
 def test_cross_weight_effects_use_full_setup_term():
     effects = {effect.effect_id: effect for effect in load_setup_knowledge().setup_effects}
     add_cross = effects["add_crossweight_small"]
@@ -251,6 +276,14 @@ def test_shock_rules_do_not_say_histogram_alone_proves_change():
         assert "histogram alone confirms" not in text
 
 
+def test_shock_histogram_wording_is_movement_evidence_not_command():
+    histogram = next(rule for rule in load_setup_knowledge().shock_interpretation if rule.rule_id == "histogram_definition")
+    text = histogram.wording.lower()
+    assert "movement signature" in text
+    assert "evidence" in text
+    assert "not a command" in text
+
+
 def test_shock_effect_text_does_not_overstate_histogram_evidence():
     for effect in load_setup_knowledge().setup_effects:
         if effect.setup_area in {"ls_compression", "ls_rebound", "hs_compression", "hs_rebound", "hs_comp_slope"}:
@@ -355,6 +388,9 @@ def test_cli_text_contains_package_and_preferred_context():
     )
     assert "Package notes:" in completed.stdout
     assert "Preferred when:" in completed.stdout
+    assert "Taller rear end ratio" in completed.stdout
+    assert "Area: rear end ratio" in completed.stdout
+    assert "Taller final drive" not in completed.stdout
 
 
 def test_no_effect_uses_banned_certainty_language():

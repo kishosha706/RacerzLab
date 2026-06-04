@@ -27,7 +27,7 @@ Output:
 
 ## Hidden Evidence Philosophy
 
-Evidence factors still drive:
+Signals still drive:
 
 - ranking
 - readiness
@@ -41,6 +41,9 @@ But default responses do not expose:
 - full evidence-group dumps
 - internal scoring
 - full ranking-reason lists
+- internal confidence values
+- evidence IDs
+- ranking scores
 
 Default output stays short and crew-chief-like. Debug detail is opt-in through
 `include_debug_evidence=True` or `--debug-evidence`.
@@ -125,6 +128,19 @@ loose-exit stability swing.
 Internal target IDs such as `exit_yaw`, `rear_tire_trend`, and
 `long_run_falloff` stay stable in JSON, but normal text/UI output formats them
 as human labels like `exit yaw`, `rear tire trend`, and `long-run falloff`.
+NASCAR-facing driver text uses `rear end ratio` for final-drive gearing.
+
+## Terminology Remaster
+
+The vocabulary parser accepts common oval and road-course phrases such as
+`won't stay on bottom`, `RF is angry`, `nose is dragging`, `won't take a set`,
+`aero wash`, `rear steps out`, `entry understeer`, `power oversteer`, and
+`curb instability`. Ambiguous phrases keep a compact clarification question
+instead of forcing certainty.
+
+Normal Dial-In copy uses `Symptom Interpretation`, `Signals`, and `Data Profile`
+language. Software-first recommendation, diagnosis, matcher-score, and raw
+evidence identifier wording belongs outside normal driver output.
 
 ## Candidate Filtering
 

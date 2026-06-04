@@ -35,6 +35,12 @@ Milestone 3B adds the Evidence Adapter: a local run-context layer that inspects
 available evidence, detects conservative car/track family hints, and feeds real
 evidence flags into the deterministic matcher.
 
+The terminology remaster adds race-language vocabulary and display wording for
+phrases such as `won't stay on bottom`, `RF is angry`, `nose is dragging`,
+`won't take a set`, `aero wash`, `power oversteer`, and `curb instability`.
+Normal output keeps software internals hidden and speaks in data-profile,
+signals, goal/trade-off, and one-change-test language.
+
 ## Schema And Data
 
 Core schema sections:
@@ -102,7 +108,9 @@ Next Gen ARB model:
 
 Diameter options are `1.375` and `2.000`. Arm positions are `P1` through `P5`.
 Diameter is a big package swing, arm position is a tuning swing, preload is a
-load/detail swing, and attach state is a setup/procedure state.
+load/detail swing that can mask ride-height or corner-weight problems, and
+attach state is a procedure/diagnostic state rather than a normal race
+recommendation.
 
 ## Platform And Shock Notes
 
@@ -115,11 +123,12 @@ Rear height alone does not determine rear aero behavior, front higher than rear
 is not automatically wrong, lower is not automatically faster, and static rake
 sign does not decide if a setup is good.
 
-Shock interpretation distinguishes compression/shortening, rebound/extending,
-low-speed body-motion regions, high-speed bump/impact regions, and selected-zone
-histogram evidence. A shock histogram is evidence, not a setup command; it must
-agree with the complaint phase, driver inputs, platform trace, and same-zone
-behavior before ranking a shock swing high.
+Shock interpretation distinguishes bump/compression shortening, rebound
+(extension), low-speed driver/platform movement, high-speed track/bump
+movement, and selected-zone histogram evidence. A shock histogram is a movement
+signature and evidence, not a setup command; it must agree with the complaint
+phase, driver inputs, platform trace, and same-zone behavior before ranking a
+shock swing high.
 
 Setup packages are first-class context. Crossweight, platform, spring, shock,
 ARB, toe, tire-pressure, and tire-protection candidates can be right or wrong
@@ -148,8 +157,8 @@ Effect: Can calm entry-to-drive-off balance by adding cross weight diagonal supp
 Counter-effect: May bind the center or add scrub if the car was already loaded too tightly.
 Evidence: missing key evidence
 One-change test: Try one small swing: Add a little cross weight...
-Validate: exit_yaw, center_speed, tire_trend
-Watch for: tight_center, tight_exit, drag_scrub
+Validate: exit yaw, center speed, tire trend
+Watch for: exit yaw, RF tire temp, center rotation
 ```
 
 Driver-facing setup text should use the full setup term and explain confusing
@@ -157,6 +166,11 @@ relationships compactly. Cross weight is the LR + RF diagonal load
 relationship. Tire pressure split guidance should name the axle, diagonal, or
 tire pair where the matrix supports it, and UI/CLI display should format stable
 internal IDs as readable labels for drivers.
+
+For NASCAR-facing setup copy, use `rear end ratio` instead of `final drive`.
+Diffuser/platform wording must stay on derived geometry proxy, front-feed,
+rear-outlet, scrape/contact, and speed-trend language. It must not claim
+measured downforce or universal exact setup values.
 
 The next layer after source digestion is now implemented: the Evidence Adapter
 translates local telemetry context, Compare run presence, setup snapshots, and

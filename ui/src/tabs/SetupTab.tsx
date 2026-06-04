@@ -105,6 +105,10 @@ function formatDelta(baseline: SetupDiffValue, current: SetupDiffValue, decimals
 
 function cleanLabel(value: string | null | undefined, fallback = "Not mapped"): string {
   if (!value) return fallback;
+  const aliases: Record<string, string> = {
+    final_drive: "Rear End Ratio",
+  };
+  if (aliases[value]) return aliases[value];
   return value
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
@@ -131,11 +135,13 @@ const TARGET_LABELS: Record<string, string> = {
   center_rotation: "center rotation",
   center_speed: "center speed",
   correction_count: "correction count",
+  cfs_height: "CFS height",
   drag_scrub: "drag/scrub",
   drive_off: "drive-off",
   entry_balance: "entry balance",
   entry_stability: "entry stability",
   entry_yaw: "entry yaw",
+  exit_drive: "exit drive",
   exit_yaw: "exit yaw",
   front_contact: "front contact",
   front_height: "front height",
@@ -149,14 +155,18 @@ const TARGET_LABELS: Record<string, string> = {
   phase_balance: "phase balance",
   platform_rate: "platform rate",
   platform_stability: "platform stability",
+  rear_float: "rear float",
   rear_height: "rear height",
+  rear_scrape_margin: "rear scrape margin",
   rear_slip: "rear slip",
   rear_tire_trend: "rear tire trend",
+  rf_tire_temp: "RF tire temp",
   ride_height_trace: "ride-height trace",
   scrape: "scrape",
   speed_loss: "speed loss",
   speed_trace: "speed trace",
   steering_correction: "steering correction",
+  steering_load: "steering load",
   steering_trace: "steering trace",
   throttle_pickup: "throttle pickup",
   tight_center: "tight center",
@@ -657,7 +667,7 @@ export function SetupTab({ overview }: SetupTabProps) {
                 return null;
               })()
             } u="%" />
-            <Field l="Final Drive" v={evNum(setup, "final_drive_ratio")} u=":1" />
+            <Field l="Rear End Ratio" v={evNum(setup, "final_drive_ratio")} u=":1" />
           </div>
         </div>
 
