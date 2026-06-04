@@ -215,7 +215,7 @@ Evidence:
 Parsed symptom:
 - loose_exit
 
-Candidate 1: Add a little cross
+Candidate 1: Add a little cross weight
 Strength: 4 / strong balance lever
 Risk: high
 Evidence: partially ready

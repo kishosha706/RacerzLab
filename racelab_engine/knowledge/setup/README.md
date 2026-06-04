@@ -104,13 +104,13 @@ tab panel.
 Text output is designed to be readable in PowerShell:
 
 ```text
-Candidate 1: Add a little cross
+Candidate 1: Add a little cross weight
 Strength: 4 / strong balance lever
 Risk: high
 Effect: Can calm entry-to-drive-off balance by adding diagonal support.
 Counter-effect: May bind the center or add scrub if the car was already loaded too tightly.
 Evidence: missing key evidence
-One-change test: Try one small swing: Add a little cross...
+One-change test: Try one small swing: Add a little cross weight...
 Validate: exit_yaw, center_speed, tire_trend
 Watch for: tight_center, tight_exit, drag_scrub
 ```

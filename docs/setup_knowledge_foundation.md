@@ -141,16 +141,22 @@ python -B scripts/query_setup_knowledge.py --car-family next_gen --symptom "loos
 Example text output:
 
 ```text
-Candidate 1: Add a little cross
+Candidate 1: Add a little cross weight
 Strength: 4 / strong balance lever
 Risk: high
-Effect: Can calm entry-to-drive-off balance by adding diagonal support.
+Effect: Can calm entry-to-drive-off balance by adding cross weight diagonal support.
 Counter-effect: May bind the center or add scrub if the car was already loaded too tightly.
 Evidence: missing key evidence
-One-change test: Try one small swing: Add a little cross...
+One-change test: Try one small swing: Add a little cross weight...
 Validate: exit_yaw, center_speed, tire_trend
 Watch for: tight_center, tight_exit, drag_scrub
 ```
+
+Driver-facing setup text should use the full setup term and explain confusing
+relationships compactly. Cross weight is the LR + RF diagonal load
+relationship. Tire pressure split guidance should name the axle, diagonal, or
+tire pair where the matrix supports it, and UI/CLI display should format stable
+internal IDs as readable labels for drivers.
 
 The next layer after source digestion is now implemented: the Evidence Adapter
 translates local telemetry context, Compare run presence, setup snapshots, and

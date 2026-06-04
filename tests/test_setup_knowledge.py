@@ -75,6 +75,34 @@ def test_loose_off_next_gen_ranks_expected_candidate_styles():
     assert {"cross_weight", "rear_ride_height_platform", "tire_pressure", "ls_rebound"}.issubset(areas)
 
 
+def test_cross_weight_effects_use_full_setup_term():
+    effects = {effect.effect_id: effect for effect in load_setup_knowledge().setup_effects}
+    add_cross = effects["add_crossweight_small"]
+    reduce_cross = effects["reduce_crossweight_small"]
+    assert add_cross.direction == "Add a little cross weight"
+    assert reduce_cross.direction == "Reduce a little cross weight"
+    assert "cross weight" in add_cross.driver_facing_summary.lower()
+    assert "add a little cross." not in add_cross.driver_facing_summary.lower()
+    assert "reduce a little cross." not in reduce_cross.driver_facing_summary.lower()
+
+
+def test_rear_pressure_split_effect_teaches_lr_rr_relationship():
+    effects = {effect.effect_id: effect for effect in load_setup_knowledge().setup_effects}
+    rear_split = effects["add_rear_stability_pressure_swing"]
+    combined = " ".join(
+        [
+            rear_split.direction,
+            rear_split.effect,
+            rear_split.counter_effect,
+            rear_split.test_language,
+        ]
+    ).lower()
+    assert "lr/rr" in combined
+    assert "rear tire pressure" in combined
+    assert "not all four tires" in combined
+    assert {"exit_yaw", "rear_tire_trend", "throttle_pickup", "long_run_falloff"}.issubset(rear_split.validation_targets)
+
+
 def test_tight_center_ranks_center_rotation_candidates():
     result = query_setup_knowledge(car_family="next_gen", symptom="tight center", limit=12)
     assert "reduce_crossweight_small" in _ids(result)
@@ -258,6 +286,8 @@ def test_query_output_includes_one_change_test_language_counter_effect_and_targe
     result = query_setup_knowledge(car_family="next_gen", symptom="loose off")
     first = result.candidate_effects[0]
     assert "Try one" in first.one_change_test_plan
+    assert "drive_off" not in first.one_change_test_plan
+    assert "exit_yaw" not in first.one_change_test_plan
     assert first.effect.counter_effect
     assert first.effect.validation_targets
 
@@ -301,6 +331,8 @@ def test_cli_text_contains_polished_labels_and_readiness():
     assert "One-change test:" in completed.stdout
     assert "Validate:" in completed.stdout
     assert "Watch for:" in completed.stdout
+    assert "Validate: drive-off, exit yaw" in completed.stdout
+    assert "Validate: drive_off, exit_yaw" not in completed.stdout
     assert "Evidence: missing key evidence" in completed.stdout
 
 

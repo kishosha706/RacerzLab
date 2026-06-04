@@ -31,6 +31,54 @@ EVIDENCE_ALIASES = {
     "compare_baseline": {"compare_baseline_test"},
     "compare_test": {"compare_baseline_test"},
 }
+TARGET_LABELS = {
+    "brake_lock": "brake lock",
+    "center_balance": "center balance",
+    "center_rotation": "center rotation",
+    "center_speed": "center speed",
+    "correction_count": "correction count",
+    "drag_scrub": "drag/scrub",
+    "drive_off": "drive-off",
+    "driver_input_timing": "driver input timing",
+    "entry_balance": "entry balance",
+    "entry_stability": "entry stability",
+    "entry_yaw": "entry yaw",
+    "exit_yaw": "exit yaw",
+    "front_contact": "front contact",
+    "front_height": "front height",
+    "front_platform_contact": "front platform contact",
+    "front_response": "front response",
+    "front_slip": "front slip",
+    "garage_state": "garage state",
+    "high_steering_demand": "high steering demand",
+    "lap_falloff": "lap falloff",
+    "long_run_falloff": "long-run falloff",
+    "low_straight_speed": "low straight speed",
+    "phase_balance": "phase balance",
+    "platform_rate": "platform rate",
+    "platform_stability": "platform stability",
+    "poor_drive_off": "poor drive-off",
+    "rear_height": "rear height",
+    "rear_slip": "rear slip",
+    "rear_tire_trend": "rear tire trend",
+    "ride_height_trace": "ride-height trace",
+    "scrape": "scrape",
+    "speed_loss": "speed loss",
+    "speed_trace": "speed trace",
+    "steering_correction": "steering correction",
+    "steering_trace": "steering trace",
+    "straight_speed": "straight speed",
+    "throttle_pickup": "throttle pickup",
+    "tight_center": "tight center",
+    "tight_exit": "tight exit",
+    "tire_overwork": "tire overwork",
+    "tire_temp": "tire temperature",
+    "tire_temp_spread": "tire temperature spread",
+    "tire_trend": "tire trend",
+    "transition_yaw": "transition yaw",
+    "turn_in_response": "turn-in response",
+    "unstable_exit": "unstable exit",
+}
 
 
 @dataclass(frozen=True)
@@ -157,14 +205,29 @@ def _format_reason(template: str, *, parsed: SymptomVocabularyEntry, phase: str,
     )
 
 
+def _format_target_label(value: str) -> str:
+    return TARGET_LABELS.get(value, value.replace("_", " "))
+
+
+def _format_target_list(values: list[str]) -> str:
+    return ", ".join(_format_target_label(value) for value in values)
+
+
+def _format_driver_targets(text: str) -> str:
+    formatted = text
+    for target, label in sorted(TARGET_LABELS.items(), key=lambda item: len(item[0]), reverse=True):
+        formatted = re.sub(rf"\b{re.escape(target)}\b", label, formatted)
+    return formatted
+
+
 def _one_change_test(effect: SetupEffect) -> str:
     if effect.test_language:
         lower = effect.test_language.lower()
         if "one" in lower or "single" in lower or "package test" in lower:
-            return effect.test_language
-        return f"Try one swing: {effect.test_language}"
-    validate = ", ".join(effect.validation_targets)
-    watch = ", ".join(effect.watch_for_targets) if effect.watch_for_targets else "phase balance"
+            return _format_driver_targets(effect.test_language)
+        return _format_driver_targets(f"Try one swing: {effect.test_language}")
+    validate = _format_target_list(effect.validation_targets)
+    watch = _format_target_list(effect.watch_for_targets) if effect.watch_for_targets else "phase balance"
     if effect.exact_value_policy == "reference_only":
         return (
             f"This is a package-level lever. Test only one package change: {effect.direction}. "

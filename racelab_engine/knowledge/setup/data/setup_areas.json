@@ -186,7 +186,7 @@
     "disabled_for": [],
     "effect_strength_default": 3,
     "coupling_risk_default": "high",
-    "what_it_changes": "Corner height and local platform preload state.",
+    "what_it_changes": "Static preload, ride height, and corner weight together.",
     "phases": [
       "entry",
       "center",
@@ -210,7 +210,9 @@
       "garage adjustment exists for the selected car family"
     ],
     "unavailable_when": [],
-    "common_confusions": [],
+    "common_confusions": [
+      "Shock collar changes static preload, ride height, and corner weight together."
+    ],
     "static_or_live": "static_setup"
   },
   {
@@ -261,7 +263,7 @@
     "disabled_for": [],
     "effect_strength_default": 4,
     "coupling_risk_default": "high",
-    "what_it_changes": "Front feed, splitter contact margin, and front platform support.",
+    "what_it_changes": "Front ride-height platform, CFS/front splitter reference, and LF/RF ride-height behavior.",
     "phases": [
       "entry",
       "center",
@@ -300,7 +302,7 @@
     "disabled_for": [],
     "effect_strength_default": 4,
     "coupling_risk_default": "high",
-    "what_it_changes": "Rear platform support, outlet behavior, and throttle-on stability.",
+    "what_it_changes": "Rear ride-height platform, diffuser outlet behavior, and throttle-on stability.",
     "phases": [
       "center",
       "exit",
@@ -383,7 +385,7 @@
     "disabled_for": [],
     "effect_strength_default": 4,
     "coupling_risk_default": "high",
-    "what_it_changes": "Diagonal load distribution and oval balance.",
+    "what_it_changes": "Diagonal load relationship, usually LR + RF, that can add security or bind center.",
     "phases": [
       "entry",
       "center",
@@ -408,7 +410,9 @@
       "garage adjustment exists for the selected car family"
     ],
     "unavailable_when": [],
-    "common_confusions": [],
+    "common_confusions": [
+      "Cross weight means the diagonal load relationship, not a generic balance guess."
+    ],
     "static_or_live": "static_setup"
   },
   {
@@ -455,7 +459,7 @@
     "disabled_for": [],
     "effect_strength_default": 5,
     "coupling_risk_default": "high",
-    "what_it_changes": "Large front roll stiffness package state.",
+    "what_it_changes": "Front ARB diameter package choice; this is the big bar stiffness family.",
     "phases": [
       "entry",
       "center"
@@ -493,7 +497,7 @@
     "disabled_for": [],
     "effect_strength_default": 4,
     "coupling_risk_default": "high",
-    "what_it_changes": "Front bar leverage from P1 softest to P5 stiffest.",
+    "what_it_changes": "Front ARB arm position; this is the smaller stiffness tuning choice.",
     "phases": [
       "entry",
       "center"
@@ -529,7 +533,7 @@
     "disabled_for": [],
     "effect_strength_default": 3,
     "coupling_risk_default": "high",
-    "what_it_changes": "Static bar load detail and asymmetry feel.",
+    "what_it_changes": "Front ARB preload detail; this changes static bar load and asymmetry feel.",
     "phases": [
       "entry",
       "center"
@@ -601,7 +605,7 @@
     "disabled_for": [],
     "effect_strength_default": 5,
     "coupling_risk_default": "high",
-    "what_it_changes": "Large rear roll stiffness package state.",
+    "what_it_changes": "Rear ARB diameter package choice; this is the big bar stiffness family.",
     "phases": [
       "center",
       "exit"
@@ -639,7 +643,7 @@
     "disabled_for": [],
     "effect_strength_default": 4,
     "coupling_risk_default": "high",
-    "what_it_changes": "Rear bar leverage from P1 softest to P5 stiffest.",
+    "what_it_changes": "Rear ARB arm position; this is the smaller stiffness tuning choice.",
     "phases": [
       "center",
       "exit"
@@ -675,7 +679,7 @@
     "disabled_for": [],
     "effect_strength_default": 3,
     "coupling_risk_default": "high",
-    "what_it_changes": "Static rear bar load detail and throttle transition feel.",
+    "what_it_changes": "Rear ARB preload detail; this changes static bar load and throttle transition feel.",
     "phases": [
       "center",
       "exit"
@@ -1242,7 +1246,7 @@
     "disabled_for": [],
     "effect_strength_default": 3,
     "coupling_risk_default": "medium",
-    "what_it_changes": "Matrix-backed pressure split context for setup digestion.",
+    "what_it_changes": "Relationship between tire pressures across an axle or diagonal; name the tire pair before changing it.",
     "phases": [
       "entry",
       "center",
@@ -1269,7 +1273,8 @@
     ],
     "unavailable_when": [],
     "common_confusions": [
-      "Do not confuse static setup values with live telemetry evidence."
+      "Do not confuse static setup values with live telemetry evidence.",
+      "Rear pressure split means the LR/RR pressure relationship, not all four tires."
     ],
     "static_or_live": "static_setup"
   },
@@ -1922,7 +1927,7 @@
     "disabled_for": [],
     "effect_strength_default": 3,
     "coupling_risk_default": "medium",
-    "what_it_changes": "Matrix-backed shock histogram context for setup digestion.",
+    "what_it_changes": "Live shock movement evidence for setup digestion, not garage damper clicks.",
     "phases": [
       "entry",
       "center",

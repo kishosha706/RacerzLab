@@ -89,6 +89,48 @@ def test_one_change_test_uses_concise_driver_language(tmp_path: Path, monkeypatc
     assert response.top_swings
     assert "Effect:" not in response.top_swings[0].one_change_test
     assert "Counter-effect:" not in response.top_swings[0].one_change_test
+    assert "exit_yaw" not in response.top_swings[0].one_change_test
+    assert "drive_off" not in response.top_swings[0].one_change_test
+
+
+def test_cross_weight_swing_uses_full_setup_term(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, channels={"throttle_pct": 100.0, "yaw_rate": 1.2})
+    response = build_dial_in_response("run-1", "loose off")
+    cross_swings = [swing for swing in response.top_swings if swing.setup_area == "cross_weight"]
+    assert cross_swings
+    assert all("cross weight" in swing.title.lower() for swing in cross_swings)
+    assert all("add a little cross." not in swing.title.lower() for swing in cross_swings)
+
+
+def test_rear_pressure_split_swing_explains_lr_rr_relationship(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        channels={
+            "throttle_pct": 100.0,
+            "yaw_rate": 1.2,
+            "lf_tire_temp_inner_c": 85.0,
+            "rf_tire_temp_inner_c": 90.0,
+            "lr_tire_temp_inner_c": 92.0,
+            "rr_tire_temp_inner_c": 88.0,
+        },
+    )
+    response = build_dial_in_response("run-1", "snaps loose on throttle", limit=10)
+    pressure_swings = [swing for swing in response.top_swings if swing.id == "add_rear_stability_pressure_swing"]
+    assert pressure_swings
+    combined = " ".join(
+        [
+            pressure_swings[0].title,
+            pressure_swings[0].effect,
+            pressure_swings[0].counter_effect,
+            pressure_swings[0].one_change_test,
+        ]
+    ).lower()
+    assert "lr/rr" in combined
+    assert "rear tire pressure" in combined
+    assert "not all four tires" in combined
+    assert "long_run_falloff" not in combined
 
 
 def test_driver_response_avoids_bad_product_phrases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

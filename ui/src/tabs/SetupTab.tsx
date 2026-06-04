@@ -125,6 +125,60 @@ function swingKindLabel(strength: string, risk: string): string {
   return "Feel polish";
 }
 
+const TARGET_LABELS: Record<string, string> = {
+  brake_lock: "brake lock",
+  center_balance: "center balance",
+  center_rotation: "center rotation",
+  center_speed: "center speed",
+  correction_count: "correction count",
+  drag_scrub: "drag/scrub",
+  drive_off: "drive-off",
+  entry_balance: "entry balance",
+  entry_stability: "entry stability",
+  entry_yaw: "entry yaw",
+  exit_yaw: "exit yaw",
+  front_contact: "front contact",
+  front_height: "front height",
+  front_platform_contact: "front platform contact",
+  front_response: "front response",
+  front_slip: "front slip",
+  garage_state: "garage state",
+  high_steering_demand: "high steering demand",
+  lap_falloff: "lap falloff",
+  long_run_falloff: "long-run falloff",
+  phase_balance: "phase balance",
+  platform_rate: "platform rate",
+  platform_stability: "platform stability",
+  rear_height: "rear height",
+  rear_slip: "rear slip",
+  rear_tire_trend: "rear tire trend",
+  ride_height_trace: "ride-height trace",
+  scrape: "scrape",
+  speed_loss: "speed loss",
+  speed_trace: "speed trace",
+  steering_correction: "steering correction",
+  steering_trace: "steering trace",
+  throttle_pickup: "throttle pickup",
+  tight_center: "tight center",
+  tight_exit: "tight exit",
+  tire_overwork: "tire overwork",
+  tire_temp: "tire temperature",
+  tire_temp_spread: "tire temperature spread",
+  tire_trend: "tire trend",
+  transition_yaw: "transition yaw",
+  turn_in_response: "turn-in response",
+  unstable_exit: "unstable exit",
+};
+
+function formatTargetLabel(value: string): string {
+  return TARGET_LABELS[value] ?? value.replace(/_/g, " ");
+}
+
+function formatTargetList(validateWith: string[], watchFor: string[]): string {
+  const targets = [...validateWith, ...watchFor].filter((item, index, all) => item && all.indexOf(item) === index);
+  return targets.map(formatTargetLabel).join(", ") || "Balance shift";
+}
+
 function dialInEvidenceHints(response: DialInResponse): string[] {
   const hints = new Set<string>();
   const nextStep = response.next_step ?? "";
@@ -318,7 +372,7 @@ function DialInPanel({ overview, baselineRunId }: { overview: RunOverview; basel
                     <div><span>Your Next Test</span><p>{swing.one_change_test}</p></div>
                     <div>
                       <span>What to watch for</span>
-                      <p>{[...swing.validate_with, ...swing.watch_for].filter((item, index, all) => item && all.indexOf(item) === index).join(", ") || "Balance shift"}</p>
+                      <p>{formatTargetList(swing.validate_with, swing.watch_for)}</p>
                     </div>
                   </div>
                 </article>

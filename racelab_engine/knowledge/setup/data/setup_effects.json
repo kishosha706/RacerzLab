@@ -2,7 +2,7 @@
   {
     "effect_id": "add_crossweight_small",
     "setup_area": "cross_weight",
-    "direction": "Add a little cross",
+    "direction": "Add a little cross weight",
     "driver_phrase": [
       "exit",
       "center"
@@ -23,9 +23,9 @@
     ],
     "effect_strength": 4,
     "coupling_risk": "high",
-    "effect": "Can calm entry security and drive-off by adding diagonal support when loose exit is the real complaint.",
+    "effect": "Can calm entry security and drive-off by adding cross weight diagonal support when loose exit is the real complaint.",
     "counter_effect": "May bind the center, add steering scrub, or make late exit too secure.",
-    "test_language": "Run comparable laps and validate exit yaw, center speed, and tire trend.",
+    "test_language": "Try one small cross weight swing. Run comparable laps and validate exit yaw, center speed, and tire trend.",
     "evidence_required": [
       "phase",
       "yaw",
@@ -39,7 +39,7 @@
       "center_speed",
       "tire_trend"
     ],
-    "small_swing_hint": "Use a small diagonal change only.",
+    "small_swing_hint": "Use a small cross weight change only; cross weight is the LR + RF diagonal relationship.",
     "cautions": [
       "Treat as a strong balance lever."
     ],
@@ -66,9 +66,9 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Add a little cross. Effect: Can calm entry security and drive-off by adding diagonal support when loose exit is the real complaint. Counter-effect: May bind the center, add steering scrub, or make late exit too secure. Watch: tight_center, tight_exit, drag_scrub, high_steering_demand. Validate: entry_stability, exit_yaw, center_speed, tire_trend.",
+    "driver_facing_summary": "Try one small swing: Add a little cross weight. Effect: Can calm entry security and drive-off by adding cross weight diagonal support when loose exit is the real complaint. Counter-effect: May bind the center, add steering scrub, or make late exit too secure. Watch: tight_center, tight_exit, drag_scrub, high_steering_demand. Validate: entry_stability, exit_yaw, center_speed, tire_trend.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Add a little cross. Effect: Can calm entry security and drive-off by adding diagonal support when loose exit is the real complaint. Counter-effect: May bind the center, add steering scrub, or make late exit too secure. Watch: tight_center, tight_exit, drag_scrub, high_steering_demand. Validate: entry_stability, exit_yaw, center_speed, tire_trend.",
+    "one_change_test_template": "Try one small swing: Add a little cross weight. Effect: Can calm entry security and drive-off by adding cross weight diagonal support when loose exit is the real complaint. Counter-effect: May bind the center, add steering scrub, or make late exit too secure. Watch: tight_center, tight_exit, drag_scrub, high_steering_demand. Validate: entry_stability, exit_yaw, center_speed, tire_trend.",
     "expected_improvement_targets": [
       "exit_yaw",
       "center_speed"
@@ -109,7 +109,7 @@
   {
     "effect_id": "reduce_crossweight_small",
     "setup_area": "cross_weight",
-    "direction": "Reduce a little cross",
+    "direction": "Reduce a little cross weight",
     "driver_phrase": [
       "center",
       "exit"
@@ -131,7 +131,7 @@
     "coupling_risk": "high",
     "effect": "Can free center rotation and reduce bound-up drive-off feel when the car is carrying too much diagonal support.",
     "counter_effect": "May reduce entry security, make throttle pickup nervous, or take rear stability away.",
-    "test_language": "Run comparable laps and validate center speed, exit yaw, and correction count.",
+    "test_language": "Try one small cross weight swing. Run comparable laps and validate center speed, exit yaw, and correction count.",
     "evidence_required": [
       "phase",
       "yaw",
@@ -143,7 +143,7 @@
       "exit_yaw",
       "entry_stability"
     ],
-    "small_swing_hint": "Use a small cross change and keep the rest of the package still.",
+    "small_swing_hint": "Use a small cross weight change and keep the rest of the package still.",
     "cautions": [
       "Avoid stacking with another major balance change."
     ],
@@ -170,9 +170,9 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Reduce a little cross. Effect: Can free center rotation and reduce bound-up drive-off feel when the car is carrying too much diagonal support. Counter-effect: May reduce entry security, make throttle pickup nervous, or take rear stability away. Watch: loose_entry, loose_exit, unstable_exit. Validate: center_speed, exit_yaw, entry_stability.",
+    "driver_facing_summary": "Try one small swing: Reduce a little cross weight. Effect: Can free center rotation and reduce bound-up drive-off feel when the car is carrying too much diagonal support. Counter-effect: May reduce entry security, make throttle pickup nervous, or take rear stability away. Watch: loose_entry, loose_exit, unstable_exit. Validate: center_speed, exit_yaw, entry_stability.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Reduce a little cross. Effect: Can free center rotation and reduce bound-up drive-off feel when the car is carrying too much diagonal support. Counter-effect: May reduce entry security, make throttle pickup nervous, or take rear stability away. Watch: loose_entry, loose_exit, unstable_exit. Validate: center_speed, exit_yaw, entry_stability.",
+    "one_change_test_template": "Try one small swing: Reduce a little cross weight. Effect: Can free center rotation and reduce bound-up drive-off feel when the car is carrying too much diagonal support. Counter-effect: May reduce entry security, make throttle pickup nervous, or take rear stability away. Watch: loose_entry, loose_exit, unstable_exit. Validate: center_speed, exit_yaw, entry_stability.",
     "expected_improvement_targets": [
       "center_speed",
       "exit_yaw"
@@ -596,7 +596,7 @@
   {
     "effect_id": "add_rear_stability_pressure_swing",
     "setup_area": "tire_pressure",
-    "direction": "Tune rear pressure split for stability",
+    "direction": "Adjust LR/RR rear tire pressure split for stability",
     "driver_phrase": [
       "exit",
       "transition"
@@ -616,9 +616,9 @@
     ],
     "effect_strength": 3,
     "coupling_risk": "medium",
-    "effect": "Can calm rear support during throttle pickup when tire and phase evidence agree. Read it against long-run tire trend, not one cold lap.",
-    "counter_effect": "May hurt long-run temperature balance or make exit too flat. Watch the tire-work trend after the swing.",
-    "test_language": "Check comparable exit traces and rear tire trend before keeping the change.",
+    "effect": "Can calm rear support during throttle pickup when tire and phase evidence agree. This means changing the LR/RR rear tire pressure relationship, not all four tires.",
+    "counter_effect": "May flatten drive-off bite, change long-run rear tire trend, or make exit too secure.",
+    "test_language": "Try one rear tire pressure split swing: add LR pressure or reduce RR pressure, then compare exit yaw, throttle pickup, and rear tire trend.",
     "evidence_required": [
       "tire_trend",
       "throttle",
@@ -627,17 +627,19 @@
     ],
     "validation_targets": [
       "exit_yaw",
-      "rear_tire_trend"
+      "rear_tire_trend",
+      "throttle_pickup",
+      "long_run_falloff"
     ],
-    "small_swing_hint": "Use a small rear pressure split change.",
+    "small_swing_hint": "Use one small LR/RR rear tire pressure split change and leave the rest of the tire set alone.",
     "cautions": [
       "Do not use as a substitute for missing platform evidence."
     ],
     "primary_effects": [
-      "Can calm rear support during throttle pickup when tire evidence agrees."
+      "Can calm rear support during throttle pickup when LR/RR rear tire evidence agrees."
     ],
     "counter_effects": [
-      "May hurt long-run temperature balance or make exit too flat."
+      "May flatten drive-off bite, change long-run rear tire trend, or make exit too secure."
     ],
     "helps_phases": [
       "exit",
@@ -655,16 +657,18 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Tune rear pressure split for stability. Effect: Can calm rear support during throttle pickup when tire and phase evidence agree. Read it against long-run tire trend, not one cold lap. Counter-effect: May hurt long-run temperature balance or make exit too flat. Watch the tire-work trend after the swing. Watch: tight_exit, long_run_falloff. Validate: exit_yaw, rear_tire_trend.",
+    "driver_facing_summary": "Try one rear tire pressure split swing: add LR pressure or reduce RR pressure. Effect: Can calm rear support during throttle pickup when tire and phase evidence agree. This means changing the LR/RR rear tire pressure relationship, not all four tires. Counter-effect: May flatten drive-off bite, change long-run rear tire trend, or make exit too secure. Watch: tight_exit, long_run_falloff, rear_tire_trend. Validate: exit_yaw, rear_tire_trend, throttle_pickup, long_run_falloff.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Tune rear pressure split for stability. Effect: Can calm rear support during throttle pickup when tire and phase evidence agree. Read it against long-run tire trend, not one cold lap. Counter-effect: May hurt long-run temperature balance or make exit too flat. Watch the tire-work trend after the swing. Watch: tight_exit, long_run_falloff. Validate: exit_yaw, rear_tire_trend.",
+    "one_change_test_template": "Try one rear tire pressure split swing: add LR pressure or reduce RR pressure. Effect: Can calm rear support during throttle pickup when tire and phase evidence agree. This means changing the LR/RR rear tire pressure relationship, not all four tires. Counter-effect: May flatten drive-off bite, change long-run rear tire trend, or make exit too secure. Watch: tight_exit, long_run_falloff, rear_tire_trend. Validate: exit_yaw, rear_tire_trend, throttle_pickup, long_run_falloff.",
     "expected_improvement_targets": [
       "exit_yaw",
-      "rear_tire_trend"
+      "rear_tire_trend",
+      "throttle_pickup"
     ],
     "watch_for_targets": [
       "tight_exit",
-      "long_run_falloff"
+      "long_run_falloff",
+      "rear_tire_trend"
     ],
     "evidence_priority": [
       "tire_trend",
@@ -5961,7 +5965,7 @@
   {
     "effect_id": "pressure_split_stability_swing",
     "setup_area": "pressure_split",
-    "direction": "Tune pressure split for stability",
+    "direction": "Adjust tire pressure split for stability",
     "driver_phrase": [
       "entry",
       "exit"
@@ -5980,9 +5984,9 @@
     ],
     "effect_strength": 3,
     "coupling_risk": "medium",
-    "effect": "Can shape support and response with tire evidence.",
-    "counter_effect": "May add bind, drag, or heat.",
-    "test_language": "Try one small swing: Tune pressure split for stability. Validate entry_yaw, exit_yaw.",
+    "effect": "Can shape tire support and response when tire evidence points to an axle or diagonal pressure relationship.",
+    "counter_effect": "May add bind, drag, or tire heat if the pressure split masks the real balance issue.",
+    "test_language": "Try one small tire pressure split swing on the supported axle or diagonal. Validate entry yaw and exit yaw.",
     "evidence_required": [
       "tire_temps",
       "pressure_gain",
@@ -6016,9 +6020,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Tune pressure split for stability. Effect: Can shape support and response with tire evidence. Counter-effect: May add bind, drag, or heat. Watch: tight_center, drag_scrub. Validate: entry_yaw, exit_yaw.",
+    "driver_facing_summary": "Try one small swing: Adjust tire pressure split for stability. Effect: Can shape tire support and response when tire evidence points to an axle or diagonal pressure relationship. Counter-effect: May add bind, drag, or tire heat if the pressure split masks the real balance issue. Watch: tight_center, drag_scrub. Validate: entry_yaw, exit_yaw.",
     "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
-    "one_change_test_template": "Try one small swing: Tune pressure split for stability. Effect: Can shape support and response with tire evidence. Counter-effect: May add bind, drag, or heat. Watch: tight_center, drag_scrub. Validate: entry_yaw, exit_yaw.",
+    "one_change_test_template": "Try one small swing: Adjust tire pressure split for stability. Effect: Can shape tire support and response when tire evidence points to an axle or diagonal pressure relationship. Counter-effect: May add bind, drag, or tire heat if the pressure split masks the real balance issue. Watch: tight_center, drag_scrub. Validate: entry_yaw, exit_yaw.",
     "expected_improvement_targets": [
       "entry_yaw",
       "exit_yaw"

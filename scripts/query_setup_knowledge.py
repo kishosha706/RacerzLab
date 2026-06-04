@@ -18,6 +18,55 @@ STRENGTH_LABELS = {
     5: "major package lever",
 }
 
+TARGET_LABELS = {
+    "brake_lock": "brake lock",
+    "center_balance": "center balance",
+    "center_rotation": "center rotation",
+    "center_speed": "center speed",
+    "correction_count": "correction count",
+    "drag_scrub": "drag/scrub",
+    "drive_off": "drive-off",
+    "driver_input_timing": "driver input timing",
+    "entry_balance": "entry balance",
+    "entry_stability": "entry stability",
+    "entry_yaw": "entry yaw",
+    "exit_yaw": "exit yaw",
+    "front_contact": "front contact",
+    "front_height": "front height",
+    "front_platform_contact": "front platform contact",
+    "front_response": "front response",
+    "front_slip": "front slip",
+    "garage_state": "garage state",
+    "high_steering_demand": "high steering demand",
+    "lap_falloff": "lap falloff",
+    "long_run_falloff": "long-run falloff",
+    "low_straight_speed": "low straight speed",
+    "phase_balance": "phase balance",
+    "platform_rate": "platform rate",
+    "platform_stability": "platform stability",
+    "poor_drive_off": "poor drive-off",
+    "rear_height": "rear height",
+    "rear_slip": "rear slip",
+    "rear_tire_trend": "rear tire trend",
+    "ride_height_trace": "ride-height trace",
+    "scrape": "scrape",
+    "speed_loss": "speed loss",
+    "speed_trace": "speed trace",
+    "steering_correction": "steering correction",
+    "steering_trace": "steering trace",
+    "straight_speed": "straight speed",
+    "throttle_pickup": "throttle pickup",
+    "tight_center": "tight center",
+    "tight_exit": "tight exit",
+    "tire_overwork": "tire overwork",
+    "tire_temp": "tire temperature",
+    "tire_temp_spread": "tire temperature spread",
+    "tire_trend": "tire trend",
+    "transition_yaw": "transition yaw",
+    "turn_in_response": "turn-in response",
+    "unstable_exit": "unstable exit",
+}
+
 
 def _split_evidence(raw: str | None) -> list[str]:
     if not raw:
@@ -27,6 +76,14 @@ def _split_evidence(raw: str | None) -> list[str]:
 
 def _display_readiness(readiness: str) -> str:
     return readiness.replace("_", " ")
+
+
+def _format_target_label(value: str) -> str:
+    return TARGET_LABELS.get(value, value.replace("_", " "))
+
+
+def _format_targets(values: list[str]) -> str:
+    return ", ".join(_format_target_label(value) for value in values)
 
 
 def main() -> int:
@@ -92,9 +149,9 @@ def main() -> int:
         if args.show_missing_evidence or ranked.readiness != "ready":
             print(f"Missing: {missing}")
         print(f"One-change test: {ranked.one_change_test_plan}")
-        print(f"Validate: {', '.join(effect.validation_targets)}")
+        print(f"Validate: {_format_targets(effect.validation_targets)}")
         if effect.watch_for_targets:
-            print(f"Watch for: {', '.join(effect.watch_for_targets)}")
+            print(f"Watch for: {_format_targets(effect.watch_for_targets)}")
         if effect.setup_package_tags:
             print(f"Package notes: {', '.join(effect.setup_package_tags)}")
         if effect.preferred_when:

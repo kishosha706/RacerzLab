@@ -114,6 +114,18 @@ The Setup tab renders the clean response by default:
 Clarification options are shown when the complaint is too broad. Selecting an
 option only refines the complaint text; RacerZLab never edits setup files.
 
+## Specific Swing Language
+
+Driver-facing Dial-In wording should teach the setup term without pretending to
+know a universal exact value. Write `cross weight` fully instead of shortening
+it to `cross`. Pressure split guidance should name the tire pair or relationship
+where the matrix supports it, such as the LR/RR rear tire pressure split for a
+loose-exit stability swing.
+
+Internal target IDs such as `exit_yaw`, `rear_tire_trend`, and
+`long_run_falloff` stay stable in JSON, but normal text/UI output formats them
+as human labels like `exit yaw`, `rear tire trend`, and `long-run falloff`.
+
 ## Candidate Filtering
 
 Default Dial-In results:
