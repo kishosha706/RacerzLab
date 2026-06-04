@@ -1,4 +1,4 @@
-import { Clock, Gauge, GitCompare, Layers, List, MapPin, Wrench } from "lucide-react";
+import { Clock, Crosshair, Gauge, GitCompare, Layers, List, MapPin, Wrench } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
@@ -41,6 +41,10 @@ import type {
 const CompareTab = lazy(async () => {
   const module = await import("./tabs/CompareTab");
   return { default: module.CompareTab };
+});
+const DialInTab = lazy(async () => {
+  const module = await import("./tabs/DialInTab");
+  return { default: module.DialInTab };
 });
 const LapsTab = lazy(async () => {
   const module = await import("./tabs/LapsTab");
@@ -331,6 +335,7 @@ function CockpitShell() {
       return <PlatformTab overview={overview} trace={trace} platformEvents={platformEvents} initialWorkbenchView={initialWorkbenchView} />;
     }
     if (ws === "setup_impact") return <SetupTab overview={overview} />;
+    if (ws === "dial_in") return <DialInTab overview={overview} />;
     if (ws === "channels") {
       // Channels removed from nav; redirect to overview if stale state exists
       return <OverviewTab overview={overview} />;
@@ -408,6 +413,7 @@ function CockpitShell() {
             ["platform_trace", "Platform", Layers],
             ["map", "Track Map", MapPin],
             ["setup_impact", "Setup", Wrench],
+            ["dial_in", "Dial-In", Crosshair],
             ["compare", "Compare", GitCompare],
             ["notebook", "Notebook", List],
           ] as const).map(([key, label, Icon]) => (
@@ -484,6 +490,7 @@ function CockpitShell() {
               <span>M</span><p>Open Track Map</p>
               <span>O</span><p>Open Overview</p>
               <span>C</span><p>Open Compare</p>
+              <span>D</span><p>Open Dial-In</p>
               <span>N</span><p>Open Notebook</p>
               <span>L</span><p>Toggle race/learning mode</p>
               <span>[ / ]</span><p>Toggle rails</p>

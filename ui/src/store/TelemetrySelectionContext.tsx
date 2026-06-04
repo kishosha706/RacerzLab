@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, type ReactNode } from "react";
 import type { EvidenceContext, SelectionMode, SelectionSource, TelemetrySelection, Workspace } from "./types";
 
-const VALID_WORKSPACES: Workspace[] = ["overview", "map", "laps", "platform_trace", "speed_delta", "drag_scrub", "setup_impact", "compare", "notebook", "channels"];
+const VALID_WORKSPACES: Workspace[] = ["overview", "map", "laps", "platform_trace", "speed_delta", "drag_scrub", "setup_impact", "dial_in", "compare", "notebook", "channels"];
 
 function loadLastWorkspace(): Workspace {
   try {

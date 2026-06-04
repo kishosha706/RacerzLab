@@ -29,6 +29,40 @@ def test_dial_in_api_returns_clean_response_by_default(tmp_path: Path, monkeypat
     assert "guaranteed" not in dumped
 
 
+def test_dial_in_api_accepts_limit_nine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        channels={
+            "throttle_pct": 100.0,
+            "yaw_rate": 1.2,
+            "front_center_rh_in": 1.8,
+            "rear_center_rh_in": 2.5,
+            "smooth_center_rake_in": 0.7,
+            "diffuser_volume_ft3": 12.0,
+            "speed_mph": 185.0,
+            "lf_tire_temp_inner_c": 85.0,
+            "rf_tire_temp_inner_c": 90.0,
+            "lr_tire_temp_inner_c": 92.0,
+            "rr_tire_temp_inner_c": 88.0,
+            "lf_shock_vel_in_s": 1.0,
+            "rf_shock_vel_in_s": 1.1,
+            "lr_shock_vel_in_s": 1.0,
+            "rr_shock_vel_in_s": 1.2,
+        },
+    )
+    client = TestClient(app)
+
+    response = client.post("/api/runs/run-1/dial-in", json={"complaint": "tight center", "limit": 9})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert 3 < len(payload["top_swings"]) <= 9
+    assert sum(1 for swing in payload["top_swings"] if swing["strength_label"] == "Package-level lever") <= 1
+    assert {swing["setup_area"] for swing in payload["top_swings"]}.isdisjoint({"track_bar", "truck_arm_mount", "bump_stop", "packer"})
+    assert "hidden_evidence_summary" not in payload
+
+
 def test_dial_in_api_can_include_debug_evidence_when_requested(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

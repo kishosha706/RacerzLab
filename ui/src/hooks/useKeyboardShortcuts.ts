@@ -69,6 +69,10 @@ export function useKeyboardShortcuts(
         case "C":
           openWorkspace("compare");
           break;
+        case "d":
+        case "D":
+          openWorkspace("dial_in");
+          break;
         case "n":
         case "N":
           openWorkspace("notebook");

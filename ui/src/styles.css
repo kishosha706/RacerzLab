@@ -5351,6 +5351,48 @@ button:focus:not(:focus-visible) {
 
 .garage-board { padding: 0; min-height: 100%; background: #0a0e14; }
 
+.setup-dialin-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #1a1d27;
+  background: #0d1117;
+}
+
+.setup-dialin-callout div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.setup-dialin-callout strong {
+  color: #e2e8f0;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.setup-dialin-callout span {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.setup-dialin-callout .secondary-button {
+  flex: 0 0 auto;
+}
+
+.dialin-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100%;
+  padding: 0 0 16px;
+  background: #0a0e14;
+}
+
 .dialin-panel {
   display: flex;
   flex-direction: column;
@@ -5359,6 +5401,11 @@ button:focus:not(:focus-visible) {
   padding: 12px 16px;
   border-bottom: 6px solid #0a0e14;
   background: #0d1117;
+}
+
+.dialin-panel.dialin-hero {
+  gap: 12px;
+  border-bottom-width: 1px;
 }
 
 .dialin-header {
@@ -5382,6 +5429,14 @@ button:focus:not(:focus-visible) {
   margin: 3px 0 0;
   color: #64748b;
   font-size: 11px;
+}
+
+.dialin-tab-subtitle {
+  max-width: 720px;
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .dialin-readonly,
@@ -5409,6 +5464,10 @@ button:focus:not(:focus-visible) {
   align-items: center;
 }
 
+.dialin-command-bar {
+  grid-template-columns: minmax(260px, 1fr) auto auto;
+}
+
 .dialin-input-row .secondary-button {
   min-height: 34px;
   justify-content: center;
@@ -5431,6 +5490,22 @@ button:focus:not(:focus-visible) {
   outline: none;
 }
 
+.dialin-rule-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 7px 9px;
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  border-radius: 5px;
+  background: rgba(56, 189, 248, 0.06);
+  color: #bae6fd;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
 .dialin-empty,
 .dialin-alert {
   border: 1px solid #1f2937;
@@ -5442,6 +5517,12 @@ button:focus:not(:focus-visible) {
 
 .dialin-empty {
   padding: 9px 11px;
+}
+
+.dialin-tab > .dialin-empty,
+.dialin-tab > .dialin-alert,
+.dialin-tab > .dialin-result {
+  margin: 0 16px;
 }
 
 .dialin-alert {
@@ -5523,6 +5604,42 @@ button:focus:not(:focus-visible) {
   line-height: 1.45;
 }
 
+.dialin-section-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 2px;
+}
+
+.dialin-section-header span {
+  display: block;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.dialin-section-header h3 {
+  margin: 2px 0 0;
+  color: #e2e8f0;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.dialin-section-header p {
+  max-width: 440px;
+  margin: 0;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.dialin-section-header.compact {
+  margin-top: 6px;
+}
+
 .dialin-clarification,
 .dialin-evidence-status {
   padding: 10px 11px;
@@ -5585,6 +5702,16 @@ button:focus:not(:focus-visible) {
   background: #0a0e14;
 }
 
+.dialin-swings .dialin-swing-card {
+  border-color: rgba(56, 189, 248, 0.22);
+  background: #0b1119;
+}
+
+.dialin-swing-card.compact {
+  gap: 8px;
+  padding: 9px;
+}
+
 .dialin-swing-card header {
   display: flex;
   justify-content: space-between;
@@ -5596,6 +5723,10 @@ button:focus:not(:focus-visible) {
   color: #e2e8f0;
   font-size: 13px;
   line-height: 1.25;
+}
+
+.dialin-swing-card.compact h3 {
+  font-size: 12px;
 }
 
 .dialin-card-pills {
@@ -5620,6 +5751,10 @@ button:focus:not(:focus-visible) {
   gap: 8px;
 }
 
+.dialin-swing-card.compact .dialin-action-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .dialin-action-grid p {
   margin: 3px 0 0;
   color: #cbd5e1;
@@ -5627,14 +5762,41 @@ button:focus:not(:focus-visible) {
   line-height: 1.38;
 }
 
+.dialin-other-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 @media (max-width: 1100px) {
   .dialin-summary-grid,
-  .dialin-swings {
+  .dialin-swings,
+  .dialin-other-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dialin-swing-card.compact .dialin-action-grid {
+    grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 700px) {
+  .setup-dialin-callout,
+  .dialin-section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .setup-dialin-callout .secondary-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .dialin-section-header p {
+    max-width: none;
+    text-align: left;
+  }
+
   .dialin-panel {
     padding: 12px;
   }
@@ -5646,7 +5808,9 @@ button:focus:not(:focus-visible) {
 
   .dialin-input-row,
   .dialin-summary-grid,
-  .dialin-swings {
+  .dialin-swings,
+  .dialin-other-grid,
+  .dialin-swing-card.compact .dialin-action-grid {
     grid-template-columns: 1fr;
   }
 

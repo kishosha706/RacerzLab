@@ -256,6 +256,35 @@ def test_limit_defaults_to_three(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert len(response.top_swings) <= 3
 
 
+def test_limit_nine_returns_expanded_disciplined_candidate_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        channels={
+            "throttle_pct": 100.0,
+            "yaw_rate": 1.2,
+            "front_center_rh_in": 1.8,
+            "rear_center_rh_in": 2.5,
+            "smooth_center_rake_in": 0.7,
+            "diffuser_volume_ft3": 12.0,
+            "speed_mph": 185.0,
+            "lf_tire_temp_inner_c": 85.0,
+            "rf_tire_temp_inner_c": 90.0,
+            "lr_tire_temp_inner_c": 92.0,
+            "rr_tire_temp_inner_c": 88.0,
+            "lf_shock_vel_in_s": 1.0,
+            "rf_shock_vel_in_s": 1.1,
+            "lr_shock_vel_in_s": 1.0,
+            "rr_shock_vel_in_s": 1.2,
+        },
+    )
+    response = build_dial_in_response("run-1", "tight center", limit=9)
+
+    assert 3 < len(response.top_swings) <= 9
+    assert sum(1 for swing in response.top_swings if swing.strength_label == "Package-level lever") <= 1
+    assert {swing.setup_area for swing in response.top_swings}.isdisjoint({"track_bar", "truck_arm_mount", "bump_stop", "packer"})
+
+
 def test_cli_json_returns_stable_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     data_dir, db_path = _configure_env(monkeypatch, tmp_path)
     _seed_run(tmp_path, channels={"throttle_pct": 100.0, "yaw_rate": 1.2})

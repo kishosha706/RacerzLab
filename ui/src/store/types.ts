@@ -19,6 +19,7 @@ export type Workspace =
   | "speed_delta"
   | "drag_scrub"
   | "setup_impact"
+  | "dial_in"
   | "compare"
   | "notebook"
   | "channels";
