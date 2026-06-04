@@ -1180,7 +1180,12 @@ td {
   min-width: 0;
   min-height: 0;
   display: flex;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.cockpit-workspace-main > .tab-grid {
+  width: 100%;
 }
 
 .workspace-placeholder {
