@@ -106,7 +106,7 @@ Next Gen ARB model:
 - `rear_arb_preload`
 - `rear_arb_attach`
 
-Diameter options are `1.375` and `2.000`. Arm positions are `P1` through `P5`.
+Diameter options are `1.375` and `2.000`. Arm positions are `P1` through `P5`: `P1` is softest/lowest/looser, `P5` is stiffest/tighter. Use a one-P arm move for a smaller tuning swing; use a diameter change only for a bigger package swing.
 Diameter is a big package swing, arm position is a tuning swing, preload is a
 load/detail swing that can mask ride-height or corner-weight problems, and
 attach state is a procedure/diagnostic state rather than a normal race

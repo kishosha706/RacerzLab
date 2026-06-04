@@ -68,7 +68,8 @@
       ]
     },
     "notes": [
-      "Track bar, truck arm, bump stop, and packer guidance is preserved globally but gated off for Next Gen."
+      "Track bar, truck arm, bump stop, and packer guidance is preserved globally but gated off for Next Gen.",
+      "Next Gen ARB: each bar has only 1.375 and 2.000 diameter options; each bar has P1-P5 arm settings where P1 is softest/lowest/looser and P5 is stiffest/tighter."
     ]
   },
   {

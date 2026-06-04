@@ -472,7 +472,7 @@
     "disabled_for": [],
     "effect_strength_default": 5,
     "coupling_risk_default": "high",
-    "what_it_changes": "Diameter is the big front bar package choice.",
+    "what_it_changes": "Next Gen front ARB diameter has only 1.375 soft and 2.000 stiff; changing diameter is the bigger package swing.",
     "phases": [
       "entry",
       "center"
@@ -487,13 +487,14 @@
     ],
     "notes": [
       "Next Gen options are 1.375 soft bar and 2.000 stiff bar.",
-      "LoWLiNE review: front sway bar choice is a package-level preference/roll-control lever."
+      "LoWLiNE review: front sway bar choice is a package-level preference/roll-control lever.",
+      "Next Gen front ARB diameter has only 1.375 soft and 2.000 stiff; changing diameter is the bigger package swing."
     ],
     "package_role": [
       "roll_balance"
     ],
     "car_specific_notes": {
-      "next_gen": " Next Gen ARB diameter, arm, preload, and attach states are separate setup areas."
+      "next_gen": "Next Gen front ARB diameter has only 1.375 soft and 2.000 stiff; changing diameter is the bigger package swing."
     },
     "available_when": [
       "garage adjustment exists for the selected car family"
@@ -511,7 +512,7 @@
     "disabled_for": [],
     "effect_strength_default": 4,
     "coupling_risk_default": "high",
-    "what_it_changes": "Front ARB arm position P1-P5; this is the smaller stiffness tuning choice.",
+    "what_it_changes": "Next Gen front ARB arm uses P1-P5: P1 is softest/lowest/looser, P5 is stiffest/tighter; one P-position is the smaller tuning swing.",
     "phases": [
       "entry",
       "center"
@@ -525,13 +526,14 @@
       "center_speed"
     ],
     "notes": [
-      "LoWLiNE review: ARB tuning should be read as part of the selected front bar package."
+      "LoWLiNE review: ARB tuning should be read as part of the selected front bar package.",
+      "Next Gen front ARB arm uses P1-P5: P1 is softest/lowest/looser, P5 is stiffest/tighter; one P-position is the smaller tuning swing."
     ],
     "package_role": [
       "roll_balance"
     ],
     "car_specific_notes": {
-      "next_gen": " Next Gen ARB diameter, arm, preload, and attach states are separate setup areas."
+      "next_gen": "Next Gen front ARB arm uses P1-P5: P1 is softest/lowest/looser, P5 is stiffest/tighter; one P-position is the smaller tuning swing."
     },
     "available_when": [
       "garage adjustment exists for the selected car family"
@@ -621,7 +623,7 @@
     "disabled_for": [],
     "effect_strength_default": 5,
     "coupling_risk_default": "high",
-    "what_it_changes": "Diameter is the big rear bar package choice.",
+    "what_it_changes": "Next Gen rear ARB diameter has only 1.375 soft and 2.000 stiff; changing diameter is the bigger package swing.",
     "phases": [
       "center",
       "exit"
@@ -635,13 +637,14 @@
       "drive_off"
     ],
     "notes": [
-      "Next Gen options are 1.375 soft bar and 2.000 stiff bar."
+      "Next Gen options are 1.375 soft bar and 2.000 stiff bar.",
+      "Next Gen rear ARB diameter has only 1.375 soft and 2.000 stiff; changing diameter is the bigger package swing."
     ],
     "package_role": [
       "roll_balance"
     ],
     "car_specific_notes": {
-      "next_gen": " Next Gen ARB diameter, arm, preload, and attach states are separate setup areas."
+      "next_gen": "Next Gen rear ARB diameter has only 1.375 soft and 2.000 stiff; changing diameter is the bigger package swing."
     },
     "available_when": [
       "garage adjustment exists for the selected car family"
@@ -659,7 +662,7 @@
     "disabled_for": [],
     "effect_strength_default": 4,
     "coupling_risk_default": "high",
-    "what_it_changes": "Rear ARB arm position P1-P5; this is the smaller stiffness tuning choice.",
+    "what_it_changes": "Next Gen rear ARB arm uses P1-P5: P1 is softest/lowest/looser, P5 is stiffest/tighter; one P-position is the smaller tuning swing.",
     "phases": [
       "center",
       "exit"
@@ -672,12 +675,14 @@
       "exit_yaw",
       "center_rotation"
     ],
-    "notes": [],
+    "notes": [
+      "Next Gen rear ARB arm uses P1-P5: P1 is softest/lowest/looser, P5 is stiffest/tighter; one P-position is the smaller tuning swing."
+    ],
     "package_role": [
       "roll_balance"
     ],
     "car_specific_notes": {
-      "next_gen": " Next Gen ARB diameter, arm, preload, and attach states are separate setup areas."
+      "next_gen": "Next Gen rear ARB arm uses P1-P5: P1 is softest/lowest/looser, P5 is stiffest/tighter; one P-position is the smaller tuning swing."
     },
     "available_when": [
       "garage adjustment exists for the selected car family"
@@ -2098,6 +2103,51 @@
     "unavailable_when": [],
     "common_confusions": [
       "Do not confuse static setup values with live telemetry evidence."
+    ],
+    "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "front_stagger",
+    "system": "setup",
+    "applies_to": [
+      "legacy_oval_generic"
+    ],
+    "disabled_for": [
+      "next_gen"
+    ],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "medium",
+    "what_it_changes": "Legacy oval front stagger context from Oval Setup Matrix V5; car-specific availability required.",
+    "phases": [
+      "entry",
+      "center",
+      "exit"
+    ],
+    "evidence_required": [
+      "setup_snapshot",
+      "tire_temps"
+    ],
+    "validation_targets": [
+      "phase_balance",
+      "tire_temp_spread"
+    ],
+    "notes": [
+      "Oval Setup Matrix V5 review: front stagger appears as a legacy/context row and should stay car-gated."
+    ],
+    "package_role": [
+      "setup_context"
+    ],
+    "car_specific_notes": {
+      "next_gen": "Unavailable for Next Gen; filtered by the car capability gate."
+    },
+    "available_when": [
+      "selected legacy car exposes stagger adjustment"
+    ],
+    "unavailable_when": [
+      "selected car family disables or does not expose this setup area"
+    ],
+    "common_confusions": [
+      "Do not treat stagger as available on every oval car."
     ],
     "static_or_live": "static_setup"
   }

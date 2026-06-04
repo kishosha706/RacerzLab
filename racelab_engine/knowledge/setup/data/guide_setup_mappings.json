@@ -162,9 +162,9 @@
     "setup_area": "rear_arb_arm",
     "symptom": "loose_center",
     "phase": "center",
-    "direction": "soften rear ARB or add rear security",
-    "intended_effect": "Adds rear security in the middle.",
-    "counter_effect": "May tighten center or reduce rotation.",
+    "direction": "move rear ARB arm toward P5/stiffer/tighter or add rear security",
+    "intended_effect": "Adds rear bar support/security in the middle when the loose condition is repeatable.",
+    "counter_effect": "May tighten center/exit or reduce rotation if the package already has enough rear support.",
     "effect_strength": 3,
     "coupling_risk": "medium",
     "evidence_required": [
@@ -188,7 +188,7 @@
       "evidence points to a different phase first"
     ],
     "watch_for": [
-      "May tighten center or reduce rotation."
+      "May tighten center/exit or reduce rotation."
     ]
   },
   {
@@ -814,6 +814,158 @@
     ],
     "watch_for": [
       "Confounded test from ride-height or camber drift."
+    ]
+  },
+  {
+    "mapping_id": "matrix_v5_tight_center_front_arb_arm",
+    "source_ids": [
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "front_arb_arm",
+    "symptom": "tight_center",
+    "phase": "center",
+    "direction": "move front ARB arm one P-position toward P1/softer/looser",
+    "intended_effect": "Adds a small amount of front compliance to help center rotation.",
+    "counter_effect": "May reduce platform support or make entry less secure.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "setup_snapshot",
+      "steering",
+      "front_platform"
+    ],
+    "validation_targets": [
+      "center_speed",
+      "front_response"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "small_swing",
+    "review_status": "accepted",
+    "preferred_when": [
+      "tight center is repeatable and front bar package is otherwise close"
+    ],
+    "avoid_when": [
+      "front platform already lacks support"
+    ],
+    "watch_for": [
+      "Reduced support or looser entry."
+    ]
+  },
+  {
+    "mapping_id": "matrix_v5_loose_center_front_arb_arm",
+    "source_ids": [
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "front_arb_arm",
+    "symptom": "loose_center",
+    "phase": "center",
+    "direction": "move front ARB arm one P-position toward P5/stiffer/tighter",
+    "intended_effect": "Adds a small amount of front bar support to tighten the balance.",
+    "counter_effect": "May bind center or add front tire load.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "setup_snapshot",
+      "steering",
+      "front_platform"
+    ],
+    "validation_targets": [
+      "center_balance",
+      "front_response"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "small_swing",
+    "review_status": "accepted",
+    "preferred_when": [
+      "loose center is repeatable and front bar package is otherwise close"
+    ],
+    "avoid_when": [
+      "tight center or front tire heat is already present"
+    ],
+    "watch_for": [
+      "Center bind or front tire load."
+    ]
+  },
+  {
+    "mapping_id": "matrix_v5_loose_exit_rear_arb_arm",
+    "source_ids": [
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "rear_arb_arm",
+    "symptom": "loose_exit",
+    "phase": "exit",
+    "direction": "move rear ARB arm one P-position toward P5/stiffer/tighter",
+    "intended_effect": "Adds rear bar support/security for throttle-on exit.",
+    "counter_effect": "May tighten drive-off or reduce rotation if the car is already bound.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "setup_snapshot",
+      "yaw",
+      "throttle"
+    ],
+    "validation_targets": [
+      "exit_yaw",
+      "drive_off"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "small_swing",
+    "review_status": "accepted",
+    "preferred_when": [
+      "loose exit is repeatable and rear bar package is otherwise close"
+    ],
+    "avoid_when": [
+      "tight exit is the dominant complaint"
+    ],
+    "watch_for": [
+      "Tighter drive-off or reduced rotation."
+    ]
+  },
+  {
+    "mapping_id": "matrix_v5_tight_exit_rear_arb_arm",
+    "source_ids": [
+      "oval_setup_matrix_v5"
+    ],
+    "setup_area": "rear_arb_arm",
+    "symptom": "tight_exit",
+    "phase": "exit",
+    "direction": "move rear ARB arm one P-position toward P1/softer/looser",
+    "intended_effect": "Frees the rear bar support slightly to help drive-off rotation.",
+    "counter_effect": "May make throttle pickup nervous or reduce exit security.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "setup_snapshot",
+      "yaw",
+      "throttle"
+    ],
+    "validation_targets": [
+      "drive_off",
+      "exit_yaw"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "small_swing",
+    "review_status": "accepted",
+    "preferred_when": [
+      "tight exit is repeatable and rear bar package is otherwise close"
+    ],
+    "avoid_when": [
+      "loose exit or unstable exit is already present"
+    ],
+    "watch_for": [
+      "Nervous throttle pickup or loose exit."
     ]
   }
 ]

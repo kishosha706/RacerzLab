@@ -121,6 +121,54 @@ def test_arb_discrete_options_remain_exact():
     assert cap.discrete_options["rear_arb_arm"] == ["P1", "P2", "P3", "P4", "P5"]
 
 
+def test_next_gen_arb_p_setting_direction_is_encoded():
+    knowledge = load_setup_knowledge()
+    terms = {term.term_id: term.definition.lower() for term in knowledge.guide_term_definitions}
+    assert "1.375 soft" in terms["front_arb_diameter"]
+    assert "2.000 stiff" in terms["rear_arb_diameter"]
+    assert "p1 is softest/lowest/looser" in terms["front_arb_arm"]
+    assert "p5 is stiffest/tighter" in terms["rear_arb_arm"]
+
+    effects = {effect.effect_id: effect for effect in knowledge.setup_effects}
+    assert "tight_center" in effects["soften_front_arb_arm_one_position"].helps
+    assert "loose_center" in effects["stiffen_front_arb_arm_one_position"].helps
+    assert "tight_exit" in effects["soften_rear_arb_arm_one_position"].helps
+    assert "loose_exit" in effects["stiffen_rear_arb_arm_one_position"].helps
+    assert effects["switch_rear_arb_to_soft_bar"].effect_strength == 5
+    assert effects["switch_rear_arb_to_stiff_bar"].exact_value_policy == "reference_only"
+
+
+def test_oval_setup_matrix_v5_visible_rows_have_reviewed_coverage():
+    knowledge = load_setup_knowledge()
+    area_ids = set(knowledge.setup_area_by_id)
+    term_ids = {term.term_id for term in knowledge.guide_term_definitions}
+
+    assert {
+        "tire_pressure",
+        "spring_rate",
+        "ls_compression",
+        "hs_compression",
+        "ls_rebound",
+        "hs_rebound",
+        "camber",
+        "caster",
+        "corner_weight",
+        "ride_height",
+        "shock_collar",
+        "front_arb_diameter",
+        "front_arb_arm",
+        "front_arb_preload",
+        "ballast",
+        "front_stagger",
+        "front_toe_response",
+        "toe",
+        "rear_arb_arm",
+        "truck_arm_mount",
+        "track_bar",
+    }.issubset(area_ids)
+    assert "steering_ratio" in term_ids
+
+
 def test_query_guide_knowledge_by_setup_area_returns_source_backed_records():
     result = query_guide_knowledge(setup_area="ls_rebound", car_family="next_gen")
     assert result.setup_effects

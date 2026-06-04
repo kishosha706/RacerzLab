@@ -543,14 +543,15 @@
     "term": "front_arb_diameter",
     "aliases": [],
     "canonical_term": "front_arb_diameter",
-    "definition": "Front ARB diameter is the big front bar package choice.",
+    "definition": "Front ARB diameter is the big front bar package choice. Next Gen has only 1.375 soft and 2.000 stiff.",
     "domain": "setup_system",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "all",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -560,14 +561,15 @@
     "term": "front_arb_arm",
     "aliases": [],
     "canonical_term": "front_arb_arm",
-    "definition": "Front ARB arm position P1-P5 is the smaller front bar stiffness tuning choice.",
+    "definition": "Front ARB arm position P1-P5 is the smaller front bar stiffness tuning choice. P1 is softest/lowest/looser and P5 is stiffest/tighter.",
     "domain": "setup_system",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "all",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -594,14 +596,15 @@
     "term": "rear_arb_diameter",
     "aliases": [],
     "canonical_term": "rear_arb_diameter",
-    "definition": "Rear ARB diameter is the big rear bar package choice.",
+    "definition": "Rear ARB diameter is the big rear bar package choice. Next Gen has only 1.375 soft and 2.000 stiff.",
     "domain": "setup_system",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "all",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -611,14 +614,15 @@
     "term": "rear_arb_arm",
     "aliases": [],
     "canonical_term": "rear_arb_arm",
-    "definition": "Rear ARB arm position P1-P5 is the smaller rear bar stiffness tuning choice.",
+    "definition": "Rear ARB arm position P1-P5 is the smaller rear bar stiffness tuning choice. P1 is softest/lowest/looser and P5 is stiffest/tighter.",
     "domain": "setup_system",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "all",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -1284,6 +1288,44 @@
     "car_scope": "all",
     "source_ids": [
       "lowline_oval_setup_guide"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "front_stagger",
+    "term": "front stagger",
+    "aliases": [
+      "stagger"
+    ],
+    "canonical_term": "front_stagger",
+    "definition": "Oval Setup Matrix V5 context row for front stagger. Treat as legacy/car-specific setup context and only recommend when the selected car exposes the adjustment.",
+    "domain": "setup_system",
+    "phase_hint": null,
+    "symptom_hint": null,
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "legacy_oval",
+    "source_ids": [
+      "oval_setup_matrix_v5"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "steering_ratio",
+    "term": "steering ratio",
+    "aliases": [
+      "steering box ratio"
+    ],
+    "canonical_term": "steering_ratio",
+    "definition": "Oval Setup Matrix V5 context row for steering ratio. Treat as driver feel/response context and only recommend when the selected car exposes the adjustment.",
+    "domain": "setup_system",
+    "phase_hint": "turn_in",
+    "symptom_hint": "tight_entry",
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted",
     "clarification_question": null

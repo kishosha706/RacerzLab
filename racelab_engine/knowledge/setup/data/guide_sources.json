@@ -67,11 +67,13 @@
     "source_type": "matrix",
     "domain": "oval",
     "car_scope": "all",
-    "file_name": "local_reference",
-    "local_path": "docs/setup_knowledge/racerzlab_master_setup_matrix.md",
-    "page_refs": [],
+    "file_name": "oval_setup_matrix_v5_review.md",
+    "local_path": "docs/setup_knowledge/oval_setup_matrix_v5_review.md",
+    "page_refs": [
+      "user_matrix_image"
+    ],
     "status": "reviewed",
-    "notes": "Expanded oval condition matrix source summarized through the master matrix."
+    "notes": "Oval Setup Matrix V5 image reviewed into RacerZLab-owned phase/condition setup mappings."
   },
   {
     "source_id": "oval_setup_flowchart",

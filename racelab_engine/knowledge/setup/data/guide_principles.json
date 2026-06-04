@@ -603,5 +603,56 @@
     "mistakes_to_avoid": [
       "Recommending track bar, truck arm, bump stop, or packer for Next Gen"
     ]
+  },
+  {
+    "principle_id": "next_gen_arb_p_setting_direction",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "title": "Next Gen ARB P settings are small tuning swings",
+    "racerzlab_wording": "For Next Gen, use one P-position as the smaller ARB tuning swing: P1 is softest/lowest/looser and P5 is stiffest/tighter. Use diameter only when a bigger package swing is intended.",
+    "source_summary": "User clarified Next Gen ARB diameter and P-setting behavior while reviewing Oval Setup Matrix V5.",
+    "domain": "anti_roll_bar",
+    "car_scope": "next_gen",
+    "setup_areas": [
+      "front_arb_diameter",
+      "front_arb_arm",
+      "rear_arb_diameter",
+      "rear_arb_arm"
+    ],
+    "phases": [
+      "entry",
+      "center",
+      "exit"
+    ],
+    "symptoms": [
+      "loose_entry",
+      "tight_entry",
+      "loose_center",
+      "tight_center",
+      "loose_exit",
+      "tight_exit"
+    ],
+    "evidence_links": [
+      "setup_snapshot",
+      "steering",
+      "yaw",
+      "platform_trace"
+    ],
+    "confidence": "high",
+    "review_status": "accepted",
+    "cautions": [
+      "Do not treat a diameter change as a small P-position trim."
+    ],
+    "do_not_overclaim": [
+      "Do not recommend an unavailable ARB option outside 1.375, 2.000, or P1-P5."
+    ],
+    "short_ui_wording": "P-step small, diameter big.",
+    "why_it_matters": "The bar diameter and P setting are different magnitudes of change.",
+    "mistakes_to_avoid": [
+      "Using a diameter swap when one P-position would be enough",
+      "Reversing P1/P5 direction"
+    ]
   }
 ]

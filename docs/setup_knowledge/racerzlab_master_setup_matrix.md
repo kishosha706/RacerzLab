@@ -185,11 +185,11 @@ Coupling risk: high
 ### ARB arm
 
 ```text
-P1 = softest
+P1 = softest / lowest / looser
 P2
 P3
 P4
-P5 = stiffest
+P5 = stiffest / tighter
 ```
 
 ARB arm is a **tuning swing** within the selected bar package.
@@ -552,7 +552,7 @@ ARB changes roll stiffness and balance response. A stiffer bar at one end increa
 | Area | Options | Effect | Counter-effect |
 |---|---|---|---|
 | Rear ARB diameter | 1.375 soft / 2.000 stiff | Bigger rear roll-stiffness package | Can induce oversteer if too stiff or reduce rotation if too soft depending package |
-| Rear ARB arm | P1 softest → P5 stiffest | Tuning swing | Stiffer can help rotation; softer can add rear security |
+| Rear ARB arm | P1 softest/looser → P5 stiffest/tighter | Tuning swing | One P-position is the smaller swing; diameter is the bigger package swing |
 | Rear ARB preload | Static/dynamic bar load detail | Alters load on straights/corners | Can mask setup/corner-weight issues |
 | Rear ARB attach | Procedure state | Not default race advice | Use with caution |
 
@@ -561,9 +561,9 @@ ARB changes roll stiffness and balance response. A stiffer bar at one end increa
 | Symptom | Candidate | Effect | Counter-effect |
 |---|---|---|---|
 | Tight center | Soften front ARB arm/bar | Adds front compliance/free center | May slow response or hurt platform |
-| Loose center | Soften rear ARB or stiffen front depending evidence | Adds rear security / shifts balance tighter | May reduce rotation |
+| Loose center | Move ARB arm one P-position toward P5/stiffer/tighter or use a bigger diameter package swing if intended | Adds support/security | May bind center or reduce rotation |
 | Tight exit | Rear ARB/diff/cross package review | Helps drive-off rotation if bound | May loosen exit |
-| Loose exit | Soften rear ARB or add rear security | Calms throttle rear | May make center tight/lazy |
+| Loose exit | Move rear ARB arm one P-position toward P5/stiffer/tighter or add rear security | Calms throttle rear | May make center tight/lazy |
 | High-speed/bumpy instability | Softer ARB or compliance package | More tire contact | May reduce platform control |
 
 ---

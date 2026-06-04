@@ -707,7 +707,7 @@
   {
     "effect_id": "soften_front_arb_arm",
     "setup_area": "front_arb_arm",
-    "direction": "Soften front ARB arm (P1-P5)",
+    "direction": "Move front ARB arm one P-position toward P1/softer/looser",
     "driver_phrase": [
       "entry",
       "center"
@@ -726,8 +726,8 @@
     ],
     "effect_strength": 3,
     "coupling_risk": "high",
-    "effect": "Can fine-tune front roll stiffness and platform support with the front ARB arm.",
-    "counter_effect": "May add roll movement or reduce support if the platform already needs help.",
+    "effect": "Can add front compliance and free tight entry/center in a tuning-size step.",
+    "counter_effect": "May reduce platform support or make entry less secure.",
     "test_language": "Try one front ARB arm position swing. Compare CFS/front height, steering load, and front response.",
     "evidence_required": [
       "setup_snapshot",
@@ -738,15 +738,16 @@
       "center_speed",
       "front_response"
     ],
-    "small_swing_hint": "Move one arm position.",
+    "small_swing_hint": "Move exactly one P-position inside the chosen diameter.",
     "cautions": [
-      "ARB arm is coupled to the full roll package."
+      "ARB arm is coupled to the full roll package.",
+      "P1 is softest/lowest/looser and P5 is stiffest/tighter."
     ],
     "primary_effects": [
-      "Can add front roll compliance and help the nose work in the corner."
+      "Can add front compliance and free tight entry/center in a tuning-size step."
     ],
     "counter_effects": [
-      "May reduce front platform support or make entry less secure."
+      "May reduce platform support or make entry less secure."
     ],
     "helps_phases": [
       "center",
@@ -763,9 +764,9 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Soften front ARB arm (P1-P5). Effect: Can fine-tune front roll stiffness and platform support with the front ARB arm. Counter-effect: May add roll movement or reduce support if the platform already needs help. Watch: cfs_height, steering_load, front_response. Validate: center_speed, front_response.",
+    "driver_facing_summary": "Try one small swing: Move front ARB arm one P-position toward P1/softer/looser. Effect: Can add front compliance and free tight entry/center in a tuning-size step. Counter-effect: May reduce platform support or make entry less secure. Watch: cfs_height, steering_load, front_response. Validate: center_speed, front_response.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Soften front ARB arm (P1-P5). Effect: Can fine-tune front roll stiffness and platform support with the front ARB arm. Counter-effect: May add roll movement or reduce support if the platform already needs help. Watch: cfs_height, steering_load, front_response. Validate: center_speed, front_response.",
+    "one_change_test_template": "Try one small swing: Move front ARB arm one P-position toward P1/softer/looser. Effect: Can add front compliance and free tight entry/center in a tuning-size step. Counter-effect: May reduce platform support or make entry less secure. Watch: cfs_height, steering_load, front_response. Validate: center_speed, front_response.",
     "expected_improvement_targets": [
       "center_speed",
       "front_response"
@@ -795,14 +796,15 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted"
   },
   {
     "effect_id": "stiffen_front_arb_arm",
     "setup_area": "front_arb_arm",
-    "direction": "Stiffen front ARB arm (P1-P5)",
+    "direction": "Move front ARB arm one P-position toward P5/stiffer/tighter",
     "driver_phrase": [
       "entry",
       "center"
@@ -813,6 +815,7 @@
     "disabled_for": [],
     "helps": [
       "loose_entry",
+      "loose_center",
       "front_feed_instability"
     ],
     "can_hurt": [
@@ -821,8 +824,8 @@
     ],
     "effect_strength": 3,
     "coupling_risk": "high",
-    "effect": "Can fine-tune front roll stiffness and platform support with the front ARB arm.",
-    "counter_effect": "May add chatter, push, or reduce compliance over bumps.",
+    "effect": "Can add front bar support and tighten loose entry/center in a tuning-size step.",
+    "counter_effect": "May bind center, add push, or increase front tire load.",
     "test_language": "Try one front ARB arm position swing. Compare CFS/front height, steering load, and front response.",
     "evidence_required": [
       "setup_snapshot",
@@ -833,13 +836,15 @@
       "entry_stability",
       "center_speed"
     ],
-    "small_swing_hint": "Move one arm position.",
-    "cautions": [],
+    "small_swing_hint": "Move exactly one P-position inside the chosen diameter.",
+    "cautions": [
+      "P1 is softest/lowest/looser and P5 is stiffest/tighter."
+    ],
     "primary_effects": [
-      "Can fine-tune front roll stiffness and platform support."
+      "Can add front bar support and tighten loose entry/center in a tuning-size step."
     ],
     "counter_effects": [
-      "May add chatter, push, or reduce compliance over bumps."
+      "May bind center, add push, or increase front tire load."
     ],
     "helps_phases": [
       "center",
@@ -856,9 +861,9 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Stiffen front ARB arm (P1-P5). Effect: Can fine-tune front roll stiffness and platform support with the front ARB arm. Counter-effect: May add chatter, push, or reduce compliance over bumps. Watch: cfs_height, steering_load, front_response. Validate: entry_stability, center_speed.",
+    "driver_facing_summary": "Try one small swing: Move front ARB arm one P-position toward P5/stiffer/tighter. Effect: Can add front bar support and tighten loose entry/center in a tuning-size step. Counter-effect: May bind center, add push, or increase front tire load. Watch: cfs_height, steering_load, front_response. Validate: entry_stability, center_speed.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Stiffen front ARB arm (P1-P5). Effect: Can fine-tune front roll stiffness and platform support with the front ARB arm. Counter-effect: May add chatter, push, or reduce compliance over bumps. Watch: cfs_height, steering_load, front_response. Validate: entry_stability, center_speed.",
+    "one_change_test_template": "Try one small swing: Move front ARB arm one P-position toward P5/stiffer/tighter. Effect: Can add front bar support and tighten loose entry/center in a tuning-size step. Counter-effect: May bind center, add push, or increase front tire load. Watch: cfs_height, steering_load, front_response. Validate: entry_stability, center_speed.",
     "expected_improvement_targets": [
       "entry_stability",
       "center_speed"
@@ -888,7 +893,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted"
   },
@@ -926,7 +932,8 @@
     ],
     "small_swing_hint": "Use only when a bar-package test is intended.",
     "cautions": [
-      "Next Gen soft diameter is 1.375 in."
+      "Next Gen soft diameter is 1.375 in.",
+      "Diameter change is a bigger package swing; use a one-P arm move for smaller tuning."
     ],
     "primary_effects": [
       "Can make a large front roll compliance change."
@@ -977,7 +984,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted"
   },
@@ -1016,7 +1024,8 @@
     ],
     "small_swing_hint": "Use only as a package test.",
     "cautions": [
-      "Next Gen stiff diameter is 2.000 in."
+      "Next Gen stiff diameter is 2.000 in.",
+      "Diameter change is a bigger package swing; use a one-P arm move for smaller tuning."
     ],
     "primary_effects": [
       "Can make a large front support change."
@@ -1068,14 +1077,15 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted"
   },
   {
     "effect_id": "soften_rear_arb_arm",
     "setup_area": "rear_arb_arm",
-    "direction": "Soften rear ARB arm",
+    "direction": "Move rear ARB arm one P-position toward P1/softer/looser",
     "driver_phrase": [
       "center",
       "exit"
@@ -1085,18 +1095,17 @@
     ],
     "disabled_for": [],
     "helps": [
-      "loose_exit",
-      "loose_center",
-      "poor_drive_off"
+      "tight_center",
+      "tight_exit"
     ],
     "can_hurt": [
-      "tight_exit",
-      "tight_center"
+      "loose_exit",
+      "unstable_exit"
     ],
     "effect_strength": 3,
     "coupling_risk": "high",
-    "effect": "Can reduce rear roll stiffness leverage and calm throttle-on oversteer.",
-    "counter_effect": "May take rotation away or make the car lazy off.",
+    "effect": "Can free tight center/exit by reducing rear bar support in a tuning-size step.",
+    "counter_effect": "May make throttle pickup nervous or reduce exit security.",
     "test_language": "Validate exit yaw, throttle trace, and center rotation.",
     "evidence_required": [
       "setup_snapshot",
@@ -1104,16 +1113,18 @@
       "throttle"
     ],
     "validation_targets": [
-      "exit_yaw",
-      "drive_off"
+      "drive_off",
+      "exit_yaw"
     ],
-    "small_swing_hint": "Move one arm position.",
-    "cautions": [],
+    "small_swing_hint": "Move exactly one P-position inside the chosen diameter.",
+    "cautions": [
+      "P1 is softest/lowest/looser and P5 is stiffest/tighter."
+    ],
     "primary_effects": [
-      "Can reduce rear roll stiffness leverage and calm throttle-on oversteer."
+      "Can free tight center/exit by reducing rear bar support in a tuning-size step."
     ],
     "counter_effects": [
-      "May take rotation away or make the car lazy off."
+      "May make throttle pickup nervous or reduce exit security."
     ],
     "helps_phases": [
       "center",
@@ -1130,16 +1141,16 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Soften rear ARB arm. Effect: Can reduce rear roll stiffness leverage and calm throttle-on oversteer. Counter-effect: May take rotation away or make the car lazy off. Watch: tight_exit, tight_center. Validate: exit_yaw, drive_off.",
+    "driver_facing_summary": "Try one small swing: Move rear ARB arm one P-position toward P1/softer/looser. Effect: Can free tight center/exit by reducing rear bar support in a tuning-size step. Counter-effect: May make throttle pickup nervous or reduce exit security. Watch: loose_exit, unstable_exit. Validate: drive_off, exit_yaw.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Soften rear ARB arm. Effect: Can reduce rear roll stiffness leverage and calm throttle-on oversteer. Counter-effect: May take rotation away or make the car lazy off. Watch: tight_exit, tight_center. Validate: exit_yaw, drive_off.",
+    "one_change_test_template": "Try one small swing: Move rear ARB arm one P-position toward P1/softer/looser. Effect: Can free tight center/exit by reducing rear bar support in a tuning-size step. Counter-effect: May make throttle pickup nervous or reduce exit security. Watch: loose_exit, unstable_exit. Validate: drive_off, exit_yaw.",
     "expected_improvement_targets": [
-      "exit_yaw",
-      "drive_off"
+      "drive_off",
+      "exit_yaw"
     ],
     "watch_for_targets": [
-      "tight_exit",
-      "tight_center"
+      "loose_exit",
+      "unstable_exit"
     ],
     "evidence_priority": [
       "setup_snapshot",
@@ -1160,14 +1171,15 @@
     "delta_label": "small test swing",
     "caution_level": "high",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted"
   },
   {
     "effect_id": "stiffen_rear_arb_arm",
     "setup_area": "rear_arb_arm",
-    "direction": "Stiffen rear ARB arm",
+    "direction": "Move rear ARB arm one P-position toward P5/stiffer/tighter",
     "driver_phrase": [
       "center",
       "exit"
@@ -1177,17 +1189,18 @@
     ],
     "disabled_for": [],
     "helps": [
-      "tight_center",
-      "tight_exit"
+      "loose_exit",
+      "loose_center",
+      "poor_drive_off"
     ],
     "can_hurt": [
-      "loose_exit",
-      "unstable_exit"
+      "tight_exit",
+      "tight_center"
     ],
     "effect_strength": 3,
     "coupling_risk": "high",
-    "effect": "Can add rear roll leverage and help the car rotate.",
-    "counter_effect": "May make throttle pickup nervous.",
+    "effect": "Can add rear bar support/security for loose center/exit in a tuning-size step.",
+    "counter_effect": "May tighten drive-off or reduce rotation if the car is already bound.",
     "test_language": "Compare center rotation against exit yaw and correction count.",
     "evidence_required": [
       "setup_snapshot",
@@ -1195,16 +1208,18 @@
       "throttle"
     ],
     "validation_targets": [
-      "center_rotation",
-      "exit_yaw"
+      "exit_yaw",
+      "drive_off"
     ],
-    "small_swing_hint": "Move one arm position.",
-    "cautions": [],
+    "small_swing_hint": "Move exactly one P-position inside the chosen diameter.",
+    "cautions": [
+      "P1 is softest/lowest/looser and P5 is stiffest/tighter."
+    ],
     "primary_effects": [
-      "Can add rear roll leverage and help the car rotate."
+      "Can add rear bar support/security for loose center/exit in a tuning-size step."
     ],
     "counter_effects": [
-      "May make throttle pickup nervous."
+      "May tighten drive-off or reduce rotation if the car is already bound."
     ],
     "helps_phases": [
       "center",
@@ -1221,16 +1236,16 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Stiffen rear ARB arm. Effect: Can add rear roll leverage and help the car rotate. Counter-effect: May make throttle pickup nervous. Watch: loose_exit, unstable_exit. Validate: center_rotation, exit_yaw.",
+    "driver_facing_summary": "Try one small swing: Move rear ARB arm one P-position toward P5/stiffer/tighter. Effect: Can add rear bar support/security for loose center/exit in a tuning-size step. Counter-effect: May tighten drive-off or reduce rotation if the car is already bound. Watch: tight_exit, tight_center. Validate: exit_yaw, drive_off.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Stiffen rear ARB arm. Effect: Can add rear roll leverage and help the car rotate. Counter-effect: May make throttle pickup nervous. Watch: loose_exit, unstable_exit. Validate: center_rotation, exit_yaw.",
+    "one_change_test_template": "Try one small swing: Move rear ARB arm one P-position toward P5/stiffer/tighter. Effect: Can add rear bar support/security for loose center/exit in a tuning-size step. Counter-effect: May tighten drive-off or reduce rotation if the car is already bound. Watch: tight_exit, tight_center. Validate: exit_yaw, drive_off.",
     "expected_improvement_targets": [
-      "center_rotation",
-      "exit_yaw"
+      "exit_yaw",
+      "drive_off"
     ],
     "watch_for_targets": [
-      "loose_exit",
-      "unstable_exit"
+      "tight_exit",
+      "tight_center"
     ],
     "evidence_priority": [
       "setup_snapshot",
@@ -1251,7 +1266,8 @@
     "delta_label": "small test swing",
     "caution_level": "high",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted"
   },
@@ -4043,7 +4059,7 @@
   {
     "effect_id": "soften_front_arb_arm_one_position",
     "setup_area": "front_arb_arm",
-    "direction": "Soften front ARB arm one position",
+    "direction": "Move front ARB arm one P-position toward P1/softer/looser",
     "driver_phrase": [
       "entry",
       "center"
@@ -4062,8 +4078,8 @@
     ],
     "effect_strength": 3,
     "coupling_risk": "high",
-    "effect": "Can add a tuning-size amount of front roll compliance.",
-    "counter_effect": "May reduce front support or make entry less secure.",
+    "effect": "Can add front compliance and free tight entry/center in a tuning-size step.",
+    "counter_effect": "May reduce platform support or make entry less secure.",
     "test_language": "Run one comparable test and validate center_speed, front_response before keeping the change.",
     "evidence_required": [
       "setup_snapshot",
@@ -4074,15 +4090,16 @@
       "center_speed",
       "front_response"
     ],
-    "small_swing_hint": "Use one small test change unless this is marked as a package reference.",
+    "small_swing_hint": "Move exactly one P-position inside the chosen diameter.",
     "cautions": [
-      "Keep this as a single-change test."
+      "Keep this as a single-change test.",
+      "P1 is softest/lowest/looser and P5 is stiffest/tighter."
     ],
     "primary_effects": [
-      "Can add a tuning-size amount of front roll compliance."
+      "Can add front compliance and free tight entry/center in a tuning-size step."
     ],
     "counter_effects": [
-      "May reduce front support or make entry less secure."
+      "May reduce platform support or make entry less secure."
     ],
     "helps_phases": [
       "entry",
@@ -4100,9 +4117,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Soften front ARB arm one position. Effect: Can add a tuning-size amount of front roll compliance. Counter-effect: May reduce front support or make entry less secure. Watch: loose_entry, front_platform_contact. Validate: center_speed, front_response.",
+    "driver_facing_summary": "Try one small swing: Move front ARB arm one P-position toward P1/softer/looser. Effect: Can add front compliance and free tight entry/center in a tuning-size step. Counter-effect: May reduce platform support or make entry less secure. Watch: loose_entry, front_platform_contact. Validate: center_speed, front_response.",
     "why_ranked_template": "Matches {symptom} in {phase}; package {package}; readiness {readiness}; strength {strength}, risk {risk}.",
-    "one_change_test_template": "Try one small swing: Soften front ARB arm one position. Effect: Can add a tuning-size amount of front roll compliance. Counter-effect: May reduce front support or make entry less secure. Watch: loose_entry, front_platform_contact. Validate: center_speed, front_response.",
+    "one_change_test_template": "Try one small swing: Move front ARB arm one P-position toward P1/softer/looser. Effect: Can add front compliance and free tight entry/center in a tuning-size step. Counter-effect: May reduce platform support or make entry less secure. Watch: loose_entry, front_platform_contact. Validate: center_speed, front_response.",
     "expected_improvement_targets": [
       "center_speed",
       "front_response"
@@ -4131,14 +4148,15 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted"
   },
   {
     "effect_id": "stiffen_front_arb_arm_one_position",
     "setup_area": "front_arb_arm",
-    "direction": "Stiffen front ARB arm one position",
+    "direction": "Move front ARB arm one P-position toward P5/stiffer/tighter",
     "driver_phrase": [
       "entry",
       "center"
@@ -4149,6 +4167,7 @@
     "disabled_for": [],
     "helps": [
       "loose_entry",
+      "loose_center",
       "front_feed_instability"
     ],
     "can_hurt": [
@@ -4157,8 +4176,8 @@
     ],
     "effect_strength": 3,
     "coupling_risk": "high",
-    "effect": "Can add a tuning-size amount of front bar support.",
-    "counter_effect": "May make the center tighter or add front tire load.",
+    "effect": "Can add front bar support and tighten loose entry/center in a tuning-size step.",
+    "counter_effect": "May bind center, add push, or increase front tire load.",
     "test_language": "Run one comparable test and validate entry_stability, center_speed before keeping the change.",
     "evidence_required": [
       "setup_snapshot",
@@ -4169,15 +4188,16 @@
       "entry_stability",
       "center_speed"
     ],
-    "small_swing_hint": "Use one small test change unless this is marked as a package reference.",
+    "small_swing_hint": "Move exactly one P-position inside the chosen diameter.",
     "cautions": [
-      "Keep this as a single-change test."
+      "Keep this as a single-change test.",
+      "P1 is softest/lowest/looser and P5 is stiffest/tighter."
     ],
     "primary_effects": [
-      "Can add a tuning-size amount of front bar support."
+      "Can add front bar support and tighten loose entry/center in a tuning-size step."
     ],
     "counter_effects": [
-      "May make the center tighter or add front tire load."
+      "May bind center, add push, or increase front tire load."
     ],
     "helps_phases": [
       "entry",
@@ -4195,9 +4215,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Stiffen front ARB arm one position. Effect: Can add a tuning-size amount of front bar support. Counter-effect: May make the center tighter or add front tire load. Watch: tight_center, tight_entry. Validate: entry_stability, center_speed.",
+    "driver_facing_summary": "Try one small swing: Move front ARB arm one P-position toward P5/stiffer/tighter. Effect: Can add front bar support and tighten loose entry/center in a tuning-size step. Counter-effect: May bind center, add push, or increase front tire load. Watch: tight_center, tight_entry. Validate: entry_stability, center_speed.",
     "why_ranked_template": "Matches {symptom} in {phase}; package {package}; readiness {readiness}; strength {strength}, risk {risk}.",
-    "one_change_test_template": "Try one small swing: Stiffen front ARB arm one position. Effect: Can add a tuning-size amount of front bar support. Counter-effect: May make the center tighter or add front tire load. Watch: tight_center, tight_entry. Validate: entry_stability, center_speed.",
+    "one_change_test_template": "Try one small swing: Move front ARB arm one P-position toward P5/stiffer/tighter. Effect: Can add front bar support and tighten loose entry/center in a tuning-size step. Counter-effect: May bind center, add push, or increase front tire load. Watch: tight_center, tight_entry. Validate: entry_stability, center_speed.",
     "expected_improvement_targets": [
       "entry_stability",
       "center_speed"
@@ -4226,14 +4246,15 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted"
   },
   {
     "effect_id": "soften_rear_arb_arm_one_position",
     "setup_area": "rear_arb_arm",
-    "direction": "Soften rear ARB arm one position",
+    "direction": "Move rear ARB arm one P-position toward P1/softer/looser",
     "driver_phrase": [
       "center",
       "exit"
@@ -4243,18 +4264,17 @@
     ],
     "disabled_for": [],
     "helps": [
-      "loose_exit",
-      "loose_center",
-      "poor_drive_off"
+      "tight_center",
+      "tight_exit"
     ],
     "can_hurt": [
-      "tight_exit",
-      "tight_center"
+      "loose_exit",
+      "unstable_exit"
     ],
     "effect_strength": 3,
     "coupling_risk": "high",
-    "effect": "Can calm rear roll leverage for throttle pickup.",
-    "counter_effect": "May remove needed center rotation.",
+    "effect": "Can free tight center/exit by reducing rear bar support in a tuning-size step.",
+    "counter_effect": "May make throttle pickup nervous or reduce exit security.",
     "test_language": "Run one comparable test and validate exit_yaw, drive_off before keeping the change.",
     "evidence_required": [
       "setup_snapshot",
@@ -4262,18 +4282,19 @@
       "throttle"
     ],
     "validation_targets": [
-      "exit_yaw",
-      "drive_off"
+      "drive_off",
+      "exit_yaw"
     ],
-    "small_swing_hint": "Use one small test change unless this is marked as a package reference.",
+    "small_swing_hint": "Move exactly one P-position inside the chosen diameter.",
     "cautions": [
-      "Keep this as a single-change test."
+      "Keep this as a single-change test.",
+      "P1 is softest/lowest/looser and P5 is stiffest/tighter."
     ],
     "primary_effects": [
-      "Can calm rear roll leverage for throttle pickup."
+      "Can free tight center/exit by reducing rear bar support in a tuning-size step."
     ],
     "counter_effects": [
-      "May remove needed center rotation."
+      "May make throttle pickup nervous or reduce exit security."
     ],
     "helps_phases": [
       "center",
@@ -4291,16 +4312,16 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Soften rear ARB arm one position. Effect: Can calm rear roll leverage for throttle pickup. Counter-effect: May remove needed center rotation. Watch: tight_exit, tight_center. Validate: exit_yaw, drive_off.",
+    "driver_facing_summary": "Try one small swing: Move rear ARB arm one P-position toward P1/softer/looser. Effect: Can free tight center/exit by reducing rear bar support in a tuning-size step. Counter-effect: May make throttle pickup nervous or reduce exit security. Watch: loose_exit, unstable_exit. Validate: drive_off, exit_yaw.",
     "why_ranked_template": "Matches {symptom} in {phase}; package {package}; readiness {readiness}; strength {strength}, risk {risk}.",
-    "one_change_test_template": "Try one small swing: Soften rear ARB arm one position. Effect: Can calm rear roll leverage for throttle pickup. Counter-effect: May remove needed center rotation. Watch: tight_exit, tight_center. Validate: exit_yaw, drive_off.",
+    "one_change_test_template": "Try one small swing: Move rear ARB arm one P-position toward P1/softer/looser. Effect: Can free tight center/exit by reducing rear bar support in a tuning-size step. Counter-effect: May make throttle pickup nervous or reduce exit security. Watch: loose_exit, unstable_exit. Validate: drive_off, exit_yaw.",
     "expected_improvement_targets": [
-      "exit_yaw",
-      "drive_off"
+      "drive_off",
+      "exit_yaw"
     ],
     "watch_for_targets": [
-      "tight_exit",
-      "tight_center"
+      "loose_exit",
+      "unstable_exit"
     ],
     "evidence_priority": [
       "setup_snapshot",
@@ -4321,14 +4342,15 @@
     "delta_label": "small test swing",
     "caution_level": "high",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted"
   },
   {
     "effect_id": "stiffen_rear_arb_arm_one_position",
     "setup_area": "rear_arb_arm",
-    "direction": "Stiffen rear ARB arm one position",
+    "direction": "Move rear ARB arm one P-position toward P5/stiffer/tighter",
     "driver_phrase": [
       "center",
       "exit"
@@ -4338,17 +4360,18 @@
     ],
     "disabled_for": [],
     "helps": [
-      "tight_center",
-      "tight_exit"
+      "loose_exit",
+      "loose_center",
+      "poor_drive_off"
     ],
     "can_hurt": [
-      "loose_exit",
-      "unstable_exit"
+      "tight_exit",
+      "tight_center"
     ],
     "effect_strength": 3,
     "coupling_risk": "high",
-    "effect": "Can add rear roll leverage to help rotation.",
-    "counter_effect": "May make throttle pickup nervous.",
+    "effect": "Can add rear bar support/security for loose center/exit in a tuning-size step.",
+    "counter_effect": "May tighten drive-off or reduce rotation if the car is already bound.",
     "test_language": "Run one comparable test and validate center_rotation, exit_yaw before keeping the change.",
     "evidence_required": [
       "setup_snapshot",
@@ -4356,18 +4379,19 @@
       "throttle"
     ],
     "validation_targets": [
-      "center_rotation",
-      "exit_yaw"
+      "exit_yaw",
+      "drive_off"
     ],
-    "small_swing_hint": "Use one small test change unless this is marked as a package reference.",
+    "small_swing_hint": "Move exactly one P-position inside the chosen diameter.",
     "cautions": [
-      "Keep this as a single-change test."
+      "Keep this as a single-change test.",
+      "P1 is softest/lowest/looser and P5 is stiffest/tighter."
     ],
     "primary_effects": [
-      "Can add rear roll leverage to help rotation."
+      "Can add rear bar support/security for loose center/exit in a tuning-size step."
     ],
     "counter_effects": [
-      "May make throttle pickup nervous."
+      "May tighten drive-off or reduce rotation if the car is already bound."
     ],
     "helps_phases": [
       "center",
@@ -4385,16 +4409,16 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Stiffen rear ARB arm one position. Effect: Can add rear roll leverage to help rotation. Counter-effect: May make throttle pickup nervous. Watch: loose_exit, unstable_exit. Validate: center_rotation, exit_yaw.",
+    "driver_facing_summary": "Try one small swing: Move rear ARB arm one P-position toward P5/stiffer/tighter. Effect: Can add rear bar support/security for loose center/exit in a tuning-size step. Counter-effect: May tighten drive-off or reduce rotation if the car is already bound. Watch: tight_exit, tight_center. Validate: exit_yaw, drive_off.",
     "why_ranked_template": "Matches {symptom} in {phase}; package {package}; readiness {readiness}; strength {strength}, risk {risk}.",
-    "one_change_test_template": "Try one small swing: Stiffen rear ARB arm one position. Effect: Can add rear roll leverage to help rotation. Counter-effect: May make throttle pickup nervous. Watch: loose_exit, unstable_exit. Validate: center_rotation, exit_yaw.",
+    "one_change_test_template": "Try one small swing: Move rear ARB arm one P-position toward P5/stiffer/tighter. Effect: Can add rear bar support/security for loose center/exit in a tuning-size step. Counter-effect: May tighten drive-off or reduce rotation if the car is already bound. Watch: tight_exit, tight_center. Validate: exit_yaw, drive_off.",
     "expected_improvement_targets": [
-      "center_rotation",
-      "exit_yaw"
+      "exit_yaw",
+      "drive_off"
     ],
     "watch_for_targets": [
-      "loose_exit",
-      "unstable_exit"
+      "tight_exit",
+      "tight_center"
     ],
     "evidence_priority": [
       "setup_snapshot",
@@ -4415,7 +4439,8 @@
     "delta_label": "small test swing",
     "caution_level": "high",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted"
   },
@@ -8597,6 +8622,193 @@
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
       "lowline_oval_setup_guide"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "switch_rear_arb_to_soft_bar",
+    "setup_area": "rear_arb_diameter",
+    "direction": "Switch rear ARB to 1.375 soft bar",
+    "driver_phrase": [
+      "center",
+      "exit"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "tight_center",
+      "tight_exit"
+    ],
+    "can_hurt": [
+      "loose_exit",
+      "unstable_exit"
+    ],
+    "effect_strength": 5,
+    "coupling_risk": "high",
+    "effect": "Can make a large rear bar package change toward a softer/looser rear support window.",
+    "counter_effect": "May make throttle pickup nervous or reduce exit security.",
+    "test_language": "Try one package-level rear ARB diameter test. Compare center rotation, exit yaw, and throttle pickup.",
+    "evidence_required": [
+      "setup_snapshot",
+      "yaw",
+      "throttle"
+    ],
+    "validation_targets": [
+      "center_rotation",
+      "exit_yaw"
+    ],
+    "small_swing_hint": "Use only when a diameter package test is intended; for smaller tuning move one P-position.",
+    "cautions": [
+      "Next Gen soft diameter is 1.375 in.",
+      "Diameter change is a bigger package swing."
+    ],
+    "primary_effects": [
+      "Can make a large rear bar package change toward a softer/looser rear support window."
+    ],
+    "counter_effects": [
+      "May make throttle pickup nervous or reduce exit security."
+    ],
+    "helps_phases": [
+      "center",
+      "exit"
+    ],
+    "can_hurt_phases": [
+      "center",
+      "exit"
+    ],
+    "setup_package_tags": [
+      "arb_led_package"
+    ],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Switch rear ARB to 1.375 soft bar. Effect: Can make a large rear bar package change toward a softer/looser rear support window. Counter-effect: May make throttle pickup nervous or reduce exit security. Watch: loose_exit, unstable_exit. Validate: center_rotation, exit_yaw.",
+    "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
+    "one_change_test_template": "Try one small swing: Switch rear ARB to 1.375 soft bar. Effect: Can make a large rear bar package change toward a softer/looser rear support window. Counter-effect: May make throttle pickup nervous or reduce exit security. Watch: loose_exit, unstable_exit. Validate: center_rotation, exit_yaw.",
+    "expected_improvement_targets": [
+      "center_rotation",
+      "exit_yaw"
+    ],
+    "watch_for_targets": [
+      "loose_exit",
+      "unstable_exit"
+    ],
+    "evidence_priority": [
+      "setup_snapshot",
+      "yaw",
+      "throttle"
+    ],
+    "evidence_missing_message": "Missing key evidence: setup_snapshot. Keep this as lower confidence until that evidence is available.",
+    "preferred_when": [
+      "tight center/exit is repeatable and a rear bar package test is intended"
+    ],
+    "avoid_when": [
+      "loose exit or unstable exit is already present"
+    ],
+    "exact_value_policy": "reference_only",
+    "can_show_delta": false,
+    "delta_label": null,
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
+    ],
+    "review_status": "accepted"
+  },
+  {
+    "effect_id": "switch_rear_arb_to_stiff_bar",
+    "setup_area": "rear_arb_diameter",
+    "direction": "Switch rear ARB to 2.000 stiff bar",
+    "driver_phrase": [
+      "center",
+      "exit"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "helps": [
+      "loose_center",
+      "loose_exit",
+      "poor_drive_off"
+    ],
+    "can_hurt": [
+      "tight_center",
+      "tight_exit"
+    ],
+    "effect_strength": 5,
+    "coupling_risk": "high",
+    "effect": "Can make a large rear bar package change toward a stiffer/tighter rear support window.",
+    "counter_effect": "May bind center/exit or reduce rotation if the car already has enough rear support.",
+    "test_language": "Try one package-level rear ARB diameter test. Compare exit yaw, drive-off, and center speed.",
+    "evidence_required": [
+      "setup_snapshot",
+      "yaw",
+      "throttle"
+    ],
+    "validation_targets": [
+      "exit_yaw",
+      "drive_off"
+    ],
+    "small_swing_hint": "Use only when a diameter package test is intended; for smaller tuning move one P-position.",
+    "cautions": [
+      "Next Gen stiff diameter is 2.000 in.",
+      "Diameter change is a bigger package swing."
+    ],
+    "primary_effects": [
+      "Can make a large rear bar package change toward a stiffer/tighter rear support window."
+    ],
+    "counter_effects": [
+      "May bind center/exit or reduce rotation if the car already has enough rear support."
+    ],
+    "helps_phases": [
+      "center",
+      "exit"
+    ],
+    "can_hurt_phases": [
+      "center",
+      "exit"
+    ],
+    "setup_package_tags": [
+      "arb_led_package"
+    ],
+    "track_family_tags": [
+      "oval",
+      "intermediate_oval"
+    ],
+    "driver_facing_summary": "Try one small swing: Switch rear ARB to 2.000 stiff bar. Effect: Can make a large rear bar package change toward a stiffer/tighter rear support window. Counter-effect: May bind center/exit or reduce rotation if the car already has enough rear support. Watch: tight_center, tight_exit. Validate: exit_yaw, drive_off.",
+    "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
+    "one_change_test_template": "Try one small swing: Switch rear ARB to 2.000 stiff bar. Effect: Can make a large rear bar package change toward a stiffer/tighter rear support window. Counter-effect: May bind center/exit or reduce rotation if the car already has enough rear support. Watch: tight_center, tight_exit. Validate: exit_yaw, drive_off.",
+    "expected_improvement_targets": [
+      "exit_yaw",
+      "drive_off"
+    ],
+    "watch_for_targets": [
+      "tight_center",
+      "tight_exit"
+    ],
+    "evidence_priority": [
+      "setup_snapshot",
+      "yaw",
+      "throttle"
+    ],
+    "evidence_missing_message": "Missing key evidence: setup_snapshot. Keep this as lower confidence until that evidence is available.",
+    "preferred_when": [
+      "loose center/exit is repeatable and a rear bar package test is intended"
+    ],
+    "avoid_when": [
+      "tight center or tight exit is already present"
+    ],
+    "exact_value_policy": "reference_only",
+    "can_show_delta": false,
+    "delta_label": null,
+    "caution_level": "high",
+    "source_ids": [
+      "racerzlab_master_setup_matrix_v1",
+      "oval_setup_matrix_v5"
     ],
     "review_status": "accepted"
   }

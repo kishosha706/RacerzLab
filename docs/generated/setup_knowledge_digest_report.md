@@ -31,12 +31,13 @@ Generated from reviewed local JSON records derived from the RacerZLab master set
 - Driver preference levers are not first-response fixes: Preference levers need context.
 - Spring changes require platform reset checks: Reset platform after springs.
 - Legacy travel and rear-geometry levers stay gated: Legacy levers stay gated.
+- Next Gen ARB P settings are small tuning swings: P-step small, diameter big.
 
 ## Terms
-- Term definitions: 72
+- Term definitions: 74
 
 ## Setup Areas
-- Setup areas: 54
+- Setup areas: 55
 - alignment: 1
 - anti_roll_bar: 8
 - brakes: 1
@@ -44,7 +45,7 @@ Generated from reviewed local JSON records derived from the RacerZLab master set
 - evidence: 9
 - platform: 6
 - rear_suspension: 2
-- setup: 12
+- setup: 13
 - shocks: 6
 - springs: 2
 - steering: 1
@@ -55,11 +56,11 @@ Generated from reviewed local JSON records derived from the RacerZLab master set
 - derived_proxy: 2
 - live_telemetry: 8
 - mixed: 6
-- static_setup: 38
+- static_setup: 39
 
 ## Setup Effects By System
 - alignment: 4
-- anti_roll_bar: 12
+- anti_roll_bar: 14
 - brakes: 2
 - driveline: 5
 - platform: 11
@@ -75,10 +76,10 @@ Generated from reviewed local JSON records derived from the RacerZLab master set
 - Strength 2: 19
 - Strength 3: 48
 - Strength 4: 20
-- Strength 5: 3
+- Strength 5: 5
 
 ## Counter-Effect Summary
-- Effects with counter-effect text: 90
+- Effects with counter-effect text: 92
 
 ## Car Capability Gates
 - Next Gen disabled areas: track_bar, truck_arm_mount, bump_stop, packer
@@ -115,7 +116,7 @@ Generated from reviewed local JSON records derived from the RacerZLab master set
 - tight_overall: cross_weight / free balance/bind
 - loose_entry: brake_bias / add front brake bias
 - tight_entry: brake_bias / reduce front brake bias
-- loose_center: rear_arb_arm / soften rear ARB or add rear security
+- loose_center: rear_arb_arm / move rear ARB arm toward P5/stiffer/tighter or add rear security
 - tight_center: cross_weight / reduce bind/free center
 - loose_exit: cross_weight / add exit security
 - tight_exit: diff_preload / free center-off/driveline bind
@@ -132,6 +133,10 @@ Generated from reviewed local JSON records derived from the RacerZLab master set
 - tight_entry: caster / tune caster split as a driver/track feel lever
 - tire_overwork: camber / read camber through contact patch and temperature spread
 - platform_instability: spring_rate / recheck ride height and camber after spring changes
+- tight_center: front_arb_arm / move front ARB arm one P-position toward P1/softer/looser
+- loose_center: front_arb_arm / move front ARB arm one P-position toward P5/stiffer/tighter
+- loose_exit: rear_arb_arm / move rear ARB arm one P-position toward P5/stiffer/tighter
+- tight_exit: rear_arb_arm / move rear ARB arm one P-position toward P1/softer/looser
 
 ## Flowchart Process Logic
 - Exit grip first, entry balance second, driver feel last.
