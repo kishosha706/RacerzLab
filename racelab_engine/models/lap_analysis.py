@@ -145,3 +145,72 @@ class LapWindowsResponse(BaseModel):
     total_valid_laps: int = 0
     total_laps: int = 0
     warnings: list[str] = Field(default_factory=list)
+
+
+class StintSummary(BaseModel):
+    """Table-ready summary of a run stint or consecutive lap window."""
+    stint_id: str
+    run_id: str
+    setup_name: Optional[str] = None
+    car_name: Optional[str] = None
+    track_name: Optional[str] = None
+    session_date: Optional[str] = None
+    start_lap: int
+    end_lap: int
+    lap_count: int
+    valid_lap_count: int
+    avg_lap_time: Optional[float] = None
+    best_lap_time: Optional[float] = None
+    worst_lap_time: Optional[float] = None
+    lap_time_std_dev: Optional[float] = None
+    rolling_5_avg_best: Optional[float] = None
+    rolling_10_avg_best: Optional[float] = None
+    rolling_20_avg_best: Optional[float] = None
+    rolling_30_avg_best: Optional[float] = None
+    falloff_total: Optional[float] = None
+    falloff_per_lap: Optional[float] = None
+    early_avg: Optional[float] = None
+    middle_avg: Optional[float] = None
+    late_avg: Optional[float] = None
+    consistency_score: Optional[float] = None
+    pace_quality_score: Optional[float] = None
+    evidence_confidence_score: Optional[float] = None
+    setup_usefulness_score: Optional[float] = None
+    tire_trend_label: str = "tire data limited"
+    platform_trend_label: str = "platform data limited"
+    shock_trend_label: str = "shock data limited"
+    stint_label: str = "insufficient laps"
+    warnings: list[str] = Field(default_factory=list)
+
+
+class StintResponse(BaseModel):
+    """Response for imported-data stint intelligence."""
+    run_id: str
+    stints: list[StintSummary] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class StintCompareRequest(BaseModel):
+    """Request for comparing two computed stint summaries."""
+    baseline_run_id: str
+    baseline_stint_id: str
+    test_run_id: str
+    test_stint_id: str
+
+
+class StintCompareResult(BaseModel):
+    """Delta summary for two selected stints."""
+    baseline_stint: StintSummary
+    test_stint: StintSummary
+    avg_delta: Optional[float] = None
+    best_delta: Optional[float] = None
+    rolling_5_delta: Optional[float] = None
+    rolling_10_delta: Optional[float] = None
+    rolling_20_delta: Optional[float] = None
+    falloff_delta: Optional[float] = None
+    consistency_delta: Optional[float] = None
+    tire_trend_delta: str = "limited"
+    platform_trend_delta: str = "limited"
+    shock_trend_delta: str = "limited"
+    verdict: str = "Data is limited; need more clean laps."
+    summary: str = "Stint comparison is limited by available clean lap data."

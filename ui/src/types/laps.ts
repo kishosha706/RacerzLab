@@ -122,3 +122,68 @@ export interface LapWindowsResponse {
   total_laps: number;
   warnings: string[];
 }
+
+export interface StintSummary {
+  stint_id: string;
+  run_id: string;
+  setup_name: string | null;
+  car_name: string | null;
+  track_name: string | null;
+  session_date: string | null;
+  start_lap: number;
+  end_lap: number;
+  lap_count: number;
+  valid_lap_count: number;
+  avg_lap_time: number | null;
+  best_lap_time: number | null;
+  worst_lap_time: number | null;
+  lap_time_std_dev: number | null;
+  rolling_5_avg_best: number | null;
+  rolling_10_avg_best: number | null;
+  rolling_20_avg_best: number | null;
+  rolling_30_avg_best: number | null;
+  falloff_total: number | null;
+  falloff_per_lap: number | null;
+  early_avg: number | null;
+  middle_avg: number | null;
+  late_avg: number | null;
+  consistency_score: number | null;
+  pace_quality_score: number | null;
+  evidence_confidence_score: number | null;
+  setup_usefulness_score: number | null;
+  tire_trend_label: string;
+  platform_trend_label: string;
+  shock_trend_label: string;
+  stint_label: string;
+  warnings: string[];
+}
+
+export interface StintResponse {
+  run_id: string;
+  stints: StintSummary[];
+  warnings: string[];
+}
+
+export interface StintCompareRequest {
+  baseline_run_id: string;
+  baseline_stint_id: string;
+  test_run_id: string;
+  test_stint_id: string;
+}
+
+export interface StintCompareResult {
+  baseline_stint: StintSummary;
+  test_stint: StintSummary;
+  avg_delta: number | null;
+  best_delta: number | null;
+  rolling_5_delta: number | null;
+  rolling_10_delta: number | null;
+  rolling_20_delta: number | null;
+  falloff_delta: number | null;
+  consistency_delta: number | null;
+  tire_trend_delta: string;
+  platform_trend_delta: string;
+  shock_trend_delta: string;
+  verdict: string;
+  summary: string;
+}

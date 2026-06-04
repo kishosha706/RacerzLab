@@ -12,19 +12,19 @@ import {
   Trophy,
 } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchLapWindows, fetchRunList } from "../api/client";
+import { compareStints, fetchLapWindows, fetchRunList, fetchStints } from "../api/client";
 import { makeBasketItem } from "../components/CompareBasket";
 import { ValueDisplay } from "../components/ValueDisplay";
 import { useCompareBasket } from "../store/CompareBasketContext";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
-import type { LapWindowSummary, LapWindowsResponse } from "../types/laps";
+import type { LapWindowSummary, LapWindowsResponse, StintCompareResult, StintResponse, StintSummary } from "../types/laps";
 import type { LapSummary, RunListItem, RunOverview } from "../types/telemetry";
 
 type LapsTabProps = {
   overview: RunOverview;
 };
 
-type LapsSubview = "current" | "windows" | "all_sessions" | "baselines" | "basket";
+type LapsSubview = "current" | "windows" | "stints" | "all_sessions" | "baselines" | "basket";
 type StintMode = "ev" | "delta" | "falloff";
 
 type EvidenceDescriptor = {
@@ -59,8 +59,22 @@ function formatDelta(seconds: number | null | undefined, best: number | null | u
   return `+${delta.toFixed(3)}`;
 }
 
+function formatSignedDelta(seconds: number | null | undefined): string {
+  if (seconds == null || Number.isNaN(seconds)) return "-";
+  if (Math.abs(seconds) < 0.001) return "+0.000";
+  return `${seconds > 0 ? "+" : ""}${seconds.toFixed(3)}`;
+}
+
+function formatScore(score: number | null | undefined): string {
+  return score == null || Number.isNaN(score) ? "-" : score.toFixed(0);
+}
+
 function formatWindowRange(window: Pick<LapWindowSummary, "start_lap" | "end_lap">): string {
   return `Laps ${window.start_lap}-${window.end_lap}`;
+}
+
+function formatStintRange(stint: Pick<StintSummary, "start_lap" | "end_lap">): string {
+  return `Laps ${stint.start_lap}-${stint.end_lap}`;
 }
 
 function paceQualityColor(score: number | null | undefined): string {
@@ -337,6 +351,13 @@ export function LapsTab({ overview }: LapsTabProps) {
   } = useCompareBasket();
 
   const [windowsData, setWindowsData] = useState<LapWindowsResponse | null>(null);
+  const [stintData, setStintData] = useState<StintResponse | null>(null);
+  const [stintsLoading, setStintsLoading] = useState(false);
+  const [stintCompareLoading, setStintCompareLoading] = useState(false);
+  const [stintCompareError, setStintCompareError] = useState<string | null>(null);
+  const [baselineStintId, setBaselineStintId] = useState<string | null>(null);
+  const [testStintId, setTestStintId] = useState<string | null>(null);
+  const [stintCompare, setStintCompare] = useState<StintCompareResult | null>(null);
   const [expandedLap, setExpandedLap] = useState<number | null>(null);
   const [stintMode, setStintMode] = useState<StintMode>("ev");
   const [subview, setSubview] = useState<LapsSubview>("current");
@@ -361,6 +382,40 @@ export function LapsTab({ overview }: LapsTabProps) {
       .then(setWindowsData)
       .catch(() => setWindowsData(null));
   }, [overview.run_id]);
+
+  useEffect(() => {
+    setStintsLoading(true);
+    setBaselineStintId(null);
+    setTestStintId(null);
+    setStintCompare(null);
+    setStintCompareError(null);
+    fetchStints(overview.run_id)
+      .then(setStintData)
+      .catch(() => setStintData(null))
+      .finally(() => setStintsLoading(false));
+  }, [overview.run_id]);
+
+  useEffect(() => {
+    if (!baselineStintId || !testStintId) {
+      setStintCompare(null);
+      setStintCompareError(null);
+      return;
+    }
+    setStintCompareLoading(true);
+    setStintCompareError(null);
+    compareStints({
+      baseline_run_id: overview.run_id,
+      baseline_stint_id: baselineStintId,
+      test_run_id: overview.run_id,
+      test_stint_id: testStintId,
+    })
+      .then(setStintCompare)
+      .catch((err: unknown) => {
+        setStintCompare(null);
+        setStintCompareError((err as Error).message ?? "Stint compare failed.");
+      })
+      .finally(() => setStintCompareLoading(false));
+  }, [baselineStintId, overview.run_id, testStintId]);
 
   const bestTime = useMemo(() => {
     const times = laps.filter((lap) => lap.lap_time != null).map((lap) => lap.lap_time as number);
@@ -390,6 +445,20 @@ export function LapsTab({ overview }: LapsTabProps) {
       .filter((group) => group.best_window != null)
       .map((group) => group.best_window as LapWindowSummary),
     [windowsData],
+  );
+
+  const stints = useMemo(() => stintData?.stints ?? [], [stintData]);
+  const baselineStint = useMemo(
+    () => stints.find((stint) => stint.stint_id === baselineStintId) ?? null,
+    [baselineStintId, stints],
+  );
+  const testStint = useMemo(
+    () => stints.find((stint) => stint.stint_id === testStintId) ?? null,
+    [stints, testStintId],
+  );
+  const strongestSetupStintId = useMemo(
+    () => [...stints].sort((left, right) => (right.setup_usefulness_score ?? -1) - (left.setup_usefulness_score ?? -1))[0]?.stint_id ?? null,
+    [stints],
   );
 
   const bestWindow = useMemo(
@@ -537,6 +606,66 @@ export function LapsTab({ overview }: LapsTabProps) {
       valueBasis: "selected_window",
     },
   ), [laps, overview, representativeLapByWindowId]);
+
+  const stintToWindowSummary = useCallback((stint: StintSummary): LapWindowSummary => ({
+    window_id: stint.stint_id,
+    run_id: stint.run_id,
+    car_name: stint.car_name,
+    track_name: stint.track_name,
+    start_lap: stint.start_lap,
+    end_lap: stint.end_lap,
+    window_size: stint.lap_count,
+    total_time: stint.avg_lap_time != null ? stint.avg_lap_time * stint.valid_lap_count : null,
+    average_lap_time: stint.avg_lap_time,
+    fastest_lap_time: stint.best_lap_time,
+    slowest_lap_time: stint.worst_lap_time,
+    lap_time_std_dev: stint.lap_time_std_dev,
+    falloff_sec: stint.falloff_total,
+    falloff_sec_per_lap: stint.falloff_per_lap,
+    consistency_score: stint.consistency_score ?? 0,
+    valid_lap_count: stint.valid_lap_count,
+    excluded_laps: [],
+    classification_tags: [],
+    platform_risk_peak: null,
+    rear_platform_risk_peak: null,
+    whole_car_bottoming_peak: null,
+    tire_stress_score: 0,
+    shock_stress_score: 0,
+    confidence_score: stint.evidence_confidence_score ?? 0,
+    warnings: stint.warnings,
+    recommendation: stint.stint_label,
+    pace_quality_score: stint.pace_quality_score,
+    pace_quality_label: null,
+    evidence_confidence_score: stint.evidence_confidence_score,
+    evidence_confidence_label: null,
+    setup_usefulness_score: stint.setup_usefulness_score,
+    setup_usefulness_label: null,
+    pace_quality_warnings: stint.warnings,
+    pace_quality_components: null,
+  }), []);
+
+  const makeStintBasket = useCallback((stint: StintSummary, label: string) => makeBasketItem(
+    overview.run_id,
+    stint.start_lap,
+    label,
+    stint.car_name ?? overview.session.car_name ?? null,
+    stint.track_name ?? (overview.session.track_display_name ?? overview.session.track_name) ?? null,
+    stint.setup_name ?? overview.session.setup_name ?? null,
+    stint.avg_lap_time ?? null,
+    [],
+    stint.setup_usefulness_score ?? null,
+    stint.session_date ?? overview.session.import_time ?? null,
+    overview.session.session_type ?? null,
+    overview.setup_snapshot != null,
+    {
+      lapScope: "lap_window",
+      lapWindowStart: stint.start_lap,
+      lapWindowEnd: stint.end_lap,
+      representativeLap: stint.start_lap,
+      trustTier: stint.evidence_confidence_score != null ? `Trust ${stint.evidence_confidence_score.toFixed(0)}` : "Trust unavailable",
+      valueBasis: "selected_window",
+    },
+  ), [overview]);
 
   const compareRoleForLap = useCallback((lapNumber: number): string | null => {
     if (basket.baseline?.run_id === overview.run_id && basket.baseline.lap_scope !== "lap_window" && basket.baseline.lap_number === lapNumber) return "Baseline";
@@ -748,13 +877,13 @@ export function LapsTab({ overview }: LapsTabProps) {
       </section>
 
       <div className="compare-subnav">
-        {(["current", "windows", "all_sessions", "baselines", "basket"] as LapsSubview[]).map((view) => (
+        {(["current", "windows", "stints", "all_sessions", "baselines", "basket"] as LapsSubview[]).map((view) => (
           <button
             key={view}
             className={`subnav-item ${subview === view ? "active" : ""}`}
             onClick={() => setSubview(view)}
           >
-            {view === "current" ? "Evidence" : view === "windows" ? "Windows" : view === "all_sessions" ? "All Sessions" : view === "baselines" ? "Baselines" : "Basket"}
+            {view === "current" ? "Evidence" : view === "windows" ? "Windows" : view === "stints" ? "Stint Intelligence" : view === "all_sessions" ? "All Sessions" : view === "baselines" ? "Baselines" : "Basket"}
           </button>
         ))}
       </div>
@@ -1045,6 +1174,154 @@ export function LapsTab({ overview }: LapsTabProps) {
                     ), false, "compare_inline")}
                   </article>
                 ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {subview === "stints" && (
+        <section className="workspace-section stint-intelligence-section">
+          <div className="section-heading-row">
+            <div>
+              <span className="eyebrow">Imported Data</span>
+              <h2><BarChart3 size={16} /> Stint Intelligence</h2>
+              <p className="section-note">
+                Compare long-run pace windows, falloff, and setup usefulness.
+              </p>
+            </div>
+            <div className="laps-action-row compact">
+              <button className="secondary-button" onClick={() => setWorkspace("compare", "laps")} disabled={!baselineStint || !testStint}>
+                <Layers size={14} /> Open Compare
+              </button>
+            </div>
+          </div>
+
+          {stintData?.warnings && stintData.warnings.length > 0 && (
+            <div className="laps-chip-row" style={{ marginBottom: 10 }}>
+              {stintData.warnings.slice(0, 3).map((warning) => (
+                <span key={warning} className="lap-flag-badge" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>{warning}</span>
+              ))}
+            </div>
+          )}
+
+          {baselineStint && testStint && (
+            <div className="stint-compare-panel">
+              <div>
+                <span className="eyebrow">Stint Compare</span>
+                <h3>{stintCompare?.verdict ?? (stintCompareLoading ? "Comparing selected stints..." : "Comparison pending")}</h3>
+                <p className="section-note">{stintCompareError ?? stintCompare?.summary ?? "Select clean windows with enough laps for stronger deltas."}</p>
+                <svg className="stint-sparkline" viewBox="0 0 104 52" role="img" aria-label="Selected stint pace bucket preview">
+                  {[baselineStint, testStint].map((stint, index) => {
+                    const values = [stint.early_avg, stint.middle_avg, stint.late_avg].filter((value): value is number => value != null);
+                    const min = values.length > 0 ? Math.min(...values) : 0;
+                    const max = values.length > 0 ? Math.max(...values) : 1;
+                    const spread = Math.max(0.001, max - min);
+                    const points = [stint.early_avg, stint.middle_avg, stint.late_avg]
+                      .map((value, pointIndex) => {
+                        const y = value == null ? 26 : 46 - ((value - min) / spread) * 28;
+                        return `${pointIndex * 44 + 8},${y}`;
+                      })
+                      .join(" ");
+                    return <polyline key={stint.stint_id} points={points} fill="none" stroke={index === 0 ? "#38bdf8" : "#f59e0b"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />;
+                  })}
+                </svg>
+              </div>
+              <div className="stint-compare-metrics">
+                <div><span>Avg</span><strong>{formatSignedDelta(stintCompare?.avg_delta)}</strong></div>
+                <div><span>Best</span><strong>{formatSignedDelta(stintCompare?.best_delta)}</strong></div>
+                <div><span>Best 5</span><strong>{formatSignedDelta(stintCompare?.rolling_5_delta)}</strong></div>
+                <div><span>Best 10</span><strong>{formatSignedDelta(stintCompare?.rolling_10_delta)}</strong></div>
+                <div><span>Best 20</span><strong>{formatSignedDelta(stintCompare?.rolling_20_delta)}</strong></div>
+                <div><span>Falloff</span><strong>{formatSignedDelta(stintCompare?.falloff_delta)}</strong></div>
+                <div><span>Consistency</span><strong>{formatSignedDelta(stintCompare?.consistency_delta)}</strong></div>
+              </div>
+              <div className="laps-chip-row">
+                <span className="lap-flag-badge">Baseline {formatStintRange(baselineStint)}</span>
+                <span className="lap-flag-badge">Test {formatStintRange(testStint)}</span>
+                {stintCompare && <span className="lap-flag-badge">{stintCompare.tire_trend_delta}</span>}
+                {stintCompare && <span className="lap-flag-badge">{stintCompare.platform_trend_delta}</span>}
+                {stintCompare && <span className="lap-flag-badge">{stintCompare.shock_trend_delta}</span>}
+              </div>
+            </div>
+          )}
+
+          {stintsLoading && <p className="muted">Loading stint windows...</p>}
+          {!stintsLoading && stints.length === 0 && (
+            <p className="muted">No stint windows are available yet. Need at least 5 valid imported laps and 60% valid data in a candidate window.</p>
+          )}
+          {!stintsLoading && stints.length > 0 && (
+            <div className="stint-table-wrap">
+              <table className="compact-table stint-table">
+                <thead>
+                  <tr>
+                    <th>Run / Setup</th>
+                    <th>Stint / Window</th>
+                    <th>Laps</th>
+                    <th>Best</th>
+                    <th>Avg</th>
+                    <th>Best 5</th>
+                    <th>Best 10</th>
+                    <th>Best 20</th>
+                    <th>Falloff</th>
+                    <th>Consistency</th>
+                    <th>Tire</th>
+                    <th>Platform</th>
+                    <th>Shock</th>
+                    <th>Setup EV</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stints.map((stint) => {
+                    const isBaseline = baselineStintId === stint.stint_id;
+                    const isTest = testStintId === stint.stint_id;
+                    const isStrongest = strongestSetupStintId === stint.stint_id;
+                    const hasLimitedWarning = stint.warnings.some((warning) => /limited|shorter|excluded/i.test(warning));
+                    const window = stintToWindowSummary(stint);
+                    const bucketValues = [stint.rolling_5_avg_best, stint.rolling_10_avg_best, stint.rolling_20_avg_best].filter((value): value is number => value != null);
+                    const bestBucket = bucketValues.length > 0 ? Math.min(...bucketValues) : null;
+                    return (
+                      <tr
+                        key={stint.stint_id}
+                        className={`${isBaseline ? "stint-row-baseline" : ""} ${isTest ? "stint-row-test" : ""} ${isStrongest ? "stint-row-strongest" : ""}`}
+                      >
+                        <td>
+                          <strong>{stint.setup_name ?? overview.session.setup_name ?? "Setup unknown"}</strong>
+                          <div className="muted">{stint.track_name ?? overview.session.track_display_name ?? overview.session.track_name ?? "-"}</div>
+                        </td>
+                        <td>
+                          <strong>{formatStintRange(stint)}</strong>
+                          <div className="laps-chip-row compact">
+                            <span className="lap-flag-badge">{stint.stint_label}</span>
+                            {isStrongest && <span className="lap-flag-badge">Top EV</span>}
+                            {hasLimitedWarning && <span className="lap-flag-badge" style={{ color: "#f59e0b" }}>Limited</span>}
+                          </div>
+                        </td>
+                        <td>{stint.valid_lap_count}/{stint.lap_count}</td>
+                        <td>{formatTime(stint.best_lap_time)}</td>
+                        <td>{formatTime(stint.avg_lap_time)}</td>
+                        <td className={bestBucket === stint.rolling_5_avg_best ? "best-bucket-cell" : ""}>{formatTime(stint.rolling_5_avg_best)}</td>
+                        <td className={bestBucket === stint.rolling_10_avg_best ? "best-bucket-cell" : ""}>{formatTime(stint.rolling_10_avg_best)}</td>
+                        <td className={bestBucket === stint.rolling_20_avg_best ? "best-bucket-cell" : ""}>{formatTime(stint.rolling_20_avg_best)}</td>
+                        <td>{stint.falloff_total != null ? `${stint.falloff_total > 0 ? "+" : ""}${stint.falloff_total.toFixed(2)}s` : "-"}</td>
+                        <td>{formatScore(stint.consistency_score)}</td>
+                        <td>{stint.tire_trend_label}</td>
+                        <td>{stint.platform_trend_label}</td>
+                        <td>{stint.shock_trend_label}</td>
+                        <td style={{ color: paceQualityColor(stint.setup_usefulness_score) }}>{formatScore(stint.setup_usefulness_score)}</td>
+                        <td>
+                          <div className="laps-action-row compact">
+                            <button className="secondary-button" onClick={() => setBaselineStintId(stint.stint_id)} aria-label={`Select ${formatStintRange(stint)} as baseline stint`}>Baseline</button>
+                            <button className="secondary-button" onClick={() => setTestStintId(stint.stint_id)} aria-label={`Select ${formatStintRange(stint)} as test stint`}>Test</button>
+                            <button className="secondary-button" onClick={() => addToQueue(makeStintBasket(stint, `Stint ${formatStintRange(stint)}`))}>Basket</button>
+                            <button className="secondary-button" onClick={() => focusWindowEvidence(window, "platform_trace")}>Platform</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </section>

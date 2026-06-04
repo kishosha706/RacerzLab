@@ -7,6 +7,7 @@ from api.routes_compare import router as compare_router
 from api.routes_events import router as events_router
 from api.routes_imports import router as imports_router
 from api.routes_laps import router as laps_router
+from api.routes_laps import stints_router
 from api.routes_notebook import router as notebook_router
 from api.routes_reports import router as reports_router
 from api.routes_runs import router as runs_router
@@ -42,6 +43,7 @@ app.include_router(compare_router)
 app.include_router(imports_router)
 app.include_router(runs_router)
 app.include_router(laps_router)
+app.include_router(stints_router)
 app.include_router(events_router)
 app.include_router(reports_router)
 app.include_router(notebook_router)

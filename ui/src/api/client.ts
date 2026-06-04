@@ -328,7 +328,7 @@ export function fetchCompareInsights(request: {
   });
 }
 
-import type { LapWindowsResponse } from "../types/laps";
+import type { LapWindowsResponse, StintCompareRequest, StintCompareResult, StintResponse } from "../types/laps";
 import type { RaceLabSession, RunLapList } from "../types/session";
 import type { TrackMap, TrackMapIndexEntry, TrackMapPackage } from "../types/trackMap";
 
@@ -434,6 +434,17 @@ export function fetchRunLapList(runId: string): Promise<RunLapList> {
 
 export function fetchLapWindows(runId: string): Promise<LapWindowsResponse> {
   return requestJson<LapWindowsResponse>(`/api/runs/${encodeURIComponent(runId)}/lap-windows`);
+}
+
+export function fetchStints(runId: string): Promise<StintResponse> {
+  return requestJson<StintResponse>(`/api/runs/${encodeURIComponent(runId)}/stints`);
+}
+
+export function compareStints(request: StintCompareRequest): Promise<StintCompareResult> {
+  return requestJson<StintCompareResult>("/api/stints/compare", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
 }
 
 export function fetchShockReader(

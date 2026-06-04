@@ -6195,6 +6195,103 @@ button:focus:not(:focus-visible) {
   color: #8d9aaa;
 }
 
+.stint-intelligence-section {
+  min-width: 0;
+}
+
+.stint-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+}
+
+.stint-table {
+  min-width: 1320px;
+  margin-top: 0;
+}
+
+.stint-table td,
+.stint-table th {
+  white-space: nowrap;
+}
+
+.stint-table .laps-action-row.compact {
+  flex-wrap: nowrap;
+}
+
+.stint-row-baseline {
+  box-shadow: inset 3px 0 0 #38bdf8;
+}
+
+.stint-row-test {
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
+.stint-row-baseline.stint-row-test {
+  box-shadow: inset 3px 0 0 #38bdf8, inset 6px 0 0 #f59e0b;
+}
+
+.stint-row-strongest td {
+  background: rgba(34, 197, 94, 0.045);
+}
+
+.best-bucket-cell {
+  color: #22c55e;
+  font-weight: 800;
+}
+
+.stint-compare-panel {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.3fr) minmax(360px, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 6px;
+  background: rgba(8, 12, 18, 0.72);
+}
+
+.stint-compare-panel h3 {
+  margin: 2px 0 4px;
+  font-size: 15px;
+}
+
+.stint-compare-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(70px, 1fr));
+  gap: 8px;
+}
+
+.stint-compare-metrics div {
+  display: grid;
+  gap: 2px;
+  min-height: 48px;
+  padding: 8px;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  background: #0d1117;
+}
+
+.stint-compare-metrics span {
+  color: #8d9aaa;
+  font-size: 11px;
+}
+
+.stint-compare-metrics strong {
+  color: #e5e7eb;
+  font-size: 13px;
+}
+
+.stint-sparkline {
+  width: 140px;
+  height: 52px;
+  margin-top: 8px;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  background: #0a0d14;
+}
+
 @media (max-width: 700px) {
   .workspace-nav-rail {
     width: 48px;
@@ -6225,6 +6322,14 @@ button:focus:not(:focus-visible) {
   .import-desktop-actions > .secondary-button {
     justify-content: center;
     flex: 1 1 150px;
+  }
+
+  .stint-compare-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .stint-compare-metrics {
+    grid-template-columns: repeat(2, minmax(70px, 1fr));
   }
 }
 

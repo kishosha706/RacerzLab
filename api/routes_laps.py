@@ -4,10 +4,18 @@ from fastapi import APIRouter, HTTPException
 
 from api.routes_runs import repository
 from racelab_engine.analysis.lap_windows import compute_lap_windows_response
+from racelab_engine.analysis.stint_intelligence import build_stint_response, compare_stints
 from racelab_engine.models.lap import LapSummary
-from racelab_engine.models.lap_analysis import LapCompareSelection, LapWindowsResponse
+from racelab_engine.models.lap_analysis import (
+    LapCompareSelection,
+    LapWindowsResponse,
+    StintCompareRequest,
+    StintCompareResult,
+    StintResponse,
+)
 
 router = APIRouter(prefix="/api/runs", tags=["laps"])
+stints_router = APIRouter(prefix="/api/stints", tags=["stints"])
 
 
 @router.get("/{run_id}/laps")
@@ -20,6 +28,35 @@ def get_lap_windows(run_id: str) -> LapWindowsResponse:
     if not (laps := repository().get_laps(run_id)):
         raise HTTPException(404, f"No laps found for run {run_id}")
     return compute_lap_windows_response(laps)
+
+
+@router.get("/{run_id}/stints", response_model=StintResponse)
+def get_stints(run_id: str) -> StintResponse:
+    repo = repository()
+    if not (laps := repo.get_laps(run_id)):
+        raise HTTPException(404, f"No laps found for run {run_id}")
+    return build_stint_response(laps, repo.get_session(run_id))
+
+
+@stints_router.post("/compare", response_model=StintCompareResult)
+def compare_stint_summaries(req: StintCompareRequest) -> StintCompareResult:
+    repo = repository()
+    baseline_laps = repo.get_laps(req.baseline_run_id)
+    test_laps = repo.get_laps(req.test_run_id)
+    if not baseline_laps:
+        raise HTTPException(404, f"Baseline run not found: {req.baseline_run_id}")
+    if not test_laps:
+        raise HTTPException(404, f"Test run not found: {req.test_run_id}")
+
+    baseline_response = build_stint_response(baseline_laps, repo.get_session(req.baseline_run_id))
+    test_response = build_stint_response(test_laps, repo.get_session(req.test_run_id))
+    baseline = next((stint for stint in baseline_response.stints if stint.stint_id == req.baseline_stint_id), None)
+    test = next((stint for stint in test_response.stints if stint.stint_id == req.test_stint_id), None)
+    if baseline is None:
+        raise HTTPException(404, f"Baseline stint not found: {req.baseline_stint_id}")
+    if test is None:
+        raise HTTPException(404, f"Test stint not found: {req.test_stint_id}")
+    return compare_stints(baseline, test)
 
 
 @router.post("/laps/compare-selection")
