@@ -2536,10 +2536,11 @@ def _compute_scrub_proxies(item: dict[str, Any]) -> None:
         yaw_error_proxy = max(0.0, yaw_theoretical - yaw_rate)
     item["yaw_error_proxy"] = yaw_error_proxy
 
-    # TODO: When understeer_gradient_proxy_deg_per_g is available and
-    # abs(lat_accel_g) > 0.1, use it as primary scrub evidence instead of
-    # the steering/yaw blend below. Requires wiring vehicle_dynamics
-    # understeer functions into runtime (mass/geometry needed).
+    # Deferred understeer-gradient integration:
+    # understeer_gradient_proxy_deg_per_g can become primary scrub evidence
+    # once runtime vehicle mass and geometry inputs are available. Until then,
+    # this steering/yaw/slip blend stays the guarded fallback so scrub detection
+    # does not silently depend on missing setup metadata.
     if lf_slip is not None and rf_slip is not None:
         YAW_ERROR_CRITICAL = 0.15  # rad/s threshold for understeer
         slip_delta = abs(rf_slip - lf_slip)
