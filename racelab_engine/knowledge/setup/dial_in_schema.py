@@ -27,7 +27,9 @@ class DialInSwing(DialInModel):
     counter_effect: str
     one_change_test: str
     validate_with: list[str] = Field(default_factory=list)
+    validate_with_labels: list[str] = Field(default_factory=list)
     watch_for: list[str] = Field(default_factory=list)
+    watch_for_labels: list[str] = Field(default_factory=list)
     readiness_label: str
     disabled_reason: str | None = None
     debug: dict[str, Any] | None = None

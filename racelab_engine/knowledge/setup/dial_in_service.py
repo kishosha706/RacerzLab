@@ -3,18 +3,12 @@ from __future__ import annotations
 from typing import Any
 
 from .dial_in_schema import Clarification, DialInResponse, DialInSwing, HiddenEvidenceSummary
+from .display_labels import DIAL_IN_STRENGTH_LABELS, format_target_label
 from .evidence_adapter import build_run_evidence_context, query_setup_for_run_context
 from .loader import load_setup_knowledge
 from .matcher import RankedSetupEffect, parse_symptom
 
 
-STRENGTH_LABELS = {
-    1: "Feel polish",
-    2: "Fine-tune",
-    3: "Balance swing",
-    4: "Big swing",
-    5: "Package-level lever",
-}
 RISK_LABELS = {
     "low": "Low risk",
     "medium": "Medium risk",
@@ -104,13 +98,15 @@ def _build_swing(item: RankedSetupEffect, *, include_debug_evidence: bool) -> Di
         id=item.effect.effect_id,
         title=item.effect.direction,
         setup_area=item.effect.setup_area,
-        strength_label=STRENGTH_LABELS.get(item.effect.effect_strength, "Setup lever"),
+        strength_label=DIAL_IN_STRENGTH_LABELS.get(item.effect.effect_strength, "Setup lever"),
         risk_label=RISK_LABELS.get(item.effect.coupling_risk, item.effect.coupling_risk.title()),
         effect=item.effect.effect,
         counter_effect=item.effect.counter_effect,
         one_change_test=item.one_change_test_plan,
         validate_with=item.effect.validation_targets,
+        validate_with_labels=[format_target_label(target) for target in item.effect.validation_targets],
         watch_for=item.effect.watch_for_targets,
+        watch_for_labels=[format_target_label(target) for target in item.effect.watch_for_targets],
         readiness_label=CANDIDATE_READINESS_LABELS.get(item.readiness, item.readiness.replace("_", " ").title()),
         debug=debug,
     )

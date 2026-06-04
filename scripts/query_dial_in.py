@@ -10,62 +10,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from racelab_engine.knowledge.setup.dial_in_service import build_dial_in_response
 
 
-TARGET_LABELS = {
-    "brake_lock": "brake lock",
-    "center_balance": "center balance",
-    "center_rotation": "center rotation",
-    "center_speed": "center speed",
-    "correction_count": "correction count",
-    "cfs_height": "CFS height",
-    "drag_scrub": "drag/scrub",
-    "drive_off": "drive-off",
-    "entry_balance": "entry balance",
-    "entry_stability": "entry stability",
-    "entry_yaw": "entry yaw",
-    "exit_yaw": "exit yaw",
-    "exit_drive": "exit drive",
-    "front_contact": "front contact",
-    "front_height": "front height",
-    "front_platform_contact": "front platform contact",
-    "front_response": "front response",
-    "front_slip": "front slip",
-    "garage_state": "garage state",
-    "high_steering_demand": "high steering demand",
-    "lap_falloff": "lap falloff",
-    "long_run_falloff": "long-run falloff",
-    "phase_balance": "phase balance",
-    "platform_rate": "platform rate",
-    "platform_stability": "platform stability",
-    "rear_height": "rear height",
-    "rear_float": "rear float",
-    "rear_scrape_margin": "rear scrape margin",
-    "rear_slip": "rear slip",
-    "rear_tire_trend": "rear tire trend",
-    "rf_tire_temp": "RF tire temp",
-    "ride_height_trace": "ride-height trace",
-    "scrape": "scrape",
-    "speed_loss": "speed loss",
-    "speed_trace": "speed trace",
-    "steering_correction": "steering correction",
-    "steering_trace": "steering trace",
-    "steering_load": "steering load",
-    "throttle_pickup": "throttle pickup",
-    "tight_center": "tight center",
-    "tight_exit": "tight exit",
-    "tire_overwork": "tire overwork",
-    "tire_temp": "tire temperature",
-    "tire_temp_spread": "tire temperature spread",
-    "tire_trend": "tire trend",
-    "transition_yaw": "transition yaw",
-    "turn_in_response": "turn-in response",
-    "unstable_exit": "unstable exit",
-}
-
-
-def _format_target_label(value: str) -> str:
-    return TARGET_LABELS.get(value, value.replace("_", " "))
-
-
 def _print_debug_summary(summary: dict) -> None:
     print()
     print("Debug evidence:")
@@ -126,8 +70,8 @@ def main() -> int:
             print(f"   Goal: {swing.effect}")
             print(f"   The trade-off: {swing.counter_effect}")
             print(f"   Your next test: {swing.one_change_test}")
-            watch_targets = list(dict.fromkeys([*swing.validate_with, *swing.watch_for]))
-            print(f"   What to watch for: {', '.join(_format_target_label(target) for target in watch_targets)}")
+            watch_targets = list(dict.fromkeys([*swing.validate_with_labels, *swing.watch_for_labels]))
+            print(f"   What to watch for: {', '.join(watch_targets)}")
             print(f"   Readiness: {swing.readiness_label}")
 
     if response.next_step:

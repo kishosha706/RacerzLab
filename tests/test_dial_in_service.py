@@ -80,6 +80,8 @@ def test_top_swings_include_one_change_test_and_validate_with(tmp_path: Path, mo
     first = response.top_swings[0]
     assert first.one_change_test
     assert first.validate_with
+    assert first.validate_with_labels
+    assert all("_" not in label for label in first.validate_with_labels)
 
 
 def test_one_change_test_uses_concise_driver_language(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -300,6 +302,7 @@ def test_cli_json_returns_stable_keys(tmp_path: Path, monkeypatch: pytest.Monkey
     )
     payload = json.loads(completed.stdout)
     assert {"run_id", "complaint_raw", "confidence_label", "readiness_label", "driver_message", "top_swings", "clarification", "warnings"}.issubset(payload)
+    assert payload["top_swings"][0]["validate_with_labels"]
 
 
 def test_cli_debug_evidence_includes_backend_factors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

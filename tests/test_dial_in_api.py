@@ -22,6 +22,8 @@ def test_dial_in_api_returns_clean_response_by_default(tmp_path: Path, monkeypat
     assert payload["run_id"] == "run-1"
     assert payload["interpreted_symptom"] == "loose_exit"
     assert len(payload["top_swings"]) <= 3
+    assert payload["top_swings"][0]["validate_with_labels"]
+    assert payload["top_swings"][0]["watch_for_labels"] is not None
     assert "hidden_evidence_summary" not in payload
     assert "evidence_groups" not in payload
     dumped = json.dumps(payload).lower()

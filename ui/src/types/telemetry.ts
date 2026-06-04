@@ -163,7 +163,9 @@ export type DialInSwing = {
   counter_effect: string;
   one_change_test: string;
   validate_with: string[];
+  validate_with_labels?: string[];
   watch_for: string[];
+  watch_for_labels?: string[];
   readiness_label: string;
   disabled_reason?: string | null;
   debug?: Record<string, unknown> | null;

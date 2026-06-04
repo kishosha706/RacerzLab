@@ -7,16 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from racelab_engine.knowledge.setup.display_labels import SETUP_STRENGTH_LABELS
 from racelab_engine.knowledge.setup.evidence_adapter import query_setup_for_run_context, run_context_result_to_dict
-
-
-STRENGTH_LABELS = {
-    1: "driver feel / small polish",
-    2: "fine tuning",
-    3: "medium phase-specific lever",
-    4: "strong balance lever",
-    5: "major package lever",
-}
 
 
 def _display_status(status: str) -> str:
@@ -90,7 +82,7 @@ def main() -> int:
 
     print()
     for index, candidate in enumerate(payload["candidates"], start=1):
-        strength_label = STRENGTH_LABELS.get(candidate["strength"], "setup lever")
+        strength_label = SETUP_STRENGTH_LABELS.get(candidate["strength"], "setup lever")
         print(f"Candidate {index}: {candidate['direction']}")
         print(f"Strength: {candidate['strength']} / {strength_label}")
         print(f"Risk: {candidate['risk']}")
