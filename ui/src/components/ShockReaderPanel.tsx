@@ -1,5 +1,5 @@
-import { Activity, AlertTriangle, Gauge, Wrench } from "lucide-react";
-import type { ShockReaderResponse, ShockRecommendation } from "../types/shockReader";
+import { AlertTriangle, Gauge } from "lucide-react";
+import type { ShockReaderResponse } from "../types/shockReader";
 
 type ShockReaderPanelProps = {
   data: ShockReaderResponse | null;
@@ -11,29 +11,14 @@ function titleCasePattern(pattern: string): string {
   return pattern.split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
 
-function directionLabel(rec: ShockRecommendation): string {
-  if (rec.semantic_direction === "move_more_linear") return "More linear";
-  if (rec.semantic_direction === "move_more_digressive") return "More digressive";
-  if (rec.semantic_direction === "leave_alone") return "Leave alone";
-  return rec.semantic_direction === "add" ? "Add" : "Subtract";
-}
-
-function valueText(rec: ShockRecommendation): string | null {
-  if (rec.blocked_by_limit && rec.current_value != null) return `Blocked at ${rec.current_value}`;
-  if (rec.current_value != null && rec.suggested_value != null) return `${rec.current_value} -> ${rec.suggested_value}`;
-  if (rec.current_value == null && rec.semantic_direction !== "leave_alone") return "No setup value";
-  return null;
-}
-
 export function ShockReaderPanel({ data, loading, error }: ShockReaderPanelProps) {
-  const recommendation = data?.recommendations[0] ?? null;
   return (
     <section className="shock-reader-panel" aria-label="Shock Reader">
       <header className="shock-reader-header">
         <div>
           <span className="eyebrow">Platform / Shocks</span>
           <h3><Gauge size={18} /> Shock Reader</h3>
-          <p>Reads the live shock movement signature and suggests one shock/slope swing to test.</p>
+          <p>Inline damper worksheet recommendations use the selected shock movement window.</p>
         </div>
         <span className={`shock-reader-status ${error ? "error" : loading ? "loading" : data?.corners.length ? "ready" : "missing"}`}>
           {error ? "Unavailable" : loading ? "Reading" : data?.corners.length ? "Ready" : "No data"}
@@ -73,33 +58,9 @@ export function ShockReaderPanel({ data, loading, error }: ShockReaderPanelProps
             ))}
           </div>
 
-          {recommendation ? (
-            <article className="shock-reader-recommendation">
-              <header>
-                <span className="shock-reader-rec-setting"><Wrench size={15} /> {recommendation.display_setting}</span>
-                <span className="shock-reader-rec-direction">{directionLabel(recommendation)}</span>
-                {valueText(recommendation) && <span className="shock-reader-rec-value">{valueText(recommendation)}</span>}
-              </header>
-              <div className="shock-reader-rec-grid">
-                <div><span>Goal</span><p>{recommendation.goal}</p></div>
-                <div><span>The Trade-off</span><p>{recommendation.tradeoff}</p></div>
-                <div><span>Your Next Test</span><p>{recommendation.next_test}</p></div>
-                <div>
-                  <span>What to watch for</span>
-                  <p>{recommendation.watch_for.join("; ")}</p>
-                </div>
-              </div>
-              <footer>
-                <span>Confidence: {recommendation.confidence}</span>
-                <span>{recommendation.classification.replace("_", " ")}</span>
-              </footer>
-            </article>
-          ) : (
-            <div className="shock-reader-empty">
-              <Activity size={16} />
-              <span>No guarded shock/slope swing for this window.</span>
-            </div>
-          )}
+          <p className="shock-reader-inline-note">
+            Shock Reader: per-corner recommendations shown beside setup values. Pick one change and run clean laps.
+          </p>
 
           {data.warnings.length > 0 && (
             <div className="shock-reader-warning" role="status">

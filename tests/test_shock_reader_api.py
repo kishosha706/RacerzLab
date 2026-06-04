@@ -106,6 +106,8 @@ def test_shock_reader_api_returns_stable_shape(tmp_path: Path, monkeypatch: pyte
         "warnings",
     }.issubset(payload)
     assert payload["corners"][0]["corner"] == "LF"
+    assert len(payload["corners"][0]["setting_recommendations"]) == 6
+    assert payload["corners"][0]["setting_recommendations"][0]["display_label"] == "LS Comp"
     assert len(payload["recommendations"]) <= 1
 
 
@@ -120,10 +122,11 @@ def test_shock_reader_api_missing_setup_has_no_numeric_suggestion(
     response = client.get("/api/runs/run-1/shock-reader?lap=1")
 
     assert response.status_code == 200
-    rec = response.json()["recommendations"][0]
+    rec = response.json()["corners"][0]["setting_recommendations"][0]
     assert rec["current_value"] is None
     assert rec["suggested_value"] is None
-    assert rec["numeric_step"] is None
+    assert rec["delta"] is None
+    assert rec["blocked_reason"] == "setup value missing"
 
 
 def test_shock_reader_api_returns_404_for_unknown_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

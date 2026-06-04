@@ -8,9 +8,11 @@ from pydantic import BaseModel, Field
 CornerScope = Literal["LF", "RF", "LR", "RR", "front", "rear", "all"]
 ShockSetting = Literal[
     "ls_compression",
-    "ls_rebound",
     "hs_compression",
+    "hs_compression_slope",
+    "ls_rebound",
     "hs_rebound",
+    "hs_rebound_slope",
     "compression_slope",
     "rebound_slope",
 ]
@@ -28,6 +30,33 @@ Pattern = Literal[
     "insufficient_evidence",
 ]
 Confidence = Literal["low", "medium", "high"]
+SettingDirection = Literal["add", "subtract", "hold", "blocked", "needs_more_evidence"]
+SettingMagnitude = Literal["hold", "small", "medium", "big"]
+SettingConfidence = Literal["high", "medium", "low", "needs_more_evidence"]
+
+
+class ShockSettingRecommendation(BaseModel):
+    corner: Literal["LF", "RF", "LR", "RR"]
+    setting: Literal[
+        "ls_compression",
+        "hs_compression",
+        "hs_compression_slope",
+        "ls_rebound",
+        "hs_rebound",
+        "hs_rebound_slope",
+    ]
+    display_label: Literal["LS Comp", "HS Comp", "HS-S Comp", "LS Reb", "HS Reb", "HS-S Reb"]
+    current_value: int | None = None
+    delta: int | None = Field(default=None, ge=-5, le=5)
+    suggested_value: int | None = None
+    direction: SettingDirection
+    magnitude: SettingMagnitude
+    confidence: SettingConfidence
+    reason_short: str
+    goal: str
+    tradeoff: str
+    watch_for: list[str]
+    blocked_reason: str | None = None
 
 
 class ShockCornerRead(BaseModel):
@@ -45,6 +74,8 @@ class ShockCornerRead(BaseModel):
     deflection_delta_range_in: float | None = None
     pattern: Pattern
     confidence: Confidence
+    setup_values: dict[str, int | None] = Field(default_factory=dict)
+    setting_recommendations: list[ShockSettingRecommendation] = Field(default_factory=list)
 
 
 class ShockRecommendation(BaseModel):
@@ -53,7 +84,7 @@ class ShockRecommendation(BaseModel):
     setting: ShockSetting
     display_setting: str
     semantic_direction: SemanticDirection
-    numeric_step: int | None = Field(default=None, ge=-1, le=1)
+    numeric_step: int | None = Field(default=None, ge=-5, le=5)
     current_value: int | None = None
     suggested_value: int | None = None
     blocked_by_limit: bool = False

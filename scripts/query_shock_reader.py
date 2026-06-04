@@ -60,8 +60,20 @@ def main() -> int:
             f"(RHi {corner.rebound_hi_pct:.1f}, RLo {corner.rebound_lo_pct:.1f}, "
             f"BLo {corner.bump_lo_pct:.1f}, BHi {corner.bump_hi_pct:.1f})"
         )
+        for rec in corner.setting_recommendations:
+            if rec.direction in {"hold", "needs_more_evidence"}:
+                badge = "hold" if rec.direction == "hold" else "need data"
+            elif rec.direction == "blocked":
+                badge = "limit"
+            elif rec.delta is not None and rec.suggested_value is not None:
+                badge = f"{rec.delta:+d} -> {rec.suggested_value}"
+            elif rec.blocked_reason == "setup value missing":
+                badge = "need setup"
+            else:
+                badge = rec.direction
+            print(f"  {rec.display_label}: {badge} | {rec.reason_short}")
     if response.recommendations:
-        print("Recommendations:")
+        print("Compatibility recommendation:")
         for rec in response.recommendations:
             value_text = ""
             if rec.current_value is not None:

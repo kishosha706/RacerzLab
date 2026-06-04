@@ -26,6 +26,31 @@ export type ShockCornerRead = {
   deflection_delta_range_in?: number | null;
   pattern: ShockPattern;
   confidence: "low" | "medium" | "high";
+  setup_values: Record<string, number | null>;
+  setting_recommendations: ShockSettingRecommendation[];
+};
+
+export type ShockSettingRecommendation = {
+  corner: ShockCornerName;
+  setting:
+    | "ls_compression"
+    | "hs_compression"
+    | "hs_compression_slope"
+    | "ls_rebound"
+    | "hs_rebound"
+    | "hs_rebound_slope";
+  display_label: "LS Comp" | "HS Comp" | "HS-S Comp" | "LS Reb" | "HS Reb" | "HS-S Reb";
+  current_value?: number | null;
+  delta?: number | null;
+  suggested_value?: number | null;
+  direction: "add" | "subtract" | "hold" | "blocked" | "needs_more_evidence";
+  magnitude: "hold" | "small" | "medium" | "big";
+  confidence: "high" | "medium" | "low" | "needs_more_evidence";
+  reason_short: string;
+  goal: string;
+  tradeoff: string;
+  watch_for: string[];
+  blocked_reason?: string | null;
 };
 
 export type ShockRecommendation = {
@@ -36,11 +61,13 @@ export type ShockRecommendation = {
     | "ls_rebound"
     | "hs_compression"
     | "hs_rebound"
+    | "hs_compression_slope"
+    | "hs_rebound_slope"
     | "compression_slope"
     | "rebound_slope";
   display_setting: string;
   semantic_direction: "add" | "subtract" | "move_more_linear" | "move_more_digressive" | "leave_alone";
-  numeric_step?: 1 | -1 | null;
+  numeric_step?: number | null;
   current_value?: number | null;
   suggested_value?: number | null;
   blocked_by_limit: boolean;

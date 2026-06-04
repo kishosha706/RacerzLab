@@ -9,6 +9,7 @@ from racelab_engine.analysis.shock_reader_schema import (
     ShockCornerRead,
     ShockReaderResponse,
     ShockRecommendation,
+    ShockSettingRecommendation,
     ShockSetting,
 )
 from racelab_engine.models.setup import SetupSnapshot
@@ -64,9 +65,11 @@ CONTEXT_CHANNELS = [
 
 DISPLAY_SETTING: dict[ShockSetting, str] = {
     "ls_compression": "LS bump",
-    "ls_rebound": "LS rebound",
     "hs_compression": "HS bump",
+    "hs_compression_slope": "compression slope",
+    "ls_rebound": "LS rebound",
     "hs_rebound": "HS rebound",
+    "hs_rebound_slope": "rebound slope",
     "compression_slope": "compression slope",
     "rebound_slope": "rebound slope",
 }
@@ -74,11 +77,22 @@ DISPLAY_SETTING: dict[ShockSetting, str] = {
 SETUP_KEY_CANDIDATES: dict[ShockSetting, tuple[str, ...]] = {
     "ls_compression": ("ls_compression", "ls_comp"),
     "hs_compression": ("hs_compression", "hs_comp"),
+    "hs_compression_slope": ("hs_compression_slope", "compression_slope", "hs_comp_slope", "hs_compression_slope"),
     "ls_rebound": ("ls_rebound", "ls_reb"),
     "hs_rebound": ("hs_rebound", "hs_reb"),
+    "hs_rebound_slope": ("hs_rebound_slope", "rebound_slope", "hs_reb_slope", "hs_rebound_slope"),
     "compression_slope": ("compression_slope", "hs_comp_slope", "hs_compression_slope"),
     "rebound_slope": ("rebound_slope", "hs_reb_slope", "hs_rebound_slope"),
 }
+
+INLINE_SETTINGS: tuple[tuple[str, str, ShockSetting], ...] = (
+    ("ls_compression", "LS Comp", "ls_compression"),
+    ("hs_compression", "HS Comp", "hs_compression"),
+    ("hs_compression_slope", "HS-S Comp", "hs_compression_slope"),
+    ("ls_rebound", "LS Reb", "ls_rebound"),
+    ("hs_rebound", "HS Reb", "hs_rebound"),
+    ("hs_rebound_slope", "HS-S Reb", "hs_rebound_slope"),
+)
 
 
 def build_shock_reader_response(
@@ -121,6 +135,7 @@ def build_shock_reader_response(
     ]
     context = _build_context(data, phase=phase, selected_zone=_has_selected_zone(lap, lap_window, phase))
     corners = _apply_context_patterns(corners, context)
+    corners = _attach_setting_recommendations(corners, context, setup_snapshot)
     recommendations = _build_recommendations(
         corners,
         context,
@@ -248,48 +263,15 @@ def _build_recommendations(
     include_debug: bool,
 ) -> list[ShockRecommendation]:
     usable = [corner for corner in corners if corner.pattern != "insufficient_evidence"]
-    if not usable:
-        return []
-
-    contact_corners = [
-        corner
-        for corner in usable
-        if corner.pattern in {"high_speed_bump_heavy", "impact_contact_driven"} and context["contact"]
+    candidates = [
+        (corner, rec)
+        for corner in corners
+        for rec in corner.setting_recommendations
+        if rec.direction in {"add", "subtract", "blocked"} and rec.confidence != "needs_more_evidence"
     ]
-    if contact_corners:
-        corner = max(contact_corners, key=lambda item: item.bump_hi_pct)
-        if context["slope_allowed"] and _setting_available(setup_snapshot, corner.corner, "compression_slope"):
-            return [_recommend(corner, "compression_slope", "move_more_linear", 1, "package_swing", context, setup_snapshot, include_debug)]
-        return [_recommend(corner, "hs_compression", "add", 1, "balance_swing", context, setup_snapshot, include_debug)]
-
-    shoulder_corners = [corner for corner in usable if corner.pattern == "excessive_high_speed_shoulders"]
-    if shoulder_corners and not context["contact"]:
-        corner = max(shoulder_corners, key=lambda item: (item.bump_hi_pct + item.rebound_hi_pct))
-        if context["slope_allowed"] and context["chatter"] and _setting_available(setup_snapshot, corner.corner, "compression_slope"):
-            return [_recommend(corner, "compression_slope", "move_more_digressive", -1, "package_swing", context, setup_snapshot, include_debug)]
-        setting: ShockSetting = "hs_compression" if corner.bump_hi_pct >= corner.rebound_hi_pct else "hs_rebound"
-        return [_recommend(corner, setting, "subtract", -1, "balance_swing", context, setup_snapshot, include_debug)]
-
-    rebound_corners = [
-        corner
-        for corner in usable
-        if corner.pattern in {"high_speed_rebound_heavy", "oscillation_recovery_issue"}
-    ]
-    if rebound_corners and context["recovery"]:
-        corner = max(rebound_corners, key=lambda item: item.rebound_hi_pct)
-        direction = -1 if context["packed"] else 1
-        semantic = "subtract" if direction < 0 else "add"
-        return [_recommend(corner, "hs_rebound", semantic, direction, "balance_swing", context, setup_snapshot, include_debug)]
-
-    low_bump = [corner for corner in usable if corner.pattern == "low_speed_bump_heavy"]
-    if low_bump:
-        corner = max(low_bump, key=lambda item: item.bump_lo_pct - item.rebound_lo_pct)
-        return [_recommend(corner, "ls_compression", "subtract", -1, "fine_tune", context, setup_snapshot, include_debug)]
-
-    low_rebound = [corner for corner in usable if corner.pattern == "low_speed_rebound_heavy"]
-    if low_rebound:
-        corner = max(low_rebound, key=lambda item: item.rebound_lo_pct - item.bump_lo_pct)
-        return [_recommend(corner, "ls_rebound", "subtract", -1, "fine_tune", context, setup_snapshot, include_debug)]
+    if candidates:
+        corner, rec = max(candidates, key=lambda item: _recommendation_priority(item[1], item[0]))
+        return [_compat_recommend(corner, rec, context, include_debug)]
 
     return [
         ShockRecommendation(
@@ -312,6 +294,308 @@ def _build_recommendations(
             hidden_debug={"patterns": [corner.pattern for corner in usable]} if include_debug else None,
         )
     ]
+
+
+def _attach_setting_recommendations(
+    corners: list[ShockCornerRead],
+    context: dict[str, Any],
+    setup_snapshot: SetupSnapshot | None,
+) -> list[ShockCornerRead]:
+    return [
+        corner.model_copy(
+            update={
+                "setup_values": _corner_setup_values(setup_snapshot, corner.corner),
+                "setting_recommendations": _build_setting_recommendations(corner, context, setup_snapshot),
+            }
+        )
+        for corner in corners
+    ]
+
+
+def _corner_setup_values(setup_snapshot: SetupSnapshot | None, corner: str) -> dict[str, int | None]:
+    return {setting: _setup_value(setup_snapshot, corner, setting) for setting, _label, _schema_setting in INLINE_SETTINGS}
+
+
+def _build_setting_recommendations(
+    corner: ShockCornerRead,
+    context: dict[str, Any],
+    setup_snapshot: SetupSnapshot | None,
+) -> list[ShockSettingRecommendation]:
+    return [
+        _setting_recommendation(corner, context, setup_snapshot, label, schema_setting)
+        for _setup_key, label, schema_setting in INLINE_SETTINGS
+    ]
+
+
+def _setting_recommendation(
+    corner: ShockCornerRead,
+    context: dict[str, Any],
+    setup_snapshot: SetupSnapshot | None,
+    display_label: str,
+    setting: ShockSetting,
+) -> ShockSettingRecommendation:
+    current = _setup_value(setup_snapshot, corner.corner, setting)
+    signed_score, reason = _setting_signal(corner, context, setting)
+    absolute_score = abs(signed_score)
+    confidence = _setting_confidence(corner, context, absolute_score)
+    desired_delta = _scaled_delta(signed_score, setting, context)
+    direction: str = "add" if desired_delta > 0 else "subtract" if desired_delta < 0 else "hold"
+    blocked_reason: str | None = None
+    delta: int | None = None
+    suggested: int | None = None
+
+    if corner.pattern == "insufficient_evidence" or confidence == "needs_more_evidence":
+        direction = "needs_more_evidence"
+        reason = "Need a cleaner selected lap/window before changing this setting."
+    elif desired_delta == 0:
+        direction = "hold"
+        reason = reason or "No guarded change for this row."
+    elif current is None:
+        blocked_reason = "setup value missing"
+    else:
+        delta, suggested, blocked = _bounded_delta(current, desired_delta)
+        if blocked:
+            direction = "blocked"
+            blocked_reason = "limit"
+
+    magnitude = _setting_magnitude(delta if delta is not None else desired_delta if direction in {"add", "subtract"} else 0)
+    goal, tradeoff, watch_for = _setting_text(setting, direction, reason)
+    return ShockSettingRecommendation(
+        corner=corner.corner,  # type: ignore[arg-type]
+        setting=setting,  # type: ignore[arg-type]
+        display_label=display_label,  # type: ignore[arg-type]
+        current_value=current,
+        delta=delta,
+        suggested_value=suggested,
+        direction=direction,  # type: ignore[arg-type]
+        magnitude=magnitude,  # type: ignore[arg-type]
+        confidence=confidence,  # type: ignore[arg-type]
+        reason_short=reason,
+        goal=goal,
+        tradeoff=tradeoff,
+        watch_for=watch_for,
+        blocked_reason=blocked_reason,
+    )
+
+
+def _setting_signal(corner: ShockCornerRead, context: dict[str, Any], setting: ShockSetting) -> tuple[int, str]:
+    low_delta = corner.bump_lo_pct - corner.rebound_lo_pct
+    high_delta = corner.bump_hi_pct - corner.rebound_hi_pct
+    high_total = corner.bump_hi_pct + corner.rebound_hi_pct
+    active = max(corner.rms_in_s or 0.0, corner.activity_index or 0.0)
+
+    if setting == "ls_compression":
+        if corner.pattern == "low_speed_rebound_heavy" and low_delta <= -12 and (context["contact"] or context["packed"]):
+            return _score_from_gap(abs(low_delta), active, context), "Low-speed bump is under the matching rebound share; add platform support."
+        if corner.pattern == "low_speed_bump_heavy" and low_delta >= 12:
+            return -_score_from_gap(abs(low_delta), active, context), "Low-speed bump is high versus rebound; free compression before adding support."
+    elif setting == "hs_compression":
+        if corner.pattern == "impact_contact_driven" or (high_delta >= 12 and context["contact"]):
+            return _score_from_gap(abs(high_delta), active, context, bonus=1), "High-speed bump and platform/contact evidence point to more support."
+        if high_delta >= 12 and context["chatter"] and not context["contact"]:
+            return -_score_from_gap(abs(high_delta), active, context), "High-speed bump is active without contact; reduce harshness/chatter."
+    elif setting == "hs_compression_slope":
+        if not _slope_context(context, corner, "compression"):
+            return 0, "Slope change needs stronger high-speed plus platform/contact/chatter evidence."
+        if corner.pattern == "impact_contact_driven" or high_delta >= 16:
+            return min(3, _score_from_gap(abs(high_delta), active, context)), "Compression slope has enough high-speed/platform context for a shape change."
+        if high_total >= 38 and context["chatter"] and not context["contact"]:
+            return -min(3, _score_from_gap(high_total / 2, active, context)), "High-speed shoulders with chatter support a more compliant compression shape."
+    elif setting == "ls_rebound":
+        if corner.pattern == "low_speed_rebound_heavy" and low_delta <= -12:
+            return -_score_from_gap(abs(low_delta), active, context), "Low-speed rebound is high; reduce tie-down risk."
+        if corner.pattern == "low_speed_bump_heavy" and low_delta >= 12 and context["recovery"]:
+            return _score_from_gap(abs(low_delta), active, context), "Low-speed recovery is under-controlled versus bump."
+    elif setting == "hs_rebound":
+        if corner.pattern == "oscillation_recovery_issue" and not context["packed"]:
+            return _score_from_gap(abs(high_delta), active, context, bonus=1), "High-speed recovery looks too free after the hit."
+        if high_delta <= -12 or (corner.pattern == "oscillation_recovery_issue" and context["packed"]):
+            return -_score_from_gap(abs(high_delta), active, context), "High-speed rebound is heavy; reduce packing/tie-down risk."
+    elif setting == "hs_rebound_slope":
+        if not _slope_context(context, corner, "rebound"):
+            return 0, "Rebound slope needs stronger high-speed recovery context."
+        if corner.pattern == "oscillation_recovery_issue" and not context["packed"]:
+            return min(3, _score_from_gap(abs(high_delta), active, context)), "Recovery evidence supports more linear high-speed rebound shape."
+        if high_delta <= -16 or context["packed"]:
+            return -min(3, _score_from_gap(abs(high_delta), active, context)), "Recovery evidence supports more compliant high-speed rebound shape."
+
+    return 0, "No guarded signal for this setting."
+
+
+def _score_from_gap(gap: float, active: float, context: dict[str, Any], *, bonus: int = 0) -> int:
+    score = 1 if gap >= 10 else 0
+    if gap >= 18:
+        score += 1
+    if gap >= 30:
+        score += 1
+    if active >= 1.4:
+        score += 1
+    if context["selected_zone"]:
+        score += 1
+    if context["contact"] or context["chatter"]:
+        score += 1
+    return max(0, min(5, score + bonus))
+
+
+def _slope_context(context: dict[str, Any], corner: ShockCornerRead, side: str) -> bool:
+    if not context["slope_allowed"]:
+        return False
+    high_total = corner.bump_hi_pct + corner.rebound_hi_pct
+    if side == "compression":
+        return (corner.bump_hi_pct >= 18 and context["contact"]) or (high_total >= 38 and context["chatter"])
+    return (corner.rebound_hi_pct >= 18 and context["recovery"]) or (high_total >= 38 and context["chatter"])
+
+
+def _setting_confidence(corner: ShockCornerRead, context: dict[str, Any], score: int) -> str:
+    if corner.pattern == "insufficient_evidence" or corner.sample_count < MIN_SAMPLE_COUNT:
+        return "needs_more_evidence"
+    if score == 0:
+        return "low"
+    if score >= 4 and context["selected_zone"]:
+        return "high"
+    if score >= 2:
+        return "medium"
+    return "low"
+
+
+def _scaled_delta(score: int, setting: ShockSetting, context: dict[str, Any]) -> int:
+    sign = 1 if score > 0 else -1 if score < 0 else 0
+    strength = abs(score)
+    if strength == 0:
+        return 0
+    if strength <= 1:
+        delta = 1
+    elif strength <= 3:
+        delta = 2
+    else:
+        delta = 3
+    if strength >= 5 and context["selected_zone"] and (context["contact"] or context["chatter"]):
+        delta = 5 if setting in {"hs_compression", "hs_rebound"} else 4
+    if setting in {"hs_compression_slope", "hs_rebound_slope"}:
+        delta = min(delta, 3)
+    return sign * delta
+
+
+def _bounded_delta(current: int, desired_delta: int) -> tuple[int | None, int | None, bool]:
+    if current < SETUP_MIN or current > SETUP_MAX:
+        return None, None, True
+    suggested = max(SETUP_MIN, min(SETUP_MAX, current + desired_delta))
+    actual_delta = suggested - current
+    if actual_delta == 0:
+        return None, None, True
+    return actual_delta, suggested, False
+
+
+def _setting_magnitude(delta: int) -> str:
+    amount = abs(delta)
+    if amount == 0:
+        return "hold"
+    if amount == 1:
+        return "small"
+    if amount <= 3:
+        return "medium"
+    return "big"
+
+
+def _setting_text(setting: ShockSetting, direction: str, reason: str) -> tuple[str, str, list[str]]:
+    if direction == "needs_more_evidence":
+        return (
+            "Collect a cleaner shock read before touching this row.",
+            "Guessing here can create a setup problem that was not in the data.",
+            ["Repeat the same lap/window", "Look for stable corner pattern"],
+        )
+    if direction == "blocked":
+        return (
+            "The requested direction is already against the click limit.",
+            "A bigger package change may be needed before this click can move.",
+            ["Do not force past the 1-10 range", "Re-check adjacent settings"],
+        )
+    if direction == "hold":
+        return (
+            "Leave this row alone for the next run.",
+            "Changing a quiet row can mask the real shock signal.",
+            ["New imbalance after the next clean run"],
+        )
+    if setting == "ls_compression":
+        return (
+            "Tune low-speed platform support at this corner.",
+            "More LS compression adds support; less can improve compliance.",
+            ["Platform movement", "Harshness over driver inputs"],
+        )
+    if setting == "hs_compression":
+        return (
+            "Tune high-speed bump support without touching rebound.",
+            "More support protects the platform; less can calm chatter.",
+            ["Contact/blow-through", "Harshness and tire load spikes"],
+        )
+    if setting == "hs_compression_slope":
+        return (
+            "Shape high-speed compression response.",
+            "More linear adds support; more digressive adds compliance.",
+            ["Harshness if too linear", "Contact if too digressive"],
+        )
+    if setting == "ls_rebound":
+        return (
+            "Tune low-speed recovery and tie-down.",
+            "More rebound slows extension; less helps the corner recover.",
+            ["Lazy recovery", "Tied-down feel"],
+        )
+    if setting == "hs_rebound":
+        return (
+            "Tune high-speed recovery after bumps or platform hits.",
+            "More rebound can control bounce; less can reduce packing.",
+            ["Bounce after hits", "Packing down"],
+        )
+    return (
+        "Shape high-speed rebound recovery.",
+        "More linear supports recovery; more digressive adds compliance.",
+        ["Packing if too linear", "Bounce if too digressive"],
+    )
+
+
+def _recommendation_priority(rec: ShockSettingRecommendation, corner: ShockCornerRead) -> tuple[int, int, float]:
+    direction_rank = 1 if rec.direction == "blocked" else 2
+    confidence_rank = {"needs_more_evidence": 0, "low": 1, "medium": 2, "high": 3}[rec.confidence]
+    return (direction_rank, confidence_rank, abs(rec.delta or 0), corner.bump_hi_pct + corner.rebound_hi_pct)
+
+
+def _compat_recommend(
+    corner: ShockCornerRead,
+    rec: ShockSettingRecommendation,
+    context: dict[str, Any],
+    include_debug: bool,
+) -> ShockRecommendation:
+    semantic: str
+    if rec.direction == "add":
+        semantic = "move_more_linear" if rec.setting in {"hs_compression_slope", "hs_rebound_slope"} else "add"
+    elif rec.direction == "subtract":
+        semantic = "move_more_digressive" if rec.setting in {"hs_compression_slope", "hs_rebound_slope"} else "subtract"
+    else:
+        semantic = "subtract" if (rec.delta or 0) < 0 else "add"
+    classification = "package_swing" if rec.setting in {"hs_compression_slope", "hs_rebound_slope"} else "balance_swing" if rec.magnitude in {"medium", "big"} else "fine_tune"
+    return ShockRecommendation(
+        id=f"shock_reader_{corner.corner.lower()}_{rec.setting}_{rec.direction}",
+        corner_scope=corner.corner,  # type: ignore[arg-type]
+        setting=rec.setting,
+        display_setting=rec.display_label,
+        semantic_direction=semantic,  # type: ignore[arg-type]
+        numeric_step=rec.delta,
+        current_value=rec.current_value,
+        suggested_value=rec.suggested_value,
+        blocked_by_limit=rec.direction == "blocked",
+        classification=classification,  # type: ignore[arg-type]
+        goal=rec.goal,
+        tradeoff=rec.tradeoff,
+        next_test=f"Try one {rec.display_label} change on {corner.corner}, then compare the same Shocks lap/window.",
+        watch_for=rec.watch_for,
+        confidence="high" if rec.confidence == "high" else "medium" if rec.confidence == "medium" else "low",
+        evidence_summary=_evidence_summary(corner, context),
+        hidden_debug={
+            "inline_setting": rec.setting,
+            "inline_direction": rec.direction,
+            "reason": rec.reason_short,
+        } if include_debug else None,
+    )
 
 
 def _apply_context_patterns(corners: list[ShockCornerRead], context: dict[str, Any]) -> list[ShockCornerRead]:

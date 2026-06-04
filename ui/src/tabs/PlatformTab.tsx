@@ -1518,13 +1518,17 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
   const shockCornerModels = useMemo<ShockPanelModel[]>(() => (
     SHOCK_CORNERS.map((corner) => {
       const samples = numericTraceValues(trace, `${corner.key}_shock_vel_in_s`);
+      const readerCorner = shockReader?.corners.find((item) => item.corner === corner.label);
+      const recommendationFor = (displayLabel: ShockSetupField["label"]) => (
+        readerCorner?.setting_recommendations.find((recommendation) => recommendation.display_label === displayLabel) ?? null
+      );
       const setupFields: ShockSetupField[] = [
-        { label: "LS Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "ls_compression")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "ls_compression") == null },
-        { label: "HS Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_compression")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_compression") == null },
-        { label: "HS-S Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_comp_slope")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_comp_slope") == null },
-        { label: "LS Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "ls_rebound")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "ls_rebound") == null },
-        { label: "HS Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_rebound")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_rebound") == null },
-        { label: "HS-S Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_reb_slope")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_reb_slope") == null },
+        { label: "LS Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "ls_compression")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "ls_compression") == null, recommendation: recommendationFor("LS Comp") },
+        { label: "HS Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_compression")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_compression") == null, recommendation: recommendationFor("HS Comp") },
+        { label: "HS-S Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_comp_slope")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_comp_slope") == null, recommendation: recommendationFor("HS-S Comp") },
+        { label: "LS Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "ls_rebound")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "ls_rebound") == null, recommendation: recommendationFor("LS Reb") },
+        { label: "HS Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_rebound")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_rebound") == null, recommendation: recommendationFor("HS Reb") },
+        { label: "HS-S Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_reb_slope")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_reb_slope") == null, recommendation: recommendationFor("HS-S Reb") },
       ];
       return {
         ...corner,
@@ -1535,7 +1539,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
           : undefined,
       };
     })
-  ), [shockSetupSnapshot, trace]);
+  ), [shockReader, shockSetupSnapshot, trace]);
 
   const hasAnyShockTelemetry = shockCornerModels.some((corner) => corner.samples.length > 0);
   const sharedShockAxisLimit = SHOCK_FIXED_AXIS_LIMIT_IN_S;

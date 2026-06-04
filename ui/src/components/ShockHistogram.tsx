@@ -1,9 +1,11 @@
 import { useMemo } from "react";
+import type { ShockSettingRecommendation } from "../types/shockReader";
 
 export type ShockSetupField = {
   label: string;
   value: string;
   unavailable?: boolean;
+  recommendation?: ShockSettingRecommendation | null;
 };
 
 type ShockHistogramProps = {
@@ -37,6 +39,31 @@ type HistogramModel = {
   bumpLowPct: number;
   bumpHighPct: number;
 };
+
+function recommendationBadgeText(recommendation?: ShockSettingRecommendation | null): string {
+  if (!recommendation) return "need data";
+  if (recommendation.direction === "blocked") return "limit";
+  if (recommendation.direction === "needs_more_evidence") return recommendation.blocked_reason === "setup value missing" ? "need setup" : "need data";
+  if (recommendation.direction === "hold") return "hold";
+  if (recommendation.delta != null && recommendation.suggested_value != null) {
+    const sign = recommendation.delta > 0 ? "+" : "";
+    return `${sign}${recommendation.delta} -> ${recommendation.suggested_value}`;
+  }
+  if (recommendation.blocked_reason === "setup value missing") return "need setup";
+  return recommendation.direction === "add" ? "add" : "subtract";
+}
+
+function recommendationTitle(recommendation?: ShockSettingRecommendation | null): string {
+  if (!recommendation) return "Need more shock-reader evidence.";
+  const bits = [
+    `Goal: ${recommendation.goal}`,
+    `Trade-off: ${recommendation.tradeoff}`,
+    `Watch: ${recommendation.watch_for.join("; ")}`,
+    `Reason: ${recommendation.reason_short}`,
+  ];
+  if (recommendation.blocked_reason) bits.push(`Blocked: ${recommendation.blocked_reason}`);
+  return bits.join("\n");
+}
 
 const CHART_WIDTH = 720;
 const CHART_HEIGHT = 260;
@@ -249,8 +276,24 @@ export function ShockHistogram({
                 key={field.label}
                 className={`shock-setup-field${field.unavailable ? " unavailable" : ""}`}
               >
-                <span>{field.label}</span>
+                {setupSide === "right" && (
+                  <span
+                    className={`shock-setup-recommendation-badge ${field.recommendation?.direction ?? "needs_more_evidence"}`}
+                    title={recommendationTitle(field.recommendation)}
+                  >
+                    {recommendationBadgeText(field.recommendation)}
+                  </span>
+                )}
+                <span className="shock-setup-label">{field.label}</span>
                 <strong>{field.value}</strong>
+                {setupSide === "left" && (
+                  <span
+                    className={`shock-setup-recommendation-badge ${field.recommendation?.direction ?? "needs_more_evidence"}`}
+                    title={recommendationTitle(field.recommendation)}
+                  >
+                    {recommendationBadgeText(field.recommendation)}
+                  </span>
+                )}
               </div>
             ))}
           </div>

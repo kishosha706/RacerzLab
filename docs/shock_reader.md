@@ -1,6 +1,6 @@
 # Shock Reader
 
-Milestone 1 adds a Platform -> Shocks-only reader for live shock movement signatures.
+Platform -> Shocks includes a reader for live shock movement signatures and an inline damper worksheet.
 
 The reader uses normalized shock velocity channels from the parquet cache and computes per-corner histogram zones:
 
@@ -17,10 +17,14 @@ Compression/bump is shock shortening. Rebound is shock extending. Low-speed moti
 - The reader does not change telemetry formulas or import behavior.
 - Missing telemetry stays unavailable and is never treated as zero.
 - Normal UI hides raw evidence internals.
-- Recommendations are one shock/slope swing at a time.
-- Numeric click guidance is limited to `+1` or `-1`, and only when the setup snapshot has a current value inside `1-10`.
+- Recommendations are shown inline beside each corner setup value: `LS Comp`, `HS Comp`, `HS-S Comp`, `LS Reb`, `HS Reb`, and `HS-S Reb`.
+- Top-level recommendations remain in the API for compatibility, but the normal UI uses the per-corner setup rows.
+- Numeric click guidance is scaled from signal severity: weak `+/-1`, medium `+/-2`, strong `+/-3`, and extreme `+/-4` or `+/-5` only with strong cross-check context and room.
+- Click guidance is bounded to `1-10`. If a target hits the range, the shown delta is clamped; if the requested direction cannot move, the row is blocked at the limit.
+- If a setup value is missing, the row may still show semantic direction, but it does not show a current-to-target value.
 - Slope recommendations require a high-speed pattern plus selected-zone and platform/contact/chatter context.
-- The reader never says a histogram proves a setting is wrong.
+- The reader treats histogram signatures as guarded evidence, not proof that a setting is wrong.
+- Pick one change and run clean laps before comparing the same window again.
 
 ## Endpoint
 

@@ -69,27 +69,44 @@ def test_balanced_histogram_returns_leave_alone(tmp_path: Path) -> None:
     _write(tmp_path, [-0.8, -0.4, 0.2, 0.7] * 30)
     response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path)
     assert response.corners[0].pattern == "balanced"
+    assert all(len(corner.setting_recommendations) == 6 for corner in response.corners)
     assert response.recommendations[0].semantic_direction == "leave_alone"
     assert response.recommendations[0].numeric_step is None
 
 
-def test_low_speed_bump_heavy_returns_subtract_ls_bump(tmp_path: Path) -> None:
+def test_per_corner_setting_recommendations_exist_for_all_corners(tmp_path: Path) -> None:
     _write(tmp_path, ([0.2] * 70) + ([-0.2] * 20) + ([1.4] * 10))
     response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path)
-    rec = response.recommendations[0]
+    assert [corner.corner for corner in response.corners] == ["LF", "RF", "LR", "RR"]
+    for corner in response.corners:
+        assert [rec.display_label for rec in corner.setting_recommendations] == [
+            "LS Comp",
+            "HS Comp",
+            "HS-S Comp",
+            "LS Reb",
+            "HS Reb",
+            "HS-S Reb",
+        ]
+
+
+def test_strong_low_speed_bump_signal_scales_beyond_one_click(tmp_path: Path) -> None:
+    _write(tmp_path, ([0.2] * 70) + ([-0.2] * 20) + ([1.4] * 10))
+    response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path)
+    rec = response.corners[0].setting_recommendations[0]
     assert response.corners[0].pattern == "low_speed_bump_heavy"
     assert rec.setting == "ls_compression"
-    assert rec.semantic_direction == "subtract"
-    assert rec.numeric_step == -1
+    assert rec.direction == "subtract"
+    assert rec.delta is not None and rec.delta < -1
+    assert rec.suggested_value == rec.current_value + rec.delta
 
 
 def test_low_speed_rebound_heavy_returns_subtract_ls_rebound(tmp_path: Path) -> None:
     _write(tmp_path, ([-0.2] * 70) + ([0.2] * 20) + ([-1.4] * 10))
     response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path)
-    rec = response.recommendations[0]
+    rec = response.corners[0].setting_recommendations[3]
     assert response.corners[0].pattern == "low_speed_rebound_heavy"
     assert rec.setting == "ls_rebound"
-    assert rec.semantic_direction == "subtract"
+    assert rec.direction == "subtract"
 
 
 def test_excessive_high_speed_shoulders_no_contact_returns_soften_candidate(tmp_path: Path) -> None:
@@ -97,7 +114,7 @@ def test_excessive_high_speed_shoulders_no_contact_returns_soften_candidate(tmp_
     response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path)
     rec = response.recommendations[0]
     assert response.corners[0].pattern == "excessive_high_speed_shoulders"
-    assert rec.setting in {"hs_compression", "hs_rebound", "compression_slope"}
+    assert rec.setting in {"hs_compression", "hs_rebound", "hs_compression_slope", "hs_rebound_slope"}
     assert rec.semantic_direction in {"subtract", "move_more_digressive"}
 
 
@@ -106,16 +123,25 @@ def test_high_speed_bump_contact_returns_add_hs_or_linear_slope(tmp_path: Path) 
     response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path)
     rec = response.recommendations[0]
     assert response.corners[0].pattern == "impact_contact_driven"
-    assert rec.setting in {"hs_compression", "compression_slope"}
+    assert rec.setting in {"hs_compression", "hs_compression_slope"}
     assert rec.semantic_direction in {"add", "move_more_linear"}
 
 
 def test_slope_candidate_requires_selected_platform_context(tmp_path: Path) -> None:
     _write(tmp_path, ([2.4] * 60) + ([-0.3] * 20) + ([0.2] * 20), contact=True)
     response = build_shock_reader_response("run-1", setup_snapshot=_setup(), data_dir=tmp_path)
-    rec = response.recommendations[0]
-    assert rec.setting == "hs_compression"
-    assert rec.setting != "compression_slope"
+    slope = response.corners[0].setting_recommendations[2]
+    assert slope.setting == "hs_compression_slope"
+    assert slope.direction in {"hold", "needs_more_evidence"}
+
+
+def test_slope_candidate_uses_strong_selected_context(tmp_path: Path) -> None:
+    _write(tmp_path, ([2.4] * 60) + ([-0.3] * 20) + ([0.2] * 20), contact=True)
+    response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path)
+    slope = response.corners[0].setting_recommendations[2]
+    assert slope.setting == "hs_compression_slope"
+    assert slope.direction == "add"
+    assert slope.delta is not None and slope.delta > 1
 
 
 def test_no_shock_telemetry_returns_unavailable(tmp_path: Path) -> None:
@@ -129,29 +155,49 @@ def test_no_shock_telemetry_returns_unavailable(tmp_path: Path) -> None:
 def test_setup_snapshot_missing_prevents_numeric_values(tmp_path: Path) -> None:
     _write(tmp_path, ([0.2] * 70) + ([-0.2] * 30))
     response = build_shock_reader_response("run-1", lap=1, setup_snapshot=None, data_dir=tmp_path)
-    rec = response.recommendations[0]
+    rec = response.corners[0].setting_recommendations[0]
     assert rec.current_value is None
     assert rec.suggested_value is None
-    assert rec.numeric_step is None
+    assert rec.delta is None
+    assert rec.blocked_reason == "setup value missing"
+
+
+def test_weak_signal_stays_one_click_when_context_is_unselected(tmp_path: Path) -> None:
+    _write(tmp_path, ([0.2] * 46) + ([-0.2] * 34))
+    response = build_shock_reader_response("run-1", setup_snapshot=_setup(), data_dir=tmp_path)
+    rec = response.corners[0].setting_recommendations[0]
+    assert rec.direction == "subtract"
+    assert rec.delta == -1
 
 
 def test_click_bounds_enforced(tmp_path: Path) -> None:
     _write(tmp_path, ([0.2] * 70) + ([-0.2] * 30))
     response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(5), data_dir=tmp_path)
-    rec = response.recommendations[0]
+    rec = response.corners[0].setting_recommendations[0]
     assert rec.current_value == 5
-    assert rec.suggested_value == 4
+    assert rec.suggested_value == 2
     assert 1 <= rec.suggested_value <= 10
 
 
 def test_at_limit_blocks_recommendation(tmp_path: Path) -> None:
     _write(tmp_path, ([0.2] * 70) + ([-0.2] * 30))
     response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(1), data_dir=tmp_path)
-    rec = response.recommendations[0]
+    rec = response.corners[0].setting_recommendations[0]
     assert rec.current_value == 1
     assert rec.suggested_value is None
-    assert rec.numeric_step is None
-    assert rec.blocked_by_limit is True
+    assert rec.delta is None
+    assert rec.direction == "blocked"
+    assert rec.blocked_reason == "limit"
+
+
+def test_large_positive_delta_clamps_to_upper_bound(tmp_path: Path) -> None:
+    _write(tmp_path, ([2.4] * 60) + ([-0.3] * 20) + ([0.2] * 20), contact=True)
+    response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(8), data_dir=tmp_path)
+    rec = response.corners[0].setting_recommendations[1]
+    assert rec.setting == "hs_compression"
+    assert rec.direction == "add"
+    assert rec.delta == 2
+    assert rec.suggested_value == 10
 
 
 def test_no_full_row_materialization(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

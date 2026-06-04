@@ -34,3 +34,15 @@ def test_platform_shocks_mounts_shock_reader_only_in_shocks_panel() -> None:
     assert "<ShockReaderPanel" in source
     assert 'case "shocks": return renderShocksPanel();' in source
     assert "DialIn" not in Path("ui/src/components/ShockReaderPanel.tsx").read_text(encoding="utf-8")
+
+
+def test_shock_reader_uses_inline_setup_recommendations() -> None:
+    panel_source = Path("ui/src/components/ShockReaderPanel.tsx").read_text(encoding="utf-8")
+    histogram_source = Path("ui/src/components/ShockHistogram.tsx").read_text(encoding="utf-8")
+    platform_source = Path("ui/src/tabs/PlatformTab.tsx").read_text(encoding="utf-8")
+
+    assert "shock-reader-recommendation" not in panel_source
+    assert "shock-reader-inline-note" in panel_source
+    assert "shock-setup-recommendation-badge" in histogram_source
+    assert 'setupSide === "right"' in histogram_source
+    assert "recommendationFor(\"LS Comp\")" in platform_source
