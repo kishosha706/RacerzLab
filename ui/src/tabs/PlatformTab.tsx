@@ -8,10 +8,11 @@ import { CornerTireMap } from "../components/CornerTireMap";
 import { CornerBarChart } from "../components/CornerBarChart";
 import { ShockHistogram } from "../components/ShockHistogram";
 import type { ShockSetupField } from "../components/ShockHistogram";
+import { ShockReaderPanel } from "../components/ShockReaderPanel";
 import { WorkbenchSubnav } from "../components/WorkbenchSubnav";
 import type { WorkbenchView } from "../components/WorkbenchSubnav";
 import { ProxyBadge } from "../components/ProxyBadge";
-import { fetchPlatformEvents } from "../api/client";
+import { fetchPlatformEvents, fetchShockReader } from "../api/client";
 import { isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
 import { getTraceValues, formatChannelValue, formatForceProxyN, safeStringValue } from "../utils/channelFormat";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
@@ -24,6 +25,7 @@ import type {
   TraceChannelPayload,
   TraceResponse,
 } from "../types/telemetry";
+import type { ShockReaderResponse } from "../types/shockReader";
 
 type PlatformTabProps = {
   overview: RunOverview;
@@ -615,6 +617,9 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
   const pendingHoverSampleIndexRef = useRef<number | null>(null);
   const lastHoverCommitRef = useRef(0);
   const [platformEvents, setPlatformEvents] = useState<PlatformEventItem[]>([]);
+  const [shockReader, setShockReader] = useState<ShockReaderResponse | null>(null);
+  const [shockReaderLoading, setShockReaderLoading] = useState(false);
+  const [shockReaderError, setShockReaderError] = useState<string | null>(null);
   const [selectedPlatformEvent, setSelectedPlatformEvent] = useState<PlatformEventItem | null>(null);
   const [clickedSampleIndex, setClickedSampleIndex] = useState<number | null>(null);
   const [hoverSampleIndex, setHoverSampleIndex] = useState<number | null>(null);
@@ -680,6 +685,37 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
       .map((lap) => lap.lap_number);
   }, [overview.laps, selection.selectedLapWindowEnd, selection.selectedLapWindowStart, windowContextActive]);
   const representativeLapIndex = representativeLap != null ? windowLapNumbers.indexOf(representativeLap) : -1;
+  const shockReaderLapWindow = windowContextActive
+    ? `${selection.selectedLapWindowStart}-${selection.selectedLapWindowEnd}`
+    : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    if (workbenchView !== "shocks") return;
+    setShockReaderLoading(true);
+    setShockReaderError(null);
+    fetchShockReader(overview.run_id, {
+      lap: shockReaderLapWindow ? null : trace?.lap ?? representativeLap,
+      lapWindow: shockReaderLapWindow,
+      boundaryInS: SHOCK_BUCKET_THRESHOLD_IN_S,
+      includeDebug: false,
+    })
+      .then((payload) => {
+        if (!cancelled) setShockReader(payload);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setShockReader(null);
+          setShockReaderError((err as Error).message ?? "Shock Reader unavailable.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setShockReaderLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [overview.run_id, representativeLap, shockReaderLapWindow, trace?.lap, workbenchView]);
 
   const buildTraceEvidence = useCallback((
     lapNumber: number | null,
@@ -1796,6 +1832,12 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
           Histograms use a fixed -{sharedShockAxisLimit.toFixed(1)} to +{sharedShockAxisLimit.toFixed(1)} in/s range, 0.50 in/s bins, labels every 1.0 in/s, and ±{SHOCK_BUCKET_THRESHOLD_IN_S.toFixed(1)} in/s hi/lo boundaries.
         </p>
       </div>
+
+      <ShockReaderPanel
+        data={shockReader}
+        loading={shockReaderLoading}
+        error={shockReaderError}
+      />
 
       <div className="shock-workstation-grid">
         {shockCornerModels.map((corner) => (

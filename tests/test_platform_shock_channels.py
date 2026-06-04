@@ -26,3 +26,11 @@ def test_workbench_trace_channels_include_platform_shock_channels() -> None:
 
     for channel in required_channels:
         assert f'"{channel}"' in source, f"Workbench trace channels are missing {channel}"
+
+
+def test_platform_shocks_mounts_shock_reader_only_in_shocks_panel() -> None:
+    source = Path("ui/src/tabs/PlatformTab.tsx").read_text(encoding="utf-8")
+    assert "fetchShockReader" in source
+    assert "<ShockReaderPanel" in source
+    assert 'case "shocks": return renderShocksPanel();' in source
+    assert "DialIn" not in Path("ui/src/components/ShockReaderPanel.tsx").read_text(encoding="utf-8")

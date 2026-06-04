@@ -304,6 +304,7 @@ export function fetchPlatformEvents(
 }
 
 import type { ComparisonInsightsResponse, DeltaTraceRequest, DeltaTraceResponse } from "../types/compare";
+import type { ShockReaderResponse } from "../types/shockReader";
 
 export function fetchCompareDeltaTraces(request: DeltaTraceRequest): Promise<DeltaTraceResponse> {
   return requestJson<DeltaTraceResponse>("/api/compare/delta-traces", {
@@ -433,6 +434,20 @@ export function fetchRunLapList(runId: string): Promise<RunLapList> {
 
 export function fetchLapWindows(runId: string): Promise<LapWindowsResponse> {
   return requestJson<LapWindowsResponse>(`/api/runs/${encodeURIComponent(runId)}/lap-windows`);
+}
+
+export function fetchShockReader(
+  runId: string,
+  options?: { lap?: number | null; lapWindow?: string | null; phase?: string | null; boundaryInS?: number; includeDebug?: boolean },
+): Promise<ShockReaderResponse> {
+  const params = new URLSearchParams();
+  if (options?.lap != null) params.set("lap", String(options.lap));
+  if (options?.lapWindow) params.set("lap_window", options.lapWindow);
+  if (options?.phase) params.set("phase", options.phase);
+  if (options?.boundaryInS != null) params.set("boundary_in_s", String(options.boundaryInS));
+  if (options?.includeDebug != null) params.set("include_debug", String(options.includeDebug));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestJson<ShockReaderResponse>(`/api/runs/${encodeURIComponent(runId)}/shock-reader${suffix}`);
 }
 
 export interface TelemetryFileEntry {

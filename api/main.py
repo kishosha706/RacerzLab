@@ -11,6 +11,7 @@ from api.routes_notebook import router as notebook_router
 from api.routes_reports import router as reports_router
 from api.routes_runs import router as runs_router
 from api.routes_sessions import router as sessions_router
+from api.routes_shock_reader import router as shock_reader_router
 from api.routes_track_map import router as track_map_router
 from api.schemas import HealthResponse
 from racelab_engine import __version__
@@ -45,4 +46,5 @@ app.include_router(events_router)
 app.include_router(reports_router)
 app.include_router(notebook_router)
 app.include_router(sessions_router)
+app.include_router(shock_reader_router)
 app.include_router(track_map_router)
