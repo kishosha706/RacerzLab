@@ -84,14 +84,14 @@ cd racelab-garage
 - Verify: recommended candidates shown (fastest clean lap, most recent run, best 10-lap EV)
 - Verify: Add as Baseline buttons work
 
-## 6e. Compare Basket
+## 6e. Test Basket
 - Add a lap as Test from Laps table (Gauge icon)
-- Verify: Compare Basket appears at bottom-right
+- Verify: Test Basket appears at bottom-right
 - Verify: readiness badge shows (ready/caution/not_valid/reference_mode)
 - Verify: warnings displayed for cross-session/missing-setup
 - Verify: Swap and Clear buttons work
-- Click Open Compare
-- Verify: CompareTab opens
+- Click Review in Laps
+- Verify: Laps opens and baseline/test staging remains visible
 
 ## 7. Platform Workbench — Platform/Rake Preset
 - Navigate to "Platform" in the nav rail
@@ -106,8 +106,8 @@ cd racelab-garage
 - Verify: each row has LF/RF/LR/RR series with corner colors
 - Verify: proxy channels (slip ratio) show dashed lines
 
-## 7. Compare
-- Navigate to "Compare" in the nav rail
+## 7. Legacy Compare Engine
+- Standalone Compare is hidden from the nav rail; use Laps and Stint Intelligence for baseline/test review
 - Select baseline and test runs
 - Click "Run Compare" if compare doesn't auto-load
 - Verify: Verdict card shows keep_direction/undo/retest/inconclusive
@@ -224,7 +224,7 @@ cd racelab-garage
 | Laps stint map | Colored blocks render | |
 | Performance/Trust/EV badges | Three badges on Best 10/20 cards | |
 | All Sessions | Runs listed with basket actions | |
-| Compare Basket | Drawer appears, readiness shown | |
+| Test Basket | Drawer appears, readiness shown | |
 | Platform preset | 5 rows render | |
 | Tires preset | 4 rows render | |
 | Compare verdict | Verdict card visible | |

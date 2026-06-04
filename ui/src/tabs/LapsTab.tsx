@@ -762,7 +762,7 @@ export function LapsTab({ overview }: LapsTabProps) {
         <button className="secondary-button" onClick={handleSelect} disabled={!canStage} title={canStage ? "Use this evidence as current selection" : disabledReason} aria-label={isWindow ? "Select window evidence" : "Select lap evidence"}>
           <Target size={14} /> {isWindow ? "Select Window" : "Select Evidence"}
         </button>
-        <button className="secondary-button" onClick={handleBasket} disabled={!canStage} title={canStage ? "Add evidence to Compare Basket queue" : disabledReason} aria-label="Add evidence to Compare Basket">
+        <button className="secondary-button" onClick={handleBasket} disabled={!canStage} title={canStage ? "Add evidence to Test Basket queue" : disabledReason} aria-label="Add evidence to Test Basket">
           <BarChart3 size={14} /> Basket
         </button>
       </div>
@@ -1190,8 +1190,8 @@ export function LapsTab({ overview }: LapsTabProps) {
               </p>
             </div>
             <div className="laps-action-row compact">
-              <button className="secondary-button" onClick={() => setWorkspace("compare", "laps")} disabled={!baselineStint || !testStint}>
-                <Layers size={14} /> Open Compare
+              <button className="secondary-button" onClick={() => setSubview("stints")} disabled={!baselineStint || !testStint}>
+                <Layers size={14} /> Review Stint Compare
               </button>
             </div>
           </div>
@@ -1441,7 +1441,7 @@ export function LapsTab({ overview }: LapsTabProps) {
           <div className="section-heading-row">
             <div>
               <span className="eyebrow">Task 9</span>
-              <h2><BarChart3 size={16} /> Compare Basket Staging</h2>
+              <h2><BarChart3 size={16} /> Baseline/Test Staging</h2>
             </div>
             <div className="laps-action-row compact">
               <button className="secondary-button" onClick={swap} disabled={!basket.baseline || !basket.test}>
@@ -1453,13 +1453,13 @@ export function LapsTab({ overview }: LapsTabProps) {
               <button className="secondary-button" onClick={clear} disabled={!basket.baseline && !basket.test && basket.queue.length === 0}>
                 <AlertTriangle size={14} /> Clear Basket
               </button>
-              <button className="secondary-button" onClick={() => setWorkspace("compare", "laps")}>
-                <Layers size={14} /> Open Compare
+              <button className="secondary-button" onClick={() => setSubview("stints")}>
+                <Layers size={14} /> Open Stint Intelligence
               </button>
             </div>
           </div>
           <p className="section-note">
-            Basket cards preserve whether you staged a lap or a window. Compare still syncs run-level identity first, so window metadata is preserved truthfully but not yet consumed deeply by the compare engine.
+            Basket cards preserve whether you staged a lap or a window. Use Stint Intelligence for baseline/test review while deeper compare internals remain available to embedded tools.
           </p>
           <div className="laps-window-grid">
             {([["Baseline", basket.baseline], ["Test", basket.test]] as const).map(([label, item]) => (

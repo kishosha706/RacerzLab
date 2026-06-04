@@ -184,7 +184,7 @@ export function NotebookTab() {
   const hasCompareRevisitContext = !!(selectedFinding?.baseline_run_id && selectedFinding?.test_run_id);
   const hasSingleRunRevisitContext = !!(selectedFinding?.baseline_run_id || selectedFinding?.test_run_id);
   const compareRevisitTitle = hasCompareRevisitContext
-    ? "Open Compare with this finding context"
+    ? "Review this finding in Laps"
     : "Not available for this run";
   const singleRunRevisitTitle = hasSingleRunRevisitContext
     ? undefined
@@ -474,11 +474,11 @@ export function NotebookTab() {
               });
               focusEvidence(
                 getFindingEvidence(selectedFinding, selectedFinding.baseline_run_id, selectedFinding.baseline_lap),
-                "compare",
+                "laps",
               );
-              setWorkspace("compare", "compare_verdict");
-            }} disabled={!hasCompareRevisitContext} title={compareRevisitTitle} aria-label="Revisit in Compare">
-              <BarChart3 size={10} /> Compare
+              setWorkspace("laps", "compare_verdict");
+            }} disabled={!hasCompareRevisitContext} title={compareRevisitTitle} aria-label="Review finding in Laps">
+              <BarChart3 size={10} /> Review in Laps
             </button>
             <button className="trackmap-action-btn" onClick={() => {
               const runId = selectedFinding.baseline_run_id ?? selectedFinding.test_run_id;

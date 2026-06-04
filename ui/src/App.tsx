@@ -1,4 +1,4 @@
-import { Clock, Crosshair, Gauge, GitCompare, Layers, List, MapPin, Wrench } from "lucide-react";
+import { Clock, Crosshair, Gauge, Layers, List, MapPin, Wrench } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
@@ -38,10 +38,6 @@ import type {
   TraceResponse,
 } from "./types/telemetry";
 
-const CompareTab = lazy(async () => {
-  const module = await import("./tabs/CompareTab");
-  return { default: module.CompareTab };
-});
 const DialInTab = lazy(async () => {
   const module = await import("./tabs/DialInTab");
   return { default: module.DialInTab };
@@ -343,9 +339,6 @@ function CockpitShell() {
     if (ws === "notebook") {
       return <NotebookTab />;
     }
-    if (ws === "compare") {
-      return <CompareTab runs={runs} currentRunId={overview.run_id} />;
-    }
     if (ws === "laps") {
       return <LapsTab overview={overview} />;
     }
@@ -358,7 +351,7 @@ function CockpitShell() {
         targetZoneEndPct={selection.selectedZoneEndPct ?? undefined} />;
     }
     return <OverviewTab overview={overview} />;
-  }, [overview, selection.selectedWorkspace, selectedTraceLap, trace, platformEvents, runs]);
+  }, [overview, selection.selectedWorkspace, selectedTraceLap, trace, platformEvents]);
 
   // ── no session yet → show startup screen ───────────────────
   if (!sessionId) {
@@ -414,7 +407,6 @@ function CockpitShell() {
             ["map", "Track Map", MapPin],
             ["setup_impact", "Setup", Wrench],
             ["dial_in", "Dial-In", Crosshair],
-            ["compare", "Compare", GitCompare],
             ["notebook", "Notebook", List],
           ] as const).map(([key, label, Icon]) => (
             <button
@@ -489,7 +481,7 @@ function CockpitShell() {
               <span>P</span><p>Open Platform</p>
               <span>M</span><p>Open Track Map</p>
               <span>O</span><p>Open Overview</p>
-              <span>C</span><p>Open Compare</p>
+              <span>C</span><p>Open Laps</p>
               <span>D</span><p>Open Dial-In</p>
               <span>N</span><p>Open Notebook</p>
               <span>L</span><p>Toggle race/learning mode</p>

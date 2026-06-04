@@ -11,13 +11,13 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **Track Map Cockpit** — two-panel layout (map + inspector), 16 data-aware layer toggles with live counts, heatmap modes (Normal/Density/Severity), section summary cards, mini event timeline, analysis summary panel, manual map association, 82 indexed maps
 - **Track Map matching** — automatic track name normalization and scoring-based map-to-run matching with optional manual override
 - **Session Manager** — create/list/get/update/delete/archive RaceLab sessions, add/remove runs, startup screen with New/Open/Delete
-- **Laps Workspace** — lap table with stint map visualization, Performance/Trust/Engineering Value scoring, subviews (Current Run, Windows, All Sessions, Baselines, Compare Basket)
+- **Laps Workspace** — lap table with stint map visualization, Stint Intelligence, Performance/Trust/Engineering Value scoring, and baseline/test subviews (Current Run, Windows, Stint Intelligence, All Sessions, Baselines, Test Basket)
 - **Laps Stint Map** — compact colored-block visualization per lap with mode toggle (Engineering Value, Lap Time Delta, Validity, Falloff), selected lap highlight, best window outline
 - **Pace Quality Scoring** — three-dimension system: Performance (speed/consistency/falloff/stress), Trust (validity/completeness/window/context), Engineering Value (combined). Percentage-based thresholds, caps for wreck/pit/<60% valid laps, deductions for missing data.
-- **Compare Basket** — persistent bottom-right drawer for collecting laps/runs to compare. Baseline/test slots with readiness state (ready/caution/not_valid/reference_mode), cross-session support, validation warnings, Swap/Clear/Open Compare. Persists to localStorage across app restarts.
+- **Test Basket** — persistent bottom-right drawer for collecting baseline/test laps, windows, and stints. Baseline/test slots with readiness state (ready/caution/not_valid/reference_mode), cross-session support, validation warnings, Swap/Clear/Review in Laps. Persists to localStorage across app restarts.
 - **All Sessions / Baselines** — browse all imported runs with Add as Baseline/Test actions. Recommended baseline candidates (fastest clean lap, most recent run, best 10-lap EV window).
 - **Platform/Aero Workbench** — stacked telemetry chart workbench (ECharts) with Platform/Rake, Speed/RPM, Drag/Scrub, Tires, Shocks, Grade/Pull subviews. Event markArea annotation bands.
-- **Compare Workbook** — baseline vs test lap comparison by lap percentage with verdict, whole-car index, four corners, tires, shocks, driver, engine, and delta traces views
+- **Internal Compare Engine** — baseline vs test analysis services, verdict components, did-it-work logic, and delta trace tooling retained for Laps-owned comparison workflows
 - **Did-It-Work Card** — standalone verdict component with evidence, test discipline score, target-zone/splitter/scrub deltas, warnings, setup changes, and action buttons (Save Finding, Stage Next Test, Create Test, Open Setup, Open Map, Open Evidence)
 - **Delta Traces** — per-channel delta traces with target zone highlighting (Speed/Platform, Ride Height, Tire presets)
 - **Insights Engine** — automated interpretation of comparison results with trace annotations, correlations, target zone classification, confidence-weighted verdicts, and sector intelligence
@@ -107,11 +107,11 @@ See [TESTING.md](TESTING.md) for full details.
 3. **Import test .ibt** — your experimental setup or driving change
 4. **Import a track map file** — via file picker or folder import for spatial overlays
 5. **Browse Laps** — view lap table, stint map, Performance/Trust/Engineering Value badges
-6. **Add to Compare Basket** — set baseline/test from Laps, All Sessions, or Baselines views
+6. **Add to Test Basket** — set baseline/test from Laps, All Sessions, Baselines, or Stint Intelligence
 7. **Open Platform Workbench** — inspect ride heights, rake, dynamic pressure, tire pressure/temp/slip via ECharts
 8. **Open Track Map** — view centerline geometry with platform event markers, heatmaps, section cards, and layer toggles
-9. **Open Compare** — select baseline/test laps (or use Compare Basket), run comparison
-10. **Review Verdict** — keep/undo/retest with confidence score, evidence, and Did-It-Work card
+9. **Review Stint Intelligence** — compare baseline/test stints inline from Laps
+10. **Review Verdict** — keep/undo/retest with confidence score, evidence, and Did-It-Work card as comparison tools are embedded into Laps
 11. **Explore Delta Traces** — see per-channel deltas by lap position with target zone highlight
 12. **Check Setup Relevance** — highlighted setup fields linked to selected event, Explicit/Inferred badges
 13. **Stage Next Test** — create a draft test plan from the verdict

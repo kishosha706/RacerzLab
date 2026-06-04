@@ -3,10 +3,14 @@ import type { EvidenceContext, SelectionMode, SelectionSource, TelemetrySelectio
 
 const VALID_WORKSPACES: Workspace[] = ["overview", "map", "laps", "platform_trace", "speed_delta", "drag_scrub", "setup_impact", "dial_in", "compare", "notebook", "channels"];
 
+function normalizeWorkspace(workspace: Workspace): Workspace {
+  return workspace === "compare" ? "laps" : workspace;
+}
+
 function loadLastWorkspace(): Workspace {
   try {
     const saved = localStorage.getItem("racelab_last_workspace");
-    if (saved && VALID_WORKSPACES.includes(saved as Workspace)) return saved as Workspace;
+    if (saved && VALID_WORKSPACES.includes(saved as Workspace)) return normalizeWorkspace(saved as Workspace);
   } catch { /* ignore */ }
   return "overview";
 }
@@ -98,7 +102,7 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
     case "SET_MODE":
       return { ...state, selectedMode: action.mode };
     case "SET_WORKSPACE":
-      return { ...state, selectedWorkspace: action.workspace, selectionSource: action.source };
+      return { ...state, selectedWorkspace: normalizeWorkspace(action.workspace), selectionSource: action.source };
     case "SELECT_ZONE":
       return {
         ...state,
@@ -138,7 +142,7 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
         selectedLapPct: action.lapPct,
         selectedValueBasis: action.sampleIndex != null ? "selected_sample" : state.selectedValueBasis,
         selectedLockState: action.sampleIndex != null ? "locked" : state.selectedLockState,
-        selectedWorkspace: action.workspace,
+        selectedWorkspace: normalizeWorkspace(action.workspace),
         selectionSource: action.source,
         hoverLapPct: null,
         hoverSampleIndex: null,
@@ -178,7 +182,7 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
         selectedLockState: ev.lockState !== undefined ? ev.lockState : state.selectedLockState,
         selectedTrustTier: ev.trustTier !== undefined ? ev.trustTier : state.selectedTrustTier,
         selectionSource: ev.selectionSource !== undefined ? ev.selectionSource : state.selectionSource,
-        selectedWorkspace: action.workspace !== undefined ? action.workspace : state.selectedWorkspace,
+        selectedWorkspace: action.workspace !== undefined ? normalizeWorkspace(action.workspace) : state.selectedWorkspace,
         hoverLapPct: null,
         hoverSampleIndex: null,
         playbackActive: false,
@@ -253,7 +257,7 @@ export function TelemetrySelectionProvider({ children }: { children: ReactNode }
   const setMode = useCallback((mode: SelectionMode) => dispatch({ type: "SET_MODE", mode }), []);
   const setWorkspace = useCallback(
     (workspace: Workspace, source: SelectionSource = "manual") =>
-      dispatch({ type: "SET_WORKSPACE", workspace, source }),
+      dispatch({ type: "SET_WORKSPACE", workspace: normalizeWorkspace(workspace), source }),
     [],
   );
   const loadRun = useCallback(

@@ -67,7 +67,7 @@ export function useKeyboardShortcuts(
           break;
         case "c":
         case "C":
-          openWorkspace("compare");
+          openWorkspace("laps");
           break;
         case "d":
         case "D":

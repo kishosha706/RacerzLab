@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCheck, Crosshair, Database, GitCompare, Info, Layers, MapPin, List, Wrench } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCheck, Crosshair, Database, Info, Layers, MapPin, List, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { ChannelCatalogItem, PlatformEventItem, RunOverview } from "../types/telemetry";
@@ -131,8 +131,8 @@ function RunInspector({ overview, channels, collapsed, onToggle }: { overview: R
         )}
         {(selection.selectedZoneStartPct != null && selection.selectedZoneEndPct != null) && (
           <div className="diw-actions" style={{ marginTop: 6 }}>
-            <button className="trackmap-action-btn" onClick={() => setWorkspace("compare", selection.selectionSource)} title="Open Compare with the selected area">
-              <GitCompare size={10} /> Compare Zone
+            <button className="trackmap-action-btn" onClick={() => setWorkspace("laps", selection.selectionSource)} title="Review this area from Laps">
+              <Crosshair size={10} /> Review in Laps
             </button>
           </div>
         )}
@@ -334,8 +334,8 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
             <Wrench size={10} /> Open Setup
           </button>
           {(selection.selectedZoneStartPct != null && selection.selectedZoneEndPct != null) && (
-            <button className="trackmap-action-btn" onClick={() => setWorkspace("compare", eventSource)} title="Open Compare with the selected area">
-              <GitCompare size={10} /> Open Compare
+            <button className="trackmap-action-btn" onClick={() => setWorkspace("laps", eventSource)} title="Review this area from Laps">
+              <Crosshair size={10} /> Review in Laps
             </button>
           )}
           <button className="trackmap-action-btn" onClick={handleStageTest} title="Stage Test">

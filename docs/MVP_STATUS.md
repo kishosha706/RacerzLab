@@ -12,8 +12,8 @@ This status file is a current-state checkpoint, not a historical changelog.
 - Row analysis path remains available for fallback/debug parity.
 - Draft detection/classification is removed from active runtime and product decisions.
 - Notebook revisit actions use internal SPA workspace navigation (no internal `window.open(...)`).
-- Compare subviews are grouped navigation (Verdict / Platform / Systems / Detail).
-- Laps includes inline Compare Basket actions (Set Baseline / Set Test / Open Platform) where evidence is sufficient.
+- Standalone Compare is hidden from main navigation; compare engine internals remain available for embedded tools.
+- Laps includes inline Test Basket actions (Set Baseline / Set Test / Open Platform) where evidence is sufficient.
 - Proxy/estimate badges are unified through shared badge styling/component usage.
 
 ## Truth Rules (Must Stay Visible)

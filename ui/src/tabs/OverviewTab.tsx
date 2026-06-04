@@ -1,4 +1,4 @@
-import { AlertTriangle, BarChart3, CheckCircle, Clock, Layers, Lightbulb, MapPin, Wrench } from "lucide-react";
+import { AlertTriangle, CheckCircle, Clock, Layers, Lightbulb, MapPin, Wrench } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
@@ -242,8 +242,8 @@ export function OverviewTab({ overview }: OverviewTabProps) {
           <button className="secondary-button" onClick={() => setWorkspace("notebook", "overview")}>
             <CheckCircle size={14} /> Open Notebook
           </button>
-          <button className="secondary-button" onClick={() => setWorkspace("compare", "overview")}>
-            <BarChart3 size={14} /> Open Compare
+          <button className="secondary-button" onClick={() => setWorkspace("laps", "overview")}>
+            <Clock size={14} /> Review in Laps
           </button>
           <button className="secondary-button" onClick={() => setWorkspace("laps", "overview")}>
             <Clock size={14} /> Open Laps

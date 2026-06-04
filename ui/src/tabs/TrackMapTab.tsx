@@ -1021,12 +1021,12 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
             <button
               className="trackmap-action-btn"
               onClick={() => {
-                focusEvidence(buildSectionEvidence(selectedAreaSection), "compare");
-                setWorkspace("compare", "track_map");
+                focusEvidence(buildSectionEvidence(selectedAreaSection), "laps");
+                setWorkspace("laps", "track_map");
               }}
-              title="Open Compare using the selected zone"
+              title="Review selected zone in Laps"
             >
-              <Crosshair size={12} /> Compare Selected Zone
+              <Crosshair size={12} /> Review Selected Zone
             </button>
           )}
           {preferredMapId && (
@@ -1051,13 +1051,13 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
             <button
               className="trackmap-action-btn"
               onClick={() => {
-                focusEvidence(buildSectionEvidence(selectedAreaSection), "compare");
-                setWorkspace("compare", "track_map");
+                focusEvidence(buildSectionEvidence(selectedAreaSection), "laps");
+                setWorkspace("laps", "track_map");
               }}
-              title="Open Compare using the selected zone"
-              aria-label={`Compare selected zone ${selectedAreaLabel ?? selectedAreaSection.section_id}`}
+              title="Review selected zone in Laps"
+              aria-label={`Review selected zone ${selectedAreaLabel ?? selectedAreaSection.section_id} in Laps`}
             >
-              <Crosshair size={12} /> Compare Selected Zone
+              <Crosshair size={12} /> Review Selected Zone
             </button>
           )}
           <button className="trackmap-action-btn" onClick={copySummary} title="Copy Summary">
@@ -1630,10 +1630,10 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                 </button>
                 <button
                   className="trackmap-action-btn"
-                  onClick={() => focusEvidence(buildSectionEvidence(inspector.section), "compare")}
-                  title="Use this area as the compare target zone"
+                  onClick={() => focusEvidence(buildSectionEvidence(inspector.section), "laps")}
+                  title="Review this area in Laps"
                 >
-                  <Crosshair size={10} /> Compare Zone
+                  <Crosshair size={10} /> Review in Laps
                 </button>
               </div>
               {se.length === 0 ? (
@@ -1768,10 +1768,10 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                     {o.lap_pct != null && (
                       <button
                         className="trackmap-action-btn"
-                        onClick={() => focusEvidence(buildOverlayEvidence(o), "compare")}
-                        title="Use this area as the compare target zone"
+                        onClick={() => focusEvidence(buildOverlayEvidence(o), "laps")}
+                        title="Review this area in Laps"
                       >
-                        <Crosshair size={10} /> Compare Zone
+                        <Crosshair size={10} /> Review in Laps
                       </button>
                     )}
                   </div>

@@ -1,5 +1,5 @@
 /**
- * CompareBasket - compact persistent basket for collecting laps/runs to compare.
+ * CompareBasket - compact persistent basket for collecting baseline/test evidence.
  *
  * Lives at the bottom of the nav rail or as a bottom-right drawer.
  * Visible only when at least one item is added.
@@ -54,8 +54,8 @@ export function CompareBasket() {
   const warnings = getWarnings();
   const readiness = getReadiness();
 
-  const handleOpenCompare = useCallback(() => {
-    setWorkspace("compare", "manual");
+  const handleReviewInLaps = useCallback(() => {
+    setWorkspace("laps", "manual");
   }, [setWorkspace]);
 
   if (!hasItems && !expanded) return null;
@@ -66,19 +66,19 @@ export function CompareBasket() {
         <button
           className="compare-basket-toggle"
           onClick={() => setExpanded(!expanded)}
-          title={expanded ? "Collapse" : "Expand Compare Basket"}
-          aria-label={expanded ? "Collapse Compare Basket" : "Expand Compare Basket"}
+          title={expanded ? "Collapse" : "Expand Test Basket"}
+          aria-label={expanded ? "Collapse Test Basket" : "Expand Test Basket"}
           aria-expanded={expanded}
         >
           <BarChart3 size={14} />
-          <span>Compare {basket.baseline ? "•" : ""}{basket.test ? "•" : ""}</span>
+          <span>Test Basket {basket.baseline ? "•" : ""}{basket.test ? "•" : ""}</span>
         </button>
         {hasItems && (
           <div className="compare-basket-actions">
-            <button className="compare-basket-action-btn" onClick={handleOpenCompare} title="Open Compare" aria-label="Open Compare from basket">
+            <button className="compare-basket-action-btn" onClick={handleReviewInLaps} title="Review in Laps" aria-label="Review Test Basket in Laps">
               <BarChart3 size={12} />
             </button>
-            <button className="compare-basket-action-btn" onClick={clear} title="Clear All" aria-label="Clear Compare Basket">
+            <button className="compare-basket-action-btn" onClick={clear} title="Clear All" aria-label="Clear Test Basket">
               <Trash2 size={12} />
             </button>
           </div>
@@ -107,7 +107,7 @@ export function CompareBasket() {
           {basket.baseline && basket.test && readiness.status === "ready" && (
             <button
               className="compare-basket-ready-btn"
-              onClick={handleOpenCompare}
+              onClick={handleReviewInLaps}
               style={{
                 background: READINESS_COLORS.ready,
                 color: "white",
@@ -121,7 +121,7 @@ export function CompareBasket() {
                 width: "100%",
               }}
             >
-              Ready to Compare
+              Review in Laps
             </button>
           )}
 

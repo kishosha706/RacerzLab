@@ -1,5 +1,5 @@
 /**
- * Compare Basket — lightweight context for collecting laps/runs to compare.
+ * Test Basket — lightweight context for collecting baseline/test evidence.
  *
  * Supports:
  * - baseline slot
