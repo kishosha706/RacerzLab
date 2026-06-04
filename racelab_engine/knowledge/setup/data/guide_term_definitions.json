@@ -1329,5 +1329,167 @@
     ],
     "review_status": "accepted",
     "clarification_question": null
+  },
+  {
+    "term_id": "brake_pressure",
+    "term": "brake pressure",
+    "aliases": [
+      "overall brake pressure",
+      "brake force"
+    ],
+    "canonical_term": "brake_pressure",
+    "definition": "Overall brake pressure is a car-supported brake force adjustment; use it for excessive locking only with brake-trace evidence and do not confuse it with brake bias.",
+    "domain": "brakes",
+    "phase_hint": "braking",
+    "symptom_hint": "brake_entry_instability",
+    "evidence_hint": "brake_trace",
+    "car_scope": "road",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "lock_order",
+    "term": "lock order",
+    "aliases": [
+      "front locks first",
+      "rear locks first"
+    ],
+    "canonical_term": "lock_order",
+    "definition": "Lock order is brake evidence for which axle reaches lock first; front lock before rear is the stability target context, while repeated early front lock can need less front bias.",
+    "domain": "brakes",
+    "phase_hint": "braking",
+    "symptom_hint": "brake_entry_instability",
+    "evidence_hint": "brake_trace",
+    "car_scope": "all",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "diff_coast_locking",
+    "term": "diff coast locking",
+    "aliases": [
+      "coast lock",
+      "lift-off diff lock"
+    ],
+    "canonical_term": "diff_coast_locking",
+    "definition": "Diff coast locking is the off-throttle differential context associated with lift-off oversteer; only recommend it when the selected car exposes that adjustment or an equivalent supported diff lever.",
+    "domain": "driveline",
+    "phase_hint": "entry",
+    "symptom_hint": "loose_entry",
+    "evidence_hint": "throttle_yaw",
+    "car_scope": "all",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "diff_power_locking",
+    "term": "diff power locking",
+    "aliases": [
+      "power lock",
+      "power ramp"
+    ],
+    "canonical_term": "diff_power_locking",
+    "definition": "Diff power locking is the throttle-on differential context for exit behavior; keep it behind car support and validate with throttle pickup, yaw, and RPM evidence.",
+    "domain": "driveline",
+    "phase_hint": "exit",
+    "symptom_hint": "tight_exit",
+    "evidence_hint": "throttle_yaw",
+    "car_scope": "all",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "wing_angle",
+    "term": "wing angle",
+    "aliases": [
+      "front wing angle",
+      "rear wing angle",
+      "wing values"
+    ],
+    "canonical_term": "wing_angle",
+    "definition": "Wing angle is road/aero-car setup context for aero balance and drag; it is not a NASCAR Next Gen oval adjustment and must stay car-support gated.",
+    "domain": "aero",
+    "phase_hint": "straight",
+    "symptom_hint": "low_straight_speed",
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "road",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "aero_balance",
+    "term": "aero balance",
+    "aliases": [
+      "aero balance backwards",
+      "front aero balance",
+      "rear aero balance"
+    ],
+    "canonical_term": "aero_balance",
+    "definition": "Aero balance describes where aero load tendency acts on supported aero cars; in Next Gen platform context, platform/scrape/speed proxy context is not measured downforce.",
+    "domain": "aero_platform",
+    "phase_hint": "straight",
+    "symptom_hint": "diffuser_instability",
+    "evidence_hint": "platform_trace",
+    "car_scope": "all",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "slow_damper_weight_transfer",
+    "term": "slow damper",
+    "aliases": [
+      "slow damping",
+      "low-speed damper"
+    ],
+    "canonical_term": "slow_damper_weight_transfer",
+    "definition": "Slow damper changes affect braking, acceleration, and turning weight-transfer feel; validate the phase and shock/platform evidence before changing low-speed compression or rebound.",
+    "domain": "shock",
+    "phase_hint": "transition",
+    "symptom_hint": "platform_instability",
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "fast_damper_bump_compliance",
+    "term": "fast damper",
+    "aliases": [
+      "fast damping",
+      "high-speed damper"
+    ],
+    "canonical_term": "fast_damper_bump_compliance",
+    "definition": "Fast damper changes affect bump, curb, and sharp movement response; validate with shock activity, platform motion, and zone evidence.",
+    "domain": "shock",
+    "phase_hint": "transition",
+    "symptom_hint": "shock_overactive",
+    "evidence_hint": "shock_histogram",
+    "car_scope": "all",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
   }
 ]

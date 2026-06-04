@@ -301,7 +301,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -395,7 +396,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -497,7 +499,8 @@
     "caution_level": "medium",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -594,7 +597,8 @@
     "caution_level": "medium",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -700,7 +704,8 @@
     "caution_level": "medium",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -797,7 +802,8 @@
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
       "lowline_oval_setup_guide",
-      "oval_setup_matrix_v5"
+      "oval_setup_matrix_v5",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -894,7 +900,8 @@
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
       "lowline_oval_setup_guide",
-      "oval_setup_matrix_v5"
+      "oval_setup_matrix_v5",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -1172,7 +1179,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "oval_setup_matrix_v5"
+      "oval_setup_matrix_v5",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -1267,7 +1275,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "oval_setup_matrix_v5"
+      "oval_setup_matrix_v5",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -1354,7 +1363,8 @@
     "caution_level": "medium",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -1442,7 +1452,8 @@
     "caution_level": "medium",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -1547,7 +1558,8 @@
     "delta_label": "small test swing",
     "caution_level": "high",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -1644,7 +1656,8 @@
     "delta_label": "small test swing",
     "caution_level": "high",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -1752,7 +1765,8 @@
     "delta_label": "small test swing",
     "caution_level": "high",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -1854,7 +1868,8 @@
     "delta_label": "small test swing",
     "caution_level": "high",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -1952,7 +1967,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -2048,7 +2064,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -2144,7 +2161,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -2240,7 +2258,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -2342,7 +2361,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -2440,7 +2460,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -2538,7 +2559,8 @@
     "delta_label": null,
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -2635,7 +2657,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -2727,7 +2750,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -2822,7 +2846,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -2915,7 +2940,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -3010,7 +3036,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -3098,7 +3125,8 @@
     "delta_label": "small test swing",
     "caution_level": "high",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -3189,7 +3217,8 @@
     "delta_label": "small test swing",
     "caution_level": "high",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -3277,7 +3306,8 @@
     "delta_label": null,
     "caution_level": "high",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -3360,7 +3390,8 @@
     "delta_label": null,
     "caution_level": "high",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -3844,7 +3875,8 @@
     "delta_label": "small test swing",
     "caution_level": "high",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -3947,7 +3979,8 @@
     "delta_label": "small test swing",
     "caution_level": "high",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -4052,7 +4085,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -4149,7 +4183,8 @@
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
       "lowline_oval_setup_guide",
-      "oval_setup_matrix_v5"
+      "oval_setup_matrix_v5",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -4247,7 +4282,8 @@
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
       "lowline_oval_setup_guide",
-      "oval_setup_matrix_v5"
+      "oval_setup_matrix_v5",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -4343,7 +4379,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "oval_setup_matrix_v5"
+      "oval_setup_matrix_v5",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -4440,7 +4477,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "oval_setup_matrix_v5"
+      "oval_setup_matrix_v5",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -5143,7 +5181,8 @@
     "caution_level": "medium",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -5246,7 +5285,8 @@
     "caution_level": "medium",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -5346,7 +5386,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -5439,7 +5480,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -5533,7 +5575,8 @@
     "delta_label": "small test swing",
     "caution_level": "high",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -5734,7 +5777,8 @@
     "caution_level": "medium",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -5834,7 +5878,8 @@
     "caution_level": "medium",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -5931,7 +5976,8 @@
     "caution_level": "medium",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -6026,7 +6072,8 @@
     "caution_level": "medium",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -6212,7 +6259,8 @@
     "caution_level": "medium",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -6299,7 +6347,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -6389,7 +6438,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -6482,7 +6532,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -6575,7 +6626,8 @@
     "caution_level": "high",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -6674,7 +6726,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -6948,7 +7001,8 @@
     "caution_level": "medium",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -7039,7 +7093,8 @@
     "caution_level": "medium",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -7218,7 +7273,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -7311,7 +7367,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -7407,7 +7464,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -7503,7 +7561,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -7602,7 +7661,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -7697,7 +7757,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -7793,7 +7854,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -7892,7 +7954,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -7986,7 +8049,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -8079,7 +8143,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -8169,7 +8234,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -8259,7 +8325,8 @@
     "delta_label": "small test swing",
     "caution_level": "medium",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },
@@ -8529,7 +8596,8 @@
     "caution_level": "medium",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1",
-      "lowline_oval_setup_guide"
+      "lowline_oval_setup_guide",
+      "chris_haye_setup_cheat_sheet"
     ],
     "review_status": "accepted"
   },

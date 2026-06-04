@@ -122,5 +122,19 @@
     "page_refs": [],
     "status": "accepted",
     "notes": "Accepted RacerZLab-owned consolidated setup knowledge source."
+  },
+  {
+    "source_id": "chris_haye_setup_cheat_sheet",
+    "title": "Chris Haye Setup Cheat Sheet",
+    "source_type": "cheat_sheet",
+    "domain": "general",
+    "car_scope": "all",
+    "file_name": "chris_haye_setup_cheat_sheet_review.md",
+    "local_path": "docs/setup_knowledge/chris_haye_setup_cheat_sheet_review.md",
+    "page_refs": [
+      "user_cheat_sheet_image"
+    ],
+    "status": "reviewed",
+    "notes": "Pasted setup cheat sheet image reviewed into RacerZLab-owned general setup concepts with road/aero-only guidance gated away from Next Gen oval outputs."
   }
 ]

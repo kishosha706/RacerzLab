@@ -13,6 +13,7 @@ Generated from reviewed local JSON records derived from the RacerZLab master set
 - racerzlab_research_report: RacerZLab Research Report (reviewed)
 - user_diffuser_front_feed_notes: User Diffuser Front Feed Notes (reviewed)
 - racerzlab_master_setup_matrix_v1: RacerZLab Master Setup Matrix v1 (accepted)
+- chris_haye_setup_cheat_sheet: Chris Haye Setup Cheat Sheet (reviewed)
 
 ## Accepted Principles
 - Baseline first: Baseline first.
@@ -32,15 +33,20 @@ Generated from reviewed local JSON records derived from the RacerZLab master set
 - Spring changes require platform reset checks: Reset platform after springs.
 - Legacy travel and rear-geometry levers stay gated: Legacy levers stay gated.
 - Next Gen ARB P settings are small tuning swings: P-step small, diameter big.
+- Brake bias follows lock order and stability: Read lock order before bias.
+- Dampers tune response, stability, and bump behavior: Slow for transfer, fast for bumps.
+- Ride height needs platform and scrape evidence: Low, but not scraping.
+- Wing advice is car-support gated: Wing advice stays car-gated.
 
 ## Terms
-- Term definitions: 74
+- Term definitions: 82
 
 ## Setup Areas
-- Setup areas: 55
+- Setup areas: 58
+- aero: 2
 - alignment: 1
 - anti_roll_bar: 8
-- brakes: 1
+- brakes: 2
 - driveline: 2
 - evidence: 9
 - platform: 6
@@ -56,7 +62,7 @@ Generated from reviewed local JSON records derived from the RacerZLab master set
 - derived_proxy: 2
 - live_telemetry: 8
 - mixed: 6
-- static_setup: 39
+- static_setup: 42
 
 ## Setup Effects By System
 - alignment: 4
@@ -137,6 +143,20 @@ Generated from reviewed local JSON records derived from the RacerZLab master set
 - loose_center: front_arb_arm / move front ARB arm one P-position toward P5/stiffer/tighter
 - loose_exit: rear_arb_arm / move rear ARB arm one P-position toward P5/stiffer/tighter
 - tight_exit: rear_arb_arm / move rear ARB arm one P-position toward P1/softer/looser
+- tight_entry: brake_bias / move brake bias rearward when repeated front lock is the evidence
+- brake_entry_instability: brake_bias / move brake bias forward when rear instability under braking is repeatable
+- brake_entry_instability: brake_pressure / reduce overall brake pressure only when the selected car supports it
+- tight_entry: front_arb_arm / soften front bar support as a small supported response swing
+- tight_entry: front_toe_response / add front toe-out response only when scrub and stability tradeoffs are acceptable
+- tight_exit: rear_arb_arm / stiffen rear bar support if exit understeer is repeatable and supported by the selected car
+- loose_exit: rear_arb_arm / soften rear bar support when throttle-on oversteer is repeatable
+- loose_entry: diff_preload / increase supported coast-lock/preload context only for repeatable lift-off oversteer
+- low_straight_speed: final_drive / lengthen gearing only after exit speed, throttle, and RPM evidence agree
+- tire_overwork: tire_pressure / use pressure as one tire-temperature correction lever with camber and toe context
+- platform_instability: ls_compression / tune low-speed damping for braking, accelerating, and turning weight transfer
+- shock_overactive: hs_compression / tune high-speed damping for bump and curb behavior
+- tight_entry: front_wing_angle / increase front wing angle only on supported road/aero cars
+- low_straight_speed: rear_wing_angle / reduce rear wing value only on supported road/aero cars after normalizing exit speed
 
 ## Flowchart Process Logic
 - Exit grip first, entry balance second, driver feel last.

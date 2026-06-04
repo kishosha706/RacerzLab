@@ -2150,5 +2150,148 @@
       "Do not treat stagger as available on every oval car."
     ],
     "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "brake_pressure",
+    "system": "brakes",
+    "applies_to": [
+      "road"
+    ],
+    "disabled_for": [
+      "next_gen"
+    ],
+    "effect_strength_default": 3,
+    "coupling_risk_default": "high",
+    "what_it_changes": "Overall brake force/locking tendency when the selected car exposes a brake-pressure adjustment.",
+    "phases": [
+      "braking",
+      "entry"
+    ],
+    "evidence_required": [
+      "brake_trace",
+      "lockup_trace",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "brake_lock",
+      "entry_stability"
+    ],
+    "notes": [
+      "Chris Haye cheat sheet review: reduce overall brake pressure for excessive locking only with caution and car support."
+    ],
+    "package_role": [
+      "braking_support"
+    ],
+    "car_specific_notes": {
+      "next_gen": "Unavailable as a generic Next Gen oval recommendation; use supported brake-bias/master-cylinder context instead."
+    },
+    "available_when": [
+      "selected car exposes overall brake pressure adjustment"
+    ],
+    "unavailable_when": [
+      "selected car family does not expose overall brake pressure"
+    ],
+    "common_confusions": [
+      "Do not confuse overall brake pressure with brake bias."
+    ],
+    "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "front_wing_angle",
+    "system": "aero",
+    "applies_to": [
+      "road"
+    ],
+    "disabled_for": [
+      "next_gen",
+      "legacy_oval_generic"
+    ],
+    "effect_strength_default": 4,
+    "coupling_risk_default": "high",
+    "what_it_changes": "Front aero balance on cars that expose a front wing or splitter aero setting.",
+    "phases": [
+      "turn_in",
+      "center",
+      "exit",
+      "straight"
+    ],
+    "evidence_required": [
+      "speed_trace",
+      "steering",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "front_response",
+      "straight_speed",
+      "phase_balance"
+    ],
+    "notes": [
+      "Chris Haye cheat sheet review: front wing angle guidance is road/aero context only, not a Next Gen oval lever."
+    ],
+    "package_role": [
+      "aero_balance"
+    ],
+    "car_specific_notes": {
+      "next_gen": "Unavailable for Next Gen oval setup recommendations."
+    },
+    "available_when": [
+      "selected road/aero car exposes a front wing or splitter aero adjustment"
+    ],
+    "unavailable_when": [
+      "selected car does not expose front wing/splitter angle"
+    ],
+    "common_confusions": [
+      "Do not treat road-car wing advice as NASCAR Next Gen oval setup logic."
+    ],
+    "static_or_live": "static_setup"
+  },
+  {
+    "setup_area": "rear_wing_angle",
+    "system": "aero",
+    "applies_to": [
+      "road"
+    ],
+    "disabled_for": [
+      "next_gen",
+      "legacy_oval_generic"
+    ],
+    "effect_strength_default": 4,
+    "coupling_risk_default": "high",
+    "what_it_changes": "Rear aero balance and drag on cars that expose a rear wing adjustment.",
+    "phases": [
+      "turn_in",
+      "center",
+      "exit",
+      "straight"
+    ],
+    "evidence_required": [
+      "speed_trace",
+      "yaw",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "rear_security",
+      "straight_speed",
+      "phase_balance"
+    ],
+    "notes": [
+      "Chris Haye cheat sheet review: rear wing angle guidance is road/aero context only, not a Next Gen oval lever."
+    ],
+    "package_role": [
+      "aero_balance"
+    ],
+    "car_specific_notes": {
+      "next_gen": "Unavailable for Next Gen oval setup recommendations."
+    },
+    "available_when": [
+      "selected road/aero car exposes a rear wing adjustment"
+    ],
+    "unavailable_when": [
+      "selected car does not expose rear wing angle"
+    ],
+    "common_confusions": [
+      "Do not treat road-car wing advice as NASCAR Next Gen oval setup logic."
+    ],
+    "static_or_live": "static_setup"
   }
 ]

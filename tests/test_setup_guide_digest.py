@@ -11,10 +11,12 @@ from racelab_engine.knowledge.setup.validator import validate_setup_knowledge
 
 def test_guide_sources_load():
     knowledge = load_setup_knowledge()
-    assert len(knowledge.guide_sources) >= 10
+    assert len(knowledge.guide_sources) >= 11
     assert "racerzlab_master_setup_matrix_v1" in knowledge.guide_source_by_id
     lowline = knowledge.guide_source_by_id["lowline_oval_setup_guide"]
     assert lowline.local_path == "docs/setup_knowledge/lowline_oval_setup_guide_v1_6_review.md"
+    cheat_sheet = knowledge.guide_source_by_id["chris_haye_setup_cheat_sheet"]
+    assert cheat_sheet.local_path == "docs/setup_knowledge/chris_haye_setup_cheat_sheet_review.md"
 
 
 def test_every_referenced_source_id_exists():
@@ -45,6 +47,12 @@ def test_term_definitions_load():
         "tire_pressure_responsiveness",
         "brake_bias_masking",
         "coil_binding_legacy_context",
+        "brake_pressure",
+        "wing_angle",
+        "diff_coast_locking",
+        "diff_power_locking",
+        "slow_damper_weight_transfer",
+        "fast_damper_bump_compliance",
     }.issubset(terms)
 
 
@@ -78,6 +86,9 @@ def test_cfs_half_inch_claim_is_needs_review():
 def test_next_gen_disabled_areas_remain_disabled():
     cap = load_setup_knowledge().car_capability_by_family["next_gen"]
     assert set(cap.disabled_setup_areas) == {"track_bar", "truck_arm_mount", "bump_stop", "packer"}
+    assert "brake_pressure" not in cap.available_setup_areas
+    assert "front_wing_angle" not in cap.available_setup_areas
+    assert "rear_wing_angle" not in cap.available_setup_areas
 
 
 def test_lowline_source_is_applied_to_reviewed_records():
@@ -106,6 +117,53 @@ def test_lowline_source_is_applied_to_reviewed_records():
         if source_id in effect.source_ids
     }
     assert {"tire_pressure", "toe", "brake_bias", "caster", "camber", "spring_rate", "track_bar"}.issubset(effects_by_area)
+
+
+def test_chris_haye_cheat_sheet_is_applied_to_reviewed_records():
+    knowledge = load_setup_knowledge()
+    source_id = "chris_haye_setup_cheat_sheet"
+
+    principles = {principle.principle_id for principle in knowledge.guide_principles if source_id in principle.source_ids}
+    assert {
+        "cheat_sheet_brake_bias_lock_order",
+        "cheat_sheet_damper_response_stability",
+        "cheat_sheet_ride_height_aero_guardrail",
+        "cheat_sheet_wing_aero_road_context",
+    }.issubset(principles)
+
+    mappings = {mapping.mapping_id for mapping in knowledge.guide_setup_mappings if source_id in mapping.source_ids}
+    assert {
+        "cheat_sheet_front_lock_brake_bias",
+        "cheat_sheet_lift_off_oversteer_diff",
+        "cheat_sheet_damper_weight_transfer",
+        "cheat_sheet_road_mid_speed_front_wing",
+        "cheat_sheet_road_rear_wing_top_speed",
+    }.issubset(mappings)
+
+    effects_by_area = {
+        effect.setup_area
+        for effect in knowledge.setup_effects
+        if source_id in effect.source_ids
+    }
+    assert {"brake_bias", "tire_pressure", "front_arb_arm", "rear_arb_arm", "diff_preload", "final_drive"}.issubset(effects_by_area)
+
+
+def test_cheat_sheet_road_aero_items_are_gated_from_next_gen():
+    knowledge = load_setup_knowledge()
+    cap = knowledge.car_capability_by_family["next_gen"]
+    assert {"front_wing_angle", "rear_wing_angle", "brake_pressure"}.isdisjoint(cap.available_setup_areas)
+
+    road_only = {
+        mapping.mapping_id: mapping
+        for mapping in knowledge.guide_setup_mappings
+        if mapping.setup_area in {"front_wing_angle", "rear_wing_angle", "brake_pressure"}
+    }
+    assert set(road_only) >= {
+        "cheat_sheet_excessive_locking_brake_pressure",
+        "cheat_sheet_road_mid_speed_front_wing",
+        "cheat_sheet_road_rear_wing_top_speed",
+    }
+    assert all("next_gen" in mapping.disabled_for for mapping in road_only.values())
 
 
 def test_legacy_oval_can_keep_legacy_areas():

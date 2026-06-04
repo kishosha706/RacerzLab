@@ -654,5 +654,189 @@
       "Using a diameter swap when one P-position would be enough",
       "Reversing P1/P5 direction"
     ]
+  },
+  {
+    "principle_id": "cheat_sheet_brake_bias_lock_order",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "title": "Brake bias follows lock order and stability",
+    "racerzlab_wording": "Use brake bias from brake-trace evidence: front lock points toward less front bias, rear instability points toward more front bias, and bias changes can trade entry rotation for stability.",
+    "source_summary": "The cheat sheet says front tires should lock just before rears, front locks need bias rearward, and brake-entry loss can need bias forward.",
+    "domain": "brakes",
+    "car_scope": "all",
+    "setup_areas": [
+      "brake_bias",
+      "brake_pressure"
+    ],
+    "phases": [
+      "braking",
+      "entry"
+    ],
+    "symptoms": [
+      "brake_entry_instability",
+      "loose_entry",
+      "tight_entry"
+    ],
+    "evidence_links": [
+      "brake_trace",
+      "entry_yaw",
+      "setup_snapshot"
+    ],
+    "confidence": "high",
+    "review_status": "accepted",
+    "cautions": [
+      "Overall brake pressure is car-support dependent and should not replace brake-bias/chassis diagnosis."
+    ],
+    "do_not_overclaim": [
+      "Do not call brake bias the root cause without brake and entry evidence."
+    ],
+    "short_ui_wording": "Read lock order before bias.",
+    "why_it_matters": "Brake changes can hide or create entry balance problems.",
+    "mistakes_to_avoid": [
+      "Moving bias without lock-order evidence",
+      "Confusing brake pressure with brake bias"
+    ]
+  },
+  {
+    "principle_id": "cheat_sheet_damper_response_stability",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "title": "Dampers tune response, stability, and bump behavior",
+    "racerzlab_wording": "Use low-speed damping for braking/acceleration/turning weight transfer and high-speed damping for bumps/curbs, with shock evidence before ranking a damper swing.",
+    "source_summary": "The cheat sheet separates slow damper weight-transfer tuning from fast damper bump/curb tuning and says higher values are more responsive while lower values are more stable.",
+    "domain": "shock",
+    "car_scope": "all",
+    "setup_areas": [
+      "ls_compression",
+      "hs_compression",
+      "ls_rebound",
+      "hs_rebound"
+    ],
+    "phases": [
+      "transition",
+      "braking",
+      "entry",
+      "exit"
+    ],
+    "symptoms": [
+      "shock_overactive",
+      "platform_instability",
+      "loose_entry"
+    ],
+    "evidence_links": [
+      "shock_histogram",
+      "platform_trace",
+      "selected_zone"
+    ],
+    "confidence": "high",
+    "review_status": "accepted",
+    "cautions": [
+      "Do not use shock histogram or driver feel alone as a command."
+    ],
+    "do_not_overclaim": [
+      "Do not say a damper change proves the setup is fixed without comparable-zone validation."
+    ],
+    "short_ui_wording": "Slow for transfer, fast for bumps.",
+    "why_it_matters": "Damper changes can improve response but also remove compliance or support.",
+    "mistakes_to_avoid": [
+      "Using high-speed damping to solve a pure slow weight-transfer complaint",
+      "Changing shocks without zone evidence"
+    ]
+  },
+  {
+    "principle_id": "cheat_sheet_ride_height_aero_guardrail",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "title": "Ride height needs platform and scrape evidence",
+    "racerzlab_wording": "Run platform low enough for the package only when scrape, speed, and platform traces show it is not grounding or choking the car.",
+    "source_summary": "The cheat sheet says ride height should be low but not grounding, and aero balance depends on ride height/rake where the car supports that tuning.",
+    "domain": "aero_platform",
+    "car_scope": "all",
+    "setup_areas": [
+      "ride_height",
+      "front_ride_height_platform",
+      "rear_ride_height_platform",
+      "diffuser_platform"
+    ],
+    "phases": [
+      "straight",
+      "center",
+      "exit"
+    ],
+    "symptoms": [
+      "front_platform_contact",
+      "rear_scrape",
+      "diffuser_instability",
+      "low_straight_speed"
+    ],
+    "evidence_links": [
+      "platform_trace",
+      "scrape",
+      "speed_trace"
+    ],
+    "confidence": "high",
+    "review_status": "accepted",
+    "cautions": [
+      "Treat derived aero/platform channels as context, not force measurement."
+    ],
+    "do_not_overclaim": [
+      "Do not say diffuser proxy or rake measures downforce."
+    ],
+    "short_ui_wording": "Low, but not scraping.",
+    "why_it_matters": "A low platform can gain or lose speed depending on contact and stability.",
+    "mistakes_to_avoid": [
+      "Judging static ride height without live platform evidence",
+      "Ignoring scrape or speed loss"
+    ]
+  },
+  {
+    "principle_id": "cheat_sheet_wing_aero_road_context",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "title": "Wing advice is car-support gated",
+    "racerzlab_wording": "Treat front and rear wing-angle advice as road/aero-car context only; do not surface it for Next Gen oval unless the selected car actually exposes that adjustment.",
+    "source_summary": "The cheat sheet uses front and rear wing angle for mid-high-speed balance and low top speed, which is not a Next Gen oval setup lever.",
+    "domain": "aero_platform",
+    "car_scope": "road",
+    "setup_areas": [
+      "front_wing_angle",
+      "rear_wing_angle"
+    ],
+    "phases": [
+      "turn_in",
+      "exit",
+      "straight"
+    ],
+    "symptoms": [
+      "tight_entry",
+      "loose_entry",
+      "tight_exit",
+      "loose_exit",
+      "low_straight_speed"
+    ],
+    "evidence_links": [
+      "speed_trace",
+      "steering",
+      "yaw",
+      "setup_snapshot"
+    ],
+    "confidence": "high",
+    "review_status": "accepted",
+    "cautions": [
+      "Keep wing angle out of Next Gen oval candidate recommendations."
+    ],
+    "do_not_overclaim": [
+      "Do not translate road wing adjustments into unsupported oval setup logic."
+    ],
+    "short_ui_wording": "Wing advice stays car-gated.",
+    "why_it_matters": "Unsupported aero settings would create false setup choices.",
+    "mistakes_to_avoid": [
+      "Showing wing changes for Next Gen oval",
+      "Using wing advice when the selected car has no wing adjustment"
+    ]
   }
 ]

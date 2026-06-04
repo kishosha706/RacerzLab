@@ -967,5 +967,546 @@
     "watch_for": [
       "Nervous throttle pickup or loose exit."
     ]
+  },
+  {
+    "mapping_id": "cheat_sheet_front_lock_brake_bias",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "setup_area": "brake_bias",
+    "symptom": "tight_entry",
+    "phase": "braking",
+    "direction": "move brake bias rearward when repeated front lock is the evidence",
+    "intended_effect": "Reduces front lock tendency and can restore brake-entry rotation.",
+    "counter_effect": "May reduce rear stability if moved too far rearward.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "brake_trace",
+      "lockup_trace",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "brake_lock",
+      "entry_rotation"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "small_swing",
+    "review_status": "accepted",
+    "preferred_when": [
+      "front tires repeatedly lock before the car can rotate under brake"
+    ],
+    "avoid_when": [
+      "rear lock or brake-entry instability is already present"
+    ],
+    "watch_for": [
+      "Rear instability or loose entry."
+    ]
+  },
+  {
+    "mapping_id": "cheat_sheet_brake_loss_bias_forward",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "setup_area": "brake_bias",
+    "symptom": "brake_entry_instability",
+    "phase": "braking",
+    "direction": "move brake bias forward when rear instability under braking is repeatable",
+    "intended_effect": "Adds brake-phase stability by reducing rear brake demand.",
+    "counter_effect": "May add front lock or entry push.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "brake_trace",
+      "entry_yaw",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "brake_stability",
+      "entry_yaw"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "small_swing",
+    "review_status": "accepted",
+    "preferred_when": [
+      "loss of control happens during braking, not after release"
+    ],
+    "avoid_when": [
+      "front lock is the dominant brake complaint"
+    ],
+    "watch_for": [
+      "Front lock or tighter entry."
+    ]
+  },
+  {
+    "mapping_id": "cheat_sheet_excessive_locking_brake_pressure",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "setup_area": "brake_pressure",
+    "symptom": "brake_entry_instability",
+    "phase": "braking",
+    "direction": "reduce overall brake pressure only when the selected car supports it",
+    "intended_effect": "Can reduce excessive locking when bias and technique are not the only issue.",
+    "counter_effect": "May lengthen braking zones or reduce peak stopping force.",
+    "effect_strength": 3,
+    "coupling_risk": "high",
+    "evidence_required": [
+      "brake_trace",
+      "lockup_trace",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "brake_lock",
+      "braking_distance"
+    ],
+    "applies_to": [
+      "road"
+    ],
+    "disabled_for": [
+      "next_gen"
+    ],
+    "exact_value_policy": "small_swing",
+    "review_status": "accepted",
+    "preferred_when": [
+      "overall lock persists after reading bias/lock order and the car exposes brake pressure"
+    ],
+    "avoid_when": [
+      "selected car does not expose overall brake pressure"
+    ],
+    "watch_for": [
+      "Longer braking distance."
+    ]
+  },
+  {
+    "mapping_id": "cheat_sheet_turn_in_understeer_front_bar",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "setup_area": "front_arb_arm",
+    "symptom": "tight_entry",
+    "phase": "turn_in",
+    "direction": "soften front bar support as a small supported response swing",
+    "intended_effect": "Can help the front accept turn-in and reduce entry understeer.",
+    "counter_effect": "May reduce front platform support or make entry less settled.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "setup_snapshot",
+      "steering",
+      "front_platform"
+    ],
+    "validation_targets": [
+      "turn_in_response",
+      "center_speed"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "small_swing",
+    "review_status": "accepted",
+    "preferred_when": [
+      "turn-in understeer is repeatable and front platform support is not already weak"
+    ],
+    "avoid_when": [
+      "front platform/contact evidence says the car needs more support"
+    ],
+    "watch_for": [
+      "Reduced support or looser entry."
+    ]
+  },
+  {
+    "mapping_id": "cheat_sheet_turn_in_understeer_front_toe",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "setup_area": "front_toe_response",
+    "symptom": "tight_entry",
+    "phase": "turn_in",
+    "direction": "add front toe-out response only when scrub and stability tradeoffs are acceptable",
+    "intended_effect": "Can sharpen initial response and help the car point into the corner.",
+    "counter_effect": "May add scrub, tire heat, or straightaway speed loss.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "setup_snapshot",
+      "steering",
+      "speed_trace"
+    ],
+    "validation_targets": [
+      "turn_in_response",
+      "straight_speed"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "small_swing",
+    "review_status": "accepted",
+    "preferred_when": [
+      "entry response is lazy and straight speed is not already scrub-limited"
+    ],
+    "avoid_when": [
+      "drag scrub or tire heat is the dominant issue"
+    ],
+    "watch_for": [
+      "More scrub or less stability."
+    ]
+  },
+  {
+    "mapping_id": "cheat_sheet_exit_understeer_rear_bar",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "setup_area": "rear_arb_arm",
+    "symptom": "tight_exit",
+    "phase": "exit",
+    "direction": "stiffen rear bar support if exit understeer is repeatable and supported by the selected car",
+    "intended_effect": "Can free throttle-on exit balance and help drive-off rotation.",
+    "counter_effect": "May reduce exit security or make power application nervous.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "setup_snapshot",
+      "throttle",
+      "yaw"
+    ],
+    "validation_targets": [
+      "drive_off",
+      "exit_yaw"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "small_swing",
+    "review_status": "accepted",
+    "preferred_when": [
+      "tight exit happens under throttle and rear bar package is otherwise close"
+    ],
+    "avoid_when": [
+      "loose exit or throttle pickup instability is already present"
+    ],
+    "watch_for": [
+      "Loose exit or nervous throttle pickup."
+    ]
+  },
+  {
+    "mapping_id": "cheat_sheet_exit_oversteer_rear_bar",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "setup_area": "rear_arb_arm",
+    "symptom": "loose_exit",
+    "phase": "exit",
+    "direction": "soften rear bar support when throttle-on oversteer is repeatable",
+    "intended_effect": "Can add exit security by reducing rear roll-stiffness effect.",
+    "counter_effect": "May tighten drive-off or reduce rotation.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "setup_snapshot",
+      "throttle",
+      "yaw"
+    ],
+    "validation_targets": [
+      "exit_yaw",
+      "drive_off"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "small_swing",
+    "review_status": "accepted",
+    "preferred_when": [
+      "loose exit is repeatable under throttle"
+    ],
+    "avoid_when": [
+      "tight exit is the dominant complaint"
+    ],
+    "watch_for": [
+      "Tighter exit or slower drive-off."
+    ]
+  },
+  {
+    "mapping_id": "cheat_sheet_lift_off_oversteer_diff",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "setup_area": "diff_preload",
+    "symptom": "loose_entry",
+    "phase": "entry",
+    "direction": "increase supported coast-lock/preload context only for repeatable lift-off oversteer",
+    "intended_effect": "Can calm off-throttle rear rotation when the selected car exposes a matching diff lever.",
+    "counter_effect": "May bind entry or center if used as a broad fix.",
+    "effect_strength": 3,
+    "coupling_risk": "high",
+    "evidence_required": [
+      "throttle",
+      "yaw",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "entry_yaw",
+      "center_rotation"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "small_swing",
+    "review_status": "accepted",
+    "preferred_when": [
+      "oversteer appears on lift or trailing throttle"
+    ],
+    "avoid_when": [
+      "the selected car does not expose an equivalent diff adjustment"
+    ],
+    "watch_for": [
+      "Entry or center bind."
+    ]
+  },
+  {
+    "mapping_id": "cheat_sheet_low_top_speed_gearing",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "setup_area": "final_drive",
+    "symptom": "low_straight_speed",
+    "phase": "straight",
+    "direction": "lengthen gearing only after exit speed, throttle, and RPM evidence agree",
+    "intended_effect": "Can improve terminal speed when the car is gear-limited rather than exit- or scrub-limited.",
+    "counter_effect": "May reduce drive-off acceleration.",
+    "effect_strength": 4,
+    "coupling_risk": "high",
+    "evidence_required": [
+      "exit_speed",
+      "throttle",
+      "rpm",
+      "speed_trace"
+    ],
+    "validation_targets": [
+      "terminal_speed",
+      "drive_off"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "reference_only",
+    "review_status": "accepted",
+    "preferred_when": [
+      "straight speed loss happens after comparable exit speed and throttle"
+    ],
+    "avoid_when": [
+      "exit speed or toe scrub explains the speed loss first"
+    ],
+    "watch_for": [
+      "Slower drive-off."
+    ]
+  },
+  {
+    "mapping_id": "cheat_sheet_tire_overheat_pressure_camber_toe",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "setup_area": "tire_pressure",
+    "symptom": "tire_overwork",
+    "phase": "long_run",
+    "direction": "use pressure as one tire-temperature correction lever with camber and toe context",
+    "intended_effect": "Can move tire temperature trend when the heat pattern supports it.",
+    "counter_effect": "May hurt fire-off grip or hide camber/toe abuse.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "tire_temps",
+      "wear",
+      "pressure_gain"
+    ],
+    "validation_targets": [
+      "tire_temp_spread",
+      "lap_falloff"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "small_swing",
+    "review_status": "accepted",
+    "preferred_when": [
+      "tire heat pattern is repeatable over comparable run length"
+    ],
+    "avoid_when": [
+      "cold-lap tire behavior is the only evidence"
+    ],
+    "watch_for": [
+      "Fire-off loss or unchanged edge heat."
+    ]
+  },
+  {
+    "mapping_id": "cheat_sheet_damper_weight_transfer",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "setup_area": "ls_compression",
+    "symptom": "platform_instability",
+    "phase": "transition",
+    "direction": "tune low-speed damping for braking, accelerating, and turning weight transfer",
+    "intended_effect": "Can alter how quickly the car takes a set during weight transfer.",
+    "counter_effect": "May make the car too edgy or too lazy depending direction and package.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "shock_histogram",
+      "platform_trace",
+      "selected_zone"
+    ],
+    "validation_targets": [
+      "platform_stability",
+      "correction_count"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "small_swing",
+    "review_status": "accepted",
+    "preferred_when": [
+      "the complaint is a repeatable weight-transfer response, not a bump/curb hit"
+    ],
+    "avoid_when": [
+      "bump/curb impact is the dominant complaint"
+    ],
+    "watch_for": [
+      "Edgier response or slower set."
+    ]
+  },
+  {
+    "mapping_id": "cheat_sheet_damper_bump_compliance",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "setup_area": "hs_compression",
+    "symptom": "shock_overactive",
+    "phase": "transition",
+    "direction": "tune high-speed damping for bump and curb behavior",
+    "intended_effect": "Can calm or support sharp shock movement over bumps and curbs.",
+    "counter_effect": "May remove needed support or reduce compliance if the direction is wrong.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "shock_histogram",
+      "platform_trace",
+      "selected_zone"
+    ],
+    "validation_targets": [
+      "shock_activity",
+      "platform_stability"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "small_swing",
+    "review_status": "accepted",
+    "preferred_when": [
+      "the complaint appears on bumps, curbs, or sharp platform events"
+    ],
+    "avoid_when": [
+      "pure brake/turn/drive weight transfer is the dominant complaint"
+    ],
+    "watch_for": [
+      "Loss of compliance or support."
+    ]
+  },
+  {
+    "mapping_id": "cheat_sheet_road_mid_speed_front_wing",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "setup_area": "front_wing_angle",
+    "symptom": "tight_entry",
+    "phase": "turn_in",
+    "direction": "increase front wing angle only on supported road/aero cars",
+    "intended_effect": "Can add mid-high-speed front response on cars with front aero adjustment.",
+    "counter_effect": "May add drag or reduce aero balance stability if overdone.",
+    "effect_strength": 4,
+    "coupling_risk": "high",
+    "evidence_required": [
+      "speed_trace",
+      "steering",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "front_response",
+      "straight_speed"
+    ],
+    "applies_to": [
+      "road"
+    ],
+    "disabled_for": [
+      "next_gen",
+      "legacy_oval_generic"
+    ],
+    "exact_value_policy": "reference_only",
+    "review_status": "accepted",
+    "preferred_when": [
+      "selected car exposes front aero adjustment and the complaint is mid-high-speed understeer"
+    ],
+    "avoid_when": [
+      "selected car is Next Gen oval or has no front aero adjustment"
+    ],
+    "watch_for": [
+      "Drag or aero balance tradeoff."
+    ]
+  },
+  {
+    "mapping_id": "cheat_sheet_road_rear_wing_top_speed",
+    "source_ids": [
+      "chris_haye_setup_cheat_sheet"
+    ],
+    "setup_area": "rear_wing_angle",
+    "symptom": "low_straight_speed",
+    "phase": "straight",
+    "direction": "reduce rear wing value only on supported road/aero cars after normalizing exit speed",
+    "intended_effect": "Can reduce drag and improve top speed when wing drag is the supported cause.",
+    "counter_effect": "May reduce rear security in fast corners or corner exit.",
+    "effect_strength": 4,
+    "coupling_risk": "high",
+    "evidence_required": [
+      "speed_trace",
+      "exit_speed",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "terminal_speed",
+      "rear_security"
+    ],
+    "applies_to": [
+      "road"
+    ],
+    "disabled_for": [
+      "next_gen",
+      "legacy_oval_generic"
+    ],
+    "exact_value_policy": "reference_only",
+    "review_status": "accepted",
+    "preferred_when": [
+      "selected car exposes rear wing adjustment and speed loss is not exit/scrub limited"
+    ],
+    "avoid_when": [
+      "selected car is Next Gen oval or has no rear wing adjustment"
+    ],
+    "watch_for": [
+      "Less high-speed rear security."
+    ]
   }
 ]
