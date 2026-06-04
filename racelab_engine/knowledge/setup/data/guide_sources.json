@@ -41,11 +41,13 @@
     "source_type": "guide",
     "domain": "oval",
     "car_scope": "legacy_oval",
-    "file_name": "local_reference",
-    "local_path": "docs/setup_knowledge/racerzlab_master_setup_matrix.md",
-    "page_refs": [],
+    "file_name": "lowline_oval_setup_guide_v1_6_review.md",
+    "local_path": "docs/setup_knowledge/lowline_oval_setup_guide_v1_6_review.md",
+    "page_refs": [
+      "pdf_pages_1_6"
+    ],
     "status": "reviewed",
-    "notes": "Oval setup concepts summarized through the master matrix."
+    "notes": "LoWLiNE Oval Setup Guide v1.6 concepts reviewed from the local PDF and captured as RacerZLab-owned digest wording."
   },
   {
     "source_id": "oval_setup_matrix_v4",

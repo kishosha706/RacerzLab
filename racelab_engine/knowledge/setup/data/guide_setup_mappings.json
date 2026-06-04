@@ -622,5 +622,198 @@
     "watch_for": [
       "May bind center or loosen exit depending direction."
     ]
+  },
+  {
+    "mapping_id": "lowline_rear_toe_stability_context",
+    "source_ids": [
+      "lowline_oval_setup_guide"
+    ],
+    "setup_area": "rear_toe_stability",
+    "symptom": "loose_center",
+    "phase": "center",
+    "direction": "inspect rear toe stability before changing larger balance levers",
+    "intended_effect": "Rear toe relationship can add corner stability when the loose condition is repeatable.",
+    "counter_effect": "Too much toe or the wrong rear relationship can add scrub, reduce speed, or make transitions loose.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "setup_snapshot",
+      "yaw",
+      "speed_trace"
+    ],
+    "validation_targets": [
+      "center_balance",
+      "straight_speed",
+      "correction_count"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "corner instability aligns with rear toe context and speed trace is not already scrub-limited"
+    ],
+    "avoid_when": [
+      "straight speed loss or drag scrub is the dominant complaint"
+    ],
+    "watch_for": [
+      "Added scrub or a sharper loose transition."
+    ]
+  },
+  {
+    "mapping_id": "lowline_brake_bias_entry_support",
+    "source_ids": [
+      "lowline_oval_setup_guide"
+    ],
+    "setup_area": "brake_bias",
+    "symptom": "brake_entry_instability",
+    "phase": "entry",
+    "direction": "use brake bias only after checking chassis entry evidence",
+    "intended_effect": "Brake bias can support entry stability when brake trace and entry yaw agree.",
+    "counter_effect": "It can mask a chassis entry issue or add push if moved too far forward.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "brake_trace",
+      "entry_yaw",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "entry_stability",
+      "brake_lock"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "entry complaint happens under braking and chassis balance evidence is not pointing elsewhere"
+    ],
+    "avoid_when": [
+      "loose or tight entry exists without brake-trace support"
+    ],
+    "watch_for": [
+      "Masked chassis entry problem or added entry push."
+    ]
+  },
+  {
+    "mapping_id": "lowline_caster_split_entry_center_feel",
+    "source_ids": [
+      "lowline_oval_setup_guide"
+    ],
+    "setup_area": "caster",
+    "symptom": "tight_entry",
+    "phase": "entry",
+    "direction": "tune caster split as a driver/track feel lever",
+    "intended_effect": "Caster split can help entry-to-center turn feel when steering evidence and driver feedback agree.",
+    "counter_effect": "Can loosen the car or add steering load, especially if used before solving exit grip.",
+    "effect_strength": 2,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "driver_feedback",
+      "steering_trace",
+      "setup_snapshot"
+    ],
+    "validation_targets": [
+      "turn_in_response",
+      "center_rotation"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "setup is close and the complaint is entry-to-center feel"
+    ],
+    "avoid_when": [
+      "dominant issue is exit grip, platform contact, or tire abuse"
+    ],
+    "watch_for": [
+      "Loose entry/center feel or increased steering load."
+    ]
+  },
+  {
+    "mapping_id": "lowline_camber_contact_temperature_context",
+    "source_ids": [
+      "lowline_oval_setup_guide"
+    ],
+    "setup_area": "camber",
+    "symptom": "tire_overwork",
+    "phase": "long_run",
+    "direction": "read camber through contact patch and temperature spread",
+    "intended_effect": "Camber can improve loaded tire contact and corner grip when the tire temperature pattern supports it.",
+    "counter_effect": "May cost straight-line speed or overwork an edge if the contact pattern is wrong.",
+    "effect_strength": 3,
+    "coupling_risk": "medium",
+    "evidence_required": [
+      "tire_temps",
+      "wear",
+      "speed_trace"
+    ],
+    "validation_targets": [
+      "tire_temp_spread",
+      "center_speed",
+      "straight_speed"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "one tire edge is trending wrong and lap falloff agrees"
+    ],
+    "avoid_when": [
+      "tire sample is too short or cold-lap only"
+    ],
+    "watch_for": [
+      "Straight speed loss or worsening tire edge trend."
+    ]
+  },
+  {
+    "mapping_id": "lowline_spring_change_platform_recheck",
+    "source_ids": [
+      "lowline_oval_setup_guide"
+    ],
+    "setup_area": "spring_rate",
+    "symptom": "platform_instability",
+    "phase": "transition",
+    "direction": "recheck ride height and camber after spring changes",
+    "intended_effect": "Spring changes can support platform and balance once the intended ride-height and camber window is restored.",
+    "counter_effect": "If ride height or camber drifts, the test can look like a spring result when it is really a platform/contact change.",
+    "effect_strength": 4,
+    "coupling_risk": "high",
+    "evidence_required": [
+      "setup_snapshot",
+      "platform_trace",
+      "tire_temps"
+    ],
+    "validation_targets": [
+      "ride_height_trace",
+      "phase_balance",
+      "tire_temp_spread"
+    ],
+    "applies_to": [
+      "all"
+    ],
+    "disabled_for": [],
+    "exact_value_policy": "none",
+    "review_status": "accepted",
+    "preferred_when": [
+      "platform or balance complaint persists after confirming setup snapshot context"
+    ],
+    "avoid_when": [
+      "ride height and camber have not been checked after the spring change"
+    ],
+    "watch_for": [
+      "Confounded test from ride-height or camber drift."
+    ]
   }
 ]

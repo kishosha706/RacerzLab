@@ -26,9 +26,14 @@ Generated from reviewed local JSON records derived from the RacerZLab master set
 - Save the lesson: Save helped/hurt lessons.
 - Exit grip first, entry balance second, driver feel last: Exit first, entry second, feel last.
 - One small swing language: Effect, counter-effect, watch, validate.
+- Tire pressure follows load and tire evidence: Pressure needs tire evidence.
+- Brake bias can mask entry balance: Check chassis before bias.
+- Driver preference levers are not first-response fixes: Preference levers need context.
+- Spring changes require platform reset checks: Reset platform after springs.
+- Legacy travel and rear-geometry levers stay gated: Legacy levers stay gated.
 
 ## Terms
-- Term definitions: 67
+- Term definitions: 72
 
 ## Setup Areas
 - Setup areas: 54
@@ -122,6 +127,11 @@ Generated from reviewed local JSON records derived from the RacerZLab master set
 - shock_overactive: hs_compression / tune bump/compliance only with shock evidence
 - tire_overwork: camber / protect tire contact and temperature trend
 - poor_drive_off: diff_preload / tune connected throttle pickup
+- loose_center: rear_toe_stability / inspect rear toe stability before changing larger balance levers
+- brake_entry_instability: brake_bias / use brake bias only after checking chassis entry evidence
+- tight_entry: caster / tune caster split as a driver/track feel lever
+- tire_overwork: camber / read camber through contact patch and temperature spread
+- platform_instability: spring_rate / recheck ride height and camber after spring changes
 
 ## Flowchart Process Logic
 - Exit grip first, entry balance second, driver feel last.

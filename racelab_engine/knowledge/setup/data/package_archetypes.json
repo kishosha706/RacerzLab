@@ -258,7 +258,8 @@
     "driver_facing_explanation": "High cross can calm loose entry or drive-off, but it can bind center or add steering scrub if the car is already secure.",
     "disabled_for": [],
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "setup_areas_involved": [
       "ride_height",
@@ -319,7 +320,8 @@
     "driver_facing_explanation": "Reduces steering demand and lets the car finish the corner.",
     "disabled_for": [],
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "setup_areas_involved": [
       "ride_height",
@@ -386,7 +388,8 @@
     "driver_facing_explanation": "Use tire temperature, pressure trend, lap falloff, and driver corrections together before calling a tire-protection swing.",
     "disabled_for": [],
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "setup_areas_involved": [
       "ride_height",
@@ -573,7 +576,8 @@
     "driver_facing_explanation": "High-speed shock work belongs to sharp track events and recovery zones, not generic balance complaints.",
     "disabled_for": [],
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "setup_areas_involved": [
       "ride_height",
@@ -695,7 +699,8 @@
     "driver_facing_explanation": "Uses spring support as the primary platform structure.",
     "disabled_for": [],
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "setup_areas_involved": [
       "ride_height",
@@ -758,7 +763,8 @@
     "driver_facing_explanation": "Uses bar diameter and arm position as the main roll balance architecture.",
     "disabled_for": [],
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "setup_areas_involved": [
       "ride_height",
@@ -815,7 +821,8 @@
     "driver_facing_explanation": "Tire pressure support package is a matrix-backed package archetype, not a universal setup value.",
     "disabled_for": [],
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "setup_areas_involved": [
       "tire_pressure",
@@ -870,7 +877,8 @@
     "driver_facing_explanation": "Toe-scrub speed package is a matrix-backed package archetype, not a universal setup value.",
     "disabled_for": [],
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "setup_areas_involved": [
       "toe",
@@ -926,7 +934,8 @@
       "next_gen"
     ],
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "setup_areas_involved": [
       "track_bar",

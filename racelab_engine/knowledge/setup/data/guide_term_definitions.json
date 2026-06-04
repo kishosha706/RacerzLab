@@ -300,16 +300,19 @@
   {
     "term_id": "static_ride_height",
     "term": "static ride height",
-    "aliases": [],
+    "aliases": [
+      "ride height"
+    ],
     "canonical_term": "static_ride_height",
-    "definition": "static ride height context from the Next Gen platform section; proxy/evidence wording must treat derived channels as geometry context, not force measurement.",
+    "definition": "Static ride height is garage platform context; it is affected by ballast, pressures, camber, springs, and collars, and must be validated with live platform/scrape/speed evidence.",
     "domain": "platform",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "all",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -640,16 +643,19 @@
   {
     "term_id": "spring_rate",
     "term": "spring rate",
-    "aliases": [],
+    "aliases": [
+      "springs"
+    ],
     "canonical_term": "spring_rate",
-    "definition": "Setup system term from the master setup matrix: spring rate.",
+    "definition": "Spring rate is a major platform and load-transfer lever; after a spring change, re-check ride height and camber before judging the result.",
     "domain": "setup_system",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "all",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -657,16 +663,20 @@
   {
     "term_id": "shock_collar",
     "term": "shock collar / perch",
-    "aliases": [],
+    "aliases": [
+      "spring perch",
+      "perch"
+    ],
     "canonical_term": "shock_collar",
-    "definition": "Shock collar / perch changes ride height, spring preload, and corner weight together.",
+    "definition": "Shock collar / perch changes ride height, spring preload, and corner weight together; use it to compensate platform height after related setup changes.",
     "domain": "setup_system",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "all",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -674,16 +684,19 @@
   {
     "term_id": "tire_pressure",
     "term": "tire pressure",
-    "aliases": [],
+    "aliases": [
+      "air pressure"
+    ],
     "canonical_term": "tire_pressure",
-    "definition": "Tire pressure changes tire spring, contact support, and temperature trend; rear pressure split means the LR/RR rear tire relationship, not all four tires.",
+    "definition": "Tire pressure changes tire spring, contact support, responsiveness, and temperature trend; pressure should be read with load, tire temperatures, wear, and run length.",
     "domain": "setup_system",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "all",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -708,16 +721,20 @@
   {
     "term_id": "camber",
     "term": "camber",
-    "aliases": [],
+    "aliases": [
+      "negative camber",
+      "positive camber"
+    ],
     "canonical_term": "camber",
-    "definition": "Setup system term from the master setup matrix: camber.",
+    "definition": "Camber changes loaded tire contact quality and trades corner grip against straight-line speed context; validate with tire temperature spread and wear.",
     "domain": "setup_system",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "all",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -725,16 +742,19 @@
   {
     "term_id": "caster",
     "term": "caster",
-    "aliases": [],
+    "aliases": [
+      "caster split"
+    ],
     "canonical_term": "caster",
-    "definition": "Setup system term from the master setup matrix: caster.",
+    "definition": "Caster and caster split are driver-feel and track-context levers; split can change entry-to-center rotation and should be read with track size, banking, and steering feel.",
     "domain": "setup_system",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "all",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -742,16 +762,20 @@
   {
     "term_id": "toe",
     "term": "toe",
-    "aliases": [],
+    "aliases": [
+      "toe-in",
+      "toe-out"
+    ],
     "canonical_term": "toe",
-    "definition": "Setup system term from the master setup matrix: toe.",
+    "definition": "Toe changes scrub, straightaway speed context, response, and stability; near-zero toe can reduce scrub while rear toe relationship affects corner stability.",
     "domain": "setup_system",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "all",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -759,16 +783,19 @@
   {
     "term_id": "brake_bias",
     "term": "brake bias",
-    "aliases": [],
+    "aliases": [
+      "front brake bias"
+    ],
     "canonical_term": "brake_bias",
-    "definition": "Setup system term from the master setup matrix: brake bias.",
+    "definition": "Brake bias changes brake-phase stability and can mask chassis entry problems, so treat it as an entry/braking support lever after chassis balance is understood.",
     "domain": "setup_system",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "all",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -810,16 +837,20 @@
   {
     "term_id": "track_bar",
     "term": "track bar",
-    "aliases": [],
+    "aliases": [
+      "rear track bar",
+      "track-bar"
+    ],
     "canonical_term": "track_bar",
-    "definition": "Setup system term from the master setup matrix: track bar.",
+    "definition": "Legacy oval track bar changes rear roll-center/lateral load feel; reversed left/right split is a legacy package concept and is unavailable for Next Gen.",
     "domain": "setup_system",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "legacy_oval",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -827,16 +858,20 @@
   {
     "term_id": "truck_arm_mount",
     "term": "truck arm",
-    "aliases": [],
+    "aliases": [
+      "truck arm",
+      "rear truck arm mount"
+    ],
     "canonical_term": "truck_arm_mount",
-    "definition": "Setup system term from the master setup matrix: truck arm.",
+    "definition": "Legacy oval truck arm mounts change rear suspension dynamic weight-distribution tendency and may support certain spring/platform packages; unavailable for Next Gen.",
     "domain": "setup_system",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "legacy_oval",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -844,16 +879,19 @@
   {
     "term_id": "bump_stop",
     "term": "bump stop",
-    "aliases": [],
+    "aliases": [
+      "bump stops"
+    ],
     "canonical_term": "bump_stop",
-    "definition": "Setup system term from the master setup matrix: bump stop.",
+    "definition": "Legacy oval bump stops limit front shock travel to protect platform/splitter contact when softer front spring packages need travel control; unavailable for Next Gen.",
     "domain": "setup_system",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "legacy_oval",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -861,16 +899,20 @@
   {
     "term_id": "packer",
     "term": "packer",
-    "aliases": [],
+    "aliases": [
+      "packer shim",
+      "packer shims"
+    ],
     "canonical_term": "packer",
-    "definition": "Setup system term from the master setup matrix: packer.",
+    "definition": "Legacy oval packer shims change where bump-stop support begins by changing available shock travel; unavailable for Next Gen.",
     "domain": "setup_system",
     "phase_hint": null,
     "symptom_hint": null,
     "evidence_hint": "setup_snapshot",
     "car_scope": "legacy_oval",
     "source_ids": [
-      "racerzlab_master_setup_matrix_v1"
+      "racerzlab_master_setup_matrix_v1",
+      "lowline_oval_setup_guide"
     ],
     "review_status": "accepted",
     "clarification_question": null
@@ -1143,6 +1185,105 @@
     "car_scope": "all",
     "source_ids": [
       "racerzlab_master_setup_matrix_v1"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "tire_pressure_responsiveness",
+    "term": "pressure responsiveness",
+    "aliases": [
+      "higher pressure response",
+      "lower pressure sluggish feel"
+    ],
+    "canonical_term": "tire_pressure_responsiveness",
+    "definition": "Reviewed LoWLiNE concept: pressure changes can sharpen or soften driver feel, but the call should be validated with load, tire temperature, wear, and comparable laps.",
+    "domain": "tires",
+    "phase_hint": null,
+    "symptom_hint": "tire_overwork",
+    "evidence_hint": "tire_temps",
+    "car_scope": "all",
+    "source_ids": [
+      "lowline_oval_setup_guide"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "inside_tire_temp_spread",
+    "term": "inside tire temp spread",
+    "aliases": [
+      "inside hotter than outside",
+      "inside wear hotter"
+    ],
+    "canonical_term": "inside_tire_temp_spread",
+    "definition": "Reviewed LoWLiNE concept: oval tire review often expects inside temperature/wear to be modestly hotter than outside; treat this as contact-quality context, not a universal exact target.",
+    "domain": "tires",
+    "phase_hint": "long_run",
+    "symptom_hint": "tire_overwork",
+    "evidence_hint": "tire_temps",
+    "car_scope": "all",
+    "source_ids": [
+      "lowline_oval_setup_guide"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "brake_bias_masking",
+    "term": "brake bias masking",
+    "aliases": [
+      "masked entry issue"
+    ],
+    "canonical_term": "brake_bias_masking",
+    "definition": "Reviewed LoWLiNE concept: brake bias can hide an entry chassis issue, so avoid using it as the first explanation when chassis evidence points elsewhere.",
+    "domain": "brakes",
+    "phase_hint": "entry",
+    "symptom_hint": "brake_entry_instability",
+    "evidence_hint": "brake_trace",
+    "car_scope": "all",
+    "source_ids": [
+      "lowline_oval_setup_guide"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "coil_binding_legacy_context",
+    "term": "coil binding setup",
+    "aliases": [
+      "coil bind",
+      "coil binding"
+    ],
+    "canonical_term": "coil_binding_legacy_context",
+    "definition": "Reviewed LoWLiNE concept: coil-binding legacy setups use spring, ARB, bump-stop, and packer travel-control context together; keep unsupported pieces behind car capability gates.",
+    "domain": "platform",
+    "phase_hint": "straight",
+    "symptom_hint": "front_platform_contact",
+    "evidence_hint": "platform_trace",
+    "car_scope": "legacy_oval",
+    "source_ids": [
+      "lowline_oval_setup_guide"
+    ],
+    "review_status": "accepted",
+    "clarification_question": null
+  },
+  {
+    "term_id": "front_sway_bar_package",
+    "term": "front sway bar package",
+    "aliases": [
+      "front ARB package",
+      "front anti-roll bar package"
+    ],
+    "canonical_term": "front_sway_bar_package",
+    "definition": "Reviewed LoWLiNE concept: front ARB choice is a foundational roll/package preference and should not be churned alongside many other major changes.",
+    "domain": "anti_roll_bar",
+    "phase_hint": "center",
+    "symptom_hint": "tight_center",
+    "evidence_hint": "setup_snapshot",
+    "car_scope": "all",
+    "source_ids": [
+      "lowline_oval_setup_guide"
     ],
     "review_status": "accepted",
     "clarification_question": null

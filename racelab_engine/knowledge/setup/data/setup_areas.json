@@ -25,7 +25,8 @@
       "phase_balance"
     ],
     "notes": [
-      "Use small pressure tests and validate against run length."
+      "Use small pressure tests and validate against run length.",
+      "LoWLiNE review: pressure affects load support and responsiveness; validate with tire temps/wear."
     ],
     "package_role": [
       "contact_patch"
@@ -60,7 +61,9 @@
       "tire_temp_spread",
       "center_speed"
     ],
-    "notes": [],
+    "notes": [
+      "LoWLiNE review: camber trades tire contact/corner speed against straight-speed context."
+    ],
     "package_role": [
       "contact_patch"
     ],
@@ -94,7 +97,9 @@
       "steering_trace",
       "turn_in_response"
     ],
-    "notes": [],
+    "notes": [
+      "LoWLiNE review: caster split is a driver/track-context feel lever."
+    ],
     "package_role": [
       "supporting_adjustment"
     ],
@@ -129,7 +134,9 @@
       "straight_speed",
       "steering_correction"
     ],
-    "notes": [],
+    "notes": [
+      "LoWLiNE review: near-zero toe can reduce straightaway scrub while rear toe relationship affects stability."
+    ],
     "package_role": [
       "contact_patch"
     ],
@@ -165,7 +172,9 @@
       "ride_height_trace",
       "phase_balance"
     ],
-    "notes": [],
+    "notes": [
+      "LoWLiNE review: spring changes require ride-height and camber recheck before judging."
+    ],
     "package_role": [
       "supporting_adjustment"
     ],
@@ -201,7 +210,9 @@
       "corner_height",
       "scrape"
     ],
-    "notes": [],
+    "notes": [
+      "LoWLiNE review: spring perches/collars compensate ride-height changes and alter corner load."
+    ],
     "package_role": [
       "supporting_adjustment"
     ],
@@ -240,7 +251,9 @@
       "scrape",
       "ride_height_trace"
     ],
-    "notes": [],
+    "notes": [
+      "LoWLiNE review: ride height is affected by ballast, pressures, camber, springs, and collars."
+    ],
     "package_role": [
       "platform_control"
     ],
@@ -473,7 +486,8 @@
       "front_slip"
     ],
     "notes": [
-      "Next Gen options are 1.375 soft bar and 2.000 stiff bar."
+      "Next Gen options are 1.375 soft bar and 2.000 stiff bar.",
+      "LoWLiNE review: front sway bar choice is a package-level preference/roll-control lever."
     ],
     "package_role": [
       "roll_balance"
@@ -510,7 +524,9 @@
       "front_response",
       "center_speed"
     ],
-    "notes": [],
+    "notes": [
+      "LoWLiNE review: ARB tuning should be read as part of the selected front bar package."
+    ],
     "package_role": [
       "roll_balance"
     ],
@@ -764,7 +780,9 @@
       "entry_yaw",
       "brake_lock"
     ],
-    "notes": [],
+    "notes": [
+      "LoWLiNE review: brake bias can mask chassis entry issues; read brake trace and entry yaw first."
+    ],
     "package_role": [
       "supporting_adjustment"
     ],
@@ -1088,7 +1106,8 @@
       "center_rotation"
     ],
     "notes": [
-      "Car-specific legacy-only lever."
+      "Car-specific legacy-only lever.",
+      "LoWLiNE review: legacy track-bar split/reversal is car-specific package context; Next Gen disabled."
     ],
     "package_role": [
       "supporting_adjustment"
@@ -1131,7 +1150,8 @@
       "rear_slip"
     ],
     "notes": [
-      "Car-specific legacy-only lever."
+      "Car-specific legacy-only lever.",
+      "LoWLiNE review: legacy truck arm mounts affect dynamic weight distribution/package behavior; Next Gen disabled."
     ],
     "package_role": [
       "supporting_adjustment"
@@ -1175,7 +1195,8 @@
       "center_speed"
     ],
     "notes": [
-      "Car-specific legacy-only lever."
+      "Car-specific legacy-only lever.",
+      "LoWLiNE review: legacy bump stops limit shock travel for platform/contact control; Next Gen disabled."
     ],
     "package_role": [
       "platform_control"
@@ -1219,7 +1240,8 @@
       "scrape"
     ],
     "notes": [
-      "Car-specific legacy-only lever."
+      "Car-specific legacy-only lever.",
+      "LoWLiNE review: legacy packers change available travel before bump-stop support; Next Gen disabled."
     ],
     "package_role": [
       "platform_control"
@@ -1463,7 +1485,8 @@
       "compare_baseline"
     ],
     "notes": [
-      "Derived from RacerZLab master setup matrix."
+      "Derived from RacerZLab master setup matrix.",
+      "LoWLiNE review: rear toe relationship can stabilize or create a loose transition depending direction/package."
     ],
     "package_role": [
       "setup_context"

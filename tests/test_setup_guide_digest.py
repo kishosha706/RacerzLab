@@ -13,6 +13,8 @@ def test_guide_sources_load():
     knowledge = load_setup_knowledge()
     assert len(knowledge.guide_sources) >= 10
     assert "racerzlab_master_setup_matrix_v1" in knowledge.guide_source_by_id
+    lowline = knowledge.guide_source_by_id["lowline_oval_setup_guide"]
+    assert lowline.local_path == "docs/setup_knowledge/lowline_oval_setup_guide_v1_6_review.md"
 
 
 def test_every_referenced_source_id_exists():
@@ -35,7 +37,15 @@ def test_guide_principles_load():
 
 def test_term_definitions_load():
     terms = {item.canonical_term for item in load_setup_knowledge().guide_term_definitions}
-    assert {"shock_histogram", "diffuser_proxy", "cross_weight", "track_bar"}.issubset(terms)
+    assert {
+        "shock_histogram",
+        "diffuser_proxy",
+        "cross_weight",
+        "track_bar",
+        "tire_pressure_responsiveness",
+        "brake_bias_masking",
+        "coil_binding_legacy_context",
+    }.issubset(terms)
 
 
 def test_setup_mappings_link_to_setup_areas():
@@ -68,6 +78,34 @@ def test_cfs_half_inch_claim_is_needs_review():
 def test_next_gen_disabled_areas_remain_disabled():
     cap = load_setup_knowledge().car_capability_by_family["next_gen"]
     assert set(cap.disabled_setup_areas) == {"track_bar", "truck_arm_mount", "bump_stop", "packer"}
+
+
+def test_lowline_source_is_applied_to_reviewed_records():
+    knowledge = load_setup_knowledge()
+    source_id = "lowline_oval_setup_guide"
+
+    principles = {principle.principle_id for principle in knowledge.guide_principles if source_id in principle.source_ids}
+    assert {
+        "lowline_tire_pressure_load_temp_context",
+        "lowline_brake_bias_masks_entry_context",
+        "lowline_spring_changes_require_platform_reset",
+        "lowline_legacy_travel_levers_capability_gate",
+    }.issubset(principles)
+
+    mappings = {mapping.mapping_id for mapping in knowledge.guide_setup_mappings if source_id in mapping.source_ids}
+    assert {
+        "lowline_rear_toe_stability_context",
+        "lowline_brake_bias_entry_support",
+        "lowline_caster_split_entry_center_feel",
+        "lowline_spring_change_platform_recheck",
+    }.issubset(mappings)
+
+    effects_by_area = {
+        effect.setup_area
+        for effect in knowledge.setup_effects
+        if source_id in effect.source_ids
+    }
+    assert {"tire_pressure", "toe", "brake_bias", "caster", "camber", "spring_rate", "track_bar"}.issubset(effects_by_area)
 
 
 def test_legacy_oval_can_keep_legacy_areas():

@@ -379,5 +379,229 @@
       "Robotic phrasing",
       "No counter-effect"
     ]
+  },
+  {
+    "principle_id": "lowline_tire_pressure_load_temp_context",
+    "source_ids": [
+      "lowline_oval_setup_guide"
+    ],
+    "title": "Tire pressure follows load and tire evidence",
+    "racerzlab_wording": "Treat pressure as a support and feel lever; validate load, tire temperature, wear, and run length before ranking a pressure swing.",
+    "source_summary": "LoWLiNE frames pressure around tire load, responsiveness, and inside/outside temperature context.",
+    "domain": "tires",
+    "car_scope": "all",
+    "setup_areas": [
+      "tire_pressure",
+      "camber"
+    ],
+    "phases": [
+      "center",
+      "exit",
+      "long_run"
+    ],
+    "symptoms": [
+      "tire_overwork",
+      "long_run_falloff",
+      "loose_exit",
+      "tight_center"
+    ],
+    "evidence_links": [
+      "tire_temps",
+      "wear",
+      "setup_snapshot"
+    ],
+    "confidence": "high",
+    "review_status": "accepted",
+    "cautions": [
+      "Do not use tire pressure as an exact universal value."
+    ],
+    "do_not_overclaim": [
+      "Do not rank a pressure swing from pressure alone."
+    ],
+    "short_ui_wording": "Pressure needs tire evidence.",
+    "why_it_matters": "Pressure can change feel quickly but can also hide tire abuse or load imbalance.",
+    "mistakes_to_avoid": [
+      "Ignoring tire temperature spread",
+      "Treating fire-off feel as long-run proof"
+    ]
+  },
+  {
+    "principle_id": "lowline_brake_bias_masks_entry_context",
+    "source_ids": [
+      "lowline_oval_setup_guide"
+    ],
+    "title": "Brake bias can mask entry balance",
+    "racerzlab_wording": "Use brake bias as an entry/braking support lever only after checking whether the chassis balance is the real entry issue.",
+    "source_summary": "LoWLiNE warns brake bias can mask chassis entry problems if used too early.",
+    "domain": "brakes",
+    "car_scope": "all",
+    "setup_areas": [
+      "brake_bias"
+    ],
+    "phases": [
+      "braking",
+      "entry"
+    ],
+    "symptoms": [
+      "loose_entry",
+      "tight_entry",
+      "brake_entry_instability"
+    ],
+    "evidence_links": [
+      "brake_trace",
+      "entry_yaw",
+      "setup_snapshot"
+    ],
+    "confidence": "high",
+    "review_status": "accepted",
+    "cautions": [
+      "Do not let brake bias hide a chassis balance problem."
+    ],
+    "do_not_overclaim": [
+      "Do not call brake bias the root cause without entry evidence."
+    ],
+    "short_ui_wording": "Check chassis before bias.",
+    "why_it_matters": "A brake-only fix can leave the real entry balance problem untouched.",
+    "mistakes_to_avoid": [
+      "Changing brake bias before reading entry yaw and brake trace"
+    ]
+  },
+  {
+    "principle_id": "lowline_set_once_driver_preference_levers",
+    "source_ids": [
+      "lowline_oval_setup_guide"
+    ],
+    "title": "Driver preference levers are not first-response fixes",
+    "racerzlab_wording": "Treat caster and foundational ARB choice as driver/track/package context unless the evidence clearly points to that lever.",
+    "source_summary": "LoWLiNE describes caster and front sway bar choice as preference and track-context setup choices.",
+    "domain": "setup_process",
+    "car_scope": "all",
+    "setup_areas": [
+      "caster",
+      "front_arb_diameter",
+      "front_arb_arm"
+    ],
+    "phases": [
+      "turn_in",
+      "entry",
+      "center"
+    ],
+    "symptoms": [
+      "tight_entry",
+      "tight_center",
+      "loose_entry"
+    ],
+    "evidence_links": [
+      "driver_feedback",
+      "steering_trace",
+      "setup_snapshot"
+    ],
+    "confidence": "high",
+    "review_status": "accepted",
+    "cautions": [
+      "Do not churn package-level preference levers during fine tuning."
+    ],
+    "do_not_overclaim": [
+      "Do not rank caster from lap time alone."
+    ],
+    "short_ui_wording": "Preference levers need context.",
+    "why_it_matters": "These levers affect feel and package behavior more than a single complaint.",
+    "mistakes_to_avoid": [
+      "Changing caster while exit grip is the dominant issue"
+    ]
+  },
+  {
+    "principle_id": "lowline_spring_changes_require_platform_reset",
+    "source_ids": [
+      "lowline_oval_setup_guide"
+    ],
+    "title": "Spring changes require platform reset checks",
+    "racerzlab_wording": "After changing springs, re-check ride height, camber, and platform evidence before judging the setup change.",
+    "source_summary": "LoWLiNE notes spring changes affect ride heights and cambers and should be rechecked before testing conclusions.",
+    "domain": "setup_process",
+    "car_scope": "all",
+    "setup_areas": [
+      "spring_rate",
+      "ride_height",
+      "shock_collar",
+      "camber"
+    ],
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight"
+    ],
+    "symptoms": [
+      "front_platform_contact",
+      "rear_scrape",
+      "tight_center",
+      "loose_exit"
+    ],
+    "evidence_links": [
+      "setup_snapshot",
+      "platform_trace",
+      "tire_temps"
+    ],
+    "confidence": "high",
+    "review_status": "accepted",
+    "cautions": [
+      "Do not judge the spring swing before restoring the intended platform window."
+    ],
+    "do_not_overclaim": [
+      "Do not say the spring worked if ride height or camber drifted and was not checked."
+    ],
+    "short_ui_wording": "Reset platform after springs.",
+    "why_it_matters": "Spring changes can move ride heights and camber, confounding the test.",
+    "mistakes_to_avoid": [
+      "Ignoring ride-height drift after a spring change"
+    ]
+  },
+  {
+    "principle_id": "lowline_legacy_travel_levers_capability_gate",
+    "source_ids": [
+      "lowline_oval_setup_guide"
+    ],
+    "title": "Legacy travel and rear-geometry levers stay gated",
+    "racerzlab_wording": "Bump stops, packers, truck arm mounts, and track bar belong to legacy oval knowledge and must stay behind car capability gates.",
+    "source_summary": "LoWLiNE covers bump stops, packers, truck arms, and track bar as legacy oval setup concepts.",
+    "domain": "oval",
+    "car_scope": "legacy_oval",
+    "setup_areas": [
+      "bump_stop",
+      "packer",
+      "truck_arm_mount",
+      "track_bar"
+    ],
+    "phases": [
+      "entry",
+      "center",
+      "exit",
+      "straight"
+    ],
+    "symptoms": [
+      "front_platform_contact",
+      "poor_drive_off",
+      "tight_center",
+      "loose_exit"
+    ],
+    "evidence_links": [
+      "setup_snapshot",
+      "platform_trace",
+      "yaw"
+    ],
+    "confidence": "high",
+    "review_status": "accepted",
+    "cautions": [
+      "Next Gen must never receive these recommendations."
+    ],
+    "do_not_overclaim": [
+      "Do not expose disabled legacy areas for Next Gen."
+    ],
+    "short_ui_wording": "Legacy levers stay gated.",
+    "why_it_matters": "Legacy oval advice is useful only when the selected car supports it.",
+    "mistakes_to_avoid": [
+      "Recommending track bar, truck arm, bump stop, or packer for Next Gen"
+    ]
   }
 ]
