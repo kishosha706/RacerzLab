@@ -176,6 +176,12 @@ class StintSummary(BaseModel):
     pace_quality_score: Optional[float] = None
     evidence_confidence_score: Optional[float] = None
     setup_usefulness_score: Optional[float] = None
+    bucket_averages: list["StintBucket"] = Field(default_factory=list)
+    is_primary_summary: bool = False
+    is_best_for_size: bool = False
+    display_group: str = "windows"
+    display_label_short: str = "Window"
+    rank_reason: Optional[str] = None
     tire_trend_label: str = "tire data limited"
     platform_trend_label: str = "platform data limited"
     shock_trend_label: str = "shock data limited"
@@ -183,10 +189,25 @@ class StintSummary(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class StintBucket(BaseModel):
+    """Fixed lap-bucket average for timing-sheet style stint rows."""
+    label: str
+    start_offset: int
+    end_offset: int
+    avg_lap_time: Optional[float] = None
+    lap_count: int = 0
+    valid_lap_count: int = 0
+    is_fastest_bucket: bool = False
+    delta_from_best_bucket: Optional[float] = None
+    warning: Optional[str] = None
+
+
 class StintResponse(BaseModel):
     """Response for imported-data stint intelligence."""
     run_id: str
     stints: list[StintSummary] = Field(default_factory=list)
+    primary_stints: list[StintSummary] = Field(default_factory=list)
+    all_windows: list[StintSummary] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -207,6 +228,7 @@ class StintCompareResult(BaseModel):
     rolling_5_delta: Optional[float] = None
     rolling_10_delta: Optional[float] = None
     rolling_20_delta: Optional[float] = None
+    bucket_deltas: list["StintBucketDelta"] = Field(default_factory=list)
     falloff_delta: Optional[float] = None
     consistency_delta: Optional[float] = None
     tire_trend_delta: str = "limited"
@@ -214,3 +236,12 @@ class StintCompareResult(BaseModel):
     shock_trend_delta: str = "limited"
     verdict: str = "Data is limited; need more clean laps."
     summary: str = "Stint comparison is limited by available clean lap data."
+
+
+class StintBucketDelta(BaseModel):
+    """Time delta for matching bucket labels between selected stints."""
+    label: str
+    delta: Optional[float] = None
+    baseline_avg: Optional[float] = None
+    test_avg: Optional[float] = None
+    warning: Optional[str] = None

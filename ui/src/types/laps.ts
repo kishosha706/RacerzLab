@@ -151,6 +151,12 @@ export interface StintSummary {
   pace_quality_score: number | null;
   evidence_confidence_score: number | null;
   setup_usefulness_score: number | null;
+  bucket_averages: StintBucket[];
+  is_primary_summary: boolean;
+  is_best_for_size: boolean;
+  display_group: string;
+  display_label_short: string;
+  rank_reason: string | null;
   tire_trend_label: string;
   platform_trend_label: string;
   shock_trend_label: string;
@@ -158,9 +164,23 @@ export interface StintSummary {
   warnings: string[];
 }
 
+export interface StintBucket {
+  label: string;
+  start_offset: number;
+  end_offset: number;
+  avg_lap_time: number | null;
+  lap_count: number;
+  valid_lap_count: number;
+  is_fastest_bucket: boolean;
+  delta_from_best_bucket: number | null;
+  warning: string | null;
+}
+
 export interface StintResponse {
   run_id: string;
   stints: StintSummary[];
+  primary_stints: StintSummary[];
+  all_windows: StintSummary[];
   warnings: string[];
 }
 
@@ -179,6 +199,7 @@ export interface StintCompareResult {
   rolling_5_delta: number | null;
   rolling_10_delta: number | null;
   rolling_20_delta: number | null;
+  bucket_deltas: StintBucketDelta[];
   falloff_delta: number | null;
   consistency_delta: number | null;
   tire_trend_delta: string;
@@ -186,4 +207,12 @@ export interface StintCompareResult {
   shock_trend_delta: string;
   verdict: string;
   summary: string;
+}
+
+export interface StintBucketDelta {
+  label: string;
+  delta: number | null;
+  baseline_avg: number | null;
+  test_avg: number | null;
+  warning: string | null;
 }

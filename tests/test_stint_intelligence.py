@@ -59,19 +59,41 @@ def _seed_run(tmp_path: Path, run_id: str = "run-1", lap_count: int = 18) -> Non
     )
 
 
-def test_stint_response_returns_summary_rows_and_rolling_buckets() -> None:
-    laps = _laps(22)
+def test_stint_response_returns_curated_primary_rows_and_buckets() -> None:
+    laps = _laps(42)
 
     response = build_stint_response(laps)
 
     assert response.run_id == "run-1"
     assert response.stints
+    assert response.stints == response.primary_stints
+    assert len(response.primary_stints) <= 6
+    assert [stint.display_label_short for stint in response.primary_stints] == [
+        "Full run",
+        "Best 5",
+        "Best 10",
+        "Best 20",
+        "Best 30",
+        "Best 40",
+    ]
     full = response.stints[0]
-    assert full.valid_lap_count == 22
+    assert full.valid_lap_count == 42
     assert full.rolling_5_avg_best is not None
     assert full.rolling_10_avg_best is not None
     assert full.rolling_20_avg_best is not None
     assert full.avg_lap_time is not None
+    assert full.bucket_averages[0].label == "L1-5"
+    assert full.bucket_averages[0].avg_lap_time is not None
+    assert any(bucket.is_fastest_bucket for bucket in full.bucket_averages)
+
+
+def test_primary_stints_exclude_near_duplicate_overlapping_windows() -> None:
+    response = build_stint_response(_laps(50))
+
+    labels = [stint.display_label_short for stint in response.primary_stints]
+    assert labels.count("Best 40") == 1
+    assert len(response.all_windows) >= len(response.primary_stints) - 1
+    assert len(response.primary_stints) <= 6
 
 
 def test_invalid_laps_are_excluded_without_missing_to_zero() -> None:
@@ -85,6 +107,9 @@ def test_invalid_laps_are_excluded_without_missing_to_zero() -> None:
     assert full.valid_lap_count == 11
     assert any("excluded" in warning.lower() for warning in full.warnings)
     assert full.best_lap_time != 0
+    limited_bucket = full.bucket_averages[0]
+    assert limited_bucket.avg_lap_time is None
+    assert limited_bucket.warning is not None
 
 
 def test_insufficient_laps_marked_unavailable() -> None:
@@ -92,7 +117,8 @@ def test_insufficient_laps_marked_unavailable() -> None:
 
     assert response.stints == []
     assert response.warnings
-    assert "Need 5+" in response.warnings[0]
+    assert "No eligible stint windows yet" in response.warnings[0]
+    assert any("Import or select a longer clean run" in warning for warning in response.warnings)
 
 
 def test_falloff_classification_and_limited_trends_are_truthful() -> None:
@@ -114,6 +140,9 @@ def test_compare_result_computes_deltas() -> None:
     assert result.avg_delta is not None
     assert result.avg_delta < 0
     assert result.best_delta is not None
+    assert result.bucket_deltas
+    assert result.bucket_deltas[0].label == "L1-5"
+    assert result.bucket_deltas[0].delta is not None
     assert result.verdict
 
 
@@ -128,7 +157,8 @@ def test_stints_endpoint_returns_summaries(tmp_path: Path, monkeypatch: pytest.M
     payload = response.json()
     assert payload["run_id"] == "run-1"
     assert payload["stints"]
-    assert {"stint_id", "rolling_5_avg_best", "stint_label", "setup_usefulness_score"}.issubset(payload["stints"][0])
+    assert payload["primary_stints"]
+    assert {"stint_id", "bucket_averages", "display_label_short", "setup_usefulness_score"}.issubset(payload["stints"][0])
 
 
 def test_stints_compare_endpoint_returns_delta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

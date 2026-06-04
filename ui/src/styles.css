@@ -6206,8 +6206,12 @@ button:focus:not(:focus-visible) {
 }
 
 .stint-table {
-  min-width: 1320px;
+  min-width: 1480px;
   margin-top: 0;
+}
+
+.timing-sheet-table {
+  font-variant-numeric: tabular-nums;
 }
 
 .stint-table td,
@@ -6235,9 +6239,104 @@ button:focus:not(:focus-visible) {
   background: rgba(34, 197, 94, 0.045);
 }
 
-.best-bucket-cell {
+.stint-row-limited {
+  opacity: 0.84;
+}
+
+.stint-run-summary {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.8fr) repeat(5, minmax(92px, 1fr));
+  gap: 1px;
+  margin: 10px 0 12px;
+  overflow: hidden;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  background: #1f2937;
+}
+
+.stint-run-summary > div {
+  display: grid;
+  gap: 3px;
+  min-height: 54px;
+  padding: 9px 10px;
+  background: #0d1117;
+}
+
+.stint-run-summary span {
+  color: #8d9aaa;
+  font-size: 11px;
+}
+
+.stint-run-summary strong {
+  color: #e5e7eb;
+  font-size: 13px;
+}
+
+.stint-bucket-cell {
+  text-align: right;
+}
+
+.stint-bucket-cell.fastest {
+  background: rgba(34, 197, 94, 0.11);
   color: #22c55e;
   font-weight: 800;
+}
+
+.stint-bucket-cell.falloff {
+  color: #f59e0b;
+}
+
+.stint-bucket-cell.unavailable {
+  color: #64748b;
+}
+
+.falloff-warn-cell {
+  color: #f97316;
+  font-weight: 700;
+}
+
+.stint-trend-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 7px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, 0.08);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.stint-trend-badge.muted {
+  color: #8d9aaa;
+  background: rgba(100, 116, 139, 0.10);
+}
+
+.stint-trend-badge.stable {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.10);
+}
+
+.stint-trend-badge.warn {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.10);
+}
+
+.stint-empty-state {
+  padding: 14px;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  background: rgba(13, 17, 23, 0.72);
+}
+
+.stint-empty-state h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.stint-empty-state p {
+  margin: 4px 0;
 }
 
 .stint-compare-panel {
@@ -6330,6 +6429,10 @@ button:focus:not(:focus-visible) {
 
   .stint-compare-metrics {
     grid-template-columns: repeat(2, minmax(70px, 1fr));
+  }
+
+  .stint-run-summary {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
 }
 

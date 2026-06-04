@@ -9,6 +9,8 @@ from racelab_engine.analysis.lap_windows import _is_lap_valid_for_ranking, compu
 from racelab_engine.analysis.pace_quality import compute_pace_quality_score, score_consistency
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.lap_analysis import (
+    StintBucket,
+    StintBucketDelta,
     StintCompareResult,
     StintResponse,
     StintSummary,
@@ -16,6 +18,8 @@ from racelab_engine.models.lap_analysis import (
 from racelab_engine.models.session import SessionSummary
 
 STINT_WINDOW_SIZES = [5, 10, 20, 30, 40]
+STINT_BUCKET_SIZE = 5
+STINT_BUCKET_COUNT = 8
 
 
 def _avg(values: Iterable[float]) -> float | None:
@@ -44,6 +48,43 @@ def _best_rolling_average(laps: list[LapSummary], size: int) -> float | None:
         candidate = sum(values) / size
         best = candidate if best is None else min(best, candidate)
     return best
+
+
+def _bucket_averages(laps: list[LapSummary]) -> list[StintBucket]:
+    ordered = sorted(laps, key=lambda lap: lap.lap_number)
+    buckets: list[StintBucket] = []
+    for bucket_index in range(STINT_BUCKET_COUNT):
+        start_offset = bucket_index * STINT_BUCKET_SIZE + 1
+        end_offset = start_offset + STINT_BUCKET_SIZE - 1
+        bucket_laps = ordered[bucket_index * STINT_BUCKET_SIZE:(bucket_index + 1) * STINT_BUCKET_SIZE]
+        valid = _valid_laps(bucket_laps)
+        avg = _avg(_times(valid)) if len(valid) == STINT_BUCKET_SIZE else None
+        warning = None
+        if not bucket_laps:
+            warning = "No laps in bucket."
+        elif len(valid) < STINT_BUCKET_SIZE:
+            warning = f"Need {STINT_BUCKET_SIZE} valid laps for this bucket."
+        buckets.append(StintBucket(
+            label=f"L{start_offset}-{end_offset}",
+            start_offset=start_offset,
+            end_offset=end_offset,
+            avg_lap_time=avg,
+            lap_count=len(bucket_laps),
+            valid_lap_count=len(valid),
+            warning=warning,
+        ))
+
+    available = [bucket.avg_lap_time for bucket in buckets if bucket.avg_lap_time is not None]
+    if not available:
+        return buckets
+    fastest = min(available)
+    return [
+        bucket.model_copy(update={
+            "is_fastest_bucket": bucket.avg_lap_time is not None and abs(bucket.avg_lap_time - fastest) < 0.0005,
+            "delta_from_best_bucket": (bucket.avg_lap_time - fastest) if bucket.avg_lap_time is not None else None,
+        })
+        for bucket in buckets
+    ]
 
 
 def _third_averages(laps: list[LapSummary]) -> tuple[float | None, float | None, float | None]:
@@ -184,6 +225,11 @@ def _build_stint_summary(
     session: SessionSummary | None,
     *,
     warnings: list[str] | None = None,
+    is_primary_summary: bool = False,
+    is_best_for_size: bool = False,
+    display_group: str = "windows",
+    display_label_short: str = "Window",
+    rank_reason: str | None = None,
 ) -> StintSummary | None:
     if not source_laps:
         return None
@@ -260,6 +306,12 @@ def _build_stint_summary(
         pace_quality_score=pq.pace_quality_score,
         evidence_confidence_score=pq.evidence_confidence_score,
         setup_usefulness_score=pq.setup_usefulness_score,
+        bucket_averages=_bucket_averages(ordered),
+        is_primary_summary=is_primary_summary,
+        is_best_for_size=is_best_for_size,
+        display_group=display_group,
+        display_label_short=display_label_short,
+        rank_reason=rank_reason,
         tire_trend_label=_tire_trend_label(valid),
         platform_trend_label=_platform_trend_label(valid),
         shock_trend_label=_shock_trend_label(valid),
@@ -273,21 +325,34 @@ def build_stint_response(laps: list[LapSummary], session: SessionSummary | None 
         return StintResponse(run_id="", warnings=["No lap data available."])
     run_id = laps[0].run_id
     ordered = sorted(laps, key=lambda lap: lap.lap_number)
-    stints: list[StintSummary] = []
+    primary_stints: list[StintSummary] = []
+    all_windows: list[StintSummary] = []
     seen: set[tuple[int, int, int]] = set()
 
     valid = _valid_laps(ordered)
     valid_ratio = len(valid) / len(ordered) if ordered else 0.0
     warnings: list[str] = []
     if len(valid) < 5:
-        warnings.append(f"Only {len(valid)} valid lap{'s' if len(valid) != 1 else ''}. Need 5+ for stint intelligence.")
+        warnings.append(f"No eligible stint windows yet. Only {len(valid)} valid lap{'s' if len(valid) != 1 else ''}; need at least 5 valid laps for short windows.")
+        warnings.append("Need 10+ valid laps for a useful long-run read.")
+        warnings.append("Out laps, pit laps, cooldowns, wrecks, and invalid laps are excluded.")
+        warnings.append("Import or select a longer clean run to unlock Stint Intelligence.")
     if valid_ratio < 0.6:
         warnings.append("Fewer than 60% of run laps are valid for stint analysis.")
 
     if len(valid) >= 5 and valid_ratio >= 0.6:
-        summary = _build_stint_summary(run_id, f"stint_{run_id}_full_{ordered[0].lap_number}_{ordered[-1].lap_number}", ordered, session)
+        summary = _build_stint_summary(
+            run_id,
+            f"stint_{run_id}_full_{ordered[0].lap_number}_{ordered[-1].lap_number}",
+            ordered,
+            session,
+            is_primary_summary=True,
+            display_group="full_run",
+            display_label_short="Full run",
+            rank_reason="Full imported run with valid-lap filtering.",
+        )
         if summary is not None:
-            stints.append(summary)
+            primary_stints.append(summary)
             seen.add((summary.start_lap, summary.end_lap, summary.lap_count))
 
     for group in compute_best_windows(ordered, STINT_WINDOW_SIZES):
@@ -302,15 +367,28 @@ def build_stint_response(laps: list[LapSummary], session: SessionSummary | None 
                 window_laps,
                 session,
                 warnings=[f"Ranked #{index + 1} {window.window_size}-lap imported-data window."],
+                is_primary_summary=index == 0,
+                is_best_for_size=index == 0,
+                display_group=f"best_{window.window_size}",
+                display_label_short=f"Best {window.window_size}",
+                rank_reason=f"Best average {window.window_size}-lap window." if index == 0 else f"Alternate #{index + 1} {window.window_size}-lap window.",
             )
             if summary is not None:
-                stints.append(summary)
+                all_windows.append(summary)
+                if index == 0:
+                    primary_stints.append(summary)
                 seen.add(key)
 
-    stints.sort(key=lambda item: (0 if "_full_" in item.stint_id else 1, -item.lap_count, item.avg_lap_time or 999999.0))
-    if not stints and not warnings:
-        warnings.append("No stint windows met the 60% valid-lap requirement.")
-    return StintResponse(run_id=run_id, stints=stints, warnings=warnings)
+    size_order = {"full_run": 0, "best_5": 1, "best_10": 2, "best_20": 3, "best_30": 4, "best_40": 5}
+    primary_stints.sort(key=lambda item: (size_order.get(item.display_group, 99), item.avg_lap_time or 999999.0))
+    all_windows.sort(key=lambda item: (size_order.get(item.display_group, 99), item.avg_lap_time or 999999.0))
+    if not primary_stints and not warnings:
+        warnings.append("No eligible stint windows yet.")
+        warnings.append("Need at least 5 valid laps for short windows.")
+        warnings.append("Need 10+ valid laps for a useful long-run read.")
+        warnings.append("Out laps, pit laps, cooldowns, wrecks, and invalid laps are excluded.")
+        warnings.append("Import or select a longer clean run to unlock Stint Intelligence.")
+    return StintResponse(run_id=run_id, stints=primary_stints, primary_stints=primary_stints, all_windows=all_windows, warnings=warnings)
 
 
 def _delta(test: float | None, baseline: float | None) -> float | None:
@@ -335,6 +413,24 @@ def compare_stints(baseline: StintSummary, test: StintSummary) -> StintCompareRe
     rolling_20_delta = _delta(test.rolling_20_avg_best, baseline.rolling_20_avg_best)
     falloff_delta = _delta(test.falloff_total, baseline.falloff_total)
     consistency_delta = _delta(test.consistency_score, baseline.consistency_score)
+    baseline_buckets = {bucket.label: bucket for bucket in baseline.bucket_averages}
+    test_buckets = {bucket.label: bucket for bucket in test.bucket_averages}
+    labels = [bucket.label for bucket in baseline.bucket_averages] or [bucket.label for bucket in test.bucket_averages]
+    bucket_deltas: list[StintBucketDelta] = []
+    for label in labels:
+        baseline_bucket = baseline_buckets.get(label)
+        test_bucket = test_buckets.get(label)
+        baseline_avg = baseline_bucket.avg_lap_time if baseline_bucket else None
+        test_avg = test_bucket.avg_lap_time if test_bucket else None
+        warning = None if baseline_avg is not None and test_avg is not None else "Bucket delta unavailable."
+        bucket_deltas.append(StintBucketDelta(
+            label=label,
+            baseline_avg=baseline_avg,
+            test_avg=test_avg,
+            delta=_delta(test_avg, baseline_avg),
+            warning=warning,
+        ))
+    best_bucket_delta = min((bucket.delta for bucket in bucket_deltas if bucket.delta is not None), default=None)
 
     if baseline.valid_lap_count < 5 or test.valid_lap_count < 5:
         verdict = "Data is limited; need more clean laps."
@@ -342,6 +438,8 @@ def compare_stints(baseline: StintSummary, test: StintSummary) -> StintCompareRe
         verdict = "Test stint is faster early but falls off harder."
     elif avg_delta is not None and avg_delta > 0.05 and falloff_delta is not None and falloff_delta < -0.10:
         verdict = "Baseline is faster, but test is more stable over the run."
+    elif rolling_20_delta is not None and rolling_20_delta < -0.05 and (falloff_delta is None or abs(falloff_delta) <= 0.20):
+        verdict = "Test keeps better 20-lap pace."
     elif rolling_10_delta is not None and rolling_10_delta < -0.05 and (falloff_delta is None or abs(falloff_delta) <= 0.15):
         verdict = "Test shows better 10-lap pace with similar falloff."
     elif consistency_delta is not None and consistency_delta > 5 and (avg_delta is None or avg_delta > -0.05):
@@ -358,6 +456,8 @@ def compare_stints(baseline: StintSummary, test: StintSummary) -> StintCompareRe
         summary_parts.append(f"Average delta {avg_delta:+.3f}s.")
     if rolling_10_delta is not None:
         summary_parts.append(f"Best 10-lap delta {rolling_10_delta:+.3f}s.")
+    if best_bucket_delta is not None:
+        summary_parts.append(f"Best bucket delta {best_bucket_delta:+.3f}s.")
     if falloff_delta is not None:
         summary_parts.append(f"Falloff delta {falloff_delta:+.3f}s.")
     summary = " ".join(summary_parts) if summary_parts else "Stint comparison is limited by available clean lap data."
@@ -370,6 +470,7 @@ def compare_stints(baseline: StintSummary, test: StintSummary) -> StintCompareRe
         rolling_5_delta=rolling_5_delta,
         rolling_10_delta=rolling_10_delta,
         rolling_20_delta=rolling_20_delta,
+        bucket_deltas=bucket_deltas,
         falloff_delta=falloff_delta,
         consistency_delta=consistency_delta,
         tire_trend_delta=_trend_delta(test.tire_trend_label, baseline.tire_trend_label),

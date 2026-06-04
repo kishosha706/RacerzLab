@@ -50,8 +50,10 @@ def compare_stint_summaries(req: StintCompareRequest) -> StintCompareResult:
 
     baseline_response = build_stint_response(baseline_laps, repo.get_session(req.baseline_run_id))
     test_response = build_stint_response(test_laps, repo.get_session(req.test_run_id))
-    baseline = next((stint for stint in baseline_response.stints if stint.stint_id == req.baseline_stint_id), None)
-    test = next((stint for stint in test_response.stints if stint.stint_id == req.test_stint_id), None)
+    baseline_candidates = [*baseline_response.stints, *baseline_response.all_windows]
+    test_candidates = [*test_response.stints, *test_response.all_windows]
+    baseline = next((stint for stint in baseline_candidates if stint.stint_id == req.baseline_stint_id), None)
+    test = next((stint for stint in test_candidates if stint.stint_id == req.test_stint_id), None)
     if baseline is None:
         raise HTTPException(404, f"Baseline stint not found: {req.baseline_stint_id}")
     if test is None:

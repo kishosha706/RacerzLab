@@ -77,6 +77,26 @@ function formatStintRange(stint: Pick<StintSummary, "start_lap" | "end_lap">): s
   return `Laps ${stint.start_lap}-${stint.end_lap}`;
 }
 
+function compactTrendLabel(kind: "tire" | "platform" | "shock", label: string): string {
+  const lower = label.toLowerCase();
+  if (lower.includes("limited")) return `${kind[0].toUpperCase()}${kind.slice(1)} limited`;
+  if (lower.includes("rf")) return "RF rising";
+  if (lower.includes("rear scrape")) return "Rear scrape";
+  if (lower.includes("rear")) return "Rear rising";
+  if (lower.includes("front contact")) return "Front contact";
+  if (lower.includes("rising")) return kind === "shock" ? "Rising activity" : "Rising";
+  if (lower.includes("stable")) return "Stable";
+  return label;
+}
+
+function trendBadgeClass(label: string): string {
+  const lower = label.toLowerCase();
+  if (lower.includes("limited")) return "stint-trend-badge muted";
+  if (lower.includes("rising") || lower.includes("contact") || lower.includes("scrape")) return "stint-trend-badge warn";
+  if (lower.includes("stable")) return "stint-trend-badge stable";
+  return "stint-trend-badge";
+}
+
 function paceQualityColor(score: number | null | undefined): string {
   if (score == null) return "#8d9aaa";
   if (score >= 85) return "#22c55e";
@@ -358,6 +378,7 @@ export function LapsTab({ overview }: LapsTabProps) {
   const [baselineStintId, setBaselineStintId] = useState<string | null>(null);
   const [testStintId, setTestStintId] = useState<string | null>(null);
   const [stintCompare, setStintCompare] = useState<StintCompareResult | null>(null);
+  const [showAllStintWindows, setShowAllStintWindows] = useState(false);
   const [expandedLap, setExpandedLap] = useState<number | null>(null);
   const [stintMode, setStintMode] = useState<StintMode>("ev");
   const [subview, setSubview] = useState<LapsSubview>("current");
@@ -447,7 +468,10 @@ export function LapsTab({ overview }: LapsTabProps) {
     [windowsData],
   );
 
-  const stints = useMemo(() => stintData?.stints ?? [], [stintData]);
+  const stints = useMemo(
+    () => showAllStintWindows ? (stintData?.all_windows ?? []) : (stintData?.primary_stints ?? stintData?.stints ?? []),
+    [showAllStintWindows, stintData],
+  );
   const baselineStint = useMemo(
     () => stints.find((stint) => stint.stint_id === baselineStintId) ?? null,
     [baselineStintId, stints],
@@ -460,6 +484,22 @@ export function LapsTab({ overview }: LapsTabProps) {
     () => [...stints].sort((left, right) => (right.setup_usefulness_score ?? -1) - (left.setup_usefulness_score ?? -1))[0]?.stint_id ?? null,
     [stints],
   );
+  const bestSustainedStint = useMemo(
+    () => stints.find((stint) => stint.is_best_for_size && stint.lap_count >= 20)
+      ?? stints.find((stint) => stint.is_best_for_size)
+      ?? null,
+    [stints],
+  );
+  const bucketLabels = useMemo(() => [
+    "L1-5",
+    "L6-10",
+    "L11-15",
+    "L16-20",
+    "L21-25",
+    "L26-30",
+    "L31-35",
+    "L36-40",
+  ], []);
 
   const bestWindow = useMemo(
     () => [...availableBestWindows].sort((left, right) => candidateScore(right) - candidateScore(left))[0] ?? null,
@@ -1198,11 +1238,24 @@ export function LapsTab({ overview }: LapsTabProps) {
 
           {stintData?.warnings && stintData.warnings.length > 0 && (
             <div className="laps-chip-row" style={{ marginBottom: 10 }}>
-              {stintData.warnings.slice(0, 3).map((warning) => (
+              {stintData.warnings.slice(0, 4).map((warning) => (
                 <span key={warning} className="lap-flag-badge" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>{warning}</span>
               ))}
             </div>
           )}
+
+          <div className="stint-run-summary">
+            <div>
+              <span className="eyebrow">Run / Setup</span>
+              <strong>{overview.session.setup_name ?? "Setup unknown"}</strong>
+              <span className="muted">{overview.session.track_display_name ?? overview.session.track_name ?? "-"} - {overview.session.car_name ?? "-"}</span>
+            </div>
+            <div><span>Total</span><strong>{windowsData?.total_laps ?? laps.length}</strong></div>
+            <div><span>Valid</span><strong>{windowsData?.total_valid_laps ?? usefulLaps.length}</strong></div>
+            <div><span>Best Lap</span><strong>{formatTime(bestTime)}</strong></div>
+            <div><span>Best Sustained</span><strong>{bestSustainedStint ? `${bestSustainedStint.display_label_short} ${formatTime(bestSustainedStint.avg_lap_time)}` : "-"}</strong></div>
+            <div><span>Data</span><strong>{stintData?.warnings?.length ? "Limited" : "Ready"}</strong></div>
+          </div>
 
           {baselineStint && testStint && (
             <div className="stint-compare-panel">
@@ -1229,9 +1282,10 @@ export function LapsTab({ overview }: LapsTabProps) {
               <div className="stint-compare-metrics">
                 <div><span>Avg</span><strong>{formatSignedDelta(stintCompare?.avg_delta)}</strong></div>
                 <div><span>Best</span><strong>{formatSignedDelta(stintCompare?.best_delta)}</strong></div>
-                <div><span>Best 5</span><strong>{formatSignedDelta(stintCompare?.rolling_5_delta)}</strong></div>
-                <div><span>Best 10</span><strong>{formatSignedDelta(stintCompare?.rolling_10_delta)}</strong></div>
-                <div><span>Best 20</span><strong>{formatSignedDelta(stintCompare?.rolling_20_delta)}</strong></div>
+                {bucketLabels.slice(0, 4).map((label) => {
+                  const bucketDelta = stintCompare?.bucket_deltas.find((bucket) => bucket.label === label);
+                  return <div key={label}><span>{label}</span><strong>{formatSignedDelta(bucketDelta?.delta)}</strong></div>;
+                })}
                 <div><span>Falloff</span><strong>{formatSignedDelta(stintCompare?.falloff_delta)}</strong></div>
                 <div><span>Consistency</span><strong>{formatSignedDelta(stintCompare?.consistency_delta)}</strong></div>
               </div>
@@ -1247,21 +1301,33 @@ export function LapsTab({ overview }: LapsTabProps) {
 
           {stintsLoading && <p className="muted">Loading stint windows...</p>}
           {!stintsLoading && stints.length === 0 && (
-            <p className="muted">No stint windows are available yet. Need at least 5 valid imported laps and 60% valid data in a candidate window.</p>
+            <div className="stint-empty-state">
+              <h3>No eligible stint windows yet.</h3>
+              <p>Need at least 5 valid laps for short windows and 10+ valid laps for a useful long-run read.</p>
+              <p className="muted">Out laps, pit laps, cooldowns, wrecks, and invalid laps are excluded.</p>
+              <p className="muted">Import or select a longer clean run to unlock Stint Intelligence.</p>
+            </div>
           )}
           {!stintsLoading && stints.length > 0 && (
+            <>
+            <div className="section-heading-row" style={{ margin: "4px 0 8px" }}>
+              <span className="muted">{showAllStintWindows ? "Showing alternate windows" : "Showing curated timing-sheet rows"}</span>
+              {(stintData?.all_windows?.length ?? 0) > stints.length && (
+                <button className="secondary-button" onClick={() => setShowAllStintWindows((open) => !open)}>
+                  {showAllStintWindows ? "Show curated rows" : "Show all windows"}
+                </button>
+              )}
+            </div>
             <div className="stint-table-wrap">
-              <table className="compact-table stint-table">
+              <table className="compact-table stint-table timing-sheet-table">
                 <thead>
                   <tr>
-                    <th>Run / Setup</th>
-                    <th>Stint / Window</th>
+                    <th>Type</th>
                     <th>Laps</th>
+                    <th>Valid</th>
                     <th>Best</th>
                     <th>Avg</th>
-                    <th>Best 5</th>
-                    <th>Best 10</th>
-                    <th>Best 20</th>
+                    {bucketLabels.map((label) => <th key={label}>{label}</th>)}
                     <th>Falloff</th>
                     <th>Consistency</th>
                     <th>Tire</th>
@@ -1278,36 +1344,44 @@ export function LapsTab({ overview }: LapsTabProps) {
                     const isStrongest = strongestSetupStintId === stint.stint_id;
                     const hasLimitedWarning = stint.warnings.some((warning) => /limited|shorter|excluded/i.test(warning));
                     const window = stintToWindowSummary(stint);
-                    const bucketValues = [stint.rolling_5_avg_best, stint.rolling_10_avg_best, stint.rolling_20_avg_best].filter((value): value is number => value != null);
-                    const bestBucket = bucketValues.length > 0 ? Math.min(...bucketValues) : null;
                     return (
                       <tr
                         key={stint.stint_id}
-                        className={`${isBaseline ? "stint-row-baseline" : ""} ${isTest ? "stint-row-test" : ""} ${isStrongest ? "stint-row-strongest" : ""}`}
+                        className={`${isBaseline ? "stint-row-baseline" : ""} ${isTest ? "stint-row-test" : ""} ${isStrongest ? "stint-row-strongest" : ""} ${hasLimitedWarning ? "stint-row-limited" : ""}`}
                       >
                         <td>
-                          <strong>{stint.setup_name ?? overview.session.setup_name ?? "Setup unknown"}</strong>
-                          <div className="muted">{stint.track_name ?? overview.session.track_display_name ?? overview.session.track_name ?? "-"}</div>
-                        </td>
-                        <td>
-                          <strong>{formatStintRange(stint)}</strong>
+                          <strong>{stint.display_label_short}</strong>
+                          <div className="muted">{formatStintRange(stint)}</div>
                           <div className="laps-chip-row compact">
-                            <span className="lap-flag-badge">{stint.stint_label}</span>
+                            <span className={trendBadgeClass(stint.stint_label)}>{stint.stint_label}</span>
                             {isStrongest && <span className="lap-flag-badge">Top EV</span>}
                             {hasLimitedWarning && <span className="lap-flag-badge" style={{ color: "#f59e0b" }}>Limited</span>}
                           </div>
                         </td>
-                        <td>{stint.valid_lap_count}/{stint.lap_count}</td>
+                        <td>{stint.lap_count}</td>
+                        <td>{stint.valid_lap_count}</td>
                         <td>{formatTime(stint.best_lap_time)}</td>
                         <td>{formatTime(stint.avg_lap_time)}</td>
-                        <td className={bestBucket === stint.rolling_5_avg_best ? "best-bucket-cell" : ""}>{formatTime(stint.rolling_5_avg_best)}</td>
-                        <td className={bestBucket === stint.rolling_10_avg_best ? "best-bucket-cell" : ""}>{formatTime(stint.rolling_10_avg_best)}</td>
-                        <td className={bestBucket === stint.rolling_20_avg_best ? "best-bucket-cell" : ""}>{formatTime(stint.rolling_20_avg_best)}</td>
-                        <td>{stint.falloff_total != null ? `${stint.falloff_total > 0 ? "+" : ""}${stint.falloff_total.toFixed(2)}s` : "-"}</td>
+                        {bucketLabels.map((label) => {
+                          const bucket = stint.bucket_averages.find((item) => item.label === label);
+                          const bucketClass = bucket?.is_fastest_bucket
+                            ? "stint-bucket-cell fastest"
+                            : bucket?.delta_from_best_bucket != null && bucket.delta_from_best_bucket > 0.35
+                              ? "stint-bucket-cell falloff"
+                              : bucket?.avg_lap_time == null
+                                ? "stint-bucket-cell unavailable"
+                                : "stint-bucket-cell";
+                          return (
+                            <td key={label} className={bucketClass} title={bucket?.warning ?? undefined}>
+                              {formatTime(bucket?.avg_lap_time)}
+                            </td>
+                          );
+                        })}
+                        <td className={stint.falloff_total != null && stint.falloff_total > 0.5 ? "falloff-warn-cell" : ""}>{stint.falloff_total != null ? `${stint.falloff_total > 0 ? "+" : ""}${stint.falloff_total.toFixed(2)}s` : "-"}</td>
                         <td>{formatScore(stint.consistency_score)}</td>
-                        <td>{stint.tire_trend_label}</td>
-                        <td>{stint.platform_trend_label}</td>
-                        <td>{stint.shock_trend_label}</td>
+                        <td><span className={trendBadgeClass(stint.tire_trend_label)}>{compactTrendLabel("tire", stint.tire_trend_label)}</span></td>
+                        <td><span className={trendBadgeClass(stint.platform_trend_label)}>{compactTrendLabel("platform", stint.platform_trend_label)}</span></td>
+                        <td><span className={trendBadgeClass(stint.shock_trend_label)}>{compactTrendLabel("shock", stint.shock_trend_label)}</span></td>
                         <td style={{ color: paceQualityColor(stint.setup_usefulness_score) }}>{formatScore(stint.setup_usefulness_score)}</td>
                         <td>
                           <div className="laps-action-row compact">
@@ -1323,6 +1397,7 @@ export function LapsTab({ overview }: LapsTabProps) {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </section>
       )}
