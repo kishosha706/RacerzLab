@@ -23,6 +23,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[api,parquet,dev]"
 
+      - name: Validate setup knowledge data
+        run: python -c "from racelab_engine.knowledge.setup.loader import load_setup_knowledge; load_setup_knowledge()"
+
       - name: Run backend tests
         run: python -B -m pytest -m "not slow and not integration" -q --durations=25
 

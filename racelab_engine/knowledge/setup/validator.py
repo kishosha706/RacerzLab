@@ -92,7 +92,7 @@ def validate_setup_knowledge(knowledge) -> list[str]:
 def _contains_banned_certainty(text: str) -> bool:
     if "guaranteed" in text or "will fix" in text or "universal truth" in text:
         return True
-    return bool(re.search(r"(?<!not\\s)\\balways\\b", text))
+    return bool(re.search(r"(?<!not\s)\balways\b", text))
 
 
 def _validate_effect(
