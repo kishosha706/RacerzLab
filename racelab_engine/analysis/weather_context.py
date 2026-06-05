@@ -10,9 +10,6 @@ Standard reference: rho_standard = 1.225 kg/m³ at 15°C, 1013.25 hPa
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
-
-
 @dataclass
 class WeatherContext:
     air_density_kg_m3: float | None = None
