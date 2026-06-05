@@ -6344,6 +6344,35 @@ button:focus:not(:focus-visible) {
   gap: 3px;
 }
 
+.stint-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0;
+  padding: 9px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 6px;
+  background: rgba(8, 12, 18, 0.64);
+}
+
+.stint-filter-bar .eyebrow,
+.stint-filter-bar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stint-filter-bar label {
+  min-height: 28px;
+  padding: 4px 7px;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  color: #cbd5e1;
+  background: rgba(13, 17, 23, 0.82);
+  font-size: 12px;
+}
+
 .stint-alternate-window-panel {
   display: grid;
   gap: 8px;
@@ -6431,6 +6460,51 @@ button:focus:not(:focus-visible) {
 .stint-chart-label {
   fill: #8d9aaa;
   font-size: 11px;
+}
+
+.stint-chart-point {
+  cursor: pointer;
+  opacity: 0.9;
+  stroke: #090d14;
+  stroke-width: 1;
+}
+
+.stint-chart-point.invalid {
+  opacity: 0.38;
+}
+
+.stint-chart-fastest-marker {
+  fill: none;
+  stroke: #facc15;
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.stint-chart-selected-marker {
+  fill: none;
+  stroke: #e5e7eb;
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.stint-graph-tooltip {
+  position: fixed;
+  z-index: 30;
+  display: grid;
+  gap: 3px;
+  min-width: 190px;
+  padding: 9px;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 6px;
+  color: #cbd5e1;
+  background: rgba(9, 13, 20, 0.96);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.34);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.stint-graph-tooltip strong {
+  color: #e5e7eb;
 }
 
 .stint-graph-legend {
@@ -6540,6 +6614,80 @@ button:focus:not(:focus-visible) {
 .stint-history-stint-row.selected {
   border-color: rgba(56, 189, 248, 0.45);
   background: rgba(56, 189, 248, 0.08);
+}
+
+.stint-summary-drawer {
+  position: sticky;
+  bottom: 12px;
+  z-index: 12;
+  display: grid;
+  gap: 10px;
+  max-height: min(620px, 72vh);
+  margin-top: 14px;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 6px;
+  background: rgba(8, 12, 18, 0.96);
+  box-shadow: 0 -10px 36px rgba(0, 0, 0, 0.28);
+}
+
+.stint-summary-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.stint-summary-drawer-header h3 {
+  margin: 2px 0 4px;
+  font-size: 16px;
+}
+
+.stint-summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  background: #1f2937;
+}
+
+.stint-summary-metrics div {
+  display: grid;
+  gap: 3px;
+  min-height: 48px;
+  padding: 8px;
+  background: #0d1117;
+}
+
+.stint-summary-metrics span {
+  color: #8d9aaa;
+  font-size: 11px;
+}
+
+.stint-summary-metrics strong {
+  color: #e5e7eb;
+  font-size: 13px;
+}
+
+.stint-summary-table-wrap {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+}
+
+.stint-summary-lap-table {
+  min-width: 1180px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.stint-summary-lap-table th,
+.stint-summary-lap-table td {
+  white-space: nowrap;
 }
 
 .stint-run-summary {

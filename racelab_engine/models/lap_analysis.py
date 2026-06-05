@@ -211,6 +211,10 @@ class StintGraphPoint(BaseModel):
     valid: bool = False
     delta_to_best: Optional[float] = None
     rolling_5: Optional[float] = None
+    avg_speed_mph: Optional[float] = None
+    max_speed_mph: Optional[float] = None
+    min_speed_mph: Optional[float] = None
+    fuel: Optional[float] = None
     warning: Optional[str] = None
 
 

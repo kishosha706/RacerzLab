@@ -5,14 +5,18 @@ import {
   ChevronRight,
   CheckCircle2,
   Clock,
+  Download,
   Gauge,
   LineChart,
   Layers,
   List,
   MapPin,
+  SlidersHorizontal,
+  Star,
   Target,
   TrendingDown,
   Trophy,
+  X,
 } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { compareStints, fetchLapWindows, fetchRunList, fetchStints } from "../api/client";
@@ -54,6 +58,21 @@ type StintGraphRenderPoint = {
   lapNumber: number;
   y: number;
   valid: boolean;
+  lapTime: number | null;
+  deltaToBest: number | null;
+  rolling5: number | null;
+  warning: string | null;
+  sourceLabel: string;
+  color: string;
+  screenX: number;
+  screenY: number;
+};
+
+type StintGraphRawPoint = Omit<StintGraphRenderPoint, "sourceLabel" | "color" | "screenX" | "screenY">;
+
+type StintGraphHover = StintGraphRenderPoint & {
+  clientX: number;
+  clientY: number;
 };
 
 function stintChartPolyline(
@@ -100,6 +119,16 @@ function formatSignedDelta(seconds: number | null | undefined): string {
 
 function formatScore(score: number | null | undefined): string {
   return score == null || Number.isNaN(score) ? "-" : score.toFixed(0);
+}
+
+function formatOptionalNumber(value: number | null | undefined, digits = 1): string {
+  return value == null || Number.isNaN(value) ? "-" : value.toFixed(digits);
+}
+
+function csvCell(value: string | number | boolean | null | undefined): string {
+  if (value == null) return "";
+  const text = String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 function formatWindowRange(window: Pick<LapWindowSummary, "start_lap" | "end_lap">): string {
@@ -417,6 +446,14 @@ export function LapsTab({ overview }: LapsTabProps) {
   const [stintGraphMode, setStintGraphMode] = useState<StintGraphMode>("lap_time");
   const [showRolling5, setShowRolling5] = useState(false);
   const [excludeInvalidGraphLaps, setExcludeInvalidGraphLaps] = useState(true);
+  const [currentRunOnlyFilter, setCurrentRunOnlyFilter] = useState(false);
+  const [sameCarTrackOnlyFilter, setSameCarTrackOnlyFilter] = useState(false);
+  const [graphedOnlyFilter, setGraphedOnlyFilter] = useState(false);
+  const [hideInvalidRowsFilter, setHideInvalidRowsFilter] = useState(false);
+  const [summaryDrawerStintId, setSummaryDrawerStintId] = useState<string | null>(null);
+  const [hoveredGraphPoint, setHoveredGraphPoint] = useState<StintGraphHover | null>(null);
+  const [selectedGraphLap, setSelectedGraphLap] = useState<{ stintId: string; lapNumber: number } | null>(null);
+  const [pinnedRunIds, setPinnedRunIds] = useState<Set<string>>(() => new Set());
   const [expandedRunIds, setExpandedRunIds] = useState<Set<string>>(() => new Set([overview.run_id]));
   const [historyStintData, setHistoryStintData] = useState<Record<string, StintResponse>>({});
   const [historyStintsLoading, setHistoryStintsLoading] = useState<Record<string, boolean>>({});
@@ -442,6 +479,9 @@ export function LapsTab({ overview }: LapsTabProps) {
   useEffect(() => {
     setExpandedRunIds(new Set([overview.run_id]));
     setGraphStintIds([]);
+    setSummaryDrawerStintId(null);
+    setHoveredGraphPoint(null);
+    setSelectedGraphLap(null);
     setHistoryStintData({});
     setHistoryStintsLoading({});
   }, [overview.run_id]);
@@ -458,6 +498,7 @@ export function LapsTab({ overview }: LapsTabProps) {
     setTestStintId(null);
     setSelectedStintId(null);
     setGraphStintIds([]);
+    setSummaryDrawerStintId(null);
     setStintCompare(null);
     setStintCompareError(null);
     fetchStints(overview.run_id)
@@ -878,13 +919,18 @@ export function LapsTab({ overview }: LapsTabProps) {
               ? point.rolling_5
               : point.lap_time,
           valid: point.valid,
+          lapTime: point.lap_time,
+          deltaToBest: point.delta_to_best,
+          rolling5: point.rolling_5,
+          warning: point.warning,
         }))
-        .filter((point): point is { x: number; lapNumber: number; y: number; valid: boolean } => point.y != null);
+        .filter((point): point is StintGraphRawPoint => point.y != null);
       const rows = [{
         id: stint.stint_id,
         label: `${stint.display_label_short} ${formatStintRange(stint)}`,
         color: baselineStintId === stint.stint_id ? "#38bdf8" : testStintId === stint.stint_id ? "#f59e0b" : colors[index % colors.length],
         dashed: false,
+        stint,
         points: basePoints,
       }];
       if (showRolling5 && stintGraphMode === "lap_time") {
@@ -895,14 +941,19 @@ export function LapsTab({ overview }: LapsTabProps) {
             lapNumber: point.lap_number,
             y: point.rolling_5,
             valid: point.valid,
+            lapTime: point.lap_time,
+            deltaToBest: point.delta_to_best,
+            rolling5: point.rolling_5,
+            warning: point.warning,
           }))
-          .filter((point): point is { x: number; lapNumber: number; y: number; valid: boolean } => point.y != null);
+          .filter((point): point is StintGraphRawPoint => point.y != null);
         if (rollingPoints.length > 0) {
           rows.push({
             id: `${stint.stint_id}:rolling5`,
             label: `${stint.display_label_short} rolling 5`,
             color: colors[index % colors.length],
             dashed: true,
+            stint,
             points: rollingPoints,
           });
         }
@@ -911,21 +962,162 @@ export function LapsTab({ overview }: LapsTabProps) {
     });
     const allPoints = series.flatMap((item) => item.points);
     if (allPoints.length === 0) {
-      return { series, xMin: 1, xMax: 1, yMin: 0, yMax: 1 };
+      return {
+        series: series.map((item) => ({ ...item, points: [] as StintGraphRenderPoint[] })),
+        xMin: 1,
+        xMax: 1,
+        yMin: 0,
+        yMax: 1,
+      };
     }
     const xMin = Math.min(...allPoints.map((point) => point.x));
     const xMax = Math.max(...allPoints.map((point) => point.x));
     const yMinRaw = Math.min(...allPoints.map((point) => point.y));
     const yMaxRaw = Math.max(...allPoints.map((point) => point.y));
     const yPad = Math.max(0.05, (yMaxRaw - yMinRaw) * 0.12);
+    const xSpan = Math.max(1, Math.max(xMin + 1, xMax) - xMin);
+    const ySpan = Math.max(0.001, (yMaxRaw + yPad) - (yMinRaw - yPad));
+    const yMin = yMinRaw - yPad;
+    const yMax = yMaxRaw + yPad;
+    const width = 720;
+    const height = 260;
+    const padLeft = 42;
+    const padRight = 16;
+    const padTop = 16;
+    const padBottom = 28;
+    const seriesWithCoords = series.map((item) => ({
+      ...item,
+      points: item.points.map((point) => ({
+        ...point,
+        sourceLabel: item.label,
+        color: item.color,
+        screenX: padLeft + ((point.x - xMin) / xSpan) * (width - padLeft - padRight),
+        screenY: padTop + (1 - ((point.y - yMin) / ySpan)) * (height - padTop - padBottom),
+      })),
+    }));
     return {
-      series,
+      series: seriesWithCoords,
       xMin,
       xMax: Math.max(xMin + 1, xMax),
-      yMin: yMinRaw - yPad,
-      yMax: yMaxRaw + yPad,
+      yMin,
+      yMax,
     };
   }, [baselineStintId, excludeInvalidGraphLaps, graphStints, showRolling5, stintGraphMode, testStintId]);
+
+  const summaryDrawerStint = useMemo(
+    () => summaryDrawerStintId
+      ? stintSelectionCandidates.find((stint) => stint.stint_id === summaryDrawerStintId) ?? null
+      : null,
+    [stintSelectionCandidates, summaryDrawerStintId],
+  );
+
+  const visibleStints = useMemo(
+    () => stints.filter((stint) => {
+      if (graphedOnlyFilter && !graphStintIds.includes(stint.stint_id)) return false;
+      if (hideInvalidRowsFilter && stint.valid_lap_count < stint.lap_count) return false;
+      return true;
+    }),
+    [graphStintIds, graphedOnlyFilter, hideInvalidRowsFilter, stints],
+  );
+
+  const visibleBestWindowCards = useMemo(
+    () => bestWindowCards.filter((stint) => {
+      if (graphedOnlyFilter && !graphStintIds.includes(stint.stint_id)) return false;
+      if (hideInvalidRowsFilter && stint.valid_lap_count < stint.lap_count) return false;
+      return true;
+    }),
+    [bestWindowCards, graphStintIds, graphedOnlyFilter, hideInvalidRowsFilter],
+  );
+
+  const visibleRunHistory = useMemo(
+    () => runHistory.filter((run) => {
+      if (currentRunOnlyFilter && run.run_id !== overview.run_id) return false;
+      if (sameCarTrackOnlyFilter && run.run_id !== overview.run_id) {
+        const trackName = overview.session.track_display_name ?? overview.session.track_name ?? null;
+        if (run.car_name !== overview.session.car_name || run.track_name !== trackName) return false;
+      }
+      if (graphedOnlyFilter && run.run_id !== overview.run_id) {
+        const response = historyStintData[run.run_id];
+        const ids = [
+          ...(response?.stint_rows ?? []),
+          ...(response?.best_window_cards ?? []),
+          ...(response?.all_windows ?? []),
+        ].map((stint) => stint.stint_id);
+        if (!ids.some((id) => graphStintIds.includes(id))) return false;
+      }
+      return true;
+    }).sort((left, right) => {
+      const leftPinned = pinnedRunIds.has(left.run_id);
+      const rightPinned = pinnedRunIds.has(right.run_id);
+      if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
+      return 0;
+    }),
+    [currentRunOnlyFilter, graphStintIds, graphedOnlyFilter, historyStintData, overview.run_id, overview.session.car_name, overview.session.track_display_name, overview.session.track_name, pinnedRunIds, runHistory, sameCarTrackOnlyFilter],
+  );
+
+  const exportSelectedStintsCsv = useCallback(() => {
+    const selectedForExport = (graphStintIds.length > 0 ? graphStintIds : selectedStint ? [selectedStint.stint_id] : [])
+      .map((id) => stintSelectionCandidates.find((stint) => stint.stint_id === id))
+      .filter((stint): stint is StintSummary => stint != null);
+    if (selectedForExport.length === 0) return;
+    const headers = [
+      "run_id",
+      "setup_name",
+      "track_name",
+      "car_name",
+      "session_date",
+      "stint_id",
+      "stint_label",
+      "lap_number",
+      "stint_lap",
+      "lap_time",
+      "delta_to_best",
+      "rolling_5",
+      "valid",
+      "invalid_reason",
+      "avg_speed_mph",
+      "max_speed_mph",
+      "min_speed_mph",
+      "fuel",
+      "tire_trend_label",
+      "platform_trend_label",
+      "shock_trend_label",
+    ];
+    const rows = selectedForExport.flatMap((stint) => stint.lap_points.map((point) => [
+      stint.run_id,
+      stint.setup_name,
+      stint.track_name,
+      stint.car_name,
+      stint.session_date,
+      stint.stint_id,
+      stint.display_label_short,
+      point.lap_number,
+      point.stint_lap,
+      point.lap_time,
+      point.delta_to_best,
+      point.rolling_5,
+      point.valid,
+      point.warning,
+      point.avg_speed_mph,
+      point.max_speed_mph,
+      point.min_speed_mph,
+      point.fuel,
+      stint.tire_trend_label,
+      stint.platform_trend_label,
+      stint.shock_trend_label,
+    ]));
+    const csv = [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    link.href = url;
+    link.download = `racelab-stints-${stamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, [graphStintIds, selectedStint, stintSelectionCandidates]);
 
   const compareRoleForLap = useCallback((lapNumber: number): string | null => {
     if (basket.baseline?.run_id === overview.run_id && basket.baseline.lap_scope !== "lap_window" && basket.baseline.lap_number === lapNumber) return "Baseline";
@@ -1453,6 +1645,9 @@ export function LapsTab({ overview }: LapsTabProps) {
               <button className="secondary-button" onClick={() => selectedStint && addStintToGraph(selectedStint.stint_id)} disabled={!selectedStint}>
                 <LineChart size={14} /> Graph Selected
               </button>
+              <button className="secondary-button" onClick={exportSelectedStintsCsv} disabled={graphStintIds.length === 0 && !selectedStint}>
+                <Download size={14} /> Export Selected CSV
+              </button>
             </div>
           </div>
 
@@ -1477,6 +1672,27 @@ export function LapsTab({ overview }: LapsTabProps) {
             <div><span>Data</span><strong>{stintData?.run_summary?.data_status ?? (stintData?.warnings?.length ? "Limited" : "Ready")}</strong></div>
           </div>
 
+          <div className="stint-filter-bar">
+            <span className="eyebrow"><SlidersHorizontal size={13} /> Filters</span>
+            <label><input type="checkbox" checked={currentRunOnlyFilter} onChange={(event) => setCurrentRunOnlyFilter(event.currentTarget.checked)} /> Current run only</label>
+            <label><input type="checkbox" checked={sameCarTrackOnlyFilter} onChange={(event) => setSameCarTrackOnlyFilter(event.currentTarget.checked)} /> Same car/track only</label>
+            <label><input type="checkbox" checked={graphedOnlyFilter} onChange={(event) => setGraphedOnlyFilter(event.currentTarget.checked)} /> Graphed only</label>
+            <label><input type="checkbox" checked={hideInvalidRowsFilter} onChange={(event) => setHideInvalidRowsFilter(event.currentTarget.checked)} /> Hide invalid/caution laps</label>
+            <button className="secondary-button" onClick={() => setExpandedRunIds(new Set([overview.run_id]))}>Collapse all older runs</button>
+            <button className="secondary-button" onClick={() => setExpandedRunIds((runs) => new Set(runs).add(overview.run_id))}>Expand current run</button>
+            <button
+              className="secondary-button"
+              onClick={() => selectedStint && setPinnedRunIds((runs) => {
+                const next = new Set(runs);
+                next.has(selectedStint.run_id) ? next.delete(selectedStint.run_id) : next.add(selectedStint.run_id);
+                return next;
+              })}
+              disabled={!selectedStint}
+            >
+              <Star size={13} /> {selectedStint && pinnedRunIds.has(selectedStint.run_id) ? "Unpin selected run" : "Pin selected run"}
+            </button>
+          </div>
+
           <div className="stint-graph-panel">
             <div className="section-heading-row">
               <div>
@@ -1497,6 +1713,9 @@ export function LapsTab({ overview }: LapsTabProps) {
                 <button className="secondary-button" onClick={() => setGraphStintIds([])} disabled={graphStintIds.length === 0}>
                   Clear Graph
                 </button>
+                <button className="secondary-button" onClick={exportSelectedStintsCsv} disabled={graphStintIds.length === 0 && !selectedStint}>
+                  Export Selected CSV
+                </button>
               </div>
             </div>
             <div className="stint-graph-controls">
@@ -1514,7 +1733,7 @@ export function LapsTab({ overview }: LapsTabProps) {
             </div>
             {graphChart.series.some((series) => series.points.length > 0) ? (
               <div className="stint-graph-canvas">
-                <svg viewBox="0 0 720 260" role="img" aria-label="Selected stint lap-time line chart">
+                <svg viewBox="0 0 720 260" role="img" aria-label="Selected stint lap-time line chart" onMouseLeave={() => setHoveredGraphPoint(null)}>
                   <line x1="42" y1="16" x2="42" y2="232" className="stint-chart-axis" />
                   <line x1="42" y1="232" x2="704" y2="232" className="stint-chart-axis" />
                   <text x="42" y="250" className="stint-chart-label">Lap {graphChart.xMin}</text>
@@ -1533,7 +1752,44 @@ export function LapsTab({ overview }: LapsTabProps) {
                       strokeLinejoin="round"
                     />
                   ))}
+                  {graphChart.series.map((series) => {
+                    const fastest = series.points.reduce<StintGraphRenderPoint | null>((best, point) => {
+                      if (point.lapTime == null) return best;
+                      return best == null || point.lapTime < (best.lapTime ?? Number.POSITIVE_INFINITY) ? point : best;
+                    }, null);
+                    const selectedPoint = selectedGraphLap && series.id === selectedGraphLap.stintId
+                      ? series.points.find((point) => point.lapNumber === selectedGraphLap.lapNumber)
+                      : null;
+                    return (
+                      <React.Fragment key={`${series.id}:markers`}>
+                        {series.points.map((point) => (
+                          <circle
+                            key={`${series.id}:${point.lapNumber}`}
+                            className={`stint-chart-point ${point.valid ? "" : "invalid"}`}
+                            cx={point.screenX}
+                            cy={point.screenY}
+                            r={point.valid ? 3.2 : 2.5}
+                            fill={point.color}
+                            onMouseEnter={(event) => setHoveredGraphPoint({ ...point, clientX: event.clientX, clientY: event.clientY })}
+                            onClick={() => setSelectedGraphLap({ stintId: series.id.replace(":rolling5", ""), lapNumber: point.lapNumber })}
+                          />
+                        ))}
+                        {fastest && <circle className="stint-chart-fastest-marker" cx={fastest.screenX} cy={fastest.screenY} r="6" />}
+                        {selectedPoint && <circle className="stint-chart-selected-marker" cx={selectedPoint.screenX} cy={selectedPoint.screenY} r="8" />}
+                      </React.Fragment>
+                    );
+                  })}
                 </svg>
+                {hoveredGraphPoint && (
+                  <div className="stint-graph-tooltip" style={{ left: hoveredGraphPoint.clientX + 12, top: hoveredGraphPoint.clientY + 12 }}>
+                    <strong>{hoveredGraphPoint.sourceLabel}</strong>
+                    <span>Lap {hoveredGraphPoint.lapNumber}</span>
+                    <span>Lap time {formatTime(hoveredGraphPoint.lapTime)}</span>
+                    <span>Delta {formatSignedDelta(hoveredGraphPoint.deltaToBest)}</span>
+                    <span>Rolling 5 {formatTime(hoveredGraphPoint.rolling5)}</span>
+                    {!hoveredGraphPoint.valid && <span>Invalid: {hoveredGraphPoint.warning ?? "invalid lap"}</span>}
+                  </div>
+                )}
                 <div className="stint-graph-legend">
                   {graphChart.series.map((series) => (
                     <span key={series.id}>
@@ -1594,7 +1850,7 @@ export function LapsTab({ overview }: LapsTabProps) {
           )}
 
           {stintsLoading && <p className="muted">Loading stint windows...</p>}
-          {!stintsLoading && stints.length === 0 && bestWindowCards.length === 0 && (
+          {!stintsLoading && visibleStints.length === 0 && visibleBestWindowCards.length === 0 && (
             <div className="stint-empty-state">
               <h3>No eligible stint windows yet.</h3>
               <p>Need at least 5 valid laps for short windows and 10+ valid laps for a useful long-run read.</p>
@@ -1602,11 +1858,11 @@ export function LapsTab({ overview }: LapsTabProps) {
               <p className="muted">Import or select a longer clean run to unlock Stint Intelligence.</p>
             </div>
           )}
-          {!stintsLoading && (stints.length > 0 || bestWindowCards.length > 0) && (
+          {!stintsLoading && (visibleStints.length > 0 || visibleBestWindowCards.length > 0) && (
             <>
-            {bestWindowCards.length > 0 && (
+            {visibleBestWindowCards.length > 0 && (
               <div className="stint-window-card-row" aria-label="Best rolling stint window summary">
-                {bestWindowCards.map((stint) => {
+                {visibleBestWindowCards.map((stint) => {
                   const isSelected = selectedStint?.stint_id === stint.stint_id;
                   const isBaseline = baselineStintId === stint.stint_id;
                   const isTest = testStintId === stint.stint_id;
@@ -1616,6 +1872,7 @@ export function LapsTab({ overview }: LapsTabProps) {
                       key={stint.stint_id}
                       className={`stint-window-card ${isSelected ? "selected" : ""} ${isBaseline ? "baseline" : ""} ${isTest ? "test" : ""} ${isGraphed ? "graphed" : ""}`}
                       onClick={() => setSelectedStintId(stint.stint_id)}
+                      onDoubleClick={() => setSummaryDrawerStintId(stint.stint_id)}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(event) => {
@@ -1636,6 +1893,7 @@ export function LapsTab({ overview }: LapsTabProps) {
                         <button className="secondary-button" onClick={(event) => { event.stopPropagation(); isGraphed ? removeStintFromGraph(stint.stint_id) : addStintToGraph(stint.stint_id); }}>
                           {isGraphed ? "Ungraph" : "Graph"}
                         </button>
+                        <button className="secondary-button" onClick={(event) => { event.stopPropagation(); setSummaryDrawerStintId(stint.stint_id); }}>Summary</button>
                         <button className="secondary-button" onClick={(event) => { event.stopPropagation(); addToQueue(makeStintBasket(stint, `Stint ${formatStintRange(stint)}`)); }}>Basket</button>
                       </div>
                     </div>
@@ -1661,6 +1919,9 @@ export function LapsTab({ overview }: LapsTabProps) {
                   <button className="secondary-button" onClick={() => addToQueue(makeStintBasket(selectedStint, `Stint ${formatStintRange(selectedStint)}`))}>
                     Basket
                   </button>
+                  <button className="secondary-button" onClick={() => setSummaryDrawerStintId(selectedStint.stint_id)}>
+                    Summary
+                  </button>
                   <button className="secondary-button" onClick={() => graphStintIds.includes(selectedStint.stint_id) ? removeStintFromGraph(selectedStint.stint_id) : addStintToGraph(selectedStint.stint_id)}>
                     {graphStintIds.includes(selectedStint.stint_id) ? "Ungraph" : "Graph"}
                   </button>
@@ -1676,7 +1937,7 @@ export function LapsTab({ overview }: LapsTabProps) {
               </div>
             )}
 
-            {stints.length > 0 && (
+            {visibleStints.length > 0 && (
             <div className="stint-table-wrap">
               <table className="compact-table stint-table timing-sheet-table">
                 <thead>
@@ -1696,7 +1957,7 @@ export function LapsTab({ overview }: LapsTabProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {stints.map((stint) => {
+                  {visibleStints.map((stint) => {
                     const isBaseline = baselineStintId === stint.stint_id;
                     const isTest = testStintId === stint.stint_id;
                     const isSelected = selectedStint?.stint_id === stint.stint_id;
@@ -1707,6 +1968,7 @@ export function LapsTab({ overview }: LapsTabProps) {
                         key={stint.stint_id}
                         className={`${isSelected ? "stint-row-selected" : ""} ${isBaseline ? "stint-row-baseline" : ""} ${isTest ? "stint-row-test" : ""} ${isStrongest ? "stint-row-strongest" : ""} ${hasLimitedWarning ? "stint-row-limited" : ""}`}
                         onClick={() => setSelectedStintId(stint.stint_id)}
+                        onDoubleClick={() => setSummaryDrawerStintId(stint.stint_id)}
                       >
                         <td>
                           <strong>{stint.display_label_short}</strong>
@@ -1781,8 +2043,8 @@ export function LapsTab({ overview }: LapsTabProps) {
                 </div>
                 {runsLoading && <span className="muted">Loading run history...</span>}
               </div>
-              {runHistory.length === 0 && <div className="stint-empty-state"><p className="muted">No imported runs yet.</p></div>}
-              {runHistory.map((run) => {
+              {visibleRunHistory.length === 0 && <div className="stint-empty-state"><p className="muted">No imported runs yet.</p></div>}
+              {visibleRunHistory.map((run) => {
                 const isCurrentRun = run.run_id === overview.run_id;
                 const expanded = expandedRunIds.has(run.run_id);
                 const response = isCurrentRun ? stintData : historyStintData[run.run_id];
@@ -1791,18 +2053,19 @@ export function LapsTab({ overview }: LapsTabProps) {
                 const loading = historyStintsLoading[run.run_id] ?? false;
                 return (
                   <div key={run.run_id} className={`stint-history-run ${isCurrentRun ? "current" : ""}`}>
-                    <button className="stint-history-header" onClick={() => toggleHistoryRun(run.run_id)} aria-expanded={expanded}>
+                    <div className="stint-history-header" onClick={() => toggleHistoryRun(run.run_id)} aria-expanded={expanded} role="button" tabIndex={0}>
                       {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                       <span>
                         <strong>{isCurrentRun ? "Current run" : run.setup_name ?? "Setup unknown"}</strong>
-                        <small>{run.track_name ?? "-"} · {run.car_name ?? "-"} · {run.lap_count ?? response?.run_summary?.total_laps ?? "-"} laps · Best {formatTime(run.best_lap_time ?? run.best_lap_time_s ?? response?.run_summary?.best_lap_time)}</small>
+                        <small>{run.track_name ?? "-"} - {run.car_name ?? "-"} - {run.lap_count ?? response?.run_summary?.total_laps ?? "-"} laps - Best {formatTime(run.best_lap_time ?? run.best_lap_time_s ?? response?.run_summary?.best_lap_time)}</small>
                       </span>
                       <span className="stint-history-summary">
                         <b>Best 5</b> {formatTime(response?.run_summary?.best_5_avg)}
                         <b>Best 10</b> {formatTime(response?.run_summary?.best_10_avg)}
                         <b>Best 20</b> {formatTime(response?.run_summary?.best_20_avg)}
+                        {pinnedRunIds.has(run.run_id) && <b>Pinned</b>}
                       </span>
-                    </button>
+                    </div>
                     {expanded && (
                       <div className="stint-history-body">
                         {isCurrentRun && <p className="muted">Current run cards, graph, and timing sheet are shown above.</p>}
@@ -1814,7 +2077,7 @@ export function LapsTab({ overview }: LapsTabProps) {
                               {runCards.map((stint) => {
                                 const isGraphed = graphStintIds.includes(stint.stint_id);
                                 return (
-                                  <div key={stint.stint_id} className={`stint-window-card compact ${isGraphed ? "graphed" : ""}`} onClick={() => setSelectedStintId(stint.stint_id)} role="button" tabIndex={0}>
+                                  <div key={stint.stint_id} className={`stint-window-card compact ${isGraphed ? "graphed" : ""}`} onClick={() => setSelectedStintId(stint.stint_id)} onDoubleClick={() => setSummaryDrawerStintId(stint.stint_id)} role="button" tabIndex={0}>
                                     <span>{stint.display_label_short}</span>
                                     <strong>{formatTime(stint.avg_lap_time)}</strong>
                                     <small>{formatStintRange(stint)}</small>
@@ -1822,6 +2085,7 @@ export function LapsTab({ overview }: LapsTabProps) {
                                       <button className="secondary-button" onClick={(event) => { event.stopPropagation(); setBaselineStintId(stint.stint_id); }}>Baseline</button>
                                       <button className="secondary-button" onClick={(event) => { event.stopPropagation(); setTestStintId(stint.stint_id); }}>Test</button>
                                       <button className="secondary-button" onClick={(event) => { event.stopPropagation(); isGraphed ? removeStintFromGraph(stint.stint_id) : addStintToGraph(stint.stint_id); }}>{isGraphed ? "Ungraph" : "Graph"}</button>
+                                      <button className="secondary-button" onClick={(event) => { event.stopPropagation(); setSummaryDrawerStintId(stint.stint_id); }}>Summary</button>
                                     </div>
                                   </div>
                                 );
@@ -1829,12 +2093,13 @@ export function LapsTab({ overview }: LapsTabProps) {
                             </div>
                             <div className="stint-history-row-list">
                               {runRows.map((stint) => (
-                                <div key={stint.stint_id} className={`stint-history-stint-row ${selectedStint?.stint_id === stint.stint_id ? "selected" : ""}`} onClick={() => setSelectedStintId(stint.stint_id)} role="button" tabIndex={0}>
+                                <div key={stint.stint_id} className={`stint-history-stint-row ${selectedStint?.stint_id === stint.stint_id ? "selected" : ""}`} onClick={() => setSelectedStintId(stint.stint_id)} onDoubleClick={() => setSummaryDrawerStintId(stint.stint_id)} role="button" tabIndex={0}>
                                   <span><strong>{stint.display_label_short}</strong> {formatStintRange(stint)}</span>
                                   <span>Avg {formatTime(stint.avg_lap_time)}</span>
                                   <span>Valid {stint.valid_lap_count}/{stint.lap_count}</span>
                                   <span className="laps-action-row compact">
                                     <button className="secondary-button" onClick={(event) => { event.stopPropagation(); addStintToGraph(stint.stint_id); }}>Graph</button>
+                                    <button className="secondary-button" onClick={(event) => { event.stopPropagation(); setSummaryDrawerStintId(stint.stint_id); }}>Summary</button>
                                     <button className="secondary-button" onClick={(event) => { event.stopPropagation(); setBaselineStintId(stint.stint_id); }}>Baseline</button>
                                     <button className="secondary-button" onClick={(event) => { event.stopPropagation(); setTestStintId(stint.stint_id); }}>Test</button>
                                   </span>
@@ -1850,6 +2115,78 @@ export function LapsTab({ overview }: LapsTabProps) {
               })}
             </div>
             </>
+          )}
+          {summaryDrawerStint && (
+            <aside className="stint-summary-drawer" aria-label="Stint Summary">
+              <div className="stint-summary-drawer-header">
+                <div>
+                  <span className="eyebrow">Stint Summary</span>
+                  <h3>{summaryDrawerStint.display_label_short} - {formatStintRange(summaryDrawerStint)}</h3>
+                  <p className="section-note">
+                    {summaryDrawerStint.setup_name ?? "Setup unknown"} - {summaryDrawerStint.track_name ?? "-"} - {summaryDrawerStint.car_name ?? "-"}
+                  </p>
+                </div>
+                <button className="secondary-button" onClick={() => setSummaryDrawerStintId(null)} aria-label="Close stint summary">
+                  <X size={14} /> Close
+                </button>
+              </div>
+              <div className="stint-summary-metrics">
+                <div><span>Valid</span><strong>{summaryDrawerStint.valid_lap_count}/{summaryDrawerStint.lap_count}</strong></div>
+                <div><span>Best</span><strong>{formatTime(summaryDrawerStint.best_lap_time)}</strong></div>
+                <div><span>Average</span><strong>{formatTime(summaryDrawerStint.avg_lap_time)}</strong></div>
+                <div><span>Falloff</span><strong>{summaryDrawerStint.falloff_total != null ? `${summaryDrawerStint.falloff_total > 0 ? "+" : ""}${summaryDrawerStint.falloff_total.toFixed(2)}s` : "-"}</strong></div>
+                <div><span>Consistency</span><strong>{formatScore(summaryDrawerStint.consistency_score)}</strong></div>
+                <div><span>Setup EV</span><strong>{formatScore(summaryDrawerStint.setup_usefulness_score)}</strong></div>
+              </div>
+              <div className="laps-chip-row">
+                <span className={trendBadgeClass(summaryDrawerStint.tire_trend_label)}>{summaryDrawerStint.tire_trend_label}</span>
+                <span className={trendBadgeClass(summaryDrawerStint.platform_trend_label)}>{summaryDrawerStint.platform_trend_label}</span>
+                <span className={trendBadgeClass(summaryDrawerStint.shock_trend_label)}>{summaryDrawerStint.shock_trend_label}</span>
+                <span className="lap-flag-badge">Run {summaryDrawerStint.run_id}</span>
+              </div>
+              <div className="stint-summary-table-wrap">
+                <table className="compact-table stint-summary-lap-table">
+                  <thead>
+                    <tr>
+                      <th>Lap</th>
+                      <th>Stint Lap</th>
+                      <th>Lap Time</th>
+                      <th>Delta</th>
+                      <th>Rolling 5</th>
+                      <th>Status</th>
+                      <th>Reason</th>
+                      <th>Avg MPH</th>
+                      <th>Max MPH</th>
+                      <th>Min MPH</th>
+                      <th>Fuel</th>
+                      <th>Tire</th>
+                      <th>Platform</th>
+                      <th>Shock</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summaryDrawerStint.lap_points.map((point) => (
+                      <tr key={`${summaryDrawerStint.stint_id}:${point.lap_number}`} className={selectedGraphLap?.lapNumber === point.lap_number ? "stint-row-selected" : ""}>
+                        <td>{point.lap_number}</td>
+                        <td>{point.stint_lap}</td>
+                        <td>{formatTime(point.lap_time)}</td>
+                        <td>{formatSignedDelta(point.delta_to_best)}</td>
+                        <td>{formatTime(point.rolling_5)}</td>
+                        <td>{point.valid ? "Valid" : "Invalid"}</td>
+                        <td>{point.warning ?? "-"}</td>
+                        <td>{formatOptionalNumber(point.avg_speed_mph)}</td>
+                        <td>{formatOptionalNumber(point.max_speed_mph)}</td>
+                        <td>{formatOptionalNumber(point.min_speed_mph)}</td>
+                        <td>{formatOptionalNumber(point.fuel)}</td>
+                        <td>{compactTrendLabel("tire", summaryDrawerStint.tire_trend_label)}</td>
+                        <td>{compactTrendLabel("platform", summaryDrawerStint.platform_trend_label)}</td>
+                        <td>{compactTrendLabel("shock", summaryDrawerStint.shock_trend_label)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </aside>
           )}
         </section>
       )}

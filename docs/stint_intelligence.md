@@ -22,6 +22,17 @@ The default Laps view is curated on purpose. It shows meaningful stint rows only
 
 Selecting either a full-run row or a best-window card drives the toolbar actions for baseline, test, compare basket, and Platform focus. The timing sheet itself does not include a default Actions column.
 
+## Stint Summary Drawer
+
+Click or double-click a full-run row, best-window card, history stint, or graphed stint to open the Stint Summary drawer. The drawer shows:
+
+- run/setup, track, car, stint label, and lap range
+- valid lap count, best lap, average lap, falloff, consistency, and setup usefulness
+- tire, platform, and shock trend labels
+- lap-by-lap rows with lap number, stint lap, lap time, delta to best, rolling 5, valid status, invalid reason, speed fields, and fuel when present
+
+Unavailable values are shown as missing. RacerZLab does not fill missing speed, fuel, tire, platform, or shock fields with zero.
+
 ## Lap-Time Graph
 
 Laps owns the stint and lap-time workflow. The Stint Intelligence view includes a selected-stint graph panel:
@@ -34,6 +45,8 @@ Laps owns the stint and lap-time workflow. The Stint Intelligence view includes 
 
 The graph uses lap-summary data only. It does not load full telemetry traces, use runtime AI, or invent missing lap-time points.
 
+The graph includes hover details for each plotted point, fastest-lap markers, a selected-lap marker, and muted invalid points when invalid laps are shown. Brush/zoom selection is intentionally deferred until the chart needs deeper lap-range inspection.
+
 ## Run History
 
 The Stint Intelligence view also includes collapsible imported-run history:
@@ -45,6 +58,31 @@ The Stint Intelligence view also includes collapsible imported-run history:
 - expanded history stints and best-window cards can be graphed or assigned as baseline/test inside Laps
 
 Older run details are loaded on demand so the app does not fetch every stint table or lap series up front.
+
+Compact filters keep the screen manageable:
+
+- current run only
+- same car/track only
+- graphed only
+- hide invalid/caution laps
+- collapse all older runs
+- expand current run
+- pin/unpin the selected run
+
+Filters do not eagerly fetch older run details. Older runs still load lazily when expanded.
+
+## CSV Export
+
+`Export Selected CSV` writes the currently graphed stints, or the selected stint when nothing is graphed, to a browser-generated CSV file. The export contains lap/stint summary rows only:
+
+- run and setup metadata
+- stint id and label
+- lap number and stint lap
+- lap time, delta to best, rolling 5, valid status, and invalid reason
+- optional speed and fuel fields when present
+- stint-level tire, platform, and shock labels
+
+Raw telemetry traces are not exported from this workflow.
 
 ## Rolling Averages
 
@@ -123,6 +161,7 @@ Compare remains inside Laps for this workflow. The standalone Compare workspace 
 - Compare currently operates on computed summary rows, not raw time-series overlays.
 - Representative lap selection is preserved for downstream tabs, but Compare still primarily consumes run-level context.
 - Run history stints are fetched lazily; collapsed older runs may show only run-list metadata until expanded.
+- Lap-range brush/zoom is not implemented yet; the current graph focuses on hover, selection, and mode switching.
 
 ## Future Work
 

@@ -22,6 +22,19 @@ def test_laps_tab_includes_stint_intelligence_subview() -> None:
     assert "stint-window-card-row" in source
     assert "stint-selected-toolbar" in source
     assert "stint-graph-panel" in source
+    assert "stint-summary-drawer" in source
+    assert "Stint Summary" in source
+    assert "stint-summary-lap-table" in source
+    assert "stint-graph-tooltip" in source
+    assert "stint-chart-fastest-marker" in source
+    assert "stint-chart-selected-marker" in source
+    assert "stint-filter-bar" in source
+    assert "Current run only" in source
+    assert "Same car/track only" in source
+    assert "Graphed only" in source
+    assert "Hide invalid/caution laps" in source
+    assert "Export Selected CSV" in source
+    assert "exportSelectedStintsCsv" in source
     assert "Graph Selected Stints" in source
     assert "Graph Selected" in source
     assert "Clear Graph" in source
@@ -42,6 +55,8 @@ def test_laps_tab_includes_stint_intelligence_subview() -> None:
     assert "export interface StintBucket" in types
     assert "export interface StintGraphPoint" in types
     assert "lap_points" in types
+    assert "avg_speed_mph" in types
+    assert "fuel" in types
     assert "export interface StintRunSummary" in types
     assert "stint_rows" in types
     assert "best_window_cards" in types

@@ -102,6 +102,14 @@ def _graph_points(laps: list[LapSummary]) -> list[StintGraphPoint]:
     for index, lap in enumerate(ordered, start=1):
         valid, warning = _is_lap_valid_for_ranking(lap)
         lap_time = lap.lap_time if lap.lap_time is not None else None
+        fuel = next(
+            (
+                float(value)
+                for name in ("fuel", "fuel_left", "fuel_level", "fuel_remaining", "fuel_remaining_l")
+                if isinstance((value := getattr(lap, name, None)), (int, float))
+            ),
+            None,
+        )
         rolling_source.append(lap_time if valid else None)
         rolling_5 = None
         if len(rolling_source) >= 5:
@@ -115,6 +123,10 @@ def _graph_points(laps: list[LapSummary]) -> list[StintGraphPoint]:
             valid=valid,
             delta_to_best=lap_time - best_time if lap_time is not None and best_time is not None and valid else None,
             rolling_5=rolling_5,
+            avg_speed_mph=lap.avg_speed_mph,
+            max_speed_mph=lap.max_speed_mph,
+            min_speed_mph=lap.min_speed_mph,
+            fuel=fuel,
             warning=None if valid else warning,
         ))
     return points

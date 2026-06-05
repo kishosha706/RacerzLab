@@ -184,6 +184,10 @@ export interface StintGraphPoint {
   valid: boolean;
   delta_to_best: number | null;
   rolling_5: number | null;
+  avg_speed_mph: number | null;
+  max_speed_mph: number | null;
+  min_speed_mph: number | null;
+  fuel: number | null;
   warning: string | null;
 }
 
