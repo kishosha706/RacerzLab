@@ -28,6 +28,15 @@ def test_laps_tab_includes_stint_intelligence_subview() -> None:
     assert "stint-graph-tooltip" in source
     assert "stint-chart-fastest-marker" in source
     assert "stint-chart-selected-marker" in source
+    assert "racePaceDomain" in source
+    assert "percentile" in source
+    assert "Include outliers in scale" in source
+    assert "Scale: Race pace" in source
+    assert "stint-graph-summary-strip" in source
+    assert "Excluded from scale" in source
+    assert "outlier excluded from pace scale" in source
+    assert "stint-chart-range" in source
+    assert "stint-chart-outlier-label" in source
     assert "stint-filter-bar" in source
     assert "Current run only" in source
     assert "Same car/track only" in source

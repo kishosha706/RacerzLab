@@ -54,10 +54,16 @@ type EvidenceDescriptor = {
 };
 
 type StintGraphRenderPoint = {
+  id: string;
+  seriesId: string;
   x: number;
   lapNumber: number;
   y: number;
   valid: boolean;
+  excludedFromScale: boolean;
+  exclusionReason: string | null;
+  outlierAboveScale: boolean;
+  outlierBelowScale: boolean;
   lapTime: number | null;
   deltaToBest: number | null;
   rolling5: number | null;
@@ -95,6 +101,45 @@ function stintChartPolyline(
     const y = padTop + (1 - ((point.y - yMin) / ySpan)) * (height - padTop - padBottom);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
+}
+
+function percentile(values: number[], p: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = (sorted.length - 1) * p;
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  if (lower === upper) return sorted[lower];
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
+}
+
+function racePaceDomain(values: number[], includeOutliers: boolean): { min: number; max: number; outlierLow: number; outlierHigh: number; mode: "race_pace" | "full_range" } {
+  if (values.length === 0) return { min: 0, max: 1, outlierLow: 0, outlierHigh: 1, mode: includeOutliers ? "full_range" : "race_pace" };
+  const sorted = [...values].sort((left, right) => left - right);
+  const minRaw = sorted[0];
+  const maxRaw = sorted[sorted.length - 1];
+  if (includeOutliers || sorted.length < 5) {
+    const pad = Math.max(0.05, (maxRaw - minRaw) * 0.12);
+    return { min: minRaw - pad, max: maxRaw + pad, outlierLow: minRaw - pad, outlierHigh: maxRaw + pad, mode: includeOutliers ? "full_range" : "race_pace" };
+  }
+  const q1 = percentile(sorted, 0.25) ?? minRaw;
+  const q3 = percentile(sorted, 0.75) ?? maxRaw;
+  const p5 = percentile(sorted, 0.05) ?? minRaw;
+  const p95 = percentile(sorted, 0.95) ?? maxRaw;
+  const iqr = Math.max(0.001, q3 - q1);
+  const outlierLow = q1 - iqr * 1.5;
+  const outlierHigh = q3 + iqr * 1.5;
+  const domainValues = sorted.filter((value) => value >= outlierLow && value <= outlierHigh);
+  const domainMin = Math.min(...(domainValues.length > 0 ? domainValues : sorted), p5);
+  const domainMax = Math.max(...(domainValues.length > 0 ? domainValues : sorted), p95);
+  const pad = Math.max(0.05, (domainMax - domainMin) * 0.18);
+  return {
+    min: domainMin - pad,
+    max: domainMax + pad,
+    outlierLow,
+    outlierHigh,
+    mode: "race_pace",
+  };
 }
 
 function formatTime(seconds: number | null | undefined): string {
@@ -446,6 +491,7 @@ export function LapsTab({ overview }: LapsTabProps) {
   const [stintGraphMode, setStintGraphMode] = useState<StintGraphMode>("lap_time");
   const [showRolling5, setShowRolling5] = useState(false);
   const [excludeInvalidGraphLaps, setExcludeInvalidGraphLaps] = useState(true);
+  const [includeOutliersInScale, setIncludeOutliersInScale] = useState(false);
   const [currentRunOnlyFilter, setCurrentRunOnlyFilter] = useState(false);
   const [sameCarTrackOnlyFilter, setSameCarTrackOnlyFilter] = useState(false);
   const [graphedOnlyFilter, setGraphedOnlyFilter] = useState(false);
@@ -907,10 +953,12 @@ export function LapsTab({ overview }: LapsTabProps) {
   const graphChart = useMemo(() => {
     const colors = ["#38bdf8", "#f59e0b", "#22c55e", "#a78bfa", "#fb7185", "#facc15"];
     const series = graphStints.flatMap((stint, index) => {
+      const seriesColor = baselineStintId === stint.stint_id ? "#38bdf8" : testStintId === stint.stint_id ? "#f59e0b" : colors[index % colors.length];
       const basePoints = stint.lap_points
         .filter((point) => point.lap_time != null)
-        .filter((point) => !excludeInvalidGraphLaps || point.valid)
         .map((point) => ({
+          id: `${stint.stint_id}:${point.lap_number}`,
+          seriesId: stint.stint_id,
           x: point.stint_lap,
           lapNumber: point.lap_number,
           y: stintGraphMode === "delta"
@@ -919,16 +967,21 @@ export function LapsTab({ overview }: LapsTabProps) {
               ? point.rolling_5
               : point.lap_time,
           valid: point.valid,
+          excludedFromScale: false,
+          exclusionReason: null,
+          outlierAboveScale: false,
+          outlierBelowScale: false,
           lapTime: point.lap_time,
           deltaToBest: point.delta_to_best,
           rolling5: point.rolling_5,
           warning: point.warning,
         }))
-        .filter((point): point is StintGraphRawPoint => point.y != null);
+        .filter((point) => point.y != null)
+        .map((point): StintGraphRawPoint => ({ ...point, y: point.y as number }));
       const rows = [{
         id: stint.stint_id,
         label: `${stint.display_label_short} ${formatStintRange(stint)}`,
-        color: baselineStintId === stint.stint_id ? "#38bdf8" : testStintId === stint.stint_id ? "#f59e0b" : colors[index % colors.length],
+        color: seriesColor,
         dashed: false,
         stint,
         points: basePoints,
@@ -937,21 +990,28 @@ export function LapsTab({ overview }: LapsTabProps) {
         const rollingPoints = stint.lap_points
           .filter((point) => !excludeInvalidGraphLaps || point.valid)
           .map((point) => ({
+            id: `${stint.stint_id}:rolling5:${point.lap_number}`,
+            seriesId: stint.stint_id,
             x: point.stint_lap,
             lapNumber: point.lap_number,
             y: point.rolling_5,
             valid: point.valid,
+            excludedFromScale: false,
+            exclusionReason: null,
+            outlierAboveScale: false,
+            outlierBelowScale: false,
             lapTime: point.lap_time,
             deltaToBest: point.delta_to_best,
             rolling5: point.rolling_5,
             warning: point.warning,
           }))
-          .filter((point): point is StintGraphRawPoint => point.y != null);
+          .filter((point) => point.y != null)
+          .map((point): StintGraphRawPoint => ({ ...point, y: point.y as number }));
         if (rollingPoints.length > 0) {
           rows.push({
             id: `${stint.stint_id}:rolling5`,
             label: `${stint.display_label_short} rolling 5`,
-            color: colors[index % colors.length],
+            color: seriesColor,
             dashed: true,
             stint,
             points: rollingPoints,
@@ -960,25 +1020,33 @@ export function LapsTab({ overview }: LapsTabProps) {
       }
       return rows;
     });
-    const allPoints = series.flatMap((item) => item.points);
-    if (allPoints.length === 0) {
+    const allRawPoints = series.flatMap((item) => item.points);
+    const visibleRawPoints = allRawPoints.filter((point) => !excludeInvalidGraphLaps || point.valid);
+    const scaleCandidateValues = visibleRawPoints
+      .filter((point) => point.valid || includeOutliersInScale)
+      .map((point) => point.y);
+    if (visibleRawPoints.length === 0) {
       return {
         series: series.map((item) => ({ ...item, points: [] as StintGraphRenderPoint[] })),
         xMin: 1,
         xMax: 1,
         yMin: 0,
         yMax: 1,
+        scaleLabel: "Scale: Race pace",
+        validLapCount: 0,
+        excludedLapCount: allRawPoints.length,
+        fastestValidLap: null as number | null,
+        bestRolling5: null as number | null,
+        bestRolling10: bestSustainedStint?.rolling_10_avg_best ?? null,
       };
     }
-    const xMin = Math.min(...allPoints.map((point) => point.x));
-    const xMax = Math.max(...allPoints.map((point) => point.x));
-    const yMinRaw = Math.min(...allPoints.map((point) => point.y));
-    const yMaxRaw = Math.max(...allPoints.map((point) => point.y));
-    const yPad = Math.max(0.05, (yMaxRaw - yMinRaw) * 0.12);
+    const domain = racePaceDomain(scaleCandidateValues.length > 0 ? scaleCandidateValues : visibleRawPoints.map((point) => point.y), includeOutliersInScale);
+    const xMin = Math.min(...visibleRawPoints.map((point) => point.x));
+    const xMax = Math.max(...visibleRawPoints.map((point) => point.x));
     const xSpan = Math.max(1, Math.max(xMin + 1, xMax) - xMin);
-    const ySpan = Math.max(0.001, (yMaxRaw + yPad) - (yMinRaw - yPad));
-    const yMin = yMinRaw - yPad;
-    const yMax = yMaxRaw + yPad;
+    const yMin = domain.min;
+    const yMax = domain.max;
+    const ySpan = Math.max(0.001, yMax - yMin);
     const width = 720;
     const height = 260;
     const padLeft = 42;
@@ -987,22 +1055,50 @@ export function LapsTab({ overview }: LapsTabProps) {
     const padBottom = 28;
     const seriesWithCoords = series.map((item) => ({
       ...item,
-      points: item.points.map((point) => ({
-        ...point,
-        sourceLabel: item.label,
-        color: item.color,
-        screenX: padLeft + ((point.x - xMin) / xSpan) * (width - padLeft - padRight),
-        screenY: padTop + (1 - ((point.y - yMin) / ySpan)) * (height - padTop - padBottom),
-      })),
+      points: item.points
+        .filter((point) => !excludeInvalidGraphLaps || point.valid)
+        .map((point) => {
+          const invalidExcluded = !point.valid && !includeOutliersInScale;
+          const highOutlier = !includeOutliersInScale && point.y > domain.outlierHigh;
+          const lowOutlier = !includeOutliersInScale && point.y < domain.outlierLow;
+          const aboveScale = point.y > yMax;
+          const belowScale = point.y < yMin;
+          const clampedY = Math.min(yMax, Math.max(yMin, point.y));
+          const exclusionReason = invalidExcluded
+            ? point.warning ?? "invalid lap"
+            : highOutlier || lowOutlier || aboveScale || belowScale
+              ? "outlier excluded from pace scale"
+              : null;
+          return {
+            ...point,
+            excludedFromScale: exclusionReason != null,
+            exclusionReason,
+            outlierAboveScale: aboveScale || highOutlier,
+            outlierBelowScale: belowScale || lowOutlier,
+            sourceLabel: item.label,
+            color: item.color,
+            screenX: padLeft + ((point.x - xMin) / xSpan) * (width - padLeft - padRight),
+            screenY: padTop + (1 - ((clampedY - yMin) / ySpan)) * (height - padTop - padBottom),
+          };
+        }),
     }));
+    const validLapTimes = visibleRawPoints.filter((point) => point.valid && point.lapTime != null).map((point) => point.lapTime as number);
+    const rolling5Values = visibleRawPoints.filter((point) => point.valid && point.rolling5 != null).map((point) => point.rolling5 as number);
+    const excludedLapCount = seriesWithCoords.flatMap((item) => item.points).filter((point) => point.excludedFromScale || !point.valid).length;
     return {
       series: seriesWithCoords,
       xMin,
       xMax: Math.max(xMin + 1, xMax),
       yMin,
       yMax,
+      scaleLabel: includeOutliersInScale ? "Scale: Full range" : "Scale: Race pace",
+      validLapCount: validLapTimes.length,
+      excludedLapCount,
+      fastestValidLap: validLapTimes.length > 0 ? Math.min(...validLapTimes) : null,
+      bestRolling5: rolling5Values.length > 0 ? Math.min(...rolling5Values) : null,
+      bestRolling10: bestSustainedStint?.rolling_10_avg_best ?? null,
     };
-  }, [baselineStintId, excludeInvalidGraphLaps, graphStints, showRolling5, stintGraphMode, testStintId]);
+  }, [baselineStintId, bestSustainedStint, excludeInvalidGraphLaps, graphStints, includeOutliersInScale, showRolling5, stintGraphMode, testStintId]);
 
   const summaryDrawerStint = useMemo(
     () => summaryDrawerStintId
@@ -1730,12 +1826,44 @@ export function LapsTab({ overview }: LapsTabProps) {
                 <input type="checkbox" checked={excludeInvalidGraphLaps} onChange={(event) => setExcludeInvalidGraphLaps(event.currentTarget.checked)} />
                 Exclude invalid laps
               </label>
+              <label className="stint-graph-toggle">
+                <input type="checkbox" checked={includeOutliersInScale} onChange={(event) => setIncludeOutliersInScale(event.currentTarget.checked)} />
+                Include outliers in scale
+              </label>
             </div>
             {graphChart.series.some((series) => series.points.length > 0) ? (
               <div className="stint-graph-canvas">
+                <div className="stint-graph-summary-strip">
+                  <span>{graphChart.scaleLabel}</span>
+                  <span>Graphing {graphChart.validLapCount} valid laps</span>
+                  <span>{graphChart.excludedLapCount} excluded</span>
+                  <span>Best {formatTime(graphChart.fastestValidLap)}</span>
+                  <span>Best 5 {formatTime(graphChart.bestRolling5)}</span>
+                  <span>Best 10 {formatTime(graphChart.bestRolling10)}</span>
+                  <span>{graphStints.length} selected stint{graphStints.length === 1 ? "" : "s"}</span>
+                </div>
                 <svg viewBox="0 0 720 260" role="img" aria-label="Selected stint lap-time line chart" onMouseLeave={() => setHoveredGraphPoint(null)}>
                   <line x1="42" y1="16" x2="42" y2="232" className="stint-chart-axis" />
                   <line x1="42" y1="232" x2="704" y2="232" className="stint-chart-axis" />
+                  {[0.25, 0.5, 0.75].map((ratio) => (
+                    <line key={ratio} x1="42" y1={16 + ratio * 216} x2="704" y2={16 + ratio * 216} className="stint-chart-gridline" />
+                  ))}
+                  {[selectedStint, baselineStint, testStint].filter((stint): stint is StintSummary => stint != null).map((stint) => {
+                    const series = graphChart.series.find((item) => item.id === stint.stint_id);
+                    const start = series?.points.find((point) => point.lapNumber === stint.start_lap);
+                    const end = [...(series?.points ?? [])].reverse().find((point) => point.lapNumber === stint.end_lap);
+                    if (!start || !end) return null;
+                    const isBaseline = baselineStintId === stint.stint_id;
+                    const isTest = testStintId === stint.stint_id;
+                    return (
+                      <g key={`range:${stint.stint_id}`} className={`stint-chart-range ${isBaseline ? "baseline" : ""} ${isTest ? "test" : ""}`}>
+                        <rect x={Math.min(start.screenX, end.screenX)} y="16" width={Math.max(2, Math.abs(end.screenX - start.screenX))} height="216" />
+                        <line x1={start.screenX} y1="16" x2={start.screenX} y2="232" />
+                        <line x1={end.screenX} y1="16" x2={end.screenX} y2="232" />
+                        <text x={Math.min(start.screenX, end.screenX) + 4} y="30">{stint.display_label_short}: {formatStintRange(stint)}</text>
+                      </g>
+                    );
+                  })}
                   <text x="42" y="250" className="stint-chart-label">Lap {graphChart.xMin}</text>
                   <text x="650" y="250" className="stint-chart-label">Lap {graphChart.xMax}</text>
                   <text x="6" y="22" className="stint-chart-label">{stintGraphMode === "delta" ? formatSignedDelta(graphChart.yMax) : formatTime(graphChart.yMax)}</text>
@@ -1765,7 +1893,7 @@ export function LapsTab({ overview }: LapsTabProps) {
                         {series.points.map((point) => (
                           <circle
                             key={`${series.id}:${point.lapNumber}`}
-                            className={`stint-chart-point ${point.valid ? "" : "invalid"}`}
+                            className={`stint-chart-point ${point.valid ? "" : "invalid"} ${point.excludedFromScale ? "excluded" : ""}`}
                             cx={point.screenX}
                             cy={point.screenY}
                             r={point.valid ? 3.2 : 2.5}
@@ -1773,6 +1901,9 @@ export function LapsTab({ overview }: LapsTabProps) {
                             onMouseEnter={(event) => setHoveredGraphPoint({ ...point, clientX: event.clientX, clientY: event.clientY })}
                             onClick={() => setSelectedGraphLap({ stintId: series.id.replace(":rolling5", ""), lapNumber: point.lapNumber })}
                           />
+                        ))}
+                        {series.points.filter((point) => point.outlierAboveScale || point.outlierBelowScale).map((point) => (
+                          <text key={`${series.id}:${point.lapNumber}:outlier`} x={point.screenX + 4} y={point.outlierAboveScale ? 14 : 242} className="stint-chart-outlier-label">!</text>
                         ))}
                         {fastest && <circle className="stint-chart-fastest-marker" cx={fastest.screenX} cy={fastest.screenY} r="6" />}
                         {selectedPoint && <circle className="stint-chart-selected-marker" cx={selectedPoint.screenX} cy={selectedPoint.screenY} r="8" />}
@@ -1787,7 +1918,9 @@ export function LapsTab({ overview }: LapsTabProps) {
                     <span>Lap time {formatTime(hoveredGraphPoint.lapTime)}</span>
                     <span>Delta {formatSignedDelta(hoveredGraphPoint.deltaToBest)}</span>
                     <span>Rolling 5 {formatTime(hoveredGraphPoint.rolling5)}</span>
-                    {!hoveredGraphPoint.valid && <span>Invalid: {hoveredGraphPoint.warning ?? "invalid lap"}</span>}
+                    <span>Status {hoveredGraphPoint.valid ? "Valid" : "Invalid"}</span>
+                    {hoveredGraphPoint.excludedFromScale && <span>Excluded from scale: {hoveredGraphPoint.exclusionReason ?? "outlier"}</span>}
+                    {!hoveredGraphPoint.valid && <span>Reason: {hoveredGraphPoint.warning ?? "invalid lap"}</span>}
                   </div>
                 )}
                 <div className="stint-graph-legend">

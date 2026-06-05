@@ -45,7 +45,11 @@ Laps owns the stint and lap-time workflow. The Stint Intelligence view includes 
 
 The graph uses lap-summary data only. It does not load full telemetry traces, use runtime AI, or invent missing lap-time points.
 
-The graph includes hover details for each plotted point, fastest-lap markers, a selected-lap marker, and muted invalid points when invalid laps are shown. Brush/zoom selection is intentionally deferred until the chart needs deeper lap-range inspection.
+The default chart scale is `Race pace`. That scale is based on valid race-pace lap values and ignores invalid, pit, cooldown, out, wreck/spin, and extreme statistical outlier laps for y-axis domain purposes. This prevents one 40-second pit/cooldown lap from flattening a real 15-second Bristol stint into an unreadable line.
+
+Excluded laps are not hidden from the truth model. When invalid/outlier laps are shown, RacerZLab renders them muted or marked at the chart boundary with tooltip text explaining why they were excluded from the pace scale. `Include outliers in scale` expands the y-axis to the full selected data range when the driver wants to inspect the raw spike.
+
+The graph includes hover details for each plotted point, fastest valid lap markers, a selected-lap marker, selected stint/window range shading, and muted invalid points when invalid laps are shown. Brush/zoom selection is intentionally deferred until the chart needs deeper lap-range inspection.
 
 ## Run History
 
