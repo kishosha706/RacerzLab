@@ -13,6 +13,7 @@ from racelab_engine.models.lap_analysis import (
     StintBucketDelta,
     StintCompareResult,
     StintResponse,
+    StintRunSummary,
     StintSummary,
 )
 from racelab_engine.models.session import SessionSummary
@@ -320,14 +321,47 @@ def _build_stint_summary(
     )
 
 
+def _build_run_summary(
+    *,
+    run_id: str,
+    ordered: list[LapSummary],
+    valid: list[LapSummary],
+    session: SessionSummary | None,
+    full_stint: StintSummary | None,
+    best_window_cards: list[StintSummary],
+    warnings: list[str],
+) -> StintRunSummary:
+    card_by_size = {card.lap_count: card for card in best_window_cards if card.is_best_for_size}
+    return StintRunSummary(
+        run_id=run_id,
+        setup_name=session.setup_name if session else None,
+        car_name=session.car_name if session else None,
+        track_name=session.track_display_name or session.track_name if session else None,
+        session_date=session.import_time.isoformat() if session else None,
+        total_laps=len(ordered),
+        valid_laps=len(valid),
+        best_lap_time=min(_times(valid), default=None),
+        full_stint_avg=full_stint.avg_lap_time if full_stint else None,
+        falloff_total=full_stint.falloff_total if full_stint else None,
+        best_5_avg=card_by_size.get(5).avg_lap_time if card_by_size.get(5) else None,
+        best_10_avg=card_by_size.get(10).avg_lap_time if card_by_size.get(10) else None,
+        best_20_avg=card_by_size.get(20).avg_lap_time if card_by_size.get(20) else None,
+        best_30_avg=card_by_size.get(30).avg_lap_time if card_by_size.get(30) else None,
+        best_40_avg=card_by_size.get(40).avg_lap_time if card_by_size.get(40) else None,
+        data_status="Ready" if full_stint is not None and len(warnings) == 0 else "Limited",
+        warnings=warnings,
+    )
+
+
 def build_stint_response(laps: list[LapSummary], session: SessionSummary | None = None) -> StintResponse:
     if not laps:
         return StintResponse(run_id="", warnings=["No lap data available."])
     run_id = laps[0].run_id
     ordered = sorted(laps, key=lambda lap: lap.lap_number)
-    primary_stints: list[StintSummary] = []
+    stint_rows: list[StintSummary] = []
+    best_window_cards: list[StintSummary] = []
     all_windows: list[StintSummary] = []
-    seen: set[tuple[int, int, int]] = set()
+    seen_windows: set[tuple[int, int, int]] = set()
 
     valid = _valid_laps(ordered)
     valid_ratio = len(valid) / len(ordered) if ordered else 0.0
@@ -352,14 +386,13 @@ def build_stint_response(laps: list[LapSummary], session: SessionSummary | None 
             rank_reason="Full imported run with valid-lap filtering.",
         )
         if summary is not None:
-            primary_stints.append(summary)
-            seen.add((summary.start_lap, summary.end_lap, summary.lap_count))
+            stint_rows.append(summary)
 
     for group in compute_best_windows(ordered, STINT_WINDOW_SIZES):
         for index, window in enumerate(group.windows):
             window_laps = [lap for lap in ordered if window.start_lap <= lap.lap_number <= window.end_lap]
             key = (window.start_lap, window.end_lap, window.window_size)
-            if key in seen:
+            if key in seen_windows:
                 continue
             summary = _build_stint_summary(
                 run_id,
@@ -376,19 +409,38 @@ def build_stint_response(laps: list[LapSummary], session: SessionSummary | None 
             if summary is not None:
                 all_windows.append(summary)
                 if index == 0:
-                    primary_stints.append(summary)
-                seen.add(key)
+                    best_window_cards.append(summary)
+                seen_windows.add(key)
 
     size_order = {"full_run": 0, "best_5": 1, "best_10": 2, "best_20": 3, "best_30": 4, "best_40": 5}
-    primary_stints.sort(key=lambda item: (size_order.get(item.display_group, 99), item.avg_lap_time or 999999.0))
+    stint_rows.sort(key=lambda item: (size_order.get(item.display_group, 99), item.avg_lap_time or 999999.0))
+    best_window_cards.sort(key=lambda item: (size_order.get(item.display_group, 99), item.avg_lap_time or 999999.0))
     all_windows.sort(key=lambda item: (size_order.get(item.display_group, 99), item.avg_lap_time or 999999.0))
-    if not primary_stints and not warnings:
+    if not stint_rows and not warnings:
         warnings.append("No eligible stint windows yet.")
         warnings.append("Need at least 5 valid laps for short windows.")
         warnings.append("Need 10+ valid laps for a useful long-run read.")
         warnings.append("Out laps, pit laps, cooldowns, wrecks, and invalid laps are excluded.")
         warnings.append("Import or select a longer clean run to unlock Stint Intelligence.")
-    return StintResponse(run_id=run_id, stints=primary_stints, primary_stints=primary_stints, all_windows=all_windows, warnings=warnings)
+    run_summary = _build_run_summary(
+        run_id=run_id,
+        ordered=ordered,
+        valid=valid,
+        session=session,
+        full_stint=stint_rows[0] if stint_rows else None,
+        best_window_cards=best_window_cards,
+        warnings=warnings,
+    )
+    return StintResponse(
+        run_id=run_id,
+        stints=stint_rows,
+        stint_rows=stint_rows,
+        best_window_cards=best_window_cards,
+        primary_stints=stint_rows,
+        all_windows=all_windows,
+        run_summary=run_summary,
+        warnings=warnings,
+    )
 
 
 def _delta(test: float | None, baseline: float | None) -> float | None:

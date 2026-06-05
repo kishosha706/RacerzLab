@@ -377,8 +377,9 @@ export function LapsTab({ overview }: LapsTabProps) {
   const [stintCompareError, setStintCompareError] = useState<string | null>(null);
   const [baselineStintId, setBaselineStintId] = useState<string | null>(null);
   const [testStintId, setTestStintId] = useState<string | null>(null);
+  const [selectedStintId, setSelectedStintId] = useState<string | null>(null);
   const [stintCompare, setStintCompare] = useState<StintCompareResult | null>(null);
-  const [showAllStintWindows, setShowAllStintWindows] = useState(false);
+  const [showAlternateStintWindows, setShowAlternateStintWindows] = useState(false);
   const [expandedLap, setExpandedLap] = useState<number | null>(null);
   const [stintMode, setStintMode] = useState<StintMode>("ev");
   const [subview, setSubview] = useState<LapsSubview>("current");
@@ -408,6 +409,7 @@ export function LapsTab({ overview }: LapsTabProps) {
     setStintsLoading(true);
     setBaselineStintId(null);
     setTestStintId(null);
+    setSelectedStintId(null);
     setStintCompare(null);
     setStintCompareError(null);
     fetchStints(overview.run_id)
@@ -469,26 +471,46 @@ export function LapsTab({ overview }: LapsTabProps) {
   );
 
   const stints = useMemo(
-    () => showAllStintWindows ? (stintData?.all_windows ?? []) : (stintData?.primary_stints ?? stintData?.stints ?? []),
-    [showAllStintWindows, stintData],
+    () => stintData?.stint_rows ?? stintData?.primary_stints ?? stintData?.stints ?? [],
+    [stintData],
+  );
+  const bestWindowCards = useMemo(
+    () => stintData?.best_window_cards ?? [],
+    [stintData],
+  );
+  const alternateStintWindows = useMemo(
+    () => (stintData?.all_windows ?? []).filter((stint) => !bestWindowCards.some((card) => card.stint_id === stint.stint_id)),
+    [bestWindowCards, stintData],
+  );
+  const stintSelectionCandidates = useMemo(
+    () => {
+      const byId = new Map<string, StintSummary>();
+      [...stints, ...bestWindowCards, ...(stintData?.all_windows ?? [])].forEach((stint) => byId.set(stint.stint_id, stint));
+      return [...byId.values()];
+    },
+    [bestWindowCards, stintData, stints],
+  );
+  const selectedStint = useMemo(
+    () => stintSelectionCandidates.find((stint) => stint.stint_id === selectedStintId) ?? stints[0] ?? bestWindowCards[0] ?? null,
+    [bestWindowCards, selectedStintId, stintSelectionCandidates, stints],
   );
   const baselineStint = useMemo(
-    () => stints.find((stint) => stint.stint_id === baselineStintId) ?? null,
-    [baselineStintId, stints],
+    () => stintSelectionCandidates.find((stint) => stint.stint_id === baselineStintId) ?? null,
+    [baselineStintId, stintSelectionCandidates],
   );
   const testStint = useMemo(
-    () => stints.find((stint) => stint.stint_id === testStintId) ?? null,
-    [stints, testStintId],
+    () => stintSelectionCandidates.find((stint) => stint.stint_id === testStintId) ?? null,
+    [stintSelectionCandidates, testStintId],
   );
   const strongestSetupStintId = useMemo(
-    () => [...stints].sort((left, right) => (right.setup_usefulness_score ?? -1) - (left.setup_usefulness_score ?? -1))[0]?.stint_id ?? null,
-    [stints],
+    () => [...stintSelectionCandidates].sort((left, right) => (right.setup_usefulness_score ?? -1) - (left.setup_usefulness_score ?? -1))[0]?.stint_id ?? null,
+    [stintSelectionCandidates],
   );
   const bestSustainedStint = useMemo(
-    () => stints.find((stint) => stint.is_best_for_size && stint.lap_count >= 20)
-      ?? stints.find((stint) => stint.is_best_for_size)
+    () => bestWindowCards.find((stint) => stint.is_best_for_size && stint.lap_count >= 20)
+      ?? bestWindowCards.find((stint) => stint.is_best_for_size)
       ?? null,
-    [stints],
+    [bestWindowCards],
   );
   const bucketLabels = useMemo(() => [
     "L1-5",
@@ -1247,14 +1269,14 @@ export function LapsTab({ overview }: LapsTabProps) {
           <div className="stint-run-summary">
             <div>
               <span className="eyebrow">Run / Setup</span>
-              <strong>{overview.session.setup_name ?? "Setup unknown"}</strong>
-              <span className="muted">{overview.session.track_display_name ?? overview.session.track_name ?? "-"} - {overview.session.car_name ?? "-"}</span>
+              <strong>{stintData?.run_summary?.setup_name ?? overview.session.setup_name ?? "Setup unknown"}</strong>
+              <span className="muted">{stintData?.run_summary?.track_name ?? overview.session.track_display_name ?? overview.session.track_name ?? "-"} - {stintData?.run_summary?.car_name ?? overview.session.car_name ?? "-"}</span>
             </div>
-            <div><span>Total</span><strong>{windowsData?.total_laps ?? laps.length}</strong></div>
-            <div><span>Valid</span><strong>{windowsData?.total_valid_laps ?? usefulLaps.length}</strong></div>
-            <div><span>Best Lap</span><strong>{formatTime(bestTime)}</strong></div>
+            <div><span>Total</span><strong>{stintData?.run_summary?.total_laps ?? windowsData?.total_laps ?? laps.length}</strong></div>
+            <div><span>Valid</span><strong>{stintData?.run_summary?.valid_laps ?? windowsData?.total_valid_laps ?? usefulLaps.length}</strong></div>
+            <div><span>Best Lap</span><strong>{formatTime(stintData?.run_summary?.best_lap_time ?? bestTime)}</strong></div>
             <div><span>Best Sustained</span><strong>{bestSustainedStint ? `${bestSustainedStint.display_label_short} ${formatTime(bestSustainedStint.avg_lap_time)}` : "-"}</strong></div>
-            <div><span>Data</span><strong>{stintData?.warnings?.length ? "Limited" : "Ready"}</strong></div>
+            <div><span>Data</span><strong>{stintData?.run_summary?.data_status ?? (stintData?.warnings?.length ? "Limited" : "Ready")}</strong></div>
           </div>
 
           {baselineStint && testStint && (
@@ -1300,7 +1322,7 @@ export function LapsTab({ overview }: LapsTabProps) {
           )}
 
           {stintsLoading && <p className="muted">Loading stint windows...</p>}
-          {!stintsLoading && stints.length === 0 && (
+          {!stintsLoading && stints.length === 0 && bestWindowCards.length === 0 && (
             <div className="stint-empty-state">
               <h3>No eligible stint windows yet.</h3>
               <p>Need at least 5 valid laps for short windows and 10+ valid laps for a useful long-run read.</p>
@@ -1308,16 +1330,60 @@ export function LapsTab({ overview }: LapsTabProps) {
               <p className="muted">Import or select a longer clean run to unlock Stint Intelligence.</p>
             </div>
           )}
-          {!stintsLoading && stints.length > 0 && (
+          {!stintsLoading && (stints.length > 0 || bestWindowCards.length > 0) && (
             <>
-            <div className="section-heading-row" style={{ margin: "4px 0 8px" }}>
-              <span className="muted">{showAllStintWindows ? "Showing alternate windows" : "Showing curated timing-sheet rows"}</span>
-              {(stintData?.all_windows?.length ?? 0) > stints.length && (
-                <button className="secondary-button" onClick={() => setShowAllStintWindows((open) => !open)}>
-                  {showAllStintWindows ? "Show curated rows" : "Show all windows"}
-                </button>
-              )}
-            </div>
+            {bestWindowCards.length > 0 && (
+              <div className="stint-window-card-row" aria-label="Best rolling stint window summary">
+                {bestWindowCards.map((stint) => {
+                  const isSelected = selectedStint?.stint_id === stint.stint_id;
+                  const isBaseline = baselineStintId === stint.stint_id;
+                  const isTest = testStintId === stint.stint_id;
+                  return (
+                    <button
+                      type="button"
+                      key={stint.stint_id}
+                      className={`stint-window-card ${isSelected ? "selected" : ""} ${isBaseline ? "baseline" : ""} ${isTest ? "test" : ""}`}
+                      onClick={() => setSelectedStintId(stint.stint_id)}
+                      aria-pressed={isSelected}
+                    >
+                      <span>{stint.display_label_short}</span>
+                      <strong>{formatTime(stint.avg_lap_time)}</strong>
+                      <small>{formatStintRange(stint)} - {stint.valid_lap_count}/{stint.lap_count} valid</small>
+                      <div>
+                        <span className={trendBadgeClass(stint.stint_label)}>{stint.stint_label}</span>
+                        <span className="lap-flag-badge">EV {formatScore(stint.setup_usefulness_score)}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {selectedStint && (
+              <div className="stint-selected-toolbar">
+                <div>
+                  <span className="eyebrow">Selected</span>
+                  <strong>{selectedStint.display_label_short} - {formatStintRange(selectedStint)}</strong>
+                  <span className="muted">Avg {formatTime(selectedStint.avg_lap_time)} - Falloff {selectedStint.falloff_total != null ? `${selectedStint.falloff_total > 0 ? "+" : ""}${selectedStint.falloff_total.toFixed(2)}s` : "-"}</span>
+                </div>
+                <div className="laps-action-row compact">
+                  <button className="secondary-button" onClick={() => setBaselineStintId(selectedStint.stint_id)}>
+                    Baseline
+                  </button>
+                  <button className="secondary-button" onClick={() => setTestStintId(selectedStint.stint_id)}>
+                    Test
+                  </button>
+                  <button className="secondary-button" onClick={() => addToQueue(makeStintBasket(selectedStint, `Stint ${formatStintRange(selectedStint)}`))}>
+                    Basket
+                  </button>
+                  <button className="secondary-button" onClick={() => focusWindowEvidence(stintToWindowSummary(selectedStint), "platform_trace")}>
+                    Platform
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {stints.length > 0 && (
             <div className="stint-table-wrap">
               <table className="compact-table stint-table timing-sheet-table">
                 <thead>
@@ -1334,20 +1400,20 @@ export function LapsTab({ overview }: LapsTabProps) {
                     <th>Platform</th>
                     <th>Shock</th>
                     <th>Setup EV</th>
-                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {stints.map((stint) => {
                     const isBaseline = baselineStintId === stint.stint_id;
                     const isTest = testStintId === stint.stint_id;
+                    const isSelected = selectedStint?.stint_id === stint.stint_id;
                     const isStrongest = strongestSetupStintId === stint.stint_id;
                     const hasLimitedWarning = stint.warnings.some((warning) => /limited|shorter|excluded/i.test(warning));
-                    const window = stintToWindowSummary(stint);
                     return (
                       <tr
                         key={stint.stint_id}
-                        className={`${isBaseline ? "stint-row-baseline" : ""} ${isTest ? "stint-row-test" : ""} ${isStrongest ? "stint-row-strongest" : ""} ${hasLimitedWarning ? "stint-row-limited" : ""}`}
+                        className={`${isSelected ? "stint-row-selected" : ""} ${isBaseline ? "stint-row-baseline" : ""} ${isTest ? "stint-row-test" : ""} ${isStrongest ? "stint-row-strongest" : ""} ${hasLimitedWarning ? "stint-row-limited" : ""}`}
+                        onClick={() => setSelectedStintId(stint.stint_id)}
                       >
                         <td>
                           <strong>{stint.display_label_short}</strong>
@@ -1383,20 +1449,35 @@ export function LapsTab({ overview }: LapsTabProps) {
                         <td><span className={trendBadgeClass(stint.platform_trend_label)}>{compactTrendLabel("platform", stint.platform_trend_label)}</span></td>
                         <td><span className={trendBadgeClass(stint.shock_trend_label)}>{compactTrendLabel("shock", stint.shock_trend_label)}</span></td>
                         <td style={{ color: paceQualityColor(stint.setup_usefulness_score) }}>{formatScore(stint.setup_usefulness_score)}</td>
-                        <td>
-                          <div className="laps-action-row compact">
-                            <button className="secondary-button" onClick={() => setBaselineStintId(stint.stint_id)} aria-label={`Select ${formatStintRange(stint)} as baseline stint`}>Baseline</button>
-                            <button className="secondary-button" onClick={() => setTestStintId(stint.stint_id)} aria-label={`Select ${formatStintRange(stint)} as test stint`}>Test</button>
-                            <button className="secondary-button" onClick={() => addToQueue(makeStintBasket(stint, `Stint ${formatStintRange(stint)}`))}>Basket</button>
-                            <button className="secondary-button" onClick={() => focusWindowEvidence(window, "platform_trace")}>Platform</button>
-                          </div>
-                        </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
+            )}
+
+            {alternateStintWindows.length > 0 && (
+              <div className="stint-alternate-window-panel">
+                <button className="secondary-button" onClick={() => setShowAlternateStintWindows((open) => !open)}>
+                  {showAlternateStintWindows ? "Hide alternate windows" : "Show alternate windows"}
+                </button>
+                {showAlternateStintWindows && (
+                  <div className="stint-alternate-window-list">
+                    {alternateStintWindows.slice(0, 12).map((stint) => (
+                      <button
+                        type="button"
+                        key={stint.stint_id}
+                        className={`stint-window-pill ${selectedStint?.stint_id === stint.stint_id ? "selected" : ""}`}
+                        onClick={() => setSelectedStintId(stint.stint_id)}
+                      >
+                        {stint.display_label_short} {formatStintRange(stint)} {formatTime(stint.avg_lap_time)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             </>
           )}
         </section>

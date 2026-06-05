@@ -176,11 +176,34 @@ export interface StintBucket {
   warning: string | null;
 }
 
+export interface StintRunSummary {
+  run_id: string;
+  setup_name: string | null;
+  car_name: string | null;
+  track_name: string | null;
+  session_date: string | null;
+  total_laps: number;
+  valid_laps: number;
+  best_lap_time: number | null;
+  full_stint_avg: number | null;
+  falloff_total: number | null;
+  best_5_avg: number | null;
+  best_10_avg: number | null;
+  best_20_avg: number | null;
+  best_30_avg: number | null;
+  best_40_avg: number | null;
+  data_status: string;
+  warnings: string[];
+}
+
 export interface StintResponse {
   run_id: string;
   stints: StintSummary[];
+  stint_rows: StintSummary[];
+  best_window_cards: StintSummary[];
   primary_stints: StintSummary[];
   all_windows: StintSummary[];
+  run_summary: StintRunSummary | null;
   warnings: string[];
 }
 

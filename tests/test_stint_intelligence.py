@@ -66,10 +66,13 @@ def test_stint_response_returns_curated_primary_rows_and_buckets() -> None:
 
     assert response.run_id == "run-1"
     assert response.stints
+    assert response.stints == response.stint_rows
     assert response.stints == response.primary_stints
-    assert len(response.primary_stints) <= 6
+    assert len(response.stint_rows) == 1
     assert [stint.display_label_short for stint in response.primary_stints] == [
         "Full run",
+    ]
+    assert [stint.display_label_short for stint in response.best_window_cards] == [
         "Best 5",
         "Best 10",
         "Best 20",
@@ -85,15 +88,19 @@ def test_stint_response_returns_curated_primary_rows_and_buckets() -> None:
     assert full.bucket_averages[0].label == "L1-5"
     assert full.bucket_averages[0].avg_lap_time is not None
     assert any(bucket.is_fastest_bucket for bucket in full.bucket_averages)
+    assert response.run_summary is not None
+    assert response.run_summary.full_stint_avg == full.avg_lap_time
+    assert response.run_summary.best_20_avg == response.best_window_cards[2].avg_lap_time
 
 
-def test_primary_stints_exclude_near_duplicate_overlapping_windows() -> None:
+def test_best_window_cards_exclude_near_duplicate_overlapping_windows_from_table_rows() -> None:
     response = build_stint_response(_laps(50))
 
-    labels = [stint.display_label_short for stint in response.primary_stints]
+    labels = [stint.display_label_short for stint in response.best_window_cards]
     assert labels.count("Best 40") == 1
-    assert len(response.all_windows) >= len(response.primary_stints) - 1
-    assert len(response.primary_stints) <= 6
+    assert "Best 40" not in [stint.display_label_short for stint in response.stint_rows]
+    assert len(response.all_windows) >= len(response.best_window_cards)
+    assert len(response.stint_rows) == 1
 
 
 def test_invalid_laps_are_excluded_without_missing_to_zero() -> None:
@@ -116,6 +123,8 @@ def test_insufficient_laps_marked_unavailable() -> None:
     response = build_stint_response(_laps(4))
 
     assert response.stints == []
+    assert response.stint_rows == []
+    assert response.best_window_cards == []
     assert response.warnings
     assert "No eligible stint windows yet" in response.warnings[0]
     assert any("Import or select a longer clean run" in warning for warning in response.warnings)
@@ -133,7 +142,7 @@ def test_falloff_classification_and_limited_trends_are_truthful() -> None:
 
 def test_compare_result_computes_deltas() -> None:
     baseline = build_stint_response(_laps(15, run_id="baseline", start_time=51.0)).stints[0]
-    test = build_stint_response(_laps(15, run_id="test", start_time=50.5)).stints[0]
+    test = build_stint_response(_laps(15, run_id="test", start_time=50.5)).best_window_cards[1]
 
     result = compare_stints(baseline, test)
 
@@ -157,7 +166,10 @@ def test_stints_endpoint_returns_summaries(tmp_path: Path, monkeypatch: pytest.M
     payload = response.json()
     assert payload["run_id"] == "run-1"
     assert payload["stints"]
+    assert payload["stint_rows"] == payload["stints"]
     assert payload["primary_stints"]
+    assert payload["best_window_cards"]
+    assert payload["run_summary"]["full_stint_avg"] is not None
     assert {"stint_id", "bucket_averages", "display_label_short", "setup_usefulness_score"}.issubset(payload["stints"][0])
 
 
@@ -168,7 +180,7 @@ def test_stints_compare_endpoint_returns_delta(tmp_path: Path, monkeypatch: pyte
     client = TestClient(app)
 
     baseline = client.get("/api/runs/baseline/stints").json()["stints"][0]
-    test = client.get("/api/runs/test/stints").json()["stints"][0]
+    test = client.get("/api/runs/test/stints").json()["best_window_cards"][1]
     response = client.post(
         "/api/stints/compare",
         json={

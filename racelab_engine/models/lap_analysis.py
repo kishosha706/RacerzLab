@@ -202,12 +202,36 @@ class StintBucket(BaseModel):
     warning: Optional[str] = None
 
 
+class StintRunSummary(BaseModel):
+    """Compact header summary for the selected imported run."""
+    run_id: str
+    setup_name: Optional[str] = None
+    car_name: Optional[str] = None
+    track_name: Optional[str] = None
+    session_date: Optional[str] = None
+    total_laps: int = 0
+    valid_laps: int = 0
+    best_lap_time: Optional[float] = None
+    full_stint_avg: Optional[float] = None
+    falloff_total: Optional[float] = None
+    best_5_avg: Optional[float] = None
+    best_10_avg: Optional[float] = None
+    best_20_avg: Optional[float] = None
+    best_30_avg: Optional[float] = None
+    best_40_avg: Optional[float] = None
+    data_status: str = "Limited"
+    warnings: list[str] = Field(default_factory=list)
+
+
 class StintResponse(BaseModel):
     """Response for imported-data stint intelligence."""
     run_id: str
     stints: list[StintSummary] = Field(default_factory=list)
+    stint_rows: list[StintSummary] = Field(default_factory=list)
+    best_window_cards: list[StintSummary] = Field(default_factory=list)
     primary_stints: list[StintSummary] = Field(default_factory=list)
     all_windows: list[StintSummary] = Field(default_factory=list)
+    run_summary: Optional[StintRunSummary] = None
     warnings: list[str] = Field(default_factory=list)
 
 

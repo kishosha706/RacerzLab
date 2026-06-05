@@ -6211,7 +6211,7 @@ button:focus:not(:focus-visible) {
 }
 
 .stint-table {
-  min-width: 1480px;
+  min-width: 1280px;
   margin-top: 0;
 }
 
@@ -6222,10 +6222,6 @@ button:focus:not(:focus-visible) {
 .stint-table td,
 .stint-table th {
   white-space: nowrap;
-}
-
-.stint-table .laps-action-row.compact {
-  flex-wrap: nowrap;
 }
 
 .stint-row-baseline {
@@ -6246,6 +6242,115 @@ button:focus:not(:focus-visible) {
 
 .stint-row-limited {
   opacity: 0.84;
+}
+
+.stint-row-selected td {
+  background: rgba(56, 189, 248, 0.075);
+}
+
+.stint-window-card-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(164px, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.stint-window-card {
+  display: grid;
+  gap: 5px;
+  min-height: 104px;
+  padding: 10px;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  color: #cbd5e1;
+  background: rgba(13, 17, 23, 0.82);
+  text-align: left;
+  cursor: pointer;
+}
+
+.stint-window-card:hover,
+.stint-window-card.selected {
+  border-color: rgba(56, 189, 248, 0.52);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.stint-window-card.baseline {
+  box-shadow: inset 3px 0 0 #38bdf8;
+}
+
+.stint-window-card.test {
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
+.stint-window-card.baseline.test {
+  box-shadow: inset 3px 0 0 #38bdf8, inset 6px 0 0 #f59e0b;
+}
+
+.stint-window-card span {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #8d9aaa;
+}
+
+.stint-window-card strong {
+  color: #e5e7eb;
+  font-size: 18px;
+}
+
+.stint-window-card small {
+  color: #8d9aaa;
+  font-size: 11px;
+}
+
+.stint-window-card > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.stint-selected-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 6px;
+  background: rgba(8, 12, 18, 0.72);
+}
+
+.stint-selected-toolbar > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.stint-alternate-window-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.stint-alternate-window-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stint-window-pill {
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid #1f2937;
+  border-radius: 999px;
+  color: #cbd5e1;
+  background: rgba(13, 17, 23, 0.82);
+  cursor: pointer;
+}
+
+.stint-window-pill.selected {
+  border-color: rgba(56, 189, 248, 0.52);
+  background: rgba(56, 189, 248, 0.08);
 }
 
 .stint-run-summary {

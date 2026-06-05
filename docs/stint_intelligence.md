@@ -12,14 +12,15 @@ Stint Intelligence is RacerZLab's imported-data view for comparing sustained pac
 
 ## Stint Definitions
 
-A stint row can represent:
+A stint table row can represent:
 
 - the full imported run when it has at least 5 valid laps and at least 60% of laps are valid
-- the best consecutive 5, 10, 20, 30, or 40 lap window from the existing lap-window analysis
 
 Invalid laps are excluded from calculations when they are incomplete, not useful, out laps, cooldown laps, pit road, wreck/spin laps, invalid speed events, or missing lap time.
 
-The default Laps view is curated on purpose. It shows the full run plus one best row for each supported window size, instead of every overlapping alternate window. Alternate windows can be exposed separately, but the primary timing sheet stays clean by default.
+The default Laps view is curated on purpose. It shows meaningful stint rows only, so imported-data v1 usually has one full-run row. The best consecutive 5, 10, 20, 30, or 40 lap windows are compact summary cards above the timing sheet instead of repeated table rows. Alternate rolling windows can be exposed separately, but they stay collapsed by default.
+
+Selecting either a full-run row or a best-window card drives the toolbar actions for baseline, test, compare basket, and Platform focus. The timing sheet itself does not include a default Actions column.
 
 ## Rolling Averages
 
