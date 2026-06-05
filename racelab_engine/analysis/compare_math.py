@@ -191,8 +191,6 @@ def aggregate_tire_comparison(
     pg_channels = ["lf_pressure_gain", "rf_pressure_gain", "lr_pressure_gain", "rr_pressure_gain"]
     ts_channels = ["lf_temp_spread", "rf_temp_spread", "lr_temp_spread", "rr_temp_spread"]
     ws_channels = ["lf_wear_spread", "rf_wear_spread", "lr_wear_spread", "rr_wear_spread"]
-    cb_channels = ["lf_camber_temp_bias_c", "rf_camber_temp_bias_c",
-                   "lr_camber_temp_bias_c", "rr_camber_temp_bias_c"]
 
     def _avg_delta(chs: list[str]) -> float | None:
         vals: list[float] = []
@@ -206,11 +204,8 @@ def aggregate_tire_comparison(
     pg_delta = _avg_delta(pg_channels)
     ts_delta = _avg_delta(ts_channels)
     ws_delta = _avg_delta(ws_channels)
-    cb_delta = _avg_delta(cb_channels)
-
     # Determine tire stress change label
     is_short_run = lap_count < 10
-    confidence: str = "low" if is_short_run else ("medium" if has_tire_data else "low")
 
     # Build warnings
     warnings: list[str] = []
@@ -239,7 +234,6 @@ def aggregate_tire_comparison(
         parts.append(f"temp spread {ts_delta:+.1f}°C")
     if ws_delta is not None:
         parts.append(f"wear spread {ws_delta:+.2f} mm")
-    explanation = f"Tire stress {stress_label}: {', '.join(parts)}." if parts else "Tire context limited."
 
     return TireComparison(
         corners={},
@@ -282,7 +276,6 @@ def aggregate_shock_comparison(
 
     sai = aggregate_channel_stats(bl, t, "shock_activity_index", "Shock Activity", "index", "worse")
     svr = aggregate_channel_stats(bl, t, "shock_velocity_rms", "Shock Velocity RMS", "in/s", "worse")
-    dep = aggregate_channel_stats(bl, t, "damper_energy_proxy", "Damper Energy", "index", "worse")
 
     # Determine shock stress change label
     sai_d = sai.delta_avg
@@ -295,8 +288,6 @@ def aggregate_shock_comparison(
         shock_label = "worse"
     else:
         shock_label = "similar"
-
-    warnings = ["Damper energy proxy changed — platform motion may have shifted."] if dep.delta_avg is not None and abs(dep.delta_avg) > 0.5 else []
 
     return ShockComparison(
         corners={},

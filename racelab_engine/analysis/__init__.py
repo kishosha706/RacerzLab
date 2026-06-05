@@ -23,9 +23,9 @@ _CORE_CHANNELS: set[str] = set()
 _get_analysis_engine_mode = None
 _compare_row_vs_vectorized = None
 
-from contextlib import suppress
+from contextlib import suppress  # noqa: E402
 
-with suppress(ImportError):
+with suppress(ImportError):  # noqa: E402
     from racelab_engine.analysis.vectorized_channels import (
         normalize_telemetry_frame as _nft,
         calculate_core_channels_frame as _ccf,
@@ -85,23 +85,23 @@ def compare_row_vs_vectorized(*args, **kwargs):
     return _compare_row_vs_vectorized(*args, **kwargs)  # type: ignore[misc]
 
 
-from racelab_engine.analysis.drag_scrub import (
+from racelab_engine.analysis.drag_scrub import (  # noqa: E402
     compute_drag_scrub_index,
     aero_normalized_resistance,
     detect_drag_scrub_risk_zones,
 )
-from racelab_engine.analysis.platform_events import (
+from racelab_engine.analysis.platform_events import (  # noqa: E402
     detect_platform_events,
     PlatformEvent,
 )
-from racelab_engine.analysis.constants import (
+from racelab_engine.analysis.constants import (  # noqa: E402
     FORCE_PROXY_WARNING,
     FORCE_PROXY_CHANNELS,
     SLIP_RATIO_SPEED_FLOOR_MPS,
     SLIP_RATIO_CLAMP_MAX,
     REFERENCE_DYNAMIC_PRESSURE_PA,
 )
-from racelab_engine.analysis.units import (
+from racelab_engine.analysis.units import (  # noqa: E402
     MPS_TO_MPH,
     M_TO_FT,
     M_TO_IN,

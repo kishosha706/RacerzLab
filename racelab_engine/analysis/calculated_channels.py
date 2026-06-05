@@ -2758,7 +2758,7 @@ def _compute_diffuser_channels(
         rf = row.get("rf_ride_height_in")
         lr = row.get("lr_ride_height_in")
         rr = row.get("rr_ride_height_in")
-        if any(v is None for v in (lf, rf, lr, rr)):
+        if lf is None or rf is None or lr is None or rr is None:
             row["front_center_rh_in"] = None
             row["lr_height_rub_block_in"] = None
             row["rear_center_rh_in"] = None

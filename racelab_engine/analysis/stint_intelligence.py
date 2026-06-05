@@ -377,6 +377,11 @@ def _build_run_summary(
     warnings: list[str],
 ) -> StintRunSummary:
     card_by_size = {card.lap_count: card for card in best_window_cards if card.is_best_for_size}
+    c5 = card_by_size.get(5)
+    c10 = card_by_size.get(10)
+    c20 = card_by_size.get(20)
+    c30 = card_by_size.get(30)
+    c40 = card_by_size.get(40)
     return StintRunSummary(
         run_id=run_id,
         setup_name=session.setup_name if session else None,
@@ -386,13 +391,13 @@ def _build_run_summary(
         total_laps=len(ordered),
         valid_laps=len(valid),
         best_lap_time=min(_times(valid), default=None),
-        full_stint_avg=full_stint.avg_lap_time if full_stint else None,
-        falloff_total=full_stint.falloff_total if full_stint else None,
-        best_5_avg=card_by_size.get(5).avg_lap_time if card_by_size.get(5) else None,
-        best_10_avg=card_by_size.get(10).avg_lap_time if card_by_size.get(10) else None,
-        best_20_avg=card_by_size.get(20).avg_lap_time if card_by_size.get(20) else None,
-        best_30_avg=card_by_size.get(30).avg_lap_time if card_by_size.get(30) else None,
-        best_40_avg=card_by_size.get(40).avg_lap_time if card_by_size.get(40) else None,
+        full_stint_avg=None if full_stint is None else full_stint.avg_lap_time,
+        falloff_total=None if full_stint is None else full_stint.falloff_total,
+        best_5_avg=None if c5 is None else c5.avg_lap_time,
+        best_10_avg=None if c10 is None else c10.avg_lap_time,
+        best_20_avg=None if c20 is None else c20.avg_lap_time,
+        best_30_avg=None if c30 is None else c30.avg_lap_time,
+        best_40_avg=None if c40 is None else c40.avg_lap_time,
         data_status="Ready" if full_stint is not None and len(warnings) == 0 else "Limited",
         warnings=warnings,
     )

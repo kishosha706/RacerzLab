@@ -17,14 +17,11 @@ Formulas:
 from __future__ import annotations
 
 import math
-from typing import Any
 
 from racelab_engine.analysis.estimate_confidence import (
     EstimateConfidence,
     confidence_from_missing,
 )
-from racelab_engine.analysis.physics_inputs import VehiclePhysicsInputs
-
 G = 9.81  # m/s²
 
 

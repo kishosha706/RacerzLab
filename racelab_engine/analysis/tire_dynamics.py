@@ -14,7 +14,6 @@ Formulas:
 from __future__ import annotations
 
 import math
-from typing import Any
 
 from racelab_engine.analysis.estimate_confidence import (
     EstimateConfidence,

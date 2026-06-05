@@ -8,6 +8,9 @@ from pydantic import BaseModel
 import polars as pl
 
 from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+from racelab_engine.analysis.constants import SEGMENT_WIDTH_PCT
+from racelab_engine.analysis.drag_scrub import compute_drag_scrub_index
+from racelab_engine.analysis.platform import classify_splitter_height_mm
 
 
 def _ensure_normalized(table: Any) -> list[dict[str, Any]]:
@@ -16,9 +19,6 @@ def _ensure_normalized(table: Any) -> list[dict[str, Any]]:
         if "speed_mph" in table[0]:
             return table  # already normalized
     return normalize_telemetry_rows(table)
-from racelab_engine.analysis.constants import SEGMENT_WIDTH_PCT
-from racelab_engine.analysis.drag_scrub import compute_drag_scrub_index
-from racelab_engine.analysis.platform import classify_splitter_height_mm
 
 
 class SegmentSummary(BaseModel):

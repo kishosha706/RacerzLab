@@ -146,7 +146,6 @@ def build_platform_proxy_estimates(row: Mapping[str, Any], setup: Any | None = N
     rr_mm = _get_float(row, "rr_ride_height_mm")
     rear_min_mm: float | None = None
     rear_risk: float | None = None
-    rear_side: str | None = None
     if lr_mm is not None and rr_mm is not None:
         rear_min_mm = min(lr_mm, rr_mm)
         from racelab_engine.analysis.constants import REAR_SCRAPE_MM, REAR_CRITICAL_MM, REAR_HIGH_MM, REAR_WATCH_MM

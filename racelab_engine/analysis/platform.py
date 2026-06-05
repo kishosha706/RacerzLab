@@ -4,16 +4,6 @@ from collections import defaultdict
 from typing import Any, cast
 
 from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
-import polars as pl
-
-
-def _ensure_normalized(table: Any) -> list[dict[str, Any]]:
-    if isinstance(table, list) and table and isinstance(table[0], dict):
-        if "speed_mph" in table[0]:
-            return table
-    return normalize_telemetry_rows(table)
-
-
 from racelab_engine.analysis.constants import (
     SPLITTER_SCRAPE_MM,
     SPLITTER_CRITICAL_MM,
@@ -24,6 +14,14 @@ from racelab_engine.analysis.constants import (
     LOW_BRAKE_PCT,
 )
 from racelab_engine.models.event import TelemetryEvent
+import polars as pl
+
+
+def _ensure_normalized(table: Any) -> list[dict[str, Any]]:
+    if isinstance(table, list) and table and isinstance(table[0], dict):
+        if "speed_mph" in table[0]:
+            return table
+    return normalize_telemetry_rows(table)
 
 
 def classify_splitter_height_mm(splitter_height_mm: float | None) -> str:

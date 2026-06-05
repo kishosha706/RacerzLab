@@ -6,7 +6,7 @@ Default values carry low confidence and are documented as assumptions.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from racelab_engine.analysis.estimate_confidence import (
