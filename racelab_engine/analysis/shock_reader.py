@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from racelab_engine.analysis.shock_reader_schema import (
+    Confidence,
+    Pattern,
+    SettingConfidence,
     ShockCornerRead,
     ShockReaderResponse,
     ShockRecommendation,
@@ -218,7 +221,7 @@ def compute_corner_read(
         bump_hi_pct=read["bump_hi_pct"],
         avg_rebound_in_s=_mean(abs(value) for value in samples if value < 0),
         avg_bump_in_s=_mean(value for value in samples if value > 0),
-        center_pct=_pct(sum(1 for value in samples if abs(value) < 0.05), total),
+        center_pct=_pct(sum(abs(value) < 0.05 for value in samples), total),
         rms_in_s=rms,
         activity_index=activity,
         deflection_delta_range_in=deflection_range,
@@ -234,25 +237,25 @@ def classify_corner_pattern(
     bump_hi_pct: float,
     rms_in_s: float | None,
     activity_index: float | None,
-) -> tuple[str, str]:
+) -> tuple[Pattern, Confidence]:
     low_delta = bump_lo_pct - rebound_lo_pct
     high_delta = bump_hi_pct - rebound_hi_pct
     high_total = bump_hi_pct + rebound_hi_pct
     active = max(rms_in_s or 0.0, activity_index or 0.0)
 
     if high_total >= 38 and bump_hi_pct >= 10 and rebound_hi_pct >= 10 and active >= 1.6:
-        return "excessive_high_speed_shoulders", "medium"
+        return "excessive_high_speed_shoulders", "medium"  # type: ignore[return-value]
     if high_delta >= 12 and bump_hi_pct >= 18:
-        return "high_speed_bump_heavy", "medium"
+        return "high_speed_bump_heavy", "medium"  # type: ignore[return-value]
     if high_delta <= -12 and rebound_hi_pct >= 18:
-        return "high_speed_rebound_heavy", "medium"
+        return "high_speed_rebound_heavy", "medium"  # type: ignore[return-value]
     if low_delta >= 12 and bump_lo_pct >= 18:
-        return "low_speed_bump_heavy", "medium"
+        return "low_speed_bump_heavy", "medium"  # type: ignore[return-value]
     if low_delta <= -12 and rebound_lo_pct >= 18:
-        return "low_speed_rebound_heavy", "medium"
+        return "low_speed_rebound_heavy", "medium"  # type: ignore[return-value]
     if abs(low_delta) <= 8 and abs(high_delta) <= 8 and high_total < 32:
-        return "balanced", "high"
-    return "balanced", "medium"
+        return "balanced", "high"  # type: ignore[return-value]
+    return "balanced", "medium"  # type: ignore[return-value]
 
 
 def _build_recommendations(
@@ -313,7 +316,7 @@ def _attach_setting_recommendations(
 
 
 def _corner_setup_values(setup_snapshot: SetupSnapshot | None, corner: str) -> dict[str, int | None]:
-    return {setting: _setup_value(setup_snapshot, corner, setting) for setting, _label, _schema_setting in INLINE_SETTINGS}
+    return {setting: _setup_value(setup_snapshot, corner, _schema_setting) for setting, _label, _schema_setting in INLINE_SETTINGS}
 
 
 def _build_setting_recommendations(
@@ -446,16 +449,17 @@ def _slope_context(context: dict[str, Any], corner: ShockCornerRead, side: str) 
     return (corner.rebound_hi_pct >= 18 and context["recovery"]) or (high_total >= 38 and context["chatter"])
 
 
-def _setting_confidence(corner: ShockCornerRead, context: dict[str, Any], score: int) -> str:
+def _setting_confidence(corner: ShockCornerRead, context: dict[str, Any], score: int) -> SettingConfidence:
     if corner.pattern == "insufficient_evidence" or corner.sample_count < MIN_SAMPLE_COUNT:
         return "needs_more_evidence"
-    if score == 0:
+    elif score == 0:
         return "low"
-    if score >= 4 and context["selected_zone"]:
+    elif score >= 4 and context["selected_zone"]:
         return "high"
-    if score >= 2:
+    elif score >= 2:
         return "medium"
-    return "low"
+    else:
+        return "low"
 
 
 def _scaled_delta(score: int, setting: ShockSetting, context: dict[str, Any]) -> int:
@@ -490,11 +494,12 @@ def _setting_magnitude(delta: int) -> str:
     amount = abs(delta)
     if amount == 0:
         return "hold"
-    if amount == 1:
+    elif amount == 1:
         return "small"
-    if amount <= 3:
+    elif amount <= 3:
         return "medium"
-    return "big"
+    else:
+        return "big"
 
 
 def _setting_text(setting: ShockSetting, direction: str, reason: str) -> tuple[str, str, list[str]]:
@@ -553,7 +558,7 @@ def _setting_text(setting: ShockSetting, direction: str, reason: str) -> tuple[s
     )
 
 
-def _recommendation_priority(rec: ShockSettingRecommendation, corner: ShockCornerRead) -> tuple[int, int, float]:
+def _recommendation_priority(rec: ShockSettingRecommendation, corner: ShockCornerRead) -> tuple[int, int, float, float]:
     direction_rank = 1 if rec.direction == "blocked" else 2
     confidence_rank = {"needs_more_evidence": 0, "low": 1, "medium": 2, "high": 3}[rec.confidence]
     return (direction_rank, confidence_rank, abs(rec.delta or 0), corner.bump_hi_pct + corner.rebound_hi_pct)
@@ -573,6 +578,7 @@ def _compat_recommend(
     else:
         semantic = "subtract" if (rec.delta or 0) < 0 else "add"
     classification = "package_swing" if rec.setting in {"hs_compression_slope", "hs_rebound_slope"} else "balance_swing" if rec.magnitude in {"medium", "big"} else "fine_tune"
+    rec_confidence: Confidence = "high" if rec.confidence == "high" else "medium" if rec.confidence == "medium" else "low"
     return ShockRecommendation(
         id=f"shock_reader_{corner.corner.lower()}_{rec.setting}_{rec.direction}",
         corner_scope=corner.corner,  # type: ignore[arg-type]
@@ -588,7 +594,7 @@ def _compat_recommend(
         tradeoff=rec.tradeoff,
         next_test=f"Try one {rec.display_label} change on {corner.corner}, then compare the same Shocks lap/window.",
         watch_for=rec.watch_for,
-        confidence="high" if rec.confidence == "high" else "medium" if rec.confidence == "medium" else "low",
+        confidence=rec_confidence,
         evidence_summary=_evidence_summary(corner, context),
         hidden_debug={
             "inline_setting": rec.setting,
@@ -722,7 +728,7 @@ def _read_shock_reader_columns(
         wanted.extend(channels)
     wanted.extend(ACTIVITY_CHANNELS.values())
     safe = [column for column in dict.fromkeys(wanted) if column in existing]
-    if not any(channel in safe for channel in VELOCITY_CHANNELS.values()):
+    if all(channel not in safe for channel in VELOCITY_CHANNELS.values()):
         return {}
 
     frame = pl.scan_parquet(path).select(safe)
@@ -754,9 +760,7 @@ def _apply_phase_filter(frame: Any, pl: Any, phase: str | None, columns: list[st
         expr = pl.col("throttle_pct") > 35
     elif normalized == "straight" and steering_col and has_throttle:
         expr = (pl.col(steering_col).abs() < 2) & (pl.col("throttle_pct") > 70)
-    if expr is None:
-        return frame
-    return frame.filter(expr)
+    return frame if expr is None else frame.filter(expr)
 
 
 def _build_context(data: dict[str, list[Any]], *, phase: str | None, selected_zone: bool) -> dict[str, Any]:
@@ -771,18 +775,23 @@ def _build_context(data: dict[str, list[Any]], *, phase: str | None, selected_zo
     ) or (rear_margin is not None and rear_margin <= 0.0) or (cfs_in is not None and cfs_in <= 0.12) or (cfs_mm is not None and cfs_mm <= 3.0)
     global_activity = _mean(_numeric_series(data, "shock_activity_index"))
     damper_energy = _mean(_numeric_series(data, "damper_energy_proxy"))
-    chatter = bool(not contact and ((global_activity or 0.0) >= 1.4 or (damper_energy or 0.0) >= 1.4))
+    chatter = not contact and ((global_activity or 0.0) >= 1.4 or (damper_energy or 0.0) >= 1.4)
     recovery = phase in {"transition", "exit", "entry"} or chatter
-    packed = contact or bool(_max(_numeric_series(data, "platform_compression_index")) and (_max(_numeric_series(data, "platform_compression_index")) or 0) > 0.65)
+    compression_index = _max(_numeric_series(data, "platform_compression_index"))
+    platform_trace = any(
+        name in data
+        for name in ("cfs_ride_height_in", "rear_scrape_margin_mm", "rear_platform_contact_risk", "front_center_rh_in", "rear_center_rh_in")
+    )
+    packed = contact or (compression_index is not None and compression_index > 0.65)
     return {
         "selected_zone": selected_zone,
         "phase": phase,
         "contact": contact,
-        "platform_trace": any(name in data for name in ("cfs_ride_height_in", "rear_scrape_margin_mm", "rear_platform_contact_risk", "front_center_rh_in", "rear_center_rh_in")),
+        "platform_trace": platform_trace,
         "chatter": chatter,
         "recovery": recovery,
         "packed": packed,
-        "slope_allowed": selected_zone and (contact or chatter) and any(name in data for name in ("cfs_ride_height_in", "rear_scrape_margin_mm", "rear_platform_contact_risk", "front_center_rh_in", "rear_center_rh_in")),
+        "slope_allowed": selected_zone and (contact or chatter) and platform_trace,
     }
 
 
@@ -831,7 +840,7 @@ def _click_value(value: Any) -> int | None:
     return int(numeric)
 
 
-def _recommendation_confidence(corner: ShockCornerRead, context: dict[str, Any]) -> str:
+def _recommendation_confidence(corner: ShockCornerRead, context: dict[str, Any]) -> Confidence:
     if corner.confidence == "high" and context["selected_zone"]:
         return "high"
     if context["selected_zone"] and (context["contact"] or context["chatter"] or corner.sample_count >= 80):
@@ -857,9 +866,10 @@ def _evidence_summary(corner: ShockCornerRead, context: dict[str, Any]) -> str:
 def _format_lap_window(*, lap: int | None, lap_window: tuple[int, int] | None) -> str | None:
     if lap is not None:
         return str(lap)
-    if lap_window is None:
+    elif lap_window is None:
         return None
-    return f"{lap_window[0]}-{lap_window[1]}"
+    else:
+        return f"{lap_window[0]}-{lap_window[1]}"
 
 
 def _has_selected_zone(lap: int | None, lap_window: tuple[int, int] | None, phase: str | None) -> bool:
@@ -882,19 +892,17 @@ def _numeric_series(data: dict[str, list[Any]], channel: str) -> list[float]:
 
 def _mean(values: Iterable[float]) -> float | None:
     clean = [value for value in values if math.isfinite(value)]
-    if not clean:
-        return None
-    return sum(clean) / len(clean)
+    return sum(clean) / len(clean) if clean else None
 
 
 def _min(values: Iterable[float]) -> float | None:
     clean = [value for value in values if math.isfinite(value)]
-    return min(clean) if clean else None
+    return min(clean, default=None)
 
 
 def _max(values: Iterable[float]) -> float | None:
     clean = [value for value in values if math.isfinite(value)]
-    return max(clean) if clean else None
+    return max(clean, default=None)
 
 
 def _pct(count: int, total: int) -> float:

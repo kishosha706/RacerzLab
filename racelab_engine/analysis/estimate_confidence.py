@@ -34,24 +34,27 @@ def confidence_from_missing(
     - All missing → unavailable (score 0.0)
     """
     missing = [k for k in required_inputs if k not in provided_inputs]
-    if not required_inputs:
-        return EstimateConfidence(
+    assumptions_list = assumptions or []
+    return (
+        EstimateConfidence(
             score=0.90,
             tier="high",
-            assumptions=assumptions or [],
+            assumptions=assumptions_list,
             validity_reason="No required inputs specified.",
         )
-    if missing:
-        return EstimateConfidence(
+        if not required_inputs
+        else EstimateConfidence(
             score=0.40,
             tier="low",
             missing_inputs=missing,
-            assumptions=assumptions or [],
+            assumptions=assumptions_list,
             validity_reason=f"Missing inputs: {', '.join(missing)}.",
         )
-    return EstimateConfidence(
-        score=0.90,
-        tier="high",
-        assumptions=assumptions or [],
-        validity_reason="All required inputs available.",
+        if missing
+        else EstimateConfidence(
+            score=0.90,
+            tier="high",
+            assumptions=assumptions_list,
+            validity_reason="All required inputs available.",
+        )
     )

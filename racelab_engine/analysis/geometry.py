@@ -11,7 +11,6 @@ provides motion-ratio data.
 from __future__ import annotations
 
 import math
-from typing import Any
 
 from racelab_engine.analysis.constants import apply_motion_ratio
 
@@ -66,9 +65,9 @@ def compute_roll_deg(
 
 def ride_height_m_to_in(meters: float | None) -> float | None:
     """Convert ride height from meters to inches."""
-    return None if meters is None else meters * 39.37007874
+    return meters * 39.37007874 if meters is not None else None
 
 
 def ride_height_mm_to_m(mm: float | None) -> float | None:
     """Convert ride height from millimeters to meters."""
-    return None if mm is None else mm / 1000.0
+    return mm / 1000.0 if mm is not None else None

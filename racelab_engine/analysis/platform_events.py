@@ -134,16 +134,20 @@ def _sample_value(row: dict[str, Any], name: str) -> Any:
     return value
 
 
-def _event_location(row: dict[str, Any], sample_index: int) -> dict[str, Any]:
+def _sample_lap(row: dict[str, Any]) -> int | None:
     lap_raw = row.get("lap")
-    lap_val: int | None = None
-    if lap_raw is not None and not isinstance(lap_raw, bool):
-        from contextlib import suppress
-        with suppress(TypeError, ValueError):
-            if not math.isnan(float(lap_raw)):
-                lap_val = int(lap_raw)
+    if lap_raw is None or isinstance(lap_raw, bool):
+        return None
+    from contextlib import suppress
+    with suppress(TypeError, ValueError):
+        if not math.isnan(float(lap_raw)):
+            return int(lap_raw)
+    return None
+
+
+def _event_location(row: dict[str, Any], sample_index: int) -> dict[str, Any]:
     return {
-        "lap": lap_val,
+        "lap": _sample_lap(row),
         "sample_index": sample_index,
         "lap_dist_ft": _sample_value(row, "lap_dist_ft"),
         "lap_pct": _sample_value(row, "lap_dist_pct_100"),
@@ -153,40 +157,39 @@ def _event_location(row: dict[str, Any], sample_index: int) -> dict[str, Any]:
 
 
 def _make_event_id(event_type: str, row: dict[str, Any], sample_index: int) -> str:
-    lap_raw = row.get("lap")
-    lap: int | str = "x"
-    if lap_raw is not None and not isinstance(lap_raw, bool):
-        from contextlib import suppress
-        with suppress(TypeError, ValueError):
-            if not math.isnan(float(lap_raw)):
-                lap = int(lap_raw)
+    lap_value = _sample_lap(row)
+    lap: int | str = lap_value if lap_value is not None else "x"
     return f"{event_type.lower()}_lap{lap}_sample{sample_index}"
 
 
 def _cfs_severity(cfs_in: float | None) -> Severity:
-    if cfs_in is None:
-        return "info"
-    if cfs_in <= 0.118:
-        return "critical"
-    if cfs_in <= 0.236:
-        return "high"
-    if cfs_in <= 0.394:
-        return "watch"
-    return "info"
+    return (
+        "info"
+        if cfs_in is None
+        else "critical"
+        if cfs_in <= 0.118
+        else "high"
+        if cfs_in <= 0.236
+        else "watch"
+        if cfs_in <= 0.394
+        else "info"
+    )
 
 
 def _rear_severity(rear_mm: float | None) -> Severity:
     """Classify rear ride height severity using rear thresholds."""
     from racelab_engine.analysis.constants import REAR_CRITICAL_MM, REAR_HIGH_MM, REAR_WATCH_MM
-    if rear_mm is None:
-        return "info"
-    if rear_mm <= REAR_CRITICAL_MM:
-        return "critical"
-    if rear_mm <= REAR_HIGH_MM:
-        return "high"
-    if rear_mm <= REAR_WATCH_MM:
-        return "watch"
-    return "info"
+    return (
+        "info"
+        if rear_mm is None
+        else "critical"
+        if rear_mm <= REAR_CRITICAL_MM
+        else "high"
+        if rear_mm <= REAR_HIGH_MM
+        else "watch"
+        if rear_mm <= REAR_WATCH_MM
+        else "info"
+    )
 
 
 # ── detectors ────────────────────────────────────────────────────
@@ -625,7 +628,6 @@ def detect_whole_car_bottoming_risk(rows: list[dict[str, Any]]) -> PlatformEvent
     rear_risk = _sample_value(row, "rear_scrape_risk_score")
     cfs_in = _sample_value(row, "cfs_ride_height_in")
     rear_mm = _sample_value(row, "rear_min_ride_height_mm")
-    balance_label = row.get("platform_balance_label", "")
     balance_explanation = row.get("platform_balance_explanation", "")
 
     evidence = ["Both front and rear platform risk are elevated — possible whole-car bottoming."]
@@ -760,4 +762,3 @@ def detect_platform_events(
             events.append(event)
 
     return events
-

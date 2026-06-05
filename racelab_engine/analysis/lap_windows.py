@@ -57,7 +57,7 @@ def _to_quality_summary(lap: LapSummary) -> LapQualitySummary:
 
 
 def _compute_window_stats(laps: list[LapSummary]) -> dict[str, Any]:
-    times = [l.lap_time for l in laps if l.lap_time is not None]
+    times = [la.lap_time for la in laps if la.lap_time is not None]
     if not times:
         return {"avg": None, "fastest": None, "slowest": None, "std": None}
 
@@ -66,11 +66,11 @@ def _compute_window_stats(laps: list[LapSummary]) -> dict[str, Any]:
     fastest = min(times)
     slowest = max(times)
     std = statistics.stdev(times) if n >= 2 else 0.0
-    third = max(1, n // 3)
+    third = n // 3 or 1
     first_third = sum(times[:third]) / third
     last_third = sum(times[-third:]) / third
     falloff = last_third - first_third
-    falloff_per_lap = falloff / max(1, n)
+    falloff_per_lap = falloff / n
     return {"avg": avg, "fastest": fastest, "slowest": slowest, "std": std, "falloff": falloff, "falloff_per_lap": falloff_per_lap}
 
 
@@ -79,7 +79,7 @@ def compute_fastest_groups(laps: list[LapSummary], sizes: list[int] | None = Non
         sizes = [10, 20, 30, 40]
 
     valid = [lap for lap in laps if _is_lap_valid_for_ranking(lap)[0]]
-    valid.sort(key=lambda l: l.lap_time or 999999.0)
+    valid.sort(key=lambda la: la.lap_time or 999999.0)
     groups: list[FastestLapGroup] = []
 
     for size in sizes:
@@ -94,7 +94,7 @@ def compute_fastest_groups(laps: list[LapSummary], sizes: list[int] | None = Non
             continue
 
         stats = _compute_window_stats(selected)
-        tags = list({t for l in selected for t in l.classification_tags})
+        tags = list({t for la in selected for t in la.classification_tags})
         pq = compute_pace_quality_score(
             window_size=size,
             valid_lap_count=len(selected),
@@ -107,7 +107,7 @@ def compute_fastest_groups(laps: list[LapSummary], sizes: list[int] | None = Non
         groups.append(FastestLapGroup(
             label=f"Fastest {size} Laps",
             lap_count=size,
-            laps=[_to_quality_summary(l) for l in selected],
+            laps=[_to_quality_summary(la) for la in selected],
             average_lap_time=stats["avg"],
             fastest_lap_time=stats["fastest"],
             slowest_lap_time=stats["slowest"],
@@ -127,7 +127,7 @@ def compute_fastest_groups(laps: list[LapSummary], sizes: list[int] | None = Non
 def compute_best_windows(laps: list[LapSummary], sizes: list[int] | None = None) -> list[BestWindowGroup]:
     if sizes is None:
         sizes = [5, 10, 20, 30, 40]
-    sorted_laps = sorted(laps, key=lambda l: l.lap_number)
+    sorted_laps = sorted(laps, key=lambda la: la.lap_number)
     valid_map: dict[int, bool] = {}
     reason_map: dict[int, str | None] = {}
     for lap in sorted_laps:
@@ -205,8 +205,8 @@ def compute_best_windows(laps: list[LapSummary], sizes: list[int] | None = None)
 
 
 def compute_degradation(laps: list[LapSummary]) -> LapDegradationSummary:
-    sorted_laps = sorted(laps, key=lambda l: l.lap_number)
-    valid = [l for l in sorted_laps if _is_lap_valid_for_ranking(l)[0]]
+    sorted_laps = sorted(laps, key=lambda la: la.lap_number)
+    valid = [la for la in sorted_laps if _is_lap_valid_for_ranking(la)[0]]
     n = len(valid)
     if n < 10:
         return LapDegradationSummary(
@@ -216,18 +216,18 @@ def compute_degradation(laps: list[LapSummary]) -> LapDegradationSummary:
             coaching_message=f"Need at least 10 valid laps for degradation analysis. Only {n} valid lap{'s' if n != 1 else ''}.",
         )
 
-    third = max(1, n // 3)
+    third = n // 3 or 1
     early = valid[:third]
     middle = valid[third:2 * third]
     late = valid[2 * third:]
-    early_times = [l.lap_time for l in early if l.lap_time is not None]
-    middle_times = [l.lap_time for l in middle if l.lap_time is not None]
-    late_times = [l.lap_time for l in late if l.lap_time is not None]
+    early_times = [la.lap_time for la in early if la.lap_time is not None]
+    middle_times = [la.lap_time for la in middle if la.lap_time is not None]
+    late_times = [la.lap_time for la in late if la.lap_time is not None]
     early_avg = sum(early_times) / len(early_times) if early_times else None
     middle_avg = sum(middle_times) / len(middle_times) if middle_times else None
     late_avg = sum(late_times) / len(late_times) if late_times else None
     falloff = (late_avg - early_avg) if (late_avg is not None and early_avg is not None) else None
-    falloff_per_lap = falloff / max(1, n) if falloff is not None else None
+    falloff_per_lap = falloff / n if falloff is not None else None
     confidence = min(1.0, n / 40)
     coaching_message = "Limited falloff data - more laps needed for stronger conclusions."
     if falloff is not None:
@@ -258,7 +258,7 @@ def compute_lap_windows_response(laps: list[LapSummary]) -> LapWindowsResponse:
         return LapWindowsResponse(run_id="", warnings=["No lap data available."])
     run_id = laps[0].run_id
     total = len(laps)
-    valid = sum(_is_lap_valid_for_ranking(l)[0] for l in laps)
+    valid = sum(_is_lap_valid_for_ranking(la)[0] for la in laps)
     fastest_groups = compute_fastest_groups(laps)
     best_windows = compute_best_windows(laps)
     degradation = compute_degradation(laps)

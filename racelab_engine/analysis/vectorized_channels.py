@@ -51,8 +51,6 @@ from racelab_engine.analysis.units import (
     MPS_TO_MPH,
     PA_TO_PSF,
     MM_TO_IN,
-    input_01_to_percent,
-    radians_to_degrees,
 )
 
 # ── Feature flag ─────────────────────────────────────────────────
@@ -182,8 +180,6 @@ def compare_row_vs_vectorized(
 
     if channels is None:
         channels = _DEFAULT_COMPARE_CHANNELS
-    channel_set = set(channels)
-
     ref = normalize_telemetry_rows(rows_or_table, geometry=geometry)
     vec_df = normalize_telemetry_frame(rows_or_table, geometry=geometry)
     vec = frame_to_rows(vec_df)
@@ -443,24 +439,6 @@ CORE_CHANNELS: set[str] = {
 }
 
 
-def normalize_telemetry_frame(
-    data: pl.DataFrame | list[dict[str, Any]],
-    geometry: dict[str, float] | None = None,
-) -> pl.DataFrame:
-    """Vectorised equivalent of calculated_channels.normalize_telemetry_rows.
-
-    Parameters
-    ----------
-    data : pl.DataFrame | list[dict]
-        Raw telemetry rows or a Polars DataFrame with iRacing column names.
-    geometry : dict or None
-        Optional setup constants (wheelbase, track width, axle-to-CG, etc.).
-
-    Returns
-    -------
-    pl.DataFrame
-        DataFrame with all core calculated channels added.
-    """
 # Known string channels -- for explicit schema inference
 _STRING_CHANNELS: frozenset[str] = frozenset({
     "Skies", "TrackWetness", "SessionType", "SessionName",
@@ -475,11 +453,11 @@ def _rows_to_frame(data: list[dict[str, Any]]) -> pl.DataFrame:
     """Build DataFrame from row dicts with explicit schema (fast)."""
     if not data:
         return pl.DataFrame()
-    schema: dict[str, pl.PolarsDataType] = {}
+    schema: dict[str, type[pl.DataType]] = {}
     first = data[0]
     for key in first:
         if key in _STRING_CHANNELS or isinstance(first[key], str):
-            schema[key] = pl.Utf8
+            schema[key] = pl.String
         elif isinstance(first[key], bool):
             schema[key] = pl.Boolean
         elif isinstance(first[key], int):
@@ -491,11 +469,7 @@ def _rows_to_frame(data: list[dict[str, Any]]) -> pl.DataFrame:
 
 def _columns_to_frame(columns: dict[str, list[Any]]) -> pl.DataFrame:
     """Build DataFrame from columnar data (fastest path)."""
-    if not columns:
-        return pl.DataFrame()
-    # Let Polars infer types from column lists (fast, no scanning needed)
-    # Use strict=False to handle occasional mixed types gracefully
-    return pl.DataFrame(columns, strict=False)
+    return pl.DataFrame(columns, strict=False) if columns else pl.DataFrame()
 
 
 def normalize_telemetry_frame(
@@ -685,8 +659,7 @@ def _apply_aliases(df: pl.DataFrame) -> pl.DataFrame:
     Only renames if the target column does not already exist (avoids
     DuplicateError when the alias was already created by the row path).
     """
-    all_aliases = dict(_ALIAS_MAP)
-    all_aliases.update(_TIRE_ALIAS_MAP)
+    all_aliases = _ALIAS_MAP | _TIRE_ALIAS_MAP
     if renames := {
         raw: norm for raw, norm in all_aliases.items()
         if raw in df.columns and norm not in df.columns
@@ -807,7 +780,7 @@ def _compute_slip_ratios(df: pl.DataFrame) -> pl.DataFrame:
         df = df.with_columns(slip.alias(target))
 
     # driven_wheel_slip_proxy
-    if all(k in df.columns for k in ("LRspeed", "RRspeed")):
+    if {"LRspeed", "RRspeed"}.issubset(df.columns):
         ws_avg = (pl.col("LRspeed") + pl.col("RRspeed")) / 2.0
         slip = (ws_avg - speed_expr) / denom_expr
         slip = slip.clip(-SLIP_RATIO_CLAMP_MAX, SLIP_RATIO_CLAMP_MAX)
@@ -1118,12 +1091,6 @@ def _convert_shocks(df: pl.DataFrame) -> pl.DataFrame:
     elif "throttle_01" in df.columns:
         throttle_expr = pl.col("throttle_01") * 100.0
 
-    brake_expr = None
-    if "brake_pct" in df.columns:
-        brake_expr = pl.col("brake_pct")
-    elif "brake_01" in df.columns:
-        brake_expr = pl.col("brake_01") * 100.0
-
     for corner in _SHOCK_CORNERS:
         deflection_col = f"{corner}_shock_defl_in"
         if deflection_col not in df.columns or throttle_expr is None:
@@ -1207,6 +1174,9 @@ def _compute_resistance_indices(df: pl.DataFrame) -> pl.DataFrame:
     def col_or_zero(name: str) -> pl.Expr:
         return pl.col(name) if name in df.columns else pl.lit(0.0, dtype=pl.Float64)
 
+    # Row path skips first row (via _init_derivative_row continue)
+    row_idx = pl.int_range(0, df.height, dtype=pl.Int64)
+
     # full_throttle_resistance_index
     has_ft = {"speed_mph", "throttle_pct", "brake_pct"}.issubset(df.columns)
     if has_ft:
@@ -1229,8 +1199,6 @@ def _compute_resistance_indices(df: pl.DataFrame) -> pl.DataFrame:
         resistance_coeff = decel_pos / dp_psf
         resistance_index = (resistance_coeff / RESISTANCE_COEFF_CRITICAL).clip(0.0, 1.0)
 
-        # Row path skips first row (via _init_derivative_row continue)
-        row_idx = pl.int_range(0, df.height, dtype=pl.Int64)
         ft_index = (
             pl.when(row_idx == 0).then(None)
             .when(gate)
@@ -1559,8 +1527,10 @@ def _compute_diffuser_geometry(df: pl.DataFrame) -> pl.DataFrame:
     ft3 = _CUBIC_INCHES_PER_FT3_V
     window = _DIFFUSER_SMOOTH_WINDOW_V
 
-    lf = pl.col("lf_ride_height_in"); rf = pl.col("rf_ride_height_in")
-    lr = pl.col("lr_ride_height_in"); rr = pl.col("rr_ride_height_in")
+    lf = pl.col("lf_ride_height_in")
+    rf = pl.col("rf_ride_height_in")
+    lr = pl.col("lr_ride_height_in")
+    rr = pl.col("rr_ride_height_in")
     has_all = lf.is_not_null() & rf.is_not_null() & lr.is_not_null() & rr.is_not_null()
 
     front_c = (rf + lf) / 2.0
