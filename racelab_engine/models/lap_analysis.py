@@ -177,6 +177,7 @@ class StintSummary(BaseModel):
     evidence_confidence_score: Optional[float] = None
     setup_usefulness_score: Optional[float] = None
     bucket_averages: list["StintBucket"] = Field(default_factory=list)
+    lap_points: list["StintGraphPoint"] = Field(default_factory=list)
     is_primary_summary: bool = False
     is_best_for_size: bool = False
     display_group: str = "windows"
@@ -199,6 +200,17 @@ class StintBucket(BaseModel):
     valid_lap_count: int = 0
     is_fastest_bucket: bool = False
     delta_from_best_bucket: Optional[float] = None
+    warning: Optional[str] = None
+
+
+class StintGraphPoint(BaseModel):
+    """Lap-time point for graphing a selected stint without loading trace data."""
+    stint_lap: int
+    lap_number: int
+    lap_time: Optional[float] = None
+    valid: bool = False
+    delta_to_best: Optional[float] = None
+    rolling_5: Optional[float] = None
     warning: Optional[str] = None
 
 

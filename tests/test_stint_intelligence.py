@@ -88,6 +88,11 @@ def test_stint_response_returns_curated_primary_rows_and_buckets() -> None:
     assert full.bucket_averages[0].label == "L1-5"
     assert full.bucket_averages[0].avg_lap_time is not None
     assert any(bucket.is_fastest_bucket for bucket in full.bucket_averages)
+    assert full.lap_points
+    assert full.lap_points[0].stint_lap == 1
+    assert full.lap_points[0].lap_time is not None
+    assert full.lap_points[0].delta_to_best is not None
+    assert any(point.rolling_5 is not None for point in full.lap_points)
     assert response.run_summary is not None
     assert response.run_summary.full_stint_avg == full.avg_lap_time
     assert response.run_summary.best_20_avg == response.best_window_cards[2].avg_lap_time
@@ -117,6 +122,10 @@ def test_invalid_laps_are_excluded_without_missing_to_zero() -> None:
     limited_bucket = full.bucket_averages[0]
     assert limited_bucket.avg_lap_time is None
     assert limited_bucket.warning is not None
+    invalid_point = next(point for point in full.lap_points if point.lap_number == 5)
+    assert invalid_point.valid is False
+    assert invalid_point.lap_time == 49.0
+    assert invalid_point.delta_to_best is None
 
 
 def test_insufficient_laps_marked_unavailable() -> None:
@@ -170,7 +179,8 @@ def test_stints_endpoint_returns_summaries(tmp_path: Path, monkeypatch: pytest.M
     assert payload["primary_stints"]
     assert payload["best_window_cards"]
     assert payload["run_summary"]["full_stint_avg"] is not None
-    assert {"stint_id", "bucket_averages", "display_label_short", "setup_usefulness_score"}.issubset(payload["stints"][0])
+    assert {"stint_id", "bucket_averages", "lap_points", "display_label_short", "setup_usefulness_score"}.issubset(payload["stints"][0])
+    assert payload["stints"][0]["lap_points"][0]["lap_time"] is not None
 
 
 def test_stints_compare_endpoint_returns_delta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

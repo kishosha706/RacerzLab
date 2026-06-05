@@ -152,6 +152,7 @@ export interface StintSummary {
   evidence_confidence_score: number | null;
   setup_usefulness_score: number | null;
   bucket_averages: StintBucket[];
+  lap_points: StintGraphPoint[];
   is_primary_summary: boolean;
   is_best_for_size: boolean;
   display_group: string;
@@ -173,6 +174,16 @@ export interface StintBucket {
   valid_lap_count: number;
   is_fastest_bucket: boolean;
   delta_from_best_bucket: number | null;
+  warning: string | null;
+}
+
+export interface StintGraphPoint {
+  stint_lap: number;
+  lap_number: number;
+  lap_time: number | null;
+  valid: boolean;
+  delta_to_best: number | null;
+  rolling_5: number | null;
   warning: string | null;
 }
 

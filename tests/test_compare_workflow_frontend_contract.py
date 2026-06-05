@@ -43,7 +43,8 @@ def test_laps_owns_baseline_test_workflow_copy() -> None:
 
     assert "Stint Intelligence" in laps
     assert "Baseline/Test Staging" in laps
-    assert "Review Stint Compare" in laps
+    assert "Graph Selected" in laps
+    assert "Graph Selected Stints" in laps
     assert "Open Stint Intelligence" in laps
     assert "Open Compare" not in laps
     assert "Compare Basket Staging" not in laps

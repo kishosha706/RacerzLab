@@ -21,6 +21,16 @@ def test_laps_tab_includes_stint_intelligence_subview() -> None:
     assert "stint-run-summary" in source
     assert "stint-window-card-row" in source
     assert "stint-selected-toolbar" in source
+    assert "stint-graph-panel" in source
+    assert "Graph Selected Stints" in source
+    assert "Graph Selected" in source
+    assert "Clear Graph" in source
+    assert "Show delta to best" in source
+    assert "Exclude invalid laps" in source
+    assert "Run History" in source
+    assert "expandedRunIds" in source
+    assert "historyStintData" in source
+    assert "loadHistoryRunStints" in source
     assert "selectedStintId" in source
     assert "compactTrendLabel" in source
     assert "No eligible stint windows yet." in source
@@ -30,6 +40,8 @@ def test_laps_tab_includes_stint_intelligence_subview() -> None:
     assert "export function fetchStints" in client
     assert "export interface StintSummary" in types
     assert "export interface StintBucket" in types
+    assert "export interface StintGraphPoint" in types
+    assert "lap_points" in types
     assert "export interface StintRunSummary" in types
     assert "stint_rows" in types
     assert "best_window_cards" in types

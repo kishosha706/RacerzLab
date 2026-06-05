@@ -12,6 +12,7 @@ from racelab_engine.models.lap_analysis import (
     StintBucket,
     StintBucketDelta,
     StintCompareResult,
+    StintGraphPoint,
     StintResponse,
     StintRunSummary,
     StintSummary,
@@ -86,6 +87,37 @@ def _bucket_averages(laps: list[LapSummary]) -> list[StintBucket]:
         })
         for bucket in buckets
     ]
+
+
+def _graph_points(laps: list[LapSummary]) -> list[StintGraphPoint]:
+    ordered = sorted(laps, key=lambda lap: lap.lap_number)
+    valid_times = [
+        lap.lap_time
+        for lap in ordered
+        if lap.lap_time is not None and _is_lap_valid_for_ranking(lap)[0]
+    ]
+    best_time = min(valid_times, default=None)
+    rolling_source: list[float | None] = []
+    points: list[StintGraphPoint] = []
+    for index, lap in enumerate(ordered, start=1):
+        valid, warning = _is_lap_valid_for_ranking(lap)
+        lap_time = lap.lap_time if lap.lap_time is not None else None
+        rolling_source.append(lap_time if valid else None)
+        rolling_5 = None
+        if len(rolling_source) >= 5:
+            window = rolling_source[-5:]
+            if all(value is not None for value in window):
+                rolling_5 = sum(value for value in window if value is not None) / 5
+        points.append(StintGraphPoint(
+            stint_lap=index,
+            lap_number=lap.lap_number,
+            lap_time=lap_time,
+            valid=valid,
+            delta_to_best=lap_time - best_time if lap_time is not None and best_time is not None and valid else None,
+            rolling_5=rolling_5,
+            warning=None if valid else warning,
+        ))
+    return points
 
 
 def _third_averages(laps: list[LapSummary]) -> tuple[float | None, float | None, float | None]:
@@ -308,6 +340,7 @@ def _build_stint_summary(
         evidence_confidence_score=pq.evidence_confidence_score,
         setup_usefulness_score=pq.setup_usefulness_score,
         bucket_averages=_bucket_averages(ordered),
+        lap_points=_graph_points(ordered),
         is_primary_summary=is_primary_summary,
         is_best_for_size=is_best_for_size,
         display_group=display_group,

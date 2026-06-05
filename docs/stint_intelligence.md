@@ -22,6 +22,30 @@ The default Laps view is curated on purpose. It shows meaningful stint rows only
 
 Selecting either a full-run row or a best-window card drives the toolbar actions for baseline, test, compare basket, and Platform focus. The timing sheet itself does not include a default Actions column.
 
+## Lap-Time Graph
+
+Laps owns the stint and lap-time workflow. The Stint Intelligence view includes a selected-stint graph panel:
+
+- default graph: current full-run lap-time curve
+- selectable graph sources: full-run row, best-window cards, and loaded history stints
+- graph modes: lap time, delta to best, or rolling 5-lap average
+- invalid laps are excluded by default and remain flagged in the source lap points
+- baseline/test selections are graphed together without reopening the standalone Compare workspace
+
+The graph uses lap-summary data only. It does not load full telemetry traces, use runtime AI, or invent missing lap-time points.
+
+## Run History
+
+The Stint Intelligence view also includes collapsible imported-run history:
+
+- current run is expanded by default
+- older runs are collapsed by default
+- history headers show setup/run context, track, car, lap count, best lap, and best loaded window averages
+- expanding an older run lazily fetches that run's existing `/api/runs/{run_id}/stints` data
+- expanded history stints and best-window cards can be graphed or assigned as baseline/test inside Laps
+
+Older run details are loaded on demand so the app does not fetch every stint table or lap series up front.
+
 ## Rolling Averages
 
 Each stint summary exposes:
@@ -90,12 +114,15 @@ The compare panel reports:
 
 Positive time deltas mean the test stint is slower than baseline. Negative time deltas mean the test stint is faster.
 
+Compare remains inside Laps for this workflow. The standalone Compare workspace is still hidden from normal navigation.
+
 ## Limitations
 
 - Pit detection is not live-aware yet.
 - Tire, platform, and shock trends depend on imported lap/window fields being populated.
 - Compare currently operates on computed summary rows, not raw time-series overlays.
 - Representative lap selection is preserved for downstream tabs, but Compare still primarily consumes run-level context.
+- Run history stints are fetched lazily; collapsed older runs may show only run-list metadata until expanded.
 
 ## Future Work
 
