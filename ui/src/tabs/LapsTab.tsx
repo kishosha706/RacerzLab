@@ -31,7 +31,6 @@ type LapsTabProps = {
   overview: RunOverview;
 };
 
-type LapsSubview = "current" | "windows" | "stints" | "all_sessions" | "baselines" | "basket";
 type StintMode = "ev" | "delta" | "falloff";
 type StintGraphMode = "lap_time" | "delta" | "rolling_5";
 
@@ -505,7 +504,6 @@ export function LapsTab({ overview }: LapsTabProps) {
   const [historyStintsLoading, setHistoryStintsLoading] = useState<Record<string, boolean>>({});
   const [expandedLap, setExpandedLap] = useState<number | null>(null);
   const [stintMode, setStintMode] = useState<StintMode>("ev");
-  const [subview, setSubview] = useState<LapsSubview>("current");
   const [allRuns, setAllRuns] = useState<RunListItem[]>([]);
   const [runsLoading, setRunsLoading] = useState(false);
   const [hoveredWindowId, setHoveredWindowId] = useState<string | null>(null);
@@ -513,14 +511,12 @@ export function LapsTab({ overview }: LapsTabProps) {
   const { laps } = overview;
 
   useEffect(() => {
-    if (subview === "stints" || subview === "all_sessions" || subview === "baselines") {
-      setRunsLoading(true);
-      fetchRunList()
-        .then(setAllRuns)
-        .catch(() => setAllRuns([]))
-        .finally(() => setRunsLoading(false));
-    }
-  }, [subview]);
+    setRunsLoading(true);
+    fetchRunList()
+      .then(setAllRuns)
+      .catch(() => setAllRuns([]))
+      .finally(() => setRunsLoading(false));
+  }, [overview.run_id]);
 
   useEffect(() => {
     setExpandedRunIds(new Set([overview.run_id]));
@@ -1225,12 +1221,6 @@ export function LapsTab({ overview }: LapsTabProps) {
     ? { start: selection.selectedLapWindowStart ?? null, end: selection.selectedLapWindowEnd ?? null }
     : null;
 
-  useEffect(() => {
-    if (subview !== "current" || selection.selectedLap == null || selection.selectedLapScope === "lap_window") return;
-    const row = document.querySelector(`[data-lap-row="${selection.selectedLap}"]`) as HTMLElement | null;
-    if (!row) return;
-    row.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [selection.selectedLap, selection.selectedLapScope, subview]);
 
   const renderEvidenceActions = useCallback((item: EvidenceDescriptor, compact = false, mode: "full" | "compare_inline" = "full") => {
     const isWindow = item.scope === "lap_window" && item.window;
@@ -1397,7 +1387,7 @@ export function LapsTab({ overview }: LapsTabProps) {
           <div>
             <h2><Clock size={18} /> Laps</h2>
             <p className="section-note" style={{ marginBottom: 0 }}>
-              Evidence center for selecting trustworthy lap or lap-window context before jumping to Platform, Map, Compare, or Notebook.
+              Stint timing, best-window evidence, run history, and baseline/test review for the current imported data.
             </p>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -1424,310 +1414,6 @@ export function LapsTab({ overview }: LapsTabProps) {
         </div>
       </section>
 
-      <div className="compare-subnav">
-        {(["current", "windows", "stints", "all_sessions", "baselines", "basket"] as LapsSubview[]).map((view) => (
-          <button
-            key={view}
-            className={`subnav-item ${subview === view ? "active" : ""}`}
-            onClick={() => setSubview(view)}
-          >
-            {view === "current" ? "Evidence" : view === "windows" ? "Windows" : view === "stints" ? "Stint Intelligence" : view === "all_sessions" ? "All Sessions" : view === "baselines" ? "Baselines" : "Basket"}
-          </button>
-        ))}
-      </div>
-
-      {subview === "current" && evidenceSelector.length > 0 && (
-        <section className="workspace-section">
-          <div className="section-heading-row">
-            <div>
-              <span className="eyebrow">Task 1</span>
-              <h2><Target size={16} /> Evidence Selector</h2>
-            </div>
-          </div>
-          {groupedEvidenceSelector.map((group) => (
-            <div key={group.label} style={{ marginBottom: 12 }}>
-              <h4 style={{ margin: "0 0 6px 2px" }}>{group.label}</h4>
-              <div className="laps-evidence-selector">
-                {group.items.map((item) => (
-                  <article key={item.id} className="laps-evidence-card">
-                    {renderDescriptorSummary(item)}
-                    {item.scope === "lap_window" && (
-                      <p className="section-note" style={{ marginTop: 8 }}>
-                        Window context stays preserved globally. Platform and Map use the representative lap for lap-level anchoring and still label the selection as a window.
-                      </p>
-                    )}
-                    {renderEvidenceActions(item, false, "compare_inline")}
-                  </article>
-                ))}
-              </div>
-            </div>
-          ))}
-        </section>
-      )}
-
-      {subview === "current" && candidateMatrix.length > 0 && (
-        <section className="workspace-section">
-          <div className="section-heading-row">
-            <div>
-              <span className="eyebrow">Task 3</span>
-              <h2><BarChart3 size={16} /> Trust / Pace / Engineering Matrix</h2>
-            </div>
-          </div>
-          <p className="section-note">
-            This matrix stays truthful about grain: lap rows use lap-level data, window rows use window-level scores, and unavailable values stay unavailable.
-          </p>
-          <div className="table-scroll">
-            <table className="compact-table" style={{ marginTop: 0 }}>
-              <thead>
-                <tr>
-                  <th>Candidate</th>
-                  <th>Scope</th>
-                  <th>Pace</th>
-                  <th>Trust</th>
-                  <th>Engineering</th>
-                  <th>Flags</th>
-                  <th>Basis</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {candidateMatrix.map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      <strong>{item.title}</strong>
-                      <div className="muted" style={{ fontSize: 11 }}>
-                        {item.window ? formatWindowRange(item.window) : item.lap ? `Lap ${item.lap.lap_number}` : "Unavailable"}
-                      </div>
-                    </td>
-                    <td>{item.window ? "Window" : "Lap"}</td>
-                    <td>{item.window ? formatTime(item.window.average_lap_time) : item.lap ? formatTime(item.lap.lap_time) : "-"}</td>
-                    <td>
-                      {item.trustScore != null ? (
-                        <span style={{ color: paceQualityColor(item.trustScore) }}>{item.trustTier} ({item.trustScore.toFixed(0)})</span>
-                      ) : item.trustTier ?? "Unavailable"}
-                    </td>
-                    <td>
-                      {item.engineeringValue != null ? (
-                        <span style={{ color: paceQualityColor(item.engineeringValue) }}>{item.engineeringValue.toFixed(0)}</span>
-                      ) : item.lap?.min_splitter_mm != null ? (
-                        <span>Min splitter {item.lap.min_splitter_mm.toFixed(1)} mm</span>
-                      ) : "Unavailable"}
-                    </td>
-                    <td>
-                      <div className="laps-chip-row">
-                        {item.flags.map((flag) => <span key={flag} className="lap-flag-badge">{flag}</span>)}
-                        {item.reasons.map((reason) => (
-                          <span key={reason} className="lap-flag-badge" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>{reason}</span>
-                        ))}
-                      </div>
-                    </td>
-                    <td>{item.basisLabel}</td>
-                    <td>{renderEvidenceActions(item, true)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      {subview === "current" && windowsData && laps.length > 0 && (
-        <section className="workspace-section">
-          <div className="section-heading-row">
-            <div>
-              <span className="eyebrow">Task 4</span>
-              <h2><CheckCircle2 size={16} /> Stint Map Truthfulness</h2>
-            </div>
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {(["ev", "delta", "falloff"] as StintMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  className={`setup-diff-toggle-btn ${stintMode === mode ? "active" : ""}`}
-                  onClick={() => setStintMode(mode)}
-                >
-                  {mode === "ev" ? "Eng Value" : mode === "delta" ? "Delta" : "Falloff"}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="laps-chip-row" style={{ marginBottom: 8 }}>
-            <span className="lap-flag-badge">
-              Basis: {stintMode === "delta" ? "Lap-level" : stintMode === "ev" ? "Window-level" : "Run-level"}
-            </span>
-            {stintMode === "ev" && bestWindow && (
-              <span className="lap-flag-badge" style={{ background: "rgba(56,189,248,0.12)", color: "#38bdf8" }}>
-                Best window EV {bestWindow.setup_usefulness_score?.toFixed(0) ?? "-"} for {formatWindowRange(bestWindow)}
-              </span>
-            )}
-            {stintMode === "falloff" && windowsData.degradation && (
-              <span className="lap-flag-badge" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>
-                Run falloff {windowsData.degradation.falloff_early_to_late != null ? `+${windowsData.degradation.falloff_early_to_late.toFixed(2)}s` : "Unavailable"}
-              </span>
-            )}
-          </div>
-          <div className="laps-stint-shell">
-            <div
-              className="laps-stint-overlay-row"
-              style={{ gridTemplateColumns: `repeat(${laps.length}, minmax(24px, 1fr))` }}
-            >
-              {availableBestWindows.map((window) => {
-                const startIndex = laps.findIndex((lap) => lap.lap_number === window.start_lap);
-                const endIndex = laps.findIndex((lap) => lap.lap_number === window.end_lap);
-                if (startIndex < 0 || endIndex < 0) return null;
-                const isSelected = matchesSelectionWindow(window, selection.selectedLapWindowStart, selection.selectedLapWindowEnd);
-                const isHovered = hoveredWindowId === window.window_id;
-                return (
-                  <button
-                    key={window.window_id}
-                    className={`laps-stint-window-band${isSelected ? " selected" : ""}${isHovered ? " hovered" : ""}`}
-                    style={{ gridColumn: `${startIndex + 1} / ${endIndex + 2}` }}
-                    onMouseEnter={() => setHoveredWindowId(window.window_id)}
-                    onMouseLeave={() => setHoveredWindowId(null)}
-                    onClick={() => focusWindowEvidence(window)}
-                    aria-label={`Select window ${window.start_lap} through ${window.end_lap}`}
-                    title={`${formatWindowRange(window)} - EV ${window.setup_usefulness_score?.toFixed(0) ?? "-"} - Trust ${window.evidence_confidence_score?.toFixed(0) ?? "-"}`}
-                  >
-                    {window.window_size}L
-                  </button>
-                );
-              })}
-            </div>
-            <div
-              className="laps-stint-map-grid"
-              style={{ gridTemplateColumns: `repeat(${laps.length}, minmax(24px, 1fr))` }}
-            >
-              {laps.map((lap) => {
-                const isValid = lap.is_useful;
-                const isSelectedLap = selection.selectedLapScope !== "lap_window" && selection.selectedLap === lap.lap_number;
-                const inSelectedWindow = selectedWindow?.start != null && selectedWindow.end != null
-                  ? lap.lap_number >= selectedWindow.start && lap.lap_number <= selectedWindow.end
-                  : false;
-                const inHoveredWindow = availableBestWindows.some((window) =>
-                  hoveredWindowId === window.window_id && windowContainsLap(window, lap.lap_number));
-
-                let background = "#1f2937";
-                if (stintMode === "delta") {
-                  const delta = lap.lap_time != null && bestTime != null ? lap.lap_time - bestTime : null;
-                  if (delta == null) background = "#1f2937";
-                  else if (delta < 0.1) background = "#22c55e";
-                  else if (delta < 0.5) background = "#f59e0b";
-                  else background = "#ef4444";
-                }
-
-                const markers: string[] = [];
-                if (!lap.is_useful) markers.push("!");
-                if (lap.lap_type === "out") markers.push("O");
-                if (lap.lap_type === "in") markers.push("I");
-
-                return (
-                  <button
-                    key={lap.lap_id}
-                    className={`laps-stint-block${isSelectedLap ? " selected" : ""}${inSelectedWindow ? " window-highlight" : ""}${inHoveredWindow ? " window-hover" : ""}`}
-                    style={{ background, opacity: isValid ? 1 : 0.7 }}
-                    onClick={() => focusLapEvidence(lap)}
-                    aria-label={`Select lap ${lap.lap_number}`}
-                    title={`Lap ${lap.lap_number} - ${formatTime(lap.lap_time)} - ${lapTrustTier(lap)}`}
-                  >
-                    <span className="laps-stint-block-label">{lap.lap_number}</span>
-                    {markers.length > 0 && <span className="laps-stint-marker">{markers[0]}</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div className="laps-stint-legend">
-            <span className="laps-stint-legend-item"><span className="laps-stint-legend-swatch" style={{ background: "#22c55e" }} /> Fast / clean</span>
-            <span className="laps-stint-legend-item"><span className="laps-stint-legend-swatch" style={{ background: "#f59e0b" }} /> Warning</span>
-            <span className="laps-stint-legend-item"><span className="laps-stint-legend-swatch" style={{ background: "#ef4444" }} /> Slow / invalid</span>
-            <span className="laps-stint-legend-item"><span className="laps-stint-legend-swatch" style={{ outline: "2px solid var(--cyan)", background: "transparent" }} /> Selected lap</span>
-            <span className="laps-stint-legend-item"><span className="laps-stint-legend-swatch" style={{ border: "1px solid var(--cyan)", background: "transparent" }} /> Selected window</span>
-          </div>
-        </section>
-      )}
-
-      {subview === "current" && windowsData?.degradation?.coaching_message && windowsData.degradation.lap_count >= 10 && (
-        <section className="workspace-section">
-          <h2><TrendingDown size={16} /> Pace Trend</h2>
-          <p className="section-note">{windowsData.degradation.coaching_message}</p>
-          <div className="laps-chip-row">
-            <span className="lap-flag-badge">Run-level</span>
-            {windowsData.degradation.falloff_early_to_late != null && (
-              <span className="lap-flag-badge" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>
-                Falloff +{windowsData.degradation.falloff_early_to_late.toFixed(2)}s
-              </span>
-            )}
-          </div>
-        </section>
-      )}
-
-      {subview === "windows" && (
-        <section className="workspace-section">
-          <div className="section-heading-row">
-            <div>
-              <span className="eyebrow">Task 7</span>
-              <h2><BarChart3 size={16} /> Best Windows</h2>
-            </div>
-          </div>
-          {!windowsData || availableBestWindows.length === 0 ? (
-            <p className="muted">No windows available yet. More valid laps are needed before window evidence is trustworthy.</p>
-          ) : (
-            <div className="laps-window-grid">
-              {availableBestWindows
-                .sort((left, right) => candidateScore(right) - candidateScore(left))
-                .map((window) => (
-                  <article
-                    key={window.window_id}
-                    className={`laps-window-card${matchesSelectionWindow(window, selection.selectedLapWindowStart, selection.selectedLapWindowEnd) ? " active" : ""}`}
-                    onMouseEnter={() => setHoveredWindowId(window.window_id)}
-                    onMouseLeave={() => setHoveredWindowId(null)}
-                  >
-                    <div className="section-heading-row">
-                      <div>
-                        <span className="eyebrow">Window {window.window_size}L</span>
-                        <h3 style={{ margin: 0 }}>{formatWindowRange(window)}</h3>
-                      </div>
-                      <span className="lap-flag-badge">{windowTrustTier(window)}</span>
-                    </div>
-                    <div className="laps-chip-row">
-                      <span className="lap-flag-badge">Window-level</span>
-                      <span className="lap-flag-badge">Avg {formatTime(window.average_lap_time)}</span>
-                      <span className="lap-flag-badge" style={{ color: paceQualityColor(window.setup_usefulness_score), borderColor: "transparent" }}>
-                        EV {window.setup_usefulness_score?.toFixed(0) ?? "-"}
-                      </span>
-                      <span className="lap-flag-badge" style={{ color: paceQualityColor(window.evidence_confidence_score), borderColor: "transparent" }}>
-                        Trust {window.evidence_confidence_score?.toFixed(0) ?? "-"}
-                      </span>
-                    </div>
-                    <p className="section-note">{classifyPaceTrust(window.pace_quality_score, window.evidence_confidence_score, window.pace_quality_warnings)}</p>
-                    <div className="laps-chip-row">
-                      {windowFlags(window).map((flag) => <span key={flag} className="lap-flag-badge">{flag}</span>)}
-                      {trustReasonChips(window.evidence_confidence_score, window.pace_quality_warnings, window.classification_tags).map((reason) => (
-                        <span key={reason} className="lap-flag-badge" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>{reason}</span>
-                      ))}
-                      {(window.warnings ?? []).slice(0, 3).map((warning) => (
-                        <span key={warning} className="lap-flag-badge" style={{ background: "rgba(239,68,68,0.12)", color: "#ef4444" }}>{warning}</span>
-                      ))}
-                    </div>
-                    <div className="laps-window-metrics">
-                      <div><span className="muted">Fastest</span><strong>{formatTime(window.fastest_lap_time)}</strong></div>
-                      <div><span className="muted">Slowest</span><strong>{formatTime(window.slowest_lap_time)}</strong></div>
-                      <div><span className="muted">Falloff</span><strong>{window.falloff_sec != null ? `+${window.falloff_sec.toFixed(2)}s` : "Unavailable"}</strong></div>
-                      <div><span className="muted">Valid laps</span><strong>{window.valid_lap_count}/{window.window_size}</strong></div>
-                    </div>
-                    {renderEvidenceActions(descriptorForWindow(
-                      `Window ${window.window_size}L`,
-                      "Actionable evidence scope",
-                      window,
-                      representativeLapByWindowId.get(window.window_id) ?? null,
-                    ), false, "compare_inline")}
-                  </article>
-                ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {subview === "stints" && (
         <section className="workspace-section stint-intelligence-section">
           <div className="section-heading-row">
             <div>
@@ -2027,7 +1713,7 @@ export function LapsTab({ overview }: LapsTabProps) {
                           {isGraphed ? "Ungraph" : "Graph"}
                         </button>
                         <button className="secondary-button" onClick={(event) => { event.stopPropagation(); setSummaryDrawerStintId(stint.stint_id); }}>Summary</button>
-                        <button className="secondary-button" onClick={(event) => { event.stopPropagation(); addToQueue(makeStintBasket(stint, `Stint ${formatStintRange(stint)}`)); }}>Basket</button>
+                        <button className="secondary-button" onClick={(event) => { event.stopPropagation(); addToQueue(makeStintBasket(stint, `Stint ${formatStintRange(stint)}`)); }}>Add to Test Basket</button>
                       </div>
                     </div>
                   );
@@ -2050,7 +1736,7 @@ export function LapsTab({ overview }: LapsTabProps) {
                     Test
                   </button>
                   <button className="secondary-button" onClick={() => addToQueue(makeStintBasket(selectedStint, `Stint ${formatStintRange(selectedStint)}`))}>
-                    Basket
+                    Add to Test Basket
                   </button>
                   <button className="secondary-button" onClick={() => setSummaryDrawerStintId(selectedStint.stint_id)}>
                     Summary
@@ -2322,283 +2008,7 @@ export function LapsTab({ overview }: LapsTabProps) {
             </aside>
           )}
         </section>
-      )}
 
-      {subview === "all_sessions" && (
-        <section className="workspace-section">
-          <h2><List size={16} /> All Sessions</h2>
-          {runsLoading && <p className="muted">Loading runs...</p>}
-          {!runsLoading && allRuns.length === 0 && <p className="muted">No imported runs found.</p>}
-          {!runsLoading && allRuns.length > 0 && (
-            <table className="compact-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Car</th>
-                  <th>Track</th>
-                  <th>Setup</th>
-                  <th>Laps</th>
-                  <th>Best Lap</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {allRuns.map((run) => (
-                  <tr key={run.run_id}>
-                    <td>{run.imported_at?.slice(0, 10) ?? "-"}</td>
-                    <td>{run.car_name ?? "-"}</td>
-                    <td>{run.track_name ?? "-"}</td>
-                    <td>{run.setup_name ?? "-"}</td>
-                    <td>{run.lap_count ?? "-"}</td>
-                    <td>{run.best_lap_time_s != null ? `${run.best_lap_time_s.toFixed(3)}s` : "-"}</td>
-                    <td>
-                      <div className="laps-action-row compact">
-                        <button
-                          className="secondary-button"
-                          onClick={() => setBaseline(makeBasketItem(
-                            run.run_id,
-                            null,
-                            `${run.car_name ?? "Car"} @ ${run.track_name ?? "Track"}`,
-                            run.car_name ?? null,
-                            run.track_name ?? null,
-                            run.setup_name ?? null,
-                            run.best_lap_time_s ?? null,
-                            [],
-                            null,
-                            run.imported_at ?? null,
-                            null,
-                            run.has_setup_snapshot ?? false,
-                            { valueBasis: "run_level" },
-                          ))}
-                        >
-                          <Clock size={14} /> Baseline
-                        </button>
-                        <button
-                          className="secondary-button"
-                          onClick={() => setTest(makeBasketItem(
-                            run.run_id,
-                            null,
-                            `${run.car_name ?? "Car"} @ ${run.track_name ?? "Track"}`,
-                            run.car_name ?? null,
-                            run.track_name ?? null,
-                            run.setup_name ?? null,
-                            run.best_lap_time_s ?? null,
-                            [],
-                            null,
-                            run.imported_at ?? null,
-                            null,
-                            run.has_setup_snapshot ?? false,
-                            { valueBasis: "run_level" },
-                          ))}
-                        >
-                          <Gauge size={14} /> Test
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-      )}
-
-      {subview === "baselines" && (
-        <section className="workspace-section">
-          <h2><Trophy size={16} /> Baseline Suggestions</h2>
-          <div className="laps-window-grid">
-            {bestEvidenceLap && (
-              <article className="laps-window-card">
-                {renderDescriptorSummary(descriptorForLap("Best Evidence Lap", "Strong single-lap baseline candidate", bestEvidenceLap))}
-                {renderEvidenceActions(descriptorForLap("Best Evidence Lap", "Strong single-lap baseline candidate", bestEvidenceLap), false, "compare_inline")}
-              </article>
-            )}
-            {bestWindow && (
-              <article className="laps-window-card">
-                {renderDescriptorSummary(descriptorForWindow(
-                  "Best Window",
-                  "Sustained baseline candidate",
-                  bestWindow,
-                  representativeLapByWindowId.get(bestWindow.window_id) ?? null,
-                ))}
-                {renderEvidenceActions(descriptorForWindow(
-                  "Best Window",
-                  "Sustained baseline candidate",
-                  bestWindow,
-                  representativeLapByWindowId.get(bestWindow.window_id) ?? null,
-                ), false, "compare_inline")}
-              </article>
-            )}
-          </div>
-        </section>
-      )}
-
-      {subview === "basket" && (
-        <section className="workspace-section">
-          <div className="section-heading-row">
-            <div>
-              <span className="eyebrow">Task 9</span>
-              <h2><BarChart3 size={16} /> Baseline/Test Staging</h2>
-            </div>
-            <div className="laps-action-row compact">
-              <button className="secondary-button" onClick={swap} disabled={!basket.baseline || !basket.test}>
-                <Gauge size={14} /> Swap
-              </button>
-              <button className="secondary-button" onClick={clearQueue} disabled={basket.queue.length === 0}>
-                <List size={14} /> Clear Queue
-              </button>
-              <button className="secondary-button" onClick={clear} disabled={!basket.baseline && !basket.test && basket.queue.length === 0}>
-                <AlertTriangle size={14} /> Clear Basket
-              </button>
-              <button className="secondary-button" onClick={() => setSubview("stints")}>
-                <Layers size={14} /> Open Stint Intelligence
-              </button>
-            </div>
-          </div>
-          <p className="section-note">
-            Basket cards preserve whether you staged a lap or a window. Use Stint Intelligence for baseline/test review while deeper compare internals remain available to embedded tools.
-          </p>
-          <div className="laps-window-grid">
-            {([["Baseline", basket.baseline], ["Test", basket.test]] as const).map(([label, item]) => (
-              <article key={label} className="laps-window-card">
-                <span className="eyebrow">{label}</span>
-                <h3 style={{ marginTop: 0 }}>{item?.label ?? "Empty"}</h3>
-                {item ? (
-                  <>
-                    <div className="laps-chip-row">
-                      <span className="lap-flag-badge">{item.lap_scope === "lap_window" ? `Window ${item.lap_window_start}-${item.lap_window_end}` : item.lap_number != null ? `Lap ${item.lap_number}` : "Run-level"}</span>
-                      {item.representative_lap != null && item.lap_scope === "lap_window" && <span className="lap-flag-badge">Rep Lap {item.representative_lap}</span>}
-                      {item.trust_tier && <span className="lap-flag-badge">Trust {item.trust_tier}</span>}
-                      {item.value_basis && <span className="lap-flag-badge">{item.value_basis}</span>}
-                    </div>
-                    <p className="section-note">
-                      {item.car ?? "-"} - {item.track ?? "-"} - {item.lap_time != null ? formatTime(item.lap_time) : "Time unavailable"}
-                    </p>
-                  </>
-                ) : (
-                  <p className="muted">Stage evidence from the Evidence Selector, table, or Best Windows cards.</p>
-                )}
-              </article>
-            ))}
-          </div>
-          {basket.queue.length > 0 && (
-            <>
-              <h3>Queue</h3>
-              <div className="laps-basket-queue">
-                {basket.queue.map((item) => (
-                  <div key={item.id} className="laps-basket-queue-item">
-                    <div>
-                      <strong>{item.label}</strong>
-                      <div className="muted" style={{ fontSize: 11 }}>
-                        {item.lap_scope === "lap_window" ? `Window ${item.lap_window_start}-${item.lap_window_end}` : item.lap_number != null ? `Lap ${item.lap_number}` : "Run-level"}
-                        {item.lap_scope === "lap_window" && item.representative_lap != null ? ` - Rep Lap ${item.representative_lap}` : ""}
-                        {item.trust_tier ? ` - Trust ${item.trust_tier}` : ""}
-                      </div>
-                    </div>
-                    <button className="secondary-button" onClick={() => removeFromQueue(item.id)}>Remove</button>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </section>
-      )}
-
-      {subview === "current" && (
-        <section className="workspace-section" style={{ padding: 0, overflow: "auto" }}>
-          <div style={{ padding: "12px 12px 0" }}>
-            <span className="eyebrow">Task 6</span>
-            <h2><List size={16} /> All Laps</h2>
-            <p className="section-note">
-              Evidence-first lap list. Use this to stage baseline/test before drilling into Platform or Map.
-            </p>
-          </div>
-          <table className="compact-table" style={{ marginTop: 0 }}>
-            <thead>
-              <tr>
-                <th>Lap #</th>
-                <th>Lap Time</th>
-                <th>Classification</th>
-                <th>Quality / Trust Tier</th>
-                <th>Top Event Count</th>
-                <th>Min Speed</th>
-                <th>Max Speed</th>
-                <th>Platform Risk</th>
-                <th>Scrub Risk</th>
-                <th>Tire Summary</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {laps.map((lap) => {
-                const isExpanded = expandedLap === lap.lap_number;
-                const role = compareRoleForLap(lap.lap_number);
-                const memberships = bestWindowMembership.get(lap.lap_number) ?? [];
-                const isSelectedLap = selection.selectedLapScope !== "lap_window" && selection.selectedLap === lap.lap_number;
-                const inSelectedWindow = selectedWindow?.start != null && selectedWindow.end != null
-                  ? lap.lap_number >= selectedWindow.start && lap.lap_number <= selectedWindow.end
-                  : false;
-
-                return (
-                  <React.Fragment key={lap.lap_id}>
-                    <tr data-lap-row={lap.lap_number} className={isSelectedLap ? "selected-row" : ""} style={{ opacity: lap.is_useful ? 1 : 0.72 }}>
-                      <td>{lap.lap_number}</td>
-                      <td style={{ fontWeight: 600 }}>{formatTime(lap.lap_time)} <span className="muted">({formatDelta(lap.lap_time, bestTime)})</span></td>
-                      <td>{lap.classification_tags?.join(", ") || lap.lap_type || "-"}</td>
-                      <td>
-                        <div className="laps-chip-row">
-                          <span className="lap-flag-badge">{lapTrustTier(lap)}</span>
-                          {role && <span className="lap-flag-badge">{role}</span>}
-                          {inSelectedWindow && <span className="lap-flag-badge">In selected window</span>}
-                          {memberships.slice(0, 1).map((membership) => <span key={membership} className="lap-flag-badge">{membership}</span>)}
-                        </div>
-                      </td>
-                      <td>{lap.confidence_notes?.length ?? 0}</td>
-                      <td><ValueDisplay value={lap.min_speed_mph} unit="mph" precision={1} /></td>
-                      <td><ValueDisplay value={lap.max_speed_mph} unit="mph" precision={1} /></td>
-                      <td>{(lap.classification_tags ?? []).some((tag) => /platform|scrape|bottom/i.test(tag)) ? "Watch" : "Low"}</td>
-                      <td>{(lap.classification_tags ?? []).some((tag) => /scrub|drag|yaw|steer/i.test(tag)) ? "Watch" : "Low"}</td>
-                      <td>{(lap.classification_tags ?? []).some((tag) => /tire|temp|pressure|camber/i.test(tag)) ? "Tagged" : "Clear"}</td>
-                      <td>
-                        <div className="laps-action-row compact">
-                          <button className="secondary-button" onClick={() => setBaseline(makeLapBasket(lap, `Baseline Lap ${lap.lap_number}`))}>Baseline</button>
-                          <button className="secondary-button" onClick={() => setTest(makeLapBasket(lap, `Test Lap ${lap.lap_number}`))}>Test</button>
-                          <button className="secondary-button" onClick={() => focusLapEvidence(lap, "platform_trace")} aria-label={`Open lap ${lap.lap_number} in Platform`}>Platform</button>
-                          <button className="secondary-button" onClick={() => focusLapEvidence(lap, "map")} aria-label={`Open lap ${lap.lap_number} on Map`}>Map</button>
-                          <button className="secondary-button" onClick={() => setExpandedLap(isExpanded ? null : lap.lap_number)} aria-expanded={isExpanded} aria-label={`${isExpanded ? "Collapse" : "Expand"} lap ${lap.lap_number} details`}>
-                            {isExpanded ? "Hide" : "Details"}
-                          </button>
-                          <button className="secondary-button" onClick={() => addToQueue(makeLapBasket(lap, `Lap ${lap.lap_number}`))}>Basket</button>
-                        </div>
-                      </td>
-                    </tr>
-                    {isExpanded && (
-                      <tr>
-                        <td colSpan={11} style={{ padding: "10px 16px", background: "#0a0d14" }}>
-                          <div className="laps-window-metrics">
-                            <div><span className="muted">Basis</span><strong>Lap-level</strong></div>
-                            <div><span className="muted">Avg Speed</span><strong><ValueDisplay value={lap.avg_speed_mph} unit="mph" precision={1} /></strong></div>
-                            <div><span className="muted">Max Speed</span><strong><ValueDisplay value={lap.max_speed_mph} unit="mph" precision={1} /></strong></div>
-                            <div><span className="muted">Avg RPM</span><strong><ValueDisplay value={lap.avg_rpm} unit="rpm" precision={0} /></strong></div>
-                            <div><span className="muted">Min Splitter</span><strong><ValueDisplay value={lap.min_splitter_mm} unit="mm" precision={1} /></strong></div>
-                          </div>
-                          {lap.confidence_notes?.length > 0 && (
-                            <div className="laps-chip-row" style={{ marginTop: 8 }}>
-                              {lap.confidence_notes.map((note) => (
-                                <span key={note} className="lap-flag-badge" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>{note}</span>
-                              ))}
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </section>
-      )}
     </div>
   );
 }

@@ -22,6 +22,19 @@ The default Laps view is curated on purpose. It shows meaningful stint rows only
 
 Selecting either a full-run row or a best-window card drives the toolbar actions for baseline, test, compare basket, and Platform focus. The timing sheet itself does not include a default Actions column.
 
+## Laps Workspace
+
+Laps renders Stint Intelligence directly. The former Evidence, Windows, Stint Intelligence, All Sessions, Baselines, and Basket sub-tabs are not part of the normal Laps surface.
+
+Useful behavior from those older views now lives inline:
+
+- best-window cards sit above the timing sheet
+- baseline/test buttons live on stint cards, the selected-stint toolbar, and loaded history rows
+- run history is embedded below the timing sheet and loads older runs lazily
+- Test Basket actions are available from stint cards and the selected-stint toolbar
+
+The standalone Compare workspace remains hidden from normal navigation. Baseline/test review for this workflow stays in Laps.
+
 ## Stint Summary Drawer
 
 Click or double-click a full-run row, best-window card, history stint, or graphed stint to open the Stint Summary drawer. The drawer shows:
@@ -74,6 +87,12 @@ Compact filters keep the screen manageable:
 - pin/unpin the selected run
 
 Filters do not eagerly fetch older run details. Older runs still load lazily when expanded.
+
+## Session Cleanup Boundary
+
+RacerZLab may clean up temporary RaceLab session containers, but only when they are clearly session records. Cleanup must never delete imported runs, raw `.ibt` files, cached telemetry, setup snapshots, generated notebooks, reports, or source guide data.
+
+The current backend model stores RaceLab sessions separately from durable imported runs. `DELETE /api/sessions/{session_id}` removes the session row and does not delete telemetry files or run records. There is not yet a distinct `ephemeral` session flag, so no automatic expiration or bulk cleanup is enabled for this milestone.
 
 ## CSV Export
 

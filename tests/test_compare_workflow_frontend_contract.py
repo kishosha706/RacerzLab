@@ -40,11 +40,14 @@ def test_test_basket_routes_to_laps_not_compare() -> None:
 
 def test_laps_owns_baseline_test_workflow_copy() -> None:
     laps = _read("ui/src/tabs/LapsTab.tsx")
+    direct_stint_section = laps.split('className="workspace-section stint-intelligence-section"', 1)[1].split('{subview === "all_sessions" && (', 1)[0]
 
     assert "Stint Intelligence" in laps
-    assert "Baseline/Test Staging" in laps
     assert "Graph Selected" in laps
     assert "Graph Selected Stints" in laps
-    assert "Open Stint Intelligence" in laps
+    assert "Add to Test Basket" in laps
+    assert "Baseline/Test Staging" not in direct_stint_section
+    assert "Open Stint Intelligence" not in direct_stint_section
+    assert "compare-subnav" not in laps
     assert "Open Compare" not in laps
     assert "Compare Basket Staging" not in laps

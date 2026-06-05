@@ -76,22 +76,21 @@ cd racelab-garage
 - Verify: Engineering Value badge has tooltip
 - Verify: relationship label shown (e.g., "Strong clean pace")
 
-## 6d. Laps Workspace — All Sessions / Baselines
-- Click "All Sessions" subview
-- Verify: all imported runs listed with car/track/setup/best-lap
-- Verify: Set as Baseline and Set as Test buttons work
-- Click "Baselines" subview
-- Verify: recommended candidates shown (fastest clean lap, most recent run, best 10-lap EV)
-- Verify: Add as Baseline buttons work
+## 6d. Laps Workspace - Stint Intelligence
+- Verify: Laps opens directly to Stint Intelligence without Evidence/Windows/All Sessions/Baselines/Basket sub-tabs
+- Verify: best-window cards are visible above the timing sheet
+- Verify: baseline and test buttons work from stint cards and the selected-stint toolbar
+- Verify: Run History lists imported runs and older runs expand lazily
+- Verify: Add to Test Basket works from a stint card or selected stint
 
 ## 6e. Test Basket
-- Add a lap as Test from Laps table (Gauge icon)
+- Add a stint/window to Test Basket from Laps
 - Verify: Test Basket appears at bottom-right
 - Verify: readiness badge shows (ready/caution/not_valid/reference_mode)
 - Verify: warnings displayed for cross-session/missing-setup
 - Verify: Swap and Clear buttons work
 - Click Review in Laps
-- Verify: Laps opens and baseline/test staging remains visible
+- Verify: Laps opens directly to Stint Intelligence and baseline/test selections remain visible
 
 ## 7. Platform Workbench — Platform/Rake Preset
 - Navigate to "Platform" in the nav rail
@@ -223,7 +222,7 @@ cd racelab-garage
 | Import test | Two runs available | |
 | Laps stint map | Colored blocks render | |
 | Performance/Trust/EV badges | Three badges on Best 10/20 cards | |
-| All Sessions | Runs listed with basket actions | |
+| Laps Stint Intelligence | Best-window cards, run history, and basket actions visible | |
 | Test Basket | Drawer appears, readiness shown | |
 | Platform preset | 5 rows render | |
 | Tires preset | 4 rows render | |
