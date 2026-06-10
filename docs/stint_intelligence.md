@@ -1,191 +1,185 @@
 # Stint Intelligence
 
-Stint Intelligence is RacerZLab's imported-data view for comparing sustained pace windows, falloff, consistency, and setup usefulness. Version 1 is intentionally local and offline: it uses laps and windows that are already imported into RacerZLab.
+Stint Intelligence is RacerZLab's local, imported-data timing workstation inside Laps. It compares user stints, sustained average windows, falloff, consistency, and setup usefulness from data already imported into RacerZLab.
 
-## Scope
+Version 1 remains offline:
 
-- No runtime AI, API keys, or live iRSDK bridge.
-- No import pipeline changes.
-- No telemetry formula changes beyond derived stint/window metrics.
-- No missing values are treated as zero.
-- No setup auto-editing.
+- no runtime AI
+- no API keys
+- no live iRSDK dependency
+- no telemetry formula changes beyond derived lap/stint display metrics
+- no fake values or missing-to-zero fill
 
-## Stint Definitions
+## My Stints Timing Sheet
 
-A stint table row can represent:
+Laps opens Stint Intelligence as **My Stints**. The subtitle is:
 
-- the full imported run when it has at least 5 valid laps and at least 60% of laps are valid
+> Lap averages, falloff, and long-run pace from your imported runs.
 
-Invalid laps are excluded from calculations when they are incomplete, not useful, out laps, cooldown laps, pit road, wreck/spin laps, invalid speed events, or missing lap time.
+Rows represent meaningful user stints. In imported-data v1, the current run/full-run row is acceptable as the primary stint because true pit-to-pit stint detection is a later milestone.
 
-The default Laps view is curated on purpose. It shows meaningful stint rows only, so imported-data v1 usually has one full-run row. The best consecutive 5, 10, 20, 30, or 40 lap windows are compact summary cards above the timing sheet instead of repeated table rows. Alternate rolling windows can be exposed separately, but they stay collapsed by default.
+The default page is a single **My Stints** timing sheet. Best rolling averages stay in the main table so the page reads like a Stint Analyzer-style worksheet instead of two separate summaries.
 
-Selecting either a full-run row or a best-window card drives the toolbar actions for baseline, test, compare basket, and Platform focus. The timing sheet itself does not include a default Actions column.
+Best-window cards are retained only as an advanced **Best Windows** section, collapsed by default.
 
-## Laps Workspace
+The timing sheet columns are:
 
-Laps renders Stint Intelligence directly. The former Evidence, Windows, Stint Intelligence, All Sessions, Baselines, and Basket sub-tabs are not part of the normal Laps surface.
+- Stint
+- # Laps
+- Last Lap
+- Current Avg Lap
+- Fastest Lap
+- 3-Lap Avg
+- 5-Lap Avg
+- 7-Lap Avg
+- 10-Lap Avg
+- 15-Lap Avg
+- 20-Lap Avg
+- 25-Lap Avg
+- 30-Lap Avg
+- 40-Lap Avg
+- 50-Lap Avg
+- 60-Lap Avg
+- Falloff
+- Consistency
+- Setup EV
 
-Useful behavior from those older views now lives inline:
+Each average column is the best rolling average of that same length inside the stint/run. If a stint does not have enough valid laps for a window size, that cell stays unavailable instead of being faked or backfilled.
 
-- best-window cards sit above the timing sheet
-- baseline/test buttons live on stint cards, the selected-stint toolbar, and loaded history rows
-- run history is embedded below the timing sheet and loads older runs lazily
-- Test Basket actions are available from stint cards and the selected-stint toolbar
+The sheet scrolls horizontally when needed. Key row identity columns remain sticky where practical so wide average columns do not collapse into a vertical layout.
 
-The standalone Compare workspace remains hidden from normal navigation. Baseline/test review for this workflow stays in Laps.
+## Average Windows
 
-## Stint Summary Drawer
+Stint Intelligence supports these best average sizes everywhere the stint contract exposes average windows:
 
-Click or double-click a full-run row, best-window card, history stint, or graphed stint to open the Stint Summary drawer. The drawer shows:
+`3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 60`
 
-- run/setup, track, car, stint label, and lap range
-- valid lap count, best lap, average lap, falloff, consistency, and setup usefulness
-- tire, platform, and shock trend labels
-- lap-by-lap rows with lap number, stint lap, lap time, delta to best, rolling 5, valid status, invalid reason, speed fields, and fuel when present
+A window average is available only when enough valid laps exist for that same window size. Out-laps, cooldowns, wrecks/spins, pit-road laps, invalid-speed laps, incomplete laps, non-useful laps, and missing/invalid lap times are excluded. RacerZLab does not bridge an average through an invalid lap and does not fill missing values with zero.
 
-Unavailable values are shown as missing. RacerZLab does not fill missing speed, fuel, tire, platform, or shock fields with zero.
+For short runs:
 
-## Lap-Time Graph
+- fewer than 3 valid laps: no short-run average
+- fewer than 10 valid laps: long-run read is limited
+- fewer than 50 or 60 valid laps: 50/60-lap averages remain unavailable
 
-Laps owns the stint and lap-time workflow. The Stint Intelligence view includes a selected-stint graph panel:
+## Best Highlights
 
-- default graph: current full-run lap-time curve
-- selectable graph sources: full-run row, best-window cards, and loaded history stints
-- graph modes: lap time, delta to best, or rolling 5-lap average
-- invalid laps are excluded by default and remain flagged in the source lap points
-- baseline/test selections are graphed together without reopening the standalone Compare workspace
+The backend marks highlight metadata and the UI highlights the fastest eligible cells with restrained timing-sheet styling.
 
-The graph uses lap-summary data only. It does not load full telemetry traces, use runtime AI, or invent missing lap-time points.
+Highlighted categories:
 
-The default chart scale is `Race pace`. That scale is based on valid race-pace lap values and ignores invalid, pit, cooldown, out, wreck/spin, and extreme statistical outlier laps for y-axis domain purposes. This prevents one 40-second pit/cooldown lap from flattening a real 15-second Bristol stint into an unreadable line.
+- fastest lap
+- best 3/5/7/10/15/20/25/30/40/50/60 average
+- best long-run row
+- highest Setup EV
 
-Excluded laps are not hidden from the truth model. When invalid/outlier laps are shown, RacerZLab renders them muted or marked at the chart boundary with tooltip text explaining why they were excluded from the pace scale. `Include outliers in scale` expands the y-axis to the full selected data range when the driver wants to inspect the raw spike.
+Only eligible same-size values are compared. A 5-lap run cannot win a 20-lap average column, and unavailable values stay muted.
 
-The graph includes hover details for each plotted point, fastest valid lap markers, a selected-lap marker, selected stint/window range shading, and muted invalid points when invalid laps are shown. Brush/zoom selection is intentionally deferred until the chart needs deeper lap-range inspection.
+## Session Runs
 
-## Run History
+Stint Intelligence shows only the current session's runs by default. The current imported run is visible and expanded by default. Other runs from the open session stay collapsed by default and load their stint data only when expanded.
 
-The Stint Intelligence view also includes collapsible imported-run history:
+If the user opens an older saved session from startup, Laps shows the runs that belong to that loaded session. Historical imported runs from other sessions stay hidden unless that session is explicitly loaded. Imported telemetry is retained on disk and in storage; this view only changes which runs are shown by default.
 
-- current run is expanded by default
-- older runs are collapsed by default
-- history headers show setup/run context, track, car, lap count, best lap, and best loaded window averages
-- expanding an older run lazily fetches that run's existing `/api/runs/{run_id}/stints` data
-- expanded history stints and best-window cards can be graphed or assigned as baseline/test inside Laps
+Collapsed session-run headers show available run context:
 
-Older run details are loaded on demand so the app does not fetch every stint table or lap series up front.
+- setup/run short name
+- track
+- car
+- date
+- valid lap context when loaded
+- best lap
+- best 5, best 10, and best 20 when stint data is loaded
 
-Compact filters keep the screen manageable:
+Expanded session runs can contribute stint rows/cards for graphing, baseline/test selection, the summary drawer, and the Test Basket. RacerZLab does not fetch every older stint table eagerly.
 
-- current run only
-- same car/track only
-- graphed only
-- hide invalid/caution laps
-- collapse all older runs
-- expand current run
-- pin/unpin the selected run
+## Best-Window Cards
 
-Filters do not eagerly fetch older run details. Older runs still load lazily when expanded.
+Best-window cards use the expanded average set:
 
-## Session Cleanup Boundary
+`Best 3, Best 5, Best 7, Best 10, Best 15, Best 20, Best 25, Best 30, Best 40, Best 50, Best 60`
 
-RacerZLab may clean up temporary RaceLab session containers, but only when they are clearly session records. Cleanup must never delete imported runs, raw `.ibt` files, cached telemetry, setup snapshots, generated notebooks, reports, or source guide data.
+Unavailable card sizes are omitted rather than faked. The card strip is compact and horizontally scrollable. Cards can be selected for:
 
-The current backend model stores RaceLab sessions separately from durable imported runs. `DELETE /api/sessions/{session_id}` removes the session row and does not delete telemetry files or run records. There is not yet a distinct `ephemeral` session flag, so no automatic expiration or bulk cleanup is enabled for this milestone.
+- graphing
+- baseline
+- test
+- Test Basket
+- summary drawer
 
-## CSV Export
+The cards answer "What were my best 3/5/7/10/... lap windows?" but they are hidden behind the collapsed **Best Windows** section by default so the main page stays focused on the timing sheet.
 
-`Export Selected CSV` writes the currently graphed stints, or the selected stint when nothing is graphed, to a browser-generated CSV file. The export contains lap/stint summary rows only:
+## Progression Buckets
 
-- run and setup metadata
-- stint id and label
-- lap number and stint lap
-- lap time, delta to best, rolling 5, valid status, and invalid reason
-- optional speed and fuel fields when present
-- stint-level tire, platform, and shock labels
+Progression buckets remain available for detail views and the Stint Summary drawer:
 
-Raw telemetry traces are not exported from this workflow.
+`L1-5, L6-10, L11-15, L16-20, L21-25, L26-30, L31-35, L36-40, L41-45, L46-50, L51-55, L56-60`
 
-## Rolling Averages
+Each bucket is the average lap time for that exact segment of the run. If a bucket does not have enough valid laps, it stays unavailable instead of being faked or backfilled.
 
-Each stint summary exposes:
+These buckets are no longer part of the default timing sheet.
 
-- full stint average
-- best 5-lap average
-- best 10-lap average
-- best 20-lap average
-- best 30-lap average when enough laps exist
-- early, middle, and late averages
+## Chart And Selection
 
-Rolling averages are only populated when enough valid laps exist. Missing buckets remain unavailable.
+The timing sheet and advanced best-window section drive the chart. Selecting a row or card updates:
 
-## Bucket Averages
+- selected row/card highlight
+- graph source
+- summary drawer target
+- selected-stint toolbar actions
 
-The Stint Intelligence table also exposes fixed 5-lap timing buckets:
+Graph Selected supports multiple selected stints as separate lines. Baseline/test selections can graph together inside Laps without restoring the standalone Compare workspace. Race-pace scaling keeps invalid/outlier handling from the current graph implementation.
 
-- L1-5
-- L6-10
-- L11-15
-- L16-20
-- L21-25
-- L26-30
-- L31-35
-- L36-40
+## Field Compare
 
-Each bucket is the average of valid laps inside that slice of the stint/window. RacerZLab only shows a bucket value when all 5 laps in that bucket are valid. Limited or missing buckets remain unavailable, so there is no fake precision.
+Field Compare is a separate collapsible section below My Stints. It is not mixed into the user stint sheet.
 
-The fastest available bucket in each row is highlighted. Later buckets that fall away meaningfully are marked with a restrained warning color.
+Title:
 
-## Falloff Classifications
+> Field Compare
 
-The first version labels trend, not root cause. Labels include:
+Subtitle:
 
-- strong short-run / poor long-run
-- stable long-run
-- late falloff
-- early fade
-- inconsistent / noisy
-- insufficient laps
+> Compare other drivers' best stint averages against your best equivalent stint.
 
-Classification uses falloff per lap, early vs late average, lap-time standard deviation, valid lap count, pace quality, and setup usefulness.
+Imported-data v1 usually has no other-driver stint source. The empty state is:
 
-## Trend Labels
+> Other-driver stint data is not available yet.
 
-Compact trend labels are shown only when data exists:
+> Live iRSDK / imported shared stint data will unlock field comparison later.
 
-- tire stable, RF tire work rising, tire data limited
-- platform stable, front contact rising, platform data limited
-- shock activity stable, shock activity rising, shock data limited
+Future Field Compare rows will use:
 
-If source fields are not populated, RacerZLab reports limited data instead of inventing a value.
+- Driver
+- Stint
+- # Laps
+- Fastest Lap
+- 3-Lap Avg
+- 5-Lap Avg
+- 7-Lap Avg
+- 10-Lap Avg
+- 15-Lap Avg
+- 20-Lap Avg
+- 25-Lap Avg
+- 30-Lap Avg
+- 40-Lap Avg
+- 50-Lap Avg
+- 60-Lap Avg
+- Delta to My Best Equivalent
+- Notes
+
+Comparison discipline is same-length only: 10-lap vs 10-lap, 20-lap vs 20-lap, and never a 5-lap hot run against a 40-lap long run.
 
 ## Compare Behavior
 
-The compare panel reports:
+Stint compare remains inside Laps. The standalone Compare workspace remains hidden from normal navigation.
 
-- average delta
-- best lap delta
-- best 5/10/20 average deltas
-- L1-5/L6-10/L11-15/L16-20 bucket deltas
-- falloff delta
-- consistency delta
-- tire/platform/shock trend comparison
-- a cautious verdict
+The compare response keeps legacy overall deltas for the existing baseline/test panel, but also exposes same-length average metadata. When two selected stints have different lap counts, same-length overall average delta is unavailable and a warning explains the mismatch. Rolling deltas by size are keyed by the same expanded average sizes.
 
 Positive time deltas mean the test stint is slower than baseline. Negative time deltas mean the test stint is faster.
 
-Compare remains inside Laps for this workflow. The standalone Compare workspace is still hidden from normal navigation.
+## Limits And Future Work
 
-## Limitations
+Imported-data v1 can identify run-to-run and window-to-window pace differences, but it cannot infer live field position or shared-driver stint timing without a future data source. Future milestones can add live iRSDK/shared import support, persistent stint identities, deeper pit-to-pit detection, and richer same-position comparisons.
 
-- Pit detection is not live-aware yet.
-- Tire, platform, and shock trends depend on imported lap/window fields being populated.
-- Compare currently operates on computed summary rows, not raw time-series overlays.
-- Representative lap selection is preserved for downstream tabs, but Compare still primarily consumes run-level context.
-- Run history stints are fetched lazily; collapsed older runs may show only run-list metadata until expanded.
-- Lap-range brush/zoom is not implemented yet; the current graph focuses on hover, selection, and mode switching.
-
-## Future Work
-
-Later milestones can reconcile imported `.ibt` stints with a live iRSDK bridge, persist stint identities across sessions, deepen raw-channel trend diagnosis, and connect live stint timing to the same table model.
+RaceLab setup guidance remains evidence-first: setup values must link back to telemetry events, short runs cannot support strong degradation conclusions, and aero/load values should be treated as proxies unless directly supported by measured channels and complete vehicle constants.

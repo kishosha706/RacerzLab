@@ -9,6 +9,7 @@ import {
   fetchOverview,
   fetchPlatformEvents,
   fetchRunList,
+  fetchSessionRunList,
   fetchSession,
   fetchSetup,
   fetchTrace,
@@ -37,6 +38,7 @@ import type {
   TrackMapResolution,
   TraceResponse,
 } from "./types/telemetry";
+import type { RaceLabSession, SessionSelectionSource } from "./types/session";
 
 const DialInTab = lazy(async () => {
   const module = await import("./tabs/DialInTab");
@@ -67,6 +69,10 @@ const TrackMapTab = lazy(async () => {
 
 function CockpitShell() {
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [currentSession, setCurrentSession] = useState<RaceLabSession | null>(null);
+  const [sessionSelectionSource, setSessionSelectionSource] = useState<SessionSelectionSource | null>(null);
+  const [sessionRuns, setSessionRuns] = useState<RunListItem[]>([]);
+  const [sessionRunsLoading, setSessionRunsLoading] = useState(false);
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [overview, setOverview] = useState<RunOverview | null>(null);
   const [trace, setTrace] = useState<TraceResponse | null>(null);
@@ -156,21 +162,45 @@ function CockpitShell() {
   );
 
   // ── session management (defined after loadSelectedRun to avoid hoisting issues) ──
-  const handleSessionSelected = useCallback(async (sid: string) => {
+  const refreshSessionRuns = useCallback(async (sid: string) => {
+    setSessionRunsLoading(true);
+    try {
+      const scopedRuns = await fetchSessionRunList(sid);
+      setSessionRuns(scopedRuns);
+      return scopedRuns;
+    } catch {
+      setSessionRuns([]);
+      return [];
+    } finally {
+      setSessionRunsLoading(false);
+    }
+  }, []);
+
+  const handleSessionSelected = useCallback(async (sid: string, source: SessionSelectionSource) => {
     setSessionId(sid);
+    setSessionSelectionSource(source);
+    setCurrentSession(null);
+    setSessionRuns([]);
+    setLoading(true);
     try {
       const session = await fetchSession(sid);
+      setCurrentSession(session);
+      const [recentRuns] = await Promise.all([
+        fetchRunList().catch(() => []),
+        refreshSessionRuns(sid),
+      ]);
+      setRuns(recentRuns);
       if (session.run_ids.length > 0) {
-        const recentRuns = await fetchRunList();
-        setRuns(recentRuns);
         await loadSelectedRun(session.run_ids[session.run_ids.length - 1]);
       } else {
         setLoading(false);
       }
     } catch {
+      setCurrentSession(null);
+      setSessionRuns([]);
       setLoading(false);
     }
-  }, [loadSelectedRun]);
+  }, [loadSelectedRun, refreshSessionRuns]);
 
   // ── import ──────────────────────────────────────────────────
   const [importStage, setImportStage] = useState<string | null>(null);
@@ -182,15 +212,22 @@ function CockpitShell() {
 
       importDebug.start("sessions_refresh_started", { runId, track_map_status: trackMap?.status });
       if (sessionId && runId) {
-        await addRunToSession(sessionId, runId).catch((caught) => {
+        const updatedSession = await addRunToSession(sessionId, runId).catch((caught) => {
           importDebug.error(
             "sessions_refresh_started",
             caught instanceof Error ? caught.message : "Could not attach run to session.",
             { sessionId, runId },
           );
+          return null;
         });
+        if (updatedSession) {
+          setCurrentSession(updatedSession);
+        }
       }
-      const recentRuns = await fetchRunList();
+      const [recentRuns] = await Promise.all([
+        fetchRunList(),
+        sessionId ? refreshSessionRuns(sessionId) : Promise.resolve([]),
+      ]);
       setRuns(recentRuns);
       importDebug.success("sessions_refresh_finished", { run_count: recentRuns.length });
 
@@ -212,7 +249,7 @@ function CockpitShell() {
       // Suppress success messages for normal auto-resolution
       setStatus(null);
     },
-    [loadSelectedRun, sessionId, setWorkspace],
+    [loadSelectedRun, refreshSessionRuns, sessionId, setWorkspace],
   );
 
   const handleFileSelected = useCallback(async (file: File | null) => {
@@ -340,7 +377,15 @@ function CockpitShell() {
       return <NotebookTab />;
     }
     if (ws === "laps") {
-      return <LapsTab overview={overview} />;
+      return (
+        <LapsTab
+          overview={overview}
+          session={currentSession}
+          sessionRuns={sessionRuns}
+          sessionRunsLoading={sessionRunsLoading}
+          sessionSelectionSource={sessionSelectionSource}
+        />
+      );
     }
     if (ws === "map") {
       return <TrackMapTab runId={overview.run_id} lap={selectedTraceLap}
@@ -351,7 +396,7 @@ function CockpitShell() {
         targetZoneEndPct={selection.selectedZoneEndPct ?? undefined} />;
     }
     return <OverviewTab overview={overview} />;
-  }, [overview, selection.selectedWorkspace, selectedTraceLap, trace, platformEvents]);
+  }, [currentSession, overview, platformEvents, selectedTraceLap, selection.selectedWorkspace, sessionRuns, sessionRunsLoading, sessionSelectionSource, trace]);
 
   // ── no session yet → show startup screen ───────────────────
   if (!sessionId) {

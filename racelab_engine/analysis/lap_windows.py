@@ -126,7 +126,7 @@ def compute_fastest_groups(laps: list[LapSummary], sizes: list[int] | None = Non
 
 def compute_best_windows(laps: list[LapSummary], sizes: list[int] | None = None) -> list[BestWindowGroup]:
     if sizes is None:
-        sizes = [5, 10, 20, 30, 40]
+        sizes = [3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 60]
     sorted_laps = sorted(laps, key=lambda la: la.lap_number)
     valid_map: dict[int, bool] = {}
     reason_map: dict[int, str | None] = {}
@@ -147,7 +147,7 @@ def compute_best_windows(laps: list[LapSummary], sizes: list[int] | None = None)
                     valid_window_laps.append(wl)
                 else:
                     excluded.append({"lap_number": wl.lap_number, "reason": reason_map.get(wl.lap_number, "Unknown")})
-            if len(valid_window_laps) < size * 0.6:
+            if len(valid_window_laps) != size:
                 continue
             stats = _compute_window_stats(valid_window_laps)
             if stats["avg"] is None:

@@ -280,54 +280,70 @@ class RaceLabRepository:
             """,
             (limit,),
         ).fetchall()
-        items: list[dict[str, Any]] = []
-        for row in rows:
-            best_lap = connection.execute(
-                """
-                SELECT lap_number, lap_time
-                FROM laps
-                WHERE run_id = ? AND is_useful = 1
-                ORDER BY lap_time ASC
-                LIMIT 1
-                """,
-                (row["run_id"],),
-            ).fetchone()
-            lap_count_row = connection.execute(
-                "SELECT COUNT(*) as cnt FROM laps WHERE run_id = ?",
-                (row["run_id"],),
-            ).fetchone()
-            has_setup = connection.execute(
-                "SELECT 1 FROM setup_snapshots WHERE run_id = ? LIMIT 1",
-                (row["run_id"],),
-            ).fetchone()
-            recommendation = connection.execute(
-                """
-                SELECT issue
-                FROM recommendations
-                WHERE run_id = ?
-                ORDER BY priority_rank ASC
-                LIMIT 1
-                """,
-                (row["run_id"],),
-            ).fetchone()
-            best_time = best_lap["lap_time"] if best_lap else None
-            items.append(
-                {
-                    "run_id": row["run_id"],
-                    "car_name": row["car_name"],
-                    "track_name": row["track_display_name"] or row["track_name"],
-                    "setup_name": row["setup_name"],
-                    "imported_at": row["imported_at"],
-                    "best_lap_number": best_lap["lap_number"] if best_lap else None,
-                    "best_lap_time": best_time,
-                    "best_lap_time_s": best_time,
-                    "lap_count": lap_count_row["cnt"] if lap_count_row else None,
-                    "has_setup_snapshot": has_setup is not None,
-                    "primary_issue": recommendation["issue"] if recommendation else None,
-                }
-            )
+        items = [self._build_run_list_item(connection, row) for row in rows]
         connection.close()
         return items
+
+    def get_run_list_item(self, run_id: str) -> dict[str, Any] | None:
+        connection = initialize_database(self.db_path)
+        row = connection.execute(
+            """
+            SELECT run_id, car_name, track_name, track_display_name, setup_name, imported_at
+            FROM runs
+            WHERE run_id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            connection.close()
+            return None
+        item = self._build_run_list_item(connection, row)
+        connection.close()
+        return item
+
+    def _build_run_list_item(self, connection: Any, row: Any) -> dict[str, Any]:
+        best_lap = connection.execute(
+            """
+            SELECT lap_number, lap_time
+            FROM laps
+            WHERE run_id = ? AND is_useful = 1
+            ORDER BY lap_time ASC
+            LIMIT 1
+            """,
+            (row["run_id"],),
+        ).fetchone()
+        lap_count_row = connection.execute(
+            "SELECT COUNT(*) as cnt FROM laps WHERE run_id = ?",
+            (row["run_id"],),
+        ).fetchone()
+        has_setup = connection.execute(
+            "SELECT 1 FROM setup_snapshots WHERE run_id = ? LIMIT 1",
+            (row["run_id"],),
+        ).fetchone()
+        recommendation = connection.execute(
+            """
+            SELECT issue
+            FROM recommendations
+            WHERE run_id = ?
+            ORDER BY priority_rank ASC
+            LIMIT 1
+            """,
+            (row["run_id"],),
+        ).fetchone()
+        best_time = best_lap["lap_time"] if best_lap else None
+        return {
+            "run_id": row["run_id"],
+            "car_name": row["car_name"],
+            "track_name": row["track_display_name"] or row["track_name"],
+            "setup_name": row["setup_name"],
+            "imported_at": row["imported_at"],
+            "best_lap_number": best_lap["lap_number"] if best_lap else None,
+            "best_lap_time": best_time,
+            "best_lap_time_s": best_time,
+            "lap_count": lap_count_row["cnt"] if lap_count_row else None,
+            "has_setup_snapshot": has_setup is not None,
+            "primary_issue": recommendation["issue"] if recommendation else None,
+        }
 
     def get_session(self, run_id: str) -> SessionSummary | None:
         connection = initialize_database(self.db_path)

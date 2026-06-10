@@ -159,14 +159,27 @@ class StintSummary(BaseModel):
     end_lap: int
     lap_count: int
     valid_lap_count: int
+    last_lap_time: Optional[float] = None
     avg_lap_time: Optional[float] = None
     best_lap_time: Optional[float] = None
     worst_lap_time: Optional[float] = None
     lap_time_std_dev: Optional[float] = None
+    best_avg_by_size: dict[str, Optional[float]] = Field(default_factory=dict)
+    best_average_size_flags: list[int] = Field(default_factory=list)
+    is_best_fastest_lap: bool = False
+    is_best_long_run: bool = False
+    highlight_tags: list[str] = Field(default_factory=list)
+    rolling_3_avg_best: Optional[float] = None
     rolling_5_avg_best: Optional[float] = None
+    rolling_7_avg_best: Optional[float] = None
     rolling_10_avg_best: Optional[float] = None
+    rolling_15_avg_best: Optional[float] = None
     rolling_20_avg_best: Optional[float] = None
+    rolling_25_avg_best: Optional[float] = None
     rolling_30_avg_best: Optional[float] = None
+    rolling_40_avg_best: Optional[float] = None
+    rolling_50_avg_best: Optional[float] = None
+    rolling_60_avg_best: Optional[float] = None
     falloff_total: Optional[float] = None
     falloff_per_lap: Optional[float] = None
     early_avg: Optional[float] = None
@@ -230,11 +243,18 @@ class StintRunSummary(BaseModel):
     best_lap_time: Optional[float] = None
     full_stint_avg: Optional[float] = None
     falloff_total: Optional[float] = None
+    best_avg_by_size: dict[str, Optional[float]] = Field(default_factory=dict)
+    best_3_avg: Optional[float] = None
     best_5_avg: Optional[float] = None
+    best_7_avg: Optional[float] = None
     best_10_avg: Optional[float] = None
+    best_15_avg: Optional[float] = None
     best_20_avg: Optional[float] = None
+    best_25_avg: Optional[float] = None
     best_30_avg: Optional[float] = None
     best_40_avg: Optional[float] = None
+    best_50_avg: Optional[float] = None
+    best_60_avg: Optional[float] = None
     data_status: str = "Limited"
     warnings: list[str] = Field(default_factory=list)
 
@@ -268,6 +288,9 @@ class StintCompareResult(BaseModel):
     rolling_5_delta: Optional[float] = None
     rolling_10_delta: Optional[float] = None
     rolling_20_delta: Optional[float] = None
+    same_length_avg_delta: Optional[float] = None
+    rolling_delta_by_size: dict[str, Optional[float]] = Field(default_factory=dict)
+    comparison_warnings: list[str] = Field(default_factory=list)
     bucket_deltas: list["StintBucketDelta"] = Field(default_factory=list)
     falloff_delta: Optional[float] = None
     consistency_delta: Optional[float] = None

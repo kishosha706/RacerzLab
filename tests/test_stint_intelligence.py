@@ -9,6 +9,7 @@ from api.main import app
 from racelab_engine.analysis.stint_intelligence import build_stint_response, compare_stints
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.session import RunOverview, SessionSummary
+from racelab_engine.services.session_service import add_run_to_session, create_session
 from racelab_engine.storage.repository import RaceLabRepository
 from test_setup_evidence_adapter import _configure_env
 
@@ -73,20 +74,40 @@ def test_stint_response_returns_curated_primary_rows_and_buckets() -> None:
         "Full run",
     ]
     assert [stint.display_label_short for stint in response.best_window_cards] == [
+        "Best 3",
         "Best 5",
+        "Best 7",
         "Best 10",
+        "Best 15",
         "Best 20",
+        "Best 25",
         "Best 30",
         "Best 40",
     ]
     full = response.stints[0]
     assert full.valid_lap_count == 42
+    assert set(full.best_avg_by_size) == {"3", "5", "7", "10", "15", "20", "25", "30", "40", "50", "60"}
+    assert full.rolling_3_avg_best is not None
     assert full.rolling_5_avg_best is not None
+    assert full.rolling_7_avg_best is not None
     assert full.rolling_10_avg_best is not None
+    assert full.rolling_15_avg_best is not None
     assert full.rolling_20_avg_best is not None
+    assert full.rolling_25_avg_best is not None
+    assert full.rolling_30_avg_best is not None
+    assert full.rolling_40_avg_best is not None
+    assert full.rolling_50_avg_best is None
+    assert full.rolling_60_avg_best is None
     assert full.avg_lap_time is not None
+    assert len(full.bucket_averages) == 12
     assert full.bucket_averages[0].label == "L1-5"
     assert full.bucket_averages[0].avg_lap_time is not None
+    assert full.bucket_averages[7].label == "L36-40"
+    assert full.bucket_averages[7].avg_lap_time is not None
+    assert full.bucket_averages[8].label == "L41-45"
+    assert full.bucket_averages[8].avg_lap_time is None
+    assert full.bucket_averages[11].label == "L56-60"
+    assert full.bucket_averages[11].avg_lap_time is None
     assert any(bucket.is_fastest_bucket for bucket in full.bucket_averages)
     assert full.lap_points
     assert full.lap_points[0].stint_lap == 1
@@ -99,7 +120,9 @@ def test_stint_response_returns_curated_primary_rows_and_buckets() -> None:
     assert any(point.rolling_5 is not None for point in full.lap_points)
     assert response.run_summary is not None
     assert response.run_summary.full_stint_avg == full.avg_lap_time
-    assert response.run_summary.best_20_avg == response.best_window_cards[2].avg_lap_time
+    assert response.run_summary.best_20_avg == next(card for card in response.best_window_cards if card.lap_count == 20).avg_lap_time
+    assert response.run_summary.best_50_avg is None
+    assert response.run_summary.best_60_avg is None
 
 
 def test_best_window_cards_exclude_near_duplicate_overlapping_windows_from_table_rows() -> None:
@@ -107,9 +130,48 @@ def test_best_window_cards_exclude_near_duplicate_overlapping_windows_from_table
 
     labels = [stint.display_label_short for stint in response.best_window_cards]
     assert labels.count("Best 40") == 1
+    assert labels.count("Best 50") == 1
+    assert "Best 60" not in labels
     assert "Best 40" not in [stint.display_label_short for stint in response.stint_rows]
     assert len(response.all_windows) >= len(response.best_window_cards)
     assert len(response.stint_rows) == 1
+
+
+def test_50_and_60_lap_averages_are_computed_only_when_enough_valid_laps_exist() -> None:
+    response = build_stint_response(_laps(65))
+    full = response.stints[0]
+
+    assert full.rolling_50_avg_best is not None
+    assert full.rolling_60_avg_best is not None
+    assert full.best_avg_by_size["50"] == full.rolling_50_avg_best
+    assert full.best_avg_by_size["60"] == full.rolling_60_avg_best
+    assert full.bucket_averages[10].label == "L51-55"
+    assert full.bucket_averages[10].avg_lap_time is not None
+    assert full.bucket_averages[11].label == "L56-60"
+    assert full.bucket_averages[11].avg_lap_time is not None
+    assert any(card.display_label_short == "Best 50" for card in response.best_window_cards)
+    assert any(card.display_label_short == "Best 60" for card in response.best_window_cards)
+
+
+def test_bucket_progression_contract_stays_distinct_from_best_rolling_averages() -> None:
+    laps = [
+        _lap(index, 51.0 if index <= 5 else 50.0 if index <= 10 else 50.5)
+        for index in range(1, 31)
+    ]
+    full = build_stint_response(laps).stints[0]
+
+    assert full.best_avg_by_size["5"] is not None
+    assert [bucket.label for bucket in full.bucket_averages[:6]] == [
+        "L1-5",
+        "L6-10",
+        "L11-15",
+        "L16-20",
+        "L21-25",
+        "L26-30",
+    ]
+    assert all(bucket.label not in full.best_avg_by_size for bucket in full.bucket_averages)
+    assert full.bucket_averages[0].avg_lap_time == 51.0
+    assert full.best_avg_by_size["5"] == 50.0
 
 
 def test_invalid_laps_are_excluded_without_missing_to_zero() -> None:
@@ -123,6 +185,8 @@ def test_invalid_laps_are_excluded_without_missing_to_zero() -> None:
     assert full.valid_lap_count == 11
     assert any("excluded" in warning.lower() for warning in full.warnings)
     assert full.best_lap_time != 0
+    assert full.best_avg_by_size["5"] is not None
+    assert full.best_avg_by_size["10"] is None
     limited_bucket = full.bucket_averages[0]
     assert limited_bucket.avg_lap_time is None
     assert limited_bucket.warning is not None
@@ -134,13 +198,14 @@ def test_invalid_laps_are_excluded_without_missing_to_zero() -> None:
 
 
 def test_insufficient_laps_marked_unavailable() -> None:
-    response = build_stint_response(_laps(4))
+    response = build_stint_response(_laps(2))
 
     assert response.stints == []
     assert response.stint_rows == []
     assert response.best_window_cards == []
     assert response.warnings
     assert "No eligible stint windows yet" in response.warnings[0]
+    assert any("Need at least 3 valid laps" in warning for warning in response.warnings)
     assert any("Import or select a longer clean run" in warning for warning in response.warnings)
 
 
@@ -156,7 +221,7 @@ def test_falloff_classification_and_limited_trends_are_truthful() -> None:
 
 def test_compare_result_computes_deltas() -> None:
     baseline = build_stint_response(_laps(15, run_id="baseline", start_time=51.0)).stints[0]
-    test = build_stint_response(_laps(15, run_id="test", start_time=50.5)).best_window_cards[1]
+    test = next(card for card in build_stint_response(_laps(15, run_id="test", start_time=50.5)).best_window_cards if card.lap_count == 5)
 
     result = compare_stints(baseline, test)
 
@@ -167,6 +232,19 @@ def test_compare_result_computes_deltas() -> None:
     assert result.bucket_deltas[0].label == "L1-5"
     assert result.bucket_deltas[0].delta is not None
     assert result.verdict
+    assert result.same_length_avg_delta is None
+    assert result.rolling_delta_by_size["5"] is not None
+    assert result.comparison_warnings
+
+
+def test_best_average_highlight_metadata_marks_fastest_cells() -> None:
+    response = build_stint_response(_laps(65))
+
+    assert any(card.best_average_size_flags for card in response.best_window_cards)
+    best_60 = next(card for card in response.best_window_cards if card.lap_count == 60)
+    assert 60 in best_60.best_average_size_flags
+    assert "best_60" in best_60.highlight_tags
+    assert any(stint.is_best_fastest_lap for stint in [*response.stint_rows, *response.best_window_cards])
 
 
 def test_stints_endpoint_returns_summaries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -188,6 +266,24 @@ def test_stints_endpoint_returns_summaries(tmp_path: Path, monkeypatch: pytest.M
     assert payload["stints"][0]["lap_points"][0]["lap_time"] is not None
     assert {"avg_speed_mph", "max_speed_mph", "min_speed_mph", "fuel"}.issubset(payload["stints"][0]["lap_points"][0])
     assert payload["stints"][0]["lap_points"][0]["fuel"] is None
+
+
+def test_session_runs_endpoint_returns_only_runs_in_loaded_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, run_id="session-run-a")
+    _seed_run(tmp_path, run_id="session-run-b")
+    _seed_run(tmp_path, run_id="historical-run-c")
+    session = create_session(name="Session Scope Test")
+    add_run_to_session(session.session_id, "session-run-a")
+    add_run_to_session(session.session_id, "session-run-b")
+    client = TestClient(app)
+
+    response = client.get(f"/api/sessions/{session.session_id}/runs")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["run_id"] for item in payload] == ["session-run-a", "session-run-b"]
+    assert all(item["run_id"] != "historical-run-c" for item in payload)
 
 
 def test_stints_compare_endpoint_returns_delta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

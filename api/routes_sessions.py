@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from api.schemas import RunListItem
 from racelab_engine.services.lap_service import build_lap_list_for_run
 from racelab_engine.services.session_service import (
     add_run_to_session,
@@ -98,6 +99,16 @@ def add_run_endpoint(session_id: str, req: AddRunRequest) -> dict:
     if not (session := add_run_to_session(session_id, req.run_id)):
         raise HTTPException(404, f"Session not found: {session_id}")
     return session.as_dict()
+
+
+@router.get("/{session_id}/runs", response_model=list[RunListItem])
+def list_session_runs_endpoint(session_id: str) -> list[RunListItem]:
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(404, f"Session not found: {session_id}")
+    repo = RaceLabRepository()
+    items = [repo.get_run_list_item(run_id) for run_id in session.run_ids]
+    return [RunListItem(**item) for item in items if item is not None]
 
 
 @router.delete("/{session_id}/runs/{run_id}")

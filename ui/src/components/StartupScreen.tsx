@@ -1,10 +1,10 @@
 import { AlertTriangle, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { createSession, deleteSession, fetchSessions } from "../api/client";
-import type { RaceLabSession } from "../types/session";
+import type { RaceLabSession, SessionSelectionSource } from "../types/session";
 
 type StartupScreenProps = {
-  onSessionSelected: (sessionId: string) => void;
+  onSessionSelected: (sessionId: string, source: SessionSelectionSource) => void;
 };
 
 export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
@@ -36,7 +36,7 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
     setCreateError(null);
     try {
       const session = await createSession();
-      onSessionSelected(session.session_id);
+      onSessionSelected(session.session_id, "new");
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Could not create session.");
     } finally {
@@ -109,7 +109,7 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
               <div key={s.session_id} className="session-card">
                 <button
                   className="session-card-body"
-                  onClick={() => onSessionSelected(s.session_id)}
+                  onClick={() => onSessionSelected(s.session_id, "existing")}
                   aria-label={`Open session ${s.name}`}
                 >
                   <span className="session-card-title">{s.name}</span>

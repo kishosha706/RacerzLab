@@ -19,9 +19,9 @@ from racelab_engine.models.lap_analysis import (
 )
 from racelab_engine.models.session import SessionSummary
 
-STINT_WINDOW_SIZES = [5, 10, 20, 30, 40]
+STINT_WINDOW_SIZES = [3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 60]
 STINT_BUCKET_SIZE = 5
-STINT_BUCKET_COUNT = 8
+STINT_BUCKET_COUNT = 12
 
 
 def _avg(values: Iterable[float]) -> float | None:
@@ -44,12 +44,18 @@ def _best_rolling_average(laps: list[LapSummary], size: int) -> float | None:
     best: float | None = None
     for index in range(len(ordered) - size + 1):
         window = ordered[index:index + size]
+        if not all(_is_lap_valid_for_ranking(lap)[0] for lap in window):
+            continue
         values = _times(window)
-        if len(values) < size:
+        if len(values) != size:
             continue
         candidate = sum(values) / size
         best = candidate if best is None else min(best, candidate)
     return best
+
+
+def _best_average_map(laps: list[LapSummary]) -> dict[str, float | None]:
+    return {str(size): _best_rolling_average(laps, size) for size in STINT_WINDOW_SIZES}
 
 
 def _bucket_averages(laps: list[LapSummary]) -> list[StintBucket]:
@@ -285,10 +291,12 @@ def _build_stint_summary(
     if lap_count <= 0 or valid_count / lap_count < 0.6:
         return None
 
+    best_avg_by_size = _best_average_map(ordered)
     values = _times(valid)
     avg = _avg(values)
     best = min(values) if values else None
     worst = max(values) if values else None
+    last_lap_time = next((lap.lap_time for lap in reversed(ordered) if lap.lap_time is not None), None)
     std = statistics.stdev(values) if len(values) >= 2 else (0.0 if values else None)
     early_avg, middle_avg, late_avg = _third_averages(valid)
     falloff_total = (late_avg - early_avg) if early_avg is not None and late_avg is not None else None
@@ -334,14 +342,23 @@ def _build_stint_summary(
         end_lap=ordered[-1].lap_number,
         lap_count=lap_count,
         valid_lap_count=valid_count,
+        last_lap_time=last_lap_time,
         avg_lap_time=avg,
         best_lap_time=best,
         worst_lap_time=worst,
         lap_time_std_dev=std,
-        rolling_5_avg_best=_best_rolling_average(valid, 5),
-        rolling_10_avg_best=_best_rolling_average(valid, 10),
-        rolling_20_avg_best=_best_rolling_average(valid, 20),
-        rolling_30_avg_best=_best_rolling_average(valid, 30),
+        best_avg_by_size=best_avg_by_size,
+        rolling_3_avg_best=best_avg_by_size["3"],
+        rolling_5_avg_best=best_avg_by_size["5"],
+        rolling_7_avg_best=best_avg_by_size["7"],
+        rolling_10_avg_best=best_avg_by_size["10"],
+        rolling_15_avg_best=best_avg_by_size["15"],
+        rolling_20_avg_best=best_avg_by_size["20"],
+        rolling_25_avg_best=best_avg_by_size["25"],
+        rolling_30_avg_best=best_avg_by_size["30"],
+        rolling_40_avg_best=best_avg_by_size["40"],
+        rolling_50_avg_best=best_avg_by_size["50"],
+        rolling_60_avg_best=best_avg_by_size["60"],
         falloff_total=falloff_total,
         falloff_per_lap=falloff_per_lap,
         early_avg=early_avg,
@@ -377,11 +394,10 @@ def _build_run_summary(
     warnings: list[str],
 ) -> StintRunSummary:
     card_by_size = {card.lap_count: card for card in best_window_cards if card.is_best_for_size}
-    c5 = card_by_size.get(5)
-    c10 = card_by_size.get(10)
-    c20 = card_by_size.get(20)
-    c30 = card_by_size.get(30)
-    c40 = card_by_size.get(40)
+    best_avg_by_size = {
+        str(size): (card.avg_lap_time if (card := card_by_size.get(size)) is not None else None)
+        for size in STINT_WINDOW_SIZES
+    }
     return StintRunSummary(
         run_id=run_id,
         setup_name=session.setup_name if session else None,
@@ -393,14 +409,74 @@ def _build_run_summary(
         best_lap_time=min(_times(valid), default=None),
         full_stint_avg=None if full_stint is None else full_stint.avg_lap_time,
         falloff_total=None if full_stint is None else full_stint.falloff_total,
-        best_5_avg=None if c5 is None else c5.avg_lap_time,
-        best_10_avg=None if c10 is None else c10.avg_lap_time,
-        best_20_avg=None if c20 is None else c20.avg_lap_time,
-        best_30_avg=None if c30 is None else c30.avg_lap_time,
-        best_40_avg=None if c40 is None else c40.avg_lap_time,
+        best_avg_by_size=best_avg_by_size,
+        best_3_avg=best_avg_by_size["3"],
+        best_5_avg=best_avg_by_size["5"],
+        best_7_avg=best_avg_by_size["7"],
+        best_10_avg=best_avg_by_size["10"],
+        best_15_avg=best_avg_by_size["15"],
+        best_20_avg=best_avg_by_size["20"],
+        best_25_avg=best_avg_by_size["25"],
+        best_30_avg=best_avg_by_size["30"],
+        best_40_avg=best_avg_by_size["40"],
+        best_50_avg=best_avg_by_size["50"],
+        best_60_avg=best_avg_by_size["60"],
         data_status="Ready" if full_stint is not None and len(warnings) == 0 else "Limited",
         warnings=warnings,
     )
+
+
+def _with_highlight_metadata(stints: list[StintSummary]) -> list[StintSummary]:
+    if not stints:
+        return stints
+    best_lap = min((stint.best_lap_time for stint in stints if stint.best_lap_time is not None), default=None)
+    top_ev = max((stint.setup_usefulness_score for stint in stints if stint.setup_usefulness_score is not None), default=None)
+    long_run_size = max(
+        (
+            size
+            for size in STINT_WINDOW_SIZES
+            if any(stint.best_avg_by_size.get(str(size)) is not None for stint in stints)
+        ),
+        default=None,
+    )
+    best_by_size = {
+        size: min(
+            (
+                value
+                for stint in stints
+                if (value := stint.best_avg_by_size.get(str(size))) is not None
+            ),
+            default=None,
+        )
+        for size in STINT_WINDOW_SIZES
+    }
+    highlighted: list[StintSummary] = []
+    for stint in stints:
+        tags = set(stint.highlight_tags)
+        size_flags = set(stint.best_average_size_flags)
+        if best_lap is not None and stint.best_lap_time is not None and abs(stint.best_lap_time - best_lap) < 0.0005:
+            tags.add("fastest_lap")
+        for size, best_avg in best_by_size.items():
+            value = stint.best_avg_by_size.get(str(size))
+            if best_avg is not None and value is not None and abs(value - best_avg) < 0.0005:
+                tags.add(f"best_{size}")
+                size_flags.add(size)
+        is_best_long_run = False
+        if long_run_size is not None:
+            value = stint.best_avg_by_size.get(str(long_run_size))
+            long_best = best_by_size.get(long_run_size)
+            is_best_long_run = value is not None and long_best is not None and abs(value - long_best) < 0.0005
+            if is_best_long_run:
+                tags.add("best_long_run")
+        if top_ev is not None and stint.setup_usefulness_score is not None and abs(stint.setup_usefulness_score - top_ev) < 0.0005:
+            tags.add("top_setup_ev")
+        highlighted.append(stint.model_copy(update={
+            "is_best_fastest_lap": "fastest_lap" in tags,
+            "best_average_size_flags": sorted(size_flags),
+            "is_best_long_run": is_best_long_run,
+            "highlight_tags": sorted(tags),
+        }))
+    return highlighted
 
 
 def build_stint_response(laps: list[LapSummary], session: SessionSummary | None = None) -> StintResponse:
@@ -416,15 +492,17 @@ def build_stint_response(laps: list[LapSummary], session: SessionSummary | None 
     valid = _valid_laps(ordered)
     valid_ratio = len(valid) / len(ordered) if ordered else 0.0
     warnings: list[str] = []
-    if len(valid) < 5:
-        warnings.append(f"No eligible stint windows yet. Only {len(valid)} valid lap{'s' if len(valid) != 1 else ''}; need at least 5 valid laps for short windows.")
+    if len(valid) < 3:
+        warnings.append(f"No eligible stint windows yet. Only {len(valid)} valid lap{'s' if len(valid) != 1 else ''}; need at least 3 valid laps for short windows.")
+        warnings.append("Need at least 3 valid laps to start short-run averages.")
         warnings.append("Need 10+ valid laps for a useful long-run read.")
+        warnings.append("Need 50/60 valid laps for 50/60-lap averages.")
         warnings.append("Out laps, pit laps, cooldowns, wrecks, and invalid laps are excluded.")
         warnings.append("Import or select a longer clean run to unlock Stint Intelligence.")
     if valid_ratio < 0.6:
         warnings.append("Fewer than 60% of run laps are valid for stint analysis.")
 
-    if len(valid) >= 5 and valid_ratio >= 0.6:
+    if len(valid) >= 3 and valid_ratio >= 0.6:
         summary = _build_stint_summary(
             run_id,
             f"stint_{run_id}_full_{ordered[0].lap_number}_{ordered[-1].lap_number}",
@@ -462,16 +540,28 @@ def build_stint_response(laps: list[LapSummary], session: SessionSummary | None 
                     best_window_cards.append(summary)
                 seen_windows.add(key)
 
-    size_order = {"full_run": 0, "best_5": 1, "best_10": 2, "best_20": 3, "best_30": 4, "best_40": 5}
+    size_order = {"full_run": 0, **{f"best_{size}": index + 1 for index, size in enumerate(STINT_WINDOW_SIZES)}}
     stint_rows.sort(key=lambda item: (size_order.get(item.display_group, 99), item.avg_lap_time or 999999.0))
     best_window_cards.sort(key=lambda item: (size_order.get(item.display_group, 99), item.avg_lap_time or 999999.0))
     all_windows.sort(key=lambda item: (size_order.get(item.display_group, 99), item.avg_lap_time or 999999.0))
     if not stint_rows and not warnings:
         warnings.append("No eligible stint windows yet.")
-        warnings.append("Need at least 5 valid laps for short windows.")
+        warnings.append("Need at least 3 valid laps to start short-run averages.")
         warnings.append("Need 10+ valid laps for a useful long-run read.")
+        warnings.append("Need 50/60 valid laps for 50/60-lap averages.")
         warnings.append("Out laps, pit laps, cooldowns, wrecks, and invalid laps are excluded.")
         warnings.append("Import or select a longer clean run to unlock Stint Intelligence.")
+    highlighted = _with_highlight_metadata([*stint_rows, *best_window_cards])
+    highlighted_by_id = {stint.stint_id: stint for stint in highlighted}
+    stint_rows = [highlighted_by_id.get(stint.stint_id, stint) for stint in stint_rows]
+    best_window_cards = [highlighted_by_id.get(stint.stint_id, stint) for stint in best_window_cards]
+    all_windows = [
+        highlighted_by_id.get(stint.stint_id, stint.model_copy(update={
+            "best_average_size_flags": [stint.lap_count] if stint.is_best_for_size else [],
+            "highlight_tags": [f"best_{stint.lap_count}"] if stint.is_best_for_size else [],
+        }))
+        for stint in all_windows
+    ]
     run_summary = _build_run_summary(
         run_id=run_id,
         ordered=ordered,
@@ -513,6 +603,16 @@ def compare_stints(baseline: StintSummary, test: StintSummary) -> StintCompareRe
     rolling_5_delta = _delta(test.rolling_5_avg_best, baseline.rolling_5_avg_best)
     rolling_10_delta = _delta(test.rolling_10_avg_best, baseline.rolling_10_avg_best)
     rolling_20_delta = _delta(test.rolling_20_avg_best, baseline.rolling_20_avg_best)
+    rolling_delta_by_size = {
+        str(size): _delta(test.best_avg_by_size.get(str(size)), baseline.best_avg_by_size.get(str(size)))
+        for size in STINT_WINDOW_SIZES
+    }
+    comparison_warnings: list[str] = []
+    same_length_avg_delta = avg_delta if baseline.lap_count == test.lap_count else None
+    if baseline.lap_count != test.lap_count:
+        comparison_warnings.append(
+            f"Overall average delta is cross-length ({baseline.lap_count} laps vs {test.lap_count} laps); same-length average delta is unavailable."
+        )
     falloff_delta = _delta(test.falloff_total, baseline.falloff_total)
     consistency_delta = _delta(test.consistency_score, baseline.consistency_score)
     baseline_buckets = {bucket.label: bucket for bucket in baseline.bucket_averages}
@@ -572,6 +672,9 @@ def compare_stints(baseline: StintSummary, test: StintSummary) -> StintCompareRe
         rolling_5_delta=rolling_5_delta,
         rolling_10_delta=rolling_10_delta,
         rolling_20_delta=rolling_20_delta,
+        same_length_avg_delta=same_length_avg_delta,
+        rolling_delta_by_size=rolling_delta_by_size,
+        comparison_warnings=comparison_warnings,
         bucket_deltas=bucket_deltas,
         falloff_delta=falloff_delta,
         consistency_delta=consistency_delta,

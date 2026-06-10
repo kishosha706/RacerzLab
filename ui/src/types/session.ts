@@ -13,6 +13,8 @@ export interface RaceLabSession {
   status: "active" | "archived";
 }
 
+export type SessionSelectionSource = "new" | "existing";
+
 export interface LapSummaryItem {
   lap_id: string;
   run_id: string;

@@ -428,6 +428,10 @@ export function addRunToSession(sessionId: string, runId: string): Promise<RaceL
   });
 }
 
+export function fetchSessionRunList(sessionId: string): Promise<RunListItem[]> {
+  return requestJson<RunListItem[]>(`/api/sessions/${encodeURIComponent(sessionId)}/runs`);
+}
+
 export function fetchRunLapList(runId: string): Promise<RunLapList> {
   return requestJson<RunLapList>(`/api/sessions/runs/${encodeURIComponent(runId)}/laps`);
 }
