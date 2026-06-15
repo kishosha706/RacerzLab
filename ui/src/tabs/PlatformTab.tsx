@@ -14,10 +14,13 @@ import { ProxyBadge } from "../components/ProxyBadge";
 import { fetchPlatformEvents, fetchShockReader } from "../api/client";
 import { isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
 import { getTraceValues, formatChannelValue, formatForceProxyN, safeStringValue } from "../utils/channelFormat";
+import { buildPlatformChartAnnotations } from "../utils/platformChartAnnotations";
+import { filterPlatformEvents, isMutedPlatformEvent, platformEventScopeLabel } from "../utils/platformEventVisibility";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
 import type {
   PlatformEventItem,
+  PlatformEventVisibilityMode,
   RunOverview,
   SetupSnapshot,
   TelemetryEvent,
@@ -31,6 +34,8 @@ type PlatformTabProps = {
   trace: TraceResponse | null;
   platformEvents?: PlatformEventItem[];
   initialWorkbenchView?: WorkbenchView;
+  platformEventVisibilityMode?: PlatformEventVisibilityMode;
+  onPlatformEventVisibilityModeChange?: (mode: PlatformEventVisibilityMode) => void;
 };
 
 type PlatformTraceWorkbenchProps = {
@@ -38,6 +43,8 @@ type PlatformTraceWorkbenchProps = {
   trace: TraceResponse;
   platformEvents?: PlatformEventItem[];
   initialWorkbenchView?: WorkbenchView;
+  platformEventVisibilityMode?: PlatformEventVisibilityMode;
+  onPlatformEventVisibilityModeChange?: (mode: PlatformEventVisibilityMode) => void;
 };
 
 type ChartRow = {
@@ -553,7 +560,14 @@ function validSampleIndex(index: number | null | undefined, length: number): num
   return index;
 }
 
-export function PlatformTab({ overview, trace, platformEvents, initialWorkbenchView }: PlatformTabProps) {
+export function PlatformTab({
+  overview,
+  trace,
+  platformEvents,
+  initialWorkbenchView,
+  platformEventVisibilityMode,
+  onPlatformEventVisibilityModeChange,
+}: PlatformTabProps) {
   const xs = useMemo(() => xValues(trace), [trace]);
 
   if (!trace) {
@@ -594,11 +608,20 @@ export function PlatformTab({ overview, trace, platformEvents, initialWorkbenchV
       trace={trace}
       platformEvents={platformEvents}
       initialWorkbenchView={initialWorkbenchView}
+      platformEventVisibilityMode={platformEventVisibilityMode}
+      onPlatformEventVisibilityModeChange={onPlatformEventVisibilityModeChange}
     />
   );
 }
 
-function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatformEvents, initialWorkbenchView = "balance" }: PlatformTraceWorkbenchProps) {
+function PlatformTraceWorkbench({
+  overview,
+  trace,
+  platformEvents: externalPlatformEvents,
+  initialWorkbenchView = "balance",
+  platformEventVisibilityMode = "actionable",
+  onPlatformEventVisibilityModeChange,
+}: PlatformTraceWorkbenchProps) {
   const { selection, setWorkspace, focusEvidence } = useTelemetrySelection();
   const chartNode = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
@@ -739,15 +762,29 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
     return () => { cancelled = true; };
   }, [overview.run_id, trace?.lap, externalPlatformEvents]);
 
+  const visiblePlatformEvents = useMemo(
+    () => filterPlatformEvents(platformEvents, platformEventVisibilityMode),
+    [platformEvents, platformEventVisibilityMode],
+  );
+
+  useEffect(() => {
+    if (
+      selectedPlatformEvent
+      && !visiblePlatformEvents.some((event) => event.event_id === selectedPlatformEvent.event_id)
+    ) {
+      setSelectedPlatformEvent(null);
+    }
+  }, [selectedPlatformEvent, visiblePlatformEvents]);
+
   // ── event lookup helpers ─────────────────────────────────────
   const findEvent = useCallback(
     (reference?: string | null) => {
       if (!reference) return null;
-      return platformEvents.find((event) => event.event_id === reference)
-        ?? platformEvents.find((event) => event.event_type === reference)
+      return visiblePlatformEvents.find((event) => event.event_id === reference)
+        ?? visiblePlatformEvents.find((event) => event.event_type === reference)
         ?? null;
     },
-    [platformEvents],
+    [visiblePlatformEvents],
   );
 
   const indexForPlatformEvent = useCallback(
@@ -834,7 +871,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
       const pct = valueAt(trace, "lap_dist_pct_100", index);
       let best: PlatformEventItem | null = null;
       let bestScore = Number.POSITIVE_INFINITY;
-      for (const event of platformEvents) {
+      for (const event of visiblePlatformEvents) {
         let score = Number.POSITIVE_INFINITY;
         if (dist != null && event.lap_dist_ft != null) {
           score = Math.abs(dist - event.lap_dist_ft);
@@ -853,7 +890,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
       }
       return best;
     },
-    [platformEvents, trace, xs],
+    [trace, visiblePlatformEvents, xs],
   );
 
   // ── cursor management ────────────────────────────────────────
@@ -879,7 +916,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
       });
       setSelectedPlatformEvent(pevt ?? null);
     },
-    [trace, overview, xs, focusEvidence, findEvent, platformEvents, nearestEventForIndex, buildTraceEvidence],
+    [trace, overview, xs, focusEvidence, findEvent, visiblePlatformEvents, nearestEventForIndex, buildTraceEvidence],
   );
 
   const jumpToIndex = useCallback(
@@ -941,7 +978,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
     selection.selectedLapDistFt,
     selection.selectedLapPct,
     selection.selectedEventId,
-    platformEvents,
+    visiblePlatformEvents,
     nearestEventForIndex,
     findEvent,
     indexForPlatformEvent,
@@ -1251,29 +1288,10 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
     chartNode.current.style.height = `${totalChartH}px`;
     chartNode.current.style.minHeight = `${totalChartH}px`;
 
-    const eventLines = [
-      ...platformEvents.map((event) => event.lap_dist_ft ?? null),
-      ...legacyEvents.map((event) => eventDistanceFt(event)),
-    ]
-      .filter((value): value is number => value != null)
-      .map((x) => ({ xAxis: x }));
-    const eventMarkAreas = [
-      ...platformEvents
-        .filter((event) => event.lap_dist_ft != null)
-        .map((event) => ({ distFt: event.lap_dist_ft!, label: event.title, severity: event.severity })),
-      ...legacyEvents
-        .filter((event) => eventDistanceFt(event) != null)
-        .map((event) => ({ distFt: eventDistanceFt(event)!, label: event.event_subtype ?? event.event_type, severity: event.severity })),
-    ].map((event) => {
-      const color = event.severity === "critical" ? "#ef4444"
-        : event.severity === "high" ? "#f97316"
-          : event.severity === "watch" ? "#f59e0b"
-            : "#38bdf8";
-      return {
-        name: event.label,
-        xAxis: event.distFt - 25,
-        itemStyle: { color, opacity: 0.08 },
-      };
+    const eventAnnotations = buildPlatformChartAnnotations({
+      platformEvents,
+      legacyEvents,
+      mode: platformEventVisibilityMode,
     });
 
     const series: SeriesOption[] = [];
@@ -1302,9 +1320,9 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
           data,
           markLine: rowIndex === 0 && channelIndex === 0 ? {
             symbol: "none",
-            label: { color: "#f59e0b", formatter: "event" },
+            label: { show: eventAnnotations.showLineLabels, color: "#f59e0b" },
             lineStyle: { color: "#f59e0b", type: "dashed" },
-            data: eventLines,
+            data: eventAnnotations.markLines,
           } : undefined,
           markArea: channel.name === "cfs_ride_height_in" ? {
             silent: true,
@@ -1314,11 +1332,11 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
               [{ yAxis: 0.118, itemStyle: { color: "#f97316" } }, { yAxis: 0.236, itemStyle: { color: "#f97316" } }],
               [{ yAxis: 0.236, itemStyle: { color: "#f59e0b" } }, { yAxis: 0.394, itemStyle: { color: "#f59e0b" } }],
             ],
-          } : (rowIndex === 0 && channelIndex === 0 && eventMarkAreas.length > 0 ? {
+          } : (rowIndex === 0 && channelIndex === 0 && eventAnnotations.markAreas.length > 0 ? {
             silent: true,
-            data: eventMarkAreas.map((area) => [
-              { xAxis: area.xAxis, itemStyle: { color: area.itemStyle.color, opacity: area.itemStyle.opacity } },
-              { xAxis: area.xAxis + 50, itemStyle: { color: area.itemStyle.color, opacity: area.itemStyle.opacity } },
+            data: eventAnnotations.markAreas.map((area) => [
+              { xAxis: area.xAxis, itemStyle: { color: area.color, opacity: area.opacity } },
+              { xAxis: area.xAxis + 50, itemStyle: { color: area.color, opacity: area.opacity } },
             ]),
           } : undefined),
         });
@@ -1370,7 +1388,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
     if (lockedSampleIdx != null) {
       positionCursorLineForIndexRef.current(lockedSampleIdx, true);
     }
-  }, [legacyEvents, platformEvents, preset, rows, trace, xs]);
+  }, [legacyEvents, platformEventVisibilityMode, platformEvents, preset, rows, trace, xs]);
 
   // ── Escape key clears clicked sample ─────────────────────────
   useEffect(() => {
@@ -1984,6 +2002,20 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
               </button>
             </>
           )}
+          <label className="platform-event-filter">
+            <span>Event markers</span>
+            <select
+              value={platformEventVisibilityMode}
+              onChange={(event) => {
+                onPlatformEventVisibilityModeChange?.(event.target.value as PlatformEventVisibilityMode);
+              }}
+              aria-label="Platform event visibility"
+            >
+              <option value="actionable">Actionable</option>
+              <option value="proxy">Proxy / Internal</option>
+              <option value="all">All</option>
+            </select>
+          </label>
           <button className="secondary-button" onClick={() => { zoomRangeRef.current = null; chartRef.current?.dispatchAction({ type: "restore" }); }}>
             <RotateCcw size={16} /> Reset Zoom
           </button>
@@ -2076,23 +2108,34 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
       </div>
 
       {/* ── structured platform event evidence cards ── */}
-      {platformEvents.length > 0 && (
+      {(visiblePlatformEvents.length > 0 || platformEvents.length > 0) && (
         <div className="platform-events-section">
           <h3>Platform Diagnostic Events</h3>
-          <div className="event-jump-row">
-            {platformEvents.map((event) => (
-              <button
-                className="secondary-button"
-                key={event.event_id}
-                onClick={() => {
-                  const idx = indexForPlatformEvent(event);
-                  jumpToIndex(idx, event.event_id);
-                }}
-              >
-                <Activity size={16} /> {event.title}
-              </button>
-            ))}
-          </div>
+          {visiblePlatformEvents.length > 0 ? (
+            <div className="event-jump-row">
+              {visiblePlatformEvents.map((event) => {
+                const muted = isMutedPlatformEvent(event, platformEventVisibilityMode);
+                return (
+                  <button
+                    className={`secondary-button platform-event-button${muted ? " muted" : ""}`}
+                    key={event.event_id}
+                    onClick={() => {
+                      const idx = indexForPlatformEvent(event);
+                      jumpToIndex(idx, event.event_id);
+                    }}
+                  >
+                    <Activity size={16} /> {event.title}
+                    {muted && <span className="event-scope-pill">{platformEventScopeLabel(event)}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="platform-events-empty">
+              <p>No actionable platform events in this window.</p>
+              <p className="muted">Internal evidence is still available for analysis.</p>
+            </div>
+          )}
           {selectedPlatformEvent && (
             <div className="evidence-card platform-evidence-card">
               <h4>{selectedPlatformEvent.title}</h4>
@@ -2101,6 +2144,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
                   <AlertTriangle size={14} /> {selectedPlatformEvent.severity}
                 </span>
                 <span>Confidence: {selectedPlatformEvent.confidence}</span>
+                <span className="event-scope-pill">{platformEventScopeLabel(selectedPlatformEvent)}</span>
                 {selectedPlatformEvent.is_proxy_based && <ProxyBadge kind="proxy" />}
               </div>
               <dl>
@@ -2131,6 +2175,9 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
                   <strong>Recommended:</strong> {selectedPlatformEvent.recommended_action}
                 </p>
               )}
+              {selectedPlatformEvent.reason_for_hidden && (
+                <p className="proxy-note">Hidden by default: {selectedPlatformEvent.reason_for_hidden}</p>
+              )}
               <div className="diw-actions" style={{ marginTop: 8 }}>
                 <button className="trackmap-action-btn" onClick={() => handleOpenMapFromPlatformEvent(selectedPlatformEvent)} title="Open Map at selected event">
                   <MapPin size={10} /> Open Map
@@ -2150,7 +2197,7 @@ function PlatformTraceWorkbench({ overview, trace, platformEvents: externalPlatf
       )}
 
       {/* ── legacy platform events (only shown when no structured events exist) ── */}
-      {platformEvents.length === 0 && legacyEvents.length > 0 && (
+      {visiblePlatformEvents.length === 0 && legacyEvents.length > 0 && (
         <>
           <div className="event-jump-row">
             {legacyEvents.map((event) => (

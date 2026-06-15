@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+from .evidence_schema import MatcherReadiness
 from .display_labels import TARGET_LABELS, format_driver_targets, format_target_label, format_target_list
 from .loader import SetupKnowledge, load_setup_knowledge
 from .schema import SetupEffect, SymptomVocabularyEntry
@@ -38,7 +39,7 @@ class RankedSetupEffect:
     score: float
     evidence_matched: list[str]
     missing_evidence: list[str]
-    readiness: str
+    readiness: MatcherReadiness
     ranking_reasons: list[str]
     evidence_missing: list[str]
     one_change_test_plan: str
@@ -134,7 +135,7 @@ def _key_required_evidence(effect: SetupEffect) -> list[str]:
     return effect.evidence_required[:1]
 
 
-def _readiness(effect: SetupEffect, matched: list[str]) -> str:
+def _readiness(effect: SetupEffect, matched: list[str]) -> MatcherReadiness:
     required = effect.evidence_required
     if not required:
         return "ready"
@@ -183,7 +184,7 @@ def _score_effect(
     evidence: set[str],
     package_archetype: str | None,
     track_family: str | None,
-) -> tuple[float, list[str], list[str], str, list[str], list[str]]:
+) -> tuple[float, list[str], list[str], MatcherReadiness, list[str], list[str]]:
     score = float(effect.effect_strength)
     reasons: list[str] = []
     warnings: list[str] = []

@@ -212,7 +212,7 @@
   {
     "effect_id": "add_rf_spring_small",
     "setup_area": "spring_rate",
-    "direction": "Add RF spring support",
+    "direction": "Increase RF spring rate",
     "driver_phrase": [
       "entry",
       "center"
@@ -232,9 +232,9 @@
     ],
     "effect_strength": 4,
     "coupling_risk": "high",
-    "effect": "Can add front platform support when contact or front feed instability appears.",
-    "counter_effect": "May take front grip away in the center if support becomes too stiff.",
-    "test_language": "Compare front contact, center speed, and steering trace in the same track zone.",
+    "effect": "Can add RF support when front platform contact or front feed instability shows up in the same zone.",
+    "counter_effect": "May take front grip away in the center if the RF spring rate gets too stiff.",
+    "test_language": "Try one small RF spring change and compare front contact, center speed, and steering trace in the same zone.",
     "evidence_required": [
       "front_platform",
       "scrape",
@@ -245,7 +245,7 @@
       "center_speed",
       "steering_trace"
     ],
-    "small_swing_hint": "Use a small spring step only after platform evidence points there.",
+    "small_swing_hint": "Use a small RF spring step only after platform evidence points there.",
     "cautions": [
       "Spring rate is a package-level lever."
     ],
@@ -270,9 +270,9 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Add RF spring support. Effect: Can add front platform support when contact or front feed instability appears. Counter-effect: May take front grip away in the center if support becomes too stiff. Watch: tight_center, tight_entry. Validate: front_contact, center_speed, steering_trace.",
+    "driver_facing_summary": "Try one small swing: Increase RF spring rate. Effect: Can add RF support when front platform contact or front feed instability shows up in the same zone. Counter-effect: May take front grip away in the center if the RF spring rate gets too stiff. Watch: tight_center, tight_entry. Validate: front_contact, center_speed, steering_trace.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Add RF spring support. Effect: Can add front platform support when contact or front feed instability appears. Counter-effect: May take front grip away in the center if support becomes too stiff. Watch: tight_center, tight_entry. Validate: front_contact, center_speed, steering_trace.",
+    "one_change_test_template": "Try one small swing: Increase RF spring rate. Effect: Can add RF support when front platform contact or front feed instability shows up in the same zone. Counter-effect: May take front grip away in the center if the RF spring rate gets too stiff. Watch: tight_center, tight_entry. Validate: front_contact, center_speed, steering_trace.",
     "expected_improvement_targets": [
       "front_contact",
       "center_speed"
@@ -309,7 +309,7 @@
   {
     "effect_id": "reduce_rf_spring_small",
     "setup_area": "spring_rate",
-    "direction": "Reduce RF spring support",
+    "direction": "Reduce RF spring rate",
     "driver_phrase": [
       "center",
       "entry"
@@ -329,8 +329,8 @@
     "effect_strength": 4,
     "coupling_risk": "high",
     "effect": "Can give the front tire more compliance and help the car point.",
-    "counter_effect": "May increase platform contact or front feed instability if travel margin is weak.",
-    "test_language": "Validate turn-in response with front height and contact evidence.",
+    "counter_effect": "May increase platform contact or destabilize front feed if RF travel margin is already weak.",
+    "test_language": "Try one small RF spring change and validate turn-in response with front height and contact evidence.",
     "evidence_required": [
       "front_platform",
       "steering",
@@ -340,7 +340,7 @@
       "turn_in_response",
       "front_height"
     ],
-    "small_swing_hint": "Use a small step and watch platform margin.",
+    "small_swing_hint": "Use a small RF spring step and watch platform margin.",
     "cautions": [
       "Do not infer aero gain from this alone."
     ],
@@ -365,9 +365,9 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Reduce RF spring support. Effect: Can give the front tire more compliance and help the car point. Counter-effect: May increase platform contact or front feed instability if travel margin is weak. Watch: front_platform_contact, front_feed_instability. Validate: turn_in_response, front_height.",
+    "driver_facing_summary": "Try one small swing: Reduce RF spring rate. Effect: Can give the front tire more compliance and help the car point. Counter-effect: May increase platform contact or destabilize front feed if RF travel margin is already weak. Watch: front_platform_contact, front_feed_instability. Validate: turn_in_response, front_height.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Reduce RF spring support. Effect: Can give the front tire more compliance and help the car point. Counter-effect: May increase platform contact or front feed instability if travel margin is weak. Watch: front_platform_contact, front_feed_instability. Validate: turn_in_response, front_height.",
+    "one_change_test_template": "Try one small swing: Reduce RF spring rate. Effect: Can give the front tire more compliance and help the car point. Counter-effect: May increase platform contact or destabilize front feed if RF travel margin is already weak. Watch: front_platform_contact, front_feed_instability. Validate: turn_in_response, front_height.",
     "expected_improvement_targets": [
       "turn_in_response",
       "front_height"
@@ -404,7 +404,7 @@
   {
     "effect_id": "add_lr_pressure_small",
     "setup_area": "tire_pressure",
-    "direction": "Add LR pressure",
+    "direction": "Add LR tire pressure",
     "driver_phrase": [
       "exit",
       "long_run"
@@ -463,9 +463,9 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Add LR pressure. Effect: Can add a little rear support and clean up throttle-on balance. Read it against long-run tire trend, not one cold lap. Counter-effect: May change tire heat trend or tighten late exit. Watch: tight_exit, tire_overwork. Validate: exit_yaw, drive_off, tire_temp.",
+    "driver_facing_summary": "Try one small swing: Add LR tire pressure. Effect: Can add a little rear support and clean up throttle-on balance. Read it against long-run tire trend, not one cold lap. Counter-effect: May change tire heat trend or tighten late exit. Watch: tight_exit, tire_overwork. Validate: exit_yaw, drive_off, tire_temp.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Add LR pressure. Effect: Can add a little rear support and clean up throttle-on balance. Read it against long-run tire trend, not one cold lap. Counter-effect: May change tire heat trend or tighten late exit. Watch: tight_exit, tire_overwork. Validate: exit_yaw, drive_off, tire_temp.",
+    "one_change_test_template": "Try one small swing: Add LR tire pressure. Effect: Can add a little rear support and clean up throttle-on balance. Read it against long-run tire trend, not one cold lap. Counter-effect: May change tire heat trend or tighten late exit. Watch: tight_exit, tire_overwork. Validate: exit_yaw, drive_off, tire_temp.",
     "expected_improvement_targets": [
       "exit_yaw",
       "drive_off"
@@ -507,7 +507,7 @@
   {
     "effect_id": "reduce_lf_pressure_small",
     "setup_area": "tire_pressure",
-    "direction": "Reduce LF pressure",
+    "direction": "Reduce LF tire pressure",
     "driver_phrase": [
       "center",
       "entry"
@@ -562,9 +562,9 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Reduce LF pressure. Effect: Can add a little front compliance and help the car accept steering. Read it against long-run tire trend, not one cold lap. Counter-effect: May overwork the tire or reduce stability if taken too far. Watch: loose_entry, tire_overwork. Validate: center_speed, tire_temp.",
+    "driver_facing_summary": "Try one small swing: Reduce LF tire pressure. Effect: Can add a little front compliance and help the car accept steering. Read it against long-run tire trend, not one cold lap. Counter-effect: May overwork the tire or reduce stability if taken too far. Watch: loose_entry, tire_overwork. Validate: center_speed, tire_temp.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Reduce LF pressure. Effect: Can add a little front compliance and help the car accept steering. Read it against long-run tire trend, not one cold lap. Counter-effect: May overwork the tire or reduce stability if taken too far. Watch: loose_entry, tire_overwork. Validate: center_speed, tire_temp.",
+    "one_change_test_template": "Try one small swing: Reduce LF tire pressure. Effect: Can add a little front compliance and help the car accept steering. Read it against long-run tire trend, not one cold lap. Counter-effect: May overwork the tire or reduce stability if taken too far. Watch: loose_entry, tire_overwork. Validate: center_speed, tire_temp.",
     "expected_improvement_targets": [
       "center_speed",
       "tire_temp"
@@ -605,7 +605,7 @@
   {
     "effect_id": "add_rear_stability_pressure_swing",
     "setup_area": "tire_pressure",
-    "direction": "Adjust LR/RR rear tire pressure split for stability",
+    "direction": "Adjust LR/RR rear tire pressure split",
     "driver_phrase": [
       "exit",
       "transition"
@@ -666,9 +666,9 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one rear tire pressure split swing: add LR pressure or reduce RR pressure. Effect: Can use the LR/RR rear tire pressure relationship to calm exit or help drive-off. This means changing the rear split, not all four tires. Counter-effect: May hurt long-run rear tire trend or make exit too flat if the split gets too large. Watch: rear_tire_trend, exit_drive, skating. Validate: exit_yaw, rear_tire_trend, throttle_pickup, long_run_falloff.",
+    "driver_facing_summary": "Try one small swing: Adjust LR/RR rear tire pressure split. Effect: Can use the LR/RR rear tire pressure relationship to calm exit or help drive-off. This means changing the rear split, not all four tires. Counter-effect: May hurt long-run rear tire trend or make exit too flat if the split gets too large. Watch: rear_tire_trend, exit_drive, skating. Validate: exit_yaw, rear_tire_trend, throttle_pickup, long_run_falloff.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one rear tire pressure split swing: add LR pressure or reduce RR pressure. Effect: Can use the LR/RR rear tire pressure relationship to calm exit or help drive-off. This means changing the rear split, not all four tires. Counter-effect: May hurt long-run rear tire trend or make exit too flat if the split gets too large. Watch: rear_tire_trend, exit_drive, skating. Validate: exit_yaw, rear_tire_trend, throttle_pickup, long_run_falloff.",
+    "one_change_test_template": "Try one small swing: Adjust LR/RR rear tire pressure split. Effect: Can use the LR/RR rear tire pressure relationship to calm exit or help drive-off. This means changing the rear split, not all four tires. Counter-effect: May hurt long-run rear tire trend or make exit too flat if the split gets too large. Watch: rear_tire_trend, exit_drive, skating. Validate: exit_yaw, rear_tire_trend, throttle_pickup, long_run_falloff.",
     "expected_improvement_targets": [
       "exit_yaw",
       "rear_tire_trend",
@@ -1460,7 +1460,7 @@
   {
     "effect_id": "add_front_platform_support",
     "setup_area": "front_ride_height_platform",
-    "direction": "Add front platform support",
+    "direction": "Lower front ride height with LF/RF shock collar offsets",
     "driver_phrase": [
       "entry",
       "straight",
@@ -1479,9 +1479,9 @@
     ],
     "effect_strength": 4,
     "coupling_risk": "high",
-    "effect": "Can keep the front ride-height platform in a stable diffuser proxy geometry window.",
-    "counter_effect": "May cost mechanical grip or change balance if support or height goes too far.",
-    "test_language": "Validate front contact, front height, and speed trace together.",
+    "effect": "Can keep the CFS/front feed window cleaner when lower front ride height is the right platform move.",
+    "counter_effect": "May cost mechanical grip or create front contact if front ride height goes too low.",
+    "test_language": "Try one small LF/RF front ride-height or shock-collar change and validate front contact, front height, and speed trace together.",
     "evidence_required": [
       "front_platform",
       "scrape",
@@ -1493,7 +1493,7 @@
       "front_height",
       "speed_loss"
     ],
-    "small_swing_hint": "Use the smallest platform support change that can be measured.",
+    "small_swing_hint": "Shock collar changes ride height, spring preload, and corner weight together. Treat it as a bigger swing than a click change.",
     "cautions": [
       "Do not describe diffuser proxy as a force reading."
     ],
@@ -1522,9 +1522,9 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Add front platform support. Effect: Can keep the front ride-height platform in a stable diffuser proxy geometry window. Counter-effect: May cost mechanical grip or change balance if support or height goes too far. Watch: speed_loss, rear_float, scrape, center_speed. Validate: front_contact, front_height, speed_loss.",
+    "driver_facing_summary": "Try one small swing: Lower front ride height with LF/RF shock collar offsets. Effect: Can keep the CFS/front feed window cleaner when lower front ride height is the right platform move. Counter-effect: May cost mechanical grip or create front contact if front ride height goes too low. Watch: speed_loss, rear_float, scrape, center_speed. Validate: front_contact, front_height, speed_loss.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Add front platform support. Effect: Can keep the front ride-height platform in a stable diffuser proxy geometry window. Counter-effect: May cost mechanical grip or change balance if support or height goes too far. Watch: speed_loss, rear_float, scrape, center_speed. Validate: front_contact, front_height, speed_loss.",
+    "one_change_test_template": "Try one small swing: Lower front ride height with LF/RF shock collar offsets. Effect: Can keep the CFS/front feed window cleaner when lower front ride height is the right platform move. Counter-effect: May cost mechanical grip or create front contact if front ride height goes too low. Watch: speed_loss, rear_float, scrape, center_speed. Validate: front_contact, front_height, speed_loss.",
     "expected_improvement_targets": [
       "front_contact",
       "front_height"
@@ -1566,7 +1566,7 @@
   {
     "effect_id": "reduce_front_platform_support",
     "setup_area": "front_ride_height_platform",
-    "direction": "Reduce front platform support",
+    "direction": "Raise front ride height with LF/RF shock collar offsets",
     "driver_phrase": [
       "center",
       "entry"
@@ -1585,9 +1585,9 @@
     ],
     "effect_strength": 4,
     "coupling_risk": "high",
-    "effect": "Can improve front bite when the platform has margin.",
-    "counter_effect": "May increase contact or destabilize front feed if margin is already thin.",
-    "test_language": "Validate front height and contact before judging balance.",
+    "effect": "Can improve front bite when the platform has contact margin.",
+    "counter_effect": "May reduce front feed quality or give away speed if front ride height goes too high.",
+    "test_language": "Try one small LF/RF front ride-height or shock-collar change and validate front height, front contact, and center speed.",
     "evidence_required": [
       "front_platform",
       "scrape",
@@ -1597,7 +1597,7 @@
       "front_height",
       "center_speed"
     ],
-    "small_swing_hint": "Use a small support change.",
+    "small_swing_hint": "Shock collar changes ride height, spring preload, and corner weight together. Treat it as a bigger swing than a click change.",
     "cautions": [],
     "primary_effects": [
       "Can improve front bite when the platform has margin."
@@ -1622,9 +1622,9 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Reduce front platform support. Effect: Can improve front bite when the platform has margin. Counter-effect: May increase contact or destabilize front feed if margin is already thin. Watch: front_platform_contact, front_feed_instability. Validate: front_height, center_speed.",
+    "driver_facing_summary": "Try one small swing: Raise front ride height with LF/RF shock collar offsets. Effect: Can improve front bite when the platform has contact margin. Counter-effect: May reduce front feed quality or give away speed if front ride height goes too high. Watch: front_platform_contact, front_feed_instability. Validate: front_height, center_speed.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Reduce front platform support. Effect: Can improve front bite when the platform has margin. Counter-effect: May increase contact or destabilize front feed if margin is already thin. Watch: front_platform_contact, front_feed_instability. Validate: front_height, center_speed.",
+    "one_change_test_template": "Try one small swing: Raise front ride height with LF/RF shock collar offsets. Effect: Can improve front bite when the platform has contact margin. Counter-effect: May reduce front feed quality or give away speed if front ride height goes too high. Watch: front_platform_contact, front_feed_instability. Validate: front_height, center_speed.",
     "expected_improvement_targets": [
       "front_height",
       "center_speed"
@@ -1664,7 +1664,7 @@
   {
     "effect_id": "add_rear_platform_support",
     "setup_area": "rear_ride_height_platform",
-    "direction": "Add rear platform support",
+    "direction": "Raise rear ride height with LR/RR shock collar offsets",
     "driver_phrase": [
       "exit",
       "straight"
@@ -1685,9 +1685,9 @@
     ],
     "effect_strength": 4,
     "coupling_risk": "high",
-    "effect": "Can keep the rear ride-height platform in a stable diffuser proxy geometry window.",
-    "counter_effect": "May cost mechanical grip or change balance if support or height goes too far.",
-    "test_language": "Validate exit yaw with rear height, scrape, diffuser proxy, and speed trace.",
+    "effect": "Can keep the rear outlet/diffuser window cleaner when rear platform evidence needs more height margin.",
+    "counter_effect": "May cost mechanical grip or change balance if rear ride height goes too far.",
+    "test_language": "Try one small LR/RR rear ride-height or shock-collar change and validate exit yaw, rear height, rear scrape, diffuser proxy, and speed trace.",
     "evidence_required": [
       "rear_platform",
       "scrape",
@@ -1700,7 +1700,7 @@
       "rear_height",
       "speed_trace"
     ],
-    "small_swing_hint": "Use a small rear platform support step.",
+    "small_swing_hint": "Shock collar changes ride height, spring preload, and corner weight together. Treat it as a bigger swing than a click change.",
     "cautions": [
       "Rear height alone does not describe rear aero behavior."
     ],
@@ -1727,9 +1727,9 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Add rear platform support. Effect: Can keep the rear ride-height platform in a stable diffuser proxy geometry window. Counter-effect: May cost mechanical grip or change balance if support or height goes too far. Watch: speed_loss, rear_float, scrape, center_speed. Validate: exit_yaw, rear_height, speed_trace.",
+    "driver_facing_summary": "Try one small swing: Raise rear ride height with LR/RR shock collar offsets. Effect: Can keep the rear outlet/diffuser window cleaner when rear platform evidence needs more height margin. Counter-effect: May cost mechanical grip or change balance if rear ride height goes too far. Watch: speed_loss, rear_float, scrape, center_speed. Validate: exit_yaw, rear_height, speed_trace.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Add rear platform support. Effect: Can keep the rear ride-height platform in a stable diffuser proxy geometry window. Counter-effect: May cost mechanical grip or change balance if support or height goes too far. Watch: speed_loss, rear_float, scrape, center_speed. Validate: exit_yaw, rear_height, speed_trace.",
+    "one_change_test_template": "Try one small swing: Raise rear ride height with LR/RR shock collar offsets. Effect: Can keep the rear outlet/diffuser window cleaner when rear platform evidence needs more height margin. Counter-effect: May cost mechanical grip or change balance if rear ride height goes too far. Watch: speed_loss, rear_float, scrape, center_speed. Validate: exit_yaw, rear_height, speed_trace.",
     "expected_improvement_targets": [
       "exit_yaw",
       "rear_height"
@@ -1773,7 +1773,7 @@
   {
     "effect_id": "reduce_rear_platform_support",
     "setup_area": "rear_ride_height_platform",
-    "direction": "Reduce rear platform support",
+    "direction": "Lower rear ride height with LR/RR shock collar offsets",
     "driver_phrase": [
       "center",
       "exit"
@@ -1793,9 +1793,9 @@
     ],
     "effect_strength": 4,
     "coupling_risk": "high",
-    "effect": "Can free exit and improve speed when rear platform evidence shows excess support.",
-    "counter_effect": "May reduce rear security or create scrape/choke behavior.",
-    "test_language": "Compare exit rotation, rear scrape, and straight speed.",
+    "effect": "Can free exit and improve speed when rear platform evidence shows too much rear height/support.",
+    "counter_effect": "May reduce rear security or create rear scrape/choke behavior if rear ride height goes too low.",
+    "test_language": "Try one small LR/RR rear ride-height or shock-collar change and compare exit rotation, rear scrape, and straight speed.",
     "evidence_required": [
       "rear_platform",
       "scrape",
@@ -1807,7 +1807,7 @@
       "straight_speed",
       "rear_height"
     ],
-    "small_swing_hint": "Use a small support change.",
+    "small_swing_hint": "Shock collar changes ride height, spring preload, and corner weight together. Treat it as a bigger swing than a click change.",
     "cautions": [],
     "primary_effects": [
       "Can free exit and improve speed when rear platform evidence shows excess support."
@@ -1832,9 +1832,9 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Reduce rear platform support. Effect: Can free exit and improve speed when rear platform evidence shows excess support. Counter-effect: May reduce rear security or create scrape/choke behavior. Watch: loose_exit, rear_scrape, diffuser_choke_or_stall. Validate: exit_yaw, straight_speed, rear_height.",
+    "driver_facing_summary": "Try one small swing: Lower rear ride height with LR/RR shock collar offsets. Effect: Can free exit and improve speed when rear platform evidence shows too much rear height/support. Counter-effect: May reduce rear security or create rear scrape/choke behavior if rear ride height goes too low. Watch: loose_exit, rear_scrape, diffuser_choke_or_stall. Validate: exit_yaw, straight_speed, rear_height.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Reduce rear platform support. Effect: Can free exit and improve speed when rear platform evidence shows excess support. Counter-effect: May reduce rear security or create scrape/choke behavior. Watch: loose_exit, rear_scrape, diffuser_choke_or_stall. Validate: exit_yaw, straight_speed, rear_height.",
+    "one_change_test_template": "Try one small swing: Lower rear ride height with LR/RR shock collar offsets. Effect: Can free exit and improve speed when rear platform evidence shows too much rear height/support. Counter-effect: May reduce rear security or create rear scrape/choke behavior if rear ride height goes too low. Watch: loose_exit, rear_scrape, diffuser_choke_or_stall. Validate: exit_yaw, straight_speed, rear_height.",
     "expected_improvement_targets": [
       "exit_yaw",
       "straight_speed"
@@ -2854,7 +2854,7 @@
   {
     "effect_id": "add_rear_toe_stability",
     "setup_area": "toe",
-    "direction": "Add rear toe stability",
+    "direction": "Add rear toe-in for stability",
     "driver_phrase": [
       "exit",
       "straight"
@@ -2875,7 +2875,7 @@
     "coupling_risk": "high",
     "effect": "Can add rear directional stability.",
     "counter_effect": "May add scrub and reduce straight speed.",
-    "test_language": "Validate correction count, exit yaw, and straight speed.",
+    "test_language": "Try one small rear toe change and validate correction count, exit yaw, and straight speed.",
     "evidence_required": [
       "setup_snapshot",
       "yaw",
@@ -2885,7 +2885,7 @@
       "exit_yaw",
       "straight_speed"
     ],
-    "small_swing_hint": "Use a small toe change.",
+    "small_swing_hint": "Use a small rear toe-in change.",
     "cautions": [],
     "primary_effects": [
       "Can add rear directional stability."
@@ -2909,9 +2909,9 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Add rear toe stability. Effect: Can add rear directional stability. Counter-effect: May add scrub and reduce straight speed. Watch: low_straight_speed, drag_scrub. Validate: exit_yaw, straight_speed.",
+    "driver_facing_summary": "Try one small swing: Add rear toe-in for stability. Effect: Can add rear directional stability. Counter-effect: May add scrub and reduce straight speed. Watch: low_straight_speed, drag_scrub. Validate: exit_yaw, straight_speed.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Add rear toe stability. Effect: Can add rear directional stability. Counter-effect: May add scrub and reduce straight speed. Watch: low_straight_speed, drag_scrub. Validate: exit_yaw, straight_speed.",
+    "one_change_test_template": "Try one small swing: Add rear toe-in for stability. Effect: Can add rear directional stability. Counter-effect: May add scrub and reduce straight speed. Watch: low_straight_speed, drag_scrub. Validate: exit_yaw, straight_speed.",
     "expected_improvement_targets": [
       "exit_yaw",
       "straight_speed"
@@ -3671,7 +3671,7 @@
   {
     "effect_id": "bump_stop_or_packer_legacy_support",
     "setup_area": "bump_stop",
-    "direction": "Tune bump stop or packer support",
+    "direction": "Adjust legacy bump stop or packer gap",
     "driver_phrase": [
       "entry",
       "center",
@@ -3693,9 +3693,9 @@
     ],
     "effect_strength": 4,
     "coupling_risk": "high",
-    "effect": "Can change legacy platform support timing when the car supports these parts.",
+    "effect": "Can change legacy platform timing when the car supports these parts.",
     "counter_effect": "May create harsh contact timing or reduce compliance.",
-    "test_language": "Validate travel, scrape, and selected-zone platform behavior on a supported legacy car.",
+    "test_language": "Try one small bump-stop or packer-gap change and validate travel, scrape, and selected-zone platform behavior on a supported legacy car.",
     "evidence_required": [
       "platform",
       "travel",
@@ -3706,7 +3706,7 @@
       "platform_contact",
       "center_speed"
     ],
-    "small_swing_hint": "Use a car-specific supported step.",
+    "small_swing_hint": "Use a car-specific supported bump-stop or packer step.",
     "cautions": [
       "Legacy car-specific only."
     ],
@@ -3733,9 +3733,9 @@
       "oval",
       "intermediate_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Tune bump stop or packer support. Effect: Can change legacy platform support timing when the car supports these parts. Counter-effect: May create harsh contact timing or reduce compliance. Watch: tight_center, shock_overactive. Validate: platform_contact, center_speed.",
+    "driver_facing_summary": "Try one small swing: Adjust legacy bump stop or packer gap. Effect: Can change legacy platform timing when the car supports these parts. Counter-effect: May create harsh contact timing or reduce compliance. Watch: tight_center, shock_overactive. Validate: platform_contact, center_speed.",
     "why_ranked_template": "Matches {symptom} in {phase}; strength {strength}, risk {risk}; readiness {readiness}.",
-    "one_change_test_template": "Try one small swing: Tune bump stop or packer support. Effect: Can change legacy platform support timing when the car supports these parts. Counter-effect: May create harsh contact timing or reduce compliance. Watch: tight_center, shock_overactive. Validate: platform_contact, center_speed.",
+    "one_change_test_template": "Try one small swing: Adjust legacy bump stop or packer gap. Effect: Can change legacy platform timing when the car supports these parts. Counter-effect: May create harsh contact timing or reduce compliance. Watch: tight_center, shock_overactive. Validate: platform_contact, center_speed.",
     "expected_improvement_targets": [
       "platform_contact",
       "center_speed"
@@ -3772,7 +3772,7 @@
   {
     "effect_id": "improve_front_feed_window",
     "setup_area": "front_ride_height_platform",
-    "direction": "Improve front feed window",
+    "direction": "Adjust front ride height for cleaner front feed",
     "driver_phrase": [
       "entry",
       "center",
@@ -3793,9 +3793,9 @@
     ],
     "effect_strength": 4,
     "coupling_risk": "high",
-    "effect": "Can stabilize front ride-height platform behavior that helps define diffuser feed.",
-    "counter_effect": "May reduce front bite or add speed tradeoff if the front platform was already clean.",
-    "test_language": "Run one comparable test and validate front_height, front_contact, speed_trace before keeping the change.",
+    "effect": "Can stabilize front ride-height behavior that helps define diffuser feed.",
+    "counter_effect": "May reduce front bite or add a speed trade-off if the front platform was already clean.",
+    "test_language": "Try one small front ride-height or LF/RF shock-collar change and validate front height, front contact, and speed trace before keeping it.",
     "evidence_required": [
       "front_platform",
       "diffuser_proxy",
@@ -3808,7 +3808,7 @@
       "front_contact",
       "speed_trace"
     ],
-    "small_swing_hint": "Use one small test change unless this is marked as a package reference.",
+    "small_swing_hint": "Shock collar changes ride height, spring preload, and corner weight together. Treat it as a bigger swing than a click change.",
     "cautions": [
       "Keep this as a single-change test."
     ],
@@ -3838,9 +3838,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Improve front feed window. Effect: Can keep the platform in a stable diffuser proxy geometry window. Counter-effect: May cost mechanical grip or change balance if support or height goes too far. Watch: speed_loss, rear_float, scrape, center_speed. Validate: front_height, front_contact, speed_trace.",
+    "driver_facing_summary": "Try one small swing: Adjust front ride height for cleaner front feed. Effect: Can stabilize front ride-height behavior that helps define diffuser feed. Counter-effect: May reduce front bite or add a speed trade-off if the front platform was already clean. Watch: speed_loss, rear_float, scrape, center_speed. Validate: front_height, front_contact, speed_trace.",
     "why_ranked_template": "Matches {symptom} in {phase}; package {package}; readiness {readiness}; strength {strength}, risk {risk}.",
-    "one_change_test_template": "Try one small swing: Improve front feed window. Effect: Can keep the platform in a stable diffuser proxy geometry window. Counter-effect: May cost mechanical grip or change balance if support or height goes too far. Watch: speed_loss, rear_float, scrape, center_speed. Validate: front_height, front_contact, speed_trace.",
+    "one_change_test_template": "Try one small swing: Adjust front ride height for cleaner front feed. Effect: Can stabilize front ride-height behavior that helps define diffuser feed. Counter-effect: May reduce front bite or add a speed trade-off if the front platform was already clean. Watch: speed_loss, rear_float, scrape, center_speed. Validate: front_height, front_contact, speed_trace.",
     "expected_improvement_targets": [
       "front_height",
       "front_contact"
@@ -3883,7 +3883,7 @@
   {
     "effect_id": "inspect_diffuser_choke_or_scrape",
     "setup_area": "diffuser_platform",
-    "direction": "Adjust platform support for the diffuser proxy window",
+    "direction": "Adjust front/rear ride height for the diffuser proxy window",
     "driver_phrase": [
       "straight",
       "transition"
@@ -3902,9 +3902,9 @@
     ],
     "effect_strength": 3,
     "coupling_risk": "high",
-    "effect": "Can keep the platform in a stable geometry window using front platform, rear platform, speed loss, and derived diffuser proxy context.",
-    "counter_effect": "May cost mechanical grip or change balance if support or height goes too far.",
-    "test_language": "Run one comparable test and validate speed_loss, scrape, platform_stability before keeping the change.",
+    "effect": "Can keep the platform in a stable geometry window using front ride height, rear ride height, speed loss, and derived diffuser proxy context.",
+    "counter_effect": "May cost mechanical grip or change balance if the ride-height move goes too far.",
+    "test_language": "Try one small ride-height or shock-collar change and validate speed loss, scrape, and platform stability before keeping it.",
     "evidence_required": [
       "front_platform",
       "rear_platform",
@@ -3917,7 +3917,7 @@
       "scrape",
       "platform_stability"
     ],
-    "small_swing_hint": "Use one small test change unless this is marked as a package reference.",
+    "small_swing_hint": "Use one small ride-height change at a time. Shock collar changes ride height, preload, and corner weight together.",
     "cautions": [
       "Keep this as a single-change test."
     ],
@@ -3945,9 +3945,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Inspect diffuser choke or scrape. Effect: Can separate scrape/choke suspicion from a pure balance complaint using front platform, rear platform, speed loss, and derived diffuser proxy context. Counter-effect: May point away from a setup change if speed loss, scrape, and platform traces do not line up. Watch: tight_center. Validate: speed_loss, scrape, platform_stability.",
+    "driver_facing_summary": "Try one small swing: Adjust front/rear ride height for the diffuser proxy window. Effect: Can keep the platform in a stable geometry window using front ride height, rear ride height, speed loss, and derived diffuser proxy context. Counter-effect: May cost mechanical grip or change balance if the ride-height move goes too far. Watch: tight_center. Validate: speed_loss, scrape, platform_stability.",
     "why_ranked_template": "Matches {symptom} in {phase}; package {package}; readiness {readiness}; strength {strength}, risk {risk}.",
-    "one_change_test_template": "Try one small swing: Inspect diffuser choke or scrape. Effect: Can separate scrape/choke suspicion from a pure balance complaint using front platform, rear platform, speed loss, and derived diffuser proxy context. Counter-effect: May point away from a setup change if speed loss, scrape, and platform traces do not line up. Watch: tight_center. Validate: speed_loss, scrape, platform_stability.",
+    "one_change_test_template": "Try one small swing: Adjust front/rear ride height for the diffuser proxy window. Effect: Can keep the platform in a stable geometry window using front ride height, rear ride height, speed loss, and derived diffuser proxy context. Counter-effect: May cost mechanical grip or change balance if the ride-height move goes too far. Watch: tight_center. Validate: speed_loss, scrape, platform_stability.",
     "expected_improvement_targets": [
       "speed_loss",
       "scrape"
@@ -3987,7 +3987,7 @@
   {
     "effect_id": "reduce_platform_contact_small",
     "setup_area": "ride_height",
-    "direction": "Reduce platform contact small",
+    "direction": "Raise ride height for more contact margin",
     "driver_phrase": [
       "straight",
       "center"
@@ -4009,7 +4009,7 @@
     "coupling_risk": "high",
     "effect": "Can add contact margin when scrape evidence is repeatable.",
     "counter_effect": "May move the platform out of a fast window or add drag-like speed loss.",
-    "test_language": "Run one comparable test and validate scrape, speed_trace, ride_height_trace before keeping the change.",
+    "test_language": "Try one small ride-height or shock-collar change and validate scrape, speed trace, and ride-height trace before keeping it.",
     "evidence_required": [
       "platform_trace",
       "scrape",
@@ -4021,7 +4021,7 @@
       "speed_trace",
       "ride_height_trace"
     ],
-    "small_swing_hint": "Use one small test change unless this is marked as a package reference.",
+    "small_swing_hint": "Use one small ride-height change at a time. Shock collar changes ride height, preload, and corner weight together.",
     "cautions": [
       "Keep this as a single-change test."
     ],
@@ -4049,9 +4049,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Reduce platform contact small. Effect: Can add contact margin when scrape evidence is repeatable. Counter-effect: May move the platform out of a fast window or add drag-like speed loss. Watch: low_straight_speed, tight_center. Validate: scrape, speed_trace, ride_height_trace.",
+    "driver_facing_summary": "Try one small swing: Raise ride height for more contact margin. Effect: Can add contact margin when scrape evidence is repeatable. Counter-effect: May move the platform out of a fast window or add drag-like speed loss. Watch: low_straight_speed, tight_center. Validate: scrape, speed_trace, ride_height_trace.",
     "why_ranked_template": "Matches {symptom} in {phase}; package {package}; readiness {readiness}; strength {strength}, risk {risk}.",
-    "one_change_test_template": "Try one small swing: Reduce platform contact small. Effect: Can add contact margin when scrape evidence is repeatable. Counter-effect: May move the platform out of a fast window or add drag-like speed loss. Watch: low_straight_speed, tight_center. Validate: scrape, speed_trace, ride_height_trace.",
+    "one_change_test_template": "Try one small swing: Raise ride height for more contact margin. Effect: Can add contact margin when scrape evidence is repeatable. Counter-effect: May move the platform out of a fast window or add drag-like speed loss. Watch: low_straight_speed, tight_center. Validate: scrape, speed_trace, ride_height_trace.",
     "expected_improvement_targets": [
       "scrape",
       "speed_trace"
@@ -5084,7 +5084,7 @@
   {
     "effect_id": "protect_rf_long_run_pressure",
     "setup_area": "tire_pressure",
-    "direction": "Protect RF with pressure trim",
+    "direction": "Adjust RF tire pressure",
     "driver_phrase": [
       "long_run",
       "center"
@@ -5104,9 +5104,9 @@
     ],
     "effect_strength": 3,
     "coupling_risk": "medium",
-    "effect": "Can reduce long-run tire abuse when pressure trend supports it.",
+    "effect": "Can reduce long-run RF tire abuse when the pressure trend supports it.",
     "counter_effect": "May give up short-run response or create a new balance offset. Watch the tire-work trend after the swing.",
-    "test_language": "Run one comparable test and validate tire_temp, lap_falloff, center_speed before keeping the change.",
+    "test_language": "Try one small RF tire-pressure change and validate tire temp, lap falloff, and center speed before keeping it.",
     "evidence_required": [
       "tire_temps",
       "tire_trend",
@@ -5118,7 +5118,7 @@
       "lap_falloff",
       "center_speed"
     ],
-    "small_swing_hint": "Use one small test change unless this is marked as a package reference.",
+    "small_swing_hint": "Use one small RF tire-pressure change unless this is marked as a package reference.",
     "cautions": [
       "Keep this as a single-change test."
     ],
@@ -5145,9 +5145,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Protect RF with pressure trim. Effect: Can reduce long-run tire abuse when pressure trend supports it. Counter-effect: May give up short-run response or create a new balance offset. Watch the tire-work trend after the swing. Watch: loose_entry, low_straight_speed. Validate: tire_temp, lap_falloff, center_speed.",
+    "driver_facing_summary": "Try one small swing: Adjust RF tire pressure. Effect: Can reduce long-run RF tire abuse when the pressure trend supports it. Counter-effect: May give up short-run response or create a new balance offset. Watch the tire-work trend after the swing. Watch: loose_entry, low_straight_speed. Validate: tire_temp, lap_falloff, center_speed.",
     "why_ranked_template": "Matches {symptom} in {phase}; package {package}; readiness {readiness}; strength {strength}, risk {risk}.",
-    "one_change_test_template": "Try one small swing: Protect RF with pressure trim. Effect: Can reduce long-run tire abuse when pressure trend supports it. Counter-effect: May give up short-run response or create a new balance offset. Watch the tire-work trend after the swing. Watch: loose_entry, low_straight_speed. Validate: tire_temp, lap_falloff, center_speed.",
+    "one_change_test_template": "Try one small swing: Adjust RF tire pressure. Effect: Can reduce long-run RF tire abuse when the pressure trend supports it. Counter-effect: May give up short-run response or create a new balance offset. Watch the tire-work trend after the swing. Watch: loose_entry, low_straight_speed. Validate: tire_temp, lap_falloff, center_speed.",
     "expected_improvement_targets": [
       "tire_temp",
       "lap_falloff"
@@ -5189,7 +5189,7 @@
   {
     "effect_id": "protect_rr_long_run_pressure",
     "setup_area": "tire_pressure",
-    "direction": "Protect RR with pressure trim",
+    "direction": "Adjust RR tire pressure",
     "driver_phrase": [
       "long_run",
       "exit"
@@ -5209,9 +5209,9 @@
     ],
     "effect_strength": 3,
     "coupling_risk": "medium",
-    "effect": "Can support rear tire trend when the run falls away loose.",
+    "effect": "Can support RR tire trend when the run falls away loose.",
     "counter_effect": "May make the car too secure or slow on exit. Watch the tire-work trend after the swing.",
-    "test_language": "Run one comparable test and validate rear_tire_trend, exit_yaw before keeping the change.",
+    "test_language": "Try one small RR tire-pressure change and validate rear tire trend and exit yaw before keeping it.",
     "evidence_required": [
       "tire_temps",
       "tire_trend",
@@ -5222,7 +5222,7 @@
       "rear_tire_trend",
       "exit_yaw"
     ],
-    "small_swing_hint": "Use one small test change unless this is marked as a package reference.",
+    "small_swing_hint": "Use one small RR tire-pressure change unless this is marked as a package reference.",
     "cautions": [
       "Keep this as a single-change test."
     ],
@@ -5249,9 +5249,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Protect RR with pressure trim. Effect: Can support rear tire trend when the run falls away loose. Counter-effect: May make the car too secure or slow on exit. Watch the tire-work trend after the swing. Watch: tight_exit, poor_drive_off. Validate: rear_tire_trend, exit_yaw.",
+    "driver_facing_summary": "Try one small swing: Adjust RR tire pressure. Effect: Can support RR tire trend when the run falls away loose. Counter-effect: May make the car too secure or slow on exit. Watch the tire-work trend after the swing. Watch: tight_exit, poor_drive_off. Validate: rear_tire_trend, exit_yaw.",
     "why_ranked_template": "Matches {symptom} in {phase}; package {package}; readiness {readiness}; strength {strength}, risk {risk}.",
-    "one_change_test_template": "Try one small swing: Protect RR with pressure trim. Effect: Can support rear tire trend when the run falls away loose. Counter-effect: May make the car too secure or slow on exit. Watch the tire-work trend after the swing. Watch: tight_exit, poor_drive_off. Validate: rear_tire_trend, exit_yaw.",
+    "one_change_test_template": "Try one small swing: Adjust RR tire pressure. Effect: Can support RR tire trend when the run falls away loose. Counter-effect: May make the car too secure or slow on exit. Watch the tire-work trend after the swing. Watch: tight_exit, poor_drive_off. Validate: rear_tire_trend, exit_yaw.",
     "expected_improvement_targets": [
       "rear_tire_trend",
       "exit_yaw"
@@ -5583,7 +5583,7 @@
   {
     "effect_id": "legacy_packer_support_swing",
     "setup_area": "packer",
-    "direction": "Tune legacy packer support",
+    "direction": "Adjust legacy packer gap",
     "driver_phrase": [
       "entry",
       "center",
@@ -5605,9 +5605,9 @@
     ],
     "effect_strength": 4,
     "coupling_risk": "high",
-    "effect": "Can change legacy platform support timing when supported by that car.",
+    "effect": "Can change legacy platform timing when that car supports packers.",
     "counter_effect": "May create harsher contact timing or reduce compliance.",
-    "test_language": "Run one comparable test and validate platform_contact, center_speed before keeping the change.",
+    "test_language": "Try one small legacy packer-gap change and validate platform contact and center speed before keeping it.",
     "evidence_required": [
       "platform",
       "travel",
@@ -5618,7 +5618,7 @@
       "platform_contact",
       "center_speed"
     ],
-    "small_swing_hint": "Use one small test change unless this is marked as a package reference.",
+    "small_swing_hint": "Use one small packer-gap change unless this is marked as a package reference.",
     "cautions": [
       "Keep this as a single-change test."
     ],
@@ -5646,9 +5646,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Tune legacy packer support. Effect: Can change legacy platform support timing when supported by that car. Counter-effect: May create harsher contact timing or reduce compliance. Watch: tight_center, shock_overactive. Validate: platform_contact, center_speed.",
+    "driver_facing_summary": "Try one small swing: Adjust legacy packer gap. Effect: Can change legacy platform timing when that car supports packers. Counter-effect: May create harsher contact timing or reduce compliance. Watch: tight_center, shock_overactive. Validate: platform_contact, center_speed.",
     "why_ranked_template": "Matches {symptom} in {phase}; package {package}; readiness {readiness}; strength {strength}, risk {risk}.",
-    "one_change_test_template": "Try one small swing: Tune legacy packer support. Effect: Can change legacy platform support timing when supported by that car. Counter-effect: May create harsher contact timing or reduce compliance. Watch: tight_center, shock_overactive. Validate: platform_contact, center_speed.",
+    "one_change_test_template": "Try one small swing: Adjust legacy packer gap. Effect: Can change legacy platform timing when that car supports packers. Counter-effect: May create harsher contact timing or reduce compliance. Watch: tight_center, shock_overactive. Validate: platform_contact, center_speed.",
     "expected_improvement_targets": [
       "platform_contact",
       "center_speed"
@@ -5685,7 +5685,7 @@
   {
     "effect_id": "add_left_rear_pressure_small",
     "setup_area": "tire_pressure",
-    "direction": "Add left-rear pressure support",
+    "direction": "Add LR tire pressure",
     "driver_phrase": [
       "exit"
     ],
@@ -5705,7 +5705,7 @@
     "coupling_risk": "medium",
     "effect": "Can add rear support for throttle pickup when tire evidence agrees. Read it against long-run tire trend, not one cold lap.",
     "counter_effect": "May tighten late exit or shift tire heat.",
-    "test_language": "Try one small swing: Add left-rear pressure support. Validate exit_yaw, drive_off.",
+    "test_language": "Try one small LR tire-pressure change and validate exit yaw and drive-off.",
     "evidence_required": [
       "tire_temps",
       "pressure_gain",
@@ -5741,9 +5741,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Add left-rear pressure support. Effect: Can add rear support for throttle pickup when tire evidence agrees. Read it against long-run tire trend, not one cold lap. Counter-effect: May tighten late exit or shift tire heat. Watch: tight_exit, tire_overwork. Validate: exit_yaw, drive_off.",
+    "driver_facing_summary": "Try one small swing: Add LR tire pressure. Effect: Can add rear support for throttle pickup when tire evidence agrees. Read it against long-run tire trend, not one cold lap. Counter-effect: May tighten late exit or shift tire heat. Watch: tight_exit, tire_overwork. Validate: exit_yaw, drive_off.",
     "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
-    "one_change_test_template": "Try one small swing: Add left-rear pressure support. Effect: Can add rear support for throttle pickup when tire evidence agrees. Read it against long-run tire trend, not one cold lap. Counter-effect: May tighten late exit or shift tire heat. Watch: tight_exit, tire_overwork. Validate: exit_yaw, drive_off.",
+    "one_change_test_template": "Try one small swing: Add LR tire pressure. Effect: Can add rear support for throttle pickup when tire evidence agrees. Read it against long-run tire trend, not one cold lap. Counter-effect: May tighten late exit or shift tire heat. Watch: tight_exit, tire_overwork. Validate: exit_yaw, drive_off.",
     "expected_improvement_targets": [
       "exit_yaw",
       "drive_off"
@@ -5785,7 +5785,7 @@
   {
     "effect_id": "reduce_left_front_pressure_small",
     "setup_area": "tire_pressure",
-    "direction": "Reduce left-front pressure support",
+    "direction": "Reduce LF tire pressure",
     "driver_phrase": [
       "entry",
       "center"
@@ -5806,7 +5806,7 @@
     "coupling_risk": "medium",
     "effect": "Can add front compliance for turn-in or center feel. Read it against long-run tire trend, not one cold lap.",
     "counter_effect": "May overwork the tire or reduce entry security.",
-    "test_language": "Try one small swing: Reduce left-front pressure support. Validate turn_in_response, center_speed.",
+    "test_language": "Try one small LF tire-pressure change and validate turn-in response and center speed.",
     "evidence_required": [
       "tire_temps",
       "steering",
@@ -5843,9 +5843,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Reduce left-front pressure support. Effect: Can add front compliance for turn-in or center feel. Read it against long-run tire trend, not one cold lap. Counter-effect: May overwork the tire or reduce entry security. Watch: loose_entry, tire_overwork. Validate: turn_in_response, center_speed.",
+    "driver_facing_summary": "Try one small swing: Reduce LF tire pressure. Effect: Can add front compliance for turn-in or center feel. Read it against long-run tire trend, not one cold lap. Counter-effect: May overwork the tire or reduce entry security. Watch: loose_entry, tire_overwork. Validate: turn_in_response, center_speed.",
     "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
-    "one_change_test_template": "Try one small swing: Reduce left-front pressure support. Effect: Can add front compliance for turn-in or center feel. Read it against long-run tire trend, not one cold lap. Counter-effect: May overwork the tire or reduce entry security. Watch: loose_entry, tire_overwork. Validate: turn_in_response, center_speed.",
+    "one_change_test_template": "Try one small swing: Reduce LF tire pressure. Effect: Can add front compliance for turn-in or center feel. Read it against long-run tire trend, not one cold lap. Counter-effect: May overwork the tire or reduce entry security. Watch: loose_entry, tire_overwork. Validate: turn_in_response, center_speed.",
     "expected_improvement_targets": [
       "turn_in_response",
       "center_speed"
@@ -5886,7 +5886,7 @@
   {
     "effect_id": "add_right_front_pressure_support",
     "setup_area": "tire_pressure",
-    "direction": "Add right-front pressure support",
+    "direction": "Add RF tire pressure",
     "driver_phrase": [
       "center",
       "long_run"
@@ -5905,8 +5905,8 @@
     "effect_strength": 3,
     "coupling_risk": "medium",
     "effect": "Can support the loaded RF and shape long-run tire work.",
-    "counter_effect": "May reduce front grip if over-supported. Watch the tire-work trend after the swing.",
-    "test_language": "Try one small swing: Add right-front pressure support. Validate tire_temp, center_speed.",
+    "counter_effect": "May reduce front grip if RF pressure goes too far. Watch the tire-work trend after the swing.",
+    "test_language": "Try one small RF tire-pressure change and validate tire temp and center speed.",
     "evidence_required": [
       "rf_tire_temps",
       "pressure_gain",
@@ -5943,9 +5943,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Add right-front pressure support. Effect: Can support the loaded RF and shape long-run tire work. Counter-effect: May reduce front grip if over-supported. Watch the tire-work trend after the swing. Watch: tight_center. Validate: tire_temp, center_speed.",
+    "driver_facing_summary": "Try one small swing: Add RF tire pressure. Effect: Can support the loaded RF and shape long-run tire work. Counter-effect: May reduce front grip if RF pressure goes too far. Watch the tire-work trend after the swing. Watch: tight_center. Validate: tire_temp, center_speed.",
     "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
-    "one_change_test_template": "Try one small swing: Add right-front pressure support. Effect: Can support the loaded RF and shape long-run tire work. Counter-effect: May reduce front grip if over-supported. Watch the tire-work trend after the swing. Watch: tight_center. Validate: tire_temp, center_speed.",
+    "one_change_test_template": "Try one small swing: Add RF tire pressure. Effect: Can support the loaded RF and shape long-run tire work. Counter-effect: May reduce front grip if RF pressure goes too far. Watch the tire-work trend after the swing. Watch: tight_center. Validate: tire_temp, center_speed.",
     "expected_improvement_targets": [
       "tire_temp",
       "center_speed"
@@ -5984,7 +5984,7 @@
   {
     "effect_id": "reduce_right_front_pressure_grip",
     "setup_area": "tire_pressure",
-    "direction": "Reduce right-front pressure for grip",
+    "direction": "Reduce RF tire pressure for grip",
     "driver_phrase": [
       "center"
     ],
@@ -6003,7 +6003,7 @@
     "coupling_risk": "medium",
     "effect": "Can add RF compliance when over-supported. Read it against long-run tire trend, not one cold lap.",
     "counter_effect": "May collapse support or add tire heat.",
-    "test_language": "Try one small swing: Reduce right-front pressure for grip. Validate center_speed, tire_temp.",
+    "test_language": "Try one small swing: Reduce RF tire pressure for grip. Validate center_speed, tire_temp.",
     "evidence_required": [
       "rf_tire_temps",
       "steering",
@@ -6038,9 +6038,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Reduce right-front pressure for grip. Effect: Can add RF compliance when over-supported. Read it against long-run tire trend, not one cold lap. Counter-effect: May collapse support or add tire heat. Watch: tire_overwork, front_platform_contact. Validate: center_speed, tire_temp.",
+    "driver_facing_summary": "Try one small swing: Reduce RF tire pressure for grip. Effect: Can add RF compliance when over-supported. Read it against long-run tire trend, not one cold lap. Counter-effect: May collapse support or add tire heat. Watch: tire_overwork, front_platform_contact. Validate: center_speed, tire_temp.",
     "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
-    "one_change_test_template": "Try one small swing: Reduce right-front pressure for grip. Effect: Can add RF compliance when over-supported. Read it against long-run tire trend, not one cold lap. Counter-effect: May collapse support or add tire heat. Watch: tire_overwork, front_platform_contact. Validate: center_speed, tire_temp.",
+    "one_change_test_template": "Try one small swing: Reduce RF tire pressure for grip. Effect: Can add RF compliance when over-supported. Read it against long-run tire trend, not one cold lap. Counter-effect: May collapse support or add tire heat. Watch: tire_overwork, front_platform_contact. Validate: center_speed, tire_temp.",
     "expected_improvement_targets": [
       "center_speed",
       "tire_temp"
@@ -6080,7 +6080,7 @@
   {
     "effect_id": "pressure_split_stability_swing",
     "setup_area": "pressure_split",
-    "direction": "Adjust tire pressure split for stability",
+    "direction": "Adjust tire pressure split on the supported axle",
     "driver_phrase": [
       "entry",
       "exit"
@@ -6101,7 +6101,7 @@
     "coupling_risk": "medium",
     "effect": "Can shape tire support and response when tire evidence points to an axle or diagonal pressure relationship.",
     "counter_effect": "May add bind, drag, or tire heat if the pressure split masks the real balance issue.",
-    "test_language": "Try one small tire pressure split swing on the supported axle or diagonal. Validate entry yaw and exit yaw.",
+    "test_language": "Try one small tire-pressure split swing on the supported axle or diagonal and validate entry yaw and exit yaw.",
     "evidence_required": [
       "tire_temps",
       "pressure_gain",
@@ -6135,9 +6135,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Adjust tire pressure split for stability. Effect: Can shape tire support and response when tire evidence points to an axle or diagonal pressure relationship. Counter-effect: May add bind, drag, or tire heat if the pressure split masks the real balance issue. Watch: tight_center, drag_scrub. Validate: entry_yaw, exit_yaw.",
+    "driver_facing_summary": "Try one small swing: Adjust tire pressure split on the supported axle. Effect: Can shape tire support and response when tire evidence points to an axle or diagonal pressure relationship. Counter-effect: May add bind, drag, or tire heat if the pressure split masks the real balance issue. Watch: tight_center, drag_scrub. Validate: entry_yaw, exit_yaw.",
     "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
-    "one_change_test_template": "Try one small swing: Adjust tire pressure split for stability. Effect: Can shape tire support and response when tire evidence points to an axle or diagonal pressure relationship. Counter-effect: May add bind, drag, or tire heat if the pressure split masks the real balance issue. Watch: tight_center, drag_scrub. Validate: entry_yaw, exit_yaw.",
+    "one_change_test_template": "Try one small swing: Adjust tire pressure split on the supported axle. Effect: Can shape tire support and response when tire evidence points to an axle or diagonal pressure relationship. Counter-effect: May add bind, drag, or tire heat if the pressure split masks the real balance issue. Watch: tight_center, drag_scrub. Validate: entry_yaw, exit_yaw.",
     "expected_improvement_targets": [
       "entry_yaw",
       "exit_yaw"
@@ -6172,7 +6172,7 @@
   {
     "effect_id": "long_run_pressure_protection",
     "setup_area": "tire_pressure",
-    "direction": "Protect long-run pressure trend",
+    "direction": "Adjust tire pressure for long-run tire trend",
     "driver_phrase": [
       "long_run"
     ],
@@ -6191,7 +6191,7 @@
     "coupling_risk": "medium",
     "effect": "Can protect tire trend over a run.",
     "counter_effect": "May give up short-run speed. Watch the tire-work trend after the swing.",
-    "test_language": "Try one small swing: Protect long-run pressure trend. Validate lap_falloff, tire_temp.",
+    "test_language": "Try one small tire-pressure change and validate lap falloff and tire temp.",
     "evidence_required": [
       "lap_falloff",
       "tire_temps",
@@ -6226,9 +6226,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Protect long-run pressure trend. Effect: Can protect tire trend over a run. Counter-effect: May give up short-run speed. Watch the tire-work trend after the swing. Watch: low_straight_speed. Validate: lap_falloff, tire_temp.",
+    "driver_facing_summary": "Try one small swing: Adjust tire pressure for long-run tire trend. Effect: Can protect tire trend over a run. Counter-effect: May give up short-run speed. Watch the tire-work trend after the swing. Watch: low_straight_speed. Validate: lap_falloff, tire_temp.",
     "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
-    "one_change_test_template": "Try one small swing: Protect long-run pressure trend. Effect: Can protect tire trend over a run. Counter-effect: May give up short-run speed. Watch the tire-work trend after the swing. Watch: low_straight_speed. Validate: lap_falloff, tire_temp.",
+    "one_change_test_template": "Try one small swing: Adjust tire pressure for long-run tire trend. Effect: Can protect tire trend over a run. Counter-effect: May give up short-run speed. Watch the tire-work trend after the swing. Watch: low_straight_speed. Validate: lap_falloff, tire_temp.",
     "expected_improvement_targets": [
       "lap_falloff",
       "tire_temp"
@@ -6267,7 +6267,7 @@
   {
     "effect_id": "add_lr_spring_support",
     "setup_area": "spring_rate",
-    "direction": "Add LR spring support",
+    "direction": "Increase LR spring rate",
     "driver_phrase": [
       "exit"
     ],
@@ -6286,7 +6286,7 @@
     "coupling_risk": "high",
     "effect": "Can add drive-off support in the spring package.",
     "counter_effect": "May bind center or change platform attitude.",
-    "test_language": "Try one small swing: Add LR spring support. Validate drive_off, exit_yaw.",
+    "test_language": "Try one small LR spring change and validate drive-off and exit yaw.",
     "evidence_required": [
       "setup_snapshot",
       "platform_trace",
@@ -6318,9 +6318,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Add LR spring support. Effect: Can add drive-off support in the spring package. Counter-effect: May bind center or change platform attitude. Watch: tight_center. Validate: drive_off, exit_yaw.",
+    "driver_facing_summary": "Try one small swing: Increase LR spring rate. Effect: Can add drive-off support in the spring package. Counter-effect: May bind center or change platform attitude. Watch: tight_center. Validate: drive_off, exit_yaw.",
     "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
-    "one_change_test_template": "Try one small swing: Add LR spring support. Effect: Can add drive-off support in the spring package. Counter-effect: May bind center or change platform attitude. Watch: tight_center. Validate: drive_off, exit_yaw.",
+    "one_change_test_template": "Try one small swing: Increase LR spring rate. Effect: Can add drive-off support in the spring package. Counter-effect: May bind center or change platform attitude. Watch: tight_center. Validate: drive_off, exit_yaw.",
     "expected_improvement_targets": [
       "drive_off",
       "exit_yaw"
@@ -6446,7 +6446,7 @@
   {
     "effect_id": "spring_package_platform_support",
     "setup_area": "spring_rate",
-    "direction": "Use spring package for platform support",
+    "direction": "Adjust spring package for ride-height control",
     "driver_phrase": [
       "straight",
       "center"
@@ -6465,9 +6465,9 @@
     ],
     "effect_strength": 5,
     "coupling_risk": "high",
-    "effect": "Can hold the platform window more consistently.",
+    "effect": "Can hold the ride-height window more consistently.",
     "counter_effect": "May reduce mechanical grip or overwork tires.",
-    "test_language": "Try one small swing: Use spring package for platform support. Validate ride_height_trace, center_speed.",
+    "test_language": "Try one small spring-package change and validate ride-height trace and center speed.",
     "evidence_required": [
       "platform_trace",
       "setup_snapshot",
@@ -6477,7 +6477,7 @@
       "ride_height_trace",
       "center_speed"
     ],
-    "small_swing_hint": "Use one small matrix-backed swing only.",
+    "small_swing_hint": "Use one spring change at a time and recheck ride height, preload, and tire trend.",
     "cautions": [
       "Use only when symptom phase and evidence agree."
     ],
@@ -6501,9 +6501,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Use spring package for platform support. Effect: Can hold the platform window more consistently. Counter-effect: May reduce mechanical grip or overwork tires. Watch: tight_center, tire_overwork. Validate: ride_height_trace, center_speed.",
+    "driver_facing_summary": "Try one small swing: Adjust spring package for ride-height control. Effect: Can hold the ride-height window more consistently. Counter-effect: May reduce mechanical grip or overwork tires. Watch: tight_center, tire_overwork. Validate: ride_height_trace, center_speed.",
     "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
-    "one_change_test_template": "Try one small swing: Use spring package for platform support. Effect: Can hold the platform window more consistently. Counter-effect: May reduce mechanical grip or overwork tires. Watch: tight_center, tire_overwork. Validate: ride_height_trace, center_speed.",
+    "one_change_test_template": "Try one small swing: Adjust spring package for ride-height control. Effect: Can hold the ride-height window more consistently. Counter-effect: May reduce mechanical grip or overwork tires. Watch: tight_center, tire_overwork. Validate: ride_height_trace, center_speed.",
     "expected_improvement_targets": [
       "ride_height_trace",
       "center_speed"
@@ -6823,7 +6823,7 @@
   {
     "effect_id": "reduce_rear_toe_bind",
     "setup_area": "rear_toe_stability",
-    "direction": "Reduce rear toe bind",
+    "direction": "Reduce rear toe-in / rear toe bind",
     "driver_phrase": [
       "center",
       "straight"
@@ -6844,7 +6844,7 @@
     "coupling_risk": "medium",
     "effect": "Can reduce rear alignment bind or scrub.",
     "counter_effect": "May reduce rear security.",
-    "test_language": "Try one small swing: Reduce rear toe bind. Validate center_speed, straight_speed.",
+    "test_language": "Try one small rear-toe change and validate center speed and straight speed.",
     "evidence_required": [
       "setup_snapshot",
       "yaw",
@@ -6878,9 +6878,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Reduce rear toe bind. Effect: Can reduce rear alignment bind or scrub. Counter-effect: May reduce rear security. Watch: loose_exit, unstable_exit. Validate: center_speed, straight_speed.",
+    "driver_facing_summary": "Try one small swing: Reduce rear toe-in / rear toe bind. Effect: Can reduce rear alignment bind or scrub. Counter-effect: May reduce rear security. Watch: loose_exit, unstable_exit. Validate: center_speed, straight_speed.",
     "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
-    "one_change_test_template": "Try one small swing: Reduce rear toe bind. Effect: Can reduce rear alignment bind or scrub. Counter-effect: May reduce rear security. Watch: loose_exit, unstable_exit. Validate: center_speed, straight_speed.",
+    "one_change_test_template": "Try one small swing: Reduce rear toe-in / rear toe bind. Effect: Can reduce rear alignment bind or scrub. Counter-effect: May reduce rear security. Watch: loose_exit, unstable_exit. Validate: center_speed, straight_speed.",
     "expected_improvement_targets": [
       "center_speed",
       "straight_speed"
@@ -8151,7 +8151,7 @@
   {
     "effect_id": "add_hs_rebound_control",
     "setup_area": "hs_rebound",
-    "direction": "Add high-speed rebound control",
+    "direction": "Add high-speed rebound",
     "driver_phrase": [
       "transition"
     ],
@@ -8169,7 +8169,7 @@
     "coupling_risk": "medium",
     "effect": "Can slow fast platform recovery after bumps, curbs, or banking transitions.",
     "counter_effect": "May keep the platform tied down over repeated bumps.",
-    "test_language": "Try one small swing: Add high-speed rebound control. Validate platform_recovery.",
+    "test_language": "Try one small high-speed rebound change and validate platform recovery.",
     "evidence_required": [
       "shock_histogram",
       "bump_trace",
@@ -8204,9 +8204,9 @@
       "intermediate_oval",
       "short_oval"
     ],
-    "driver_facing_summary": "Try one small swing: Add high-speed rebound control. Effect: Can slow fast platform recovery after bumps, curbs, or banking transitions. Counter-effect: May keep the platform tied down over repeated bumps. Watch: shock_overactive. Validate: platform_recovery, bump_zone_response.",
+    "driver_facing_summary": "Try one small swing: Add high-speed rebound. Effect: Can slow fast platform recovery after bumps, curbs, or banking transitions. Counter-effect: May keep the platform tied down over repeated bumps. Watch: shock_overactive. Validate: platform_recovery, bump_zone_response.",
     "why_ranked_template": "Matrix-backed condition mapping for {symptom} in {phase}.",
-    "one_change_test_template": "Try one small swing: Add high-speed rebound control. Effect: Can slow fast platform recovery after bumps, curbs, or banking transitions. Counter-effect: May keep the platform tied down over repeated bumps. Watch: shock_overactive. Validate: platform_recovery, bump_zone_response.",
+    "one_change_test_template": "Try one small swing: Add high-speed rebound. Effect: Can slow fast platform recovery after bumps, curbs, or banking transitions. Counter-effect: May keep the platform tied down over repeated bumps. Watch: shock_overactive. Validate: platform_recovery, bump_zone_response.",
     "expected_improvement_targets": [
       "platform_recovery"
     ],

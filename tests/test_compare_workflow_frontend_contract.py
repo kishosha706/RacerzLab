@@ -43,9 +43,11 @@ def test_laps_owns_baseline_test_workflow_copy() -> None:
     direct_stint_section = laps.split('className="workspace-section stint-intelligence-section"', 1)[1].split('{subview === "all_sessions" && (', 1)[0]
 
     assert "Stint Intelligence" in laps
-    assert "Graph Selected" in laps
-    assert "Graph Selected Stints" in laps
-    assert "Add to Test Basket" in laps
+    assert "Main Graph" in laps
+    assert "Graph Selected" not in laps
+    assert "Graph Selected Stints" not in laps
+    assert "Advanced Controls" in laps
+    assert "Basket" in laps
     assert "Baseline/Test Staging" not in direct_stint_section
     assert "Open Stint Intelligence" not in direct_stint_section
     assert "compare-subnav" not in laps

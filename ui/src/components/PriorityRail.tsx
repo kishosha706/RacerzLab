@@ -7,9 +7,10 @@ import {
   SEVERITY_COLOURS, eventWorkspace, eventLabel,
 } from "../constants/ui";
 import { ProxyBadge } from "./ProxyBadge";
-import type { PlatformEventItem } from "../types/telemetry";
+import type { PlatformEventItem, PlatformEventVisibilityMode } from "../types/telemetry";
 import type { EvidenceContext, Workspace } from "../store/types";
 import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
+import { filterPlatformEvents, isMutedPlatformEvent, platformEventScopeLabel } from "../utils/platformEventVisibility";
 
 type PriorityRailProps = {
   runId: string;
@@ -17,9 +18,17 @@ type PriorityRailProps = {
   collapsed?: boolean;
   onToggle?: () => void;
   platformEvents?: PlatformEventItem[];
+  eventVisibilityMode: PlatformEventVisibilityMode;
 };
 
-export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platformEvents: externalEvents }: PriorityRailProps) {
+export function PriorityRail({
+  runId,
+  selectedLap,
+  collapsed,
+  onToggle,
+  platformEvents: externalEvents,
+  eventVisibilityMode,
+}: PriorityRailProps) {
   const { selection, setWorkspace, focusEvidence } = useTelemetrySelection();
   const [events, setEvents] = useState<PlatformEventItem[]>([]);
   const [showInvalid, setShowInvalid] = useState(false);
@@ -36,10 +45,15 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
     return () => { cancelled = true; };
   }, [runId, selectedLap, externalEvents]);
 
+  const visibleEvents = useMemo(
+    () => filterPlatformEvents(events, eventVisibilityMode),
+    [events, eventVisibilityMode],
+  );
+
   const { valid, invalid } = useMemo(() => {
     const v: PlatformEventItem[] = [];
     const inv: PlatformEventItem[] = [];
-    for (const e of events) {
+    for (const e of visibleEvents) {
       if (e.severity === "info" && e.confidence === "low") {
         inv.push(e);
       } else {
@@ -64,7 +78,7 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
       return catA - catB;
     });
     return { valid: v, invalid: inv };
-  }, [events, selectedLap, selection.selectedEventId]);
+  }, [selectedLap, selection.selectedEventId, visibleEvents]);
 
   const buildPriorityEvidence = useCallback((event: PlatformEventItem): Partial<EvidenceContext> => {
     const sampleIndex =
@@ -175,12 +189,17 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
 
       <div className="rail-list">
         {valid.length === 0 && (
-          <p className="rail-empty">No priority events for this lap.</p>
+          <div className="rail-empty">
+            <p>{eventVisibilityMode === "actionable" ? "No actionable platform events for this lap." : "No platform events for this lap."}</p>
+            {eventVisibilityMode === "actionable" && events.length > 0 && (
+              <p className="muted">Internal evidence is still available for analysis.</p>
+            )}
+          </div>
         )}
         {valid.map((event, idx) => (
           <button
             key={event.event_id}
-            className={`priority-card ${selection.selectedEventId === event.event_id ? "active" : ""}`}
+            className={`priority-card ${selection.selectedEventId === event.event_id ? "active" : ""}${isMutedPlatformEvent(event, eventVisibilityMode) ? " internal" : ""}`}
             data-severity={event.severity}
             onClick={() => handleClick(event)}
             onDoubleClick={() => handleSecondaryAction(event)}
@@ -199,8 +218,11 @@ export function PriorityRail({ runId, selectedLap, collapsed, onToggle, platform
               <div className="priority-title-row">
                 <strong>{event.title}</strong>
               </div>
+              {isMutedPlatformEvent(event, eventVisibilityMode) && (
+                <span className="event-scope-pill">{platformEventScopeLabel(event)}</span>
+              )}
               <span className="muted" style={{ fontSize: 11 }}>
-                {event.recommended_action ?? event.evidence?.[0] ?? "Open this event for detailed evidence."}
+                {event.recommended_action ?? event.reason_for_hidden ?? event.evidence?.[0] ?? "Open this event for detailed evidence."}
               </span>
               <span className="priority-next">
                 <ArrowRight size={12} /> Open {CATEGORY_LABELS[event.event_type] ?? "Trace"}

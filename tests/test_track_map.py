@@ -272,7 +272,9 @@ def test_track_matching_aliases_and_preferred_override() -> None:
     available = [
         {"map_id": "talladega-abc123", "track_key": "talladega", "layout_key": "default", "source_filename": "talladega.mt2"},
     ]
-    assert match_track_map_for_run("Talladega Superspeedway", None, available)["map_id"] == "talladega-abc123"
+    match = match_track_map_for_run("Talladega Superspeedway", None, available)
+    assert match is not None
+    assert match["map_id"] == "talladega-abc123"
     assert match_track_map_for_run("Talladega Superspeedway", None, available, preferred_map_id="missing") is None
 
 

@@ -43,6 +43,57 @@ function formatTargetList(swing: DialInSwing): string {
   return targets.join(", ") || "Balance shift";
 }
 
+function garageLeverLabel(swing: DialInSwing): string | null {
+  const title = swing.title.toLowerCase();
+  if (title.includes("lf/rf shock collar")) {
+    return "Garage lever: front ride height or LF/RF shock collar offsets. Shock collar changes ride height, spring preload, and corner weight together.";
+  }
+  if (title.includes("lr/rr shock collar")) {
+    return "Garage lever: rear ride height or LR/RR shock collar offsets. Shock collar changes ride height, spring preload, and corner weight together.";
+  }
+  if (title.includes("lr/rr rear tire pressure split")) return "Garage lever: LR/RR rear tire pressure split.";
+  if (title.includes("rf tire pressure")) return "Garage lever: RF tire pressure.";
+  if (title.includes("lf tire pressure")) return "Garage lever: LF tire pressure.";
+  if (title.includes("lr tire pressure")) return "Garage lever: LR tire pressure.";
+  if (title.includes("rr tire pressure")) return "Garage lever: RR tire pressure.";
+  if (title.includes("cross weight")) return "Garage lever: cross weight.";
+  if (title.includes("high-speed rebound")) return "Garage lever: HS rebound.";
+  if (title.includes("high-speed compression")) return "Garage lever: HS compression.";
+  if (title.includes("low-speed rebound")) return "Garage lever: LS rebound.";
+  if (title.includes("low-speed compression")) return "Garage lever: LS compression.";
+  if (title.includes("spring rate")) return "Garage lever: spring rate.";
+  if (title.includes("rear toe")) return "Garage lever: rear toe.";
+  if (title.includes("front toe")) return "Garage lever: front toe.";
+
+  switch (swing.setup_area) {
+    case "front_arb_diameter":
+      return "Garage lever: front ARB diameter.";
+    case "front_arb_arm":
+      return "Garage lever: front ARB arm P1-P5.";
+    case "front_arb_preload":
+      return "Garage lever: front ARB preload.";
+    case "rear_arb_diameter":
+      return "Garage lever: rear ARB diameter.";
+    case "rear_arb_arm":
+      return "Garage lever: rear ARB arm P1-P5.";
+    case "rear_arb_preload":
+      return "Garage lever: rear ARB preload.";
+    case "diff_preload":
+      return "Garage lever: diff preload.";
+    case "brake_bias":
+      return "Garage lever: brake bias.";
+    case "ride_height":
+      return "Garage lever: ride height.";
+    case "toe":
+    case "rear_toe_stability":
+      return "Garage lever: toe.";
+    case "pressure_split":
+      return "Garage lever: supported tire pressure split.";
+    default:
+      return null;
+  }
+}
+
 function dialInEvidenceHints(response: DialInResponse): string[] {
   const hints = new Set<string>();
   const nextStep = response.next_step ?? "";
@@ -71,12 +122,14 @@ function dialInEvidenceHints(response: DialInResponse): string[] {
 }
 
 function SwingCard({ swing, compact = false }: { swing: DialInSwing; compact?: boolean }) {
+  const helper = garageLeverLabel(swing);
   return (
     <article className={`dialin-swing-card${compact ? " compact" : ""}`}>
       <header>
         <div>
           <span>{cleanLabel(swing.setup_area, "Setup area")}</span>
           <h3>{swingKindLabel(swing.strength_label, swing.risk_label)}: {swing.title}</h3>
+          {helper && <p className="dialin-garage-helper">{helper}</p>}
         </div>
         <div className="dialin-card-pills">
           <span className="dialin-mini-pill">{swing.strength_label}</span>

@@ -128,6 +128,10 @@ class PlatformEventItem(BaseModel):
     title: str
     severity: str
     confidence: str
+    display_scope: str = "actionable"
+    is_visible_default: bool = True
+    reason_for_hidden: Optional[str] = None
+    contributes_to_backend_evidence: bool = True
     lap: Optional[int] = None
     sample_index: int
     lap_dist_ft: Optional[float] = None

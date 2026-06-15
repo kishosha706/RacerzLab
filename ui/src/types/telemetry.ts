@@ -311,6 +311,8 @@ export type TraceResponse = {
 
 export type PlatformEventSeverity = "info" | "watch" | "high" | "critical";
 export type PlatformEventConfidence = "low" | "medium" | "high";
+export type PlatformEventDisplayScope = "actionable" | "watch" | "internal" | "debug";
+export type PlatformEventVisibilityMode = "actionable" | "proxy" | "all";
 
 export type PlatformEventItem = {
   event_id: string;
@@ -318,6 +320,10 @@ export type PlatformEventItem = {
   title: string;
   severity: PlatformEventSeverity;
   confidence: PlatformEventConfidence;
+  display_scope: PlatformEventDisplayScope;
+  is_visible_default: boolean;
+  reason_for_hidden?: string | null;
+  contributes_to_backend_evidence: boolean;
   lap?: number | null;
   sample_index?: number | null;
   lap_dist_ft?: number | null;

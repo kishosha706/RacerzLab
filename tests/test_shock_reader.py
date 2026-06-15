@@ -97,6 +97,7 @@ def test_strong_low_speed_bump_signal_scales_beyond_one_click(tmp_path: Path) ->
     assert rec.setting == "ls_compression"
     assert rec.direction == "subtract"
     assert rec.delta is not None and rec.delta < -1
+    assert rec.current_value is not None
     assert rec.suggested_value == rec.current_value + rec.delta
 
 

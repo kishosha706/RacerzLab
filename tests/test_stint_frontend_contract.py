@@ -33,8 +33,26 @@ def test_laps_tab_renders_stint_intelligence_directly() -> None:
     assert "Stint Summary" in source
     assert "stint-summary-lap-table" in source
     assert "stint-graph-tooltip" in source
+    assert "stint-graph-detail-strip" in source
     assert "stint-chart-fastest-marker" in source
+    assert "stint-chart-best-label" in source
     assert "stint-chart-selected-marker" in source
+    assert "stint-chart-selected-guide" in source
+    assert "stint-chart-zero-line" in source
+    assert "stint-chart-bucket-guide" in source
+    assert "graphRangeOverlays" in source
+    assert "graphStatusesForPoint" in source
+    assert "Selected Window -" in source
+    assert "Baseline Window -" in source
+    assert "Test Window -" in source
+    assert "Delta to best" in source
+    assert "Invalid reason" in source
+    assert "Stint lap" in source
+    assert "Flags " in source
+    assert "chartX(tick, graphChart.xMin, graphChart.xMax)" in source
+    assert "graphChart.xTicks.map" in source
+    assert "graphChart.yTicks.map" in source
+    assert "graphYLabel(tick, stintGraphMode)" in source
     assert "racePaceDomain" in source
     assert "percentile" in source
     assert "Include outliers in scale" in source
@@ -44,23 +62,29 @@ def test_laps_tab_renders_stint_intelligence_directly() -> None:
     assert "outlier excluded from pace scale" in source
     assert "stint-chart-range" in source
     assert "stint-chart-outlier-label" in source
-    assert "stint-filter-bar" in source
+    assert "const [showAdvancedControls, setShowAdvancedControls] = useState(false);" in source
+    assert "Advanced Controls" in source
+    assert "stint-advanced-panel" in source
+    assert "stint-advanced-toggle" in source
     assert "Current run only" in source
     assert "Same car/track only" in source
     assert "Graphed only" in source
     assert "Hide invalid/caution laps" in source
-    assert "Export Selected CSV" in source
     assert "exportSelectedStintsCsv" in source
-    assert "Graph Selected Stints" in source
-    assert "Graph Selected" in source
-    assert "Clear Graph" in source
-    assert "Show delta to best" in source
+    assert "Graph Selected Stints" not in source
+    assert "Graph Selected" not in source
+    assert "Export Selected CSV" not in source
+    assert "Clear" in source
+    assert ">Lap Time<" in source
+    assert ">Delta to Best<" in source
+    assert ">Rolling 5<" in source
     assert "Exclude invalid laps" in source
     assert "Session Runs" in source
     assert "Current run and runs added to this open session." in source
     assert "Runs from the loaded session." in source
     assert "Only the current run is shown. Add runs to this session to compare stints." in source
     assert "Load older session from startup to view previous runs." in source
+    assert "Select a stint row to graph, compare, or export." in source
     assert "fetchRunList" not in source
     assert "Field Compare" in source
     assert "Other-driver stint data is not available yet." in source
@@ -74,7 +98,7 @@ def test_laps_tab_renders_stint_intelligence_directly() -> None:
     assert "No eligible stint windows yet." in source
     assert "Need at least 3 valid laps to start short-run averages." in source
     assert "Need 50/60 valid laps for 50/60-lap averages." in source
-    assert "Add to Test Basket" in source
+    assert "Basket" in source
     assert "3-Lap Avg" in source
     assert "5-Lap Avg" in source
     assert "10-Lap Avg" in source
@@ -96,6 +120,7 @@ def test_laps_tab_renders_stint_intelligence_directly() -> None:
     assert "export interface StintBucket" in types
     assert "export interface StintGraphPoint" in types
     assert "lap_points" in types
+    assert "invalid_reason" in types
     assert "avg_speed_mph" in types
     assert "fuel" in types
     assert "export interface StintRunSummary" in types

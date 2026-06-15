@@ -128,6 +128,56 @@ def test_rear_pressure_split_effect_teaches_lr_rr_relationship():
     assert {"exit_yaw", "rear_tire_trend", "throttle_pickup", "long_run_falloff"}.issubset(rear_split.validation_targets)
 
 
+def test_recommendation_titles_name_exact_garage_actions():
+    effects = {effect.effect_id: effect for effect in load_setup_knowledge().setup_effects}
+    all_titles = " || ".join(effect.direction.lower() for effect in effects.values())
+
+    banned = (
+        "reduce front platform support",
+        "add front platform support",
+        "add rear platform support",
+        "reduce rear platform support",
+        "protect rf with pressure trim",
+        "protect rr with pressure trim",
+        "add rear toe stability",
+        "add high-speed rebound control",
+    )
+    assert not any(term in all_titles for term in banned)
+
+    assert effects["add_front_platform_support"].direction == "Lower front ride height with LF/RF shock collar offsets"
+    assert effects["reduce_front_platform_support"].direction == "Raise front ride height with LF/RF shock collar offsets"
+    assert effects["add_rear_platform_support"].direction == "Raise rear ride height with LR/RR shock collar offsets"
+    assert effects["reduce_rear_platform_support"].direction == "Lower rear ride height with LR/RR shock collar offsets"
+    assert effects["protect_rf_long_run_pressure"].direction == "Adjust RF tire pressure"
+    assert effects["protect_rr_long_run_pressure"].direction == "Adjust RR tire pressure"
+    assert effects["add_hs_rebound_control"].direction == "Add high-speed rebound"
+    assert effects["reduce_rear_toe_bind"].direction == "Reduce rear toe-in / rear toe bind"
+
+
+def test_tire_pressure_swing_titles_name_the_tire_or_split():
+    for effect in load_setup_knowledge().setup_effects:
+        if effect.setup_area == "tire_pressure":
+            direction = effect.direction.lower()
+            assert "pressure" in direction
+            assert "tire" in direction
+        if effect.setup_area == "pressure_split":
+            direction = effect.direction.lower()
+            assert "pressure split" in direction
+
+
+def test_arb_and_shock_titles_name_the_specific_lever():
+    for effect in load_setup_knowledge().setup_effects:
+        direction = effect.direction.lower()
+        if effect.setup_area in {"front_arb_diameter", "rear_arb_diameter"}:
+            assert "arb" in direction or "bar" in direction
+        if effect.setup_area in {"front_arb_arm", "rear_arb_arm"}:
+            assert "arb arm" in direction
+        if effect.setup_area in {"front_arb_preload", "rear_arb_preload"}:
+            assert "arb preload" in direction
+        if effect.setup_area in {"ls_compression", "ls_rebound", "hs_compression", "hs_rebound", "hs_comp_slope"}:
+            assert "control" not in direction
+
+
 def test_tight_center_ranks_center_rotation_candidates():
     result = query_setup_knowledge(car_family="next_gen", symptom="tight center", limit=12)
     assert "reduce_crossweight_small" in _ids(result)

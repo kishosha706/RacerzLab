@@ -152,6 +152,36 @@ def test_driver_response_avoids_bad_product_phrases(tmp_path: Path, monkeypatch:
     assert "measured downforce" not in text
 
 
+def test_dial_in_response_titles_use_exact_garage_actions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        channels={
+            "throttle_pct": 100.0,
+            "yaw_rate": 1.2,
+            "front_center_rh_in": 1.8,
+            "rear_center_rh_in": 2.5,
+            "smooth_center_rake_in": 0.7,
+            "diffuser_volume_ft3": 12.0,
+            "speed_mph": 185.0,
+            "lf_tire_temp_inner_c": 85.0,
+            "rf_tire_temp_inner_c": 90.0,
+            "lr_tire_temp_inner_c": 92.0,
+            "rr_tire_temp_inner_c": 88.0,
+            "lf_shock_vel_in_s": 1.0,
+            "rf_shock_vel_in_s": 1.1,
+            "lr_shock_vel_in_s": 1.0,
+            "rr_shock_vel_in_s": 1.2,
+        },
+    )
+    response = build_dial_in_response("run-1", "tight center", limit=9)
+    titles = " || ".join(swing.title.lower() for swing in response.top_swings)
+    assert "platform support" not in titles
+    assert "pressure trim" not in titles
+    assert "rear toe stability" not in titles
+    assert "high-speed rebound control" not in titles
+
+
 def test_driver_response_uses_data_profile_language(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_env(monkeypatch, tmp_path)
     _seed_run(tmp_path, channels={"throttle_pct": 100.0, "yaw_rate": 1.2})

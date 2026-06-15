@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from racelab_engine.analysis.constants import FORCE_PROXY_WARNING
@@ -23,6 +23,7 @@ EventType = Literal[
 
 Severity = Literal["info", "watch", "high", "critical"]
 Confidence = Literal["low", "medium", "high"]
+DisplayScope = Literal["actionable", "watch", "internal", "debug"]
 
 PLATFORM_EVENT_COLUMNS = [
     "lap",
@@ -94,6 +95,10 @@ class PlatformEvent:
     is_proxy_based: bool = False
     proxy_warning: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    display_scope: DisplayScope = "actionable"
+    is_visible_default: bool = True
+    reason_for_hidden: str | None = None
+    contributes_to_backend_evidence: bool = True
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -102,6 +107,10 @@ class PlatformEvent:
             "title": self.title,
             "severity": self.severity,
             "confidence": self.confidence,
+            "display_scope": self.display_scope,
+            "is_visible_default": self.is_visible_default,
+            "reason_for_hidden": self.reason_for_hidden,
+            "contributes_to_backend_evidence": self.contributes_to_backend_evidence,
             "lap": self.lap,
             "sample_index": self.sample_index,
             "lap_dist_ft": self.lap_dist_ft,
@@ -189,6 +198,281 @@ def _rear_severity(rear_mm: float | None) -> Severity:
         else "watch"
         if rear_mm <= REAR_WATCH_MM
         else "info"
+    )
+
+
+def _sample_row(rows: list[dict[str, Any]], sample_index: int) -> dict[str, Any]:
+    return rows[sample_index] if 0 <= sample_index < len(rows) else {}
+
+
+def _event_distance_ft(row: dict[str, Any], fallback: PlatformEvent | None = None) -> float | None:
+    dist_ft = _sample_value(row, "lap_dist_ft")
+    if dist_ft is not None:
+        return float(dist_ft)
+    if fallback is not None and fallback.lap_dist_ft is not None:
+        return float(fallback.lap_dist_ft)
+    lap_dist_m = _sample_value(row, "lap_dist_m")
+    return float(lap_dist_m) * 3.280839895 if lap_dist_m is not None else None
+
+
+def _confidence_rank(confidence: Confidence) -> int:
+    return {"low": 0, "medium": 1, "high": 2}[confidence]
+
+
+def _window_support(
+    rows: list[dict[str, Any]],
+    sample_index: int,
+    predicate: Any,
+) -> tuple[int, float]:
+    if not rows or sample_index < 0 or sample_index >= len(rows):
+        return (0, 0.0)
+
+    start = sample_index
+    end = sample_index
+    while start > 0 and predicate(rows[start - 1]):
+        start -= 1
+    while end + 1 < len(rows) and predicate(rows[end + 1]):
+        end += 1
+
+    sample_count = end - start + 1
+    start_ft = _event_distance_ft(rows[start])
+    end_ft = _event_distance_ft(rows[end])
+    if start_ft is None or end_ft is None:
+        return (sample_count, 0.0)
+    return (sample_count, abs(end_ft - start_ft))
+
+
+def _is_sustained(
+    rows: list[dict[str, Any]],
+    sample_index: int,
+    predicate: Any,
+    *,
+    min_samples: int = 3,
+    min_span_ft: float = 20.0,
+) -> bool:
+    sample_count, span_ft = _window_support(rows, sample_index, predicate)
+    return sample_count >= min_samples or span_ft >= min_span_ft
+
+
+def _front_contact_context(row: dict[str, Any]) -> bool:
+    cfs_in = _sample_value(row, "cfs_ride_height_in")
+    cfs_risk = _sample_value(row, "cfs_risk_score")
+    return (
+        cfs_in is not None
+        and float(cfs_in) <= 0.236
+    ) or (
+        cfs_risk is not None
+        and float(cfs_risk) >= 0.72
+    )
+
+
+def _rear_contact_context(row: dict[str, Any]) -> bool:
+    rear_mm = _sample_value(row, "rear_min_ride_height_mm")
+    rear_risk = _sample_value(row, "rear_scrape_risk_score")
+    margin = _sample_value(row, "rear_scrape_margin_mm")
+    return (
+        rear_mm is not None
+        and float(rear_mm) <= 6.0
+    ) or (
+        margin is not None
+        and float(margin) <= 6.0
+    ) or (
+        rear_risk is not None
+        and float(rear_risk) >= 0.72
+    )
+
+
+def _whole_car_contact_context(row: dict[str, Any]) -> bool:
+    whole_car_risk = _sample_value(row, "whole_car_bottoming_risk")
+    return (
+        whole_car_risk is not None
+        and float(whole_car_risk) >= 0.72
+        and _front_contact_context(row)
+        and _rear_contact_context(row)
+    )
+
+
+def _speed_loss_context(row: dict[str, Any]) -> bool:
+    rate_1000ft = _sample_value(row, "speed_rate_mph_1000ft")
+    rate_s = _sample_value(row, "speed_rate_mph_s")
+    return (
+        rate_1000ft is not None
+        and float(rate_1000ft) <= -1.5
+    ) or (
+        rate_s is not None
+        and float(rate_s) <= -2.0
+    )
+
+
+def _strong_proxy_context(row: dict[str, Any]) -> bool:
+    compression = _sample_value(row, "platform_compression_index")
+    shock = _sample_value(row, "shock_activity_index")
+    drag = _sample_value(row, "drag_scrub_suspicion")
+    return (
+        compression is not None
+        and float(compression) >= 0.7
+    ) or (
+        shock is not None
+        and float(shock) >= 5.0
+    ) or (
+        drag is not None
+        and float(drag) >= 0.7
+    )
+
+
+def _with_display(
+    event: PlatformEvent,
+    scope: DisplayScope,
+    *,
+    reason_for_hidden: str | None = None,
+) -> PlatformEvent:
+    visible = scope in ("actionable", "watch")
+    return replace(
+        event,
+        display_scope=scope,
+        is_visible_default=visible,
+        reason_for_hidden=None if visible else reason_for_hidden,
+        contributes_to_backend_evidence=True,
+    )
+
+
+def _classify_event_display(event: PlatformEvent, rows: list[dict[str, Any]]) -> PlatformEvent:
+    row = _sample_row(rows, event.sample_index)
+
+    if event.event_type == "MIN_SPLITTER":
+        cfs_in = _sample_value(row, "cfs_ride_height_in")
+        near_contact = cfs_in is not None and float(cfs_in) <= 0.394
+        sustained = _is_sustained(
+            rows,
+            event.sample_index,
+            lambda sample: (value := _sample_value(sample, "cfs_ride_height_in")) is not None and float(value) <= 0.394,
+        )
+        if _front_contact_context(row):
+            return _with_display(event, "actionable")
+        if near_contact and (sustained or _speed_loss_context(row)):
+            return _with_display(event, "watch")
+        return _with_display(
+            event,
+            "internal",
+            reason_for_hidden="Minimum splitter height stayed above the visible contact gate, so it remains backend evidence only.",
+        )
+
+    if event.event_type in ("MIN_REAR_RIDE_HEIGHT", "REAR_PLATFORM_LOW"):
+        rear_mm = _sample_value(row, "rear_min_ride_height_mm")
+        sustained = _is_sustained(
+            rows,
+            event.sample_index,
+            lambda sample: (value := _sample_value(sample, "rear_min_ride_height_mm")) is not None and float(value) <= 10.0,
+        )
+        if _rear_contact_context(row):
+            return _with_display(event, "actionable")
+        if rear_mm is not None and float(rear_mm) <= 10.0 and (sustained or _speed_loss_context(row)):
+            return _with_display(event, "watch")
+        return _with_display(
+            event,
+            "internal",
+            reason_for_hidden="Rear minimum ride height did not reach the visible contact or sustained-risk gate.",
+        )
+
+    if event.event_type == "REAR_PLATFORM_SCRAPE":
+        return _with_display(event, "actionable")
+
+    if event.event_type == "WHOLE_CAR_BOTTOMING_RISK":
+        whole_car_risk = _sample_value(row, "whole_car_bottoming_risk")
+        sustained = _is_sustained(
+            rows,
+            event.sample_index,
+            lambda sample: (value := _sample_value(sample, "whole_car_bottoming_risk")) is not None and float(value) >= 0.38,
+        )
+        if _whole_car_contact_context(row):
+            return _with_display(event, "actionable")
+        if whole_car_risk is not None and float(whole_car_risk) >= 0.38 and (sustained or _speed_loss_context(row)):
+            return _with_display(event, "watch")
+        return _with_display(
+            event,
+            "internal",
+            reason_for_hidden="Whole-car bottoming risk did not cross the visible threshold and was not sustained.",
+        )
+
+    if event.event_type == "HIGHEST_SHOCK_ACTIVITY":
+        score = _sample_value(row, "shock_activity_index")
+        if (
+            score is not None
+            and float(score) >= 5.0
+            and (_front_contact_context(row) or _rear_contact_context(row) or _whole_car_contact_context(row) or _speed_loss_context(row))
+        ):
+            return _with_display(event, "watch")
+        return _with_display(
+            event,
+            "internal",
+            reason_for_hidden="Peak shock activity is retained as proxy evidence unless strong contact or instability context agrees.",
+        )
+
+    if event.event_type == "HIGHEST_PLATFORM_COMPRESSION":
+        score = _sample_value(row, "platform_compression_index")
+        sustained = _is_sustained(
+            rows,
+            event.sample_index,
+            lambda sample: (value := _sample_value(sample, "platform_compression_index")) is not None and float(value) >= 0.4,
+        )
+        if score is not None and float(score) >= 0.7 and (
+            _front_contact_context(row) or _rear_contact_context(row) or _whole_car_contact_context(row)
+        ):
+            return _with_display(event, "watch")
+        if score is not None and float(score) >= 0.4 and sustained and _speed_loss_context(row):
+            return _with_display(event, "watch")
+        return _with_display(
+            event,
+            "internal",
+            reason_for_hidden="Platform compression stayed in proxy-evidence territory without confirmed contact or sustained driver impact.",
+        )
+
+    if event.event_type == "HIGHEST_RAKE":
+        rake = _sample_value(row, "center_rake_fs_in")
+        sustained = _is_sustained(
+            rows,
+            event.sample_index,
+            lambda sample: (value := _sample_value(sample, "cfs_ride_height_in")) is not None and float(value) <= 0.394,
+        )
+        if rake is not None and (sustained or _speed_loss_context(row)) and (
+            _front_contact_context(row) or _whole_car_contact_context(row)
+        ):
+            return _with_display(event, "watch")
+        return _with_display(
+            event,
+            "internal",
+            reason_for_hidden="Peak center rake is useful context for backend evidence but is not a driver-facing event by default.",
+        )
+
+    if event.event_type == "WORST_DRAG_SCRUB":
+        drag = _sample_value(row, "drag_scrub_suspicion")
+        if drag is not None and float(drag) >= 0.7 and (_speed_loss_context(row) or _front_contact_context(row)):
+            return _with_display(event, "watch")
+        return _with_display(
+            event,
+            "internal",
+            reason_for_hidden="Drag/scrub suspicion remained proxy evidence without enough visible impact to show by default.",
+        )
+
+    if event.event_type == "WORST_SPEED_LOSS":
+        if event.severity in ("critical", "high"):
+            return _with_display(event, "actionable")
+        return _with_display(event, "watch")
+
+    if event.event_type == "MAX_DYNAMIC_PRESSURE":
+        return _with_display(
+            event,
+            "internal",
+            reason_for_hidden="Dynamic pressure peak is context for analysis and is not shown as a default driver event.",
+        )
+
+    if _confidence_rank(event.confidence) >= 1 and (_front_contact_context(row) or _rear_contact_context(row) or _strong_proxy_context(row)):
+        return _with_display(event, "watch")
+
+    return _with_display(
+        event,
+        "internal",
+        reason_for_hidden="This event is retained as backend evidence but is hidden from the default driver view.",
     )
 
 
@@ -761,4 +1045,4 @@ def detect_platform_events(
         if event is not None:
             events.append(event)
 
-    return events
+    return [_classify_event_display(event, working) for event in events]

@@ -201,6 +201,7 @@ export interface StintGraphPoint {
   max_speed_mph: number | null;
   min_speed_mph: number | null;
   fuel: number | null;
+  invalid_reason: string | null;
   warning: string | null;
 }
 

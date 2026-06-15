@@ -139,7 +139,10 @@ async def import_mt2_endpoint(request: Request) -> dict:
             raise HTTPException(400, str(e)) from e
         except Exception as e:
             raise HTTPException(422, f"Failed to parse track map file: {e}") from e
-        return _public_track_map_summary(entry)
+        summary = _public_track_map_summary(entry)
+        if summary is None:
+            raise HTTPException(422, "Imported track map payload was empty.")
+        return summary
 
     if "application/json" in content_type:
         # JSON path import (Tauri native picker)
@@ -169,7 +172,10 @@ async def import_mt2_endpoint(request: Request) -> dict:
             raise HTTPException(400, str(e)) from e
         except Exception as e:
             raise HTTPException(422, f"Failed to parse track map file: {e}") from e
-        return _public_track_map_summary(entry)
+        summary = _public_track_map_summary(entry)
+        if summary is None:
+            raise HTTPException(422, "Imported track map payload was empty.")
+        return summary
 
     raise HTTPException(400, "Unsupported Content-Type. Use multipart/form-data or application/json.")
 
@@ -194,14 +200,15 @@ async def import_mt2_folder_endpoint(req: ImportMt2FolderRequest) -> dict:
         raise HTTPException(400, str(e)) from e
     except Exception as e:
         raise HTTPException(422, str(e)) from e
-    return {"imported": len(entries), "entries": [_public_track_map_summary(entry) for entry in entries]}
+    public_entries = [summary for entry in entries if (summary := _public_track_map_summary(entry)) is not None]
+    return {"imported": len(entries), "entries": public_entries}
 
 
 # ── query ─────────────────────────────────────────────────────
 
 @router.get("/track-maps")
 def list_track_maps_endpoint() -> list[dict]:
-    return [_public_track_map_summary(entry) for entry in list_track_maps()]
+    return [summary for entry in list_track_maps() if (summary := _public_track_map_summary(entry)) is not None]
 
 
 @router.get("/track-maps/{map_id}")
@@ -209,7 +216,10 @@ def get_track_map_endpoint(map_id: str) -> dict:
     tm = get_track_map(map_id)
     if tm is None:
         raise HTTPException(404, f"Track map not found: {map_id}")
-    return _public_track_map_payload(tm.as_dict())
+    payload = _public_track_map_payload(tm.as_dict())
+    if payload is None:
+        raise HTTPException(500, f"Track map payload unavailable: {map_id}")
+    return payload
 
 
 @router.get("/runs/{run_id}/track-map-match")

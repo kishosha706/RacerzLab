@@ -164,6 +164,12 @@ GET  /api/notebook/setup-memory
 POST /api/sessions (create RaceLab session)
 GET  /api/sessions (list sessions)
 GET  /api/sessions/{id} (get session)
+
+Platform event visibility:
+- `/api/runs/{id}/platform-events` keeps backend evidence events in the payload.
+- Each platform event now carries `display_scope`, `is_visible_default`, `reason_for_hidden`, and `contributes_to_backend_evidence`.
+- The default driver UI shows actionable/watch events only.
+- Proxy/internal evidence can still be shown on demand and remains available to backend consumers such as Dial-In and evidence adapters.
 PATCH /api/sessions/{id} (update session)
 DELETE /api/sessions/{id} (delete session, keeps telemetry)
 POST /api/sessions/{id}/archive (archive session)

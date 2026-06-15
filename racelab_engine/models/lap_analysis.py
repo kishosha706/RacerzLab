@@ -228,6 +228,7 @@ class StintGraphPoint(BaseModel):
     max_speed_mph: Optional[float] = None
     min_speed_mph: Optional[float] = None
     fuel: Optional[float] = None
+    invalid_reason: Optional[str] = None
     warning: Optional[str] = None
 
 

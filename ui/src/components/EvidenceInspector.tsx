@@ -1,8 +1,9 @@
 import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCheck, Crosshair, Database, Info, Layers, MapPin, List, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
-import type { ChannelCatalogItem, PlatformEventItem, RunOverview } from "../types/telemetry";
+import type { ChannelCatalogItem, PlatformEventItem, PlatformEventVisibilityMode, RunOverview } from "../types/telemetry";
 import { buildWindowEvidence, buildZoneEvidence, hasWindowSelection } from "../utils/evidenceFocus";
+import { filterPlatformEvents, platformEventScopeLabel } from "../utils/platformEventVisibility";
 import { ProxyBadge } from "./ProxyBadge";
 
 type EvidenceInspectorProps = {
@@ -11,6 +12,7 @@ type EvidenceInspectorProps = {
   channels: ChannelCatalogItem[];
   collapsed?: boolean;
   onToggle?: () => void;
+  eventVisibilityMode: PlatformEventVisibilityMode;
 };
 
 function humanizeSelectionSource(source: ReturnType<typeof useTelemetrySelection>["selection"]["selectionSource"]): string {
@@ -34,14 +36,18 @@ function humanizeValueBasis(valueBasis: ReturnType<typeof useTelemetrySelection>
   }
 }
 
-export function EvidenceInspector({ overview, platformEvents, channels, collapsed, onToggle }: EvidenceInspectorProps) {
+export function EvidenceInspector({ overview, platformEvents, channels, collapsed, onToggle, eventVisibilityMode }: EvidenceInspectorProps) {
   const { selection } = useTelemetrySelection();
   const [justAnchored, setJustAnchored] = useState(false);
   const prevEventRef = useRef<string | null | undefined>(null);
+  const visiblePlatformEvents = useMemo(
+    () => filterPlatformEvents(platformEvents, eventVisibilityMode),
+    [platformEvents, eventVisibilityMode],
+  );
 
   const selectedEvent = useMemo(
-    () => platformEvents.find((e) => e.event_id === selection.selectedEventId) ?? null,
-    [platformEvents, selection.selectedEventId],
+    () => visiblePlatformEvents.find((e) => e.event_id === selection.selectedEventId) ?? null,
+    [visiblePlatformEvents, selection.selectedEventId],
   );
 
   const selectedChannel = useMemo(
@@ -281,6 +287,7 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
             <AlertTriangle size={12} /> {event.severity.toUpperCase()}
           </span>
           <span>Confidence: {event.confidence}</span>
+          <span className="event-scope-pill">{platformEventScopeLabel(event)}</span>
           {event.is_proxy_based && <ProxyBadge kind="proxy" />}
         </div>
         <p className="inspector-source-item">{event.title}</p>
@@ -290,6 +297,9 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
         <h4>Trust / Basis</h4>
         <p className="inspector-source-item">Value basis: {humanizeValueBasis(eventHasLocation ? "selected_sample" : "run_level")}</p>
         <p className="inspector-source-item">Confidence: {event.confidence ?? "Unavailable"}</p>
+        {!event.is_visible_default && event.reason_for_hidden && (
+          <p className="inspector-source-item muted">Hidden by default: {event.reason_for_hidden}</p>
+        )}
         {event.is_proxy_based && <p className="inspector-source-item muted">Proxy/estimate evidence is active for this event.</p>}
       </div>
 

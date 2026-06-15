@@ -33,6 +33,7 @@ import { importDebug } from "./utils/importDebug";
 import type {
   ChannelCatalogItem,
   PlatformEventItem,
+  PlatformEventVisibilityMode,
   RunListItem,
   RunOverview,
   TrackMapResolution,
@@ -87,6 +88,7 @@ function CockpitShell() {
   const [priorityRailOpen, setPriorityRailOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [platformEventVisibilityMode, setPlatformEventVisibilityMode] = useState<PlatformEventVisibilityMode>("actionable");
   const loadSelectedRunSeqRef = useRef(0);
 
   const { selection, loadRun, selectLap, setWorkspace } = useTelemetrySelection();
@@ -365,7 +367,16 @@ function CockpitShell() {
         : ws === "speed_delta"
           ? "grade_pull"
           : "balance";
-      return <PlatformTab overview={overview} trace={trace} platformEvents={platformEvents} initialWorkbenchView={initialWorkbenchView} />;
+      return (
+        <PlatformTab
+          overview={overview}
+          trace={trace}
+          platformEvents={platformEvents}
+          initialWorkbenchView={initialWorkbenchView}
+          platformEventVisibilityMode={platformEventVisibilityMode}
+          onPlatformEventVisibilityModeChange={setPlatformEventVisibilityMode}
+        />
+      );
     }
     if (ws === "setup_impact") return <SetupTab overview={overview} />;
     if (ws === "dial_in") return <DialInTab overview={overview} />;
@@ -467,7 +478,14 @@ function CockpitShell() {
           ))}
         </nav>
 
-        <PriorityRail runId={overview.run_id} selectedLap={selection.selectedLap} collapsed={!priorityRailOpen} onToggle={() => setPriorityRailOpen(!priorityRailOpen)} platformEvents={platformEvents} />
+        <PriorityRail
+          runId={overview.run_id}
+          selectedLap={selection.selectedLap}
+          collapsed={!priorityRailOpen}
+          onToggle={() => setPriorityRailOpen(!priorityRailOpen)}
+          platformEvents={platformEvents}
+          eventVisibilityMode={platformEventVisibilityMode}
+        />
 
         <main className="cockpit-workspace">
           <div className="workspace-toolbar">
@@ -501,10 +519,17 @@ function CockpitShell() {
           </div>
         </main>
 
-        <EvidenceInspector overview={overview} platformEvents={platformEvents} channels={channels} collapsed={!inspectorOpen} onToggle={() => setInspectorOpen(!inspectorOpen)} />
+        <EvidenceInspector
+          overview={overview}
+          platformEvents={platformEvents}
+          channels={channels}
+          collapsed={!inspectorOpen}
+          onToggle={() => setInspectorOpen(!inspectorOpen)}
+          eventVisibilityMode={platformEventVisibilityMode}
+        />
       </div>
 
-      <EventTimeline platformEvents={platformEvents} />
+      <EventTimeline platformEvents={platformEvents} eventVisibilityMode={platformEventVisibilityMode} />
       <CompareBasket />
       {shortcutsOpen && (
         <div className="shortcut-modal-backdrop" role="presentation" onClick={() => setShortcutsOpen(false)}>

@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { SEVERITY_COLOURS, EVENT_SHAPES } from "../constants/ui";
-import type { PlatformEventItem } from "../types/telemetry";
+import type { PlatformEventItem, PlatformEventVisibilityMode } from "../types/telemetry";
 import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
+import { filterPlatformEvents, isMutedPlatformEvent, platformEventScopeLabel } from "../utils/platformEventVisibility";
 
 type EventTimelineProps = {
   platformEvents: PlatformEventItem[];
+  eventVisibilityMode: PlatformEventVisibilityMode;
 };
 
 const CLUSTER_THRESHOLD_PCT = 0.25;
@@ -38,7 +40,7 @@ function staggerMarkers(events: PlatformEventItem[]): StaggeredEvent[] {
   return result;
 }
 
-export function EventTimeline({ platformEvents }: EventTimelineProps) {
+export function EventTimeline({ platformEvents, eventVisibilityMode }: EventTimelineProps) {
   const { selection, focusEvidence, setHover, setPlaybackActive } = useTelemetrySelection();
   const [browseIndex, setBrowseIndex] = useState<number | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -46,11 +48,15 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
   const [speed, setSpeed] = useState<number>(1);
   const playbackRef = useRef<number | null>(null);
   const indexRef = useRef(0);
-  const staggered = useMemo(() => staggerMarkers(platformEvents), [platformEvents]);
+  const visibleEvents = useMemo(
+    () => filterPlatformEvents(platformEvents, eventVisibilityMode),
+    [platformEvents, eventVisibilityMode],
+  );
+  const staggered = useMemo(() => staggerMarkers(visibleEvents), [visibleEvents]);
 
   const sorted = useMemo(
-    () => [...platformEvents].filter((e) => e.lap_pct != null).sort((a, b) => (a.lap_pct ?? 0) - (b.lap_pct ?? 0)),
-    [platformEvents],
+    () => [...visibleEvents].filter((e) => e.lap_pct != null).sort((a, b) => (a.lap_pct ?? 0) - (b.lap_pct ?? 0)),
+    [visibleEvents],
   );
 
   useEffect(() => {
@@ -223,7 +229,7 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
     }
   }, [sorted, selection.selectedEventId, browseIndex, hoveredIndex]);
 
-  if (platformEvents.length === 0) return null;
+  if (visibleEvents.length === 0) return null;
 
   const selectedIndex = selection.selectedEventId == null
     ? -1
@@ -283,14 +289,15 @@ export function EventTimeline({ platformEvents }: EventTimelineProps) {
           const isBrowsed = previewIndex != null && sorted[previewIndex]?.event_id === event.event_id;
           const colour = SEVERITY_COLOURS[event.severity] ?? "#8d9aaa";
           const shape = EVENT_SHAPES[event.event_type] ?? "*";
+          const muted = isMutedPlatformEvent(event, eventVisibilityMode);
 
           return (
             <button
               key={event.event_id}
-              className={`timeline-marker${isActive ? " active" : ""}${isBrowsed ? " browsed" : ""}`}
+              className={`timeline-marker${isActive ? " active" : ""}${isBrowsed ? " browsed" : ""}${muted ? " muted" : ""}`}
               style={{ left: `${left}%`, top: `${event.staggerOffset}px`, color: colour }}
-              title={`${event.title} - ${event.severity}`}
-              aria-label={`${event.title}, ${event.severity}, ${left.toFixed(1)} percent lap`}
+              title={`${event.title} - ${platformEventScopeLabel(event)} - ${event.severity}`}
+              aria-label={`${event.title}, ${platformEventScopeLabel(event)}, ${event.severity}, ${left.toFixed(1)} percent lap`}
               onClick={() => {
                 const idx = sorted.findIndex((e) => e.event_id === event.event_id);
                 if (idx >= 0) commitEvent(idx);

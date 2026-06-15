@@ -29,6 +29,9 @@ def test_dial_in_tab_uses_backend_target_labels() -> None:
     telemetry_types = (PROJECT_ROOT / "ui/src/types/telemetry.ts").read_text(encoding="utf-8")
 
     assert "const TARGET_LABELS" not in dial_in_tab
+    assert "garageLeverLabel" in dial_in_tab
+    assert "Garage lever:" in dial_in_tab
+    assert "dialin-garage-helper" in dial_in_tab
     assert "validate_with_labels" in dial_in_tab
     assert "watch_for_labels" in dial_in_tab
     assert "validate_with_labels" in telemetry_types

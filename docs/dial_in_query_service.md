@@ -113,6 +113,7 @@ The Setup tab renders the clean response by default:
 - your next test
 - what to watch for
 - compact data profile
+- subtle garage-lever helper text when the title needs extra garage context
 
 Clarification options are shown when the complaint is too broad. Selecting an
 option only refines the complaint text; RacerZLab never edits setup files.
@@ -124,6 +125,24 @@ know a universal exact value. Write `cross weight` fully instead of shortening
 it to `cross`. Pressure split guidance should name the tire pair or relationship
 where the matrix supports it, such as the LR/RR rear tire pressure split for a
 loose-exit stability swing.
+
+Recommendation titles should name the garage action first. Goal and trade-off
+copy can explain the engineering reason after the lever is clear.
+
+Examples:
+
+- `Big swing: Lower front ride height with LF/RF shock collar offsets`
+- `Big swing: Raise rear ride height with LR/RR shock collar offsets`
+- `Balance swing: Adjust RF tire pressure`
+- `Fine-tune: Add high-speed rebound`
+- `Balance swing: Reduce rear toe-in / rear toe bind`
+
+Avoid vague titles such as `Reduce front platform support`, `Protect RF with
+pressure trim`, or `Add rear toe stability`.
+
+When a ride-height recommendation depends on collars, the UI can add a compact
+helper note that shock collar changes ride height, preload, and corner weight
+together.
 
 Internal target IDs such as `exit_yaw`, `rear_tire_trend`, and
 `long_run_falloff` stay stable in JSON, but normal text/UI output formats them

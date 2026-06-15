@@ -133,6 +133,7 @@ def _graph_points(laps: list[LapSummary]) -> list[StintGraphPoint]:
             max_speed_mph=lap.max_speed_mph,
             min_speed_mph=lap.min_speed_mph,
             fuel=fuel,
+            invalid_reason=None if valid else warning,
             warning=None if valid else warning,
         ))
     return points
@@ -163,7 +164,7 @@ def _max_optional(laps: list[LapSummary], *names: str) -> float | None:
         for lap in laps
         if (value := _optional_number(lap, *names)) is not None
     ]
-    return max(values) if values else None
+    return max(values, default=None)
 
 
 def _rising_trend(values: list[float], stable_label: str, rising_label: str, limited_label: str, threshold: float) -> str:
@@ -333,11 +334,22 @@ def _build_stint_summary(
         pq.pace_quality_score,
         pq.setup_usefulness_score,
     )
-    meta = _metadata(session)
     return StintSummary(
         stint_id=stint_id,
         run_id=run_id,
-        **meta,
+        setup_name=session.setup_name if session else None,
+        car_name=session.car_name if session else None,
+        track_name=(session.track_display_name or session.track_name) if session else None,
+        session_date=(
+            session.sim_date_time
+            or (
+                session.import_time.isoformat()
+                if hasattr(session.import_time, "isoformat")
+                else str(session.import_time)
+            )
+            if session
+            else None
+        ),
         start_lap=ordered[0].lap_number,
         end_lap=ordered[-1].lap_number,
         lap_count=lap_count,
@@ -493,12 +505,14 @@ def build_stint_response(laps: list[LapSummary], session: SessionSummary | None 
     valid_ratio = len(valid) / len(ordered) if ordered else 0.0
     warnings: list[str] = []
     if len(valid) < 3:
-        warnings.append(f"No eligible stint windows yet. Only {len(valid)} valid lap{'s' if len(valid) != 1 else ''}; need at least 3 valid laps for short windows.")
-        warnings.append("Need at least 3 valid laps to start short-run averages.")
-        warnings.append("Need 10+ valid laps for a useful long-run read.")
-        warnings.append("Need 50/60 valid laps for 50/60-lap averages.")
-        warnings.append("Out laps, pit laps, cooldowns, wrecks, and invalid laps are excluded.")
-        warnings.append("Import or select a longer clean run to unlock Stint Intelligence.")
+        warnings.extend([
+            f"No eligible stint windows yet. Only {len(valid)} valid lap{'s' if len(valid) != 1 else ''}; need at least 3 valid laps for short windows.",
+            "Need at least 3 valid laps to start short-run averages.",
+            "Need 10+ valid laps for a useful long-run read.",
+            "Need 50/60 valid laps for 50/60-lap averages.",
+            "Out laps, pit laps, cooldowns, wrecks, and invalid laps are excluded.",
+            "Import or select a longer clean run to unlock Stint Intelligence.",
+        ])
     if valid_ratio < 0.6:
         warnings.append("Fewer than 60% of run laps are valid for stint analysis.")
 
@@ -584,17 +598,13 @@ def build_stint_response(laps: list[LapSummary], session: SessionSummary | None 
 
 
 def _delta(test: float | None, baseline: float | None) -> float | None:
-    if test is None or baseline is None:
-        return None
-    return test - baseline
+    return None if test is None or baseline is None else test - baseline
 
 
 def _trend_delta(test: str, baseline: str) -> str:
     if "limited" in test or "limited" in baseline:
         return "limited"
-    if test == baseline:
-        return f"similar: {test}"
-    return f"{baseline} -> {test}"
+    return f"similar: {test}" if test == baseline else f"{baseline} -> {test}"
 
 
 def compare_stints(baseline: StintSummary, test: StintSummary) -> StintCompareResult:

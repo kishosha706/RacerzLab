@@ -7,6 +7,7 @@ from racelab_engine.analysis.constants import FORCE_PROXY_WARNING
 from racelab_engine.analysis.track_matching import infer_layout_key, normalize_track_key
 from racelab_engine.knowledge.setup.evidence_schema import (
     CandidateEvidenceReadiness,
+    EvidenceStatus,
     RunEvidenceContext,
     RunEvidenceGroup,
 )
@@ -228,7 +229,7 @@ def _recursive_has_keyword(value: Any, keywords: tuple[str, ...]) -> bool:
     return False
 
 
-def _setup_snapshot_status(snapshot: SetupSnapshot | None) -> tuple[str, list[str], list[str]]:
+def _setup_snapshot_status(snapshot: SetupSnapshot | None) -> tuple[EvidenceStatus, list[str], list[str]]:
     if snapshot is None:
         return "missing", [], ["setup snapshot metadata"]
     present_items: list[str] = ["setup snapshot metadata"]
@@ -249,7 +250,7 @@ def _build_group(
     *,
     group_id: str,
     label: str,
-    status: str,
+    status: EvidenceStatus,
     source: str,
     present_items: list[str],
     missing_items: list[str],
@@ -392,7 +393,7 @@ def build_run_evidence_context(
     )
     if useful_laps:
         flags.update({"lap_windows", "selected_lap_window", "phase"})
-        if sum(1 for lap in useful_laps if lap.lap_time is not None) >= 2:
+        if sum(lap.lap_time is not None for lap in useful_laps) >= 2:
             flags.add("lap_falloff")
 
     platform_present = _sorted_present(available_channels, PLATFORM_TRACE_CHANNELS)

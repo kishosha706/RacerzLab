@@ -52,9 +52,11 @@ def validate_setup_knowledge(knowledge) -> list[str]:
             problems.append(f"Symptom phrase {entry.phrase} maps to unknown canonical symptom {entry.canonical_symptom}")
 
     for area in knowledge.setup_areas:
-        for phase in area.phases:
-            if phase not in phases:
-                problems.append(f"Setup area {area.setup_area} references unknown phase {phase}")
+        problems.extend(
+            f"Setup area {area.setup_area} references unknown phase {phase}"
+            for phase in area.phases
+            if phase not in phases
+        )
         if area.setup_area in NEXT_GEN_DISABLED:
             note = area.car_specific_notes.get("next_gen", "").lower()
             if "unavailable" not in note and "disabled" not in note:
@@ -147,12 +149,14 @@ def _validate_effect(
     unknown_packages = set(effect.setup_package_tags) - package_ids
     if unknown_packages:
         problems.append(f"Effect {effect.effect_id} references unknown package tags: {sorted(unknown_packages)}")
-    for symptom in [*effect.helps, *effect.can_hurt]:
-        if symptom not in canonical_symptoms:
-            problems.append(f"Effect {effect.effect_id} references unknown symptom {symptom}")
+    problems.extend(
+        f"Effect {effect.effect_id} references unknown symptom {symptom}"
+        for symptom in [*effect.helps, *effect.can_hurt]
+        if symptom not in canonical_symptoms
+    )
     if "next_gen" in effect.applies_to and effect.setup_area in NEXT_GEN_DISABLED:
         problems.append(f"Effect {effect.effect_id} exposes disabled Next Gen area {effect.setup_area}")
-    if effect.disabled_for and not (effect.cautions or effect.avoid_when):
+    if effect.disabled_for and not effect.cautions and not effect.avoid_when:
         problems.append(f"Disabled effect {effect.effect_id} needs an explanation or alternative caution")
     text = " ".join(
         [

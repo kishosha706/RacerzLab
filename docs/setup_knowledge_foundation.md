@@ -83,6 +83,16 @@ Readiness labels are `ready`, `partially_ready`, and
 `missing_key_evidence`. Missing evidence lowers confidence but does not hide a
 useful candidate.
 
+Recommendation title discipline matters:
+
+- title = exact garage action
+- effect = what that action should help
+- counter-effect = what it may hurt
+- one-change test = one small garage-side validation step
+
+Avoid vague title wording such as `platform support`, `pressure trim`,
+`rear toe stability`, or `shock control` when the real lever is known.
+
 ## Capability Gates
 
 Next Gen disables:
@@ -166,6 +176,11 @@ relationships compactly. Cross weight is the LR + RF diagonal load
 relationship. Tire pressure split guidance should name the axle, diagonal, or
 tire pair where the matrix supports it, and UI/CLI display should format stable
 internal IDs as readable labels for drivers.
+
+Front and rear ride-height platform recommendations should name ride height or
+shock collar offsets directly. When the move is through LF/RF or LR/RR collars,
+the helper text should remind the driver that collar changes move ride height,
+spring preload, and corner weight together.
 
 For NASCAR-facing setup copy, use `rear end ratio` instead of `final drive`.
 Diffuser/platform wording must stay on derived geometry proxy, front-feed,

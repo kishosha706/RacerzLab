@@ -54,6 +54,7 @@ class ParquetQueryEngine:
     def _connect(self) -> Any:
         """Lazy-init DuckDB connection."""
         if self._connection is None and HAS_DUCKDB:
+            assert duckdb is not None
             self._connection = duckdb.connect()
         return self._connection
 

@@ -47,3 +47,25 @@ def test_shock_reader_uses_inline_setup_recommendations() -> None:
     assert "shock-setup-recommendation-badge" in histogram_source
     assert 'setupSide === "right"' in histogram_source
     assert "recommendationFor(\"LS Comp\")" in platform_source
+
+
+def test_platform_tab_defaults_event_filter_to_actionable_only() -> None:
+    app_source = Path("ui/src/App.tsx").read_text(encoding="utf-8")
+    platform_source = Path("ui/src/tabs/PlatformTab.tsx").read_text(encoding="utf-8")
+
+    assert 'useState<PlatformEventVisibilityMode>("actionable")' in app_source
+    assert '<option value="actionable">Actionable</option>' in platform_source
+    assert '<option value="proxy">Proxy / Internal</option>' in platform_source
+    assert '<option value="all">All</option>' in platform_source
+
+
+def test_platform_ui_hides_internal_events_by_default_but_keeps_note() -> None:
+    rail_source = Path("ui/src/components/PriorityRail.tsx").read_text(encoding="utf-8")
+    platform_source = Path("ui/src/tabs/PlatformTab.tsx").read_text(encoding="utf-8")
+    timeline_source = Path("ui/src/components/EventTimeline.tsx").read_text(encoding="utf-8")
+
+    assert "No actionable platform events for this lap." in rail_source
+    assert "Internal evidence is still available for analysis." in rail_source
+    assert "No actionable platform events in this window." in platform_source
+    assert "filterPlatformEvents" in rail_source
+    assert "filterPlatformEvents" in timeline_source

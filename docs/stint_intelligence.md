@@ -22,6 +22,8 @@ The default page is a single **My Stints** timing sheet. Best rolling averages s
 
 Best-window cards are retained only as an advanced **Best Windows** section, collapsed by default.
 
+The default Laps view is intentionally simplified. Drivers should see the timing sheet first, then the main lap-time graph, then the selected-stint actions. Advanced filters, run-visibility controls, and extra graph toggles stay hidden under **Advanced Controls** until explicitly opened.
+
 The timing sheet columns are:
 
 - Stint
@@ -121,14 +123,44 @@ These buckets are no longer part of the default timing sheet.
 
 ## Chart And Selection
 
-The timing sheet and advanced best-window section drive the chart. Selecting a row or card updates:
+The timing sheet and advanced best-window section drive the chart. The normal workflow is:
+
+- timing sheet
+- graph
+- selected-stint actions
+
+Selecting a row or card updates:
 
 - selected row/card highlight
 - graph source
 - summary drawer target
 - selected-stint toolbar actions
 
-Graph Selected supports multiple selected stints as separate lines. Baseline/test selections can graph together inside Laps without restoring the standalone Compare workspace. Race-pace scaling keeps invalid/outlier handling from the current graph implementation.
+The graph header stays compact by default with mode buttons for **Lap Time**, **Delta to Best**, and **Rolling 5**. Advanced graph toggles such as rolling overlays, invalid-lap filtering, and outlier-scale options stay inside **Advanced Controls**. Race-pace scaling remains the default, and invalid/outlier laps remain excluded from the default scale unless the user opts in.
+
+The main graph is meant to read like an engineering chart instead of a decorative sparkline. It now includes:
+
+- best-lap marker with a visible **Best** label
+- selected-lap marker and selected-lap detail strip
+- selected stint/window shading
+- baseline/test stint or window shading
+- invalid or out-of-scale lap markers with exclusion context
+- lap-count bucket guides at 5/10/15/20/25/30/40/50/60 when relevant
+- fuller x-axis and y-axis tick labels instead of only first/last endpoints
+
+Hovering a point shows:
+
+- lap number
+- stint lap
+- lap time
+- delta to best
+- rolling 5
+- valid/invalid status
+- invalid reason when present
+- run/stint label
+- selected/baseline/test flags when applicable
+
+Graphing supports multiple selected stints as separate lines. Baseline/test selections can graph together inside Laps without restoring the standalone Compare workspace.
 
 ## Field Compare
 
