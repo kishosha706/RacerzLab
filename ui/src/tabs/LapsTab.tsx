@@ -2058,6 +2058,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
                   <button className="secondary-button" onClick={exportSelectedStintsCsv} title="Export the selected stint or graphed stints as CSV">
                     CSV
                   </button>
+                  <span className="section-note">Some optional fields were unavailable and exported blank.</span>
                 </div>
               </div>
             ) : (

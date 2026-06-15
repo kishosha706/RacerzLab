@@ -242,6 +242,7 @@ export type ImportIbtResponse = {
   } | null;
   track_map?: TrackMapResolution | null;
   analysis_status?: string | null;
+  existing_run_updated?: boolean;
 };
 
 export type ChannelCatalogItem = {

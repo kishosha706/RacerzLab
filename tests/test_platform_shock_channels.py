@@ -66,6 +66,8 @@ def test_platform_ui_hides_internal_events_by_default_but_keeps_note() -> None:
 
     assert "No actionable platform events for this lap." in rail_source
     assert "Internal evidence is still available for analysis." in rail_source
-    assert "No actionable platform events in this window." in platform_source
+    assert "No actionable platform events shown." in platform_source
+    assert "Internal evidence is still preserved for analysis." in platform_source
+    assert "Switch to Proxy/Internal to inspect hidden evidence." in platform_source
     assert "filterPlatformEvents" in rail_source
     assert "filterPlatformEvents" in timeline_source

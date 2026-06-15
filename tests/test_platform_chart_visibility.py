@@ -90,6 +90,39 @@ def test_hidden_events_do_not_create_raw_event_label_spam() -> None:
     assert "label: { show: eventAnnotations.showLineLabels" in platform
 
 
+def test_chart_annotation_data_comes_only_from_visible_events() -> None:
+    chart = _read("ui/src/utils/platformChartAnnotations.ts")
+
+    assert "const visiblePlatformEvents = filterPlatformEvents(platformEvents, mode);" in chart
+    assert "visiblePlatformEvents\n    .filter((event) => event.lap_dist_ft != null)" in chart
+    assert "platformEvents.length > 0\n    ? []" in chart
+    assert "showLineLabels: false" in chart
+
+
+def test_compare_basket_stale_items_are_marked_not_silently_removed() -> None:
+    basket = _read("ui/src/store/CompareBasketContext.tsx")
+    component = _read("ui/src/components/CompareBasket.tsx")
+    app = _read("ui/src/App.tsx")
+
+    assert "validateBasketStateAgainstRuns" in basket
+    assert "stale_reason" in basket
+    assert 'return { status: "not_valid", reason: "Missing one or more runs." };' in basket
+    assert "Run unavailable" in component
+    assert "This basket item points to a run that is not loaded in the current session." in component
+    assert "disabled={hasStaleItems}" in component
+    assert "validateAvailableRuns(runIds" in app
+
+
+def test_selection_state_validates_run_ids_after_session_change() -> None:
+    selection = _read("ui/src/store/TelemetrySelectionContext.tsx")
+    app = _read("ui/src/App.tsx")
+
+    assert '"VALIDATE_RUN_IDS"' in selection
+    assert "validateSelectionRunIds" in selection
+    assert "selectedEventId" in selection
+    assert "validateSelectionRunIds(runIds)" in app
+
+
 def test_platform_event_summary_strip_renders_visible_and_hidden_counts() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
 

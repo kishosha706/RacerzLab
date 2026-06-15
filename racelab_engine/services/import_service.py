@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
@@ -100,6 +101,31 @@ class TelemetryCacheResult:
 
 
 @dataclass
+class _StagedImportCache:
+    temp_run_id: str
+    cache_result: TelemetryCacheResult
+    metadata_path: Path
+    final_cache_path: Path
+    final_metadata_path: Path
+    data_root: Path
+    run_id: str
+
+    def cleanup(self) -> None:
+        _safe_unlink(self.cache_result.path)
+        _safe_unlink(self.metadata_path)
+
+    def promote(self) -> TelemetryCacheResult:
+        _atomic_replace(self.cache_result.path, self.final_cache_path)
+        _atomic_replace(self.metadata_path, self.final_metadata_path)
+        _invalidate_run_cache(self.data_root, self.run_id)
+        return TelemetryCacheResult(
+            path=self.final_cache_path,
+            format=self.cache_result.format,
+            used_fallback=self.cache_result.used_fallback,
+        )
+
+
+@dataclass
 class _TelemetryRowsCacheEntry:
     signature: tuple[str, int, int]
     rows: list[dict[str, Any]]
@@ -149,6 +175,26 @@ def csv_path(data_dir: Path, run_id: str) -> Path:
 
 def channel_metadata_path(data_dir: Path, run_id: str) -> Path:
     return data_dir / "cache" / "normalized" / f"{run_id}.channels.json"
+
+
+def _temp_cache_path(final_path: Path, run_id: str) -> Path:
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    return final_path.with_name(f".{run_id}.{uuid.uuid4().hex}.tmp{final_path.suffix}")
+
+
+def _safe_unlink(path: Path | None) -> None:
+    if path is None:
+        return
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError:
+        logging.getLogger(__name__).warning("Could not remove temp cache artifact: %s", path)
+
+
+def _atomic_replace(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(source, destination)
 
 
 def _is_scalar(value: Any) -> bool:
@@ -298,15 +344,23 @@ def write_channel_metadata(
     run_id: str,
     definitions: list[IBTVariableDefinition],
     data_dir: str | Path | None = None,
+    staged: bool = False,
 ) -> Path:
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
-    path = channel_metadata_path(data_root, run_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps([definition.model_dump() for definition in definitions], indent=2),
-        encoding="utf-8",
-    )
-    return path
+    final_path = channel_metadata_path(data_root, run_id)
+    path = _temp_cache_path(final_path, run_id)
+    try:
+        path.write_text(
+            json.dumps([definition.model_dump() for definition in definitions], indent=2),
+            encoding="utf-8",
+        )
+        if staged:
+            return path
+        _atomic_replace(path, final_path)
+        return final_path
+    except Exception:
+        _safe_unlink(path)
+        raise
 
 
 def read_channel_metadata(run_id: str, data_dir: str | Path | None = None) -> list[dict[str, Any]]:
@@ -388,6 +442,42 @@ def write_telemetry_cache(
     cache_result = _write_csv(rows, csv_path(data_root, run_id))
     _invalidate_run_cache(data_root, run_id)
     return cache_result
+
+
+def _stage_import_cache(
+    run_id: str,
+    rows: list[dict[str, Any]],
+    definitions: list[IBTVariableDefinition],
+    *,
+    normalized_frame: Any | None,
+    data_dir: str | Path,
+    profile_out: dict[str, float] | None = None,
+) -> _StagedImportCache:
+    data_root = Path(data_dir)
+    temp_run_id = f".{run_id}.{uuid.uuid4().hex}.tmp"
+    cache_result = write_telemetry_cache(
+        temp_run_id,
+        rows,
+        normalized_frame=normalized_frame,
+        data_dir=data_root,
+        profile_out=profile_out,
+    )
+    try:
+        metadata_path = write_channel_metadata(temp_run_id, definitions, data_root)
+    except Exception:
+        _safe_unlink(cache_result.path)
+        raise
+
+    final_cache_path = parquet_path(data_root, run_id) if cache_result.format == "parquet" else csv_path(data_root, run_id)
+    return _StagedImportCache(
+        temp_run_id=temp_run_id,
+        cache_result=cache_result,
+        metadata_path=metadata_path,
+        final_cache_path=final_cache_path,
+        final_metadata_path=channel_metadata_path(data_root, run_id),
+        data_root=data_root,
+        run_id=run_id,
+    )
 
 
 def _coerce_number(value: str) -> Any:
@@ -1021,13 +1111,15 @@ class ImportService:
             return result, None
 
         run_id = result.overview.run_id
+        existing_run_updated = self.repository.get_overview(run_id) is not None
 
         t0 = time.perf_counter()
         cache_profile: dict[str, float] = {}
         normalized_frame = getattr(result, "get_normalized_frame", lambda: None)()
-        cache_result = write_telemetry_cache(
+        staged_cache = _stage_import_cache(
             run_id,
             result.records,
+            result.variable_definitions,
             normalized_frame=normalized_frame,
             data_dir=self.data_dir,
             profile_out=cache_profile,
@@ -1036,13 +1128,17 @@ class ImportService:
         for k, v in cache_profile.items():
             _timings[k] = float(v)
 
-        t0 = time.perf_counter()
-        write_channel_metadata(result.overview.run_id, result.variable_definitions, self.data_dir)
-        _timings["write_channel_metadata"] = time.perf_counter() - t0
+        try:
+            t0 = time.perf_counter()
+            self.repository.save_import(result.overview, result.fingerprint)
+            _timings["save_run_metadata"] = time.perf_counter() - t0
 
-        t0 = time.perf_counter()
-        self.repository.save_import(result.overview, result.fingerprint)
-        _timings["save_run_metadata"] = time.perf_counter() - t0
+            t0 = time.perf_counter()
+            cache_result = staged_cache.promote()
+            _timings["promote_cache_artifacts"] = time.perf_counter() - t0
+        except Exception:
+            staged_cache.cleanup()
+            raise
 
         # ── Post-import analysis ──────────────────────────────────
         rows_or_frame: Any = normalized_frame if normalized_frame is not None else result.records
@@ -1077,15 +1173,19 @@ class ImportService:
                       "segment persistence"]:
             if item not in implemented:
                 implemented.append(item)
-        status_message = (
+        status_message = "Existing run updated." if existing_run_updated else (
             "Imported and persisted iRacing .ibt header, variable definitions, "
             "session YAML, MVP telemetry channels, analysis summaries, "
             "telemetry cache, and segments."
         )
+        warnings = list(result.status.warnings)
+        if existing_run_updated:
+            warnings.append("Duplicate telemetry detected - updated the existing run record.")
         result.status = result.status.model_copy(
             update={
                 "message": status_message,
                 "implemented": implemented,
+                "warnings": warnings,
                 "remaining": [
                     item for item in result.status.remaining if item != "persist normalized telemetry cache"
                 ],

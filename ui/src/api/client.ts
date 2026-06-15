@@ -95,6 +95,37 @@ function timeoutErrorMessage(ms: number, label: string): string {
   return `${label} timed out after ${(ms / 1000).toFixed(0)} seconds. The backend may still be processing or the file may be too large or corrupt.`;
 }
 
+function errorMessageFromResponseText(text: string, fallback: string): string {
+  if (!text) return fallback;
+  try {
+    const payload = JSON.parse(text) as {
+      detail?: string | {
+        title?: string;
+        message?: string;
+        impact?: string;
+        next_step?: string;
+        cleanup?: string;
+        technical_detail?: string;
+      };
+    };
+    if (typeof payload.detail === "string") return payload.detail;
+    if (payload.detail && typeof payload.detail === "object") {
+      const detail = payload.detail;
+      return [
+        detail.title ?? "Import failed",
+        detail.message,
+        detail.impact,
+        detail.next_step,
+        detail.cleanup,
+        detail.technical_detail ? `Technical detail: ${detail.technical_detail}` : null,
+      ].filter(Boolean).join("\n");
+    }
+  } catch {
+    // Fall through to raw server text for non-JSON responses.
+  }
+  return text || fallback;
+}
+
 async function requestJson<T>(path: string, init?: RequestInit, timeoutMs: number = REQUEST_TIMEOUT_MS, timeoutLabel: string = "Request"): Promise<T> {
   const method = requestMethod(init);
   const key = requestKey(path, timeoutMs);
@@ -133,7 +164,7 @@ async function requestJson<T>(path: string, init?: RequestInit, timeoutMs: numbe
     }
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(text || `Request failed: ${response.status}`);
+      throw new Error(errorMessageFromResponseText(text, `Request failed: ${response.status}`));
     }
     const payload = (await response.json()) as T;
     if (method === "GET") {
@@ -184,7 +215,7 @@ export function importIbtFile(file: File): Promise<ImportIbtResponse> {
   }, IMPORT_TIMEOUT_MS).then(async (response) => {
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(text || `Import failed: ${response.status}`);
+      throw new Error(errorMessageFromResponseText(text, `Import failed: ${response.status}`));
     }
     const payload = await response.json() as ImportIbtResponse;
     invalidateApiCache();

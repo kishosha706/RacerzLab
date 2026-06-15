@@ -2172,8 +2172,9 @@ function PlatformTraceWorkbench({
             </div>
           ) : (
             <div className="platform-events-empty">
-              <p>No actionable platform events in this window.</p>
-              <p className="muted">Internal evidence is still available for analysis.</p>
+              <p>No actionable platform events shown.</p>
+              <p className="muted">Internal evidence is still preserved for analysis.</p>
+              <p className="muted">Switch to Proxy/Internal to inspect hidden evidence.</p>
             </div>
           )}
           {selectedPlatformEvent && (

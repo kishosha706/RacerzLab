@@ -253,6 +253,12 @@ export function DialInTab({ overview }: DialInTabProps) {
         <p className="dialin-tab-subtitle">
           Tell RacerZLab what the car is doing. It will give setup swings to test, one change at a time.
         </p>
+        {!overview.setup_snapshot && (
+          <div className="dialin-alert limited" role="status">
+            <AlertTriangle size={14} />
+            <span>Setup snapshot unavailable. Garage-specific recommendations are limited until setup data is available, so Dial-In will stay conservative.</span>
+          </div>
+        )}
 
         <form
           className="dialin-input-row dialin-command-bar"

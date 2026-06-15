@@ -45,6 +45,7 @@ type SelectionAction =
   | { type: "SET_PLAYBACK_ACTIVE"; active: boolean }
   | { type: "RESET_SELECTION" }
   | { type: "LOAD_RUN"; runId: string; bestLap: number | null }
+  | { type: "VALIDATE_RUN_IDS"; runIds: string[] }
   | { type: "FOCUS_EVENT"; eventId: string; lap: number | null; sampleIndex: number | null; lapDistFt: number | null; lapPct: number | null; workspace: Workspace; source: SelectionSource }
   /** Focus full evidence context — sets all relevant fields in one transaction. */
   | { type: "FOCUS_EVIDENCE"; evidence: Partial<EvidenceContext>; workspace?: Workspace };
@@ -128,6 +129,17 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
         selectedMode: state.selectedMode,
         selectedValueBasis: action.bestLap != null ? "full_lap" : "unavailable",
       };
+    case "VALIDATE_RUN_IDS":
+      if (state.selectedRunId == null || action.runIds.includes(state.selectedRunId)) {
+        return state;
+      }
+      return {
+        ...DEFAULT_SELECTION,
+        selectedRunId: null,
+        selectedCompareRunId: null,
+        selectedMode: state.selectedMode,
+        selectedWorkspace: state.selectedWorkspace,
+      };
     case "FOCUS_EVENT":
       return {
         ...state,
@@ -210,6 +222,7 @@ type TelemetrySelectionContextValue = {
   focusTelemetryEvent: (eventId: string, lap: number | null, sampleIndex: number | null, lapDistFt: number | null, lapPct: number | null, workspace: Workspace, source?: SelectionSource) => void;
   /** Set all relevant evidence context in one transaction. */
   focusEvidence: (evidence: Partial<EvidenceContext>, workspace?: Workspace) => void;
+  validateSelectionRunIds: (runIds: string[]) => void;
 };
 
 const TelemetrySelectionContext = createContext<TelemetrySelectionContextValue | null>(null);
@@ -275,10 +288,14 @@ export function TelemetrySelectionProvider({ children }: { children: ReactNode }
       dispatch({ type: "FOCUS_EVIDENCE", evidence, workspace }),
     [],
   );
+  const validateSelectionRunIds = useCallback(
+    (runIds: string[]) => dispatch({ type: "VALIDATE_RUN_IDS", runIds }),
+    [],
+  );
 
   return (
     <TelemetrySelectionContext.Provider
-      value={{ selection, dispatch, selectRun, selectLap, selectSample, selectEvent, selectChannel, selectZone, setHover, setPlaybackActive, setMode, setWorkspace, loadRun, focusTelemetryEvent, focusEvidence }}
+      value={{ selection, dispatch, selectRun, selectLap, selectSample, selectEvent, selectChannel, selectZone, setHover, setPlaybackActive, setMode, setWorkspace, loadRun, focusTelemetryEvent, focusEvidence, validateSelectionRunIds }}
     >
       {children}
     </TelemetrySelectionContext.Provider>

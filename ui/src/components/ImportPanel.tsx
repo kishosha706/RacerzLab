@@ -85,6 +85,44 @@ function addRecentAfterImport(key: string, path: string, name: string): RecentEn
   return filtered.slice(0, MAX_RECENT);
 }
 
+function splitImportError(error: string): { summary: string[]; technical: string | null } {
+  const lines = error.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const technical = lines.find((line) => line.startsWith("Technical detail:"))?.replace("Technical detail:", "").trim() ?? null;
+  const summary = lines.filter((line) => !line.startsWith("Technical detail:"));
+  return {
+    summary: summary.length > 0 ? summary : [
+      "Import failed",
+      "The telemetry file could not be processed.",
+      "No completed run was created.",
+      "Try importing again, or choose a different .ibt file.",
+    ],
+    technical,
+  };
+}
+
+function ImportRecoveryMessage({ error }: { error: string }) {
+  const { summary, technical } = splitImportError(error);
+  const [title, ...details] = summary;
+  return (
+    <div className="import-alert import-alert-error import-recovery-card" aria-live="polite">
+      <strong>{title || "Import failed"}</strong>
+      {details.map((line) => <p key={line}>{line}</p>)}
+      {!details.some((line) => line.includes("No completed run was created")) && (
+        <p>No completed run was created.</p>
+      )}
+      {!details.some((line) => line.includes("Try importing again")) && (
+        <p>Try importing again, or choose a different .ibt file.</p>
+      )}
+      {technical && (
+        <details>
+          <summary>Technical detail</summary>
+          <p>{technical}</p>
+        </details>
+      )}
+    </div>
+  );
+}
+
 export function ImportPanel({
   onImportComplete, importing, importStage, error, status,
   fileInputRef, onFileSelected, onImportClick,
@@ -335,7 +373,7 @@ export function ImportPanel({
           Importing telemetry… this can take a minute for large .ibt files.
         </p>
       )}
-      {displayedError && <p className="error-text import-alert import-alert-error" aria-live="polite">{displayedError}</p>}
+      {displayedError && <ImportRecoveryMessage error={displayedError} />}
       {displayedStatus && <p className="status-text import-alert import-alert-status" aria-live="polite">{displayedStatus}</p>}
       {displayedStatus && displayedStatus.includes("cached") && (
         <div className="import-cache-info" style={{ fontSize: 10, color: "#8d9aaa", marginTop: 2 }}>

@@ -23,7 +23,7 @@ import { PriorityRail } from "./components/PriorityRail";
 import { RunContextBar } from "./components/RunContextBar";
 import { StartupScreen } from "./components/StartupScreen";
 import { TelemetrySelectionProvider, useTelemetrySelection } from "./store/TelemetrySelectionContext";
-import { CompareBasketProvider } from "./store/CompareBasketContext";
+import { CompareBasketProvider, useCompareBasket } from "./store/CompareBasketContext";
 import { CompareBasket } from "./components/CompareBasket";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 
@@ -91,7 +91,8 @@ function CockpitShell() {
   const [platformEventVisibilityMode, setPlatformEventVisibilityMode] = useState<PlatformEventVisibilityMode>("actionable");
   const loadSelectedRunSeqRef = useRef(0);
 
-  const { selection, loadRun, selectLap, setWorkspace } = useTelemetrySelection();
+  const { selection, loadRun, selectLap, setWorkspace, validateSelectionRunIds } = useTelemetrySelection();
+  const { validateAvailableRuns } = useCompareBasket();
   const selectedTraceLap = selection.selectedRepresentativeLap ?? selection.selectedLap ?? null;
   const isTraceWorkspace =
     selection.selectedWorkspace === "platform_trace"
@@ -275,14 +276,32 @@ function CockpitShell() {
       }
       setImportStage("Reading .ibt and decoding telemetry...");
       const result = await importIbtFile(file);
+      if (ext === "ibt" && !result.run_id) {
+        setError([
+          "Import failed",
+          result.status.message || "The telemetry file could not be processed.",
+          "No completed run was created.",
+          "Try importing again, or choose a different .ibt file.",
+        ].join("\n"));
+        setImportStage(null);
+        return;
+      }
       if (result.run_id) {
         setImportStage("Normalizing channels, building laps/events, and writing cache...");
       }
       setImportStage("Opening cockpit...");
       await openImportedRun(result.run_id, result.track_map ?? null);
+      if (result.existing_run_updated) {
+        setStatus("Existing run updated. Duplicate telemetry detected - updated the existing run record.");
+      }
       setImportStage(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Import failed.");
+      setError(caught instanceof Error ? caught.message : [
+        "Import failed",
+        "The telemetry file could not be processed.",
+        "No completed run was created.",
+        "Try importing again, or choose a different .ibt file.",
+      ].join("\n"));
       setImportStage(null);
     } finally {
       setImporting(false);
@@ -355,6 +374,19 @@ function CockpitShell() {
       cancelled = true;
     };
   }, [overview, selection.selectedWorkspace, selection.selectedChannel, channelsHaveFullCatalog, toCatalogShape]);
+
+  useEffect(() => {
+    if (!sessionId || sessionRunsLoading) return;
+    if (!currentSession && sessionRuns.length === 0) return;
+    const runIds = sessionRuns.length > 0
+      ? sessionRuns.map((run) => run.run_id)
+      : currentSession?.run_ids ?? runs.map((run) => run.run_id);
+    if (selection.selectedRunId != null && !runIds.includes(selection.selectedRunId)) {
+      setStatus("Selection cleared because the active session changed. Choose a run or stint from the current session.");
+    }
+    validateAvailableRuns(runIds, currentSession ? "session" : "run list");
+    validateSelectionRunIds(runIds);
+  }, [currentSession, runs, selection.selectedRunId, sessionId, sessionRuns, sessionRunsLoading, validateAvailableRuns, validateSelectionRunIds]);
 
   // ── workspace content ───────────────────────────────────────
   const workspaceContent = useMemo(() => {

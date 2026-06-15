@@ -274,8 +274,9 @@ export function SetupTab({ overview }: SetupTabProps) {
           <h2>Setup Board</h2>
           <div className="gr-empty">
             <Sliders size={40} style={{ opacity: 0.2 }} />
-            <p style={{ fontSize: 13, color: "#8d9aaa", marginTop: 8 }}>No setup snapshot available.</p>
-            <p className="section-note">Import a run with a CarSetup section to populate the setup board.</p>
+            <p style={{ fontSize: 13, color: "#8d9aaa", marginTop: 8 }}>Setup snapshot unavailable.</p>
+            <p className="section-note">Garage-specific recommendations are limited until a setup snapshot is available.</p>
+            <p className="section-note">Import a telemetry file with setup data or attach a setup snapshot if supported.</p>
           </div>
         </section>
       </section>

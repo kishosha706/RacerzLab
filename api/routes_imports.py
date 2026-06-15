@@ -22,6 +22,7 @@ router = APIRouter(prefix="/api/imports", tags=["imports"])
 
 IMPORTS_DIR = default_data_dir() / "imports" / "ibt"
 os.makedirs(IMPORTS_DIR, exist_ok=True)
+UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
 def _get_request_id(request: Request) -> str:
@@ -91,6 +92,7 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
     req_id = _get_request_id(request)
     content_type = request.headers.get("content-type", "").lower()
     import_mode = "unknown"
+    uploaded_dest: Path | None = None
 
     if "multipart/form-data" in content_type or "application/octet-stream" in content_type:
         import_mode = "multipart"
@@ -105,10 +107,19 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
             raise HTTPException(400, "Unsupported file type. Please select an .ibt telemetry file.")
         _log.info("[%s] Multipart file accepted: %s", req_id, filename)
         safe_name = _sanitize_filename(filename)
-        dest = IMPORTS_DIR / safe_name
-        content = await file.read()
-        async with aiofiles.open(dest, "wb") as f:
-            await f.write(content)
+        dest = IMPORTS_DIR / f"{uuid.uuid4().hex}-{safe_name}"
+        try:
+            async with aiofiles.open(dest, "wb") as f:
+                while chunk := await file.read(UPLOAD_CHUNK_SIZE):
+                    await f.write(chunk)
+        except Exception:
+            try:
+                if dest.exists():
+                    dest.unlink()
+            except OSError:
+                _log.warning("[%s] Could not remove failed upload temp file: %s", req_id, dest)
+            raise
+        uploaded_dest = dest
         path_or_file = str(dest)
     elif "application/json" in content_type:
         import_mode = "json_path"
@@ -152,9 +163,25 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
         result, cache_result = await run_in_threadpool(import_service.import_ibt_file, path_or_file)
     except Exception as exc:
         _log.error("[%s] Import_service raised unhandled exception: %s", req_id, exc)
-        raise HTTPException(500, detail=f"Internal import error: {exc}")
+        if uploaded_dest is not None:
+            try:
+                uploaded_dest.unlink(missing_ok=True)
+            except OSError:
+                _log.warning("[%s] Could not remove failed import upload copy: %s", req_id, uploaded_dest)
+        raise HTTPException(
+            500,
+            detail={
+                "title": "Import failed",
+                "message": "The telemetry file could not be processed.",
+                "impact": "No completed run was created.",
+                "next_step": "Try importing again, or choose a different .ibt file.",
+                "cleanup": "Temporary import files were cleaned when possible.",
+                "technical_detail": str(exc),
+            },
+        ) from exc
     elapsed = time.time() - t0
     run_id = result.overview.run_id if result.overview else None
+    existing_run_updated = any("Duplicate telemetry detected" in warning for warning in result.status.warnings)
     _log.info("[%s] Import_service finished in %.1f s: run_id=%s", req_id, elapsed, run_id)
 
     cache = None
@@ -206,4 +233,5 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
         cache=cache,
         track_map=track_map_resolution,
         analysis_status="ready",
+        existing_run_updated=existing_run_updated,
     )

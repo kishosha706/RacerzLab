@@ -32,6 +32,8 @@ export interface BasketItem {
   has_setup_snapshot: boolean;
   trust_tier?: string | null;
   value_basis?: ValueBasis | null;
+  stale?: boolean;
+  stale_reason?: string | null;
 }
 
 export type BasketSlot = "baseline" | "test";
@@ -50,7 +52,8 @@ type BasketAction =
   | { type: "REMOVE"; slot: BasketSlot }
   | { type: "ADD_TO_QUEUE"; item: BasketItem }
   | { type: "REMOVE_FROM_QUEUE"; id: string }
-  | { type: "CLEAR_QUEUE" };
+  | { type: "CLEAR_QUEUE" }
+  | { type: "VALIDATE_AVAILABLE_RUNS"; runIds: string[]; scopeLabel: string };
 
 const STORAGE_KEY = "racelab_compare_basket";
 
@@ -70,6 +73,30 @@ function loadPersistedState(): CompareBasketState {
 
 const EMPTY: CompareBasketState = { baseline: null, test: null, queue: [] };
 
+function markStaleBasketItem(item: BasketItem, runIds: Set<string>, scopeLabel: string): BasketItem {
+  if (runIds.has(item.run_id)) {
+    return { ...item, stale: false, stale_reason: null };
+  }
+  return {
+    ...item,
+    stale: true,
+    stale_reason: `Run is unavailable in the current ${scopeLabel}.`,
+  };
+}
+
+export function validateBasketStateAgainstRuns(
+  state: CompareBasketState,
+  runIds: string[],
+  scopeLabel = "session",
+): CompareBasketState {
+  const knownRunIds = new Set(runIds);
+  return {
+    baseline: state.baseline ? markStaleBasketItem(state.baseline, knownRunIds, scopeLabel) : null,
+    test: state.test ? markStaleBasketItem(state.test, knownRunIds, scopeLabel) : null,
+    queue: state.queue.map((item) => markStaleBasketItem(item, knownRunIds, scopeLabel)),
+  };
+}
+
 function basketReducer(state: CompareBasketState, action: BasketAction): CompareBasketState {
   switch (action.type) {
     case "SET_BASELINE":
@@ -88,6 +115,8 @@ function basketReducer(state: CompareBasketState, action: BasketAction): Compare
       return { ...state, queue: state.queue.filter((i) => i.id !== action.id) };
     case "CLEAR_QUEUE":
       return { ...state, queue: [] };
+    case "VALIDATE_AVAILABLE_RUNS":
+      return validateBasketStateAgainstRuns(state, action.runIds, action.scopeLabel);
     default:
       return state;
   }
@@ -119,6 +148,7 @@ type CompareBasketContextValue = {
   getWarnings: () => string[];
   /** Readiness state for the current basket pair. */
   getReadiness: () => { status: BasketReadiness; reason: string };
+  validateAvailableRuns: (runIds: string[], scopeLabel?: string) => void;
 };
 
 const CompareBasketContext = createContext<CompareBasketContextValue | null>(null);
@@ -141,11 +171,21 @@ export function CompareBasketProvider({ children }: { children: ReactNode }) {
   const addToQueue = useCallback((item: BasketItem) => dispatch({ type: "ADD_TO_QUEUE", item }), []);
   const removeFromQueue = useCallback((id: string) => dispatch({ type: "REMOVE_FROM_QUEUE", id }), []);
   const clearQueue = useCallback(() => dispatch({ type: "CLEAR_QUEUE" }), []);
+  const validateAvailableRuns = useCallback(
+    (runIds: string[], scopeLabel = "session") => dispatch({ type: "VALIDATE_AVAILABLE_RUNS", runIds, scopeLabel }),
+    [],
+  );
 
   const getWarnings = useCallback((): string[] => {
     const w: string[] = [];
     const { baseline, test } = basket;
     if (!baseline || !test) return w;
+    if (baseline.stale) {
+      w.push(`Baseline unavailable: ${baseline.stale_reason ?? "run is no longer available."}`);
+    }
+    if (test.stale) {
+      w.push(`Test unavailable: ${test.stale_reason ?? "run is no longer available."}`);
+    }
     if (baseline.car && test.car && baseline.car !== test.car) {
       w.push("Different car — comparison may not be meaningful.");
     }
@@ -177,6 +217,9 @@ export function CompareBasketProvider({ children }: { children: ReactNode }) {
   const getReadiness = useCallback((): { status: BasketReadiness; reason: string } => {
     const { baseline, test } = basket;
     if (!baseline || !test) return { status: "not_valid", reason: "Both baseline and test are required." };
+    if (baseline.stale || test.stale) {
+      return { status: "not_valid", reason: "Missing one or more runs." };
+    }
     if (sameEvidenceScope(baseline, test)) {
       return {
         status: "reference_mode",
@@ -202,7 +245,7 @@ export function CompareBasketProvider({ children }: { children: ReactNode }) {
   }, [basket, getWarnings]);
 
   return (
-    <CompareBasketContext.Provider value={{ basket, setBaseline, setTest, swap, clear, remove, addToQueue, removeFromQueue, clearQueue, getWarnings, getReadiness }}>
+    <CompareBasketContext.Provider value={{ basket, setBaseline, setTest, swap, clear, remove, addToQueue, removeFromQueue, clearQueue, getWarnings, getReadiness, validateAvailableRuns }}>
       {children}
     </CompareBasketContext.Provider>
   );

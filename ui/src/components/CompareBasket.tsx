@@ -53,10 +53,12 @@ export function CompareBasket() {
   const hasItems = basket.baseline != null || basket.test != null;
   const warnings = getWarnings();
   const readiness = getReadiness();
+  const hasStaleItems = Boolean(basket.baseline?.stale || basket.test?.stale);
 
   const handleReviewInLaps = useCallback(() => {
+    if (hasStaleItems) return;
     setWorkspace("laps", "manual");
-  }, [setWorkspace]);
+  }, [hasStaleItems, setWorkspace]);
 
   if (!hasItems && !expanded) return null;
 
@@ -75,7 +77,13 @@ export function CompareBasket() {
         </button>
         {hasItems && (
           <div className="compare-basket-actions">
-            <button className="compare-basket-action-btn" onClick={handleReviewInLaps} title="Review in Laps" aria-label="Review Test Basket in Laps">
+            <button
+              className="compare-basket-action-btn"
+              onClick={handleReviewInLaps}
+              title={hasStaleItems ? "Unavailable basket items cannot be reviewed" : "Review in Laps"}
+              aria-label="Review Test Basket in Laps"
+              disabled={hasStaleItems}
+            >
               <BarChart3 size={12} />
             </button>
             <button className="compare-basket-action-btn" onClick={clear} title="Clear All" aria-label="Clear Test Basket">
@@ -108,6 +116,7 @@ export function CompareBasket() {
             <button
               className="compare-basket-ready-btn"
               onClick={handleReviewInLaps}
+              disabled={hasStaleItems}
               style={{
                 background: READINESS_COLORS.ready,
                 color: "white",
@@ -116,7 +125,7 @@ export function CompareBasket() {
                 borderRadius: 4,
                 fontSize: 12,
                 fontWeight: 600,
-                cursor: "pointer",
+                cursor: hasStaleItems ? "not-allowed" : "pointer",
                 marginTop: 8,
                 width: "100%",
               }}
@@ -210,6 +219,16 @@ function BasketSlotDisplay({
       {item ? (
         <div className="compare-basket-slot-item">
           <span className="compare-basket-item-label">{item.label}</span>
+          {item.stale && (
+            <span className="compare-basket-item-meta" style={{ color: "#ef4444", fontWeight: 700 }}>
+              Run unavailable
+            </span>
+          )}
+          {item.stale && (
+            <span className="compare-basket-item-meta">
+              This basket item points to a run that is not loaded in the current session. Remove it when ready, or keep it here as context.
+            </span>
+          )}
           <span className="compare-basket-item-meta">
             {describeBasketScope(item)}
             {item.lap_time != null ? ` · ${item.lap_time.toFixed(3)}s` : ""}
@@ -279,5 +298,7 @@ export function makeBasketItem(
     has_setup_snapshot: hasSetupSnapshot ?? false,
     trust_tier: metadata?.trustTier ?? null,
     value_basis: metadata?.valueBasis ?? null,
+    stale: false,
+    stale_reason: null,
   };
 }
