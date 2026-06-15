@@ -88,3 +88,81 @@ def test_hidden_events_do_not_create_raw_event_label_spam() -> None:
     assert 'formatter: "event"' not in platform
     assert "showLineLabels: false" in chart
     assert "label: { show: eventAnnotations.showLineLabels" in platform
+
+
+def test_platform_event_summary_strip_renders_visible_and_hidden_counts() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    assert "platform-event-summary-strip" in platform
+    assert "visiblePlatformEvents.length" in platform
+    assert "hiddenPlatformEventCount" in platform
+    assert "Top issue:" in platform
+    assert "shown" in platform
+    assert "hidden" in platform
+
+
+def test_actionable_mode_hides_internal_events_but_counts_them_as_hidden() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    visibility = _read("ui/src/utils/platformEventVisibility.ts")
+
+    assert 'return (scope === "actionable" || scope === "watch") && Boolean(event.is_visible_default);' in visibility
+    assert "Math.max(0, platformEvents.length - visiblePlatformEvents.length)" in platform
+
+
+def test_no_visible_events_state_displays_cleanly() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    assert "No actionable platform events shown" in platform
+    assert "internal evidence item" in platform
+    assert "No platform diagnostic events for this lap" in platform
+
+
+def test_hidden_selected_event_fallback_appears_when_selected_event_is_filtered_out() -> None:
+    inspector = _read("ui/src/components/EvidenceInspector.tsx")
+
+    assert "hiddenSelectedEvent" in inspector
+    assert "Selected event is hidden by current filter." in inspector
+    assert "HiddenSelectedEventInspector" in inspector
+
+
+def test_hidden_selected_event_fallback_can_show_proxy_internal_or_clear_selection() -> None:
+    inspector = _read("ui/src/components/EvidenceInspector.tsx")
+    app = _read("ui/src/App.tsx")
+
+    assert 'onEventVisibilityModeChange("proxy")' in inspector
+    assert 'selectEvent(null, "manual")' in inspector
+    assert "Show Proxy/Internal" in inspector
+    assert "Clear Selection" in inspector
+    assert "onEventVisibilityModeChange={setPlatformEventVisibilityMode}" in app
+
+
+def test_platform_event_card_includes_supported_open_setup_and_stage_test_actions() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    assert "handleOpenSetupFromPlatformEvent" in platform
+    assert "handleStageTestFromPlatformEvent" in platform
+    assert "Open Setup" in platform
+    assert "Stage Test" in platform
+    assert '"setup_impact"' in platform
+    assert '"notebook"' in platform
+
+
+def test_event_timeline_prefers_zone_labels_over_raw_percentages_when_available() -> None:
+    timeline = _read("ui/src/components/EventTimeline.tsx")
+
+    assert "timelineEventLocationLabel" in timeline
+    assert "selection.selectedZoneLabel" in timeline
+    assert "lapPctInRange" in timeline
+    assert "percent lap" in timeline
+    assert "aria-label={`${event.title}, ${locationLabel}" in timeline
+
+
+def test_focus_visible_css_coverage_includes_platform_controls() -> None:
+    styles = _read("ui/src/styles.css")
+
+    assert ".secondary-button:focus-visible" in styles
+    assert ".platform-event-button:focus-visible" in styles
+    assert ".risk-strip-segment:focus-visible" in styles
+    assert ".platform-event-filter select:focus-visible" in styles
+    assert ".playback-btn:focus-visible" in styles
+    assert ".playback-speed-btn:focus-visible" in styles

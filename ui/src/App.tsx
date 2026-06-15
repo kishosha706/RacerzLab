@@ -407,7 +407,7 @@ function CockpitShell() {
         targetZoneEndPct={selection.selectedZoneEndPct ?? undefined} />;
     }
     return <OverviewTab overview={overview} />;
-  }, [currentSession, overview, platformEvents, selectedTraceLap, selection.selectedWorkspace, sessionRuns, sessionRunsLoading, sessionSelectionSource, trace]);
+  }, [currentSession, overview, platformEventVisibilityMode, platformEvents, selectedTraceLap, selection.selectedWorkspace, sessionRuns, sessionRunsLoading, sessionSelectionSource, trace]);
 
   // ── no session yet → show startup screen ───────────────────
   if (!sessionId) {
@@ -526,6 +526,7 @@ function CockpitShell() {
           collapsed={!inspectorOpen}
           onToggle={() => setInspectorOpen(!inspectorOpen)}
           eventVisibilityMode={platformEventVisibilityMode}
+          onEventVisibilityModeChange={setPlatformEventVisibilityMode}
         />
       </div>
 

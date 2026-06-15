@@ -48,3 +48,14 @@ export function platformEventScopeLabel(event: PlatformEventItem): string {
       return "Actionable";
   }
 }
+
+export function platformEventVisibilityModeLabel(mode: PlatformEventVisibilityMode): string {
+  switch (mode) {
+    case "proxy":
+      return "Proxy / Internal";
+    case "all":
+      return "All";
+    default:
+      return "Actionable";
+  }
+}

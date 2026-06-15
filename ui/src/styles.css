@@ -1607,6 +1607,21 @@ td {
   padding: 6px 14px;
 }
 
+.platform-event-summary-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin: 8px 0 10px;
+  padding: 5px 9px;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 5px;
+  background: rgba(17, 24, 33, 0.78);
+  color: #cbd6e3;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .platform-event-filter {
   display: inline-flex;
   align-items: center;
@@ -1616,6 +1631,11 @@ td {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.platform-event-filter select:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
 }
 
 .platform-events-section h3 {
@@ -1654,6 +1674,11 @@ td {
 .platform-event-button.muted {
   opacity: 0.72;
   border-style: dashed;
+}
+
+.hidden-event-fallback {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.06);
 }
 
 .evidence-meta {
@@ -5349,12 +5374,18 @@ button:focus:not(:focus-visible) {
 /* Accessibility polish */
 .priority-card:focus-visible,
 .timeline-marker:focus-visible,
+.playback-btn:focus-visible,
+.playback-speed-btn:focus-visible,
 .import-recent-item:focus-visible,
 .finding-row:focus-visible,
 .compare-basket-slot:focus-visible,
 .nav-rail-item:focus-visible,
 .gr-icon-btn:focus-visible,
-.trackmap-action-btn:focus-visible {
+.trackmap-action-btn:focus-visible,
+.secondary-button:focus-visible,
+.platform-event-button:focus-visible,
+.risk-strip-segment:focus-visible,
+.platform-event-filter select:focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
 }

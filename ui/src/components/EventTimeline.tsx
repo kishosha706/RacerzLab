@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
+import type { TelemetrySelection } from "../store/types";
 import { SEVERITY_COLOURS, EVENT_SHAPES } from "../constants/ui";
 import type { PlatformEventItem, PlatformEventVisibilityMode } from "../types/telemetry";
-import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
+import { buildWindowEvidence, buildZoneEvidence, lapPctInRange } from "../utils/evidenceFocus";
 import { filterPlatformEvents, isMutedPlatformEvent, platformEventScopeLabel } from "../utils/platformEventVisibility";
 
 type EventTimelineProps = {
@@ -38,6 +39,17 @@ function staggerMarkers(events: PlatformEventItem[]): StaggeredEvent[] {
   }
 
   return result;
+}
+
+function timelineEventLocationLabel(event: PlatformEventItem, selection: TelemetrySelection): string {
+  if (
+    selection.selectedZoneLabel
+    && lapPctInRange(event.lap_pct, selection.selectedZoneStartPct, selection.selectedZoneEndPct)
+  ) {
+    return selection.selectedZoneLabel;
+  }
+  if (event.lap_dist_ft != null) return `${Math.round(event.lap_dist_ft).toLocaleString()} ft`;
+  return "location unavailable";
 }
 
 export function EventTimeline({ platformEvents, eventVisibilityMode }: EventTimelineProps) {
@@ -270,7 +282,7 @@ export function EventTimeline({ platformEvents, eventVisibilityMode }: EventTime
         </div>
         {currentEvent && (
           <span className="playback-location" title={currentEvent.title} aria-live="polite">
-            {currentEvent.title}
+            {currentEvent.title} · {timelineEventLocationLabel(currentEvent, selection)}
           </span>
         )}
       </div>
@@ -290,14 +302,15 @@ export function EventTimeline({ platformEvents, eventVisibilityMode }: EventTime
           const colour = SEVERITY_COLOURS[event.severity] ?? "#8d9aaa";
           const shape = EVENT_SHAPES[event.event_type] ?? "*";
           const muted = isMutedPlatformEvent(event, eventVisibilityMode);
+          const locationLabel = timelineEventLocationLabel(event, selection);
 
           return (
             <button
               key={event.event_id}
               className={`timeline-marker${isActive ? " active" : ""}${isBrowsed ? " browsed" : ""}${muted ? " muted" : ""}`}
               style={{ left: `${left}%`, top: `${event.staggerOffset}px`, color: colour }}
-              title={`${event.title} - ${platformEventScopeLabel(event)} - ${event.severity}`}
-              aria-label={`${event.title}, ${platformEventScopeLabel(event)}, ${event.severity}, ${left.toFixed(1)} percent lap`}
+              title={`${event.title} - ${locationLabel} - ${left.toFixed(1)} percent lap - ${platformEventScopeLabel(event)} - ${event.severity}`}
+              aria-label={`${event.title}, ${locationLabel}, ${platformEventScopeLabel(event)}, ${event.severity}`}
               onClick={() => {
                 const idx = sorted.findIndex((e) => e.event_id === event.event_id);
                 if (idx >= 0) commitEvent(idx);

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { ChannelCatalogItem, PlatformEventItem, PlatformEventVisibilityMode, RunOverview } from "../types/telemetry";
 import { buildWindowEvidence, buildZoneEvidence, hasWindowSelection } from "../utils/evidenceFocus";
-import { filterPlatformEvents, platformEventScopeLabel } from "../utils/platformEventVisibility";
+import { filterPlatformEvents, platformEventScopeLabel, platformEventVisibilityModeLabel } from "../utils/platformEventVisibility";
 import { ProxyBadge } from "./ProxyBadge";
 
 type EvidenceInspectorProps = {
@@ -13,6 +13,7 @@ type EvidenceInspectorProps = {
   collapsed?: boolean;
   onToggle?: () => void;
   eventVisibilityMode: PlatformEventVisibilityMode;
+  onEventVisibilityModeChange?: (mode: PlatformEventVisibilityMode) => void;
 };
 
 function humanizeSelectionSource(source: ReturnType<typeof useTelemetrySelection>["selection"]["selectionSource"]): string {
@@ -36,8 +37,16 @@ function humanizeValueBasis(valueBasis: ReturnType<typeof useTelemetrySelection>
   }
 }
 
-export function EvidenceInspector({ overview, platformEvents, channels, collapsed, onToggle, eventVisibilityMode }: EvidenceInspectorProps) {
-  const { selection } = useTelemetrySelection();
+export function EvidenceInspector({
+  overview,
+  platformEvents,
+  channels,
+  collapsed,
+  onToggle,
+  eventVisibilityMode,
+  onEventVisibilityModeChange,
+}: EvidenceInspectorProps) {
+  const { selection, selectEvent } = useTelemetrySelection();
   const [justAnchored, setJustAnchored] = useState(false);
   const prevEventRef = useRef<string | null | undefined>(null);
   const visiblePlatformEvents = useMemo(
@@ -48,6 +57,13 @@ export function EvidenceInspector({ overview, platformEvents, channels, collapse
   const selectedEvent = useMemo(
     () => visiblePlatformEvents.find((e) => e.event_id === selection.selectedEventId) ?? null,
     [visiblePlatformEvents, selection.selectedEventId],
+  );
+
+  const hiddenSelectedEvent = useMemo(
+    () => selectedEvent == null && selection.selectedEventId != null
+      ? platformEvents.find((e) => e.event_id === selection.selectedEventId) ?? null
+      : null,
+    [platformEvents, selectedEvent, selection.selectedEventId],
   );
 
   const selectedChannel = useMemo(
@@ -73,8 +89,60 @@ export function EvidenceInspector({ overview, platformEvents, channels, collapse
       <EventInspector event={selectedEvent} showAnchorBadge={true} collapsed={collapsed} onToggle={onToggle} />
     </div>
   );
+  if (hiddenSelectedEvent) {
+    return (
+      <HiddenSelectedEventInspector
+        event={hiddenSelectedEvent}
+        eventVisibilityMode={eventVisibilityMode}
+        onShowProxyInternal={onEventVisibilityModeChange ? () => onEventVisibilityModeChange("proxy") : undefined}
+        onClearSelection={() => selectEvent(null, "manual")}
+        collapsed={collapsed}
+        onToggle={onToggle}
+      />
+    );
+  }
   if (selectedChannel) return <ChannelInspector channel={selectedChannel} collapsed={collapsed} onToggle={onToggle} />;
   return <RunInspector overview={overview} channels={channels} collapsed={collapsed} onToggle={onToggle} />;
+}
+
+function HiddenSelectedEventInspector({
+  event,
+  eventVisibilityMode,
+  onShowProxyInternal,
+  onClearSelection,
+  collapsed,
+  onToggle,
+}: {
+  event: PlatformEventItem;
+  eventVisibilityMode: PlatformEventVisibilityMode;
+  onShowProxyInternal?: () => void;
+  onClearSelection: () => void;
+  collapsed?: boolean;
+  onToggle?: () => void;
+}) {
+  return (
+    <InspectorShell title="Hidden Event" icon={<Info size={16} />} collapsed={collapsed} onToggle={onToggle}>
+      <div className="inspector-source-stack hidden-event-fallback">
+        <h4>Selected event is hidden by current filter.</h4>
+        <p className="inspector-source-item">
+          {event.title} is currently outside {platformEventVisibilityModeLabel(eventVisibilityMode)} mode.
+        </p>
+        {event.reason_for_hidden && (
+          <p className="inspector-source-item muted">Hidden by default: {event.reason_for_hidden}</p>
+        )}
+        <div className="diw-actions" style={{ marginTop: 6 }}>
+          {onShowProxyInternal && (
+            <button className="trackmap-action-btn" onClick={onShowProxyInternal} title="Show Proxy/Internal events">
+              <Layers size={10} /> Show Proxy/Internal
+            </button>
+          )}
+          <button className="trackmap-action-btn" onClick={onClearSelection} title="Clear selected hidden event">
+            <ChevronRight size={10} /> Clear Selection
+          </button>
+        </div>
+      </div>
+    </InspectorShell>
+  );
 }
 
 function RunInspector({ overview, channels, collapsed, onToggle }: { overview: RunOverview | null; channels: ChannelCatalogItem[]; collapsed?: boolean; onToggle?: () => void }) {

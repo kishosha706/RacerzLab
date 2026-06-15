@@ -15,7 +15,7 @@ import { fetchPlatformEvents, fetchShockReader } from "../api/client";
 import { isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
 import { getTraceValues, formatChannelValue, formatForceProxyN, safeStringValue } from "../utils/channelFormat";
 import { buildPlatformChartAnnotations } from "../utils/platformChartAnnotations";
-import { filterPlatformEvents, isMutedPlatformEvent, platformEventScopeLabel } from "../utils/platformEventVisibility";
+import { filterPlatformEvents, isMutedPlatformEvent, platformEventScopeLabel, platformEventVisibilityModeLabel } from "../utils/platformEventVisibility";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
 import type {
@@ -1463,6 +1463,36 @@ function PlatformTraceWorkbench({
     }, "map");
   }, [buildTraceEvidence, focusEvidence, overview.best_useful_lap?.lap_number, trace?.lap]);
 
+  const handleOpenSetupFromPlatformEvent = useCallback((event: PlatformEventItem) => {
+    focusEvidence({
+      ...buildTraceEvidence(
+        event.lap ?? trace?.lap ?? overview.best_useful_lap?.lap_number ?? null,
+        event.lap_pct ?? null,
+        event.sample_index ?? null,
+        event.lap_dist_ft ?? null,
+        event.event_id,
+      ),
+      lockState: "locked",
+      valueBasis: event.sample_index != null || event.lap_dist_ft != null ? "selected_sample" : "run_level",
+      selectionSource: "trace_cursor",
+    }, "setup_impact");
+  }, [buildTraceEvidence, focusEvidence, overview.best_useful_lap?.lap_number, trace?.lap]);
+
+  const handleStageTestFromPlatformEvent = useCallback((event: PlatformEventItem) => {
+    focusEvidence({
+      ...buildTraceEvidence(
+        event.lap ?? trace?.lap ?? overview.best_useful_lap?.lap_number ?? null,
+        event.lap_pct ?? null,
+        event.sample_index ?? null,
+        event.lap_dist_ft ?? null,
+        event.event_id,
+      ),
+      lockState: event.sample_index != null || event.lap_dist_ft != null ? "locked" : "none",
+      valueBasis: event.sample_index != null || event.lap_dist_ft != null ? "selected_sample" : "run_level",
+      selectionSource: "trace_cursor",
+    }, "notebook");
+  }, [buildTraceEvidence, focusEvidence, overview.best_useful_lap?.lap_number, trace?.lap]);
+
   // ── clear clicked sample when trace/preset changes ───────────
   useEffect(() => {
     setHoverSampleIndex(null);
@@ -1572,6 +1602,13 @@ function PlatformTraceWorkbench({
     { label: "Selected", value: selected.distanceFt != null ? `Lap ${trace?.lap ?? "n/a"} @ ${selected.distanceFt.toFixed(0)} ft` : `Lap ${trace?.lap ?? "n/a"}`, badge: readoutSource.toLowerCase(), severity: selected.distanceFt != null ? "safe" : "missing" },
   ];
   const summaryItems = workbenchView === "balance" ? platformGeometrySummaryItems : diagnosticSummaryItems;
+  const hiddenPlatformEventCount = Math.max(0, platformEvents.length - visiblePlatformEvents.length);
+  const topVisiblePlatformEvent = visiblePlatformEvents[0] ?? null;
+  const platformEventSummaryText = topVisiblePlatformEvent
+    ? `${platformEventVisibilityModeLabel(platformEventVisibilityMode)} mode · ${visiblePlatformEvents.length} shown · ${hiddenPlatformEventCount} hidden · Top issue: ${topVisiblePlatformEvent.title} · ${topVisiblePlatformEvent.severity} / ${topVisiblePlatformEvent.confidence} confidence · Inspect Platform/Setup`
+    : hiddenPlatformEventCount > 0
+      ? `No actionable platform events shown · ${hiddenPlatformEventCount} internal evidence item${hiddenPlatformEventCount === 1 ? "" : "s"} hidden`
+      : `${platformEventVisibilityModeLabel(platformEventVisibilityMode)} mode · 0 shown · 0 hidden · No platform diagnostic events for this lap`;
 
   const riskSegments = useMemo(() => {
     const riskChannels = [
@@ -2033,6 +2070,9 @@ function PlatformTraceWorkbench({
       <p className="proxy-warning">
         Force values are estimates/proxies derived from telemetry, setup spring rates, ride heights, shock movement, and dynamic pressure. They are not direct iRacing aerodynamic force channels.
       </p>
+      <div className="platform-event-summary-strip" aria-label="Platform event visibility summary">
+        <span>{platformEventSummaryText}</span>
+      </div>
       <div className="platform-summary-bar" aria-label="Current platform summary">
         {summaryItems.map((item) => (
           <div key={item.label} className="platform-summary-chip" data-severity={item.severity}>
@@ -2181,6 +2221,12 @@ function PlatformTraceWorkbench({
               <div className="diw-actions" style={{ marginTop: 8 }}>
                 <button className="trackmap-action-btn" onClick={() => handleOpenMapFromPlatformEvent(selectedPlatformEvent)} title="Open Map at selected event">
                   <MapPin size={10} /> Open Map
+                </button>
+                <button className="trackmap-action-btn" onClick={() => handleOpenSetupFromPlatformEvent(selectedPlatformEvent)} title="Open Setup with selected event">
+                  <Wrench size={10} /> Open Setup
+                </button>
+                <button className="trackmap-action-btn" onClick={() => handleStageTestFromPlatformEvent(selectedPlatformEvent)} title="Stage a notebook test from selected event">
+                  <BarChart3 size={10} /> Stage Test
                 </button>
               </div>
               {selectedPlatformEvent.is_proxy_based && selectedPlatformEvent.proxy_warning && (
