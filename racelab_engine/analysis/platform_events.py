@@ -337,26 +337,34 @@ def _with_display(
     )
 
 
+def _classify_min_splitter_display(
+    event: PlatformEvent,
+    row: dict[str, Any],
+    rows: list[dict[str, Any]],
+) -> PlatformEvent:
+    cfs_in = _sample_value(row, "cfs_ride_height_in")
+    near_contact = cfs_in is not None and float(cfs_in) <= 0.394
+    sustained = _is_sustained(
+        rows,
+        event.sample_index,
+        lambda sample: (value := _sample_value(sample, "cfs_ride_height_in")) is not None and float(value) <= 0.394,
+    )
+    if _front_contact_context(row):
+        return _with_display(event, "actionable")
+    if near_contact and (sustained or _speed_loss_context(row)):
+        return _with_display(event, "watch")
+    return _with_display(
+        event,
+        "internal",
+        reason_for_hidden="Minimum splitter height stayed above the visible contact gate, so it remains backend evidence only.",
+    )
+
+
 def _classify_event_display(event: PlatformEvent, rows: list[dict[str, Any]]) -> PlatformEvent:
     row = _sample_row(rows, event.sample_index)
 
     if event.event_type == "MIN_SPLITTER":
-        cfs_in = _sample_value(row, "cfs_ride_height_in")
-        near_contact = cfs_in is not None and float(cfs_in) <= 0.394
-        sustained = _is_sustained(
-            rows,
-            event.sample_index,
-            lambda sample: (value := _sample_value(sample, "cfs_ride_height_in")) is not None and float(value) <= 0.394,
-        )
-        if _front_contact_context(row):
-            return _with_display(event, "actionable")
-        if near_contact and (sustained or _speed_loss_context(row)):
-            return _with_display(event, "watch")
-        return _with_display(
-            event,
-            "internal",
-            reason_for_hidden="Minimum splitter height stayed above the visible contact gate, so it remains backend evidence only.",
-        )
+        return _classify_min_splitter_display(event, row, rows)
 
     if event.event_type in ("MIN_REAR_RIDE_HEIGHT", "REAR_PLATFORM_LOW"):
         rear_mm = _sample_value(row, "rear_min_ride_height_mm")
