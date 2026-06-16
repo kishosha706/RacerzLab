@@ -38,6 +38,14 @@ When selection is cleared by an active-session change, the UI should present it 
 
 Backend Platform events remain in the payload for evidence and debug use. Driver-facing chart markers, rails, timelines, and inspectors use shared visibility filtering so internal/debug events are hidden by default in Actionable mode and can be shown through Proxy/Internal or All modes.
 
+## Platform Detector Contracts
+
+`racelab_engine.analysis.platform_events.detect_platform_events` is the canonical rich PlatformEvent detector for platform UI, track-map overlays, and future platform analysis work.
+
+The old duplicate TelemetryEvent platform detector was removed during development cleanup. Import/overview code now derives any legacy-shaped summary markers from the canonical PlatformEvent output locally instead of maintaining a second detector.
+
+Future code should import Platform event detection from `platform_events.py`. There should be no normal runtime import path back to a separate `platform.py` detector.
+
 ## Missing Data Policy
 
 Missing telemetry/setup fields mean unavailable. They must not be converted to zero or used to create fake exact conclusions.

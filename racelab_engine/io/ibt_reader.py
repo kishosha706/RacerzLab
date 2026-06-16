@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 import struct
 import time
@@ -10,6 +11,8 @@ from typing import Any, Collection, Mapping, cast
 
 _log = logging.getLogger(__name__)
 LAST_IMPORT_PROFILE: dict[str, Any] = {}
+
+import polars as pl
 
 
 def _subprofile_enabled() -> bool:
@@ -26,14 +29,16 @@ from racelab_engine.analysis.calculated_channels import (
     HIGH_VALUE_RAW_CHANNELS,
     normalize_telemetry_rows,
 )
+from racelab_engine.analysis.constants import LOW_BRAKE_PCT, PLATFORM_VALID_MIN_SPEED_MPH, PLATFORM_VALID_THROTTLE_PCT
 from racelab_engine.analysis.drag_scrub import detect_drag_scrub_risk_zones
 from racelab_engine.analysis.dynamic_crew_chief import build_recommendations
 from racelab_engine.analysis.lap_classification import classify_laps
 from racelab_engine.analysis.lap_detection import detect_laps
-from racelab_engine.analysis.platform import detect_platform_events
+from racelab_engine.analysis.platform_events import PlatformEvent, detect_platform_events
 from racelab_engine.io.file_fingerprint import fingerprint_file
 from racelab_engine.io.ibt_types import IBTHeader, IBTImportResult, IBTVariableDefinition, ImportStatus
 from racelab_engine.io.session_yaml import extract_session_summary, extract_setup_snapshot, parse_session_yaml
+from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.session import RunOverview
 
 
@@ -502,6 +507,132 @@ def _slug_run_id(file_path: Path, file_hash: str) -> str:
     return f"{stem[:48]}-{file_hash[:8]}"
 
 
+def _platform_detection_rows(table: Any) -> list[dict[str, Any]]:
+    if isinstance(table, pl.DataFrame):
+        return table.to_dicts()
+    if isinstance(table, list) and table and isinstance(table[0], dict):
+        if "speed_mph" in table[0]:
+            return cast(list[dict[str, Any]], table)
+    return normalize_telemetry_rows(table)
+
+
+def _safe_float(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(number) else number
+
+
+def _lap_pct_100(row: Mapping[str, Any]) -> float | None:
+    explicit_pct = _safe_float(row.get("lap_dist_pct_100"))
+    if explicit_pct is not None:
+        return explicit_pct
+    raw_pct = _safe_float(row.get("lap_dist_pct"))
+    if raw_pct is None:
+        return None
+    return raw_pct * 100.0 if 0.0 <= raw_pct <= 1.5 else raw_pct
+
+
+def _is_complete_lap(lap_rows: list[dict[str, Any]]) -> bool:
+    lap_pcts = [pct for row in lap_rows if (pct := _lap_pct_100(row)) is not None]
+    return bool(lap_pcts) and min(lap_pcts) <= 2.0 and max(lap_pcts) >= 98.0
+
+
+def _platform_event_to_overview_marker(
+    event: PlatformEvent,
+    row: Mapping[str, Any],
+    *,
+    run_id: str,
+    is_complete_lap: bool,
+) -> TelemetryEvent:
+    splitter_mm = _safe_float(row.get("cfsr_height_mm"))
+    speed_mph = float(_safe_float(row.get("speed_mph")) or 0.0)
+    throttle_pct = float(_safe_float(row.get("throttle_pct")) or 0.0)
+    brake_pct = float(_safe_float(row.get("brake_pct")) or 0.0)
+    valid_for_tuning = (
+        splitter_mm is not None
+        and splitter_mm >= 0.0
+        and is_complete_lap
+        and speed_mph >= PLATFORM_VALID_MIN_SPEED_MPH
+        and throttle_pct >= PLATFORM_VALID_THROTTLE_PCT
+        and brake_pct <= LOW_BRAKE_PCT
+    )
+    lap_pct_peak = event.lap_pct if event.lap_pct is not None else _lap_pct_100(row)
+    event_type = "PLATFORM_SCRAPE" if splitter_mm is not None and splitter_mm <= 0.0 else "PLATFORM_LOW"
+    return TelemetryEvent(
+        event_id=f"{run_id}:{event.event_id}",
+        run_id=run_id,
+        lap_number=event.lap,
+        event_type=event_type,
+        event_subtype=event.severity,
+        lap_pct_start=lap_pct_peak,
+        lap_pct_end=lap_pct_peak,
+        lap_pct_peak=lap_pct_peak,
+        distance_m_peak=_safe_float(row.get("lap_dist_m")),
+        zone_name=row.get("zone_name"),
+        severity=event.severity,
+        confidence_score=0.75 if valid_for_tuning else 0.35,
+        valid_for_tuning=valid_for_tuning,
+        primary_metric_name="cfsr_height_mm",
+        primary_metric_value=splitter_mm,
+        evidence_json={
+            "speed_mph": speed_mph,
+            "throttle_pct": throttle_pct,
+            "brake_pct": brake_pct,
+            "splitter_height_mm": splitter_mm,
+            "is_complete_lap": is_complete_lap,
+            "display_scope": event.display_scope,
+            "validity_rule": (
+                "complete high-speed full-throttle low-brake event"
+                if valid_for_tuning
+                else "not valid for tuning because context is incomplete, slowdown, braking, low-speed, or not full-throttle"
+            ),
+        },
+        related_setup_keys=["front_ride_height", "front_springs", "packers", "steering_offset"],
+        recommended_actions=[event.recommended_action] if event.recommended_action else [],
+    )
+
+
+def _build_overview_platform_events(table: Any, run_id: str) -> list[TelemetryEvent]:
+    rows = _platform_detection_rows(table)
+    if not rows:
+        return []
+
+    lap_numbers = sorted(
+        {
+            int(lap_value)
+            for row in rows
+            if (lap_value := _safe_float(row.get("lap"))) is not None
+        }
+    )
+    lap_scope = lap_numbers or [None]
+    events: list[TelemetryEvent] = []
+    for lap_number in lap_scope:
+        lap_rows = rows if lap_number is None else [row for row in rows if _safe_float(row.get("lap")) == float(lap_number)]
+        if not lap_rows:
+            continue
+        platform_events = detect_platform_events(lap_rows, lap=lap_number, event_types=["MIN_SPLITTER"])
+        if not platform_events:
+            continue
+        event = platform_events[0]
+        if event.event_type != "MIN_SPLITTER":
+            continue
+        if not (0 <= event.sample_index < len(lap_rows)):
+            continue
+        events.append(
+            _platform_event_to_overview_marker(
+                event,
+                lap_rows[event.sample_index],
+                run_id=run_id,
+                is_complete_lap=_is_complete_lap(lap_rows),
+            )
+        )
+    return events
+
+
 def _build_primary_findings(best_lap: Any, platform_events: list[Any], drag_events: list[Any]) -> list[str]:
     findings: list[str] = []
     if best_lap is not None:
@@ -568,7 +699,7 @@ def _build_overview(
     best_lap = min(useful_laps, key=lambda lap: lap.lap_time or 999999.0) if useful_laps else None
     profile["overview_best_lap_pick_s"] = time.perf_counter() - t0
     t0 = time.perf_counter()
-    platform_events = detect_platform_events(telemetry_table, run_id=run_id)
+    platform_events = _build_overview_platform_events(telemetry_table, run_id=run_id)
     profile["overview_platform_events_s"] = time.perf_counter() - t0
     t0 = time.perf_counter()
     drag_events = detect_drag_scrub_risk_zones(

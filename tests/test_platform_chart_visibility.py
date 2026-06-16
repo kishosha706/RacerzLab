@@ -90,6 +90,144 @@ def test_hidden_events_do_not_create_raw_event_label_spam() -> None:
     assert "label: { show: eventAnnotations.showLineLabels" in platform
 
 
+def test_ride_height_panels_receive_increased_density_aware_heights() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    assert 'heightDetailed: 154, heightCompact: 108, yAxisUnit: "in"' in platform
+    assert 'heightDetailed: 138, heightCompact: 104, yAxisUnit: "in"' in platform
+    assert 'heightDetailed: 118, heightCompact: 96, yAxisUnit: "in"' in platform
+    assert 'type ChartDensity = "detailed" | "compact"' in platform
+    assert 'const [chartDensity, setChartDensity] = useState<ChartDensity>("detailed")' in platform
+    assert "buildPanelLayout(rows, preset, chartDensity, fallbackRowHeight(preset), 54)" in platform
+    assert "layoutTotalHeight(panelLayout, 42)" in platform
+
+
+def test_chart_uses_separated_grid_panels_without_wheel_scroll_trap() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    styles = _read("ui/src/styles.css")
+
+    assert "rowGap(preset, density)" in platform
+    assert 'return density === "compact" ? 12 : 18' in platform
+    assert 'stroke: "rgba(15,23,42,0.95)"' in platform
+    wrapper_block = styles.split(".trace-panel-wrapper {", 1)[1].split("}", 1)[0]
+    assert "overflow: visible" in wrapper_block
+    assert "max-height" not in wrapper_block
+    assert "overflow: auto" not in wrapper_block
+
+
+def test_rake_panels_include_zero_line() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    assert 'zeroLine: true' in platform
+    assert 'name: "Zero"' in platform
+    assert "yAxis: 0" in platform
+    assert 'color: "rgba(203,213,225,0.58)"' in platform
+
+
+def test_only_bottom_x_axis_shows_full_distance_labels() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    assert "show: index === rows.length - 1" in platform
+    assert "hideOverlap: true" in platform
+    assert "formatter: (value: number) => `${Math.round(value).toLocaleString()} ft`" in platform
+    assert "axisTick: { show: index === rows.length - 1 }" in platform
+
+
+def test_cursor_readout_includes_ride_height_rake_and_event_context() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    assert "<div><dt>CFS</dt>" in platform
+    assert "<div><dt>LF/RF</dt>" in platform
+    assert "<div><dt>LR/RR</dt>" in platform
+    assert "<div><dt>Front/Rear Avg</dt>" in platform
+    assert "<div><dt>Center Rake FS</dt>" in platform
+    assert "<div><dt>Side Rake</dt>" in platform
+    assert "<div><dt>Event</dt><dd>{selectedPlatformEvent.title}</dd></div>" in platform
+    assert "<div><dt>Hidden</dt><dd>{hiddenPlatformEventCount} internal</dd></div>" in platform
+
+
+def test_missing_channel_does_not_render_as_zero() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    assert "channelHasNumericData" in platform
+    assert "!channelHasNumericData(trace, channel.name)" in platform
+    assert '`${channel.label} unavailable`' in platform
+    assert "trace-missing-note" in platform
+    assert "connectNulls: false" in platform
+
+
+def test_selected_event_or_zone_draws_subtle_cross_panel_context() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    assert "selectedBandAreaData" in platform
+    assert "selectedOverlayEvent" in platform
+    assert "selection.selectedZoneStartPct" in platform
+    assert "selection.selectedZoneEndPct" in platform
+    assert 'color: "#38bdf8", opacity: 0.055' in platform
+    assert "channelIndex === 0 ? selectedBandAreaData : []" in platform
+
+
+def test_ride_height_series_do_not_use_hover_focus_or_blur_emphasis() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    assert 'emphasis: { disabled: true }' in platform
+    assert 'focus: "self"' not in platform
+    assert 'focus: "series"' not in platform
+    assert "blur: { lineStyle" not in platform
+    assert "legendHoverLink: false" in platform
+    assert 'inactiveColor: "#475569"' in platform
+    assert "itemGap: 8" in platform
+
+
+def test_chart_config_includes_x_axis_data_zoom_across_stacked_grids() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    assert 'type: "slider", xAxisIndex: rows.map((_, i) => i)' in platform
+    assert "xAxisIndex: rows.map((_, i) => i)" in platform
+    assert 'yAxisIndex: "none"' in platform
+    assert 'filterMode: "none"' in platform
+    assert 'type: "inside"' not in platform
+    assert "zoomOnMouseWheel" not in platform
+    assert "moveOnMouseWheel" not in platform
+    assert "dataZoomIndex: 0" in platform
+
+
+def test_drag_zoom_and_reset_zoom_controls_exist() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    styles = _read("ui/src/styles.css")
+
+    assert "dragZoomRef" in platform
+    assert "trace-drag-zoom-band" in platform
+    assert "Reset ride-height zoom" in platform
+    assert "trace-reset-zoom" in platform
+    assert "trace-zoom-status" in platform
+    assert "Zoomed: ${start}-${end} ft" in platform
+    assert ".trace-drag-zoom-band" in styles
+
+
+def test_reset_zoom_does_not_clear_selected_event_or_session_state() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    reset_body = platform.split("const resetRideHeightZoom = useCallback(() => {", 1)[1].split("}, []);", 1)[0]
+
+    assert 'chartRef.current?.dispatchAction({ type: "dataZoom", start: 0, end: 100 });' in reset_body
+    assert "setSelectedPlatformEvent" not in reset_body
+    assert "focusEvidence" not in reset_body
+    assert "setWorkspace" not in reset_body
+
+
+def test_escape_unlock_restores_live_cursor_hover_readout() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    assert "lastPointerOffsetRef" in platform
+    assert "restoreHoverAtPointerRef" in platform
+    assert "cancelDragZoomRef.current()" in platform
+    assert "clickedSampleIndexRef.current = null" in platform
+    assert "hoverSampleIndexRef.current = index" in platform
+    assert "setHoverSampleIndex(index)" in platform
+    assert "const restoredHover = restoreHoverAtPointerRef.current()" in platform
+    assert "if (!restoredHover) hideCursorLine()" in platform
+
+
 def test_chart_annotation_data_comes_only_from_visible_events() -> None:
     chart = _read("ui/src/utils/platformChartAnnotations.ts")
 

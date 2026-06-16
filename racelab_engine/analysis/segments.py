@@ -10,7 +10,7 @@ import polars as pl
 from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
 from racelab_engine.analysis.constants import SEGMENT_WIDTH_PCT
 from racelab_engine.analysis.drag_scrub import compute_drag_scrub_index
-from racelab_engine.analysis.platform import classify_splitter_height_mm
+from racelab_engine.analysis.platform_metrics import classify_splitter_height_mm
 
 
 def _ensure_normalized(table: Any) -> list[dict[str, Any]]:

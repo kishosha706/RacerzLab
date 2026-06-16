@@ -52,6 +52,20 @@ type ChartRow = {
   channels: Array<{ name: string; label: string; color: string }>;
   min?: number;
   max?: number;
+  heightDetailed?: number;
+  heightCompact?: number;
+  yAxisUnit?: string;
+  zeroLine?: boolean;
+};
+
+type ChartDensity = "detailed" | "compact";
+type ChartPanelLayout = { top: number; height: number; gap: number };
+type DragZoomState = {
+  pointerId: number;
+  startOffsetX: number;
+  startOffsetY: number;
+  startValue: number;
+  active: boolean;
 };
 
 type ShockCornerKey = "lf" | "rf" | "lr" | "rr";
@@ -99,17 +113,17 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "cfs_ride_height_in", label: "CFS", color: "#4ade80" },
       { name: "lf_ride_height_in", label: "LF", color: "#eab308" },
       { name: "rf_ride_height_in", label: "RF", color: "#ef4444" },
-    ] },
+    ], heightDetailed: 154, heightCompact: 108, yAxisUnit: "in" },
     { label: "LR / RR Ride Height [in]", channels: [
       { name: "lr_ride_height_in", label: "LR", color: "#eab308" },
       { name: "rr_ride_height_in", label: "RR", color: "#22d3ee" },
-    ] },
+    ], heightDetailed: 138, heightCompact: 104, yAxisUnit: "in" },
     { label: "Front / Rear Avg RH [in]", channels: [
       { name: "front_avg_rh_in", label: "Front Avg", color: "#38bdf8" },
       { name: "rear_avg_rh_in", label: "Rear Avg", color: "#a78bfa" },
-    ] },
-    { label: "Center Rake [in]", channels: [{ name: "center_rake_fs_in", label: "Center Rake", color: "#4ade80" }] },
-    { label: "Side Rake [in]", channels: [{ name: "side_rake_in", label: "Side Rake", color: "#f59e0b" }] },
+    ], heightDetailed: 118, heightCompact: 96, yAxisUnit: "in" },
+    { label: "Center Rake [in]", channels: [{ name: "center_rake_fs_in", label: "Center Rake", color: "#4ade80" }], heightDetailed: 108, heightCompact: 88, yAxisUnit: "in", zeroLine: true },
+    { label: "Side Rake [in]", channels: [{ name: "side_rake_in", label: "Side Rake", color: "#f59e0b" }], heightDetailed: 108, heightCompact: 88, yAxisUnit: "in", zeroLine: true },
   ],
   "Rear Scrape": [
     { label: "Rear Min / Scrape Margin [mm]", channels: [
@@ -340,6 +354,66 @@ function valueAt(trace: TraceResponse | null, channel: string, index: number | n
   const v = values(trace, channel)[index];
   if (v == null || typeof v === "string") return null;
   return v;
+}
+
+function channelHasNumericData(trace: TraceResponse | null, channel: string): boolean {
+  return values(trace, channel).some((value) => typeof value === "number" && Number.isFinite(value));
+}
+
+function rowHeight(row: ChartRow, density: ChartDensity, fallback: number): number {
+  return density === "compact"
+    ? row.heightCompact ?? Math.min(fallback, 104)
+    : row.heightDetailed ?? fallback;
+}
+
+function rowGap(preset: string, density: ChartDensity): number {
+  if (preset === "Platform / Rake / Ride Height") return density === "compact" ? 12 : 18;
+  return 12;
+}
+
+function fallbackRowHeight(preset: string): number {
+  if (preset === "Tires") return 130;
+  if (preset === "Shocks") return 120;
+  return 104;
+}
+
+function buildPanelLayout(rows: ChartRow[], preset: string, density: ChartDensity, fallbackHeight: number, top = 50): ChartPanelLayout[] {
+  const gap = rowGap(preset, density);
+  let cursorTop = top;
+  return rows.map((row) => {
+    const height = rowHeight(row, density, fallbackHeight);
+    const panel = { top: cursorTop, height, gap };
+    cursorTop += height + gap;
+    return panel;
+  });
+}
+
+function layoutTotalHeight(layout: ChartPanelLayout[], bottomPadding = 34): number {
+  if (layout.length === 0) return 0;
+  const last = layout[layout.length - 1];
+  return last.top + last.height + bottomPadding;
+}
+
+function xAtLapPct(trace: TraceResponse | null, xs: Array<number | null>, lapPct: number | null | undefined): number | null {
+  if (lapPct == null) return null;
+  const index = nearestIndexByPct(trace, lapPct);
+  return index == null ? null : xs[index] ?? null;
+}
+
+function zoomRangeSummary(range: { startValue?: number; endValue?: number } | null): string {
+  if (range?.startValue == null || range.endValue == null) return "Full range";
+  const start = Math.round(Math.min(range.startValue, range.endValue)).toLocaleString();
+  const end = Math.round(Math.max(range.startValue, range.endValue)).toLocaleString();
+  return `Zoomed: ${start}-${end} ft`;
+}
+
+function formatYAxisTick(value: number, unit?: string): string {
+  if (!Number.isFinite(value)) return "";
+  if (unit === "in") {
+    const digits = Math.abs(value) < 1 ? 2 : 1;
+    return value.toFixed(digits);
+  }
+  return Math.abs(value) >= 100 ? Math.round(value).toLocaleString() : value.toFixed(1);
 }
 
 function fmt(value: number | null | undefined, digits = 2) {
@@ -626,15 +700,20 @@ function PlatformTraceWorkbench({
   const chartNode = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
   const cursorLineRef = useRef<HTMLDivElement | null>(null);
+  const dragZoomBandRef = useRef<HTMLDivElement | null>(null);
   const clickedSampleIndexRef = useRef<number | null>(null);
   const hoverSampleIndexRef = useRef<number | null>(null);
   const zoomRangeRef = useRef<{ startValue?: number; endValue?: number } | null>(null);
+  const dragZoomRef = useRef<DragZoomState | null>(null);
+  const lastPointerOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const latestXsRef = useRef<Array<number | null>>([]);
   const gridLeftRef = useRef(100);
   const updateCursorRef = useRef<(index: number | null, eventId?: string | null) => void>(() => {});
   const showCursorLineRef = useRef<(offsetX: number, locked: boolean) => void>(() => {});
   const hideCursorLineRef = useRef<() => void>(() => {});
   const commitHoverSampleRef = useRef<(index: number | null) => void>(() => {});
+  const restoreHoverAtPointerRef = useRef<() => boolean>(() => false);
+  const cancelDragZoomRef = useRef<() => void>(() => {});
   const hoverRafRef = useRef<number | null>(null);
   const pendingHoverSampleIndexRef = useRef<number | null>(null);
   const lastHoverCommitRef = useRef(0);
@@ -644,6 +723,8 @@ function PlatformTraceWorkbench({
   const [clickedSampleIndex, setClickedSampleIndex] = useState<number | null>(null);
   const [hoverSampleIndex, setHoverSampleIndex] = useState<number | null>(null);
   const [tireMapMode, setTireMapMode] = useState<any>("pressure");
+  const [chartDensity, setChartDensity] = useState<ChartDensity>("detailed");
+  const [zoomSummary, setZoomSummary] = useState("Full range");
   const normalizedInitialView = initialWorkbenchView === "scrub_steering" ? "rear_scrape" : initialWorkbenchView;
   const [workbenchView, setWorkbenchView] = useState<WorkbenchView>(normalizedInitialView);
   useEffect(() => {
@@ -688,10 +769,21 @@ function PlatformTraceWorkbench({
     [overview.events],
   );
   const rows = useMemo(() => PRESET_ROWS[preset] ?? PRESET_ROWS["Platform / Rake / Ride Height"], [preset]);
+  const missingTraceChannels = useMemo(
+    () => rows
+      .flatMap((row) => row.channels)
+      .filter((channel) => !channelHasNumericData(trace, channel.name))
+      .map((channel) => `${channel.label} unavailable`),
+    [rows, trace],
+  );
   const rowsRef = useRef<ChartRow[]>(rows);
   useEffect(() => {
     rowsRef.current = rows;
   }, [rows]);
+  const chartDensityRef = useRef<ChartDensity>(chartDensity);
+  useEffect(() => {
+    chartDensityRef.current = chartDensity;
+  }, [chartDensity]);
   const windowContextActive = selection.selectedLapScope === "lap_window"
     && selection.selectedLapWindowStart != null
     && selection.selectedLapWindowEnd != null;
@@ -937,6 +1029,12 @@ function PlatformTraceWorkbench({
     [updateCursor, xs],
   );
 
+  const resetRideHeightZoom = useCallback(() => {
+    zoomRangeRef.current = null;
+    setZoomSummary("Full range");
+    chartRef.current?.dispatchAction({ type: "dataZoom", start: 0, end: 100 });
+  }, []);
+
   const focusRepresentativeLap = useCallback((lapNumber: number) => {
     if (!windowContextActive) return;
     focusEvidence({
@@ -1062,35 +1160,35 @@ function PlatformTraceWorkbench({
     chartRef.current = chart;
 
     const GRID_RIGHT = 36;
-    const GRID_TOP = 50;
+    const GRID_TOP = 54;
 
-    const indexFromPoint = (offsetX: number, offsetY: number): number | null => {
-      if (!Number.isFinite(offsetX) || !Number.isFinite(offsetY)) return null;
+    const isInsideAnyGrid = (offsetY: number): boolean => {
+      if (!Number.isFinite(offsetY)) return false;
+      const currentPreset = presetRef.current;
+      const layout = buildPanelLayout(
+        rowsRef.current,
+        currentPreset,
+        chartDensityRef.current,
+        fallbackRowHeight(currentPreset),
+        GRID_TOP,
+      );
+      let insideGrid = false;
+      for (const panel of layout) {
+        if (offsetY >= panel.top && offsetY <= panel.top + panel.height) {
+          insideGrid = true;
+          break;
+        }
+      }
+      return insideGrid;
+    };
+
+    const xValueFromOffset = (offsetX: number): number | null => {
+      if (!Number.isFinite(offsetX)) return null;
       const xsRef = latestXsRef.current;
       if (xsRef.length === 0) return null;
       const gl = gridLeftRef.current;
       const right = node.clientWidth - GRID_RIGHT;
       if (right <= gl || offsetX < gl || offsetX > right) return null;
-
-      // Y hit-test: is cursor inside any row grid?
-      const sectionRowConfigH: Record<string, { height: number; gap: number }> = {
-        "Platform / Rake / Ride Height": { height: 100, gap: 12 },
-        "Rear Scrape / Scrub": { height: 104, gap: 12 },
-        "Aero Load": { height: 104, gap: 12 },
-        "Tires": { height: 130, gap: 12 },
-        "Shocks": { height: 120, gap: 12 },
-        "Grade / Pull": { height: 104, gap: 12 },
-        "Diffuser": { height: 104, gap: 12 },
-      };
-      const cfg = sectionRowConfigH[presetRef.current] ?? { height: 100, gap: 12 };
-      const ROW_H = cfg.height; const ROW_GAP = cfg.gap; const nRows = rowsRef.current.length;
-      let insideGrid = false;
-      for (let i = 0; i < nRows; i++) {
-        const top = GRID_TOP + i * (ROW_H + ROW_GAP);
-        if (offsetY >= top && offsetY <= top + ROW_H) { insideGrid = true; break; }
-      }
-      if (!insideGrid) return null;
-
       const ratio = (offsetX - gl) / (right - gl);
       const finiteXs = xsRef.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
       if (finiteXs.length === 0) return null;
@@ -1103,7 +1201,75 @@ function PlatformTraceWorkbench({
       const endValue = typeof zoom.endValue === "number"
         ? zoom.endValue
         : minX + ((typeof zoom.end === "number" ? zoom.end : 100) / 100) * (maxX - minX);
-      return nearestIndexByFt(xsRef, startValue + ratio * (endValue - startValue));
+      return startValue + ratio * (endValue - startValue);
+    };
+
+    const zoomRangeFromOption = (): { startValue?: number; endValue?: number } | null => {
+      const xsRef = latestXsRef.current;
+      const finiteXs = xsRef.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+      if (finiteXs.length === 0) return null;
+      const minX = finiteXs[0];
+      const maxX = finiteXs[finiteXs.length - 1];
+      const zoom = (chart.getOption().dataZoom as any[] | undefined)?.[0] ?? {};
+      const startValue = typeof zoom.startValue === "number"
+        ? zoom.startValue
+        : minX + ((typeof zoom.start === "number" ? zoom.start : 0) / 100) * (maxX - minX);
+      const endValue = typeof zoom.endValue === "number"
+        ? zoom.endValue
+        : minX + ((typeof zoom.end === "number" ? zoom.end : 100) / 100) * (maxX - minX);
+      if (Math.abs(startValue - minX) < 1 && Math.abs(endValue - maxX) < 1) return null;
+      return { startValue, endValue };
+    };
+
+    const indexFromPoint = (offsetX: number, offsetY: number): number | null => {
+      if (!Number.isFinite(offsetX) || !Number.isFinite(offsetY)) return null;
+      if (!isInsideAnyGrid(offsetY)) return null;
+      const xValue = xValueFromOffset(offsetX);
+      return xValue == null ? null : nearestIndexByFt(latestXsRef.current, xValue);
+    };
+
+    const hideDragZoomBand = () => {
+      const band = dragZoomBandRef.current;
+      if (!band) return;
+      band.hidden = true;
+      band.style.transform = "translateX(-9999px)";
+      band.style.width = "0";
+    };
+
+    const cancelDragZoom = () => {
+      const drag = dragZoomRef.current;
+      if (drag) {
+        node.releasePointerCapture?.(drag.pointerId);
+      }
+      dragZoomRef.current = null;
+      node.dataset.dragZooming = "false";
+      hideDragZoomBand();
+    };
+
+    const restoreHoverAtPointer = () => {
+      const lastPointer = lastPointerOffsetRef.current;
+      if (!lastPointer) return false;
+      const index = indexFromPoint(lastPointer.x, lastPointer.y);
+      if (index == null) return false;
+      hoverSampleIndexRef.current = index;
+      setHoverSampleIndex(index);
+      showCursorLineRef.current(lastPointer.x, false);
+      return true;
+    };
+
+    cancelDragZoomRef.current = cancelDragZoom;
+    restoreHoverAtPointerRef.current = restoreHoverAtPointer;
+
+    const showDragZoomBand = (startOffsetX: number, currentOffsetX: number) => {
+      const band = dragZoomBandRef.current;
+      if (!band) return;
+      const gl = gridLeftRef.current;
+      const right = node.clientWidth - GRID_RIGHT;
+      const start = Math.max(gl, Math.min(right, startOffsetX));
+      const current = Math.max(gl, Math.min(right, currentOffsetX));
+      band.hidden = false;
+      band.style.transform = `translateX(${Math.min(start, current)}px)`;
+      band.style.width = `${Math.abs(current - start)}px`;
     };
 
     // Single pointer path: DOM pointer events only
@@ -1111,6 +1277,22 @@ function PlatformTraceWorkbench({
       const rect = node.getBoundingClientRect();
       const ox = event.clientX - rect.left;
       const oy = event.clientY - rect.top;
+      lastPointerOffsetRef.current = { x: ox, y: oy };
+      const drag = dragZoomRef.current;
+      if (drag?.pointerId === event.pointerId) {
+        const dx = ox - drag.startOffsetX;
+        const dy = oy - drag.startOffsetY;
+        if (!drag.active && Math.abs(dx) >= 8 && Math.abs(dx) > Math.abs(dy)) {
+          drag.active = true;
+          node.dataset.dragZooming = "true";
+        }
+        if (drag.active) {
+          event.preventDefault();
+          showDragZoomBand(drag.startOffsetX, ox);
+          showCursorLineRef.current(ox, false);
+          return;
+        }
+      }
       const index = indexFromPoint(ox, oy);
       if (index == null) {
         if (clickedSampleIndexRef.current == null) {
@@ -1129,6 +1311,49 @@ function PlatformTraceWorkbench({
       const rect = node.getBoundingClientRect();
       const ox = event.clientX - rect.left;
       const oy = event.clientY - rect.top;
+      lastPointerOffsetRef.current = { x: ox, y: oy };
+      const index = indexFromPoint(ox, oy);
+      if (index == null) return;
+      const startValue = xValueFromOffset(ox);
+      if (startValue == null) return;
+      dragZoomRef.current = {
+        pointerId: event.pointerId,
+        startOffsetX: ox,
+        startOffsetY: oy,
+        startValue,
+        active: false,
+      };
+      node.setPointerCapture?.(event.pointerId);
+      showCursorLineRef.current(ox, false);
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      const rect = node.getBoundingClientRect();
+      const ox = event.clientX - rect.left;
+      const oy = event.clientY - rect.top;
+      lastPointerOffsetRef.current = { x: ox, y: oy };
+      const drag = dragZoomRef.current;
+      if (drag?.pointerId === event.pointerId) {
+        cancelDragZoom();
+        if (drag.active) {
+          const endValue = xValueFromOffset(ox);
+          if (endValue != null && Math.abs(endValue - drag.startValue) >= 5) {
+            const nextRange = {
+              startValue: Math.min(drag.startValue, endValue),
+              endValue: Math.max(drag.startValue, endValue),
+            };
+            zoomRangeRef.current = nextRange;
+            setZoomSummary(zoomRangeSummary(nextRange));
+            chart.dispatchAction({
+              type: "dataZoom",
+              dataZoomIndex: 0,
+              startValue: nextRange.startValue,
+              endValue: nextRange.endValue,
+            });
+          }
+          return;
+        }
+      }
       const index = indexFromPoint(ox, oy);
       if (index == null) return;
       setClickedSampleIndex(index);
@@ -1137,7 +1362,13 @@ function PlatformTraceWorkbench({
       showCursorLineRef.current(ox, true);
     };
 
+    const handlePointerCancel = (event: PointerEvent) => {
+      if (dragZoomRef.current?.pointerId !== event.pointerId) return;
+      cancelDragZoom();
+    };
+
     const handlePointerLeave = () => {
+      if (dragZoomRef.current?.active) return;
       if (clickedSampleIndexRef.current == null) {
         commitHoverSampleRef.current(null);
         hideCursorLineRef.current();
@@ -1154,16 +1385,16 @@ function PlatformTraceWorkbench({
     ro.observe(node);
 
     const handleDataZoom = () => {
-      const zoom = (chart.getOption().dataZoom as any[] | undefined)?.[0] ?? {};
-      zoomRangeRef.current = {
-        startValue: typeof zoom.startValue === "number" ? zoom.startValue : undefined,
-        endValue: typeof zoom.endValue === "number" ? zoom.endValue : undefined,
-      };
+      const nextRange = zoomRangeFromOption();
+      zoomRangeRef.current = nextRange;
+      setZoomSummary(zoomRangeSummary(nextRange));
     };
 
     chart.on("datazoom", handleDataZoom);
     node.addEventListener("pointermove", handlePointerMove);
     node.addEventListener("pointerdown", handlePointerDown);
+    node.addEventListener("pointerup", handlePointerUp);
+    node.addEventListener("pointercancel", handlePointerCancel);
     node.addEventListener("pointerleave", handlePointerLeave);
 
     return () => {
@@ -1171,6 +1402,8 @@ function PlatformTraceWorkbench({
       chart.off("datazoom", handleDataZoom);
       node.removeEventListener("pointermove", handlePointerMove);
       node.removeEventListener("pointerdown", handlePointerDown);
+      node.removeEventListener("pointerup", handlePointerUp);
+      node.removeEventListener("pointercancel", handlePointerCancel);
       node.removeEventListener("pointerleave", handlePointerLeave);
       if (hoverRafRef.current != null) {
         cancelAnimationFrame(hoverRafRef.current);
@@ -1178,6 +1411,8 @@ function PlatformTraceWorkbench({
       }
       chart.dispose();
       if (chartRef.current === chart) chartRef.current = null;
+      if (cancelDragZoomRef.current === cancelDragZoom) cancelDragZoomRef.current = () => {};
+      if (restoreHoverAtPointerRef.current === restoreHoverAtPointer) restoreHoverAtPointerRef.current = () => false;
     };
   }, []);;
 
@@ -1185,20 +1420,10 @@ function PlatformTraceWorkbench({
     const chart = chartRef.current;
     if (!chart || !chartNode.current) return;
 
-    const sectionRowConfig: Record<string, { height: number; gap: number }> = {
-      "Platform / Rake / Ride Height": { height: 100, gap: 12 },
-      "Rear Scrape / Scrub": { height: 104, gap: 12 },
-      "Aero Load": { height: 104, gap: 12 },
-      "Diffuser": { height: 104, gap: 12 },
-      "Tires": { height: 130, gap: 12 },
-      "Shocks": { height: 120, gap: 12 },
-      "Grade / Pull": { height: 104, gap: 12 },
-    };
-    const config = sectionRowConfig[preset] ?? { height: 100, gap: 12 };
-    const ROW_H = config.height;
-    const ROW_GAP = config.gap;
     const isTires = preset === "Tires";
-    const GRID_LEFT = isTires ? 130 : 100;
+    const isRideHeightPreset = preset === "Platform / Rake / Ride Height";
+    const panelLayout = buildPanelLayout(rows, preset, chartDensity, fallbackRowHeight(preset), 54);
+    const GRID_LEFT = isTires ? 130 : isRideHeightPreset ? 112 : 100;
     const LABEL_LEFT = 4;
     gridLeftRef.current = GRID_LEFT;
     const GRID_RIGHT = 36;
@@ -1206,8 +1431,8 @@ function PlatformTraceWorkbench({
     const grid = rows.map((_, index) => ({
       left: GRID_LEFT,
       right: GRID_RIGHT,
-      top: 50 + index * (ROW_H + ROW_GAP),
-      height: ROW_H,
+      top: panelLayout[index]?.top ?? 54,
+      height: panelLayout[index]?.height ?? fallbackRowHeight(preset),
     }));
     const xAxis = rows.map((_, index) => ({
       type: "value" as const,
@@ -1215,9 +1440,17 @@ function PlatformTraceWorkbench({
       min: "dataMin",
       max: "dataMax",
       scale: isTires,
-      axisLabel: { show: index === rows.length - 1, color: "#8d9aaa", fontSize: 10 },
+      axisLabel: {
+        show: index === rows.length - 1,
+        color: "#8d9aaa",
+        fontSize: 10,
+        hideOverlap: true,
+        margin: 8,
+        formatter: (value: number) => `${Math.round(value).toLocaleString()} ft`,
+      },
       axisLine: { lineStyle: { color: "#263241" } },
-      splitLine: { lineStyle: { color: "#1f2937" } },
+      axisTick: { show: index === rows.length - 1 },
+      splitLine: { lineStyle: { color: index === rows.length - 1 ? "#1f2937" : "rgba(31,41,55,0.42)" } },
     }));
     const yAxis = rows.map((row, index) => ({
       type: "value" as const,
@@ -1225,18 +1458,29 @@ function PlatformTraceWorkbench({
       min: row.min,
       max: row.max,
       scale: isTires,
-      axisLabel: { color: "#8d9aaa", fontSize: 10 },
+      splitNumber: chartDensity === "detailed" ? 4 : 3,
+      axisLabel: {
+        color: "#8d9aaa",
+        fontSize: 10,
+        formatter: (value: number) => formatYAxisTick(value, row.yAxisUnit),
+      },
       axisLine: { lineStyle: { color: "#263241" } },
       splitLine: { lineStyle: { color: "#1f2937" } },
+      minorTick: { show: chartDensity === "detailed", splitNumber: 2 },
+      minorSplitLine: {
+        show: chartDensity === "detailed",
+        lineStyle: { color: "rgba(31,41,55,0.34)" },
+      },
     }));
 
     const graphic: any[] = [];
     rows.forEach((row, index) => {
-      const top = 50 + index * (ROW_H + ROW_GAP);
+      const panel = panelLayout[index] ?? { top: 54, height: fallbackRowHeight(preset), gap: rowGap(preset, chartDensity) };
+      const top = panel.top;
       graphic.push({
         type: "line",
         shape: { x1: GRID_LEFT, y1: top, x2: 9999, y2: top },
-        style: { stroke: "rgba(31,41,55,0.5)", lineWidth: 1 },
+        style: { stroke: "rgba(71,85,105,0.52)", lineWidth: 1 },
         silent: true,
         z: 1,
       });
@@ -1245,15 +1489,22 @@ function PlatformTraceWorkbench({
         left: 0,
         right: 0,
         top,
-        height: ROW_H,
-        style: { fill: "rgba(15,17,23,0.5)", opacity: 1 },
+        height: panel.height,
+        style: { fill: index % 2 === 0 ? "rgba(11,16,24,0.72)" : "rgba(15,21,31,0.64)", opacity: 1 },
         silent: true,
         z: 0,
       });
       graphic.push({
         type: "line",
-        shape: { x1: GRID_LEFT, y1: top, x2: GRID_LEFT, y2: top + ROW_H },
+        shape: { x1: GRID_LEFT, y1: top, x2: GRID_LEFT, y2: top + panel.height },
         style: { stroke: "rgba(31,41,55,0.4)", lineWidth: 1 },
+        silent: true,
+        z: 1,
+      });
+      graphic.push({
+        type: "line",
+        shape: { x1: GRID_LEFT, y1: top + panel.height, x2: 9999, y2: top + panel.height },
+        style: { stroke: "rgba(15,23,42,0.95)", lineWidth: Math.max(1, panel.gap - 8) },
         silent: true,
         z: 1,
       });
@@ -1274,17 +1525,17 @@ function PlatformTraceWorkbench({
     });
 
     if (rows.length > 0) {
-      const lastTop = 50 + (rows.length - 1) * (ROW_H + ROW_GAP);
+      const last = panelLayout[panelLayout.length - 1];
       graphic.push({
         type: "line",
-        shape: { x1: GRID_LEFT, y1: lastTop + ROW_H, x2: 9999, y2: lastTop + ROW_H },
+        shape: { x1: GRID_LEFT, y1: last.top + last.height, x2: 9999, y2: last.top + last.height },
         style: { stroke: "rgba(31,41,55,0.5)", lineWidth: 1 },
         silent: true,
         z: 1,
       });
     }
 
-    const totalChartH = 50 + rows.length * (ROW_H + ROW_GAP) + 34;
+    const totalChartH = layoutTotalHeight(panelLayout, 42);
     chartNode.current.style.height = `${totalChartH}px`;
     chartNode.current.style.minHeight = `${totalChartH}px`;
 
@@ -1293,6 +1544,32 @@ function PlatformTraceWorkbench({
       legacyEvents,
       mode: platformEventVisibilityMode,
     });
+    const selectedOverlayEvent = selectedPlatformEvent ?? selectedEventForContext;
+    const selectedEventCenter = selectedOverlayEvent?.lap_dist_ft
+      ?? (selectedOverlayEvent?.lap_pct != null ? xAtLapPct(trace, xs, selectedOverlayEvent.lap_pct) : null);
+    const selectedZoneStart = xAtLapPct(trace, xs, selection.selectedZoneStartPct);
+    const selectedZoneEnd = xAtLapPct(trace, xs, selection.selectedZoneEndPct);
+    const selectedBand = selectedEventCenter != null
+      ? {
+        start: Math.max(0, selectedEventCenter - 35),
+        end: selectedEventCenter + 35,
+        center: selectedEventCenter,
+        label: selectedOverlayEvent?.title ?? "Selected event",
+      }
+      : selectedZoneStart != null && selectedZoneEnd != null
+        ? {
+          start: Math.min(selectedZoneStart, selectedZoneEnd),
+          end: Math.max(selectedZoneStart, selectedZoneEnd),
+          center: (selectedZoneStart + selectedZoneEnd) / 2,
+          label: selection.selectedZoneLabel ?? "Selected zone",
+        }
+        : null;
+    const selectedBandAreaData = selectedBand
+      ? [[
+        { xAxis: selectedBand.start, itemStyle: { color: "#38bdf8", opacity: 0.055 } },
+        { xAxis: selectedBand.end, itemStyle: { color: "#38bdf8", opacity: 0.055 } },
+      ]]
+      : [];
 
     const series: SeriesOption[] = [];
     rows.forEach((row, rowIndex) => {
@@ -1307,6 +1584,41 @@ function PlatformTraceWorkbench({
           else if (label === "outer") lineType = "dotted";
         }
         if (isProxyChannel(channel.name)) lineType = "dashed";
+        const markLineData: any[] = [];
+        if (rowIndex === 0 && channelIndex === 0) {
+          markLineData.push(...eventAnnotations.markLines);
+        }
+        if (row.zeroLine && channelIndex === 0) {
+          markLineData.push({
+            yAxis: 0,
+            name: "Zero",
+            lineStyle: { color: "rgba(203,213,225,0.58)", width: 1, type: "solid" },
+            label: { show: false },
+          });
+        }
+        if (selectedBand && channelIndex === 0) {
+          markLineData.push({
+            xAxis: selectedBand.center,
+            name: selectedBand.label,
+            lineStyle: { color: "#38bdf8", width: 1.5, type: "solid", opacity: 0.78 },
+            label: { show: false },
+          });
+        }
+        const contactBandAreas = channel.name === "cfs_ride_height_in"
+          ? [
+            [{ yAxis: 0, itemStyle: { color: "#ef4444", opacity: 0.14 } }, { yAxis: 0.118, itemStyle: { color: "#ef4444", opacity: 0.14 } }],
+            [{ yAxis: 0.118, itemStyle: { color: "#f97316", opacity: 0.12 } }, { yAxis: 0.236, itemStyle: { color: "#f97316", opacity: 0.12 } }],
+            [{ yAxis: 0.236, itemStyle: { color: "#f59e0b", opacity: 0.1 } }, { yAxis: 0.394, itemStyle: { color: "#f59e0b", opacity: 0.1 } }],
+          ]
+          : [];
+        const eventAreaData = rowIndex === 0 && channelIndex === 0
+          ? eventAnnotations.markAreas.map((area) => [
+            { xAxis: area.xAxis, itemStyle: { color: area.color, opacity: area.opacity } },
+            { xAxis: area.xAxis + 50, itemStyle: { color: area.color, opacity: area.opacity } },
+          ])
+          : [];
+        const rowSelectedBandArea = channelIndex === 0 ? selectedBandAreaData : [];
+        const markAreaData: any[] = [...contactBandAreas, ...eventAreaData, ...rowSelectedBandArea];
         series.push({
           type: "line",
           name: channel.label,
@@ -1315,30 +1627,21 @@ function PlatformTraceWorkbench({
           showSymbol: false,
           sampling: "lttb",
           connectNulls: false,
+          legendHoverLink: false,
           lineStyle: { width: 1.35, color: channel.color, type: lineType },
           itemStyle: { color: channel.color },
+          emphasis: { disabled: true },
           data,
-          markLine: rowIndex === 0 && channelIndex === 0 ? {
+          markLine: markLineData.length > 0 ? {
             symbol: "none",
             label: { show: eventAnnotations.showLineLabels, color: "#f59e0b" },
             lineStyle: { color: "#f59e0b", type: "dashed" },
-            data: eventAnnotations.markLines,
+            data: markLineData,
           } : undefined,
-          markArea: channel.name === "cfs_ride_height_in" ? {
+          markArea: markAreaData.length > 0 ? {
             silent: true,
-            itemStyle: { opacity: 0.14 },
-            data: [
-              [{ yAxis: 0, itemStyle: { color: "#ef4444" } }, { yAxis: 0.118, itemStyle: { color: "#ef4444" } }],
-              [{ yAxis: 0.118, itemStyle: { color: "#f97316" } }, { yAxis: 0.236, itemStyle: { color: "#f97316" } }],
-              [{ yAxis: 0.236, itemStyle: { color: "#f59e0b" } }, { yAxis: 0.394, itemStyle: { color: "#f59e0b" } }],
-            ],
-          } : (rowIndex === 0 && channelIndex === 0 && eventAnnotations.markAreas.length > 0 ? {
-            silent: true,
-            data: eventAnnotations.markAreas.map((area) => [
-              { xAxis: area.xAxis, itemStyle: { color: area.color, opacity: area.opacity } },
-              { xAxis: area.xAxis + 50, itemStyle: { color: area.color, opacity: area.opacity } },
-            ]),
-          } : undefined),
+            data: markAreaData,
+          } : undefined,
         });
       });
     });
@@ -1350,14 +1653,15 @@ function PlatformTraceWorkbench({
       tooltip: { show: false, trigger: "none", axisPointer: { type: "cross" } },
       legend: {
         type: "scroll",
-        top: 0,
+        top: 4,
         left: 18,
         right: 18,
         data: rows.flatMap((row) => row.channels.map((channel) => channel.label)),
         itemWidth: 10,
-        itemHeight: 8,
-        itemGap: 10,
-        textStyle: { color: "#cbd6e3", fontSize: 11 },
+        itemHeight: 7,
+        itemGap: 8,
+        inactiveColor: "#475569",
+        textStyle: { color: "#cbd6e3", fontSize: 10, fontWeight: 600 },
         pageIconColor: "#38bdf8",
         pageIconInactiveColor: "#334155",
         pageTextStyle: { color: "#8d9aaa" },
@@ -1376,11 +1680,20 @@ function PlatformTraceWorkbench({
           ...(zoomRangeRef.current ?? {}),
         },
       ],
-      toolbox: { feature: { dataZoom: { yAxisIndex: "none" }, restore: {} }, iconStyle: { borderColor: "#8d9aaa" } },
+      toolbox: {
+        feature: {
+          dataZoom: {
+            yAxisIndex: "none",
+            title: { zoom: "Select x-range zoom", back: "Zoom back" },
+          },
+          restore: { title: "Reset ride-height zoom" },
+        },
+        iconStyle: { borderColor: "#8d9aaa" },
+      },
       axisPointer: { link: [{ xAxisIndex: rows.map((_, i) => i) }], snap: false },
       series,
     };
-    chart.setOption(option, { notMerge: false, lazyUpdate: true, replaceMerge: ["series", "legend", "xAxis", "yAxis", "grid", "graphic"] });
+    chart.setOption(option, { notMerge: false, lazyUpdate: true, replaceMerge: ["series", "legend", "xAxis", "yAxis", "grid", "graphic", "dataZoom"] });
     chart.resize();
 
     // Reposition locked cursor after chart re-render to match new grid layout
@@ -1388,13 +1701,30 @@ function PlatformTraceWorkbench({
     if (lockedSampleIdx != null) {
       positionCursorLineForIndexRef.current(lockedSampleIdx, true);
     }
-  }, [legacyEvents, platformEventVisibilityMode, platformEvents, preset, rows, trace, xs]);
+  }, [
+    chartDensity,
+    legacyEvents,
+    platformEventVisibilityMode,
+    platformEvents,
+    preset,
+    rows,
+    selectedEventForContext,
+    selectedPlatformEvent,
+    selection.selectedZoneEndPct,
+    selection.selectedZoneLabel,
+    selection.selectedZoneStartPct,
+    trace,
+    xs,
+  ]);
 
   // ── Escape key clears clicked sample ─────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      cancelDragZoomRef.current();
       if (clickedSampleIndexRef.current != null) {
+        clickedSampleIndexRef.current = null;
+        hoverSampleIndexRef.current = null;
         setClickedSampleIndex(null);
         setHoverSampleIndex(null);
         focusEvidence({
@@ -1414,7 +1744,8 @@ function PlatformTraceWorkbench({
           selectionSource: "trace_cursor",
         });
       }
-      hideCursorLine();
+      const restoredHover = restoreHoverAtPointerRef.current();
+      if (!restoredHover) hideCursorLine();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1511,6 +1842,8 @@ function PlatformTraceWorkbench({
     rf: valueAt(trace, "rf_ride_height_in", selectedIndex),
     lr: valueAt(trace, "lr_ride_height_in", selectedIndex),
     rr: valueAt(trace, "rr_ride_height_in", selectedIndex),
+    frontAvgRh: valueAt(trace, "front_avg_rh_in", selectedIndex),
+    rearAvgRh: valueAt(trace, "rear_avg_rh_in", selectedIndex),
     centerRake: valueAt(trace, "center_rake_fs_in", selectedIndex),
     sideRake: valueAt(trace, "side_rake_in", selectedIndex),
     dynamicPressure: valueAt(trace, "dynamic_pressure_psf", selectedIndex),
@@ -2053,7 +2386,12 @@ function PlatformTraceWorkbench({
               <option value="all">All</option>
             </select>
           </label>
-          <button className="secondary-button" onClick={() => { zoomRangeRef.current = null; chartRef.current?.dispatchAction({ type: "restore" }); }}>
+          <button
+            className="secondary-button"
+            onClick={resetRideHeightZoom}
+            aria-label="Reset ride-height zoom"
+            title="Reset ride-height zoom"
+          >
             <RotateCcw size={16} /> Reset Zoom
           </button>
           <button className={`secondary-button${jumpedBtn === "min_splitter" ? " jump-clicked" : ""}`} onClick={() => handleJumpClick("min_splitter", minSplitterIndex, "MIN_SPLITTER")}>
@@ -2119,10 +2457,48 @@ function PlatformTraceWorkbench({
         </span>
       </div>
       {renderEngineeringPanel()}
+      <div className="trace-toolbar" aria-label="Trace chart controls">
+        <span className="trace-toolbar-label">Ride-height chart density</span>
+        <div className="trace-density-toggle" role="group" aria-label="Ride-height chart density">
+          <button
+            type="button"
+            className={chartDensity === "detailed" ? "active" : ""}
+            onClick={() => setChartDensity("detailed")}
+            aria-pressed={chartDensity === "detailed"}
+          >
+            Detailed
+          </button>
+          <button
+            type="button"
+            className={chartDensity === "compact" ? "active" : ""}
+            onClick={() => setChartDensity("compact")}
+            aria-pressed={chartDensity === "compact"}
+          >
+            Compact
+          </button>
+        </div>
+        <button
+          type="button"
+          className="secondary-button trace-reset-zoom"
+          onClick={resetRideHeightZoom}
+          aria-label="Reset ride-height zoom"
+          title="Reset ride-height zoom"
+        >
+          <RotateCcw size={13} /> Reset Zoom
+        </button>
+        <span className="trace-zoom-status" aria-live="polite">{zoomSummary}</span>
+        {missingTraceChannels.length > 0 && (
+          <span className="trace-missing-note" role="status">
+            {missingTraceChannels.slice(0, 3).join(" | ")}
+            {missingTraceChannels.length > 3 ? ` | +${missingTraceChannels.length - 3} more unavailable` : ""}
+          </span>
+        )}
+      </div>
       <div className="platform-layout">
         <div className="trace-panel-wrapper">
           <div className="trace-panel" ref={chartNode} />
           <div className="trace-cursor-line" ref={cursorLineRef} hidden />
+          <div className="trace-drag-zoom-band" ref={dragZoomBandRef} hidden />
         </div>
         <aside className="cursor-panel">
           <header>
@@ -2139,10 +2515,17 @@ function PlatformTraceWorkbench({
             <div><dt>CFS</dt><dd>{fmt(selected.cfsIn, 3)} in / {fmt(selected.cfsMm, 2)} mm</dd></div>
             <div><dt>LF/RF</dt><dd>{fmt(selected.lf, 2)} / {fmt(selected.rf, 2)} in</dd></div>
             <div><dt>LR/RR</dt><dd>{fmt(selected.lr, 2)} / {fmt(selected.rr, 2)} in</dd></div>
+            <div><dt>Front/Rear Avg</dt><dd>{fmt(selected.frontAvgRh, 3)} / {fmt(selected.rearAvgRh, 3)} in</dd></div>
             <div><dt>Center Rake FS</dt><dd>{fmt(selected.centerRake, 2)} in</dd></div>
             <div><dt>Side Rake</dt><dd>{fmt(selected.sideRake, 3)} in</dd></div>
             <div><dt>Dynamic Pressure</dt><dd>{fmt(selected.dynamicPressure, 1)} psf</dd></div>
             <div><dt>Risk</dt><dd>{riskLabel(selected.cfsIn)}</dd></div>
+            {selectedPlatformEvent && (
+              <div><dt>Event</dt><dd>{selectedPlatformEvent.title}</dd></div>
+            )}
+            {hiddenPlatformEventCount > 0 && platformEventVisibilityMode === "actionable" && (
+              <div><dt>Hidden</dt><dd>{hiddenPlatformEventCount} internal</dd></div>
+            )}
           </dl>
         </aside>
       </div>

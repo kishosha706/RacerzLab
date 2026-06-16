@@ -90,9 +90,11 @@ from racelab_engine.analysis.drag_scrub import (  # noqa: E402
     aero_normalized_resistance,
     detect_drag_scrub_risk_zones,
 )
+from racelab_engine.analysis.platform_metrics import classify_splitter_height_mm  # noqa: E402
 from racelab_engine.analysis.platform_events import (  # noqa: E402
-    detect_platform_events,
+    PlatformEventType,
     PlatformEvent,
+    detect_platform_events,
 )
 from racelab_engine.analysis.constants import (  # noqa: E402
     FORCE_PROXY_WARNING,
@@ -127,9 +129,11 @@ __all__ = [
     "compute_drag_scrub_index",
     "aero_normalized_resistance",
     "detect_drag_scrub_risk_zones",
+    "classify_splitter_height_mm",
     # Platform events
     "detect_platform_events",
     "PlatformEvent",
+    "PlatformEventType",
     # Constants
     "FORCE_PROXY_WARNING",
     "FORCE_PROXY_CHANNELS",
@@ -142,4 +146,3 @@ __all__ = [
     "M_TO_IN",
     "PA_TO_PSF",
 ]
-

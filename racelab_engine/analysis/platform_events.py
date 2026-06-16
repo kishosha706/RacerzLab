@@ -20,6 +20,7 @@ EventType = Literal[
     "REAR_CONTACT_RISK",
     "WHOLE_CAR_BOTTOMING_RISK",
 ]
+PlatformEventType = EventType
 
 Severity = Literal["info", "watch", "high", "critical"]
 Confidence = Literal["low", "medium", "high"]
