@@ -121,6 +121,7 @@ class TraceResponse(BaseModel):
     sample_count: int
     downsample: int | str
     preserve_extrema: bool = False
+    trace_meta: Optional[dict[str, Any]] = None
 
 
 class PlatformEventItem(BaseModel):

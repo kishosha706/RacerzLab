@@ -306,7 +306,16 @@ export function fetchReport(runId: string): Promise<{ run_id: string; markdown: 
 
 export function fetchTrace(
   runId: string,
-  options?: { lap?: number; channels?: string[]; x?: string; downsample?: number | string; preserveExtrema?: boolean },
+  options?: {
+    lap?: number;
+    channels?: string[];
+    x?: string;
+    downsample?: number | string;
+    preserveExtrema?: boolean;
+    resolution?: "raw";
+    startFt?: number;
+    endFt?: number;
+  },
 ): Promise<TraceResponse> {
   const params = new URLSearchParams();
   if (options?.lap != null) params.set("lap", String(options.lap));
@@ -314,6 +323,9 @@ export function fetchTrace(
   if (options?.x) params.set("x", options.x);
   if (options?.downsample != null) params.set("downsample", String(options.downsample));
   if (options?.preserveExtrema != null) params.set("preserve_extrema", String(options.preserveExtrema));
+  if (options?.resolution) params.set("resolution", options.resolution);
+  if (options?.startFt != null) params.set("start_ft", String(options.startFt));
+  if (options?.endFt != null) params.set("end_ft", String(options.endFt));
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return requestJson<TraceResponse>(
     `/api/runs/${encodeURIComponent(runId)}/trace${suffix}`,

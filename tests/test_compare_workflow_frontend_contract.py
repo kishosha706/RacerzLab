@@ -23,7 +23,7 @@ def test_compare_workspace_is_hidden_from_app_navigation() -> None:
 def test_stale_compare_workspace_redirects_to_laps() -> None:
     selection = _read("ui/src/store/TelemetrySelectionContext.tsx")
 
-    assert 'workspace === "compare" ? "laps"' in selection
+    assert 'if (workspace === "compare") return "laps";' in selection
     assert "normalizeWorkspace(saved as Workspace)" in selection
     assert "normalizeWorkspace(action.workspace)" in selection
 

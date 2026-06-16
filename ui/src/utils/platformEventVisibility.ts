@@ -18,11 +18,18 @@ export function isPlatformEventVisibleInMode(
   return (scope === "actionable" || scope === "watch") && Boolean(event.is_visible_default);
 }
 
+export function isClearPlatformDiagnostic(event: PlatformEventItem): boolean {
+  const scope = platformEventScope(event);
+  return (scope === "internal" || scope === "debug")
+    && event.severity === "info"
+    && !event.is_visible_default;
+}
+
 export function filterPlatformEvents(
   events: PlatformEventItem[],
   mode: PlatformEventVisibilityMode,
 ): PlatformEventItem[] {
-  return events.filter((event) => isPlatformEventVisibleInMode(event, mode));
+  return events.filter((event) => isPlatformEventVisibleInMode(event, mode) && !isClearPlatformDiagnostic(event));
 }
 
 export function isMutedPlatformEvent(

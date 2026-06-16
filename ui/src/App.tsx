@@ -1,4 +1,4 @@
-import { Clock, Crosshair, Gauge, Layers, List, MapPin, Wrench } from "lucide-react";
+import { Clock, Crosshair, Gauge, Layers, List, Wrench } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
@@ -22,6 +22,7 @@ import { ImportPanel } from "./components/ImportPanel";
 import { PriorityRail } from "./components/PriorityRail";
 import { RunContextBar } from "./components/RunContextBar";
 import { StartupScreen } from "./components/StartupScreen";
+import { TrackMapOverlay } from "./components/TrackMapOverlay";
 import { TelemetrySelectionProvider, useTelemetrySelection } from "./store/TelemetrySelectionContext";
 import { CompareBasketProvider, useCompareBasket } from "./store/CompareBasketContext";
 import { CompareBasket } from "./components/CompareBasket";
@@ -61,10 +62,6 @@ const SetupTab = lazy(async () => {
   const module = await import("./tabs/SetupTab");
   return { default: module.SetupTab };
 });
-const TrackMapTab = lazy(async () => {
-  const module = await import("./tabs/TrackMapTab");
-  return { default: module.TrackMapTab };
-});
 
 // ── cockpit shell ─────────────────────────────────────────────
 
@@ -88,6 +85,8 @@ function CockpitShell() {
   const [priorityRailOpen, setPriorityRailOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [mapOverlayOpen, setMapOverlayOpen] = useState(false);
+  const [mapOverlayZoomRange, setMapOverlayZoomRange] = useState<{ startValue?: number; endValue?: number } | null>(null);
   const [platformEventVisibilityMode, setPlatformEventVisibilityMode] = useState<PlatformEventVisibilityMode>("actionable");
   const loadSelectedRunSeqRef = useRef(0);
 
@@ -127,6 +126,7 @@ function CockpitShell() {
   useKeyboardShortcuts(platformEvents, setWorkspace, {
     onTogglePriorityRail: () => setPriorityRailOpen((open) => !open),
     onToggleInspector: () => setInspectorOpen((open) => !open),
+    onToggleMapOverlay: () => setMapOverlayOpen((open) => !open),
     onShowShortcuts: () => setShortcutsOpen(true),
     onHideShortcuts: () => setShortcutsOpen(false),
     shortcutsOpen,
@@ -392,7 +392,7 @@ function CockpitShell() {
   const workspaceContent = useMemo(() => {
     if (!overview) return null;
     const ws = selection.selectedWorkspace;
-    if (ws === "overview") return <OverviewTab overview={overview} />;
+    if (ws === "overview") return <OverviewTab overview={overview} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
     if (ws === "platform_trace" || ws === "speed_delta" || ws === "drag_scrub") {
       const initialWorkbenchView = ws === "drag_scrub"
         ? "scrub_steering"
@@ -407,14 +407,16 @@ function CockpitShell() {
           initialWorkbenchView={initialWorkbenchView}
           platformEventVisibilityMode={platformEventVisibilityMode}
           onPlatformEventVisibilityModeChange={setPlatformEventVisibilityMode}
+          onToggleMapOverlay={() => setMapOverlayOpen(true)}
+          onMapOverlayZoomRangeChange={setMapOverlayZoomRange}
         />
       );
     }
-    if (ws === "setup_impact") return <SetupTab overview={overview} />;
+    if (ws === "setup_impact") return <SetupTab overview={overview} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
     if (ws === "dial_in") return <DialInTab overview={overview} />;
     if (ws === "channels") {
       // Channels removed from nav; redirect to overview if stale state exists
-      return <OverviewTab overview={overview} />;
+      return <OverviewTab overview={overview} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
     }
     if (ws === "notebook") {
       return <NotebookTab />;
@@ -427,18 +429,11 @@ function CockpitShell() {
           sessionRuns={sessionRuns}
           sessionRunsLoading={sessionRunsLoading}
           sessionSelectionSource={sessionSelectionSource}
+          onToggleMapOverlay={() => setMapOverlayOpen(true)}
         />
       );
     }
-    if (ws === "map") {
-      return <TrackMapTab runId={overview.run_id} lap={selectedTraceLap}
-        trackName={overview.session.track_display_name ?? overview.session.track_name}
-        carName={overview.session.car_name}
-        setupName={overview.session.setup_name}
-        targetZoneStartPct={selection.selectedZoneStartPct ?? undefined}
-        targetZoneEndPct={selection.selectedZoneEndPct ?? undefined} />;
-    }
-    return <OverviewTab overview={overview} />;
+    return <OverviewTab overview={overview} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
   }, [currentSession, overview, platformEventVisibilityMode, platformEvents, selectedTraceLap, selection.selectedWorkspace, sessionRuns, sessionRunsLoading, sessionSelectionSource, trace]);
 
   // ── no session yet → show startup screen ───────────────────
@@ -492,7 +487,6 @@ function CockpitShell() {
             ["overview", "Overview", Gauge],
             ["laps", "Laps", Clock],
             ["platform_trace", "Platform", Layers],
-            ["map", "Track Map", MapPin],
             ["setup_impact", "Setup", Wrench],
             ["dial_in", "Dial-In", Crosshair],
             ["notebook", "Notebook", List],
@@ -559,10 +553,23 @@ function CockpitShell() {
           onToggle={() => setInspectorOpen(!inspectorOpen)}
           eventVisibilityMode={platformEventVisibilityMode}
           onEventVisibilityModeChange={setPlatformEventVisibilityMode}
+          onToggleMapOverlay={() => setMapOverlayOpen(true)}
         />
       </div>
 
       <EventTimeline platformEvents={platformEvents} eventVisibilityMode={platformEventVisibilityMode} />
+      <TrackMapOverlay
+        open={mapOverlayOpen}
+        runId={overview.run_id}
+        lap={selectedTraceLap}
+        trackName={overview.session.track_display_name ?? overview.session.track_name}
+        targetZoneStartPct={selection.selectedZoneStartPct}
+        targetZoneEndPct={selection.selectedZoneEndPct}
+        zoomRangeFt={mapOverlayZoomRange}
+        platformEvents={platformEvents}
+        eventVisibilityMode={platformEventVisibilityMode}
+        onClose={() => setMapOverlayOpen(false)}
+      />
       <CompareBasket />
       {shortcutsOpen && (
         <div className="shortcut-modal-backdrop" role="presentation" onClick={() => setShortcutsOpen(false)}>
@@ -582,7 +589,7 @@ function CockpitShell() {
               <span>Esc</span><p>Clear evidence focus</p>
               <span>Left / Right</span><p>Step through events</p>
               <span>P</span><p>Open Platform</p>
-              <span>M</span><p>Open Track Map</p>
+              <span>M</span><p>Toggle Map Overlay</p>
               <span>O</span><p>Open Overview</p>
               <span>C</span><p>Open Laps</p>
               <span>D</span><p>Open Dial-In</p>

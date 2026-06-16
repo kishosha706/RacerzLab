@@ -17,6 +17,7 @@ export function useKeyboardShortcuts(
   options?: {
     onTogglePriorityRail?: () => void;
     onToggleInspector?: () => void;
+    onToggleMapOverlay?: () => void;
     onShowShortcuts?: () => void;
     onHideShortcuts?: () => void;
     shortcutsOpen?: boolean;
@@ -55,7 +56,7 @@ export function useKeyboardShortcuts(
           break;
         case "m":
         case "M":
-          openWorkspace("map");
+          options?.onToggleMapOverlay?.();
           break;
         case "p":
         case "P":

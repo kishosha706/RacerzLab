@@ -149,11 +149,11 @@ function cornerMini(c: CornerName, m: CornerMetric | undefined) {
 
 // ── Sub-views ───────────────────────────────────────────────
 
-function VerdictView({ verdict: v, disc, wci, confidence, weatherWarning, onSaveFinding, onStageNextTest, onOpenMap, saving, saveStatus, isSelfCompare }: {
+function VerdictView({ verdict: v, disc, wci, confidence, weatherWarning, onSaveFinding, onStageNextTest, saving, saveStatus, isSelfCompare }: {
   verdict: DidItWorkVerdict | null; disc: { score: number; label: string } | null;
   wci: WholeCarIndex | null; confidence: number;
   weatherWarning?: string | null;
-  onSaveFinding?: () => void; onStageNextTest?: () => void; onOpenMap?: () => void;
+  onSaveFinding?: () => void; onStageNextTest?: () => void;
   saving?: boolean; saveStatus?: string | null; isSelfCompare?: boolean;
 }) {
   if (!v) return <p className="muted">No verdict available.</p>;
@@ -175,7 +175,6 @@ function VerdictView({ verdict: v, disc, wci, confidence, weatherWarning, onSave
         weatherWarning={weatherWarning}
         onSaveFinding={isSelfCompare ? undefined : onSaveFinding}
         onStageNextTest={isSelfCompare ? undefined : onStageNextTest}
-        onOpenMap={onOpenMap}
         saving={saving}
         saveStatus={saveStatus}
         disabled={isSelfCompare}
@@ -728,7 +727,6 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
               handleSaveFinding(false);
               setWorkspace("notebook", "compare_verdict");
             }}
-            onOpenMap={() => setWorkspace("map", "compare_verdict")}
             saving={saving}
             saveStatus={saveStatus}
             isSelfCompare={isSelfCompare}

@@ -1004,6 +1004,82 @@ def _trace_channel_payload(rows: list[dict[str, Any]], channel: str) -> dict[str
     }
 
 
+def _raw_trace_sort_key(row: dict[str, Any]) -> tuple[float, float, float]:
+    session_time = _numeric_value(row.get("session_time"))
+    sample_index = _numeric_value(row.get("sample_index"))
+    distance_ft = _numeric_value(row.get("lap_dist_ft"))
+    return (
+        session_time if session_time is not None else math.inf,
+        sample_index if sample_index is not None else math.inf,
+        distance_ft if distance_ft is not None else math.inf,
+    )
+
+
+def _ordered_sample_indices(rows: list[dict[str, Any]]) -> list[Any]:
+    indices: list[Any] = []
+    for row_index, row in enumerate(rows):
+        value = row.get("sample_index")
+        indices.append(value if value is not None else row_index)
+    return indices
+
+
+def _trace_meta(
+    *,
+    source_rows: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+    bucket_size: int,
+    downsample_label: int | str,
+    raw_resolution: bool,
+    start_ft: float | None,
+    end_ft: float | None,
+) -> dict[str, Any]:
+    session_times = [
+        value for value in (_numeric_value(row.get("session_time")) for row in rows)
+        if value is not None
+    ]
+    sample_indices = [
+        value for value in (_numeric_value(row.get("sample_index")) for row in rows)
+        if value is not None
+    ]
+    distances = [
+        value for value in (_numeric_value(row.get("lap_dist_ft")) for row in rows)
+        if value is not None
+    ]
+    time_deltas = [
+        b - a for a, b in zip(session_times, session_times[1:])
+        if b >= a
+    ]
+    sample_index_deltas = [
+        b - a for a, b in zip(sample_indices, sample_indices[1:])
+        if b >= a
+    ]
+    distance_deltas = [
+        b - a for a, b in zip(distances, distances[1:])
+    ]
+    mean_time_delta = sum(time_deltas) / len(time_deltas) if time_deltas else None
+    mean_sample_index_delta = sum(sample_index_deltas) / len(sample_index_deltas) if sample_index_deltas else None
+    mean_distance_delta = sum(distance_deltas) / len(distance_deltas) if distance_deltas else None
+    rounded_distances = [round(value, 6) for value in distances]
+    duplicate_distance_count = len(rounded_distances) - len(set(rounded_distances))
+    return {
+        "raw_resolution": raw_resolution,
+        "raw_source_row_count": len(source_rows),
+        "returned_row_count": len(rows),
+        "downsample_applied": bucket_size > 1,
+        "downsample": downsample_label,
+        "bucket_size": bucket_size,
+        "window_start_ft": start_ft,
+        "window_end_ft": end_ft,
+        "session_time_delta_s_mean": mean_time_delta,
+        "sample_index_delta_mean": mean_sample_index_delta,
+        "distance_delta_ft_mean": mean_distance_delta,
+        "approx_hz": (1.0 / mean_time_delta) if mean_time_delta and mean_time_delta > 0 else None,
+        "distance_duplicate_count": duplicate_distance_count,
+        "distance_rounded_or_deduped": False,
+        "sample_identity": "sample_index/session_time",
+    }
+
+
 def build_trace_payload(
     run_id: str,
     lap: int | None = None,
@@ -1013,9 +1089,13 @@ def build_trace_payload(
     preserve_extrema: bool = False,
     events: list[TelemetryEvent] | None = None,
     data_dir: str | Path | None = None,
+    start_ft: float | None = None,
+    end_ft: float | None = None,
+    raw_resolution: bool = False,
 ) -> dict[str, Any]:
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
     selected_channels = channels or TRACE_DEFAULT_CHANNELS
+    needs_distance_window = start_ft is not None or end_ft is not None
 
     # Fast path: use column pruning to read only needed channels from parquet
     if importlib.util.find_spec("polars") is not None:
@@ -1023,15 +1103,29 @@ def build_trace_payload(
         path = parquet_path(data_root, run_id)
         if path.exists():
             needed_cols = list(dict.fromkeys(
-                [c for c in selected_channels + (["lap", "lap_dist_ft", "lap_dist_pct", "session_time", "lap_dist_pct_100"] if x_axis else ["lap"])]
+                [
+                    c for c in selected_channels + (
+                        ["lap", "lap_dist_ft", "lap_dist_pct", "session_time", "sample_index", "lap_dist_pct_100"]
+                        if x_axis or needs_distance_window or raw_resolution
+                        else ["lap"]
+                    )
+                ]
             ))
             # Only request columns that actually exist in the parquet file
             existing = set(pl.read_parquet_schema(path).keys())
             safe_cols = [c for c in needed_cols if c in existing]
-            df = pl.read_parquet(path, columns=safe_cols) if safe_cols else pl.read_parquet(path)
+            df = pl.scan_parquet(path).select(safe_cols) if safe_cols else pl.scan_parquet(path)
             if lap is not None:
                 df = df.filter(pl.col("lap") == lap)
-            rows = df.to_dicts()
+            if needs_distance_window and "lap_dist_ft" in safe_cols:
+                bounds = [value for value in (start_ft, end_ft) if value is not None]
+                low_ft = min(bounds) if bounds else None
+                high_ft = max(bounds) if bounds else None
+                if low_ft is not None:
+                    df = df.filter(pl.col("lap_dist_ft") >= low_ft)
+                if high_ft is not None:
+                    df = df.filter(pl.col("lap_dist_ft") <= high_ft)
+            rows = df.collect().to_dicts()
         else:
             rows = read_telemetry_rows(run_id, data_dir)
             if lap is not None:
@@ -1041,6 +1135,26 @@ def build_trace_payload(
         if lap is not None:
             rows = [row for row in rows if row.get("lap") == lap]
 
+    if needs_distance_window:
+        bounds = [value for value in (start_ft, end_ft) if value is not None]
+        low_ft = min(bounds) if bounds else None
+        high_ft = max(bounds) if bounds else None
+        windowed_rows: list[dict[str, Any]] = []
+        for row in rows:
+            distance_ft = _numeric_value(row.get("lap_dist_ft"))
+            if distance_ft is None:
+                continue
+            if low_ft is not None and distance_ft < low_ft:
+                continue
+            if high_ft is not None and distance_ft > high_ft:
+                continue
+            windowed_rows.append(row)
+        rows = windowed_rows
+
+    if raw_resolution:
+        rows = sorted(rows, key=_raw_trace_sort_key)
+
+    source_rows = rows
     selected_channels = channels or TRACE_DEFAULT_CHANNELS
     bucket_size, downsample_label = _resolve_bucket_size(len(rows), downsample)
     if bucket_size > 1:
@@ -1062,6 +1176,8 @@ def build_trace_payload(
                 "lap_dist_pct": [row.get("lap_dist_pct") for row in rows],
                 "lap_dist_ft": [row.get("lap_dist_ft") for row in rows],
                 "session_time": [row.get("session_time") for row in rows],
+                "sample_index": _ordered_sample_indices(rows),
+                "row_index": list(range(len(rows))),
                 "lap_dist_pct_100": [row.get("lap_dist_pct_100") for row in rows],
             },
             "channels": {channel: _trace_channel_payload(rows, channel) for channel in selected_channels},
@@ -1069,6 +1185,15 @@ def build_trace_payload(
             "sample_count": len(rows),
             "downsample": downsample_label,
             "preserve_extrema": preserve_extrema,
+            "trace_meta": _trace_meta(
+                source_rows=source_rows,
+                rows=rows,
+                bucket_size=bucket_size,
+                downsample_label=downsample_label,
+                raw_resolution=raw_resolution,
+                start_ft=start_ft,
+                end_ft=end_ft,
+            ),
         }
 
     return {

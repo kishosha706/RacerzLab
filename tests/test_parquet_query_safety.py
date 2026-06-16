@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from racelab_engine.services.import_service import write_telemetry_cache
+from racelab_engine.services.import_service import build_trace_payload, write_telemetry_cache
 from racelab_engine.storage import parquet_query
 from racelab_engine.storage.parquet_query import ParquetQueryEngine
 
@@ -59,3 +59,37 @@ def test_parquet_query_valid_channel_still_queries(tmp_path: Path) -> None:
             "sample_count": 1,
         },
     ]
+
+
+def test_trace_payload_window_returns_raw_samples_without_bucket_stepping(tmp_path: Path) -> None:
+    rows = [
+        {
+            "lap": 1,
+            "lap_dist_ft": float(index),
+            "lap_dist_pct": index / 19,
+            "lap_dist_pct_100": (index / 19) * 100,
+            "session_time": index * 0.01,
+            "cfs_ride_height_in": 2.0 + index * 0.01,
+            "speed_mph": 150.0 + index,
+        }
+        for index in range(20)
+    ]
+    write_telemetry_cache("raw-window-run", rows, data_dir=tmp_path)
+
+    payload = build_trace_payload(
+        "raw-window-run",
+        lap=1,
+        channels=["cfs_ride_height_in", "speed_mph"],
+        x_axis="lap_dist_ft",
+        downsample=1,
+        data_dir=tmp_path,
+        start_ft=5.5,
+        end_ft=8.5,
+    )
+
+    assert payload["downsample"] == 1
+    assert payload["sample_count"] == 3
+    assert payload["x"] == [6.0, 7.0, 8.0]
+    assert payload["x_by_name"]["lap_dist_ft"] == [6.0, 7.0, 8.0]
+    assert payload["channels"]["cfs_ride_height_in"]["values"] == [2.06, 2.07, 2.08]
+    assert payload["channels"]["speed_mph"]["values"] == [156.0, 157.0, 158.0]

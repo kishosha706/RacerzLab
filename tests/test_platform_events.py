@@ -62,6 +62,18 @@ def test_highest_shock_activity_is_internal_by_default() -> None:
     assert event.contributes_to_backend_evidence is True
 
 
+def test_clear_internal_evidence_is_preserved_in_backend_payload() -> None:
+    events = detect_platform_events([
+        _row(dynamic_pressure_psf=180.0, speed_mph=194.0),
+    ])
+
+    event = _event(events, "MAX_DYNAMIC_PRESSURE")
+    assert event.severity == "info"
+    assert event.display_scope == "internal"
+    assert event.is_visible_default is False
+    assert event.contributes_to_backend_evidence is True
+
+
 def test_highest_platform_compression_is_internal_without_contact_gate() -> None:
     events = detect_platform_events([
         _row(

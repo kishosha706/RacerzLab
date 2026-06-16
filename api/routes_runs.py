@@ -87,20 +87,27 @@ def get_trace(
     x: Optional[str] = None,
     downsample: str = "1",
     preserve_extrema: bool = False,
+    resolution: Optional[str] = None,
+    start_ft: Optional[float] = None,
+    end_ft: Optional[float] = None,
 ) -> TraceResponse:
     repo = repository()
     if repo.get_session(run_id) is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
     selected_channels = [item.strip() for item in channels.split(",") if item.strip()] if channels else None
     events = repo.get_events(run_id, lap=lap)
-    effective_preserve = preserve_extrema or (isinstance(downsample, str) and downsample.lower() == "auto")
+    effective_downsample = "1" if (resolution or "").lower() == "raw" else downsample
+    effective_preserve = preserve_extrema or (isinstance(effective_downsample, str) and effective_downsample.lower() == "auto")
     payload = build_trace_payload(
         run_id,
         lap=lap,
         channels=selected_channels,
-        downsample=downsample,
+        downsample=effective_downsample,
         x_axis=x,
         preserve_extrema=effective_preserve,
         events=events,
+        start_ft=start_ft,
+        end_ft=end_ft,
+        raw_resolution=(resolution or "").lower() == "raw",
     )
     return TraceResponse(**payload)

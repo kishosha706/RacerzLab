@@ -5,7 +5,10 @@ import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useCompareBasket } from "../store/CompareBasketContext";
 import type { RunOverview, SetupSnapshot } from "../types/telemetry";
 
-type SetupTabProps = { overview: RunOverview };
+type SetupTabProps = {
+  overview: RunOverview;
+  onToggleMapOverlay?: () => void;
+};
 
 // ── Imperial display conversions ─────────────────────────────────
 // iRacing CornerWeight raw values are Newtons, stored under corner_weight_kg
@@ -166,7 +169,7 @@ function CornerPanel({ label, corner, setup, glow }: {
 }
 
 // ── Main ─────────────────────────────────────────────────────────
-export function SetupTab({ overview }: SetupTabProps) {
+export function SetupTab({ overview, onToggleMapOverlay }: SetupTabProps) {
   const setup = overview.setup_snapshot;
   const { selection, setWorkspace } = useTelemetrySelection();
   const { basket } = useCompareBasket();
@@ -255,7 +258,7 @@ export function SetupTab({ overview }: SetupTabProps) {
   }, [basket.baseline, diffMode, overview.run_id, overview.setup_snapshot]);
 
   const handlePlatform = useCallback(() => setWorkspace("platform_trace", "setup_table"), [setWorkspace]);
-  const handleMap = useCallback(() => setWorkspace("map", "setup_table"), [setWorkspace]);
+  const handleMap = useCallback(() => onToggleMapOverlay?.(), [onToggleMapOverlay]);
   const handleDialIn = useCallback(() => setWorkspace("dial_in", "setup_table"), [setWorkspace]);
 
   if (!setup) {
@@ -480,7 +483,7 @@ export function SetupTab({ overview }: SetupTabProps) {
           <Layers size={14} /> Open Platform
         </button>
         <button className="secondary-button" onClick={handleMap}>
-          <MapPin size={14} /> Open Map
+          <MapPin size={14} /> Map Overlay
         </button>
       </div>
     </section>

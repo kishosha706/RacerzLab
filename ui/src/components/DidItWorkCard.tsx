@@ -295,7 +295,7 @@ export function DidItWorkCard({
         )}
         {onOpenMap && (
           <button className="diw-btn" onClick={onOpenMap} disabled={disabled} aria-disabled={disabled}>
-            Open Map
+            Map Overlay
           </button>
         )}
         {onOpenEvidence && (

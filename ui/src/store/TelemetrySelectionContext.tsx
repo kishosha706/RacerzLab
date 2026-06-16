@@ -4,7 +4,9 @@ import type { EvidenceContext, SelectionMode, SelectionSource, TelemetrySelectio
 const VALID_WORKSPACES: Workspace[] = ["overview", "map", "laps", "platform_trace", "speed_delta", "drag_scrub", "setup_impact", "dial_in", "compare", "notebook", "channels"];
 
 function normalizeWorkspace(workspace: Workspace): Workspace {
-  return workspace === "compare" ? "laps" : workspace;
+  if (workspace === "compare") return "laps";
+  if (workspace === "map") return "overview";
+  return workspace;
 }
 
 function loadLastWorkspace(): Workspace {

@@ -53,7 +53,7 @@ export function CrewChiefPanel({ overview, onOpenMap, onOpenPlatform, onOpenSetu
           )}
           {onOpenMap && (
             <button className="crew-action-btn" onClick={onOpenMap}>
-              <MapPin size={12} /> Open Map
+              <MapPin size={12} /> Map Overlay
             </button>
           )}
           {onOpenSetup && (

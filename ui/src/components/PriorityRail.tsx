@@ -10,7 +10,7 @@ import { ProxyBadge } from "./ProxyBadge";
 import type { PlatformEventItem, PlatformEventVisibilityMode } from "../types/telemetry";
 import type { EvidenceContext, Workspace } from "../store/types";
 import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
-import { filterPlatformEvents, isMutedPlatformEvent, platformEventScopeLabel } from "../utils/platformEventVisibility";
+import { filterPlatformEvents, isClearPlatformDiagnostic, isMutedPlatformEvent, platformEventScopeLabel } from "../utils/platformEventVisibility";
 
 type PriorityRailProps = {
   runId: string;
@@ -48,6 +48,10 @@ export function PriorityRail({
   const visibleEvents = useMemo(
     () => filterPlatformEvents(events, eventVisibilityMode),
     [events, eventVisibilityMode],
+  );
+  const clearDiagnosticCount = useMemo(
+    () => events.filter((event) => isClearPlatformDiagnostic(event)).length,
+    [events],
   );
 
   const { valid, invalid } = useMemo(() => {
@@ -193,6 +197,9 @@ export function PriorityRail({
             <p>{eventVisibilityMode === "actionable" ? "No actionable platform events for this lap." : "No platform events for this lap."}</p>
             {eventVisibilityMode === "actionable" && events.length > 0 && (
               <p className="muted">Internal evidence is still available for analysis.</p>
+            )}
+            {clearDiagnosticCount > 0 && (
+              <p className="muted">{clearDiagnosticCount} internal checks hidden/clear.</p>
             )}
           </div>
         )}

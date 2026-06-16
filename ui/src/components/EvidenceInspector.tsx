@@ -14,6 +14,7 @@ type EvidenceInspectorProps = {
   onToggle?: () => void;
   eventVisibilityMode: PlatformEventVisibilityMode;
   onEventVisibilityModeChange?: (mode: PlatformEventVisibilityMode) => void;
+  onToggleMapOverlay?: () => void;
 };
 
 function humanizeSelectionSource(source: ReturnType<typeof useTelemetrySelection>["selection"]["selectionSource"]): string {
@@ -45,6 +46,7 @@ export function EvidenceInspector({
   onToggle,
   eventVisibilityMode,
   onEventVisibilityModeChange,
+  onToggleMapOverlay,
 }: EvidenceInspectorProps) {
   const { selection, selectEvent } = useTelemetrySelection();
   const [justAnchored, setJustAnchored] = useState(false);
@@ -86,7 +88,7 @@ export function EvidenceInspector({
 
   if (selectedEvent) return (
     <div className={anchorClass}>
-      <EventInspector event={selectedEvent} showAnchorBadge={true} collapsed={collapsed} onToggle={onToggle} />
+      <EventInspector event={selectedEvent} showAnchorBadge={true} collapsed={collapsed} onToggle={onToggle} onToggleMapOverlay={onToggleMapOverlay} />
     </div>
   );
   if (hiddenSelectedEvent) {
@@ -257,7 +259,19 @@ function CrewChiefSummary({ overview }: { overview: RunOverview }) {
   );
 }
 
-function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event: PlatformEventItem; showAnchorBadge?: boolean; collapsed?: boolean; onToggle?: () => void }) {
+function EventInspector({
+  event,
+  showAnchorBadge,
+  collapsed,
+  onToggle,
+  onToggleMapOverlay,
+}: {
+  event: PlatformEventItem;
+  showAnchorBadge?: boolean;
+  collapsed?: boolean;
+  onToggle?: () => void;
+  onToggleMapOverlay?: () => void;
+}) {
   const sevColour = event.severity === "critical" ? "#ef4444" : event.severity === "high" ? "#f97316" : event.severity === "watch" ? "#f59e0b" : "#38bdf8";
   const { selection, focusEvidence, setWorkspace } = useTelemetrySelection();
   const eventSource = selection.selectedEventId === event.event_id ? selection.selectionSource : "priority_stack";
@@ -279,7 +293,7 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
 
   const eventHasLocation = eventSampleIndex != null || event.lap_dist_ft != null || event.lap_pct != null;
 
-  const focusEventEvidence = useCallback((workspace: "platform_trace" | "map") => {
+  const focusEventEvidence = useCallback((workspace?: "platform_trace") => {
     focusEvidence({
       runId: selection.selectedRunId,
       lapNumber: event.lap,
@@ -297,7 +311,10 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
   }, [event.event_id, event.lap, event.lap_dist_ft, event.lap_pct, eventSampleIndex, eventHasLocation, eventSource, focusEvidence, selection, event.confidence]);
 
   const handleOpenPlatform = useCallback(() => focusEventEvidence("platform_trace"), [focusEventEvidence]);
-  const handleOpenMap = useCallback(() => focusEventEvidence("map"), [focusEventEvidence]);
+  const handleOpenMap = useCallback(() => {
+    focusEventEvidence();
+    onToggleMapOverlay?.();
+  }, [focusEventEvidence, onToggleMapOverlay]);
   const handleOpenSetup = useCallback(() => {
     focusEvidence({
       runId: selection.selectedRunId,
@@ -405,8 +422,8 @@ function EventInspector({ event, showAnchorBadge, collapsed, onToggle }: { event
           <button className="trackmap-action-btn" onClick={handleOpenPlatform} title="Open Platform">
             <Layers size={10} /> Open Platform
           </button>
-          <button className="trackmap-action-btn" onClick={handleOpenMap} title="Open Map">
-            <MapPin size={10} /> Open Map
+          <button className="trackmap-action-btn" onClick={handleOpenMap} title="Show event on map overlay">
+            <MapPin size={10} /> Map Overlay
           </button>
           <button className="trackmap-action-btn" onClick={handleOpenSetup} title="Open Setup with event focus">
             <Wrench size={10} /> Open Setup

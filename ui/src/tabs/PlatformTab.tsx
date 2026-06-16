@@ -11,11 +11,12 @@ import type { ShockSetupField } from "../components/ShockHistogram";
 import { WorkbenchSubnav } from "../components/WorkbenchSubnav";
 import type { WorkbenchView } from "../components/WorkbenchSubnav";
 import { ProxyBadge } from "../components/ProxyBadge";
-import { fetchPlatformEvents, fetchShockReader } from "../api/client";
+import { fetchPlatformEvents, fetchShockReader, fetchTrace } from "../api/client";
+import { TRACE_WORKBENCH_CHANNELS } from "../constants/workbenchChannels";
 import { isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
 import { getTraceValues, formatChannelValue, formatForceProxyN, safeStringValue } from "../utils/channelFormat";
 import { buildPlatformChartAnnotations } from "../utils/platformChartAnnotations";
-import { filterPlatformEvents, isMutedPlatformEvent, platformEventScopeLabel, platformEventVisibilityModeLabel } from "../utils/platformEventVisibility";
+import { filterPlatformEvents, isClearPlatformDiagnostic, isMutedPlatformEvent, platformEventScopeLabel, platformEventVisibilityModeLabel } from "../utils/platformEventVisibility";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
 import type {
@@ -36,6 +37,8 @@ type PlatformTabProps = {
   initialWorkbenchView?: WorkbenchView;
   platformEventVisibilityMode?: PlatformEventVisibilityMode;
   onPlatformEventVisibilityModeChange?: (mode: PlatformEventVisibilityMode) => void;
+  onToggleMapOverlay?: () => void;
+  onMapOverlayZoomRangeChange?: (range: { startValue?: number; endValue?: number } | null) => void;
 };
 
 type PlatformTraceWorkbenchProps = {
@@ -45,6 +48,8 @@ type PlatformTraceWorkbenchProps = {
   initialWorkbenchView?: WorkbenchView;
   platformEventVisibilityMode?: PlatformEventVisibilityMode;
   onPlatformEventVisibilityModeChange?: (mode: PlatformEventVisibilityMode) => void;
+  onToggleMapOverlay?: () => void;
+  onMapOverlayZoomRangeChange?: (range: { startValue?: number; endValue?: number } | null) => void;
 };
 
 type ChartRow = {
@@ -67,6 +72,8 @@ type DragZoomState = {
   startValue: number;
   active: boolean;
 };
+
+type ZoomRange = { startValue?: number; endValue?: number };
 
 type ShockCornerKey = "lf" | "rf" | "lr" | "rr";
 
@@ -343,6 +350,15 @@ function values(trace: TraceResponse | null, channel: string): Array<number | st
   return asPayload(trace, channel)?.values ?? [];
 }
 
+function rawSeriesSamples(trace: TraceResponse | null, channel: string): Array<number | string | null> {
+  return values(trace, channel);
+}
+
+function traceAxisValues(trace: TraceResponse | null, name: string): Array<number | null> {
+  const rawValues = trace?.x_by_name?.[name] ?? [];
+  return rawValues.map((value) => typeof value === "number" && Number.isFinite(value) ? value : null);
+}
+
 function xValues(trace: TraceResponse | null): Array<number | null> {
   if (!trace) return [];
   if (Array.isArray(trace.x)) return trace.x;
@@ -354,6 +370,69 @@ function valueAt(trace: TraceResponse | null, channel: string, index: number | n
   const v = values(trace, channel)[index];
   if (v == null || typeof v === "string") return null;
   return v;
+}
+
+function numericSeriesValue(series: Array<number | string | null>, index: number | null | undefined): number | null {
+  if (index == null || index < 0 || index >= series.length) return null;
+  const value = series[index];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function lineCursorDisplayValue(
+  trace: TraceResponse | null,
+  xs: Array<number | null>,
+  channel: string,
+  cursorDistanceFt: number | null | undefined,
+  measuredSampleIndex: number | null | undefined,
+): number | null {
+  const series = rawSeriesSamples(trace, channel);
+  const fallback = numericSeriesValue(series, measuredSampleIndex);
+  if (cursorDistanceFt == null || !Number.isFinite(cursorDistanceFt)) return fallback;
+
+  const exactToleranceFt = 0.001;
+  let exactIndex: number | null = null;
+  let exactDistance = Number.POSITIVE_INFINITY;
+  xs.forEach((x, index) => {
+    if (typeof x !== "number" || !Number.isFinite(x)) return;
+    const delta = Math.abs(x - cursorDistanceFt);
+    if (delta <= exactToleranceFt && delta < exactDistance) {
+      exactDistance = delta;
+      exactIndex = index;
+    }
+  });
+  const exactValue = numericSeriesValue(series, exactIndex);
+  if (exactValue != null) return exactValue;
+
+  let beforeIndex: number | null = null;
+  let afterIndex: number | null = null;
+  for (let index = 0; index < xs.length; index += 1) {
+    const x = xs[index];
+    const y = numericSeriesValue(series, index);
+    if (typeof x !== "number" || !Number.isFinite(x) || y == null) continue;
+    if (x < cursorDistanceFt) beforeIndex = index;
+    if (x > cursorDistanceFt) {
+      afterIndex = index;
+      break;
+    }
+  }
+
+  if (beforeIndex == null || afterIndex == null) return fallback;
+  const beforeX = xs[beforeIndex];
+  const afterX = xs[afterIndex];
+  const beforeY = numericSeriesValue(series, beforeIndex);
+  const afterY = numericSeriesValue(series, afterIndex);
+  if (
+    typeof beforeX !== "number"
+    || typeof afterX !== "number"
+    || beforeY == null
+    || afterY == null
+    || Math.abs(afterX - beforeX) <= 0.001
+  ) {
+    return fallback;
+  }
+
+  const ratio = (cursorDistanceFt - beforeX) / (afterX - beforeX);
+  return beforeY + ratio * (afterY - beforeY);
 }
 
 function channelHasNumericData(trace: TraceResponse | null, channel: string): boolean {
@@ -400,11 +479,47 @@ function xAtLapPct(trace: TraceResponse | null, xs: Array<number | null>, lapPct
   return index == null ? null : xs[index] ?? null;
 }
 
+function formatDistanceNumber(value: number | null | undefined, digits = 1): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
+function formatDistanceFt(value: number | null | undefined, digits = 1): string {
+  const formatted = formatDistanceNumber(value, digits);
+  return formatted === "—" ? formatted : `${formatted} ft`;
+}
+
 function zoomRangeSummary(range: { startValue?: number; endValue?: number } | null): string {
   if (range?.startValue == null || range.endValue == null) return "Full range";
-  const start = Math.round(Math.min(range.startValue, range.endValue)).toLocaleString();
-  const end = Math.round(Math.max(range.startValue, range.endValue)).toLocaleString();
-  return `Zoomed: ${start}-${end} ft`;
+  const start = Math.min(range.startValue, range.endValue);
+  const end = Math.max(range.startValue, range.endValue);
+  return `Zoomed: ${formatDistanceNumber(start)}-${formatDistanceNumber(end)} ft`;
+}
+
+function finiteXRange(xs: Array<number | null>): { min: number; max: number } | null {
+  const finiteXs = xs.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+  if (finiteXs.length === 0) return null;
+  return { min: finiteXs[0], max: finiteXs[finiteXs.length - 1] };
+}
+
+function normalizedZoomRange(range: ZoomRange): { start: number; end: number } | null {
+  if (range.startValue == null || range.endValue == null) return null;
+  const start = Math.min(range.startValue, range.endValue);
+  const end = Math.max(range.startValue, range.endValue);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || Math.abs(end - start) < 1) return null;
+  return { start, end };
+}
+
+function paddedRawZoomRange(range: { start: number; end: number }, fullRange: { min: number; max: number }): { start: number; end: number } {
+  const span = Math.max(1, range.end - range.start);
+  const pad = Math.max(25, span * 0.08);
+  return {
+    start: Math.max(fullRange.min, range.start - pad),
+    end: Math.min(fullRange.max, range.end + pad),
+  };
 }
 
 function formatYAxisTick(value: number, unit?: string): string {
@@ -419,6 +534,50 @@ function formatYAxisTick(value: number, unit?: string): string {
 function fmt(value: number | null | undefined, digits = 2) {
   if (value == null || Number.isNaN(value)) return "n/a";
   return value.toFixed(digits);
+}
+
+function fmtReadout(value: number | null | undefined, digits = 2, unit?: string): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${value.toFixed(digits)}${unit ? ` ${unit}` : ""}`;
+}
+
+function rawTraceStatus(trace: TraceResponse): string {
+  const meta = trace.trace_meta;
+  const count = (meta?.returned_row_count ?? trace.sample_count).toLocaleString();
+  const sourceCount = meta?.raw_source_row_count != null ? `/${meta.raw_source_row_count.toLocaleString()}` : "";
+  const hz = meta?.approx_hz != null && Number.isFinite(meta.approx_hz)
+    ? ` · ${meta.approx_hz.toFixed(1)} Hz`
+    : "";
+  const distanceDelta = meta?.distance_delta_ft_mean != null && Number.isFinite(meta.distance_delta_ft_mean)
+    ? ` · ${meta.distance_delta_ft_mean.toFixed(2)} ft/sample`
+    : "";
+  const duplicates = meta?.distance_duplicate_count ? ` · ${meta.distance_duplicate_count} repeated-distance samples` : "";
+  return `Raw zoom data: ${count}${sourceCount} samples${hz}${distanceDelta}${duplicates}`;
+}
+
+function panelReadoutLabel(channelName: string, fallback: string): string {
+  switch (channelName) {
+    case "cfs_ride_height_in":
+      return "CFSRideHeight [in]";
+    case "lf_ride_height_in":
+      return "LF Ride Height [in]";
+    case "rf_ride_height_in":
+      return "RF Ride Height [in]";
+    case "lr_ride_height_in":
+      return "LR Ride Height [in]";
+    case "rr_ride_height_in":
+      return "RR Ride Height [in]";
+    case "front_avg_rh_in":
+      return "Front Avg";
+    case "rear_avg_rh_in":
+      return "Rear Avg";
+    case "center_rake_fs_in":
+      return "Center Rake";
+    case "side_rake_in":
+      return "Side Rake";
+    default:
+      return fallback;
+  }
 }
 
 /** Scale a value into a 0-1 risk range, returning null for missing data. */
@@ -446,6 +605,12 @@ function semanticSeverity(value: number | null | undefined): "missing" | "safe" 
 
 function eventDistanceFt(event: TelemetryEvent) {
   return event.distance_m_peak == null ? null : event.distance_m_peak * 3.280839895;
+}
+
+function isSafeLegacyPlatformEvent(event: TelemetryEvent): boolean {
+  const severity = event.severity.toLowerCase();
+  const label = `${event.event_type} ${event.event_subtype ?? ""}`.toLowerCase();
+  return severity === "safe" || label.includes("safe") || label.includes("normal");
 }
 
 /**
@@ -557,7 +722,7 @@ export function TraceSampleReadout({
 }) {
   const xs = xValues(trace);
   const distFt = xs[sampleIndex];
-  const distStr = distFt != null && !Number.isNaN(distFt) ? `${Math.round(distFt).toLocaleString()} ft` : "—";
+  const distStr = formatDistanceFt(distFt);
   return (
     <div className="trace-sample-readout">
       <div className="readout-header">
@@ -599,13 +764,38 @@ export function TraceSampleReadout({
   );
 }
 
-function nearestIndexByFt(xs: Array<number | null>, targetFt: number): number | null {
+function nearestIndexByFt(xs: Array<number | null>, targetFt: number, trace?: TraceResponse | null, preferredIndex?: number | null): number | null {
+  return nearestRawSampleIndexByFt(xs, targetFt, trace, preferredIndex);
+}
+
+function nearestRawSampleIndexByFt(
+  xs: Array<number | null>,
+  targetFt: number,
+  trace?: TraceResponse | null,
+  preferredIndex?: number | null,
+): number | null {
+  const sampleIndices = traceAxisValues(trace ?? null, "sample_index");
+  const sessionTimes = traceAxisValues(trace ?? null, "session_time");
   let bestIndex: number | null = null;
   let bestDelta = Number.POSITIVE_INFINITY;
   xs.forEach((x, index) => {
     if (x == null) return;
     const delta = Math.abs(x - targetFt);
-    if (delta < bestDelta) {
+    const sameDistance = Math.abs(delta - bestDelta) <= 1e-9;
+    const preferredTieBreak = preferredIndex != null && bestIndex != null
+      ? Math.abs(index - preferredIndex) < Math.abs(bestIndex - preferredIndex)
+      : false;
+    const identityTieBreak = bestIndex != null
+      && !preferredTieBreak
+      && sameDistance
+      && (
+        (sampleIndices[index] ?? Number.POSITIVE_INFINITY) < (sampleIndices[bestIndex] ?? Number.POSITIVE_INFINITY)
+        || (
+          (sampleIndices[index] ?? Number.POSITIVE_INFINITY) === (sampleIndices[bestIndex] ?? Number.POSITIVE_INFINITY)
+          && (sessionTimes[index] ?? Number.POSITIVE_INFINITY) < (sessionTimes[bestIndex] ?? Number.POSITIVE_INFINITY)
+        )
+      );
+    if (delta < bestDelta || (sameDistance && (preferredTieBreak || identityTieBreak))) {
       bestDelta = delta;
       bestIndex = index;
     }
@@ -641,6 +831,8 @@ export function PlatformTab({
   initialWorkbenchView,
   platformEventVisibilityMode,
   onPlatformEventVisibilityModeChange,
+  onToggleMapOverlay,
+  onMapOverlayZoomRangeChange,
 }: PlatformTabProps) {
   const xs = useMemo(() => xValues(trace), [trace]);
 
@@ -684,47 +876,64 @@ export function PlatformTab({
       initialWorkbenchView={initialWorkbenchView}
       platformEventVisibilityMode={platformEventVisibilityMode}
       onPlatformEventVisibilityModeChange={onPlatformEventVisibilityModeChange}
+      onToggleMapOverlay={onToggleMapOverlay}
+      onMapOverlayZoomRangeChange={onMapOverlayZoomRangeChange}
     />
   );
 }
 
 function PlatformTraceWorkbench({
   overview,
-  trace,
+  trace: overviewTrace,
   platformEvents: externalPlatformEvents,
   initialWorkbenchView = "balance",
   platformEventVisibilityMode = "actionable",
   onPlatformEventVisibilityModeChange,
+  onToggleMapOverlay,
+  onMapOverlayZoomRangeChange,
 }: PlatformTraceWorkbenchProps) {
-  const { selection, setWorkspace, focusEvidence } = useTelemetrySelection();
+  const { selection, setWorkspace, focusEvidence, setHover } = useTelemetrySelection();
   const chartNode = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
   const cursorLineRef = useRef<HTMLDivElement | null>(null);
   const dragZoomBandRef = useRef<HTMLDivElement | null>(null);
   const clickedSampleIndexRef = useRef<number | null>(null);
   const hoverSampleIndexRef = useRef<number | null>(null);
+  const clickedCursorDistanceFtRef = useRef<number | null>(null);
+  const hoverCursorDistanceFtRef = useRef<number | null>(null);
   const zoomRangeRef = useRef<{ startValue?: number; endValue?: number } | null>(null);
   const dragZoomRef = useRef<DragZoomState | null>(null);
   const lastPointerOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const latestXsRef = useRef<Array<number | null>>([]);
+  const latestTraceRef = useRef<TraceResponse | null>(overviewTrace);
   const gridLeftRef = useRef(100);
-  const updateCursorRef = useRef<(index: number | null, eventId?: string | null) => void>(() => {});
+  const updateCursorRef = useRef<(index: number | null, eventId?: string | null, cursorDistanceFt?: number | null) => void>(() => {});
   const showCursorLineRef = useRef<(offsetX: number, locked: boolean) => void>(() => {});
   const hideCursorLineRef = useRef<() => void>(() => {});
-  const commitHoverSampleRef = useRef<(index: number | null) => void>(() => {});
+  const commitHoverSampleRef = useRef<(index: number | null, cursorDistanceFt?: number | null) => void>(() => {});
   const restoreHoverAtPointerRef = useRef<() => boolean>(() => false);
   const cancelDragZoomRef = useRef<() => void>(() => {});
   const hoverRafRef = useRef<number | null>(null);
   const pendingHoverSampleIndexRef = useRef<number | null>(null);
+  const pendingHoverCursorDistanceFtRef = useRef<number | null>(null);
   const lastHoverCommitRef = useRef(0);
   const [platformEvents, setPlatformEvents] = useState<PlatformEventItem[]>([]);
   const [shockReader, setShockReader] = useState<ShockReaderResponse | null>(null);
   const [selectedPlatformEvent, setSelectedPlatformEvent] = useState<PlatformEventItem | null>(null);
   const [clickedSampleIndex, setClickedSampleIndex] = useState<number | null>(null);
   const [hoverSampleIndex, setHoverSampleIndex] = useState<number | null>(null);
+  const [clickedCursorDistanceFt, setClickedCursorDistanceFt] = useState<number | null>(null);
+  const [hoverCursorDistanceFt, setHoverCursorDistanceFt] = useState<number | null>(null);
   const [tireMapMode, setTireMapMode] = useState<any>("pressure");
   const [chartDensity, setChartDensity] = useState<ChartDensity>("detailed");
   const [zoomSummary, setZoomSummary] = useState("Full range");
+  const [visibleZoomRange, setVisibleZoomRange] = useState<{ startValue?: number; endValue?: number } | null>(null);
+  const [detailTrace, setDetailTrace] = useState<TraceResponse | null>(null);
+  const [detailTraceLoading, setDetailTraceLoading] = useState(false);
+  const [detailTraceStatus, setDetailTraceStatus] = useState<string | null>(null);
+  const detailTraceCacheRef = useRef<Map<string, TraceResponse>>(new Map());
+  const detailTraceDebounceRef = useRef<number | null>(null);
+  const detailTraceRequestRef = useRef(0);
   const normalizedInitialView = initialWorkbenchView === "scrub_steering" ? "rear_scrape" : initialWorkbenchView;
   const [workbenchView, setWorkbenchView] = useState<WorkbenchView>(normalizedInitialView);
   useEffect(() => {
@@ -749,12 +958,129 @@ function PlatformTraceWorkbench({
   const handleViewChange = useCallback((view: WorkbenchView) => {
     setWorkbenchView(view);
     setHoverSampleIndex(null);
+    setHoverCursorDistanceFt(null);
   }, [setWorkbenchView, setHoverSampleIndex]);
+  const overviewXs = useMemo(() => xValues(overviewTrace), [overviewTrace]);
+  const detailTraceActive = workbenchView === "balance"
+    && visibleZoomRange != null
+    && detailTrace != null
+    && detailTrace.sample_count > 0;
+  const trace = detailTraceActive ? detailTrace : overviewTrace;
   const xs = useMemo(() => xValues(trace), [trace]);
+  const windowContextActive = selection.selectedLapScope === "lap_window"
+    && selection.selectedLapWindowStart != null
+    && selection.selectedLapWindowEnd != null;
+  const representativeLap = selection.selectedRepresentativeLap ?? overviewTrace.lap ?? selection.selectedLap ?? null;
 
   useEffect(() => {
     latestXsRef.current = xs;
-  }, [xs]);
+    latestTraceRef.current = trace;
+  }, [trace, xs]);
+
+  useEffect(() => {
+    detailTraceRequestRef.current += 1;
+    if (detailTraceDebounceRef.current != null) {
+      window.clearTimeout(detailTraceDebounceRef.current);
+      detailTraceDebounceRef.current = null;
+    }
+    detailTraceCacheRef.current.clear();
+    setDetailTrace(null);
+    setDetailTraceLoading(false);
+    setDetailTraceStatus(null);
+    setClickedCursorDistanceFt(null);
+    setHoverCursorDistanceFt(null);
+  }, [overviewTrace.run_id, overviewTrace.lap]);
+
+  useEffect(() => {
+    if (detailTraceDebounceRef.current != null) {
+      window.clearTimeout(detailTraceDebounceRef.current);
+      detailTraceDebounceRef.current = null;
+    }
+
+    if (workbenchView !== "balance" || visibleZoomRange == null) {
+      setDetailTraceLoading(false);
+      if (visibleZoomRange == null) {
+        setDetailTrace(null);
+        setDetailTraceStatus(null);
+      }
+      return;
+    }
+
+    const normalizedRange = normalizedZoomRange(visibleZoomRange);
+    const fullRange = finiteXRange(overviewXs);
+    if (!normalizedRange || !fullRange) {
+      setDetailTrace(null);
+      setDetailTraceLoading(false);
+      setDetailTraceStatus(null);
+      return;
+    }
+
+    const fullSpan = Math.max(1, fullRange.max - fullRange.min);
+    const zoomSpan = normalizedRange.end - normalizedRange.start;
+    if (zoomSpan >= fullSpan * 0.96) {
+      setDetailTrace(null);
+      setDetailTraceLoading(false);
+      setDetailTraceStatus(null);
+      return;
+    }
+
+    const rawRange = paddedRawZoomRange(normalizedRange, fullRange);
+    const lap = overviewTrace.lap ?? representativeLap ?? undefined;
+    const cacheKey = [
+      overview.run_id,
+      lap ?? "run",
+      rawRange.start.toFixed(3),
+      rawRange.end.toFixed(3),
+    ].join(":");
+    const cachedTrace = detailTraceCacheRef.current.get(cacheKey);
+    if (cachedTrace) {
+      setDetailTrace(cachedTrace);
+      setDetailTraceLoading(false);
+      setDetailTraceStatus(rawTraceStatus(cachedTrace));
+      return;
+    }
+
+    setDetailTraceLoading(true);
+    setDetailTraceStatus("Loading raw zoom data...");
+    const requestId = ++detailTraceRequestRef.current;
+    detailTraceDebounceRef.current = window.setTimeout(() => {
+      detailTraceDebounceRef.current = null;
+      fetchTrace(overview.run_id, {
+        lap,
+        x: "lap_dist_ft",
+        channels: TRACE_WORKBENCH_CHANNELS,
+        resolution: "raw",
+        downsample: 1,
+        preserveExtrema: false,
+        startFt: rawRange.start,
+        endFt: rawRange.end,
+      })
+        .then((payload) => {
+          if (detailTraceRequestRef.current !== requestId) return;
+          detailTraceCacheRef.current.set(cacheKey, payload);
+          if (detailTraceCacheRef.current.size > 8) {
+            const oldestKey = detailTraceCacheRef.current.keys().next().value;
+            if (oldestKey) detailTraceCacheRef.current.delete(oldestKey);
+          }
+          setDetailTrace(payload);
+          setDetailTraceLoading(false);
+          setDetailTraceStatus(rawTraceStatus(payload));
+        })
+        .catch(() => {
+          if (detailTraceRequestRef.current !== requestId) return;
+          setDetailTrace(null);
+          setDetailTraceLoading(false);
+          setDetailTraceStatus("High-resolution window unavailable; showing overview trace.");
+        });
+    }, 180);
+
+    return () => {
+      if (detailTraceDebounceRef.current != null) {
+        window.clearTimeout(detailTraceDebounceRef.current);
+        detailTraceDebounceRef.current = null;
+      }
+    };
+  }, [overview.run_id, overviewTrace.lap, overviewXs, representativeLap, visibleZoomRange, workbenchView]);
 
   useEffect(() => {
     clickedSampleIndexRef.current = clickedSampleIndex;
@@ -764,11 +1090,32 @@ function PlatformTraceWorkbench({
     hoverSampleIndexRef.current = hoverSampleIndex;
   }, [hoverSampleIndex]);
 
+  useEffect(() => {
+    clickedCursorDistanceFtRef.current = clickedCursorDistanceFt;
+  }, [clickedCursorDistanceFt]);
+
+  useEffect(() => {
+    hoverCursorDistanceFtRef.current = hoverCursorDistanceFt;
+  }, [hoverCursorDistanceFt]);
+
   const legacyEvents = useMemo(
     () => overview.events.filter((event) => event.event_type.startsWith("PLATFORM")),
     [overview.events],
   );
+  const visibleLegacyEvents = useMemo(
+    () => legacyEvents.filter((event) => !isSafeLegacyPlatformEvent(event)),
+    [legacyEvents],
+  );
   const rows = useMemo(() => PRESET_ROWS[preset] ?? PRESET_ROWS["Platform / Rake / Ride Height"], [preset]);
+  const balanceReadoutPanelLayout = useMemo(
+    () => buildPanelLayout(rows, preset, chartDensity, fallbackRowHeight(preset), 54),
+    [chartDensity, preset, rows],
+  );
+  const balanceReadoutGridLeft = preset === "Tires"
+    ? 130
+    : preset === "Platform / Rake / Ride Height"
+      ? 112
+      : 100;
   const missingTraceChannels = useMemo(
     () => rows
       .flatMap((row) => row.channels)
@@ -784,10 +1131,6 @@ function PlatformTraceWorkbench({
   useEffect(() => {
     chartDensityRef.current = chartDensity;
   }, [chartDensity]);
-  const windowContextActive = selection.selectedLapScope === "lap_window"
-    && selection.selectedLapWindowStart != null
-    && selection.selectedLapWindowEnd != null;
-  const representativeLap = selection.selectedRepresentativeLap ?? trace?.lap ?? selection.selectedLap ?? null;
   const windowLapNumbers = useMemo(() => {
     if (!windowContextActive) return [];
     return overview.laps
@@ -805,7 +1148,7 @@ function PlatformTraceWorkbench({
     let cancelled = false;
     if (workbenchView !== "shocks") return;
     fetchShockReader(overview.run_id, {
-      lap: shockReaderLapWindow ? null : trace?.lap ?? representativeLap,
+      lap: shockReaderLapWindow ? null : overviewTrace.lap ?? representativeLap,
       lapWindow: shockReaderLapWindow,
       boundaryInS: SHOCK_BUCKET_THRESHOLD_IN_S,
       includeDebug: false,
@@ -821,7 +1164,7 @@ function PlatformTraceWorkbench({
     return () => {
       cancelled = true;
     };
-  }, [overview.run_id, representativeLap, shockReaderLapWindow, trace?.lap, workbenchView]);
+  }, [overview.run_id, overviewTrace.lap, representativeLap, shockReaderLapWindow, workbenchView]);
 
   const buildTraceEvidence = useCallback((
     lapNumber: number | null,
@@ -848,25 +1191,35 @@ function PlatformTraceWorkbench({
       return;
     }
     let cancelled = false;
-    fetchPlatformEvents(overview.run_id, { lap: trace?.lap ?? undefined })
+    fetchPlatformEvents(overview.run_id, { lap: overviewTrace.lap ?? undefined })
       .then((events) => { if (!cancelled) setPlatformEvents(events); })
       .catch(() => { if (!cancelled) setPlatformEvents([]); });
     return () => { cancelled = true; };
-  }, [overview.run_id, trace?.lap, externalPlatformEvents]);
+  }, [overview.run_id, overviewTrace.lap, externalPlatformEvents]);
 
   const visiblePlatformEvents = useMemo(
     () => filterPlatformEvents(platformEvents, platformEventVisibilityMode),
     [platformEvents, platformEventVisibilityMode],
   );
+  const clearPlatformDiagnostics = useMemo(
+    () => platformEvents.filter((event) => isClearPlatformDiagnostic(event)),
+    [platformEvents],
+  );
+  const inspectablePlatformEvents = useMemo(
+    () => platformEventVisibilityMode === "all"
+      ? [...visiblePlatformEvents, ...clearPlatformDiagnostics]
+      : visiblePlatformEvents,
+    [clearPlatformDiagnostics, platformEventVisibilityMode, visiblePlatformEvents],
+  );
 
   useEffect(() => {
     if (
       selectedPlatformEvent
-      && !visiblePlatformEvents.some((event) => event.event_id === selectedPlatformEvent.event_id)
+      && !inspectablePlatformEvents.some((event) => event.event_id === selectedPlatformEvent.event_id)
     ) {
       setSelectedPlatformEvent(null);
     }
-  }, [selectedPlatformEvent, visiblePlatformEvents]);
+  }, [inspectablePlatformEvents, selectedPlatformEvent]);
 
   // ── event lookup helpers ─────────────────────────────────────
   const findEvent = useCallback(
@@ -883,7 +1236,7 @@ function PlatformTraceWorkbench({
     (event: PlatformEventItem | null): number | null => {
       if (!event) return null;
       if (event.lap_dist_ft != null) {
-        return nearestIndexByFt(xs, event.lap_dist_ft);
+        return nearestIndexByFt(xs, event.lap_dist_ft, trace, clickedSampleIndexRef.current ?? hoverSampleIndexRef.current);
       }
       const si = validSampleIndex(event.sample_index, xs.length);
       if (si != null) return si;
@@ -937,7 +1290,7 @@ function PlatformTraceWorkbench({
   const selectedEventForContext = findEvent(selection.selectedEventId);
   const selectedEventContextIndex = indexForPlatformEvent(selectedEventForContext);
   const selectedContextIndex = selection.selectedLapDistFt != null
-    ? nearestIndexByFt(xs, selection.selectedLapDistFt)
+    ? nearestIndexByFt(xs, selection.selectedLapDistFt, trace, clickedSampleIndexRef.current ?? hoverSampleIndexRef.current)
     : selection.selectedLapPct != null
       ? nearestIndexByPct(trace, selection.selectedLapPct)
       : validSampleIndex(selection.selectedSampleIndex, xs.length) ?? selectedEventContextIndex;
@@ -953,6 +1306,46 @@ function PlatformTraceWorkbench({
         : selection.selectedEventId
           ? "Event"
           : "Default";
+  const hasExplicitReadoutContext = playbackIndex != null
+    || lockedIndex != null
+    || transientHoverIndex != null
+    || selection.selectedEventId != null
+    || selection.selectedSampleIndex != null
+    || selection.selectedLapDistFt != null
+    || selection.selectedLapPct != null;
+  const balanceReadoutIndex = playbackIndex ?? transientHoverIndex ?? lockedIndex ?? selectedContextIndex ?? cursorIndex;
+  const balanceReadoutSource = playbackIndex != null
+    ? "Playback"
+    : transientHoverIndex != null
+      ? "Hover"
+      : lockedIndex != null
+        ? "Locked"
+        : selection.selectedEventId
+        ? "Event"
+        : "Selected";
+  const balanceCursorDistanceFt = playbackIndex != null
+    ? xs[playbackIndex] ?? null
+    : transientHoverIndex != null
+      ? hoverCursorDistanceFt ?? xs[transientHoverIndex] ?? null
+      : lockedIndex != null
+        ? clickedCursorDistanceFt ?? xs[lockedIndex] ?? null
+        : selectedContextIndex != null
+          ? xs[selectedContextIndex] ?? null
+          : cursorIndex != null
+            ? xs[cursorIndex] ?? null
+            : null;
+  const balanceReadoutDistance = balanceCursorDistanceFt;
+  const balanceReadoutSessionTime = balanceReadoutIndex != null ? traceAxisValues(trace, "session_time")[balanceReadoutIndex] ?? null : null;
+  const balanceReadoutSampleIndex = balanceReadoutIndex != null ? traceAxisValues(trace, "sample_index")[balanceReadoutIndex] ?? balanceReadoutIndex : null;
+  const balanceReadoutLocationSummary = balanceReadoutIndex != null
+    ? balanceReadoutDistance != null
+      ? `Lap ${trace?.lap ?? overview.best_useful_lap?.lap_number ?? "n/a"} @ ${formatDistanceFt(balanceReadoutDistance)}`
+      : balanceReadoutSessionTime != null
+        ? `Lap ${trace?.lap ?? overview.best_useful_lap?.lap_number ?? "n/a"} @ ${balanceReadoutSessionTime.toFixed(3)} s`
+        : balanceReadoutSampleIndex != null
+          ? `Lap ${trace?.lap ?? overview.best_useful_lap?.lap_number ?? "n/a"} sample ${balanceReadoutSampleIndex}`
+          : null
+    : null;
 
   // ── nearest event for cursor index ───────────────────────────
 
@@ -987,18 +1380,19 @@ function PlatformTraceWorkbench({
 
   // ── cursor management ────────────────────────────────────────
   const updateCursor = useCallback(
-    (index: number | null, eventId?: string | null) => {
+    (index: number | null, eventId?: string | null, cursorDistanceFt?: number | null) => {
       if (index == null || !trace) return;
       const lapPct = valueAt(trace, "lap_dist_pct_100", index);
       const pevt = eventId
         ? findEvent(eventId)
         : nearestEventForIndex(index);
+      const evidenceDistanceFt = cursorDistanceFt ?? xs[index] ?? null;
       focusEvidence({
         ...buildTraceEvidence(
           trace.lap ?? overview.best_useful_lap?.lap_number ?? null,
           lapPct,
           index,
-          xs[index] ?? null,
+          evidenceDistanceFt,
           pevt?.event_id ?? eventId ?? null,
         ),
         sampleIndex: index,
@@ -1015,7 +1409,9 @@ function PlatformTraceWorkbench({
     (index: number | null, eventId?: string | null) => {
       if (index == null) return;
       setClickedSampleIndex(index);
+      setClickedCursorDistanceFt(xs[index] ?? null);
       setHoverSampleIndex(null);
+      setHoverCursorDistanceFt(null);
       updateCursor(index, eventId);
       const x = xs[index];
       if (x != null && chartRef.current) {
@@ -1031,9 +1427,16 @@ function PlatformTraceWorkbench({
 
   const resetRideHeightZoom = useCallback(() => {
     zoomRangeRef.current = null;
+    setVisibleZoomRange(null);
+    setDetailTrace(null);
+    setDetailTraceLoading(false);
+    setDetailTraceStatus(null);
+    setClickedCursorDistanceFt(null);
+    setHoverCursorDistanceFt(null);
+    onMapOverlayZoomRangeChange?.(null);
     setZoomSummary("Full range");
     chartRef.current?.dispatchAction({ type: "dataZoom", start: 0, end: 100 });
-  }, []);
+  }, [onMapOverlayZoomRangeChange]);
 
   const focusRepresentativeLap = useCallback((lapNumber: number) => {
     if (!windowContextActive) return;
@@ -1048,7 +1451,9 @@ function PlatformTraceWorkbench({
       valueBasis: "selected_window",
     }, "platform_trace");
     setClickedSampleIndex(null);
+    setClickedCursorDistanceFt(null);
     setHoverSampleIndex(null);
+    setHoverCursorDistanceFt(null);
     setSelectedPlatformEvent(null);
   }, [focusEvidence, buildTraceEvidence, windowContextActive]);
 
@@ -1056,7 +1461,7 @@ function PlatformTraceWorkbench({
     if (!trace || xs.length === 0 || selection.selectionSource === "trace_cursor") return;
     const eventFromSelection = findEvent(selection.selectedEventId);
     const indexFromSelection = selection.selectedLapDistFt != null
-      ? nearestIndexByFt(xs, selection.selectedLapDistFt)
+      ? nearestIndexByFt(xs, selection.selectedLapDistFt, trace, clickedSampleIndexRef.current ?? hoverSampleIndexRef.current)
       : selection.selectedLapPct != null
         ? nearestIndexByPct(trace, selection.selectedLapPct)
         : validSampleIndex(selection.selectedSampleIndex, xs.length)
@@ -1064,7 +1469,9 @@ function PlatformTraceWorkbench({
 
     if (indexFromSelection == null) return;
     setClickedSampleIndex(indexFromSelection);
+    setClickedCursorDistanceFt(selection.selectedLapDistFt ?? xs[indexFromSelection] ?? null);
     setHoverSampleIndex(null);
+    setHoverCursorDistanceFt(null);
 
     const event = eventFromSelection ?? nearestEventForIndex(indexFromSelection);
     setSelectedPlatformEvent(event);
@@ -1100,10 +1507,10 @@ function PlatformTraceWorkbench({
   }, []);
 
   const positionCursorLineForIndex = useCallback(
-    (index: number | null, locked: boolean) => {
+    (index: number | null, locked: boolean, cursorDistanceFt?: number | null) => {
       const chart = chartRef.current;
       if (index == null || !chart) return;
-      const x = xs[index];
+      const x = cursorDistanceFt ?? xs[index];
       if (x == null || !Number.isFinite(x)) return;
       const pixel = chart.convertToPixel({ xAxisIndex: 0 }, [x, 0]);
       const offsetX = Array.isArray(pixel) ? pixel[0] : pixel;
@@ -1118,24 +1525,39 @@ function PlatformTraceWorkbench({
     positionCursorLineForIndexRef.current = positionCursorLineForIndex;
   }, [positionCursorLineForIndex]);
 
-  const commitHoverSample = useCallback((index: number | null) => {
+  const commitHoverSample = useCallback((index: number | null, cursorDistanceFt?: number | null) => {
     pendingHoverSampleIndexRef.current = index;
+    pendingHoverCursorDistanceFtRef.current = cursorDistanceFt ?? null;
     if (hoverRafRef.current != null) return;
     hoverRafRef.current = requestAnimationFrame(() => {
       hoverRafRef.current = null;
       const nextIndex = pendingHoverSampleIndexRef.current;
-      if (nextIndex === hoverSampleIndexRef.current) return;
+      const nextCursorDistanceFt = pendingHoverCursorDistanceFtRef.current;
+      const cursorMoved = (
+        nextCursorDistanceFt != null
+        && hoverCursorDistanceFtRef.current != null
+        && Math.abs(nextCursorDistanceFt - hoverCursorDistanceFtRef.current) >= 0.05
+      ) || nextCursorDistanceFt !== hoverCursorDistanceFtRef.current;
+      if (
+        nextIndex === hoverSampleIndexRef.current
+        && nextCursorDistanceFt === hoverCursorDistanceFtRef.current
+      ) return;
       const now = performance.now();
-      if (now - lastHoverCommitRef.current < 80) return;
+      if (!cursorMoved && now - lastHoverCommitRef.current < 80) return;
       lastHoverCommitRef.current = now;
       setHoverSampleIndex(nextIndex);
+      setHoverCursorDistanceFt(nextCursorDistanceFt);
+      setHover(
+        nextIndex == null ? null : valueAt(trace, "lap_dist_pct_100", nextIndex),
+        nextIndex,
+      );
     });
-  }, []);
+  }, [setHover, trace]);
 
   useEffect(() => {
     if (readoutSource === "Default" && clickedSampleIndex == null && hoverSampleIndex == null) return;
-    positionCursorLineForIndex(selectedIndex, readoutSource === "Locked");
-  }, [clickedSampleIndex, hoverSampleIndex, positionCursorLineForIndex, readoutSource, selectedIndex, preset]);
+    positionCursorLineForIndex(selectedIndex, readoutSource === "Locked", balanceCursorDistanceFt);
+  }, [balanceCursorDistanceFt, clickedSampleIndex, hoverSampleIndex, positionCursorLineForIndex, readoutSource, selectedIndex, preset]);
 
   // ── jump button click flash ──────────────────────────────────
   const [jumpedBtn, setJumpedBtn] = useState<string | null>(null);
@@ -1225,7 +1647,8 @@ function PlatformTraceWorkbench({
       if (!Number.isFinite(offsetX) || !Number.isFinite(offsetY)) return null;
       if (!isInsideAnyGrid(offsetY)) return null;
       const xValue = xValueFromOffset(offsetX);
-      return xValue == null ? null : nearestIndexByFt(latestXsRef.current, xValue);
+      const preferredIndex = clickedSampleIndexRef.current ?? hoverSampleIndexRef.current;
+      return xValue == null ? null : nearestRawSampleIndexByFt(latestXsRef.current, xValue, latestTraceRef.current, preferredIndex);
     };
 
     const hideDragZoomBand = () => {
@@ -1251,8 +1674,11 @@ function PlatformTraceWorkbench({
       if (!lastPointer) return false;
       const index = indexFromPoint(lastPointer.x, lastPointer.y);
       if (index == null) return false;
+      const cursorDistanceFt = xValueFromOffset(lastPointer.x);
       hoverSampleIndexRef.current = index;
+      hoverCursorDistanceFtRef.current = cursorDistanceFt ?? null;
       setHoverSampleIndex(index);
+      setHoverCursorDistanceFt(cursorDistanceFt ?? null);
       showCursorLineRef.current(lastPointer.x, false);
       return true;
     };
@@ -1294,16 +1720,17 @@ function PlatformTraceWorkbench({
         }
       }
       const index = indexFromPoint(ox, oy);
+      const cursorDistanceFt = xValueFromOffset(ox);
       if (index == null) {
         if (clickedSampleIndexRef.current == null) {
-          commitHoverSampleRef.current(null);
+          commitHoverSampleRef.current(null, null);
           hideCursorLineRef.current();
         }
         return;
       }
       showCursorLineRef.current(ox, clickedSampleIndexRef.current != null);
       if (clickedSampleIndexRef.current == null) {
-        commitHoverSampleRef.current(index);
+        commitHoverSampleRef.current(index, cursorDistanceFt);
       }
     };
 
@@ -1343,6 +1770,8 @@ function PlatformTraceWorkbench({
               endValue: Math.max(drag.startValue, endValue),
             };
             zoomRangeRef.current = nextRange;
+            setVisibleZoomRange(nextRange);
+            onMapOverlayZoomRangeChange?.(nextRange);
             setZoomSummary(zoomRangeSummary(nextRange));
             chart.dispatchAction({
               type: "dataZoom",
@@ -1356,9 +1785,12 @@ function PlatformTraceWorkbench({
       }
       const index = indexFromPoint(ox, oy);
       if (index == null) return;
+      const cursorDistanceFt = xValueFromOffset(ox);
       setClickedSampleIndex(index);
+      setClickedCursorDistanceFt(cursorDistanceFt ?? xs[index] ?? null);
       setHoverSampleIndex(null);
-      updateCursorRef.current(index);
+      setHoverCursorDistanceFt(null);
+      updateCursorRef.current(index, null, cursorDistanceFt ?? xs[index] ?? null);
       showCursorLineRef.current(ox, true);
     };
 
@@ -1370,7 +1802,7 @@ function PlatformTraceWorkbench({
     const handlePointerLeave = () => {
       if (dragZoomRef.current?.active) return;
       if (clickedSampleIndexRef.current == null) {
-        commitHoverSampleRef.current(null);
+        commitHoverSampleRef.current(null, null);
         hideCursorLineRef.current();
       }
     };
@@ -1380,13 +1812,21 @@ function PlatformTraceWorkbench({
       if (!chartNode.current || chart.isDisposed()) return;
       chart.resize({ width: chartNode.current.clientWidth, height: chartNode.current.clientHeight });
       const idx = clickedSampleIndexRef.current ?? hoverSampleIndexRef.current;
-      if (idx != null) positionCursorLineForIndexRef.current(idx, clickedSampleIndexRef.current != null);
+      if (idx != null) {
+        positionCursorLineForIndexRef.current(
+          idx,
+          clickedSampleIndexRef.current != null,
+          clickedCursorDistanceFtRef.current ?? hoverCursorDistanceFtRef.current,
+        );
+      }
     });
     ro.observe(node);
 
     const handleDataZoom = () => {
       const nextRange = zoomRangeFromOption();
       zoomRangeRef.current = nextRange;
+      setVisibleZoomRange(nextRange);
+      onMapOverlayZoomRangeChange?.(nextRange);
       setZoomSummary(zoomRangeSummary(nextRange));
     };
 
@@ -1414,7 +1854,7 @@ function PlatformTraceWorkbench({
       if (cancelDragZoomRef.current === cancelDragZoom) cancelDragZoomRef.current = () => {};
       if (restoreHoverAtPointerRef.current === restoreHoverAtPointer) restoreHoverAtPointerRef.current = () => false;
     };
-  }, []);;
+  }, [onMapOverlayZoomRangeChange]);;
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -1427,6 +1867,10 @@ function PlatformTraceWorkbench({
     const LABEL_LEFT = 4;
     gridLeftRef.current = GRID_LEFT;
     const GRID_RIGHT = 36;
+    const chartZoomRange = visibleZoomRange ?? zoomRangeRef.current;
+    const normalizedChartZoomRange = chartZoomRange ? normalizedZoomRange(chartZoomRange) : null;
+    const decimalDistanceLabels = detailTraceActive
+      || (normalizedChartZoomRange != null && normalizedChartZoomRange.end - normalizedChartZoomRange.start <= 1000);
 
     const grid = rows.map((_, index) => ({
       left: GRID_LEFT,
@@ -1446,7 +1890,7 @@ function PlatformTraceWorkbench({
         fontSize: 10,
         hideOverlap: true,
         margin: 8,
-        formatter: (value: number) => `${Math.round(value).toLocaleString()} ft`,
+        formatter: (value: number) => formatDistanceFt(value, decimalDistanceLabels ? 1 : 0),
       },
       axisLine: { lineStyle: { color: "#263241" } },
       axisTick: { show: index === rows.length - 1 },
@@ -1572,10 +2016,19 @@ function PlatformTraceWorkbench({
       : [];
 
     const series: SeriesOption[] = [];
+    const activeSampleIndices = traceAxisValues(trace, "sample_index");
+    const activeSessionTimes = traceAxisValues(trace, "session_time");
+    const zoomedRawBalanceMode = preset === "Platform / Rake / Ride Height" && detailTraceActive;
     rows.forEach((row, rowIndex) => {
       row.channels.forEach((channel, channelIndex) => {
-        const channelValues = values(trace, channel.name);
-        const data = xs.map((x, index) => [x, channelValues[index]]);
+        const channelValues = rawSeriesSamples(trace, channel.name);
+        const data = xs.map((x, index) => [
+          x,
+          channelValues[index],
+          activeSampleIndices[index] ?? index,
+          activeSessionTimes[index] ?? null,
+        ]);
+        const preserveRawZoomDetail = preset === "Platform / Rake / Ride Height";
         let lineType: "solid" | "dashed" | "dotted" = "solid";
         if (preset === "Tires") {
           const label = channel.label.toLowerCase();
@@ -1625,7 +2078,14 @@ function PlatformTraceWorkbench({
           xAxisIndex: rowIndex,
           yAxisIndex: rowIndex,
           showSymbol: false,
-          sampling: "lttb",
+          smooth: false,
+          sampling: preserveRawZoomDetail ? undefined : "lttb",
+          ...(zoomedRawBalanceMode ? {
+            large: false,
+            progressive: 0,
+            progressiveThreshold: 0,
+          } as Record<string, unknown> : {}),
+          dimensions: ["lap_dist_ft", "value", "sample_index", "session_time"],
           connectNulls: false,
           legendHoverLink: false,
           lineStyle: { width: 1.35, color: channel.color, type: lineType },
@@ -1675,7 +2135,7 @@ function PlatformTraceWorkbench({
           borderColor: "#1f2937", backgroundColor: "rgba(15,17,23,0.6)", fillerColor: "rgba(59,130,246,0.15)",
           handleStyle: { color: "#3b82f6", borderColor: "#3b82f6" },
           textStyle: { color: "#7d8a99", fontSize: 9 },
-          labelFormatter: (value: number) => `${Math.round(value).toLocaleString()} ft`,
+          labelFormatter: (value: number) => formatDistanceFt(value, decimalDistanceLabels ? 1 : 0),
           showDetail: false,
           ...(zoomRangeRef.current ?? {}),
         },
@@ -1690,7 +2150,16 @@ function PlatformTraceWorkbench({
         },
         iconStyle: { borderColor: "#8d9aaa" },
       },
-      axisPointer: { link: [{ xAxisIndex: rows.map((_, i) => i) }], snap: false },
+      axisPointer: {
+        link: [{ xAxisIndex: rows.map((_, i) => i) }],
+        snap: false,
+        label: {
+          formatter: (params: { value?: unknown }) => {
+            const value = typeof params.value === "number" ? params.value : Number(params.value);
+            return formatDistanceFt(value, decimalDistanceLabels ? 1 : 0);
+          },
+        },
+      },
       series,
     };
     chart.setOption(option, { notMerge: false, lazyUpdate: true, replaceMerge: ["series", "legend", "xAxis", "yAxis", "grid", "graphic", "dataZoom"] });
@@ -1703,6 +2172,7 @@ function PlatformTraceWorkbench({
     }
   }, [
     chartDensity,
+    detailTraceActive,
     legacyEvents,
     platformEventVisibilityMode,
     platformEvents,
@@ -1714,6 +2184,7 @@ function PlatformTraceWorkbench({
     selection.selectedZoneLabel,
     selection.selectedZoneStartPct,
     trace,
+    visibleZoomRange,
     xs,
   ]);
 
@@ -1754,28 +2225,35 @@ function PlatformTraceWorkbench({
   const handleOpenMapFromCursor = useCallback(() => {
     const lapNumber = trace?.lap ?? overview.best_useful_lap?.lap_number ?? null;
     const lapPct = valueAt(trace, "lap_dist_pct_100", selectedIndex);
+    const mapCursorDistanceFt = workbenchView === "balance" && balanceCursorDistanceFt != null
+      ? balanceCursorDistanceFt
+      : xs[selectedIndex] ?? null;
     focusEvidence({
       ...buildTraceEvidence(
         lapNumber,
         lapPct,
         selectedIndex,
-        xs[selectedIndex] ?? null,
+        mapCursorDistanceFt,
         selectedPlatformEvent?.event_id ?? selection.selectedEventId ?? null,
       ),
       lockState: readoutSource === "Locked" ? "locked" : "none",
       valueBasis: selectedIndex != null ? "selected_sample" : selection.selectedValueBasis ?? "unavailable",
       selectionSource: "trace_cursor",
-    }, "map");
+    });
+    onToggleMapOverlay?.();
   }, [
     buildTraceEvidence,
     focusEvidence,
+    onToggleMapOverlay,
     overview.best_useful_lap?.lap_number,
     readoutSource,
+    balanceCursorDistanceFt,
     selectedIndex,
     selectedPlatformEvent?.event_id,
     selection.selectedEventId,
     selection.selectedValueBasis,
     trace,
+    workbenchView,
     xs,
   ]);
 
@@ -1791,8 +2269,9 @@ function PlatformTraceWorkbench({
       lockState: "locked",
       valueBasis: "selected_sample",
       selectionSource: "trace_cursor",
-    }, "map");
-  }, [buildTraceEvidence, focusEvidence, overview.best_useful_lap?.lap_number, trace?.lap]);
+    });
+    onToggleMapOverlay?.();
+  }, [buildTraceEvidence, focusEvidence, onToggleMapOverlay, overview.best_useful_lap?.lap_number, trace?.lap]);
 
   const handleOpenSetupFromPlatformEvent = useCallback((event: PlatformEventItem) => {
     focusEvidence({
@@ -1827,7 +2306,7 @@ function PlatformTraceWorkbench({
   // ── clear clicked sample when trace/preset changes ───────────
   useEffect(() => {
     setHoverSampleIndex(null);
-  }, [trace]);
+  }, [overviewTrace.run_id, overviewTrace.lap]);
 
   // ── cursor readout ───────────────────────────────────────────
   const selected = {
@@ -1857,8 +2336,73 @@ function PlatformTraceWorkbench({
     fullThrottleResistance: valueAt(trace, "full_throttle_resistance_index", selectedIndex),
   };
 
-  const platformBalanceValue = values(trace, "platform_balance_label")[selectedIndex];
-  const selectedPlatformBalance = typeof platformBalanceValue === "string" ? platformBalanceValue : null;
+  const balanceReadoutEvent = selectedPlatformEvent ?? selectedEventForContext;
+  const lockedReadoutDistance = lockedIndex != null ? clickedCursorDistanceFt ?? xs[lockedIndex] ?? null : null;
+  const lockedReadoutSummary = transientHoverIndex != null && lockedIndex != null
+    ? `Selected: Lap ${trace?.lap ?? overview.best_useful_lap?.lap_number ?? "n/a"} @ ${lockedReadoutDistance != null ? formatDistanceFt(lockedReadoutDistance) : "location unavailable"}`
+    : null;
+  const visibleRangeForStats = useMemo(() => {
+    const finiteXs = xs.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
+    if (finiteXs.length === 0) return null;
+    return {
+      startValue: visibleZoomRange?.startValue ?? finiteXs[0],
+      endValue: visibleZoomRange?.endValue ?? finiteXs[finiteXs.length - 1],
+    };
+  }, [visibleZoomRange, xs]);
+  const balancePanelReadouts = useMemo(() => {
+    const rangeStart = visibleRangeForStats?.startValue ?? null;
+    const rangeEnd = visibleRangeForStats?.endValue ?? null;
+    return rows.map((row, rowIndex) => ({
+      row,
+      layout: balanceReadoutPanelLayout[rowIndex] ?? { top: 54, height: fallbackRowHeight(preset), gap: rowGap(preset, chartDensity) },
+      channels: row.channels.map((channel) => {
+        const vals = rawSeriesSamples(trace, channel.name);
+        // Cursor values are display-only interpolation along the rendered line; stats below remain raw measured samples.
+        const cursorDisplayValue = hasExplicitReadoutContext && balanceReadoutIndex != null
+          ? lineCursorDisplayValue(trace, xs, channel.name, balanceCursorDistanceFt, balanceReadoutIndex)
+          : null;
+        const visibleValues: number[] = [];
+        // Visible Balance stats are calculated from raw telemetry samples inside the current zoom window.
+        vals.forEach((value, index) => {
+          const x = xs[index];
+          if (
+            typeof value === "number"
+            && Number.isFinite(value)
+            && typeof x === "number"
+            && Number.isFinite(x)
+            && (rangeStart == null || x >= rangeStart)
+            && (rangeEnd == null || x <= rangeEnd)
+          ) {
+            visibleValues.push(value);
+          }
+        });
+        const low = visibleValues.length > 0 ? Math.min(...visibleValues) : null;
+        const high = visibleValues.length > 0 ? Math.max(...visibleValues) : null;
+        const avg = visibleValues.length > 0
+          ? visibleValues.reduce((sum, value) => sum + value, 0) / visibleValues.length
+          : null;
+        return {
+          ...channel,
+          readoutLabel: panelReadoutLabel(channel.name, channel.label),
+          cursorValue: typeof cursorDisplayValue === "number" && Number.isFinite(cursorDisplayValue) ? cursorDisplayValue : null,
+          low,
+          high,
+          avg,
+        };
+      }),
+    }));
+  }, [
+    balanceReadoutIndex,
+    balanceCursorDistanceFt,
+    balanceReadoutPanelLayout,
+    chartDensity,
+    hasExplicitReadoutContext,
+    preset,
+    rows,
+    trace,
+    visibleRangeForStats,
+    xs,
+  ]);
 
   // ── event severity badge colour ──────────────────────────────
   const severityColour = (sev: string) =>
@@ -1916,32 +2460,21 @@ function PlatformTraceWorkbench({
   const hasAnyShockTelemetry = shockCornerModels.some((corner) => corner.samples.length > 0);
   const sharedShockAxisLimit = SHOCK_FIXED_AXIS_LIMIT_IN_S;
 
-  const platformGeometrySummaryItems = [
-    { label: "CFS", value: selected.cfsIn != null ? `${selected.cfsIn.toFixed(3)} in` : "Unavailable", badge: "measured", severity: riskLabel(selected.cfsIn).toLowerCase() },
-    { label: "LF / RF", value: selected.lf != null || selected.rf != null ? `${fmt(selected.lf, 3)} / ${fmt(selected.rf, 3)} in` : "Unavailable", badge: "measured", severity: selected.lf != null || selected.rf != null ? "safe" : "missing" },
-    { label: "LR / RR", value: selected.lr != null || selected.rr != null ? `${fmt(selected.lr, 3)} / ${fmt(selected.rr, 3)} in` : "Unavailable", badge: "measured", severity: selected.lr != null || selected.rr != null ? "safe" : "missing" },
-    { label: "Rake", value: selected.centerRake != null || selected.sideRake != null ? `${fmt(selected.centerRake, 2)} / ${fmt(selected.sideRake, 3)} in` : "Unavailable", badge: "calculated", severity: "safe" },
-    { label: "Selected", value: selected.distanceFt != null ? `Lap ${trace?.lap ?? "n/a"} @ ${selected.distanceFt.toFixed(0)} ft` : `Lap ${trace?.lap ?? "n/a"}`, badge: readoutSource.toLowerCase(), severity: selected.distanceFt != null ? "safe" : "missing" },
-  ];
-
-  const diagnosticSummaryItems = [
-    { label: "CFS", value: selected.cfsIn != null ? `${selected.cfsIn.toFixed(3)} in` : "Unavailable", badge: "measured", severity: riskLabel(selected.cfsIn).toLowerCase() },
-    { label: "Rear min", value: selected.rearMinMm != null ? `${selected.rearMinMm.toFixed(1)} mm` : "Unavailable", badge: "calculated", severity: semanticSeverity(selected.rearScrapeMarginMm != null ? 1 - Math.max(0, Math.min(1, selected.rearScrapeMarginMm / 25)) : null) },
-    { label: "Rake", value: selected.centerRake != null || selected.sideRake != null ? `${fmt(selected.centerRake, 2)} / ${fmt(selected.sideRake, 3)} in` : "Unavailable", badge: "calculated", severity: "safe" },
-    { label: "Aero load", value: selected.aeroLoadIndex != null ? selected.aeroLoadIndex.toFixed(3) : "Unavailable", badge: "proxy", severity: semanticSeverity(selected.aeroLoadIndex != null ? Math.abs(selected.aeroLoadIndex - 1) : null) },
-    { label: "Bottoming", value: selected.wholeCarBottomingRisk != null ? selected.wholeCarBottomingRisk.toFixed(2) : "Unavailable", badge: "proxy", severity: semanticSeverity(selected.wholeCarBottomingRisk) },
-    { label: "Balance", value: selectedPlatformBalance ?? "Unavailable", badge: "derived", severity: selectedPlatformBalance ? (selectedPlatformBalance.toLowerCase().includes("bottom") ? "critical" : selectedPlatformBalance.toLowerCase().includes("risk") ? "high" : "safe") : "missing" },
-    { label: "Scrub", value: selected.dragScrub != null ? selected.dragScrub.toFixed(2) : "Unavailable", badge: "proxy", severity: semanticSeverity(selected.dragScrub) },
-    { label: "Selected", value: selected.distanceFt != null ? `Lap ${trace?.lap ?? "n/a"} @ ${selected.distanceFt.toFixed(0)} ft` : `Lap ${trace?.lap ?? "n/a"}`, badge: readoutSource.toLowerCase(), severity: selected.distanceFt != null ? "safe" : "missing" },
-  ];
-  const summaryItems = workbenchView === "balance" ? platformGeometrySummaryItems : diagnosticSummaryItems;
   const hiddenPlatformEventCount = Math.max(0, platformEvents.length - visiblePlatformEvents.length);
+  const clearPlatformDiagnosticCount = clearPlatformDiagnostics.length;
+  const hiddenPlatformEventSummary = clearPlatformDiagnosticCount > 0
+    ? `${clearPlatformDiagnosticCount} internal checks hidden/clear`
+    : `${hiddenPlatformEventCount} internal evidence item${hiddenPlatformEventCount === 1 ? "" : "s"} hidden`;
   const topVisiblePlatformEvent = visiblePlatformEvents[0] ?? null;
   const platformEventSummaryText = topVisiblePlatformEvent
     ? `${platformEventVisibilityModeLabel(platformEventVisibilityMode)} mode · ${visiblePlatformEvents.length} shown · ${hiddenPlatformEventCount} hidden · Top issue: ${topVisiblePlatformEvent.title} · ${topVisiblePlatformEvent.severity} / ${topVisiblePlatformEvent.confidence} confidence · Inspect Platform/Setup`
     : hiddenPlatformEventCount > 0
       ? `No actionable platform events shown · ${hiddenPlatformEventCount} internal evidence item${hiddenPlatformEventCount === 1 ? "" : "s"} hidden`
       : `${platformEventVisibilityModeLabel(platformEventVisibilityMode)} mode · 0 shown · 0 hidden · No platform diagnostic events for this lap`;
+
+  const groupedPlatformEventSummaryText = !topVisiblePlatformEvent && hiddenPlatformEventCount > 0
+    ? `No actionable platform events shown - ${hiddenPlatformEventSummary}`
+    : platformEventSummaryText;
 
   const riskSegments = useMemo(() => {
     const riskChannels = [
@@ -2015,19 +2548,11 @@ function PlatformTraceWorkbench({
     );
   }, [setWorkspace]);
 
-  const renderBalancePanel = () => (
-    <div className="engineering-panel">
-      <div className="engineering-panel-grid">
-        <EngineeringMetricCard title="CFS Ride Height" channelName="cfs_ride_height_in" value={latest("cfs_ride_height_in")} color="#4ade80" />
-        <EngineeringMetricCard title="Front Ride Heights" value={`LF ${formatChannelValue(latest("lf_ride_height_in") as number, "in")} / RF ${formatChannelValue(latest("rf_ride_height_in") as number, "in")}`} color="#38bdf8" />
-        <EngineeringMetricCard title="Rear Ride Heights" value={`LR ${formatChannelValue(latest("lr_ride_height_in") as number, "in")} / RR ${formatChannelValue(latest("rr_ride_height_in") as number, "in")}`} color="#22d3ee" />
-        <EngineeringMetricCard title="Front / Rear Avg RH" value={`Front ${formatChannelValue(latest("front_avg_rh_in") as number, "in")} / Rear ${formatChannelValue(latest("rear_avg_rh_in") as number, "in")}`} color="#a78bfa" />
-        <EngineeringMetricCard title="Center Rake" channelName="center_rake_fs_in" value={latest("center_rake_fs_in")} color="#4ade80" />
-        <EngineeringMetricCard title="Side Rake" channelName="side_rake_in" value={latest("side_rake_in")} color="#f59e0b" />
-        <EngineeringMetricCard title="Roll / Pitch" value={`Roll ${formatChannelValue(latest("platform_roll_deg_from_rh") as number, "°")}`} subtitle={`Pitch ${formatChannelValue(latest("platform_pitch_deg_from_rh") as number, "°")}`} color="#a78bfa" />
-      </div>
+  const renderBalanceSetupContext = () => (
+    <details className="balance-setup-context">
+      <summary>Setup context</summary>
       {setupAction(["lf_ride_height_mm", "rf_ride_height_mm", "nose_weight_pct", "cross_weight_pct"], "Platform / Ride Height Setup", true)}
-    </div>
+    </details>
   );
 
   const renderRearScrapeScrubPanel = () => (
@@ -2300,7 +2825,7 @@ function PlatformTraceWorkbench({
 
   const renderEngineeringPanel = () => {
     switch (workbenchView) {
-      case "balance": return renderBalancePanel();
+      case "balance": return null;
       case "rear_scrape": return renderRearScrapeScrubPanel();
       case "aero_load": return renderAeroPanel();
       case "scrub_steering": return renderRearScrapeScrubPanel();
@@ -2308,7 +2833,7 @@ function PlatformTraceWorkbench({
       case "shocks": return renderShocksPanel();
       case "grade_pull": return renderGradePanel();
       case "diffuser": return renderDiffuserPanel();
-      default: return renderBalancePanel();
+      default: return null;
     }
   };
 
@@ -2319,12 +2844,12 @@ function PlatformTraceWorkbench({
           <span className="eyebrow">Platform / Aero Workbench</span>
           <h2>Platform Trace Workbench</h2>
           <p className="section-note">
-            Lap {trace?.lap ?? overview.best_useful_lap?.lap_number ?? "n/a"} | X Axis: Lap Distance [ft]
+            Lap {overviewTrace.lap ?? overview.best_useful_lap?.lap_number ?? "n/a"} | X Axis: Lap Distance [ft]
           </p>
           {windowContextActive && (
             <>
               <p className="scope-banner">
-                Selected window: Laps {selection.selectedLapWindowStart}-{selection.selectedLapWindowEnd}. Platform trace is currently showing representative lap {trace?.lap ?? representativeLap ?? selection.selectedLapWindowStart}.
+                Selected window: Laps {selection.selectedLapWindowStart}-{selection.selectedLapWindowEnd}. Platform trace is currently showing representative lap {overviewTrace.lap ?? representativeLap ?? selection.selectedLapWindowStart}.
               </p>
               <div className="laps-chip-row" style={{ marginTop: 6 }}>
                 <span className="lap-flag-badge">Basis: selected window / representative lap</span>
@@ -2360,10 +2885,10 @@ function PlatformTraceWorkbench({
               <button
                 className="secondary-button"
                 onClick={() => {
-                  if (trace?.lap == null || trace.lap === representativeLap) return;
-                  focusRepresentativeLap(trace.lap);
+                  if (overviewTrace.lap == null || overviewTrace.lap === representativeLap) return;
+                  focusRepresentativeLap(overviewTrace.lap);
                 }}
-                disabled={trace?.lap == null || trace.lap === representativeLap}
+                disabled={overviewTrace.lap == null || overviewTrace.lap === representativeLap}
               >
                 Use This Lap
               </button>
@@ -2401,7 +2926,7 @@ function PlatformTraceWorkbench({
             <Activity size={16} /> Jump to Worst Speed Loss
           </button>
           <button className="secondary-button" onClick={handleOpenMapFromCursor}>
-            <MapPin size={16} /> Open Map
+            <MapPin size={16} /> Map Overlay
           </button>
         </div>
       </header>
@@ -2409,16 +2934,7 @@ function PlatformTraceWorkbench({
         Force values are estimates/proxies derived from telemetry, setup spring rates, ride heights, shock movement, and dynamic pressure. They are not direct iRacing aerodynamic force channels.
       </p>
       <div className="platform-event-summary-strip" aria-label="Platform event visibility summary">
-        <span>{platformEventSummaryText}</span>
-      </div>
-      <div className="platform-summary-bar" aria-label="Current platform summary">
-        {summaryItems.map((item) => (
-          <div key={item.label} className="platform-summary-chip" data-severity={item.severity}>
-            <span className="platform-summary-label">{item.label}</span>
-            <strong>{item.value}</strong>
-            <span className="platform-summary-badge">{item.badge}</span>
-          </div>
-        ))}
+        <span>{groupedPlatformEventSummaryText}</span>
       </div>
       {workbenchView !== "balance" && (
         <div className="platform-risk-strip" aria-label="Platform risk over lap distance">
@@ -2444,19 +2960,21 @@ function PlatformTraceWorkbench({
         </div>
       )}
       <WorkbenchSubnav active={workbenchView} onChange={handleViewChange} />
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-        <span className="laps-stint-legend-item" style={{ fontSize: 10, color: "#8d9aaa", fontWeight: 600 }}>
-          Engineering cards basis:
-        </span>
-        <span className="lap-flag-badge" style={{
-          background: sampleBasisLabel === "Selected sample" ? "rgba(56,189,248,0.15)" : "rgba(141,154,170,0.12)",
-          color: sampleBasisLabel === "Selected sample" ? "#38bdf8" : "#8d9aaa",
-          fontSize: 10, padding: "2px 8px",
-        }}>
-          {sampleBasisLabel}
-        </span>
-      </div>
-      {renderEngineeringPanel()}
+      {workbenchView !== "balance" && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+          <span className="laps-stint-legend-item" style={{ fontSize: 10, color: "#8d9aaa", fontWeight: 600 }}>
+            Engineering cards basis:
+          </span>
+          <span className="lap-flag-badge" style={{
+            background: sampleBasisLabel === "Selected sample" ? "rgba(56,189,248,0.15)" : "rgba(141,154,170,0.12)",
+            color: sampleBasisLabel === "Selected sample" ? "#38bdf8" : "#8d9aaa",
+            fontSize: 10, padding: "2px 8px",
+          }}>
+            {sampleBasisLabel}
+          </span>
+        </div>
+      )}
+      {workbenchView !== "balance" && renderEngineeringPanel()}
       <div className="trace-toolbar" aria-label="Trace chart controls">
         <span className="trace-toolbar-label">Ride-height chart density</span>
         <div className="trace-density-toggle" role="group" aria-label="Ride-height chart density">
@@ -2487,6 +3005,11 @@ function PlatformTraceWorkbench({
           <RotateCcw size={13} /> Reset Zoom
         </button>
         <span className="trace-zoom-status" aria-live="polite">{zoomSummary}</span>
+        {workbenchView === "balance" && detailTraceStatus && (
+          <span className="trace-detail-status" aria-live="polite" data-loading={detailTraceLoading ? "true" : "false"}>
+            {detailTraceStatus}
+          </span>
+        )}
         {missingTraceChannels.length > 0 && (
           <span className="trace-missing-note" role="status">
             {missingTraceChannels.slice(0, 3).join(" | ")}
@@ -2494,41 +3017,97 @@ function PlatformTraceWorkbench({
           </span>
         )}
       </div>
-      <div className="platform-layout">
+      <div className={`platform-layout${workbenchView === "balance" ? " balance-chart-layout" : ""}`}>
         <div className="trace-panel-wrapper">
           <div className="trace-panel" ref={chartNode} />
           <div className="trace-cursor-line" ref={cursorLineRef} hidden />
           <div className="trace-drag-zoom-band" ref={dragZoomBandRef} hidden />
+          {workbenchView === "balance" && (
+            <div className="balance-panel-readout-layer" aria-live="polite">
+              {balancePanelReadouts.map((panel, panelIndex) => (
+                <div
+                  className="balance-panel-readout"
+                  key={panel.row.label}
+                  style={{
+                    top: panel.layout.top,
+                    height: panel.layout.height,
+                    left: balanceReadoutGridLeft + 8,
+                  }}
+                >
+                  <div className="balance-panel-cursor-readout">
+                    {hasExplicitReadoutContext ? (
+                      <>
+                        <span className={`cursor-source-badge source-${balanceReadoutSource.toLowerCase()}`}>{balanceReadoutSource}</span>
+                        {panelIndex === 0 && balanceReadoutLocationSummary && (
+                          <span className="balance-selected-context">{balanceReadoutLocationSummary}</span>
+                        )}
+                        {panel.channels.map((channel) => (
+                          <span className="balance-channel-current" key={channel.name} style={{ color: channel.color }}>
+                            <span>{channel.readoutLabel}</span>
+                            <strong>{fmtReadout(channel.cursorValue, panel.row.yAxisUnit === "in" ? 2 : 3)}</strong>
+                          </span>
+                        ))}
+                        {panelIndex === 0 && balanceReadoutEvent && (
+                          <span className="balance-selected-context">Event {balanceReadoutEvent.title}</span>
+                        )}
+                        {panelIndex === 0 && lockedReadoutSummary && (
+                          <span className="balance-selected-context">{lockedReadoutSummary}</span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="balance-cursor-helper">Cursor: hover or scrub</span>
+                    )}
+                  </div>
+                  <div className="balance-panel-stat-readout" aria-label={`${panel.row.label} visible low high average statistics`}>
+                    {panel.channels.map((channel) => (
+                      <span className="balance-channel-stat-row" key={channel.name} style={{ color: channel.color }}>
+                        <span className="balance-stat-channel">{channel.label}</span>
+                        <span className="balance-stat-icon balance-stat-low" title="Lowest visible value" aria-label="Lowest visible value">▼</span>
+                        <span>{fmtReadout(channel.low, panel.row.yAxisUnit === "in" ? 2 : 3)}</span>
+                        <span className="balance-stat-icon balance-stat-high" title="Highest visible value" aria-label="Highest visible value">▲</span>
+                        <span>{fmtReadout(channel.high, panel.row.yAxisUnit === "in" ? 2 : 3)}</span>
+                        <span className="balance-stat-icon balance-stat-avg" title="Average visible value" aria-label="Average visible value">◆</span>
+                        <span>{fmtReadout(channel.avg, panel.row.yAxisUnit === "in" ? 2 : 3)}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        <aside className="cursor-panel">
-          <header>
-            <span><Crosshair size={16} /> Cursor Readout</span>
-            <span className={`cursor-source-badge source-${readoutSource.toLowerCase()}`}>{readoutSource}</span>
-            {readoutSource === "Locked" && <span className="cursor-unlock-hint">Esc to unlock</span>}
-          </header>
-          <dl>
-            <div><dt>Lap</dt><dd>{trace?.lap ?? "n/a"}</dd></div>
-            <div><dt>Distance</dt><dd>{fmt(selected.distanceFt, 0)} ft</dd></div>
-            <div><dt>Speed</dt><dd>{fmt(selected.speed, 2)} mph</dd></div>
-            <div><dt>Throttle</dt><dd>{fmt(selected.throttle, 1)}%</dd></div>
-            <div><dt>Brake</dt><dd>{fmt(selected.brake, 1)}%</dd></div>
-            <div><dt>CFS</dt><dd>{fmt(selected.cfsIn, 3)} in / {fmt(selected.cfsMm, 2)} mm</dd></div>
-            <div><dt>LF/RF</dt><dd>{fmt(selected.lf, 2)} / {fmt(selected.rf, 2)} in</dd></div>
-            <div><dt>LR/RR</dt><dd>{fmt(selected.lr, 2)} / {fmt(selected.rr, 2)} in</dd></div>
-            <div><dt>Front/Rear Avg</dt><dd>{fmt(selected.frontAvgRh, 3)} / {fmt(selected.rearAvgRh, 3)} in</dd></div>
-            <div><dt>Center Rake FS</dt><dd>{fmt(selected.centerRake, 2)} in</dd></div>
-            <div><dt>Side Rake</dt><dd>{fmt(selected.sideRake, 3)} in</dd></div>
-            <div><dt>Dynamic Pressure</dt><dd>{fmt(selected.dynamicPressure, 1)} psf</dd></div>
-            <div><dt>Risk</dt><dd>{riskLabel(selected.cfsIn)}</dd></div>
-            {selectedPlatformEvent && (
-              <div><dt>Event</dt><dd>{selectedPlatformEvent.title}</dd></div>
-            )}
-            {hiddenPlatformEventCount > 0 && platformEventVisibilityMode === "actionable" && (
-              <div><dt>Hidden</dt><dd>{hiddenPlatformEventCount} internal</dd></div>
-            )}
-          </dl>
-        </aside>
+        {workbenchView !== "balance" && (
+          <aside className="cursor-panel">
+            <header>
+              <span><Crosshair size={16} /> Cursor Readout</span>
+              <span className={`cursor-source-badge source-${readoutSource.toLowerCase()}`}>{readoutSource}</span>
+              {readoutSource === "Locked" && <span className="cursor-unlock-hint">Esc to unlock</span>}
+            </header>
+            <dl>
+              <div><dt>Lap</dt><dd>{trace?.lap ?? "n/a"}</dd></div>
+              <div><dt>Distance</dt><dd>{formatDistanceFt(selected.distanceFt)}</dd></div>
+              <div><dt>Speed</dt><dd>{fmt(selected.speed, 2)} mph</dd></div>
+              <div><dt>Throttle</dt><dd>{fmt(selected.throttle, 1)}%</dd></div>
+              <div><dt>Brake</dt><dd>{fmt(selected.brake, 1)}%</dd></div>
+              <div><dt>CFS</dt><dd>{fmt(selected.cfsIn, 3)} in / {fmt(selected.cfsMm, 2)} mm</dd></div>
+              <div><dt>LF/RF</dt><dd>{fmt(selected.lf, 2)} / {fmt(selected.rf, 2)} in</dd></div>
+              <div><dt>LR/RR</dt><dd>{fmt(selected.lr, 2)} / {fmt(selected.rr, 2)} in</dd></div>
+              <div><dt>Front/Rear Avg</dt><dd>{fmt(selected.frontAvgRh, 3)} / {fmt(selected.rearAvgRh, 3)} in</dd></div>
+              <div><dt>Center Rake FS</dt><dd>{fmt(selected.centerRake, 2)} in</dd></div>
+              <div><dt>Side Rake</dt><dd>{fmt(selected.sideRake, 3)} in</dd></div>
+              <div><dt>Dynamic Pressure</dt><dd>{fmt(selected.dynamicPressure, 1)} psf</dd></div>
+              <div><dt>Risk</dt><dd>{riskLabel(selected.cfsIn)}</dd></div>
+              {selectedPlatformEvent && (
+                <div><dt>Event</dt><dd>{selectedPlatformEvent.title}</dd></div>
+              )}
+              {hiddenPlatformEventCount > 0 && platformEventVisibilityMode === "actionable" && (
+                <div><dt>Hidden</dt><dd>{hiddenPlatformEventCount} internal</dd></div>
+              )}
+            </dl>
+          </aside>
+        )}
       </div>
+      {workbenchView === "balance" && renderBalanceSetupContext()}
 
       {/* ── structured platform event evidence cards ── */}
       {(visiblePlatformEvents.length > 0 || platformEvents.length > 0) && (
@@ -2556,9 +3135,33 @@ function PlatformTraceWorkbench({
           ) : (
             <div className="platform-events-empty">
               <p>No actionable platform events shown.</p>
+              {clearPlatformDiagnosticCount > 0 && (
+                <p className="muted">All visible platform checks are clear.</p>
+              )}
               <p className="muted">Internal evidence is still preserved for analysis.</p>
               <p className="muted">Switch to Proxy/Internal to inspect hidden evidence.</p>
             </div>
+          )}
+          {platformEventVisibilityMode === "all" && clearPlatformDiagnosticCount > 0 && (
+            <details className="platform-clear-checks">
+              <summary>Clear checks ({clearPlatformDiagnosticCount})</summary>
+              <div className="event-jump-row platform-clear-check-list">
+                {clearPlatformDiagnostics.map((event) => (
+                  <button
+                    className="secondary-button platform-event-button muted"
+                    key={event.event_id}
+                    onClick={() => {
+                      const idx = indexForPlatformEvent(event);
+                      jumpToIndex(idx, event.event_id);
+                      setSelectedPlatformEvent(event);
+                    }}
+                  >
+                    <Activity size={16} /> {event.title}
+                    <span className="event-scope-pill">{platformEventScopeLabel(event)}</span>
+                  </button>
+                ))}
+              </div>
+            </details>
           )}
           {selectedPlatformEvent && (
             <div className="evidence-card platform-evidence-card">
@@ -2575,7 +3178,7 @@ function PlatformTraceWorkbench({
                 <dt>Location</dt>
                 <dd>
                   Lap {selectedPlatformEvent.lap ?? "n/a"}
-                  {selectedPlatformEvent.lap_dist_ft != null && ` | ${selectedPlatformEvent.lap_dist_ft.toFixed(0)} ft`}
+                  {selectedPlatformEvent.lap_dist_ft != null && ` | ${formatDistanceFt(selectedPlatformEvent.lap_dist_ft)}`}
                 </dd>
                 {selectedPlatformEvent.primary_value != null && (
                   <>
@@ -2603,8 +3206,8 @@ function PlatformTraceWorkbench({
                 <p className="proxy-note">Hidden by default: {selectedPlatformEvent.reason_for_hidden}</p>
               )}
               <div className="diw-actions" style={{ marginTop: 8 }}>
-                <button className="trackmap-action-btn" onClick={() => handleOpenMapFromPlatformEvent(selectedPlatformEvent)} title="Open Map at selected event">
-                  <MapPin size={10} /> Open Map
+                <button className="trackmap-action-btn" onClick={() => handleOpenMapFromPlatformEvent(selectedPlatformEvent)} title="Show selected event on map overlay">
+                  <MapPin size={10} /> Map Overlay
                 </button>
                 <button className="trackmap-action-btn" onClick={() => handleOpenSetupFromPlatformEvent(selectedPlatformEvent)} title="Open Setup with selected event">
                   <Wrench size={10} /> Open Setup
@@ -2627,10 +3230,10 @@ function PlatformTraceWorkbench({
       )}
 
       {/* ── legacy platform events (only shown when no structured events exist) ── */}
-      {visiblePlatformEvents.length === 0 && legacyEvents.length > 0 && (
+      {platformEvents.length === 0 && visiblePlatformEvents.length === 0 && visibleLegacyEvents.length > 0 && (
         <>
           <div className="event-jump-row">
-            {legacyEvents.map((event) => (
+            {visibleLegacyEvents.map((event) => (
               <button
                 className="secondary-button"
                 key={event.event_id}
@@ -2646,8 +3249,8 @@ function PlatformTraceWorkbench({
             ))}
           </div>
           <div className="evidence-list">
-            {legacyEvents.map((event) => (
-              <EvidenceCard event={event} key={event.event_id} />
+            {visibleLegacyEvents.map((event) => (
+              <EvidenceCard event={event} key={event.event_id} onToggleMapOverlay={onToggleMapOverlay} />
             ))}
           </div>
         </>

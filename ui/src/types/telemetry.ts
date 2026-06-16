@@ -308,6 +308,23 @@ export type TraceResponse = {
   sample_count: number;
   downsample: number | string;
   preserve_extrema?: boolean;
+  trace_meta?: {
+    raw_resolution?: boolean;
+    raw_source_row_count?: number;
+    returned_row_count?: number;
+    downsample_applied?: boolean;
+    downsample?: number | string;
+    bucket_size?: number;
+    window_start_ft?: number | null;
+    window_end_ft?: number | null;
+    session_time_delta_s_mean?: number | null;
+    sample_index_delta_mean?: number | null;
+    distance_delta_ft_mean?: number | null;
+    approx_hz?: number | null;
+    distance_duplicate_count?: number;
+    distance_rounded_or_deduped?: boolean;
+    sample_identity?: string;
+  } | null;
 };
 
 export type PlatformEventSeverity = "info" | "watch" | "high" | "critical";

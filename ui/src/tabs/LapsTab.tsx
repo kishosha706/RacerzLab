@@ -33,6 +33,7 @@ type LapsTabProps = {
   sessionRuns: RunListItem[];
   sessionRunsLoading: boolean;
   sessionSelectionSource: SessionSelectionSource | null;
+  onToggleMapOverlay?: () => void;
 };
 
 type StintMode = "ev" | "delta" | "falloff";
@@ -539,7 +540,7 @@ function descriptorForWindow(
   };
 }
 
-export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, sessionSelectionSource }: LapsTabProps) {
+export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, sessionSelectionSource, onToggleMapOverlay }: LapsTabProps) {
   const { selection, focusEvidence, setWorkspace } = useTelemetrySelection();
   const {
     basket,
@@ -823,7 +824,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     return dedupeDescriptors(rows);
   }, [availableBestWindows, bestEvidenceLap, currentSelectionDescriptor, engineeringCueLap, fastestUsableLap, representativeLapByWindowId]);
 
-  const focusLapEvidence = useCallback((lap: LapSummary, workspace?: "platform_trace" | "map") => {
+  const focusLapEvidence = useCallback((lap: LapSummary, workspace?: "platform_trace") => {
     focusEvidence({
       runId: overview.run_id,
       lapNumber: lap.lap_number,
@@ -841,7 +842,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     }, workspace);
   }, [focusEvidence, overview.run_id]);
 
-  const focusWindowEvidence = useCallback((window: LapWindowSummary, workspace?: "platform_trace" | "map") => {
+  const focusWindowEvidence = useCallback((window: LapWindowSummary, workspace?: "platform_trace") => {
     const representative = representativeLapByWindowId.get(window.window_id) ?? deriveRepresentativeLap(window, laps);
     focusEvidence({
       runId: overview.run_id,
@@ -1509,8 +1510,9 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     };
 
     const handleMap = () => {
-      if (item.window) focusWindowEvidence(item.window, "map");
-      if (item.lap) focusLapEvidence(item.lap, "map");
+      if (item.window) focusWindowEvidence(item.window);
+      if (item.lap) focusLapEvidence(item.lap);
+      onToggleMapOverlay?.();
     };
 
     const handleBaseline = () => {
@@ -1540,8 +1542,8 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
           <button className="secondary-button" onClick={handlePlatform} disabled={!canOpenPlatform} title={canOpenPlatform ? "Open Platform with this evidence context" : disabledReason} aria-label="Open evidence in Platform">
             <Layers size={14} /> Open Platform
           </button>
-          <button className="secondary-button" onClick={handleMap} disabled={!canStage} title={canStage ? "Open Map with this evidence context" : disabledReason} aria-label="Open evidence on Map">
-            <MapPin size={14} /> Open Map
+          <button className="secondary-button" onClick={handleMap} disabled={!canStage} title={canStage ? "Show evidence on map overlay" : disabledReason} aria-label="Show evidence on map overlay">
+            <MapPin size={14} /> Map Overlay
           </button>
         </div>
       );
@@ -1558,7 +1560,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
         <button className="secondary-button" onClick={handlePlatform} disabled={!canOpenPlatform} title={canOpenPlatform ? "Open Platform with this evidence context" : disabledReason} aria-label="Open evidence in Platform">
           <Layers size={14} /> Platform
         </button>
-        <button className="secondary-button" onClick={handleMap} disabled={!canStage} title={canStage ? "Open Map with this evidence context" : disabledReason} aria-label="Open evidence on Map">
+        <button className="secondary-button" onClick={handleMap} disabled={!canStage} title={canStage ? "Show evidence on map overlay" : disabledReason} aria-label="Show evidence on map overlay">
           <MapPin size={14} /> Map
         </button>
         <button className="secondary-button" onClick={handleSelect} disabled={!canStage} title={canStage ? "Use this evidence as current selection" : disabledReason} aria-label={isWindow ? "Select window evidence" : "Select lap evidence"}>
@@ -1569,7 +1571,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
         </button>
       </div>
     );
-  }, [addToQueue, focusLapEvidence, focusWindowEvidence, makeLapBasket, makeWindowBasket, setBaseline, setTest]);
+  }, [addToQueue, focusLapEvidence, focusWindowEvidence, makeLapBasket, makeWindowBasket, onToggleMapOverlay, setBaseline, setTest]);
 
   const renderDescriptorSummary = useCallback((item: EvidenceDescriptor) => {
     const headline = item.window
@@ -1656,6 +1658,15 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <span className="muted">{overview.session.track_display_name ?? overview.session.track_name} - {overview.session.car_name}</span>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onToggleMapOverlay}
+              aria-label="Show track map overlay"
+              title="Show track map overlay"
+            >
+              <MapPin size={14} /> Map Overlay
+            </button>
           </div>
         </div>
         <div className="laps-chip-row" style={{ marginTop: 8 }}>

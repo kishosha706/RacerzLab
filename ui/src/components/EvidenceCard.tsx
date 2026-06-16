@@ -6,9 +6,10 @@ import type { TelemetryEvent } from "../types/telemetry";
 
 type EvidenceCardProps = {
   event: TelemetryEvent;
+  onToggleMapOverlay?: () => void;
 };
 
-export function EvidenceCard({ event }: EvidenceCardProps) {
+export function EvidenceCard({ event, onToggleMapOverlay }: EvidenceCardProps) {
   const confidence = `${Math.round(event.confidence_score * 100)}%`;
   const { selection, focusEvidence } = useTelemetrySelection();
 
@@ -37,8 +38,9 @@ export function EvidenceCard({ event }: EvidenceCardProps) {
   }, [focusEvidence, buildCardEvidence]);
 
   const handleOpenMap = useCallback(() => {
-    focusEvidence(buildCardEvidence(), "map");
-  }, [focusEvidence, buildCardEvidence]);
+    focusEvidence(buildCardEvidence());
+    onToggleMapOverlay?.();
+  }, [focusEvidence, buildCardEvidence, onToggleMapOverlay]);
 
   return (
     <article className="evidence-card" style={{ cursor: "pointer" }} onClick={handleOpenPlatform} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpenPlatform(); } }} role="button" tabIndex={0} title="Open in Platform Trace">
@@ -64,7 +66,7 @@ export function EvidenceCard({ event }: EvidenceCardProps) {
         <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); handleOpenPlatform(); }} title="Open Platform" aria-label="Open Platform for this event">
           <Layers size={10} />
         </button>
-        <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); handleOpenMap(); }} title="Open Map" aria-label="Open Map for this event">
+        <button className="trackmap-action-btn" onClick={(e) => { e.stopPropagation(); handleOpenMap(); }} title="Show map overlay" aria-label="Show map overlay for this event">
           <MapPin size={10} />
         </button>
       </div>

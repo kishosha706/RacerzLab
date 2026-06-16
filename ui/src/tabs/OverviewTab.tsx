@@ -9,6 +9,7 @@ import type { RunOverview, TelemetryEvent } from "../types/telemetry";
 
 type OverviewTabProps = {
   overview: RunOverview;
+  onToggleMapOverlay?: () => void;
 };
 
 function severityLabel(severity: TelemetryEvent["severity"]): "CRITICAL" | "HIGH" | "WATCH" | "INFO" {
@@ -52,7 +53,7 @@ function orderedWarnings(warnings: string[]): Array<{ key: string; label: string
   return groups;
 }
 
-export function OverviewTab({ overview }: OverviewTabProps) {
+export function OverviewTab({ overview, onToggleMapOverlay }: OverviewTabProps) {
   const lap = overview.best_useful_lap;
   const { setWorkspace, focusEvidence, selection } = useTelemetrySelection();
   const [openWarningKeys, setOpenWarningKeys] = useState<Record<string, boolean>>({});
@@ -94,6 +95,12 @@ export function OverviewTab({ overview }: OverviewTabProps) {
     if (!topEvent) return;
     focusEvidence(buildOverviewEvidence(topEvent), "platform_trace");
   }, [topEvent, buildOverviewEvidence, focusEvidence]);
+
+  const openTopEventMapOverlay = useCallback(() => {
+    if (!topEvent) return;
+    focusEvidence(buildOverviewEvidence(topEvent));
+    onToggleMapOverlay?.();
+  }, [topEvent, buildOverviewEvidence, focusEvidence, onToggleMapOverlay]);
 
   const warningsByOrder = useMemo(() => orderedWarnings(overview.warnings), [overview.warnings]);
   const proxyEventCount = useMemo(
@@ -142,8 +149,8 @@ export function OverviewTab({ overview }: OverviewTabProps) {
           <button className="secondary-button" onClick={() => topEvent && focusEvidence(buildOverviewEvidence(topEvent), "platform_trace")}>
             <Layers size={14} /> Open Platform
           </button>
-          <button className="secondary-button" onClick={() => topEvent && focusEvidence(buildOverviewEvidence(topEvent), "map")}>
-            <MapPin size={14} /> Open Map
+          <button className="secondary-button" onClick={openTopEventMapOverlay}>
+            <MapPin size={14} /> Map Overlay
           </button>
           <button className="secondary-button" onClick={() => topEvent && focusEvidence(buildOverviewEvidence(topEvent), "setup_impact")}>
             <Wrench size={14} /> Open Setup
@@ -259,7 +266,7 @@ export function OverviewTab({ overview }: OverviewTabProps) {
       {sortedEvents.length > 0 && (
         <section className="evidence-list">
           {sortedEvents.slice(0, 6).map((event) => (
-            <EvidenceCard event={event} key={event.event_id} />
+            <EvidenceCard event={event} key={event.event_id} onToggleMapOverlay={onToggleMapOverlay} />
           ))}
         </section>
       )}
