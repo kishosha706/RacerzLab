@@ -136,11 +136,30 @@ def test_windows_icon_file_is_valid_ico_container() -> None:
     assert icon_type == 1
     assert image_count >= 1
 
+    sizes: set[tuple[int, int]] = set()
     for index in range(image_count):
         entry_offset = 6 + index * 16
+        width_byte, height_byte = struct.unpack_from("<BB", data, entry_offset)
+        width = 256 if width_byte == 0 else width_byte
+        height = 256 if height_byte == 0 else height_byte
+        sizes.add((width, height))
         image_size, image_offset = struct.unpack_from("<II", data, entry_offset + 8)
         image = data[image_offset : image_offset + image_size]
         assert image.startswith(b"\x89PNG\r\n\x1a\n")
+
+    assert {(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)}.issubset(sizes)
+
+
+def test_windows_small_png_icon_variants_exist() -> None:
+    icons_dir = PROJECT_ROOT / "ui/src-tauri/icons"
+
+    for size in (16, 24, 32, 48, 64):
+        icon_path = icons_dir / f"{size}x{size}.png"
+        data = icon_path.read_bytes()
+        width, height = struct.unpack_from(">II", data, 16)
+
+        assert data.startswith(b"\x89PNG\r\n\x1a\n")
+        assert (width, height) == (size, size)
 
 
 def test_tauri_config_has_no_runtime_remote_url() -> None:
@@ -154,11 +173,13 @@ def test_tauri_config_has_no_runtime_remote_url() -> None:
 
 
 def test_frontend_runtime_has_no_remote_production_urls() -> None:
-    frontend_paths = [PROJECT_ROOT / "ui/index.html", *Path(PROJECT_ROOT / "ui/src").rglob("*.*")]
+    text_suffixes = {".css", ".html", ".js", ".json", ".ts", ".tsx"}
+    frontend_paths = [
+        PROJECT_ROOT / "ui/index.html",
+        *(path for path in Path(PROJECT_ROOT / "ui/src").rglob("*.*") if path.suffix in text_suffixes),
+    ]
 
     for path in frontend_paths:
-        if path.is_dir():
-            continue
         text = path.read_text(encoding="utf-8")
         urls = re.findall(r"https?://[^\"'\s]+", text)
         assert all(url.startswith(("http://127.0.0.1", "http://localhost")) for url in urls)

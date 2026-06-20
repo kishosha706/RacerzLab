@@ -1,6 +1,7 @@
 import { AlertTriangle, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { createSession, deleteSession, fetchSessions } from "../api/client";
+import racerzlabBanner from "../assets/racerzlab-banner.png";
 import type { RaceLabSession, SessionSelectionSource } from "../types/session";
 
 type StartupScreenProps = {
@@ -14,6 +15,8 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [bannerVisible, setBannerVisible] = useState(true);
+  const [launchSplashVisible, setLaunchSplashVisible] = useState(true);
 
   const loadSessions = useCallback(async () => {
     setLoading(true);
@@ -30,6 +33,24 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
   }, []);
 
   useEffect(() => { void loadSessions(); }, [loadSessions]);
+
+  const enterSessionPicker = useCallback(() => {
+    setLaunchSplashVisible(false);
+  }, []);
+
+  useEffect(() => {
+    if (!launchSplashVisible) return undefined;
+
+    const handleLaunchKey = (event: KeyboardEvent) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        enterSessionPicker();
+      }
+    };
+
+    window.addEventListener("keydown", handleLaunchKey);
+    return () => window.removeEventListener("keydown", handleLaunchKey);
+  }, [enterSessionPicker, launchSplashVisible]);
 
   const handleNewSession = useCallback(async () => {
     setCreating(true);
@@ -53,30 +74,54 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
   }, [loadSessions]);
 
   return (
-    <main className="start-shell">
-      <div className="start-hero">
-        <span className="start-eyebrow">RACERZLAB</span>
-        <h1 className="start-title">Start a new RacerZLab session</h1>
-        <p className="start-subtitle">
-          Import telemetry, inspect evidence, compare setup changes, and build your next test plan.
-        </p>
+    <main className="start-shell" data-banner-visible={bannerVisible} data-launch-splash={launchSplashVisible}>
+      {bannerVisible && (
+        <img
+          className="startup-bg-image"
+          src={racerzlabBanner}
+          alt=""
+          aria-hidden="true"
+          onError={() => setBannerVisible(false)}
+        />
+      )}
+      <div className="startup-bg-vignette" aria-hidden="true" />
 
-        <div className="start-actions">
-          <button className="start-primary-btn" onClick={handleNewSession} disabled={creating}>
-            <Plus size={18} /> {creating ? "Creating…" : "New Session"}
-          </button>
-        </div>
-
-        {createError && (
-          <div className="start-error" style={{ marginTop: 12 }}>
-            <p className="error-text" style={{ fontSize: 12, margin: 0 }}>
-              <AlertTriangle size={12} /> {createError}
+      {launchSplashVisible ? (
+        <button
+          type="button"
+          className="launch-splash-gate"
+          onClick={enterSessionPicker}
+          aria-label="Enter RacerZLab"
+        >
+          <span className="launch-splash-meta">Telemetry / Setup / Stint Intelligence</span>
+          <span className="launch-splash-prompt">Click to enter</span>
+        </button>
+      ) : (
+      <div className="startup-content">
+        <div className="start-hero">
+          <div className="start-launch-panel">
+            <h1 className="start-title">Start a new RacerZLab session</h1>
+            <p className="start-subtitle">
+              Import telemetry, inspect evidence, compare setup changes, and build your next test plan.
             </p>
-          </div>
-        )}
 
-        <p className="start-hint">Open a previous session below.</p>
-      </div>
+            <div className="start-actions">
+              <button className="start-primary-btn" onClick={handleNewSession} disabled={creating}>
+                <Plus size={18} /> {creating ? "Creating..." : "New Session"}
+              </button>
+            </div>
+
+            {createError && (
+              <div className="start-error" style={{ marginTop: 12 }}>
+                <p className="error-text" style={{ fontSize: 12, margin: 0 }}>
+                  <AlertTriangle size={12} /> {createError}
+                </p>
+              </div>
+            )}
+
+            <p className="start-hint">Open a previous session below.</p>
+          </div>
+        </div>
 
       {loading && <p className="muted" style={{ textAlign: "center", marginTop: 32 }}>Loading sessions…</p>}
 
@@ -148,6 +193,8 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
             ))}
           </div>
         </section>
+      )}
+      </div>
       )}
     </main>
   );

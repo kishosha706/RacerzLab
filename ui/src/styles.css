@@ -4383,34 +4383,124 @@ td {
 
 /* ── Start Shell (Splash Page) ──────────────────────────────── */
 .start-shell {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   align-items: center;
-  justify-content: center;
+  justify-items: center;
+  position: relative;
   min-height: 100vh;
-  padding: 40px 24px;
-  background: radial-gradient(ellipse at 50% 30%, rgba(56, 189, 248, 0.03) 0%, transparent 60%), #090b0f;
+  overflow: hidden;
+  padding: clamp(18px, 3vh, 34px) 24px;
+  background: #060809;
+}
+
+.startup-bg-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  opacity: 0.56;
+  pointer-events: none;
+  user-select: none;
+}
+
+.start-shell[data-launch-splash="true"] .startup-bg-image {
+  opacity: 0.98;
+  filter: saturate(1.08) contrast(1.04) brightness(1.08);
+}
+
+.startup-bg-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at center, rgba(6, 8, 9, 0.08) 0%, rgba(6, 8, 9, 0.76) 78%),
+    linear-gradient(90deg, rgba(6, 8, 9, 0.84) 0%, rgba(6, 8, 9, 0.46) 38%, rgba(6, 8, 9, 0.72) 100%),
+    linear-gradient(180deg, rgba(6, 8, 9, 0.28) 0%, rgba(6, 8, 9, 0.78) 100%);
+}
+
+.start-shell[data-launch-splash="true"] .startup-bg-vignette {
+  background:
+    radial-gradient(ellipse at center, rgba(6, 8, 9, 0) 0%, rgba(6, 8, 9, 0.08) 48%, rgba(6, 8, 9, 0.36) 92%),
+    linear-gradient(180deg, rgba(6, 8, 9, 0.02) 0%, rgba(6, 8, 9, 0.14) 58%, rgba(6, 8, 9, 0.34) 100%);
+}
+
+.launch-splash-gate {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  align-content: end;
+  justify-items: center;
+  width: 100%;
+  height: calc(100vh - clamp(36px, 6vh, 68px));
+  min-height: 420px;
+  padding: 0 16px clamp(44px, 8vh, 92px);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: center;
+}
+
+.launch-splash-gate:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.78);
+  outline-offset: -8px;
+}
+
+.launch-splash-meta {
+  color: rgba(226, 238, 249, 0.82);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.82);
+}
+
+.launch-splash-prompt {
+  margin-top: 12px;
+  padding: 8px 14px;
+  border: 1px solid rgba(96, 165, 250, 0.38);
+  border-radius: 999px;
+  background: rgba(6, 10, 16, 0.72);
+  color: #eef6ff;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow:
+    0 14px 42px rgba(0, 0, 0, 0.42),
+    0 0 28px rgba(59, 130, 246, 0.14);
+  backdrop-filter: blur(10px);
+}
+
+.startup-content {
+  display: grid;
+  position: relative;
+  z-index: 1;
+  width: min(100%, 760px);
+  max-height: calc(100vh - clamp(36px, 6vh, 68px));
+  gap: 16px;
 }
 
 .start-hero {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   align-items: center;
+  justify-items: center;
   text-align: center;
-  max-width: 560px;
-  gap: 12px;
+  width: 100%;
 }
 
-.start-eyebrow {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  color: var(--cyan);
-  text-transform: uppercase;
+.start-launch-panel {
+  width: min(100%, 560px);
+  padding: 20px 22px 18px;
+  border: 1px solid rgba(80, 140, 220, 0.22);
+  border-radius: 8px;
+  background: rgba(6, 10, 16, 0.72);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(12px);
 }
 
 .start-title {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--text);
   margin: 0;
@@ -4420,15 +4510,16 @@ td {
 .start-subtitle {
   font-size: 14px;
   color: var(--muted);
-  margin: 0;
+  margin: 8px auto 0;
   line-height: 1.5;
   max-width: 440px;
 }
 
 .start-actions {
   display: flex;
+  justify-content: center;
   gap: 10px;
-  margin-top: 8px;
+  margin-top: 16px;
 }
 
 .start-primary-btn {
@@ -4452,19 +4543,40 @@ td {
 .start-hint {
   font-size: 12px;
   color: var(--muted);
-  margin: 4px 0 0;
+  margin: 10px 0 0;
 }
 
 .start-empty {
+  width: min(100%, 560px);
   text-align: center;
-  margin-top: 32px;
+  justify-self: center;
+  padding: 14px 16px;
+  border: 1px solid rgba(80, 140, 220, 0.18);
+  border-radius: 8px;
+  background: rgba(6, 10, 16, 0.68);
+  backdrop-filter: blur(10px);
+}
+
+.start-status {
+  justify-self: center;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 6px;
+  background: rgba(6, 10, 16, 0.58);
 }
 
 /* ── Session List ──────────────────────────────────────────── */
 .session-list {
   width: 100%;
-  max-width: 640px;
-  margin-top: 40px;
+  max-width: 720px;
+  margin-top: 0;
+  min-height: 0;
+  padding: 12px;
+  border: 1px solid rgba(80, 140, 220, 0.18);
+  border-radius: 8px;
+  background: rgba(6, 10, 16, 0.66);
+  backdrop-filter: blur(10px);
 }
 
 .session-list-heading {
@@ -4477,10 +4589,51 @@ td {
   text-align: center;
 }
 
+@media (max-width: 680px) {
+  .start-shell {
+    padding: 18px 14px 26px;
+  }
+
+  .startup-content {
+    max-height: calc(100vh - 44px);
+  }
+
+  .start-hero {
+    width: 100%;
+  }
+
+  .start-launch-panel {
+    padding: 16px 14px;
+  }
+
+  .start-title {
+    font-size: 21px;
+  }
+
+  .start-primary-btn {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .session-list {
+    margin-top: 0;
+    padding: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .start-primary-btn {
+    transition: none;
+  }
+}
+
 .session-list-grid {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: min(34vh, 330px);
+  overflow-y: auto;
+  padding-right: 3px;
 }
 
 .session-card {
