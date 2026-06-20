@@ -6,6 +6,7 @@ const VALID_WORKSPACES: Workspace[] = ["overview", "map", "laps", "platform_trac
 function normalizeWorkspace(workspace: Workspace): Workspace {
   if (workspace === "compare") return "laps";
   if (workspace === "map") return "overview";
+  if (workspace === "notebook") return "overview";
   return workspace;
 }
 

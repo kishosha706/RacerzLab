@@ -2320,21 +2320,6 @@ function PlatformTraceWorkbench({
     }, "setup_impact");
   }, [buildTraceEvidence, focusEvidence, overview.best_useful_lap?.lap_number, trace?.lap]);
 
-  const handleStageTestFromPlatformEvent = useCallback((event: PlatformEventItem) => {
-    focusEvidence({
-      ...buildTraceEvidence(
-        event.lap ?? trace?.lap ?? overview.best_useful_lap?.lap_number ?? null,
-        event.lap_pct ?? null,
-        event.sample_index ?? null,
-        event.lap_dist_ft ?? null,
-        event.event_id,
-      ),
-      lockState: event.sample_index != null || event.lap_dist_ft != null ? "locked" : "none",
-      valueBasis: event.sample_index != null || event.lap_dist_ft != null ? "selected_sample" : "run_level",
-      selectionSource: "trace_cursor",
-    }, "notebook");
-  }, [buildTraceEvidence, focusEvidence, overview.best_useful_lap?.lap_number, trace?.lap]);
-
   // ── clear clicked sample when trace/preset changes ───────────
   useEffect(() => {
     setHoverSampleIndex(null);
@@ -3031,9 +3016,6 @@ function PlatformTraceWorkbench({
                 </button>
                 <button className="trackmap-action-btn" onClick={() => handleOpenSetupFromPlatformEvent(selectedPlatformEvent)} title="Open Setup with selected event">
                   <Wrench size={10} /> Open Setup
-                </button>
-                <button className="trackmap-action-btn" onClick={() => handleStageTestFromPlatformEvent(selectedPlatformEvent)} title="Stage a notebook test from selected event">
-                  <BarChart3 size={10} /> Stage Test
                 </button>
               </div>
               {selectedPlatformEvent.is_proxy_based && selectedPlatformEvent.proxy_warning && (

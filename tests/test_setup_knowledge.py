@@ -144,14 +144,14 @@ def test_recommendation_titles_name_exact_garage_actions():
     )
     assert not any(term in all_titles for term in banned)
 
-    assert effects["add_front_platform_support"].direction == "Lower front ride height with LF/RF shock collar offsets"
-    assert effects["reduce_front_platform_support"].direction == "Raise front ride height with LF/RF shock collar offsets"
-    assert effects["add_rear_platform_support"].direction == "Raise rear ride height with LR/RR shock collar offsets"
-    assert effects["reduce_rear_platform_support"].direction == "Lower rear ride height with LR/RR shock collar offsets"
-    assert effects["protect_rf_long_run_pressure"].direction == "Adjust RF tire pressure"
-    assert effects["protect_rr_long_run_pressure"].direction == "Adjust RR tire pressure"
+    assert effects["add_front_platform_support"].direction == "Lower LF/RF front ride height one small step"
+    assert effects["reduce_front_platform_support"].direction == "Raise LF/RF front ride height one small step"
+    assert effects["add_rear_platform_support"].direction == "Raise LR/RR rear ride height one small step"
+    assert effects["reduce_rear_platform_support"].direction == "Lower LR/RR rear ride height one small step"
+    assert effects["protect_rf_long_run_pressure"].direction == "Lower RF tire pressure one small step"
+    assert effects["protect_rr_long_run_pressure"].direction == "Lower RR tire pressure one small step"
     assert effects["add_hs_rebound_control"].direction == "Add high-speed rebound"
-    assert effects["reduce_rear_toe_bind"].direction == "Reduce rear toe-in / rear toe bind"
+    assert effects["reduce_rear_toe_bind"].direction == "Reduce rear toe-in one small step"
 
 
 def test_tire_pressure_swing_titles_name_the_tire_or_split():
@@ -159,7 +159,7 @@ def test_tire_pressure_swing_titles_name_the_tire_or_split():
         if effect.setup_area == "tire_pressure":
             direction = effect.direction.lower()
             assert "pressure" in direction
-            assert "tire" in direction
+            assert "tire" in direction or "lr/rr rear pressure split" in direction
         if effect.setup_area == "pressure_split":
             direction = effect.direction.lower()
             assert "pressure split" in direction
@@ -438,7 +438,7 @@ def test_cli_text_contains_package_and_preferred_context():
     )
     assert "Package notes:" in completed.stdout
     assert "Preferred when:" in completed.stdout
-    assert "Taller rear end ratio" in completed.stdout
+    assert "Use a numerically lower rear end ratio for more straight speed" in completed.stdout
     assert "Area: rear end ratio" in completed.stdout
     assert "Taller final drive" not in completed.stdout
 

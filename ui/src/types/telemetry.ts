@@ -156,6 +156,8 @@ export type DialInClarification = {
 export type DialInSwing = {
   id: string;
   title: string;
+  change_this: string;
+  garage_lever: string;
   setup_area: string;
   strength_label: string;
   risk_label: string;

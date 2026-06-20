@@ -9,6 +9,20 @@ from .loader import load_setup_knowledge
 from .matcher import RankedSetupEffect, parse_symptom
 
 
+VAGUE_ACTION_TERMS = (
+    "adjust ",
+    "tune ",
+    "trim ",
+    "support",
+    "response swing",
+    "supported axle",
+    "pressure trend",
+    "setup area",
+    "investigate",
+    "review",
+    "protect ",
+)
+
 RISK_LABELS = {
     "low": "Low risk",
     "medium": "Medium risk",
@@ -70,12 +84,176 @@ def _is_major_package_swing(effect: RankedSetupEffect) -> bool:
     return effect.effect.exact_value_policy == "reference_only" or effect.effect.effect_strength >= 5
 
 
+def _sentence(text: str) -> str:
+    text = " ".join(text.strip().split())
+    if not text:
+        return text
+    return text if text.endswith(".") else f"{text}."
+
+
+def _garage_action_for_effect(item: RankedSetupEffect) -> tuple[str, str] | None:
+    effect = item.effect
+    effect_id = effect.effect_id
+    direction = effect.direction.lower()
+    area = effect.setup_area
+
+    exact_by_id: dict[str, tuple[str, str]] = {
+        "add_crossweight_small": ("Add cross weight one small step.", "Cross weight"),
+        "reduce_crossweight_small": ("Reduce cross weight one small step.", "Cross weight"),
+        "add_rear_stability_pressure_swing": (
+            "Increase LR/RR rear pressure split by raising LR or lowering RR one small step.",
+            "LR/RR rear tire pressure split",
+        ),
+        "pressure_split_stability_swing": (
+            "Increase LR/RR rear pressure split by raising LR or lowering RR one small step.",
+            "LR/RR rear tire pressure split",
+        ),
+        "add_front_brake_bias_small": ("Move brake bias forward one small step.", "Brake bias"),
+        "reduce_front_brake_bias_small": ("Move brake bias rearward one small step.", "Brake bias"),
+        "shorter_final_drive": ("Use a numerically higher rear end ratio for more acceleration.", "Rear end ratio"),
+        "taller_final_drive": ("Use a numerically lower rear end ratio for more straight speed.", "Rear end ratio"),
+        "add_front_platform_support": ("Lower LF/RF front ride height one small step.", "LF/RF front ride height"),
+        "reduce_front_platform_support": ("Raise LF/RF front ride height one small step.", "LF/RF front ride height"),
+        "add_rear_platform_support": ("Raise LR/RR rear ride height one small step.", "LR/RR rear ride height"),
+        "reduce_rear_platform_support": ("Lower LR/RR rear ride height one small step.", "LR/RR rear ride height"),
+        "reduce_platform_contact_small": ("Raise all four ride heights one small step.", "Ride height"),
+        "raise_front_shock_collar_small": ("Raise LF/RF front ride height one small step.", "LF/RF front ride height"),
+        "lower_front_shock_collar_small": ("Lower LF/RF front ride height one small step.", "LF/RF front ride height"),
+        "raise_rear_shock_collar_small": ("Raise LR/RR rear ride height one small step.", "LR/RR rear ride height"),
+        "lower_rear_shock_collar_small": ("Lower LR/RR rear ride height one small step.", "LR/RR rear ride height"),
+        "add_front_response_toe_swing": ("Add front toe-out one small step.", "Front toe"),
+        "reduce_front_toe_scrub": ("Reduce front toe-out one small step.", "Front toe"),
+        "add_rear_toe_stability": ("Add rear toe-in one small step.", "Rear toe"),
+        "reduce_rear_toe_bind": ("Reduce rear toe-in one small step.", "Rear toe"),
+        "switch_front_arb_to_soft_bar": ("Switch front ARB diameter to the soft bar.", "Front ARB diameter"),
+        "switch_front_arb_to_stiff_bar": ("Switch front ARB diameter to the stiffer bar.", "Front ARB diameter"),
+        "switch_rear_arb_to_soft_bar": ("Switch rear ARB diameter to the 1.375 soft bar.", "Rear ARB diameter"),
+        "switch_rear_arb_to_stiff_bar": ("Switch rear ARB diameter to the 2.000 stiff bar.", "Rear ARB diameter"),
+        "soften_front_arb_arm": ("Move front ARB arm one hole softer toward P1.", "Front ARB arm"),
+        "soften_front_arb_arm_one_position": ("Move front ARB arm one hole softer toward P1.", "Front ARB arm"),
+        "stiffen_front_arb_arm": ("Move front ARB arm one hole stiffer toward P5.", "Front ARB arm"),
+        "stiffen_front_arb_arm_one_position": ("Move front ARB arm one hole stiffer toward P5.", "Front ARB arm"),
+        "soften_rear_arb_arm": ("Move rear ARB arm one hole softer toward P1.", "Rear ARB arm"),
+        "soften_rear_arb_arm_one_position": ("Move rear ARB arm one hole softer toward P1.", "Rear ARB arm"),
+        "stiffen_rear_arb_arm": ("Move rear ARB arm one hole stiffer toward P5.", "Rear ARB arm"),
+        "stiffen_rear_arb_arm_one_position": ("Move rear ARB arm one hole stiffer toward P5.", "Rear ARB arm"),
+        "add_hs_compression_for_bumps": ("Add all four HS compression one click.", "HS compression"),
+        "reduce_hs_compression_for_compliance": ("Reduce all four HS compression one click.", "HS compression"),
+        "add_hs_rebound_control": ("Add all four HS rebound one click.", "HS rebound"),
+        "reduce_hs_rebound_recovery": ("Reduce all four HS rebound one click.", "HS rebound"),
+        "slope_more_linear_bumpy": ("Use more linear HS compression slope one small step.", "HS compression slope"),
+        "slope_more_digressive_smooth": ("Use more digressive HS compression slope one small step.", "HS compression slope"),
+    }
+    if effect_id in exact_by_id:
+        return exact_by_id[effect_id]
+
+    tire_aliases = {
+        "lf": "LF",
+        "rf": "RF",
+        "lr": "LR",
+        "rr": "RR",
+    }
+    if area == "tire_pressure":
+        corner = next((label for token, label in tire_aliases.items() if f"_{token}_" in f"_{effect_id}_" or f" {token} " in f" {direction} "), None)
+        if corner:
+            verb = "Raise" if direction.startswith(("add", "raise", "increase")) else "Lower" if direction.startswith(("reduce", "lower")) else None
+            if verb:
+                return (f"{verb} {corner} tire pressure one small step.", f"{corner} tire pressure")
+        return None
+
+    if area == "spring_rate":
+        corner = next((label for token, label in tire_aliases.items() if f"_{token}_" in f"_{effect_id}_"), None)
+        if corner:
+            verb = "Increase" if direction.startswith(("add", "increase", "raise")) else "Reduce" if direction.startswith(("reduce", "lower")) else None
+            if verb:
+                return (f"{verb} {corner} spring rate one small step.", f"{corner} spring rate")
+        return None
+
+    if area == "diff_preload":
+        if direction.startswith("increase"):
+            return ("Increase diff preload one small step.", "Diff preload")
+        if direction.startswith("reduce"):
+            return ("Reduce diff preload one small step.", "Diff preload")
+        return None
+
+    shock_settings = {
+        "ls_compression": "LS compression",
+        "ls_rebound": "LS rebound",
+        "hs_compression": "HS compression",
+        "hs_rebound": "HS rebound",
+    }
+    if area in shock_settings:
+        setting = shock_settings[area]
+        verb = "Add" if direction.startswith("add") else "Reduce" if direction.startswith("reduce") else None
+        if not verb:
+            return None
+        corner = next((label for token, label in tire_aliases.items() if f"_{token}_" in f"_{effect_id}_"), None)
+        if corner:
+            return (f"{verb} {corner} {setting} one click.", f"{corner} {setting}")
+        axle = "front" if "front" in direction or "_front" in effect_id else "rear" if "rear" in direction or "_rear" in effect_id else "all four"
+        lever = f"{axle.title()} {setting}" if axle != "all four" else setting
+        return (f"{verb} {axle} {setting} one click.", lever)
+
+    if area in {"front_arb_preload", "rear_arb_preload"}:
+        axle = "front" if area.startswith("front") else "rear"
+        if direction.startswith(("reduce", "lower")):
+            return (f"Reduce {axle} ARB preload one small step.", f"{axle.title()} ARB preload")
+        if direction.startswith(("increase", "add", "raise")):
+            return (f"Increase {axle} ARB preload one small step.", f"{axle.title()} ARB preload")
+        return None
+
+    if area in {"toe", "front_toe_response", "rear_toe_stability"}:
+        if "front" in effect_id or "front" in direction:
+            if direction.startswith(("add", "increase")):
+                return ("Add front toe-out one small step.", "Front toe")
+            if direction.startswith("reduce"):
+                return ("Reduce front toe-out one small step.", "Front toe")
+        if "rear" in effect_id or "rear" in direction:
+            if direction.startswith(("add", "increase")):
+                return ("Add rear toe-in one small step.", "Rear toe")
+            if direction.startswith("reduce"):
+                return ("Reduce rear toe-in one small step.", "Rear toe")
+        return None
+
+    candidate = _sentence(effect.direction)
+    lower = candidate.lower()
+    if any(term in lower for term in VAGUE_ACTION_TERMS):
+        return None
+    if area in {"track_bar", "truck_arm_mount", "bump_stop", "packer", "camber", "caster", "diffuser_platform"}:
+        return None
+    return (candidate, effect.setup_area.replace("_", " ").title())
+
+
+def _specific_one_change_test(item: RankedSetupEffect, change_this: str) -> str:
+    labels = [format_target_label(target) for target in item.effect.validation_targets[:4]]
+    validate = ", ".join(labels) if labels else "the same corner phase"
+    note = " Do not move all four tires." if "LR/RR rear pressure split" in change_this else ""
+    return f"Make this one change only: {change_this} Run comparable laps and validate {validate}.{note}"
+
+
+def _visible_explanation(text: str) -> str:
+    replacements = {
+        "pressure trend": "tire temperature and falloff evidence",
+        "tire-work trend": "tire temperature and falloff",
+        "supported axle": "LR/RR rear split",
+        "front response toe swing": "front toe-out change",
+        "Tune diff preload": "Change diff preload",
+        "tune the connected feel": "change the connected feel",
+    }
+    cleaned = text
+    for old, new in replacements.items():
+        cleaned = cleaned.replace(old, new).replace(old.capitalize(), new.capitalize())
+    return cleaned
+
+
 def _filter_swings(candidates: list[RankedSetupEffect], limit: int) -> list[RankedSetupEffect]:
     selected: list[RankedSetupEffect] = []
     major_package_count = 0
     for item in candidates:
         if len(selected) >= limit:
             break
+        if _garage_action_for_effect(item) is None:
+            continue
         if _is_major_package_swing(item):
             if major_package_count >= 1:
                 continue
@@ -85,6 +263,10 @@ def _filter_swings(candidates: list[RankedSetupEffect], limit: int) -> list[Rank
 
 
 def _build_swing(item: RankedSetupEffect, *, include_debug_evidence: bool) -> DialInSwing:
+    garage_action = _garage_action_for_effect(item)
+    if garage_action is None:
+        raise ValueError(f"Dial-In swing lacks a specific garage action: {item.effect.effect_id}")
+    change_this, garage_lever = garage_action
     debug: dict[str, Any] | None = None
     if include_debug_evidence:
         debug = {
@@ -96,13 +278,15 @@ def _build_swing(item: RankedSetupEffect, *, include_debug_evidence: bool) -> Di
         }
     return DialInSwing(
         id=item.effect.effect_id,
-        title=item.effect.direction,
+        title=change_this.rstrip("."),
+        change_this=change_this,
+        garage_lever=garage_lever,
         setup_area=item.effect.setup_area,
         strength_label=DIAL_IN_STRENGTH_LABELS.get(item.effect.effect_strength, "Setup lever"),
         risk_label=RISK_LABELS.get(item.effect.coupling_risk, item.effect.coupling_risk.title()),
-        effect=item.effect.effect,
-        counter_effect=item.effect.counter_effect,
-        one_change_test=item.one_change_test_plan,
+        effect=_visible_explanation(item.effect.effect),
+        counter_effect=_visible_explanation(item.effect.counter_effect),
+        one_change_test=_specific_one_change_test(item, change_this),
         validate_with=item.effect.validation_targets,
         validate_with_labels=[format_target_label(target) for target in item.effect.validation_targets],
         watch_for=item.effect.watch_for_targets,
@@ -277,7 +461,7 @@ def build_dial_in_response(
         car_family_override=car_family_override,
         track_family_override=track_family_override,
         package_archetype=package_archetype,
-        limit=max(limit * 2, limit),
+        limit=max(limit * 4, limit),
     )
     selected = _filter_swings(query_result.setup_query.candidate_effects, limit)
     swings = [_build_swing(item, include_debug_evidence=include_debug_evidence) for item in selected]

@@ -1,4 +1,4 @@
-import { Clock, Crosshair, Gauge, Layers, List, Wrench } from "lucide-react";
+import { Clock, Crosshair, Gauge, Layers, Wrench } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
@@ -49,10 +49,6 @@ const DialInTab = lazy(async () => {
 const LapsTab = lazy(async () => {
   const module = await import("./tabs/LapsTab");
   return { default: module.LapsTab };
-});
-const NotebookTab = lazy(async () => {
-  const module = await import("./tabs/NotebookTab");
-  return { default: module.NotebookTab };
 });
 const PlatformTab = lazy(async () => {
   const module = await import("./tabs/PlatformTab");
@@ -418,9 +414,6 @@ function CockpitShell() {
       // Channels removed from nav; redirect to overview if stale state exists
       return <OverviewTab overview={overview} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
     }
-    if (ws === "notebook") {
-      return <NotebookTab />;
-    }
     if (ws === "laps") {
       return (
         <LapsTab
@@ -489,7 +482,6 @@ function CockpitShell() {
             ["platform_trace", "Platform", Layers],
             ["setup_impact", "Setup", Wrench],
             ["dial_in", "Dial-In", Crosshair],
-            ["notebook", "Notebook", List],
           ] as const).map(([key, label, Icon]) => (
             <button
               key={key}
@@ -593,7 +585,6 @@ function CockpitShell() {
               <span>O</span><p>Open Overview</p>
               <span>C</span><p>Open Laps</p>
               <span>D</span><p>Open Dial-In</p>
-              <span>N</span><p>Open Notebook</p>
               <span>L</span><p>Toggle race/learning mode</p>
               <span>[ / ]</span><p>Toggle rails</p>
             </div>

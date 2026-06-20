@@ -61,7 +61,7 @@ class DialInRequest(BaseModel):
     car_family: Optional[str] = None
     track_family: Optional[str] = None
     package_archetype: Optional[str] = None
-    limit: int = Field(default=3, ge=1, le=10)
+    limit: int = Field(default=3, ge=1, le=18)
     include_debug_evidence: bool = False
 
 

@@ -154,7 +154,7 @@ export function PriorityRail({
       return { question: "Which setup values relate?", action: "Open Setup", workspace: "setup_impact" as const };
     }
     if (currentWs === "setup_impact") {
-      return { question: "What to test next?", action: "Create Test Note", workspace: "notebook" as const };
+      return { question: "Review the lap context?", action: "Open Laps", workspace: "laps" as const };
     }
     return { question: "Inspect in detail", action: "Open Platform Trace", workspace: "platform_trace" as const };
   }, [valid, selection]);

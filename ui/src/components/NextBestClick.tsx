@@ -42,10 +42,10 @@ export function NextBestClick({ runId: _runId, platformEvents }: NextBestClickPr
       return { question: "Which setup values relate to this?", action: "Open Setup Impact", workspace: "setup_impact" as const };
     }
     if (currentWs === "setup_impact") {
-      return { question: "What should we test next?", action: "Create Test Note", workspace: "notebook" as const };
+      return { question: "Review the lap context?", action: "Open Laps", workspace: "laps" as const };
     }
     if (currentWs === "compare") {
-      return { question: "Did the change work?", action: "Save Finding", workspace: "notebook" as const };
+      return { question: "Did the change work?", action: "Review in Laps", workspace: "laps" as const };
     }
 
     return { question: "Inspect this event in detail", action: "Open Platform Trace", workspace: "platform_trace" as const };

@@ -937,15 +937,15 @@ def test_hidden_selected_event_fallback_can_show_proxy_internal_or_clear_selecti
     assert "onEventVisibilityModeChange={setPlatformEventVisibilityMode}" in app
 
 
-def test_platform_event_card_includes_supported_open_setup_and_stage_test_actions() -> None:
+def test_platform_event_card_hides_notebook_stage_test_action() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
 
     assert "handleOpenSetupFromPlatformEvent" in platform
-    assert "handleStageTestFromPlatformEvent" in platform
     assert "Open Setup" in platform
-    assert "Stage Test" in platform
+    assert "handleStageTestFromPlatformEvent" not in platform
+    assert "Stage Test" not in platform
+    assert "Stage a notebook test" not in platform
     assert '"setup_impact"' in platform
-    assert '"notebook"' in platform
 
 
 def test_event_timeline_prefers_zone_labels_over_raw_percentages_when_available() -> None:

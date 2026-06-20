@@ -69,6 +69,8 @@ Default output stays short and crew-chief-like. Debug detail is opt-in through
 `DialInSwing`
 - `id`
 - `title`
+- `change_this`
+- `garage_lever`
 - `setup_area`
 - `strength_label`
 - `risk_label`
@@ -108,7 +110,8 @@ The Setup tab renders the clean response by default:
 
 - interpreted complaint
 - confidence/data profile
-- up to three setup swings
+- setup swings requested by the caller
+- an exact `Change this` garage action for each visible swing
 - goal and trade-off
 - your next test
 - what to watch for
@@ -131,14 +134,18 @@ copy can explain the engineering reason after the lever is clear.
 
 Examples:
 
-- `Big swing: Lower front ride height with LF/RF shock collar offsets`
-- `Big swing: Raise rear ride height with LR/RR shock collar offsets`
-- `Balance swing: Adjust RF tire pressure`
-- `Fine-tune: Add high-speed rebound`
-- `Balance swing: Reduce rear toe-in / rear toe bind`
+- `Big swing: Lower LF/RF front ride height one small step`
+- `Big swing: Raise LR/RR rear ride height one small step`
+- `Balance swing: Lower RF tire pressure one small step`
+- `Fine-tune: Add RF LS compression one click`
+- `Balance swing: Reduce rear toe-in one small step`
 
-Avoid vague titles such as `Reduce front platform support`, `Protect RF with
-pressure trim`, or `Add rear toe stability`.
+Each visible swing must also include a `Change this:` line and a `Garage lever:`
+line. Avoid vague visible actions such as `adjust tire pressure`, `supported
+axle`, `tune diff preload`, `front response toe swing`, `platform support`,
+`pressure trend`, or `shock control`. If the exact garage lever, direction, and
+corner/axle cannot be determined, the swing should not appear as a normal
+recommendation.
 
 When a ride-height recommendation depends on collars, the UI can add a compact
 helper note that shock collar changes ride height, preload, and corner weight

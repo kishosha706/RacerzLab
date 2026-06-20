@@ -86,12 +86,16 @@ useful candidate.
 Recommendation title discipline matters:
 
 - title = exact garage action
+- change_this = garage lever + direction + side/corner/axle where applicable
+- garage_lever = the setup page lever or supported garage adjustment
 - effect = what that action should help
 - counter-effect = what it may hurt
 - one-change test = one small garage-side validation step
 
-Avoid vague title wording such as `platform support`, `pressure trim`,
-`rear toe stability`, or `shock control` when the real lever is known.
+Avoid vague visible action wording such as `adjust tire pressure`, `supported
+axle`, `tune diff preload`, `front response toe swing`, `platform support`,
+`pressure trend`, `rear toe stability`, or `shock control` when the real lever
+is known.
 
 ## Capability Gates
 
@@ -160,13 +164,15 @@ python -B scripts/query_setup_knowledge.py --car-family next_gen --symptom "loos
 Example text output:
 
 ```text
-Candidate 1: Add a little cross weight
+Candidate 1: Add cross weight one small step
 Strength: 4 / strong balance lever
 Risk: high
+Change this: Add cross weight one small step.
+Garage lever: Cross weight
 Effect: Can calm entry-to-drive-off balance by adding cross weight diagonal support.
 Counter-effect: May bind the center or add scrub if the car was already loaded too tightly.
 Evidence: missing key evidence
-One-change test: Try one small swing: Add a little cross weight...
+One-change test: Make this one change only: Add cross weight one small step...
 Validate: exit yaw, center speed, tire trend
 Watch for: exit yaw, RF tire temp, center rotation
 ```

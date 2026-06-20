@@ -6,7 +6,9 @@ import type { DialInResponse, DialInSwing, RunOverview } from "../types/telemetr
 
 type DialInTabProps = { overview: RunOverview | null };
 
-const DIAL_IN_LIMIT = 9;
+const DIAL_IN_INITIAL_LIMIT = 9;
+const SHOW_MORE_STEP = 9;
+const DIAL_IN_REQUEST_LIMIT = DIAL_IN_INITIAL_LIMIT + SHOW_MORE_STEP;
 
 function cleanLabel(value: string | null | undefined, fallback = "Not mapped"): string {
   if (!value) return fallback;
@@ -44,54 +46,10 @@ function formatTargetList(swing: DialInSwing): string {
 }
 
 function garageLeverLabel(swing: DialInSwing): string | null {
-  const title = swing.title.toLowerCase();
-  if (title.includes("lf/rf shock collar")) {
-    return "Garage lever: front ride height or LF/RF shock collar offsets. Shock collar changes ride height, spring preload, and corner weight together.";
+  if (swing.setup_area === "shock_collar" || swing.setup_area.includes("ride_height")) {
+    return "Garage note: ride height may be changed through shock collar offsets; that also affects spring preload and corner weight.";
   }
-  if (title.includes("lr/rr shock collar")) {
-    return "Garage lever: rear ride height or LR/RR shock collar offsets. Shock collar changes ride height, spring preload, and corner weight together.";
-  }
-  if (title.includes("lr/rr rear tire pressure split")) return "Garage lever: LR/RR rear tire pressure split.";
-  if (title.includes("rf tire pressure")) return "Garage lever: RF tire pressure.";
-  if (title.includes("lf tire pressure")) return "Garage lever: LF tire pressure.";
-  if (title.includes("lr tire pressure")) return "Garage lever: LR tire pressure.";
-  if (title.includes("rr tire pressure")) return "Garage lever: RR tire pressure.";
-  if (title.includes("cross weight")) return "Garage lever: cross weight.";
-  if (title.includes("high-speed rebound")) return "Garage lever: HS rebound.";
-  if (title.includes("high-speed compression")) return "Garage lever: HS compression.";
-  if (title.includes("low-speed rebound")) return "Garage lever: LS rebound.";
-  if (title.includes("low-speed compression")) return "Garage lever: LS compression.";
-  if (title.includes("spring rate")) return "Garage lever: spring rate.";
-  if (title.includes("rear toe")) return "Garage lever: rear toe.";
-  if (title.includes("front toe")) return "Garage lever: front toe.";
-
-  switch (swing.setup_area) {
-    case "front_arb_diameter":
-      return "Garage lever: front ARB diameter.";
-    case "front_arb_arm":
-      return "Garage lever: front ARB arm P1-P5.";
-    case "front_arb_preload":
-      return "Garage lever: front ARB preload.";
-    case "rear_arb_diameter":
-      return "Garage lever: rear ARB diameter.";
-    case "rear_arb_arm":
-      return "Garage lever: rear ARB arm P1-P5.";
-    case "rear_arb_preload":
-      return "Garage lever: rear ARB preload.";
-    case "diff_preload":
-      return "Garage lever: diff preload.";
-    case "brake_bias":
-      return "Garage lever: brake bias.";
-    case "ride_height":
-      return "Garage lever: ride height.";
-    case "toe":
-    case "rear_toe_stability":
-      return "Garage lever: toe.";
-    case "pressure_split":
-      return "Garage lever: supported tire pressure split.";
-    default:
-      return null;
-  }
+  return null;
 }
 
 function dialInEvidenceHints(response: DialInResponse): string[] {
@@ -129,7 +87,9 @@ function SwingCard({ swing, compact = false }: { swing: DialInSwing; compact?: b
         <div>
           <span>{cleanLabel(swing.setup_area, "Setup area")}</span>
           <h3>{swingKindLabel(swing.strength_label, swing.risk_label)}: {swing.title}</h3>
-          {helper && <p className="dialin-garage-helper">{helper}</p>}
+          <p className="dialin-change-this"><span>Change this:</span> {swing.change_this}</p>
+          <p className="dialin-garage-helper">Garage lever: {swing.garage_lever}</p>
+          {helper && <p className="dialin-garage-note">{helper}</p>}
         </div>
         <div className="dialin-card-pills">
           <span className="dialin-mini-pill">{swing.strength_label}</span>
@@ -155,6 +115,7 @@ export function DialInTab({ overview }: DialInTabProps) {
   const storageKey = overview ? `racerzlab:dial-in:${overview.run_id}` : "racerzlab:dial-in";
   const [complaint, setComplaint] = useState("");
   const [response, setResponse] = useState<DialInResponse | null>(null);
+  const [shownSwingCount, setShownSwingCount] = useState(DIAL_IN_INITIAL_LIMIT);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -165,6 +126,7 @@ export function DialInTab({ overview }: DialInTabProps) {
       setComplaint("");
     }
     setResponse(null);
+    setShownSwingCount(DIAL_IN_INITIAL_LIMIT);
     setError(null);
   }, [storageKey]);
 
@@ -188,12 +150,14 @@ export function DialInTab({ overview }: DialInTabProps) {
       const nextResponse = await analyzeRunDialIn(overview.run_id, {
         complaint: trimmed,
         baseline_run_id: usableBaseline,
-        limit: DIAL_IN_LIMIT,
+        limit: DIAL_IN_REQUEST_LIMIT,
         include_debug_evidence: false,
       });
       setResponse(nextResponse);
+      setShownSwingCount(DIAL_IN_INITIAL_LIMIT);
     } catch (caught) {
       setResponse(null);
+      setShownSwingCount(DIAL_IN_INITIAL_LIMIT);
       setError(caught instanceof Error ? caught.message : "Dial-in request failed.");
     } finally {
       setLoading(false);
@@ -203,6 +167,7 @@ export function DialInTab({ overview }: DialInTabProps) {
   const clearDialIn = useCallback(() => {
     setComplaint("");
     setResponse(null);
+    setShownSwingCount(DIAL_IN_INITIAL_LIMIT);
     setError(null);
   }, []);
 
@@ -213,12 +178,15 @@ export function DialInTab({ overview }: DialInTabProps) {
     const nextComplaint = normalized.includes(refinement) ? base : `${base} ${refinement}`;
     setComplaint(nextComplaint.trim());
     setResponse(null);
+    setShownSwingCount(DIAL_IN_INITIAL_LIMIT);
     setError(null);
   }, [complaint, response]);
 
   const hints = response ? dialInEvidenceHints(response) : [];
   const primarySwings = useMemo(() => response?.top_swings.slice(0, 3) ?? [], [response]);
-  const secondarySwings = useMemo(() => response?.top_swings.slice(3, DIAL_IN_LIMIT) ?? [], [response]);
+  const secondarySwings = useMemo(() => response?.top_swings.slice(3, shownSwingCount) ?? [], [response, shownSwingCount]);
+  const remainingSwingCount = response ? Math.max(0, response.top_swings.length - shownSwingCount) : 0;
+  const nextRevealCount = Math.min(SHOW_MORE_STEP, remainingSwingCount);
   const canSubmit = Boolean(overview) && complaint.trim().length > 0 && !loading;
   const runLabel = overview
     ? `${overview.session.car_name ?? "Unknown car"}${overview.session.track_display_name || overview.session.track_name ? ` - ${overview.session.track_display_name ?? overview.session.track_name}` : ""}`
@@ -368,6 +336,17 @@ export function DialInTab({ overview }: DialInTabProps) {
                       <SwingCard swing={swing} compact key={swing.id} />
                     ))}
                   </div>
+                  {remainingSwingCount > 0 && (
+                    <div className="dialin-show-more-row">
+                      <button
+                        className="secondary-button dialin-show-more-button"
+                        type="button"
+                        onClick={() => setShownSwingCount((count) => Math.min(count + SHOW_MORE_STEP, response.top_swings.length))}
+                      >
+                        Show {nextRevealCount} more possible swings
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
             </>

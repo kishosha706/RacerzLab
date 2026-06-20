@@ -20,6 +20,8 @@ class Clarification(DialInModel):
 class DialInSwing(DialInModel):
     id: str
     title: str
+    change_this: str
+    garage_lever: str
     setup_area: str
     strength_label: str
     risk_label: str

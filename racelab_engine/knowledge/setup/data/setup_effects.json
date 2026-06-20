@@ -605,7 +605,7 @@
   {
     "effect_id": "add_rear_stability_pressure_swing",
     "setup_area": "tire_pressure",
-    "direction": "Adjust LR/RR rear tire pressure split",
+    "direction": "Increase LR/RR rear pressure split by raising LR or lowering RR one small step",
     "driver_phrase": [
       "exit",
       "transition"
@@ -1460,7 +1460,7 @@
   {
     "effect_id": "add_front_platform_support",
     "setup_area": "front_ride_height_platform",
-    "direction": "Lower front ride height with LF/RF shock collar offsets",
+    "direction": "Lower LF/RF front ride height one small step",
     "driver_phrase": [
       "entry",
       "straight",
@@ -1566,7 +1566,7 @@
   {
     "effect_id": "reduce_front_platform_support",
     "setup_area": "front_ride_height_platform",
-    "direction": "Raise front ride height with LF/RF shock collar offsets",
+    "direction": "Raise LF/RF front ride height one small step",
     "driver_phrase": [
       "center",
       "entry"
@@ -1664,7 +1664,7 @@
   {
     "effect_id": "add_rear_platform_support",
     "setup_area": "rear_ride_height_platform",
-    "direction": "Raise rear ride height with LR/RR shock collar offsets",
+    "direction": "Raise LR/RR rear ride height one small step",
     "driver_phrase": [
       "exit",
       "straight"
@@ -1773,7 +1773,7 @@
   {
     "effect_id": "reduce_rear_platform_support",
     "setup_area": "rear_ride_height_platform",
-    "direction": "Lower rear ride height with LR/RR shock collar offsets",
+    "direction": "Lower LR/RR rear ride height one small step",
     "driver_phrase": [
       "center",
       "exit"
@@ -2854,7 +2854,7 @@
   {
     "effect_id": "add_rear_toe_stability",
     "setup_area": "toe",
-    "direction": "Add rear toe-in for stability",
+    "direction": "Add rear toe-in one small step",
     "driver_phrase": [
       "exit",
       "straight"
@@ -3225,7 +3225,7 @@
   {
     "effect_id": "shorter_final_drive",
     "setup_area": "final_drive",
-    "direction": "Shorter rear end ratio",
+    "direction": "Use a numerically higher rear end ratio for more acceleration",
     "driver_phrase": [
       "exit",
       "straight"
@@ -3314,7 +3314,7 @@
   {
     "effect_id": "taller_final_drive",
     "setup_area": "final_drive",
-    "direction": "Taller rear end ratio",
+    "direction": "Use a numerically lower rear end ratio for more straight speed",
     "driver_phrase": [
       "straight"
     ],
@@ -3772,7 +3772,7 @@
   {
     "effect_id": "improve_front_feed_window",
     "setup_area": "front_ride_height_platform",
-    "direction": "Adjust front ride height for cleaner front feed",
+    "direction": "Raise LF/RF front ride height one small step",
     "driver_phrase": [
       "entry",
       "center",
@@ -3883,7 +3883,7 @@
   {
     "effect_id": "inspect_diffuser_choke_or_scrape",
     "setup_area": "diffuser_platform",
-    "direction": "Adjust front/rear ride height for the diffuser proxy window",
+    "direction": "Raise all four ride heights one small step",
     "driver_phrase": [
       "straight",
       "transition"
@@ -3987,7 +3987,7 @@
   {
     "effect_id": "reduce_platform_contact_small",
     "setup_area": "ride_height",
-    "direction": "Raise ride height for more contact margin",
+    "direction": "Raise all four ride heights one small step",
     "driver_phrase": [
       "straight",
       "center"
@@ -5084,7 +5084,7 @@
   {
     "effect_id": "protect_rf_long_run_pressure",
     "setup_area": "tire_pressure",
-    "direction": "Adjust RF tire pressure",
+    "direction": "Lower RF tire pressure one small step",
     "driver_phrase": [
       "long_run",
       "center"
@@ -5189,7 +5189,7 @@
   {
     "effect_id": "protect_rr_long_run_pressure",
     "setup_area": "tire_pressure",
-    "direction": "Adjust RR tire pressure",
+    "direction": "Lower RR tire pressure one small step",
     "driver_phrase": [
       "long_run",
       "exit"
@@ -5488,7 +5488,7 @@
   {
     "effect_id": "tune_diff_preload_for_center_exit",
     "setup_area": "diff_preload",
-    "direction": "Tune diff preload for center-exit",
+    "direction": "Reduce diff preload one small step",
     "driver_phrase": [
       "center",
       "exit"
@@ -6080,7 +6080,7 @@
   {
     "effect_id": "pressure_split_stability_swing",
     "setup_area": "pressure_split",
-    "direction": "Adjust tire pressure split on the supported axle",
+    "direction": "Increase LR/RR rear pressure split by raising LR or lowering RR one small step",
     "driver_phrase": [
       "entry",
       "exit"
@@ -6172,7 +6172,7 @@
   {
     "effect_id": "long_run_pressure_protection",
     "setup_area": "tire_pressure",
-    "direction": "Adjust tire pressure for long-run tire trend",
+    "direction": "Lower RF tire pressure one small step",
     "driver_phrase": [
       "long_run"
     ],
@@ -6446,7 +6446,7 @@
   {
     "effect_id": "spring_package_platform_support",
     "setup_area": "spring_rate",
-    "direction": "Adjust spring package for ride-height control",
+    "direction": "Increase RF spring rate one small step",
     "driver_phrase": [
       "straight",
       "center"
@@ -6540,7 +6540,7 @@
   {
     "effect_id": "spring_package_compliance",
     "setup_area": "spring_rate",
-    "direction": "Use spring package for compliance",
+    "direction": "Reduce LR spring rate one small step",
     "driver_phrase": [
       "transition",
       "long_run"
@@ -6734,7 +6734,7 @@
   {
     "effect_id": "add_front_response_toe_swing",
     "setup_area": "front_toe_response",
-    "direction": "Add front response toe swing",
+    "direction": "Add front toe-out one small step",
     "driver_phrase": [
       "turn_in"
     ],
@@ -6823,7 +6823,7 @@
   {
     "effect_id": "reduce_rear_toe_bind",
     "setup_area": "rear_toe_stability",
-    "direction": "Reduce rear toe-in / rear toe bind",
+    "direction": "Reduce rear toe-in one small step",
     "driver_phrase": [
       "center",
       "straight"
@@ -7101,7 +7101,7 @@
   {
     "effect_id": "caster_driver_feel_entry",
     "setup_area": "caster",
-    "direction": "Tune caster for driver feel entry",
+    "direction": "Increase LF/RF caster split one small step",
     "driver_phrase": [
       "turn_in"
     ],

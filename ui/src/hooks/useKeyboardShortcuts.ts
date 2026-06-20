@@ -74,10 +74,6 @@ export function useKeyboardShortcuts(
         case "D":
           openWorkspace("dial_in");
           break;
-        case "n":
-        case "N":
-          openWorkspace("notebook");
-          break;
         case "l":
         case "L":
           setMode(selection.selectedMode === "learning" ? "race" : "learning");

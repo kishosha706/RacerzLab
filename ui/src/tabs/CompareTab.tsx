@@ -725,7 +725,7 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
             }}
             onStageNextTest={() => {
               handleSaveFinding(false);
-              setWorkspace("notebook", "compare_verdict");
+              setWorkspace("laps", "compare_verdict");
             }}
             saving={saving}
             saveStatus={saveStatus}

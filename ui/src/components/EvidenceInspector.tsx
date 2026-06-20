@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCheck, Crosshair, Database, Info, Layers, MapPin, List, Wrench } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCheck, Crosshair, Database, Info, Layers, MapPin, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { ChannelCatalogItem, PlatformEventItem, PlatformEventVisibilityMode, RunOverview } from "../types/telemetry";
@@ -332,10 +332,6 @@ function EventInspector({
     }, "setup_impact");
   }, [event, eventSampleIndex, eventHasLocation, eventSource, focusEvidence, selection]);
 
-  const handleStageTest = useCallback(() => {
-    setWorkspace("notebook", "priority_stack");
-  }, [setWorkspace]);
-
   return (
     <InspectorShell title={event.title} icon={<Crosshair size={16} />} collapsed={collapsed} onToggle={onToggle}>
       <div className="inspector-source-stack">
@@ -433,9 +429,6 @@ function EventInspector({
               <Crosshair size={10} /> Review in Laps
             </button>
           )}
-          <button className="trackmap-action-btn" onClick={handleStageTest} title="Stage Test">
-            <List size={10} /> Test
-          </button>
         </div>
       </div>
 
