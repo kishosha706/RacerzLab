@@ -796,6 +796,14 @@ def import_ibt(path: str | Path) -> IBTImportResult:
             LAST_IMPORT_PROFILE["decode_session_yaml_s"] = time.time() - t0
         _log.info("IBT decoder: session YAML extracted in %.3fs (%d chars)",
                   time.time() - t0, len(session_yaml))
+        try:
+            session_car_path = extract_session_summary(
+                session_yaml,
+                run_id=_slug_run_id(file_path, fingerprint.sha256),
+                parsed_data=parse_session_yaml(session_yaml),
+            ).car_path
+        except Exception:
+            session_car_path = None
 
         available = {definition.name for definition in definitions}
         missing = _collect_missing_channels(available)
@@ -835,7 +843,7 @@ def import_ibt(path: str | Path) -> IBTImportResult:
                 if analysis_mode == "row":
                     import polars as pl
                     raw_rows = pl.DataFrame(columns, strict=False).to_dicts()
-                    rows = normalize_telemetry_rows(raw_rows)
+                    rows = normalize_telemetry_rows(raw_rows, car_path=session_car_path)
                     _log.info(
                         "IBT decoder (columnar+row-normalize): %d records in %.3fs",
                         len(rows),
@@ -843,7 +851,7 @@ def import_ibt(path: str | Path) -> IBTImportResult:
                     )
                 else:
                     t_norm = time.time()
-                    df = normalize_telemetry_frame(columns)
+                    df = normalize_telemetry_frame(columns, car_path=session_car_path)
                     normalized_frame = df
                     overview_table = df
                     if profile_enabled:
@@ -866,7 +874,7 @@ def import_ibt(path: str | Path) -> IBTImportResult:
                 )
                 _log.info("IBT decoder (row): %d records decoded in %.3fs", len(raw_rows), time.time() - t0)
                 t0 = time.time()
-                rows = normalize_telemetry_rows(raw_rows)
+                rows = normalize_telemetry_rows(raw_rows, car_path=session_car_path)
                 overview_table = rows
                 if profile_enabled:
                     LAST_IMPORT_PROFILE["decode_row_normalize_s"] = time.time() - t0
@@ -879,7 +887,7 @@ def import_ibt(path: str | Path) -> IBTImportResult:
             )
             _log.info("IBT decoder (forced row): %d records decoded in %.3fs", len(raw_rows), time.time() - t0)
             t0 = time.time()
-            rows = normalize_telemetry_rows(raw_rows)
+            rows = normalize_telemetry_rows(raw_rows, car_path=session_car_path)
             overview_table = rows
             if profile_enabled:
                 LAST_IMPORT_PROFILE["decode_row_normalize_s"] = time.time() - t0

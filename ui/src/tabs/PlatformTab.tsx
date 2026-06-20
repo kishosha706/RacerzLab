@@ -555,6 +555,15 @@ function rawTraceStatus(trace: TraceResponse): string {
   return `Raw zoom data: ${count}${sourceCount} samples${hz}${distanceDelta}${duplicates}`;
 }
 
+function lrRideHeightOffsetNote(trace: TraceResponse | null): string | null {
+  const meta = trace?.trace_meta;
+  if (!meta?.lr_ride_height_offset_applied) return null;
+  const offset = typeof meta.lr_ride_height_offset_in === "number" && Number.isFinite(meta.lr_ride_height_offset_in)
+    ? meta.lr_ride_height_offset_in.toFixed(2)
+    : "-0.50";
+  return `Next Gen LR ride-height offset applied: ${offset} in`;
+}
+
 function panelReadoutLabel(channelName: string, fallback: string): string {
   switch (channelName) {
     case "cfs_ride_height_in":
@@ -2551,6 +2560,9 @@ function PlatformTraceWorkbench({
   const renderBalanceSetupContext = () => (
     <details className="balance-setup-context">
       <summary>Setup context</summary>
+      {lrRideHeightOffsetNote(trace) && (
+        <p className="muted">{lrRideHeightOffsetNote(trace)}</p>
+      )}
       {setupAction(["lf_ride_height_mm", "rf_ride_height_mm", "nose_weight_pct", "cross_weight_pct"], "Platform / Ride Height Setup", true)}
     </details>
   );

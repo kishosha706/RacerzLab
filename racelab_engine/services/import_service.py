@@ -20,6 +20,10 @@ from racelab_engine.analysis.calculated_channels import (
     normalize_telemetry_rows,
 )
 from racelab_engine.analysis.constants import FORCE_PROXY_WARNING, FORCE_PROXY_CHANNELS
+from racelab_engine.analysis.ride_height_calibration import (
+    apply_next_gen_lr_ride_height_offset_to_rows,
+    trace_offset_metadata,
+)
 from racelab_engine.io import ibt_reader as ibt_mod
 from racelab_engine.io.ibt_reader import import_ibt
 from racelab_engine.io.ibt_types import IBTImportResult, IBTVariableDefinition
@@ -67,6 +71,40 @@ TRACE_CHANNEL_UNITS = {
     "rf_damper_energy_proxy": "index",
     "lr_damper_energy_proxy": "index",
     "rr_damper_energy_proxy": "index",
+}
+
+LR_RIDE_HEIGHT_OFFSET_DEPENDENCIES = {
+    "lf_ride_height_in",
+    "rf_ride_height_in",
+    "lr_ride_height_in",
+    "rr_ride_height_in",
+    "lr_ride_height_mm",
+    "rr_ride_height_mm",
+    "cfs_ride_height_in",
+    "cfs_risk_score",
+    "platform_risk_score",
+}
+
+LR_RIDE_HEIGHT_OFFSET_DERIVED_CHANNELS = {
+    "lr_ride_height_in",
+    "lr_ride_height_mm",
+    "rear_avg_rh_in",
+    "left_avg_rh_in",
+    "right_avg_rh_in",
+    "center_rake_fs_in",
+    "side_rake_in",
+    "rear_split_in",
+    "rear_min_ride_height_mm",
+    "rear_min_ride_height_in",
+    "rear_scrape_margin_mm",
+    "rear_scrape_risk_score",
+    "rear_platform_contact_risk",
+    "rear_scrape_side",
+    "rear_scrape_side_label",
+    "rear_platform_risk_score",
+    "whole_car_bottoming_risk",
+    "platform_balance_label",
+    "platform_balance_explanation",
 }
 
 PRESERVE_EXTREMA_CHANNELS = [
@@ -1032,6 +1070,7 @@ def _trace_meta(
     raw_resolution: bool,
     start_ft: float | None,
     end_ft: float | None,
+    car_path: Any = None,
 ) -> dict[str, Any]:
     session_times = [
         value for value in (_numeric_value(row.get("session_time")) for row in rows)
@@ -1077,6 +1116,7 @@ def _trace_meta(
         "distance_duplicate_count": duplicate_distance_count,
         "distance_rounded_or_deduped": False,
         "sample_identity": "sample_index/session_time",
+        **trace_offset_metadata(rows, car_path=car_path),
     }
 
 
@@ -1092,9 +1132,14 @@ def build_trace_payload(
     start_ft: float | None = None,
     end_ft: float | None = None,
     raw_resolution: bool = False,
+    car_path: Any = None,
 ) -> dict[str, Any]:
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
     selected_channels = channels or TRACE_DEFAULT_CHANNELS
+    read_channels = list(selected_channels)
+    should_refresh_lr_platform = car_path is not None and bool(LR_RIDE_HEIGHT_OFFSET_DERIVED_CHANNELS.intersection(selected_channels))
+    if should_refresh_lr_platform:
+        read_channels = list(dict.fromkeys([*read_channels, *LR_RIDE_HEIGHT_OFFSET_DEPENDENCIES]))
     needs_distance_window = start_ft is not None or end_ft is not None
 
     # Fast path: use column pruning to read only needed channels from parquet
@@ -1104,7 +1149,7 @@ def build_trace_payload(
         if path.exists():
             needed_cols = list(dict.fromkeys(
                 [
-                    c for c in selected_channels + (
+                    c for c in read_channels + (
                         ["lap", "lap_dist_ft", "lap_dist_pct", "session_time", "sample_index", "lap_dist_pct_100"]
                         if x_axis or needs_distance_window or raw_resolution
                         else ["lap"]
@@ -1154,6 +1199,8 @@ def build_trace_payload(
     if raw_resolution:
         rows = sorted(rows, key=_raw_trace_sort_key)
 
+    apply_next_gen_lr_ride_height_offset_to_rows(rows, car_path=car_path, recompute_derived=should_refresh_lr_platform)
+
     source_rows = rows
     selected_channels = channels or TRACE_DEFAULT_CHANNELS
     bucket_size, downsample_label = _resolve_bucket_size(len(rows), downsample)
@@ -1193,6 +1240,7 @@ def build_trace_payload(
                 raw_resolution=raw_resolution,
                 start_ft=start_ft,
                 end_ft=end_ft,
+                car_path=car_path,
             ),
         }
 

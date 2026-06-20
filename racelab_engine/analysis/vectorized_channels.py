@@ -44,6 +44,13 @@ from racelab_engine.analysis.constants import (
     SLIP_RATIO_CLAMP_MAX,
     SLIP_RATIO_SPEED_FLOOR_MPS,
 )
+from racelab_engine.analysis.ride_height_calibration import (
+    LR_RIDE_HEIGHT_OFFSET_IN,
+    LR_RIDE_HEIGHT_OFFSET_REASON,
+    MM_PER_IN,
+    NEXT_GEN_CAR_PATHS,
+    normalize_car_path,
+)
 from racelab_engine.analysis.units import (
     EARTH_RADIUS_M,
     M_TO_FT,
@@ -442,6 +449,8 @@ CORE_CHANNELS: set[str] = {
 # Known string channels -- for explicit schema inference
 _STRING_CHANNELS: frozenset[str] = frozenset({
     "Skies", "TrackWetness", "SessionType", "SessionName",
+    "CarPath", "car_path", "lr_ride_height_offset_reason",
+    "lr_ride_height_offset_car_path",
     "platform_balance_label", "platform_balance_explanation",
     "grade_context_label", "rear_scrape_side_label",
     "lf_camber_bias_label", "rf_camber_bias_label",
@@ -475,6 +484,7 @@ def _columns_to_frame(columns: dict[str, list[Any]]) -> pl.DataFrame:
 def normalize_telemetry_frame(
     data: pl.DataFrame | list[dict[str, Any]] | dict[str, list[Any]],
     geometry: dict[str, float] | None = None,
+    car_path: Any = None,
 ) -> pl.DataFrame:
     """Vectorised normalizer. Accepts DataFrame, list[dict], or dict[str,list]."""
     profile_enabled = _normalize_subprofile_enabled()
@@ -509,7 +519,7 @@ def normalize_telemetry_frame(
         profile["normalize_geometry_injection_s"] = time.perf_counter() - t0
 
     # ── 3. Core calculated channels ─────────────────────────────
-    df = calculate_core_channels_frame(df, profile_out=profile if profile_enabled else None)
+    df = calculate_core_channels_frame(df, profile_out=profile if profile_enabled else None, car_path=car_path)
     if profile_enabled:
         profile["normalize_total_s"] = sum(profile.values())
         globals()["LAST_NORMALIZE_PROFILE"] = profile
@@ -517,7 +527,11 @@ def normalize_telemetry_frame(
     return df
 
 
-def calculate_core_channels_frame(df: pl.DataFrame, profile_out: dict[str, float] | None = None) -> pl.DataFrame:
+def calculate_core_channels_frame(
+    df: pl.DataFrame,
+    profile_out: dict[str, float] | None = None,
+    car_path: Any = None,
+) -> pl.DataFrame:
     """Add core calculated channels to *df* in-place (returns new frame).
 
     This is the vectorised equivalent of
@@ -534,6 +548,7 @@ def calculate_core_channels_frame(df: pl.DataFrame, profile_out: dict[str, float
     _stage("convert_speed", _convert_speed)
     _stage("convert_inputs", _convert_inputs)
     _stage("convert_ride_heights", _convert_ride_heights)
+    _stage("apply_lr_ride_height_offset", lambda frame: _apply_lr_ride_height_offset(frame, car_path=car_path))
     _stage("convert_shocks", _convert_shocks)
     _stage("compute_dynamic_pressure", _compute_dynamic_pressure)
     _stage("compute_slip_ratios", _compute_slip_ratios)
@@ -593,6 +608,7 @@ _ALIAS_MAP: dict[str, str] = {
     "RFrideHeight": "rf_ride_height_m",
     "LRrideHeight": "lr_ride_height_m",
     "RRrideHeight": "rr_ride_height_m",
+    "CarPath": "car_path",
 }
 
 _RIDE_HEIGHT_RAW_KEYS: dict[str, str] = {
@@ -731,6 +747,74 @@ def _convert_ride_heights(df: pl.DataFrame) -> pl.DataFrame:
         df = df.with_columns(pl.col("cfsr_height_mm").alias("cfs_ride_height_mm"))
 
     return df
+
+
+def _apply_lr_ride_height_offset(df: pl.DataFrame, car_path: Any = None) -> pl.DataFrame:
+    if df.height == 0:
+        return df
+
+    normalized_path = normalize_car_path(car_path)
+    if normalized_path is not None:
+        applied_expr = pl.lit(normalized_path in NEXT_GEN_CAR_PATHS)
+        path_expr = pl.lit(normalized_path)
+        if "car_path" not in df.columns:
+            df = df.with_columns(path_expr.alias("car_path"))
+    elif "car_path" in df.columns:
+        path_expr = pl.col("car_path").cast(pl.String).str.strip_chars().str.to_lowercase()
+        applied_expr = path_expr.is_in(list(NEXT_GEN_CAR_PATHS))
+    else:
+        applied_expr = pl.lit(False)
+        path_expr = pl.lit(None, dtype=pl.String)
+
+    already_expr = (
+        pl.col("lr_ride_height_offset_applied_to_values").fill_null(False)
+        if "lr_ride_height_offset_applied_to_values" in df.columns
+        else pl.lit(False)
+    )
+
+    columns: list[pl.Expr] = [
+        applied_expr.alias("lr_ride_height_offset_applied"),
+        pl.when(applied_expr).then(pl.lit(LR_RIDE_HEIGHT_OFFSET_IN)).otherwise(pl.lit(0.0)).alias("lr_ride_height_offset_in"),
+        pl.when(applied_expr).then(pl.lit(LR_RIDE_HEIGHT_OFFSET_REASON)).otherwise(None).alias("lr_ride_height_offset_reason"),
+        path_expr.alias("lr_ride_height_offset_car_path"),
+    ]
+
+    corrected_any = pl.lit(False)
+    if "lr_ride_height_in" in df.columns:
+        lr_in = pl.col("lr_ride_height_in")
+        valid_lr_in = lr_in.is_not_null() & lr_in.is_finite()
+        corrected_any = corrected_any | (applied_expr & valid_lr_in)
+        columns.extend([
+            pl.when(valid_lr_in).then(lr_in).otherwise(None).alias("lr_ride_height_raw_in"),
+            (
+                pl.when(valid_lr_in & applied_expr & ~already_expr)
+                .then(lr_in + LR_RIDE_HEIGHT_OFFSET_IN)
+                .when(valid_lr_in)
+                .then(lr_in)
+                .otherwise(None)
+                .alias("lr_ride_height_in")
+            ),
+        ])
+    if "lr_ride_height_mm" in df.columns:
+        lr_mm = pl.col("lr_ride_height_mm")
+        valid_lr_mm = lr_mm.is_not_null() & lr_mm.is_finite()
+        corrected_any = corrected_any | (applied_expr & valid_lr_mm)
+        columns.extend([
+            pl.when(valid_lr_mm).then(lr_mm).otherwise(None).alias("lr_ride_height_raw_mm"),
+            (
+                pl.when(valid_lr_mm & applied_expr & ~already_expr)
+                .then(lr_mm + LR_RIDE_HEIGHT_OFFSET_IN * MM_PER_IN)
+                .when(valid_lr_mm)
+                .then(lr_mm)
+                .otherwise(None)
+                .alias("lr_ride_height_mm")
+            ),
+        ])
+
+    return df.with_columns([
+        *columns,
+        (already_expr | corrected_any).alias("lr_ride_height_offset_applied_to_values"),
+    ])
 
 
 def _compute_dynamic_pressure(df: pl.DataFrame) -> pl.DataFrame:

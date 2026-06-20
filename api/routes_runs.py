@@ -92,7 +92,8 @@ def get_trace(
     end_ft: Optional[float] = None,
 ) -> TraceResponse:
     repo = repository()
-    if repo.get_session(run_id) is None:
+    overview = repo.get_overview(run_id)
+    if overview is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
     selected_channels = [item.strip() for item in channels.split(",") if item.strip()] if channels else None
     events = repo.get_events(run_id, lap=lap)
@@ -109,5 +110,6 @@ def get_trace(
         start_ft=start_ft,
         end_ft=end_ft,
         raw_resolution=(resolution or "").lower() == "raw",
+        car_path=overview.session.car_path,
     )
     return TraceResponse(**payload)

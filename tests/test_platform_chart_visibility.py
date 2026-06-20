@@ -422,6 +422,27 @@ def test_balance_setup_context_is_collapsed_below_chart() -> None:
     assert ".balance-setup-context" in styles
 
 
+def test_balance_setup_context_can_show_next_gen_lr_offset_note() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    telemetry_types = _read("ui/src/types/telemetry.ts")
+
+    assert "function lrRideHeightOffsetNote" in platform
+    assert "Next Gen LR ride-height offset applied: ${offset} in" in platform
+    assert "meta?.lr_ride_height_offset_applied" in platform
+    assert "{lrRideHeightOffsetNote(trace) && (" in platform
+    assert "lr_ride_height_offset_applied?: boolean;" in telemetry_types
+    assert "lr_ride_height_offset_car_path?: string | null;" in telemetry_types
+
+
+def test_frontend_does_not_apply_lr_offset_math() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    assert "lr_ride_height_in - 0.5" not in platform
+    assert "lr_ride_height_in -0.5" not in platform
+    assert "lr_ride_height_in -= 0.5" not in platform
+    assert "lr_ride_height_mm - 12.7" not in platform
+
+
 def test_missing_channel_does_not_render_as_zero() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
 

@@ -11,6 +11,9 @@ from racelab_engine.analysis.constants import (
     REFERENCE_DYNAMIC_PRESSURE_PA,
 )
 from racelab_engine.analysis.drag_scrub import compute_drag_scrub_index, aero_normalized_resistance
+from racelab_engine.analysis.ride_height_calibration import (
+    apply_next_gen_lr_ride_height_offset_to_row,
+)
 from racelab_engine.analysis.units import (
     EARTH_RADIUS_M,
     M_TO_FT,
@@ -2680,12 +2683,13 @@ def _compute_component_averages(rows: list[dict[str, Any]], corners: tuple[str, 
                 row[component] = sum(numeric_values) / len(numeric_values)
 
 
-def _apply_row_calculations(item: dict[str, Any]) -> None:
+def _apply_row_calculations(item: dict[str, Any], car_path: Any = None) -> None:
     _copy_aliases(item)
     _convert_distances(item)
     _convert_speed(item)
     _convert_inputs(item)
     _convert_ride_heights(item)
+    apply_next_gen_lr_ride_height_offset_to_row(item, car_path=car_path)
     _convert_shocks(item)
     _convert_tires(item)
     _compute_tire_derived(item)
@@ -3084,6 +3088,7 @@ def _apply_gps_projection(rows: list[dict[str, Any]]) -> None:
 def normalize_telemetry_rows(
     table: Any,
     geometry: Mapping[str, float] | None = None,
+    car_path: Any = None,
 ) -> list[dict[str, Any]]:
     rows = rows_from_table(table)
     normalized: list[dict[str, Any]] = []
@@ -3102,7 +3107,7 @@ def normalize_telemetry_rows(
             for k in physics_keys:
                 if k in geometry and item.get(k) is None:
                     item[k] = geometry[k]
-        _apply_row_calculations(item)
+        _apply_row_calculations(item, car_path=car_path)
         normalized.append(item)
 
     _apply_derivatives(normalized)

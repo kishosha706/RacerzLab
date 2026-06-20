@@ -324,6 +324,10 @@ export type TraceResponse = {
     distance_duplicate_count?: number;
     distance_rounded_or_deduped?: boolean;
     sample_identity?: string;
+    lr_ride_height_offset_applied?: boolean;
+    lr_ride_height_offset_in?: number | null;
+    lr_ride_height_offset_reason?: string | null;
+    lr_ride_height_offset_car_path?: string | null;
   } | null;
 };
 
