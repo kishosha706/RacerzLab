@@ -11,10 +11,8 @@ export type WorkbenchView =
 
 export const WORKBENCH_VIEWS: { id: WorkbenchView; label: string; icon: string }[] = [
   { id: "balance", label: "Balance", icon: "BAL" },
-  { id: "rear_scrape", label: "Rear Scrape / Scrub", icon: "SCR" },
+  { id: "rear_scrape", label: "Scrape / Scrub", icon: "SCR" },
   { id: "diffuser", label: "Diffuser", icon: "DIF" },
-  { id: "aero_load", label: "Aero Load", icon: "AER" },
-  { id: "grade_pull", label: "Grade / Pull", icon: "GRD" },
   { id: "tires", label: "Tires", icon: "TIR" },
   { id: "shocks", label: "Shocks", icon: "SHK" },
 ];

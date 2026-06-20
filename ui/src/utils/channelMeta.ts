@@ -22,11 +22,13 @@ const CHANNEL_META: Record<string, ChannelUiMeta> = {
   vert_accel_g: { label: "Vert Accel", unit: "g", isProxy: false, isEstimate: false, category: "controls", precision: 2 },
 
   // -- Speed / pull --
+  speed_mps: { label: "Speed", unit: "m/s", isProxy: false, isEstimate: false, category: "speed", precision: 2 },
   speed_mph: { label: "Speed", unit: "mph", isProxy: false, isEstimate: false, category: "speed", precision: 1 },
   speed_fps: { label: "Speed", unit: "ft/s", isProxy: false, isEstimate: false, category: "speed", precision: 1 },
   speed_rate_mph_s: { label: "Speed Rate", unit: "mph/s", isProxy: false, isEstimate: false, category: "speed", precision: 2 },
   speed_rate_mph_1000ft: { label: "Speed Rate", unit: "mph/1000ft", isProxy: false, isEstimate: false, category: "speed", precision: 2 },
   speed_rate_mps2: { label: "Speed Rate", unit: "m/s^2", isProxy: false, isEstimate: false, category: "speed", precision: 2 },
+  speed_loss_mps2: { label: "Speed Loss", unit: "m/s^2", isProxy: false, isEstimate: false, category: "speed", precision: 3 },
   rpm: { label: "RPM", unit: "rpm", isProxy: false, isEstimate: false, category: "speed", precision: 0 },
   gear: { label: "Gear", unit: "", isProxy: false, isEstimate: false, category: "speed", precision: 0 },
   lap_dist_pct_100: { label: "Position", unit: "%", isProxy: false, isEstimate: false, category: "speed", precision: 1 },

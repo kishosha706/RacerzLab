@@ -1,6 +1,6 @@
 import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
-import { Activity, AlertTriangle, BarChart3, Crosshair, LocateFixed, MapPin, RotateCcw, Wrench, X } from "lucide-react";
+import { Activity, AlertTriangle, BarChart3, LocateFixed, MapPin, RotateCcw, Wrench, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
@@ -89,6 +89,8 @@ type ShockPanelModel = ShockCornerDefinition & {
   unavailableReason?: string;
 };
 
+const SCRAPE_SCRUB_PRESET = "Ride Height vs Speed Loss";
+const MPH_TO_MPS = 0.44704;
 const SHOCK_BUCKET_THRESHOLD_IN_S = 1;
 const SHOCK_FIXED_AXIS_LIMIT_IN_S = 10;
 const SHOCK_CORNERS: ShockCornerDefinition[] = [
@@ -107,6 +109,12 @@ function setupCornerNumber(setup: SetupSnapshot | null | undefined, corner: Shoc
   if (typeof cornerValues !== "object" || cornerValues == null) return null;
   const value = (cornerValues as Record<string, unknown>)[key];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function visiblePlatformWorkbenchView(view: WorkbenchView): WorkbenchView {
+  if (view === "scrub_steering") return "rear_scrape";
+  if (view === "aero_load" || view === "grade_pull") return "balance";
+  return view;
 }
 
 function formatSetupClicks(value: number | null): string {
@@ -308,26 +316,23 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "dynamic_pressure_lap_index", label: "Lap Index", color: "#60a5fa" },
     ] },
   ],
-  "Rear Scrape / Scrub": [
-    { label: "Rear Min / Scrape [mm]", channels: [
-      { name: "rear_min_ride_height_mm", label: "Min RH", color: "#22d3ee" },
-      { name: "rear_scrape_margin_mm", label: "Margin", color: "#f97316" },
-    ] },
-    { label: "Scrape / Contact Risk", channels: [
-      { name: "rear_scrape_risk_score", label: "Scrape Risk", color: "#ef4444" },
-      { name: "rear_platform_contact_risk", label: "Contact Risk", color: "#f59e0b" },
-    ] },
-    { label: "Scrub / Resistance", channels: [
-      { name: "drag_scrub_suspicion", label: "Scrub", color: "#ef4444" },
-      { name: "full_throttle_resistance_index", label: "Resistance", color: "#f97316" },
-      { name: "front_scrub_proxy", label: "F-Scrub", color: "#a78bfa" },
-      { name: "rear_scrub_proxy", label: "R-Scrub", color: "#38bdf8" },
-    ] },
-    { label: "Steering / Yaw", channels: [
-      { name: "abs_steering_deg", label: "Steering", color: "#22c55e" },
-      { name: "yaw_error_proxy", label: "Yaw Error", color: "#f59e0b" },
-      { name: "ackermann_scrub_proxy", label: "Ackermann", color: "#a78bfa" },
-    ] },
+  [SCRAPE_SCRUB_PRESET]: [
+    { label: "Speed [m/s]", channels: [
+      { name: "speed_mps", label: "Speed", color: "#93c5fd" },
+    ], heightDetailed: 104, heightCompact: 86, yAxisUnit: "m/s" },
+    { label: "Front Ride Heights [in]", channels: [
+      { name: "cfs_ride_height_in", label: "CFS", color: "#38bdf8" },
+      { name: "lf_ride_height_in", label: "LF", color: "#eab308" },
+      { name: "rf_ride_height_in", label: "RF", color: "#ef4444" },
+    ], heightDetailed: 150, heightCompact: 108, yAxisUnit: "in" },
+    { label: "Speed Loss [m/s²]", channels: [
+      { name: "speed_loss_mps2", label: "Up = losing speed", color: "#f97316" },
+    ], min: 0, heightDetailed: 118, heightCompact: 94, yAxisUnit: "m/s²", zeroLine: true },
+    { label: "Rear Ride Heights [in]", channels: [
+      { name: "lr_ride_height_in", label: "LR", color: "#eab308" },
+      { name: "rr_ride_height_in", label: "RR", color: "#22d3ee" },
+      { name: "rear_min_ride_height_in", label: "Rear Min", color: "#a78bfa" },
+    ], heightDetailed: 144, heightCompact: 104, yAxisUnit: "in" },
   ],
   Diffuser: [
     { label: "Ground Speed [mph]", channels: [{ name: "speed_mph", label: "Speed", color: "#22c55e" }] },
@@ -354,6 +359,20 @@ function rawSeriesSamples(trace: TraceResponse | null, channel: string): Array<n
   return values(trace, channel);
 }
 
+function displaySeriesSamples(trace: TraceResponse | null, channel: string): Array<number | string | null> {
+  const directValues = rawSeriesSamples(trace, channel);
+  if (channel === "speed_loss_mps2") {
+    return rawSeriesSamples(trace, "speed_rate_mps2").map((value) => (
+      typeof value === "number" && Number.isFinite(value) ? Math.max(0, -value) : null
+    ));
+  }
+  if (channel !== "speed_mps") return directValues;
+  if (directValues.some((value) => typeof value === "number" && Number.isFinite(value))) return directValues;
+  return rawSeriesSamples(trace, "speed_mph").map((value) => (
+    typeof value === "number" && Number.isFinite(value) ? value * MPH_TO_MPS : null
+  ));
+}
+
 function traceAxisValues(trace: TraceResponse | null, name: string): Array<number | null> {
   const rawValues = trace?.x_by_name?.[name] ?? [];
   return rawValues.map((value) => typeof value === "number" && Number.isFinite(value) ? value : null);
@@ -372,6 +391,13 @@ function valueAt(trace: TraceResponse | null, channel: string, index: number | n
   return v;
 }
 
+function displayValueAt(trace: TraceResponse | null, channel: string, index: number | null | undefined): number | null {
+  if (index == null) return null;
+  const v = displaySeriesSamples(trace, channel)[index];
+  if (v == null || typeof v === "string") return null;
+  return v;
+}
+
 function numericSeriesValue(series: Array<number | string | null>, index: number | null | undefined): number | null {
   if (index == null || index < 0 || index >= series.length) return null;
   const value = series[index];
@@ -385,7 +411,7 @@ function lineCursorDisplayValue(
   cursorDistanceFt: number | null | undefined,
   measuredSampleIndex: number | null | undefined,
 ): number | null {
-  const series = rawSeriesSamples(trace, channel);
+  const series = displaySeriesSamples(trace, channel);
   const fallback = numericSeriesValue(series, measuredSampleIndex);
   if (cursorDistanceFt == null || !Number.isFinite(cursorDistanceFt)) return fallback;
 
@@ -436,7 +462,7 @@ function lineCursorDisplayValue(
 }
 
 function channelHasNumericData(trace: TraceResponse | null, channel: string): boolean {
-  return values(trace, channel).some((value) => typeof value === "number" && Number.isFinite(value));
+  return displaySeriesSamples(trace, channel).some((value) => typeof value === "number" && Number.isFinite(value));
 }
 
 function rowHeight(row: ChartRow, density: ChartDensity, fallback: number): number {
@@ -446,7 +472,7 @@ function rowHeight(row: ChartRow, density: ChartDensity, fallback: number): numb
 }
 
 function rowGap(preset: string, density: ChartDensity): number {
-  if (preset === "Platform / Rake / Ride Height") return density === "compact" ? 12 : 18;
+  if (preset === "Platform / Rake / Ride Height" || preset === SCRAPE_SCRUB_PRESET) return density === "compact" ? 12 : 18;
   return 12;
 }
 
@@ -531,11 +557,6 @@ function formatYAxisTick(value: number, unit?: string): string {
   return Math.abs(value) >= 100 ? Math.round(value).toLocaleString() : value.toFixed(1);
 }
 
-function fmt(value: number | null | undefined, digits = 2) {
-  if (value == null || Number.isNaN(value)) return "n/a";
-  return value.toFixed(digits);
-}
-
 function fmtReadout(value: number | null | undefined, digits = 2, unit?: string): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return `${value.toFixed(digits)}${unit ? ` ${unit}` : ""}`;
@@ -593,15 +614,6 @@ function panelReadoutLabel(channelName: string, fallback: string): string {
 function scaledRisk(value: number | null | undefined, divisor: number): number | null {
   if (value == null || !Number.isFinite(value)) return null;
   return Math.min(1, Math.max(0, value / divisor));
-}
-
-function riskLabel(cfsIn: number | null | undefined) {
-  if (cfsIn == null) return "Unavailable";
-  if (cfsIn <= 0) return "Scrape";
-  if (cfsIn <= 0.118) return "Critical";
-  if (cfsIn <= 0.236) return "High";
-  if (cfsIn <= 0.394) return "Watch";
-  return "Safer";
 }
 
 function semanticSeverity(value: number | null | undefined): "missing" | "safe" | "watch" | "high" | "critical" {
@@ -698,6 +710,9 @@ function RiskCorridorSVG({
 function formatTooltipValue(channel: string, y: number | null | undefined): string {
   if (y == null || Number.isNaN(y)) return "—";
   if (channel.includes("_pct") || channel === "gear") return y.toFixed(0);
+  if (channel === "speed_mps") return y.toFixed(2);
+  if (channel === "speed_loss_mps2") return y.toFixed(3);
+  if (channel === "speed_rate_mps2") return y.toFixed(3);
   if (channel.includes("mph")) return y.toFixed(2);
   if (channel.includes("_in") && channel.includes("cfs")) return y.toFixed(3);
   if (channel.includes("_in")) return y.toFixed(2);
@@ -709,6 +724,9 @@ function formatTooltipValue(channel: string, y: number | null | undefined): stri
 function rowUnit(channel: string): string {
   if (channel.includes("_pct") || channel === "throttle_pct" || channel === "brake_pct") return "%";
   if (channel.includes("_in")) return "in";
+  if (channel === "speed_mps") return "m/s";
+  if (channel === "speed_loss_mps2") return "m/s²";
+  if (channel === "speed_rate_mps2") return "m/s²";
   if (channel.includes("mph")) return "mph";
   if (channel === "rpm") return "rpm";
   if (channel === "gear") return "";
@@ -943,7 +961,7 @@ function PlatformTraceWorkbench({
   const detailTraceCacheRef = useRef<Map<string, TraceResponse>>(new Map());
   const detailTraceDebounceRef = useRef<number | null>(null);
   const detailTraceRequestRef = useRef(0);
-  const normalizedInitialView = initialWorkbenchView === "scrub_steering" ? "rear_scrape" : initialWorkbenchView;
+  const normalizedInitialView = visiblePlatformWorkbenchView(initialWorkbenchView);
   const [workbenchView, setWorkbenchView] = useState<WorkbenchView>(normalizedInitialView);
   useEffect(() => {
     setWorkbenchView(normalizedInitialView);
@@ -951,26 +969,28 @@ function PlatformTraceWorkbench({
 
   const presetFromView: Record<WorkbenchView, string> = {
     balance: "Platform / Rake / Ride Height",
-    rear_scrape: "Rear Scrape / Scrub",
+    rear_scrape: SCRAPE_SCRUB_PRESET,
     aero_load: "Aero Load",
-    scrub_steering: "Rear Scrape / Scrub",
+    scrub_steering: SCRAPE_SCRUB_PRESET,
     tires: "Tires",
     shocks: "Shocks",
     grade_pull: "Grade / Pull",
     diffuser: "Diffuser",
   };
   const preset = presetFromView[workbenchView] ?? "Platform / Rake / Ride Height";
+  const scrapeScrubChartView = workbenchView === "rear_scrape" || workbenchView === "scrub_steering";
+  const rawZoomTraceEnabled = workbenchView === "balance" || scrapeScrubChartView;
   const presetRef = useRef(preset);
   useEffect(() => {
     presetRef.current = preset;
   }, [preset]);
   const handleViewChange = useCallback((view: WorkbenchView) => {
-    setWorkbenchView(view);
+    setWorkbenchView(visiblePlatformWorkbenchView(view));
     setHoverSampleIndex(null);
     setHoverCursorDistanceFt(null);
   }, [setWorkbenchView, setHoverSampleIndex]);
   const overviewXs = useMemo(() => xValues(overviewTrace), [overviewTrace]);
-  const detailTraceActive = workbenchView === "balance"
+  const detailTraceActive = rawZoomTraceEnabled
     && visibleZoomRange != null
     && detailTrace != null
     && detailTrace.sample_count > 0;
@@ -1006,7 +1026,7 @@ function PlatformTraceWorkbench({
       detailTraceDebounceRef.current = null;
     }
 
-    if (workbenchView !== "balance" || visibleZoomRange == null) {
+    if (!rawZoomTraceEnabled || visibleZoomRange == null) {
       setDetailTraceLoading(false);
       if (visibleZoomRange == null) {
         setDetailTrace(null);
@@ -1089,7 +1109,7 @@ function PlatformTraceWorkbench({
         detailTraceDebounceRef.current = null;
       }
     };
-  }, [overview.run_id, overviewTrace.lap, overviewXs, representativeLap, visibleZoomRange, workbenchView]);
+  }, [overview.run_id, overviewTrace.lap, overviewXs, rawZoomTraceEnabled, representativeLap, visibleZoomRange]);
 
   useEffect(() => {
     clickedSampleIndexRef.current = clickedSampleIndex;
@@ -1871,8 +1891,9 @@ function PlatformTraceWorkbench({
 
     const isTires = preset === "Tires";
     const isRideHeightPreset = preset === "Platform / Rake / Ride Height";
+    const isRawDetailPreset = isRideHeightPreset || preset === SCRAPE_SCRUB_PRESET;
     const panelLayout = buildPanelLayout(rows, preset, chartDensity, fallbackRowHeight(preset), 54);
-    const GRID_LEFT = isTires ? 130 : isRideHeightPreset ? 112 : 100;
+    const GRID_LEFT = isTires ? 130 : isRawDetailPreset ? 122 : 100;
     const LABEL_LEFT = 4;
     gridLeftRef.current = GRID_LEFT;
     const GRID_RIGHT = 36;
@@ -2027,17 +2048,17 @@ function PlatformTraceWorkbench({
     const series: SeriesOption[] = [];
     const activeSampleIndices = traceAxisValues(trace, "sample_index");
     const activeSessionTimes = traceAxisValues(trace, "session_time");
-    const zoomedRawBalanceMode = preset === "Platform / Rake / Ride Height" && detailTraceActive;
+    const zoomedRawDetailMode = isRawDetailPreset && detailTraceActive;
     rows.forEach((row, rowIndex) => {
       row.channels.forEach((channel, channelIndex) => {
-        const channelValues = rawSeriesSamples(trace, channel.name);
+        const channelValues = displaySeriesSamples(trace, channel.name);
         const data = xs.map((x, index) => [
           x,
           channelValues[index],
           activeSampleIndices[index] ?? index,
           activeSessionTimes[index] ?? null,
         ]);
-        const preserveRawZoomDetail = preset === "Platform / Rake / Ride Height";
+        const preserveRawZoomDetail = preset === "Platform / Rake / Ride Height" || preset === SCRAPE_SCRUB_PRESET;
         let lineType: "solid" | "dashed" | "dotted" = "solid";
         if (preset === "Tires") {
           const label = channel.label.toLowerCase();
@@ -2089,7 +2110,7 @@ function PlatformTraceWorkbench({
           showSymbol: false,
           smooth: false,
           sampling: preserveRawZoomDetail ? undefined : "lttb",
-          ...(zoomedRawBalanceMode ? {
+          ...(zoomedRawDetailMode ? {
             large: false,
             progressive: 0,
             progressiveThreshold: 0,
@@ -2234,7 +2255,7 @@ function PlatformTraceWorkbench({
   const handleOpenMapFromCursor = useCallback(() => {
     const lapNumber = trace?.lap ?? overview.best_useful_lap?.lap_number ?? null;
     const lapPct = valueAt(trace, "lap_dist_pct_100", selectedIndex);
-    const mapCursorDistanceFt = workbenchView === "balance" && balanceCursorDistanceFt != null
+    const mapCursorDistanceFt = rawZoomTraceEnabled && balanceCursorDistanceFt != null
       ? balanceCursorDistanceFt
       : xs[selectedIndex] ?? null;
     focusEvidence({
@@ -2262,7 +2283,7 @@ function PlatformTraceWorkbench({
     selection.selectedEventId,
     selection.selectedValueBasis,
     trace,
-    workbenchView,
+    rawZoomTraceEnabled,
     xs,
   ]);
 
@@ -2322,6 +2343,11 @@ function PlatformTraceWorkbench({
     distanceFt: xs[selectedIndex] ?? null,
     lapPct: valueAt(trace, "lap_dist_pct_100", selectedIndex),
     speed: valueAt(trace, "speed_mph", selectedIndex),
+    speedMps: displayValueAt(trace, "speed_mps", selectedIndex),
+    speedLossMps2: displayValueAt(trace, "speed_loss_mps2", selectedIndex),
+    speedRateMps2: valueAt(trace, "speed_rate_mps2", selectedIndex),
+    speedRateMphS: valueAt(trace, "speed_rate_mph_s", selectedIndex),
+    speedRateMph1000Ft: valueAt(trace, "speed_rate_mph_1000ft", selectedIndex),
     throttle: valueAt(trace, "throttle_pct", selectedIndex),
     brake: valueAt(trace, "brake_pct", selectedIndex),
     cfsIn: valueAt(trace, "cfs_ride_height_in", selectedIndex),
@@ -2335,6 +2361,7 @@ function PlatformTraceWorkbench({
     centerRake: valueAt(trace, "center_rake_fs_in", selectedIndex),
     sideRake: valueAt(trace, "side_rake_in", selectedIndex),
     dynamicPressure: valueAt(trace, "dynamic_pressure_psf", selectedIndex),
+    rearMinIn: valueAt(trace, "rear_min_ride_height_in", selectedIndex),
     rearMinMm: valueAt(trace, "rear_min_ride_height_mm", selectedIndex),
     rearScrapeMarginMm: valueAt(trace, "rear_scrape_margin_mm", selectedIndex),
     aeroLoadIndex: valueAt(trace, "aero_load_index", selectedIndex),
@@ -2365,13 +2392,13 @@ function PlatformTraceWorkbench({
       row,
       layout: balanceReadoutPanelLayout[rowIndex] ?? { top: 54, height: fallbackRowHeight(preset), gap: rowGap(preset, chartDensity) },
       channels: row.channels.map((channel) => {
-        const vals = rawSeriesSamples(trace, channel.name);
-        // Cursor values are display-only interpolation along the rendered line; stats below remain raw measured samples.
+        const vals = displaySeriesSamples(trace, channel.name);
+        // Cursor values are display-only interpolation along the rendered line; stats below follow the displayed samples.
         const cursorDisplayValue = hasExplicitReadoutContext && balanceReadoutIndex != null
           ? lineCursorDisplayValue(trace, xs, channel.name, balanceCursorDistanceFt, balanceReadoutIndex)
           : null;
         const visibleValues: number[] = [];
-        // Visible Balance stats are calculated from raw telemetry samples inside the current zoom window.
+        // Visible chart stats are calculated from displayed telemetry samples inside the current zoom window.
         vals.forEach((value, index) => {
           const x = xs[index];
           if (
@@ -2485,40 +2512,6 @@ function PlatformTraceWorkbench({
     ? `No actionable platform events shown - ${hiddenPlatformEventSummary}`
     : platformEventSummaryText;
 
-  const riskSegments = useMemo(() => {
-    const riskChannels = [
-      "cfs_risk_score",
-      "platform_risk_score",
-      "rear_scrape_risk_score",
-      "rear_platform_contact_risk",
-      "whole_car_bottoming_risk",
-      "drag_scrub_suspicion",
-      "full_throttle_resistance_index",
-    ];
-    const available = riskChannels
-      .map((name) => values(trace, name) as Array<number | null>)
-      .filter((vals) => vals.some((v) => typeof v === "number" && Number.isFinite(v)));
-    if (available.length === 0 || xs.length === 0) return [];
-    const segmentCount = Math.min(120, Math.max(24, Math.floor(xs.length / 8)));
-    return Array.from({ length: segmentCount }, (_, segmentIndex) => {
-      const startIndex = Math.floor((segmentIndex / segmentCount) * xs.length);
-      const endIndex = Math.min(xs.length - 1, Math.floor(((segmentIndex + 1) / segmentCount) * xs.length));
-      let risk: number | null = null;
-      for (const vals of available) {
-        for (let i = startIndex; i <= endIndex; i += 1) {
-          const value = vals[i];
-          if (typeof value === "number" && Number.isFinite(value)) risk = Math.max(risk ?? 0, value);
-        }
-      }
-      return {
-        startIndex,
-        endIndex,
-        risk,
-        severity: semanticSeverity(risk),
-      };
-    });
-  }, [trace, xs]);
-
   const scatterPoints = useMemo(() => {
     if (workbenchView !== "aero_load") return [];
     const speed = values(trace, "speed_mph") as Array<number | null>;
@@ -2567,78 +2560,7 @@ function PlatformTraceWorkbench({
     </details>
   );
 
-  const renderRearScrapeScrubPanel = () => (
-    <div className="engineering-panel">
-      {/* ── Metric cards ── */}
-      <div className="engineering-panel-grid">
-        <EngineeringMetricCard title="Rear Scrape Margin" channelName="rear_scrape_margin_mm" value={latest("rear_scrape_margin_mm")} color="#f97316" />
-        <EngineeringMetricCard title="Rear Scrape Risk" channelName="rear_scrape_risk_score" value={latest("rear_scrape_risk_score")} riskValue={latest("rear_scrape_risk_score") as number | null} color="#ef4444" />
-        <EngineeringMetricCard title="Rear Contact Risk" channelName="rear_platform_contact_risk" value={latest("rear_platform_contact_risk")} riskValue={latest("rear_platform_contact_risk") as number | null} color="#f59e0b" />
-        <EngineeringMetricCard title="Drag/Scrub Suspicion" channelName="drag_scrub_suspicion" value={latest("drag_scrub_suspicion")} riskValue={latest("drag_scrub_suspicion") as number | null} color="#ef4444" />
-        <EngineeringMetricCard title="Full-Throttle Resistance" channelName="full_throttle_resistance_index" value={latest("full_throttle_resistance_index")} riskValue={latest("full_throttle_resistance_index") as number | null} color="#f97316" />
-        <EngineeringMetricCard title="Grade-Corrected Speed Loss" channelName="grade_corrected_speed_loss_mph_s" value={latest("grade_corrected_speed_loss_mph_s")} subtitle={`Raw: ${formatChannelValue(latest("speed_rate_mph_s") as number, "mph/s")}`} color="#22c55e" />
-        <EngineeringMetricCard title="Yaw Error" value={formatChannelValue(latest("yaw_error_proxy") as number, "rad/s")} channelName="yaw_error_proxy" color="#38bdf8" />
-        <EngineeringMetricCard title="Rear Scrub Proxy" value={formatChannelValue(latest("rear_scrub_proxy") as number, "proxy")} channelName="rear_scrub_proxy" color="#a78bfa" />
-      </div>
-
-      {/* ── Jump buttons ── */}
-      <div className="toolbar-actions" style={{ marginTop: 6 }}>
-        <button className={`secondary-button${jumpedBtn === "worst_scrape" ? " jump-clicked" : ""}`} onClick={() => {
-          const scrapeVals = values(trace, "rear_scrape_risk_score") as (number | null)[];
-          let worstIdx: number | null = null;
-          let worstVal = -Infinity;
-          scrapeVals.forEach((v, i) => { if (typeof v === "number" && v > worstVal) { worstVal = v; worstIdx = i; } });
-          handleJumpClick("worst_scrape", worstIdx);
-        }}>
-          <Activity size={14} /> Jump to Worst Rear Scrape
-        </button>
-        <button className={`secondary-button${jumpedBtn === "worst_scrub" ? " jump-clicked" : ""}`} onClick={() => {
-          const scrubVals = values(trace, "drag_scrub_suspicion") as (number | null)[];
-          let worstIdx: number | null = null;
-          let worstVal = -Infinity;
-          scrubVals.forEach((v, i) => { if (typeof v === "number" && v > worstVal) { worstVal = v; worstIdx = i; } });
-          handleJumpClick("worst_scrub", worstIdx);
-        }}>
-          <Activity size={14} /> Jump to Max Scrub
-        </button>
-        <button className={`secondary-button${jumpedBtn === "worst_resistance" ? " jump-clicked" : ""}`} onClick={() => {
-          const resVals = values(trace, "full_throttle_resistance_index") as (number | null)[];
-          let worstIdx: number | null = null;
-          let worstVal = -Infinity;
-          resVals.forEach((v, i) => { if (typeof v === "number" && v > worstVal) { worstVal = v; worstIdx = i; } });
-          handleJumpClick("worst_resistance", worstIdx);
-        }}>
-          <Activity size={14} /> Jump to Worst Resistance
-        </button>
-      </div>
-
-      {/* ── Combined corridor ── */}
-      <div style={{ marginTop: 8 }}>
-        <span style={{ fontSize: 9, color: "#8d9aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Rear Scrape / Scrub Corridor</span>
-        {trace && xs.length > 1 ? (
-          <RiskCorridorSVG
-            channels={["rear_scrape_risk_score", "rear_platform_contact_risk", "drag_scrub_suspicion", "full_throttle_resistance_index", "rear_scrub_proxy"]}
-            trace={trace}
-            xs={xs}
-            selectedIndex={selectedIndex}
-            onJump={(idx) => jumpToIndex(idx)}
-            height={64}
-          />
-        ) : (
-          <p className="muted" style={{ fontSize: 9 }}>Risk corridor unavailable.</p>
-        )}
-      </div>
-
-      {/* ── Setup actions ── */}
-      {setupAction(["lr_ride_height_mm", "rr_ride_height_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm", "lr_packer_mm", "rr_packer_mm"], "Rear Platform Setup", false)}
-      {setupAction(["steering_ratio", "steering_offset_deg", "front_arb_rating", "cross_weight_pct"], "Steering / Front Geometry Setup", false)}
-
-      {/* ── Section note ── */}
-      <p className="section-note" style={{ marginTop: 8 }}>
-        Rear scrape and scrub are grouped because both represent potential speed loss/resistance. Rear scrape comes from platform/ride-height contact risk; scrub comes from steering/yaw/tire resistance proxies. Missing telemetry remains unavailable, never safe or zero.
-      </p>
-    </div>
-  );
+  const renderRearScrapeScrubPanel = () => null;
 
   const renderAeroPanel = () => {
     const aeroIdx = latest("aero_load_index") as number | null;
@@ -2942,37 +2864,16 @@ function PlatformTraceWorkbench({
           </button>
         </div>
       </header>
-      <p className="proxy-warning">
-        Force values are estimates/proxies derived from telemetry, setup spring rates, ride heights, shock movement, and dynamic pressure. They are not direct iRacing aerodynamic force channels.
-      </p>
+      {!scrapeScrubChartView && (
+        <p className="proxy-warning">
+          Force values are estimates/proxies derived from telemetry, setup spring rates, ride heights, shock movement, and dynamic pressure. They are not direct iRacing aerodynamic force channels.
+        </p>
+      )}
       <div className="platform-event-summary-strip" aria-label="Platform event visibility summary">
         <span>{groupedPlatformEventSummaryText}</span>
       </div>
-      {workbenchView !== "balance" && (
-        <div className="platform-risk-strip" aria-label="Platform risk over lap distance">
-          {riskSegments.length === 0 ? (
-            <span className="risk-strip-empty">Risk strip unavailable: required risk channels are missing.</span>
-          ) : (
-            riskSegments.map((segment) => {
-              const isSelected = selectedIndex >= segment.startIndex && selectedIndex <= segment.endIndex;
-              const dist = xs[Math.floor((segment.startIndex + segment.endIndex) / 2)];
-              return (
-                <button
-                  key={`${segment.startIndex}-${segment.endIndex}`}
-                  className={`risk-strip-segment${isSelected ? " selected" : ""}`}
-                  data-severity={segment.severity}
-                  style={{ width: `${100 / riskSegments.length}%` }}
-                  title={dist != null ? `${Math.round(dist).toLocaleString()} ft | risk ${segment.risk?.toFixed(2) ?? "unavailable"}` : "Risk unavailable"}
-                  onClick={() => jumpToIndex(Math.floor((segment.startIndex + segment.endIndex) / 2))}
-                  aria-label={dist != null ? `Jump to ${Math.round(dist)} feet` : "Risk segment unavailable"}
-                />
-              );
-            })
-          )}
-        </div>
-      )}
       <WorkbenchSubnav active={workbenchView} onChange={handleViewChange} />
-      {workbenchView !== "balance" && (
+      {workbenchView !== "balance" && !scrapeScrubChartView && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
           <span className="laps-stint-legend-item" style={{ fontSize: 10, color: "#8d9aaa", fontWeight: 600 }}>
             Engineering cards basis:
@@ -2986,9 +2887,9 @@ function PlatformTraceWorkbench({
           </span>
         </div>
       )}
-      {workbenchView !== "balance" && renderEngineeringPanel()}
+      {workbenchView !== "balance" && !scrapeScrubChartView && renderEngineeringPanel()}
       <div className="trace-toolbar" aria-label="Trace chart controls">
-        <span className="trace-toolbar-label">Ride-height chart density</span>
+        <span className="trace-toolbar-label">{scrapeScrubChartView ? "Ride Height vs Speed Loss" : "Ride-height chart density"}</span>
         <div className="trace-density-toggle" role="group" aria-label="Ride-height chart density">
           <button
             type="button"
@@ -3017,7 +2918,7 @@ function PlatformTraceWorkbench({
           <RotateCcw size={13} /> Reset Zoom
         </button>
         <span className="trace-zoom-status" aria-live="polite">{zoomSummary}</span>
-        {workbenchView === "balance" && detailTraceStatus && (
+        {rawZoomTraceEnabled && detailTraceStatus && (
           <span className="trace-detail-status" aria-live="polite" data-loading={detailTraceLoading ? "true" : "false"}>
             {detailTraceStatus}
           </span>
@@ -3029,13 +2930,12 @@ function PlatformTraceWorkbench({
           </span>
         )}
       </div>
-      <div className={`platform-layout${workbenchView === "balance" ? " balance-chart-layout" : ""}`}>
+      <div className="platform-layout balance-chart-layout">
         <div className="trace-panel-wrapper">
           <div className="trace-panel" ref={chartNode} />
           <div className="trace-cursor-line" ref={cursorLineRef} hidden />
           <div className="trace-drag-zoom-band" ref={dragZoomBandRef} hidden />
-          {workbenchView === "balance" && (
-            <div className="balance-panel-readout-layer" aria-live="polite">
+          <div className="balance-panel-readout-layer" aria-live="polite">
               {balancePanelReadouts.map((panel, panelIndex) => (
                 <div
                   className="balance-panel-readout"
@@ -3085,39 +2985,8 @@ function PlatformTraceWorkbench({
                   </div>
                 </div>
               ))}
-            </div>
-          )}
+          </div>
         </div>
-        {workbenchView !== "balance" && (
-          <aside className="cursor-panel">
-            <header>
-              <span><Crosshair size={16} /> Cursor Readout</span>
-              <span className={`cursor-source-badge source-${readoutSource.toLowerCase()}`}>{readoutSource}</span>
-              {readoutSource === "Locked" && <span className="cursor-unlock-hint">Esc to unlock</span>}
-            </header>
-            <dl>
-              <div><dt>Lap</dt><dd>{trace?.lap ?? "n/a"}</dd></div>
-              <div><dt>Distance</dt><dd>{formatDistanceFt(selected.distanceFt)}</dd></div>
-              <div><dt>Speed</dt><dd>{fmt(selected.speed, 2)} mph</dd></div>
-              <div><dt>Throttle</dt><dd>{fmt(selected.throttle, 1)}%</dd></div>
-              <div><dt>Brake</dt><dd>{fmt(selected.brake, 1)}%</dd></div>
-              <div><dt>CFS</dt><dd>{fmt(selected.cfsIn, 3)} in / {fmt(selected.cfsMm, 2)} mm</dd></div>
-              <div><dt>LF/RF</dt><dd>{fmt(selected.lf, 2)} / {fmt(selected.rf, 2)} in</dd></div>
-              <div><dt>LR/RR</dt><dd>{fmt(selected.lr, 2)} / {fmt(selected.rr, 2)} in</dd></div>
-              <div><dt>Front/Rear Avg</dt><dd>{fmt(selected.frontAvgRh, 3)} / {fmt(selected.rearAvgRh, 3)} in</dd></div>
-              <div><dt>Center Rake FS</dt><dd>{fmt(selected.centerRake, 2)} in</dd></div>
-              <div><dt>Side Rake</dt><dd>{fmt(selected.sideRake, 3)} in</dd></div>
-              <div><dt>Dynamic Pressure</dt><dd>{fmt(selected.dynamicPressure, 1)} psf</dd></div>
-              <div><dt>Risk</dt><dd>{riskLabel(selected.cfsIn)}</dd></div>
-              {selectedPlatformEvent && (
-                <div><dt>Event</dt><dd>{selectedPlatformEvent.title}</dd></div>
-              )}
-              {hiddenPlatformEventCount > 0 && platformEventVisibilityMode === "actionable" && (
-                <div><dt>Hidden</dt><dd>{hiddenPlatformEventCount} internal</dd></div>
-              )}
-            </dl>
-          </aside>
-        )}
       </div>
       {workbenchView === "balance" && renderBalanceSetupContext()}
 
@@ -3150,6 +3019,7 @@ function PlatformTraceWorkbench({
               {clearPlatformDiagnosticCount > 0 && (
                 <p className="muted">All visible platform checks are clear.</p>
               )}
+              <p className="muted">Missing telemetry remains unavailable, never safe or zero.</p>
               <p className="muted">Internal evidence is still preserved for analysis.</p>
               <p className="muted">Switch to Proxy/Internal to inspect hidden evidence.</p>
             </div>

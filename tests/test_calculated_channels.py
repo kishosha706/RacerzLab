@@ -60,9 +60,20 @@ def test_tire_delta_representative_contracts() -> None:
 def test_speed_and_dynamic_pressure_contracts() -> None:
     row = normalize_telemetry_rows([_raw_row()])[0]
 
+    assert row["speed_mps"] == pytest.approx(50.0)
     assert row["speed_mph"] == pytest.approx(50.0 * 2.23693629)
     assert row["dynamic_pressure_pa"] == pytest.approx(0.5 * 1.225 * 50.0 * 50.0)
     assert row["dynamic_pressure_psf"] > 0
+
+
+def test_speed_rate_mps2_uses_metric_speed_derivative() -> None:
+    rows = normalize_telemetry_rows([
+        _raw_row(SessionTime=0.0, Speed=50.0, LapDist=100.0),
+        _raw_row(SessionTime=0.5, Speed=51.5, LapDist=125.0),
+    ])
+
+    assert rows[0]["speed_rate_mps2"] is None
+    assert rows[1]["speed_rate_mps2"] == pytest.approx(3.0)
 
 
 def test_shock_velocity_fields_use_inches_per_second() -> None:

@@ -139,25 +139,31 @@ def test_only_bottom_x_axis_shows_full_distance_labels() -> None:
     assert "axisTick: { show: index === rows.length - 1 }" in platform
 
 
-def test_cursor_readout_includes_ride_height_rake_and_event_context() -> None:
+def test_platform_charts_use_per_panel_readouts_without_side_cursor() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
+    styles = _read("ui/src/styles.css")
 
-    assert "<div><dt>CFS</dt>" in platform
-    assert "<div><dt>LF/RF</dt>" in platform
-    assert "<div><dt>LR/RR</dt>" in platform
-    assert "<div><dt>Front/Rear Avg</dt>" in platform
-    assert "<div><dt>Center Rake FS</dt>" in platform
-    assert "<div><dt>Side Rake</dt>" in platform
-    assert "<div><dt>Event</dt><dd>{selectedPlatformEvent.title}</dd></div>" in platform
-    assert "<div><dt>Hidden</dt><dd>{hiddenPlatformEventCount} internal</dd></div>" in platform
+    assert "Cursor Readout" not in platform
+    assert 'className="cursor-panel"' not in platform
+    assert "Crosshair" not in platform
+    assert ".cursor-panel" not in styles
+    assert '<div className="balance-panel-readout-layer" aria-live="polite">' in platform
+    assert 'className="platform-layout balance-chart-layout"' in platform
+    assert 'workbenchView === "balance" && (\n            <div className="balance-panel-readout-layer"' not in platform
+    assert "balancePanelReadouts.map" in platform
+    assert "panel.channels.map((channel)" in platform
+    assert "channel.readoutLabel" in platform
+    assert "fmtReadout(channel.cursorValue" in platform
+    assert "balance-panel-stat-readout" in platform
+    assert '<span className="balance-selected-context">Event {balanceReadoutEvent.title}</span>' in platform
 
 
 def test_balance_default_removes_duplicate_ride_height_engineering_cards() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
 
     assert 'case "balance": return null;' in platform
-    assert 'workbenchView !== "balance" && renderEngineeringPanel()' in platform
-    assert 'workbenchView !== "balance" && (' in platform
+    assert 'workbenchView !== "balance" && !scrapeScrubChartView && renderEngineeringPanel()' in platform
+    assert 'workbenchView !== "balance" && !scrapeScrubChartView && (' in platform
     assert 'EngineeringMetricCard title="CFS Ride Height"' not in platform
     assert 'EngineeringMetricCard title="Front Ride Heights"' not in platform
     assert 'EngineeringMetricCard title="Rear Ride Heights"' not in platform
@@ -180,6 +186,52 @@ def test_platform_tabs_do_not_render_global_top_metric_card_strip() -> None:
     assert ".platform-summary-chip" not in styles
 
 
+def test_focused_platform_tabs_do_not_render_global_risk_strip() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    assert 'className="platform-risk-strip"' not in platform
+    assert "riskSegments" not in platform
+    assert "risk-strip-empty" not in platform
+    assert "platform-event-summary-strip" in platform
+    assert "Platform Diagnostic Events" in platform
+
+
+def test_aero_and_grade_views_are_backend_only_not_visible_platform_tabs() -> None:
+    subnav = _read("ui/src/components/WorkbenchSubnav.tsx")
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    channels = _read("ui/src/constants/workbenchChannels.ts")
+    channel_meta = _read("ui/src/utils/channelMeta.ts")
+    calculated = _read("racelab_engine/analysis/calculated_channels.py")
+
+    visible_views = subnav.split("export const WORKBENCH_VIEWS", 1)[1].split("];", 1)[0]
+    assert 'label: "Aero Load"' not in visible_views
+    assert 'icon: "AER"' not in visible_views
+    assert 'label: "Grade / Pull"' not in visible_views
+    assert 'icon: "GRD"' not in visible_views
+    assert 'view === "aero_load" || view === "grade_pull"' in platform
+    assert 'return "balance";' in platform
+
+    for channel in [
+        "aero_load_index",
+        "aero_load_index_180mph",
+        "dynamic_pressure_psf",
+        "dynamic_pressure_pa",
+        "dynamic_pressure_lap_index",
+        "dynamic_grade_rad",
+        "dynamic_grade_deg",
+        "grade_corrected_long_accel_mps2",
+        "grade_force_proxy_n",
+        "grade_context_label",
+        "grade_corrected_speed_loss_mph_s",
+    ]:
+        assert channel in channels
+        assert channel in channel_meta
+        assert channel in calculated
+
+    assert "Proxy - not a direct force measurement." in channel_meta
+    assert "Estimated from acceleration vs speed derivative, not surveyed elevation." in channel_meta
+
+
 def test_balance_panel_readouts_replace_global_readout_strip() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
     styles = _read("ui/src/styles.css")
@@ -189,8 +241,12 @@ def test_balance_panel_readouts_replace_global_readout_strip() -> None:
     assert "balance-panel-readout-layer" in platform
     assert "balance-panel-cursor-readout" in platform
     assert "balance-panel-stat-readout" in platform
+    assert 'className="platform-layout balance-chart-layout"' in platform
+    assert "Cursor Readout" not in platform
+    assert 'className="cursor-panel"' not in platform
     assert "balanceChartReadout" not in platform
     assert ".balance-panel-readout-layer" in styles
+    assert ".cursor-panel" not in styles
     assert ".balance-chart-readout" not in styles
     assert "Hover or scrub the chart to inspect ride heights." not in platform
 
@@ -254,12 +310,13 @@ def test_balance_visible_stats_recalculate_from_zoom_range() -> None:
     assert "visibleValues.reduce((sum, value) => sum + value, 0) / visibleValues.length" in platform
 
 
-def test_balance_visible_stats_use_raw_samples_inside_zoom_range() -> None:
+def test_balance_visible_stats_use_displayed_samples_inside_zoom_range() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
     readout_body = platform.split("const balancePanelReadouts = useMemo(() => {", 1)[1].split("  }, [", 1)[0]
 
-    assert "rawSeriesSamples(trace, channel.name)" in readout_body
-    assert "Visible Balance stats are calculated from raw telemetry samples inside the current zoom window." in readout_body
+    assert "displaySeriesSamples(trace, channel.name)" in readout_body
+    assert "rawSeriesSamples(trace, channel.name)" not in readout_body
+    assert "Visible chart stats are calculated from displayed telemetry samples inside the current zoom window." in readout_body
     assert "x >= rangeStart" in readout_body
     assert "x <= rangeEnd" in readout_body
     stats_body = readout_body.split("const visibleValues: number[] = [];", 1)[1].split("const low =", 1)[0]
@@ -275,7 +332,7 @@ def test_balance_cursor_readout_interpolates_display_value_only() -> None:
     assert "const ratio = (cursorDistanceFt - beforeX) / (afterX - beforeX);" in helper_body
     assert "return beforeY + ratio * (afterY - beforeY);" in helper_body
     assert "const fallback = numericSeriesValue(series, measuredSampleIndex);" in helper_body
-    assert "Cursor values are display-only interpolation along the rendered line; stats below remain raw measured samples." in readout_body
+    assert "Cursor values are display-only interpolation along the rendered line; stats below follow the displayed samples." in readout_body
     assert "lineCursorDisplayValue(trace, xs, channel.name, balanceCursorDistanceFt, balanceReadoutIndex)" in readout_body
     assert "cursorValue: typeof cursorDisplayValue === \"number\" && Number.isFinite(cursorDisplayValue) ? cursorDisplayValue : null" in readout_body
 
@@ -297,7 +354,7 @@ def test_balance_map_overlay_receives_precise_cursor_distance() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
     map_body = platform.split("const handleOpenMapFromCursor = useCallback(() => {", 1)[1].split("  const handleOpenMapFromPlatformEvent", 1)[0]
 
-    assert 'workbenchView === "balance" && balanceCursorDistanceFt != null' in map_body
+    assert 'rawZoomTraceEnabled && balanceCursorDistanceFt != null' in map_body
     assert "const mapCursorDistanceFt" in map_body
     assert "mapCursorDistanceFt," in map_body
 
@@ -317,6 +374,8 @@ def test_balance_zoom_fetches_debounced_cached_raw_trace_windows() -> None:
     assert "downsample: 1" in platform
     assert "startFt: rawRange.start" in platform
     assert "endFt: rawRange.end" in platform
+    assert 'const rawZoomTraceEnabled = workbenchView === "balance" || scrapeScrubChartView;' in platform
+    assert "if (!rawZoomTraceEnabled || visibleZoomRange == null)" in platform
     assert "const trace = detailTraceActive ? detailTrace : overviewTrace;" in platform
     assert "rawTraceStatus(payload)" in platform
     assert "Loading raw zoom data..." in platform
@@ -391,8 +450,8 @@ def test_balance_cursor_lookup_uses_nearest_raw_sample_by_distance() -> None:
 def test_balance_ride_height_series_preserve_raw_zoom_detail() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
 
-    assert 'const preserveRawZoomDetail = preset === "Platform / Rake / Ride Height";' in platform
-    assert "const channelValues = rawSeriesSamples(trace, channel.name);" in platform
+    assert 'const preserveRawZoomDetail = preset === "Platform / Rake / Ride Height" || preset === SCRAPE_SCRUB_PRESET;' in platform
+    assert "const channelValues = displaySeriesSamples(trace, channel.name);" in platform
     assert "activeSampleIndices[index] ?? index" in platform
     assert "activeSessionTimes[index] ?? null" in platform
     assert 'dimensions: ["lap_dist_ft", "value", "sample_index", "session_time"]' in platform
@@ -401,6 +460,88 @@ def test_balance_ride_height_series_preserve_raw_zoom_detail() -> None:
     assert "large: false" in platform
     assert "progressive: 0" in platform
     assert "progressiveThreshold: 0" in platform
+
+
+def test_scrape_scrub_tab_is_chart_first_ride_height_vs_speed_loss() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    subnav = _read("ui/src/components/WorkbenchSubnav.tsx")
+    channels = _read("ui/src/constants/workbenchChannels.ts")
+    channel_meta = _read("ui/src/utils/channelMeta.ts")
+
+    assert '{ id: "rear_scrape", label: "Scrape / Scrub", icon: "SCR" }' in subnav
+    assert 'const SCRAPE_SCRUB_PRESET = "Ride Height vs Speed Loss";' in platform
+    assert "rear_scrape: SCRAPE_SCRUB_PRESET" in platform
+    assert "scrub_steering: SCRAPE_SCRUB_PRESET" in platform
+
+    preset_block = platform.split("[SCRAPE_SCRUB_PRESET]: [", 1)[1].split("  Diffuser:", 1)[0]
+    assert 'label: "Speed [m/s]"' in preset_block
+    assert 'name: "speed_mps"' in preset_block
+    assert 'label: "Front Ride Heights [in]"' in preset_block
+    assert 'name: "cfs_ride_height_in"' in preset_block
+    assert 'name: "lf_ride_height_in"' in preset_block
+    assert 'name: "rf_ride_height_in"' in preset_block
+    assert 'label: "Speed Loss [m/s²]"' in preset_block
+    assert 'name: "speed_loss_mps2"' in preset_block
+    assert 'label: "Rear Ride Heights [in]"' in preset_block
+    assert 'name: "lr_ride_height_in"' in preset_block
+    assert 'name: "rr_ride_height_in"' in preset_block
+    assert 'name: "rear_min_ride_height_in"' in preset_block
+
+    assert preset_block.index('label: "Speed [m/s]"') < preset_block.index('label: "Front Ride Heights [in]"')
+    assert preset_block.index('label: "Front Ride Heights [in]"') < preset_block.index('label: "Speed Loss [m/s²]"')
+    assert preset_block.index('label: "Speed Loss [m/s²]"') < preset_block.index('label: "Rear Ride Heights [in]"')
+    speed_panel = preset_block.split('label: "Speed [m/s]"', 1)[1].split('label: "Front Ride Heights [in]"', 1)[0]
+    loss_panel = preset_block.split('label: "Speed Loss [m/s²]"', 1)[1].split('label: "Rear Ride Heights [in]"', 1)[0]
+    assert 'name: "speed_mps"' in speed_panel
+    assert 'name: "speed_loss_mps2"' not in speed_panel
+    assert 'name: "speed_loss_mps2"' in loss_panel
+    assert 'name: "speed_mps"' not in loss_panel
+    assert 'name: "speed_rate_mps2"' not in loss_panel
+    assert "min: 0" in loss_panel
+    assert 'zeroLine: true' in loss_panel
+    assert 'name: "speed_mph"' not in preset_block
+    assert 'name: "speed_rate_mph_s"' not in preset_block
+    assert 'name: "speed_rate_mph_1000ft"' not in preset_block
+    assert 'name: "speed_rate_mps2"' not in preset_block
+
+    assert "front_scrub_proxy" not in preset_block
+    assert "rear_scrub_proxy" not in preset_block
+    assert "drag_scrub_suspicion" not in preset_block
+    assert "full_throttle_resistance_index" not in preset_block
+    assert "rear_scrape_risk_score" not in preset_block
+
+    assert "const renderRearScrapeScrubPanel = () => null;" in platform
+    assert 'workbenchView !== "balance" && !scrapeScrubChartView && renderEngineeringPanel()' in platform
+    assert 'workbenchView !== "balance" && !scrapeScrubChartView && (' in platform
+    assert 'scrapeScrubChartView ? "Ride Height vs Speed Loss" : "Ride-height chart density"' in platform
+    assert 'const MPH_TO_MPS = 0.44704;' in platform
+    assert 'function displaySeriesSamples(trace: TraceResponse | null, channel: string)' in platform
+    assert 'if (channel === "speed_loss_mps2") {' in platform
+    assert 'rawSeriesSamples(trace, "speed_rate_mps2").map((value) => (' in platform
+    assert "Math.max(0, -value)" in platform
+    assert 'value * MPH_TO_MPS' in platform
+    assert 'const channelValues = displaySeriesSamples(trace, channel.name);' in platform
+    assert 'return displaySeriesSamples(trace, channel).some((value) => typeof value === "number" && Number.isFinite(value));' in platform
+    assert "speedRateMps2: valueAt(trace, \"speed_rate_mps2\", selectedIndex)" in platform
+    assert "balancePanelReadouts.map" in platform
+    assert "panel.channels.map((channel)" in platform
+    assert "fmtReadout(channel.cursorValue" in platform
+    assert "fmtReadout(channel.low" in platform
+    assert "fmtReadout(channel.high" in platform
+    assert "fmtReadout(channel.avg" in platform
+    assert '"speed_mps", "speed_mph"' in channels
+    assert 'speed_mps: { label: "Speed", unit: "m/s"' in channel_meta
+    assert 'speed_rate_mps2: { label: "Speed Rate", unit: "m/s^2"' in channel_meta
+    assert 'speed_loss_mps2: { label: "Speed Loss", unit: "m/s^2"' in channel_meta
+
+    for internal_channel in [
+        "front_scrub_proxy",
+        "rear_scrub_proxy",
+        "drag_scrub_suspicion",
+        "full_throttle_resistance_index",
+        "rear_scrape_risk_score",
+    ]:
+        assert internal_channel in channels
 
 
 def test_balance_readout_uses_unavailable_for_missing_values_not_zero() -> None:

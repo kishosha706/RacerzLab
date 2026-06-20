@@ -5,7 +5,7 @@ export const TRACE_WORKBENCH_CHANNELS = [
   "abs_lat_accel", "lat_accel_g", "long_accel_g", "vert_accel_g",
 
   // ── Speed / pull ──
-  "lap_dist_pct_100", "speed_mph", "speed_fps",
+  "lap_dist_pct_100", "speed_mps", "speed_mph", "speed_fps",
   "speed_rate_mph_s", "speed_rate_mph_1000ft", "speed_rate_mps2",
   "grade_corrected_speed_loss_mph_s", "rpm", "gear",
 

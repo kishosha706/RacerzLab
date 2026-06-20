@@ -60,7 +60,7 @@ def test_missing_channel_states_are_unavailable_not_zero() -> None:
     inspector = _read("ui/src/components/EvidenceInspector.tsx")
 
     assert "Shock movement telemetry is unavailable for this run." in platform
-    assert "Risk strip unavailable: required risk channels are missing." in platform
+    assert 'className="platform-risk-strip"' not in platform
     assert "Missing telemetry remains unavailable, never safe or zero." in platform
     assert "channel.missing_status" in inspector
 

@@ -234,7 +234,7 @@ class TestParity:
 
     def test_speed_conversions_parity(self, small_rows: list[dict]) -> None:
         ref, vec = self._run_both(small_rows)
-        self._assert_parity(ref, vec, {"speed_mph", "speed_fps"})
+        self._assert_parity(ref, vec, {"speed_mps", "speed_mph", "speed_fps"})
 
     def test_distance_conversions_parity(self, small_rows: list[dict]) -> None:
         ref, vec = self._run_both(small_rows)
