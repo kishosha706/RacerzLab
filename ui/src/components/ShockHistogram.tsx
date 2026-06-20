@@ -276,24 +276,14 @@ export function ShockHistogram({
                 key={field.label}
                 className={`shock-setup-field${field.unavailable ? " unavailable" : ""}`}
               >
-                {setupSide === "right" && (
-                  <span
-                    className={`shock-setup-recommendation-badge ${field.recommendation?.direction ?? "needs_more_evidence"}`}
-                    title={recommendationTitle(field.recommendation)}
-                  >
-                    {recommendationBadgeText(field.recommendation)}
-                  </span>
-                )}
                 <span className="shock-setup-label">{field.label}</span>
                 <strong>{field.value}</strong>
-                {setupSide === "left" && (
-                  <span
-                    className={`shock-setup-recommendation-badge ${field.recommendation?.direction ?? "needs_more_evidence"}`}
-                    title={recommendationTitle(field.recommendation)}
-                  >
-                    {recommendationBadgeText(field.recommendation)}
-                  </span>
-                )}
+                <span
+                  className={`shock-setup-recommendation-badge ${field.recommendation?.direction ?? "needs_more_evidence"}`}
+                  title={recommendationTitle(field.recommendation)}
+                >
+                  {recommendationBadgeText(field.recommendation)}
+                </span>
               </div>
             ))}
           </div>
@@ -317,6 +307,7 @@ export function ShockHistogram({
                     <span>R Lo</span>
                     <strong>{histogram.reboundLowPct.toFixed(1)}</strong>
                   </div>
+                  <span className="shock-overlay-center-gap" aria-hidden="true" />
                   <div className="shock-overlay-metric bump-low">
                     <span>B Lo</span>
                     <strong>{histogram.bumpLowPct.toFixed(1)}</strong>

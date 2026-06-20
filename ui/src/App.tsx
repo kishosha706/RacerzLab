@@ -83,7 +83,7 @@ function CockpitShell() {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [priorityRailOpen, setPriorityRailOpen] = useState(true);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [mapOverlayOpen, setMapOverlayOpen] = useState(false);
   const [mapOverlayZoomRange, setMapOverlayZoomRange] = useState<{ startValue?: number; endValue?: number } | null>(null);

@@ -4,8 +4,6 @@ import { Activity, AlertTriangle, BarChart3, LocateFixed, MapPin, RotateCcw, Wre
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
-import { CornerTireMap } from "../components/CornerTireMap";
-import { CornerBarChart } from "../components/CornerBarChart";
 import { ShockHistogram } from "../components/ShockHistogram";
 import type { ShockSetupField } from "../components/ShockHistogram";
 import { WorkbenchSubnav } from "../components/WorkbenchSubnav";
@@ -113,7 +111,7 @@ function setupCornerNumber(setup: SetupSnapshot | null | undefined, corner: Shoc
 
 function visiblePlatformWorkbenchView(view: WorkbenchView): WorkbenchView {
   if (view === "scrub_steering") return "rear_scrape";
-  if (view === "aero_load" || view === "grade_pull") return "balance";
+  if (view === "aero_load" || view === "grade_pull" || view === "tires" || view === "diffuser") return "balance";
   return view;
 }
 
@@ -951,7 +949,6 @@ function PlatformTraceWorkbench({
   const [hoverSampleIndex, setHoverSampleIndex] = useState<number | null>(null);
   const [clickedCursorDistanceFt, setClickedCursorDistanceFt] = useState<number | null>(null);
   const [hoverCursorDistanceFt, setHoverCursorDistanceFt] = useState<number | null>(null);
-  const [tireMapMode, setTireMapMode] = useState<any>("pressure");
   const [chartDensity, setChartDensity] = useState<ChartDensity>("detailed");
   const [zoomSummary, setZoomSummary] = useState("Full range");
   const [visibleZoomRange, setVisibleZoomRange] = useState<{ startValue?: number; endValue?: number } | null>(null);
@@ -1352,6 +1349,9 @@ function PlatformTraceWorkbench({
         : selection.selectedEventId
         ? "Event"
         : "Selected";
+  const balanceReadoutSourceLabel = balanceReadoutSource === "Locked"
+    ? "LOCKED \u00b7 Esc unlocks hover"
+    : balanceReadoutSource;
   const balanceCursorDistanceFt = playbackIndex != null
     ? xs[playbackIndex] ?? null
     : transientHoverIndex != null
@@ -2224,6 +2224,8 @@ function PlatformTraceWorkbench({
       if (e.key !== "Escape") return;
       cancelDragZoomRef.current();
       if (clickedSampleIndexRef.current != null) {
+        e.preventDefault();
+        e.stopPropagation();
         clickedSampleIndexRef.current = null;
         hoverSampleIndexRef.current = null;
         setClickedSampleIndex(null);
@@ -2621,30 +2623,7 @@ function PlatformTraceWorkbench({
     );
   };
 
-  const renderTiresPanel = () => (
-    <div className="engineering-panel">
-      <p className="section-note" style={{ fontSize: 10, marginBottom: 6 }}>
-        Tire temps are measured iRacing telemetry channels. Lines show inner/middle/outer surface temperature across each tire.
-      </p>
-      <div className="basis-label" style={{ fontSize: 9, color: "#8d9aaa", marginBottom: 4 }}>
-        <span className="lap-flag-badge" style={{ background: "rgba(141,154,170,0.12)", color: "#8d9aaa", fontSize: 9, padding: "1px 6px" }}>
-          Tire map: Full-lap distribution
-        </span>
-      </div>
-      <CornerTireMap trace={trace} mode={tireMapMode} onModeChange={setTireMapMode} />
-      <div className="engineering-panel-grid" style={{ marginTop: 8 }}>
-        <CornerBarChart trace={trace} channelPrefix="lf_pressure_gain" label="Pressure Gain" unit="kPa" color="#4ade80" decimals={1} />
-        <CornerBarChart trace={trace} channelPrefix="lf_temp_spread" label="Temp Spread" unit="°C" color="#f97316" decimals={1} />
-        <CornerBarChart trace={trace} channelPrefix="lf_slip_ratio_proxy" label="Slip Ratio" color="#a78bfa" decimals={3} />
-      </div>
-      {setupAction(["lf_pressure_kpa", "rf_pressure_kpa", "lr_pressure_kpa", "rr_pressure_kpa"], "Tire Pressure / Camber Setup", true)}
-      <p className="section-note" style={{ fontSize: 9, color: "#8d9aaa", marginTop: 2 }}>
-        Bar charts show <strong>{sampleBasisLabel === "Latest sample" ? "latest" : sampleBasisLabel.toLowerCase()} sample</strong> values.
-      </p>
-      <p className="section-note" style={{ marginTop: 8 }}>Inner hotter than outer may indicate camber load. Outer hotter than inner may indicate rollover, under-camber, or overdriving. Slip values are proxies unless true wheel/ground speed calibration is available.</p>
-    </div>
-  );
-
+  const renderTiresPanel = () => null;
   const renderShocksPanel = () => (
     <div className="engineering-panel shock-workstation">
       <header className="shock-workstation-header">
@@ -2685,7 +2664,7 @@ function PlatformTraceWorkbench({
             axisLimit={sharedShockAxisLimit}
             bucketThreshold={SHOCK_BUCKET_THRESHOLD_IN_S}
             setupFields={corner.setupFields}
-            setupSide={corner.key === "rf" || corner.key === "rr" ? "right" : "left"}
+            setupSide={corner.key === "lf" || corner.key === "lr" ? "left" : "right"}
             unavailableReason={corner.unavailableReason}
           />
         ))}
@@ -2693,54 +2672,7 @@ function PlatformTraceWorkbench({
     </div>
   );
 
-  const renderDiffuserPanel = () => (
-    <div className="engineering-panel">
-      <div className="engineering-panel-grid">
-        <EngineeringMetricCard title="Front Center RH" channelName="front_center_rh_in" value={latest("front_center_rh_in")} color="#38bdf8" />
-        <EngineeringMetricCard title="Rear Center RH" channelName="rear_center_rh_in" value={latest("rear_center_rh_in")} color="#a78bfa" />
-        <EngineeringMetricCard title="Smooth Center Rake" channelName="smooth_center_rake_in" value={latest("smooth_center_rake_in")} color="#c084fc" />
-        <EngineeringMetricCard title="Smooth Diffuser Volume" channelName="smooth_diffuser_volume_ft3" value={latest("smooth_diffuser_volume_ft3")} color="#4ade80" />
-        <EngineeringMetricCard title="Diffuser Base Volume" channelName="diffuser_base_volume_ft3" value={latest("diffuser_base_volume_ft3")} color="#60a5fa" />
-        <EngineeringMetricCard title="Diffuser Wedge Volume" channelName="diffuser_wedge_volume_ft3" value={latest("diffuser_wedge_volume_ft3")} color="#f97316" />
-        <EngineeringMetricCard title="Track Width Used" channelName="diffuser_track_width_in" value={latest("diffuser_track_width_in")} color="#8d9aaa" />
-        <EngineeringMetricCard title="Wheelbase Used" channelName="diffuser_wheelbase_in" value={latest("diffuser_wheelbase_in")} color="#8d9aaa" />
-      </div>
-      {/* Jump buttons */}
-      <div className="toolbar-actions" style={{ marginTop: 6 }}>
-        <button className={`secondary-button${jumpedBtn === "min_diffuser_vol" ? " jump-clicked" : ""}`} onClick={() => {
-          const vals = values(trace, "smooth_diffuser_volume_ft3") as (number | null)[];
-          let worstIdx: number | null = null;
-          let worstVal = Infinity;
-          vals.forEach((v, i) => { if (typeof v === "number" && v < worstVal) { worstVal = v; worstIdx = i; } });
-          handleJumpClick("min_diffuser_vol", worstIdx);
-        }}>
-          <Activity size={14} /> Jump to Min Smooth Diffuser Volume
-        </button>
-        <button className={`secondary-button${jumpedBtn === "worst_wedge" ? " jump-clicked" : ""}`} onClick={() => {
-          const vals = values(trace, "diffuser_wedge_volume_ft3") as (number | null)[];
-          let worstIdx: number | null = null;
-          let worstVal = -Infinity;
-          vals.forEach((v, i) => { if (typeof v === "number" && v > worstVal) { worstVal = v; worstIdx = i; } });
-          handleJumpClick("worst_wedge", worstIdx);
-        }}>
-          <Activity size={14} /> Jump to Max Wedge Volume
-        </button>
-        <button className={`secondary-button${jumpedBtn === "lowest_rear_crh" ? " jump-clicked" : ""}`} onClick={() => {
-          const vals = values(trace, "rear_center_rh_in") as (number | null)[];
-          let worstIdx: number | null = null;
-          let worstVal = Infinity;
-          vals.forEach((v, i) => { if (typeof v === "number" && v < worstVal) { worstVal = v; worstIdx = i; } });
-          handleJumpClick("lowest_rear_crh", worstIdx);
-        }}>
-          <Activity size={14} /> Jump to Lowest Rear Center RH
-        </button>
-      </div>
-      {setupAction(["lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm", "lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm", "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm", "cross_weight_pct"], "Diffuser Geometry Setup", true)}
-      <p className="section-note" style={{ marginTop: 8 }}>
-        Diffuser channels are derived from ride-height geometry and resolved vehicle geometry. They describe underbody volume/rake shape, not direct aerodynamic force. Missing ride-height telemetry remains unavailable and is never treated as zero.
-      </p>
-    </div>
-  );
+  const renderDiffuserPanel = () => null;
 
   const renderGradePanel = () => (
     <div className="engineering-panel">
@@ -2873,7 +2805,7 @@ function PlatformTraceWorkbench({
         <span>{groupedPlatformEventSummaryText}</span>
       </div>
       <WorkbenchSubnav active={workbenchView} onChange={handleViewChange} />
-      {workbenchView !== "balance" && !scrapeScrubChartView && (
+      {workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
           <span className="laps-stint-legend-item" style={{ fontSize: 10, color: "#8d9aaa", fontWeight: 600 }}>
             Engineering cards basis:
@@ -2887,7 +2819,7 @@ function PlatformTraceWorkbench({
           </span>
         </div>
       )}
-      {workbenchView !== "balance" && !scrapeScrubChartView && renderEngineeringPanel()}
+      {workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && renderEngineeringPanel()}
       <div className="trace-toolbar" aria-label="Trace chart controls">
         <span className="trace-toolbar-label">{scrapeScrubChartView ? "Ride Height vs Speed Loss" : "Ride-height chart density"}</span>
         <div className="trace-density-toggle" role="group" aria-label="Ride-height chart density">
@@ -2949,7 +2881,13 @@ function PlatformTraceWorkbench({
                   <div className="balance-panel-cursor-readout">
                     {hasExplicitReadoutContext ? (
                       <>
-                        <span className={`cursor-source-badge source-${balanceReadoutSource.toLowerCase()}`}>{balanceReadoutSource}</span>
+                        <span
+                          className={`cursor-source-badge source-${balanceReadoutSource.toLowerCase()}`}
+                          title={balanceReadoutSource === "Locked" ? "Press Esc to unlock hover" : undefined}
+                          aria-label={balanceReadoutSource === "Locked" ? "Locked cursor. Press Escape to unlock hover." : undefined}
+                        >
+                          {balanceReadoutSourceLabel}
+                        </span>
                         {panelIndex === 0 && balanceReadoutLocationSummary && (
                           <span className="balance-selected-context">{balanceReadoutLocationSummary}</span>
                         )}

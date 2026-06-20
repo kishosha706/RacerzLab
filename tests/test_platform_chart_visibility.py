@@ -119,6 +119,37 @@ def test_chart_uses_separated_grid_panels_without_wheel_scroll_trap() -> None:
     assert "overflow: auto" not in wrapper_block
 
 
+def test_platform_workspace_fills_available_cockpit_width() -> None:
+    app = _read("ui/src/App.tsx")
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    styles = _read("ui/src/styles.css")
+
+    platform_block = styles.split(".platform-workbench {", 1)[1].split("}", 1)[0]
+    layout_block = styles.split(".platform-layout {", 1)[1].split("}", 1)[0]
+    wrapper_block = styles.split(".trace-panel-wrapper {", 1)[1].split("}", 1)[0]
+    trace_block = styles.split(".trace-panel {\n  height: auto;", 1)[1].split("}", 1)[0]
+    cockpit_workspace_block = styles.split(".cockpit-workspace {\n  flex: 1;", 1)[1].split("}", 1)[0]
+    cockpit_main_block = styles.split(".cockpit-workspace-main {", 1)[1].split("}", 1)[0]
+
+    assert "const [inspectorOpen, setInspectorOpen] = useState(false);" in app
+    assert "ResizeObserver" in platform
+    assert "chart.resize({ width: chartNode.current.clientWidth, height: chartNode.current.clientHeight })" in platform
+    assert "flex: 1 1 auto" in platform_block
+    assert "width: 100%" in platform_block
+    assert "max-width: none" in platform_block
+    assert "width: 100%" in layout_block
+    assert "max-width: none" in layout_block
+    assert "min-width: 0" in layout_block
+    assert "flex: 1 1 auto" in wrapper_block
+    assert "width: 100%" in wrapper_block
+    assert "max-width: none" in wrapper_block
+    assert "width: 100%" in trace_block
+    assert "min-width: 0" in cockpit_workspace_block
+    assert "max-width: none" in cockpit_workspace_block
+    assert "width: 100%" in cockpit_main_block
+    assert "max-width: none" in cockpit_main_block
+
+
 def test_rake_panels_include_zero_line() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
 
@@ -162,8 +193,8 @@ def test_balance_default_removes_duplicate_ride_height_engineering_cards() -> No
     platform = _read("ui/src/tabs/PlatformTab.tsx")
 
     assert 'case "balance": return null;' in platform
-    assert 'workbenchView !== "balance" && !scrapeScrubChartView && renderEngineeringPanel()' in platform
-    assert 'workbenchView !== "balance" && !scrapeScrubChartView && (' in platform
+    assert 'workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && renderEngineeringPanel()' in platform
+    assert 'workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && (' in platform
     assert 'EngineeringMetricCard title="CFS Ride Height"' not in platform
     assert 'EngineeringMetricCard title="Front Ride Heights"' not in platform
     assert 'EngineeringMetricCard title="Rear Ride Heights"' not in platform
@@ -196,6 +227,117 @@ def test_focused_platform_tabs_do_not_render_global_risk_strip() -> None:
     assert "Platform Diagnostic Events" in platform
 
 
+def test_tires_view_removes_prototype_full_lap_distribution_panel() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    subnav = _read("ui/src/components/WorkbenchSubnav.tsx")
+    styles = _read("ui/src/styles.css")
+    visible_views = subnav.split("export const WORKBENCH_VIEWS", 1)[1].split("];", 1)[0]
+
+    assert '{ id: "balance", label: "Balance", icon: "BAL" }' in visible_views
+    assert '{ id: "rear_scrape", label: "Scrape / Scrub", icon: "SCR" }' in visible_views
+    assert '{ id: "shocks", label: "Shocks", icon: "SHK" }' in visible_views
+    assert 'label: "Tires"' not in visible_views
+    assert 'icon: "TIR"' not in visible_views
+    assert 'id: "tires"' not in visible_views
+    assert 'label: "Diffuser"' not in visible_views
+    assert 'icon: "DIF"' not in visible_views
+    assert 'id: "diffuser"' not in visible_views
+    assert 'view === "aero_load" || view === "grade_pull" || view === "tires" || view === "diffuser"' in platform
+    assert "CornerTireMap" not in platform
+    assert "tireMapMode" not in platform
+    assert "Tire map: Full-lap distribution" not in platform
+    assert "CornerBarChart" not in platform
+    assert 'const renderTiresPanel = () => null;' in platform
+    assert "Tire temps are measured iRacing telemetry channels" not in platform
+    assert "Tire Pressure / Camber Setup" not in platform
+    assert "Bar charts show" not in platform
+    assert 'workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView' in platform
+    assert "corner-tire-map" not in styles
+    assert "tire-map-mode-select" not in styles
+    assert "tire-map-mode-btn" not in styles
+    assert "tire-map-grid" not in styles
+    assert "tire-map-corner" not in styles
+    assert "tire-corner-value" not in styles
+    assert "tire-data-empty" not in styles
+
+    tires_preset = platform.split('"Tires": [', 1)[1].split('  "Shocks": [', 1)[0]
+    assert 'label: "Pressure Gain [kPa]"' in tires_preset
+    assert 'label: "Temp Spread [C]"' in tires_preset
+    assert 'label: "Slip Ratio Proxy"' in tires_preset
+
+
+def test_tire_backend_channels_remain_available_for_evidence() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    channels = _read("ui/src/constants/workbenchChannels.ts")
+    channel_meta = _read("ui/src/utils/channelMeta.ts")
+    calculated = _read("racelab_engine/analysis/calculated_channels.py")
+
+    calculated_literal_channels = [
+        "lf_pressure", "rf_pressure", "lr_pressure", "rr_pressure",
+        "lf_pressure_gain", "rf_pressure_gain", "lr_pressure_gain", "rr_pressure_gain",
+        "lf_temp_spread", "rf_temp_spread", "lr_temp_spread", "rr_temp_spread",
+        "lf_wear_spread", "rf_wear_spread", "lr_wear_spread", "rr_wear_spread",
+        "lf_camber_temp_bias_c", "rf_camber_temp_bias_c",
+        "lr_camber_temp_bias_c", "rr_camber_temp_bias_c",
+    ]
+    generated_slip_channels = [
+        "lf_slip_ratio_proxy", "rf_slip_ratio_proxy", "lr_slip_ratio_proxy", "rr_slip_ratio_proxy",
+    ]
+
+    for channel in [*calculated_literal_channels, *generated_slip_channels]:
+        assert channel in channels
+        assert channel in channel_meta
+
+    for channel in calculated_literal_channels:
+        assert channel in calculated
+
+    assert 'f"{c}_slip_ratio_proxy"' in calculated
+    assert "channelHasNumericData(trace, channel.name)" in platform
+
+
+def test_diffuser_view_removes_engineering_metric_card_block() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    channels = _read("ui/src/constants/workbenchChannels.ts")
+    channel_meta = _read("ui/src/utils/channelMeta.ts")
+    calculated = _read("racelab_engine/analysis/calculated_channels.py")
+    vectorized = _read("racelab_engine/analysis/vectorized_channels.py")
+
+    assert "const renderDiffuserPanel = () => null;" in platform
+    assert 'workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && renderEngineeringPanel()' in platform
+    assert 'workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && (' in platform
+    assert 'EngineeringMetricCard title="Front Center RH"' not in platform
+    assert 'EngineeringMetricCard title="Rear Center RH"' not in platform
+    assert 'EngineeringMetricCard title="Smooth Diffuser Volume"' not in platform
+    assert 'EngineeringMetricCard title="Track Width Used"' not in platform
+    assert 'EngineeringMetricCard title="Wheelbase Used"' not in platform
+    assert "Diffuser Geometry Setup" not in platform
+    assert "Jump to Min Smooth Diffuser Volume" not in platform
+
+    diffuser_preset = platform.split("  Diffuser: [", 1)[1].split("],\n};", 1)[0]
+    for label in [
+        'label: "Front Center RH [in]"',
+        'label: "Rear Center RH [in]"',
+        'label: "Smooth Diffuser Volume [ft3]"',
+    ]:
+        assert label in diffuser_preset
+
+    for channel in [
+        "front_center_rh_in",
+        "rear_center_rh_in",
+        "smooth_center_rake_in",
+        "diffuser_track_width_in",
+        "diffuser_wheelbase_in",
+        "diffuser_base_volume_ft3",
+        "diffuser_wedge_volume_ft3",
+        "diffuser_volume_ft3",
+        "smooth_diffuser_volume_ft3",
+    ]:
+        assert channel in channels
+        assert channel in channel_meta
+        assert channel in calculated
+        assert channel in vectorized
+
+
 def test_aero_and_grade_views_are_backend_only_not_visible_platform_tabs() -> None:
     subnav = _read("ui/src/components/WorkbenchSubnav.tsx")
     platform = _read("ui/src/tabs/PlatformTab.tsx")
@@ -208,7 +350,7 @@ def test_aero_and_grade_views_are_backend_only_not_visible_platform_tabs() -> No
     assert 'icon: "AER"' not in visible_views
     assert 'label: "Grade / Pull"' not in visible_views
     assert 'icon: "GRD"' not in visible_views
-    assert 'view === "aero_load" || view === "grade_pull"' in platform
+    assert 'view === "aero_load" || view === "grade_pull" || view === "tires" || view === "diffuser"' in platform
     assert 'return "balance";' in platform
 
     for channel in [
@@ -273,6 +415,10 @@ def test_balance_panel_readout_prefers_hover_and_shows_no_cursor_helper() -> Non
 
     assert "const balanceReadoutIndex = playbackIndex ?? transientHoverIndex ?? lockedIndex ?? selectedContextIndex ?? cursorIndex;" in platform
     assert "const balanceReadoutSource = playbackIndex != null" in platform
+    assert 'const balanceReadoutSourceLabel = balanceReadoutSource === "Locked"' in platform
+    assert '"LOCKED \\u00b7 Esc unlocks hover"' in platform
+    assert 'title={balanceReadoutSource === "Locked" ? "Press Esc to unlock hover" : undefined}' in platform
+    assert 'aria-label={balanceReadoutSource === "Locked" ? "Locked cursor. Press Escape to unlock hover." : undefined}' in platform
     assert "balanceReadoutLocationSummary" in platform
     assert "formatDistanceFt(balanceReadoutDistance)" in platform
     assert "panelIndex === 0 && lockedReadoutSummary" in platform
@@ -511,8 +657,8 @@ def test_scrape_scrub_tab_is_chart_first_ride_height_vs_speed_loss() -> None:
     assert "rear_scrape_risk_score" not in preset_block
 
     assert "const renderRearScrapeScrubPanel = () => null;" in platform
-    assert 'workbenchView !== "balance" && !scrapeScrubChartView && renderEngineeringPanel()' in platform
-    assert 'workbenchView !== "balance" && !scrapeScrubChartView && (' in platform
+    assert 'workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && renderEngineeringPanel()' in platform
+    assert 'workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && (' in platform
     assert 'scrapeScrubChartView ? "Ride Height vs Speed Loss" : "Ride-height chart density"' in platform
     assert 'const MPH_TO_MPS = 0.44704;' in platform
     assert 'function displaySeriesSamples(trace: TraceResponse | null, channel: string)' in platform
@@ -668,6 +814,7 @@ def test_reset_zoom_does_not_clear_selected_event_or_session_state() -> None:
 
 def test_escape_unlock_restores_live_cursor_hover_readout() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
+    escape_body = platform.split('if (e.key !== "Escape") return;', 1)[1].split("window.addEventListener", 1)[0]
 
     assert "lastPointerOffsetRef" in platform
     assert "restoreHoverAtPointerRef" in platform
@@ -677,6 +824,12 @@ def test_escape_unlock_restores_live_cursor_hover_readout() -> None:
     assert "setHoverSampleIndex(index)" in platform
     assert "const restoredHover = restoreHoverAtPointerRef.current()" in platform
     assert "if (!restoredHover) hideCursorLine()" in platform
+    assert "e.preventDefault()" in escape_body
+    assert "e.stopPropagation()" in escape_body
+    assert "setVisibleZoomRange(null)" not in escape_body
+    assert "dispatchAction({ type: \"dataZoom\"" not in escape_body
+    assert "setSelectedRun" not in escape_body
+    assert "setSession" not in escape_body
 
 
 def test_chart_annotation_data_comes_only_from_visible_events() -> None:

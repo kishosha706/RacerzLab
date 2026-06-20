@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronDown, ChevronRight, Crosshair, Gauge, Layers, MapPin, Sliders, Wrench } from "lucide-react";
+import { AlertTriangle, Crosshair, Gauge, Layers, MapPin, Sliders, Wrench } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchSetup } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
@@ -112,14 +112,14 @@ function Field({ l, v, u, imp: isImp }: {
   u?: string; imp?: boolean;
 }) {
   const missing = v == null || (typeof v === "number" && !Number.isFinite(v)) || (typeof v === "object");
-  const display = missing ? "Unavailable" : `${v}${u ? ` ${u}` : ""}`;
   const cls = ["gr-row"];
   if (missing) cls.push("missing");
   else if (isImp) cls.push("important");
   return (
     <div className={cls.join(" ")} role="row">
       <span className="gr-label" role="rowheader">{l}</span>
-      <span className="gr-value" role="cell">{display}</span>
+      <span className="gr-value" role="cell">{missing ? "—" : v}</span>
+      <span className="gr-value-unit" aria-hidden={missing || !u ? "true" : undefined}>{missing ? "" : (u ?? "")}</span>
     </div>
   );
 }
@@ -130,7 +130,6 @@ function CornerPanel({ label, corner, setup, glow }: {
 }) {
   const wt     = imp(evCorner(setup, corner, "corner_weight_kg"), N_LB, 0);
   const rh     = imp(evCorner(setup, corner, "ride_height_mm"), MM_IN, 3);
-  const collar = imp(evCorner(setup, corner, "shock_collar_offset_mm"), MM_IN, 3);
   const spring = imp(evCorner(setup, corner, "spring_rate_n_per_mm"), NMM_LB, 0);
   const psi    = imp(evCorner(setup, corner, "cold_pressure_kpa"), KPA_PSI, 1);
   const lsC    = evCorner(setup, corner, "ls_compression");
@@ -142,6 +141,7 @@ function CornerPanel({ label, corner, setup, glow }: {
   const camber = evCorner(setup, corner, "camber_deg");
   const caster = evCorner(setup, corner, "caster_deg");
   const toe    = imp(evCorner(setup, corner, "toe_in_mm"), MM_IN, 4);
+  const frontCorner = corner === "lf" || corner === "rf";
 
   return (
     <div className={`gr-corner${glow ? " glow" : ""}`} role="region" aria-label={label}>
@@ -151,7 +151,6 @@ function CornerPanel({ label, corner, setup, glow }: {
         <Field l="Ride Height" v={rh} u="in" imp />
         <Field l="Spring Rate" v={spring} u="lb/in" imp />
         <Field l="Corner Weight" v={wt} u="lb" imp />
-        <Field l="Shock Collar" v={collar} u="in" />
         <div className="gr-group-head">Dampers</div>
         <Field l="LS Compression" v={lsC} u="clk" />
         <Field l="HS Compression" v={hsC} u="clk" />
@@ -161,7 +160,7 @@ function CornerPanel({ label, corner, setup, glow }: {
         <Field l="HS Reb Slope" v={hsRS} />
         <div className="gr-group-head">Alignment</div>
         <Field l="Camber" v={camber} u="deg" />
-        <Field l="Caster" v={caster} u="deg" />
+        {frontCorner && <Field l="Caster" v={caster} u="deg" />}
         <Field l="Toe-In" v={toe} u="in" />
       </div>
     </div>
@@ -174,7 +173,6 @@ export function SetupTab({ overview, onToggleMapOverlay }: SetupTabProps) {
   const { selection, setWorkspace } = useTelemetrySelection();
   const { basket } = useCompareBasket();
   const [diffMode, setDiffMode] = useState<"current" | "diff">("current");
-  const [arbOpen, setArbOpen] = useState(false);
   const [baselineSetup, setBaselineSetup] = useState<SetupSnapshot | null>(null);
   const [baselineSetupLoading, setBaselineSetupLoading] = useState(false);
   const [baselineSetupError, setBaselineSetupError] = useState<string | null>(null);
@@ -341,18 +339,10 @@ export function SetupTab({ overview, onToggleMapOverlay }: SetupTabProps) {
         </button>
       </div>
 
-      {/* 2) 2x2 Corner Board */}
-      <div className="gr-corners">
-        <CornerPanel label="LEFT FRONT" corner="lf" setup={setup} glow={focusZone === "front" || focusZone === "all" || focusZone === "steering"} />
-        <CornerPanel label="RIGHT FRONT" corner="rf" setup={setup} glow={focusZone === "front" || focusZone === "all" || focusZone === "steering"} />
-        <CornerPanel label="LEFT REAR" corner="lr" setup={setup} glow={focusZone === "rear" || focusZone === "all"} />
-        <CornerPanel label="RIGHT REAR" corner="rr" setup={setup} glow={focusZone === "rear" || focusZone === "all"} />
-      </div>
-
-      {/* 3) Top Controls / Balance / ARB-Diff row */}
+      {/* 2) High-value setup systems */}
       <div className="gr-toprow">
-        <div className="gr-card">
-          <div className="gr-card-head"><Gauge size={12} /> Steering / Controls</div>
+        <div className="gr-card setup-system-card setup-system-steering">
+          <div className="gr-card-head"><Gauge size={12} /> Steering / Control</div>
           <div className="gr-card-body">
             <Field l="Steering Ratio" v={displayRatio ?? null} />
             {derivedRatio && pinion != null && (
@@ -366,8 +356,7 @@ export function SetupTab({ overview, onToggleMapOverlay }: SetupTabProps) {
           </div>
         </div>
 
-        {/* Balance */}
-        <div className="gr-card">
+        <div className="gr-card setup-system-card setup-system-balance">
           <div className="gr-card-head"><Crosshair size={12} /> Balance</div>
           <div className="gr-card-body">
             <Field l="Nose Weight" v={setup.nose_weight_percent ?? null} u="%" />
@@ -389,32 +378,36 @@ export function SetupTab({ overview, onToggleMapOverlay }: SetupTabProps) {
           </div>
         </div>
 
-        {/* ARB / Diff */}
-        <div className="gr-card">
-          <button
-            className="gr-card-head gr-card-head-btn"
-            onClick={() => setArbOpen(!arbOpen)}
-            aria-expanded={arbOpen}
-            aria-controls="arb-diff-body"
-          >
-            <Wrench size={12} /> ARB / Diff
-            <span className="gr-card-chev">{arbOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
-          </button>
-          {arbOpen && (
-            <div className="gr-card-body" id="arb-diff-body">
-              <div className="gr-subhead">Front ARB</div>
-              <Field l="Diameter" v={imp(evNum(setup, "front_arb_diameter_mm"), MM_IN, 3)} u="in" />
-              <Field l="Arm Length" v={imp(evNum(setup, "front_arb_arm_mm"), MM_IN, 3)} u="in" />
-              <Field l="Preload" v={imp(evNum(setup, "front_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" />
-              <div className="gr-subhead">Rear ARB</div>
-              <Field l="Diameter" v={imp(evNum(setup, "rear_arb_diameter_mm"), MM_IN, 3)} u="in" />
-              <Field l="Arm Length" v={imp(evNum(setup, "rear_arb_arm_mm"), MM_IN, 3)} u="in" />
-              <Field l="Preload" v={imp(evNum(setup, "rear_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" />
-              <div className="gr-subhead">Differential</div>
-              <Field l="Preload" v={imp(evNum(setup, "diff_preload_nm"), NM_FTLB, 1)} u="ft-lb" />
-            </div>
-          )}
+        <div className="gr-card setup-system-card setup-system-arb">
+          <div className="gr-card-head"><Wrench size={12} /> ARB</div>
+          <div className="gr-card-body">
+            <div className="gr-subhead">Front ARB</div>
+            <Field l="Diameter" v={imp(evNum(setup, "front_arb_diameter_mm"), MM_IN, 3)} u="in" />
+            <Field l="Arm Length" v={imp(evNum(setup, "front_arb_arm_mm"), MM_IN, 3)} u="in" />
+            <Field l="Preload" v={imp(evNum(setup, "front_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" />
+            <Field l="Attach" v={evNum(setup, "front_arb_attach")} />
+            <div className="gr-subhead">Rear ARB</div>
+            <Field l="Diameter" v={imp(evNum(setup, "rear_arb_diameter_mm"), MM_IN, 3)} u="in" />
+            <Field l="Arm Length" v={imp(evNum(setup, "rear_arb_arm_mm"), MM_IN, 3)} u="in" />
+            <Field l="Preload" v={imp(evNum(setup, "rear_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" />
+          </div>
         </div>
+
+        <div className="gr-card setup-system-card setup-system-diff">
+          <div className="gr-card-head"><Layers size={12} /> Diff</div>
+          <div className="gr-card-body">
+            <Field l="Diff Preload" v={imp(evNum(setup, "diff_preload_nm"), NM_FTLB, 1)} u="ft-lb" />
+            <Field l="Rear End Ratio" v={setup.rear_end_ratio ?? evNum(setup, "final_drive_ratio")} u=":1" />
+          </div>
+        </div>
+      </div>
+
+      {/* 3) 2x2 Corner Board */}
+      <div className="gr-corners">
+        <CornerPanel label="LEFT FRONT" corner="lf" setup={setup} glow={focusZone === "front" || focusZone === "all" || focusZone === "steering"} />
+        <CornerPanel label="RIGHT FRONT" corner="rf" setup={setup} glow={focusZone === "front" || focusZone === "all" || focusZone === "steering"} />
+        <CornerPanel label="LEFT REAR" corner="lr" setup={setup} glow={focusZone === "rear" || focusZone === "all"} />
+        <CornerPanel label="RIGHT REAR" corner="rr" setup={setup} glow={focusZone === "rear" || focusZone === "all"} />
       </div>
 
       {/* 4) Diff Mode / Baseline Warning */}
