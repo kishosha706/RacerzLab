@@ -521,7 +521,6 @@ def _event_symbol(event_type: str) -> str:
         "MIN_REAR_RIDE_HEIGHT": "Rmin",
         "REAR_PLATFORM_LOW": "R",
         "REAR_PLATFORM_SCRAPE": "R!",
-        "REAR_CONTACT_RISK": "R?",
         "WHOLE_CAR_BOTTOMING_RISK": "⇣",
     }
     return mapping.get(event_type, "◆")
@@ -537,7 +536,6 @@ def _event_category(event_type: str) -> str:
         "REAR_PLATFORM_LOW": "rear_platform",
         "REAR_PLATFORM_SCRAPE": "rear_platform",
         "REAR_SCRAPE": "rear_platform",
-        "REAR_CONTACT_RISK": "rear_platform",
         "MIN_REAR_RIDE_HEIGHT": "rear_platform",
         "WHOLE_CAR_BOTTOMING_RISK": "whole_car_bottoming",
         "WORST_DRAG_SCRUB": "drag_scrub",

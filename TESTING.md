@@ -9,6 +9,18 @@ python -B -m pytest -m "not slow and not integration" -q
 
 Runs the fast unit subset (exact count changes over time): comparison math, notebook CRUD, track matching, slip ratios, drag/scrub, geometry, session logic, constants, local-config checks, vectorized parity, and track map. No real `.ibt` file required.
 
+## Core Robustness Contracts
+
+```powershell
+python -B -m pytest tests/test_platform_events.py tests/test_platform_metrics.py tests/test_units.py tests/test_setup_diff.py tests/test_lap_detection.py tests/test_lap_classification.py tests/test_compare_math.py tests/test_did_it_work.py tests/test_target_zone_classifier.py tests/test_test_discipline.py tests/test_calculated_channels.py -q
+```
+
+This focused suite locks high-value pure logic behavior: platform event visibility/context gates, missing/NaN handling, setup diff discipline, lap detection/classification, compare/verdict math, target-zone classification, and representative calculated-channel formula contracts. `tests/test_calculated_channels.py` is intentionally representative, not exhaustive coverage of every derived channel.
+
+`tests/test_dynamic_crew_chief.py` covers recommendation-builder safety for empty and limited evidence states and is included in the default fast loop.
+
+Additional dedicated high-impact analysis tests cover `shock_reader.py`, `stint_intelligence.py`, `tire_dynamics.py`, `vehicle_dynamics.py`, `aero_platform.py`, `aero_coefficients.py`, `pace_quality.py`, and `best_theoretical.py`. These are synthetic-data tests focused on unavailable states, non-finite numeric handling, proxy honesty, confidence behavior, and deterministic output.
+
 ## Full Suite (pre-commit / pre-push)
 
 ```powershell

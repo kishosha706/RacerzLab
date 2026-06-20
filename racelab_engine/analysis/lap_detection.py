@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import math
 from statistics import mean
 from typing import Any, cast
 
@@ -21,7 +22,9 @@ def _numbers(rows: list[dict[str, Any]], key: str) -> list[float]:
     for row in rows:
         value = row.get(key)
         if value is not None:
-            values.append(float(value))
+            number = float(value)
+            if math.isfinite(number):
+                values.append(number)
     return values
 
 
@@ -29,6 +32,8 @@ def _pct(value: Any) -> float | None:
     if value is None:
         return None
     number = float(value)
+    if not math.isfinite(number):
+        return None
     return number * 100.0 if 0.0 <= number <= 1.5 else number
 
 
@@ -36,7 +41,13 @@ def _lap_number(row: dict[str, Any]) -> int | None:
     value = row.get("lap")
     if value is None:
         value = row.get("lap_number")
-    return int(value) if value is not None else None
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return int(number) if math.isfinite(number) else None
 
 
 def detect_laps(table: Any, run_id: str = "unassigned") -> list[LapSummary]:

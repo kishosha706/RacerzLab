@@ -17,14 +17,13 @@ EventType = Literal[
     "MIN_REAR_RIDE_HEIGHT",
     "REAR_PLATFORM_LOW",
     "REAR_PLATFORM_SCRAPE",
-    "REAR_CONTACT_RISK",
     "WHOLE_CAR_BOTTOMING_RISK",
 ]
 PlatformEventType = EventType
 
 Severity = Literal["info", "watch", "high", "critical"]
 Confidence = Literal["low", "medium", "high"]
-DisplayScope = Literal["actionable", "watch", "internal", "debug"]
+DisplayScope = Literal["actionable", "watch", "internal"]
 
 PLATFORM_EVENT_COLUMNS = [
     "lap",
@@ -209,11 +208,16 @@ def _sample_row(rows: list[dict[str, Any]], sample_index: int) -> dict[str, Any]
 def _event_distance_ft(row: dict[str, Any], fallback: PlatformEvent | None = None) -> float | None:
     dist_ft = _sample_value(row, "lap_dist_ft")
     if dist_ft is not None:
-        return float(dist_ft)
+        dist_ft_value = float(dist_ft)
+        return dist_ft_value if math.isfinite(dist_ft_value) else None
     if fallback is not None and fallback.lap_dist_ft is not None:
-        return float(fallback.lap_dist_ft)
+        fallback_value = float(fallback.lap_dist_ft)
+        return fallback_value if math.isfinite(fallback_value) else None
     lap_dist_m = _sample_value(row, "lap_dist_m")
-    return float(lap_dist_m) * 3.280839895 if lap_dist_m is not None else None
+    if lap_dist_m is None:
+        return None
+    lap_dist_m_value = float(lap_dist_m)
+    return lap_dist_m_value * 3.280839895 if math.isfinite(lap_dist_m_value) else None
 
 
 def _confidence_rank(confidence: Confidence) -> int:

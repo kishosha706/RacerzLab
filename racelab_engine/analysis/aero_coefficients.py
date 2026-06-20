@@ -33,6 +33,16 @@ from racelab_engine.analysis.physics_inputs import VehiclePhysicsInputs
 G = 9.81  # m/s²
 
 
+def _finite(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 def air_speed_mps(
     vehicle_speed_mps: float | None,
     wind_speed_mps: float | None = None,
@@ -43,6 +53,10 @@ def air_speed_mps(
 
     If wind data is missing, falls back to ground speed with lower confidence.
     """
+    vehicle_speed_mps = _finite(vehicle_speed_mps)
+    wind_speed_mps = _finite(wind_speed_mps)
+    vehicle_heading_rad = _finite(vehicle_heading_rad)
+    wind_heading_rad = _finite(wind_heading_rad)
     if vehicle_speed_mps is None:
         return None, confidence_from_missing(
             ["vehicle_speed_mps"], set(),
@@ -76,6 +90,8 @@ def dynamic_pressure_pa(
 
     Falls back to sea-level air density if missing.
     """
+    air_density_kg_m3 = _finite(air_density_kg_m3)
+    speed_mps = _finite(speed_mps)
     if speed_mps is None:
         return None, confidence_from_missing(
             ["speed_mps"], set(),
@@ -97,6 +113,7 @@ def dynamic_pressure_pa(
 
 def aero_load_index(dynamic_pressure_pa: float | None) -> tuple[float | None, EstimateConfidence]:
     """Cross-run comparable aero load index relative to 180 mph sea-level reference."""
+    dynamic_pressure_pa = _finite(dynamic_pressure_pa)
     if dynamic_pressure_pa is None or REFERENCE_DYNAMIC_PRESSURE_PA <= 0:
         return None, confidence_from_missing(
             ["dynamic_pressure_pa"], set(),
@@ -128,6 +145,8 @@ def rolling_resistance_force_n(
     crr: float | None,
 ) -> tuple[float | None, EstimateConfidence]:
     """F_rr = Crr * m * g"""
+    mass_kg = _finite(mass_kg)
+    crr = _finite(crr)
     if mass_kg is None:
         return None, confidence_from_missing(
             ["mass_kg"], set(),
@@ -149,6 +168,8 @@ def grade_force_n(
     grade_rad: float | None = 0.0,
 ) -> tuple[float | None, EstimateConfidence]:
     """F_grade = m * g * sin(grade)"""
+    mass_kg = _finite(mass_kg)
+    grade_rad = _finite(grade_rad)
     if mass_kg is None:
         return None, confidence_from_missing(
             ["mass_kg"], set(),
@@ -199,6 +220,11 @@ def cda_coastdown_proxy_m2(
     Use _coastdown_is_valid() for runtime gating before calling this function.
     This function computes the math only.
     """
+    mass_kg = _finite(mass_kg)
+    long_accel_mps2 = _finite(long_accel_mps2)
+    q_air_pa = _finite(q_air_pa)
+    crr = _finite(crr)
+    grade_rad = _finite(grade_rad)
     if mass_kg is None:
         return None, confidence_from_missing(
             ["mass_kg"], set(),
@@ -248,6 +274,12 @@ def full_throttle_resistance_cda_proxy_m2(
     Without engine_force_n, this is a residual proxy only.
     Never display as plain "CdA". Always label as "Full-Throttle Resistance CdA Proxy".
     """
+    mass_kg = _finite(mass_kg)
+    long_accel_mps2 = _finite(long_accel_mps2)
+    q_air_pa = _finite(q_air_pa)
+    engine_force_n = _finite(engine_force_n)
+    crr = _finite(crr)
+    grade_rad = _finite(grade_rad)
     if mass_kg is None:
         return None, confidence_from_missing(
             ["mass_kg"], set(),
@@ -284,9 +316,4 @@ def full_throttle_resistance_cda_proxy_m2(
 
 def _float(d: dict[str, Any], key: str) -> float | None:
     v = d.get(key)
-    if v is None:
-        return None
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
+    return _finite(v)

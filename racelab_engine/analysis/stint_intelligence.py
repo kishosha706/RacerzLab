@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import statistics
 from typing import Iterable
 
@@ -25,7 +26,7 @@ STINT_BUCKET_COUNT = 12
 
 
 def _avg(values: Iterable[float]) -> float | None:
-    items = [value for value in values if value is not None]
+    items = [float(value) for value in values if value is not None and math.isfinite(float(value))]
     return sum(items) / len(items) if items else None
 
 
@@ -34,7 +35,7 @@ def _valid_laps(laps: Iterable[LapSummary]) -> list[LapSummary]:
 
 
 def _times(laps: Iterable[LapSummary]) -> list[float]:
-    return [lap.lap_time for lap in laps if lap.lap_time is not None]
+    return [float(lap.lap_time) for lap in laps if lap.lap_time is not None and math.isfinite(float(lap.lap_time))]
 
 
 def _best_rolling_average(laps: list[LapSummary], size: int) -> float | None:
@@ -153,7 +154,7 @@ def _third_averages(laps: list[LapSummary]) -> tuple[float | None, float | None,
 def _optional_number(lap: LapSummary, *names: str) -> float | None:
     for name in names:
         value = getattr(lap, name, None)
-        if isinstance(value, (int, float)):
+        if isinstance(value, (int, float)) and math.isfinite(float(value)):
             return float(value)
     return None
 

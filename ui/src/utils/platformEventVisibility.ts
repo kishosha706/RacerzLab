@@ -20,7 +20,7 @@ export function isPlatformEventVisibleInMode(
 
 export function isClearPlatformDiagnostic(event: PlatformEventItem): boolean {
   const scope = platformEventScope(event);
-  return (scope === "internal" || scope === "debug")
+  return scope === "internal"
     && event.severity === "info"
     && !event.is_visible_default;
 }
@@ -38,7 +38,7 @@ export function isMutedPlatformEvent(
 ): boolean {
   if (mode === "actionable") return false;
   const scope = platformEventScope(event);
-  return scope === "internal" || scope === "debug";
+  return scope === "internal";
 }
 
 export function platformEventScopeLabel(event: PlatformEventItem): string {
@@ -49,8 +49,6 @@ export function platformEventScopeLabel(event: PlatformEventItem): string {
       return "Watch";
     case "internal":
       return "Proxy / Internal";
-    case "debug":
-      return "Debug";
     default:
       return "Actionable";
   }

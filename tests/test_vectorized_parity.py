@@ -1005,7 +1005,6 @@ class TestParity:
         assert _event_symbol("REAR_PLATFORM_SCRAPE") == "R!"
         assert _event_symbol("REAR_PLATFORM_LOW") == "R"
         assert _event_symbol("MIN_REAR_RIDE_HEIGHT") == "Rmin"
-        assert _event_symbol("REAR_CONTACT_RISK") == "R?"
 
     def test_rear_metadata_has_no_missing_entries(self) -> None:
         """All rear scrape channels have CHANNEL_METADATA entries."""

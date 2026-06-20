@@ -329,7 +329,7 @@ export type TraceResponse = {
 
 export type PlatformEventSeverity = "info" | "watch" | "high" | "critical";
 export type PlatformEventConfidence = "low" | "medium" | "high";
-export type PlatformEventDisplayScope = "actionable" | "watch" | "internal" | "debug";
+export type PlatformEventDisplayScope = "actionable" | "watch" | "internal";
 export type PlatformEventVisibilityMode = "actionable" | "proxy" | "all";
 
 export type PlatformEventItem = {

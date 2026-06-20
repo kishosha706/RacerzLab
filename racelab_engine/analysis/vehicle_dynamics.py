@@ -18,6 +18,13 @@ from __future__ import annotations
 
 import math
 
+
+def _finite(value: float | None) -> float | None:
+    if value is None:
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
 from racelab_engine.analysis.estimate_confidence import (
     EstimateConfidence,
     confidence_from_missing,
@@ -38,6 +45,10 @@ def longitudinal_weight_transfer_n(
     Positive ax (acceleration) transfers weight to rear.
     Negative ax (braking) transfers weight to front.
     """
+    mass_kg = _finite(mass_kg)
+    long_accel_mps2 = _finite(long_accel_mps2)
+    cg_height_m = _finite(cg_height_m)
+    wheelbase_m = _finite(wheelbase_m)
     if mass_kg is None:
         return None, confidence_from_missing(
             ["mass_kg"], set(),
@@ -75,6 +86,10 @@ def lateral_weight_transfer_n(
 
     Positive ay (left turn) transfers weight to right side.
     """
+    mass_kg = _finite(mass_kg)
+    lat_accel_mps2 = _finite(lat_accel_mps2)
+    cg_height_m = _finite(cg_height_m)
+    track_width_m = _finite(track_width_m)
     if mass_kg is None:
         return None, confidence_from_missing(
             ["mass_kg"], set(),
@@ -185,6 +200,8 @@ def yaw_rate_expected_rad_s(
     curvature_1_per_m: float | None,
 ) -> tuple[float | None, EstimateConfidence]:
     """Expected yaw rate = speed * curvature."""
+    speed_mps = _finite(speed_mps)
+    curvature_1_per_m = _finite(curvature_1_per_m)
     if speed_mps is None:
         return None, confidence_from_missing(
             ["speed_mps"], set(),
@@ -205,6 +222,8 @@ def lat_accel_expected_mps2(
     curvature_1_per_m: float | None,
 ) -> tuple[float | None, EstimateConfidence]:
     """Expected lateral acceleration = speed^2 * curvature."""
+    speed_mps = _finite(speed_mps)
+    curvature_1_per_m = _finite(curvature_1_per_m)
     if speed_mps is None:
         return None, confidence_from_missing(
             ["speed_mps"], set(),
@@ -229,6 +248,8 @@ def yaw_error_rad_s(
     Positive = understeer (car not rotating enough).
     Negative = oversteer (car rotating more than expected).
     """
+    expected_yaw_rate_rad_s = _finite(expected_yaw_rate_rad_s)
+    actual_yaw_rate_rad_s = _finite(actual_yaw_rate_rad_s)
     if expected_yaw_rate_rad_s is None or actual_yaw_rate_rad_s is None:
         return None, confidence_from_missing(
             ["expected_yaw_rate_rad_s", "actual_yaw_rate_rad_s"], set(),
@@ -270,6 +291,8 @@ def dynamic_grade_rad(
     ESTIMATE — grade is inferred, not measured. Low confidence during
     braking, wheelspin, high yaw, or low speed.
     """
+    long_accel_mps2 = _finite(long_accel_mps2)
+    speed_rate_mps2 = _finite(speed_rate_mps2)
     if long_accel_mps2 is None:
         return None, confidence_from_missing(
             ["long_accel_mps2"], set(),
@@ -310,6 +333,8 @@ def grade_force_proxy_n(
 
     ESTIMATE — grade is inferred, not measured.
     """
+    mass_kg = _finite(mass_kg)
+    grade_rad = _finite(grade_rad)
     if mass_kg is None:
         return None, confidence_from_missing(
             ["mass_kg"], set(),
@@ -338,6 +363,8 @@ def grade_corrected_long_accel_mps2(
     When grade is positive (uphill), the sensor reads extra acceleration
     from gravity. Subtracting g*sin(grade) gives the true car acceleration.
     """
+    long_accel_mps2 = _finite(long_accel_mps2)
+    grade_rad = _finite(grade_rad)
     if long_accel_mps2 is None:
         return None, confidence_from_missing(
             ["long_accel_mps2"], set(),
@@ -370,6 +397,8 @@ def ackermann_steering_expected_rad(
 
     ESTIMATE — assumes bicycle model, no steering ratio compensation.
     """
+    wheelbase_m = _finite(wheelbase_m)
+    curvature_1_per_m = _finite(curvature_1_per_m)
     if wheelbase_m is None or wheelbase_m <= 0:
         return None, confidence_from_missing(
             ["wheelbase_m"], set(),
@@ -405,6 +434,8 @@ def ackermann_steering_error_deg(
     Positive = more steering than Ackermann predicts (understeer or extra input).
     Negative = less steering than Ackermann predicts (oversteer or reduced input).
     """
+    actual_steering_deg = _finite(actual_steering_deg)
+    expected_steering_deg = _finite(expected_steering_deg)
     if actual_steering_deg is None:
         return None, confidence_from_missing(
             ["actual_steering_deg"], set(),
@@ -447,6 +478,9 @@ def brake_energy_j(
     exit_speed_mps: float | None,
 ) -> tuple[float | None, EstimateConfidence]:
     """Brake energy = 0.5 * m * (v_entry^2 - v_exit^2)"""
+    mass_kg = _finite(mass_kg)
+    entry_speed_mps = _finite(entry_speed_mps)
+    exit_speed_mps = _finite(exit_speed_mps)
     if mass_kg is None:
         return None, confidence_from_missing(
             ["mass_kg"], set(),
@@ -471,6 +505,8 @@ def brake_power_w(
     brake_duration_s: float | None,
 ) -> tuple[float | None, EstimateConfidence]:
     """Brake power = energy / duration"""
+    brake_energy_j = _finite(brake_energy_j)
+    brake_duration_s = _finite(brake_duration_s)
     if brake_energy_j is None:
         return None, confidence_from_missing(
             ["brake_energy_j"], set(),
@@ -492,6 +528,9 @@ def accel_power_w(
     speed_mps: float | None,
 ) -> tuple[float | None, EstimateConfidence]:
     """Acceleration power = m * ax * v"""
+    mass_kg = _finite(mass_kg)
+    long_accel_mps2 = _finite(long_accel_mps2)
+    speed_mps = _finite(speed_mps)
     if mass_kg is None:
         return None, confidence_from_missing(
             ["mass_kg"], set(),
@@ -514,6 +553,8 @@ def drag_power_w(
     speed_mps: float | None,
 ) -> tuple[float | None, EstimateConfidence]:
     """Drag power = F_drag * v"""
+    drag_force_n = _finite(drag_force_n)
+    speed_mps = _finite(speed_mps)
     if drag_force_n is None:
         return None, confidence_from_missing(
             ["drag_force_n"], set(),
@@ -539,6 +580,10 @@ def wheel_power_proxy_w(
 
     Missing components are treated as zero (lower confidence).
     """
+    accel_power_w = _finite(accel_power_w)
+    drag_power_w = _finite(drag_power_w)
+    rolling_power_w = _finite(rolling_power_w)
+    grade_power_w = _finite(grade_power_w)
     components = [p for p in [accel_power_w, drag_power_w, rolling_power_w, grade_power_w] if p is not None]
     if not components:
         return None, confidence_from_missing(

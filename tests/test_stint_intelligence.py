@@ -211,6 +211,34 @@ def test_insufficient_laps_marked_unavailable() -> None:
     assert any("Import or select a longer clean run" in warning for warning in response.warnings)
 
 
+def test_nan_and_infinite_lap_times_are_excluded_without_poisoning_averages() -> None:
+    laps = _laps(12)
+    laps[2] = _lap(3, float("nan"))
+    laps[6] = _lap(7, float("inf"))
+
+    response = build_stint_response(laps)
+    full = response.stints[0]
+
+    assert full.valid_lap_count == 10
+    assert full.avg_lap_time is not None
+    assert full.avg_lap_time == full.avg_lap_time
+    assert full.best_lap_time != 0
+    assert any("excluded" in warning.lower() for warning in full.warnings)
+
+
+def test_all_invalid_laps_return_limited_state_without_crash() -> None:
+    response = build_stint_response([
+        _lap(1, 50.0, useful=False, tags=["OUT_LAP"]),
+        _lap(2, float("nan")),
+        _lap(3, 51.0, useful=False, tags=["PIT_ROAD"]),
+    ])
+
+    assert response.stints == []
+    assert response.run_summary is not None
+    assert response.run_summary.data_status == "Limited"
+    assert response.warnings
+
+
 def test_falloff_classification_and_limited_trends_are_truthful() -> None:
     laps = [_lap(i, 50.0 + i * 0.08) for i in range(1, 25)]
 

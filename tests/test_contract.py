@@ -379,7 +379,6 @@ BACKEND_PLATFORM_EVENT_TYPES: set[str] = {
     "MIN_REAR_RIDE_HEIGHT",
     "REAR_PLATFORM_LOW",
     "REAR_PLATFORM_SCRAPE",
-    "REAR_CONTACT_RISK",
     "WHOLE_CAR_BOTTOMING_RISK",
 }
 
@@ -403,7 +402,7 @@ class TestEventTypeCoverage:
         """Every backend platform event type should be classifiable by the frontend."""
         # This test verifies the manifest exists.
         # The actual mapping is in trackMapFilters.ts classifyOverlayLayer().
-        assert len(BACKEND_PLATFORM_EVENT_TYPES) >= 12, "Expected at least 12 platform event types"
+        assert len(BACKEND_PLATFORM_EVENT_TYPES) >= 11, "Expected at least 11 platform event types"
         assert "MIN_SPLITTER" in BACKEND_PLATFORM_EVENT_TYPES
         assert "WHOLE_CAR_BOTTOMING_RISK" in BACKEND_PLATFORM_EVENT_TYPES
 

@@ -77,7 +77,7 @@ def test_proxy_internal_mode_renders_internal_events_muted() -> None:
     assert "opacity: event.muted ? 0.04 : 0.08" in chart
 
 
-def test_all_mode_renders_debug_events_if_present() -> None:
+def test_all_mode_keeps_internal_events_available_when_requested() -> None:
     visibility = _read("ui/src/utils/platformEventVisibility.ts")
     chart = _read("ui/src/utils/platformChartAnnotations.ts")
 

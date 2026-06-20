@@ -78,3 +78,36 @@ class TestBuildBestTheoretical:
         assert result.segments_used[0]["lap_number"] == 3
 
 
+def test_low_confidence_and_missing_speed_segments_are_excluded_without_fake_time() -> None:
+    segments = {
+        1: [
+            SegmentSummary(
+                segment_id="low-conf",
+                run_id="run",
+                lap_number=1,
+                segment_name="0-5",
+                pct_start=0.0,
+                pct_end=5.0,
+                avg_speed_mph=180.0,
+                confidence_score=0.2,
+            ),
+            SegmentSummary(
+                segment_id="missing-speed",
+                run_id="run",
+                lap_number=1,
+                segment_name="5-10",
+                pct_start=5.0,
+                pct_end=10.0,
+                avg_speed_mph=None,
+                confidence_score=0.9,
+            ),
+        ]
+    }
+
+    result = build_best_theoretical(segments, {1: ["SOLO_CLEAN"]}, {1: 50.0}, total_lap_distance_m=1000.0)
+
+    assert result.is_available is False
+    assert result.best_theoretical_lap_time_s is None
+    assert result.warnings == ["No valid segments found across available laps."]
+
+

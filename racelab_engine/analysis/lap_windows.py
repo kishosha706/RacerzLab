@@ -4,6 +4,7 @@ Lap window analysis: fastest individual laps, best consecutive windows, degradat
 
 from __future__ import annotations
 
+import math
 import statistics
 from typing import Any
 
@@ -35,7 +36,7 @@ def _is_lap_valid_for_ranking(lap: LapSummary) -> tuple[bool, str | None]:
         return False, "Wreck or spin"
     if "INVALID_SPEED_EVENT" in tags:
         return False, "Invalid speed event"
-    if lap.lap_time is None or lap.lap_time <= 0:
+    if lap.lap_time is None or not math.isfinite(float(lap.lap_time)) or lap.lap_time <= 0:
         return False, "No lap time"
     return True, None
 

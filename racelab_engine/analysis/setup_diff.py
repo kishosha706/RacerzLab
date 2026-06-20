@@ -31,7 +31,15 @@ def diff_setups(baseline_setup: Any, test_setup: Any) -> list[SetupChange]:
             return None
         if hasattr(obj, key):
             return getattr(obj, key)
-        return obj.get(key) if isinstance(obj, dict) else None
+        if not isinstance(obj, dict):
+            return None
+        if key in obj:
+            return obj.get(key)
+        for value in obj.values():
+            nested_value = _get(value, key)
+            if nested_value is not None:
+                return nested_value
+        return None
 
     for key, (group, label) in SETUP_GROUPS.items():
         bl = _get(baseline_setup, key)

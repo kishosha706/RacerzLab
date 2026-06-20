@@ -39,3 +39,31 @@ def test_pace_quality_result_contains_no_draft_component() -> None:
 def test_classification_relationship_still_works() -> None:
     label = classify_pace_trust_relationship(80, 30, 50, [])
     assert "Fast but not trustworthy" in label
+
+
+def test_pace_quality_caps_low_valid_ratio_and_keeps_deductions_deterministic() -> None:
+    result = compute_pace_quality_score(
+        window_size=10,
+        valid_lap_count=5,
+        classification_tags=["SOLO_CLEAN"],
+        avg_lap_time=50.0,
+        reference_lap_time=50.0,
+    )
+
+    assert result.evidence_confidence_score <= 35.0
+    assert any("60%" in warning for warning in result.warnings)
+    assert any(cap["reason"] == "Fewer than 60% valid laps" for cap in result.caps)
+
+
+def test_wreck_tag_caps_pace_and_evidence() -> None:
+    result = compute_pace_quality_score(
+        window_size=12,
+        valid_lap_count=12,
+        classification_tags=["WRECK_OR_SPIN"],
+        avg_lap_time=50.0,
+        reference_lap_time=49.9,
+    )
+
+    assert result.pace_quality_score <= 20.0
+    assert result.evidence_confidence_score <= 10.0
+    assert result.setup_usefulness_score <= 14.0

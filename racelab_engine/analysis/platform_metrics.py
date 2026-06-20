@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from racelab_engine.analysis.constants import (
     SPLITTER_CRITICAL_MM,
     SPLITTER_HIGH_MM,
@@ -10,6 +12,8 @@ from racelab_engine.analysis.constants import (
 
 def classify_splitter_height_mm(splitter_height_mm: float | None) -> str:
     if splitter_height_mm is None:
+        return "unavailable"
+    if not math.isfinite(float(splitter_height_mm)):
         return "unavailable"
     if splitter_height_mm <= SPLITTER_SCRAPE_MM:
         return "scrape"

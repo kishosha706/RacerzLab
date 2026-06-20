@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Any, Mapping
 
 from racelab_engine.analysis.constants import FORCE_PROXY_WARNING
@@ -29,9 +30,21 @@ class ProxyEstimate:
 
 
 def dynamic_pressure_pa(speed_mps: float | None, air_density_kg_m3: float | None) -> float | None:
+    speed_mps = _finite(speed_mps)
+    air_density_kg_m3 = _finite(air_density_kg_m3)
     if speed_mps is None or air_density_kg_m3 is None:
         return None
     return 0.5 * float(air_density_kg_m3) * float(speed_mps) * float(speed_mps)
+
+
+def _finite(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 def _get_float(source: Any, key: str) -> float | None:
@@ -41,10 +54,7 @@ def _get_float(source: Any, key: str) -> float | None:
         value = source.get(key)
     else:
         value = getattr(source, key, None)
-    try:
-        return None if value is None else float(value)
-    except (TypeError, ValueError):
-        return None
+    return _finite(value)
 
 
 def spring_load_delta_proxy_n(
@@ -52,6 +62,9 @@ def spring_load_delta_proxy_n(
     baseline_height_mm: float | None,
     spring_rate_n_per_mm: float | None,
 ) -> float | None:
+    current_height_mm = _finite(current_height_mm)
+    baseline_height_mm = _finite(baseline_height_mm)
+    spring_rate_n_per_mm = _finite(spring_rate_n_per_mm)
     if current_height_mm is None or baseline_height_mm is None or spring_rate_n_per_mm is None:
         return None
     compression_mm = baseline_height_mm - current_height_mm

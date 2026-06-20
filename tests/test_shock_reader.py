@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from racelab_engine.analysis.shock_reader import build_shock_reader_response
+from racelab_engine.analysis.shock_reader import build_shock_reader_response, compute_corner_read
 from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.services.import_service import write_telemetry_cache
 
@@ -225,3 +225,34 @@ def test_no_recommendation_stacks_multiple_changes(tmp_path: Path) -> None:
     _write(tmp_path, ([2.4] * 60) + ([-2.1] * 30) + ([0.2] * 10), contact=True, chatter=True)
     response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path)
     assert len(response.recommendations) <= 1
+
+
+def test_corner_read_ignores_nan_and_infinity_without_fake_samples() -> None:
+    read = compute_corner_read("LF", [float("nan"), float("inf"), -float("inf"), 0.2] * 10)
+
+    assert read.pattern == "insufficient_evidence"
+    assert read.sample_count == 10
+    assert read.rms_in_s is None
+
+
+def test_boundary_zero_falls_back_to_minimum_positive_gate() -> None:
+    read = compute_corner_read("LF", [-0.02, -0.005, 0.0, 0.005, 0.02] * 8, boundary_in_s=0.0)
+
+    assert read.sample_count == 40
+    assert read.rebound_hi_pct > 0
+    assert read.bump_hi_pct > 0
+
+
+def test_invalid_boundary_input_uses_default_boundary_in_response(tmp_path: Path) -> None:
+    _write(tmp_path, [-0.8, -0.4, 0.2, 0.7] * 30)
+
+    response = build_shock_reader_response(
+        "run-1",
+        lap=1,
+        boundary_in_s=float("nan"),
+        setup_snapshot=_setup(),
+        data_dir=tmp_path,
+    )
+
+    assert response.boundary_in_s == 1.0
+    assert response.corners

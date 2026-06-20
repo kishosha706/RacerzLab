@@ -440,7 +440,6 @@ EVENT_LABELS = [
     "PLATFORM_SCRAPE",
     "REAR_PLATFORM_LOW",
     "REAR_PLATFORM_SCRAPE",
-    "REAR_CONTACT_RISK",
     "WHOLE_CAR_BOTTOMING_RISK",
     "FULL_THROTTLE_SPEED_LOSS",
     "STEERING_SCRUB",
@@ -1748,7 +1747,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "formula": "piecewise from rear_min_ride_height_mm",
         "dependencies": ["rear_min_ride_height_mm"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
-        "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE", "REAR_CONTACT_RISK"],
+        "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
         "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
     },
     "rear_platform_contact_risk": {
@@ -1757,7 +1756,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "formula": "rear_scrape_risk_score",
         "dependencies": ["rear_scrape_risk_score"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
-        "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE", "REAR_CONTACT_RISK"],
+        "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
         "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
     },
     "rear_scrape_side": {

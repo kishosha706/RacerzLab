@@ -10,17 +10,28 @@ MM_TO_IN = 1 / 25.4
 EARTH_RADIUS_M = 6_371_000.0
 
 
+def _finite(value: float | int | None) -> float | None:
+    if value is None:
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
 def mps_to_mph(value: float | int | None) -> float | None:
-    return None if value is None else float(value) * MPS_TO_MPH
+    number = _finite(value)
+    return None if number is None else number * MPS_TO_MPH
 
 
 def meters_to_millimeters(value: float | int | None) -> float | None:
-    return None if value is None else float(value) * 1000.0
+    number = _finite(value)
+    return None if number is None else number * 1000.0
 
 
 def radians_to_degrees(value: float | int | None) -> float | None:
-    return None if value is None else float(value) * 180.0 / math.pi
+    number = _finite(value)
+    return None if number is None else number * 180.0 / math.pi
 
 
 def input_01_to_percent(value: float | int | None) -> float | None:
-    return None if value is None else float(value) * 100.0
+    number = _finite(value)
+    return None if number is None else number * 100.0

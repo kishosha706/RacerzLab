@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from racelab_engine.analysis.comparison import (
     ChannelDeltaStats, Corner, CornerDelta, Direction,
     PlatformComparison, TireComparison, ShockComparison,
@@ -7,6 +9,10 @@ from racelab_engine.analysis.comparison import (
     build_lap_grid, interpolate_run_to_grid,
 )
 from racelab_engine.analysis.constants import WCI_WEIGHT_PROFILES, logistic_score
+
+
+def _finite_values(values: list[float | None]) -> list[float]:
+    return [float(v) for v in values if v is not None and math.isfinite(float(v))]
 
 
 def _compute_direction(delta: float | None, higher_is: str) -> Direction | None:
@@ -25,8 +31,8 @@ def aggregate_channel_stats(
     channel: str, label: str | None = None,
     unit: str = "", higher_is: str = "better",
 ) -> ChannelDeltaStats:
-    bl = [v for v in (bl_grid.get(channel) or []) if v is not None]
-    t = [v for v in (t_grid.get(channel) or []) if v is not None]
+    bl = _finite_values(bl_grid.get(channel) or [])
+    t = _finite_values(t_grid.get(channel) or [])
     bl_avg = sum(bl) / len(bl) if bl else None
     t_avg = sum(t) / len(t) if t else None
     delta = (t_avg - bl_avg) if bl_avg is not None and t_avg is not None else None

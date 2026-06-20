@@ -15,6 +15,13 @@ from __future__ import annotations
 
 import math
 
+
+def _finite(value: float | None) -> float | None:
+    if value is None:
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
 from racelab_engine.analysis.estimate_confidence import (
     EstimateConfidence,
     confidence_from_missing,
@@ -30,6 +37,8 @@ def vehicle_sideslip_beta_rad(
     vy_mps: float | None,
 ) -> tuple[float | None, EstimateConfidence]:
     """Vehicle sideslip angle beta = atan2(v_y, v_x)."""
+    vx_mps = _finite(vx_mps)
+    vy_mps = _finite(vy_mps)
     if vx_mps is None or vy_mps is None:
         return None, confidence_from_missing(
             ["vx_mps", "vy_mps"], set(),
@@ -53,6 +62,11 @@ def front_slip_angle_rad(
     front_axle_to_cg_m: float | None,
 ) -> tuple[float | None, EstimateConfidence]:
     """Front slip angle alpha_f = steering - atan2(v_y + a * r, v_x)."""
+    steering_rad = _finite(steering_rad)
+    vx_mps = _finite(vx_mps)
+    vy_mps = _finite(vy_mps)
+    yaw_rate_rad_s = _finite(yaw_rate_rad_s)
+    front_axle_to_cg_m = _finite(front_axle_to_cg_m)
     if steering_rad is None:
         return None, confidence_from_missing(
             ["steering_rad"], set(),
@@ -91,6 +105,10 @@ def rear_slip_angle_rad(
     rear_axle_to_cg_m: float | None,
 ) -> tuple[float | None, EstimateConfidence]:
     """Rear slip angle alpha_r = -atan2(v_y - b * r, v_x)."""
+    vx_mps = _finite(vx_mps)
+    vy_mps = _finite(vy_mps)
+    yaw_rate_rad_s = _finite(yaw_rate_rad_s)
+    rear_axle_to_cg_m = _finite(rear_axle_to_cg_m)
     if vx_mps is None or vy_mps is None:
         return None, confidence_from_missing(
             ["vx_mps", "vy_mps"], set(),
@@ -126,6 +144,8 @@ def slip_angle_balance_rad(
     Positive = more front slip = understeer tendency.
     Negative = more rear slip = oversteer tendency.
     """
+    front_alpha_rad = _finite(front_alpha_rad)
+    rear_alpha_rad = _finite(rear_alpha_rad)
     if front_alpha_rad is None or rear_alpha_rad is None:
         return None, confidence_from_missing(
             ["front_alpha_rad", "rear_alpha_rad"], set(),
@@ -145,6 +165,9 @@ def understeer_gradient_proxy_deg_per_g(
 
     Positive = understeer. Near zero = neutral. Negative = oversteer.
     """
+    front_alpha_deg = _finite(front_alpha_deg)
+    rear_alpha_deg = _finite(rear_alpha_deg)
+    lateral_accel_g = _finite(lateral_accel_g)
     if front_alpha_deg is None or rear_alpha_deg is None:
         return None, confidence_from_missing(
             ["front_alpha_deg", "rear_alpha_deg"], set(),
@@ -174,6 +197,10 @@ def tire_utilization_total_proxy(
 
     where Fx = m * ax, Fy = m * ay.
     """
+    mass_kg = _finite(mass_kg)
+    long_accel_mps2 = _finite(long_accel_mps2)
+    lat_accel_mps2 = _finite(lat_accel_mps2)
+    normal_load_n = _finite(normal_load_n)
     if mass_kg is None:
         return None, confidence_from_missing(
             ["mass_kg"], set(),
@@ -206,7 +233,7 @@ def surface_temp_avg(
     outer: float | None,
 ) -> float | None:
     """Average surface temperature across the tread."""
-    temps = [t for t in [inner, middle, outer] if t is not None]
+    temps = [t for raw in [inner, middle, outer] if (t := _finite(raw)) is not None]
     return sum(temps) / len(temps) if temps else None
 
 
@@ -216,7 +243,7 @@ def carcass_temp_avg(
     outer: float | None,
 ) -> float | None:
     """Average carcass (internal) temperature."""
-    temps = [t for t in [inner, middle, outer] if t is not None]
+    temps = [t for raw in [inner, middle, outer] if (t := _finite(raw)) is not None]
     return sum(temps) / len(temps) if temps else None
 
 
@@ -228,6 +255,8 @@ def scrub_heat_index(
 
     Large positive = surface much hotter than carcass = sliding/scrubbing.
     """
+    surface_avg = _finite(surface_avg)
+    carcass_avg = _finite(carcass_avg)
     if surface_avg is None or carcass_avg is None:
         return None, confidence_from_missing(
             ["surface_avg", "carcass_avg"], set(),
@@ -252,6 +281,9 @@ def thermal_origin_label(
     - edges hotter than middle → "pressure_low_or_slip"
     - missing carcass → "unavailable"
     """
+    surface_avg = _finite(surface_avg)
+    carcass_avg = _finite(carcass_avg)
+    baseline_carcass = _finite(baseline_carcass)
     if surface_avg is None:
         return "unavailable", confidence_from_missing(
             ["surface_avg"], set(),
@@ -289,6 +321,8 @@ def wheel_speed_bias_mps(
     Positive = wheel spinning faster than vehicle (acceleration slip).
     Negative = wheel slower than vehicle (braking slip).
     """
+    wheel_speed_mps = _finite(wheel_speed_mps)
+    vehicle_speed_mps = _finite(vehicle_speed_mps)
     if wheel_speed_mps is None or vehicle_speed_mps is None:
         return None, confidence_from_missing(
             ["wheel_speed_mps", "vehicle_speed_mps"], set(),
