@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "vite build",
+    "build:desktop": "npm run build && powershell -ExecutionPolicy Bypass -File ../scripts/build_backend_sidecar.ps1",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "tauri": "tauri",

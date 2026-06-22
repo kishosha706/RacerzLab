@@ -85,14 +85,49 @@ def test_mt2_json_path_import_passes_path_object(monkeypatch: pytest.MonkeyPatch
 
 
 def test_backend_scripts_bind_to_loopback_only() -> None:
-    for relative_path in ("scripts/start_api.ps1", "scripts/start_desktop.ps1", "package.json"):
+    for relative_path in ("scripts/start_api.ps1", "scripts/start_desktop.ps1", "package.json", "api/server.py", "ui/src-tauri/src/lib.rs"):
         text = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
         assert "0.0.0.0" not in text
 
     start_api = (PROJECT_ROOT / "scripts/start_api.ps1").read_text(encoding="utf-8")
     start_desktop = (PROJECT_ROOT / "scripts/start_desktop.ps1").read_text(encoding="utf-8")
+    server = (PROJECT_ROOT / "api/server.py").read_text(encoding="utf-8")
+    shell = (PROJECT_ROOT / "ui/src-tauri/src/lib.rs").read_text(encoding="utf-8")
     assert "--host 127.0.0.1" in start_api
     assert '"127.0.0.1"' in start_desktop
+    assert 'HOST = "127.0.0.1"' in server
+    assert 'const BACKEND_HOST: &str = "127.0.0.1";' in shell
+
+
+def test_packaged_backend_entrypoint_is_production_safe() -> None:
+    server = (PROJECT_ROOT / "api/server.py").read_text(encoding="utf-8")
+    script = (PROJECT_ROOT / "scripts/build_backend_sidecar.ps1").read_text(encoding="utf-8")
+    pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8").lower()
+
+    assert "reload=False" in server
+    assert "--reload" not in server
+    assert "pyinstaller" in pyproject
+    assert "--noconsole" in script
+    assert "--onefile" in script
+    assert "racerzlab-backend" in script
+    assert "ui\\src-tauri\\bin" in script
+
+
+def test_tauri_shell_starts_hidden_backend_sidecar_and_cleans_up() -> None:
+    shell = (PROJECT_ROOT / "ui/src-tauri/src/lib.rs").read_text(encoding="utf-8")
+
+    assert 'const BACKEND_EXE: &str = "racerzlab-backend.exe";' in shell
+    assert "CREATE_NO_WINDOW" in shell
+    assert ".stdout(Stdio::null())" in shell
+    assert ".stderr(Stdio::null())" in shell
+    assert "impl Drop for BackendProcess" in shell
+    assert "CloseRequested" in shell
+    assert ".state::<BackendProcess>().stop()" in shell
+    assert "terminate_backend_process" in shell
+    assert 'Command::new("taskkill")' in shell
+    assert '.arg("/T")' in shell
+    assert "child.kill()" in shell
+    assert "RACERZLAB_BACKEND_LOG" in shell
 
 
 def test_tauri_config_uses_local_dev_and_dist_assets() -> None:
@@ -104,7 +139,9 @@ def test_tauri_config_uses_local_dev_and_dist_assets() -> None:
     assert config["identifier"] == "com.racelab.garage"
     assert config["build"]["devUrl"] == "http://127.0.0.1:5173"
     assert config["build"]["frontendDist"] == "../dist"
+    assert config["build"]["beforeBuildCommand"] == "npm run build:desktop"
     assert config["app"]["windows"][0]["title"] == "RacerZLab"
+    assert "bin/racerzlab-backend.exe" in config["bundle"]["resources"]
 
     assert "allowlist" not in text
     assert '"all": true' not in text

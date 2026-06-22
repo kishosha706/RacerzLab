@@ -24,6 +24,53 @@ def test_failed_import_ui_shows_user_safe_recovery_copy() -> None:
     assert "No completed run was created." in app
 
 
+def test_frontend_waits_for_local_engine_health_before_sessions_load() -> None:
+    app = _read("ui/src/App.tsx")
+    client = _read("ui/src/api/client.ts")
+
+    assert "fetchHealth" in app
+    assert "engineStatus" in app
+    assert "Starting local RacerZLab engine..." in app
+    assert "Local engine failed to start." in app
+    assert "Please restart RacerZLab and send logs." in app
+    assert 'if (engineStatus === "starting")' in app
+    assert 'if (engineStatus === "failed")' in app
+    gated_block = app.split('if (engineStatus === "starting")', 1)[1].split('if (!sessionId)', 1)[0]
+    assert "StartupScreen" not in gated_block
+    assert "return <StartupScreen onSessionSelected={handleSessionSelected} />;" in app
+    assert 'requestJson<HealthResponse>("/api/health"' in client
+
+
+def test_packaged_startup_error_hides_dev_backend_command() -> None:
+    app = _read("ui/src/App.tsx")
+    startup = _read("ui/src/components/StartupScreen.tsx")
+
+    assert "isTauri" in app
+    assert "!desktop" in app
+    assert "isBrowser" in startup
+    assert "browser &&" in startup
+    assert "Start backend:" in startup
+    assert "python -m uvicorn api.main:app --reload" in startup
+    assert "Start backend:" not in app.split("{!desktop &&", 1)[0]
+
+
+def test_import_panel_hides_advanced_recent_folder_scan_and_manual_track_maps() -> None:
+    panel = _read("ui/src/components/ImportPanel.tsx")
+
+    assert "Choose Telemetry File" in panel
+    assert "Advanced" not in panel
+    assert "Import Debug" not in panel
+    assert "ImportDebugPanel" not in panel
+    assert "Recent Telemetry Files" not in panel
+    assert "Recent Track Maps" not in panel
+    assert "Scan Telemetry Folder" not in panel
+    assert "Review + Import Latest .ibt" not in panel
+    assert "Manage Track Maps" not in panel
+    assert "handleRecentClick" not in panel
+    assert "handleScanFolder" not in panel
+    assert "handleNativeMapPick" not in panel
+
+
 def test_duplicate_import_ui_surfaces_existing_run_updated() -> None:
     backend = _read("racelab_engine/services/import_service.py")
     route = _read("api/routes_imports.py")

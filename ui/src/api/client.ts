@@ -40,6 +40,12 @@ type JsonCacheEntry = {
   value: unknown;
 };
 
+export type HealthResponse = {
+  status: string;
+  app: string;
+  version: string;
+};
+
 const inflightGetRequests = new Map<string, Promise<unknown>>();
 const getResponseCache = new Map<string, JsonCacheEntry>();
 
@@ -185,6 +191,10 @@ async function requestJson<T>(path: string, init?: RequestInit, timeoutMs: numbe
   });
   inflightGetRequests.set(key, promise);
   return promise;
+}
+
+export function fetchHealth(): Promise<HealthResponse> {
+  return requestJson<HealthResponse>("/api/health", undefined, 2_000, "Health check");
 }
 
 /** Like requestJson but with a longer timeout for import operations. */

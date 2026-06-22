@@ -28,7 +28,11 @@ ui/build/
 
 # Tauri / Rust build outputs
 ui/src-tauri/target/
+ui/src-tauri/bin/
 target/
+
+# Local tester packaging outputs
+tester_builds/
 
 # Environment / secrets
 .env

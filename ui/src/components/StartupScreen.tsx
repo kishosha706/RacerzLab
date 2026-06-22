@@ -3,12 +3,14 @@ import { useCallback, useEffect, useState } from "react";
 import { createSession, deleteSession, fetchSessions } from "../api/client";
 import racerzlabBanner from "../assets/racerzlab-banner.png";
 import type { RaceLabSession, SessionSelectionSource } from "../types/session";
+import { isBrowser } from "../utils/env";
 
 type StartupScreenProps = {
   onSessionSelected: (sessionId: string, source: SessionSelectionSource) => void;
 };
 
 export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
+  const browser = isBrowser();
   const [sessions, setSessions] = useState<RaceLabSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -130,9 +132,11 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
           <p className="error-text" style={{ fontSize: 12, margin: 0 }}>
             <AlertTriangle size={12} /> {loadError}
           </p>
-          <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
-            Start backend: <code style={{ color: "#38bdf8", fontSize: 11 }}>python -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8010</code>
-          </p>
+          {browser && (
+            <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+              Start backend: <code style={{ color: "#38bdf8", fontSize: 11 }}>python -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8010</code>
+            </p>
+          )}
           <button className="trackmap-action-btn" onClick={loadSessions} style={{ marginTop: 8 }}>
             <RefreshCw size={12} /> Retry
           </button>

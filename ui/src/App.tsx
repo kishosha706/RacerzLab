@@ -5,6 +5,7 @@ import {
   fetchChannelSummary,
   fetchChannelsFull,
   fetchEvents,
+  fetchHealth,
   fetchLaps,
   fetchOverview,
   fetchPlatformEvents,
@@ -31,6 +32,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { TRACE_WORKBENCH_CHANNELS } from "./constants/workbenchChannels";
 import { OverviewTab } from "./tabs/OverviewTab";
 import { importDebug } from "./utils/importDebug";
+import { isTauri } from "./utils/env";
 import type {
   ChannelCatalogItem,
   PlatformEventItem,
@@ -62,6 +64,8 @@ const SetupTab = lazy(async () => {
 // ── cockpit shell ─────────────────────────────────────────────
 
 function CockpitShell() {
+  const desktop = isTauri();
+  const [engineStatus, setEngineStatus] = useState<"starting" | "ready" | "failed">("starting");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [currentSession, setCurrentSession] = useState<RaceLabSession | null>(null);
   const [sessionSelectionSource, setSessionSelectionSource] = useState<SessionSelectionSource | null>(null);
@@ -93,6 +97,32 @@ function CockpitShell() {
     selection.selectedWorkspace === "platform_trace"
     || selection.selectedWorkspace === "speed_delta"
     || selection.selectedWorkspace === "drag_scrub";
+
+  useEffect(() => {
+    let cancelled = false;
+    const deadline = Date.now() + 30_000;
+
+    const pollHealth = async () => {
+      while (!cancelled && Date.now() < deadline) {
+        try {
+          const health = await fetchHealth();
+          if (health.status === "ok") {
+            setEngineStatus("ready");
+            return;
+          }
+        } catch {
+          // The local engine may still be starting.
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+      }
+      if (!cancelled) setEngineStatus("failed");
+    };
+
+    void pollHealth();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const toCatalogShape = useCallback((channel: Partial<ChannelCatalogItem> & { name: string }): ChannelCatalogItem => ({
     name: channel.name,
@@ -428,6 +458,27 @@ function CockpitShell() {
     }
     return <OverviewTab overview={overview} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
   }, [currentSession, overview, platformEventVisibilityMode, platformEvents, selectedTraceLap, selection.selectedWorkspace, sessionRuns, sessionRunsLoading, sessionSelectionSource, trace]);
+
+  if (engineStatus === "starting") {
+    return <main className="boot-screen">Starting local RacerZLab engine...</main>;
+  }
+
+  if (engineStatus === "failed") {
+    return (
+      <main className="empty-state">
+        <section className="empty-panel">
+          <span className="eyebrow">RACERZLAB</span>
+          <h1>Local engine failed to start.</h1>
+          <p className="muted">Please restart RacerZLab and send logs.</p>
+          {!desktop && (
+            <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+              Development mode: start the backend with <code style={{ color: "#38bdf8", fontSize: 11 }}>python -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8010</code>
+            </p>
+          )}
+        </section>
+      </main>
+    );
+  }
 
   // ── no session yet → show startup screen ───────────────────
   if (!sessionId) {
