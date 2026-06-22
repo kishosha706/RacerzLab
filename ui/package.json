@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "vite build",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

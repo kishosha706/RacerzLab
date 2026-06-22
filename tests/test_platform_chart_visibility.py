@@ -172,21 +172,24 @@ def test_only_bottom_x_axis_shows_full_distance_labels() -> None:
 
 def test_platform_charts_use_per_panel_readouts_without_side_cursor() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
+    readout = _read("ui/src/components/PlatformChartPanelReadout.tsx")
     styles = _read("ui/src/styles.css")
 
     assert "Cursor Readout" not in platform
     assert 'className="cursor-panel"' not in platform
     assert "Crosshair" not in platform
     assert ".cursor-panel" not in styles
-    assert '<div className="balance-panel-readout-layer" aria-live="polite">' in platform
+    assert '<div className="balance-panel-readout-layer" aria-live="polite">' in readout
+    assert "<PlatformChartPanelReadout" in platform
     assert 'className="platform-layout balance-chart-layout"' in platform
     assert 'workbenchView === "balance" && (\n            <div className="balance-panel-readout-layer"' not in platform
-    assert "balancePanelReadouts.map" in platform
-    assert "panel.channels.map((channel)" in platform
-    assert "channel.readoutLabel" in platform
-    assert "fmtReadout(channel.cursorValue" in platform
-    assert "balance-panel-stat-readout" in platform
-    assert '<span className="balance-selected-context">Event {balanceReadoutEvent.title}</span>' in platform
+    assert "panels={balancePanelReadouts}" in platform
+    assert "panels.map" in readout
+    assert "panel.channels.map((channel)" in readout
+    assert "channel.readoutLabel" in readout
+    assert "fmtReadout(channel.cursorValue" in readout
+    assert "balance-panel-stat-readout" in readout
+    assert '<span className="balance-selected-context">Event {eventTitle}</span>' in readout
 
 
 def test_balance_default_removes_duplicate_ride_height_engineering_cards() -> None:
@@ -242,7 +245,7 @@ def test_tires_view_removes_prototype_full_lap_distribution_panel() -> None:
     assert 'label: "Diffuser"' not in visible_views
     assert 'icon: "DIF"' not in visible_views
     assert 'id: "diffuser"' not in visible_views
-    assert 'view === "aero_load" || view === "grade_pull" || view === "tires" || view === "diffuser"' in platform
+    assert 'view === "aero_load" || view === "grade_pull" || view === "tires" || view === "diffuser"' in subnav
     assert "CornerTireMap" not in platform
     assert "tireMapMode" not in platform
     assert "Tire map: Full-lap distribution" not in platform
@@ -350,8 +353,8 @@ def test_aero_and_grade_views_are_backend_only_not_visible_platform_tabs() -> No
     assert 'icon: "AER"' not in visible_views
     assert 'label: "Grade / Pull"' not in visible_views
     assert 'icon: "GRD"' not in visible_views
-    assert 'view === "aero_load" || view === "grade_pull" || view === "tires" || view === "diffuser"' in platform
-    assert 'return "balance";' in platform
+    assert 'view === "aero_load" || view === "grade_pull" || view === "tires" || view === "diffuser"' in subnav
+    assert 'return "balance";' in subnav
 
     for channel in [
         "aero_load_index",
@@ -376,13 +379,14 @@ def test_aero_and_grade_views_are_backend_only_not_visible_platform_tabs() -> No
 
 def test_balance_panel_readouts_replace_global_readout_strip() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
+    readout = _read("ui/src/components/PlatformChartPanelReadout.tsx")
     styles = _read("ui/src/styles.css")
 
     assert "balancePanelReadouts" in platform
     assert "hasExplicitReadoutContext" in platform
-    assert "balance-panel-readout-layer" in platform
-    assert "balance-panel-cursor-readout" in platform
-    assert "balance-panel-stat-readout" in platform
+    assert "balance-panel-readout-layer" in readout
+    assert "balance-panel-cursor-readout" in readout
+    assert "balance-panel-stat-readout" in readout
     assert 'className="platform-layout balance-chart-layout"' in platform
     assert "Cursor Readout" not in platform
     assert 'className="cursor-panel"' not in platform
@@ -395,6 +399,7 @@ def test_balance_panel_readouts_replace_global_readout_strip() -> None:
 
 def test_balance_panel_cursor_readouts_include_required_labels_and_colors() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
+    readout = _read("ui/src/components/PlatformChartPanelReadout.tsx")
 
     assert 'return "CFSRideHeight [in]";' in platform
     assert 'return "LF Ride Height [in]";' in platform
@@ -405,38 +410,39 @@ def test_balance_panel_cursor_readouts_include_required_labels_and_colors() -> N
     assert 'return "Rear Avg";' in platform
     assert 'return "Center Rake";' in platform
     assert 'return "Side Rake";' in platform
-    assert 'style={{ color: channel.color }}' in platform
-    assert "channel.readoutLabel" in platform
-    assert "fmtReadout(channel.cursorValue" in platform
+    assert 'style={{ color: channel.color }}' in readout
+    assert "channel.readoutLabel" in readout
+    assert "fmtReadout(channel.cursorValue" in readout
 
 
 def test_balance_panel_readout_prefers_hover_and_shows_no_cursor_helper() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
+    readout = _read("ui/src/components/PlatformChartPanelReadout.tsx")
 
     assert "const balanceReadoutIndex = playbackIndex ?? transientHoverIndex ?? lockedIndex ?? selectedContextIndex ?? cursorIndex;" in platform
     assert "const balanceReadoutSource = playbackIndex != null" in platform
     assert 'const balanceReadoutSourceLabel = balanceReadoutSource === "Locked"' in platform
     assert '"LOCKED \\u00b7 Esc unlocks hover"' in platform
-    assert 'title={balanceReadoutSource === "Locked" ? "Press Esc to unlock hover" : undefined}' in platform
-    assert 'aria-label={balanceReadoutSource === "Locked" ? "Locked cursor. Press Escape to unlock hover." : undefined}' in platform
+    assert 'title={readoutSource === "Locked" ? "Press Esc to unlock hover" : undefined}' in readout
+    assert 'aria-label={readoutSource === "Locked" ? "Locked cursor. Press Escape to unlock hover." : undefined}' in readout
     assert "balanceReadoutLocationSummary" in platform
     assert "formatDistanceFt(balanceReadoutDistance)" in platform
-    assert "panelIndex === 0 && lockedReadoutSummary" in platform
-    assert '<span className="balance-selected-context">{lockedReadoutSummary}</span>' in platform
-    assert "Cursor: hover or scrub" in platform
-    assert platform.index('className="trace-panel" ref={chartNode}') < platform.index('className="balance-panel-readout-layer"')
+    assert "panelIndex === 0 && lockedSummary" in readout
+    assert '<span className="balance-selected-context">{lockedSummary}</span>' in readout
+    assert "Cursor: hover or scrub" in readout
+    assert platform.index('className="trace-panel" ref={chartNode}') < platform.index("<PlatformChartPanelReadout")
 
 
 def test_balance_panel_stats_include_accessible_motec_icons() -> None:
-    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    readout = _read("ui/src/components/PlatformChartPanelReadout.tsx")
     styles = _read("ui/src/styles.css")
 
-    assert 'title="Lowest visible value" aria-label="Lowest visible value">▼' in platform
-    assert 'title="Highest visible value" aria-label="Highest visible value">▲' in platform
-    assert 'title="Average visible value" aria-label="Average visible value">◆' in platform
-    assert "balance-stat-low" in platform
-    assert "balance-stat-high" in platform
-    assert "balance-stat-avg" in platform
+    assert 'title="Lowest visible value" aria-label="Lowest visible value">▼' in readout
+    assert 'title="Highest visible value" aria-label="Highest visible value">▲' in readout
+    assert 'title="Average visible value" aria-label="Average visible value">◆' in readout
+    assert "balance-stat-low" in readout
+    assert "balance-stat-high" in readout
+    assert "balance-stat-avg" in readout
     assert ".balance-stat-low" in styles
     assert ".balance-stat-high" in styles
     assert ".balance-stat-avg" in styles
@@ -610,6 +616,7 @@ def test_balance_ride_height_series_preserve_raw_zoom_detail() -> None:
 
 def test_scrape_scrub_tab_is_chart_first_ride_height_vs_speed_loss() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
+    readout = _read("ui/src/components/PlatformChartPanelReadout.tsx")
     subnav = _read("ui/src/components/WorkbenchSubnav.tsx")
     channels = _read("ui/src/constants/workbenchChannels.ts")
     channel_meta = _read("ui/src/utils/channelMeta.ts")
@@ -669,12 +676,12 @@ def test_scrape_scrub_tab_is_chart_first_ride_height_vs_speed_loss() -> None:
     assert 'const channelValues = displaySeriesSamples(trace, channel.name);' in platform
     assert 'return displaySeriesSamples(trace, channel).some((value) => typeof value === "number" && Number.isFinite(value));' in platform
     assert "speedRateMps2: valueAt(trace, \"speed_rate_mps2\", selectedIndex)" in platform
-    assert "balancePanelReadouts.map" in platform
-    assert "panel.channels.map((channel)" in platform
-    assert "fmtReadout(channel.cursorValue" in platform
-    assert "fmtReadout(channel.low" in platform
-    assert "fmtReadout(channel.high" in platform
-    assert "fmtReadout(channel.avg" in platform
+    assert "panels={balancePanelReadouts}" in platform
+    assert "panel.channels.map((channel)" in readout
+    assert "fmtReadout(channel.cursorValue" in readout
+    assert "fmtReadout(channel.low" in readout
+    assert "fmtReadout(channel.high" in readout
+    assert "fmtReadout(channel.avg" in readout
     assert '"speed_mps", "speed_mph"' in channels
     assert 'speed_mps: { label: "Speed", unit: "m/s"' in channel_meta
     assert 'speed_rate_mps2: { label: "Speed Rate", unit: "m/s^2"' in channel_meta
@@ -691,11 +698,11 @@ def test_scrape_scrub_tab_is_chart_first_ride_height_vs_speed_loss() -> None:
 
 
 def test_balance_readout_uses_unavailable_for_missing_values_not_zero() -> None:
-    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    readout = _read("ui/src/components/PlatformChartPanelReadout.tsx")
 
-    assert "function fmtReadout" in platform
-    assert 'return "—";' in platform
-    assert 'return `${value.toFixed(digits)}${unit ? ` ${unit}` : ""}`;' in platform
+    assert "function fmtReadout" in readout
+    assert 'return "—";' in readout
+    assert 'return `${value.toFixed(digits)}${unit ? ` ${unit}` : ""}`;' in readout
 
 
 def test_balance_setup_context_is_collapsed_below_chart() -> None:

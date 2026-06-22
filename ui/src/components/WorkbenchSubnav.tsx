@@ -15,6 +15,12 @@ export const WORKBENCH_VIEWS: { id: WorkbenchView; label: string; icon: string }
   { id: "shocks", label: "Shocks", icon: "SHK" },
 ];
 
+export function visiblePlatformWorkbenchView(view: WorkbenchView): WorkbenchView {
+  if (view === "scrub_steering") return "rear_scrape";
+  if (view === "aero_load" || view === "grade_pull" || view === "tires" || view === "diffuser") return "balance";
+  return view;
+}
+
 type WorkbenchSubnavProps = {
   active: WorkbenchView;
   onChange: (view: WorkbenchView) => void;

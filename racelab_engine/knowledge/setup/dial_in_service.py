@@ -304,7 +304,7 @@ def _validation_summary(swings: list[DialInSwing]) -> str | None:
                 targets.append(target)
     if not targets:
         return None
-    return f"What to watch for: {', '.join(targets[:5])}."
+    return f"Validate with: {', '.join(targets[:5])}."
 
 
 def _readiness_sentence(readiness_label: str) -> str:
@@ -472,7 +472,7 @@ def build_dial_in_response(
         test_run_id=test_run_id if context.unavailable_reasons.get("compare_test") else None,
     )
     readiness_label = _readiness_label([item.readiness for item in selected], missing_hint=missing_hint)
-    next_step = "Test one swing at a time and compare like-for-like laps."
+    next_step = "Test one setup change at a time and compare like-for-like laps."
     if readiness_label == "Need cleaner data":
         next_step = "Data's noisy here. Try a cleaner run or narrow the complaint."
     if missing_hint:

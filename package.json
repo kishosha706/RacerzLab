@@ -8,6 +8,7 @@
     "test": "pytest",
     "ui": "npm --prefix ui run dev",
     "ui:build": "npm --prefix ui run build",
+    "typecheck:ui": "cd ui && npm run typecheck",
     "desktop": "powershell -ExecutionPolicy Bypass -File scripts/start_desktop.ps1",
     "tauri:dev": "npm --prefix ui run tauri:dev",
     "tauri:build": "npm --prefix ui run tauri:build"

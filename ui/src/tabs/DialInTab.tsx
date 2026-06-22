@@ -30,10 +30,10 @@ function dialInTone(label: string): "good" | "warn" | "neutral" {
 
 function swingKindLabel(strength: string, risk: string): string {
   const combined = `${strength} ${risk}`.toLowerCase();
-  if (combined.includes("package") || combined.includes("big") || combined.includes("high risk")) return "Big swing";
-  if (combined.includes("balance")) return "Balance swing";
-  if (combined.includes("fine")) return "Fine-tune";
-  return "Feel polish";
+  if (combined.includes("package") || combined.includes("big") || combined.includes("high risk")) return "Major setup change";
+  if (combined.includes("balance")) return "Balance change";
+  if (combined.includes("fine")) return "Fine adjustment";
+  return "Small setup change";
 }
 
 function formatTargetList(swing: DialInSwing): string {
@@ -42,7 +42,7 @@ function formatTargetList(swing: DialInSwing): string {
     ...(swing.watch_for_labels ?? swing.watch_for.map((value) => value.replace(/_/g, " "))),
   ];
   const targets = labels.filter((item, index, all) => item && all.indexOf(item) === index);
-  return targets.join(", ") || "Balance shift";
+  return targets.join(", ") || "the same corner phase";
 }
 
 function garageLeverLabel(swing: DialInSwing): string | null {
@@ -87,8 +87,8 @@ function SwingCard({ swing, compact = false }: { swing: DialInSwing; compact?: b
         <div>
           <span>{cleanLabel(swing.setup_area, "Setup area")}</span>
           <h3>{swingKindLabel(swing.strength_label, swing.risk_label)}: {swing.title}</h3>
-          <p className="dialin-change-this"><span>Change this:</span> {swing.change_this}</p>
-          <p className="dialin-garage-helper">Garage lever: {swing.garage_lever}</p>
+          <p className="dialin-change-this"><span>Make this setup change:</span> {swing.change_this}</p>
+          <p className="dialin-garage-helper">Garage control: {swing.garage_lever}</p>
           {helper && <p className="dialin-garage-note">{helper}</p>}
         </div>
         <div className="dialin-card-pills">
@@ -98,11 +98,11 @@ function SwingCard({ swing, compact = false }: { swing: DialInSwing; compact?: b
         </div>
       </header>
       <div className="dialin-action-grid">
-        <div><span>Goal</span><p>{swing.effect}</p></div>
-        <div><span>The Trade-off</span><p>{swing.counter_effect}</p></div>
-        <div><span>Your Next Test</span><p>{swing.one_change_test}</p></div>
+        <div><span>Expected effect</span><p>{swing.effect}</p></div>
+        <div><span>Trade-off</span><p>{swing.counter_effect}</p></div>
+        <div><span>Test exactly this</span><p>{swing.one_change_test}</p></div>
         <div>
-          <span>What to watch for</span>
+          <span>Validate with</span>
           <p>{formatTargetList(swing)}</p>
         </div>
       </div>
@@ -219,7 +219,7 @@ export function DialInTab({ overview }: DialInTabProps) {
           <span className="dialin-readonly">Read-only</span>
         </div>
         <p className="dialin-tab-subtitle">
-          Tell RacerZLab what the car is doing. It will give setup swings to test, one change at a time.
+          Tell RacerZLab what the car is doing. It will rank specific setup changes to test, one change at a time.
         </p>
         {!overview.setup_snapshot && (
           <div className="dialin-alert limited" role="status">
@@ -252,7 +252,7 @@ export function DialInTab({ overview }: DialInTabProps) {
 
         <div className="dialin-rule-note">
           <Crosshair size={13} />
-          <span>Pick one. Just one. Run clean laps and compare.</span>
+          <span>Pick one change. Just one. Run clean laps and compare.</span>
         </div>
       </div>
 
@@ -304,17 +304,17 @@ export function DialInTab({ overview }: DialInTabProps) {
           )}
 
           {!response.clarification.needed && response.top_swings.length === 0 && (
-            <div className="dialin-empty">I need stronger data before ranking setup swings.</div>
+            <div className="dialin-empty">I need stronger data before ranking setup changes.</div>
           )}
 
           {!response.clarification.needed && response.top_swings.length > 0 && (
             <>
               <div className="dialin-section-header">
                 <div>
-                  <span>Possible swings</span>
-                  <h3>Best first swings</h3>
+                  <span>Ranked changes</span>
+                  <h3>Best first setup changes</h3>
                 </div>
-                <p>These are possible swings. Do not stack these changes. Pick one, test, then compare.</p>
+                <p>These are setup changes to test. Do not stack them. Pick one, test, then compare.</p>
               </div>
               <div className="dialin-swings">
                 {primarySwings.map((swing) => (
@@ -327,9 +327,9 @@ export function DialInTab({ overview }: DialInTabProps) {
                   <div className="dialin-section-header compact">
                     <div>
                       <span>Lower priority</span>
-                      <h3>Other possible swings</h3>
+                      <h3>Other setup changes</h3>
                     </div>
-                    <p>Still test one at a time. Use these when the first read does not match the driver feel.</p>
+                    <p>Use these only if the first change does not match the driver feel. Test one at a time.</p>
                   </div>
                   <div className="dialin-other-grid">
                     {secondarySwings.map((swing) => (
@@ -343,7 +343,7 @@ export function DialInTab({ overview }: DialInTabProps) {
                         type="button"
                         onClick={() => setShownSwingCount((count) => Math.min(count + SHOW_MORE_STEP, response.top_swings.length))}
                       >
-                        Show {nextRevealCount} more possible swings
+                        Show {nextRevealCount} more setup changes
                       </button>
                     </div>
                   )}

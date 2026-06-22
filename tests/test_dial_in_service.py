@@ -264,6 +264,18 @@ def test_driver_response_uses_data_profile_language(tmp_path: Path, monkeypatch:
     assert "confidence score" not in combined
 
 
+def test_driver_response_uses_direct_setup_change_vocabulary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, channels={"throttle_pct": 100.0, "yaw_rate": 1.2})
+    response = build_dial_in_response("run-1", "loose off")
+
+    assert response.next_step == "Test one setup change at a time and compare like-for-like laps."
+    assert response.validation_summary is not None
+    assert response.validation_summary.startswith("Validate with: ")
+    assert "Test one swing" not in response.next_step
+    assert "What to watch for" not in response.validation_summary
+
+
 def test_next_gen_response_never_includes_legacy_disabled_areas(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_env(monkeypatch, tmp_path)
     _seed_run(

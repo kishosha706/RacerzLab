@@ -6,9 +6,10 @@ import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
 import { ShockHistogram } from "../components/ShockHistogram";
 import type { ShockSetupField } from "../components/ShockHistogram";
-import { WorkbenchSubnav } from "../components/WorkbenchSubnav";
+import { WorkbenchSubnav, visiblePlatformWorkbenchView } from "../components/WorkbenchSubnav";
 import type { WorkbenchView } from "../components/WorkbenchSubnav";
 import { ProxyBadge } from "../components/ProxyBadge";
+import { PlatformChartPanelReadout } from "../components/PlatformChartPanelReadout";
 import { fetchPlatformEvents, fetchShockReader, fetchTrace } from "../api/client";
 import { TRACE_WORKBENCH_CHANNELS } from "../constants/workbenchChannels";
 import { isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
@@ -107,12 +108,6 @@ function setupCornerNumber(setup: SetupSnapshot | null | undefined, corner: Shoc
   if (typeof cornerValues !== "object" || cornerValues == null) return null;
   const value = (cornerValues as Record<string, unknown>)[key];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function visiblePlatformWorkbenchView(view: WorkbenchView): WorkbenchView {
-  if (view === "scrub_steering") return "rear_scrape";
-  if (view === "aero_load" || view === "grade_pull" || view === "tires" || view === "diffuser") return "balance";
-  return view;
 }
 
 function formatSetupClicks(value: number | null): string {
@@ -553,11 +548,6 @@ function formatYAxisTick(value: number, unit?: string): string {
     return value.toFixed(digits);
   }
   return Math.abs(value) >= 100 ? Math.round(value).toLocaleString() : value.toFixed(1);
-}
-
-function fmtReadout(value: number | null | undefined, digits = 2, unit?: string): string {
-  if (value == null || !Number.isFinite(value)) return "—";
-  return `${value.toFixed(digits)}${unit ? ` ${unit}` : ""}`;
 }
 
 function rawTraceStatus(trace: TraceResponse): string {
@@ -2852,63 +2842,16 @@ function PlatformTraceWorkbench({
           <div className="trace-panel" ref={chartNode} />
           <div className="trace-cursor-line" ref={cursorLineRef} hidden />
           <div className="trace-drag-zoom-band" ref={dragZoomBandRef} hidden />
-          <div className="balance-panel-readout-layer" aria-live="polite">
-              {balancePanelReadouts.map((panel, panelIndex) => (
-                <div
-                  className="balance-panel-readout"
-                  key={panel.row.label}
-                  style={{
-                    top: panel.layout.top,
-                    height: panel.layout.height,
-                    left: balanceReadoutGridLeft + 8,
-                  }}
-                >
-                  <div className="balance-panel-cursor-readout">
-                    {hasExplicitReadoutContext ? (
-                      <>
-                        <span
-                          className={`cursor-source-badge source-${balanceReadoutSource.toLowerCase()}`}
-                          title={balanceReadoutSource === "Locked" ? "Press Esc to unlock hover" : undefined}
-                          aria-label={balanceReadoutSource === "Locked" ? "Locked cursor. Press Escape to unlock hover." : undefined}
-                        >
-                          {balanceReadoutSourceLabel}
-                        </span>
-                        {panelIndex === 0 && balanceReadoutLocationSummary && (
-                          <span className="balance-selected-context">{balanceReadoutLocationSummary}</span>
-                        )}
-                        {panel.channels.map((channel) => (
-                          <span className="balance-channel-current" key={channel.name} style={{ color: channel.color }}>
-                            <span>{channel.readoutLabel}</span>
-                            <strong>{fmtReadout(channel.cursorValue, panel.row.yAxisUnit === "in" ? 2 : 3)}</strong>
-                          </span>
-                        ))}
-                        {panelIndex === 0 && balanceReadoutEvent && (
-                          <span className="balance-selected-context">Event {balanceReadoutEvent.title}</span>
-                        )}
-                        {panelIndex === 0 && lockedReadoutSummary && (
-                          <span className="balance-selected-context">{lockedReadoutSummary}</span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="balance-cursor-helper">Cursor: hover or scrub</span>
-                    )}
-                  </div>
-                  <div className="balance-panel-stat-readout" aria-label={`${panel.row.label} visible low high average statistics`}>
-                    {panel.channels.map((channel) => (
-                      <span className="balance-channel-stat-row" key={channel.name} style={{ color: channel.color }}>
-                        <span className="balance-stat-channel">{channel.label}</span>
-                        <span className="balance-stat-icon balance-stat-low" title="Lowest visible value" aria-label="Lowest visible value">▼</span>
-                        <span>{fmtReadout(channel.low, panel.row.yAxisUnit === "in" ? 2 : 3)}</span>
-                        <span className="balance-stat-icon balance-stat-high" title="Highest visible value" aria-label="Highest visible value">▲</span>
-                        <span>{fmtReadout(channel.high, panel.row.yAxisUnit === "in" ? 2 : 3)}</span>
-                        <span className="balance-stat-icon balance-stat-avg" title="Average visible value" aria-label="Average visible value">◆</span>
-                        <span>{fmtReadout(channel.avg, panel.row.yAxisUnit === "in" ? 2 : 3)}</span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-          </div>
+          <PlatformChartPanelReadout
+            panels={balancePanelReadouts}
+            gridLeft={balanceReadoutGridLeft}
+            hasExplicitReadoutContext={hasExplicitReadoutContext}
+            readoutSource={balanceReadoutSource}
+            readoutSourceLabel={balanceReadoutSourceLabel}
+            locationSummary={balanceReadoutLocationSummary}
+            eventTitle={balanceReadoutEvent?.title ?? null}
+            lockedSummary={lockedReadoutSummary}
+          />
         </div>
       </div>
       {workbenchView === "balance" && renderBalanceSetupContext()}
