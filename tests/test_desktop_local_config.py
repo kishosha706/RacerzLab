@@ -115,7 +115,9 @@ def test_packaged_backend_entrypoint_is_production_safe() -> None:
 
 def test_tauri_shell_starts_hidden_backend_sidecar_and_cleans_up() -> None:
     shell = (PROJECT_ROOT / "ui/src-tauri/src/lib.rs").read_text(encoding="utf-8")
+    main = (PROJECT_ROOT / "ui/src-tauri/src/main.rs").read_text(encoding="utf-8")
 
+    assert '#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]' in main
     assert 'const BACKEND_EXE: &str = "racerzlab-backend.exe";' in shell
     assert "CREATE_NO_WINDOW" in shell
     assert ".stdout(Stdio::null())" in shell
