@@ -89,6 +89,9 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
             _add_column_if_missing(connection, "recommendations", column_name, ddl)
     if "setup_snapshots" in {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
         _add_column_if_missing(connection, "setup_snapshots", "snapshot_json", "snapshot_json TEXT")
+    if "setup_response_observations" in {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
+        _add_column_if_missing(connection, "setup_response_observations", "magnitude_label", "magnitude_label TEXT")
+        _add_column_if_missing(connection, "setup_response_observations", "relative_delta_percent", "relative_delta_percent REAL")
 
 
 def initialize_database(db_path: str | Path | None = None) -> sqlite3.Connection:

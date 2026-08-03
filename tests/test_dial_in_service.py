@@ -105,7 +105,7 @@ def test_cross_weight_swing_uses_full_setup_term(tmp_path: Path, monkeypatch: py
     assert all("add a little cross." not in swing.title.lower() for swing in cross_swings)
 
 
-def test_rear_pressure_split_swing_explains_lr_rr_relationship(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dial_in_filters_controls_outside_driver_setup_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_env(monkeypatch, tmp_path)
     _seed_run(
         tmp_path,
@@ -119,20 +119,15 @@ def test_rear_pressure_split_swing_explains_lr_rr_relationship(tmp_path: Path, m
         },
     )
     response = build_dial_in_response("run-1", "snaps loose on throttle", limit=10)
-    pressure_swings = [swing for swing in response.top_swings if swing.id == "add_rear_stability_pressure_swing"]
-    assert pressure_swings
-    combined = " ".join(
-        [
-            pressure_swings[0].title,
-            pressure_swings[0].effect,
-            pressure_swings[0].counter_effect,
-            pressure_swings[0].one_change_test,
-        ]
-    ).lower()
-    assert "lr/rr" in combined
-    assert "rear tire pressure" in combined
-    assert "not all four tires" in combined
-    assert "long_run_falloff" not in combined
+    assert all(swing.id != "add_rear_stability_pressure_swing" for swing in response.top_swings)
+    allowed = {
+        "lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm",
+        "lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm",
+        "lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm",
+        "nose_weight_percent", "cross_weight_percent", "tape_percent", "rear_end_ratio",
+        "front_brake_bias_percent", "steering_ratio", "steering_offset_deg",
+    }
+    assert all(set(swing.control_keys) <= allowed for swing in response.top_swings)
 
 
 def test_driver_response_avoids_bad_product_phrases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -225,7 +220,7 @@ def test_visible_dial_in_swings_include_specific_change_this_actions(tmp_path: P
     for swing in response.top_swings:
         assert swing.change_this
         assert swing.garage_lever
-        action = swing.change_this.lower()
+        action = f"{swing.title} {swing.change_this}".lower()
         assert any(
             word in action
             for word in [
@@ -237,22 +232,22 @@ def test_visible_dial_in_swings_include_specific_change_this_actions(tmp_path: P
                 "move",
                 "switch",
                 "use",
+                "soften",
+                "stiffen",
+                "select",
             ]
         )
-        if "pressure" in action:
-            assert any(token in action for token in ["lf", "rf", "lr", "rr", "lr/rr"])
-        if "diff preload" in action:
-            assert action.startswith(("increase", "reduce"))
-        if "arb arm" in action:
-            assert "toward p1" in action or "toward p5" in action
         if "ride height" in action:
-            assert any(scope in action for scope in ["lf/rf front", "lr/rr rear", "all four"])
-        if "toe" in action:
-            assert "toe-in" in action or "toe-out" in action
+            assert any(scope in action for scope in ["lf ride height", "lr ride height", "all four corners"])
         if "brake bias" in action:
-            assert "forward" in action or "rearward" in action
-        if "compression" in action or "rebound" in action:
-            assert "one click" in action
+            assert any(direction in action for direction in ["forward", "rearward", "increase", "decrease"])
+        assert "one small step" not in action
+        assert swing.change_size_label.startswith(("Small test input", "Smallest available garage step"))
+        assert swing.change_size_explanation
+        assert swing.control_expectation
+        assert swing.control_guardrail
+        assert swing.keep_if.startswith("Keep it only if")
+        assert swing.undo_if.startswith("Undo it if")
 
 
 def test_driver_response_uses_data_profile_language(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -269,9 +264,9 @@ def test_driver_response_uses_direct_setup_change_vocabulary(tmp_path: Path, mon
     _seed_run(tmp_path, channels={"throttle_pct": 100.0, "yaw_rate": 1.2})
     response = build_dial_in_response("run-1", "loose off")
 
-    assert response.next_step == "Test one setup change at a time and compare like-for-like laps."
+    assert response.next_step == "Change one test plan, match fuel and tire age, then compare eligible laps by track position."
     assert response.validation_summary is not None
-    assert response.validation_summary.startswith("Validate with: ")
+    assert response.validation_summary.startswith("Primary evidence signals: ")
     assert "Test one swing" not in response.next_step
     assert "What to watch for" not in response.validation_summary
 

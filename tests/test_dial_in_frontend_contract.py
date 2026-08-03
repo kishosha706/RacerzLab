@@ -49,10 +49,10 @@ def test_dial_in_tab_uses_backend_target_labels() -> None:
 
     assert "const TARGET_LABELS" not in dial_in_tab
     assert "garageLeverLabel" in dial_in_tab
-    assert "Garage control:" in dial_in_tab
+    assert "Garage control" in dial_in_tab
     assert "dialin-garage-helper" in dial_in_tab
     assert "validate_with_labels" in dial_in_tab
-    assert "watch_for_labels" in dial_in_tab
+    assert "swing.undo_if" in dial_in_tab
     assert "validate_with_labels" in telemetry_types
     assert "watch_for_labels" in telemetry_types
 
@@ -67,7 +67,7 @@ def test_dial_in_cards_render_exact_change_this_and_garage_lever() -> None:
     assert "dialin-change-this" in dial_in_tab
     assert "Make this setup change:" in dial_in_tab
     assert "{swing.change_this}" in dial_in_tab
-    assert "Garage control: {swing.garage_lever}" in dial_in_tab
+    assert "{swing.garage_lever}" in dial_in_tab
     assert ".dialin-change-this" in styles
     assert ".dialin-garage-note" in styles
 
@@ -79,11 +79,16 @@ def test_dial_in_tab_uses_direct_setup_change_vocabulary() -> None:
     assert "Pick one change. Just one." in dial_in_tab
     assert "Best first setup changes" in dial_in_tab
     assert "Other setup changes" in dial_in_tab
-    assert "Expected effect" in dial_in_tab
+    assert "Expected improvement" in dial_in_tab
     assert "Trade-off" in dial_in_tab
-    assert "Test exactly this" in dial_in_tab
-    assert "Validate with" in dial_in_tab
-    assert "Small setup change" in dial_in_tab
+    assert "Why this size" in dial_in_tab
+    assert "What this control does" in dial_in_tab
+    assert "Related settings to recheck" in dial_in_tab
+    assert "Test plan" in dial_in_tab
+    assert "Evidence signals" in dial_in_tab
+    assert "Keep it if" in dial_in_tab
+    assert "Undo it if" in dial_in_tab
+    assert "swing.change_size_label" in dial_in_tab
 
     for vague_phrase in [
         "Feel polish",

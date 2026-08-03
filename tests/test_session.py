@@ -86,9 +86,9 @@ def test_useful_laps() -> None:
     from racelab_engine.models.lap import LapSummary
 
     laps = [
-        LapSummary(lap_id="l1", run_id="r1", lap_number=1, is_useful=True),
+        LapSummary(lap_id="l1", run_id="r1", lap_number=1, is_complete=True, is_useful=True, lap_time=50.0),
         LapSummary(lap_id="l2", run_id="r1", lap_number=2, is_useful=False),
-        LapSummary(lap_id="l3", run_id="r1", lap_number=3, is_useful=True),
+        LapSummary(lap_id="l3", run_id="r1", lap_number=3, is_complete=True, is_useful=True, lap_time=51.0),
     ]
     useful = useful_laps(laps)
     assert len(useful) == 2

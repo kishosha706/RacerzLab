@@ -101,6 +101,16 @@ def _steering_ratio_from_yaml(yaml_text: str, fallback: Any) -> str | None:
     return str(fallback)
 
 
+def _tape_configuration(value: Any) -> float | str | None:
+    numeric = _float_from_text(value)
+    if numeric is not None:
+        return numeric
+    if isinstance(value, str):
+        cleaned = value.strip().strip('"')
+        return cleaned or None
+    return None
+
+
 def _gather_session_data(data: dict[str, Any]) -> dict[str, Any]:
     weekend = _nested(data, "WeekendInfo")
     driver = _nested(data, "DriverInfo")
@@ -166,6 +176,7 @@ def _setup_extracted_values(car_setup: dict[str, Any], source: dict[str, Any], y
     right_front = _setup_chassis_section(car_setup, "RightFront")
     left_rear = _setup_chassis_section(car_setup, "LeftRear")
     right_rear = _setup_chassis_section(car_setup, "RightRear")
+    rear = _setup_chassis_section(car_setup, "Rear")
 
     # Tires section — ColdPressure may live here instead of Chassis corner
     tires = car_setup.get("Tires", {}) if isinstance(car_setup, dict) else {}
@@ -208,15 +219,27 @@ def _setup_extracted_values(car_setup: dict[str, Any], source: dict[str, Any], y
 
     return {
         "raw_source": "CarSetup" if car_setup else "session_yaml",
-        "tape_percent": _float_from_text(front.get("TapeConfiguration") or _find_value_by_label(source, ("tape",))),
-        "rear_end_ratio": _float_from_text(front.get("RearEndRatio") or _find_value_by_label(source, ("rear", "ratio"))),
+        "tape_percent": _tape_configuration(front.get("TapeConfiguration") or _find_value_by_label(source, ("tape",))),
+        "rear_end_ratio": _float_from_text(
+            front.get("RearEndRatio")
+            or rear.get("FinalDriveRatio")
+            or rear.get("RearEndRatio")
+            or _find_value_by_label(source, ("rear", "ratio"))
+            or _find_value_by_label(source, ("final", "drive"))
+        ),
         "front_brake_bias_percent": _float_from_text(front.get("FrontBrakeBias") or _find_value_by_label(source, ("brake", "bias"))),
         "front_mc_mm": _float_from_text(front.get("FrontMc") or _find_value_by_label(source, ("front", "mc"))),
         "rear_mc_mm": _float_from_text(front.get("RearMc") or _find_value_by_label(source, ("rear", "mc"))),
         "steering_pinion_mm": _float_from_text(front.get("SteeringPinion") or _find_value_by_label(source, ("steering", "pinion"))),
         "nose_weight_percent": _float_from_text(front.get("NoseWeight") or _find_value_by_label(source, ("nose", "weight"))),
         "cross_weight_percent": _float_from_text(front.get("CrossWeight") or _find_value_by_label(source, ("cross", "weight"))),
-        "steering_ratio": _steering_ratio_from_yaml(yaml_text, front.get("SteeringRatio") or _find_value_by_label(source, ("steering", "ratio"))),
+        "steering_ratio": _steering_ratio_from_yaml(
+            yaml_text,
+            front.get("SteeringRatio")
+            or front.get("SteeringPinion")
+            or _find_value_by_label(source, ("steering", "ratio"))
+            or _find_value_by_label(source, ("steering", "pinion")),
+        ),
         "steering_offset_deg": _float_from_text(front.get("SteeringOffset") or _find_value_by_label(source, ("steering", "offset"))),
         # Corner blocks
         "lf": _corner(left_front, tires_lf),

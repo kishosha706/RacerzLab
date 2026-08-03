@@ -59,7 +59,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   whole_car_bottoming: "Whole-Car", drag_scrub: "Drag/Scrub",
   aero: "Aero", shocks: "Shocks", speed_loss: "Speed Loss",
   all_events: "Other Events", delta: "Delta", insights: "Insights",
-  tires: "Tires", notebook: "Notebook",
+  tires: "Tires", notebook: "Learned Result",
 };
 
 const MAP_PADDING_RATIO = 0.06;

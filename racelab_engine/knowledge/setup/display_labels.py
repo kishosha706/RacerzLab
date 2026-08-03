@@ -58,6 +58,50 @@ TARGET_LABELS = {
     "unstable_exit": "unstable exit",
 }
 
+SUCCESS_TARGET_WORDING = {
+    "brake_stability": "the car needs fewer corrections under braking",
+    "center_rotation": "center balance moves closer to neutral",
+    "center_speed": "center speed improves beyond normal lap variation",
+    "drive_off": "throttle pickup is cleaner and exit acceleration improves",
+    "entry_rotation": "entry rotation moves closer to neutral",
+    "entry_stability": "entry becomes calmer without adding push",
+    "entry_yaw": "entry rotation moves closer to neutral",
+    "exit_yaw": "exit rotation moves closer to neutral",
+    "front_contact": "front contact events decrease in the same track zone",
+    "front_height": "front ride-height margin improves in the problem zone",
+    "rpm_trace": "RPM stays in the useful range without reaching the limiter too early",
+    "scrape": "repeatable scrape events decrease",
+    "speed_loss": "speed loss through the problem zone decreases",
+    "speed_trace": "speed improves at the same track position",
+    "steering_trace": "steering demand decreases for the same corner",
+    "straight_speed": "straight speed improves without losing too much drive-off",
+    "turn_in_response": "turn-in response improves without making entry nervous",
+}
+
+WATCH_TARGET_WORDING = {
+    "brake_entry_instability": "the rear becomes less stable under braking",
+    "diffuser_choke_or_stall": "rear-height proxy behavior becomes less stable or speed falls",
+    "front_feed_instability": "front ride-height behavior becomes less stable",
+    "front_platform_contact": "front contact events increase",
+    "exit_yaw": "exit balance moves farther from neutral",
+    "loose_entry": "entry becomes looser",
+    "loose_exit": "exit becomes looser",
+    "low_straight_speed": "straight speed falls beyond normal run variation",
+    "poor_drive_off": "drive-off acceleration gets worse",
+    "rear_float": "the rear feels less planted at speed",
+    "rear_scrape": "rear scrape events increase",
+    "rear_height": "rear ride-height behavior moves the wrong way",
+    "rf_tire_temp": "RF tire temperature rises without a balance improvement",
+    "ride_height_trace": "ride-height movement becomes less controlled",
+    "scrape": "scrape events increase",
+    "speed_loss": "speed falls in the same track zone",
+    "tight_center": "center push increases",
+    "tight_entry": "entry push increases",
+    "tight_exit": "exit push increases",
+    "tire_overwork": "tire temperature or wear increases without a pace gain",
+    "unstable_exit": "throttle pickup requires more corrections",
+}
+
 SETUP_STRENGTH_LABELS = {
     1: "driver feel / small polish",
     2: "fine tuning",
@@ -81,6 +125,14 @@ def format_target_label(value: str) -> str:
 
 def format_target_list(values: list[str]) -> str:
     return ", ".join(format_target_label(value) for value in values)
+
+
+def format_success_target(value: str) -> str:
+    return SUCCESS_TARGET_WORDING.get(value, f"{format_target_label(value)} moves in the intended direction")
+
+
+def format_watch_target(value: str) -> str:
+    return WATCH_TARGET_WORDING.get(value, f"{format_target_label(value)} gets worse")
 
 
 def format_driver_targets(text: str) -> str:

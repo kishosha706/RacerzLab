@@ -159,9 +159,13 @@ def test_compare_same_run_triggers_reference_warning() -> None:
         return  # no runs available, skip
 
     rid = runs[0]["run_id"] if isinstance(runs[0], dict) else runs[0].run_id
+    overview = repository().get_overview(rid)
+    if overview is None or overview.best_useful_lap is None:
+        return
+    lap_number = overview.best_useful_lap.lap_number
     resp = run_comparison(CompareRequest(
         baseline_run_id=rid, test_run_id=rid,
-        baseline_lap=1, test_lap=1,
+        baseline_lap=lap_number, test_lap=lap_number,
     ))
     verdict = resp.get("verdict", {})
     assert verdict.get("verdict") == "inconclusive"

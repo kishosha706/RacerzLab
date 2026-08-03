@@ -235,3 +235,43 @@ CREATE INDEX IF NOT EXISTS idx_findings_car_track ON notebook_findings(car_name,
 CREATE INDEX IF NOT EXISTS idx_findings_verdict ON notebook_findings(verdict);
 CREATE INDEX IF NOT EXISTS idx_findings_status ON notebook_findings(status);
 CREATE INDEX IF NOT EXISTS idx_test_plans_status ON test_plans(status);
+
+-- Internal setup-response learning. This is deliberately not a user-facing notebook.
+CREATE TABLE IF NOT EXISTS setup_response_observations (
+  observation_id TEXT PRIMARY KEY,
+  comparison_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  car_name TEXT,
+  track_name TEXT,
+  baseline_run_id TEXT NOT NULL,
+  test_run_id TEXT NOT NULL,
+  baseline_lap INTEGER,
+  test_lap INTEGER,
+  setup_key TEXT NOT NULL,
+  setup_label TEXT,
+  setup_group TEXT,
+  direction_sign INTEGER,
+  baseline_value TEXT,
+  test_value TEXT,
+  numeric_delta REAL,
+  magnitude_label TEXT,
+  relative_delta_percent REAL,
+  verdict TEXT NOT NULL,
+  confidence_score REAL DEFAULT 0.0,
+  discipline_score REAL DEFAULT 0.0,
+  target_zone_start_pct REAL,
+  target_zone_end_pct REAL,
+  median_lap_delta_s REAL,
+  pace_noise_band_s REAL,
+  target_speed_delta_mph REAL,
+  cfs_delta_in REAL,
+  driver_repeatability_score REAL,
+  context_problem_count INTEGER DEFAULT 0,
+  evidence_json TEXT,
+  UNIQUE(comparison_id, setup_key, target_zone_start_pct, target_zone_end_pct)
+);
+
+CREATE INDEX IF NOT EXISTS idx_setup_response_car_track
+  ON setup_response_observations(car_name, track_name, setup_key);
+CREATE INDEX IF NOT EXISTS idx_setup_response_verdict
+  ON setup_response_observations(verdict);

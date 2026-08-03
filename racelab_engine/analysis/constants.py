@@ -71,7 +71,7 @@ REFERENCE_SPEED_MPS = 80.4672  # ~180 mph
 REFERENCE_DYNAMIC_PRESSURE_PA = 0.5 * SEA_LEVEL_AIR_DENSITY_KG_M3 * REFERENCE_SPEED_MPS ** 2
 
 # ── Discipline labels ─────────────────────────────────────────
-RELIABLE_DISCIPLINES = ("clean", "mostly_clean")
+RELIABLE_DISCIPLINES = ("clean",)
 
 # ── WCI weight profiles ───────────────────────────────────────
 WCI_WEIGHT_PROFILES: dict[str, dict[str, float]] = {
@@ -186,5 +186,8 @@ def logistic_score(
     if delta is None:
         return 50.0
     signed_delta = delta if higher_is_better else -delta
-    x = signed_delta - noise
-    return 100.0 / (1.0 + math.exp(-steepness * x))
+    if abs(signed_delta) <= noise:
+        return 50.0
+    effective_delta = math.copysign(abs(signed_delta) - noise, signed_delta)
+    exponent = max(-60.0, min(60.0, steepness * effective_delta))
+    return 100.0 / (1.0 + math.exp(-exponent))

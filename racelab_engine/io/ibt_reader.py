@@ -33,6 +33,7 @@ from racelab_engine.analysis.constants import LOW_BRAKE_PCT, PLATFORM_VALID_MIN_
 from racelab_engine.analysis.drag_scrub import detect_drag_scrub_risk_zones
 from racelab_engine.analysis.dynamic_crew_chief import build_recommendations
 from racelab_engine.analysis.lap_classification import classify_laps
+from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.analysis.lap_detection import detect_laps
 from racelab_engine.analysis.platform_events import PlatformEvent, detect_platform_events
 from racelab_engine.io.file_fingerprint import fingerprint_file
@@ -652,7 +653,7 @@ def _build_primary_findings(best_lap: Any, platform_events: list[Any], drag_even
 
 def _best_useful_lap(rows: list[dict[str, Any]], run_id: str) -> Any:
     laps = classify_laps(detect_laps(rows, run_id=run_id))
-    useful = [lap for lap in laps if lap.is_useful]
+    useful = eligible_laps(laps)
     return min(useful, key=lambda lap: lap.lap_time or 999999.0) if useful else None
 
 
@@ -695,7 +696,7 @@ def _build_overview(
     laps = classify_laps(detected_laps)
     profile["overview_lap_classify_s"] = time.perf_counter() - t0
     t0 = time.perf_counter()
-    useful_laps = [lap for lap in laps if lap.is_useful]
+    useful_laps = eligible_laps(laps)
     best_lap = min(useful_laps, key=lambda lap: lap.lap_time or 999999.0) if useful_laps else None
     profile["overview_best_lap_pick_s"] = time.perf_counter() - t0
     t0 = time.perf_counter()

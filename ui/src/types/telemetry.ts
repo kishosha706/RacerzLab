@@ -78,7 +78,7 @@ export type SetupSnapshot = {
   setup_id: string;
   run_id: string;
   setup_name?: string | null;
-  tape_percent?: number | null;
+  tape_percent?: number | string | null;
   rear_end_ratio?: number | null;
   lf_ride_height_mm?: number | null;
   rf_ride_height_mm?: number | null;
@@ -158,7 +158,15 @@ export type DialInSwing = {
   title: string;
   change_this: string;
   garage_lever: string;
+  control_keys: string[];
   setup_area: string;
+  change_size_label: string;
+  change_size_explanation: string;
+  influence_label: string;
+  control_expectation: string;
+  control_guardrail: string;
+  current_value_label?: string | null;
+  proposed_value_label?: string | null;
   strength_label: string;
   risk_label: string;
   effect: string;
@@ -168,6 +176,8 @@ export type DialInSwing = {
   validate_with_labels?: string[];
   watch_for: string[];
   watch_for_labels?: string[];
+  keep_if: string;
+  undo_if: string;
   readiness_label: string;
   disabled_reason?: string | null;
   debug?: Record<string, unknown> | null;

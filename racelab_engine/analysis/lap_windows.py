@@ -9,6 +9,7 @@ import statistics
 from typing import Any
 
 from racelab_engine.analysis.pace_quality import compute_pace_quality_score
+from racelab_engine.analysis.lap_eligibility import lap_ineligibility_reasons, lap_is_eligible
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.lap_analysis import (
     BestWindowGroup,
@@ -21,27 +22,14 @@ from racelab_engine.models.lap_analysis import (
 
 
 def _is_lap_valid_for_ranking(lap: LapSummary) -> tuple[bool, str | None]:
-    if not lap.is_complete:
-        return False, "Incomplete lap"
-    if not lap.is_useful:
-        return False, "Not useful"
-    tags = [t.upper() for t in lap.classification_tags]
-    if "OUT_LAP" in tags:
-        return False, "Out lap"
-    if "COOLDOWN" in tags:
-        return False, "Cooldown lap"
-    if "PIT_ROAD" in tags:
-        return False, "Pit road"
-    if "WRECK_OR_SPIN" in tags:
-        return False, "Wreck or spin"
-    if "INVALID_SPEED_EVENT" in tags:
-        return False, "Invalid speed event"
-    if lap.lap_time is None or not math.isfinite(float(lap.lap_time)) or lap.lap_time <= 0:
-        return False, "No lap time"
-    return True, None
+    if lap_is_eligible(lap):
+        return True, None
+    reasons = lap_ineligibility_reasons(lap)
+    return False, reasons[0] if reasons else "Not eligible for setup analysis"
 
 
 def _to_quality_summary(lap: LapSummary) -> LapQualitySummary:
+    valid_for_compare = lap_is_eligible(lap)
     return LapQualitySummary(
         run_id=lap.run_id,
         lap_number=lap.lap_number,
@@ -50,6 +38,8 @@ def _to_quality_summary(lap: LapSummary) -> LapQualitySummary:
         is_complete=lap.is_complete,
         is_useful=lap.is_useful,
         classification_tags=list(lap.classification_tags),
+        valid_for_compare=valid_for_compare,
+        invalid_reasons=[] if valid_for_compare else lap_ineligibility_reasons(lap),
         avg_speed_mph=lap.avg_speed_mph,
         max_speed_mph=lap.max_speed_mph,
         min_speed_mph=lap.min_speed_mph,

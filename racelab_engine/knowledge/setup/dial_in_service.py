@@ -2,8 +2,18 @@ from __future__ import annotations
 
 from typing import Any
 
+from racelab_engine.analysis.setup_controls import SETUP_CONTROL_SPECS
+from racelab_engine.analysis.setup_diff import setup_control_value
+from racelab_engine.storage.repository import RaceLabRepository
+
+from .dial_in_controls import GarageAction, garage_action_for_effect
 from .dial_in_schema import Clarification, DialInResponse, DialInSwing, HiddenEvidenceSummary
-from .display_labels import DIAL_IN_STRENGTH_LABELS, format_target_label
+from .display_labels import (
+    DIAL_IN_STRENGTH_LABELS,
+    format_success_target,
+    format_target_label,
+    format_watch_target,
+)
 from .evidence_adapter import build_run_evidence_context, query_setup_for_run_context
 from .loader import load_setup_knowledge
 from .matcher import RankedSetupEffect, parse_symptom
@@ -91,7 +101,7 @@ def _sentence(text: str) -> str:
     return text if text.endswith(".") else f"{text}."
 
 
-def _garage_action_for_effect(item: RankedSetupEffect) -> tuple[str, str] | None:
+def _legacy_garage_action_for_effect(item: RankedSetupEffect) -> tuple[str, str] | None:
     effect = item.effect
     effect_id = effect.effect_id
     direction = effect.direction.lower()
@@ -224,11 +234,12 @@ def _garage_action_for_effect(item: RankedSetupEffect) -> tuple[str, str] | None
     return (candidate, effect.setup_area.replace("_", " ").title())
 
 
-def _specific_one_change_test(item: RankedSetupEffect, change_this: str) -> str:
-    labels = [format_target_label(target) for target in item.effect.validation_targets[:4]]
-    validate = ", ".join(labels) if labels else "the same corner phase"
-    note = " Do not move all four tires." if "LR/RR rear pressure split" in change_this else ""
-    return f"Make this one change only: {change_this} Run comparable laps and validate {validate}.{note}"
+def _specific_one_change_test(item: RankedSetupEffect, action: GarageAction) -> str:
+    scope = "these linked ride-height controls" if len(action.control_keys) > 1 else "this control"
+    return (
+        f"Change only {scope}. Repeat the baseline run length with similar fuel and tire age, "
+        "then compare eligible laps at the same track positions."
+    )
 
 
 def _visible_explanation(text: str) -> str:
@@ -246,27 +257,136 @@ def _visible_explanation(text: str) -> str:
     return cleaned
 
 
+EXPECTED_WORDING: dict[str, str] = {
+    "add_crossweight_small": "Expect a calmer entry and more secure throttle pickup on exit.",
+    "reduce_crossweight_small": "Expect freer center rotation and less bound-up drive-off.",
+    "add_rf_spring_small": "Expect less RF deflection and firmer RF platform control through the measured problem zone; grip must be verified rather than assumed.",
+    "spring_package_platform_support": "Expect less RF deflection and firmer RF platform control through the measured problem zone; grip must be verified rather than assumed.",
+    "reduce_rf_spring_small": "Expect more RF compliance and travel through the measured problem zone.",
+    "add_lr_spring_support": "Expect less LR deflection and firmer LR platform control during throttle pickup; the exit-balance result must be measured.",
+    "reduce_lr_spring_for_drive": "Expect more LR compliance and travel through throttle pickup and corner exit.",
+    "spring_package_compliance": "Expect more LR compliance where telemetry shows the rear is too stiff over the surface; do not assume the whole rear axle softened equally.",
+    "add_front_brake_bias_small": "Expect a calmer rear axle while braking into the corner.",
+    "reduce_front_brake_bias_small": "Expect more rotation under braking and a less front-limited entry.",
+    "shorter_final_drive": "Expect higher RPM and greater torque multiplication at the same road speed; acceleration improves only if traction and shift timing remain favorable.",
+    "taller_final_drive": "Expect lower RPM at the same road speed and more limiter margin; terminal speed improves only if the engine can pull the taller gear.",
+    "add_front_platform_support": "On a ride-height-sensitive car, expect stronger high-speed front response only if front contact remains controlled.",
+    "lower_front_shock_collar_small": "On a ride-height-sensitive car, expect stronger high-speed front response only if front contact remains controlled.",
+    "reduce_front_platform_support": "Expect more front ride-height margin and fewer contact events.",
+    "improve_front_feed_window": "Expect more front ride-height margin and a steadier platform trace.",
+    "raise_front_shock_collar_small": "Expect more front ride-height margin and fewer contact events.",
+    "add_rear_platform_support": "Expect more rear ride-height margin and fewer rear scrape events.",
+    "raise_rear_shock_collar_small": "Expect more rear ride-height margin and fewer rear scrape events.",
+    "reduce_rear_platform_support": "Expect a lower rear platform; treat any high-speed balance benefit as a car-specific proxy and keep it only if scrape margin remains healthy.",
+    "lower_rear_shock_collar_small": "Expect a lower rear platform; treat any high-speed balance benefit as a car-specific proxy and keep it only if scrape margin remains healthy.",
+    "reduce_platform_contact_small": "Expect fewer repeatable platform-contact events.",
+}
+
+TRADE_WORDING: dict[str, str] = {
+    "add_crossweight_small": "Too much can create center push, scrub speed, or reduce LF braking load.",
+    "reduce_crossweight_small": "Too little can make entry or throttle pickup nervous.",
+    "add_rf_spring_small": "A stiffer RF can reduce center grip and increase steering demand.",
+    "spring_package_platform_support": "A stiffer RF can reduce center grip and increase steering demand.",
+    "reduce_rf_spring_small": "A softer RF can increase platform movement or front contact.",
+    "add_lr_spring_support": "A stiffer LR can bind the center or reduce rear compliance.",
+    "reduce_lr_spring_for_drive": "A softer LR can reduce rear platform margin or exit security.",
+    "spring_package_compliance": "More compliance can allow excess platform movement at speed.",
+    "add_front_brake_bias_small": "More front bias can add entry push or front lockup.",
+    "reduce_front_brake_bias_small": "More rear brake demand can make entry unstable or cause rear lockup.",
+    "shorter_final_drive": "RPM rises everywhere; undo if the limiter arrives early or terminal speed falls.",
+    "taller_final_drive": "Acceleration softens; undo if drive-off gets worse without a clear speed gain.",
+    "add_front_platform_support": "Front clearance decreases; undo if contact events or speed loss increase.",
+    "lower_front_shock_collar_small": "Front clearance decreases; undo if contact events or speed loss increase.",
+    "reduce_front_platform_support": "High-speed front response may weaken if the front is raised too far.",
+    "improve_front_feed_window": "High-speed front response may weaken if the front is raised too far.",
+    "raise_front_shock_collar_small": "High-speed front response may weaken if the front is raised too far.",
+    "add_rear_platform_support": "Raising the rear changes rake and may change high-speed or exit balance; the direction and size are car-specific.",
+    "raise_rear_shock_collar_small": "Raising the rear changes rake and may change high-speed or exit balance; the direction and size are car-specific.",
+    "reduce_rear_platform_support": "Rear clearance decreases; undo if scrape or unstable rear-height behavior appears.",
+    "lower_rear_shock_collar_small": "Rear clearance decreases; undo if scrape or unstable rear-height behavior appears.",
+    "reduce_platform_contact_small": "A higher platform may give away speed or mechanical grip even when contact improves.",
+}
+
+KEEP_WORDING: dict[str, str] = {
+    "add_crossweight_small": "Keep it only if entry is calmer and throttle pickup improves without adding center push.",
+    "reduce_crossweight_small": "Keep it only if center speed or rotation improves without making entry or exit loose.",
+    "add_rf_spring_small": "Keep it only if RF platform movement improves without increasing steering demand.",
+    "spring_package_platform_support": "Keep it only if RF platform movement improves without increasing steering demand.",
+    "reduce_rf_spring_small": "Keep it only if front response improves and front contact does not increase.",
+    "add_lr_spring_support": "Keep it only if throttle pickup improves without adding center push.",
+    "reduce_lr_spring_for_drive": "Keep it only if drive-off improves without reducing rear ride-height margin.",
+    "spring_package_compliance": "Keep it only if compliance improves without adding excess platform movement.",
+    "add_front_brake_bias_small": "Keep it only if braking entry is calmer without adding front lockup or entry push.",
+    "reduce_front_brake_bias_small": "Keep it only if entry rotation improves without rear lockup or instability.",
+    "shorter_final_drive": "Keep it only if acceleration improves and the limiter still has safe margin at peak straight speed.",
+    "taller_final_drive": "Keep it only if terminal speed improves without a meaningful drive-off loss.",
+    "add_front_platform_support": "Keep it only if high-speed front response improves and front contact does not increase.",
+    "lower_front_shock_collar_small": "Keep it only if high-speed front response improves and front contact does not increase.",
+    "reduce_front_platform_support": "Keep it only if front contact decreases without a meaningful loss of center speed or front response.",
+    "improve_front_feed_window": "Keep it only if front ride-height movement becomes more stable without a meaningful speed loss.",
+    "raise_front_shock_collar_small": "Keep it only if front contact decreases without a meaningful loss of center speed or front response.",
+    "add_rear_platform_support": "Keep it only if rear scrape decreases without making exit balance or straight speed worse.",
+    "raise_rear_shock_collar_small": "Keep it only if rear scrape decreases without making exit balance or straight speed worse.",
+    "reduce_rear_platform_support": "Keep it only if exit or straight speed improves and rear scrape does not increase.",
+    "lower_rear_shock_collar_small": "Keep it only if exit or straight speed improves and rear scrape does not increase.",
+    "reduce_platform_contact_small": "Keep it only if contact events decrease without a meaningful loss of speed or mechanical grip.",
+}
+
+
+def _effect_wording(item: RankedSetupEffect) -> str:
+    return EXPECTED_WORDING.get(item.effect.effect_id, _visible_explanation(item.effect.effect))
+
+
+def _trade_wording(item: RankedSetupEffect) -> str:
+    return TRADE_WORDING.get(item.effect.effect_id, _visible_explanation(item.effect.counter_effect))
+
+
+def _keep_if(item: RankedSetupEffect) -> str:
+    if wording := KEEP_WORDING.get(item.effect.effect_id):
+        return wording
+    targets = [format_success_target(target) for target in item.effect.validation_targets[:2]]
+    if not targets:
+        return "Keep it only if the original complaint improves beyond normal lap-to-lap variation."
+    return f"Keep it only if {' and '.join(targets)}."
+
+
+def _undo_if(item: RankedSetupEffect) -> str:
+    targets = [format_watch_target(target) for target in item.effect.watch_for_targets[:2]]
+    if not targets:
+        return "Undo it if the original complaint gets worse or a new handling problem appears."
+    return f"Undo it if {' or '.join(targets)}."
+
+
 def _filter_swings(candidates: list[RankedSetupEffect], limit: int) -> list[RankedSetupEffect]:
     selected: list[RankedSetupEffect] = []
     major_package_count = 0
+    covered_controls: set[str] = set()
     for item in candidates:
         if len(selected) >= limit:
             break
-        if _garage_action_for_effect(item) is None:
+        action = garage_action_for_effect(item)
+        if action is None:
+            continue
+        if covered_controls.intersection(action.control_keys):
             continue
         if _is_major_package_swing(item):
             if major_package_count >= 1:
                 continue
             major_package_count += 1
         selected.append(item)
+        covered_controls.update(action.control_keys)
     return selected
 
 
-def _build_swing(item: RankedSetupEffect, *, include_debug_evidence: bool) -> DialInSwing:
-    garage_action = _garage_action_for_effect(item)
+def _build_swing(
+    item: RankedSetupEffect,
+    *,
+    setup_values: dict[str, Any],
+    include_debug_evidence: bool,
+) -> DialInSwing:
+    garage_action = garage_action_for_effect(item, setup_values)
     if garage_action is None:
         raise ValueError(f"Dial-In swing lacks a specific garage action: {item.effect.effect_id}")
-    change_this, garage_lever = garage_action
     debug: dict[str, Any] | None = None
     if include_debug_evidence:
         debug = {
@@ -278,19 +398,29 @@ def _build_swing(item: RankedSetupEffect, *, include_debug_evidence: bool) -> Di
         }
     return DialInSwing(
         id=item.effect.effect_id,
-        title=change_this.rstrip("."),
-        change_this=change_this,
-        garage_lever=garage_lever,
+        title=garage_action.title,
+        change_this=garage_action.change_this,
+        garage_lever=garage_action.garage_lever,
+        control_keys=garage_action.control_keys,
         setup_area=item.effect.setup_area,
+        change_size_label=garage_action.change_size_label,
+        change_size_explanation=garage_action.change_size_explanation,
+        influence_label=garage_action.influence_label,
+        control_expectation=garage_action.control_expectation,
+        control_guardrail=garage_action.control_guardrail,
+        current_value_label=garage_action.current_value_label,
+        proposed_value_label=garage_action.proposed_value_label,
         strength_label=DIAL_IN_STRENGTH_LABELS.get(item.effect.effect_strength, "Setup lever"),
         risk_label=RISK_LABELS.get(item.effect.coupling_risk, item.effect.coupling_risk.title()),
-        effect=_visible_explanation(item.effect.effect),
-        counter_effect=_visible_explanation(item.effect.counter_effect),
-        one_change_test=_specific_one_change_test(item, change_this),
+        effect=_effect_wording(item),
+        counter_effect=_trade_wording(item),
+        one_change_test=_specific_one_change_test(item, garage_action),
         validate_with=item.effect.validation_targets,
         validate_with_labels=[format_target_label(target) for target in item.effect.validation_targets],
         watch_for=item.effect.watch_for_targets,
         watch_for_labels=[format_target_label(target) for target in item.effect.watch_for_targets],
+        keep_if=_keep_if(item),
+        undo_if=_undo_if(item),
         readiness_label=CANDIDATE_READINESS_LABELS.get(item.readiness, item.readiness.replace("_", " ").title()),
         debug=debug,
     )
@@ -299,17 +429,17 @@ def _build_swing(item: RankedSetupEffect, *, include_debug_evidence: bool) -> Di
 def _validation_summary(swings: list[DialInSwing]) -> str | None:
     targets: list[str] = []
     for swing in swings:
-        for target in swing.validate_with:
+        for target in swing.validate_with_labels:
             if target not in targets:
                 targets.append(target)
     if not targets:
         return None
-    return f"Validate with: {', '.join(targets[:5])}."
+    return f"Primary evidence signals: {', '.join(targets[:5])}."
 
 
 def _readiness_sentence(readiness_label: str) -> str:
     if readiness_label == "Data profile looks clean":
-        return "Data profile looks clean. High confidence."
+        return "Data coverage is strong. Confirm the recommendation with one controlled A/B test."
     if readiness_label == "Data profile is partial":
         return "Data profile is partial. Pick one change and validate it."
     if readiness_label == "Need cleaner data":
@@ -371,6 +501,17 @@ def _hidden_summary(result, context) -> HiddenEvidenceSummary:
         ranking_reasons=result.setup_query.ranking_reasons,
         disabled_by_capability=disabled,
     )
+
+
+def _driver_setup_values(run_id: str) -> dict[str, Any]:
+    snapshot = RaceLabRepository().get_setup_snapshot(run_id)
+    if snapshot is None:
+        return {}
+    return {
+        key: value
+        for key in SETUP_CONTROL_SPECS
+        if (value := setup_control_value(snapshot, key)) is not None
+    }
 
 
 def build_dial_in_response(
@@ -464,7 +605,11 @@ def build_dial_in_response(
         limit=max(limit * 4, limit),
     )
     selected = _filter_swings(query_result.setup_query.candidate_effects, limit)
-    swings = [_build_swing(item, include_debug_evidence=include_debug_evidence) for item in selected]
+    setup_values = _driver_setup_values(run_id)
+    swings = [
+        _build_swing(item, setup_values=setup_values, include_debug_evidence=include_debug_evidence)
+        for item in selected
+    ]
 
     missing_hint = _evidence_status_hint(
         context.warnings,
@@ -472,7 +617,7 @@ def build_dial_in_response(
         test_run_id=test_run_id if context.unavailable_reasons.get("compare_test") else None,
     )
     readiness_label = _readiness_label([item.readiness for item in selected], missing_hint=missing_hint)
-    next_step = "Test one setup change at a time and compare like-for-like laps."
+    next_step = "Change one test plan, match fuel and tire age, then compare eligible laps by track position."
     if readiness_label == "Need cleaner data":
         next_step = "Data's noisy here. Try a cleaner run or narrow the complaint."
     if missing_hint:

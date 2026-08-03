@@ -6,6 +6,7 @@ import pytest
 
 from racelab_engine.analysis.compare_math import (
     aggregate_channel_stats,
+    aggregate_driver_stats,
     aggregate_platform_stats,
     compute_whole_car_index,
 )
@@ -63,8 +64,32 @@ def test_whole_car_index_aggregates_available_scores_without_fake_zero() -> None
         pull_score=ChannelDeltaStats("speed_rate_mph_1000ft", "Pull", "mph/1000ft", delta_avg=None)
     )
 
-    index = compute_whole_car_index(platform, driver, powertrain, discipline_score=88.0, context_problems=0)
+    index = compute_whole_car_index(
+        platform,
+        driver,
+        powertrain,
+        discipline_score=88.0,
+        context_problems=0,
+        speed_delta_mph=0.2,
+    )
 
+    assert index.speed_index is not None and index.speed_index > 50.0
     assert index.powertrain_index == 50.0
     assert index.confidence_index == 70.0
     assert index.overall_index is not None
+
+
+def test_driver_repeatability_uses_signed_steering_by_track_position() -> None:
+    baseline = [
+        _trace_row(0.0, throttle_pct=100.0, brake_pct=0.0, steering_deg=2.0, abs_steering_deg=2.0),
+        _trace_row(100.0, throttle_pct=100.0, brake_pct=0.0, steering_deg=2.0, abs_steering_deg=2.0),
+    ]
+    test = [
+        _trace_row(0.0, throttle_pct=100.0, brake_pct=0.0, steering_deg=-2.0, abs_steering_deg=2.0),
+        _trace_row(100.0, throttle_pct=100.0, brake_pct=0.0, steering_deg=-2.0, abs_steering_deg=2.0),
+    ]
+
+    driver = aggregate_driver_stats(baseline, test)
+
+    assert driver.steering_mae_deg == 4.0
+    assert driver.driver_verdict == "changed"

@@ -2,12 +2,112 @@ from __future__ import annotations
 
 from collections import defaultdict
 import math
-from statistics import mean
+from statistics import mean, median
 from typing import Any, cast
 
 from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
 from racelab_engine.models.lap import LapSummary
 import polars as pl
+
+
+def _truthy(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "yes", "on"}:
+            return True
+        if normalized in {"false", "no", "off"}:
+            return False
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return bool(value)
+    return bool(number) if math.isfinite(number) else None
+
+
+def _direct_invalid_tags(rows: list[dict[str, Any]]) -> tuple[set[str], list[str]]:
+    tags: set[str] = set()
+    notes: list[str] = []
+    pit_values = [_truthy(row.get("on_pit_road", row.get("OnPitRoad"))) for row in rows]
+    if any(value is True for value in pit_values):
+        tags.add("PIT_ROAD")
+        notes.append("Pit-road telemetry was present during this lap.")
+
+    on_track_values = [_truthy(row.get("is_on_track", row.get("IsOnTrack"))) for row in rows]
+    if any(value is False for value in on_track_values):
+        tags.add("OFF_TRACK")
+        notes.append("The simulator reported off-track samples during this lap.")
+
+    surfaces: list[int] = []
+    for row in rows:
+        value = row.get("player_track_surface", row.get("PlayerTrackSurface"))
+        try:
+            number = int(value) if value is not None else None
+        except (TypeError, ValueError):
+            number = None
+        if number is not None:
+            surfaces.append(number)
+    if any(value in {1, 2} for value in surfaces):
+        tags.add("PIT_ROAD")
+        notes.append("The simulator track-surface state entered the pit lane or pit stall.")
+    if any(value <= 0 for value in surfaces):
+        tags.add("OFF_TRACK")
+        notes.append("The simulator track-surface state left the racing surface.")
+    return tags, list(dict.fromkeys(notes))
+
+
+def _apply_relative_pace_filter(laps: list[LapSummary]) -> list[LapSummary]:
+    """Conservatively reject obvious cooldown/invalid laps using within-run pace."""
+    candidates = [
+        lap for lap in laps
+        if lap.is_useful and lap.lap_time is not None and math.isfinite(float(lap.lap_time))
+    ]
+    if len(candidates) < 4:
+        return laps
+    median_time = median(float(lap.lap_time) for lap in candidates if lap.lap_time is not None)
+    throttle_values = [lap.avg_throttle_pct for lap in candidates if lap.avg_throttle_pct is not None]
+    speed_values = [lap.avg_speed_mph for lap in candidates if lap.avg_speed_mph is not None]
+    median_throttle = median(throttle_values) if throttle_values else None
+    median_speed = median(speed_values) if speed_values else None
+
+    result: list[LapSummary] = []
+    for lap in laps:
+        if lap not in candidates or lap.lap_time is None:
+            result.append(lap)
+            continue
+        tags = {tag.upper() for tag in lap.classification_tags}
+        notes = list(lap.confidence_notes)
+        lap_time = float(lap.lap_time)
+        abnormally_slow = lap_time > max(median_time * 1.15, median_time + 3.0)
+        low_throttle = (
+            median_throttle is not None
+            and lap.avg_throttle_pct is not None
+            and lap.avg_throttle_pct < median_throttle * 0.85
+        )
+        low_speed = (
+            median_speed is not None
+            and lap.avg_speed_mph is not None
+            and lap.avg_speed_mph < median_speed * 0.82
+        )
+        implausibly_fast = lap_time < median_time * 0.72
+        if implausibly_fast:
+            tags.update({"INVALID_SPEED_EVENT", "NO_SETUP_CONCLUSION"})
+            notes.append("Lap time was implausibly fast relative to the clean-lap cohort.")
+        elif abnormally_slow and (low_throttle or low_speed):
+            tags.update({"COOLDOWN", "NO_SETUP_CONCLUSION"})
+            notes.append("Lap pace and driver demand were outside the clean-lap cohort.")
+        if tags & {"COOLDOWN", "INVALID_SPEED_EVENT"}:
+            tags.discard("SOLO_CLEAN")
+            result.append(lap.model_copy(update={
+                "is_useful": False,
+                "lap_type": "invalid",
+                "classification_tags": sorted(tags),
+                "confidence_notes": list(dict.fromkeys(notes)),
+            }))
+        else:
+            result.append(lap)
+    return result
 
 
 def _ensure_normalized(table: Any) -> list[dict[str, Any]]:
@@ -80,13 +180,17 @@ def detect_laps(table: Any, run_id: str = "unassigned") -> list[LapSummary]:
         pct_max = max(pct_values_clean) if pct_values_clean else None
         pct_span = (pct_max - pct_min) if pct_min is not None and pct_max is not None else None
         is_complete = pct_min is not None and pct_max is not None and pct_min <= 2.0 and pct_max >= 98.0
-        is_useful = is_complete and bool(speeds) and max(speeds) >= 30.0
+        direct_invalid_tags, direct_notes = _direct_invalid_tags(lap_rows)
+        is_useful = is_complete and bool(speeds) and max(speeds) >= 30.0 and not direct_invalid_tags
         min_splitter = min(splitters) if splitters else None
         splitter_row = None
         if min_splitter is not None:
             splitter_row = min(lap_rows, key=lambda row: float(row.get("cfsr_height_mm", 1e9)))
 
-        tags = ["SOLO_CLEAN"] if is_useful else ["PARTIAL"]
+        tags = ["SOLO_CLEAN"] if is_useful else (["PARTIAL"] if not is_complete else [])
+        tags.extend(sorted(direct_invalid_tags))
+        if direct_invalid_tags:
+            tags.append("NO_SETUP_CONCLUSION")
         if pct_span is not None and pct_span < 95.0:
             tags.append("SHORT_RUN")
 
@@ -95,7 +199,7 @@ def detect_laps(table: Any, run_id: str = "unassigned") -> list[LapSummary]:
                 lap_id=f"{run_id}:lap:{lap_number}",
                 run_id=run_id,
                 lap_number=lap_number,
-                lap_type="complete" if is_complete else "partial",
+                lap_type="timed" if is_useful else ("complete_invalid" if is_complete else "partial"),
                 is_complete=is_complete,
                 is_useful=is_useful,
                 start_time=min(times) if times else None,
@@ -122,11 +226,11 @@ def detect_laps(table: Any, run_id: str = "unassigned") -> list[LapSummary]:
                 max_abs_steering_deg=max(steering) if steering else None,
                 avg_abs_steering_deg=mean(steering) if steering else None,
                 classification_tags=tags,
-                confidence_notes=[] if is_complete else ["Lap does not span a full 0-100% distance range."],
+                confidence_notes=([] if is_complete else ["Lap does not span a full 0-100% distance range."]) + direct_notes,
             )
         )
 
-    return laps
+    return _apply_relative_pace_filter(laps)
 
 
 def _detect_laps_frame(df: pl.DataFrame, run_id: str = "unassigned") -> list[LapSummary]:
@@ -146,7 +250,7 @@ def _detect_laps_frame(df: pl.DataFrame, run_id: str = "unassigned") -> list[Lap
     ).filter(pl.col("_lap_number").is_not_null())
     if base.is_empty():
         return []
-    agg = base.group_by("_lap_number").agg(
+    agg_exprs: list[pl.Expr] = [
         pl.len().alias("sample_count"),
         pl.col("_lap_pct").min().alias("pct_min"),
         pl.col("_lap_pct").max().alias("pct_max"),
@@ -164,7 +268,17 @@ def _detect_laps_frame(df: pl.DataFrame, run_id: str = "unassigned") -> list[Lap
         pl.col("brake_pct").max().alias("max_brake_pct"),
         pl.col("abs_steering_deg").max().alias("max_abs_steering_deg"),
         pl.col("abs_steering_deg").mean().alias("avg_abs_steering_deg"),
-    ).sort("_lap_number")
+    ]
+    if "on_pit_road" in base.columns:
+        agg_exprs.append(pl.col("on_pit_road").cast(pl.Int8, strict=False).max().alias("any_on_pit_road"))
+    if "is_on_track" in base.columns:
+        agg_exprs.append(pl.col("is_on_track").cast(pl.Int8, strict=False).min().alias("all_on_track"))
+    if "player_track_surface" in base.columns:
+        agg_exprs.extend([
+            pl.col("player_track_surface").cast(pl.Int64, strict=False).min().alias("min_track_surface"),
+            pl.col("player_track_surface").cast(pl.Int64, strict=False).max().alias("max_track_surface"),
+        ])
+    agg = base.group_by("_lap_number").agg(*agg_exprs).sort("_lap_number")
     min_split = (
         base.filter(pl.col("cfsr_height_mm").is_not_null())
         .sort(["_lap_number", "cfsr_height_mm"])
@@ -181,8 +295,27 @@ def _detect_laps_frame(df: pl.DataFrame, run_id: str = "unassigned") -> list[Lap
         pct_span = (float(pct_max) - float(pct_min)) if pct_min is not None and pct_max is not None else None
         is_complete = pct_min is not None and pct_max is not None and float(pct_min) <= 2.0 and float(pct_max) >= 98.0
         max_speed = rec.get("max_speed_mph")
-        is_useful = is_complete and max_speed is not None and float(max_speed) >= 30.0
-        tags = ["SOLO_CLEAN"] if is_useful else ["PARTIAL"]
+        direct_tags: set[str] = set()
+        direct_notes: list[str] = []
+        if rec.get("any_on_pit_road") == 1:
+            direct_tags.add("PIT_ROAD")
+            direct_notes.append("Pit-road telemetry was present during this lap.")
+        if rec.get("all_on_track") == 0:
+            direct_tags.add("OFF_TRACK")
+            direct_notes.append("The simulator reported off-track samples during this lap.")
+        surface_min = rec.get("min_track_surface")
+        surface_max = rec.get("max_track_surface")
+        if surface_min is not None and surface_max is not None:
+            surface_values = range(int(surface_min), int(surface_max) + 1)
+            if any(value in {1, 2} for value in surface_values):
+                direct_tags.add("PIT_ROAD")
+            if int(surface_min) <= 0:
+                direct_tags.add("OFF_TRACK")
+        is_useful = is_complete and max_speed is not None and float(max_speed) >= 30.0 and not direct_tags
+        tags = ["SOLO_CLEAN"] if is_useful else (["PARTIAL"] if not is_complete else [])
+        tags.extend(sorted(direct_tags))
+        if direct_tags:
+            tags.append("NO_SETUP_CONCLUSION")
         if pct_span is not None and pct_span < 95.0:
             tags.append("SHORT_RUN")
         start_time = rec.get("start_time")
@@ -192,7 +325,7 @@ def _detect_laps_frame(df: pl.DataFrame, run_id: str = "unassigned") -> list[Lap
                 lap_id=f"{run_id}:lap:{lap_number}",
                 run_id=run_id,
                 lap_number=lap_number,
-                lap_type="complete" if is_complete else "partial",
+                lap_type="timed" if is_useful else ("complete_invalid" if is_complete else "partial"),
                 is_complete=is_complete,
                 is_useful=is_useful,
                 start_time=float(start_time) if start_time is not None else None,
@@ -219,7 +352,7 @@ def _detect_laps_frame(df: pl.DataFrame, run_id: str = "unassigned") -> list[Lap
                 max_abs_steering_deg=float(rec["max_abs_steering_deg"]) if rec.get("max_abs_steering_deg") is not None else None,
                 avg_abs_steering_deg=float(rec["avg_abs_steering_deg"]) if rec.get("avg_abs_steering_deg") is not None else None,
                 classification_tags=tags,
-                confidence_notes=[] if is_complete else ["Lap does not span a full 0-100% distance range."],
+                confidence_notes=([] if is_complete else ["Lap does not span a full 0-100% distance range."]) + direct_notes,
             )
         )
-    return laps
+    return _apply_relative_pace_filter(laps)

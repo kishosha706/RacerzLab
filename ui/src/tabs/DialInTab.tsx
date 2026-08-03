@@ -28,26 +28,15 @@ function dialInTone(label: string): "good" | "warn" | "neutral" {
   return "neutral";
 }
 
-function swingKindLabel(strength: string, risk: string): string {
-  const combined = `${strength} ${risk}`.toLowerCase();
-  if (combined.includes("package") || combined.includes("big") || combined.includes("high risk")) return "Major setup change";
-  if (combined.includes("balance")) return "Balance change";
-  if (combined.includes("fine")) return "Fine adjustment";
-  return "Small setup change";
-}
-
 function formatTargetList(swing: DialInSwing): string {
-  const labels = [
-    ...(swing.validate_with_labels ?? swing.validate_with.map((value) => value.replace(/_/g, " "))),
-    ...(swing.watch_for_labels ?? swing.watch_for.map((value) => value.replace(/_/g, " "))),
-  ];
+  const labels = swing.validate_with_labels ?? swing.validate_with.map((value) => value.replace(/_/g, " "));
   const targets = labels.filter((item, index, all) => item && all.indexOf(item) === index);
   return targets.join(", ") || "the same corner phase";
 }
 
 function garageLeverLabel(swing: DialInSwing): string | null {
   if (swing.setup_area === "shock_collar" || swing.setup_area.includes("ride_height")) {
-    return "Garage note: ride height may be changed through shock collar offsets; that also affects spring preload and corner weight.";
+    return "Garage note: use the named Ride Height fields. If this car exposes collar or perch offsets instead, recheck cross weight after the change.";
   }
   return null;
 }
@@ -86,23 +75,29 @@ function SwingCard({ swing, compact = false }: { swing: DialInSwing; compact?: b
       <header>
         <div>
           <span>{cleanLabel(swing.setup_area, "Setup area")}</span>
-          <h3>{swingKindLabel(swing.strength_label, swing.risk_label)}: {swing.title}</h3>
+          <h3>{swing.title}</h3>
           <p className="dialin-change-this"><span>Make this setup change:</span> {swing.change_this}</p>
-          <p className="dialin-garage-helper">Garage control: {swing.garage_lever}</p>
+          <p className="dialin-garage-helper">Garage control{(swing.control_keys?.length ?? 0) > 1 ? "s" : ""}: {swing.garage_lever}</p>
+          <p className="dialin-garage-helper"><span>Why this size:</span> {swing.change_size_explanation}</p>
           {helper && <p className="dialin-garage-note">{helper}</p>}
         </div>
         <div className="dialin-card-pills">
-          <span className="dialin-mini-pill">{swing.strength_label}</span>
+          <span className="dialin-mini-pill">{swing.change_size_label}</span>
+          <span className="dialin-mini-pill">{swing.influence_label}</span>
           <span className={`dialin-mini-pill ${dialInTone(swing.risk_label)}`}>{swing.risk_label}</span>
           <span className={`dialin-mini-pill ${dialInTone(swing.readiness_label)}`}>{swing.readiness_label}</span>
         </div>
       </header>
       <div className="dialin-action-grid">
-        <div><span>Expected effect</span><p>{swing.effect}</p></div>
+        <div><span>Expected improvement</span><p>{swing.effect}</p></div>
         <div><span>Trade-off</span><p>{swing.counter_effect}</p></div>
-        <div><span>Test exactly this</span><p>{swing.one_change_test}</p></div>
+        <div><span>What this control does</span><p>{swing.control_expectation}</p></div>
+        <div><span>Related settings to recheck</span><p>{swing.control_guardrail}</p></div>
+        <div><span>Keep it if</span><p>{swing.keep_if}</p></div>
+        <div><span>Undo it if</span><p>{swing.undo_if}</p></div>
+        <div><span>Test plan</span><p>{swing.one_change_test}</p></div>
         <div>
-          <span>Validate with</span>
+          <span>Evidence signals</span>
           <p>{formatTargetList(swing)}</p>
         </div>
       </div>

@@ -47,6 +47,17 @@ def test_setup_page_surfaces_key_system_cards_before_corner_tables() -> None:
     assert system_row.index("Steering / Control") < setup.index('{/* 3) 2x2 Corner Board */}')
 
 
+def test_setup_page_uses_unambiguous_driver_control_names() -> None:
+    setup = _read("ui/src/tabs/SetupTab.tsx")
+
+    assert 'label: "Front Brake Bias"' in setup
+    assert 'label: "Rear End Ratio"' in setup
+    assert 'label: "Tape / Cooling"' in setup
+    assert 'label: "Steering Ratio / Pinion"' in setup
+    assert 'displayRatio.toLowerCase().includes("mm/rev")' in setup
+    assert '? "Steering Pinion"' in setup
+
+
 def test_setup_page_uses_full_width_garage_layout_and_distinct_system_colours() -> None:
     styles = _read("ui/src/styles.css")
 

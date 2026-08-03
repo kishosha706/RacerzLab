@@ -1,4 +1,4 @@
-import { AlertTriangle, Bookmark, CheckCircle, RotateCcw, Thermometer, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle, RotateCcw, Thermometer, XCircle } from "lucide-react";
 import { VERDICT_COLORS } from "../constants/verdict";
 import type { VerdictKind } from "../types/compare";
 
@@ -20,6 +20,9 @@ export interface DidItWorkCardProps {
   splitterDeltaMm?: number | null;
   platformRiskDelta?: number | null;
   scrubDelta?: number | null;
+  wholeLapDeltaS?: number | null;
+  paceNoiseBandS?: number | null;
+  eligibleLapCounts?: { baseline: number; test: number } | null;
   evidence: string[];
   warnings: string[];
   nextStep?: string | null;
@@ -28,17 +31,15 @@ export interface DidItWorkCardProps {
   requiredNextData?: string[];
   doNotChangeWarnings?: string[];
   setupChanges?: Array<{ label: string; baseline_value: unknown; test_value: unknown }>;
-  contextWarnings?: Array<{ label: string; warning: string }>;  weatherWarning?: string | null;
+  contextWarnings?: Array<{ label: string; warning: string }>;
+  weatherWarning?: string | null;
   tireContext?: TireContextProps | null;
   /** Callbacks */
-  onSaveFinding?: () => void;
   onCreateTestPlan?: () => void;
   onStageNextTest?: () => void;
   onOpenSetup?: () => void;
   onOpenEvidence?: () => void;
   onOpenMap?: () => void;
-  saving?: boolean;
-  saveStatus?: string | null;
   disabled?: boolean;
 }
 
@@ -73,12 +74,13 @@ function tireContextColor(delta: number | null | undefined): string {
 export function DidItWorkCard({
   verdict, headline, confidenceScore, testDisciplineScore,
   targetZoneDeltaMph, splitterDeltaMm, platformRiskDelta, scrubDelta,
+  wholeLapDeltaS, paceNoiseBandS, eligibleLapCounts,
   evidence, warnings, nextStep, successMetric,
   causeBucket, requiredNextData, doNotChangeWarnings,
   setupChanges, contextWarnings, weatherWarning,
   tireContext,
-  onSaveFinding, onCreateTestPlan, onStageNextTest, onOpenSetup, onOpenEvidence, onOpenMap,
-  saving, saveStatus, disabled,
+  onCreateTestPlan, onStageNextTest, onOpenSetup, onOpenEvidence, onOpenMap,
+  disabled,
 }: DidItWorkCardProps) {
   const color = VERDICT_COLORS[verdict] ?? "#8d9aaa";
   const Icon = VERDICT_ICONS[verdict] ?? AlertTriangle;
@@ -103,6 +105,16 @@ export function DidItWorkCard({
           <div className="diw-score-block" style={{ borderColor: discColor }}>
             <span className="diw-score-label">Test Discipline</span>
             <span className="diw-score-value" style={{ color: discColor }}>{testDisciplineScore}/100</span>
+          </div>
+        )}
+        {wholeLapDeltaS != null && (
+          <div className="diw-score-block" style={{ borderColor: wholeLapDeltaS < 0 ? "#22c55e" : wholeLapDeltaS > 0 ? "#ef4444" : "#8d9aaa" }}>
+            <span className="diw-score-label">Median Whole-Lap Pace</span>
+            <span className="diw-score-value" style={{ color: wholeLapDeltaS < 0 ? "#22c55e" : wholeLapDeltaS > 0 ? "#ef4444" : "#8d9aaa" }}>
+              {deltaSign(wholeLapDeltaS)}{wholeLapDeltaS.toFixed(3)} s
+            </span>
+            {paceNoiseBandS != null && <span className="muted">noise ±{paceNoiseBandS.toFixed(3)} s</span>}
+            {eligibleLapCounts && <span className="muted">{eligibleLapCounts.baseline} / {eligibleLapCounts.test} eligible laps</span>}
           </div>
         )}
         {/* Delta summary */}
@@ -271,12 +283,6 @@ export function DidItWorkCard({
 
       {/* ── Action buttons ── */}
       <div className="diw-actions">
-        {onSaveFinding && (
-          <button className="diw-btn diw-btn-primary" onClick={onSaveFinding} disabled={saving || disabled} aria-disabled={saving || disabled}
-            style={{ fontWeight: 600, fontSize: 13 }}>
-            <Bookmark size={14} /> {saving ? "Saving…" : "Save Finding"}
-          </button>
-        )}
         {onStageNextTest && (
           <button className="diw-btn diw-btn-primary" onClick={onStageNextTest} disabled={disabled} aria-disabled={disabled}
             style={{ fontWeight: 600, fontSize: 13 }}>
@@ -304,7 +310,6 @@ export function DidItWorkCard({
           </button>
         )}
       </div>
-      {saveStatus && <p className="diw-save-status">{saveStatus}</p>}
     </div>
   );
 }

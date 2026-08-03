@@ -79,10 +79,10 @@ const SETUP_DIFF_FIELDS: SetupDiffField[] = [
   { key: "rr_rear_spring_n_per_mm", group: "Springs", label: "RR Spring", unit: "lb/in", decimals: 0, value: (s) => imp(s.rr_rear_spring_n_per_mm ?? null, NMM_LB, 0) },
   { key: "nose_weight_percent", group: "Weight", label: "Nose Weight", unit: "%", decimals: 1, value: (s) => s.nose_weight_percent ?? null },
   { key: "cross_weight_percent", group: "Weight", label: "Cross Weight", unit: "%", decimals: 1, value: (s) => s.cross_weight_percent ?? null },
-  { key: "tape_percent", group: "Aero/cooling", label: "Tape", unit: "%", decimals: 0, value: (s) => s.tape_percent ?? null },
-  { key: "rear_end_ratio", group: "Gearing", label: "Rear Gear", unit: ":1", decimals: 3, value: (s) => s.rear_end_ratio ?? null },
-  { key: "front_brake_bias_percent", group: "Controls", label: "Brake Bias", unit: "%", decimals: 1, value: (s) => s.front_brake_bias_percent ?? null },
-  { key: "steering_ratio", group: "Controls", label: "Steering Ratio", value: (s) => s.steering_ratio ?? deriveSteeringRatio(evNum(s, "steering_pinion_mm")) },
+  { key: "tape_percent", group: "Aero/cooling", label: "Tape / Cooling", unit: "%", decimals: 0, value: (s) => s.tape_percent ?? null },
+  { key: "rear_end_ratio", group: "Gearing", label: "Rear End Ratio", unit: ":1", decimals: 3, value: (s) => s.rear_end_ratio ?? null },
+  { key: "front_brake_bias_percent", group: "Brakes", label: "Front Brake Bias", unit: "%", decimals: 1, value: (s) => s.front_brake_bias_percent ?? null },
+  { key: "steering_ratio", group: "Driver controls", label: "Steering Ratio / Pinion", value: (s) => s.steering_ratio ?? deriveSteeringRatio(evNum(s, "steering_pinion_mm")) },
   { key: "steering_offset_deg", group: "Controls", label: "Steering Offset", unit: "deg", decimals: 2, value: (s) => s.steering_offset_deg ?? null },
 ];
 
@@ -97,7 +97,7 @@ function sameDiffValue(left: SetupDiffValue, right: SetupDiffValue): boolean {
 
 function formatDiffValue(value: SetupDiffValue, unit?: string): string {
   if (value == null || (typeof value === "number" && !Number.isFinite(value))) return "Unavailable";
-  return `${value}${unit ? ` ${unit}` : ""}`;
+  return `${value}${unit && typeof value === "number" ? ` ${unit}` : ""}`;
 }
 
 function formatDelta(baseline: SetupDiffValue, current: SetupDiffValue, decimals = 3): string {
@@ -292,6 +292,9 @@ export function SetupTab({ overview, onToggleMapOverlay }: SetupTabProps) {
   const pinion  = evNum(setup, "steering_pinion_mm");
   const derivedRatio = (!rawRatio || rawRatio === "") ? deriveSteeringRatio(pinion) : null;
   const displayRatio = rawRatio || derivedRatio;
+  const steeringControlLabel = typeof displayRatio === "string" && displayRatio.toLowerCase().includes("mm/rev")
+    ? "Steering Pinion"
+    : "Steering Ratio";
   // Master cylinders → imperial
   const frontMc = imp(evNum(setup, "front_mc_mm"), MM_IN, 3);
   const rearMc  = imp(evNum(setup, "rear_mc_mm"), MM_IN, 3);
@@ -344,15 +347,15 @@ export function SetupTab({ overview, onToggleMapOverlay }: SetupTabProps) {
         <div className="gr-card setup-system-card setup-system-steering">
           <div className="gr-card-head"><Gauge size={12} /> Steering / Control</div>
           <div className="gr-card-body">
-            <Field l="Steering Ratio" v={displayRatio ?? null} />
+            <Field l={steeringControlLabel} v={displayRatio ?? null} />
             {derivedRatio && pinion != null && (
               <Field l="Steering Pinion" v={pinion} u="mm/rev" />
             )}
             <Field l="Steering Offset" v={setup.steering_offset_deg ?? null} u="deg" />
-            <Field l="Brake Bias" v={setup.front_brake_bias_percent ?? null} u="%" />
+            <Field l="Front Brake Bias" v={setup.front_brake_bias_percent ?? null} u="%" />
             <Field l="Front Master Cyl" v={frontMc} u="in" />
             <Field l="Rear Master Cyl" v={rearMc} u="in" />
-            <Field l="Tape" v={setup.tape_percent ?? null} u="%" />
+            <Field l="Tape / Cooling" v={setup.tape_percent ?? null} u={typeof setup.tape_percent === "number" ? "%" : undefined} />
           </div>
         </div>
 

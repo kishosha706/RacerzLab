@@ -11,7 +11,7 @@ class SetupSnapshot(BaseModel):
     setup_name: Optional[str] = None
     setup_json: dict[str, Any] = Field(default_factory=dict)
     extracted_values: dict[str, Any] = Field(default_factory=dict)
-    tape_percent: Optional[float] = None
+    tape_percent: Optional[float | str] = None
     rear_end_ratio: Optional[float] = None
     lf_ride_height_mm: Optional[float] = None
     rf_ride_height_mm: Optional[float] = None

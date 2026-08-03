@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from racelab_engine.analysis.lap_detection import detect_laps
+from racelab_engine.analysis.lap_classification import classify_laps
 
 
 def _lap_row(lap: object, pct: float, time: float, speed: float = 120.0) -> dict[str, object]:
@@ -53,3 +54,52 @@ def test_non_monotonic_sample_times_use_observed_time_bounds() -> None:
     assert laps[0].start_time == 10.0
     assert laps[0].end_time == 30.0
     assert laps[0].lap_time == 20.0
+
+
+def test_complete_pit_road_lap_is_not_setup_evidence() -> None:
+    rows = [_lap_row(4, 0.0, 0.0), _lap_row(4, 0.5, 20.0), _lap_row(4, 1.0, 40.0)]
+    rows[1]["on_pit_road"] = True
+
+    lap = detect_laps(rows)[0]
+
+    assert lap.is_complete is True
+    assert lap.is_useful is False
+    assert "PIT_ROAD" in lap.classification_tags
+    assert "NO_SETUP_CONCLUSION" in lap.classification_tags
+
+    classified = classify_laps([lap])[0]
+    assert "PARTIAL" not in classified.classification_tags
+
+
+def test_complete_off_track_lap_is_not_setup_evidence() -> None:
+    rows = [_lap_row(5, 0.0, 0.0), _lap_row(5, 0.5, 20.0), _lap_row(5, 1.0, 40.0)]
+    rows[1]["player_track_surface"] = 0
+
+    lap = detect_laps(rows)[0]
+
+    assert lap.is_useful is False
+    assert "OFF_TRACK" in lap.classification_tags
+
+
+def test_relative_pace_filter_rejects_obvious_cooldown() -> None:
+    rows: list[dict[str, object]] = []
+    for lap_number, lap_time, throttle in [
+        (1, 50.0, 95.0),
+        (2, 50.2, 94.0),
+        (3, 49.9, 96.0),
+        (4, 65.0, 45.0),
+    ]:
+        lap_rows = [
+            _lap_row(lap_number, 0.0, 0.0, 150.0),
+            _lap_row(lap_number, 0.5, lap_time / 2, 150.0),
+            _lap_row(lap_number, 1.0, lap_time, 150.0),
+        ]
+        for row in lap_rows:
+            row["throttle_pct"] = throttle
+        rows.extend(lap_rows)
+
+    laps = detect_laps(rows)
+    cooldown = next(lap for lap in laps if lap.lap_number == 4)
+
+    assert cooldown.is_useful is False
+    assert "COOLDOWN" in cooldown.classification_tags

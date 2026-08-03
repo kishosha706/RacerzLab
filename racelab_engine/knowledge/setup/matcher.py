@@ -33,6 +33,17 @@ EVIDENCE_ALIASES = {
     "compare_baseline": {"compare_baseline_test"},
     "compare_test": {"compare_baseline_test"},
 }
+
+
+def _direction_sign(direction: str) -> int:
+    normalized = direction.lower()
+    positive_terms = ("increase", "add ", "raise", "higher", "shorter")
+    negative_terms = ("reduce", "lower", "decrease", "taller")
+    if any(term in normalized for term in positive_terms):
+        return 1
+    if any(term in normalized for term in negative_terms):
+        return -1
+    return 0
 @dataclass(frozen=True)
 class RankedSetupEffect:
     effect: SetupEffect
@@ -245,6 +256,7 @@ def query_setup_knowledge(
     evidence: list[str] | None = None,
     limit: int = 5,
     knowledge: SetupKnowledge | None = None,
+    learning_biases: dict[tuple[str, int], dict[str, object]] | None = None,
 ) -> SetupQueryResult:
     knowledge = knowledge or load_setup_knowledge()
     capabilities = knowledge.car_capability_by_family.get(car_family)
@@ -277,6 +289,16 @@ def query_setup_knowledge(
             package_archetype,
             track_family,
         )
+        direction_sign = _direction_sign(effect.direction)
+        learned = (learning_biases or {}).get((effect.setup_area, direction_sign)) if direction_sign else None
+        if learned:
+            count = int(learned.get("count", 0))
+            outcome = float(learned.get("weighted_outcome", 0.0))
+            adjustment = max(-1.5, min(1.5, outcome * 1.25))
+            score += adjustment
+            reasons.append(
+                f"personal setup memory: {count} controlled tests, directional score {outcome:+.2f}"
+            )
         if score >= 4.0:
             ranked.append(
                 RankedSetupEffect(

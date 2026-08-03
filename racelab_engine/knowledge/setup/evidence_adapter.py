@@ -17,6 +17,8 @@ from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.services.import_service import build_channel_summary
 from racelab_engine.services.track_map_service import find_best_map_for_run
 from racelab_engine.storage.repository import RaceLabRepository
+from racelab_engine.analysis.lap_eligibility import eligible_laps
+from racelab_engine.services.setup_learning_service import get_setup_area_biases
 
 
 NEXT_GEN_PATTERNS = (
@@ -376,7 +378,7 @@ def build_run_evidence_context(
     if setup_status in {"ready", "partially_ready"}:
         flags.add("setup_snapshot")
 
-    useful_laps = [lap for lap in overview.laps if lap.sample_count > 0]
+    useful_laps = eligible_laps(overview.laps)
     lap_status = "ready" if useful_laps else "missing"
     lap_present = ["lap/window data"] if useful_laps else []
     lap_missing = [] if useful_laps else ["lap/window data"]
@@ -721,6 +723,7 @@ def query_setup_for_run_context(
         package_archetype=package_archetype,
         evidence=context.evidence_flags,
         limit=limit,
+        learning_biases=get_setup_area_biases(context.car_name, context.track_name),
     )
     candidate_readiness = [
         CandidateEvidenceReadiness(

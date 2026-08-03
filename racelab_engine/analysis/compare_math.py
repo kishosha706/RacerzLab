@@ -102,15 +102,45 @@ def aggregate_driver_stats(
     start: float = 0.0, end: float = 100.0,
 ) -> DriverComparison:
     grid = build_lap_grid(start, end)
-    chs = ["throttle_pct", "brake_pct", "abs_steering_deg"]
+    chs = ["throttle_pct", "brake_pct", "steering_deg", "abs_steering_deg"]
     bl = interpolate_run_to_grid(bl_rows, chs, grid)
     t = interpolate_run_to_grid(t_rows, chs, grid)
     th = aggregate_channel_stats(bl, t, "throttle_pct", "Throttle", "%", "better")
     br = aggregate_channel_stats(bl, t, "brake_pct", "Brake", "%", "neutral")
     st = aggregate_channel_stats(bl, t, "abs_steering_deg", "Steering", "deg", "worse")
-    changed = (th.delta_avg and abs(th.delta_avg) > 2) or (st.delta_avg and abs(st.delta_avg) > 0.5)
+
+    def _paired_mae(channel: str) -> float | None:
+        baseline_values = bl.get(channel) or []
+        test_values = t.get(channel) or []
+        deltas = [
+            abs(float(test_value) - float(baseline_value))
+            for baseline_value, test_value in zip(baseline_values, test_values)
+            if baseline_value is not None and test_value is not None
+        ]
+        return sum(deltas) / len(deltas) if deltas else None
+
+    throttle_mae = _paired_mae("throttle_pct")
+    brake_mae = _paired_mae("brake_pct")
+    steering_mae = _paired_mae("steering_deg")
+    if steering_mae is None:
+        steering_mae = _paired_mae("abs_steering_deg")
+    changed = (
+        (throttle_mae is not None and throttle_mae > 4.0)
+        or (brake_mae is not None and brake_mae > 3.0)
+        or (steering_mae is not None and steering_mae > 1.5)
+    )
+    normalized_differences = [
+        throttle_mae / 4.0 if throttle_mae is not None else 0.0,
+        brake_mae / 3.0 if brake_mae is not None else 0.0,
+        steering_mae / 1.5 if steering_mae is not None else 0.0,
+    ]
+    repeatability = max(0.0, min(100.0, 100.0 - 35.0 * max(normalized_differences)))
     return DriverComparison(
         avg_throttle_pct=th, avg_brake_pct=br, avg_abs_steering_deg=st,
+        throttle_mae_pct=round(throttle_mae, 3) if throttle_mae is not None else None,
+        brake_mae_pct=round(brake_mae, 3) if brake_mae is not None else None,
+        steering_mae_deg=round(steering_mae, 3) if steering_mae is not None else None,
+        repeatability_score=round(repeatability, 1),
         driver_changed_warning="Driver input changed — reduced comparison confidence." if changed else None,
         driver_verdict="changed" if changed else "consistent",
     )
@@ -328,10 +358,12 @@ def compute_whole_car_index(
     discipline_score: float = 50.0,
     context_problems: int = 0,
     track_type: str = "oval",
+    speed_delta_mph: float | None = None,
 ) -> WholeCarIndex:
     # Logistic scoring for continuous, analog sub-scores
-    speed_delta = platform.dynamic_pressure.delta_avg if platform.dynamic_pressure else None
-    si = logistic_score(delta=speed_delta, noise=0.05, steepness=2.5, higher_is_better=True)
+    # Speed is measured directly. Dynamic pressure remains platform context and
+    # must not masquerade as a speed result when air density may differ.
+    si = logistic_score(delta=speed_delta_mph, noise=0.05, steepness=2.5, higher_is_better=True)
 
     cfs_delta = platform.cfs_height.delta_avg if platform.cfs_height else None
     pi = logistic_score(delta=cfs_delta, noise=0.001, steepness=80.0, higher_is_better=True)

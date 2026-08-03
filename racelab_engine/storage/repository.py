@@ -12,6 +12,7 @@ from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.models.segment import SegmentSummary
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
+from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.storage.db import initialize_database
 
 
@@ -41,7 +42,15 @@ class RaceLabRepository:
         connection = initialize_database(self.db_path)
         connection.close()
 
-    def save_import(self, overview: RunOverview, fingerprint: FileFingerprint | None = None) -> None:
+    def save_import(
+        self,
+        overview: RunOverview,
+        fingerprint: FileFingerprint | None = None,
+        *,
+        analysis_mode: str | None = None,
+    ) -> None:
+        from racelab_engine.analysis import get_analysis_engine_mode
+
         connection = initialize_database(self.db_path)
         imported_at = utc_now_iso()
         session = overview.session
@@ -81,7 +90,7 @@ class RaceLabRepository:
                     imported_at,
                     "1.0.0",  # analysis_engine_version
                     None,     # analysis_config_hash
-                    "row",    # analysis_mode
+                    analysis_mode or get_analysis_engine_mode(),
                     analyzed_at,
                     session.sim_date_time,
                     session.car_name,
@@ -495,7 +504,7 @@ class RaceLabRepository:
 
         session = SessionSummary.model_validate_json(row["session_json"])
         laps = self.get_laps(run_id)
-        useful_laps = [lap for lap in laps if lap.is_useful]
+        useful_laps = eligible_laps(laps)
         best_lap = min(useful_laps, key=lambda lap: lap.lap_time or 999999.0) if useful_laps else None
         return RunOverview(
             run_id=run_id,

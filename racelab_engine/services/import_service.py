@@ -1303,7 +1303,11 @@ class ImportService:
 
         try:
             t0 = time.perf_counter()
-            self.repository.save_import(result.overview, result.fingerprint)
+            self.repository.save_import(
+                result.overview,
+                result.fingerprint,
+                analysis_mode="vectorized" if normalized_frame is not None else "row",
+            )
             _timings["save_run_metadata"] = time.perf_counter() - t0
 
             t0 = time.perf_counter()
@@ -1317,6 +1321,8 @@ class ImportService:
         rows_or_frame: Any = normalized_frame if normalized_frame is not None else result.records
         # 1. Build and persist segments
         t0 = time.perf_counter()
+        segments_persisted = False
+        segment_warning: str | None = None
         try:
             from racelab_engine.analysis.segments import build_fixed_pct_segments
             from racelab_engine.models.segment import SegmentSummary as ModelSegment
@@ -1327,10 +1333,12 @@ class ImportService:
                 ]
                 self.repository.save_segments(run_id, model_segments)
                 _log.info("Saved %d segments for run %s", len(model_segments), run_id)
+            segments_persisted = True
             for k, v in segment_profile.items():
                 _timings[f"segment_sub_{k}"] = float(v)
         except Exception as exc:
             _log.warning("Segment persistence failed for run %s: %s", run_id, exc)
+            segment_warning = "Segment analysis could not be persisted; lap and run analysis remain available."
         _timings["segment_building"] = time.perf_counter() - t0
 
         numeric_timings = [(k, v) for k, v in _timings.items() if isinstance(v, (int, float))]
@@ -1342,8 +1350,10 @@ class ImportService:
         self.last_import_timings = dict(_timings)
 
         implemented = list(result.status.implemented)
-        for item in ["SQLite persistence", f"telemetry cache persistence ({cache_result.format})",
-                      "segment persistence"]:
+        completed_persistence = ["SQLite persistence", f"telemetry cache persistence ({cache_result.format})"]
+        if segments_persisted:
+            completed_persistence.append("segment persistence")
+        for item in completed_persistence:
             if item not in implemented:
                 implemented.append(item)
         status_message = "Existing run updated." if existing_run_updated else (
@@ -1352,6 +1362,8 @@ class ImportService:
             "telemetry cache, and segments."
         )
         warnings = list(result.status.warnings)
+        if segment_warning:
+            warnings.append(segment_warning)
         if existing_run_updated:
             warnings.append("Duplicate telemetry detected - updated the existing run record.")
         result.status = result.status.model_copy(

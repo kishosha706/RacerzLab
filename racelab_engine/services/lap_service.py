@@ -4,6 +4,11 @@ from typing import Any
 
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.storage.repository import RaceLabRepository
+from racelab_engine.analysis.lap_eligibility import (
+    eligible_laps as filter_eligible_laps,
+    lap_ineligibility_reasons,
+    lap_is_eligible,
+)
 
 
 def format_lap_time(seconds: float | None) -> str:
@@ -35,34 +40,18 @@ def format_delta(delta_seconds: float | None) -> str:
 
 def find_best_lap(laps: list[LapSummary]) -> LapSummary | None:
     """Return the fastest useful lap."""
-    if not (useful := [l for l in laps if l.is_useful and l.lap_time is not None]):
+    if not (useful := filter_eligible_laps(laps)):
         return None
     return min(useful, key=lambda l: l.lap_time or 999999.0)
 
 
 def useful_laps(laps: list[LapSummary]) -> list[LapSummary]:
-    return [l for l in laps if l.is_useful]
+    return filter_eligible_laps(laps)
 
 
 def _collect_invalid_reasons(lap: LapSummary) -> list[str]:
     """Collect human-readable reasons why a lap is not useful for comparison."""
-    reasons: list[str] = []
-    tags_upper = [t.upper() for t in lap.classification_tags]
-    tag_reason_map = {
-        "OUT_LAP": "Out lap (pit exit)",
-        "COOLDOWN": "Cool-down lap",
-        "PIT_ROAD": "Pit road included",
-        "WRECK_OR_SPIN": "Wreck or spin detected",
-        "INVALID_SPEED_EVENT": "Invalid speed event",
-    }
-    for tag, reason in tag_reason_map.items():
-        if tag in tags_upper:
-            reasons.append(reason)
-    if not lap.is_complete:
-        reasons.append("Incomplete lap")
-    if not lap.is_useful and not reasons:
-        reasons.append("Short or incomplete lap")
-    return reasons
+    return lap_ineligibility_reasons(lap)
 
 
 def classify_lap_type(lap: LapSummary, all_laps: list[LapSummary]) -> str:
@@ -71,7 +60,7 @@ def classify_lap_type(lap: LapSummary, all_laps: list[LapSummary]) -> str:
         return "unknown"
 
     # Find first and last useful/timed laps
-    timed = [l for l in all_laps if l.is_useful and l.lap_time is not None]
+    timed = filter_eligible_laps(all_laps)
     if not timed:
         return "unknown"
 
@@ -89,7 +78,7 @@ def classify_lap_type(lap: LapSummary, all_laps: list[LapSummary]) -> str:
         return "in"
 
     # Timed lap: useful with lap time
-    if lap.is_useful and lap.lap_time is not None:
+    if lap_is_eligible(lap):
         return "timed"
 
     # Partial/incomplete between timed laps
@@ -134,7 +123,7 @@ def build_lap_list_for_run(run_id: str, repo: RaceLabRepository | None = None) -
             "lap_time_display": format_lap_time(lap.lap_time),
             "delta_s": delta,
             "delta_display": format_delta(delta) if delta is not None else ("BEST" if best and lap.lap_id == best.lap_id else ""),
-            "is_valid": lap.is_complete,
+            "is_valid": lap_is_eligible(lap),
             "is_useful": lap.is_useful,
             "invalid_reasons": _collect_invalid_reasons(lap),
             "sample_count": lap.sample_count or 0,

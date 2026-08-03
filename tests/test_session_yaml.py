@@ -51,3 +51,34 @@ CarSetup:
     assert setup.rr_ride_height_mm == 137
     assert setup.steering_ratio == "10:1"
     assert setup.steering_offset_deg == 10
+
+
+def test_next_gen_rear_ratio_and_steering_pinion_aliases() -> None:
+    setup = extract_setup_snapshot(
+        """
+CarSetup:
+  Chassis:
+    Front:
+      SteeringPinion: 60 mm/rev
+    Rear:
+      FinalDriveRatio: 3.684
+""",
+        run_id="next-gen",
+    )
+
+    assert setup.rear_end_ratio == 3.684
+    assert setup.steering_ratio == "60 mm/rev"
+
+
+def test_discrete_tape_configuration_is_not_discarded_as_non_numeric() -> None:
+    setup = extract_setup_snapshot(
+        """
+CarSetup:
+  Chassis:
+    Front:
+      TapeConfiguration: Qual
+""",
+        run_id="late-model",
+    )
+
+    assert setup.tape_percent == "Qual"

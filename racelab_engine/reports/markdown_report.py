@@ -114,7 +114,7 @@ def generate_markdown_report(overview: RunOverview) -> str:
                 f"- Springs: LF {_value(setup.lf_front_spring_n_per_mm)} / RF {_value(setup.rf_front_spring_n_per_mm)} / LR {_value(setup.lr_rear_spring_n_per_mm)} / RR {_value(setup.rr_rear_spring_n_per_mm)}",
                 "- Shocks: Unavailable",
                 "- Packers/shims: Unavailable",
-                f"- Tape: {_value(setup.tape_percent, '%' if setup.tape_percent is not None else '')}",
+                f"- Tape: {_value(setup.tape_percent, '%' if isinstance(setup.tape_percent, (int, float)) else '')}",
                 f"- Gear: {_value(setup.rear_end_ratio)}",
             ]
         )

@@ -76,8 +76,28 @@ export interface DriverComparison {
   avg_brake_pct: ChannelDeltaStats | null;
   avg_abs_steering_deg: ChannelDeltaStats | null;
   max_abs_steering_deg: ChannelDeltaStats | null;
+  throttle_mae_pct: number | null;
+  brake_mae_pct: number | null;
+  steering_mae_deg: number | null;
+  repeatability_score: number | null;
   driver_changed_warning: string | null;
   driver_verdict: string | null;
+}
+
+export interface PaceComparison {
+  baseline_selected_lap_time_s: number | null;
+  test_selected_lap_time_s: number | null;
+  selected_lap_delta_s: number | null;
+  baseline_median_lap_time_s: number | null;
+  test_median_lap_time_s: number | null;
+  cohort_delta_s: number | null;
+  baseline_eligible_laps: number;
+  test_eligible_laps: number;
+  noise_band_s: number | null;
+  is_significant: boolean | null;
+  direction: "faster" | "slower" | "no_clear_difference" | "insufficient_data";
+  confidence_score: number;
+  confidence_notes: string[];
 }
 
 export interface PowertrainComparison {
@@ -135,8 +155,11 @@ export interface SetupChange {
   group: string;
   baseline_value: unknown;
   test_value: unknown;
+  unit: string | null;
   delta: string | null;
-  significance: string;
+  significance: "small" | "medium" | "large" | "unknown";
+  magnitude_basis: string | null;
+  relative_delta_percent: number | null;
   related_to_target_issue: boolean;
 }
 
@@ -149,6 +172,27 @@ export interface ContextChange {
   is_problem: boolean;
 }
 
+export interface TargetZoneChannelDelta {
+  channel: string;
+  label: string;
+  unit: string;
+  baseline_avg: number | null;
+  test_avg: number | null;
+  delta: number | null;
+  baseline_min: number | null;
+  test_min: number | null;
+  baseline_max: number | null;
+  test_max: number | null;
+}
+
+export interface TargetZoneComparison {
+  start_pct: number;
+  end_pct: number;
+  channel_deltas: TargetZoneChannelDelta[];
+  speed_gain_or_loss_label: string;
+  platform_risk_delta_label: string;
+}
+
 export interface CompareResponse {
   comparison_id: string;
   baseline_run_id: string;
@@ -157,7 +201,9 @@ export interface CompareResponse {
   test_lap: number | null;
   target_zone_start_pct: number;
   target_zone_end_pct: number;
+  target_zone: TargetZoneComparison | null;
   whole_car_index: WholeCarIndex | null;
+  pace_comparison: PaceComparison | null;
   platform: PlatformComparison | null;
   corner_matrix: Partial<CornerMatrix>;
   tire_comparison: TireComparison | null;

@@ -1493,8 +1493,11 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     if (!isWindow && !isLap) return null;
     const hasWindowContext = item.window != null
       && item.window.start_lap != null
-      && item.window.end_lap != null;
-    const hasLapContext = item.lap != null && item.lap.lap_number != null;
+      && item.window.end_lap != null
+      && item.window.valid_lap_count > 0;
+    const hasLapContext = item.lap != null
+      && item.lap.lap_number != null
+      && item.lap.is_useful === true;
     const canStage = hasWindowContext || hasLapContext;
     const canOpenPlatform = canStage;
     const disabledReason = "Not available for this run";

@@ -39,3 +39,4 @@ def test_response_counts_valid_laps() -> None:
     resp = compute_lap_windows_response(laps)
     assert resp.total_laps == 11
     assert resp.total_valid_laps == 11
+    assert resp.fastest_groups[0].laps[0].valid_for_compare is True

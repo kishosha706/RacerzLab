@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
+import math
 from typing import Any, Literal
 
 from racelab_engine.analysis.constants import LAP_WRAP_DROP_THRESHOLD_PCT
@@ -8,10 +10,11 @@ from racelab_engine.analysis.constants import LAP_WRAP_DROP_THRESHOLD_PCT
 # ── types ───────────────────────────────────────────────────────
 
 VerdictKind = Literal["keep_direction", "undo", "retest", "inconclusive"]
-Significance = Literal["minor", "moderate", "major"]
+Significance = Literal["small", "medium", "large", "unknown"]
 SetupGroup = Literal[
     "front_platform", "rear_platform", "tires", "shocks", "springs",
-    "aero_cooling", "gearing", "weight_distribution", "alignment", "unknown",
+    "aero_cooling", "gearing", "weight_distribution", "brakes",
+    "driver_controls", "alignment", "unknown",
 ]
 Corner = Literal["LF", "RF", "LR", "RR"]
 Direction = Literal["better", "worse", "neutral", "context", "mixed"]
@@ -113,8 +116,46 @@ class DriverComparison:
     avg_brake_pct: ChannelDeltaStats | None = None
     avg_abs_steering_deg: ChannelDeltaStats | None = None
     max_abs_steering_deg: ChannelDeltaStats | None = None
+    throttle_mae_pct: float | None = None
+    brake_mae_pct: float | None = None
+    steering_mae_deg: float | None = None
+    repeatability_score: float | None = None
     driver_changed_warning: str | None = None
     driver_verdict: str | None = None
+
+
+@dataclass(frozen=True)
+class PaceComparison:
+    baseline_selected_lap_time_s: float | None = None
+    test_selected_lap_time_s: float | None = None
+    selected_lap_delta_s: float | None = None
+    baseline_median_lap_time_s: float | None = None
+    test_median_lap_time_s: float | None = None
+    cohort_delta_s: float | None = None
+    baseline_eligible_laps: int = 0
+    test_eligible_laps: int = 0
+    noise_band_s: float | None = None
+    is_significant: bool | None = None
+    direction: str = "insufficient_data"
+    confidence_score: float = 0.0
+    confidence_notes: list[str] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "baseline_selected_lap_time_s": self.baseline_selected_lap_time_s,
+            "test_selected_lap_time_s": self.test_selected_lap_time_s,
+            "selected_lap_delta_s": self.selected_lap_delta_s,
+            "baseline_median_lap_time_s": self.baseline_median_lap_time_s,
+            "test_median_lap_time_s": self.test_median_lap_time_s,
+            "cohort_delta_s": self.cohort_delta_s,
+            "baseline_eligible_laps": self.baseline_eligible_laps,
+            "test_eligible_laps": self.test_eligible_laps,
+            "noise_band_s": self.noise_band_s,
+            "is_significant": self.is_significant,
+            "direction": self.direction,
+            "confidence_score": self.confidence_score,
+            "confidence_notes": self.confidence_notes,
+        }
 
 
 @dataclass(frozen=True)
@@ -159,7 +200,9 @@ class EnhancedComparisonSummary:
     test_lap: int | None
     target_zone_start_pct: float = 55.0
     target_zone_end_pct: float = 70.0
+    target_zone: TargetZoneComparison | None = None
     whole_car_index: WholeCarIndex | None = None
+    pace_comparison: PaceComparison | None = None
     platform: PlatformComparison | None = None
     corner_matrix: dict[Corner, CornerDelta] = field(default_factory=dict)
     tire_comparison: TireComparison | None = None
@@ -182,7 +225,9 @@ class EnhancedComparisonSummary:
             "test_lap": self.test_lap,
             "target_zone_start_pct": self.target_zone_start_pct,
             "target_zone_end_pct": self.target_zone_end_pct,
+            "target_zone": _zone_dict(self.target_zone) if self.target_zone else None,
             "whole_car_index": self.whole_car_index.as_dict() if self.whole_car_index else None,
+            "pace_comparison": self.pace_comparison.as_dict() if self.pace_comparison else None,
             "platform": _platform_dict(self.platform) if self.platform else None,
             "corner_matrix": {k: _corner_dict(v) for k, v in (self.corner_matrix or {}).items()},
             "tire_comparison": _tire_dict(self.tire_comparison) if self.tire_comparison else None,
@@ -207,7 +252,9 @@ class SetupChange:
     test_value: Any = None
     unit: str | None = None
     delta: str | None = None
-    significance: Significance = "minor"
+    significance: Significance = "unknown"
+    magnitude_basis: str | None = None
+    relative_delta_percent: float | None = None
     related_to_target_issue: bool = False
 
 
@@ -312,6 +359,8 @@ def _setup_change_dict(c: SetupChange) -> dict[str, Any]:
         "setup_key": c.setup_key, "label": c.label, "group": c.group,
         "baseline_value": c.baseline_value, "test_value": c.test_value,
         "unit": c.unit, "delta": c.delta, "significance": c.significance,
+        "magnitude_basis": c.magnitude_basis,
+        "relative_delta_percent": c.relative_delta_percent,
         "related_to_target_issue": c.related_to_target_issue,
     }
 
@@ -412,6 +461,10 @@ def _driver_dict(d: Any) -> dict:
         "avg_brake_pct": _delta_dict(d.avg_brake_pct),
         "avg_abs_steering_deg": _delta_dict(d.avg_abs_steering_deg),
         "max_abs_steering_deg": _delta_dict(d.max_abs_steering_deg),
+        "throttle_mae_pct": d.throttle_mae_pct,
+        "brake_mae_pct": d.brake_mae_pct,
+        "steering_mae_deg": d.steering_mae_deg,
+        "repeatability_score": d.repeatability_score,
         "driver_changed_warning": d.driver_changed_warning,
         "driver_verdict": d.driver_verdict,
     }
@@ -458,6 +511,15 @@ CHANNEL_UNITS: dict[str, str] = {
 
 
 def build_lap_grid(start_pct: float = 0.0, end_pct: float = 100.0, step_pct: float = 0.1) -> list[float]:
+    values = (start_pct, end_pct, step_pct)
+    if not all(math.isfinite(float(value)) for value in values):
+        raise ValueError("Lap-grid bounds and step must be finite.")
+    if not 0.0 <= start_pct < end_pct <= 100.0:
+        raise ValueError("Lap-grid bounds must satisfy 0 <= start < end <= 100.")
+    if step_pct <= 0:
+        raise ValueError("Lap-grid step must be greater than zero.")
+    if (end_pct - start_pct) / step_pct > 100_000:
+        raise ValueError("Lap-grid resolution is too fine.")
     grid: list[float] = []
     pct = start_pct
     while pct <= end_pct + 1e-9:
@@ -470,16 +532,27 @@ def _interp(x: float, xs: list[float], ys: list[float]) -> float | None:
     """Linear interpolation at x given sorted xs and corresponding ys."""
     if not xs or len(xs) != len(ys):
         return None
-    xs_list = list(xs)
-    if x <= xs_list[0]:
+    left_equal = bisect_left(xs, x)
+    right_equal = bisect_right(xs, x)
+    if left_equal != right_equal:
+        exact_values = ys[left_equal:right_equal]
+        return sum(exact_values) / len(exact_values)
+    if x < xs[0]:
         return ys[0]
-    if x >= xs_list[-1]:
+    if x > xs[-1]:
         return ys[-1]
-    for i in range(len(xs_list) - 1):
-        if xs_list[i] <= x <= xs_list[i + 1]:
-            t = (x - xs_list[i]) / (xs_list[i + 1] - xs_list[i])
-            return ys[i] + t * (ys[i + 1] - ys[i])
-    return None
+    right = left_equal
+    left = right - 1
+    span = xs[right] - xs[left]
+    if span <= 0:
+        return (ys[left] + ys[right]) / 2.0
+    t = (x - xs[left]) / span
+    return ys[left] + t * (ys[right] - ys[left])
+
+
+def _sort_track_positions(xs: list[float], ys: list[float]) -> tuple[list[float], list[float]]:
+    pairs = sorted(zip(xs, ys), key=lambda pair: pair[0])
+    return [pair[0] for pair in pairs], [pair[1] for pair in pairs]
 
 
 def _split_monotonic_segments(
@@ -521,7 +594,7 @@ def interpolate_run_to_grid(
     Each segment is interpolated independently; the segment overlapping the
     requested grid range is used.
     """
-    xs_raw = [row.get("lap_dist_pct_100") for row in rows]
+    xs_raw = [_safe_float(row.get("lap_dist_pct_100")) for row in rows]
     result: dict[str, list[float | None]] = {}
     for ch in channels:
         ys_raw = [_safe_float(row.get(ch)) for row in rows]
@@ -535,8 +608,9 @@ def interpolate_run_to_grid(
         segments = _split_monotonic_segments(vx, vy)
 
         if len(segments) == 1:
-            # No wraparound — simple interpolation
-            result[ch] = [_interp(g, vx, vy) for g in grid]
+            # Sort small telemetry-position jitter after wrap segmentation.
+            sx, sy = _sort_track_positions(vx, vy)
+            result[ch] = [_interp(g, sx, sy) for g in grid]
         else:
             # Multiple segments — pick the one that overlaps the grid range
             grid_start = min(grid)
@@ -553,7 +627,7 @@ def interpolate_run_to_grid(
                     best_overlap = overlap
                     best_seg = (sx, sy)
             if best_seg and best_overlap > 0:
-                sx, sy = best_seg
+                sx, sy = _sort_track_positions(*best_seg)
                 result[ch] = [_interp(g, sx, sy) for g in grid]
             else:
                 result[ch] = [None] * len(grid)

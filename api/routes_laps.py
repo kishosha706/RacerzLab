@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from api.routes_runs import repository
 from racelab_engine.analysis.lap_windows import compute_lap_windows_response
+from racelab_engine.analysis.lap_eligibility import lap_ineligibility_reasons, lap_is_eligible
 from racelab_engine.analysis.stint_intelligence import build_stint_response, compare_stints
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.lap_analysis import (
@@ -110,11 +111,13 @@ def validate_compare_selection(req: LapCompareSelection) -> LapCompareSelection:
             warnings.append(f"Different tracks: {bl_session.track_name} vs {t_session.track_name}")
             can_compare = False
 
-    if not bl_lap.is_useful:
-        warnings.append(f"Baseline lap {req.baseline_lap} is not useful.")
+    if not lap_is_eligible(bl_lap):
+        detail = "; ".join(lap_ineligibility_reasons(bl_lap))
+        warnings.append(f"Baseline lap {req.baseline_lap} is not eligible: {detail}.")
         can_compare = False
-    if not t_lap.is_useful:
-        warnings.append(f"Test lap {req.test_lap} is not useful.")
+    if not lap_is_eligible(t_lap):
+        detail = "; ".join(lap_ineligibility_reasons(t_lap))
+        warnings.append(f"Test lap {req.test_lap} is not eligible: {detail}.")
         can_compare = False
 
     return LapCompareSelection(

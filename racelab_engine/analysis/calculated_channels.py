@@ -88,6 +88,9 @@ HIGH_VALUE_RAW_CHANNELS = [
     "LapDeltaToOptimalLap",
     "LapDeltaToSessionBestLap",
     "LapDeltaToSessionOptimalLap",
+    "OnPitRoad",
+    "IsOnTrack",
+    "PlayerTrackSurface",
     "Speed",
     "VelocityX",
     "VelocityY",
@@ -2032,6 +2035,8 @@ def _average(item: dict[str, Any], *keys: str) -> float | None:
 _ALIAS_MAP: dict[str, str] = {
     "SessionTime": "session_time", "SessionTick": "session_tick",
     "Lap": "lap", "LapCompleted": "lap_completed",
+    "OnPitRoad": "on_pit_road", "IsOnTrack": "is_on_track",
+    "PlayerTrackSurface": "player_track_surface",
     "LapDist": "lap_dist_m", "LapDistPct": "lap_dist_pct",
     "Speed": "speed_mps", "RPM": "rpm", "Gear": "gear",
     "Throttle": "throttle_01", "Brake": "brake_01",

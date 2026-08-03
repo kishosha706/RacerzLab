@@ -3,6 +3,7 @@ from __future__ import annotations
 from racelab_engine.analysis.comparison import (
     ComparedChannelDelta,
     DidItWorkVerdict,
+    PaceComparison,
     TargetZoneComparison,
     TestDisciplineResult,
 )
@@ -129,6 +130,8 @@ def compute_verdict(
     target_zone: TargetZoneComparison,
     discipline: TestDisciplineResult,
     is_same_run: bool = False,
+    pace: PaceComparison | None = None,
+    driver_changed: bool = False,
 ) -> DidItWorkVerdict:
     speed_delta = _speed_delta_info(target_zone)
     if is_same_run:
@@ -149,6 +152,86 @@ def compute_verdict(
         result = _build_verdict_invalid()
     elif not discipline_ok:
         result = _build_verdict_retest_discipline(discipline)
+    elif driver_changed:
+        result = DidItWorkVerdict(
+            verdict="retest",
+            confidence_score=CONF_LOW,
+            headline="Driver inputs changed too much to isolate the setup effect.",
+            evidence=["Throttle, brake, or steering traces diverged by track position."],
+            next_step="Repeat the same setup test with a more repeatable driving trace.",
+        )
+    elif pace is not None and pace.direction == "insufficient_data":
+        zone_direction = "improved" if speed_gained else "slowed" if speed_lost else "did not change clearly"
+        result = DidItWorkVerdict(
+            verdict="retest" if speed_gained or speed_lost else "inconclusive",
+            confidence_score=min(CONF_LOW, pace.confidence_score),
+            headline="A direction is visible, but there are not enough clean laps to prove it." if speed_gained or speed_lost else "Not enough clean laps for a setup verdict.",
+            evidence=[
+                f"Target-zone speed {zone_direction} ({_format_speed_delta(speed_delta)}).",
+                f"Eligible laps: {pace.baseline_eligible_laps} baseline / {pace.test_eligible_laps} test.",
+            ],
+            next_step="Run at least three eligible laps on both setups under comparable conditions.",
+        )
+    elif pace is not None and pace.direction == "no_clear_difference":
+        result = DidItWorkVerdict(
+            verdict="inconclusive",
+            confidence_score=max(CONF_NOISE, min(CONF_MEDIUM, pace.confidence_score)),
+            headline="Whole-lap pace stayed inside the measured noise band.",
+            evidence=[
+                f"Median lap delta: {pace.cohort_delta_s:+.3f} s." if pace.cohort_delta_s is not None else "Median lap delta unavailable.",
+                f"Noise band: ±{pace.noise_band_s:.3f} s." if pace.noise_band_s is not None else "Noise band unavailable.",
+            ],
+            next_step="Repeat the same one-control test before changing direction.",
+        )
+    elif pace is not None and pace.direction == "faster":
+        if speed_gained and not cfs_worse:
+            base = _build_verdict_keep_direction(speed_delta, cfs_delta, discipline)
+            result = DidItWorkVerdict(
+                verdict=base.verdict,
+                confidence_score=max(CONF_MEDIUM, min(CONF_HIGH, pace.confidence_score)),
+                headline="Repeatable whole-lap pace and target-zone speed improved.",
+                evidence=[
+                    f"Median lap delta: {pace.cohort_delta_s:+.3f} s." if pace.cohort_delta_s is not None else "Median lap improved.",
+                    *base.evidence,
+                ],
+                next_step=base.next_step,
+            )
+        else:
+            result = DidItWorkVerdict(
+                verdict="retest",
+                confidence_score=min(CONF_MEDIUM, pace.confidence_score),
+                headline="Whole-lap pace improved, but the target-zone or platform evidence is mixed.",
+                evidence=[
+                    f"Median lap delta: {pace.cohort_delta_s:+.3f} s." if pace.cohort_delta_s is not None else "Median lap improved.",
+                    f"Target-zone speed delta: {_format_speed_delta(speed_delta)}.",
+                    f"CFS delta: {_format_cfs_delta(cfs_delta)}.",
+                ],
+                next_step="Repeat the same setup before accepting the tradeoff.",
+            )
+    elif pace is not None and pace.direction == "slower":
+        if speed_gained:
+            result = DidItWorkVerdict(
+                verdict="retest",
+                confidence_score=min(CONF_MEDIUM, pace.confidence_score),
+                headline="The target zone improved, but repeatable whole-lap pace became slower.",
+                evidence=[
+                    f"Median lap delta: {pace.cohort_delta_s:+.3f} s." if pace.cohort_delta_s is not None else "Median lap slowed.",
+                    f"Target-zone speed delta: {_format_speed_delta(speed_delta)}.",
+                ],
+                next_step="Retest before keeping a local gain that costs time elsewhere.",
+            )
+        else:
+            base = _build_verdict_undo(speed_delta)
+            result = DidItWorkVerdict(
+                verdict="undo",
+                confidence_score=max(CONF_MEDIUM, min(CONF_HIGH, pace.confidence_score)),
+                headline="Repeatable whole-lap pace became slower.",
+                evidence=[
+                    f"Median lap delta: {pace.cohort_delta_s:+.3f} s." if pace.cohort_delta_s is not None else "Median lap slowed.",
+                    *base.evidence,
+                ],
+                next_step=base.next_step,
+            )
     elif speed_gained and not cfs_worse:
         result = _build_verdict_keep_direction(speed_delta, cfs_delta, discipline)
     elif speed_gained and cfs_worse:

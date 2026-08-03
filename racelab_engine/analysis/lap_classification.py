@@ -13,7 +13,8 @@ def classify_laps(laps: list[LapSummary]) -> list[LapSummary]:
         if lap.is_complete and lap.is_useful:
             tags.add("SOLO_CLEAN")
         else:
-            tags.add("PARTIAL")
+            if not lap.is_complete:
+                tags.add("PARTIAL")
             if "INVALID_FOR_PLATFORM_TUNING" not in tags:
                 tags.add("NO_SETUP_CONCLUSION")
         if hasattr(lap, "model_copy"):

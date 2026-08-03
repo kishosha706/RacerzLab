@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import pytest
+
 from racelab_engine.analysis.comparison import (
     ComparedChannelDelta,
     TargetZoneComparison,
     build_lap_grid,
     compare_target_zone,
+    interpolate_run_to_grid,
 )
 from racelab_engine.analysis.did_it_work import compute_verdict
 from racelab_engine.analysis.setup_diff import diff_context, diff_setups
@@ -16,6 +19,13 @@ def test_build_lap_grid() -> None:
     assert grid[0] == 0.0
     assert grid[-1] == 100.0
     assert len(grid) == 11  # 0, 10, 20, ..., 100
+
+
+def test_build_lap_grid_rejects_invalid_ranges_and_steps() -> None:
+    with pytest.raises(ValueError):
+        build_lap_grid(70, 55, 0.1)
+    with pytest.raises(ValueError):
+        build_lap_grid(0, 100, 0)
 
 
 def test_interpolation_same_run() -> None:
@@ -35,6 +45,19 @@ def test_target_zone_speed_delta() -> None:
     speed = next(d for d in zone.channel_deltas if d.channel == "speed_mph")
     assert speed.delta == 1.0
     assert zone.speed_gain_or_loss_label == "gained"
+
+
+def test_track_position_interpolation_handles_duplicate_and_jittered_positions() -> None:
+    rows = [
+        {"lap_dist_pct_100": 50.0, "speed_mph": 100.0},
+        {"lap_dist_pct_100": 50.0, "speed_mph": 102.0},
+        {"lap_dist_pct_100": 49.9, "speed_mph": 99.0},
+        {"lap_dist_pct_100": 50.1, "speed_mph": 103.0},
+    ]
+
+    result = interpolate_run_to_grid(rows, ["speed_mph"], [50.0])
+
+    assert result["speed_mph"] == [101.0]
 
 
 

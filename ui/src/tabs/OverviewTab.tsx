@@ -1,4 +1,4 @@
-import { AlertTriangle, Clock, Layers, MapPin, Wrench } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, Layers, MapPin, Wrench } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
@@ -62,17 +62,17 @@ export function OverviewTab({ overview, onToggleMapOverlay }: OverviewTabProps) 
   const sortedEvents = useMemo(() => {
     const sevOrder: Record<string, number> = { critical: 0, high: 1, watch: 2, info: 3 };
     return [...overview.events].sort((a, b) => {
+      if (a.valid_for_tuning !== b.valid_for_tuning) return a.valid_for_tuning ? -1 : 1;
       const sevDiff = (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9);
       if (sevDiff !== 0) return sevDiff;
       const confA = a.confidence_score ?? 0;
       const confB = b.confidence_score ?? 0;
       if (confB !== confA) return confB - confA;
-      if (a.valid_for_tuning !== b.valid_for_tuning) return a.valid_for_tuning ? -1 : 1;
       return 0;
     });
   }, [overview.events]);
 
-  const topEvent = sortedEvents[0] ?? null;
+  const topEvent = sortedEvents.find((event) => event.valid_for_tuning) ?? null;
 
   const buildOverviewEvidence = useCallback((event: TelemetryEvent) => {
     const hasLocation = event.lap_pct_peak != null || event.lap_pct_start != null || event.distance_m_peak != null;
@@ -116,6 +116,79 @@ export function OverviewTab({ overview, onToggleMapOverlay }: OverviewTabProps) 
     () => overview.events.filter((event) => event.lap_pct_peak != null || event.lap_pct_start != null || event.distance_m_peak != null).slice(0, 24),
     [overview.events],
   );
+
+  if (!isLearning) {
+    const setupAvailable = overview.setup_snapshot != null;
+    const decisionState = !lap || !setupAvailable
+      ? "NO CALL"
+      : topEvent
+        ? "INVESTIGATE"
+        : "READY";
+    const decisionHeadline = !lap
+      ? "No eligible timed lap is available."
+      : !setupAvailable
+        ? "Telemetry is usable, but the setup snapshot is missing."
+        : topEvent
+          ? humanizeEventLabel(topEvent.event_type)
+          : "No tuning-valid issue was detected in this run.";
+    const decisionDetail = !lap
+      ? "Complete a clean timed lap before making a setup decision."
+      : !setupAvailable
+        ? "Capture the setup before the next run so every change can be attributed."
+        : topEvent
+          ? `${topEvent.zone_name ? `Zone ${topEvent.zone_name}` : "Located event"}${topEvent.lap_number != null ? ` · Lap ${topEvent.lap_number}` : ""}${(topEvent.lap_pct_peak ?? topEvent.lap_pct_start) != null ? ` · Peak ${(topEvent.lap_pct_peak ?? topEvent.lap_pct_start)?.toFixed(1)}%` : ""}`
+          : "Hold the current setup or begin one small, controlled test.";
+
+    return (
+      <div className="race-decision-shell">
+        <section className="race-decision-card" data-state={decisionState.toLowerCase().replace(" ", "-")}>
+          <div className="race-decision-kicker">
+            {decisionState === "READY" ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
+            <span>{decisionState}</span>
+          </div>
+          <h2>{decisionHeadline}</h2>
+          <p className="race-decision-detail">{decisionDetail}</p>
+
+          {topEvent && lap && setupAvailable && (
+            <p className="race-decision-caveat">
+              Highest-confidence valid telemetry event—not yet a setup conclusion.
+            </p>
+          )}
+
+          <div className="race-decision-actions">
+            {topEvent && (
+              <button className="primary-button" onClick={openTopEvent}>
+                <Layers size={14} /> Inspect evidence
+              </button>
+            )}
+            <button className="secondary-button" onClick={() => setWorkspace("laps", "overview")}>
+              <Clock size={14} /> Review laps
+            </button>
+            {topEvent && (
+              <button className="secondary-button" onClick={() => focusEvidence(buildOverviewEvidence(topEvent), "setup_impact")}>
+                <Wrench size={14} /> Setup impact
+              </button>
+            )}
+          </div>
+        </section>
+
+        <section className="race-proof-strip" aria-label="Decision evidence quality">
+          <div><span>Eligible laps</span><strong>{usefulCount}</strong></div>
+          <div><span>Setup captured</span><strong>{setupAvailable ? "YES" : "NO"}</strong></div>
+          <div><span>Valid events</span><strong>{overview.events.filter((event) => event.valid_for_tuning).length}</strong></div>
+          <div><span>Event confidence</span><strong>{topEvent?.confidence_score != null ? `${Math.round(topEvent.confidence_score * 100)}%` : "—"}</strong></div>
+        </section>
+
+        {overview.warnings.length > 0 && (
+          <section className="race-warning-line">
+            <AlertTriangle size={14} />
+            <span>{overview.warnings[0]}</span>
+            {overview.warnings.length > 1 && <span className="muted">+{overview.warnings.length - 1} more in Learning Mode</span>}
+          </section>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="tab-grid">

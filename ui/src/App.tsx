@@ -82,7 +82,7 @@ function CockpitShell() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [priorityRailOpen, setPriorityRailOpen] = useState(true);
+  const [priorityRailOpen, setPriorityRailOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [mapOverlayOpen, setMapOverlayOpen] = useState(false);
@@ -97,6 +97,10 @@ function CockpitShell() {
     selection.selectedWorkspace === "platform_trace"
     || selection.selectedWorkspace === "speed_delta"
     || selection.selectedWorkspace === "drag_scrub";
+
+  useEffect(() => {
+    setPriorityRailOpen(selection.selectedMode === "learning");
+  }, [selection.selectedMode]);
 
   useEffect(() => {
     let cancelled = false;

@@ -1,4 +1,4 @@
-import { AlertTriangle, BarChart3, Bookmark, MapPin, ShoppingCart } from "lucide-react";
+import { AlertTriangle, BarChart3, MapPin, ShoppingCart } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCompareInsights } from "../api/client";
 import { ComparisonInsightPanel } from "../components/ComparisonInsightPanel";
@@ -10,7 +10,7 @@ import type { RunListItem } from "../types/telemetry";
 import type {
   ChannelDeltaStats, CompareResponse, ComparisonInsightsResponse, CornerName, CornerMetric,
   CornerMatrix,
-  DidItWorkVerdict, DriverComparison, PlatformComparison,
+  ContextChange, DidItWorkVerdict, DriverComparison, PaceComparison, PlatformComparison,
   PowertrainComparison, ShockComparison, SetupChange, TireComparison,
   WholeCarIndex,
 } from "../types/compare";
@@ -149,12 +149,14 @@ function cornerMini(c: CornerName, m: CornerMetric | undefined) {
 
 // ── Sub-views ───────────────────────────────────────────────
 
-function VerdictView({ verdict: v, disc, wci, confidence, weatherWarning, onSaveFinding, onStageNextTest, saving, saveStatus, isSelfCompare }: {
+function VerdictView({ verdict: v, disc, wci, pace, confidence, targetSpeedDeltaMph, setupChanges, contextChanges, weatherWarning, onStageNextTest, isSelfCompare }: {
   verdict: DidItWorkVerdict | null; disc: { score: number; label: string } | null;
-  wci: WholeCarIndex | null; confidence: number;
+  wci: WholeCarIndex | null; pace: PaceComparison | null; confidence: number;
+  targetSpeedDeltaMph?: number | null;
+  setupChanges: SetupChange[];
+  contextChanges: ContextChange[];
   weatherWarning?: string | null;
-  onSaveFinding?: () => void; onStageNextTest?: () => void;
-  saving?: boolean; saveStatus?: string | null; isSelfCompare?: boolean;
+  onStageNextTest?: () => void; isSelfCompare?: boolean;
 }) {
   if (!v) return <p className="muted">No verdict available.</p>;
 
@@ -173,10 +175,15 @@ function VerdictView({ verdict: v, disc, wci, confidence, weatherWarning, onSave
         requiredNextData={v.required_next_data}
         doNotChangeWarnings={v.do_not_change_warnings}
         weatherWarning={weatherWarning}
-        onSaveFinding={isSelfCompare ? undefined : onSaveFinding}
+        wholeLapDeltaS={pace?.cohort_delta_s}
+        paceNoiseBandS={pace?.noise_band_s}
+        eligibleLapCounts={pace ? { baseline: pace.baseline_eligible_laps, test: pace.test_eligible_laps } : null}
+        targetZoneDeltaMph={targetSpeedDeltaMph}
+        setupChanges={setupChanges}
+        contextWarnings={contextChanges
+          .filter((change) => change.warning)
+          .map((change) => ({ label: change.label, warning: change.warning as string }))}
         onStageNextTest={isSelfCompare ? undefined : onStageNextTest}
-        saving={saving}
-        saveStatus={saveStatus}
         disabled={isSelfCompare}
       />
       {wci && <div className="wci-strip">{indexStrip(wci)}</div>}
@@ -248,6 +255,16 @@ function WhatChangedView({ setup, context }: { setup: SetupChange[]; context: Ar
     return g;
   }, [setup]);
 
+  const setupValue = (value: unknown, unit: string | null): string => {
+    if (value == null) return "—";
+    const rendered = String(value);
+    if (!unit || typeof value !== "number") return rendered;
+    return unit === "%" || unit === ":1" ? `${rendered}${unit}` : `${rendered} ${unit}`;
+  };
+
+  const sizeLabel = (value: SetupChange["significance"]): string =>
+    value === "unknown" ? "Unknown input size" : `Estimated ${value}`;
+
   if (setup.length === 0 && context.length === 0) return <p className="muted">No setup/context changes detected in this comparison.</p>;
   return (
     <div className="compare-subview">
@@ -255,15 +272,15 @@ function WhatChangedView({ setup, context }: { setup: SetupChange[]; context: Ar
         <div key={group} className="setup-group">
           <h4>{group.replace(/_/g, " ")}</h4>
           <table className="compact-table">
-            <thead><tr><th>Setting</th><th>Baseline</th><th>Test</th><th>Delta</th><th>Significance</th></tr></thead>
+            <thead><tr><th>Setting</th><th>Baseline</th><th>Test</th><th>Exact change</th><th>Estimated input size</th></tr></thead>
             <tbody>
               {items.map((s) => (
                 <tr key={s.setup_key} className={`significance-${s.significance}`}>
                   <td className="cell-label">{s.label}</td>
-                  <td className="cell-val">{String(s.baseline_value ?? "—")}</td>
-                  <td className="cell-val">{String(s.test_value ?? "—")}</td>
+                  <td className="cell-val">{setupValue(s.baseline_value, s.unit)}</td>
+                  <td className="cell-val">{setupValue(s.test_value, s.unit)}</td>
                   <td className="cell-delta">{s.delta ?? "—"}</td>
-                  <td className="cell-dir">{s.significance}</td>
+                  <td className="cell-dir" title={s.magnitude_basis ?? undefined}>{sizeLabel(s.significance)}</td>
                 </tr>
               ))}
             </tbody>
@@ -283,13 +300,20 @@ function WhatChangedView({ setup, context }: { setup: SetupChange[]; context: Ar
 }
 
 function TargetZoneView({ data: r, friendlyLabel, onOpenDeltaTraces }: { data: CompareResponse; friendlyLabel?: string | null; onOpenDeltaTraces?: () => void }) {
+  const speed = r.target_zone?.channel_deltas.find((delta) => delta.channel === "speed_mph") ?? null;
   return (
     <div className="compare-subview">
       <h3>{friendlyLabel ?? `Target Zone ${r.target_zone_start_pct}–${r.target_zone_end_pct}%`}</h3>
       {friendlyLabel && <p className="section-note">Range {r.target_zone_start_pct}–{r.target_zone_end_pct}%</p>}
-      {r.verdict && (
-        <p>Speed: <strong>{r.verdict.headline}</strong></p>
+      {speed && (
+        <div className="overview-trust-summary">
+          <span>Baseline {formatVal(speed.baseline_avg, 2)} mph</span>
+          <span>Test {formatVal(speed.test_avg, 2)} mph</span>
+          <span>Delta {speed.delta != null ? `${speed.delta > 0 ? "+" : ""}${speed.delta.toFixed(2)} mph` : "—"}</span>
+          <span>{r.target_zone?.speed_gain_or_loss_label ?? "unavailable"}</span>
+        </div>
       )}
+      {r.verdict && <p><strong>{r.verdict.headline}</strong></p>}
       {r.platform && (
         <table className="compact-table">
           <thead><tr><th>Metric</th><th>Direction</th></tr></thead>
@@ -518,8 +542,6 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
   const [error, setError] = useState<string | null>(null);
   const [insights, setInsights] = useState<ComparisonInsightsResponse | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [activeZoneLabel, setActiveZoneLabel] = useState<string | null>(null);
   const lastSyncedZoneKeyRef = useRef<string | null>(null);
   const basketBaselineLap = basket.baseline?.representative_lap ?? basket.baseline?.lap_number ?? null;
@@ -531,59 +553,6 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
     ? "Compare currently uses representative laps and run-level compare math; window metadata is preserved for context."
     : "Compare currently uses lap or run identity without window metadata.";
   const [subviewGroup, setSubviewGroup] = useState<SubViewGroup>("verdict");
-
-  // Resolve car/track/setup from the baseline run in the runs list
-  const baselineRun = runs.find((r) => r.run_id === baselineRunId);
-  const carName = baselineRun?.car_name ?? null;
-  const trackName = baselineRun?.track_name ?? null;
-
-  const handleSaveFinding = useCallback(async (force = false) => {
-    if (!result || saving) return;
-    setSaving(true);
-    setSaveStatus("Saving…");
-    try {
-      const body: Record<string, unknown> = {
-        car_name: carName,
-        track_name: trackName,
-        baseline_run_id: baselineRunId,
-        test_run_id: testRunId,
-        comparison_id: result.comparison_id,
-        baseline_lap: result.baseline_lap,
-        test_lap: result.test_lap,
-        target_zone_start_pct: startPct,
-        target_zone_end_pct: endPct,
-        verdict: result.verdict?.verdict ?? null,
-        confidence_score: result.confidence_score,
-        confidence_tier: result.confidence_score >= 0.7 ? "high" : result.confidence_score >= 0.4 ? "medium" : "low",
-        test_discipline_score: result.test_discipline?.score ?? null,
-        target_zone_classification: insights?.target_zone_classification?.classification ?? null,
-        summary_headline: result.verdict?.headline ?? null,
-        key_takeaways: insights?.key_takeaways ?? [],
-        evidence: result.verdict?.evidence ?? [],
-        warnings: [...(result.warnings ?? []), ...(insights?.warnings ?? [])],
-        sector_summaries: insights?.sectors ?? [],
-        setup_changes: result.setup_changes ?? [],
-        context_changes: result.context_changes ?? [],
-        next_step: result.verdict?.next_step ?? null,
-        success_metric: result.verdict?.success_metric ?? null,
-        force,
-      };
-      const resp = await req<Record<string, unknown>>("/api/notebook/findings/from-comparison", {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      if (resp.duplicate) {
-        setSaveStatus("Finding already saved. Click again to save duplicate.");
-        setSaving(false);
-        return;
-      }
-      setSaveStatus("Finding saved to Notebook.");
-    } catch {
-      setSaveStatus("Failed to save finding.");
-    } finally {
-      setSaving(false);
-    }
-  }, [result, insights, baselineRunId, testRunId, startPct, endPct, carName, trackName, saving]);
 
   const otherRuns = runs.filter((r) => r.run_id !== baselineRunId);
   const isSameRun = testRunId === baselineRunId && testRunId !== "";
@@ -718,17 +687,14 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
           <VerdictView
             verdict={result.verdict} disc={result.test_discipline}
             wci={result.whole_car_index} confidence={result.confidence_score}
+            pace={result.pace_comparison}
+            targetSpeedDeltaMph={result.target_zone?.channel_deltas.find((delta) => delta.channel === "speed_mph")?.delta}
+            setupChanges={result.setup_changes}
+            contextChanges={result.context_changes}
             weatherWarning={preview?.context_changes?.find(c => c.key === "weather")?.warning ?? null}
-            onSaveFinding={() => {
-              const isDup = saveStatus === "Finding already saved. Click again to save duplicate.";
-              handleSaveFinding(isDup);
-            }}
             onStageNextTest={() => {
-              handleSaveFinding(false);
               setWorkspace("laps", "compare_verdict");
             }}
-            saving={saving}
-            saveStatus={saveStatus}
             isSelfCompare={isSelfCompare}
           />
         </div>
@@ -756,15 +722,6 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
               </div>
             )}
             <ComparisonInsightPanel insights={insights} onOpenDeltaTraces={() => setSubview("delta-traces")} />
-            <div className="toolbar-actions" style={{ marginTop: 12 }}>
-              <button className="secondary-button" onClick={() => {
-                const isDuplicate = saveStatus === "Finding already saved. Click again to save duplicate.";
-                handleSaveFinding(isDuplicate);
-              }} disabled={saving || isSelfCompare} title={isSelfCompare ? "Cannot save finding for self-comparison" : undefined}>
-                <Bookmark size={14} /> {isSelfCompare ? "Self-Comparison" : saving ? "Saving…" : saveStatus === "Finding already saved. Click again to save duplicate." ? "Save Duplicate" : "Save Insight Finding"}
-              </button>
-              {saveStatus && <span className="status-text" style={{ marginLeft: 8 }}>{saveStatus}</span>}
-            </div>
           </div>
         );
       }

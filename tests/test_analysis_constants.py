@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from racelab_engine.analysis.constants import (
     SPLITTER_SCRAPE_MM,
     SPLITTER_CRITICAL_MM,
@@ -106,3 +108,12 @@ def test_logistic_score_higher_is_worse() -> None:
 
 def test_logistic_score_none_returns_50() -> None:
     assert logistic_score(None, 0.05, 2.5) == 50.0
+
+
+def test_logistic_score_noise_band_is_neutral_and_symmetric() -> None:
+    assert logistic_score(0.0, 0.05, 2.5) == 50.0
+    assert logistic_score(0.04, 0.05, 2.5) == 50.0
+    assert logistic_score(-0.04, 0.05, 2.5) == 50.0
+    assert logistic_score(0.25, 0.05, 2.5) == pytest.approx(
+        100.0 - logistic_score(-0.25, 0.05, 2.5)
+    )
