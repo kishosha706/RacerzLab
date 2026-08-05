@@ -4,7 +4,8 @@ from dataclasses import dataclass
 import re
 
 from .evidence_schema import MatcherReadiness
-from .display_labels import TARGET_LABELS, format_driver_targets, format_target_label, format_target_list
+from .dial_in_controls import control_keys_for_effect
+from .display_labels import format_driver_targets, format_target_label, format_target_list
 from .loader import SetupKnowledge, load_setup_knowledge
 from .schema import SetupEffect, SymptomVocabularyEntry
 
@@ -34,6 +35,23 @@ EVIDENCE_ALIASES = {
     "compare_test": {"compare_baseline_test"},
 }
 
+# These inputs establish run identity, coverage, or test context.  They are
+# necessary, but they do not show that the handling mechanism behind a setup
+# change was actually observed in telemetry.
+CONTEXT_ONLY_EVIDENCE = {
+    "setup_snapshot",
+    "lap_windows",
+    "phase",
+    "selected_lap_window",
+    "lap_falloff",
+    "track_map",
+    "track_map_zone",
+    "selected_zone",
+    "compare_baseline",
+    "compare_test",
+    "compare_baseline_test",
+}
+
 
 def _direction_sign(direction: str) -> int:
     normalized = direction.lower()
@@ -49,6 +67,7 @@ class RankedSetupEffect:
     effect: SetupEffect
     score: float
     evidence_matched: list[str]
+    observed_evidence_matched: list[str]
     missing_evidence: list[str]
     readiness: MatcherReadiness
     ranking_reasons: list[str]
@@ -77,30 +96,58 @@ class SetupQueryResult:
 
 def parse_symptom(raw_symptom: str, knowledge: SetupKnowledge) -> SymptomVocabularyEntry:
     normalized = " ".join(raw_symptom.lower().strip().split())
+    tokens = set(re.findall(r"[a-z0-9]+", normalized))
     entries = knowledge.symptom_vocabulary
+    if tokens & {"not", "no"} or any(term in normalized for term in ("isn't", "isnt", "doesn't", "doesnt")):
+        raise ValueError("Negated handling descriptions require clarification before setup matching.")
     for entry in entries:
         if normalized == entry.phrase.lower():
             return entry
-    for entry in entries:
-        phrase = entry.phrase.lower()
-        if phrase in normalized or normalized in phrase:
-            return entry
+    loose_words = {"loose", "free"}
+    tight_words = {"tight", "push", "plowing"}
+    if tokens & loose_words and tokens & tight_words:
+        raise ValueError("Complaint contains conflicting loose and tight balance descriptions.")
+    # Resolve a generic balance word with an explicit driver phase before the
+    # broader phrase matcher can fall back to the generic clarifying entry.
     if "loose" in normalized or "free" in normalized:
-        if "off" in normalized or "throttle" in normalized:
+        if tokens & {"off", "throttle", "exit"}:
+            return next(entry for entry in entries if entry.phrase == "loose off")
+        if tokens & {"in", "brake", "entry"}:
+            return next(entry for entry in entries if entry.phrase == "loose in")
+        if tokens & {"center", "middle", "rolling"}:
+            return next(entry for entry in entries if entry.phrase == "loose center")
+    if "tight" in normalized or "push" in normalized:
+        if tokens & {"off", "throttle", "exit"}:
+            return next(entry for entry in entries if entry.phrase == "tight off")
+        if tokens & {"in", "brake", "entry"}:
+            return next(entry for entry in entries if entry.phrase == "tight in")
+        if tokens & {"center", "middle", "rolling"}:
+            return next(entry for entry in entries if entry.phrase == "tight center")
+    phrase_matches = [
+        entry
+        for entry in entries
+        if re.search(rf"(?<![a-z0-9]){re.escape(entry.phrase.lower())}(?![a-z0-9])", normalized)
+    ]
+    if phrase_matches:
+        # Prefer the most specific complete phrase. Never let a fragment such
+        # as "in", "off", or "rear" select the first vocabulary row.
+        return max(phrase_matches, key=lambda entry: (len(entry.phrase.split()), len(entry.phrase)))
+    if "loose" in normalized or "free" in normalized:
+        if tokens & {"off", "throttle", "exit"}:
             target = "loose off"
-        elif "in" in normalized or "brake" in normalized:
+        elif tokens & {"in", "brake", "entry"}:
             target = "loose in"
-        elif "center" in normalized or "middle" in normalized or "rolling" in normalized:
+        elif tokens & {"center", "middle", "rolling"}:
             target = "loose center"
         else:
             target = "loose"
         return next(entry for entry in entries if entry.phrase == target)
     if "tight" in normalized or "push" in normalized:
-        if "off" in normalized or "throttle" in normalized:
+        if tokens & {"off", "throttle", "exit"}:
             target = "tight off"
-        elif "in" in normalized or "apex" in normalized:
+        elif tokens & {"in", "brake", "entry"}:
             target = "tight in"
-        elif "center" in normalized or "middle" in normalized or "rolling" in normalized:
+        elif tokens & {"center", "middle", "rolling", "apex"}:
             target = "tight center"
         else:
             target = "tight"
@@ -193,9 +240,10 @@ def _score_effect(
     parsed: SymptomVocabularyEntry,
     phase: str | None,
     evidence: set[str],
+    observed_evidence: set[str] | None,
     package_archetype: str | None,
     track_family: str | None,
-) -> tuple[float, list[str], list[str], MatcherReadiness, list[str], list[str]]:
+) -> tuple[float, list[str], list[str], list[str], MatcherReadiness, list[str], list[str]]:
     score = float(effect.effect_strength)
     reasons: list[str] = []
     warnings: list[str] = []
@@ -230,6 +278,26 @@ def _score_effect(
     matched = sorted(set(effect.evidence_required) & evidence)
     missing = [item for item in effect.evidence_required if item not in evidence]
     readiness = _readiness(effect, matched)
+    observed_matched = sorted(set(effect.evidence_required) & (observed_evidence or set()))
+    if observed_evidence is not None:
+        mechanism_requirements = set(effect.evidence_required) - CONTEXT_ONLY_EVIDENCE
+        observed_mechanisms = mechanism_requirements & set(observed_matched)
+        mechanism_observed = bool(mechanism_requirements) and mechanism_requirements <= observed_mechanisms
+        # Channel and setup availability can make a hypothesis testable, but it
+        # cannot make it evidence-ready.  A qualifying telemetry event must
+        # observe every mechanism input required by this candidate. Partial
+        # observed coverage remains a hypothesis, never an exact test authority.
+        if readiness == "ready" and not mechanism_observed:
+            readiness = "partially_ready"
+            reasons.append("measurement capability available; handling mechanism not observed")
+            warnings.append("Telemetry channels are available, but no eligible event observed this mechanism.")
+        elif mechanism_observed:
+            reasons.append(f"observed mechanism evidence: {', '.join(observed_matched)}")
+        elif observed_mechanisms:
+            reasons.append(
+                "partial observed mechanism evidence: "
+                + ", ".join(sorted(observed_mechanisms))
+            )
     if readiness == "ready":
         score += 1.0
         reasons.append("evidence ready")
@@ -243,7 +311,7 @@ def _score_effect(
         reasons.append("missing key evidence")
     if any(condition in parsed.canonical_symptom for condition in effect.avoid_when):
         score -= 1.0
-    return score, matched, missing, readiness, reasons, warnings
+    return score, matched, observed_matched, missing, readiness, reasons, warnings
 
 
 def query_setup_knowledge(
@@ -254,6 +322,7 @@ def query_setup_knowledge(
     track_family: str | None = None,
     package_archetype: str | None = None,
     evidence: list[str] | None = None,
+    observed_evidence: list[str] | None = None,
     limit: int = 5,
     knowledge: SetupKnowledge | None = None,
     learning_biases: dict[tuple[str, int], dict[str, object]] | None = None,
@@ -267,6 +336,13 @@ def query_setup_knowledge(
     parsed = parse_symptom(symptom, knowledge)
     parsed_phase = phase or parsed.phase
     evidence_set = _expand_evidence(evidence)
+    # Observations are already translated into explicit mechanism flags by the
+    # event adapter. Capability aliases are intentionally not expanded here:
+    # a generic driver-input or platform observation must not manufacture a
+    # brake, front-platform, or rear-platform mechanism.
+    observed_evidence_set = None if observed_evidence is None else {
+        item.strip() for item in observed_evidence if item.strip()
+    }
     if capabilities is None:
         disabled_setup_areas = sorted(LEGACY_DISABLED_AREAS)
         disabled_areas = set(disabled_setup_areas)
@@ -281,20 +357,44 @@ def query_setup_knowledge(
             if effect.setup_area in disabled_areas or car_family in effect.disabled_for:
                 disabled.append(effect)
             continue
-        score, matched, missing, readiness, reasons, warnings = _score_effect(
+        score, matched, observed_matched, missing, readiness, reasons, warnings = _score_effect(
             effect,
             parsed,
             phase,
             evidence_set,
+            observed_evidence_set,
             package_archetype,
             track_family,
         )
         direction_sign = _direction_sign(effect.direction)
-        learned = (learning_biases or {}).get((effect.setup_area, direction_sign)) if direction_sign else None
+        control_keys = control_keys_for_effect(effect.effect_id)
+        learned = (
+            (learning_biases or {}).get((control_keys[0], direction_sign))
+            if direction_sign and len(control_keys) == 1
+            else None
+        )
         if learned:
-            count = int(learned.get("count", 0))
-            outcome = float(learned.get("weighted_outcome", 0.0))
-            adjustment = max(-1.5, min(1.5, outcome * 1.25))
+            magnitude_counts = learned.get("magnitude_counts", {})
+            outcomes_by_magnitude = learned.get("weighted_outcome_by_magnitude", {})
+            count = int(magnitude_counts.get("small", 0)) if isinstance(magnitude_counts, dict) else 0
+            outcome = (
+                float(outcomes_by_magnitude.get("small", 0.0))
+                if isinstance(outcomes_by_magnitude, dict)
+                else 0.0
+            )
+            if count < 3:
+                learned = None
+        if learned:
+            # Exact-context controlled history outranks generic guide priors.
+            # Repeated negative local evidence blocks this direction; repeated
+            # positive evidence receives a material but bounded lift.
+            if count >= 3 and outcome <= -0.5:
+                reasons.append(
+                    f"blocked by personal setup memory: {count} exact-context controlled tests, "
+                    f"directional score {outcome:+.2f}"
+                )
+                continue
+            adjustment = max(-2.0, min(3.0, outcome * 3.0))
             score += adjustment
             reasons.append(
                 f"personal setup memory: {count} controlled tests, directional score {outcome:+.2f}"
@@ -305,6 +405,7 @@ def query_setup_knowledge(
                     effect=effect,
                     score=score,
                     evidence_matched=matched,
+                    observed_evidence_matched=observed_matched,
                     missing_evidence=missing,
                     readiness=readiness,
                     ranking_reasons=[
@@ -389,6 +490,7 @@ def query_result_to_dict(result: SetupQueryResult) -> dict:
             "counter_effect": item.effect.counter_effect,
             "why_ranked": item.ranking_reasons,
             "evidence_present": item.evidence_matched,
+            "observed_evidence_present": item.observed_evidence_matched,
             "evidence_missing": item.missing_evidence,
             "one_change_test": item.one_change_test_plan,
             "validate_with": item.effect.validation_targets,

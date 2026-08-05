@@ -88,8 +88,8 @@ def validate_compare_selection(req: LapCompareSelection) -> LapCompareSelection:
     if not t_laps:
         raise HTTPException(404, f"Test run not found: {req.test_run_id}")
 
-    bl_lap = next((l for l in bl_laps if l.lap_number == req.baseline_lap), None)
-    t_lap = next((l for l in t_laps if l.lap_number == req.test_lap), None)
+    bl_lap = next((lap for lap in bl_laps if lap.lap_number == req.baseline_lap), None)
+    t_lap = next((lap for lap in t_laps if lap.lap_number == req.test_lap), None)
     if bl_lap is None:
         raise HTTPException(404, f"Baseline lap {req.baseline_lap} not found")
     if t_lap is None:

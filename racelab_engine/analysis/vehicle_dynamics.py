@@ -18,6 +18,11 @@ from __future__ import annotations
 
 import math
 
+from racelab_engine.analysis.estimate_confidence import (
+    EstimateConfidence,
+    confidence_from_missing,
+)
+
 
 def _finite(value: float | None) -> float | None:
     if value is None:
@@ -25,10 +30,6 @@ def _finite(value: float | None) -> float | None:
     number = float(value)
     return number if math.isfinite(number) else None
 
-from racelab_engine.analysis.estimate_confidence import (
-    EstimateConfidence,
-    confidence_from_missing,
-)
 G = 9.81  # m/s²
 
 

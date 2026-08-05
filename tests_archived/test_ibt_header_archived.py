@@ -1,9 +1,9 @@
-# Archived: test_real_ibt_header (duplicate — covered by test_real_telemetry_normalization)
+# Archived: test_real_ibt_header (duplicate â€” covered by test_real_telemetry_normalization)
 # Kept:   test_file_fingerprint_and_invalid_ibt_error
 
 import pytest
 from pathlib import Path
-from racelab_engine.io.ibt_reader import import_ibt, IBTDecodeError
+from racelab_engine.io.ibt_reader import import_ibt
 
 pytestmark = pytest.mark.slow
 

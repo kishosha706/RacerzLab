@@ -248,7 +248,11 @@ def _falloff_label(
         return "early fade"
     if std_ratio > 0.007:
         return "inconsistent / noisy"
-    if abs(falloff_per_lap) <= 0.015 and (setup_usefulness_score or 0) >= 50:
+    if (
+        abs(falloff_per_lap) <= 0.015
+        and setup_usefulness_score is not None
+        and setup_usefulness_score >= 50
+    ):
         return "stable long-run"
     return "usable with caution"
 

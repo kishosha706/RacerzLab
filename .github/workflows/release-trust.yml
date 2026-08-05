@@ -1,0 +1,49 @@
+name: Release Trust Gate
+
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ibt_path:
+        description: Absolute path to the protected real .ibt fixture on the self-hosted runner
+        required: true
+        type: string
+
+jobs:
+  real-ibt-trust-gate:
+    name: Real .ibt release trust gate
+    runs-on: [self-hosted, Windows]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install release-audit dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[api,parquet,dev]"
+
+      - name: Run non-skipping real-file release audit
+        shell: powershell
+        env:
+          IBT_PATH: ${{ inputs.ibt_path || vars.RACERZLAB_RELEASE_IBT_PATH }}
+          IBT_SHA256: ${{ vars.RACERZLAB_RELEASE_IBT_SHA256 }}
+          IBT_SCHEMA: ${{ vars.RACERZLAB_RELEASE_IBT_SCHEMA_FINGERPRINT }}
+          IBT_RECORDS: ${{ vars.RACERZLAB_RELEASE_IBT_RECORDS }}
+          IBT_CHANNELS: ${{ vars.RACERZLAB_RELEASE_IBT_DECLARED_CHANNELS }}
+        run: >-
+          python scripts/audit_release_trust.py
+          --ibt "$env:IBT_PATH"
+          --expected-sha256 "$env:IBT_SHA256"
+          --expected-schema-fingerprint "$env:IBT_SCHEMA"
+          --expected-records "$env:IBT_RECORDS"
+          --expected-declared-channels "$env:IBT_CHANNELS"

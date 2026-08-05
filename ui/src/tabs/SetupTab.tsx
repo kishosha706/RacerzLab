@@ -56,6 +56,10 @@ function evCorner(s: SetupSnapshot, c: string, k: string): number | null {
   }
   return null;
 }
+function evText(s: SetupSnapshot, k: string): string | null {
+  const v = s.extracted_values?.[k];
+  return typeof v === "string" && v.trim() ? v : null;
+}
 
 type SetupDiffValue = string | number | null;
 
@@ -386,12 +390,12 @@ export function SetupTab({ overview, onToggleMapOverlay }: SetupTabProps) {
           <div className="gr-card-body">
             <div className="gr-subhead">Front ARB</div>
             <Field l="Diameter" v={imp(evNum(setup, "front_arb_diameter_mm"), MM_IN, 3)} u="in" />
-            <Field l="Arm Length" v={imp(evNum(setup, "front_arb_arm_mm"), MM_IN, 3)} u="in" />
+            <Field l="Arm Position" v={evText(setup, "front_arb_arm_position")} />
             <Field l="Preload" v={imp(evNum(setup, "front_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" />
             <Field l="Attach" v={evNum(setup, "front_arb_attach")} />
             <div className="gr-subhead">Rear ARB</div>
             <Field l="Diameter" v={imp(evNum(setup, "rear_arb_diameter_mm"), MM_IN, 3)} u="in" />
-            <Field l="Arm Length" v={imp(evNum(setup, "rear_arb_arm_mm"), MM_IN, 3)} u="in" />
+            <Field l="Arm Position" v={evText(setup, "rear_arb_arm_position")} />
             <Field l="Preload" v={imp(evNum(setup, "rear_arb_preload_nm"), NM_FTLB, 1)} u="ft-lb" />
           </div>
         </div>

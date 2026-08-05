@@ -20,6 +20,7 @@ from racelab_engine.analysis.units import (
     M_TO_IN,
     MPS_TO_MPH,
     PA_TO_PSF,
+    KPA_TO_PSI,
     MM_TO_IN,
     input_01_to_percent,
     radians_to_degrees,
@@ -30,6 +31,13 @@ ChannelMetadata = dict[str, Any]
 CORE_REQUIRED_CHANNELS = [
     "SessionTime",
     "SessionTick",
+    "SessionState",
+    "SessionFlags",
+    "SessionTimeRemain",
+    "SessionLapsRemain",
+    "SessionLapsRemainEx",
+    "SessionTimeTotal",
+    "SessionLapsTotal",
     "Lap",
     "LapCompleted",
     "LapDist",
@@ -91,6 +99,42 @@ HIGH_VALUE_RAW_CHANNELS = [
     "OnPitRoad",
     "IsOnTrack",
     "PlayerTrackSurface",
+    "PlayerTrackSurfaceMaterial",
+    "PlayerCarPosition",
+    "PlayerCarClassPosition",
+    "PlayerCarClass",
+    "PlayerCarIdx",
+    "PlayerCarInPitStall",
+    "PlayerCarPitSvStatus",
+    "PlayerCarTowTime",
+    "PlayerCarTeamIncidentCount",
+    "PlayerCarMyIncidentCount",
+    "PlayerCarDriverIncidentCount",
+    "PlayerIncidents",
+    "PaceMode",
+    "PitsOpen",
+    "PitstopActive",
+    "PitRepairLeft",
+    "PitOptRepairLeft",
+    "PitSvFlags",
+    "PitSvFuel",
+    "CarDistAhead",
+    "CarDistBehind",
+    "PlayerTireCompound",
+    "PitSvTireCompound",
+    "PlayerCarDryTireSetLimit",
+    "LeftTireSetsUsed",
+    "RightTireSetsUsed",
+    "FrontTireSetsUsed",
+    "RearTireSetsUsed",
+    "TireSetsUsed",
+    "LeftTireSetsAvailable",
+    "RightTireSetsAvailable",
+    "FrontTireSetsAvailable",
+    "RearTireSetsAvailable",
+    "TireSetsAvailable",
+    "DriverMarker",
+    "EnterExitReset",
     "Speed",
     "VelocityX",
     "VelocityY",
@@ -191,6 +235,30 @@ HIGH_VALUE_RAW_CHANNELS = [
     "RRwearL",
     "RRwearM",
     "RRwearR",
+    "LFodometer",
+    "RFodometer",
+    "LRodometer",
+    "RRodometer",
+    "LFbrakeLinePress",
+    "RFbrakeLinePress",
+    "LRbrakeLinePress",
+    "RRbrakeLinePress",
+    "BrakeABSactive",
+    "BrakeABScutPct",
+    "SteeringWheelTorque",
+    "SteeringWheelTorque_ST",
+    "SteeringWheelPctTorque",
+    "SteeringWheelPctTorqueSign",
+    "SteeringWheelPctTorqueSignStops",
+    "CpuUsageFG",
+    "CpuUsageBG",
+    "FrameRate",
+    "GpuUsage",
+    "ChanQuality",
+    "ChanLatency",
+    "ChanAvgLatency",
+    "MemPageFaultSec",
+    "MemSoftPageFaultSec",
     "FuelUsePerHour",
     "FuelLevel",
     "FuelLevelPct",
@@ -339,10 +407,10 @@ CALCULATED_CHANNEL_UNITS: dict[str, str] = {
     "rf_temp_spread": "C",
     "lr_temp_spread": "C",
     "rr_temp_spread": "C",
-    "lf_wear_spread": "mm",
-    "rf_wear_spread": "mm",
-    "lr_wear_spread": "mm",
-    "rr_wear_spread": "mm",
+    "lf_wear_spread": "%",
+    "rf_wear_spread": "%",
+    "lr_wear_spread": "%",
+    "rr_wear_spread": "%",
     # ── yaw error ──
     "yaw_error_proxy": "rad/s",
     # ── vert accel g ──
@@ -357,6 +425,15 @@ CALCULATED_CHANNEL_UNITS: dict[str, str] = {
     # ── input pct ──
     "throttle_pct": "%",
     "brake_pct": "%",
+    "frame_rate": "Hz",
+    "cpu_usage_foreground": "%",
+    "cpu_usage_background": "%",
+    "gpu_usage": "%",
+    "channel_quality": "ratio",
+    "channel_latency_s": "s",
+    "channel_average_latency_s": "s",
+    "memory_page_faults_per_s": "faults/s",
+    "memory_soft_page_faults_per_s": "faults/s",
     "steering_deg": "deg",
     "abs_steering_deg": "deg",
     "rpm": "rpm",
@@ -670,8 +747,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "drag_scrub_suspicion": {
         "label": "Drag/Scrub Suspicion",
-        "description": "Composite score estimating whether speed loss is from drag/scrub/resistance. NOT a direct force measurement.",
-        "formula": "resistance*0.45 + cfs_risk*0.25 + steering_scrub*0.2 + yaw_rate*0.1",
+        "description": "Composite of co-occurring resistance, steering, yaw, and platform signals; cause is not established and no force is measured.",
+        "formula": "resistance*0.45 + cfs_risk*0.10 + steering_scrub*0.20 + yaw_rate*0.15",
         "dependencies": ["full_throttle_resistance_index", "cfs_risk_score", "abs_steering_deg", "yaw_rate"],
         "used_by_charts": [DRAG_SCRUB],
         "used_by_events": ["FULL_THROTTLE_SPEED_LOSS", "STEERING_SCRUB"],
@@ -748,8 +825,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     # ── tire derived (pressure gain, temp spread, wear spread) ──
     "lf_pressure_gain": {
         "label": "LF Pressure Gain",
-        "description": "ESTIMATE — left-front tire pressure gain (current minus cold). Proxy for tire temperature build-up.",
-        "formula": "lf_pressure - lf_cold_pressure",
+        "description": "ESTIMATE — left-front tire pressure gain in psi, converted from current-minus-cold kPa. Proxy for tire temperature build-up.",
+        "formula": "(lf_pressure_kPa - lf_cold_pressure_kPa) * 0.1450377377",
         "dependencies": ["lf_pressure", "lf_cold_pressure"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -757,8 +834,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "rf_pressure_gain": {
         "label": "RF Pressure Gain",
-        "description": "ESTIMATE — right-front tire pressure gain.",
-        "formula": "rf_pressure - rf_cold_pressure",
+        "description": "ESTIMATE — right-front tire pressure gain in psi, converted from kPa.",
+        "formula": "(rf_pressure_kPa - rf_cold_pressure_kPa) * 0.1450377377",
         "dependencies": ["rf_pressure", "rf_cold_pressure"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -766,8 +843,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "lr_pressure_gain": {
         "label": "LR Pressure Gain",
-        "description": "ESTIMATE — left-rear tire pressure gain.",
-        "formula": "lr_pressure - lr_cold_pressure",
+        "description": "ESTIMATE — left-rear tire pressure gain in psi, converted from kPa.",
+        "formula": "(lr_pressure_kPa - lr_cold_pressure_kPa) * 0.1450377377",
         "dependencies": ["lr_pressure", "lr_cold_pressure"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -775,8 +852,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "rr_pressure_gain": {
         "label": "RR Pressure Gain",
-        "description": "ESTIMATE — right-rear tire pressure gain.",
-        "formula": "rr_pressure - rr_cold_pressure",
+        "description": "ESTIMATE — right-rear tire pressure gain in psi, converted from kPa.",
+        "formula": "(rr_pressure_kPa - rr_cold_pressure_kPa) * 0.1450377377",
         "dependencies": ["rr_pressure", "rr_cold_pressure"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -820,8 +897,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "lf_wear_spread": {
         "label": "LF Wear Spread",
-        "description": "ESTIMATE — left-front tire wear spread (max minus min across inner/middle/outer). Proxy for uneven wear or alignment issues.",
-        "formula": "max(lf_wear_inner, lf_wear_middle, lf_wear_outer) - min(...)",
+        "description": "ESTIMATE — left-front tire wear spread in percentage points. Proxy for uneven wear or alignment issues.",
+        "formula": "(max(lf_wear_inner, lf_wear_middle, lf_wear_outer) - min(...)) * 100",
         "dependencies": ["lf_wear_inner", "lf_wear_middle", "lf_wear_outer"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -829,8 +906,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "rf_wear_spread": {
         "label": "RF Wear Spread",
-        "description": "ESTIMATE — right-front tire wear spread.",
-        "formula": "max(rf_wear_inner, rf_wear_middle, rf_wear_outer) - min(...)",
+        "description": "ESTIMATE — right-front tire wear spread in percentage points.",
+        "formula": "(max(rf_wear_inner, rf_wear_middle, rf_wear_outer) - min(...)) * 100",
         "dependencies": ["rf_wear_inner", "rf_wear_middle", "rf_wear_outer"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -838,8 +915,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "lr_wear_spread": {
         "label": "LR Wear Spread",
-        "description": "ESTIMATE — left-rear tire wear spread.",
-        "formula": "max(lr_wear_inner, lr_wear_middle, lr_wear_outer) - min(...)",
+        "description": "ESTIMATE — left-rear tire wear spread in percentage points.",
+        "formula": "(max(lr_wear_inner, lr_wear_middle, lr_wear_outer) - min(...)) * 100",
         "dependencies": ["lr_wear_inner", "lr_wear_middle", "lr_wear_outer"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -847,8 +924,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "rr_wear_spread": {
         "label": "RR Wear Spread",
-        "description": "ESTIMATE — right-rear tire wear spread.",
-        "formula": "max(rr_wear_inner, rr_wear_middle, rr_wear_outer) - min(...)",
+        "description": "ESTIMATE — right-rear tire wear spread in percentage points.",
+        "formula": "(max(rr_wear_inner, rr_wear_middle, rr_wear_outer) - min(...)) * 100",
         "dependencies": ["rr_wear_inner", "rr_wear_middle", "rr_wear_outer"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -1195,7 +1272,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "full_throttle_resistance_index": {
         "label": "Full-Throttle Resistance",
-        "description": "ESTIMATE — aero-normalized resistance index during full-throttle conditions. Higher = more drag/scrub per unit aero load.",
+        "description": "ESTIMATE — dynamic-pressure-normalized deceleration proxy during full-throttle conditions. Higher means more resistance-like speed loss; it is not an aerodynamic force or coefficient.",
         "dependencies": ["speed_mph", "throttle_pct", "brake_pct", "speed_rate_mph_s", "dynamic_pressure_psf"],
         "used_by_charts": [DRAG_SCRUB],
         "used_by_events": ["FULL_THROTTLE_SPEED_LOSS"],
@@ -2047,6 +2124,11 @@ _ALIAS_MAP: dict[str, str] = {
 }
 
 _REMAINING_ALIAS_MAP: dict[str, str] = {
+    "SessionState": "session_state", "SessionFlags": "session_flags",
+    "SessionTimeRemain": "session_time_remaining_s",
+    "SessionLapsRemain": "session_laps_remaining_legacy",
+    "SessionLapsRemainEx": "session_laps_remaining",
+    "SessionTimeTotal": "session_time_total_s", "SessionLapsTotal": "session_laps_total",
     "WaterTemp": "water_temp", "OilTemp": "oil_temp",
     "FuelLevel": "fuel_level", "FuelLevelPct": "fuel_level_pct",
     "FuelUsePerHour": "fuel_use_per_hour", "Voltage": "voltage",
@@ -2058,7 +2140,7 @@ _REMAINING_ALIAS_MAP: dict[str, str] = {
     "Engine0_RPM": "engine0_rpm", "EngineWarnings": "engine_warnings",
     "TrackTempCrew": "track_temp_crew", "RelativeHumidity": "relative_humidity",
     "FogLevel": "fog_level", "Skies": "skies",
-    "TrackWetness": "track_wetness", "VelocityX": "velocity_x",
+    "TrackWetness": "track_wetness", "Precipitation": "precipitation", "VelocityX": "velocity_x",
     "VelocityY": "velocity_y", "VelocityZ": "velocity_z",
     "Yaw": "yaw", "YawNorth": "yaw_north", "Pitch": "pitch",
     "Roll": "roll", "PitchRate": "pitch_rate", "RollRate": "roll_rate",
@@ -2066,6 +2148,64 @@ _REMAINING_ALIAS_MAP: dict[str, str] = {
     "ClutchRaw": "clutch_raw", "ShiftPowerPct": "shift_power_pct",
     "ShiftGrindRPM": "shift_grind_rpm",
     "SteeringWheelAngleMax": "steering_wheel_angle_max",
+    "PlayerTrackSurfaceMaterial": "player_track_surface_material",
+    "PlayerCarPosition": "player_race_position",
+    "PlayerCarClassPosition": "player_class_position",
+    "PlayerCarClass": "player_car_class_id",
+    "PlayerCarIdx": "player_car_index",
+    "PlayerCarInPitStall": "player_in_pit_stall",
+    "PlayerCarPitSvStatus": "player_pit_service_status",
+    "PlayerCarTowTime": "player_tow_service_time_s",
+    "PlayerCarTeamIncidentCount": "player_team_incident_count",
+    "PlayerCarMyIncidentCount": "player_incident_count",
+    "PlayerCarDriverIncidentCount": "player_driver_incident_count",
+    "PlayerIncidents": "player_incident_flags",
+    "PaceMode": "pace_mode",
+    "PitsOpen": "pits_open", "PitstopActive": "pitstop_active",
+    "PitRepairLeft": "pit_repair_remaining_s",
+    "PitOptRepairLeft": "pit_optional_repair_remaining_s",
+    "PitSvFlags": "pending_pit_service_flags", "PitSvFuel": "pending_pit_fuel_add",
+    "PlayerTireCompound": "player_tire_compound",
+    "PitSvTireCompound": "pending_pit_tire_compound",
+    "PlayerCarDryTireSetLimit": "player_dry_tire_set_limit",
+    "LeftTireSetsUsed": "left_tire_sets_used",
+    "RightTireSetsUsed": "right_tire_sets_used",
+    "FrontTireSetsUsed": "front_tire_sets_used",
+    "RearTireSetsUsed": "rear_tire_sets_used",
+    "TireSetsUsed": "tire_sets_used",
+    "LeftTireSetsAvailable": "left_tire_sets_available",
+    "RightTireSetsAvailable": "right_tire_sets_available",
+    "FrontTireSetsAvailable": "front_tire_sets_available",
+    "RearTireSetsAvailable": "rear_tire_sets_available",
+    "TireSetsAvailable": "tire_sets_available",
+    "CarDistAhead": "car_distance_ahead_m",
+    "CarDistBehind": "car_distance_behind_m",
+    "DriverMarker": "driver_marker",
+    "EnterExitReset": "enter_exit_reset_state",
+    "LFodometer": "lf_tire_distance_m",
+    "RFodometer": "rf_tire_distance_m",
+    "LRodometer": "lr_tire_distance_m",
+    "RRodometer": "rr_tire_distance_m",
+    "LFbrakeLinePress": "lf_brake_line_pressure_bar",
+    "RFbrakeLinePress": "rf_brake_line_pressure_bar",
+    "LRbrakeLinePress": "lr_brake_line_pressure_bar",
+    "RRbrakeLinePress": "rr_brake_line_pressure_bar",
+    "BrakeABSactive": "brake_abs_active",
+    "BrakeABScutPct": "brake_abs_cut_01",
+    "SteeringWheelTorque": "steering_wheel_torque_nm",
+    "SteeringWheelTorque_ST": "steering_wheel_torque_subtick_nm",
+    "SteeringWheelPctTorque": "steering_wheel_torque_unsigned_01",
+    "SteeringWheelPctTorqueSign": "steering_wheel_torque_signed_01",
+    "SteeringWheelPctTorqueSignStops": "steering_wheel_torque_stops_01",
+    "CpuUsageFG": "cpu_usage_foreground",
+    "CpuUsageBG": "cpu_usage_background",
+    "FrameRate": "frame_rate",
+    "GpuUsage": "gpu_usage",
+    "ChanQuality": "channel_quality",
+    "ChanLatency": "channel_latency_s",
+    "ChanAvgLatency": "channel_average_latency_s",
+    "MemPageFaultSec": "memory_page_faults_per_s",
+    "MemSoftPageFaultSec": "memory_soft_page_faults_per_s",
 }
 
 _RIDE_HEIGHT_RAW_KEYS: dict[str, str] = {
@@ -2335,7 +2475,8 @@ def _compute_tire_derived(item: dict[str, Any]) -> None:
         p = _number(item.get(f"{c}_pressure"))
         cp = _number(item.get(f"{c}_cold_pressure"))
         if p is not None and cp is not None:
-            _set_number(item, f"{c}_pressure_gain", p - cp)
+            # iRacing pressure channels are kPa; expose the derived gain in psi.
+            _set_number(item, f"{c}_pressure_gain", (p - cp) * KPA_TO_PSI)
         ti = _number(item.get(f"{c}_temp_inner"))
         tm = _number(item.get(f"{c}_temp_middle"))
         to = _number(item.get(f"{c}_temp_outer"))
@@ -2347,7 +2488,8 @@ def _compute_tire_derived(item: dict[str, Any]) -> None:
         wo = _number(item.get(f"{c}_wear_outer"))
         wears = [v for v in [wi, wm, wo] if v is not None]
         if len(wears) >= 2:
-            _set_number(item, f"{c}_wear_spread", max(wears) - min(wears))
+            # Raw wear values are 0..1 fractions; expose spread as percentage points.
+            _set_number(item, f"{c}_wear_spread", (max(wears) - min(wears)) * 100.0)
         # slip ratio proxy (unified denominator with floor)
         ws = _number(item.get(f"{c}_speed"))
         speed_mps = _number(item.get("speed_mps"))
@@ -2627,16 +2769,23 @@ def _compute_resistance_indices(row: dict[str, Any], previous: dict[str, Any]) -
         RESISTANCE_COEFF_CRITICAL,
     )
 
-    speed = _number(row.get("speed_mph")) or 0.0
-    throttle = _number(row.get("throttle_pct")) or 0.0
-    brake_pct = _number(row.get("brake_pct")) or 0.0
+    speed = _number(row.get("speed_mph"))
+    throttle = _number(row.get("throttle_pct"))
+    brake_pct = _number(row.get("brake_pct"))
+    if speed is None or throttle is None or brake_pct is None:
+        row["full_throttle_resistance_index"] = None
+        row["drag_scrub_suspicion"] = None
+        return
     max_lap_speed = _number(row.get("max_lap_speed_mph")) or speed
     speed_threshold = max_lap_speed * 0.75 if max_lap_speed > 0 else DRAG_SCRUB_MIN_SPEED_MPH
 
     if throttle >= FULL_THROTTLE_PCT and brake_pct <= LOW_BRAKE_PCT and speed >= speed_threshold:
-        resistance_coeff = float(aero_normalized_resistance(row))
-        resistance_index = min(1.0, resistance_coeff / RESISTANCE_COEFF_CRITICAL)
-        row["full_throttle_resistance_index"] = resistance_index
+        resistance_coeff = aero_normalized_resistance(row)
+        row["full_throttle_resistance_index"] = (
+            min(1.0, resistance_coeff / RESISTANCE_COEFF_CRITICAL)
+            if resistance_coeff is not None
+            else None
+        )
     else:
         row.setdefault("full_throttle_resistance_index", 0.0)
 
@@ -2645,9 +2794,12 @@ def _compute_resistance_indices(row: dict[str, Any], previous: dict[str, Any]) -
 
 
 def _compute_compression_index(row: dict[str, Any]) -> None:
-    cfs_risk = _number(row.get("cfs_risk_score")) or 0.0
-    plat_stab = _number(row.get("platform_stability_score")) or 0.0
-    drag_susp = _number(row.get("drag_scrub_suspicion")) or 0.0
+    cfs_risk = _number(row.get("cfs_risk_score"))
+    plat_stab = _number(row.get("platform_stability_score"))
+    drag_susp = _number(row.get("drag_scrub_suspicion"))
+    if cfs_risk is None or plat_stab is None or drag_susp is None:
+        row["platform_compression_index"] = None
+        return
     row["platform_compression_index"] = min(1.0, cfs_risk * 0.4 + plat_stab * 0.3 + drag_susp * 0.3)
 
 

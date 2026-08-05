@@ -6,13 +6,39 @@ import re
 import struct
 import time
 from pathlib import Path
-from statistics import mean
 from typing import Any, Collection, Mapping, cast
+
+import polars as pl
+
+from racelab_engine.analysis.calculated_channels import (
+    CORE_REQUIRED_CHANNELS,
+    HIGH_VALUE_RAW_CHANNELS,
+    normalize_telemetry_rows,
+)
+from racelab_engine.analysis.constants import LOW_BRAKE_PCT, PLATFORM_VALID_MIN_SPEED_MPH, PLATFORM_VALID_THROTTLE_PCT
+from racelab_engine.analysis.drag_scrub import detect_drag_scrub_risk_zones
+from racelab_engine.analysis.dynamic_crew_chief import build_recommendations
+from racelab_engine.analysis.evidence_contracts import (
+    EvidenceEvaluationInput,
+    EvidenceState,
+    SETUP_RECOMMENDATION_CONTRACT,
+    evaluate_evidence_contract,
+)
+from racelab_engine.analysis.lap_classification import classify_laps
+from racelab_engine.analysis.lap_eligibility import eligible_laps
+from racelab_engine.analysis.lap_detection import detect_laps
+from racelab_engine.analysis.platform_events import PlatformEvent, detect_platform_events
+from racelab_engine.analysis.proximity_context import classify_proximity_time_gap_window
+from racelab_engine.analysis.time_alignment import detect_engineering_phases
+from racelab_engine.io.file_fingerprint import fingerprint_file
+from racelab_engine.io.ibt_types import IBTHeader, IBTImportResult, IBTVariableDefinition, ImportStatus
+from racelab_engine.io.session_yaml import extract_session_summary, extract_setup_snapshot, parse_session_yaml
+from racelab_engine.models.event import TelemetryEvent
+from racelab_engine.models.session import RunOverview
+
 
 _log = logging.getLogger(__name__)
 LAST_IMPORT_PROFILE: dict[str, Any] = {}
-
-import polars as pl
 
 
 def _subprofile_enabled() -> bool:
@@ -23,24 +49,6 @@ def _subprofile_enabled() -> bool:
 def _var_subprofile_enabled() -> bool:
     import os
     return os.environ.get("RACELAB_IMPORT_VAR_PROFILE", "").strip().lower() in {"1", "true", "yes", "on"}
-
-from racelab_engine.analysis.calculated_channels import (
-    CORE_REQUIRED_CHANNELS,
-    HIGH_VALUE_RAW_CHANNELS,
-    normalize_telemetry_rows,
-)
-from racelab_engine.analysis.constants import LOW_BRAKE_PCT, PLATFORM_VALID_MIN_SPEED_MPH, PLATFORM_VALID_THROTTLE_PCT
-from racelab_engine.analysis.drag_scrub import detect_drag_scrub_risk_zones
-from racelab_engine.analysis.dynamic_crew_chief import build_recommendations
-from racelab_engine.analysis.lap_classification import classify_laps
-from racelab_engine.analysis.lap_eligibility import eligible_laps
-from racelab_engine.analysis.lap_detection import detect_laps
-from racelab_engine.analysis.platform_events import PlatformEvent, detect_platform_events
-from racelab_engine.io.file_fingerprint import fingerprint_file
-from racelab_engine.io.ibt_types import IBTHeader, IBTImportResult, IBTVariableDefinition, ImportStatus
-from racelab_engine.io.session_yaml import extract_session_summary, extract_setup_snapshot, parse_session_yaml
-from racelab_engine.models.event import TelemetryEvent
-from racelab_engine.models.session import RunOverview
 
 
 class IBTParseError(ValueError):
@@ -65,7 +73,7 @@ DATA_TYPE_SIZES = {
     5: 8,
 }
 
-TARGET_CHANNELS = list(dict.fromkeys(HIGH_VALUE_RAW_CHANNELS))
+TARGET_CHANNELS = list(dict.fromkeys([*CORE_REQUIRED_CHANNELS, *HIGH_VALUE_RAW_CHANNELS]))
 
 _CANONICAL_SHOCK_DEFL_CHANNELS: tuple[str, ...] = (
     "LFshockDefl",
@@ -236,7 +244,43 @@ def _parse_variable_definitions(data: bytes, header: IBTHeader) -> list[IBTVaria
             )
         )
 
+    _validate_variable_definitions(header, definitions)
     return definitions
+
+
+def _validate_variable_definitions(
+    header: IBTHeader,
+    definitions: Collection[IBTVariableDefinition],
+) -> None:
+    """Reject declarations that cannot map safely into a fixed telemetry record."""
+
+    if header.record_length is None or header.record_length <= 0:
+        raise IBTParseError("Header is missing a valid telemetry record length.")
+    seen: set[str] = set()
+    for index, definition in enumerate(definitions):
+        label = definition.name or f"definition {index}"
+        if not definition.name:
+            raise IBTParseError(f"Variable definition {index} has an empty name.")
+        if definition.name in seen:
+            raise IBTParseError(f"Duplicate telemetry variable name: {definition.name}.")
+        seen.add(definition.name)
+        if definition.count <= 0:
+            raise IBTParseError(f"Telemetry variable {label} has invalid element count {definition.count}.")
+        if definition.offset < 0:
+            raise IBTParseError(f"Telemetry variable {label} has a negative record offset.")
+        element_size = DATA_TYPE_SIZES.get(
+            definition.data_type_id if definition.data_type_id is not None else -1
+        )
+        if element_size is None:
+            raise IBTParseError(
+                f"Unsupported iRacing variable type {definition.data_type_id} for {label}."
+            )
+        byte_count = element_size * definition.count
+        if definition.offset + byte_count > header.record_length:
+            raise IBTParseError(
+                f"Telemetry variable {label} exceeds the {header.record_length}-byte record "
+                f"({definition.offset}+{byte_count})."
+            )
 
 
 def read_variable_definitions(path: str | Path) -> list[IBTVariableDefinition]:
@@ -441,6 +485,71 @@ def _read_records_columnar(
     return columns
 
 
+def _analysis_columns(columns: Mapping[str, list[Any]], target_vars: Collection[str]) -> dict[str, list[Any]]:
+    """Keep calculated-channel work narrow while the raw vault stays complete."""
+
+    selected = {name: values for name, values in columns.items() if name == "sample_index" or name in target_vars}
+    return selected
+
+
+def _raw_archive_column_mapping(
+    normalized_columns: Collection[str],
+    raw_names: Collection[str],
+) -> dict[str, str]:
+    """Allocate a collision-free physical column for every raw source name."""
+
+    used = set(normalized_columns)
+    mapping: dict[str, str] = {}
+    for raw_name in raw_names:
+        archive_name = raw_name
+        source_passthrough = raw_name in HIGH_VALUE_RAW_CHANNELS and raw_name in used
+        while archive_name in used and not source_passthrough:
+            archive_name = f"raw__{archive_name}"
+        mapping[raw_name] = archive_name
+        used.add(archive_name)
+    return mapping
+
+
+def _merge_raw_columns(normalized_frame: pl.DataFrame, raw_columns: Mapping[str, list[Any]]) -> pl.DataFrame:
+    """Add untouched source columns after normalization has created aliases.
+
+    Normalization intentionally renames a subset of iRacing names.  Adding the
+    raw columns back makes provenance lossless without exposing every channel to
+    every calculated-channel expression.
+    """
+
+    mapping = _raw_archive_column_mapping(normalized_frame.columns, raw_columns)
+    additions = {
+        archive_name: raw_columns[raw_name]
+        for raw_name, archive_name in mapping.items()
+        if archive_name != raw_name or raw_name not in normalized_frame.columns
+    }
+    if not additions:
+        return normalized_frame
+    raw_frame = pl.DataFrame(additions, strict=False)
+    if raw_frame.height != normalized_frame.height:
+        raise IBTParseError("Raw and normalized telemetry row counts do not match.")
+    return normalized_frame.hstack(raw_frame)
+
+
+def _merge_raw_rows(
+    normalized_rows: list[dict[str, Any]],
+    raw_rows: Collection[Mapping[str, object]],
+) -> list[dict[str, Any]]:
+    raw_list = list(raw_rows)
+    if len(normalized_rows) != len(raw_list):
+        raise IBTParseError("Raw and normalized telemetry row counts do not match.")
+    normalized_names = normalized_rows[0].keys() if normalized_rows else ()
+    raw_names = raw_list[0].keys() if raw_list else ()
+    mapping = _raw_archive_column_mapping(normalized_names, raw_names)
+    merged: list[dict[str, Any]] = []
+    for raw, normalized in zip(raw_list, normalized_rows):
+        row = dict(normalized)
+        row.update({mapping[name]: value for name, value in raw.items()})
+        merged.append(row)
+    return merged
+
+
 def read_records(path: str | Path, variables: Collection[str] | None = None) -> list[Mapping[str, object]]:
     """Decode telemetry records from an `.ibt` file.
 
@@ -524,7 +633,14 @@ def _safe_float(value: Any) -> float | None:
         number = float(value)
     except (TypeError, ValueError):
         return None
-    return None if math.isnan(number) else number
+    return number if math.isfinite(number) else None
+
+
+_PLATFORM_MAX_SPEED_MPH = 300.0
+_PLATFORM_MIN_CLEARANCE_MM = -25.4
+_PLATFORM_MAX_CLEARANCE_MM = 500.0
+_PERCENT_MIN = 0.0
+_PERCENT_MAX = 100.0
 
 
 def _lap_pct_100(row: Mapping[str, Any]) -> float | None:
@@ -548,15 +664,29 @@ def _platform_event_to_overview_marker(
     *,
     run_id: str,
     is_complete_lap: bool,
+    is_eligible_lap: bool,
+    has_sustained_risk: bool,
 ) -> TelemetryEvent:
     splitter_mm = _safe_float(row.get("cfsr_height_mm"))
-    speed_mph = float(_safe_float(row.get("speed_mph")) or 0.0)
-    throttle_pct = float(_safe_float(row.get("throttle_pct")) or 0.0)
-    brake_pct = float(_safe_float(row.get("brake_pct")) or 0.0)
-    valid_for_tuning = (
+    speed_mph = _safe_float(row.get("speed_mph"))
+    throttle_pct = _safe_float(row.get("throttle_pct"))
+    brake_pct = _safe_float(row.get("brake_pct"))
+    plausible_numeric_context = (
         splitter_mm is not None
-        and splitter_mm >= 0.0
+        and _PLATFORM_MIN_CLEARANCE_MM <= splitter_mm <= _PLATFORM_MAX_CLEARANCE_MM
+        and speed_mph is not None
+        and 0.0 < speed_mph <= _PLATFORM_MAX_SPEED_MPH
+        and throttle_pct is not None
+        and _PERCENT_MIN <= throttle_pct <= _PERCENT_MAX
+        and brake_pct is not None
+        and _PERCENT_MIN <= brake_pct <= _PERCENT_MAX
+    )
+    valid_for_tuning = (
+        plausible_numeric_context
         and is_complete_lap
+        and is_eligible_lap
+        and event.display_scope in {"actionable", "watch"}
+        and has_sustained_risk
         and speed_mph >= PLATFORM_VALID_MIN_SPEED_MPH
         and throttle_pct >= PLATFORM_VALID_THROTTLE_PCT
         and brake_pct <= LOW_BRAKE_PCT
@@ -580,27 +710,78 @@ def _platform_event_to_overview_marker(
         primary_metric_name="cfsr_height_mm",
         primary_metric_value=splitter_mm,
         evidence_json={
+            "phase": row.get("engineering_phase"),
             "speed_mph": speed_mph,
             "throttle_pct": throttle_pct,
             "brake_pct": brake_pct,
             "splitter_height_mm": splitter_mm,
             "is_complete_lap": is_complete_lap,
+            "is_eligible_lap": is_eligible_lap,
             "display_scope": event.display_scope,
+            "has_sustained_risk": has_sustained_risk,
+            "plausible_numeric_context": plausible_numeric_context,
             "validity_rule": (
-                "complete high-speed full-throttle low-brake event"
+                "eligible complete-lap high-speed full-throttle low-brake event"
                 if valid_for_tuning
-                else "not valid for tuning because context is incomplete, slowdown, braking, low-speed, or not full-throttle"
+                else "not valid for tuning because the canonical lap gate or local operating context failed"
             ),
         },
         related_setup_keys=["front_ride_height", "front_springs", "packers", "steering_offset"],
-        recommended_actions=[event.recommended_action] if event.recommended_action else [],
+        recommended_actions=[event.recommended_action] if valid_for_tuning and event.recommended_action else [],
+        evidence_state=(
+            EvidenceState.CALCULATED
+            if valid_for_tuning
+            else EvidenceState.BLOCKED_BY_CONTEXT
+        ),
+        source_channels=["lap_dist_pct", "cfsr_height_mm", "speed_mph", "throttle_pct", "brake_pct"],
+        blocker_reasons=(
+            []
+            if valid_for_tuning
+            else ["Canonical lap eligibility or the local operating-context gate failed."]
+        ),
     )
+
+
+def _sustained_platform_risk_interval(
+    rows: list[dict[str, Any]], sample_index: int,
+) -> tuple[int, int] | None:
+    if not (0 <= sample_index < len(rows)):
+        return None
+
+    def is_low(sample: Mapping[str, Any]) -> bool:
+        splitter_mm = _safe_float(sample.get("cfsr_height_mm"))
+        if splitter_mm is not None:
+            return splitter_mm <= 10.0
+        cfs_in = _safe_float(sample.get("cfs_ride_height_in"))
+        return cfs_in is not None and cfs_in <= 0.394
+
+    start = sample_index
+    end = sample_index
+    while start > 0 and is_low(rows[start - 1]):
+        start -= 1
+    while end + 1 < len(rows) and is_low(rows[end + 1]):
+        end += 1
+    if end - start + 1 >= 3:
+        return start, end
+    start_ft = _safe_float(rows[start].get("lap_dist_ft"))
+    end_ft = _safe_float(rows[end].get("lap_dist_ft"))
+    if start_ft is not None and end_ft is not None and abs(end_ft - start_ft) >= 20.0:
+        return start, end
+    return None
+
+
+def _has_sustained_platform_risk(rows: list[dict[str, Any]], sample_index: int) -> bool:
+    return _sustained_platform_risk_interval(rows, sample_index) is not None
 
 
 def _build_overview_platform_events(table: Any, run_id: str) -> list[TelemetryEvent]:
     rows = _platform_detection_rows(table)
     if not rows:
         return []
+    eligible_lap_numbers = {
+        lap.lap_number
+        for lap in eligible_laps(classify_laps(detect_laps(rows, run_id=run_id)))
+    }
 
     lap_numbers = sorted(
         {
@@ -623,14 +804,31 @@ def _build_overview_platform_events(table: Any, run_id: str) -> list[TelemetryEv
             continue
         if not (0 <= event.sample_index < len(lap_rows)):
             continue
-        events.append(
-            _platform_event_to_overview_marker(
+        event_row = lap_rows[event.sample_index]
+        event_pct = event.lap_pct if event.lap_pct is not None else _lap_pct_100(event_row)
+        if event_pct is not None:
+            phase_by_position, _, _ = detect_engineering_phases(lap_rows)
+            phase_index = max(0, min(len(phase_by_position) - 1, int(round(event_pct * 10.0))))
+            event_row = {**event_row, "engineering_phase": phase_by_position[phase_index]}
+        sustained_interval = _sustained_platform_risk_interval(lap_rows, event.sample_index)
+        marker = _platform_event_to_overview_marker(
                 event,
-                lap_rows[event.sample_index],
+                event_row,
                 run_id=run_id,
                 is_complete_lap=_is_complete_lap(lap_rows),
+                is_eligible_lap=lap_number is not None and lap_number in eligible_lap_numbers,
+                has_sustained_risk=sustained_interval is not None,
             )
-        )
+        if sustained_interval is not None:
+            start_index, end_index = sustained_interval
+            interval_start = _lap_pct_100(lap_rows[start_index])
+            interval_end = _lap_pct_100(lap_rows[end_index])
+            if interval_start is not None and interval_end is not None:
+                marker = marker.model_copy(update={
+                    "lap_pct_start": min(interval_start, interval_end),
+                    "lap_pct_end": max(interval_start, interval_end),
+                })
+        events.append(marker)
     return events
 
 
@@ -638,8 +836,8 @@ def _build_primary_findings(best_lap: Any, platform_events: list[Any], drag_even
     findings: list[str] = []
     if best_lap is not None:
         findings.append(f"Lap {best_lap.lap_number} is the best useful lap.")
-    if drag_events:
-        event = drag_events[0]
+    if valid_drag_events := [event for event in drag_events if event.valid_for_tuning]:
+        event = valid_drag_events[0]
         findings.append(
             f"{event.zone_name or 'A target zone'} behaves like a full-throttle drag/scrub risk zone."
         )
@@ -651,10 +849,103 @@ def _build_primary_findings(best_lap: Any, platform_events: list[Any], drag_even
     return findings
 
 
+def _qualify_overview_drag_events(
+    events: list[TelemetryEvent],
+    selected_lap_rows: list[dict[str, Any]],
+) -> tuple[list[TelemetryEvent], str | None]:
+    if not events:
+        return [], None
+    proximity = classify_proximity_time_gap_window(selected_lap_rows)
+    if not proximity.blocks_relative_resistance:
+        return [
+            event.model_copy(
+                update={
+                    "evidence_json": {
+                        **event.evidence_json,
+                        "proximity_context": proximity.model_dump(mode="json"),
+                    }
+                }
+            )
+            for event in events
+        ], None
+    explanation = proximity.explanation
+    return [
+        event.model_copy(
+            update={
+                "valid_for_tuning": False,
+                "confidence_score": min(event.confidence_score, 0.35),
+                "recommended_actions": [],
+                "evidence_state": EvidenceState.BLOCKED_BY_CONTEXT,
+                "blocker_reasons": [explanation],
+                "evidence_json": {
+                    **event.evidence_json,
+                    "proximity_context": proximity.model_dump(mode="json"),
+                    "tuning_action_suppressed": True,
+                },
+            }
+        )
+        for event in events
+    ], explanation
+
+
+def _build_overview_drag_events(
+    table: Any,
+    *,
+    run_id: str,
+    best_lap: Any | None,
+) -> tuple[list[TelemetryEvent], str | None]:
+    """Detect drag-like observations only inside the canonical selected flying lap."""
+    if best_lap is None:
+        return [], None
+    overview_rows = _platform_detection_rows(table)
+    selected_lap_rows = [
+        row
+        for row in overview_rows
+        if _safe_float(row.get("lap")) == float(best_lap.lap_number)
+    ]
+    detected = detect_drag_scrub_risk_zones(
+        selected_lap_rows,
+        run_id=run_id,
+        lap_number=best_lap.lap_number,
+    )
+    promoted = [
+        event.model_copy(
+            update={
+                "valid_for_tuning": True,
+                "recommended_actions": [
+                    "Run one controlled platform/scrub test and compare this zone by lap percentage."
+                ],
+            }
+        )
+        if event.evidence_json.get("detector_action_candidate") is True
+        else event
+        for event in detected
+    ]
+    return _qualify_overview_drag_events(promoted, selected_lap_rows)
+
+
 def _best_useful_lap(rows: list[dict[str, Any]], run_id: str) -> Any:
     laps = classify_laps(detect_laps(rows, run_id=run_id))
     useful = eligible_laps(laps)
     return min(useful, key=lambda lap: lap.lap_time or 999999.0) if useful else None
+
+
+def _setup_snapshot_has_recorded_values(setup: Any | None) -> bool:
+    if setup is None:
+        return False
+    payload = setup.model_dump() if hasattr(setup, "model_dump") else dict(setup)
+    ignored = {"setup_id", "run_id", "setup_name", "notes"}
+
+    def recorded(value: Any) -> bool:
+        if value is None or value == "":
+            return False
+        if isinstance(value, Mapping):
+            return any(recorded(item) for item in value.values())
+        if isinstance(value, (list, tuple, set)):
+            return any(recorded(item) for item in value)
+        return True
+
+    return any(recorded(value) for key, value in payload.items() if key not in ignored)
 
 
 def _build_overview(
@@ -703,15 +994,117 @@ def _build_overview(
     platform_events = _build_overview_platform_events(telemetry_table, run_id=run_id)
     profile["overview_platform_events_s"] = time.perf_counter() - t0
     t0 = time.perf_counter()
-    drag_events = detect_drag_scrub_risk_zones(
+    drag_events, proximity_warning = _build_overview_drag_events(
         telemetry_table,
         run_id=run_id,
-        lap_number=best_lap.lap_number if best_lap else None,
+        best_lap=best_lap,
     )
     profile["overview_drag_scrub_s"] = time.perf_counter() - t0
     t0 = time.perf_counter()
     events = platform_events + drag_events
-    recommendations = build_recommendations(run_id, [event for event in events if event.valid_for_tuning])
+    overview_rows = _platform_detection_rows(telemetry_table)
+    usable_channels = frozenset(
+        key
+        for row in overview_rows
+        for key, value in row.items()
+        if value is not None
+    )
+    linked_events = [
+        event
+        for event in events
+        if event.valid_for_tuning
+        and event.source_channels
+        and set(event.source_channels).issubset(usable_channels)
+    ]
+    requested_outputs = frozenset({"controlled_setup_test"})
+    setup_snapshot_captured = _setup_snapshot_has_recorded_values(setup)
+    sample_integrity_observed_clear = (
+        False
+        if best_lap is not None and {"session_tick", "session_time"}.issubset(usable_channels)
+        else None
+    )
+    one_change_output_isolated = (
+        False if requested_outputs == frozenset({"controlled_setup_test"}) else None
+    )
+    sensitive_claim_requested = any(
+        token in f"{event.event_type} {' '.join(event.recommended_actions)}".lower()
+        for event in linked_events
+        for token in ("degradation", "tire wear", "cooling", "overheat")
+    )
+    missing_data_substitution_observed = (
+        False
+        if linked_events and SETUP_RECOMMENDATION_CONTRACT.required_channels.issubset(usable_channels)
+        else None
+    )
+    recommendation_evidence = evaluate_evidence_contract(
+        SETUP_RECOMMENDATION_CONTRACT,
+        EvidenceEvaluationInput(
+            usable_channels=usable_channels,
+            condition_results={
+                "complete_flying_lap_coverage": best_lap is not None,
+                "setup_snapshot_captured": setup_snapshot_captured,
+                "event_linked": bool(linked_events),
+            },
+            blocker_results={
+                "junk_lap_context": best_lap is None,
+                "sample_or_sim_integrity_failure": sample_integrity_observed_clear,
+                "unisolated_setup_change": one_change_output_isolated,
+                "short_run_sensitive_claim": sensitive_claim_requested,
+                "missing_data_substitution": missing_data_substitution_observed,
+            },
+            repetitions=len(useful_laps),
+            requested_outputs=requested_outputs,
+        ),
+    )
+    confidence_limit_reasons = [
+        limit.message for limit in recommendation_evidence.confidence_limits
+    ]
+    if recommendation_evidence.eligible:
+        events = [
+            event.model_copy(
+                update={
+                    "confidence_score": min(
+                        event.confidence_score,
+                        recommendation_evidence.confidence_cap,
+                    ),
+                    "evidence_json": {
+                        **event.evidence_json,
+                        "evidence_confidence_limits": confidence_limit_reasons,
+                    },
+                }
+            )
+            if event.valid_for_tuning
+            else event
+            for event in events
+        ]
+    else:
+        recommendation_blockers = [
+            blocker.message for blocker in recommendation_evidence.blockers
+        ]
+        events = [
+            event.model_copy(
+                update={
+                    "valid_for_tuning": False,
+                    "recommended_actions": [],
+                    "confidence_score": min(event.confidence_score, 0.35),
+                    "evidence_state": EvidenceState.BLOCKED_BY_CONTEXT,
+                    "blocker_reasons": recommendation_blockers,
+                    "evidence_json": {
+                        **event.evidence_json,
+                        "tuning_action_suppressed": True,
+                        "evidence_contract_blockers": recommendation_blockers,
+                    },
+                }
+            )
+            if event.valid_for_tuning
+            else event
+            for event in events
+        ]
+    recommendations = build_recommendations(
+        run_id,
+        events,
+        evidence_evaluation=recommendation_evidence,
+    )
     profile["overview_recommendations_s"] = time.perf_counter() - t0
     invalid_scrapes = [
         event for event in platform_events if event.event_type == "PLATFORM_SCRAPE" and not event.valid_for_tuning
@@ -722,6 +1115,10 @@ def _build_overview(
         "Do not overclaim exact aerodynamic drag force from .ibt telemetry.",
     ]
     warnings.extend(_build_missing_optional_warnings(missing_channels, available_channels))
+    if proximity_warning:
+        warnings.append(
+            f"Drag/scrub tuning was suppressed by nearby-car context: {proximity_warning}"
+        )
     if invalid_scrapes:
         warnings.append("At least one low/negative splitter event occurred in slowdown context and is not valid setup evidence.")
 
@@ -734,16 +1131,24 @@ def _build_overview(
         events=events,
         setup_snapshot=setup,
         recommendations=recommendations,
-        primary_findings=_build_primary_findings(best_lap, platform_events, drag_events),
+        primary_findings=_build_primary_findings(
+            best_lap,
+            [event for event in events if "PLATFORM" in event.event_type],
+            [event for event in events if event.event_type == "FULL_THROTTLE_SPEED_LOSS"],
+        ),
         warnings=warnings,
         crew_chief_summary=(
-            "Use Lap 2-style complete laps for setup evidence. Focus the next controlled test on platform/scrub behavior."
+            "A contract-qualified event supports one controlled platform/scrub test."
+            if recommendations
+            else "An eligible lap is available, but the evidence contract did not authorize a setup test."
             if best_lap
             else "No complete useful lap was identified."
         ),
         next_test=(
             "Run one controlled platform/scrub test. Compare speed, minimum splitter, steering angle, and RPM in the same lap-distance zone."
-            if best_lap
+            if recommendations
+            else recommendation_evidence.needed_measurements[0].instruction
+            if recommendation_evidence.needed_measurements
             else "Import a complete run with at-speed telemetry before making setup conclusions."
         ),
     )
@@ -820,6 +1225,7 @@ def import_ibt(path: str | Path) -> IBTImportResult:
         )
         analysis_mode = get_analysis_engine_mode()
         normalized_frame = None
+        raw_archive_columns: dict[str, str] = {}
         rows: list[dict[str, Any]]
         overview_table: Any | None = None
         if profile_enabled:
@@ -836,7 +1242,7 @@ def import_ibt(path: str | Path) -> IBTImportResult:
                 t_loop = time.time()
                 columns = _read_records_columnar(
                     data, header, definitions,
-                    variables=target_vars,
+                    variables=None,
                     profile_out=LAST_IMPORT_PROFILE if profile_enabled else None,
                 )
                 if profile_enabled:
@@ -844,7 +1250,21 @@ def import_ibt(path: str | Path) -> IBTImportResult:
                 if analysis_mode == "row":
                     import polars as pl
                     raw_rows = pl.DataFrame(columns, strict=False).to_dicts()
-                    rows = normalize_telemetry_rows(raw_rows, car_path=session_car_path)
+                    declared_names = {definition.name for definition in definitions}
+                    raw_archive_rows = [
+                        {name: value for name, value in row.items() if name in declared_names}
+                        for row in raw_rows
+                    ]
+                    analysis_rows = [
+                        {name: value for name, value in row.items() if name == "sample_index" or name in target_vars}
+                        for row in raw_rows
+                    ]
+                    normalized_rows = normalize_telemetry_rows(analysis_rows, car_path=session_car_path)
+                    raw_archive_columns = _raw_archive_column_mapping(
+                        normalized_rows[0].keys() if normalized_rows else (),
+                        raw_archive_rows[0].keys() if raw_archive_rows else (),
+                    )
+                    rows = _merge_raw_rows(normalized_rows, raw_archive_rows)
                     _log.info(
                         "IBT decoder (columnar+row-normalize): %d records in %.3fs",
                         len(rows),
@@ -852,7 +1272,16 @@ def import_ibt(path: str | Path) -> IBTImportResult:
                     )
                 else:
                     t_norm = time.time()
-                    df = normalize_telemetry_frame(columns, car_path=session_car_path)
+                    df = normalize_telemetry_frame(
+                        _analysis_columns(columns, target_vars),
+                        car_path=session_car_path,
+                    )
+                    declared_columns = {
+                        definition.name: columns[definition.name]
+                        for definition in definitions
+                    }
+                    raw_archive_columns = _raw_archive_column_mapping(df.columns, declared_columns)
+                    df = _merge_raw_columns(df, declared_columns)
                     normalized_frame = df
                     overview_table = df
                     if profile_enabled:
@@ -871,11 +1300,25 @@ def import_ibt(path: str | Path) -> IBTImportResult:
                 _log.debug("Columnar fast path failed, using row decoder", exc_info=True)
                 raw_rows = _read_records_from_data(
                     data, header, definitions,
-                    variables=target_vars,
+                    variables=None,
                 )
+                declared_names = {definition.name for definition in definitions}
+                raw_archive_rows = [
+                    {name: value for name, value in row.items() if name in declared_names}
+                    for row in raw_rows
+                ]
                 _log.info("IBT decoder (row): %d records decoded in %.3fs", len(raw_rows), time.time() - t0)
                 t0 = time.time()
-                rows = normalize_telemetry_rows(raw_rows, car_path=session_car_path)
+                analysis_rows = [
+                    {name: value for name, value in row.items() if name == "sample_index" or name in target_vars}
+                    for row in raw_rows
+                ]
+                normalized_rows = normalize_telemetry_rows(analysis_rows, car_path=session_car_path)
+                raw_archive_columns = _raw_archive_column_mapping(
+                    normalized_rows[0].keys() if normalized_rows else (),
+                    raw_archive_rows[0].keys() if raw_archive_rows else (),
+                )
+                rows = _merge_raw_rows(normalized_rows, raw_archive_rows)
                 overview_table = rows
                 if profile_enabled:
                     LAST_IMPORT_PROFILE["decode_row_normalize_s"] = time.time() - t0
@@ -884,11 +1327,25 @@ def import_ibt(path: str | Path) -> IBTImportResult:
         else:
             raw_rows = _read_records_from_data(
                 data, header, definitions,
-                variables=target_vars,
+                variables=None,
             )
+            declared_names = {definition.name for definition in definitions}
+            raw_archive_rows = [
+                {name: value for name, value in row.items() if name in declared_names}
+                for row in raw_rows
+            ]
             _log.info("IBT decoder (forced row): %d records decoded in %.3fs", len(raw_rows), time.time() - t0)
             t0 = time.time()
-            rows = normalize_telemetry_rows(raw_rows, car_path=session_car_path)
+            analysis_rows = [
+                {name: value for name, value in row.items() if name == "sample_index" or name in target_vars}
+                for row in raw_rows
+            ]
+            normalized_rows = normalize_telemetry_rows(analysis_rows, car_path=session_car_path)
+            raw_archive_columns = _raw_archive_column_mapping(
+                normalized_rows[0].keys() if normalized_rows else (),
+                raw_archive_rows[0].keys() if raw_archive_rows else (),
+            )
+            rows = _merge_raw_rows(normalized_rows, raw_archive_rows)
             overview_table = rows
             if profile_enabled:
                 LAST_IMPORT_PROFILE["decode_row_normalize_s"] = time.time() - t0
@@ -920,24 +1377,29 @@ def import_ibt(path: str | Path) -> IBTImportResult:
         fingerprint=fingerprint,
         header=header,
         variable_definitions=definitions,
+        raw_archive_columns={
+            definition.name: raw_archive_columns.get(definition.name, definition.name)
+            for definition in definitions
+        },
         session_yaml=session_yaml,
         records=rows,
         missing_channels=missing,
         overview=overview,
         status=ImportStatus(
             status="imported",
-            message="Imported iRacing .ibt header, variable definitions, session YAML, and MVP telemetry channels.",
+            message="Imported every file-declared iRacing telemetry channel plus selective normalized analysis channels.",
             implemented=[
                 "file fingerprint",
                 "binary header decoding",
                 "variable definition decoding",
                 "session YAML extraction",
-                "telemetry record decoding for MVP channels",
+                "lossless decoding of every file-declared telemetry channel",
+                "array and sub-tick sample preservation",
+                "raw-name provenance alongside canonical aliases",
                 "normalized calculated channels",
                 "baseline lap/platform/report contracts",
             ],
             remaining=[
-                "persist normalized telemetry cache",
                 "decode every setup/source artifact",
                 "advanced comparison and track-map workflows",
             ],

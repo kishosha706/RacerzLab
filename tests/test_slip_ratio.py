@@ -3,7 +3,6 @@ from __future__ import annotations
 from racelab_engine.analysis.calculated_channels import (
     _compute_slip_ratios,
     _compute_tire_derived,
-    SLIP_RATIO_SPEED_FLOOR_MPS,
     SLIP_RATIO_CLAMP_MAX,
 )
 

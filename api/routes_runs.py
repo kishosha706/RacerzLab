@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException
 
@@ -9,7 +9,12 @@ from racelab_engine.knowledge.setup.dial_in_schema import DialInResponse
 from racelab_engine.knowledge.setup.dial_in_service import build_dial_in_response
 from racelab_engine.models.session import RunOverview
 from racelab_engine.models.setup import SetupSnapshot
-from racelab_engine.services.import_service import build_channel_catalog, build_channel_summary, build_trace_payload
+from racelab_engine.services.import_service import (
+    build_channel_catalog,
+    build_channel_summary,
+    build_telemetry_capability_payload,
+    build_trace_payload,
+)
 from racelab_engine.storage.repository import RaceLabRepository
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
@@ -56,6 +61,12 @@ def dial_in(run_id: str, request: DialInRequest) -> DialInResponse:
             baseline_run_id=request.baseline_run_id,
             test_run_id=request.test_run_id,
             package_archetype=request.package_archetype,
+            selected_lap=request.selected_lap,
+            selected_zone_start_pct=request.selected_zone_start_pct,
+            selected_zone_end_pct=request.selected_zone_end_pct,
+            selected_phase=request.selected_phase,
+            objective=request.objective,
+            priority=request.priority,
             limit=request.limit,
             include_debug_evidence=request.include_debug_evidence,
         )
@@ -77,6 +88,16 @@ def get_channels_summary(run_id: str) -> list[ChannelSummaryItem]:
     if repository().get_session(run_id) is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
     return [ChannelSummaryItem(**item) for item in build_channel_summary(run_id)]
+
+
+@router.get("/{run_id}/telemetry-capabilities", response_model=dict[str, Any])
+def get_telemetry_capabilities(run_id: str) -> dict[str, Any]:
+    if repository().get_session(run_id) is None:
+        raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+    manifest = build_telemetry_capability_payload(run_id)
+    if not manifest:
+        raise HTTPException(status_code=404, detail=f"Telemetry capability manifest not found for run: {run_id}")
+    return manifest
 
 
 @router.get("/{run_id}/trace", response_model=TraceResponse)

@@ -92,6 +92,55 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
     if "setup_response_observations" in {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
         _add_column_if_missing(connection, "setup_response_observations", "magnitude_label", "magnitude_label TEXT")
         _add_column_if_missing(connection, "setup_response_observations", "relative_delta_percent", "relative_delta_percent REAL")
+        _add_column_if_missing(connection, "setup_response_observations", "response_context_key", "response_context_key TEXT")
+        _add_column_if_missing(connection, "setup_response_observations", "response_context_json", "response_context_json TEXT")
+        _add_column_if_missing(connection, "setup_response_observations", "environment_context_key", "environment_context_key TEXT")
+        _add_column_if_missing(connection, "setup_response_observations", "surrounding_setup_fingerprint", "surrounding_setup_fingerprint TEXT")
+        _add_column_if_missing(connection, "setup_response_observations", "source_run_provenance_key", "source_run_provenance_key TEXT")
+        _add_column_if_missing(connection, "setup_response_observations", "baseline_setup_passed_tech", "baseline_setup_passed_tech INTEGER")
+        _add_column_if_missing(connection, "setup_response_observations", "test_setup_passed_tech", "test_setup_passed_tech INTEGER")
+        _add_column_if_missing(connection, "setup_response_observations", "setup_unit", "setup_unit TEXT")
+        _add_column_if_missing(connection, "setup_response_observations", "setup_value_kind", "setup_value_kind TEXT")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_setup_response_context "
+            "ON setup_response_observations(response_context_key, setup_key, direction_sign)"
+        )
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_setup_response_source_provenance "
+            "ON setup_response_observations(source_run_provenance_key) "
+            "WHERE source_run_provenance_key IS NOT NULL"
+        )
+    if "controlled_test_workflows" in {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
+        _add_column_if_missing(
+            connection,
+            "controlled_test_workflows",
+            "stage_eligible_lap_numbers_json",
+            "stage_eligible_lap_numbers_json TEXT NOT NULL DEFAULT '{}'",
+        )
+        _add_column_if_missing(
+            connection,
+            "controlled_test_workflows",
+            "analysis_version",
+            "analysis_version TEXT NOT NULL DEFAULT 'controlled-workflow-aba2-v1'",
+        )
+        _add_column_if_missing(
+            connection,
+            "controlled_test_workflows",
+            "execution_json",
+            "execution_json TEXT",
+        )
+        _add_column_if_missing(
+            connection,
+            "controlled_test_workflows",
+            "reproduction_snapshot_json",
+            "reproduction_snapshot_json TEXT NOT NULL DEFAULT '{}'",
+        )
+        _add_column_if_missing(
+            connection,
+            "controlled_test_workflows",
+            "learning_admitted",
+            "learning_admitted INTEGER",
+        )
 
 
 def initialize_database(db_path: str | Path | None = None) -> sqlite3.Connection:

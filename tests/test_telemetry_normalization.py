@@ -8,7 +8,7 @@ import pytest
 
 from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
 from racelab_engine.io.ibt_reader import read_normalized_records
-from racelab_engine.services.import_service import bucket_downsample, build_channel_catalog, build_trace_payload
+from racelab_engine.services.import_service import bucket_downsample, build_trace_payload
 
 pytestmark = pytest.mark.slow
 

@@ -2,7 +2,6 @@
 # Kept: lap_grid, interpolation, speed_delta, discipline, verdict tests
 import pytest
 from racelab_engine.analysis.setup_diff import diff_setups, diff_context
-from racelab_engine.analysis.test_discipline import score_test_discipline, TestDisciplineResult
 
 pytestmark = pytest.mark.slow
 

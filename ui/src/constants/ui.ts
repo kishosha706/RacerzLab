@@ -212,7 +212,8 @@ export function humanizeWorkspaceLabel(ws: string): string {
 /** Map classification tag to a compact display label. */
 export function humanizeClassificationTag(tag: string): string {
   const map: Record<string, string> = {
-    SOLO_CLEAN: "Solo",
+    ELIGIBLE_FLYING_LAP: "Eligible",
+    SOLO_CLEAN: "Eligible",
     OUT_LAP: "Out Lap",
     COOLDOWN: "Cooldown",
     PIT_ROAD: "Pit Road",
@@ -234,15 +235,25 @@ export function humanizeClassificationTag(tag: string): string {
 
 /** Classify a lap by its tags for display. Returns { label, color, tone }. */
 export function classifyLapTags(tags: string[]): { label: string; color: string } | null {
-  if (tags.includes("SOLO_CLEAN")) return { label: "Solo", color: "#22c55e" };
+  const invalidTags = new Set([
+    "PARTIAL", "SHORT_RUN", "OUT_LAP", "COOLDOWN", "PIT_ROAD", "OFF_TRACK",
+    "WRECK_OR_SPIN", "INVALID_SPEED_EVENT", "CAUTION", "YELLOW", "RESET",
+    "ACTIVE_RESET", "SAMPLE_DISCONTINUITY", "POSITION_DISCONTINUITY",
+    "INVALID_FOR_PLATFORM_TUNING", "NO_SETUP_CONCLUSION",
+  ]);
   if (tags.includes("OUT_LAP")) return { label: "Out", color: "#8d9aaa" };
   if (tags.includes("COOLDOWN")) return { label: "Cool", color: "#8d9aaa" };
   if (tags.includes("PIT_ROAD")) return { label: "Pit", color: "#8d9aaa" };
-  if (tags.some(t => t.startsWith("INVALID"))) return { label: "Invalid", color: "#ef4444" };
   if (tags.includes("SHORT_RUN")) return { label: "Short", color: "#8d9aaa" };
-  if (tags.includes("LONG_RUN")) return { label: "Long", color: "#38bdf8" };
   if (tags.includes("PARTIAL")) return { label: "Partial", color: "#f59e0b" };
   if (tags.includes("NO_SETUP_CONCLUSION")) return { label: "No Setup", color: "#8d9aaa" };
+  if (tags.some(tag => invalidTags.has(tag) || tag.startsWith("INVALID"))) {
+    return { label: "Invalid", color: "#ef4444" };
+  }
+  if (tags.includes("ELIGIBLE_FLYING_LAP") || tags.includes("SOLO_CLEAN")) {
+    return { label: "Eligible", color: "#22c55e" };
+  }
+  if (tags.includes("LONG_RUN")) return { label: "Long", color: "#38bdf8" };
   return null;
 }
 

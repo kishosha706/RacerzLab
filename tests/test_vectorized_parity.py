@@ -12,7 +12,6 @@ import math
 import random
 from typing import Any
 
-import polars as pl
 import pytest
 
 from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
@@ -304,7 +303,8 @@ class TestParity:
 
     def test_empty_input(self) -> None:
         """Empty input produces empty output (row path)."""
-        import os; os.environ["RACELAB_ANALYSIS_ENGINE"] = "row"
+        import os
+        os.environ["RACELAB_ANALYSIS_ENGINE"] = "row"
         try:
             ref = normalize_telemetry_rows([])
             vec = frame_to_rows(normalize_telemetry_frame([]))
@@ -694,6 +694,24 @@ class TestParity:
         assert ref[0]["lf_shock_defl_in"] == pytest.approx(0.10 * M_TO_IN)
         assert ref[0]["lf_shock_vel_in_s"] == pytest.approx(0.20 * M_TO_IN)
 
+    def test_weather_context_aliases_match_row_and_vector_paths(self) -> None:
+        rows = [
+            _synthetic_row(
+                AirTemp=26.5,
+                TrackTemp=39.0,
+                WindVel=3.2,
+                WindDir=1.25,
+                FuelLevel=55.0,
+            )
+        ]
+
+        ref, vec = self._run_both(rows)
+
+        self._assert_parity(ref, vec, {"air_temp", "track_temp", "wind_vel", "wind_dir", "fuel_level"})
+        assert vec[0]["air_temp"] == pytest.approx(26.5)
+        assert vec[0]["wind_dir"] == pytest.approx(1.25)
+        assert vec[0]["fuel_level"] == pytest.approx(55.0)
+
     def test_legacy_shock_aliases_normalize(self) -> None:
         rows = [
             _synthetic_row(
@@ -858,7 +876,8 @@ class TestParity:
 
     def test_compare_empty_input(self) -> None:
         """compare_row_vs_vectorized handles empty input."""
-        import os; os.environ["RACELAB_ANALYSIS_ENGINE"] = "row"
+        import os
+        os.environ["RACELAB_ANALYSIS_ENGINE"] = "row"
         try:
             report = compare_row_vs_vectorized([])
             assert report["pass_fail"] is True
@@ -1081,7 +1100,8 @@ class TestParity:
 
     def test_balance_missing_risk(self) -> None:
         """Missing front or rear risk → unavailable."""
-        import os; os.environ["RACELAB_ANALYSIS_ENGINE"] = "row"
+        import os
+        os.environ["RACELAB_ANALYSIS_ENGINE"] = "row"
         try:
             from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
             rows = [{"Speed": 50.0, "SessionTime": 0.0}]

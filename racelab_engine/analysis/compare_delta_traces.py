@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Any
 
 from racelab_engine.analysis.comparison import build_lap_grid, interpolate_run_to_grid
@@ -25,6 +26,7 @@ class DeltaTraceChannel:
     delta_min: float | None = None
     delta_max: float | None = None
     delta_mean: float | None = None
+    paired_coverage: float = 0.0
     is_proxy: bool = False
     unavailable_reason: str | None = None
 
@@ -43,6 +45,7 @@ class DeltaTraceChannel:
             "delta_min": self.delta_min,
             "delta_max": self.delta_max,
             "delta_mean": self.delta_mean,
+            "paired_coverage": self.paired_coverage,
             "is_proxy": self.is_proxy,
             "unavailable_reason": self.unavailable_reason,
         }
@@ -172,8 +175,8 @@ def compute_delta_traces(
         t_vals = t_grid.get(ch, [None] * len(grid))
 
         # Check if channel is entirely unavailable
-        bl_clean = [v for v in bl_vals if v is not None]
-        t_clean = [v for v in t_vals if v is not None]
+        bl_clean = [v for v in bl_vals if v is not None and math.isfinite(v)]
+        t_clean = [v for v in t_vals if v is not None and math.isfinite(v)]
 
         if not bl_clean and not t_clean:
             missing.append(ch)
@@ -220,12 +223,41 @@ def compute_delta_traces(
         # Compute delta = test - baseline
         delta_vals: list[float | None] = []
         for b, t_val in zip(bl_vals, t_vals):
-            if b is not None and t_val is not None:
+            if (
+                b is not None
+                and t_val is not None
+                and math.isfinite(b)
+                and math.isfinite(t_val)
+            ):
                 delta_vals.append(t_val - b)
             else:
                 delta_vals.append(None)
 
         delta_clean = [d for d in delta_vals if d is not None]
+        paired_coverage = len(delta_clean) / len(grid) if grid else 0.0
+        if paired_coverage < 0.90:
+            reason = (
+                f"Paired positional coverage is {paired_coverage:.0%}; "
+                "at least 90% is required for comparison conclusions."
+            )
+            missing.append(ch)
+            warnings.append(f"{meta['label']}: {reason}")
+            channel_map[ch] = DeltaTraceChannel(
+                channel=ch,
+                label=meta["label"],
+                unit=meta["unit"],
+                baseline_values=bl_vals,
+                test_values=t_vals,
+                delta_values=[None] * len(grid),
+                baseline_min=min(bl_clean, default=None),
+                baseline_max=max(bl_clean, default=None),
+                test_min=min(t_clean, default=None),
+                test_max=max(t_clean, default=None),
+                paired_coverage=paired_coverage,
+                is_proxy=ch in FORCE_PROXY_CHANNELS,
+                unavailable_reason=reason,
+            )
+            continue
 
         channel_map[ch] = DeltaTraceChannel(
             channel=ch,
@@ -241,6 +273,7 @@ def compute_delta_traces(
             delta_min=min(delta_clean, default=None) if delta_clean else None,
             delta_max=max(delta_clean, default=None) if delta_clean else None,
             delta_mean=sum(delta_clean) / len(delta_clean) if delta_clean else None,
+            paired_coverage=paired_coverage,
             is_proxy=ch in FORCE_PROXY_CHANNELS,
         )
 

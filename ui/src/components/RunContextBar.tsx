@@ -1,5 +1,5 @@
 import { AlertTriangle, Car, CheckCircle, Flag, Gauge, Info, MapPin, Wrench } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RunOverview, LapSummary } from "../types/telemetry";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useCompareBasket } from "../store/CompareBasketContext";
@@ -11,6 +11,12 @@ type RunContextBarProps = {
   onSelectRun: (runId: string) => void;
   onSelectLap?: (lap: number | null) => void;
 };
+
+function windDirectionDegrees(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "unknown";
+  const degrees = ((value * 180 / Math.PI) % 360 + 360) % 360;
+  return `${degrees.toFixed(0)}°`;
+}
 
 export function RunContextBar({ overview, runs: _runs, onSelectLap }: RunContextBarProps) {
   const { selection, setMode } = useTelemetrySelection();
@@ -33,6 +39,15 @@ export function RunContextBar({ overview, runs: _runs, onSelectLap }: RunContext
   const modeLabel = useMemo(() => humanizeModeLabel(selection.selectedMode), [selection.selectedMode]);
   const wsLabel = useMemo(() => humanizeWorkspaceLabel(selection.selectedWorkspace), [selection.selectedWorkspace]);
 
+  useEffect(() => {
+    if (!showSessionInfo) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowSessionInfo(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [showSessionInfo]);
+
   return (
     <header className="context-bar">
       <div className="context-bar-left">
@@ -48,18 +63,37 @@ export function RunContextBar({ overview, runs: _runs, onSelectLap }: RunContext
 
             {/* Session Info trigger — shows secondary metadata in a popover */}
             <div ref={sessionInfoRef} style={{ position: "relative", display: "inline-flex" }}>
-              <button className="session-info-trigger" onClick={() => setShowSessionInfo(!showSessionInfo)} onBlur={() => setTimeout(() => setShowSessionInfo(false), 200)}>
+              <button
+                type="button"
+                className="session-info-trigger"
+                onClick={() => setShowSessionInfo(!showSessionInfo)}
+                onBlur={() => setTimeout(() => setShowSessionInfo(false), 200)}
+                aria-expanded={showSessionInfo}
+                aria-controls="session-details-popover"
+                aria-haspopup="dialog"
+              >
                 <Info size={14} /> Session
               </button>
               {showSessionInfo && (
-                <div className="session-info-popover" onMouseDown={(e) => e.preventDefault()}>
+                <div
+                  id="session-details-popover"
+                  className="session-info-popover"
+                  role="dialog"
+                  aria-label="Session details"
+                  onMouseDown={(e) => e.preventDefault()}
+                >
                   <h4>Session Details</h4>
                   <dl>
                     {session.session_type && <><dt>Type</dt><dd>{session.session_type}</dd></>}
                     {session.weather_summary && <><dt>Weather</dt><dd>{session.weather_summary}</dd></>}
                     {session.air_temp != null && <><dt>Air Temp</dt><dd>{session.air_temp.toFixed(0)}°C</dd></>}
                     {session.track_temp != null && <><dt>Track Temp</dt><dd>{session.track_temp.toFixed(0)}°C</dd></>}
-                    {session.wind_speed != null && <><dt>Wind</dt><dd>{session.wind_speed.toFixed(0)} mph @ {session.wind_direction ?? "?"}°</dd></>}
+                    {session.wind_speed != null && (
+                      <>
+                        <dt>Wind</dt>
+                        <dd>{session.wind_speed.toFixed(1)} m/s ({(session.wind_speed * 2.236936).toFixed(1)} mph) @ {windDirectionDegrees(session.wind_direction)}</dd>
+                      </>
+                    )}
                     {session.duration_seconds != null && <><dt>Duration</dt><dd>{Math.round(session.duration_seconds / 60)} min</dd></>}
                   </dl>
                   <h4>Tech Status</h4>
@@ -139,8 +173,10 @@ export function RunContextBar({ overview, runs: _runs, onSelectLap }: RunContext
 
         {/* mode badge — clickable toggle */}
         <button
+          type="button"
           className={`context-badge mode-badge mode-${selection.selectedMode}`}
           onClick={handleModeToggle}
+          aria-live="polite"
           aria-label={selection.selectedMode === "learning"
             ? "Learning Mode — click to switch to Race Mode"
             : "Race Mode — click to switch to Learning Mode"}

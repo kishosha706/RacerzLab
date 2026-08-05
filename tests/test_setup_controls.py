@@ -9,8 +9,10 @@ from racelab_engine.analysis.setup_controls import (
     format_setup_value,
     nominal_test_target,
     recommended_test_size_label,
+    setup_control_values_equal,
 )
-from racelab_engine.knowledge.setup.dial_in_controls import garage_action_for_effect
+from racelab_engine.knowledge.setup.dial_in_controls import _PLANS, garage_action_for_effect
+from racelab_engine.services.controlled_workflow_service import _cause_candidate_from_swing
 
 
 def test_registry_covers_exact_driver_adjustable_control_contract() -> None:
@@ -30,6 +32,13 @@ def test_driver_facing_units_do_not_mix_internal_metric_and_garage_units() -> No
     assert format_setup_value("rear_end_ratio", 3.45) == "3.450:1"
     assert format_setup_value("steering_ratio", "10:1") == "10:1"
     assert format_setup_value("steering_ratio", "60 mm/rev") == "60 mm/rev"
+
+
+def test_garage_value_equality_preserves_string_and_ratio_semantics() -> None:
+    assert setup_control_values_equal("tape_percent", "0%", 0.0)
+    assert setup_control_values_equal("steering_ratio", "12:1", 12.0)
+    assert setup_control_values_equal("steering_ratio", "60 mm/rev", "60 MM/REV")
+    assert not setup_control_values_equal("steering_ratio", "12:1", "12 mm/rev")
 
 
 def test_input_size_is_separate_for_absolute_and_relative_controls() -> None:
@@ -91,6 +100,33 @@ def test_coordinated_ride_height_actions_do_not_reuse_single_corner_wording() ->
     assert all_raise is not None
     assert all_raise.control_expectation.startswith("Raising all four ride heights by equal amounts")
     assert "preserving the recorded front-to-rear rake and side-to-side height differences" in all_raise.control_expectation
+
+
+def test_every_action_plan_preserves_its_typed_direction_into_workflow_candidates() -> None:
+    for effect_id, plan in _PLANS.items():
+        action = garage_action_for_effect(_effect_item(effect_id), {})
+        assert action is not None
+        assert action.direction_sign == plan.direction_sign, effect_id
+
+        swing = SimpleNamespace(
+            control_keys=action.control_keys,
+            direction_sign=action.direction_sign,
+            setup_area="test",
+            effect="Expected effect.",
+            counter_effect="Expected trade-off.",
+            validate_with_labels=["Target phase time"],
+            validate_with=[],
+            blocker_reasons=[],
+        )
+        candidate = _cause_candidate_from_swing(swing, 0, {})
+        if len(action.control_keys) != 1:
+            assert candidate is None
+            continue
+        assert candidate is not None
+        assert candidate.direction_sign == plan.direction_sign, effect_id
+
+    assert _PLANS["reduce_rf_spring_small"].direction_sign == -1
+    assert _PLANS["reduce_lr_spring_for_drive"].direction_sign == -1
 
 
 def test_handling_claims_include_their_required_scope_or_caveat() -> None:

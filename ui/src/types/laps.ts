@@ -52,8 +52,8 @@ export interface LapWindowSummary {
   platform_risk_peak: number | null;
   rear_platform_risk_peak: number | null;
   whole_car_bottoming_peak: number | null;
-  tire_stress_score: number;
-  shock_stress_score: number;
+  tire_stress_score: number | null;
+  shock_stress_score: number | null;
   confidence_score: number;
   warnings: string[];
   recommendation: string | null;
@@ -64,7 +64,7 @@ export interface LapWindowSummary {
   setup_usefulness_score?: number | null;
   setup_usefulness_label?: string | null;
   pace_quality_warnings?: string[];
-  pace_quality_components?: Record<string, number> | null;
+  pace_quality_components?: Record<string, number | null> | null;
 }
 
 export interface LapDegradationSummary {
@@ -101,7 +101,7 @@ export interface FastestLapGroup {
   setup_usefulness_score?: number | null;
   setup_usefulness_label?: string | null;
   pace_quality_warnings?: string[];
-  pace_quality_components?: Record<string, number> | null;
+  pace_quality_components?: Record<string, number | null> | null;
 }
 
 export interface BestWindowGroup {

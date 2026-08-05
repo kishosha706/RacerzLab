@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from racelab_engine.io.file_fingerprint import FileFingerprint
 from racelab_engine.models.event import TelemetryEvent
@@ -14,6 +14,9 @@ from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.storage.db import initialize_database
+
+if TYPE_CHECKING:
+    from racelab_engine.models.controlled_workflow import ControlledWorkflow
 
 
 def utc_now_iso() -> str:
@@ -41,6 +44,97 @@ class RaceLabRepository:
     def initialize(self) -> None:
         connection = initialize_database(self.db_path)
         connection.close()
+
+    def save_controlled_workflow(self, workflow: ControlledWorkflow) -> None:
+        connection = initialize_database(self.db_path)
+        with connection:
+            connection.execute(
+                """
+                INSERT INTO controlled_test_workflows (
+                  workflow_id, created_at, updated_at, status, source_run_id,
+                  complaint, packet_json, stage_run_ids_json, stage_eligible_lap_numbers_json,
+                  analysis_version, execution_json, reproduction_snapshot_json,
+                  quality_json, learning_admitted
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(workflow_id) DO UPDATE SET
+                  updated_at=excluded.updated_at,
+                  status=excluded.status,
+                  packet_json=excluded.packet_json,
+                  stage_run_ids_json=excluded.stage_run_ids_json,
+                  stage_eligible_lap_numbers_json=excluded.stage_eligible_lap_numbers_json,
+                  analysis_version=excluded.analysis_version,
+                  execution_json=excluded.execution_json,
+                  reproduction_snapshot_json=excluded.reproduction_snapshot_json,
+                  quality_json=excluded.quality_json,
+                  learning_admitted=excluded.learning_admitted
+                """,
+                (
+                    workflow.workflow_id,
+                    workflow.created_at.isoformat(),
+                    workflow.updated_at.isoformat(),
+                    workflow.status,
+                    workflow.source_run_id,
+                    workflow.complaint,
+                    workflow.packet.model_dump_json(),
+                    _json(workflow.stage_run_ids),
+                    _json(workflow.stage_eligible_lap_numbers),
+                    workflow.analysis_version,
+                    workflow.execution.model_dump_json() if workflow.execution else None,
+                    _json(workflow.reproduction_snapshot),
+                    workflow.quality.model_dump_json() if workflow.quality else None,
+                    None if workflow.learning_admitted is None else int(workflow.learning_admitted),
+                ),
+            )
+        connection.close()
+
+    def get_controlled_workflow(self, workflow_id: str) -> ControlledWorkflow | None:
+        connection = initialize_database(self.db_path)
+        row = connection.execute(
+            "SELECT * FROM controlled_test_workflows WHERE workflow_id = ?", (workflow_id,)
+        ).fetchone()
+        connection.close()
+        return self._controlled_workflow_from_row(row) if row else None
+
+    def list_controlled_workflows(self, *, active_only: bool = False) -> list[ControlledWorkflow]:
+        connection = initialize_database(self.db_path)
+        sql = "SELECT * FROM controlled_test_workflows"
+        if active_only:
+            sql += " WHERE status NOT IN ('scored', 'cancelled')"
+        sql += " ORDER BY updated_at DESC"
+        rows = connection.execute(sql).fetchall()
+        connection.close()
+        return [self._controlled_workflow_from_row(row) for row in rows]
+
+    @staticmethod
+    def _controlled_workflow_from_row(row: Any) -> ControlledWorkflow:
+        from racelab_engine.analysis.crew_chief_packet import KaizenEvidencePacket
+        from racelab_engine.analysis.test_director import TestExecution, TestQualityResult
+        from racelab_engine.models.controlled_workflow import ControlledWorkflow
+
+        return ControlledWorkflow(
+            workflow_id=row["workflow_id"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            status=row["status"],
+            source_run_id=row["source_run_id"],
+            complaint=row["complaint"],
+            packet=KaizenEvidencePacket.model_validate_json(row["packet_json"]),
+            stage_run_ids=_load_json(row["stage_run_ids_json"], {}),
+            stage_eligible_lap_numbers=_load_json(row["stage_eligible_lap_numbers_json"], {}),
+            analysis_version=row["analysis_version"],
+            execution=(
+                TestExecution.model_validate_json(row["execution_json"])
+                if row["execution_json"] else None
+            ),
+            reproduction_snapshot=_load_json(row["reproduction_snapshot_json"], {}),
+            quality=(
+                TestQualityResult.model_validate_json(row["quality_json"])
+                if row["quality_json"] else None
+            ),
+            learning_admitted=(
+                None if row["learning_admitted"] is None else bool(row["learning_admitted"])
+            ),
+        )
 
     def save_import(
         self,

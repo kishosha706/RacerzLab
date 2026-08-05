@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from starlette.datastructures import UploadFile as StarletteUploadFile
 

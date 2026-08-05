@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from racelab_engine.models.evidence import EvidenceState
 
 from .evidence_schema import CandidateEvidenceReadiness, RunEvidenceGroup
 
@@ -17,12 +19,24 @@ class Clarification(DialInModel):
     options: list[str] = Field(default_factory=list)
 
 
+class EvidenceStrengthSignal(DialInModel):
+    level: Literal["unavailable", "capability_only", "observed_mechanism"]
+    readiness: Literal["blocked", "measurement_required", "test_hypothesis_ready"]
+    setup_test_ready: bool
+    requires_controlled_test: bool = True
+    capability_flags: list[str] = Field(default_factory=list)
+    observed_mechanism_flags: list[str] = Field(default_factory=list)
+    supporting_event_ids: list[str] = Field(default_factory=list)
+    reason: str
+
+
 class DialInSwing(DialInModel):
     id: str
     title: str
     change_this: str
     garage_lever: str
     control_keys: list[str] = Field(default_factory=list)
+    direction_sign: Literal[-1, 1]
     setup_area: str
     change_size_label: str
     change_size_explanation: str
@@ -44,6 +58,11 @@ class DialInSwing(DialInModel):
     undo_if: str
     readiness_label: str
     disabled_reason: str | None = None
+    evidence_state: EvidenceState = EvidenceState.NEEDS_CONFIRMATION
+    source_channels: list[str] = Field(default_factory=list)
+    observed_evidence_flags: list[str] = Field(default_factory=list)
+    supporting_event_ids: list[str] = Field(default_factory=list)
+    blocker_reasons: list[str] = Field(default_factory=list)
     debug: dict[str, Any] | None = None
 
 
@@ -55,6 +74,9 @@ class HiddenEvidenceSummary(DialInModel):
     readiness_by_candidate: list[CandidateEvidenceReadiness] = Field(default_factory=list)
     ranking_reasons: dict[str, list[str]] = Field(default_factory=dict)
     disabled_by_capability: list[dict[str, str]] = Field(default_factory=list)
+    capability_flags: list[str] = Field(default_factory=list)
+    observed_mechanism_flags: list[str] = Field(default_factory=list)
+    supporting_event_ids: list[str] = Field(default_factory=list)
 
 
 class DialInResponse(DialInModel):
@@ -72,3 +94,7 @@ class DialInResponse(DialInModel):
     clarification: Clarification
     hidden_evidence_summary: HiddenEvidenceSummary | None = None
     warnings: list[str] = Field(default_factory=list)
+    evidence_state: EvidenceState = EvidenceState.NEEDS_CONFIRMATION
+    source_channels: list[str] = Field(default_factory=list)
+    blocker_reasons: list[str] = Field(default_factory=list)
+    evidence_strength: EvidenceStrengthSignal | None = None

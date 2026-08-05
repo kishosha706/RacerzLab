@@ -82,3 +82,57 @@ CarSetup:
     )
 
     assert setup.tape_percent == "Qual"
+
+
+def test_session_summary_uses_current_session_number_not_first_session() -> None:
+    session = extract_session_summary(
+        """
+WeekendInfo:
+  EventType: Race
+SessionInfo:
+  CurrentSessionNum: 2
+  Sessions:
+    - SessionNum: 0
+      SessionType: Practice
+    - SessionNum: 1
+      SessionType: Lone Qualify
+    - SessionNum: 2
+      SessionType: Race
+      SessionLaps: 50
+""",
+        run_id="current-race",
+    )
+
+    assert session.session_type == "Race"
+
+
+def test_next_gen_arb_and_diff_fields_use_real_paths_and_discrete_arm_types() -> None:
+    setup = extract_setup_snapshot(
+        """
+CarSetup:
+  Chassis:
+    FrontArb:
+      Diameter: 51 mm
+      ArbArm: P5 (stiff)
+      Preload: -65.1 Nm
+      Attach: 1
+    Rear:
+      Diameter: 51 mm
+      ArbArm: P3
+      ArbPreload: 0.0 Nm
+      Attach: 1
+      DiffPreload: 34 Nm
+""",
+        run_id="next-gen-arb",
+    )
+
+    values = setup.extracted_values
+    assert values["front_arb_diameter_mm"] == 51.0
+    assert values["front_arb_arm_position"] == "P5"
+    assert values["front_arb_preload_nm"] == -65.1
+    assert values["front_arb_attach"] == 1.0
+    assert values["rear_arb_diameter_mm"] == 51.0
+    assert values["rear_arb_arm_position"] == "P3"
+    assert values["rear_arb_preload_nm"] == 0.0
+    assert values["rear_arb_attach"] == 1.0
+    assert values["diff_preload_nm"] == 34.0

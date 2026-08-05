@@ -96,6 +96,16 @@ export type SetupSnapshot = {
   extracted_values?: Record<string, unknown>;
 };
 
+export type EvidenceState =
+  | "measured"
+  | "calculated"
+  | "estimated_proxy"
+  | "observed_correlation"
+  | "controlled_test_effect"
+  | "unavailable"
+  | "blocked_by_context"
+  | "needs_confirmation";
+
 export type TelemetryEvent = {
   event_id: string;
   run_id: string;
@@ -115,6 +125,11 @@ export type TelemetryEvent = {
   evidence_json: Record<string, unknown>;
   related_setup_keys: string[];
   recommended_actions: string[];
+  evidence_state: EvidenceState;
+  source_channels: string[];
+  observed_evidence_flags: string[];
+  supporting_event_ids: string[];
+  blocker_reasons: string[];
 };
 
 export type Recommendation = {
@@ -130,6 +145,10 @@ export type Recommendation = {
   required_next_data: string[];
   do_not_change_warnings: string[];
   evidence_event_ids: string[];
+  evidence_state: EvidenceState;
+  source_channels: string[];
+  blocker_reasons: string[];
+  confidence_limit_reasons: string[];
   created_at?: string | null;
 };
 
@@ -147,6 +166,37 @@ export type RunOverview = {
   next_test?: string | null;
 };
 
+export type CanonicalMappingKind =
+  | "exact_alias"
+  | "unit_converted_alias"
+  | "derived_fallback"
+  | "incompatible_similarly_named_channel"
+  | "unknown";
+
+export type TelemetryCacheCompatibility = {
+  status: "current" | "missing_cache" | "reimport_required" | "app_upgrade_required";
+  reason: string;
+  required_action: "none" | "reimport_original_ibt" | "upgrade_racerzlab";
+  automatic_migration_supported: boolean;
+  replacement_policy: string;
+};
+
+export type TelemetryCapabilitySummary = {
+  declared_channels: number;
+  cached_channels: number;
+  unmapped_channels: number;
+  warning_channels: number;
+  lossless_archive_complete: boolean;
+  analysis_readiness_counts: Record<string, number>;
+};
+
+export type TelemetryCapabilitiesResponse = {
+  manifest_schema_version?: number;
+  universal_archive_version?: number;
+  cache_compatibility: TelemetryCacheCompatibility;
+  capability_summary: TelemetryCapabilitySummary;
+};
+
 export type DialInClarification = {
   needed: boolean;
   question?: string | null;
@@ -159,6 +209,7 @@ export type DialInSwing = {
   change_this: string;
   garage_lever: string;
   control_keys: string[];
+  direction_sign: -1 | 1;
   setup_area: string;
   change_size_label: string;
   change_size_explanation: string;
@@ -180,6 +231,9 @@ export type DialInSwing = {
   undo_if: string;
   readiness_label: string;
   disabled_reason?: string | null;
+  evidence_state: EvidenceState;
+  source_channels: string[];
+  blocker_reasons: string[];
   debug?: Record<string, unknown> | null;
 };
 
@@ -191,6 +245,20 @@ export type HiddenEvidenceSummary = {
   readiness_by_candidate?: unknown[];
   ranking_reasons?: Record<string, string[]>;
   disabled_by_capability?: Array<Record<string, string>>;
+  capability_flags?: string[];
+  observed_mechanism_flags?: string[];
+  supporting_event_ids?: string[];
+};
+
+export type DialInEvidenceStrength = {
+  level: "unavailable" | "capability_only" | "observed_mechanism";
+  readiness: "blocked" | "measurement_required" | "test_hypothesis_ready";
+  capability_flags: string[];
+  observed_mechanism_flags: string[];
+  supporting_event_ids: string[];
+  setup_test_ready: boolean;
+  requires_controlled_test: boolean;
+  reason: string;
 };
 
 export type DialInResponse = {
@@ -208,10 +276,21 @@ export type DialInResponse = {
   clarification: DialInClarification;
   hidden_evidence_summary?: HiddenEvidenceSummary | null;
   warnings: string[];
+  evidence_state: EvidenceState;
+  source_channels: string[];
+  blocker_reasons: string[];
+  evidence_strength?: DialInEvidenceStrength | null;
 };
 
 export type DialInRequest = {
   complaint: string;
+  selected_lap?: number | null;
+  selected_zone_start_pct?: number | null;
+  selected_zone_end_pct?: number | null;
+  selected_zone_label?: string | null;
+  selected_phase?: string | null;
+  objective?: DialInObjective;
+  priority?: DialInPriority;
   baseline_run_id?: string | null;
   test_run_id?: string | null;
   car_family?: string | null;
@@ -219,6 +298,109 @@ export type DialInRequest = {
   package_archetype?: string | null;
   limit?: number;
   include_debug_evidence?: boolean;
+};
+
+export type DialInObjective = "race-pace" | "qualifying" | "long-run" | "tire-conservation" | "driver-confidence";
+
+export type DialInPriority =
+  | "overall-pace"
+  | "entry-security"
+  | "center-rotation"
+  | "exit-drive"
+  | "tire-life"
+  | "platform-margin";
+
+export type DialInDecisionContext = {
+  selected_zone_start_pct?: number | null;
+  selected_zone_end_pct?: number | null;
+  selected_zone_label?: string | null;
+  selected_phase?: string | null;
+  objective?: DialInObjective;
+  priority?: DialInPriority;
+};
+
+export type ControlledTestStage = {
+  stage: "A" | "B" | "A2";
+  setup_instruction: string;
+  warmup_laps: number;
+  required_flying_laps: number;
+  purpose: string;
+};
+
+export type ControlledTestCard = {
+  hypothesis: string;
+  control_key: string;
+  control_label: string;
+  exact_change: string;
+  change_size: string;
+  target_phase: string;
+  expected_mechanism: string;
+  success_metrics: string[];
+  countereffects: string[];
+  rollback_rule: string;
+  keep_rule: string;
+  stages: ControlledTestStage[];
+};
+
+export type MeasurementMission = {
+  purpose: string;
+  procedure: string[];
+  required_laps_or_passes: number;
+  target_phase: string;
+  acceptance_thresholds: string[];
+  stop_rule: string;
+  blockers: string[];
+};
+
+export type KaizenEvidencePacket = {
+  decision: "test" | "measure";
+  confidence_score: number;
+  confidence_is_calibrated_probability: boolean;
+  confidence_basis: string;
+  recommendation_score_components?: Record<string, number>;
+  recommendation_score_basis?: string | null;
+  blockers: string[];
+  primary_test?: ControlledTestCard | null;
+  measurement_mission?: MeasurementMission | null;
+  race_mode_summary: string;
+  learning_mode_explanation: string;
+};
+
+export type TestQualityResult = {
+  protocol_valid: boolean;
+  score: number;
+  verdict: "keep" | "undo" | "retest" | "invalid";
+  blockers: string[];
+  supporting_evidence: string[];
+  contradictory_evidence: string[];
+  controlled_effect_eligible: boolean;
+};
+
+export type ControlledWorkflow = {
+  workflow_id: string;
+  status: "planned" | "a_recorded" | "b_recorded" | "a2_recorded" | "scored" | "cancelled";
+  source_run_id: string;
+  complaint: string;
+  packet: KaizenEvidencePacket;
+  stage_run_ids: Partial<Record<"A" | "B" | "A2", string>>;
+  stage_eligible_lap_numbers?: Partial<Record<"A" | "B" | "A2", number[]>>;
+  analysis_version?: string;
+  execution?: {
+    phase_effect_b_vs_a_s?: number | null;
+    phase_effect_b_vs_a2_s?: number | null;
+    empirical_noise_s?: number | null;
+    empirical_noise_observations?: number;
+    minimum_alignment_confidence?: number | null;
+    target_effect_distributions_consistent?: boolean | null;
+    target_effect_distribution_state?: "faster" | "slower" | "inconclusive" | "inconsistent" | null;
+    countereffect_passed?: boolean | null;
+    countereffect_noise_by_phase_s?: Record<string, number>;
+    control_guardrails_passed?: boolean | null;
+    control_guardrail_metrics?: Record<string, number>;
+  } | null;
+  reproduction_snapshot?: Record<string, unknown>;
+  quality?: TestQualityResult | null;
+  learning_admitted?: boolean | null;
 };
 
 export type TelemetryCursor = {
@@ -372,4 +554,7 @@ export type PlatformEventItem = {
   is_proxy_based: boolean;
   proxy_warning?: string | null;
   metadata: Record<string, unknown>;
+  evidence_state: EvidenceState;
+  source_channels: string[];
+  blocker_reasons: string[];
 };

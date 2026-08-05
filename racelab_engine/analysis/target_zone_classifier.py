@@ -62,6 +62,24 @@ def classify_target_zone(
             reasoning=[f"Speed delta {speed:+.2f} mph is within noise range."],
         )
 
+    required_context = {
+        "CFS ride height": min_cfs_delta,
+        "steering": avg_steering_delta,
+        "drag/scrub suspicion": avg_drag_delta,
+    }
+    missing_context = [label for label, value in required_context.items() if value is None]
+    if missing_context:
+        return TargetZoneClassification(
+            gain_class="inconclusive",
+            label="Observed speed change; supporting evidence unavailable",
+            confidence=0.2,
+            reasoning=[
+                f"Speed changed by {speed:+.2f} mph.",
+                f"Missing comparison evidence: {', '.join(missing_context)}.",
+            ],
+            recommendation="Repeat with complete platform, steering, and drag/scrub proxy coverage.",
+        )
+
     # Gather signals
     steering_higher = avg_steering_delta is not None and avg_steering_delta > STEERING_CHANGE_THRESHOLD
     steering_lower = avg_steering_delta is not None and avg_steering_delta < -STEERING_CHANGE_THRESHOLD
@@ -70,7 +88,7 @@ def classify_target_zone(
     rpm_higher = avg_rpm_delta is not None and avg_rpm_delta > RPM_CHANGE_THRESHOLD
     rpm_lower = avg_rpm_delta is not None and avg_rpm_delta < -RPM_CHANGE_THRESHOLD
 
-    cfs_ok = min_cfs_delta is None or min_cfs_delta >= CFS_WORSEN_THRESHOLD
+    cfs_ok = min_cfs_delta >= CFS_WORSEN_THRESHOLD
     cfs_worse = min_cfs_delta is not None and min_cfs_delta < CFS_WORSEN_THRESHOLD
 
     if gained:
@@ -96,16 +114,16 @@ def classify_target_zone(
             recommendation = "Confirm driver line is repeatable before concluding setup change."
         elif drag_lower:
             gain_class = "drag_reduction"
-            label = "Likely drag reduction"
+            label = "Lower drag/scrub suspicion"
             confidence = 0.6
             reasoning.append(f"Speed +{speed:.2f} mph with drag/scrub delta {avg_drag_delta:.3f}.")
-            recommendation = "Check if platform or tape change reduced drag."
+            recommendation = "Repeat the same one-change test before assigning a cause."
         elif rpm_higher:
             gain_class = "mechanical_balance_improvement"
-            label = "Mechanical balance improvement"
+            label = "Speed gain with higher RPM"
             confidence = 0.5
             reasoning.append(f"Speed +{speed:.2f} mph with RPM +{avg_rpm_delta:.0f}.")
-            recommendation = "Check gearing or corner exit traction."
+            recommendation = "Check gearing and exit conditions, then confirm with a controlled repeat."
         else:
             gain_class = "platform_sensitive_gain"
             label = "Platform-sensitive gain"
@@ -122,7 +140,7 @@ def classify_target_zone(
             recommendation = "Undo or reduce platform change."
         elif drag_higher:
             gain_class = "drag_reduction"
-            label = "Drag-related loss"
+            label = "Higher drag/scrub suspicion"
             confidence = 0.55
             reasoning.append(f"Speed {speed:.2f} mph with drag/scrub increase {avg_drag_delta:.3f}.")
             recommendation = "Check for scrub or platform-induced drag."

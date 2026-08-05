@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import math
 from typing import Any
 
 from racelab_engine.analysis.constants import FORCE_PROXY_WARNING
@@ -11,14 +12,32 @@ from racelab_engine.knowledge.setup.evidence_schema import (
     RunEvidenceContext,
     RunEvidenceGroup,
 )
-from racelab_engine.knowledge.setup.matcher import SetupQueryResult, query_result_to_dict, query_setup_knowledge
+from racelab_engine.knowledge.setup.dial_in_controls import (
+    control_keys_for_effect,
+    expanded_related_setup_keys,
+)
+from racelab_engine.knowledge.setup.loader import load_setup_knowledge
+from racelab_engine.knowledge.setup.matcher import (
+    SetupQueryResult,
+    parse_symptom,
+    query_result_to_dict,
+    query_setup_knowledge,
+)
 from racelab_engine.models.session import RunOverview
 from racelab_engine.models.setup import SetupSnapshot
-from racelab_engine.services.import_service import build_channel_summary
+from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.services.import_service import (
+    build_channel_summary,
+    read_telemetry_manifest,
+    read_telemetry_rows,
+)
+from racelab_engine.services.setup_learning_service import (
+    build_setup_response_context,
+    get_setup_area_biases,
+)
 from racelab_engine.services.track_map_service import find_best_map_for_run
 from racelab_engine.storage.repository import RaceLabRepository
 from racelab_engine.analysis.lap_eligibility import eligible_laps
-from racelab_engine.services.setup_learning_service import get_setup_area_biases
 
 
 NEXT_GEN_PATTERNS = (
@@ -210,6 +229,12 @@ class RunContextSetupQueryResult:
     evidence_context: RunEvidenceContext
     setup_query: SetupQueryResult
     candidate_readiness: list[CandidateEvidenceReadiness]
+    capability_flags: list[str]
+    observed_evidence_flags: list[str]
+    supporting_event_ids: list[str]
+    supporting_event_ids_by_flag: dict[str, list[str]]
+    supporting_event_ids_by_setup_key: dict[str, list[str]]
+    source_channels_by_event_id: dict[str, list[str]]
 
 
 def _sorted_present(available: set[str], aliases: set[str]) -> list[str]:
@@ -260,7 +285,7 @@ def _build_group(
     channels_missing: list[str],
     notes: list[str] | None = None,
     confidence_boost: float = 0.0,
-    can_support_setup_knowledge: bool = True,
+    can_support_setup_knowledge: bool = False,
 ) -> RunEvidenceGroup:
     return RunEvidenceGroup(
         group_id=group_id,
@@ -343,6 +368,189 @@ def _driver_input_flags(groups: dict[str, RunEvidenceGroup], flags: set[str]) ->
         flags.add("driver_input")
 
 
+QUALIFYING_EVENT_STATES = {
+    EvidenceState.MEASURED,
+    EvidenceState.CALCULATED,
+    EvidenceState.ESTIMATED_PROXY,
+    EvidenceState.OBSERVED_CORRELATION,
+    EvidenceState.CONTROLLED_TEST_EFFECT,
+}
+
+
+_EVENT_TYPE_MECHANISMS: dict[str, set[str]] = {
+    "PLATFORM_LOW": {"platform", "platform_trace", "front_platform"},
+    "PLATFORM_SCRAPE": {"platform", "platform_trace", "front_platform", "scrape"},
+    "REAR_PLATFORM_LOW": {"platform", "platform_trace", "rear_platform"},
+    "REAR_PLATFORM_SCRAPE": {"platform", "platform_trace", "rear_platform", "scrape"},
+    "MIN_SPLITTER": {"platform", "platform_trace", "front_platform"},
+    "MIN_REAR_RIDE_HEIGHT": {"platform", "platform_trace", "rear_platform"},
+    "HIGHEST_RAKE": {"platform", "platform_trace"},
+    "HIGHEST_PLATFORM_COMPRESSION": {"platform", "platform_trace"},
+    "WHOLE_CAR_BOTTOMING_RISK": {"platform", "platform_trace"},
+    "HIGHEST_SHOCK_ACTIVITY": {"shock_histogram"},
+    "DAMPER_RESPONSE": {"shock_histogram"},
+    "BRAKE_ENTRY_YAW": {"brake_trace", "yaw"},
+    "BRAKE_INSTABILITY": {"brake_trace", "yaw"},
+    "YAW_EXIT": {"yaw"},
+    "THROTTLE_EXIT": {"throttle"},
+    "TIRE_EXIT": {"tire_temps", "tire_trend"},
+    "TIRE_PRESSURE": {"tire_pressure", "pressure_gain", "tire_trend"},
+    "TIRE_WEAR": {"tire_wear", "wear", "tire_trend"},
+    "FULL_THROTTLE_SPEED_LOSS": {"speed_loss", "speed_trace", "throttle"},
+    "WORST_SPEED_LOSS": {"speed_loss", "speed_trace"},
+    "WORST_DRAG_SCRUB": {"speed_loss", "speed_trace"},
+    "RPM_GEAR_LIMITER": {"rpm"},
+}
+
+_MECHANISM_SOURCE_CHANNELS: dict[str, set[str]] = {
+    "platform": PLATFORM_TRACE_CHANNELS,
+    "platform_trace": PLATFORM_TRACE_CHANNELS,
+    "front_platform": FRONT_PLATFORM_CHANNELS,
+    "rear_platform": REAR_PLATFORM_CHANNELS,
+    "scrape": FRONT_PLATFORM_CHANNELS | REAR_PLATFORM_CHANNELS | REAR_SCRAPE_CHANNELS,
+    "shock_histogram": SHOCK_CORE_CHANNELS | SHOCK_SUPPORT_CHANNELS,
+    "brake_trace": BRAKE_CHANNELS,
+    "throttle": THROTTLE_CHANNELS,
+    "steering": STEERING_CHANNELS,
+    "yaw": YAW_CHANNELS,
+    "speed_loss": SPEED_CHANNELS,
+    "speed_trace": SPEED_CHANNELS,
+    "rpm": RPM_GEAR_CHANNELS,
+    "tire_pressure": TIRE_PRESSURE_CHANNELS,
+    "pressure_gain": TIRE_PRESSURE_CHANNELS,
+    "tire_temps": TIRE_TEMP_CHANNELS,
+    "tire_wear": TIRE_WEAR_CHANNELS,
+    "wear": TIRE_WEAR_CHANNELS,
+    "tire_trend": TIRE_PRESSURE_CHANNELS | TIRE_TEMP_CHANNELS | TIRE_WEAR_CHANNELS,
+}
+
+
+def event_mechanism_flags(event_type: str, source_channels: set[str]) -> set[str]:
+    """Translate a qualified observation into matcher evidence vocabulary.
+
+    This deliberately runs only after the event passes canonical lap, tuning,
+    provenance, and confidence gates.  Raw channel availability never reaches
+    this function by itself.
+    """
+    claimed = _EVENT_TYPE_MECHANISMS.get(event_type.upper(), set())
+    flags = {
+        flag
+        for flag in claimed
+        if not (required := _MECHANISM_SOURCE_CHANNELS.get(flag)) or bool(source_channels & required)
+    }
+    if flags & {"throttle", "steering", "yaw", "brake_trace"} and len(
+        flags & {"throttle", "steering", "yaw", "brake_trace"}
+    ) >= 2:
+        flags.update({"driver_input", "driver_inputs"})
+    return flags
+
+
+def event_matches_zone(event: Any, selected_zone: tuple[float, float] | None) -> bool:
+    if selected_zone is None:
+        return True
+    start, end = event.lap_pct_start, event.lap_pct_end
+    if start is not None and end is not None:
+        return selected_zone[0] <= start <= end <= selected_zone[1]
+    position = event.lap_pct_peak if event.lap_pct_peak is not None else start if start is not None else end
+    return position is not None and selected_zone[0] <= position <= selected_zone[1]
+
+
+def event_matches_phase(event: Any, requested_phase: str | None) -> bool:
+    """Fail closed when an explicit phase cannot be tied to event provenance."""
+    if not requested_phase:
+        return True
+    requested = requested_phase.strip().casefold().replace(" ", "_")
+    explicit = str(
+        event.evidence_json.get("phase")
+        or event.evidence_json.get("target_phase")
+        or event.evidence_json.get("corner_phase")
+        or ""
+    ).strip().casefold().replace(" ", "_")
+    event_type = str(event.event_type).casefold()
+    if explicit:
+        requested_families = {
+            "brake_application": "braking", "threshold_braking": "braking",
+            "brake_release": "entry", "turn_in": "entry", "apex_region": "center",
+            "initial_throttle": "exit", "full_throttle_exit": "exit",
+            "following_straight_carry": "exit", "bump": "bump_curb", "curb": "bump_curb",
+        }
+        return requested_families.get(explicit, explicit) == requested_families.get(requested, requested)
+    inferred: set[str] = set()
+    type_families = {
+        "braking": ("brake", "lock", "abs"),
+        "entry": ("entry", "turn_in", "brake_release"),
+        "center": ("center", "apex"),
+        "exit": ("exit", "throttle", "drive_off"),
+        "transition": ("transition",),
+        "bump_curb": ("bump", "curb"),
+        "straight": ("straight", "speed_loss", "resistance"),
+    }
+    inferred.update(
+        family
+        for family, markers in type_families.items()
+        if any(marker in event_type for marker in markers)
+    )
+    requested_families = {
+        "brake_application": "braking",
+        "threshold_braking": "braking",
+        "brake_release": "entry",
+        "turn_in": "entry",
+        "apex_region": "center",
+        "initial_throttle": "exit",
+        "full_throttle_exit": "exit",
+        "following_straight_carry": "exit",
+        "bump": "bump_curb",
+        "curb": "bump_curb",
+    }
+    requested_family = requested_families.get(requested, requested)
+    explicit_family = requested_families.get(explicit, explicit)
+    return requested_family in inferred or explicit_family == requested_family
+
+
+def _observed_mechanism_evidence(
+    overview: RunOverview,
+    *,
+    eligible_lap_numbers: set[int],
+    selected_zone: tuple[float, float] | None = None,
+    selected_phase: str | None = None,
+) -> tuple[list[str], list[str], dict[str, list[str]], dict[str, list[str]], dict[str, list[str]]]:
+    flags: set[str] = set()
+    event_ids: list[str] = []
+    event_ids_by_flag: dict[str, list[str]] = {}
+    event_ids_by_setup_key: dict[str, list[str]] = {}
+    source_channels_by_event_id: dict[str, list[str]] = {}
+    for event in overview.events:
+        if (
+            not event.valid_for_tuning
+            or event.lap_number not in eligible_lap_numbers
+            or event.evidence_state not in QUALIFYING_EVENT_STATES
+            or not math.isfinite(event.confidence_score)
+            or not 0.5 <= event.confidence_score <= 1.0
+            or event.blocker_reasons
+            or not event.source_channels
+            or not event_matches_phase(event, selected_phase)
+            or not event_matches_zone(event, selected_zone)
+        ):
+            continue
+        event_flags = event_mechanism_flags(event.event_type, set(event.source_channels))
+        if not event_flags:
+            continue
+        flags.update(event_flags)
+        event_ids.append(event.event_id)
+        source_channels_by_event_id[event.event_id] = list(event.source_channels)
+        for flag in event_flags:
+            event_ids_by_flag.setdefault(flag, []).append(event.event_id)
+        for setup_key in expanded_related_setup_keys(event.related_setup_keys):
+            event_ids_by_setup_key.setdefault(setup_key, []).append(event.event_id)
+    return (
+        sorted(flags),
+        list(dict.fromkeys(event_ids)),
+        {flag: list(dict.fromkeys(ids)) for flag, ids in event_ids_by_flag.items()},
+        {key: list(dict.fromkeys(ids)) for key, ids in event_ids_by_setup_key.items()},
+        source_channels_by_event_id,
+    )
+
+
 def build_run_evidence_context(
     run_id: str,
     *,
@@ -379,6 +587,10 @@ def build_run_evidence_context(
         flags.add("setup_snapshot")
 
     useful_laps = eligible_laps(overview.laps)
+    observed_flags, observed_event_ids, _event_ids_by_flag, _, _ = _observed_mechanism_evidence(
+        overview,
+        eligible_lap_numbers={lap.lap_number for lap in useful_laps},
+    )
     lap_status = "ready" if useful_laps else "missing"
     lap_present = ["lap/window data"] if useful_laps else []
     lap_missing = [] if useful_laps else ["lap/window data"]
@@ -643,7 +855,6 @@ def build_run_evidence_context(
             channels_present=[],
             channels_missing=[],
             confidence_boost=0.1 if exists else 0.0,
-            can_support_setup_knowledge=True,
         )
         if exists:
             flags.add(group_id)
@@ -683,6 +894,37 @@ def build_run_evidence_context(
         "compare_baseline",
         "compare_test",
     ]
+    observed_group_ids = {
+        "platform_trace" if flag in {"platform", "platform_trace"} else
+        "front_ride_height_platform" if flag == "front_platform" else
+        "rear_ride_height_platform" if flag == "rear_platform" else
+        "rear_scrape_scrub" if flag in {"scrape", "rear_scrape_scrub"} else
+        "shock_histogram" if flag == "shock_histogram" else
+        "tire_pressure" if flag in {"tire_pressure", "pressure_gain"} else
+        "tire_temps" if flag in {"tire_temps", "tire_trend"} else
+        "tire_wear" if flag in {"tire_wear", "wear"} else
+        "brake_trace" if flag == "brake_trace" else
+        "throttle_trace" if flag == "throttle" else
+        "steering_trace" if flag == "steering" else
+        "yaw_trace" if flag == "yaw" else
+        "speed_trace" if flag in {"speed_trace", "speed_loss"} else
+        "rpm_gear_trace" if flag == "rpm" else
+        ""
+        for flag in observed_flags
+    }
+    for group_id in observed_group_ids - {""}:
+        group = groups[group_id]
+        groups[group_id] = group.model_copy(update={
+            "can_support_setup_knowledge": True,
+            "notes": [
+                *group.notes,
+                f"Qualified telemetry event linkage: {', '.join(observed_event_ids)}.",
+            ],
+        })
+    if not observed_event_ids:
+        warnings.append(
+            "Telemetry capability is available, but no eligible tuning event supplies observed mechanism evidence."
+        )
     return RunEvidenceContext(
         run_id=run_id,
         car_name=overview.session.car_name,
@@ -707,6 +949,11 @@ def query_setup_for_run_context(
     car_family_override: str | None = None,
     track_family_override: str | None = None,
     package_archetype: str | None = None,
+    selected_lap: int | None = None,
+    selected_zone: tuple[float, float] | None = None,
+    phase: str | None = None,
+    objective: str | None = None,
+    priority: str | None = None,
     limit: int = 5,
 ) -> RunContextSetupQueryResult:
     context = evidence_context or build_run_evidence_context(
@@ -716,15 +963,132 @@ def query_setup_for_run_context(
         car_family_override=car_family_override,
         track_family_override=track_family_override,
     )
+    repo = RaceLabRepository()
+    overview = repo.get_overview(run_id)
+    observed_evidence_flags: list[str] = []
+    supporting_event_ids: list[str] = []
+    supporting_event_ids_by_flag: dict[str, list[str]] = {}
+    supporting_event_ids_by_setup_key: dict[str, list[str]] = {}
+    source_channels_by_event_id: dict[str, list[str]] = {}
+    learning_biases: dict[tuple[str, int], dict[str, Any]] = {}
+    effective_phase = phase
+    if not effective_phase:
+        try:
+            effective_phase = parse_symptom(symptom, load_setup_knowledge()).phase
+        except ValueError:
+            effective_phase = None
+    if overview is not None:
+        eligible = eligible_laps(overview.laps)
+        scoped_laps = (
+            {selected_lap}
+            if selected_lap is not None and selected_lap in {lap.lap_number for lap in eligible}
+            else {lap.lap_number for lap in eligible}
+        )
+        (
+            observed_evidence_flags,
+            supporting_event_ids,
+            supporting_event_ids_by_flag,
+            supporting_event_ids_by_setup_key,
+            source_channels_by_event_id,
+        ) = _observed_mechanism_evidence(
+            overview,
+            eligible_lap_numbers=scoped_laps,
+            selected_zone=selected_zone,
+            selected_phase=effective_phase,
+        )
+        eligible_numbers = {lap.lap_number for lap in eligible}
+        learning_lap = (
+            selected_lap
+            if selected_lap in eligible_numbers
+            else min(
+                eligible,
+                key=lambda lap: lap.lap_time if lap.lap_time is not None else float("inf"),
+            ).lap_number if eligible else None
+        )
+        learning_rows = read_telemetry_rows(
+            run_id,
+            lap=learning_lap,
+            columns=[
+                "air_temp",
+                "track_temp",
+                "wind_vel",
+                "fuel_level",
+                "lf_tire_distance_m",
+                "rf_tire_distance_m",
+                "lr_tire_distance_m",
+                "rr_tire_distance_m",
+                "player_tire_compound",
+            ],
+        ) if learning_lap is not None else []
+        identity = read_telemetry_manifest(run_id).get("compatibility_identity") or {}
+        session_type = str(identity.get("session_type") or "").lower()
+        inferred_objective = (
+            "qualifying"
+            if "qual" in session_type
+            else "long-run"
+            if "race" in session_type
+            else "setup-development"
+        )
+        memory_objective = (objective or inferred_objective).strip()
+        if priority and priority != "overall-pace":
+            memory_objective = f"{memory_objective}|priority:{priority}"
+        response_context = build_setup_response_context(
+            compatibility_identity=identity,
+            rows=learning_rows,
+            baseline_setup=(
+                overview.setup_snapshot.model_dump(mode="json")
+                if overview.setup_snapshot is not None
+                else None
+            ),
+            package_archetype=package_archetype or context.track_family,
+            objective=memory_objective,
+        )
+        if selected_zone is not None and effective_phase:
+            learning_biases = get_setup_area_biases(
+                response_context.car_name if response_context is not None else None,
+                response_context.track_name if response_context is not None else None,
+                response_context=response_context,
+                target_zone=selected_zone,
+                target_phase=effective_phase,
+            )
     setup_result = query_setup_knowledge(
         car_family=car_family_override or context.car_family,
         symptom=symptom,
+        phase=phase,
         track_family=track_family_override or context.track_family,
         package_archetype=package_archetype,
         evidence=context.evidence_flags,
+        observed_evidence=observed_evidence_flags,
         limit=limit,
-        learning_biases=get_setup_area_biases(context.car_name, context.track_name),
+        learning_biases=learning_biases,
     )
+    linked_candidates = []
+    for item in setup_result.candidate_effects:
+        control_keys = control_keys_for_effect(item.effect.effect_id)
+        control_links = {
+            key: set(supporting_event_ids_by_setup_key.get(key, ()))
+            for key in control_keys
+        }
+        related_ids = {event_id for ids in control_links.values() for event_id in ids}
+        mechanism_links_complete = bool(item.observed_evidence_matched) and all(
+            set(supporting_event_ids_by_flag.get(flag, ())) & related_ids
+            for flag in item.observed_evidence_matched
+        )
+        exact_control_links_complete = bool(control_links) and all(control_links.values())
+        if item.readiness == "ready" and not (
+            mechanism_links_complete and exact_control_links_complete
+        ):
+            item = replace(
+                item,
+                readiness="partially_ready",
+                ranking_reasons=[
+                    *item.ranking_reasons,
+                    "observed mechanisms are not linked to every exact setup control in this action",
+                ],
+                warning="Observed mechanism events do not provide exact-control linkage for this action.",
+            )
+        linked_candidates.append(item)
+    setup_result = replace(setup_result, candidate_effects=linked_candidates)
     candidate_readiness = [
         CandidateEvidenceReadiness(
             effect_id=item.effect.effect_id,
@@ -732,7 +1096,14 @@ def query_setup_for_run_context(
             present_evidence=item.evidence_matched,
             missing_evidence=item.missing_evidence,
             warnings=[item.warning] if item.warning else [],
-            readiness_reason=item.ranking_reasons[0],
+            readiness_reason=next(
+                (
+                    reason
+                    for reason in item.ranking_reasons
+                    if "mechanism" in reason or "capability" in reason
+                ),
+                item.ranking_reasons[0],
+            ),
         )
         for item in setup_result.candidate_effects
     ]
@@ -740,6 +1111,12 @@ def query_setup_for_run_context(
         evidence_context=context,
         setup_query=setup_result,
         candidate_readiness=candidate_readiness,
+        capability_flags=context.evidence_flags,
+        observed_evidence_flags=observed_evidence_flags,
+        supporting_event_ids=supporting_event_ids,
+        supporting_event_ids_by_flag=supporting_event_ids_by_flag,
+        supporting_event_ids_by_setup_key=supporting_event_ids_by_setup_key,
+        source_channels_by_event_id=source_channels_by_event_id,
     )
 
 
@@ -754,6 +1131,11 @@ def run_context_result_to_dict(result: RunContextSetupQueryResult) -> dict[str, 
             "track_family": result.evidence_context.track_family,
             "setup_snapshot_status": result.evidence_context.setup_snapshot_status,
             "evidence_flags": result.evidence_context.evidence_flags,
+            "capability_flags": result.capability_flags,
+            "observed_evidence_flags": result.observed_evidence_flags,
+            "supporting_event_ids": result.supporting_event_ids,
+            "supporting_event_ids_by_flag": result.supporting_event_ids_by_flag,
+            "supporting_event_ids_by_setup_key": result.supporting_event_ids_by_setup_key,
             "evidence_groups": [group.model_dump() for group in result.evidence_context.evidence_groups],
             "run_warnings": result.evidence_context.warnings,
             "unavailable_reasons": result.evidence_context.unavailable_reasons,

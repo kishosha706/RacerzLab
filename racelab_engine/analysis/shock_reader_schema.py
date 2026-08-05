@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from racelab_engine.models.evidence import EvidenceState
+
 
 CornerScope = Literal["LF", "RF", "LR", "RR", "front", "rear", "all"]
 ShockSetting = Literal[
@@ -53,10 +55,18 @@ class ShockSettingRecommendation(BaseModel):
     magnitude: SettingMagnitude
     confidence: SettingConfidence
     reason_short: str
+    action_text: str
+    expected_effect: str
+    change_size_explanation: str
+    keep_if: str
+    undo_if: str
     goal: str
     tradeoff: str
     watch_for: list[str]
     blocked_reason: str | None = None
+    evidence_state: EvidenceState = EvidenceState.NEEDS_CONFIRMATION
+    source_channels: list[str] = Field(default_factory=list)
+    blocker_reasons: list[str] = Field(default_factory=list)
 
 
 class ShockCornerRead(BaseModel):
@@ -74,6 +84,13 @@ class ShockCornerRead(BaseModel):
     deflection_delta_range_in: float | None = None
     pattern: Pattern
     confidence: Confidence
+    source_lap_numbers: list[int] = Field(default_factory=list)
+    repeatability_lap_count: int = Field(default=0, ge=0)
+    high_speed_compression_repeatable: bool = False
+    high_speed_rebound_repeatable: bool = False
+    compression_boundary_stable: bool = False
+    rebound_boundary_stable: bool = False
+    boundary_sensitivity_patterns: list[str] = Field(default_factory=list)
     setup_values: dict[str, int | None] = Field(default_factory=dict)
     setting_recommendations: list[ShockSettingRecommendation] = Field(default_factory=list)
 
@@ -96,15 +113,25 @@ class ShockRecommendation(BaseModel):
     confidence: Confidence
     evidence_summary: str
     hidden_debug: dict[str, Any] | None = None
+    evidence_state: EvidenceState = EvidenceState.NEEDS_CONFIRMATION
+    source_channels: list[str] = Field(default_factory=list)
+    blocker_reasons: list[str] = Field(default_factory=list)
 
 
 class ShockReaderResponse(BaseModel):
     run_id: str
     lap_window: str | None = None
     phase: str | None = None
+    zone_start_pct: float | None = None
+    zone_end_pct: float | None = None
     boundary_in_s: float
+    boundary_basis: str
+    slope_actions_available: bool = False
     bin_width_in_s: float
     setup_snapshot_available: bool
     corners: list[ShockCornerRead]
     recommendations: list[ShockRecommendation]
     warnings: list[str]
+    evidence_state: EvidenceState = EvidenceState.NEEDS_CONFIRMATION
+    source_channels: list[str] = Field(default_factory=list)
+    blocker_reasons: list[str] = Field(default_factory=list)

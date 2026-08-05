@@ -852,7 +852,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
       : null;
 
   return (
-    <section className="trackmap-cockpit">
+    <section className="trackmap-cockpit" data-analysis-surface="track_position_map">
       <div className="trackmap-left">
         {/* ── Header ── */}
         <header className="trackmap-header">
@@ -878,8 +878,8 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
           )}
           {match && (
             <div className="trackmap-header-match">
-              <span className="map-confidence-badge" data-confidence={match.match_confidence ?? "medium"}>
-                {match.match_confidence ?? "medium"}
+              <span className="map-confidence-badge" data-confidence={match.match_confidence ?? "unknown"}>
+                {match.match_confidence ?? "unknown"}
               </span>
               <span className="muted">{match.display_name}</span>
               {lap != null && <span className="muted">· Lap {lap}</span>}

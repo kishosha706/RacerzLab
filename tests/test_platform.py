@@ -5,9 +5,14 @@ from pathlib import Path
 import polars as pl
 
 import racelab_engine.analysis as analysis_pkg
-from racelab_engine.analysis.platform_events import PlatformEvent, PlatformEventType, detect_platform_events
+from racelab_engine.analysis.platform_events import (
+    PLATFORM_EVENT_COLUMNS,
+    PlatformEvent,
+    PlatformEventType,
+    detect_platform_events,
+)
 from racelab_engine.analysis.platform_metrics import classify_splitter_height_mm
-from racelab_engine.io.ibt_reader import _build_overview_platform_events
+from racelab_engine.io.ibt_reader import _build_overview_platform_events, _safe_float
 from racelab_engine.models.event import TelemetryEvent
 
 
@@ -26,6 +31,8 @@ def _row(
     brake_pct: float | None = 0.0,
     cfsr_height_mm: float | None = 8.0,
     cfs_risk_score: float = 0.08,
+    session_time: float | None = None,
+    on_pit_road: bool | None = None,
 ) -> dict[str, float | int | None]:
     cfs_in = None if cfsr_height_mm is None else cfsr_height_mm / 25.4
     row: dict[str, float | int | None] = {
@@ -56,11 +63,37 @@ def _row(
         row["lap_dist_pct"] = lap_dist_pct
     if lap_dist_pct_100 is not None:
         row["lap_dist_pct_100"] = lap_dist_pct_100
+    if session_time is not None:
+        row["session_time"] = session_time
+    if on_pit_road is not None:
+        row["on_pit_road"] = on_pit_road
     return row
 
 
 def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def _dense_platform_lap(
+    *,
+    duration_s: float,
+    splitter_by_index: dict[int, float],
+    default_splitter_mm: float = 15.0,
+) -> list[dict[str, float | int | None]]:
+    rows: list[dict[str, float | int | None]] = []
+    for index in range(101):
+        pct = index / 100.0
+        splitter = splitter_by_index.get(index, default_splitter_mm)
+        rows.append(
+            _row(
+                lap_dist_pct=pct,
+                lap_dist_m=4230.0 * pct,
+                lap_dist_ft=13877.95 * pct,
+                cfsr_height_mm=splitter,
+                session_time=duration_s * pct,
+            )
+        )
+    return rows
 
 
 def test_analysis_package_exports_only_canonical_platform_detector_names() -> None:
@@ -98,11 +131,12 @@ def test_canonical_detector_emits_min_splitter_platform_event() -> None:
 
 
 def test_overview_platform_event_conversion_uses_canonical_detector() -> None:
-    rows = [
-        _row(lap_dist_pct=0.0, lap_dist_m=0.0, lap_dist_ft=0.0, cfsr_height_mm=8.0),
-        _row(lap_dist_pct=0.6702, lap_dist_m=2864.23, lap_dist_ft=9397.08, speed_mph=186.08, cfsr_height_mm=3.58),
-        _row(lap_dist_pct=0.99, lap_dist_m=4230.0, lap_dist_ft=13877.95, speed_mph=186.0, cfsr_height_mm=9.0),
-    ]
+    rows = _dense_platform_lap(
+        duration_s=45.0,
+        splitter_by_index={66: 8.0, 67: 3.58, 68: 8.0},
+    )
+    rows[67]["lap_dist_pct"] = 0.6702
+    rows[67]["speed_mph"] = 186.08
 
     events = _build_overview_platform_events(rows, run_id="test-run")
 
@@ -112,6 +146,99 @@ def test_overview_platform_event_conversion_uses_canonical_detector() -> None:
     assert events[0].severity == "high"
     assert events[0].valid_for_tuning is True
     assert events[0].lap_pct_peak == 67.02
+
+
+def test_platform_numeric_parser_rejects_every_non_finite_value() -> None:
+    assert _safe_float(float("nan")) is None
+    assert _safe_float(float("inf")) is None
+    assert _safe_float(float("-inf")) is None
+
+
+def test_overview_platform_event_rejects_implausible_peak_context() -> None:
+    hostile_values = (
+        ("speed_mph", float("inf")),
+        ("speed_mph", 301.0),
+        ("throttle_pct", float("inf")),
+        ("throttle_pct", 101.0),
+        ("throttle_pct", -1.0),
+        ("brake_pct", float("-inf")),
+        ("brake_pct", 101.0),
+        ("brake_pct", -1.0),
+        ("cfsr_height_mm", float("-inf")),
+        ("cfsr_height_mm", -25.5),
+    )
+    for channel, value in hostile_values:
+        rows = _dense_platform_lap(
+            duration_s=45.0,
+            splitter_by_index={49: 3.0, 50: 2.5, 51: 3.0},
+        )
+        rows[50][channel] = value
+
+        events = _build_overview_platform_events(rows, run_id=f"hostile-{channel}-{value}")
+
+        assert len(events) == 1
+        assert events[0].valid_for_tuning is False, (channel, value)
+        assert events[0].recommended_actions == [], (channel, value)
+
+
+def test_overview_platform_event_cannot_bypass_canonical_pit_lap_gate() -> None:
+    rows = [
+        _row(lap_dist_pct=0.0, cfsr_height_mm=8.0, session_time=0.0, on_pit_road=True),
+        _row(lap_dist_pct=0.67, cfsr_height_mm=3.0, session_time=30.0, on_pit_road=True),
+        _row(lap_dist_pct=0.99, cfsr_height_mm=9.0, session_time=45.0, on_pit_road=True),
+    ]
+
+    events = _build_overview_platform_events(rows, run_id="pit-lap")
+
+    assert len(events) == 1
+    assert events[0].valid_for_tuning is False
+    assert events[0].evidence_json["is_eligible_lap"] is False
+
+
+def test_platform_read_columns_include_canonical_lap_eligibility_state() -> None:
+    assert {
+        "session_time",
+        "session_tick",
+        "lap_dist_pct",
+        "on_pit_road",
+        "is_on_track",
+        "player_track_surface",
+        "session_flags",
+        "player_incident_count",
+        "player_driver_incident_count",
+        "player_team_incident_count",
+    } <= set(PLATFORM_EVENT_COLUMNS)
+
+
+def test_overview_allows_sustained_negative_scrape_on_eligible_lap() -> None:
+    rows = _dense_platform_lap(
+        duration_s=40.0,
+        splitter_by_index={49: -1.0, 50: -1.5, 51: -1.0},
+    )
+
+    events = _build_overview_platform_events(rows, run_id="sustained-scrape")
+
+    assert len(events) == 1
+    assert events[0].event_type == "PLATFORM_SCRAPE"
+    assert events[0].valid_for_tuning is True
+    assert events[0].lap_pct_start < events[0].lap_pct_peak < events[0].lap_pct_end
+    assert events[0].evidence_json["has_sustained_risk"] is True
+    assert events[0].recommended_actions
+
+
+def test_overview_internal_one_frame_low_has_no_tuning_action() -> None:
+    rows = [
+        _row(lap_dist_pct=0.0, lap_dist_ft=0.0, cfsr_height_mm=15.0, session_time=0.0),
+        _row(lap_dist_pct=0.50, lap_dist_ft=2000.0, cfsr_height_mm=9.0, session_time=20.0),
+        _row(lap_dist_pct=0.99, lap_dist_ft=4000.0, cfsr_height_mm=15.0, session_time=40.0),
+    ]
+
+    events = _build_overview_platform_events(rows, run_id="one-frame-low")
+
+    assert len(events) == 1
+    assert events[0].evidence_json["display_scope"] == "internal"
+    assert events[0].valid_for_tuning is False
+    assert events[0].recommended_actions == []
 
 
 def test_overview_platform_event_conversion_handles_multiple_laps() -> None:

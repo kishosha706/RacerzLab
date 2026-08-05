@@ -4,6 +4,8 @@ import json
 import subprocess
 import sys
 
+import pytest
+
 from racelab_engine.knowledge.setup.loader import load_setup_knowledge
 from racelab_engine.knowledge.setup.matcher import parse_symptom, query_setup_knowledge
 from racelab_engine.knowledge.setup.validator import validate_setup_knowledge
@@ -73,6 +75,120 @@ def test_loose_off_next_gen_ranks_expected_candidate_styles():
     result = query_setup_knowledge(car_family="next_gen", symptom="loose off", limit=20)
     areas = _areas(result)
     assert {"cross_weight", "rear_ride_height_platform", "tire_pressure", "ls_rebound"}.issubset(areas)
+
+
+def test_exact_context_negative_memory_blocks_generic_prior_direction() -> None:
+    result = query_setup_knowledge(
+        car_family="next_gen",
+        symptom="loose off",
+        limit=30,
+        learning_biases={
+            ("cross_weight_percent", 1): {
+                "count": 4,
+                "weighted_outcome": -0.8,
+                "magnitude_counts": {"small": 4},
+                "weighted_outcome_by_magnitude": {"small": -0.8},
+            }
+        },
+    )
+    assert "add_crossweight_small" not in _ids(result)
+
+
+def test_large_change_memory_cannot_block_an_untested_small_step() -> None:
+    result = query_setup_knowledge(
+        car_family="next_gen",
+        symptom="loose off",
+        limit=30,
+        learning_biases={
+            ("cross_weight_percent", 1): {
+                "count": 4,
+                "weighted_outcome": -1.0,
+                "magnitude_counts": {"large": 4},
+                "weighted_outcome_by_magnitude": {"large": -1.0},
+            },
+        },
+    )
+    assert "add_crossweight_small" in _ids(result)
+
+
+@pytest.mark.parametrize("fragment", ["off", "rear", "in"])
+def test_vague_fragments_do_not_select_the_first_partial_vocabulary_match(fragment: str) -> None:
+    with pytest.raises(ValueError):
+        parse_symptom(fragment, load_setup_knowledge())
+
+
+def test_longest_complete_symptom_phrase_wins() -> None:
+    parsed = parse_symptom("the car is loose off on throttle", load_setup_knowledge())
+    assert parsed.canonical_symptom == "loose_exit"
+
+
+@pytest.mark.parametrize(
+    "complaint",
+    ["tight off and loose off", "loose center but tight off"],
+)
+def test_conflicting_balance_directions_require_clarification(complaint: str) -> None:
+    with pytest.raises(ValueError, match="conflicting loose and tight"):
+        parse_symptom(complaint, load_setup_knowledge())
+
+
+@pytest.mark.parametrize(
+    "complaint", ["not loose off", "it is not tight center", "no rear scrape", "does not push on entry"],
+)
+def test_negated_symptoms_never_become_positive_setup_matches(complaint: str) -> None:
+    with pytest.raises(ValueError, match="Negated handling descriptions"):
+        parse_symptom(complaint, load_setup_knowledge())
+
+
+@pytest.mark.parametrize(
+    ("complaint", "canonical", "phase"),
+    [
+        ("tight entry", "tight_entry", "entry"),
+        ("tight center", "tight_center", "center"),
+        ("tight exit", "tight_exit", "exit"),
+        ("loose entry", "loose_entry", "entry"),
+        ("loose center", "loose_center", "center"),
+        ("loose exit", "loose_exit", "exit"),
+    ],
+)
+def test_generic_balance_plus_ui_phase_resolves_without_repeated_clarification(
+    complaint: str, canonical: str, phase: str,
+) -> None:
+    parsed = parse_symptom(complaint, load_setup_knowledge())
+    assert parsed.canonical_symptom == canonical
+    assert parsed.phase == phase
+    assert parsed.clarification_question is None
+
+
+def test_partial_observed_mechanism_cannot_become_ready_from_capability() -> None:
+    result = query_setup_knowledge(
+        car_family="next_gen",
+        symptom="loose off",
+        evidence=["phase", "yaw", "throttle", "setup_snapshot", "tire_temps"],
+        observed_evidence=["yaw"],
+        limit=30,
+    )
+    cross = next(item for item in result.candidate_effects if item.effect.effect_id == "add_crossweight_small")
+    assert cross.readiness == "partially_ready"
+
+
+def test_exact_control_memory_does_not_transfer_rf_spring_history_to_lr() -> None:
+    baseline = query_setup_knowledge(car_family="next_gen", symptom="loose off", limit=30)
+    learned = query_setup_knowledge(
+        car_family="next_gen",
+        symptom="loose off",
+        limit=30,
+        learning_biases={
+            ("rf_front_spring_n_per_mm", 1): {
+                "count": 3,
+                "weighted_outcome": 1.0,
+                "magnitude_counts": {"small": 3},
+                "weighted_outcome_by_magnitude": {"small": 1.0},
+            },
+        },
+    )
+    baseline_lr = next(item.score for item in baseline.candidate_effects if item.effect.effect_id == "add_lr_spring_support")
+    learned_lr = next(item.score for item in learned.candidate_effects if item.effect.effect_id == "add_lr_spring_support")
+    assert learned_lr == baseline_lr
 
 
 def test_racing_terms_parse_to_expected_context():

@@ -12,9 +12,11 @@ Rules:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
+from racelab_engine.analysis.lap_eligibility import INVALID_TUNING_TAGS
 from racelab_engine.models.segment import SegmentSummary
 
 
@@ -29,19 +31,19 @@ class BestTheoreticalResult:
     warnings: list[str] = field(default_factory=list)
 
 
-def _is_lap_valid(classification_tags: list[str]) -> tuple[bool, str | None]:
+def _is_lap_valid(
+    classification_tags: list[str],
+    lap_time: float | None,
+) -> tuple[bool, str | None]:
     """Check if a lap is valid for theoretical best calculation."""
-    tags = [t.upper() for t in classification_tags]
-    if "OUT_LAP" in tags:
-        return False, "Out lap"
-    if "COOLDOWN" in tags:
-        return False, "Cooldown lap"
-    if "PIT_ROAD" in tags:
-        return False, "Pit road"
-    if "WRECK_OR_SPIN" in tags:
-        return False, "Wreck or spin"
-    if "INVALID_SPEED_EVENT" in tags:
-        return False, "Invalid speed event"
+    tags = {tag.upper() for tag in classification_tags}
+    invalid = sorted(tags & INVALID_TUNING_TAGS)
+    if invalid:
+        return False, invalid[0].replace("_", " ").title()
+    if not ({"ELIGIBLE_FLYING_LAP", "SOLO_CLEAN"} & tags):
+        return False, "Canonical eligibility was not established"
+    if lap_time is None or not math.isfinite(float(lap_time)) or float(lap_time) <= 0:
+        return False, "Valid positive lap time is unavailable"
     return True, None
 
 
@@ -78,7 +80,7 @@ def build_best_theoretical(
     # ── Collect valid laps ─────────────────────────────────────
     valid_laps: set[int] = set()
     for lap_num, tags in lap_classification_tags.items():
-        valid, reason = _is_lap_valid(tags)
+        valid, reason = _is_lap_valid(tags, lap_times.get(lap_num))
         if valid and lap_num in segments_by_lap:
             valid_laps.add(lap_num)
 
@@ -161,7 +163,7 @@ def build_best_theoretical(
         best_theoretical_lap_time_s=best_theoretical_time,
         segments_used=segments_used,
         excluded_laps=[{"lap_number": ln, "reason": r} for ln, r in
-                       [(ln, _is_lap_valid(lap_classification_tags.get(ln, []))[1])
+                       [(ln, _is_lap_valid(lap_classification_tags.get(ln, []), lap_times.get(ln))[1])
                         for ln in segments_by_lap if ln not in valid_laps]
                        if r is not None],
         excluded_segments=excluded_segments_list,

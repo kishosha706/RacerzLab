@@ -13,6 +13,8 @@ class CorrelationPair:
     label_b: str
     pearson_r: float | None
     interpretation: str | None = None
+    paired_sample_count: int = 0
+    paired_coverage: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -21,12 +23,20 @@ class CorrelationResult:
     narrative: str | None = None
 
 
-def _pearson_r(xs: list[float | None], ys: list[float | None]) -> float | None:
-    """Compute Pearson correlation coefficient between two series, ignoring nulls."""
-    pairs = [(x, y) for x, y in zip(xs, ys) if x is not None and y is not None]
+def _pearson_r(
+    xs: list[float | None], ys: list[float | None]
+) -> tuple[float | None, int, float]:
+    """Return exploratory correlation only when positional coverage is adequate."""
+    expected = min(len(xs), len(ys))
+    pairs = [
+        (x, y)
+        for x, y in zip(xs, ys)
+        if x is not None and y is not None and math.isfinite(x) and math.isfinite(y)
+    ]
     n = len(pairs)
-    if n < 3:
-        return None
+    coverage = n / expected if expected else 0.0
+    if n < 20 or coverage < 0.90:
+        return None, n, coverage
 
     x_vals = [p[0] for p in pairs]
     y_vals = [p[1] for p in pairs]
@@ -39,10 +49,10 @@ def _pearson_r(xs: list[float | None], ys: list[float | None]) -> float | None:
     den_y = math.sqrt(sum((y - mean_y) ** 2 for y in y_vals))
 
     if den_x == 0 or den_y == 0:
-        return None
+        return None, n, coverage
 
     r = num / (den_x * den_y)
-    return max(-1.0, min(1.0, r))
+    return max(-1.0, min(1.0, r)), n, coverage
 
 
 def _interpret_correlation(r: float, label_a: str, label_b: str) -> str:
@@ -51,9 +61,9 @@ def _interpret_correlation(r: float, label_a: str, label_b: str) -> str:
     strength = "strong" if abs_r >= 0.7 else "moderate" if abs_r >= 0.4 else "weak"
 
     if r > 0:
-        return f"{strength.title()} {direction} correlation: {label_a} and {label_b} move together (r={r:.2f})."
+        return f"{strength.title()} {direction} association: {label_a} and {label_b} move together (r={r:.2f}). This does not establish cause."
     else:
-        return f"{strength.title()} {direction} correlation: {label_a} increases as {label_b} decreases (r={r:.2f})."
+        return f"{strength.title()} {direction} association: {label_a} increases as {label_b} decreases (r={r:.2f}). This does not establish cause."
 
 
 def correlate_delta_channels(
@@ -82,7 +92,7 @@ def correlate_delta_channels(
         if not a_deltas or not b_deltas:
             continue
 
-        r = _pearson_r(a_deltas, b_deltas)
+        r, paired_count, paired_coverage = _pearson_r(a_deltas, b_deltas)
         if r is None:
             continue
 
@@ -94,6 +104,8 @@ def correlate_delta_channels(
             label_b=label_b,
             pearson_r=round(r, 3),
             interpretation=interpretation,
+            paired_sample_count=paired_count,
+            paired_coverage=paired_coverage,
         ))
 
     # Build narrative
@@ -103,8 +115,7 @@ def correlate_delta_channels(
         top = strong[0]
         narrative = (
             f"Strongest relationship: {top.interpretation} "
-            f"This suggests the speed change is {'linked to' if abs(top.pearson_r or 0) > 0.5 else 'partially linked to'} "
-            f"{top.label_b.lower()} changes."
+            f"Treat this as exploratory co-variation with {top.label_b.lower()}, not proof of cause."
         )
     else:
         narrative = "No strong correlations detected between speed and platform channels."

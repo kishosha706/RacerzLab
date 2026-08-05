@@ -21,14 +21,19 @@ This focused suite locks high-value pure logic behavior: platform event visibili
 
 Additional dedicated high-impact analysis tests cover `shock_reader.py`, `stint_intelligence.py`, `tire_dynamics.py`, `vehicle_dynamics.py`, `aero_platform.py`, `aero_coefficients.py`, `pace_quality.py`, and `best_theoretical.py`. These are synthetic-data tests focused on unavailable states, non-finite numeric handling, proxy honesty, confidence behavior, and deterministic output.
 
+Roadmap engineering contracts are covered by `test_evidence_contracts.py`, `test_time_alignment.py`, `test_phase_engineering.py`, `test_p3_engineering_systems.py`, `test_test_director.py`, `test_crew_chief_packet.py`, `test_setup_learning_service.py`, and `test_advanced_experimentation.py`. These suites include hostile missing-data, mismatched-context, junk-lap, unsupported-causality, and forged-client-evidence cases.
+
 ## Full Suite (pre-commit / pre-push)
 
 ```powershell
-# All tests including .ibt import and telemetry pipeline
+# Complete Python + UI quality gate
+npm run check
+
+# Python-only suite including .ibt import and telemetry pipeline
 python -B -m pytest -p no:cacheprovider -q
 ```
 
-Requires a Talladega `.ibt` fixture at:
+The synthetic and contract suite runs without a private telemetry file. Tests that require a real Talladega `.ibt` fixture skip when the fixture is unavailable. For full fixture validation, set:
 ```
 C:\Users\Soulj\Documents\iRacing\telemetry\stockcars camarozl12018_talladega 2026-05-07 15-05-45.ibt
 ```
@@ -79,4 +84,4 @@ Benchmark tests in `TestBenchmark` skip gracefully if `pytest-benchmark` is not 
 - Service/API integration -> add `@pytest.mark.integration`
 - See `pyproject.toml` for registered markers
 
-Last verified: 2026-06-01 (counts intentionally non-fixed to avoid stale status drift).
+Last verified: 2026-08-03 (1,172 tests collected; counts intentionally stay non-fixed in the category table to avoid stale status drift).

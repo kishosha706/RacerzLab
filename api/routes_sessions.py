@@ -13,7 +13,6 @@ from racelab_engine.services.session_service import (
     get_session,
     list_sessions,
     remove_run_from_session,
-    set_last_opened,
     update_session,
 )
 from racelab_engine.storage.repository import RaceLabRepository

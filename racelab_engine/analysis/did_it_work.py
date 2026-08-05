@@ -10,6 +10,7 @@ from racelab_engine.analysis.comparison import (
 from racelab_engine.analysis.constants import (
     SPEED_NOISE_THRESHOLD,
     CFS_WORSEN_THRESHOLD,
+    CFS_SIGNIFICANT,
     CONF_HIGH,
     CONF_MEDIUM,
     CONF_LOW,
@@ -39,7 +40,16 @@ def _speed_flags(speed_delta: ComparedChannelDelta | None) -> tuple[bool, bool, 
 
 
 def _cfs_worsened(cfs_delta: ComparedChannelDelta | None) -> bool:
-    return cfs_delta is not None and cfs_delta.delta is not None and cfs_delta.delta < CFS_WORSEN_THRESHOLD
+    return bool(
+        cfs_delta is not None
+        and (
+            (cfs_delta.delta is not None and cfs_delta.delta < CFS_WORSEN_THRESHOLD)
+            or (
+                cfs_delta.delta_low_p05 is not None
+                and cfs_delta.delta_low_p05 < CFS_SIGNIFICANT
+            )
+        )
+    )
 
 
 def _format_speed_delta(d: ComparedChannelDelta | None) -> str:
@@ -48,6 +58,12 @@ def _format_speed_delta(d: ComparedChannelDelta | None) -> str:
 
 def _format_cfs_delta(d: ComparedChannelDelta | None) -> str:
     return f"{d.delta:+.3f} in" if d is not None and d.delta is not None else "N/A"
+
+
+def _format_cfs_low_delta(d: ComparedChannelDelta | None) -> str | None:
+    if d is None or d.delta_low_p05 is None:
+        return None
+    return f"{d.delta_low_p05:+.3f} in at the low 5th-percentile positions"
 
 
 def _build_verdict_invalid() -> DidItWorkVerdict:
@@ -67,6 +83,56 @@ def _build_verdict_retest_discipline(discipline: TestDisciplineResult) -> DidItW
         headline="Retest with fewer changes before concluding.",
         evidence=[f"Test discipline: {discipline.label} ({discipline.score}/100)."],
         next_step="Run another test changing only one setup area.",
+    )
+
+
+def _build_verdict_reference(discipline: TestDisciplineResult) -> DidItWorkVerdict:
+    return DidItWorkVerdict(
+        verdict="inconclusive",
+        confidence_score=CONF_LOW,
+        headline="No setup control changed; this is a repeatability reference, not a setup test.",
+        evidence=[f"Test discipline: {discipline.label} ({discipline.score}/100)."],
+        next_step="Use these runs to measure normal variation, or change exactly one setup control for a causal test.",
+    )
+
+
+def _build_verdict_retest_context(
+    speed_delta: ComparedChannelDelta | None,
+    evidence: list[str],
+    next_step: str | None,
+) -> DidItWorkVerdict:
+    _changed, speed_gained, speed_lost = _speed_flags(speed_delta)
+    if speed_gained:
+        headline = "Speed improved, but uncontrolled context prevents attributing it to the setup."
+    elif speed_lost:
+        headline = "Speed dropped, but uncontrolled context prevents attributing it to the setup."
+    else:
+        headline = "Uncontrolled context prevents a causal setup verdict."
+    return DidItWorkVerdict(
+        verdict="retest",
+        confidence_score=CONF_LOW,
+        headline=headline,
+        evidence=[f"Observed target-zone speed delta: {_format_speed_delta(speed_delta)}.", *evidence],
+        next_step=next_step or (
+            "Keep this as an observed result, then repeat the same one-change test "
+            "under matched conditions before accepting a setup direction."
+        ),
+    )
+
+
+def _build_verdict_missing_supporting_evidence(
+    speed_delta: ComparedChannelDelta | None,
+    missing_evidence: list[str],
+) -> DidItWorkVerdict:
+    return DidItWorkVerdict(
+        verdict="retest",
+        confidence_score=CONF_LOW,
+        headline="A speed direction is visible, but supporting evidence is incomplete.",
+        evidence=[
+            f"Observed target-zone speed delta: {_format_speed_delta(speed_delta)}.",
+            f"Missing comparison evidence: {', '.join(missing_evidence)}.",
+        ],
+        next_step="Repeat with complete platform and driver-input telemetry before accepting a setup direction.",
     )
 
 
@@ -91,14 +157,18 @@ def _build_verdict_retest_tradeoff(
     speed_delta: ComparedChannelDelta | None,
     cfs_delta: ComparedChannelDelta | None,
 ) -> DidItWorkVerdict:
+    low_delta = _format_cfs_low_delta(cfs_delta)
+    evidence = [
+        f"Speed delta: {_format_speed_delta(speed_delta)}",
+        f"Average CFS delta: {_format_cfs_delta(cfs_delta)} (lower = riskier)",
+    ]
+    if low_delta is not None:
+        evidence.append(f"Localized CFS change: {low_delta}.")
     return DidItWorkVerdict(
         verdict="retest",
         confidence_score=CONF_LOW,
         headline="Speed improved but splitter risk worsened — confirm tradeoff.",
-        evidence=[
-            f"Speed delta: {_format_speed_delta(speed_delta)}",
-            f"CFS delta: {_format_cfs_delta(cfs_delta)} (lower = riskier)",
-        ],
+        evidence=evidence,
         next_step="Try a smaller change or target the platform area specifically.",
     )
 
@@ -132,6 +202,10 @@ def compute_verdict(
     is_same_run: bool = False,
     pace: PaceComparison | None = None,
     driver_changed: bool = False,
+    driver_evidence_available: bool = True,
+    context_blocks_attribution: bool = False,
+    context_evidence: list[str] | None = None,
+    context_retest_instruction: str | None = None,
 ) -> DidItWorkVerdict:
     speed_delta = _speed_delta_info(target_zone)
     if is_same_run:
@@ -146,12 +220,30 @@ def compute_verdict(
     cfs_delta = _cfs_delta_info(target_zone)
     _changed, speed_gained, speed_lost = _speed_flags(speed_delta)
     cfs_worse = _cfs_worsened(cfs_delta)
+    missing_supporting_evidence: list[str] = []
+    if cfs_delta is None or cfs_delta.delta is None:
+        missing_supporting_evidence.append("CFS ride-height delta")
+    if not driver_evidence_available:
+        missing_supporting_evidence.append("matched throttle, brake, and steering traces")
     discipline_ok = discipline.label in RELIABLE_DISCIPLINES
 
     if discipline.label == "invalid":
         result = _build_verdict_invalid()
+    elif context_blocks_attribution:
+        result = _build_verdict_retest_context(
+            speed_delta,
+            list(context_evidence or ["Required comparison context is uncontrolled or unavailable."]),
+            context_retest_instruction,
+        )
+    elif discipline.label == "reference":
+        result = _build_verdict_reference(discipline)
     elif not discipline_ok:
         result = _build_verdict_retest_discipline(discipline)
+    elif missing_supporting_evidence and (speed_gained or speed_lost):
+        result = _build_verdict_missing_supporting_evidence(
+            speed_delta,
+            missing_supporting_evidence,
+        )
     elif driver_changed:
         result = DidItWorkVerdict(
             verdict="retest",

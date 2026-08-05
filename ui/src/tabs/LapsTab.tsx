@@ -20,6 +20,8 @@ import {
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { compareStints, fetchLapWindows, fetchStints } from "../api/client";
 import { makeBasketItem } from "../components/CompareBasket";
+import { TimeDeltaComparison } from "../components/TimeDeltaComparison";
+import { EngineeringSystemsComparison } from "../components/EngineeringSystemsComparison";
 import { ValueDisplay } from "../components/ValueDisplay";
 import { useCompareBasket } from "../store/CompareBasketContext";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
@@ -460,8 +462,8 @@ function describeSelection(
         platform_risk_peak: null,
         rear_platform_risk_peak: null,
         whole_car_bottoming_peak: null,
-        tire_stress_score: 0,
-        shock_stress_score: 0,
+        tire_stress_score: null,
+        shock_stress_score: null,
         confidence_score: 0,
         warnings: [],
         recommendation: null,
@@ -927,8 +929,8 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     platform_risk_peak: null,
     rear_platform_risk_peak: null,
     whole_car_bottoming_peak: null,
-    tire_stress_score: 0,
-    shock_stress_score: 0,
+    tire_stress_score: null,
+    shock_stress_score: null,
     confidence_score: stint.evidence_confidence_score ?? 0,
     warnings: stint.warnings,
     recommendation: stint.stint_label,
@@ -1649,6 +1651,24 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     );
   }, [bestTime]);
 
+  const timeBaselineLap = basket.baseline?.lap_scope === "lap_window"
+    ? basket.baseline.representative_lap
+    : basket.baseline?.lap_number;
+  const timeTestLap = basket.test?.lap_scope === "lap_window"
+    ? basket.test.representative_lap
+    : basket.test?.lap_number;
+  const showPhysicalTimeComparison = Boolean(
+    basket.baseline
+    && basket.test
+    && !basket.baseline.stale
+    && !basket.test.stale
+    && timeBaselineLap != null
+    && timeTestLap != null
+    && (basket.baseline.run_id !== basket.test.run_id || timeBaselineLap !== timeTestLap)
+    && (!basket.baseline.car || !basket.test.car || basket.baseline.car === basket.test.car)
+    && (!basket.baseline.track || !basket.test.track || basket.baseline.track === basket.test.track)
+  );
+
   return (
     <div className="tab-grid">
       <section className="workspace-section">
@@ -1692,6 +1712,30 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
         </div>
       </section>
 
+      {showPhysicalTimeComparison && basket.baseline && basket.test && (
+        <section className="workspace-section" aria-label="Staged baseline and test time comparison">
+          <div className="section-heading-row">
+            <div>
+              <span className="eyebrow">Staged Test</span>
+              <h2><LineChart size={16} /> Where the Time Changed</h2>
+              <p className="section-note">{basket.baseline.label} vs {basket.test.label}</p>
+            </div>
+          </div>
+          <TimeDeltaComparison
+            baselineRunId={basket.baseline.run_id}
+            testRunId={basket.test.run_id}
+            baselineLap={timeBaselineLap ?? null}
+            testLap={timeTestLap ?? null}
+          />
+          <EngineeringSystemsComparison
+            baselineRunId={basket.baseline.run_id}
+            testRunId={basket.test.run_id}
+            baselineLap={timeBaselineLap ?? null}
+            testLap={timeTestLap ?? null}
+          />
+        </section>
+      )}
+
         <section className="workspace-section stint-intelligence-section">
           <div className="section-heading-row">
             <div>
@@ -1708,6 +1752,16 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
               {stintData.warnings.slice(0, 4).map((warning) => (
                 <span key={warning} className="lap-flag-badge" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>{warning}</span>
               ))}
+              {stintData.warnings.length > 4 && (
+                <details className="stint-warning-more">
+                  <summary className="lap-flag-badge">+{stintData.warnings.length - 4} more warnings</summary>
+                  <div className="laps-chip-row">
+                    {stintData.warnings.slice(4).map((warning) => (
+                      <span key={warning} className="lap-flag-badge" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>{warning}</span>
+                    ))}
+                  </div>
+                </details>
+              )}
             </div>
           )}
 

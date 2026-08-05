@@ -1,9 +1,9 @@
-import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
 import { Activity, AlertTriangle, BarChart3, LocateFixed, MapPin, RotateCcw, Wrench, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
+import { DamperSpectrumSummary } from "../components/DamperSpectrumSummary";
 import { ShockHistogram } from "../components/ShockHistogram";
 import type { ShockSetupField } from "../components/ShockHistogram";
 import { WorkbenchSubnav, visiblePlatformWorkbenchView } from "../components/WorkbenchSubnav";
@@ -14,6 +14,7 @@ import { fetchPlatformEvents, fetchShockReader, fetchTrace } from "../api/client
 import { TRACE_WORKBENCH_CHANNELS } from "../constants/workbenchChannels";
 import { isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
 import { getTraceValues, formatChannelValue, formatForceProxyN, safeStringValue } from "../utils/channelFormat";
+import { echarts, type EChartsType } from "../utils/echarts";
 import { buildPlatformChartAnnotations } from "../utils/platformChartAnnotations";
 import { filterPlatformEvents, isClearPlatformDiagnostic, isMutedPlatformEvent, platformEventScopeLabel, platformEventVisibilityModeLabel } from "../utils/platformEventVisibility";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
@@ -85,12 +86,12 @@ type ShockCornerDefinition = {
 type ShockPanelModel = ShockCornerDefinition & {
   samples: number[];
   setupFields: ShockSetupField[];
+  repeatabilitySummary?: string;
   unavailableReason?: string;
 };
 
 const SCRAPE_SCRUB_PRESET = "Ride Height vs Speed Loss";
 const MPH_TO_MPS = 0.44704;
-const SHOCK_BUCKET_THRESHOLD_IN_S = 1;
 const SHOCK_FIXED_AXIS_LIMIT_IN_S = 10;
 const SHOCK_CORNERS: ShockCornerDefinition[] = [
   { key: "lf", label: "LF", color: "#4ade80" },
@@ -101,6 +102,27 @@ const SHOCK_CORNERS: ShockCornerDefinition[] = [
 
 function numericTraceValues(trace: TraceResponse | null, channel: string): number[] {
   return getTraceValues(trace, channel).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+}
+
+function numericTraceValuesInZone(
+  trace: TraceResponse | null,
+  channel: string,
+  startPct?: number | null,
+  endPct?: number | null,
+): number[] {
+  if (!trace || startPct == null || endPct == null) return numericTraceValues(trace, channel);
+  const rawValues = getTraceValues(trace, channel);
+  const rawDistance = trace.x_by_name?.lap_dist_pct
+    ?? (typeof trace.x === "object" && !Array.isArray(trace.x) ? trace.x.lap_dist_pct : undefined);
+  if (!rawDistance || rawDistance.length !== rawValues.length) return [];
+  const finiteDistances = rawDistance.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const distanceScale = finiteDistances.length > 0 && Math.max(...finiteDistances) <= 1.5 ? 100 : 1;
+  return rawValues.flatMap((value, index) => {
+    const distance = rawDistance[index];
+    if (typeof value !== "number" || !Number.isFinite(value) || typeof distance !== "number" || !Number.isFinite(distance)) return [];
+    const pct = distance * distanceScale;
+    return pct >= startPct && pct <= endPct ? [value] : [];
+  });
 }
 
 function setupCornerNumber(setup: SetupSnapshot | null | undefined, corner: ShockCornerKey, key: string): number | null {
@@ -248,7 +270,7 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "lr_pressure", label: "LR", color: "#eab308" },
       { name: "rr_pressure", label: "RR", color: "#22d3ee" },
     ] },
-    { label: "Pressure Gain [kPa]", channels: [
+    { label: "Pressure Gain [psi]", channels: [
       { name: "lf_pressure_gain", label: "LF", color: "#4ade80" },
       { name: "rf_pressure_gain", label: "RF", color: "#ef4444" },
       { name: "lr_pressure_gain", label: "LR", color: "#eab308" },
@@ -909,7 +931,7 @@ function PlatformTraceWorkbench({
 }: PlatformTraceWorkbenchProps) {
   const { selection, setWorkspace, focusEvidence, setHover } = useTelemetrySelection();
   const chartNode = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<echarts.ECharts | null>(null);
+  const chartRef = useRef<EChartsType | null>(null);
   const cursorLineRef = useRef<HTMLDivElement | null>(null);
   const dragZoomBandRef = useRef<HTMLDivElement | null>(null);
   const clickedSampleIndexRef = useRef<number | null>(null);
@@ -1166,7 +1188,8 @@ function PlatformTraceWorkbench({
     fetchShockReader(overview.run_id, {
       lap: shockReaderLapWindow ? null : overviewTrace.lap ?? representativeLap,
       lapWindow: shockReaderLapWindow,
-      boundaryInS: SHOCK_BUCKET_THRESHOLD_IN_S,
+      zoneStartPct: selection.selectedZoneStartPct,
+      zoneEndPct: selection.selectedZoneEndPct,
       includeDebug: false,
     })
       .then((payload) => {
@@ -1180,7 +1203,15 @@ function PlatformTraceWorkbench({
     return () => {
       cancelled = true;
     };
-  }, [overview.run_id, overviewTrace.lap, representativeLap, shockReaderLapWindow, workbenchView]);
+  }, [
+    overview.run_id,
+    overviewTrace.lap,
+    representativeLap,
+    selection.selectedZoneEndPct,
+    selection.selectedZoneStartPct,
+    shockReaderLapWindow,
+    workbenchView,
+  ]);
 
   const buildTraceEvidence = useCallback((
     lapNumber: number | null,
@@ -2442,33 +2473,51 @@ function PlatformTraceWorkbench({
       : "Latest sample";
 
   const shockSetupSnapshot = overview.setup_snapshot ?? null;
-  const shockDistributionModeLabel = "Full Lap Distribution";
+  const shockDistributionModeLabel = shockReaderLapWindow
+    ? `Representative Lap Display · Decision uses laps ${shockReaderLapWindow}`
+    : shockReader?.zone_start_pct != null && shockReader.zone_end_pct != null
+      ? `Selected Zone ${shockReader.zone_start_pct.toFixed(1)}-${shockReader.zone_end_pct.toFixed(1)}%`
+    : shockReader?.lap_window
+      ? `Lap Scope ${shockReader.lap_window}`
+      : "Selected Lap Distribution";
 
   const shockCornerModels = useMemo<ShockPanelModel[]>(() => (
     SHOCK_CORNERS.map((corner) => {
-      const samples = numericTraceValues(trace, `${corner.key}_shock_vel_in_s`);
+      const samples = numericTraceValuesInZone(
+        trace,
+        `${corner.key}_shock_vel_in_s`,
+        shockReader?.zone_start_pct,
+        shockReader?.zone_end_pct,
+      );
       const readerCorner = shockReader?.corners.find((item) => item.corner === corner.label);
-      const recommendationFor = (displayLabel: ShockSetupField["label"]) => (
-        readerCorner?.setting_recommendations.find((recommendation) => recommendation.display_label === displayLabel) ?? null
+      const recommendationFor = (displayLabel: string) => (
+        shockReaderLapWindow
+          ? null
+          : readerCorner?.setting_recommendations.find((recommendation) => recommendation.display_label === displayLabel) ?? null
       );
       const setupFields: ShockSetupField[] = [
         { label: "LS Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "ls_compression")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "ls_compression") == null, recommendation: recommendationFor("LS Comp") },
         { label: "HS Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_compression")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_compression") == null, recommendation: recommendationFor("HS Comp") },
-        { label: "HS-S Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_comp_slope")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_comp_slope") == null, recommendation: recommendationFor("HS-S Comp") },
+        { label: "Comp Slope", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_comp_slope")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_comp_slope") == null, recommendation: recommendationFor("HS-S Comp") },
         { label: "LS Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "ls_rebound")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "ls_rebound") == null, recommendation: recommendationFor("LS Reb") },
         { label: "HS Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_rebound")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_rebound") == null, recommendation: recommendationFor("HS Reb") },
-        { label: "HS-S Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_reb_slope")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_reb_slope") == null, recommendation: recommendationFor("HS-S Reb") },
+        { label: "Rebound Slope", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_reb_slope")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_reb_slope") == null, recommendation: recommendationFor("HS-S Reb") },
       ];
       return {
         ...corner,
         samples,
         setupFields,
+        repeatabilitySummary: readerCorner
+          ? `${readerCorner.repeatability_lap_count} repeat lap${readerCorner.repeatability_lap_count === 1 ? "" : "s"} · compression ${readerCorner.high_speed_compression_repeatable ? "repeatable" : "not repeatable"} / boundary ${readerCorner.compression_boundary_stable ? "stable" : "unstable"} · rebound ${readerCorner.high_speed_rebound_repeatable ? "repeatable" : "not repeatable"} / boundary ${readerCorner.rebound_boundary_stable ? "stable" : "unstable"}`
+          : undefined,
         unavailableReason: samples.length === 0
-          ? "Shock movement telemetry unavailable for this run."
+          ? shockReader?.zone_start_pct != null
+            ? "Selected-zone histogram is unavailable because aligned lap-position samples are missing from this display trace. Full-lap samples were not substituted."
+            : "Shock movement telemetry unavailable for this run."
           : undefined,
       };
     })
-  ), [shockReader, shockSetupSnapshot, trace]);
+  ), [shockReader, shockReaderLapWindow, shockSetupSnapshot, trace]);
 
   const hasAnyShockTelemetry = shockCornerModels.some((corner) => corner.samples.length > 0);
   const sharedShockAxisLimit = SHOCK_FIXED_AXIS_LIMIT_IN_S;
@@ -2614,6 +2663,26 @@ function PlatformTraceWorkbench({
         </div>
       </header>
 
+      {shockReader && (
+        <div className="shock-workstation-toolbar" aria-label="Shock evidence status">
+          <p className="shock-range-note">
+            Evidence: {shockReader.evidence_state.replace(/_/g, " ")}
+            {shockReader.blocker_reasons.length > 0 ? ` — ${shockReader.blocker_reasons.join(" ")}` : ""}
+          </p>
+        </div>
+      )}
+
+      {shockReader?.recommendations[0] && shockReader.recommendations[0].semantic_direction !== "leave_alone" && (
+        <section className="evidence-card" aria-label="Primary shock test">
+          <span className="eyebrow">Primary shock test · one change only</span>
+          <h3>{shockReader.recommendations[0].display_setting} · {shockReader.recommendations[0].corner_scope}</h3>
+          <p>{shockReader.recommendations[0].next_test}</p>
+          {selection.selectedMode === "learning" && (
+            <p className="section-note">{shockReader.recommendations[0].evidence_summary}</p>
+          )}
+        </section>
+      )}
+
       {!hasAnyShockTelemetry && (
         <div className="shock-workstation-warning" role="status">
           <AlertTriangle size={14} />
@@ -2625,7 +2694,11 @@ function PlatformTraceWorkbench({
 
       <div className="shock-workstation-toolbar" aria-label="Shock histogram range summary">
         <p className="shock-range-note">
-          Histograms use a fixed -{sharedShockAxisLimit.toFixed(1)} to +{sharedShockAxisLimit.toFixed(1)} in/s range, 0.50 in/s bins, labels every 1.0 in/s, and ±{SHOCK_BUCKET_THRESHOLD_IN_S.toFixed(1)} in/s hi/lo boundaries.
+          Histograms use a fixed -{sharedShockAxisLimit.toFixed(1)} to +{sharedShockAxisLimit.toFixed(1)} in/s display range. {shockReader
+            ? `${shockReader.boundary_basis} ${shockReader.slope_actions_available
+              ? "Slope actions are available only where repeatability and boundary-stability gates pass."
+              : "Slope actions are withheld because the server has not verified a car-specific curve transition."}`
+            : "The server-defined high/low boundary and action eligibility are loading."}
         </p>
       </div>
 
@@ -2637,13 +2710,16 @@ function PlatformTraceWorkbench({
             color={corner.color}
             samples={corner.samples}
             axisLimit={sharedShockAxisLimit}
-            bucketThreshold={SHOCK_BUCKET_THRESHOLD_IN_S}
+            bucketThreshold={shockReader?.boundary_in_s ?? 1}
             setupFields={corner.setupFields}
+            repeatabilitySummary={corner.repeatabilitySummary}
+            learningMode={selection.selectedMode === "learning"}
             setupSide={corner.key === "lf" || corner.key === "lr" ? "left" : "right"}
             unavailableReason={corner.unavailableReason}
           />
         ))}
       </div>
+      <DamperSpectrumSummary runId={overview.run_id} lap={representativeLap} />
     </div>
   );
 
@@ -2679,7 +2755,7 @@ function PlatformTraceWorkbench({
   };
 
   return (
-    <section className="platform-workbench">
+    <section className="platform-workbench" data-analysis-surface="platform_channel_overlay">
       <header className="platform-header">
         <div>
           <span className="eyebrow">Platform / Aero Workbench</span>

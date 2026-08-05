@@ -2,16 +2,20 @@ import type {
   ImportIbtResponse,
   ChannelCatalogItem,
   ChannelSummaryItem,
+  DialInDecisionContext,
   DialInRequest,
   DialInResponse,
+  ControlledWorkflow,
   LapSummary,
   PlatformEventItem,
   RunListItem,
   RunOverview,
   SetupSnapshot,
+  TelemetryCapabilitiesResponse,
   TelemetryEvent,
   TraceResponse,
 } from "../types/telemetry";
+import type { DamperResponseReport } from "../types/damperResponse";
 
 const API_BASE =
   import.meta.env.VITE_RACELAB_API_BASE_URL ??
@@ -298,12 +302,57 @@ export function analyzeRunDialIn(runId: string, payload: DialInRequest): Promise
   });
 }
 
+export function startControlledWorkflow(payload: {
+  run_id: string;
+  complaint: string;
+  selected_lap?: number | null;
+} & DialInDecisionContext): Promise<ControlledWorkflow> {
+  return requestJson<ControlledWorkflow>("/api/engineering/workflows", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function attachControlledWorkflowStage(
+  workflowId: string,
+  stage: "A" | "B" | "A2",
+  runId: string,
+): Promise<ControlledWorkflow> {
+  return requestJson<ControlledWorkflow>(
+    `/api/engineering/workflows/${encodeURIComponent(workflowId)}/stages/${stage}`,
+    { method: "POST", body: JSON.stringify({ run_id: runId }) },
+  );
+}
+
+export function scoreControlledWorkflow(workflowId: string): Promise<ControlledWorkflow> {
+  return requestJson<ControlledWorkflow>("/api/engineering/test-director/score", {
+    method: "POST",
+    body: JSON.stringify({ workflow_id: workflowId }),
+  });
+}
+
+export function fetchControlledWorkflows(activeOnly = false): Promise<ControlledWorkflow[]> {
+  return requestJson<ControlledWorkflow[]>(`/api/engineering/workflows?active_only=${activeOnly ? "true" : "false"}`);
+}
+
+export function fetchControlledWorkflowReport(workflowId: string): Promise<{ workflow_id: string; markdown: string }> {
+  return requestJson<{ workflow_id: string; markdown: string }>(
+    `/api/engineering/workflows/${encodeURIComponent(workflowId)}/report`,
+  );
+}
+
 export function fetchChannels(runId: string): Promise<ChannelCatalogItem[]> {
   return requestJson<ChannelCatalogItem[]>(`/api/runs/${encodeURIComponent(runId)}/channels`);
 }
 
 export function fetchChannelSummary(runId: string): Promise<ChannelSummaryItem[]> {
   return requestJson<ChannelSummaryItem[]>(`/api/runs/${encodeURIComponent(runId)}/channels/summary`);
+}
+
+export function fetchTelemetryCapabilities(runId: string): Promise<TelemetryCapabilitiesResponse> {
+  return requestJson<TelemetryCapabilitiesResponse>(
+    `/api/runs/${encodeURIComponent(runId)}/telemetry-capabilities`,
+  );
 }
 
 export function fetchChannelsFull(runId: string): Promise<ChannelCatalogItem[]> {
@@ -356,7 +405,14 @@ export function fetchPlatformEvents(
   return requestJson<PlatformEventItem[]>(`/api/runs/${encodeURIComponent(runId)}/platform-events${suffix}`);
 }
 
-import type { ComparisonInsightsResponse, DeltaTraceRequest, DeltaTraceResponse } from "../types/compare";
+import type {
+  ComparisonInsightsResponse,
+  DeltaTraceRequest,
+  DeltaTraceResponse,
+  EngineeringSystemsResponse,
+  TimeAnalysisRequest,
+  TimeAnalysisResponse,
+} from "../types/compare";
 import type { ShockReaderResponse } from "../types/shockReader";
 
 export function fetchCompareDeltaTraces(request: DeltaTraceRequest): Promise<DeltaTraceResponse> {
@@ -416,6 +472,20 @@ export function importMt2FileFromPath(filePath: string): Promise<TrackMapIndexEn
   }).then((payload) => {
     invalidateApiCache("/api/track-maps");
     return payload;
+  });
+}
+
+export function fetchCompareTimeAnalysis(request: TimeAnalysisRequest): Promise<TimeAnalysisResponse> {
+  return requestJson<TimeAnalysisResponse>("/api/compare/time-analysis", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export function fetchEngineeringSystems(request: TimeAnalysisRequest): Promise<EngineeringSystemsResponse> {
+  return requestJson<EngineeringSystemsResponse>("/api/compare/engineering-systems", {
+    method: "POST",
+    body: JSON.stringify(request),
   });
 }
 
@@ -506,16 +576,31 @@ export function compareStints(request: StintCompareRequest): Promise<StintCompar
 
 export function fetchShockReader(
   runId: string,
-  options?: { lap?: number | null; lapWindow?: string | null; phase?: string | null; boundaryInS?: number; includeDebug?: boolean },
+  options?: {
+    lap?: number | null;
+    lapWindow?: string | null;
+    phase?: string | null;
+    zoneStartPct?: number | null;
+    zoneEndPct?: number | null;
+    includeDebug?: boolean;
+  },
 ): Promise<ShockReaderResponse> {
   const params = new URLSearchParams();
   if (options?.lap != null) params.set("lap", String(options.lap));
   if (options?.lapWindow) params.set("lap_window", options.lapWindow);
   if (options?.phase) params.set("phase", options.phase);
-  if (options?.boundaryInS != null) params.set("boundary_in_s", String(options.boundaryInS));
+  if (options?.zoneStartPct != null) params.set("zone_start_pct", String(options.zoneStartPct));
+  if (options?.zoneEndPct != null) params.set("zone_end_pct", String(options.zoneEndPct));
   if (options?.includeDebug != null) params.set("include_debug", String(options.includeDebug));
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return requestJson<ShockReaderResponse>(`/api/runs/${encodeURIComponent(runId)}/shock-reader${suffix}`);
+}
+
+export function fetchDamperResponse(runId: string, lap: number): Promise<DamperResponseReport> {
+  const params = new URLSearchParams({ lap: String(lap) });
+  return requestJson<DamperResponseReport>(
+    `/api/runs/${encodeURIComponent(runId)}/damper-response?${params.toString()}`,
+  );
 }
 
 export interface TelemetryFileEntry {

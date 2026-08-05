@@ -12,12 +12,35 @@ from racelab_engine.analysis.setup_controls import (
 )
 
 
+RELATED_SETUP_KEY_ALIASES: dict[str, tuple[str, ...]] = {
+    "front_ride_height": ("lf_ride_height_mm", "rf_ride_height_mm"),
+    "rear_ride_height": ("lr_ride_height_mm", "rr_ride_height_mm"),
+    "ride_height": ("lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm"),
+    "front_springs": ("lf_front_spring_n_per_mm", "rf_front_spring_n_per_mm"),
+    "rear_springs": ("lr_rear_spring_n_per_mm", "rr_rear_spring_n_per_mm"),
+    "steering_offset": ("steering_offset_deg",),
+    "cross_weight": ("cross_weight_percent",),
+    "front_brake_bias": ("front_brake_bias_percent",),
+    "final_drive": ("rear_end_ratio",),
+}
+
+
+def expanded_related_setup_keys(keys: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    expanded: list[str] = []
+    for key in keys:
+        if key in SETUP_CONTROL_SPECS:
+            expanded.append(key)
+        expanded.extend(RELATED_SETUP_KEY_ALIASES.get(key, ()))
+    return tuple(dict.fromkeys(expanded))
+
+
 @dataclass(frozen=True)
 class GarageAction:
     title: str
     change_this: str
     garage_lever: str
     control_keys: list[str]
+    direction_sign: int
     change_size_label: str
     change_size_explanation: str
     influence_label: str
@@ -64,6 +87,11 @@ _PLANS: dict[str, _ActionPlan] = {
         "Raise All Four Ride Heights",
     ),
 }
+
+
+def control_keys_for_effect(effect_id: str) -> tuple[str, ...]:
+    plan = _PLANS.get(effect_id)
+    return plan.control_keys if plan is not None else ()
 
 
 def _current_summary(keys: tuple[str, ...], setup_values: dict[str, Any]) -> str | None:
@@ -175,6 +203,7 @@ def garage_action_for_effect(item: Any, setup_values: dict[str, Any] | None = No
         change_this=change_this,
         garage_lever=lever,
         control_keys=list(plan.control_keys),
+        direction_sign=plan.direction_sign,
         change_size_label=recommended_test_size_label(plan.control_keys[0]),
         change_size_explanation=_unique_join([SETUP_CONTROL_SPECS[key].magnitude_policy for key in plan.control_keys]),
         influence_label=influence,

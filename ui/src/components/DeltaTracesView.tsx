@@ -1,9 +1,10 @@
-import * as echarts from "echarts";
 import type { EChartsOption, SeriesOption } from "echarts";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCompareDeltaTraces } from "../api/client";
 import type { CompareResponse, DeltaTraceResponse } from "../types/compare";
+import { TimeDeltaComparison } from "./TimeDeltaComparison";
+import { echarts, type EChartsType } from "../utils/echarts";
 
 type DeltaTracesViewProps = {
   baselineRunId: string;
@@ -62,7 +63,7 @@ const DELTA_ROW_COLORS: Record<string, string> = {
 
 export function DeltaTracesView({ baselineRunId, testRunId, startPct, endPct, result }: DeltaTracesViewProps) {
   const chartNode = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<echarts.ECharts | null>(null);
+  const chartRef = useRef<EChartsType | null>(null);
   const [preset, setPreset] = useState("Speed / Platform Delta");
   const [deltaData, setDeltaData] = useState<DeltaTraceResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -266,6 +267,12 @@ export function DeltaTracesView({ baselineRunId, testRunId, startPct, endPct, re
 
   return (
     <div className="compare-subview">
+      <TimeDeltaComparison
+        baselineRunId={baselineRunId}
+        testRunId={testRunId}
+        baselineLap={result.baseline_lap}
+        testLap={result.test_lap}
+      />
       <div className="delta-traces-controls">
         <select value={preset} onChange={(e) => setPreset(e.target.value)} aria-label="Delta trace preset">
           <option>Speed / Platform Delta</option>

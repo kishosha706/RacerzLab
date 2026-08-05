@@ -22,7 +22,9 @@ export interface CornerMetric {
   shock_defl_in: ChannelDeltaStats | null;
   shock_vel_in_s: ChannelDeltaStats | null;
   shock_velocity_rms: ChannelDeltaStats | null;
+  shock_activity_index: ChannelDeltaStats | null;
   tire_pressure: ChannelDeltaStats | null;
+  tire_pressure_gain: ChannelDeltaStats | null;
   tire_temp_inner: ChannelDeltaStats | null;
   tire_temp_middle: ChannelDeltaStats | null;
   tire_temp_outer: ChannelDeltaStats | null;
@@ -136,6 +138,9 @@ export interface DidItWorkVerdict {
   cause_bucket?: string | null;
   required_next_data?: string[];
   do_not_change_warnings?: string[];
+  evidence_state: import("./telemetry").EvidenceState;
+  source_channels: string[];
+  blocker_reasons: string[];
 }
 
 /** Extended verdict kind used by DidItWorkCard UI (includes frontend-only states). */
@@ -214,6 +219,13 @@ export interface CompareResponse {
   context_changes: ContextChange[];
   test_discipline: TestDisciplineResult | null;
   verdict: DidItWorkVerdict | null;
+  sim_integrity?: {
+    baseline: Record<string, unknown>;
+    test: Record<string, unknown>;
+    comparison_clear: boolean | null;
+    confidence_cap: number;
+    warnings: string[];
+  } | null;
   warnings: string[];
   confidence_score: number;
 }
@@ -266,6 +278,211 @@ export interface DeltaTraceResponse {
   channels: Record<string, DeltaTraceChannel>;
   warnings: string[];
   missing_channels: string[];
+}
+
+// -- Phase-aware physical-position time analysis -------------
+
+export interface TimeAnalysisRequest {
+  baseline_run_id: string;
+  test_run_id: string;
+  baseline_lap?: number | null;
+  test_lap?: number | null;
+  start_pct?: number;
+  end_pct?: number;
+  step_pct?: number;
+}
+
+export interface EngineeringPhaseInterval {
+  phase: string;
+  start_pct: number;
+  end_pct: number;
+  confidence: number;
+  source_channels: string[];
+}
+
+export interface LocalAlignmentPoint {
+  lap_pct: number;
+  aligned_test_pct: number | null;
+  confidence: number;
+  uncertainty_pct: number | null;
+  methods: string[];
+  is_gap: boolean;
+  gap_reason: string | null;
+}
+
+export interface PhaseTimeEffect {
+  phase: string;
+  start_pct: number;
+  end_pct: number;
+  delta_s: number | null;
+  cumulative_delta_s: number | null;
+  alignment_confidence: number;
+  evidence_state: "calculated" | "unavailable";
+  source_channels: string[];
+  calculation_basis: "reciprocal_speed_integration" | "aligned_timing_boundaries" | "mixed" | "unavailable";
+  interpretation: string;
+}
+
+export interface LapLevelNoiseEstimate {
+  experiment_unit: "eligible_lap";
+  baseline_laps: number;
+  test_laps: number;
+  paired_lap_differences: number;
+  median_effect_s: number | null;
+  trimmed_mean_effect_s: number | null;
+  bootstrap_low_s: number | null;
+  bootstrap_high_s: number | null;
+  contradiction_score: number | null;
+  aba_consistency: "not_available_without_restored_baseline" | string;
+  is_repeatable: boolean | null;
+  context_complete: boolean;
+  context_blockers: string[];
+  context_key: Record<string, unknown>;
+  phase_estimates: Record<string, {
+    experiment_unit: "eligible_lap";
+    baseline_laps: number;
+    test_laps: number;
+    paired_lap_differences: number;
+    median_effect_s: number | null;
+    empirical_noise_band_s: number;
+    bootstrap_low_s: number | null;
+    bootstrap_high_s: number | null;
+    is_repeatable: boolean | null;
+  }>;
+  warnings: string[];
+}
+
+/**
+ * All position-indexed arrays share grid_pct. Nulls are intentional rendering
+ * gaps: charts must not connect or extrapolate across them. A cursor uses the
+ * same index to synchronize time, phase, and local alignment uncertainty.
+ */
+export interface TimeAnalysisResponse {
+  baseline_run_id: string;
+  test_run_id: string;
+  baseline_lap: number;
+  test_lap: number;
+  grid_pct: number[];
+  phase_by_position: (string | null)[];
+  phases: EngineeringPhaseInterval[];
+  alignment: LocalAlignmentPoint[];
+  cumulative_delta_s: (number | null)[];
+  incremental_delta_s: (number | null)[];
+  incremental_basis: ("reciprocal_speed_integration" | "aligned_timing_boundaries" | null)[];
+  baseline_elapsed_s: (number | null)[];
+  test_elapsed_s: (number | null)[];
+  phase_effects: PhaseTimeEffect[];
+  phase_attribution: {
+    entry_delta_s: number | null;
+    center_delta_s: number | null;
+    exit_delta_s: number | null;
+    following_straight_carry_delta_s: number | null;
+  };
+  gain_origin_pct: number | null;
+  gain_origin_phase: string | null;
+  surrender_pct: number | null;
+  gain_persistence_pct: number | null;
+  selected_effect_s: number | null;
+  time_delta_complete: boolean;
+  theoretical_opportunity_s: number | null;
+  repeatable_opportunity_s: number | null;
+  noise: LapLevelNoiseEstimate;
+  coverage_fraction: number;
+  local_alignment_confidence: number;
+  distance_basis: "reciprocal_speed_integration" | "aligned_timing_boundaries" | "mixed" | "unavailable";
+  warnings: string[];
+  source_channels: string[];
+}
+
+// -- Contract-gated driver, rotation, and platform systems --
+
+export interface EngineeringGate {
+  contract_key: string;
+  eligible: boolean;
+  confidence_cap: number;
+  blocker_reasons: string[];
+  needed_measurements: string[];
+}
+
+export interface EngineeringConclusion {
+  key: string;
+  summary: string;
+  evidence_state: import("./telemetry").EvidenceState;
+  confidence_score: number;
+  source_channels: string[];
+  supporting_evidence: string[];
+  contradicting_evidence: string[];
+  blocker_reasons: string[];
+  recommendation: string | null;
+}
+
+export interface EngineeringPhaseMetric {
+  phase: string;
+  coverage_fraction: number;
+  sample_bins: number;
+  metrics: Record<string, number | null>;
+}
+
+export interface DriverLineEngineeringReport {
+  gate: EngineeringGate;
+  phase_metrics: EngineeringPhaseMetric[];
+  line_deviation_median_m: number | null;
+  line_deviation_p95_m: number | null;
+  throttle_mae_pct: number | null;
+  brake_mae_pct: number | null;
+  steering_mae_deg: number | null;
+  driver_execution_changed: boolean | null;
+  setup_attribution_allowed: boolean;
+  conclusions: EngineeringConclusion[];
+}
+
+export interface CornerRotationEngineeringReport {
+  gate: EngineeringGate;
+  phase_metrics: EngineeringPhaseMetric[];
+  conclusions: EngineeringConclusion[];
+}
+
+export interface PlatformSpeedBand {
+  label: string;
+  min_speed_mph: number;
+  max_speed_mph: number | null;
+  sample_bins: number;
+  metrics: Record<string, number | null>;
+}
+
+export interface AeroPlatformEngineeringReport {
+  gate: EngineeringGate;
+  setup_attribution_allowed: boolean;
+  baseline_speed_bands: PlatformSpeedBand[];
+  test_speed_bands: PlatformSpeedBand[];
+  comparison_metrics: {
+    baseline?: Record<string, number | null>;
+    test?: Record<string, number | null>;
+    delta?: Record<string, number | string | boolean | null>;
+  };
+  lap_consistency: Record<string, Record<string, number | string | null>>;
+  conclusions: EngineeringConclusion[];
+}
+
+export interface EngineeringSystemsResponse {
+  baseline_run_id: string;
+  test_run_id: string;
+  baseline_lap: number;
+  test_lap: number;
+  alignment_coverage_fraction: number;
+  local_alignment_confidence: number;
+  baseline_curvature_basis: string;
+  test_curvature_basis: string;
+  baseline_gps_geometry_healthy: boolean;
+  test_gps_geometry_healthy: boolean;
+  baseline_sim_integrity_status: string;
+  test_sim_integrity_status: string;
+  sim_integrity_clear: boolean | null;
+  sim_integrity_confidence_cap: number;
+  driver_line: DriverLineEngineeringReport;
+  corner_rotation: CornerRotationEngineeringReport;
+  aero_platform: AeroPlatformEngineeringReport;
+  warnings: string[];
 }
 
 // -- Comparison Insights types ------------------------------

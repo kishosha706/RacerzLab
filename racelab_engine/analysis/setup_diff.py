@@ -21,6 +21,24 @@ SETUP_VALUE_ALIASES: dict[str, tuple[str, ...]] = {
     "tape_percent": ("TapeConfiguration", "Tape"),
 }
 
+SETUP_RAW_PATHS: dict[str, frozenset[str]] = {
+    "lf_ride_height_mm": frozenset({"LeftFront.RideHeight"}),
+    "rf_ride_height_mm": frozenset({"RightFront.RideHeight"}),
+    "lr_ride_height_mm": frozenset({"LeftRear.RideHeight"}),
+    "rr_ride_height_mm": frozenset({"RightRear.RideHeight"}),
+    "lf_front_spring_n_per_mm": frozenset({"LeftFront.SpringRate"}),
+    "rf_front_spring_n_per_mm": frozenset({"RightFront.SpringRate"}),
+    "lr_rear_spring_n_per_mm": frozenset({"LeftRear.SpringRate"}),
+    "rr_rear_spring_n_per_mm": frozenset({"RightRear.SpringRate"}),
+    "nose_weight_percent": frozenset({"Front.NoseWeight"}),
+    "cross_weight_percent": frozenset({"Front.CrossWeight"}),
+    "tape_percent": frozenset({"Front.TapeConfiguration", "Front.Tape"}),
+    "rear_end_ratio": frozenset({"Rear.FinalDriveRatio", "Rear.RearEndRatio"}),
+    "front_brake_bias_percent": frozenset({"Front.FrontBrakeBias"}),
+    "steering_ratio": frozenset({"Front.SteeringPinion", "Front.SteeringRatio"}),
+    "steering_offset_deg": frozenset({"Front.SteeringOffset"}),
+}
+
 
 def setup_control_value(setup: Any, key: str) -> Any:
     if setup is None:
@@ -52,15 +70,92 @@ def setup_control_coverage(setup: Any) -> tuple[int, int, list[str]]:
 def setup_controls_comparable(baseline_setup: Any, test_setup: Any) -> bool:
     if baseline_setup is None or test_setup is None:
         return False
+    def _has_complete_source(snapshot: Any) -> bool:
+        setup_json = getattr(snapshot, "setup_json", None)
+        if setup_json is None and isinstance(snapshot, dict):
+            setup_json = snapshot.get("setup_json")
+        if not isinstance(setup_json, dict):
+            return False
+        # A truthy fragment is not a complete setup. Require enough declared
+        # leaves to plausibly represent the garage snapshot before treating
+        # controls absent on both sides as explicitly unexposed.
+        return len(_flatten_values(setup_json)) >= len(SETUP_GROUPS)
+
+    baseline_has_source = _has_complete_source(baseline_setup)
+    test_has_source = _has_complete_source(test_setup)
     matched_controls = 0
+    accounted_controls = 0
     for key in SETUP_GROUPS:
         baseline_value = setup_control_value(baseline_setup, key)
         test_value = setup_control_value(test_setup, key)
         if (baseline_value is None) != (test_value is None):
             return False
+        if baseline_value is None:
+            if not (baseline_has_source and test_has_source):
+                return False
+            accounted_controls += 1
+            continue
         if baseline_value is not None:
             matched_controls += 1
-    return matched_controls > 0
+            accounted_controls += 1
+    return accounted_controls == len(SETUP_GROUPS) and matched_controls > 0
+
+
+def _raw_setup(snapshot: Any) -> dict[str, Any] | None:
+    setup_json = getattr(snapshot, "setup_json", None)
+    if setup_json is None and isinstance(snapshot, dict):
+        setup_json = snapshot.get("setup_json")
+    if not isinstance(setup_json, dict):
+        return None
+    return setup_json
+
+
+def _flatten_values(value: Any, prefix: str = "") -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {prefix: value}
+    flattened: dict[str, Any] = {}
+    for key, child in value.items():
+        path = f"{prefix}.{key}" if prefix else str(key)
+        flattened.update(_flatten_values(child, path))
+    return flattened
+
+
+def unmapped_setup_change_paths(
+    baseline_setup: Any,
+    test_setup: Any,
+    mapped_changes: list[SetupChange],
+) -> list[str]:
+    """Flag any raw garage difference not accounted for by mapped app controls."""
+
+    baseline_raw = _raw_setup(baseline_setup)
+    test_raw = _raw_setup(test_setup)
+    if baseline_raw is None and test_raw is None:
+        return []
+    if baseline_raw is None or test_raw is None:
+        return ["raw setup snapshot unavailable on one run"]
+
+    def _flatten_setup(value: dict[str, Any]) -> dict[str, Any]:
+        flattened: dict[str, Any] = {}
+        for section, child in value.items():
+            # Preserve legacy Chassis-relative paths while keeping every other
+            # setup section namespaced (for example Tires.LeftFront...).
+            prefix = "" if str(section).casefold() == "chassis" else str(section)
+            flattened.update(_flatten_values(child, prefix))
+        return flattened
+
+    baseline_values = _flatten_setup(baseline_raw)
+    test_values = _flatten_setup(test_raw)
+    changed_paths = sorted(
+        path
+        for path in set(baseline_values) | set(test_values)
+        if baseline_values.get(path) != test_values.get(path)
+    )
+    allowed_paths = {
+        path.casefold()
+        for change in mapped_changes
+        for path in SETUP_RAW_PATHS.get(change.setup_key, frozenset())
+    }
+    return [path for path in changed_paths if path.casefold() not in allowed_paths]
 
 
 def diff_setups(baseline_setup: Any, test_setup: Any) -> list[SetupChange]:

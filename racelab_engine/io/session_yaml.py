@@ -78,8 +78,27 @@ def _setup_chassis_section(car_setup: dict[str, Any], section: str) -> dict[str,
     chassis = car_setup.get("Chassis", {})
     if not isinstance(chassis, dict):
         return {}
-    value = chassis.get(section, {})
+    value = chassis.get(section)
+    if value is None:
+        normalized_section = section.casefold()
+        value = next(
+            (
+                candidate
+                for key, candidate in chassis.items()
+                if str(key).casefold() == normalized_section
+            ),
+            {},
+        )
     return value if isinstance(value, dict) else {}
+
+
+def _arb_position(value: Any) -> str | None:
+    """Normalize discrete ARB arm positions without pretending they are lengths."""
+
+    if value in (None, ""):
+        return None
+    match = re.search(r"\bP([1-5])\b", str(value), flags=re.IGNORECASE)
+    return f"P{match.group(1)}" if match else None
 
 
 def _setup_value(car_setup: dict[str, Any], section: str, key: str) -> Any:
@@ -117,7 +136,23 @@ def _gather_session_data(data: dict[str, Any]) -> dict[str, Any]:
     driver_entry = _find_driver_entry(driver)
     session_info = _nested(data, "SessionInfo")
     sessions = session_info.get("Sessions", []) if isinstance(session_info, dict) else []
-    current_session = sessions[0] if isinstance(sessions, list) and sessions and isinstance(sessions[0], dict) else {}
+    current_session_number = session_info.get("CurrentSessionNum")
+    current_session = (
+        next(
+            (
+                session for session in sessions
+                if isinstance(session, dict)
+                and session.get("SessionNum") == current_session_number
+            ),
+            None,
+        )
+        if isinstance(sessions, list) else None
+    )
+    if not isinstance(current_session, dict):
+        current_session = (
+            next((session for session in sessions if isinstance(session, dict)), {})
+            if isinstance(sessions, list) else {}
+        )
     weather = _nested(data, "WeatherInfo")
     car_name = _first(driver, "DriverCarName", "CarScreenName", "CarName") or _first(driver_entry, "CarScreenName", "CarName")
     car_path = _first(driver, "DriverCarPath", "CarPath") or _first(driver_entry, "CarPath")
@@ -189,7 +224,8 @@ def _setup_extracted_values(car_setup: dict[str, Any], source: dict[str, Any], y
 
     def _cold(corner: dict[str, Any], tires_corner: dict[str, Any]) -> float | None:
         val = _float_from_text(corner.get("ColdPressure"))
-        if val is not None: return val
+        if val is not None:
+            return val
         return _float_from_text(
             next((tires_corner.get(k) for k in _CP_ALIASES if tires_corner.get(k) is not None), None)
         )
@@ -213,9 +249,13 @@ def _setup_extracted_values(car_setup: dict[str, Any], source: dict[str, Any], y
         }
 
     # ARB section
-    front_arb = _setup_chassis_section(car_setup, "FrontARB")
+    front_arb = _setup_chassis_section(car_setup, "FrontArb")
     rear_arb = _setup_chassis_section(car_setup, "RearARB")
     diff = _setup_chassis_section(car_setup, "Differential")
+    if not rear_arb:
+        rear_arb = rear
+    if not diff:
+        diff = rear
 
     return {
         "raw_source": "CarSetup" if car_setup else "session_yaml",
@@ -257,15 +297,31 @@ def _setup_extracted_values(car_setup: dict[str, Any], source: dict[str, Any], y
         "rr_rear_spring_n_per_mm": _float_from_text(right_rear.get("SpringRate") or _find_value_by_label(source, ("rr", "spring"))),
         # ARB
         "front_arb_diameter_mm": _float_from_text(front_arb.get("Diameter") or _find_value_by_label(source, ("front", "arb", "diameter"))),
-        "front_arb_arm_mm": _float_from_text(front_arb.get("Arm") or _find_value_by_label(source, ("front", "arb", "arm"))),
+        "front_arb_arm_position": _arb_position(
+            front_arb.get("ArbArm")
+            or front_arb.get("Arm")
+            or _find_value_by_label(source, ("front", "arb", "arm"))
+        ),
         "front_arb_preload_nm": _float_from_text(front_arb.get("Preload") or _find_value_by_label(source, ("front", "arb", "preload"))),
         "front_arb_attach": _float_from_text(front_arb.get("Attach") or _find_value_by_label(source, ("front", "arb", "attach"))),
         "rear_arb_diameter_mm": _float_from_text(rear_arb.get("Diameter") or _find_value_by_label(source, ("rear", "arb", "diameter"))),
-        "rear_arb_arm_mm": _float_from_text(rear_arb.get("Arm") or _find_value_by_label(source, ("rear", "arb", "arm"))),
-        "rear_arb_preload_nm": _float_from_text(rear_arb.get("Preload") or _find_value_by_label(source, ("rear", "arb", "preload"))),
+        "rear_arb_arm_position": _arb_position(
+            rear_arb.get("ArbArm")
+            or rear_arb.get("Arm")
+            or _find_value_by_label(source, ("rear", "arb", "arm"))
+        ),
+        "rear_arb_preload_nm": _float_from_text(
+            rear_arb.get("ArbPreload")
+            or rear_arb.get("Preload")
+            or _find_value_by_label(source, ("rear", "arb", "preload"))
+        ),
         "rear_arb_attach": _float_from_text(rear_arb.get("Attach") or _find_value_by_label(source, ("rear", "arb", "attach"))),
         # Diff
-        "diff_preload_nm": _float_from_text(diff.get("Preload") or _find_value_by_label(source, ("diff", "preload"))),
+        "diff_preload_nm": _float_from_text(
+            diff.get("DiffPreload")
+            or diff.get("Preload")
+            or _find_value_by_label(source, ("diff", "preload"))
+        ),
         "final_drive_ratio": _float_from_text(front.get("FinalDriveRatio") or diff.get("FinalDriveRatio") or _find_value_by_label(source, ("final", "drive"))),
     }
 

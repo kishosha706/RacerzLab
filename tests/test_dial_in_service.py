@@ -9,7 +9,318 @@ from pathlib import Path
 import pytest
 
 from racelab_engine.knowledge.setup.dial_in_service import build_dial_in_response
+from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.event import TelemetryEvent
+from racelab_engine.models.lap import LapSummary
+from racelab_engine.storage.repository import RaceLabRepository
 from test_setup_evidence_adapter import _configure_env, _seed_run
+
+
+def test_no_eligible_laps_never_emit_exact_dial_in_actions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, useful_laps=0, channels={"throttle_pct": 100.0, "yaw_rate": 1.2})
+
+    response = build_dial_in_response("run-1", "loose off")
+
+    assert response.top_swings == []
+    assert response.readiness_label == "Need cleaner data"
+    assert any("No eligible flying laps" in warning for warning in response.warnings)
+
+
+def test_explicit_phase_conflict_blocks_clear_read_and_setup_actions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, channels={"brake_pct": 50.0, "yaw_rate": 1.0})
+
+    response = build_dial_in_response("run-1", "loose off", selected_phase="braking")
+
+    assert response.top_swings == []
+    assert response.confidence_label == "Needs clarification"
+    assert response.evidence_state == "blocked_by_context"
+    assert "maps to exit" in response.blocker_reasons[0]
+
+
+def test_explicit_phase_cannot_conflict_with_driver_priority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, channels={"throttle_pct": 80.0, "yaw_rate": 1.0})
+
+    response = build_dial_in_response(
+        "run-1", "loose off", selected_phase="exit", priority="entry-security",
+    )
+
+    assert response.top_swings == []
+    assert response.evidence_state == "blocked_by_context"
+    assert "priority requires entry" in response.blocker_reasons[0]
+
+
+@pytest.mark.parametrize("phase", ["entry", "center", "exit"])
+def test_generic_complaint_is_resolved_by_selected_phase(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, phase: str,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, channels={"steering_deg": 3.0, "yaw_rate": 1.0})
+
+    response = build_dial_in_response("run-1", f"tight {phase}", selected_phase=phase)
+
+    assert response.clarification.needed is False
+    assert response.interpreted_phase == phase
+
+
+@pytest.mark.parametrize(("complaint", "phase"), [("tight", "exit"), ("loose", "entry")])
+def test_bare_balance_complaint_uses_explicit_phase_selector(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, complaint: str, phase: str,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, channels={"steering_deg": 3.0, "yaw_rate": 1.0})
+
+    response = build_dial_in_response("run-1", complaint, selected_phase=phase)
+
+    assert response.clarification.needed is False
+    assert response.interpreted_phase == phase
+    assert response.evidence_state != "blocked_by_context"
+
+
+@pytest.mark.parametrize(
+    ("objective", "priority"),
+    [
+        ("long-run", "overall-pace"),
+        ("tire-conservation", "tire-life"),
+        ("driver-confidence", "overall-pace"),
+        ("race-pace", "platform-margin"),
+    ],
+)
+def test_objective_specific_requests_cannot_certify_a_generic_phase_test(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, objective: str, priority: str,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, channels={"throttle_pct": 80.0, "yaw_rate": 1.0})
+
+    response = build_dial_in_response(
+        "run-1", "loose off", objective=objective, priority=priority,
+    )
+
+    assert response.top_swings == []
+    assert response.evidence_strength is not None
+    assert response.evidence_strength.setup_test_ready is False
+    assert response.evidence_state == "blocked_by_context"
+
+
+def test_sparse_semantic_match_never_emits_exact_actions_or_invented_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, channels={"speed_mph": 150.0})
+
+    response = build_dial_in_response(
+        "run-1", "rear scrape", include_debug_evidence=True, limit=5
+    )
+
+    assert response.top_swings == []
+    assert response.evidence_state == "unavailable"
+    assert response.source_channels == []
+    assert response.blocker_reasons
+
+
+def test_dial_in_reports_capability_only_as_measurement_required(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        channels={
+            "lf_shock_vel_in_s": 1.0,
+            "rf_shock_vel_in_s": 1.1,
+            "lr_shock_vel_in_s": 0.9,
+            "rr_shock_vel_in_s": 1.2,
+            "throttle_pct": 75.0,
+            "yaw_rate": 1.1,
+        },
+    )
+
+    response = build_dial_in_response("run-1", "loose off")
+
+    assert response.evidence_strength is not None
+    assert response.evidence_strength.level == "capability_only"
+    assert response.evidence_strength.readiness == "measurement_required"
+    assert response.evidence_strength.setup_test_ready is False
+    assert response.evidence_strength.observed_mechanism_flags == []
+
+
+def test_dial_in_reports_qualified_event_without_claiming_controlled_effect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        channels={
+            "lf_shock_vel_in_s": 1.0,
+            "rf_shock_vel_in_s": 1.1,
+            "lr_shock_vel_in_s": 0.9,
+            "rr_shock_vel_in_s": 1.2,
+            "throttle_pct": 75.0,
+            "yaw_rate": 1.1,
+        },
+    )
+    repo = RaceLabRepository()
+    overview = repo.get_overview("run-1")
+    assert overview is not None
+    event = TelemetryEvent(
+        event_id="run-1:damper-response:1",
+        run_id="run-1",
+        lap_number=1,
+        event_type="DAMPER_RESPONSE",
+        confidence_score=0.82,
+        valid_for_tuning=True,
+        evidence_state=EvidenceState.CALCULATED,
+        evidence_json={"phase": "exit"},
+        source_channels=["lf_shock_vel_in_s", "throttle_pct", "yaw_rate"],
+        blocker_reasons=[],
+    )
+    repo.save_import(overview.model_copy(update={"events": [event]}))
+
+    response = build_dial_in_response("run-1", "loose off", limit=9)
+
+    assert response.evidence_strength is not None
+    assert response.evidence_strength.level == "observed_mechanism"
+    assert response.evidence_strength.setup_test_ready is False
+    assert response.evidence_strength.requires_controlled_test is True
+    assert response.evidence_state == "needs_confirmation"
+    assert response.evidence_strength.supporting_event_ids == [event.event_id]
+
+
+def test_selected_zone_scopes_observed_mechanism_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        channels={
+            "lf_shock_vel_in_s": 1.0,
+            "rf_shock_vel_in_s": 1.1,
+            "lr_shock_vel_in_s": 0.9,
+            "rr_shock_vel_in_s": 1.2,
+            "throttle_pct": 75.0,
+            "yaw_rate": 1.1,
+        },
+    )
+    repo = RaceLabRepository()
+    overview = repo.get_overview("run-1")
+    assert overview is not None
+    event = TelemetryEvent(
+        event_id="run-1:damper-response:zone",
+        run_id="run-1",
+        lap_number=1,
+        event_type="DAMPER_RESPONSE",
+        lap_pct_peak=25.0,
+        confidence_score=0.82,
+        valid_for_tuning=True,
+        evidence_state=EvidenceState.CALCULATED,
+        source_channels=["lf_shock_vel_in_s", "throttle_pct", "yaw_rate"],
+        blocker_reasons=[],
+    )
+    repo.save_import(overview.model_copy(update={"events": [event]}))
+
+    inside = build_dial_in_response(
+        "run-1", "loose off", selected_zone_start_pct=20.0, selected_zone_end_pct=30.0,
+    )
+    outside = build_dial_in_response(
+        "run-1", "loose off", selected_zone_start_pct=50.0, selected_zone_end_pct=60.0,
+    )
+
+    assert inside.evidence_strength is not None
+    assert inside.evidence_strength.level == "capability_only"
+    assert outside.evidence_strength is not None
+    assert outside.evidence_strength.level == "capability_only"
+    assert outside.evidence_strength.setup_test_ready is False
+
+
+def test_selected_lap_and_phase_scope_observed_events(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        useful_laps=2,
+        channels={"throttle_pct": 75.0, "steering_deg": 2.0, "yaw_rate": 1.1},
+    )
+    repo = RaceLabRepository()
+    overview = repo.get_overview("run-1")
+    assert overview is not None
+    event = TelemetryEvent(
+        event_id="run-1:braking-yaw:lap-1",
+        run_id="run-1",
+        lap_number=1,
+        event_type="BRAKE_ENTRY_YAW",
+        lap_pct_peak=25.0,
+        confidence_score=0.82,
+        valid_for_tuning=True,
+        evidence_state=EvidenceState.CALCULATED,
+        evidence_json={"phase": "braking"},
+        source_channels=["throttle_pct", "steering_deg", "yaw_rate"],
+        blocker_reasons=[],
+    )
+    repo.save_import(overview.model_copy(update={"events": [event]}))
+
+    response = build_dial_in_response(
+        "run-1",
+        "loose off",
+        selected_lap=2,
+        selected_zone_start_pct=20.0,
+        selected_zone_end_pct=30.0,
+        selected_phase="exit",
+    )
+
+    assert response.evidence_strength is not None
+    assert response.evidence_strength.level == "capability_only"
+    assert response.evidence_strength.supporting_event_ids == []
+
+
+def test_dial_in_sources_are_archived_channels_not_future_validation_targets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, channels={"throttle_pct": 100.0, "yaw_rate": 1.2})
+
+    response = build_dial_in_response("run-1", "loose off")
+
+    assert response.top_swings
+    assert set(response.source_channels) <= {"throttle_pct", "yaw_rate"}
+    assert "exit_yaw" not in response.source_channels
+
+
+def test_selected_pit_lap_never_emits_exact_dial_in_actions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, useful_laps=1, channels={"throttle_pct": 100.0, "yaw_rate": 1.2})
+    repo = RaceLabRepository()
+    overview = repo.get_overview("run-1")
+    assert overview is not None
+    pit_lap = LapSummary(
+        lap_id="run-1:lap:2",
+        run_id="run-1",
+        lap_number=2,
+        lap_type="complete_invalid",
+        is_complete=True,
+        is_useful=False,
+        lap_time=32.0,
+        classification_tags=["PIT_ROAD", "NO_SETUP_CONCLUSION"],
+    )
+    repo.save_import(overview.model_copy(update={"laps": [*overview.laps, pit_lap]}))
+
+    response = build_dial_in_response("run-1", "loose off", selected_lap=2)
+
+    assert response.top_swings == []
+    assert any("Selected lap 2 is not eligible" in warning for warning in response.warnings)
 
 
 def test_loose_off_returns_interpreted_loose_exit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -52,8 +363,9 @@ def test_default_response_hides_raw_evidence_group_spam(tmp_path: Path, monkeypa
     payload = response.model_dump(exclude_none=True)
     dumped = json.dumps(payload)
     assert "hidden_evidence_summary" not in payload
-    assert "front_center_rh_in" not in dumped
     assert "evidence_groups" not in dumped
+    # Raw channels may appear only as compact, truthful provenance.
+    assert set(response.source_channels) <= {"front_center_rh_in", "rear_center_rh_in"}
 
 
 def test_debug_response_includes_hidden_evidence_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

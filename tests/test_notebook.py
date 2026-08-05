@@ -228,7 +228,6 @@ def test_notebook_stores_comparison_as_is_no_recompute(db_path: Path) -> None:
 
 def test_settings_compatible_with_local_only(tmp_path: Path) -> None:
     """Verify notebook DB does not connect to remote services."""
-    import os
     from racelab_engine.storage.db import initialize_database
     db = tmp_path / "test.sqlite"
     conn = initialize_database(db)

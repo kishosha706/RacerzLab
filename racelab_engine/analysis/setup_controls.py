@@ -138,6 +138,40 @@ def numeric_setup_value(value: Any) -> float | None:
     return number if math.isfinite(number) else None
 
 
+def setup_value_numeric_representation(key: str, value: Any) -> tuple[str, float] | None:
+    """Return a sortable number while retaining representation semantics."""
+    numeric = numeric_setup_value(value)
+    if numeric is None:
+        return None
+    if key != "steering_ratio":
+        return "numeric", numeric
+    if isinstance(value, str):
+        normalized = value.casefold()
+        if "mm/rev" in normalized:
+            return "steering_pinion_mm_per_rev", numeric
+        if ":" in normalized:
+            return "steering_ratio_x_to_1", numeric
+    # Legacy cards stored true x:1 ratios as bare floats. Treat an unlabelled
+    # numeric steering value as x:1 for backward-compatible exact comparison;
+    # explicitly labelled mm/rev values remain a separate representation.
+    return "steering_ratio_x_to_1", numeric
+
+
+def canonical_setup_value_key(key: str, value: Any) -> str:
+    """Canonical identity for exact setup comparison and option provenance."""
+    represented = setup_value_numeric_representation(key, value)
+    if represented is not None:
+        kind, numeric = represented
+        return f"{kind}:{numeric:.12g}"
+    if isinstance(value, str):
+        return f"text:{value.strip().casefold()}"
+    return f"typed:{type(value).__name__}:{value!r}"
+
+
+def setup_control_values_equal(key: str, left: Any, right: Any) -> bool:
+    return canonical_setup_value_key(key, left) == canonical_setup_value_key(key, right)
+
+
 def display_setup_value(key: str, value: Any) -> Any:
     spec = setup_control_spec(key)
     if key == "steering_ratio" and isinstance(value, str):

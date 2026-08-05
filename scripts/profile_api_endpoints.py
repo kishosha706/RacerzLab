@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from fastapi.testclient import TestClient
 

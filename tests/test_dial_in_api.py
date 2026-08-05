@@ -7,7 +7,30 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.main import app
+from api.schemas import DialInRequest
 from test_setup_evidence_adapter import _configure_env, _seed_run
+
+
+def test_dial_in_request_decision_context_is_backward_compatible_and_typed() -> None:
+    legacy = DialInRequest.model_validate({"complaint": "tight center"})
+    assert legacy.objective == "race-pace"
+    assert legacy.priority == "overall-pace"
+    assert legacy.selected_phase is None
+    assert legacy.selected_zone_start_pct is None
+
+    contextual = DialInRequest.model_validate({
+        "complaint": "tight center",
+        "selected_zone_start_pct": 23.5,
+        "selected_zone_end_pct": 31.0,
+        "selected_zone_label": "Turn 3 center",
+        "selected_phase": "center",
+        "objective": "long-run",
+        "priority": "tire-life",
+    })
+    assert contextual.selected_zone_label == "Turn 3 center"
+    assert contextual.selected_phase == "center"
+    assert contextual.objective == "long-run"
+    assert contextual.priority == "tire-life"
 
 
 def test_dial_in_api_returns_clean_response_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

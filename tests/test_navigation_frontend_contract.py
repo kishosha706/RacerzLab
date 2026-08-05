@@ -13,7 +13,7 @@ def _read(path: str) -> str:
 def test_notebook_workspace_is_hidden_from_app_navigation() -> None:
     app = _read("ui/src/App.tsx")
 
-    nav_block = app.split('<nav className="workspace-nav-rail">', 1)[1].split("</nav>", 1)[0]
+    nav_block = app.split('<nav className="workspace-nav-rail"', 1)[1].split("</nav>", 1)[0]
     shortcut_block = app.split('<div className="shortcut-grid">', 1)[1].split("</div>", 1)[0]
 
     for label in [

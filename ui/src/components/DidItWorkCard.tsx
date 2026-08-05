@@ -219,7 +219,7 @@ export function DidItWorkCard({
             <div className="diw-change-row">
               <span>Wear Spread Δ</span>
               <span style={{ color: tireContextColor(tireContext.wearSpreadDelta) }}>
-                {tireContext.wearSpreadDelta > 0 ? "+" : ""}{tireContext.wearSpreadDelta.toFixed(2)} mm
+                {tireContext.wearSpreadDelta > 0 ? "+" : ""}{tireContext.wearSpreadDelta.toFixed(2)} percentage points
               </span>
             </div>
           )}

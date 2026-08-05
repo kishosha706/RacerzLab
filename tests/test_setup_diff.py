@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from racelab_engine.analysis.setup_diff import diff_setups, setup_controls_comparable
+from racelab_engine.analysis.setup_diff import (
+    SETUP_GROUPS,
+    diff_setups,
+    setup_controls_comparable,
+    unmapped_setup_change_paths,
+)
 
 
 def test_changed_and_unchanged_setup_fields() -> None:
@@ -43,12 +48,81 @@ def test_nested_setup_sections_are_compared() -> None:
 
 
 def test_matching_car_specific_control_coverage_is_comparable() -> None:
-    baseline = {"lf_ride_height_mm": 55.0, "tape_percent": None}
-    test = {"lf_ride_height_mm": 56.0, "tape_percent": None}
+    baseline = {key: 1.0 for key in SETUP_GROUPS}
+    test = dict(baseline)
+    test["lf_ride_height_mm"] = 2.0
 
     assert setup_controls_comparable(baseline, test) is True
     assert setup_controls_comparable(baseline, {"lf_ride_height_mm": None}) is False
+    assert setup_controls_comparable(
+        {"lf_ride_height_mm": 55.0},
+        {"lf_ride_height_mm": 56.0},
+    ) is False
     assert setup_controls_comparable({}, {}) is False
+
+
+def test_small_truthy_setup_fragment_is_not_mistaken_for_complete_source() -> None:
+    baseline = {
+        "setup_json": {"Chassis": {"LeftRear": {"SpringRate": "800 N/mm"}}},
+        **{key: 1.0 for key in SETUP_GROUPS if key not in {"lr_ride_height_mm", "tape_percent"}},
+    }
+    test = dict(baseline)
+    test["rear_end_ratio"] = 2.0
+
+    assert setup_controls_comparable(baseline, test) is False
+
+
+def test_unmapped_raw_chassis_change_blocks_isolated_change_claim() -> None:
+    controls = {key: 1.0 for key in SETUP_GROUPS}
+    baseline = {
+        **controls,
+        "setup_json": {"Chassis": {"Rear": {"FinalDriveRatio": 3.5, "DiffPreload": "20 Nm"}}},
+    }
+    test = {
+        **controls,
+        "rear_end_ratio": 3.6,
+        "setup_json": {"Chassis": {"Rear": {"FinalDriveRatio": 3.6, "DiffPreload": "30 Nm"}}},
+    }
+    mapped = diff_setups(baseline, test)
+
+    assert len(mapped) == 1
+    assert unmapped_setup_change_paths(baseline, test, mapped) == ["Rear.DiffPreload"]
+
+
+def test_mapped_raw_chassis_change_is_accounted_for_by_exact_path() -> None:
+    controls = {key: 1.0 for key in SETUP_GROUPS}
+    baseline = {
+        **controls,
+        "rear_end_ratio": 3.5,
+        "setup_json": {"Chassis": {"Rear": {"FinalDriveRatio": 3.5}}},
+    }
+    test = {
+        **controls,
+        "rear_end_ratio": 3.6,
+        "setup_json": {"Chassis": {"Rear": {"FinalDriveRatio": 3.6}}},
+    }
+    mapped = diff_setups(baseline, test)
+
+    assert unmapped_setup_change_paths(baseline, test, mapped) == []
+
+
+def test_unmapped_tire_setup_change_blocks_isolated_change_claim() -> None:
+    controls = {key: 1.0 for key in SETUP_GROUPS}
+    baseline = {
+        **controls,
+        "setup_json": {"Tires": {"LeftFront": {"ColdPressure": "20 psi"}}},
+    }
+    test = {
+        **controls,
+        "setup_json": {"Tires": {"LeftFront": {"ColdPressure": "22 psi"}}},
+    }
+
+    mapped = diff_setups(baseline, test)
+
+    assert mapped == []
+    assert unmapped_setup_change_paths(baseline, test, mapped) == [
+        "Tires.LeftFront.ColdPressure"
+    ]
 
 
 def test_change_size_uses_control_specific_units_and_bands() -> None:

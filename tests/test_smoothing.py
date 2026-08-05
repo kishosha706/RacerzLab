@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 
 from racelab_engine.analysis.smoothing import (
     savitzky_golay_5point,

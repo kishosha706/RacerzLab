@@ -1,5 +1,29 @@
 # Dial-In Query Service
 
+## Evidence authority
+
+Dial-In separates three different questions:
+
+1. Did RacerZLab understand the driver's complaint?
+2. Does the run contain channels capable of measuring the proposed mechanism?
+3. Did eligible telemetry actually observe that mechanism strongly enough to
+   justify one controlled test?
+
+Channel availability answers only question 2. A candidate reaches
+`observed_mechanism` only when a tuning-valid eligible event supplies source
+channels, provenance, sufficient confidence, and no blocker. Capability-only
+matches remain unverified hypotheses and cannot authorize a verified test.
+
+The verified workflow additionally accepts a selected physical track zone,
+phase, objective, and priority. If no repeated opportunity exists inside the
+selected scope, the server returns a measurement mission instead of silently
+choosing a different corner.
+
+Candidate evidence scores are ordinal and expose their components. They are not
+probabilities or promised lap-time gains. Qualified exact-context personal
+response models may influence one next-test choice only inside their observed
+input envelope and exact target zone.
+
 The Dial-In Query Service is the backend layer that turns a run-aware setup
 query into a clean driver-facing guidance payload.
 

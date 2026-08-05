@@ -55,6 +55,21 @@ class TestBuildBestTheoretical:
         result = build_best_theoretical({}, {}, {})
         assert not result.is_available
 
+    def test_missing_eligibility_certificate_is_not_treated_as_valid(self) -> None:
+        segments = {2: [_make_segment(0, 5, 180.0)]}
+
+        result = build_best_theoretical(segments, {2: []}, {2: 51.0})
+
+        assert result.is_available is False
+        assert result.warnings == ["No valid laps available for theoretical best calculation."]
+
+    def test_missing_lap_time_is_not_treated_as_valid(self) -> None:
+        segments = {2: [_make_segment(0, 5, 180.0)]}
+
+        result = build_best_theoretical(segments, {2: ["ELIGIBLE_FLYING_LAP"]}, {2: None})
+
+        assert result.is_available is False
+
     def test_low_confidence_segments_excluded(self) -> None:
         segs: dict[int, list[SegmentSummary]] = {2: [_make_segment(0, 5, 180.0, confidence=0.1), _make_segment(5, 10, 181.0, confidence=0.9)]}
         result = build_best_theoretical(segs, {2: ["SOLO_CLEAN"]}, {2: 51.0})

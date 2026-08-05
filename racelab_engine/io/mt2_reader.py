@@ -324,7 +324,6 @@ def smooth_curvature_5point(
     n = len(curvatures)
     if n < 5:
         return list(curvatures)  # Not enough points to smooth
-    w_sum = sum(weights)
     result: list[float | None] = [None] * n
     for i in range(n):
         if curvatures[i] is None:

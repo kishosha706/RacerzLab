@@ -1,6 +1,5 @@
-# Archived catalog/metadata tests — covered by test_analysis_constants.py classification tests
+# Archived catalog/metadata tests â€” covered by test_analysis_constants.py classification tests
 import pytest
-from pathlib import Path
 from racelab_engine.services.import_service import build_channel_catalog, FORCE_PROXY_CHANNELS
 from racelab_engine.analysis.calculated_channels import CALCULATED_CHANNEL_UNITS, channel_metadata, CHANNEL_METADATA
 pytestmark = pytest.mark.slow
@@ -53,7 +52,6 @@ def test_channel_catalog_preset_channels_exist(talladega_run_id: str) -> None:
     ]:
         assert channel in catalog_names, f"{channel} should be in channel catalog"
 def test_channel_metadata_labels() -> None:
-    from racelab_engine.analysis.calculated_channels import CHANNEL_METADATA, channel_metadata
 
     # Key channels should have friendly labels
     assert CHANNEL_METADATA["cfs_ride_height_in"]["label"] == "CFS Ride Height"
@@ -71,7 +69,6 @@ def test_channel_metadata_labels() -> None:
     assert unknown["used_by_recommendations"] == []
 
 def test_channel_metadata_used_by() -> None:
-    from racelab_engine.analysis.calculated_channels import CHANNEL_METADATA
 
     metadata_checks: list[tuple[str, list[str], list[str], list[str]]] = [
         (
@@ -106,7 +103,6 @@ def test_channel_metadata_used_by() -> None:
     assert len(CHANNEL_METADATA["speed_mph"]["used_by_charts"]) >= 3
 
 def test_proxy_channels_have_estimate_warning() -> None:
-    from racelab_engine.analysis.calculated_channels import CHANNEL_METADATA
 
     proxies = ["rear_downforce_proxy_n", "rear_platform_proxy_n", "aero_balance_front_pct"]
     for name in proxies:
@@ -135,8 +131,6 @@ def test_calculated_channels_imports_units_constants() -> None:
 
 def test_channel_classification_contract() -> None:
     """Verify proxy/calculated/raw channel classifications are consistent."""
-    from racelab_engine.services.import_service import FORCE_PROXY_CHANNELS
-    from racelab_engine.analysis.calculated_channels import CALCULATED_CHANNEL_UNITS
 
     # Pressure gain is calculated, not proxy
     assert "lf_pressure_gain" not in FORCE_PROXY_CHANNELS
@@ -156,7 +150,6 @@ def test_channel_classification_contract() -> None:
 
 def test_dynamic_pressure_index_not_comparable_across_runs() -> None:
     """dynamic_pressure_index must be marked as not comparable across runs."""
-    from racelab_engine.analysis.calculated_channels import channel_metadata
     meta = channel_metadata("dynamic_pressure_index")
     assert meta.get("comparable_across_runs") is False, \
         "dynamic_pressure_index must be marked comparable_across_runs=False"

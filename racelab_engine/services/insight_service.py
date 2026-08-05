@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from dataclasses import replace
+from typing import Any
 
 from racelab_engine.analysis.compare_delta_traces import (
     DEFAULT_DELTA_CHANNELS,
@@ -87,6 +88,10 @@ def build_comparison_insights(
     verdict_str: str = "inconclusive",
     base_confidence: float = 0.5,
     channels: list[str] | None = None,
+    causal_attribution_blocked: bool = False,
+    causal_block_reason: str | None = None,
+    causal_block_reasons: list[str] | None = None,
+    causal_retest_instruction: str | None = None,
 ) -> ComparisonInsightsResponse:
     """Run all insight engines and combine into one response."""
     selected = channels or DEFAULT_DELTA_CHANNELS
@@ -117,6 +122,8 @@ def build_comparison_insights(
             "label": ch_data.label,
             "unit": ch_data.unit,
             "is_proxy": ch_data.is_proxy,
+            "paired_coverage": ch_data.paired_coverage,
+            "unavailable_reason": ch_data.unavailable_reason,
         }
 
     # ── 2. Trace annotations ───────────────────────────────────
@@ -152,7 +159,11 @@ def build_comparison_insights(
             strength=_strength_label(p.pearson_r),
             direction=_direction_label(p.pearson_r),
             narrative=p.interpretation or "",
-            confidence=0.6 if p.pearson_r is not None and abs(p.pearson_r) > 0.4 else 0.3,
+            confidence=min(
+                0.85,
+                p.paired_coverage * (0.4 + 0.4 * abs(p.pearson_r or 0.0)),
+            ),
+            warning="Exploratory association only; it does not establish setup causality.",
         )
         for p in corr_result.pairs
     ]
@@ -167,7 +178,10 @@ def build_comparison_insights(
         vals = ch_data.get("delta_values", [])
         if not vals:
             return None
-        slice_vals = [v for v in vals[tz_start_idx:tz_end_idx + 1] if v is not None]
+        raw_slice = vals[tz_start_idx:tz_end_idx + 1]
+        slice_vals = [v for v in raw_slice if v is not None]
+        if not raw_slice or len(slice_vals) / len(raw_slice) < 0.90:
+            return None
         return sum(slice_vals) / len(slice_vals) if slice_vals else None
 
     def _tz_min(ch: str) -> float | None:
@@ -175,7 +189,10 @@ def build_comparison_insights(
         vals = ch_data.get("delta_values", [])
         if not vals:
             return None
-        slice_vals = [v for v in vals[tz_start_idx:tz_end_idx + 1] if v is not None]
+        raw_slice = vals[tz_start_idx:tz_end_idx + 1]
+        slice_vals = [v for v in raw_slice if v is not None]
+        if not raw_slice or len(slice_vals) / len(raw_slice) < 0.90:
+            return None
         return min(slice_vals) if slice_vals else None
 
     tz_speed = _tz_avg("speed_mph")
@@ -192,6 +209,52 @@ def build_comparison_insights(
         evidence=tz_class.reasoning,
         recommendation=tz_class.recommendation,
     )
+    if tz_speed is None and not causal_attribution_blocked:
+        tz_model = TargetZoneClassification(
+            classification="inconclusive",
+            confidence=0.0,
+            headline="Insufficient paired speed evidence",
+            evidence=[
+                "At least 90% paired positional speed coverage is required in the target zone."
+            ],
+            recommendation="Record complete laps and repeat before choosing a setup direction.",
+        )
+        warnings.append("Target-zone speed evidence is incomplete; no gain/loss conclusion was issued.")
+    if causal_attribution_blocked:
+        reasons = list(causal_block_reasons or [])
+        if causal_block_reason and causal_block_reason not in reasons:
+            reasons.append(causal_block_reason)
+        if not reasons:
+            reasons.append("External context prevents causal setup attribution.")
+        tz_model = TargetZoneClassification(
+            classification="inconclusive",
+            confidence=min(tz_class.confidence, 0.3),
+            headline="Observed change; setup cause not established",
+            evidence=[*tz_class.reasoning, *reasons],
+            recommendation=causal_retest_instruction or (
+                "Keep the measured result as an observation and repeat the same setup "
+                "with matched nearby-car context before accepting a setup direction."
+            ),
+        )
+        warnings.extend(reason for reason in reasons if reason not in warnings)
+        correlations = [
+            replace(
+                correlation,
+                narrative="Observed correlation only; causal setup attribution is blocked. "
+                + correlation.narrative,
+            )
+            for correlation in correlations
+        ]
+        annotations = [
+            replace(
+                annotation,
+                description="Observed telemetry only; setup attribution is blocked. "
+                + annotation.description,
+                confidence=min(annotation.confidence, 0.3),
+                recommendation=None,
+            )
+            for annotation in annotations
+        ]
 
     # ── 5. Confidence-weighted verdict ─────────────────────────
     cwv = apply_confidence_weights(
@@ -223,21 +286,43 @@ def build_comparison_insights(
             avg_drag_scrub_delta=s.avg_drag_delta,
             avg_rpm_delta=s.avg_rpm_delta,
             classification=s.speed_direction,
+            warnings=[s.warning] if s.warning else [],
         )
         for i, s in enumerate(sector_result.sectors)
     ]
+    if causal_attribution_blocked:
+        sectors = [
+            replace(
+                sector,
+                classification="observed_only",
+                warnings=["Setup attribution is blocked; sector deltas are observational."],
+            )
+            for sector in sectors
+        ]
 
     # ── 7. Summary headline + takeaways ────────────────────────
-    summary_headline = tz_class.label if tz_class.confidence > 0.3 else "Inconclusive — review delta traces"
+    if causal_attribution_blocked:
+        summary_headline = "Observed change; setup cause not established"
+    else:
+        summary_headline = tz_model.headline if tz_model.confidence > 0.3 else "Inconclusive — review data coverage"
     key_takeaways: list[str] = []
-    if annotation_result.summary:
-        key_takeaways.append(annotation_result.summary)
-    if corr_result.narrative:
-        key_takeaways.append(corr_result.narrative)
-    if sector_result.summary:
-        key_takeaways.append(sector_result.summary)
-    if cwv.recommendation:
-        key_takeaways.append(cwv.recommendation)
+    if causal_attribution_blocked:
+        if annotation_result.summary:
+            key_takeaways.append("Observed telemetry only: " + annotation_result.summary)
+        key_takeaways.extend(list(causal_block_reasons or []))
+        key_takeaways.append(
+            causal_retest_instruction
+            or "Repeat under matched conditions before accepting a setup direction."
+        )
+    else:
+        if annotation_result.summary:
+            key_takeaways.append(annotation_result.summary)
+        if corr_result.narrative:
+            key_takeaways.append(corr_result.narrative)
+        if sector_result.summary:
+            key_takeaways.append(sector_result.summary)
+        if cwv.recommendation:
+            key_takeaways.append(cwv.recommendation)
 
     return ComparisonInsightsResponse(
         comparison_id=comparison_id,

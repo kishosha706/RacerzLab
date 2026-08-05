@@ -67,3 +67,38 @@ def test_wreck_tag_caps_pace_and_evidence() -> None:
     assert result.pace_quality_score <= 20.0
     assert result.evidence_confidence_score <= 10.0
     assert result.setup_usefulness_score <= 14.0
+
+
+def test_missing_measurements_remain_none_instead_of_becoming_neutral_scores() -> None:
+    result = compute_pace_quality_score(
+        window_size=20,
+        valid_lap_count=20,
+        classification_tags=["ELIGIBLE_FLYING_LAP"],
+    )
+
+    assert result.component_scores["pace_speed"] is None
+    assert result.component_scores["consistency"] is None
+    assert result.component_scores["falloff"] is None
+    assert result.component_scores["platform_safety"] is None
+    assert result.component_scores["tire_safety"] is None
+    assert result.component_scores["shock_safety"] is None
+    assert result.setup_usefulness_score <= 35.0
+    assert any("no neutral score was substituted" in note for note in result.confidence_notes)
+
+
+def test_short_run_cannot_claim_high_setup_usefulness() -> None:
+    result = compute_pace_quality_score(
+        window_size=5,
+        valid_lap_count=5,
+        classification_tags=["ELIGIBLE_FLYING_LAP"],
+        avg_lap_time=50.0,
+        reference_lap_time=50.0,
+        lap_time_std_dev=0.01,
+        falloff_sec_per_lap=0.0,
+        platform_risk_peak=0.0,
+        tire_temp_spread=0.0,
+        shock_activity_index=0.0,
+    )
+
+    assert result.setup_usefulness_score <= 35.0
+    assert any("Short run" in cap["reason"] for cap in result.caps)

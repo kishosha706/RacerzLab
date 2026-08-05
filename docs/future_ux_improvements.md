@@ -226,14 +226,23 @@ restore on re-open, clear when run changes.
 
 ### Lazy-Load Heavy Tabs
 
-**Status:** Not implemented. Tabs use named exports, incompatible with
-`React.lazy`.
+**Status:** Partially implemented. Platform, Laps, Dial In, and Setup are
+loaded with dynamic imports from `App.tsx`.
+
+**Bundle audit (2026-08-03):** Replacing the full ECharts namespace import
+with registered core/chart/components reduced the minified Platform chunk from
+about 1.12 MB to 657 KB. It remains above Vite's 500 KB advisory threshold.
+A forced ECharts/zrender vendor split was rejected because Rollup reported a
+circular chunk dependency; the threshold was not raised or hidden.
 
 **Future work:**
-- Convert tab components to default exports
-- Use `React.lazy(() => import("./tabs/PlatformTab"))` with `<Suspense>`
-- Candidates: PlatformTab, TrackMapTab, CompareTab, LapsTab,
-  RawChannelsTab, NotebookTab
+- Extract the stacked chart workbench from `PlatformTab` behind its own lazy
+  component boundary, then verify chart initialization, zoom, cursor, toolbox,
+  mark-line, and mark-area behavior in the packaged desktop app.
+- Profile whether the ECharts canvas renderer or registered toolbox/annotation
+  components dominate the remaining bundle before removing any feature.
+- Keep TrackMap, Compare, Raw Channels, and Notebook as candidates where a
+  measured initial-load benefit justifies the added boundary.
 
 ### Ghost Lap / Baseline Overlay
 

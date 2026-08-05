@@ -8,7 +8,12 @@ from racelab_engine.analysis.comparison import (
     DriverComparison, PowertrainComparison, WholeCarIndex,
     build_lap_grid, interpolate_run_to_grid,
 )
-from racelab_engine.analysis.constants import WCI_WEIGHT_PROFILES, logistic_score
+from racelab_engine.analysis.constants import (
+    CFS_SIGNIFICANT,
+    CFS_WORSEN_THRESHOLD,
+    WCI_WEIGHT_PROFILES,
+    logistic_score,
+)
 
 
 def _finite_values(values: list[float | None]) -> list[float]:
@@ -31,22 +36,41 @@ def aggregate_channel_stats(
     channel: str, label: str | None = None,
     unit: str = "", higher_is: str = "better",
 ) -> ChannelDeltaStats:
-    bl = _finite_values(bl_grid.get(channel) or [])
-    t = _finite_values(t_grid.get(channel) or [])
+    bl_values = bl_grid.get(channel) or []
+    t_values = t_grid.get(channel) or []
+    bl_all = _finite_values(bl_values)
+    t_all = _finite_values(t_values)
+    paired = [
+        (float(baseline), float(test))
+        for baseline, test in zip(bl_values, t_values)
+        if baseline is not None
+        and test is not None
+        and math.isfinite(float(baseline))
+        and math.isfinite(float(test))
+    ]
+    grid_count = max(len(bl_values), len(t_values))
+    if not grid_count or len(paired) / grid_count < 0.9:
+        paired = []
+    bl = [baseline for baseline, _test in paired]
+    t = [test for _baseline, test in paired]
     bl_avg = sum(bl) / len(bl) if bl else None
     t_avg = sum(t) / len(t) if t else None
     delta = (t_avg - bl_avg) if bl_avg is not None and t_avg is not None else None
+    positional_deltas = sorted(test - baseline for baseline, test in paired)
+    low_index = int(0.05 * (len(positional_deltas) - 1)) if positional_deltas else 0
     direction = _compute_direction(delta, higher_is)
     return ChannelDeltaStats(
         channel=channel, label=label or channel, unit=unit,
         baseline_avg=bl_avg, test_avg=t_avg, delta_avg=delta,
-        baseline_min=min(bl, default=None),
-        test_min=min(t, default=None),
-        baseline_max=max(bl, default=None),
-        test_max=max(t, default=None),
+        baseline_min=min(bl_all, default=None),
+        test_min=min(t_all, default=None),
+        baseline_max=max(bl_all, default=None),
+        test_max=max(t_all, default=None),
         direction=direction,
         interpretation=f"{label or channel}: {direction or 'unchanged'}",
         confidence=0.6 if (bl and t) else 0.0,
+        delta_min=min(positional_deltas, default=None),
+        delta_low_p05=positional_deltas[low_index] if positional_deltas else None,
     )
 
 
@@ -72,10 +96,14 @@ def aggregate_platform_stats(
     dp = aggregate_channel_stats(bl, t, "dynamic_pressure_psf", "Dynamic Pressure", "psf", "neutral")
     risk = aggregate_channel_stats(bl, t, "cfs_risk_score", "CFS Risk Score", "score", "worse")
     cd = cfs.delta_avg
-    if cd and cd > 0.001:
-        rl = "improved"
-    elif cd and cd < -0.001:
+    localized_worse = (
+        cfs.delta_low_p05 is not None
+        and cfs.delta_low_p05 < CFS_SIGNIFICANT
+    )
+    if localized_worse or (cd is not None and cd < CFS_WORSEN_THRESHOLD):
         rl = "worsened"
+    elif cd and cd > 0.001:
+        rl = "improved"
     else:
         rl = "unchanged"
 
@@ -85,7 +113,7 @@ def aggregate_platform_stats(
     pv = "mixed"  # default
     if rl == "improved" and rake_unstable:
         pv = "mixed"
-    elif cd is not None and cd > 0:
+    elif rl == "improved":
         pv = "better"
 
     return PlatformComparison(
@@ -117,7 +145,8 @@ def aggregate_driver_stats(
             for baseline_value, test_value in zip(baseline_values, test_values)
             if baseline_value is not None and test_value is not None
         ]
-        return sum(deltas) / len(deltas) if deltas else None
+        required_pairs = math.ceil(0.9 * max(len(baseline_values), len(test_values)))
+        return sum(deltas) / len(deltas) if deltas and len(deltas) >= required_pairs else None
 
     throttle_mae = _paired_mae("throttle_pct")
     brake_mae = _paired_mae("brake_pct")
@@ -129,20 +158,31 @@ def aggregate_driver_stats(
         or (brake_mae is not None and brake_mae > 3.0)
         or (steering_mae is not None and steering_mae > 1.5)
     )
+    evidence_complete = all(value is not None for value in (throttle_mae, brake_mae, steering_mae))
     normalized_differences = [
-        throttle_mae / 4.0 if throttle_mae is not None else 0.0,
-        brake_mae / 3.0 if brake_mae is not None else 0.0,
-        steering_mae / 1.5 if steering_mae is not None else 0.0,
-    ]
-    repeatability = max(0.0, min(100.0, 100.0 - 35.0 * max(normalized_differences)))
+        throttle_mae / 4.0,
+        brake_mae / 3.0,
+        steering_mae / 1.5,
+    ] if evidence_complete else []
+    repeatability = (
+        max(0.0, min(100.0, 100.0 - 35.0 * max(normalized_differences)))
+        if normalized_differences
+        else None
+    )
     return DriverComparison(
         avg_throttle_pct=th, avg_brake_pct=br, avg_abs_steering_deg=st,
         throttle_mae_pct=round(throttle_mae, 3) if throttle_mae is not None else None,
         brake_mae_pct=round(brake_mae, 3) if brake_mae is not None else None,
         steering_mae_deg=round(steering_mae, 3) if steering_mae is not None else None,
-        repeatability_score=round(repeatability, 1),
-        driver_changed_warning="Driver input changed — reduced comparison confidence." if changed else None,
-        driver_verdict="changed" if changed else "consistent",
+        repeatability_score=round(repeatability, 1) if repeatability is not None else None,
+        driver_changed_warning=(
+            "Driver input evidence is incomplete; setup attribution is unavailable."
+            if not evidence_complete
+            else "Driver input changed — reduced comparison confidence."
+            if changed
+            else None
+        ),
+        driver_verdict="unavailable" if not evidence_complete else "changed" if changed else "consistent",
     )
 
 
@@ -214,7 +254,8 @@ def aggregate_tire_comparison(
     # Check if any tire data exists
     has_tire_data = any(
         any(v is not None for v in (bl.get(ch) or []))
-        for ch in ["lf_pressure_gain", "lf_temp_spread"]
+        or any(v is not None for v in (t.get(ch) or []))
+        for ch in tire_channels
     )
     if not has_tire_data:
         return TireComparison(
@@ -231,29 +272,66 @@ def aggregate_tire_comparison(
     def _avg_delta(chs: list[str]) -> float | None:
         vals: list[float] = []
         for ch in chs:
-            bl_v = [v for v in (bl.get(ch) or []) if v is not None]
-            t_v = [v for v in (t.get(ch) or []) if v is not None]
-            if bl_v and t_v:
-                vals.append(sum(t_v) / len(t_v) - sum(bl_v) / len(bl_v))
+            bl_values = bl.get(ch) or []
+            t_values = t.get(ch) or []
+            paired = [
+                (float(baseline), float(test))
+                for baseline, test in zip(bl_values, t_values)
+                if baseline is not None
+                and test is not None
+                and math.isfinite(float(baseline))
+                and math.isfinite(float(test))
+            ]
+            required = math.ceil(0.90 * max(len(bl_values), len(t_values)))
+            if paired and len(paired) >= required:
+                vals.append(sum(test - baseline for baseline, test in paired) / len(paired))
         return sum(vals) / len(vals) if vals else None
 
     pg_delta = _avg_delta(pg_channels)
     ts_delta = _avg_delta(ts_channels)
     ws_delta = _avg_delta(ws_channels)
+    corners: dict[Corner, CornerDelta] = {}
+    for corner in ("LF", "RF", "LR", "RR"):
+        prefix = corner.lower()
+        pressure_gain = aggregate_channel_stats(
+            bl, t, f"{prefix}_pressure_gain", f"{corner} Pressure Gain", "psi", "neutral",
+        )
+        temp_spread = aggregate_channel_stats(
+            bl, t, f"{prefix}_temp_spread", f"{corner} Surface Temp Spread", "°C", "worse",
+        )
+        wear_spread = aggregate_channel_stats(
+            bl, t, f"{prefix}_wear_spread", f"{corner} Wear Spread", "percentage points", "worse",
+        )
+        if any(
+            metric.baseline_avg is not None or metric.test_avg is not None
+            for metric in (pressure_gain, temp_spread, wear_spread)
+        ):
+            corners[corner] = CornerDelta(
+                corner=corner,
+                tire_pressure_gain=pressure_gain,
+                temp_spread=temp_spread,
+                tire_wear=wear_spread,
+                warnings=[
+                    "Pressure gain is calculated in psi from measured running and cold pressures stored in kPa; it is not raw pressure or direct tire-energy measurement.",
+                    "Surface-temperature and wear spreads are calculated from measured profiles; short runs cannot establish degradation.",
+                ],
+            )
     # Determine tire stress change label
     is_short_run = lap_count < 10
 
     # Build warnings
     warnings: list[str] = []
     if is_short_run:
-        warnings.append("Short run — tire falloff conclusions are low confidence.")
+        warnings.append("Short run — tire trend is observational; use at least 10 eligible laps for a verdict.")
     if pg_delta is not None and abs(pg_delta) > 2.0:
         warnings.append(f"Pressure gain changed by {pg_delta:+.1f} psi.")
     if ts_delta is not None and abs(ts_delta) > 5.0:
         warnings.append(f"Temp spread changed by {ts_delta:+.1f}°C.")
 
     # Stress change label
-    if pg_delta is None and ts_delta is None:
+    if is_short_run:
+        stress_label = "unavailable"
+    elif pg_delta is None and ts_delta is None:
         stress_label = "unavailable"
     elif (pg_delta is not None and pg_delta < -0.5) or (ts_delta is not None and ts_delta < -2.0):
         stress_label = "improved"
@@ -269,12 +347,20 @@ def aggregate_tire_comparison(
     if ts_delta is not None:
         parts.append(f"temp spread {ts_delta:+.1f}°C")
     if ws_delta is not None:
-        parts.append(f"wear spread {ws_delta:+.2f} mm")
+        parts.append(f"wear spread {ws_delta:+.2f} percentage points")
 
     return TireComparison(
-        corners={},
+        corners=corners,
+        temp_spread_summary=(
+            f"Average matched-position surface-temperature spread changed {ts_delta:+.1f} °C."
+            if ts_delta is not None else None
+        ),
+        wear_summary=(
+            f"Average matched-position wear spread changed {ws_delta:+.2f} percentage points."
+            if ws_delta is not None else None
+        ),
         tire_verdict=stress_label,
-        short_run_warning=warnings[0] if warnings else None,
+        short_run_warning=" ".join(warnings) if warnings else None,
     )
 
 
@@ -302,7 +388,8 @@ def aggregate_shock_comparison(
     # Check if any shock data exists
     has_shock_data = any(
         any(v is not None for v in (bl.get(ch) or []))
-        for ch in ["shock_activity_index", "shock_velocity_rms"]
+        or any(v is not None for v in (t.get(ch) or []))
+        for ch in shock_channels
     )
     if not has_shock_data:
         return ShockComparison(
@@ -312,6 +399,27 @@ def aggregate_shock_comparison(
 
     sai = aggregate_channel_stats(bl, t, "shock_activity_index", "Shock Activity", "index", "worse")
     svr = aggregate_channel_stats(bl, t, "shock_velocity_rms", "Shock Velocity RMS", "in/s", "worse")
+    corners: dict[Corner, CornerDelta] = {}
+    for corner in ("LF", "RF", "LR", "RR"):
+        prefix = corner.lower()
+        corner_rms = aggregate_channel_stats(
+            bl, t, f"{prefix}_shock_velocity_rms", f"{corner} Shock Velocity RMS", "in/s", "worse",
+        )
+        corner_activity = aggregate_channel_stats(
+            bl, t, f"{prefix}_shock_activity_index", f"{corner} Shock Activity", "index", "worse",
+        )
+        if any(
+            metric.baseline_avg is not None or metric.test_avg is not None
+            for metric in (corner_rms, corner_activity)
+        ):
+            corners[corner] = CornerDelta(
+                corner=corner,
+                shock_velocity_rms=corner_rms,
+                shock_activity_index=corner_activity,
+                warnings=[
+                    "Shock RMS and activity index are calculated response metrics from measured shaft velocity; neither is measured damper force."
+                ],
+            )
 
     # Determine shock stress change label
     sai_d = sai.delta_avg
@@ -326,7 +434,7 @@ def aggregate_shock_comparison(
         shock_label = "similar"
 
     return ShockComparison(
-        corners={},
+        corners=corners,
         shock_velocity_rms_avg=svr,
         shock_activity_index=sai,
         shock_verdict=shock_label,
@@ -363,35 +471,69 @@ def compute_whole_car_index(
     # Logistic scoring for continuous, analog sub-scores
     # Speed is measured directly. Dynamic pressure remains platform context and
     # must not masquerade as a speed result when air density may differ.
-    si = logistic_score(delta=speed_delta_mph, noise=0.05, steepness=2.5, higher_is_better=True)
+    si = (
+        logistic_score(delta=speed_delta_mph, noise=0.05, steepness=2.5, higher_is_better=True)
+        if speed_delta_mph is not None
+        else None
+    )
 
     cfs_delta = platform.cfs_height.delta_avg if platform.cfs_height else None
-    pi = logistic_score(delta=cfs_delta, noise=0.001, steepness=80.0, higher_is_better=True)
+    pi = (
+        logistic_score(delta=cfs_delta, noise=0.001, steepness=80.0, higher_is_better=True)
+        if cfs_delta is not None
+        else None
+    )
 
     steering_delta = driver.avg_abs_steering_deg.delta_avg if driver.avg_abs_steering_deg else None
-    di = logistic_score(delta=steering_delta, noise=0.25, steepness=3.0, higher_is_better=False)
+    di = (
+        logistic_score(delta=steering_delta, noise=0.25, steepness=3.0, higher_is_better=False)
+        if steering_delta is not None
+        else None
+    )
 
     pull_delta = powertrain.pull_score.delta_avg if powertrain and powertrain.pull_score else None
-    pwi = logistic_score(delta=pull_delta, noise=0.05, steepness=2.0, higher_is_better=True) if pull_delta is not None else 50.0
+    pwi = logistic_score(delta=pull_delta, noise=0.05, steepness=2.0, higher_is_better=True) if pull_delta is not None else None
 
     dici = min(100, discipline_score) if discipline_score else 50
 
     # Select weight profile by track type, fall back to oval
     weights = WCI_WEIGHT_PROFILES.get(track_type, WCI_WEIGHT_PROFILES["oval"])
-    ov = (
-        si * weights["speed"]
-        + pi * weights["platform"]
-        + di * weights["driver"]
-        + pwi * weights["powertrain"]
-        + dici * weights["discipline"]
+    component_scores = {
+        "speed": si,
+        "platform": pi,
+        "driver": di,
+        "powertrain": pwi,
+        "discipline": dici,
+    }
+    available_weight = sum(
+        weights[name] for name, score in component_scores.items() if score is not None
     )
-    ov = min(100, max(0, ov))
-    lb = _overall_label(ov)
+    total_weight = sum(weights.values())
+    coverage = available_weight / total_weight if total_weight else 0.0
+    ov = (
+        sum(
+            score * weights[name]
+            for name, score in component_scores.items()
+            if score is not None
+        ) / available_weight
+        if available_weight
+        else None
+    )
+    if ov is not None:
+        ov = min(100, max(0, ov))
+    # A faster/slower whole-car conclusion requires measured speed evidence.
+    lb = _overall_label(ov) if ov is not None and si is not None else "Unavailable — speed evidence missing"
+    confidence = (70.0 if context_problems == 0 else 45.0) * coverage
+    if si is None:
+        confidence = min(confidence, 25.0)
     return WholeCarIndex(
-        speed_index=round(si, 1), platform_index=round(pi, 1),
+        speed_index=round(si, 1) if si is not None else None,
+        platform_index=round(pi, 1) if pi is not None else None,
         tire_index=None, shock_index=None,
-        driver_index=round(di, 1), powertrain_index=round(pwi, 1),
+        driver_index=round(di, 1) if di is not None else None,
+        powertrain_index=round(pwi, 1) if pwi is not None else None,
         test_discipline_index=round(dici, 1),
-        confidence_index=70.0 if context_problems == 0 else 45.0,
-        overall_index=round(ov, 1), overall_label=lb,
+        confidence_index=round(confidence, 1),
+        overall_index=round(ov, 1) if ov is not None and si is not None else None,
+        overall_label=lb,
     )

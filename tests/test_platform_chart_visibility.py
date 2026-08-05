@@ -264,7 +264,7 @@ def test_tires_view_removes_prototype_full_lap_distribution_panel() -> None:
     assert "tire-data-empty" not in styles
 
     tires_preset = platform.split('"Tires": [', 1)[1].split('  "Shocks": [', 1)[0]
-    assert 'label: "Pressure Gain [kPa]"' in tires_preset
+    assert 'label: "Pressure Gain [psi]"' in tires_preset
     assert 'label: "Temp Spread [C]"' in tires_preset
     assert 'label: "Slip Ratio Proxy"' in tires_preset
 
@@ -343,7 +343,6 @@ def test_diffuser_view_removes_engineering_metric_card_block() -> None:
 
 def test_aero_and_grade_views_are_backend_only_not_visible_platform_tabs() -> None:
     subnav = _read("ui/src/components/WorkbenchSubnav.tsx")
-    platform = _read("ui/src/tabs/PlatformTab.tsx")
     channels = _read("ui/src/constants/workbenchChannels.ts")
     channel_meta = _read("ui/src/utils/channelMeta.ts")
     calculated = _read("racelab_engine/analysis/calculated_channels.py")

@@ -5,12 +5,29 @@ import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { SEVERITY_COLOURS, humanizeEventLabel } from "../constants/ui";
 import { isProxyChannel } from "../utils/channelMeta";
-import type { RunOverview, TelemetryEvent } from "../types/telemetry";
+import type { RunOverview, TelemetryCapabilitiesResponse, TelemetryEvent } from "../types/telemetry";
 
 type OverviewTabProps = {
   overview: RunOverview;
+  telemetryCapabilities?: TelemetryCapabilitiesResponse | null;
   onToggleMapOverlay?: () => void;
 };
+
+const NON_BLOCKING_RACE_WARNING_PREFIXES = [
+  "short runs cannot support strong tire degradation or cooling conclusions",
+  "do not overclaim exact aerodynamic drag force",
+  "missing optional channels",
+  "shock movement telemetry is unavailable",
+  "at least one low/negative splitter event occurred in slowdown context",
+];
+
+function isDecisionBlockingWarning(warning: string): boolean {
+  const lower = warning.toLowerCase();
+  if (NON_BLOCKING_RACE_WARNING_PREFIXES.some((prefix) => lower.startsWith(prefix))) return false;
+  // New warning text must fail closed until it is explicitly reviewed as a
+  // scope-only caution. Unknown warnings cannot silently earn a Race call.
+  return true;
+}
 
 function severityLabel(severity: TelemetryEvent["severity"]): "CRITICAL" | "HIGH" | "WATCH" | "INFO" {
   if (severity === "critical") return "CRITICAL";
@@ -40,20 +57,29 @@ function buildWhyText(event: TelemetryEvent, isLearning: boolean): string {
 }
 
 function orderedWarnings(warnings: string[]): Array<{ key: string; label: string; matches: string[]; items: string[] }> {
-  const groups = [
+  const definitions = [
     { key: "missing_required", label: "Missing required telemetry", matches: ["missing required"] },
     { key: "missing_optional", label: "Missing optional telemetry", matches: ["missing optional"] },
     { key: "setup_snapshot", label: "Setup snapshot unavailable", matches: ["setup", "snapshot", "carsetup"] },
     { key: "proxy_heavy", label: "Proxy/estimate-heavy result", matches: ["proxy", "estimate"] },
     { key: "short_run", label: "Short run / low confidence", matches: ["short", "low confidence", "insufficient", "few laps"] },
-  ].map((group) => ({
+  ];
+  const assigned = new Set<number>();
+  const groups = definitions.map((group) => ({
     ...group,
-    items: warnings.filter((warning) => group.matches.some((match) => warning.toLowerCase().includes(match))),
+    items: warnings.filter((warning, index) => {
+      if (assigned.has(index) || !group.matches.some((match) => warning.toLowerCase().includes(match))) return false;
+      assigned.add(index);
+      return true;
+    }),
   }));
-  return groups;
+  const other = warnings.filter((_, index) => !assigned.has(index));
+  return other.length > 0
+    ? [...groups, { key: "other", label: "Other data-quality warnings", matches: [], items: other }]
+    : groups;
 }
 
-export function OverviewTab({ overview, onToggleMapOverlay }: OverviewTabProps) {
+export function OverviewTab({ overview, telemetryCapabilities, onToggleMapOverlay }: OverviewTabProps) {
   const lap = overview.best_useful_lap;
   const { setWorkspace, focusEvidence, selection } = useTelemetrySelection();
   const [openWarningKeys, setOpenWarningKeys] = useState<Record<string, boolean>>({});
@@ -119,15 +145,34 @@ export function OverviewTab({ overview, onToggleMapOverlay }: OverviewTabProps) 
 
   if (!isLearning) {
     const setupAvailable = overview.setup_snapshot != null;
-    const decisionState = !lap || !setupAvailable
+    const archiveVerified = Boolean(
+      telemetryCapabilities
+      && telemetryCapabilities.cache_compatibility.status === "current"
+      && telemetryCapabilities.capability_summary.lossless_archive_complete
+      && telemetryCapabilities.capability_summary.warning_channels === 0,
+    );
+    const blockingOverviewWarnings = overview.warnings.filter(isDecisionBlockingWarning);
+    const dataTrustReady = archiveVerified && blockingOverviewWarnings.length === 0;
+    const trustBlocker = !telemetryCapabilities
+      ? "Telemetry capability verification is unavailable for this run."
+      : telemetryCapabilities.cache_compatibility.status !== "current"
+        ? telemetryCapabilities.cache_compatibility.reason
+        : !telemetryCapabilities.capability_summary.lossless_archive_complete
+          ? "The universal telemetry archive is incomplete."
+          : telemetryCapabilities.capability_summary.warning_channels > 0
+            ? `${telemetryCapabilities.capability_summary.warning_channels} telemetry channels have health warnings.`
+            : blockingOverviewWarnings[0] ?? null;
+    const decisionState = !lap || !setupAvailable || !dataTrustReady
       ? "NO CALL"
       : topEvent
         ? "INVESTIGATE"
-        : "READY";
+        : "HOLD";
     const decisionHeadline = !lap
       ? "No eligible timed lap is available."
       : !setupAvailable
         ? "Telemetry is usable, but the setup snapshot is missing."
+        : !dataTrustReady
+          ? "Data quality needs review before a setup call."
         : topEvent
           ? humanizeEventLabel(topEvent.event_type)
           : "No tuning-valid issue was detected in this run.";
@@ -135,6 +180,8 @@ export function OverviewTab({ overview, onToggleMapOverlay }: OverviewTabProps) 
       ? "Complete a clean timed lap before making a setup decision."
       : !setupAvailable
         ? "Capture the setup before the next run so every change can be attributed."
+        : !dataTrustReady
+          ? trustBlocker ?? "Resolve the run warnings before using this run for a setup decision."
         : topEvent
           ? `${topEvent.zone_name ? `Zone ${topEvent.zone_name}` : "Located event"}${topEvent.lap_number != null ? ` · Lap ${topEvent.lap_number}` : ""}${(topEvent.lap_pct_peak ?? topEvent.lap_pct_start) != null ? ` · Peak ${(topEvent.lap_pct_peak ?? topEvent.lap_pct_start)?.toFixed(1)}%` : ""}`
           : "Hold the current setup or begin one small, controlled test.";
@@ -143,13 +190,13 @@ export function OverviewTab({ overview, onToggleMapOverlay }: OverviewTabProps) 
       <div className="race-decision-shell">
         <section className="race-decision-card" data-state={decisionState.toLowerCase().replace(" ", "-")}>
           <div className="race-decision-kicker">
-            {decisionState === "READY" ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
+            {decisionState === "HOLD" ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
             <span>{decisionState}</span>
           </div>
           <h2>{decisionHeadline}</h2>
           <p className="race-decision-detail">{decisionDetail}</p>
 
-          {topEvent && lap && setupAvailable && (
+          {topEvent && lap && setupAvailable && dataTrustReady && (
             <p className="race-decision-caveat">
               Highest-confidence valid telemetry event—not yet a setup conclusion.
             </p>
@@ -175,8 +222,8 @@ export function OverviewTab({ overview, onToggleMapOverlay }: OverviewTabProps) 
         <section className="race-proof-strip" aria-label="Decision evidence quality">
           <div><span>Eligible laps</span><strong>{usefulCount}</strong></div>
           <div><span>Setup captured</span><strong>{setupAvailable ? "YES" : "NO"}</strong></div>
-          <div><span>Valid events</span><strong>{overview.events.filter((event) => event.valid_for_tuning).length}</strong></div>
-          <div><span>Event confidence</span><strong>{topEvent?.confidence_score != null ? `${Math.round(topEvent.confidence_score * 100)}%` : "—"}</strong></div>
+          <div><span>Archive verified</span><strong>{archiveVerified ? "YES" : "NO"}</strong></div>
+          <div><span>Blocking warnings</span><strong>{blockingOverviewWarnings.length}</strong></div>
         </section>
 
         {overview.warnings.length > 0 && (
@@ -240,6 +287,29 @@ export function OverviewTab({ overview, onToggleMapOverlay }: OverviewTabProps) 
           <span>Top Severity {topSeverity}</span>
         </div>
       </section>
+
+      {telemetryCapabilities && (
+        <section className="workspace-section" aria-label="Telemetry capability summary">
+          <h2>Telemetry Capability</h2>
+          <div className="overview-trust-summary">
+            <span>Declared {telemetryCapabilities.capability_summary.declared_channels}</span>
+            <span>Archived {telemetryCapabilities.capability_summary.cached_channels}</span>
+            <span>Unmapped {telemetryCapabilities.capability_summary.unmapped_channels}</span>
+            <span>Warnings {telemetryCapabilities.capability_summary.warning_channels}</span>
+          </div>
+          <p className="muted">
+            {telemetryCapabilities.capability_summary.lossless_archive_complete
+              ? "Every file-declared channel is preserved in the universal archive."
+              : "This run does not satisfy the universal archive invariant."}
+          </p>
+          {telemetryCapabilities.cache_compatibility.status !== "current" && (
+            <div className="race-warning-line">
+              <AlertTriangle size={14} />
+              <span>{telemetryCapabilities.cache_compatibility.reason}</span>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="metrics-row">
         <EngineeringMetricCard title="Best Useful Lap" value={lap ? `Lap ${lap.lap_number} · ${lap.lap_time?.toFixed(3)}s` : null} color="#22c55e" />

@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from api.schemas import CacheInfo, ImportIbtRequest, ImportIbtResponse, TrackMapResolution
+from api.schemas import CacheInfo, ImportIbtResponse, TrackMapResolution
 from racelab_engine.services.import_service import ImportService, default_data_dir
 
 _log = logging.getLogger(__name__)

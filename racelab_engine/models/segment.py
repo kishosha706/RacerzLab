@@ -28,7 +28,7 @@ class SegmentSummary(BaseModel):
     avg_lat_accel: Optional[float] = None
     min_splitter_mm: Optional[float] = None
     platform_risk_score: float = 0.0
-    drag_scrub_score: float = 0.0
+    drag_scrub_score: Optional[float] = None
     driver_input_score: float = 0.0
     powertrain_score: float = 0.0
     confidence_score: float = 0.0

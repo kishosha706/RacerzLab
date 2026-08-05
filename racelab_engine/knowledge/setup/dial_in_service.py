@@ -2,12 +2,20 @@ from __future__ import annotations
 
 from typing import Any
 
+from racelab_engine.analysis.lap_eligibility import eligible_laps, find_lap, lap_ineligibility_reasons
 from racelab_engine.analysis.setup_controls import SETUP_CONTROL_SPECS
 from racelab_engine.analysis.setup_diff import setup_control_value
 from racelab_engine.storage.repository import RaceLabRepository
 
 from .dial_in_controls import GarageAction, garage_action_for_effect
-from .dial_in_schema import Clarification, DialInResponse, DialInSwing, HiddenEvidenceSummary
+from .dial_in_schema import (
+    Clarification,
+    DialInResponse,
+    DialInSwing,
+    EvidenceStrengthSignal,
+    HiddenEvidenceSummary,
+)
+from .evidence_schema import RunEvidenceContext
 from .display_labels import (
     DIAL_IN_STRENGTH_LABELS,
     format_success_target,
@@ -39,9 +47,9 @@ RISK_LABELS = {
     "high": "High risk",
 }
 CANDIDATE_READINESS_LABELS = {
-    "ready": "Data profile clean",
-    "partially_ready": "Data profile partial",
-    "missing_key_evidence": "Need cleaner data",
+    "ready": "Observed mechanism",
+    "partially_ready": "Unverified hypothesis",
+    "missing_key_evidence": "Measurement required",
 }
 GENERIC_COMPLAINTS = {"loose", "tight", "push", "free", "bad", "weird", "off"}
 GENERIC_CLARIFICATION_QUESTION = "Where is it happening?"
@@ -54,6 +62,49 @@ def _normalize_complaint(value: str) -> str:
 
 def _balance_label(value: str | None) -> str | None:
     return value.replace("_", " ") if value else None
+
+
+def _phase_family(value: str | None) -> str | None:
+    normalized = (value or "").strip().casefold().replace(" ", "_")
+    aliases = {
+        "brake_application": "braking",
+        "threshold_braking": "braking",
+        "brake_release": "entry",
+        "turn_in": "entry",
+        "apex_region": "center",
+        "initial_throttle": "exit",
+        "full_throttle_exit": "exit",
+        "following_straight_carry": "exit",
+        "bump": "bump_curb",
+        "curb": "bump_curb",
+    }
+    return aliases.get(normalized, normalized) or None
+
+
+def _priority_phase(value: str | None) -> str | None:
+    return {
+        "entry-security": "entry",
+        "center-rotation": "center",
+        "exit-drive": "exit",
+    }.get((value or "").strip().casefold())
+
+
+def _decision_context_measurement_blocker(objective: str | None, priority: str | None) -> str | None:
+    normalized_objective = (objective or "race-pace").strip().casefold()
+    normalized_priority = (priority or "overall-pace").strip().casefold()
+    if normalized_objective in {"long-run", "tire-conservation", "driver-confidence"}:
+        return (
+            f"The {normalized_objective.replace('-', ' ')} objective requires its purpose-sized "
+            "stint, tire, or driver-consistency measurement mission before any setup test is approved."
+        )
+    if normalized_priority == "tire-life":
+        return "Tire-life priority requires a clean continuous stint and repeated tire-state history."
+    if normalized_priority == "platform-margin":
+        return (
+            "Platform-margin priority requires same-position clearance, contact, and platform-stability "
+            "measurements; phase time alone cannot approve a setup test."
+        )
+    return None
 
 
 def _confidence_label(complaint: str, *, needs_clarification: bool, supported: bool) -> str:
@@ -84,10 +135,10 @@ def _readiness_label(candidate_readiness: list[str], *, missing_hint: str | None
     if not candidate_readiness:
         return "Need cleaner data"
     if all(item == "ready" for item in candidate_readiness) and not missing_hint:
-        return "Data profile looks clean"
+        return "Observed mechanism available"
     if all(item == "missing_key_evidence" for item in candidate_readiness):
         return "Need cleaner data"
-    return "Data profile is partial"
+    return "Hypothesis only"
 
 
 def _is_major_package_swing(effect: RankedSetupEffect) -> bool:
@@ -364,6 +415,28 @@ def _filter_swings(candidates: list[RankedSetupEffect], limit: int) -> list[Rank
     for item in candidates:
         if len(selected) >= limit:
             break
+        # A semantic match is not measurement evidence.  Never turn a candidate
+        # with missing required signals into a numeric garage instruction.
+        if item.readiness == "missing_key_evidence":
+            continue
+        # Setup presence, lap windows, track identity, and speed alone establish
+        # context but do not measure the handling mechanism behind an action.
+        context_only = {
+            "setup_snapshot",
+            "lap_windows",
+            "phase",
+            "selected_lap_window",
+            "lap_falloff",
+            "track_map",
+            "track_map_zone",
+            "selected_zone",
+            "speed_trace",
+            "compare_baseline",
+            "compare_test",
+            "compare_baseline_test",
+        }
+        if not (set(item.evidence_matched) - context_only):
+            continue
         action = garage_action_for_effect(item)
         if action is None:
             continue
@@ -378,10 +451,55 @@ def _filter_swings(candidates: list[RankedSetupEffect], limit: int) -> list[Rank
     return selected
 
 
+EVIDENCE_GROUP_BY_FLAG: dict[str, tuple[str, ...]] = {
+    "brake": ("brake_trace",),
+    "brake_trace": ("brake_trace",),
+    "diffuser_proxy": ("diffuser_proxy",),
+    "front_platform": ("front_ride_height_platform", "platform_trace"),
+    "platform": ("platform_trace",),
+    "rear_platform": ("rear_ride_height_platform", "platform_trace"),
+    "rear_scrape_scrub": ("rear_scrape_scrub",),
+    "rpm": ("rpm_gear_trace",),
+    "rpm_gear_trace": ("rpm_gear_trace",),
+    "scrape": ("rear_scrape_scrub",),
+    "shock_histogram": ("shock_histogram",),
+    "shock_rms_activity": ("shock_histogram",),
+    "speed_loss": ("speed_trace",),
+    "speed_trace": ("speed_trace",),
+    "steering": ("steering_trace",),
+    "throttle": ("throttle_trace",),
+    "tire_pressure": ("tire_pressure",),
+    "tire_temps": ("tire_temps",),
+    "tire_trend": ("tire_pressure", "tire_temps", "tire_wear"),
+    "tire_wear": ("tire_wear",),
+    "wear": ("tire_wear",),
+    "yaw": ("yaw_trace",),
+    "yaw_scrub_steering": ("rear_scrape_scrub", "yaw_trace", "steering_trace"),
+}
+
+
+def _candidate_source_channels(item: RankedSetupEffect, context: RunEvidenceContext) -> list[str]:
+    """Return archived channels that supplied the candidate's matched evidence."""
+    group_ids = {
+        group_id
+        for flag in item.evidence_matched
+        for group_id in EVIDENCE_GROUP_BY_FLAG.get(flag, (flag,))
+    }
+    return list(dict.fromkeys(
+        channel
+        for group in context.evidence_groups
+        if group.group_id in group_ids
+        for channel in group.channels_present
+    ))
+
+
 def _build_swing(
     item: RankedSetupEffect,
     *,
     setup_values: dict[str, Any],
+    supporting_event_ids_by_flag: dict[str, list[str]],
+    supporting_event_ids_by_setup_key: dict[str, list[str]],
+    source_channels_by_event_id: dict[str, list[str]],
     include_debug_evidence: bool,
 ) -> DialInSwing:
     garage_action = garage_action_for_effect(item, setup_values)
@@ -395,13 +513,64 @@ def _build_swing(
             "evidence_missing": item.missing_evidence,
             "ranking_reasons": item.ranking_reasons,
             "score": round(item.score, 3),
+            "observed_evidence_flags": item.observed_evidence_matched,
         }
+    control_links = {
+        key: set(supporting_event_ids_by_setup_key.get(key, ()))
+        for key in garage_action.control_keys
+    }
+    control_flag_links = {
+        key: {
+            flag: event_ids & set(supporting_event_ids_by_flag.get(flag, ()))
+            for flag in item.observed_evidence_matched
+        }
+        for key, event_ids in control_links.items()
+    }
+    candidate_mechanism_complete = (
+        bool(item.observed_evidence_matched)
+        and bool(control_flag_links)
+        and all(
+            ids
+            for flag_links in control_flag_links.values()
+            for ids in flag_links.values()
+        )
+    )
+    supporting_event_ids = list(dict.fromkeys(
+        event_id
+        for flag_links in control_flag_links.values()
+        for ids in flag_links.values()
+        for event_id in ids
+    )) if candidate_mechanism_complete else []
+    linked_observed_flags = [
+        flag
+        for flag in item.observed_evidence_matched
+        if all(flag_links.get(flag) for flag_links in control_flag_links.values())
+    ]
+    source_channels = list(dict.fromkeys(
+        channel
+        for event_id in supporting_event_ids
+        for channel in source_channels_by_event_id.get(event_id, ())
+    ))
+    readiness_label = CANDIDATE_READINESS_LABELS.get(
+        item.readiness, item.readiness.replace("_", " ").title(),
+    )
+    if item.readiness == "ready" and not candidate_mechanism_complete:
+        readiness_label = "Unverified hypothesis"
+    change_this = garage_action.change_this
+    proposed_value_label = garage_action.proposed_value_label
+    if not candidate_mechanism_complete:
+        change_this = (
+            f"Do not change {garage_action.garage_lever} yet; first measure whether it is linked "
+            "to the selected symptom and phase."
+        )
+        proposed_value_label = None
     return DialInSwing(
         id=item.effect.effect_id,
         title=garage_action.title,
-        change_this=garage_action.change_this,
+        change_this=change_this,
         garage_lever=garage_action.garage_lever,
         control_keys=garage_action.control_keys,
+        direction_sign=garage_action.direction_sign,
         setup_area=item.effect.setup_area,
         change_size_label=garage_action.change_size_label,
         change_size_explanation=garage_action.change_size_explanation,
@@ -409,7 +578,7 @@ def _build_swing(
         control_expectation=garage_action.control_expectation,
         control_guardrail=garage_action.control_guardrail,
         current_value_label=garage_action.current_value_label,
-        proposed_value_label=garage_action.proposed_value_label,
+        proposed_value_label=proposed_value_label,
         strength_label=DIAL_IN_STRENGTH_LABELS.get(item.effect.effect_strength, "Setup lever"),
         risk_label=RISK_LABELS.get(item.effect.coupling_risk, item.effect.coupling_risk.title()),
         effect=_effect_wording(item),
@@ -421,7 +590,12 @@ def _build_swing(
         watch_for_labels=[format_target_label(target) for target in item.effect.watch_for_targets],
         keep_if=_keep_if(item),
         undo_if=_undo_if(item),
-        readiness_label=CANDIDATE_READINESS_LABELS.get(item.readiness, item.readiness.replace("_", " ").title()),
+        readiness_label=readiness_label,
+        # Validation targets describe what a future A/B test should watch. They
+        # are not necessarily channels measured in the current run.
+        source_channels=source_channels,
+        observed_evidence_flags=linked_observed_flags,
+        supporting_event_ids=supporting_event_ids,
         debug=debug,
     )
 
@@ -438,10 +612,10 @@ def _validation_summary(swings: list[DialInSwing]) -> str | None:
 
 
 def _readiness_sentence(readiness_label: str) -> str:
-    if readiness_label == "Data profile looks clean":
-        return "Data coverage is strong. Confirm the recommendation with one controlled A/B test."
-    if readiness_label == "Data profile is partial":
-        return "Data profile is partial. Pick one change and validate it."
+    if readiness_label == "Observed mechanism available":
+        return "An eligible telemetry event supports this mechanism. Confirm it with one controlled A/B test."
+    if readiness_label == "Hypothesis only":
+        return "The data profile can measure this, but the mechanism is not fully observed. Treat it as one test hypothesis."
     if readiness_label == "Need cleaner data":
         return "I need a cleaner run to be sure."
     return f"Readiness: {readiness_label}."
@@ -500,6 +674,82 @@ def _hidden_summary(result, context) -> HiddenEvidenceSummary:
         readiness_by_candidate=result.candidate_readiness,
         ranking_reasons=result.setup_query.ranking_reasons,
         disabled_by_capability=disabled,
+        capability_flags=result.capability_flags,
+        observed_mechanism_flags=result.observed_evidence_flags,
+        supporting_event_ids=result.supporting_event_ids,
+    )
+
+
+def _evidence_strength_signal(
+    context: RunEvidenceContext,
+    *,
+    result=None,
+    selected: list[RankedSetupEffect] | None = None,
+    swings: list[DialInSwing] | None = None,
+    blocked_reason: str | None = None,
+) -> EvidenceStrengthSignal:
+    capability_flags = context.evidence_flags
+    context_only_flags = {
+        "setup_snapshot",
+        "lap_windows",
+        "phase",
+        "selected_lap_window",
+        "lap_falloff",
+        "track_map",
+        "track_map_zone",
+        "selected_zone",
+        "compare_baseline",
+        "compare_test",
+        "compare_baseline_test",
+    }
+    measurement_capability = bool(set(capability_flags) - context_only_flags)
+    observed_flags = result.observed_evidence_flags if result is not None else []
+    event_ids = result.supporting_event_ids if result is not None else []
+    if blocked_reason:
+        return EvidenceStrengthSignal(
+            level="unavailable",
+            readiness="blocked",
+            setup_test_ready=False,
+            capability_flags=capability_flags,
+            observed_mechanism_flags=observed_flags,
+            supporting_event_ids=event_ids,
+            reason=blocked_reason,
+        )
+    if not observed_flags and not measurement_capability:
+        return EvidenceStrengthSignal(
+            level="unavailable",
+            readiness="blocked",
+            setup_test_ready=False,
+            capability_flags=capability_flags,
+            reason="No relevant telemetry measurement capability is available for this setup hypothesis.",
+        )
+    if not observed_flags:
+        return EvidenceStrengthSignal(
+            level="capability_only",
+            readiness="measurement_required",
+            setup_test_ready=False,
+            capability_flags=capability_flags,
+            reason=(
+                "The run can measure relevant channels, but no eligible tuning event observed "
+                "the handling mechanism. Any listed change is an unverified test hypothesis."
+            ),
+        )
+    ready = bool(selected) and bool(swings) and any(
+        swing.readiness_label == "Observed mechanism" and bool(swing.supporting_event_ids)
+        for swing in swings
+    )
+    return EvidenceStrengthSignal(
+        level="observed_mechanism",
+        readiness="test_hypothesis_ready" if ready else "measurement_required",
+        setup_test_ready=ready,
+        capability_flags=capability_flags,
+        observed_mechanism_flags=observed_flags,
+        supporting_event_ids=event_ids,
+        reason=(
+            "Eligible telemetry events support a one-change setup test; a controlled A/B result is still required."
+            if ready
+            else "Eligible events were observed, but none supplies the mechanism evidence required by a listed setup test."
+        ),
     )
 
 
@@ -523,9 +773,22 @@ def build_dial_in_response(
     baseline_run_id: str | None = None,
     test_run_id: str | None = None,
     package_archetype: str | None = None,
+    selected_lap: int | None = None,
+    selected_zone_start_pct: float | None = None,
+    selected_zone_end_pct: float | None = None,
+    selected_phase: str | None = None,
+    objective: str | None = None,
+    priority: str | None = None,
     limit: int = 3,
     include_debug_evidence: bool = False,
 ) -> DialInResponse:
+    selected_zone: tuple[float, float] | None = None
+    if selected_zone_start_pct is not None or selected_zone_end_pct is not None:
+        if selected_zone_start_pct is None or selected_zone_end_pct is None:
+            raise ValueError("A selected Dial-In zone requires both start and end track positions.")
+        if not 0.0 <= selected_zone_start_pct < selected_zone_end_pct <= 100.0:
+            raise ValueError("Selected Dial-In zone must satisfy 0 <= start < end <= 100.")
+        selected_zone = (selected_zone_start_pct, selected_zone_end_pct)
     context = build_run_evidence_context(
         run_id,
         baseline_run_id=baseline_run_id,
@@ -537,6 +800,7 @@ def build_dial_in_response(
     try:
         parsed = parse_symptom(complaint, knowledge)
     except ValueError:
+        blocker = "The complaint could not be mapped to a supported setup symptom."
         return DialInResponse(
             run_id=run_id,
             complaint_raw=complaint,
@@ -546,9 +810,58 @@ def build_dial_in_response(
             next_step="Try naming the phase, trigger, or main behavior first.",
             clarification=Clarification(needed=False),
             warnings=_driver_warnings(context.warnings, include_debug_evidence=include_debug_evidence),
+            evidence_state="unavailable",
+            blocker_reasons=[blocker],
+            evidence_strength=_evidence_strength_signal(context, blocked_reason=blocker),
         )
 
     normalized_complaint = _normalize_complaint(complaint)
+    priority_phase = _priority_phase(priority)
+    decision_phase = selected_phase or priority_phase
+    generic_balance = {
+        "loose": "loose",
+        "free": "loose",
+        "tight": "tight",
+        "push": "tight",
+    }.get(normalized_complaint)
+    if generic_balance and decision_phase:
+        phase_phrase = {
+            "entry": "in",
+            "center": "center",
+            "exit": "off",
+        }.get(_phase_family(decision_phase))
+        if phase_phrase:
+            parsed = parse_symptom(f"{generic_balance} {phase_phrase}", knowledge)
+    if selected_phase and priority_phase and _phase_family(selected_phase) != _phase_family(priority_phase):
+        blocker = (
+            f'The selected phase is {selected_phase.replace("_", " ")}, but the driver priority requires '
+            f'{priority_phase.replace("_", " ")}. Resolve that conflict before choosing a setup test.'
+        )
+    elif decision_phase and _phase_family(decision_phase) != _phase_family(parsed.phase):
+        blocker = (
+            f'The complaint maps to {parsed.phase.replace("_", " ")}, but the requested phase is '
+            f'{decision_phase.replace("_", " ")}. Resolve that conflict before choosing a setup test.'
+        )
+    else:
+        blocker = None
+    if blocker:
+        return DialInResponse(
+            run_id=run_id,
+            complaint_raw=complaint,
+            interpreted_symptom=parsed.canonical_symptom,
+            interpreted_phase=parsed.phase,
+            balance_direction=_balance_label(parsed.balance),
+            confidence_label="Needs clarification",
+            readiness_label="Need cleaner data",
+            driver_message=blocker,
+            next_step="Change the selected phase or describe the handling problem in that phase.",
+            clarification=Clarification(needed=True, question=blocker, options=[]),
+            warnings=_driver_warnings(context.warnings, include_debug_evidence=include_debug_evidence),
+            evidence_state="blocked_by_context",
+            blocker_reasons=[blocker],
+            evidence_strength=_evidence_strength_signal(context, blocked_reason=blocker),
+        )
+
     question = parsed.clarification_question
     options = parsed.clarification_options
     if question is not None and normalized_complaint in GENERIC_COMPLAINTS:
@@ -563,6 +876,7 @@ def build_dial_in_response(
 
     if clarification.needed:
         message = f"I need to narrow it down. {clarification.question}"
+        blocker = "A handling-phase clarification is required before selecting a setup test."
         return DialInResponse(
             run_id=run_id,
             complaint_raw=complaint,
@@ -575,6 +889,8 @@ def build_dial_in_response(
             next_step="Answer the clarification first. Then pick one change, not a handful.",
             clarification=clarification,
             warnings=_driver_warnings(context.warnings, include_debug_evidence=include_debug_evidence),
+            blocker_reasons=[blocker],
+            evidence_strength=_evidence_strength_signal(context, blocked_reason=blocker),
             hidden_evidence_summary=_hidden_summary(
                 query_setup_for_run_context(
                     run_id,
@@ -585,12 +901,59 @@ def build_dial_in_response(
                     car_family_override=car_family_override,
                     track_family_override=track_family_override,
                     package_archetype=package_archetype,
+                    selected_lap=selected_lap,
+                    selected_zone=selected_zone,
+                    phase=decision_phase,
+                    objective=objective,
+                    priority=priority,
                     limit=max(limit, 1),
                 ),
                 context,
             )
             if include_debug_evidence
             else None,
+        )
+
+    if context_blocker := _decision_context_measurement_blocker(objective, priority):
+        return DialInResponse(
+            run_id=run_id,
+            complaint_raw=complaint,
+            interpreted_symptom=parsed.canonical_symptom,
+            interpreted_phase=decision_phase or parsed.phase,
+            balance_direction=_balance_label(parsed.balance),
+            confidence_label=confidence_label,
+            readiness_label="Need objective-specific evidence",
+            driver_message=context_blocker,
+            next_step="Run the server-generated measurement mission before changing the setup.",
+            clarification=clarification,
+            warnings=_driver_warnings(context.warnings, include_debug_evidence=include_debug_evidence),
+            evidence_state="blocked_by_context",
+            blocker_reasons=[context_blocker],
+            evidence_strength=_evidence_strength_signal(context, blocked_reason=context_blocker),
+        )
+
+    eligibility_block = _dial_in_eligibility_block(run_id, selected_lap=selected_lap)
+    if eligibility_block is not None:
+        warnings = _driver_warnings(context.warnings, include_debug_evidence=include_debug_evidence)
+        warnings.append(eligibility_block)
+        return DialInResponse(
+            run_id=run_id,
+            complaint_raw=complaint,
+            interpreted_symptom=parsed.canonical_symptom,
+            interpreted_phase=parsed.phase,
+            balance_direction=_balance_label(parsed.balance),
+            confidence_label=confidence_label,
+            readiness_label="Need cleaner data",
+            driver_message=(
+                f"You said {complaint}. I'm reading that as {parsed.canonical_symptom.replace('_', ' ')}. "
+                "The telemetry observations remain available, but this lap selection cannot support an exact setup change."
+            ),
+            next_step="Record or select one clean, complete flying lap, then test one small setup change.",
+            clarification=clarification,
+            warnings=warnings,
+            evidence_state="blocked_by_context",
+            blocker_reasons=[eligibility_block],
+            evidence_strength=_evidence_strength_signal(context, blocked_reason=eligibility_block),
         )
 
     query_result = query_setup_for_run_context(
@@ -602,12 +965,24 @@ def build_dial_in_response(
         car_family_override=car_family_override,
         track_family_override=track_family_override,
         package_archetype=package_archetype,
+        selected_lap=selected_lap,
+        selected_zone=selected_zone,
+        phase=decision_phase,
+        objective=objective,
+        priority=priority,
         limit=max(limit * 4, limit),
     )
     selected = _filter_swings(query_result.setup_query.candidate_effects, limit)
     setup_values = _driver_setup_values(run_id)
     swings = [
-        _build_swing(item, setup_values=setup_values, include_debug_evidence=include_debug_evidence)
+        _build_swing(
+            item,
+            setup_values=setup_values,
+            supporting_event_ids_by_flag=query_result.supporting_event_ids_by_flag,
+            supporting_event_ids_by_setup_key=query_result.supporting_event_ids_by_setup_key,
+            source_channels_by_event_id=query_result.source_channels_by_event_id,
+            include_debug_evidence=include_debug_evidence,
+        )
         for item in selected
     ]
 
@@ -616,18 +991,30 @@ def build_dial_in_response(
         baseline_run_id=baseline_run_id if context.unavailable_reasons.get("compare_baseline") else None,
         test_run_id=test_run_id if context.unavailable_reasons.get("compare_test") else None,
     )
-    readiness_label = _readiness_label([item.readiness for item in selected], missing_hint=missing_hint)
+    linked_readiness = [
+        "ready" if swing.readiness_label == "Observed mechanism" else "partially_ready"
+        for swing in swings
+    ]
+    readiness_label = _readiness_label(linked_readiness, missing_hint=missing_hint)
     next_step = "Change one test plan, match fuel and tire age, then compare eligible laps by track position."
     if readiness_label == "Need cleaner data":
         next_step = "Data's noisy here. Try a cleaner run or narrow the complaint."
     if missing_hint:
         next_step = f"{next_step} {missing_hint}"
 
+    blocker_reasons = []
+    evidence_state = "needs_confirmation"
+    if not swings:
+        evidence_state = "unavailable"
+        blocker_reasons.append(
+            "Required telemetry evidence is missing for every supported setup action; exact changes are suppressed."
+        )
+
     return DialInResponse(
         run_id=run_id,
         complaint_raw=complaint,
         interpreted_symptom=parsed.canonical_symptom,
-        interpreted_phase=query_result.setup_query.parsed_phase,
+        interpreted_phase=decision_phase or query_result.setup_query.parsed_phase,
         balance_direction=_balance_label(parsed.balance),
         confidence_label=confidence_label,
         readiness_label=readiness_label,
@@ -638,4 +1025,40 @@ def build_dial_in_response(
         clarification=clarification,
         hidden_evidence_summary=_hidden_summary(query_result, context) if include_debug_evidence else None,
         warnings=_driver_warnings(context.warnings, include_debug_evidence=include_debug_evidence),
+        source_channels=list(dict.fromkeys(
+            channel for swing in swings for channel in swing.source_channels
+        )),
+        evidence_state=evidence_state,
+        blocker_reasons=blocker_reasons,
+        evidence_strength=_evidence_strength_signal(
+            context, result=query_result, selected=selected, swings=swings,
+        ),
+    )
+
+
+def _dial_in_eligibility_block(run_id: str, *, selected_lap: int | None) -> str | None:
+    repository = RaceLabRepository()
+    overview = repository.get_overview(run_id)
+    if overview is None:
+        return "Run overview is unavailable; exact setup actions are suppressed."
+    if repository.get_setup_snapshot(run_id) is None:
+        return (
+            "The current setup snapshot is unavailable. Capture the garage setup before requesting "
+            "an exact Dial-In action so the test stays linked to a known baseline."
+        )
+    eligible_numbers = {lap.lap_number for lap in eligible_laps(overview.laps)}
+    if not eligible_numbers:
+        return (
+            "No eligible flying laps are available. Partial, pit, reset, cooldown, wreck, and other "
+            "junk laps cannot drive an exact Dial-In action."
+        )
+    if selected_lap is None:
+        return None
+    summary = find_lap(overview.laps, selected_lap)
+    if summary is not None and selected_lap in eligible_numbers:
+        return None
+    reasons = ["Lap summary unavailable"] if summary is None else lap_ineligibility_reasons(summary)
+    return (
+        f"Selected lap {selected_lap} is not eligible for Dial-In tuning "
+        f"({', '.join(reasons) or 'setup-evidence gate failed'}). Exact setup actions are suppressed."
     )

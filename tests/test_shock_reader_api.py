@@ -66,6 +66,7 @@ def _seed_shock_run(tmp_path: Path, *, include_setup: bool = True) -> None:
             session=SessionSummary(
                 run_id="run-1",
                 car_name="NASCAR Cup Series Next Gen Chevrolet Camaro ZL1",
+                car_path="stockcars chevycamarozl12022",
                 track_name="Charlotte Oval",
                 track_display_name="Charlotte Oval",
             ),
@@ -108,6 +109,9 @@ def test_shock_reader_api_returns_stable_shape(tmp_path: Path, monkeypatch: pyte
     assert payload["corners"][0]["corner"] == "LF"
     assert len(payload["corners"][0]["setting_recommendations"]) == 6
     assert payload["corners"][0]["setting_recommendations"][0]["display_label"] == "LS Comp"
+    assert payload["boundary_in_s"] == 1.5
+    assert payload["slope_actions_available"] is False
+    assert "Official iRacing Next Gen guidance" in payload["boundary_basis"]
     assert len(payload["recommendations"]) <= 1
 
 
@@ -136,3 +140,30 @@ def test_shock_reader_api_returns_404_for_unknown_run(tmp_path: Path, monkeypatc
     response = client.get("/api/runs/missing/shock-reader")
 
     assert response.status_code == 404
+
+
+def test_shock_reader_api_rejects_wide_or_partial_slope_zone(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_shock_run(tmp_path)
+    client = TestClient(app)
+
+    assert client.get("/api/runs/run-1/shock-reader?lap=1&zone_start_pct=20").status_code == 400
+    assert client.get(
+        "/api/runs/run-1/shock-reader?lap=1&zone_start_pct=10&zone_end_pct=40"
+    ).status_code == 400
+
+
+def test_client_cannot_override_server_selected_shock_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_shock_run(tmp_path)
+    client = TestClient(app)
+
+    payload = client.get("/api/runs/run-1/shock-reader?lap=1&boundary_in_s=99").json()
+
+    assert payload["boundary_in_s"] == 1.5

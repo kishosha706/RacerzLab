@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Any
 
 from racelab_engine.analysis.comparison import build_lap_grid, interpolate_run_to_grid
@@ -25,6 +26,8 @@ class SectorDelta:
     avg_rpm_delta: float | None = None
     speed_direction: str = "unchanged"
     platform_risk_direction: str = "unchanged"
+    speed_coverage: float = 0.0
+    warning: str | None = None
 
 
 @dataclass(frozen=True)
@@ -50,23 +53,40 @@ def compute_sector_deltas(
         bl_grid = interpolate_run_to_grid(baseline_rows, selected, grid)
         t_grid = interpolate_run_to_grid(test_rows, selected, grid)
 
+        def _paired(ch: str) -> tuple[list[tuple[float, float]], float]:
+            bl_values = bl_grid.get(ch) or []
+            t_values = t_grid.get(ch) or []
+            expected = min(len(bl_values), len(t_values))
+            pairs = [
+                (b, t)
+                for b, t in zip(bl_values, t_values)
+                if b is not None and t is not None and math.isfinite(b) and math.isfinite(t)
+            ]
+            return pairs, len(pairs) / expected if expected else 0.0
+
         def _avg(ch: str) -> float | None:
-            bl = [v for v in (bl_grid.get(ch) or []) if v is not None]
-            t = [v for v in (t_grid.get(ch) or []) if v is not None]
-            return (sum(t) / len(t)) - (sum(bl) / len(bl)) if bl and t else None
+            pairs, coverage = _paired(ch)
+            if coverage < 0.90:
+                return None
+            return sum(t - b for b, t in pairs) / len(pairs) if pairs else None
 
         def _min(ch: str) -> float | None:
-            t = [v for v in (t_grid.get(ch) or []) if v is not None]
-            bl = [v for v in (bl_grid.get(ch) or []) if v is not None]
-            return min(t) - min(bl) if t and bl else None
+            pairs, coverage = _paired(ch)
+            if coverage < 0.90 or not pairs:
+                return None
+            return min(t - b for b, t in pairs)
 
         avg_speed = _avg("speed_mph")
         min_cfs = _min("cfs_ride_height_in")
         avg_steer = _avg("abs_steering_deg")
         avg_drag = _avg("drag_scrub_suspicion")
         avg_rpm = _avg("rpm")
+        _, speed_coverage = _paired("speed_mph")
+        coverage_warning = None if speed_coverage >= 0.90 else (
+            f"Only {speed_coverage:.0%} paired speed coverage; 90% is required."
+        )
 
-        speed_dir = "gained" if avg_speed and avg_speed > 0.05 else "lost" if avg_speed and avg_speed < -0.05 else "unchanged"
+        speed_dir = "insufficient_data" if avg_speed is None else "gained" if avg_speed > 0.05 else "lost" if avg_speed < -0.05 else "unchanged"
         risk_dir = "improved" if min_cfs and min_cfs > 0.001 else "worsened" if min_cfs and min_cfs < -0.001 else "unchanged"
 
         sectors.append(SectorDelta(
@@ -80,6 +100,8 @@ def compute_sector_deltas(
             avg_rpm_delta=avg_rpm,
             speed_direction=speed_dir,
             platform_risk_direction=risk_dir,
+            speed_coverage=speed_coverage,
+            warning=coverage_warning,
         ))
 
     # Build summary

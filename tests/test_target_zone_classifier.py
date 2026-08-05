@@ -19,6 +19,15 @@ def test_missing_speed_data_falls_back_to_inconclusive() -> None:
     assert result.confidence == 0.0
 
 
+def test_speed_gain_with_missing_supporting_channels_is_observation_only() -> None:
+    result = classify_target_zone(0.30, None, None, None, None, "clean")
+
+    assert result.gain_class == "inconclusive"
+    assert result.label == "Observed speed change; supporting evidence unavailable"
+    assert "Missing comparison evidence" in result.reasoning[1]
+    assert result.confidence <= 0.2
+
+
 def test_platform_related_loss_when_speed_and_cfs_worsen() -> None:
     result = classify_target_zone(-0.2, -0.01, 0.0, 0.0, 0.0, "clean")
 

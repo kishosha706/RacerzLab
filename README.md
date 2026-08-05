@@ -27,6 +27,9 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **Clickable Evidence Chips** — evidence chips in Overview open Platform/Setup. EvidenceCard clickable with Platform/Map actions.
 - **Comprehensive UX Audit** — full page-by-page review completed (2026-05-28). P0-P3 priority matrix documented in `docs/future_ux_improvements.md`.
 - **Learning/Race Mode** — toggle between short/direct (Race Mode) and verbose/coaching (Learning Mode) via L key or mode badge click. Mode-aware copy in Overview, Crew Chief, and inspector.
+- **Evidence-gated Engineering Systems** — driver/line, braking, corner rotation, tire state, damper response, aero-platform, relative-resistance, powertrain/gearing, stint-strategy, and simulator-integrity analysis. Missing or incompatible evidence produces an explicit holdback instead of a fabricated answer.
+- **Physical-position Comparison** — future runs are aligned by track position with coverage gaps, phase context, alignment quality, and empirical-noise reporting; sample index is never treated as track position.
+- **Controlled Test Director** — guarded A/B/A2 experiment planning with one setup control, a measurement mission, stop/rollback rules, and noise-aware keep/retest/undo scoring. Production execution remains locked until the server can assemble all required evidence.
 - **Keyboard Shortcuts** — Esc clear, M/P/O/C/N workspace nav, L mode toggle, ←/→ event navigation
 - **Persistent Evidence Inspector** — right-side Crew Chief panel with event selection, evidence cards, setup linkage, and next-action buttons
 - **Local SQLite persistence** — imported runs, laps, events, setup snapshots, recommendations, segments, notebook findings, test plans, and RaceLab sessions stored locally
@@ -36,7 +39,7 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **Vectorized Analysis Pipeline** — default Polars path with parity coverage against row fallback, frame-native overview consumers, and no full-row materialization in the normal import path.
 - **Engine Comparison Script** — `scripts/compare_analysis_engines.py` for validating vector vs row path on real data
 - **Extrema-preserving downsampling** — CFS minimums and event peaks never lost in chart views
-- **492 tests** — unit, integration, parity, benchmarks; fast suite <4s
+- **1,100+ collected tests** — unit, integration, adversarial, API-contract, frontend-contract, parity, and benchmark coverage
 
 ## Proxy Disclaimer
 
@@ -89,7 +92,7 @@ cd racelab-garage
 ## Run Tests
 
 ```powershell
-# Fast suite (<1s)
+# Fast suite (excludes tests explicitly marked slow or integration)
 python -B -m pytest -m "not slow and not integration" -q
 
 # Full suite including .ibt-dependent tests
@@ -153,6 +156,10 @@ POST /api/compare
 GET  /api/compare/preview
 POST /api/compare/delta-traces
 POST /api/compare/insights
+POST /api/compare/engineering-systems
+POST /api/runs/relative-resistance/aba
+GET  /api/runs/{id}/powertrain-gearing
+GET  /api/runs/{id}/stint-strategy
 POST /api/notebook/findings/from-comparison
 GET  /api/notebook/findings
 GET  /api/notebook/findings/{id}
@@ -204,5 +211,5 @@ See `AGENTS.md` for product rules (evidence first, no junk-lap conclusions, prox
 
 Vectorized analysis is the default runtime path; row mode is retained as fallback/debug parity only.
 
-Last verified: 2026-06-01 (docs alignment pass; large-fixture timing numbers should be re-verified via profiler runs).
+Last verified: 2026-08-03 (1,172 tests collected during the adversarial polish pass; large-fixture timing numbers still require fixture profiler runs).
 

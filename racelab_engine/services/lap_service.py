@@ -42,7 +42,7 @@ def find_best_lap(laps: list[LapSummary]) -> LapSummary | None:
     """Return the fastest useful lap."""
     if not (useful := filter_eligible_laps(laps)):
         return None
-    return min(useful, key=lambda l: l.lap_time or 999999.0)
+    return min(useful, key=lambda lap: lap.lap_time or 999999.0)
 
 
 def useful_laps(laps: list[LapSummary]) -> list[LapSummary]:
@@ -64,8 +64,8 @@ def classify_lap_type(lap: LapSummary, all_laps: list[LapSummary]) -> str:
     if not timed:
         return "unknown"
 
-    first_timed = min(timed, key=lambda l: l.lap_number or 0)
-    last_timed = max(timed, key=lambda l: l.lap_number or 0)
+    first_timed = min(timed, key=lambda lap: lap.lap_number or 0)
+    last_timed = max(timed, key=lambda lap: lap.lap_number or 0)
 
     lap_num = lap.lap_number or 0
 
@@ -151,6 +151,6 @@ def build_lap_list_for_run(run_id: str, repo: RaceLabRepository | None = None) -
         "laps": lap_list,
         "best_lap_number": best.lap_number if best else None,
         "best_lap_time_s": best.lap_time if best else None,
-        "useful_lap_numbers": [l.lap_number for l in useful_laps(laps) if l.lap_number is not None],
+        "useful_lap_numbers": [lap.lap_number for lap in useful_laps(laps) if lap.lap_number is not None],
         "warnings": overview.warnings,
     }

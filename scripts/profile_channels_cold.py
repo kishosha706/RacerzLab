@@ -44,7 +44,7 @@ def _profile_full(run_id: str, data_root: Path) -> dict[str, Any]:
     rows = None
     if path.exists() and importlib.util.find_spec("polars") is not None:
         pl = __import__("polars")
-        rows = int(pl.scan_parquet(path).select(pl.len()).collect(streaming=True).item())
+        rows = int(pl.scan_parquet(path).select(pl.len()).collect(engine="streaming").item())
     else:
         rows = None
 
@@ -99,7 +99,7 @@ def _profile_summary(run_id: str, data_root: Path) -> dict[str, Any]:
     path = svc.parquet_path(data_root, run_id)
     if path.exists() and importlib.util.find_spec("polars") is not None:
         pl = __import__("polars")
-        rows = int(pl.scan_parquet(path).select(pl.len()).collect(streaming=True).item())
+        rows = int(pl.scan_parquet(path).select(pl.len()).collect(engine="streaming").item())
     else:
         rows = None
 

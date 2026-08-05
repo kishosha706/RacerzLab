@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from racelab_engine.analysis.weather_context import (
-    RHO_STANDARD,
     WeatherContext,
     compute_air_density,
     compute_weather_context,

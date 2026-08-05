@@ -1,4 +1,4 @@
-import { Clock, Crosshair, Gauge, Layers, Wrench } from "lucide-react";
+import { ArrowLeft, Clock, Crosshair, Gauge, Layers, Upload, Wrench } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
@@ -13,6 +13,7 @@ import {
   fetchSessionRunList,
   fetchSession,
   fetchSetup,
+  fetchTelemetryCapabilities,
   fetchTrace,
   importIbtFile,
   importMt2File,
@@ -41,6 +42,7 @@ import type {
   RunOverview,
   TrackMapResolution,
   TraceResponse,
+  TelemetryCapabilitiesResponse,
 } from "./types/telemetry";
 import type { RaceLabSession, SessionSelectionSource } from "./types/session";
 
@@ -77,11 +79,13 @@ function CockpitShell() {
   const [channels, setChannels] = useState<ChannelCatalogItem[]>([]);
   const [channelsHaveFullCatalog, setChannelsHaveFullCatalog] = useState(false);
   const [platformEvents, setPlatformEvents] = useState<PlatformEventItem[]>([]);
+  const [telemetryCapabilities, setTelemetryCapabilities] = useState<TelemetryCapabilitiesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sessionOpenError, setSessionOpenError] = useState<string | null>(null);
   const [priorityRailOpen, setPriorityRailOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -164,29 +168,34 @@ function CockpitShell() {
 
   // ── load a run ──────────────────────────────────────────────
   const loadSelectedRun = useCallback(
-    async (runId: string) => {
+    async (runId: string, errorScope: "general" | "session_open" = "general") => {
       const seq = ++loadSelectedRunSeqRef.current;
       setLoading(true);
       setError(null);
+      setTelemetryCapabilities(null);
       try {
         const base = await fetchOverview(runId);
         const bestLap = base.best_useful_lap?.lap_number;
-        const [laps, events, setup, channelCatalog] = await Promise.all([
+        const [laps, events, setup, channelCatalog, capabilityPayload] = await Promise.all([
           fetchLaps(runId),
           fetchEvents(runId),
           fetchSetup(runId).catch(() => base.setup_snapshot ?? null),
           fetchChannelSummary(runId).catch(() => []),
+          fetchTelemetryCapabilities(runId).catch(() => null),
         ]);
         if (seq !== loadSelectedRunSeqRef.current) return;
         setOverview({ ...base, laps, events, setup_snapshot: setup });
         setChannels(channelCatalog.map((item) => toCatalogShape(item)));
         setChannelsHaveFullCatalog(false);
+        setTelemetryCapabilities(capabilityPayload);
         setTrace(null);
         setPlatformEvents([]);
         loadRun(runId, bestLap ?? null);
       } catch (caught) {
         if (seq !== loadSelectedRunSeqRef.current) return;
-        setError(caught instanceof Error ? caught.message : "Failed to load run.");
+        const message = caught instanceof Error ? caught.message : "Failed to load run.";
+        if (errorScope === "session_open") setSessionOpenError(message);
+        else setError(message);
       } finally {
         if (seq === loadSelectedRunSeqRef.current) setLoading(false);
       }
@@ -215,6 +224,8 @@ function CockpitShell() {
     setCurrentSession(null);
     setSessionRuns([]);
     setLoading(true);
+    setError(null);
+    setSessionOpenError(null);
     try {
       const session = await fetchSession(sid);
       setCurrentSession(session);
@@ -224,13 +235,14 @@ function CockpitShell() {
       ]);
       setRuns(recentRuns);
       if (session.run_ids.length > 0) {
-        await loadSelectedRun(session.run_ids[session.run_ids.length - 1]);
+        await loadSelectedRun(session.run_ids[session.run_ids.length - 1], "session_open");
       } else {
         setLoading(false);
       }
-    } catch {
+    } catch (caught) {
       setCurrentSession(null);
       setSessionRuns([]);
+      setSessionOpenError(caught instanceof Error ? caught.message : "The session could not be opened.");
       setLoading(false);
     }
   }, [loadSelectedRun, refreshSessionRuns]);
@@ -422,7 +434,7 @@ function CockpitShell() {
   const workspaceContent = useMemo(() => {
     if (!overview) return null;
     const ws = selection.selectedWorkspace;
-    if (ws === "overview") return <OverviewTab overview={overview} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
+    if (ws === "overview") return <OverviewTab overview={overview} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
     if (ws === "platform_trace" || ws === "speed_delta" || ws === "drag_scrub") {
       const initialWorkbenchView = ws === "drag_scrub"
         ? "scrub_steering"
@@ -446,7 +458,7 @@ function CockpitShell() {
     if (ws === "dial_in") return <DialInTab overview={overview} />;
     if (ws === "channels") {
       // Channels removed from nav; redirect to overview if stale state exists
-      return <OverviewTab overview={overview} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
+      return <OverviewTab overview={overview} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
     }
     if (ws === "laps") {
       return (
@@ -460,11 +472,11 @@ function CockpitShell() {
         />
       );
     }
-    return <OverviewTab overview={overview} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
+    return <OverviewTab overview={overview} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
   }, [currentSession, overview, platformEventVisibilityMode, platformEvents, selectedTraceLap, selection.selectedWorkspace, sessionRuns, sessionRunsLoading, sessionSelectionSource, trace]);
 
   if (engineStatus === "starting") {
-    return <main className="boot-screen">Starting local RacerZLab engine...</main>;
+    return <main className="boot-screen" role="status" aria-live="polite">Starting the local RacerZLab engine…</main>;
   }
 
   if (engineStatus === "failed") {
@@ -473,12 +485,15 @@ function CockpitShell() {
         <section className="empty-panel">
           <span className="eyebrow">RACERZLAB</span>
           <h1>Local engine failed to start.</h1>
-          <p className="muted">Please restart RacerZLab and send logs.</p>
+          <p className="muted">Close and reopen RacerZLab, then retry. Restarting does not delete your local sessions or telemetry files.</p>
           {!desktop && (
             <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
               Development mode: start the backend with <code style={{ color: "#38bdf8", fontSize: 11 }}>python -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8010</code>
             </p>
           )}
+          <button type="button" className="secondary-button" onClick={() => window.location.reload()}>
+            Retry engine check
+          </button>
         </section>
       </main>
     );
@@ -491,15 +506,44 @@ function CockpitShell() {
 
   // ── loading / empty state ───────────────────────────────────
   if (loading && !overview) {
-    return <main className="boot-screen">RacerZLab</main>;
+    return <main className="boot-screen" role="status" aria-live="polite">Opening the selected session…</main>;
   }
 
   if (!overview) {
+    const sessionOpenFailed = Boolean(sessionOpenError);
     return (
       <main className="empty-state">
-        <section className="empty-panel">
-          <span className="eyebrow">RACERZLAB</span>
-          <h1>No persisted runs yet</h1>
+        <section className="empty-panel empty-session-panel" aria-labelledby="empty-session-title">
+          <div className="empty-session-heading">
+            <div>
+              <span className="eyebrow">{currentSession?.name ?? "RACERZLAB SESSION"}</span>
+              <h1 id="empty-session-title">{sessionOpenFailed ? "We couldn't open this session" : "Import the first telemetry run"}</h1>
+              <p className="muted">
+                {sessionOpenFailed
+                  ? "The session or its latest run could not be loaded. Retry it, return to the session chooser, or import another telemetry file."
+                  : <>This session is ready. Add an iRacing <strong>.ibt</strong> file to build laps, evidence, and setup context locally.</>}
+              </p>
+            </div>
+            <Upload size={28} aria-hidden="true" />
+          </div>
+          {sessionOpenFailed ? (
+            <div className="warning-banner" role="alert">
+              <span>{sessionOpenError}</span>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => { if (sessionId) void handleSessionSelected(sessionId, sessionSelectionSource ?? "existing"); }}
+              >
+                Retry session
+              </button>
+            </div>
+          ) : (
+            <ol className="empty-session-steps" aria-label="What happens after import">
+              <li><strong>Choose a file</strong><span>Select a completed telemetry recording.</span></li>
+              <li><strong>Let RacerZLab qualify it</strong><span>Invalid laps and missing evidence stay excluded.</span></li>
+              <li><strong>Start with the decision</strong><span>Review the fastest justified next test.</span></li>
+            </ol>
+          )}
           <ImportPanel
             onImportComplete={(runId, trackMap) => {
               void openImportedRun(runId, trackMap);
@@ -512,6 +556,20 @@ function CockpitShell() {
             onFileSelected={(file) => { void handleFileSelected(file); }}
             onImportClick={handleImportClick}
           />
+          <button
+            type="button"
+            className="secondary-button empty-session-back"
+            onClick={() => {
+              setSessionId(null);
+              setCurrentSession(null);
+              setSessionRuns([]);
+              setError(null);
+              setSessionOpenError(null);
+              setStatus(null);
+            }}
+          >
+            <ArrowLeft size={14} /> Back to sessions
+          </button>
         </section>
       </main>
     );
@@ -530,7 +588,7 @@ function CockpitShell() {
       />
 
       <div className="cockpit-body">
-        <nav className="workspace-nav-rail">
+        <nav className="workspace-nav-rail" aria-label="Main workspaces">
           {([
             ["overview", "Overview", Gauge],
             ["laps", "Laps", Clock],
@@ -540,9 +598,11 @@ function CockpitShell() {
           ] as const).map(([key, label, Icon]) => (
             <button
               key={key}
+              type="button"
               className={`nav-rail-item ${selection.selectedWorkspace === key ? "active" : ""}`}
               onClick={() => setWorkspace(key, "manual")}
               title={label}
+              aria-label={`Open ${label}`}
               aria-current={selection.selectedWorkspace === key ? "page" : undefined}
             >
               <Icon size={17} />
@@ -575,12 +635,12 @@ function CockpitShell() {
               onImportClick={handleImportClick}
             />
           </div>
-          {status && <p className="status-text">{status}</p>}
-          {error && <p className="error-text">{error}</p>}
+          {status && <p className="status-text" role="status" aria-live="polite">{status}</p>}
+          {error && <p className="error-text" role="alert">{error}</p>}
           <div className="cockpit-workspace-body">
             <div className="cockpit-workspace-main">
               <Suspense fallback={(
-                <div className="workspace-placeholder">
+                <div className="workspace-placeholder" role="status" aria-live="polite">
                   <h3>Loading workspace...</h3>
                   <p>Preparing view data and UI.</p>
                 </div>

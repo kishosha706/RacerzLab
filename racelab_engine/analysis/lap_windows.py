@@ -4,7 +4,6 @@ Lap window analysis: fastest individual laps, best consecutive windows, degradat
 
 from __future__ import annotations
 
-import math
 import statistics
 from typing import Any
 

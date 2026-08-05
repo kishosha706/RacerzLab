@@ -1,7 +1,7 @@
 import { AlertTriangle, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { createSession, deleteSession, fetchSessions } from "../api/client";
-import racerzlabBanner from "../assets/racerzlab-banner.png";
+import racerzlabBanner from "../assets/racerzlab-banner-1920.jpg";
 import type { RaceLabSession, SessionSelectionSource } from "../types/session";
 import { isBrowser } from "../utils/env";
 

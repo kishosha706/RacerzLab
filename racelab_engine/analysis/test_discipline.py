@@ -27,8 +27,8 @@ def score_test_discipline(
 
     if exact_changes == 0 and setup_groups_touched == 0:
         score = 95
-        label = "clean"
-        positive.append("No driver-adjustable setup controls changed.")
+        label = "reference"
+        positive.append("No driver-adjustable setup controls changed; this is a repeatability reference.")
     elif exact_changes == 0 and setup_groups_touched == 1:
         score = 88
         label = "clean"
@@ -62,12 +62,24 @@ def score_test_discipline(
         score = max(0, score - 15 * context_problems)
         negative.append(f"{context_problems} context problem(s) detected (weather, run length).")
 
-    if score < 25:
+    if label == "reference":
+        pass
+    elif score >= 85:
+        label = "clean"
+    elif score >= 65:
+        label = "mostly_clean"
+    elif score >= 40:
+        label = "mixed"
+    elif score >= 25:
+        label = "weak"
+    else:
         label = "invalid"
         negative.append("Too many uncontrolled variables for a valid comparison.")
 
     recommendation = None
-    if label == "clean":
+    if label == "reference":
+        recommendation = "Use this comparison to characterize repeatability, not a setup direction."
+    elif label == "clean":
         recommendation = "Controlled setup scope. Continue only if lap and context evidence also pass."
     elif label == "mostly_clean":
         recommendation = "Comparison is usable, but try to limit to one change per test."

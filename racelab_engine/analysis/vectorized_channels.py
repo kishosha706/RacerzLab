@@ -58,6 +58,7 @@ from racelab_engine.analysis.units import (
     MPS_TO_MPH,
     PA_TO_PSF,
     MM_TO_IN,
+    KPA_TO_PSI,
 )
 
 # ── Feature flag ─────────────────────────────────────────────────
@@ -462,14 +463,26 @@ def _rows_to_frame(data: list[dict[str, Any]]) -> pl.DataFrame:
     """Build DataFrame from row dicts with explicit schema (fast)."""
     if not data:
         return pl.DataFrame()
-    schema: dict[str, type[pl.DataType]] = {}
+    schema: dict[str, Any] = {}
     first = data[0]
     for key in first:
-        if key in _STRING_CHANNELS or isinstance(first[key], str):
+        value = first[key]
+        if isinstance(value, (list, tuple)):
+            element = next((item for item in value if item is not None), None)
+            if isinstance(element, bool):
+                inner = pl.Boolean
+            elif isinstance(element, int):
+                inner = pl.Int64
+            elif isinstance(element, str):
+                inner = pl.String
+            else:
+                inner = pl.Float64
+            schema[key] = pl.List(inner)
+        elif key in _STRING_CHANNELS or isinstance(value, str):
             schema[key] = pl.String
-        elif isinstance(first[key], bool):
+        elif isinstance(value, bool):
             schema[key] = pl.Boolean
-        elif isinstance(first[key], int):
+        elif isinstance(value, int):
             schema[key] = pl.Int64
         else:
             schema[key] = pl.Float64
@@ -585,6 +598,13 @@ def frame_to_rows(df: pl.DataFrame) -> list[dict[str, Any]]:
 _ALIAS_MAP: dict[str, str] = {
     "SessionTime": "session_time",
     "SessionTick": "session_tick",
+    "SessionState": "session_state",
+    "SessionFlags": "session_flags",
+    "SessionTimeRemain": "session_time_remaining_s",
+    "SessionLapsRemain": "session_laps_remaining_legacy",
+    "SessionLapsRemainEx": "session_laps_remaining",
+    "SessionTimeTotal": "session_time_total_s",
+    "SessionLapsTotal": "session_laps_total",
     "Lap": "lap",
     "LapCompleted": "lap_completed",
     "OnPitRoad": "on_pit_road",
@@ -597,21 +617,119 @@ _ALIAS_MAP: dict[str, str] = {
     "Gear": "gear",
     "Throttle": "throttle_01",
     "Brake": "brake_01",
+    "FuelLevel": "fuel_level",
+    "FuelLevelPct": "fuel_level_pct",
+    "FuelUsePerHour": "fuel_use_per_hour",
+    "WaterTemp": "water_temp",
+    "OilTemp": "oil_temp",
+    "EngineWarnings": "engine_warnings",
+    "Voltage": "voltage",
+    "WaterLevel": "water_level",
+    "FuelPress": "fuel_press",
+    "OilPress": "oil_press",
+    "OilLevel": "oil_level",
+    "ManifoldPress": "manifold_press",
+    "Engine0_RPM": "engine0_rpm",
+    "SteeringWheelAngleMax": "steering_wheel_angle_max",
+    "Clutch": "clutch",
+    "ClutchRaw": "clutch_raw",
+    "ShiftPowerPct": "shift_power_pct",
+    "ShiftGrindRPM": "shift_grind_rpm",
     "SteeringWheelAngle": "steering_rad",
     "YawRate": "yaw_rate",
     "LatAccel": "lat_accel",
     "LongAccel": "long_accel",
     "VertAccel": "vert_accel",
     "AirDensity": "air_density",
+    "AirTemp": "air_temp",
+    "TrackTemp": "track_temp",
+    "WindVel": "wind_vel",
+    "WindDir": "wind_dir",
+    "AirPressure": "air_pressure",
+    "TrackTempCrew": "track_temp_crew",
+    "RelativeHumidity": "relative_humidity",
+    "FogLevel": "fog_level",
+    "Skies": "skies",
+    "Precipitation": "precipitation",
+    "TrackWetness": "track_wetness",
     "Lat": "lat",
     "Lon": "lon",
     "Alt": "alt",
+    "VelocityX": "velocity_x",
+    "VelocityY": "velocity_y",
+    "VelocityZ": "velocity_z",
+    "Yaw": "yaw",
+    "YawNorth": "yaw_north",
+    "Pitch": "pitch",
+    "Roll": "roll",
+    "PitchRate": "pitch_rate",
+    "RollRate": "roll_rate",
     "CFSRrideHeight": "cfs_ride_height_m",
     "LFrideHeight": "lf_ride_height_m",
     "RFrideHeight": "rf_ride_height_m",
     "LRrideHeight": "lr_ride_height_m",
     "RRrideHeight": "rr_ride_height_m",
     "CarPath": "car_path",
+    "PlayerTrackSurfaceMaterial": "player_track_surface_material",
+    "PlayerCarPosition": "player_race_position",
+    "PlayerCarClassPosition": "player_class_position",
+    "PlayerCarClass": "player_car_class_id",
+    "PlayerCarIdx": "player_car_index",
+    "PlayerCarInPitStall": "player_in_pit_stall",
+    "PlayerCarPitSvStatus": "player_pit_service_status",
+    "PlayerCarTowTime": "player_tow_service_time_s",
+    "PlayerCarTeamIncidentCount": "player_team_incident_count",
+    "PlayerCarMyIncidentCount": "player_incident_count",
+    "PlayerCarDriverIncidentCount": "player_driver_incident_count",
+    "PlayerIncidents": "player_incident_flags",
+    "PaceMode": "pace_mode",
+    "PitsOpen": "pits_open",
+    "PitstopActive": "pitstop_active",
+    "PitRepairLeft": "pit_repair_remaining_s",
+    "PitOptRepairLeft": "pit_optional_repair_remaining_s",
+    "PitSvFlags": "pending_pit_service_flags",
+    "PitSvFuel": "pending_pit_fuel_add",
+    "PlayerTireCompound": "player_tire_compound",
+    "PitSvTireCompound": "pending_pit_tire_compound",
+    "PlayerCarDryTireSetLimit": "player_dry_tire_set_limit",
+    "LeftTireSetsUsed": "left_tire_sets_used",
+    "RightTireSetsUsed": "right_tire_sets_used",
+    "FrontTireSetsUsed": "front_tire_sets_used",
+    "RearTireSetsUsed": "rear_tire_sets_used",
+    "TireSetsUsed": "tire_sets_used",
+    "LeftTireSetsAvailable": "left_tire_sets_available",
+    "RightTireSetsAvailable": "right_tire_sets_available",
+    "FrontTireSetsAvailable": "front_tire_sets_available",
+    "RearTireSetsAvailable": "rear_tire_sets_available",
+    "TireSetsAvailable": "tire_sets_available",
+    "CarDistAhead": "car_distance_ahead_m",
+    "CarDistBehind": "car_distance_behind_m",
+    "DriverMarker": "driver_marker",
+    "EnterExitReset": "enter_exit_reset_state",
+    "LFodometer": "lf_tire_distance_m",
+    "RFodometer": "rf_tire_distance_m",
+    "LRodometer": "lr_tire_distance_m",
+    "RRodometer": "rr_tire_distance_m",
+    "LFbrakeLinePress": "lf_brake_line_pressure_bar",
+    "RFbrakeLinePress": "rf_brake_line_pressure_bar",
+    "LRbrakeLinePress": "lr_brake_line_pressure_bar",
+    "RRbrakeLinePress": "rr_brake_line_pressure_bar",
+    "BrakeABSactive": "brake_abs_active",
+    "BrakeABScutPct": "brake_abs_cut_01",
+    "SteeringWheelTorque": "steering_wheel_torque_nm",
+    "SteeringWheelTorque_ST": "steering_wheel_torque_subtick_nm",
+    "SteeringWheelPctTorque": "steering_wheel_torque_unsigned_01",
+    "SteeringWheelPctTorqueSign": "steering_wheel_torque_signed_01",
+    "SteeringWheelPctTorqueSignStops": "steering_wheel_torque_stops_01",
+    "CpuUsageFG": "cpu_usage_foreground",
+    "CpuUsageBG": "cpu_usage_background",
+    "FrameRate": "frame_rate",
+    "GpuUsage": "gpu_usage",
+    "ChanQuality": "channel_quality",
+    "ChanLatency": "channel_latency_s",
+    "ChanAvgLatency": "channel_average_latency_s",
+    "MemPageFaultSec": "memory_page_faults_per_s",
+    "MemSoftPageFaultSec": "memory_soft_page_faults_per_s",
 }
 
 _RIDE_HEIGHT_RAW_KEYS: dict[str, str] = {
@@ -1258,14 +1376,19 @@ def _compute_resistance_indices(df: pl.DataFrame) -> pl.DataFrame:
         DRAG_SCRUB_MIN_SPEED_MPH, FULL_THROTTLE_PCT, LOW_BRAKE_PCT,
         RESISTANCE_COEFF_CRITICAL,
     )
-    def col_or_zero(name: str) -> pl.Expr:
-        return pl.col(name) if name in df.columns else pl.lit(0.0, dtype=pl.Float64)
-
+    if df.is_empty():
+        return df
     # Row path skips first row (via _init_derivative_row continue)
     row_idx = pl.int_range(0, df.height, dtype=pl.Int64)
 
     # full_throttle_resistance_index
-    has_ft = {"speed_mph", "throttle_pct", "brake_pct"}.issubset(df.columns)
+    has_ft = {
+        "speed_mph",
+        "throttle_pct",
+        "brake_pct",
+        "speed_rate_mph_s",
+        "dynamic_pressure_psf",
+    }.issubset(df.columns)
     if has_ft:
         speed = pl.col("speed_mph")
         throttle = pl.col("throttle_pct")
@@ -1281,31 +1404,48 @@ def _compute_resistance_indices(df: pl.DataFrame) -> pl.DataFrame:
 
         # aero_normalized_resistance: decel_mph_s / dynamic_pressure_psf
         # Row path uses max(0, -speed_rate_mph_s). We use negative since decel is negative.
-        decel_pos = (-col_or_zero("speed_rate_mph_s")).clip(lower_bound=0.0)
-        dp_psf = col_or_zero("dynamic_pressure_psf").clip(lower_bound=1.0)
+        speed_rate = pl.col("speed_rate_mph_s")
+        dp_raw = pl.col("dynamic_pressure_psf")
+        valid_resistance = speed_rate.is_not_null() & speed_rate.is_finite() & dp_raw.is_not_null() & dp_raw.is_finite() & (dp_raw > 0)
+        decel_pos = (-speed_rate).clip(lower_bound=0.0)
+        dp_psf = dp_raw
         resistance_coeff = decel_pos / dp_psf
         resistance_index = (resistance_coeff / RESISTANCE_COEFF_CRITICAL).clip(0.0, 1.0)
 
         ft_index = (
             pl.when(row_idx == 0).then(None)
-            .when(gate)
-            .then(resistance_index)
-            .otherwise(0.0)
+            .when(~gate).then(0.0)
+            .when(~valid_resistance).then(None)
+            .otherwise(resistance_index)
             .alias("full_throttle_resistance_index")
         )
         df = df.with_columns(ft_index)
 
     # drag_scrub_suspicion — vectorized mirror of compute_drag_scrub_index
-    drag_cols = {"speed_mph", "throttle_pct", "brake_pct"}
+    drag_cols = {
+        "speed_mph",
+        "throttle_pct",
+        "brake_pct",
+        "speed_rate_mph_s",
+        "dynamic_pressure_psf",
+        "abs_steering_deg",
+        "yaw_rate",
+        "cfs_risk_score",
+    }
     if drag_cols.issubset(df.columns):
-        speed = pl.col("speed_mph").fill_null(0.0)
-        throttle = pl.col("throttle_pct").fill_null(0.0)
-        brake = pl.col("brake_pct").fill_null(0.0)
-        speed_rate = col_or_zero("speed_rate_mph_s").fill_null(0.0)
-        dyn_psf = col_or_zero("dynamic_pressure_psf").fill_null(0.0)
-        steering = col_or_zero("abs_steering_deg").fill_null(0.0).abs()
-        yaw_rate = col_or_zero("yaw_rate").fill_null(0.0).abs()
-        cfs_risk = col_or_zero("cfs_risk_score").fill_null(0.0).clip(lower_bound=0.0, upper_bound=1.0)
+        speed = pl.col("speed_mph")
+        throttle = pl.col("throttle_pct")
+        brake = pl.col("brake_pct")
+        speed_rate = pl.col("speed_rate_mph_s")
+        dyn_psf = pl.col("dynamic_pressure_psf")
+        steering = pl.col("abs_steering_deg").abs()
+        yaw_rate = pl.col("yaw_rate").abs()
+        cfs_risk = pl.col("cfs_risk_score").clip(lower_bound=0.0, upper_bound=1.0)
+
+        valid_inputs = pl.all_horizontal(
+            pl.col(column).is_not_null() & pl.col(column).is_finite()
+            for column in drag_cols
+        ) & (dyn_psf > 0)
 
         resistance_coeff = ((-speed_rate).clip(lower_bound=0.0)) / dyn_psf.clip(lower_bound=1.0)
         resistance_index = (resistance_coeff / RESISTANCE_COEFF_CRITICAL).clip(0.0, 1.0)
@@ -1318,9 +1458,11 @@ def _compute_resistance_indices(df: pl.DataFrame) -> pl.DataFrame:
             & (throttle >= FULL_THROTTLE_PCT)
             & (brake <= LOW_BRAKE_PCT)
         )
-        drag_expr = pl.when(gate).then(index.clip(0.0, 1.0)).otherwise(0.0)
+        drag_expr = pl.when(~gate).then(0.0).when(~valid_inputs).then(None).otherwise(index.clip(0.0, 1.0))
         drag_expr = pl.when(row_idx == 0).then(None).otherwise(drag_expr).alias("drag_scrub_suspicion")
         df = df.with_columns(drag_expr)
+    elif "drag_scrub_suspicion" not in df.columns:
+        df = df.with_columns(pl.lit(None, dtype=pl.Float64).alias("drag_scrub_suspicion"))
 
     return df
 
@@ -1419,7 +1561,7 @@ def _compute_tire_derived(df: pl.DataFrame) -> pl.DataFrame:
         cp_col = f"{c}_cold_pressure"
         if p_col in df.columns and cp_col in df.columns:
             df = df.with_columns(
-                (pl.col(p_col) - pl.col(cp_col)).alias(f"{c}_pressure_gain"),
+                ((pl.col(p_col) - pl.col(cp_col)) * KPA_TO_PSI).alias(f"{c}_pressure_gain"),
             )
 
         ti = f"{c}_temp_inner"
@@ -1441,7 +1583,7 @@ def _compute_tire_derived(df: pl.DataFrame) -> pl.DataFrame:
             max_expr = pl.max_horizontal(*[pl.col(col) for col in wears])
             min_expr = pl.min_horizontal(*[pl.col(col) for col in wears])
             df = df.with_columns(
-                (max_expr - min_expr).alias(f"{c}_wear_spread"),
+                ((max_expr - min_expr) * 100.0).alias(f"{c}_wear_spread"),
             )
 
     return df

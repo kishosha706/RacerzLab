@@ -15,7 +15,6 @@ Usage:
 import argparse
 import json
 import socket
-import sys
 import urllib.request
 import urllib.error
 

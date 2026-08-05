@@ -3,9 +3,13 @@ from __future__ import annotations
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
 import math
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
-from racelab_engine.analysis.constants import LAP_WRAP_DROP_THRESHOLD_PCT
+from racelab_engine.analysis.constants import (
+    CFS_SIGNIFICANT,
+    CFS_WORSEN_THRESHOLD,
+    LAP_WRAP_DROP_THRESHOLD_PCT,
+)
 
 # ── types ───────────────────────────────────────────────────────
 
@@ -35,6 +39,8 @@ class ComparedChannelDelta:
     test_min: float | None = None
     baseline_max: float | None = None
     test_max: float | None = None
+    delta_min: float | None = None
+    delta_low_p05: float | None = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +58,8 @@ class ChannelDeltaStats:
     direction: Direction | None = None
     interpretation: str | None = None
     confidence: float | None = None
+    delta_min: float | None = None
+    delta_low_p05: float | None = None
 
 
 @dataclass(frozen=True)
@@ -61,7 +69,9 @@ class CornerDelta:
     shock_defl_in: ChannelDeltaStats | None = None
     shock_vel_in_s: ChannelDeltaStats | None = None
     shock_velocity_rms: ChannelDeltaStats | None = None
+    shock_activity_index: ChannelDeltaStats | None = None
     tire_pressure: ChannelDeltaStats | None = None
+    tire_pressure_gain: ChannelDeltaStats | None = None
     tire_temp_inner: ChannelDeltaStats | None = None
     tire_temp_middle: ChannelDeltaStats | None = None
     tire_temp_outer: ChannelDeltaStats | None = None
@@ -213,6 +223,7 @@ class EnhancedComparisonSummary:
     context_changes: list[dict] = field(default_factory=list)
     test_discipline: dict | None = None
     verdict: dict | None = None
+    sim_integrity: dict | None = None
     warnings: list[str] = field(default_factory=list)
     confidence_score: float = 0.0
 
@@ -238,6 +249,7 @@ class EnhancedComparisonSummary:
             "context_changes": self.context_changes,
             "test_discipline": self.test_discipline,
             "verdict": self.verdict,
+            "sim_integrity": self.sim_integrity,
             "warnings": self.warnings,
             "confidence_score": self.confidence_score,
         }
@@ -279,6 +291,8 @@ class TargetZoneComparison:
 
 @dataclass(frozen=True)
 class TestDisciplineResult:
+    __test__: ClassVar[bool] = False
+
     score: int
     label: str
     positive_factors: list[str] = field(default_factory=list)
@@ -405,7 +419,9 @@ def _corner_dict(c: CornerDelta) -> dict:
         "shock_defl_in": _delta_dict(c.shock_defl_in),
         "shock_vel_in_s": _delta_dict(c.shock_vel_in_s),
         "shock_velocity_rms": _delta_dict(c.shock_velocity_rms),
+        "shock_activity_index": _delta_dict(c.shock_activity_index),
         "tire_pressure": _delta_dict(c.tire_pressure),
+        "tire_pressure_gain": _delta_dict(c.tire_pressure_gain),
         "tire_temp_inner": _delta_dict(c.tire_temp_inner),
         "tire_temp_middle": _delta_dict(c.tire_temp_middle),
         "tire_temp_outer": _delta_dict(c.tire_temp_outer),
@@ -528,6 +544,9 @@ def build_lap_grid(start_pct: float = 0.0, end_pct: float = 100.0, step_pct: flo
     return grid
 
 
+MAX_INTERPOLATION_GAP_PCT = 2.0
+
+
 def _interp(x: float, xs: list[float], ys: list[float]) -> float | None:
     """Linear interpolation at x given sorted xs and corresponding ys."""
     if not xs or len(xs) != len(ys):
@@ -538,14 +557,16 @@ def _interp(x: float, xs: list[float], ys: list[float]) -> float | None:
         exact_values = ys[left_equal:right_equal]
         return sum(exact_values) / len(exact_values)
     if x < xs[0]:
-        return ys[0]
+        return None
     if x > xs[-1]:
-        return ys[-1]
+        return None
     right = left_equal
     left = right - 1
     span = xs[right] - xs[left]
     if span <= 0:
         return (ys[left] + ys[right]) / 2.0
+    if span > MAX_INTERPOLATION_GAP_PCT:
+        return None
     t = (x - xs[left]) / span
     return ys[left] + t * (ys[right] - ys[left])
 
@@ -647,10 +668,24 @@ def _safe_float(value: Any) -> float | None:
 def _channel_delta(
     ch: str, bl_data: dict[str, list[float | None]], t_data: dict[str, list[float | None]]
 ) -> ComparedChannelDelta:
-    bl = [v for v in (bl_data.get(ch) or []) if v is not None]
-    t = [v for v in (t_data.get(ch) or []) if v is not None]
+    bl_values = bl_data.get(ch) or []
+    t_values = t_data.get(ch) or []
+    bl_all = [v for v in bl_values if v is not None]
+    t_all = [v for v in t_values if v is not None]
+    paired = [
+        (baseline, test)
+        for baseline, test in zip(bl_values, t_values)
+        if baseline is not None and test is not None
+    ]
+    grid_count = max(len(bl_values), len(t_values))
+    if not grid_count or len(paired) / grid_count < 0.9:
+        paired = []
+    bl = [baseline for baseline, _test in paired]
+    t = [test for _baseline, test in paired]
     bl_avg = sum(bl) / len(bl) if bl else None
     t_avg = sum(t) / len(t) if t else None
+    positional_deltas = sorted(test - baseline for baseline, test in paired)
+    low_index = int(0.05 * (len(positional_deltas) - 1)) if positional_deltas else 0
     return ComparedChannelDelta(
         channel=ch,
         label=CHANNEL_LABELS.get(ch, ch),
@@ -658,10 +693,12 @@ def _channel_delta(
         baseline_avg=bl_avg,
         test_avg=t_avg,
         delta=(t_avg - bl_avg) if bl_avg is not None and t_avg is not None else None,
-        baseline_min=min(bl, default=None),
-        test_min=min(t, default=None),
-        baseline_max=max(bl, default=None),
-        test_max=max(t, default=None),
+        baseline_min=min(bl_all, default=None),
+        test_min=min(t_all, default=None),
+        baseline_max=max(bl_all, default=None),
+        test_max=max(t_all, default=None),
+        delta_min=min(positional_deltas, default=None),
+        delta_low_p05=positional_deltas[low_index] if positional_deltas else None,
     )
 
 
@@ -694,10 +731,14 @@ def compare_target_zone(  # sourcery skip
 
     if cfs_delta and cfs_delta.delta is not None:
         cd = cfs_delta.delta
-        if cd > 0.001:
-            risk_label = "improved"
-        elif cd < -0.001:
+        localized_worse = (
+            cfs_delta.delta_low_p05 is not None
+            and cfs_delta.delta_low_p05 < CFS_SIGNIFICANT
+        )
+        if localized_worse or cd < CFS_WORSEN_THRESHOLD:
             risk_label = "worsened"
+        elif cd > 0.001:
+            risk_label = "improved"
         else:
             risk_label = "unchanged"
     else:

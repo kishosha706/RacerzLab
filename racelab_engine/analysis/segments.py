@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import math
 import time
-from statistics import mean
-from typing import Any, Optional
+from statistics import mean, median
+from typing import Any
 
-from pydantic import BaseModel
 import polars as pl
 
 from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
 from racelab_engine.analysis.constants import SEGMENT_WIDTH_PCT
 from racelab_engine.analysis.drag_scrub import compute_drag_scrub_index
 from racelab_engine.analysis.platform_metrics import classify_splitter_height_mm
+from racelab_engine.models.segment import SegmentSummary
 
 
 def _ensure_normalized(table: Any) -> list[dict[str, Any]]:
@@ -19,35 +20,6 @@ def _ensure_normalized(table: Any) -> list[dict[str, Any]]:
         if "speed_mph" in table[0]:
             return table  # already normalized
     return normalize_telemetry_rows(table)
-
-
-class SegmentSummary(BaseModel):
-    segment_id: str
-    run_id: str
-    lap_number: Optional[int] = None
-    segment_type: str = "fixed_pct"
-    segment_name: str
-    pct_start: float
-    pct_end: float
-    distance_start_m: Optional[float] = None
-    distance_end_m: Optional[float] = None
-    avg_speed_mph: Optional[float] = None
-    min_speed_mph: Optional[float] = None
-    max_speed_mph: Optional[float] = None
-    speed_delta_mph: Optional[float] = None
-    avg_rpm: Optional[float] = None
-    rpm_delta: Optional[float] = None
-    avg_throttle_pct: Optional[float] = None
-    avg_brake_pct: Optional[float] = None
-    avg_abs_steering_deg: Optional[float] = None
-    max_abs_steering_deg: Optional[float] = None
-    avg_lat_accel: Optional[float] = None
-    min_splitter_mm: Optional[float] = None
-    platform_risk_score: float = 0.0
-    drag_scrub_score: float = 0.0
-    driver_input_score: float = 0.0
-    powertrain_score: float = 0.0
-    confidence_score: float = 0.0
 
 
 def _pct(value: Any) -> float | None:
@@ -59,6 +31,39 @@ def _pct(value: Any) -> float | None:
 
 def _values(rows: list[dict[str, Any]], key: str) -> list[float]:
     return [float(row[key]) for row in rows if row.get(key) is not None]
+
+
+def _robust_track_delta(rows: list[dict[str, Any]], key: str) -> float | None:
+    """Return end-minus-start by track position using robust endpoint bands."""
+    samples: list[tuple[float, float]] = []
+    for row in rows:
+        if row.get("lap_dist_pct") is None or row.get(key) is None:
+            continue
+        position = _pct(row["lap_dist_pct"])
+        value = float(row[key])
+        if position is not None and math.isfinite(position) and math.isfinite(value):
+            samples.append((position, value))
+    values = [value for _, value in sorted(samples, key=lambda item: item[0])]
+    if len(values) < 2:
+        return None
+    band_size = max(1, round(len(values) * 0.20))
+    return median(values[-band_size:]) - median(values[:band_size])
+
+
+def _robust_ordered_delta(samples: list[tuple[float, float]]) -> float | None:
+    ordered = sorted(
+        (
+            (position, value)
+            for position, value in samples
+            if math.isfinite(position) and math.isfinite(value)
+        ),
+        key=lambda item: item[0],
+    )
+    values = [value for _, value in ordered]
+    if len(values) < 2:
+        return None
+    band_size = max(1, round(len(values) * 0.20))
+    return median(values[-band_size:]) - median(values[:band_size])
 
 
 def _score_platform(splitter_mm: float | None) -> float:
@@ -135,20 +140,33 @@ def build_fixed_pct_segments(
         splitters = _values(segment_rows, "cfsr_height_mm")
         distances = _values(segment_rows, "lap_dist_m")
 
-        speed_delta = speeds[-1] - speeds[0] if len(speeds) >= 2 else None
-        rpm_delta = rpms[-1] - rpms[0] if len(rpms) >= 2 else None
+        speed_delta = _robust_track_delta(segment_rows, "speed_mph")
+        rpm_delta = _robust_track_delta(segment_rows, "rpm")
         avg_throttle = mean(throttles) if throttles else None
         avg_brake = mean(brakes) if brakes else None
         avg_steering = mean(steering) if steering else None
         min_splitter = min(splitters) if splitters else None
         platform_score = _score_platform(min_splitter)
-        driver_input_score = 1.0 if (avg_brake or 0.0) > 5.0 or (avg_throttle is not None and avg_throttle < 95.0) else 0.0
+        driver_consistent = sum(
+            1
+            for row in segment_rows
+            if (row.get("throttle_pct") is not None and float(row["throttle_pct"]) >= 95.0)
+            and (row.get("brake_pct") is not None and float(row["brake_pct"]) <= 5.0)
+        )
+        driver_coverage = driver_consistent / len(segment_rows)
+        driver_input_score = 0.0 if driver_coverage >= 0.90 else 1.0
         # Use canonical drag/scrub index from the shared module
-        drag_scrub_score = 0.0
+        drag_scrub_scores: list[float] = []
         for row in segment_rows:
             dsi = compute_drag_scrub_index(row)
-            if dsi > drag_scrub_score:
-                drag_scrub_score = dsi
+            if dsi is not None:
+                drag_scrub_scores.append(dsi)
+        drag_coverage = len(drag_scrub_scores) / len(segment_rows)
+        if len(segment_rows) >= 30 and drag_coverage >= 0.90:
+            ordered_scores = sorted(drag_scrub_scores)
+            drag_scrub_score = ordered_scores[int(0.90 * (len(ordered_scores) - 1))]
+        else:
+            drag_scrub_score = None
 
         segments.append(
             SegmentSummary(
@@ -176,7 +194,9 @@ def build_fixed_pct_segments(
                 drag_scrub_score=drag_scrub_score,
                 driver_input_score=driver_input_score,
                 powertrain_score=0.0,
-                confidence_score=0.6 if len(segment_rows) >= 2 else 0.25,
+                confidence_score=min(0.8, 0.4 + 0.4 * min(driver_coverage, drag_coverage))
+                if drag_scrub_score is not None
+                else 0.25,
             )
         )
 
@@ -227,10 +247,14 @@ def _build_fixed_pct_segments_frame(
     if with_pct.is_empty():
         return []
     t0 = time.perf_counter()
-    drag_scores: dict[int, float] = {}
+    drag_score_samples: dict[int, list[float]] = {}
+    speed_track_samples: dict[int, list[tuple[float, float]]] = {}
+    rpm_track_samples: dict[int, list[tuple[float, float]]] = {}
     for row in with_pct.select(
         "_seg_start",
+        "_lap_pct",
         "speed_mph",
+        "rpm",
         "throttle_pct",
         "brake_pct",
         "speed_rate_mph_s",
@@ -240,18 +264,26 @@ def _build_fixed_pct_segments_frame(
         "cfs_risk_score",
     ).iter_rows(named=True):
         seg = int(row["_seg_start"])
+        position = float(row["_lap_pct"])
+        if row.get("speed_mph") is not None:
+            speed_track_samples.setdefault(seg, []).append((position, float(row["speed_mph"])))
+        if row.get("rpm") is not None:
+            rpm_track_samples.setdefault(seg, []).append((position, float(row["rpm"])))
         score = compute_drag_scrub_index(row)
-        if score > drag_scores.get(seg, 0.0):
-            drag_scores[seg] = score
+        if score is not None:
+            drag_score_samples.setdefault(seg, []).append(score)
     agg = with_pct.group_by("_seg_start").agg(
         pl.col("speed_mph").mean().alias("avg_speed_mph"),
         pl.col("speed_mph").min().alias("min_speed_mph"),
         pl.col("speed_mph").max().alias("max_speed_mph"),
-        (pl.col("speed_mph").drop_nulls().last() - pl.col("speed_mph").drop_nulls().first()).alias("speed_delta_mph"),
         pl.col("rpm").mean().alias("avg_rpm"),
-        (pl.col("rpm").drop_nulls().last() - pl.col("rpm").drop_nulls().first()).alias("rpm_delta"),
         pl.col("throttle_pct").mean().alias("avg_throttle_pct"),
         pl.col("brake_pct").mean().alias("avg_brake_pct"),
+        (
+            ((pl.col("throttle_pct") >= 95.0) & (pl.col("brake_pct") <= 5.0))
+            .fill_null(False)
+            .sum()
+        ).alias("driver_consistent_samples"),
         pl.col("abs_steering_deg").mean().alias("avg_abs_steering_deg"),
         pl.col("abs_steering_deg").max().alias("max_abs_steering_deg"),
         pl.col("lat_accel").mean().alias("avg_lat_accel"),
@@ -267,7 +299,20 @@ def _build_fixed_pct_segments_frame(
         min_splitter = float(rec["min_splitter_mm"]) if rec.get("min_splitter_mm") is not None else None
         avg_brake = float(rec["avg_brake_pct"]) if rec.get("avg_brake_pct") is not None else None
         avg_throttle = float(rec["avg_throttle_pct"]) if rec.get("avg_throttle_pct") is not None else None
-        driver_input_score = 1.0 if (avg_brake or 0.0) > 5.0 or (avg_throttle is not None and avg_throttle < 95.0) else 0.0
+        sample_count = int(rec.get("sample_count") or 0)
+        driver_coverage = (
+            int(rec.get("driver_consistent_samples") or 0) / sample_count
+            if sample_count
+            else 0.0
+        )
+        driver_input_score = 0.0 if driver_coverage >= 0.90 else 1.0
+        scores = sorted(drag_score_samples.get(start, []))
+        drag_coverage = len(scores) / sample_count if sample_count else 0.0
+        drag_score = (
+            scores[int(0.90 * (len(scores) - 1))]
+            if sample_count >= 30 and drag_coverage >= 0.90
+            else None
+        )
         segments.append(
             SegmentSummary(
                 segment_id=f"{run_id}:segment:{lap_number or 'all'}:{start}-{end}",
@@ -281,9 +326,9 @@ def _build_fixed_pct_segments_frame(
                 avg_speed_mph=float(rec["avg_speed_mph"]) if rec.get("avg_speed_mph") is not None else None,
                 min_speed_mph=float(rec["min_speed_mph"]) if rec.get("min_speed_mph") is not None else None,
                 max_speed_mph=float(rec["max_speed_mph"]) if rec.get("max_speed_mph") is not None else None,
-                speed_delta_mph=float(rec["speed_delta_mph"]) if rec.get("speed_delta_mph") is not None else None,
+                speed_delta_mph=_robust_ordered_delta(speed_track_samples.get(start, [])),
                 avg_rpm=float(rec["avg_rpm"]) if rec.get("avg_rpm") is not None else None,
-                rpm_delta=float(rec["rpm_delta"]) if rec.get("rpm_delta") is not None else None,
+                rpm_delta=_robust_ordered_delta(rpm_track_samples.get(start, [])),
                 avg_throttle_pct=avg_throttle,
                 avg_brake_pct=avg_brake,
                 avg_abs_steering_deg=float(rec["avg_abs_steering_deg"]) if rec.get("avg_abs_steering_deg") is not None else None,
@@ -291,10 +336,12 @@ def _build_fixed_pct_segments_frame(
                 avg_lat_accel=float(rec["avg_lat_accel"]) if rec.get("avg_lat_accel") is not None else None,
                 min_splitter_mm=min_splitter,
                 platform_risk_score=_score_platform(min_splitter),
-                drag_scrub_score=float(drag_scores.get(start, 0.0)),
+                drag_scrub_score=drag_score,
                 driver_input_score=driver_input_score,
                 powertrain_score=0.0,
-                confidence_score=0.6 if int(rec.get("sample_count") or 0) >= 2 else 0.25,
+                confidence_score=min(0.8, 0.4 + 0.4 * min(driver_coverage, drag_coverage))
+                if drag_score is not None
+                else 0.25,
             )
         )
     if profile_out is not None:

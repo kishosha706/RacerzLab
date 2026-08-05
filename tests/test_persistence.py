@@ -174,7 +174,6 @@ def test_compare_same_run_triggers_reference_warning() -> None:
 
 
 def test_compare_different_run_not_blocked() -> None:
-    from racelab_engine.analysis.comparison import ChannelDeltaStats, PlatformComparison, DriverComparison
     from racelab_engine.analysis.compare_math import compute_whole_car_index
 
     # Two runs with different IDs but zero speed delta should still NOT be flagged as same-run
@@ -189,7 +188,7 @@ def test_compare_different_run_not_blocked() -> None:
     plat = aggregate_platform_stats(same_rows, same_rows)
     driver = aggregate_driver_stats(same_rows, same_rows)
     pt = aggregate_powertrain_stats(same_rows, same_rows)
-    wci = compute_whole_car_index(plat, driver, pt, 90)
+    wci = compute_whole_car_index(plat, driver, pt, 90, speed_delta_mph=0.0)
 
     # With zero delta, the index should still produce a valid score — not crash
     assert wci.overall_index is not None

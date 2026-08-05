@@ -140,7 +140,6 @@ def test_dynamic_pressure_missing_density() -> None:
 
 
 def test_aero_load_index_known() -> None:
-    from racelab_engine.analysis.constants import REFERENCE_DYNAMIC_PRESSURE_PA
     q = 0.5 * 1.225 * 80.4672 * 80.4672  # ~180 mph reference
     index, conf = aero_load_index(q)
     assert index is not None
@@ -583,9 +582,9 @@ def test_grade_context_label_flat() -> None:
 
 # ── Grade channel integration via normalize_telemetry_rows ────
 
-def test_grade_channels_produced_on_synthetic_rows() -> None:
+def test_grade_channels_produced_on_synthetic_rows(monkeypatch) -> None:
     """normalize_telemetry_rows should produce all grade channels."""
-    import os; os.environ["RACELAB_ANALYSIS_ENGINE"] = "row"
+    monkeypatch.setenv("RACELAB_ANALYSIS_ENGINE", "row")
     from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
     rows = [
         {"SessionTime": 0.0, "LapDist": 0.0, "LapDistPct": 0.0, "Speed": 0.0,
@@ -946,7 +945,6 @@ def test_frontend_channels_are_backend_known() -> None:
     channel to be frontend-requested — only that frontend requests
     point to real channels.
     """
-    import json
     from pathlib import Path
     import re
 

@@ -15,6 +15,14 @@ def test_one_change_test_is_clean() -> None:
     assert result.is_reliable is True
 
 
+def test_zero_change_comparison_is_reference_not_causal_test() -> None:
+    result = score_test_discipline([])
+
+    assert result.label == "reference"
+    assert result.is_reliable is False
+    assert "repeatability" in (result.recommendation or "")
+
+
 def test_multi_change_warning_reduces_score() -> None:
     result = score_test_discipline([_change("front_platform"), _change("rear_platform", "lr_ride_height_mm")])
 

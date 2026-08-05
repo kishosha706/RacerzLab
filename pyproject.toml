@@ -27,6 +27,7 @@ parquet = [
 dev = [
   "pytest>=8.0",
   "httpx>=0.27",
+  "ruff>=0.5",
 ]
 build = [
   "pyinstaller",
@@ -51,4 +52,5 @@ addopts = "-q --ignore=tests_archived"
 markers = [
     "unit: Fast pure-logic or mock-based tests (no .ibt import)",
     "slow: Tests that import real .ibt files or hit full telemetry pipeline",
+    "integration: Tests that cross application or persistence boundaries",
 ]

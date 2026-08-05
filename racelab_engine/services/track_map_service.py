@@ -7,11 +7,7 @@ from typing import Any
 
 from racelab_engine.io.mt2_reader import (
     TrackMap,
-    TrackMapPoint,
-    TrackMapMarker,
-    TrackMapSection,
     parse_mt2_bytes,
-    MT2DecodeError,
 )
 from racelab_engine.analysis.track_matching import (
     build_match_aliases,

@@ -19,6 +19,7 @@ from racelab_engine.analysis.calculated_channels import (
     channel_metadata,
     normalize_telemetry_rows,
 )
+from racelab_engine.analysis.channel_registry import canonical_name
 from racelab_engine.analysis.constants import FORCE_PROXY_WARNING, FORCE_PROXY_CHANNELS
 from racelab_engine.analysis.ride_height_calibration import (
     apply_next_gen_lr_ride_height_offset_to_rows,
@@ -26,7 +27,12 @@ from racelab_engine.analysis.ride_height_calibration import (
 )
 from racelab_engine.io import ibt_reader as ibt_mod
 from racelab_engine.io.ibt_reader import import_ibt
-from racelab_engine.io.ibt_types import IBTImportResult, IBTVariableDefinition
+from racelab_engine.io.ibt_types import IBTHeader, IBTImportResult, IBTVariableDefinition
+from racelab_engine.io.telemetry_manifest import (
+    assess_cache_compatibility,
+    build_telemetry_manifest,
+    compact_capability_summary,
+)
 from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.storage.repository import RaceLabRepository
 
@@ -59,6 +65,26 @@ TRACE_CHANNEL_UNITS = {
     "fuel_level": "L",
     "voltage": "V",
     "shift_power_pct": "%",
+    "car_distance_ahead_m": "m",
+    "car_distance_behind_m": "m",
+    "lf_brake_line_pressure_bar": "bar",
+    "rf_brake_line_pressure_bar": "bar",
+    "lr_brake_line_pressure_bar": "bar",
+    "rr_brake_line_pressure_bar": "bar",
+    "lf_tire_distance_m": "m",
+    "rf_tire_distance_m": "m",
+    "lr_tire_distance_m": "m",
+    "rr_tire_distance_m": "m",
+    "brake_abs_cut_01": "ratio",
+    "steering_wheel_torque_nm": "N*m",
+    "steering_wheel_torque_subtick_nm": "N*m",
+    "steering_wheel_torque_unsigned_01": "ratio",
+    "steering_wheel_torque_signed_01": "ratio",
+    "steering_wheel_torque_stops_01": "ratio",
+    "channel_latency_s": "s",
+    "channel_average_latency_s": "s",
+    "memory_page_faults_per_s": "faults/s",
+    "memory_soft_page_faults_per_s": "faults/s",
     "lf_shock_velocity_rms": "in/s",
     "rf_shock_velocity_rms": "in/s",
     "lr_shock_velocity_rms": "in/s",
@@ -143,18 +169,72 @@ class _StagedImportCache:
     temp_run_id: str
     cache_result: TelemetryCacheResult
     metadata_path: Path
+    manifest_path: Path
     final_cache_path: Path
     final_metadata_path: Path
+    final_manifest_path: Path
     data_root: Path
     run_id: str
+    raw_archive_columns: dict[str, str]
+    expected_record_count: int | None
+    array_element_counts: dict[str, int]
+    backups: dict[Path, Path] | None = None
+    promoted_destinations: list[Path] | None = None
 
     def cleanup(self) -> None:
         _safe_unlink(self.cache_result.path)
         _safe_unlink(self.metadata_path)
+        _safe_unlink(self.manifest_path)
+
+    def _artifacts(self) -> tuple[tuple[Path, Path], ...]:
+        return (
+            (self.cache_result.path, self.final_cache_path),
+            (self.metadata_path, self.final_metadata_path),
+            (self.manifest_path, self.final_manifest_path),
+        )
+
+    def rollback(self) -> None:
+        for destination in reversed(self.promoted_destinations or []):
+            _safe_unlink(destination)
+        for destination, backup in (self.backups or {}).items():
+            if backup.exists():
+                try:
+                    os.replace(backup, destination)
+                except OSError:
+                    logging.getLogger(__name__).exception(
+                        "Could not restore cache artifact %s from %s", destination, backup
+                    )
+        self.promoted_destinations = []
+        self.backups = {}
+        _invalidate_run_cache(self.data_root, self.run_id)
+
+    def commit(self) -> None:
+        for backup in (self.backups or {}).values():
+            _safe_unlink(backup)
+        self.backups = {}
+        self.promoted_destinations = []
 
     def promote(self) -> TelemetryCacheResult:
-        _atomic_replace(self.cache_result.path, self.final_cache_path)
-        _atomic_replace(self.metadata_path, self.final_metadata_path)
+        _assert_declared_channels_archived(
+            self.cache_result,
+            self.raw_archive_columns,
+            expected_record_count=self.expected_record_count,
+            array_element_counts=self.array_element_counts,
+        )
+        self.backups = {}
+        self.promoted_destinations = []
+        try:
+            for _source, destination in self._artifacts():
+                if destination.exists():
+                    backup = _temp_cache_path(destination, f"{self.run_id}.backup")
+                    _atomic_replace(destination, backup)
+                    self.backups[destination] = backup
+            for source, destination in self._artifacts():
+                _atomic_replace(source, destination)
+                self.promoted_destinations.append(destination)
+        except Exception:
+            self.rollback()
+            raise
         _invalidate_run_cache(self.data_root, self.run_id)
         return TelemetryCacheResult(
             path=self.final_cache_path,
@@ -197,7 +277,7 @@ class _ChannelSummaryCacheEntry:
 
 _CHANNEL_SUMMARY_CACHE: dict[tuple[str, str], _ChannelSummaryCacheEntry] = {}
 _CHANNEL_SUMMARY_CACHE_MAX = 24
-_CHANNEL_SCHEMA_VERSION = "v2"
+_CHANNEL_SCHEMA_VERSION = "v4-health-provenance"
 
 def default_data_dir() -> Path:
     return Path(os.environ.get("RACELAB_DATA_DIR", "data"))
@@ -213,6 +293,10 @@ def csv_path(data_dir: Path, run_id: str) -> Path:
 
 def channel_metadata_path(data_dir: Path, run_id: str) -> Path:
     return data_dir / "cache" / "normalized" / f"{run_id}.channels.json"
+
+
+def telemetry_manifest_path(data_dir: Path, run_id: str) -> Path:
+    return data_dir / "cache" / "normalized" / f"{run_id}.telemetry-manifest.json"
 
 
 def _temp_cache_path(final_path: Path, run_id: str) -> Path:
@@ -233,6 +317,113 @@ def _safe_unlink(path: Path | None) -> None:
 def _atomic_replace(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     os.replace(source, destination)
+
+
+def _archived_columns(cache_result: TelemetryCacheResult) -> set[str]:
+    if cache_result.format == "parquet":
+        if importlib.util.find_spec("polars") is None:
+            raise RuntimeError("Cannot verify Parquet archive completeness without Polars.")
+        pl = __import__("polars")
+        return set(pl.read_parquet_schema(cache_result.path))
+    with cache_result.path.open("r", newline="", encoding="utf-8") as file_obj:
+        return set(next(csv.reader(file_obj), []))
+
+
+def _assert_declared_channels_archived(
+    cache_result: TelemetryCacheResult,
+    raw_archive_columns: dict[str, str] | tuple[str, ...] | list[str],
+    *,
+    expected_record_count: int | None = None,
+    array_element_counts: dict[str, int] | None = None,
+) -> None:
+    """Block promotion unless every file-declared raw channel exists physically."""
+
+    archived = _archived_columns(cache_result)
+    mapping = (
+        raw_archive_columns
+        if isinstance(raw_archive_columns, dict)
+        else {name: name for name in raw_archive_columns}
+    )
+    if len(set(mapping.values())) != len(mapping):
+        raise RuntimeError("Telemetry archive invariant failed: raw archive columns are not unique.")
+    missing = sorted(raw_name for raw_name, column in mapping.items() if column not in archived)
+    if missing:
+        preview = ", ".join(missing[:8])
+        suffix = "..." if len(missing) > 8 else ""
+        raise RuntimeError(
+            "Telemetry archive invariant failed: "
+            f"{len(missing)} declared raw channel(s) are missing from the staged cache: {preview}{suffix}"
+        )
+    if cache_result.format == "parquet":
+        pl = __import__("polars")
+        actual_record_count = int(
+            pl.scan_parquet(cache_result.path).select(pl.len()).collect().item()
+        )
+        if expected_record_count is not None and actual_record_count != expected_record_count:
+            raise RuntimeError(
+                "Telemetry archive invariant failed: "
+                f"expected {expected_record_count} records but staged cache contains {actual_record_count}."
+            )
+        null_aliases = {
+            raw_name: f"__null_{index}"
+            for index, raw_name in enumerate(mapping)
+        }
+        null_row = (
+            pl.scan_parquet(cache_result.path)
+            .select(
+                pl.col(archive_column).null_count().alias(null_aliases[raw_name])
+                for raw_name, archive_column in mapping.items()
+            )
+            .collect()
+            .to_dicts()[0]
+            if mapping
+            else {}
+        )
+        null_channels = {
+            raw_name: int(null_row[alias])
+            for raw_name, alias in null_aliases.items()
+            if int(null_row[alias]) > 0
+        }
+        if null_channels:
+            details = ", ".join(
+                f"{name} ({count})" for name, count in sorted(null_channels.items())
+            )
+            raise RuntimeError(
+                "Telemetry archive invariant failed: declared raw channels contain null records: "
+                + details
+            )
+        for raw_name, expected_count in (array_element_counts or {}).items():
+            archive_column = mapping[raw_name]
+            malformed_count = int(
+                pl.scan_parquet(cache_result.path)
+                .select(
+                    (
+                        pl.col(archive_column).is_null()
+                        | (pl.col(archive_column).list.len() != expected_count)
+                        | pl.col(archive_column)
+                        .list.eval(pl.element().is_null())
+                        .list.any()
+                        .fill_null(True)
+                    )
+                    .sum()
+                )
+                .collect()
+                .item()
+            )
+            if malformed_count:
+                raise RuntimeError(
+                    "Telemetry archive invariant failed: "
+                    f"{raw_name} has {malformed_count} malformed array record(s); "
+                    f"expected {expected_count} elements per record."
+                )
+    elif expected_record_count is not None:
+        with cache_result.path.open("r", newline="", encoding="utf-8") as file_obj:
+            actual_record_count = max(0, sum(1 for _line in file_obj) - 1)
+        if actual_record_count != expected_record_count:
+            raise RuntimeError(
+                "Telemetry archive invariant failed: "
+                f"expected {expected_record_count} records but staged cache contains {actual_record_count}."
+            )
 
 
 def _is_scalar(value: Any) -> bool:
@@ -407,6 +598,67 @@ def read_channel_metadata(run_id: str, data_dir: str | Path | None = None) -> li
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
 
 
+def write_telemetry_manifest(
+    run_id: str,
+    header: IBTHeader,
+    definitions: list[IBTVariableDefinition],
+    frame: Any,
+    session_yaml: str | None = None,
+    raw_archive_columns: dict[str, str] | None = None,
+    data_dir: str | Path | None = None,
+    staged: bool = False,
+) -> Path:
+    data_root = Path(data_dir) if data_dir is not None else default_data_dir()
+    final_path = telemetry_manifest_path(data_root, run_id)
+    path = _temp_cache_path(final_path, run_id)
+    try:
+        path.write_text(
+            json.dumps(
+                build_telemetry_manifest(
+                    header,
+                    definitions,
+                    frame,
+                    session_yaml,
+                    raw_archive_columns,
+                ),
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        if staged:
+            return path
+        _atomic_replace(path, final_path)
+        return final_path
+    except Exception:
+        _safe_unlink(path)
+        raise
+
+
+def read_telemetry_manifest(run_id: str, data_dir: str | Path | None = None) -> dict[str, Any]:
+    data_root = Path(data_dir) if data_dir is not None else default_data_dir()
+    path = telemetry_manifest_path(data_root, run_id)
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def build_telemetry_capability_payload(
+    run_id: str,
+    data_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    data_root = Path(data_dir) if data_dir is not None else default_data_dir()
+    manifest = dict(read_telemetry_manifest(run_id, data_root))
+    cache_present = parquet_path(data_root, run_id).exists() or csv_path(data_root, run_id).exists()
+    if not manifest and not cache_present:
+        return {}
+    manifest["cache_compatibility"] = assess_cache_compatibility(
+        manifest,
+        cache_present=cache_present,
+    )
+    manifest["capability_summary"] = compact_capability_summary(manifest)
+    manifest.setdefault("capabilities", [])
+    manifest.setdefault("channels", [])
+    return manifest
+
+
 def write_telemetry_cache(
     run_id: str,
     rows: list[dict[str, Any]],
@@ -487,34 +739,93 @@ def _stage_import_cache(
     rows: list[dict[str, Any]],
     definitions: list[IBTVariableDefinition],
     *,
+    header: IBTHeader,
+    session_yaml: str | None,
+    raw_archive_columns: dict[str, str],
     normalized_frame: Any | None,
     data_dir: str | Path,
     profile_out: dict[str, float] | None = None,
 ) -> _StagedImportCache:
     data_root = Path(data_dir)
     temp_run_id = f".{run_id}.{uuid.uuid4().hex}.tmp"
-    cache_result = write_telemetry_cache(
-        temp_run_id,
-        rows,
-        normalized_frame=normalized_frame,
-        data_dir=data_root,
-        profile_out=profile_out,
-    )
+    cache_result: TelemetryCacheResult | None = None
     try:
+        cache_result = write_telemetry_cache(
+            temp_run_id,
+            rows,
+            normalized_frame=normalized_frame,
+            data_dir=data_root,
+            profile_out=profile_out,
+        )
+        declared_raw_names = tuple(definition.name for definition in definitions)
+        archive_mapping = {
+            name: raw_archive_columns.get(name, name)
+            for name in declared_raw_names
+        }
+        canonical_targets = {
+            canonical
+            for definition in definitions
+            if (canonical := canonical_name(definition.name)) is not None
+        }
+        unsafe_collisions = sorted(
+            raw_name
+            for raw_name, archive_column in archive_mapping.items()
+            if raw_name in canonical_targets and archive_column == raw_name
+        )
+        if unsafe_collisions:
+            raise RuntimeError(
+                "Telemetry archive invariant failed: raw/canonical namespace collision for "
+                + ", ".join(unsafe_collisions)
+            )
+        array_element_counts = {
+            definition.name: definition.count
+            for definition in definitions
+            if definition.count > 1 and definition.data_type_id != 0
+        }
+        _assert_declared_channels_archived(
+            cache_result,
+            archive_mapping,
+            expected_record_count=header.record_count,
+            array_element_counts=array_element_counts,
+        )
         metadata_path = write_channel_metadata(temp_run_id, definitions, data_root)
+        manifest_frame = normalized_frame
+        if manifest_frame is None and importlib.util.find_spec("polars") is not None:
+            pl = importlib.import_module("polars")
+            manifest_frame = pl.from_dicts(rows, infer_schema_length=None) if rows else pl.DataFrame()
+        manifest_path = write_telemetry_manifest(
+            temp_run_id,
+            header,
+            definitions,
+            manifest_frame,
+            session_yaml,
+            archive_mapping,
+            data_root,
+        )
     except Exception:
-        _safe_unlink(cache_result.path)
+        _safe_unlink(cache_result.path if cache_result is not None else None)
+        _safe_unlink(parquet_path(data_root, temp_run_id))
+        _safe_unlink(csv_path(data_root, temp_run_id))
+        _safe_unlink(locals().get("metadata_path"))
+        _safe_unlink(locals().get("manifest_path"))
         raise
+
+    assert cache_result is not None
 
     final_cache_path = parquet_path(data_root, run_id) if cache_result.format == "parquet" else csv_path(data_root, run_id)
     return _StagedImportCache(
         temp_run_id=temp_run_id,
         cache_result=cache_result,
         metadata_path=metadata_path,
+        manifest_path=manifest_path,
         final_cache_path=final_cache_path,
         final_metadata_path=channel_metadata_path(data_root, run_id),
+        final_manifest_path=telemetry_manifest_path(data_root, run_id),
         data_root=data_root,
         run_id=run_id,
+        raw_archive_columns=archive_mapping,
+        expected_record_count=header.record_count,
+        array_element_counts=array_element_counts,
     )
 
 
@@ -754,7 +1065,7 @@ def _precompute_channel_stats_from_parquet(
             pl.col(name).max().alias(f"{name}__max"),
             pl.col(name).mean().alias(f"{name}__mean"),
         ])
-    row = pl.scan_parquet(path).select(exprs).collect(streaming=True).to_dicts()[0]
+    row = pl.scan_parquet(path).select(exprs).collect(engine="streaming").to_dicts()[0]
     for name in numeric_cols:
         stats[name] = {
             "min": row.get(f"{name}__min"),
@@ -788,6 +1099,40 @@ def _definition_type_for(definition: dict[str, Any] | None, is_calculated: bool)
     return "float" if is_calculated else None
 
 
+def _manifest_channel_fields(manifest_channel: dict[str, Any] | None) -> dict[str, Any]:
+    if not manifest_channel:
+        return {}
+    return {
+        key: manifest_channel.get(key)
+        for key in (
+            "raw_name",
+            "archive_column",
+            "canonical_name",
+            "canonical_mapping_kind",
+            "registry_status",
+            "provenance",
+            "archive_status",
+            "variation",
+            "health_status",
+            "health_warnings",
+            "non_finite_sample_count",
+            "impossible_sample_count",
+            "impossible_range_rule",
+            "malformed_array_record_count",
+            "null_element_count",
+            "numeric_limit_hit_count",
+            "clipping_status",
+            "saturation_status",
+            "lower_bound_occupancy_fraction",
+            "upper_bound_occupancy_fraction",
+            "count_as_time",
+            "base_sample_rate_hz",
+            "effective_sample_rate_hz",
+            "missing_fraction",
+        )
+    }
+
+
 def _build_catalog_item(
     name: str,
     definition: dict[str, Any] | None,
@@ -795,8 +1140,15 @@ def _build_catalog_item(
     is_calculated: bool,
     in_column_set: bool,
     channel_stats: dict[str, dict[str, Any]],
+    manifest_channel: dict[str, Any] | None = None,
+    is_canonical_alias: bool = False,
 ) -> dict[str, Any]:
-    stats = channel_stats.get(name, {"min": None, "max": None, "mean": None, "sample_value": None})
+    stats_name = (
+        str(manifest_channel.get("archive_column"))
+        if manifest_channel and is_raw and manifest_channel.get("archive_column")
+        else name
+    )
+    stats = channel_stats.get(stats_name, {"min": None, "max": None, "mean": None, "sample_value": None})
     missing_status = _missing_status(name, definition, is_calculated, in_column_set)
     definition_type = _definition_type_for(definition, is_calculated)
     meta = channel_metadata(name)
@@ -804,11 +1156,18 @@ def _build_catalog_item(
         "name": name,
         "label": meta.get("label", name),
         "description": definition.get("description") if definition else meta.get("description"),
-        "unit": definition.get("unit") if definition and definition.get("unit") else TRACE_CHANNEL_UNITS.get(name),
+        "unit": (
+            TRACE_CHANNEL_UNITS.get(name)
+            or CALCULATED_CHANNEL_UNITS.get(name)
+            or (definition.get("unit") if definition else None)
+            if is_canonical_alias
+            else definition.get("unit") if definition and definition.get("unit") else TRACE_CHANNEL_UNITS.get(name)
+        ),
         "type": definition_type,
         "count": definition.get("count", 1) if definition else 1,
         "is_raw": is_raw,
         "is_calculated": is_calculated,
+        "is_canonical_alias": is_canonical_alias,
         "is_proxy": name in FORCE_PROXY_CHANNELS,
         "formula": meta.get("formula"),
         "dependencies": meta.get("dependencies", []),
@@ -817,7 +1176,11 @@ def _build_catalog_item(
         "used_by_recommendations": meta.get("used_by_recommendations", []),
         "missing_status": missing_status,
         **stats,
+        **_manifest_channel_fields(manifest_channel),
     }
+    if is_canonical_alias:
+        item["source"] = "canonical_alias"
+        item["group"] = "canonical_alias"
     if name in FORCE_PROXY_CHANNELS:
         item["is_proxy"] = True
         if not item.get("description") or "ESTIMATE" not in str(item.get("description", "")):
@@ -831,6 +1194,8 @@ def _build_summary_item(
     is_raw: bool,
     is_calculated: bool,
     in_column_set: bool,
+    manifest_channel: dict[str, Any] | None = None,
+    is_canonical_alias: bool = False,
 ) -> dict[str, Any]:
     meta = channel_metadata(name)
     missing_status = _missing_status(name, definition, is_calculated, in_column_set)
@@ -839,11 +1204,18 @@ def _build_summary_item(
         "name": name,
         "label": meta.get("label", name),
         "description": definition.get("description") if definition else meta.get("description"),
-        "unit": definition.get("unit") if definition and definition.get("unit") else TRACE_CHANNEL_UNITS.get(name),
+        "unit": (
+            TRACE_CHANNEL_UNITS.get(name)
+            or CALCULATED_CHANNEL_UNITS.get(name)
+            or (definition.get("unit") if definition else None)
+            if is_canonical_alias
+            else definition.get("unit") if definition and definition.get("unit") else TRACE_CHANNEL_UNITS.get(name)
+        ),
         "type": definition_type,
         "count": definition.get("count", 1) if definition else 1,
         "is_raw": is_raw,
         "is_calculated": is_calculated,
+        "is_canonical_alias": is_canonical_alias,
         "is_proxy": name in FORCE_PROXY_CHANNELS,
         "formula": None,
         "dependencies": [],
@@ -855,11 +1227,10 @@ def _build_summary_item(
         "mean": None,
         "sample_value": None,
         "missing_status": missing_status,
-        "group": "raw" if is_raw and not is_calculated else "calculated" if is_calculated else "derived",
-        "source": "raw" if definition is not None else "calculated" if is_calculated else "derived",
+        "group": "raw" if is_raw else "canonical_alias" if is_canonical_alias else "calculated" if is_calculated else "derived",
+        "source": "raw" if is_raw else "canonical_alias" if is_canonical_alias else "calculated" if is_calculated else "derived",
+        **_manifest_channel_fields(manifest_channel),
     }
-
-
 def build_channel_catalog(run_id: str, data_dir: str | Path | None = None) -> list[dict[str, Any]]:
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
     key = _cache_key(data_root, run_id)
@@ -880,17 +1251,79 @@ def build_channel_catalog(run_id: str, data_dir: str | Path | None = None) -> li
         columns = list(stats_map.keys())
     column_set = set(columns)
     definitions = {definition["name"]: definition for definition in read_channel_metadata(run_id, data_dir)}
-    catalog_names = list(definitions)
+    manifest_channels = {
+        channel["raw_name"]: channel
+        for channel in read_telemetry_manifest(run_id, data_dir).get("channels", [])
+        if channel.get("raw_name")
+    }
+    manifest_by_canonical = {
+        channel["canonical_name"]: channel
+        for channel in manifest_channels.values()
+        if channel.get("canonical_name")
+    }
+    namespaced_raw_columns = {
+        str(channel["archive_column"])
+        for channel in manifest_channels.values()
+        if channel.get("archive_column") and channel.get("archive_column") != channel.get("raw_name")
+    }
+    physical_raw_names = {
+        str(channel.get("archive_column", raw_name)): raw_name
+        for raw_name, channel in manifest_channels.items()
+    }
+    catalog_names = [
+        str(manifest_channels.get(name, {}).get("archive_column", name))
+        for name in definitions
+    ]
     catalog_names.extend(name for name in HIGH_VALUE_RAW_CHANNELS if name not in catalog_names)
-    catalog_names.extend(name for name in columns if name not in catalog_names)
+    catalog_names.extend(
+        name for name in columns
+        if name not in catalog_names and name not in namespaced_raw_columns
+    )
     catalog_names.extend(name for name in CALCULATED_CHANNEL_UNITS if name not in catalog_names)
 
     catalog: list[dict[str, Any]] = []
     for name in catalog_names:
-        definition = definitions.get(name)
+        is_physical_raw = name in physical_raw_names
+        logical_raw_name = physical_raw_names.get(name, name)
+        # Boot metadata remains authoritative even when a synthetic/test cache
+        # has no telemetry manifest yet.
+        definition = (
+            definitions.get(logical_raw_name)
+            if is_physical_raw or not manifest_channels
+            else None
+        )
+        manifest_channel = (
+            manifest_channels.get(logical_raw_name)
+            if is_physical_raw
+            else manifest_by_canonical.get(name)
+        )
+        is_canonical_alias = definition is None and name in manifest_by_canonical
+        source_definition = (
+            definitions.get(str(manifest_channel.get("raw_name")))
+            if is_canonical_alias and manifest_channel
+            else definition
+        )
         is_raw = definition is not None or name in HIGH_VALUE_RAW_CHANNELS
-        is_calculated = name in CALCULATED_CHANNEL_UNITS or (not is_raw and name in column_set)
-        catalog.append(_build_catalog_item(name, definition, is_raw, is_calculated, name in column_set, stats_map))
+        is_calculated = not is_raw and not is_canonical_alias and (
+            name in CALCULATED_CHANNEL_UNITS or (not is_raw and name in column_set)
+        )
+        in_column_set = (
+            str(manifest_channel.get("archive_column")) in column_set
+            if is_raw and manifest_channel and manifest_channel.get("archive_column")
+            else name in column_set
+        )
+        catalog.append(
+            _build_catalog_item(
+                name,
+                source_definition,
+                is_raw,
+                is_calculated,
+                in_column_set,
+                stats_map,
+                manifest_channel,
+                is_canonical_alias,
+            )
+        )
 
     with _TELEMETRY_ROWS_CACHE_LOCK:
         _CHANNEL_CATALOG_CACHE[key] = _ChannelCatalogCacheEntry(
@@ -924,17 +1357,78 @@ def build_channel_summary(run_id: str, data_dir: str | Path | None = None) -> li
 
     column_set = set(columns)
     definitions = {definition["name"]: definition for definition in read_channel_metadata(run_id, data_dir)}
-    catalog_names = list(definitions)
+    manifest_channels = {
+        channel["raw_name"]: channel
+        for channel in read_telemetry_manifest(run_id, data_dir).get("channels", [])
+        if channel.get("raw_name")
+    }
+    manifest_by_canonical = {
+        channel["canonical_name"]: channel
+        for channel in manifest_channels.values()
+        if channel.get("canonical_name")
+    }
+    namespaced_raw_columns = {
+        str(channel["archive_column"])
+        for channel in manifest_channels.values()
+        if channel.get("archive_column") and channel.get("archive_column") != channel.get("raw_name")
+    }
+    physical_raw_names = {
+        str(channel.get("archive_column", raw_name)): raw_name
+        for raw_name, channel in manifest_channels.items()
+    }
+    catalog_names = [
+        str(manifest_channels.get(name, {}).get("archive_column", name))
+        for name in definitions
+    ]
     catalog_names.extend(name for name in HIGH_VALUE_RAW_CHANNELS if name not in catalog_names)
-    catalog_names.extend(name for name in columns if name not in catalog_names)
+    catalog_names.extend(
+        name for name in columns
+        if name not in catalog_names and name not in namespaced_raw_columns
+    )
     catalog_names.extend(name for name in CALCULATED_CHANNEL_UNITS if name not in catalog_names)
 
     summary: list[dict[str, Any]] = []
     for name in catalog_names:
-        definition = definitions.get(name)
+        is_physical_raw = name in physical_raw_names
+        logical_raw_name = physical_raw_names.get(name, name)
+        # Boot metadata remains authoritative even when a synthetic/test cache
+        # has no telemetry manifest yet.
+        definition = (
+            definitions.get(logical_raw_name)
+            if is_physical_raw or not manifest_channels
+            else None
+        )
+        manifest_channel = (
+            manifest_channels.get(logical_raw_name)
+            if is_physical_raw
+            else manifest_by_canonical.get(name)
+        )
+        is_canonical_alias = definition is None and name in manifest_by_canonical
+        source_definition = (
+            definitions.get(str(manifest_channel.get("raw_name")))
+            if is_canonical_alias and manifest_channel
+            else definition
+        )
         is_raw = definition is not None or name in HIGH_VALUE_RAW_CHANNELS
-        is_calculated = name in CALCULATED_CHANNEL_UNITS or (not is_raw and name in column_set)
-        summary.append(_build_summary_item(name, definition, is_raw, is_calculated, name in column_set))
+        is_calculated = not is_raw and not is_canonical_alias and (
+            name in CALCULATED_CHANNEL_UNITS or (not is_raw and name in column_set)
+        )
+        in_column_set = (
+            str(manifest_channel.get("archive_column")) in column_set
+            if is_raw and manifest_channel and manifest_channel.get("archive_column")
+            else name in column_set
+        )
+        summary.append(
+            _build_summary_item(
+                name,
+                source_definition,
+                is_raw,
+                is_calculated,
+                in_column_set,
+                manifest_channel,
+                is_canonical_alias,
+            )
+        )
 
     with _TELEMETRY_ROWS_CACHE_LOCK:
         _CHANNEL_SUMMARY_CACHE[key] = _ChannelSummaryCacheEntry(
@@ -1289,10 +1783,17 @@ class ImportService:
         t0 = time.perf_counter()
         cache_profile: dict[str, float] = {}
         normalized_frame = getattr(result, "get_normalized_frame", lambda: None)()
+        manifest_header = result.header or IBTHeader(
+            variable_count=len(result.variable_definitions),
+            record_count=(normalized_frame.height if normalized_frame is not None else len(result.records)),
+        )
         staged_cache = _stage_import_cache(
             run_id,
             result.records,
             result.variable_definitions,
+            header=manifest_header,
+            session_yaml=result.session_yaml,
+            raw_archive_columns=result.raw_archive_columns,
             normalized_frame=normalized_frame,
             data_dir=self.data_dir,
             profile_out=cache_profile,
@@ -1303,17 +1804,19 @@ class ImportService:
 
         try:
             t0 = time.perf_counter()
+            cache_result = staged_cache.promote()
+            _timings["promote_cache_artifacts"] = time.perf_counter() - t0
+
+            t0 = time.perf_counter()
             self.repository.save_import(
                 result.overview,
                 result.fingerprint,
                 analysis_mode="vectorized" if normalized_frame is not None else "row",
             )
             _timings["save_run_metadata"] = time.perf_counter() - t0
-
-            t0 = time.perf_counter()
-            cache_result = staged_cache.promote()
-            _timings["promote_cache_artifacts"] = time.perf_counter() - t0
+            staged_cache.commit()
         except Exception:
+            staged_cache.rollback()
             staged_cache.cleanup()
             raise
 

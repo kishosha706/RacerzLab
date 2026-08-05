@@ -46,7 +46,12 @@ def _find_extreme(
     threshold: float = 0.0,
 ) -> TraceAnnotation | None:
     """Find the single most extreme value in a delta trace and annotate it."""
-    candidates = [(i, v) for i, v in enumerate(values) if v is not None and abs(v) >= threshold]
+    magnitude = abs(threshold)
+    candidates = [
+        (i, v)
+        for i, v in enumerate(values)
+        if v is not None and (v >= magnitude if find_max else v <= -magnitude)
+    ]
     if not candidates:
         return None
 

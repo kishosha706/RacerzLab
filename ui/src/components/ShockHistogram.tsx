@@ -16,6 +16,8 @@ type ShockHistogramProps = {
   bucketThreshold: number;
   setupFields: ShockSetupField[];
   setupSide?: "left" | "right";
+  repeatabilitySummary?: string;
+  learningMode?: boolean;
   unavailableReason?: string;
 };
 
@@ -41,7 +43,19 @@ type HistogramModel = {
 };
 
 function recommendationBadgeText(recommendation?: ShockSettingRecommendation | null): string {
-  if (!recommendation) return "need data";
+  if (!recommendation) return "action withheld";
+  const isSlope = recommendation.setting === "hs_compression_slope" || recommendation.setting === "hs_rebound_slope";
+  if (isSlope && recommendation.direction === "needs_more_evidence") return "slope withheld";
+  if (isSlope && recommendation.direction === "blocked") return "slope limit";
+  if (isSlope && recommendation.direction === "hold") return "hold curve shape";
+  if (isSlope && (recommendation.direction === "add" || recommendation.direction === "subtract")) {
+    const shape = recommendation.direction === "add" ? "more linear" : "more digressive";
+    if (recommendation.delta != null && recommendation.suggested_value != null) {
+      const sign = recommendation.delta > 0 ? "+" : "";
+      return `${shape} ${sign}${recommendation.delta} → ${recommendation.suggested_value}`;
+    }
+    return shape;
+  }
   if (recommendation.direction === "blocked") return "limit";
   if (recommendation.direction === "needs_more_evidence") return recommendation.blocked_reason === "setup value missing" ? "need setup" : "need data";
   if (recommendation.direction === "hold") return "hold";
@@ -53,15 +67,24 @@ function recommendationBadgeText(recommendation?: ShockSettingRecommendation | n
   return recommendation.direction === "add" ? "add" : "subtract";
 }
 
-function recommendationTitle(recommendation?: ShockSettingRecommendation | null): string {
-  if (!recommendation) return "Need more shock-reader evidence.";
+function recommendationTitle(recommendation?: ShockSettingRecommendation | null, learningMode = false): string {
+  if (!recommendation) return "Action withheld: no qualified shock-reader recommendation is available for this setting.";
   const bits = [
-    `Goal: ${recommendation.goal}`,
-    `Trade-off: ${recommendation.tradeoff}`,
-    `Watch: ${recommendation.watch_for.join("; ")}`,
-    `Reason: ${recommendation.reason_short}`,
+    `Action: ${recommendation.action_text}`,
+    `Expected: ${recommendation.expected_effect}`,
+    `Change size: ${recommendation.change_size_explanation}`,
+    `Keep if: ${recommendation.keep_if}`,
+    `Undo if: ${recommendation.undo_if}`,
   ];
-  if (recommendation.blocked_reason) bits.push(`Blocked: ${recommendation.blocked_reason}`);
+  if (recommendation.blocked_reason) bits.push(`Action withheld: ${recommendation.blocked_reason}`);
+  if (learningMode) {
+    bits.push(
+      `Why: ${recommendation.reason_short}`,
+      `Goal: ${recommendation.goal}`,
+      `Trade-off: ${recommendation.tradeoff}`,
+      `Watch: ${recommendation.watch_for.join("; ")}`,
+    );
+  }
   return bits.join("\n");
 }
 
@@ -71,6 +94,7 @@ const CHART_PADDING = { top: 32, right: 46, bottom: 32, left: 46 };
 const DEFAULT_PERCENT_AXIS_MAX = 35;
 const TICK_EPSILON = 0.000001;
 const DEFAULT_BIN_WIDTH_IN_S = 0.5;
+const CENTER_DEADBAND_IN_S = 0.05;
 const AXIS_LABEL_INTERVAL_IN_S = DEFAULT_BIN_WIDTH_IN_S * 2;
 
 function average(values: number[]): number | null {
@@ -206,13 +230,20 @@ function buildHistogramModel(samples: number[], axisLimit: number, bucketThresho
   const positives = validSamples.filter((value) => value > 0);
   const total = validSamples.length;
   const highThreshold = Math.min(Math.abs(bucketThreshold), axisLimit);
+  const deadband = Math.min(CENTER_DEADBAND_IN_S, highThreshold / 2);
   const binsModel = buildShockHistogram(validSamples, binCenters, binWidth);
   const maxPercent = Math.max(1, ...binsModel.map((bin) => bin.percent));
 
-  const reboundHighPct = (validSamples.filter((value) => value <= -highThreshold).length / total) * 100;
-  const reboundLowPct = (validSamples.filter((value) => value > -highThreshold && value < 0).length / total) * 100;
-  const bumpLowPct = (validSamples.filter((value) => value >= 0 && value < highThreshold).length / total) * 100;
-  const bumpHighPct = (validSamples.filter((value) => value >= highThreshold).length / total) * 100;
+  const reboundHighCount = validSamples.filter((value) => value <= -highThreshold).length;
+  const reboundLowCount = validSamples.filter((value) => value > -highThreshold && value < -deadband).length;
+  const bumpLowCount = validSamples.filter((value) => value > deadband && value < highThreshold).length;
+  const bumpHighCount = validSamples.filter((value) => value >= highThreshold).length;
+  const movingTotal = reboundHighCount + reboundLowCount + bumpLowCount + bumpHighCount;
+  const movingPercent = (count: number) => movingTotal > 0 ? (count / movingTotal) * 100 : 0;
+  const reboundHighPct = movingPercent(reboundHighCount);
+  const reboundLowPct = movingPercent(reboundLowCount);
+  const bumpLowPct = movingPercent(bumpLowCount);
+  const bumpHighPct = movingPercent(bumpHighCount);
 
   return {
     bins: binsModel,
@@ -237,6 +268,8 @@ export function ShockHistogram({
   bucketThreshold,
   setupFields,
   setupSide = "left",
+  repeatabilitySummary,
+  learningMode = false,
   unavailableReason = "Shock movement telemetry unavailable for this run.",
 }: ShockHistogramProps) {
   const histogram = useMemo(
@@ -266,7 +299,7 @@ export function ShockHistogram({
   const clipPathId = `shock-plot-${corner.toLowerCase().replace(/[^a-z0-9-]/g, "")}`;
 
   return (
-    <section className={`shock-panel setup-${setupSide}`} aria-label={`${corner} shock distribution`}>
+    <section className={`shock-panel setup-${setupSide}`} aria-label={`${corner} shock distribution`} data-analysis-surface="damper_velocity_histogram">
       <div className="shock-panel-body">
         <aside className="shock-setup-strip" aria-label={`${corner} damper setup context`}>
           <div className="shock-setup-strip-title">Setup</div>
@@ -280,13 +313,18 @@ export function ShockHistogram({
                 <strong>{field.value}</strong>
                 <span
                   className={`shock-setup-recommendation-badge ${field.recommendation?.direction ?? "needs_more_evidence"}`}
-                  title={recommendationTitle(field.recommendation)}
+                  title={recommendationTitle(field.recommendation, learningMode)}
                 >
                   {recommendationBadgeText(field.recommendation)}
                 </span>
               </div>
             ))}
           </div>
+          {repeatabilitySummary && (
+            <p className="shock-repeatability-note" title={repeatabilitySummary}>
+              {learningMode ? repeatabilitySummary : repeatabilitySummary.split(" · ")[0]}
+            </p>
+          )}
         </aside>
 
         <div className="shock-panel-main">

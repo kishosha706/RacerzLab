@@ -5,7 +5,7 @@ import math
 import pytest
 
 from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
-from racelab_engine.analysis.units import M_TO_IN
+from racelab_engine.analysis.units import KPA_TO_PSI, M_TO_IN
 
 
 def _raw_row(**overrides: float | int | None) -> dict[str, float | int | None]:
@@ -53,8 +53,16 @@ def test_representative_ride_height_and_rake_formula_contracts() -> None:
 def test_tire_delta_representative_contracts() -> None:
     row = normalize_telemetry_rows([_raw_row()])[0]
 
-    assert row["lf_pressure_gain"] == pytest.approx(2.0)
+    assert row["lf_pressure_gain"] == pytest.approx(2.0 * KPA_TO_PSI)
     assert row["lf_temp_spread"] == pytest.approx(6.0)
+
+
+def test_tire_wear_spread_is_percentage_points_not_fraction_or_length() -> None:
+    row = normalize_telemetry_rows([
+        _raw_row(LFwearL=0.994, LFwearM=0.992, LFwearR=0.990),
+    ])[0]
+
+    assert row["lf_wear_spread"] == pytest.approx(0.4)
 
 
 def test_speed_and_dynamic_pressure_contracts() -> None:

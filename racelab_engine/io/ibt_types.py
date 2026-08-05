@@ -49,6 +49,7 @@ class IBTImportResult(BaseModel):
     fingerprint: Optional[FileFingerprint] = None
     header: Optional[IBTHeader] = None
     variable_definitions: list[IBTVariableDefinition] = Field(default_factory=list)
+    raw_archive_columns: dict[str, str] = Field(default_factory=dict)
     session_yaml: Optional[str] = None
     records: list[dict[str, Any]] = Field(default_factory=list)
     missing_channels: list[str] = Field(default_factory=list)

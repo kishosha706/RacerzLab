@@ -1,10 +1,20 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from racelab_engine.io.ibt_types import ImportStatus
+
+DialInObjective = Literal["race-pace", "qualifying", "long-run", "tire-conservation", "driver-confidence"]
+DialInPriority = Literal[
+    "overall-pace",
+    "entry-security",
+    "center-rotation",
+    "exit-drive",
+    "tire-life",
+    "platform-margin",
+]
 
 
 class HealthResponse(BaseModel):
@@ -56,6 +66,13 @@ class RunListItem(BaseModel):
 
 class DialInRequest(BaseModel):
     complaint: str
+    selected_lap: Optional[int] = Field(default=None, ge=1)
+    selected_zone_start_pct: Optional[float] = Field(default=None, ge=0.0, lt=100.0)
+    selected_zone_end_pct: Optional[float] = Field(default=None, gt=0.0, le=100.0)
+    selected_zone_label: Optional[str] = Field(default=None, max_length=120)
+    selected_phase: Optional[str] = Field(default=None, max_length=64)
+    objective: DialInObjective = "race-pace"
+    priority: DialInPriority = "overall-pace"
     baseline_run_id: Optional[str] = None
     test_run_id: Optional[str] = None
     car_family: Optional[str] = None
@@ -79,12 +96,27 @@ class ChannelCatalogItem(BaseModel):
     count: int = 1
     is_raw: bool = False
     is_calculated: bool = False
+    is_canonical_alias: bool = False
+    archive_column: Optional[str] = None
+    provenance: Optional[str] = None
+    health_status: Optional[str] = None
+    health_warnings: list[str] = Field(default_factory=list)
+    non_finite_sample_count: int = 0
+    impossible_sample_count: int = 0
+    impossible_range_rule: Optional[str] = None
+    malformed_array_record_count: int = 0
+    null_element_count: int = 0
+    numeric_limit_hit_count: int = 0
+    clipping_status: Optional[str] = None
+    saturation_status: Optional[str] = None
+    lower_bound_occupancy_fraction: Optional[float] = None
+    upper_bound_occupancy_fraction: Optional[float] = None
     is_proxy: bool = False
     formula: Optional[str] = None
-    dependencies: list[str] = []
-    used_by_charts: list[str] = []
-    used_by_events: list[str] = []
-    used_by_recommendations: list[str] = []
+    dependencies: list[str] = Field(default_factory=list)
+    used_by_charts: list[str] = Field(default_factory=list)
+    used_by_events: list[str] = Field(default_factory=list)
+    used_by_recommendations: list[str] = Field(default_factory=list)
     min: Optional[float] = None
     max: Optional[float] = None
     mean: Optional[float] = None
@@ -92,6 +124,16 @@ class ChannelCatalogItem(BaseModel):
     missing_status: Optional[str] = None
     group: Optional[str] = None
     source: Optional[str] = None
+    raw_name: Optional[str] = None
+    canonical_name: Optional[str] = None
+    canonical_mapping_kind: Optional[str] = None
+    registry_status: Optional[str] = None
+    archive_status: Optional[str] = None
+    variation: Optional[str] = None
+    count_as_time: bool = False
+    base_sample_rate_hz: Optional[int] = None
+    effective_sample_rate_hz: Optional[int] = None
+    missing_fraction: Optional[float] = None
 
 
 class ChannelSummaryItem(BaseModel):
@@ -103,10 +145,35 @@ class ChannelSummaryItem(BaseModel):
     count: int = 1
     is_raw: bool = False
     is_calculated: bool = False
+    is_canonical_alias: bool = False
+    archive_column: Optional[str] = None
+    provenance: Optional[str] = None
+    health_status: Optional[str] = None
+    health_warnings: list[str] = Field(default_factory=list)
+    non_finite_sample_count: int = 0
+    impossible_sample_count: int = 0
+    impossible_range_rule: Optional[str] = None
+    malformed_array_record_count: int = 0
+    null_element_count: int = 0
+    numeric_limit_hit_count: int = 0
+    clipping_status: Optional[str] = None
+    saturation_status: Optional[str] = None
+    lower_bound_occupancy_fraction: Optional[float] = None
+    upper_bound_occupancy_fraction: Optional[float] = None
     is_proxy: bool = False
     missing_status: Optional[str] = None
     group: Optional[str] = None
     source: Optional[str] = None
+    raw_name: Optional[str] = None
+    canonical_name: Optional[str] = None
+    canonical_mapping_kind: Optional[str] = None
+    registry_status: Optional[str] = None
+    archive_status: Optional[str] = None
+    variation: Optional[str] = None
+    count_as_time: bool = False
+    base_sample_rate_hz: Optional[int] = None
+    effective_sample_rate_hz: Optional[int] = None
+    missing_fraction: Optional[float] = None
 
 
 class TraceResponse(BaseModel):
@@ -142,9 +209,12 @@ class PlatformEventItem(BaseModel):
     track_y_ft: Optional[float] = None
     primary_value: Optional[float] = None
     primary_unit: Optional[str] = None
-    channels_used: list[str] = []
-    evidence: list[str] = []
+    channels_used: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
     recommended_action: Optional[str] = None
     is_proxy_based: bool = False
     proxy_warning: Optional[str] = None
-    metadata: dict[str, Any] = {}
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    evidence_state: str = "needs_confirmation"
+    source_channels: list[str] = Field(default_factory=list)
+    blocker_reasons: list[str] = Field(default_factory=list)

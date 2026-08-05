@@ -11,14 +11,50 @@ import pytest
 from racelab_engine.io.ibt_types import IBTVariableDefinition
 from racelab_engine.knowledge.setup.evidence_adapter import (
     build_run_evidence_context,
+    event_matches_zone,
+    event_mechanism_flags,
     query_setup_for_run_context,
     run_context_result_to_dict,
 )
 from racelab_engine.models.lap import LapSummary
+from racelab_engine.models.event import TelemetryEvent
+from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.services.import_service import write_channel_metadata, write_telemetry_cache
 from racelab_engine.storage.repository import RaceLabRepository
+
+
+@pytest.mark.parametrize("confidence", [float("nan"), float("inf"), float("-inf"), 1.01, -0.01])
+def test_event_confidence_rejects_non_finite_or_out_of_range_values(confidence: float) -> None:
+    with pytest.raises(ValueError):
+        TelemetryEvent(
+            event_id="invalid-confidence", run_id="run-1", event_type="DAMPER_RESPONSE",
+            confidence_score=confidence,
+        )
+
+
+def test_broad_event_interval_cannot_authorize_a_narrow_zone() -> None:
+    event = TelemetryEvent(
+        event_id="broad", run_id="run-1", event_type="DAMPER_RESPONSE",
+        lap_pct_start=0.0, lap_pct_end=100.0, lap_pct_peak=25.0,
+    )
+    assert event_matches_zone(event, (20.0, 30.0)) is False
+    assert event_matches_zone(event.model_copy(update={"lap_pct_start": 22.0, "lap_pct_end": 28.0}), (20.0, 30.0)) is True
+
+
+def test_aero_dynamic_pressure_event_cannot_manufacture_tire_evidence() -> None:
+    flags = event_mechanism_flags("MAX_DYNAMIC_PRESSURE", {"speed_mph"})
+    assert "tire_temps" not in flags
+    assert "tire_trend" not in flags
+
+
+def test_front_splitter_scrape_declares_front_platform_and_scrape_mechanisms() -> None:
+    flags = event_mechanism_flags("PLATFORM_SCRAPE", {"cfsr_height_mm"})
+    assert {"front_platform", "platform", "scrape"} <= flags
+    rear_flags = event_mechanism_flags("REAR_PLATFORM_SCRAPE", {"lr_ride_height_in"})
+    assert {"rear_platform", "platform", "scrape"} <= rear_flags
+    assert "front_platform" not in rear_flags
 
 
 def _configure_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path, Path]:
@@ -118,6 +154,122 @@ def test_evidence_adapter_detects_shock_histogram_ready(tmp_path: Path, monkeypa
     shock_group = next(group for group in context.evidence_groups if group.group_id == "shock_histogram")
     assert shock_group.status == "ready"
     assert "shock_histogram" in context.evidence_flags
+    assert shock_group.can_support_setup_knowledge is False
+
+
+def test_channel_availability_alone_never_makes_candidate_evidence_ready(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        channels={
+            "lf_shock_vel_in_s": 1.0,
+            "rf_shock_vel_in_s": 1.1,
+            "lr_shock_vel_in_s": 0.9,
+            "rr_shock_vel_in_s": 1.2,
+            "throttle_pct": 75.0,
+            "yaw_rate": 1.1,
+        },
+    )
+
+    result = query_setup_for_run_context("run-1", "loose off", limit=20)
+    shock_candidates = [
+        item for item in result.setup_query.candidate_effects
+        if item.effect.setup_area in {"ls_compression", "ls_rebound", "hs_compression", "hs_rebound"}
+    ]
+
+    assert shock_candidates
+    assert all(item.readiness != "ready" for item in shock_candidates)
+    assert all(item.observed_evidence_matched == [] for item in shock_candidates)
+    assert result.observed_evidence_flags == []
+
+
+def test_eligible_provenance_complete_event_can_supply_observed_mechanism_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        channels={
+            "lf_shock_vel_in_s": 1.0,
+            "rf_shock_vel_in_s": 1.1,
+            "lr_shock_vel_in_s": 0.9,
+            "rr_shock_vel_in_s": 1.2,
+            "throttle_pct": 75.0,
+            "yaw_rate": 1.1,
+        },
+    )
+    repo = RaceLabRepository()
+    overview = repo.get_overview("run-1")
+    assert overview is not None
+    event = TelemetryEvent(
+        event_id="run-1:damper-response:1",
+        run_id="run-1",
+        lap_number=1,
+        event_type="DAMPER_RESPONSE",
+        confidence_score=0.82,
+        valid_for_tuning=True,
+        evidence_state=EvidenceState.CALCULATED,
+        evidence_json={"phase": "exit"},
+        source_channels=["lf_shock_vel_in_s", "throttle_pct", "yaw_rate"],
+        blocker_reasons=[],
+    )
+    repo.save_import(overview.model_copy(update={"events": [event]}))
+
+    result = query_setup_for_run_context("run-1", "loose off", limit=20)
+    shock_candidates = [
+        item for item in result.setup_query.candidate_effects
+        if item.effect.setup_area == "ls_rebound"
+    ]
+
+    assert shock_candidates
+    assert all(item.readiness != "ready" for item in shock_candidates)
+    assert "shock_histogram" in result.observed_evidence_flags
+    assert "throttle" not in result.observed_evidence_flags
+    assert "yaw" not in result.observed_evidence_flags
+    assert result.supporting_event_ids == [event.event_id]
+
+
+def test_blocked_or_ineligible_event_cannot_promote_channel_capability(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(
+        tmp_path,
+        channels={
+            "lf_shock_vel_in_s": 1.0,
+            "rf_shock_vel_in_s": 1.1,
+            "lr_shock_vel_in_s": 0.9,
+            "rr_shock_vel_in_s": 1.2,
+            "throttle_pct": 75.0,
+            "yaw_rate": 1.1,
+        },
+    )
+    repo = RaceLabRepository()
+    overview = repo.get_overview("run-1")
+    assert overview is not None
+    blocked_event = TelemetryEvent(
+        event_id="run-1:damper-response:blocked",
+        run_id="run-1",
+        lap_number=99,
+        event_type="DAMPER_RESPONSE",
+        confidence_score=0.95,
+        valid_for_tuning=True,
+        evidence_state=EvidenceState.BLOCKED_BY_CONTEXT,
+        source_channels=["lf_shock_vel_in_s", "throttle_pct", "yaw_rate"],
+        blocker_reasons=["Lap is not eligible."],
+    )
+    repo.save_import(overview.model_copy(update={"events": [blocked_event]}))
+
+    result = query_setup_for_run_context("run-1", "loose off", limit=20)
+
+    assert result.observed_evidence_flags == []
+    assert result.supporting_event_ids == []
+    assert all(item.readiness != "ready" for item in result.setup_query.candidate_effects)
 
 
 def test_shock_histogram_missing_when_only_garage_damper_values_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

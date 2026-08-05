@@ -5,6 +5,10 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from racelab_engine.analysis.constants import FORCE_PROXY_WARNING
+from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.analysis.lap_classification import classify_laps
+from racelab_engine.analysis.lap_detection import detect_laps
+from racelab_engine.analysis.lap_eligibility import eligible_laps
 
 EventType = Literal[
     "MIN_SPLITTER",
@@ -27,6 +31,9 @@ DisplayScope = Literal["actionable", "watch", "internal"]
 
 PLATFORM_EVENT_COLUMNS = [
     "lap",
+    "session_time",
+    "session_tick",
+    "lap_dist_pct",
     "lap_dist_ft",
     "lap_dist_m",
     "lap_dist_pct_100",
@@ -67,6 +74,14 @@ PLATFORM_EVENT_COLUMNS = [
     "platform_balance_explanation",
     "dynamic_pressure_psf",
     "air_density",
+    "on_pit_road",
+    "is_on_track",
+    "player_track_surface",
+    "session_flags",
+    "enter_exit_reset_state",
+    "player_incident_count",
+    "player_driver_incident_count",
+    "player_team_incident_count",
 ]
 
 
@@ -99,6 +114,9 @@ class PlatformEvent:
     is_visible_default: bool = True
     reason_for_hidden: str | None = None
     contributes_to_backend_evidence: bool = True
+    evidence_state: EvidenceState = EvidenceState.CALCULATED
+    source_channels: list[str] = field(default_factory=list)
+    blocker_reasons: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -125,6 +143,13 @@ class PlatformEvent:
             "is_proxy_based": self.is_proxy_based,
             "proxy_warning": self.proxy_warning,
             "metadata": self.metadata,
+            "evidence_state": (
+                EvidenceState.ESTIMATED_PROXY.value
+                if self.is_proxy_based and self.evidence_state is EvidenceState.CALCULATED
+                else self.evidence_state.value
+            ),
+            "source_channels": self.source_channels or self.channels_used,
+            "blocker_reasons": self.blocker_reasons,
         }
 
 
@@ -1036,6 +1061,11 @@ def detect_platform_events(
     if not working:
         return []
 
+    eligible_lap_numbers = {
+        summary.lap_number
+        for summary in eligible_laps(classify_laps(detect_laps(working, run_id="platform-events")))
+    }
+
     detectors = [
         detect_min_splitter,
         detect_worst_speed_loss,
@@ -1058,4 +1088,28 @@ def detect_platform_events(
         if event is not None:
             events.append(event)
 
-    return [_classify_event_display(event, working) for event in events]
+    qualified: list[PlatformEvent] = []
+    for event in events:
+        displayed = _classify_event_display(event, working)
+        lap_is_eligible = event.lap is not None and event.lap in eligible_lap_numbers
+        metadata = {
+            **displayed.metadata,
+            "lap_eligibility": "eligible" if lap_is_eligible else "blocked",
+            "tuning_action_suppressed": not lap_is_eligible,
+        }
+        if lap_is_eligible:
+            qualified.append(replace(displayed, metadata=metadata))
+            continue
+        reason = "Canonical lap eligibility failed; observation retained, tuning action suppressed."
+        qualified.append(
+            replace(
+                displayed,
+                recommended_action=None,
+                reason_for_hidden=displayed.reason_for_hidden,
+                metadata=metadata,
+                evidence=[*displayed.evidence, reason],
+                evidence_state=EvidenceState.BLOCKED_BY_CONTEXT,
+                blocker_reasons=[reason],
+            )
+        )
+    return qualified

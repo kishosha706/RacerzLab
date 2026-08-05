@@ -15,10 +15,12 @@ def _read(path: str) -> str:
 def test_startup_screen_uses_local_racerzlab_banner_and_keeps_session_actions() -> None:
     startup = _read("ui/src/components/StartupScreen.tsx")
     styles = _read("ui/src/styles.css")
-    banner_path = PROJECT_ROOT / "ui/src/assets/racerzlab-banner.png"
+    banner_path = PROJECT_ROOT / "ui/src/assets/racerzlab-banner-1920.jpg"
 
     assert banner_path.exists()
-    assert 'import racerzlabBanner from "../assets/racerzlab-banner.png";' in startup
+    assert banner_path.stat().st_size < 750_000
+    assert not (PROJECT_ROOT / "ui/src/assets/racerzlab-banner.png").exists()
+    assert 'import racerzlabBanner from "../assets/racerzlab-banner-1920.jpg";' in startup
     assert "launchSplashVisible" in startup
     assert "setLaunchSplashVisible(false)" in startup
     assert 'className="launch-splash-gate"' in startup

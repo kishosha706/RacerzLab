@@ -6,9 +6,7 @@ They do NOT require a running server — they test model serialization directly.
 
 from __future__ import annotations
 
-from typing import Any
 
-import pytest
 
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.lap_analysis import (
@@ -16,24 +14,17 @@ from racelab_engine.models.lap_analysis import (
     LapWindowSummary,
     LapDegradationSummary,
     FastestLapGroup,
-    BestWindowGroup,
     LapWindowsResponse,
 )
 from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.notebook import NotebookFinding, TestPlan, SetupMemorySummary
 from racelab_engine.models.comparison_insights import (
-    TraceAnnotation,
-    CorrelationInsight,
-    TargetZoneClassification,
-    ConfidenceWeightedVerdict,
-    SectorDeltaSummary,
     ComparisonInsightsResponse,
 )
 from racelab_engine.analysis.comparison import (
     DidItWorkVerdict,
     TireComparison,
     ShockComparison,
-    ChannelDeltaStats,
 )
 from racelab_engine.analysis.compare_math import (
     aggregate_tire_comparison,
@@ -642,7 +633,6 @@ class TestImportValidation:
     def test_import_rejects_directory(self):
         """import_ibt with a directory path returns unavailable status."""
         from racelab_engine.io.ibt_reader import import_ibt
-        import tempfile, os
         # Use a path that looks like a directory path but doesn't exist
         result = import_ibt("/nonexistent/directory/path.ibt")
         assert result.status.status == "unavailable"

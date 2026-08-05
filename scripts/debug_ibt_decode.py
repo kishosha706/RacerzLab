@@ -11,7 +11,6 @@ Usage:
 """
 
 import argparse
-import sys
 import time
 from pathlib import Path
 
@@ -161,10 +160,10 @@ def diagnose(path_str: str, do_import: bool = False) -> None:
             traceback.print_exc()
             return
     else:
-        print(f"\n=== Stage 5: Full import (skipped) ===")
+        print("\n=== Stage 5: Full import (skipped) ===")
         print("  Pass --import to run full import_ibt()")
 
-    print(f"\n=== Diagnostic Complete ===")
+    print("\n=== Diagnostic Complete ===")
 
 
 def main() -> None:

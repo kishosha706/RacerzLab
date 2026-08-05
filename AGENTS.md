@@ -1,5 +1,8 @@
 # RaceLab Garage Agent Rules
 
+- Read `ROADMAP.md` before substantive product work. Update its checkboxes only
+  when the same change includes verification evidence.
+
 - Evidence first. Recommendations must point to telemetry evidence.
 - No junk-lap conclusions. Out-laps, cooldowns, wrecks, pit-road laps, invalid-speed laps, and partial laps cannot drive setup recommendations unless the user explicitly overrides that.
 - Do not overclaim exact drag from `.ibt`. The app may identify drag/scrub-like behavior, but it must not claim an exact aerodynamic drag force or coefficient.

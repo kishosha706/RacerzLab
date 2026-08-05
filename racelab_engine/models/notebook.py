@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 FindingStatus = Literal["saved", "confirmed", "rejected", "needs_retest", "archived"]
 TestPlanStatus = Literal["planned", "completed", "cancelled"]
@@ -84,6 +84,7 @@ class NotebookFinding:
 
 @dataclass(frozen=True)
 class TestPlan:
+    __test__: ClassVar[bool] = False
     test_plan_id: str
     created_at: str = field(default_factory=_utc_now)
     updated_at: str = field(default_factory=_utc_now)

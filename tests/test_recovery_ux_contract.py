@@ -30,9 +30,11 @@ def test_frontend_waits_for_local_engine_health_before_sessions_load() -> None:
 
     assert "fetchHealth" in app
     assert "engineStatus" in app
-    assert "Starting local RacerZLab engine..." in app
+    assert "Starting the local RacerZLab engine…" in app
     assert "Local engine failed to start." in app
-    assert "Please restart RacerZLab and send logs." in app
+    assert "Close and reopen RacerZLab, then retry." in app
+    assert "Retry engine check" in app
+    assert "send logs" not in app.lower()
     assert 'if (engineStatus === "starting")' in app
     assert 'if (engineStatus === "failed")' in app
     gated_block = app.split('if (engineStatus === "starting")', 1)[1].split('if (!sessionId)', 1)[0]

@@ -61,8 +61,8 @@ class LapWindowSummary(BaseModel):
     platform_risk_peak: Optional[float] = None
     rear_platform_risk_peak: Optional[float] = None
     whole_car_bottoming_peak: Optional[float] = None
-    tire_stress_score: float = 0.0
-    shock_stress_score: float = 0.0
+    tire_stress_score: Optional[float] = None
+    shock_stress_score: Optional[float] = None
     confidence_score: float = 0.0
     warnings: list[str] = Field(default_factory=list)
     recommendation: Optional[str] = None
@@ -73,7 +73,7 @@ class LapWindowSummary(BaseModel):
     setup_usefulness_score: Optional[float] = None
     setup_usefulness_label: Optional[str] = None
     pace_quality_warnings: list[str] = Field(default_factory=list)
-    pace_quality_components: Optional[dict[str, float]] = None
+    pace_quality_components: Optional[dict[str, Optional[float]]] = None
 
 
 class LapDegradationSummary(BaseModel):
@@ -123,7 +123,7 @@ class FastestLapGroup(BaseModel):
     setup_usefulness_score: Optional[float] = None
     setup_usefulness_label: Optional[str] = None
     pace_quality_warnings: list[str] = Field(default_factory=list)
-    pace_quality_components: Optional[dict[str, float]] = None
+    pace_quality_components: Optional[dict[str, Optional[float]]] = None
 
 
 class BestWindowGroup(BaseModel):

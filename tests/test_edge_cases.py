@@ -3,7 +3,7 @@
 Verifies the 8 edge cases from the engineering audit:
 1. Superspeedway full throttle, high speed, normal aero decel → low/medium drag_scrub
 2. Lower-speed corner with same raw decel → higher drag_scrub
-3. Missing dynamic_pressure_psf → safe fallback, no crash
+3. Missing dynamic_pressure_psf → unavailable, no invented fallback
 4. Missing track width → corrected mismatch null, raw preserved
 5. Near-zero vehicle speed with wheel speed noise → bounded slip ratio
 6. High steering + correct yaw response → no over-warning
@@ -80,8 +80,8 @@ def test_lower_speed_same_decel_higher_index() -> None:
 
 # ── Edge case 3: Missing dynamic_pressure_psf ─────────────────
 
-def test_missing_dynamic_pressure_fallback() -> None:
-    """Missing dynamic_pressure_psf should fall back to 1.0, no crash."""
+def test_missing_dynamic_pressure_remains_unavailable() -> None:
+    """Missing dynamic pressure must not be converted to an invented force context."""
     row = {
         "speed_mph": 180.0,
         "throttle_pct": 100.0,
@@ -92,12 +92,11 @@ def test_missing_dynamic_pressure_fallback() -> None:
         "yaw_rate": 0.05,
         "cfs_risk_score": 0.1,
     }
-    # aero_normalized_resistance should use the 1.0 psf floor defined in the blueprint
     coeff = aero_normalized_resistance(row)
-    assert coeff == 2.0
-    
+    assert coeff is None
+
     index = compute_drag_scrub_index(row)
-    assert 0.0 <= index <= 1.0
+    assert index is None
 
 
 # ── Edge case 4: Missing track width ──────────────────────────

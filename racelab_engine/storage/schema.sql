@@ -243,6 +243,11 @@ CREATE TABLE IF NOT EXISTS setup_response_observations (
   created_at TEXT NOT NULL,
   car_name TEXT,
   track_name TEXT,
+  response_context_key TEXT,
+  response_context_json TEXT,
+  environment_context_key TEXT,
+  surrounding_setup_fingerprint TEXT,
+  source_run_provenance_key TEXT,
   baseline_run_id TEXT NOT NULL,
   test_run_id TEXT NOT NULL,
   baseline_lap INTEGER,
@@ -267,6 +272,10 @@ CREATE TABLE IF NOT EXISTS setup_response_observations (
   cfs_delta_in REAL,
   driver_repeatability_score REAL,
   context_problem_count INTEGER DEFAULT 0,
+  baseline_setup_passed_tech INTEGER,
+  test_setup_passed_tech INTEGER,
+  setup_unit TEXT,
+  setup_value_kind TEXT,
   evidence_json TEXT,
   UNIQUE(comparison_id, setup_key, target_zone_start_pct, target_zone_end_pct)
 );
@@ -275,3 +284,43 @@ CREATE INDEX IF NOT EXISTS idx_setup_response_car_track
   ON setup_response_observations(car_name, track_name, setup_key);
 CREATE INDEX IF NOT EXISTS idx_setup_response_verdict
   ON setup_response_observations(verdict);
+-- Qualified multi-factor DOE responses. These rows are admitted only after the
+-- advanced experimentation unlock and retain their exact context/evidence.
+CREATE TABLE IF NOT EXISTS setup_interaction_observations (
+  experiment_id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  response_context_key TEXT NOT NULL,
+  response_context_json TEXT NOT NULL,
+  factor_deltas_json TEXT NOT NULL,
+  outcomes_json TEXT NOT NULL,
+  uncertainty REAL NOT NULL,
+  setup_passed_tech INTEGER NOT NULL,
+  evidence_packet_ids_json TEXT NOT NULL,
+  source_run_ids_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_setup_interaction_context
+  ON setup_interaction_observations(response_context_key);
+
+-- Server-owned A/B/A2 workflow state. Clients may attach run identifiers but
+-- cannot assert lap eligibility, setup deltas, effects, or evidence quality.
+CREATE TABLE IF NOT EXISTS controlled_test_workflows (
+  workflow_id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  status TEXT NOT NULL,
+  source_run_id TEXT NOT NULL,
+  complaint TEXT NOT NULL,
+  packet_json TEXT NOT NULL,
+  stage_run_ids_json TEXT NOT NULL DEFAULT '{}',
+  stage_eligible_lap_numbers_json TEXT NOT NULL DEFAULT '{}',
+  analysis_version TEXT NOT NULL DEFAULT 'controlled-workflow-aba2-v1',
+  execution_json TEXT,
+  reproduction_snapshot_json TEXT NOT NULL DEFAULT '{}',
+  quality_json TEXT,
+  learning_admitted INTEGER,
+  FOREIGN KEY(source_run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_controlled_workflow_status
+  ON controlled_test_workflows(status, updated_at);

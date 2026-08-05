@@ -52,6 +52,16 @@ def test_shock_reader_uses_inline_setup_recommendations() -> None:
     assert 'setupSide={corner.key === "lf" || corner.key === "lr" ? "left" : "right"}' in platform_source
 
 
+def test_shock_zone_and_multilap_visuals_fail_closed() -> None:
+    platform_source = Path("ui/src/tabs/PlatformTab.tsx").read_text(encoding="utf-8")
+
+    assert "if (!rawDistance || rawDistance.length !== rawValues.length) return [];" in platform_source
+    assert "shockReaderLapWindow" in platform_source
+    assert "Representative Lap Display · Decision uses laps" in platform_source
+    assert "shockReaderLapWindow\n          ? null" in platform_source
+    assert "Full-lap samples were not substituted." in platform_source
+
+
 def test_shock_histograms_render_as_four_corner_grid() -> None:
     platform_source = Path("ui/src/tabs/PlatformTab.tsx").read_text(encoding="utf-8")
     styles = Path("ui/src/styles.css").read_text(encoding="utf-8")
