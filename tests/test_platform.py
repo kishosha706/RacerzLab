@@ -296,11 +296,11 @@ def test_import_boundaries_exclude_removed_platform_detector_path() -> None:
     assert detector_defs == ["racelab_engine/analysis/platform_events.py"]
 
 
-def test_platform_routes_import_canonical_detector_explicitly() -> None:
+def test_platform_routes_use_canonical_detector_path() -> None:
     routes_events = _read("api/routes_events.py")
     routes_track_map = _read("api/routes_track_map.py")
     ibt_reader = _read("racelab_engine/io/ibt_reader.py")
 
     assert "from racelab_engine.analysis.platform_events import PLATFORM_EVENT_COLUMNS, detect_platform_events" in routes_events
-    assert "from racelab_engine.analysis.platform_events import detect_platform_events" in routes_track_map
+    assert "from api.routes_events import get_platform_events" in routes_track_map
     assert "from racelab_engine.analysis.platform_events import PlatformEvent, detect_platform_events" in ibt_reader

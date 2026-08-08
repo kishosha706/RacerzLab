@@ -18,7 +18,7 @@ from racelab_engine.analysis.phase_engineering_contracts import (
     CORNER_ROTATION_CONTRACT,
     DRIVER_LINE_CONTRACT,
 )
-from racelab_engine.analysis.time_alignment import TimeAlignmentResult
+from racelab_engine.analysis.time_alignment import TimeAlignmentResult, nearest_sorted_index
 from racelab_engine.models.engineering import EngineGate, EngineeringConclusion
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.phase_engineering import (
@@ -201,7 +201,7 @@ def _aligned_test_grid(
             if point.is_gap or point.aligned_test_pct is None:
                 aligned.append(None)
                 continue
-            index = min(range(len(grid)), key=lambda item: abs(grid[item] - point.aligned_test_pct))
+            index = nearest_sorted_index(grid, point.aligned_test_pct)
             aligned.append(values[index])
         result[channel] = aligned
     return result

@@ -6,7 +6,7 @@ import json
 import math
 import re
 import struct
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -272,7 +272,31 @@ class TrackMap:
     warnings: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        # ``dataclasses.asdict`` recursively deep-copies thousands of point
+        # objects.  Track-map values are already flat dataclasses, so explicit
+        # shallow copies preserve the serialization contract at a fraction of
+        # the CPU and allocation cost.
+        metadata = vars(self.metadata).copy()
+        metadata["origin"] = vars(self.metadata.origin).copy()
+        metadata["point_record"] = list(self.metadata.point_record)
+        metadata["units"] = dict(self.metadata.units)
+        metadata["warnings"] = list(self.metadata.warnings)
+        return {
+            "map_id": self.map_id,
+            "source_file": self.source_file,
+            "source_type": self.source_type,
+            "file_size_bytes": self.file_size_bytes,
+            "sha256": self.sha256,
+            "metadata": metadata,
+            "bounds": vars(self.bounds).copy(),
+            "points": [vars(point).copy() for point in self.points],
+            "markers": [vars(marker).copy() for marker in self.markers],
+            "sections": [vars(section).copy() for section in self.sections],
+            "status": self.status,
+            "supported": self.supported,
+            "partial": self.partial,
+            "warnings": list(self.warnings),
+        }
 
 
 def _slug(value: str) -> str:

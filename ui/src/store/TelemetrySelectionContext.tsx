@@ -1,4 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useReducer, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useReducer,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import type { EvidenceContext, SelectionMode, SelectionSource, TelemetrySelection, Workspace } from "./types";
 
 const VALID_WORKSPACES: Workspace[] = ["overview", "map", "laps", "platform_trace", "speed_delta", "drag_scrub", "setup_impact", "dial_in", "compare", "notebook", "channels"];
@@ -44,8 +53,6 @@ type SelectionAction =
   | { type: "SET_MODE"; mode: SelectionMode }
   | { type: "SET_WORKSPACE"; workspace: Workspace; source: SelectionSource }
   | { type: "SELECT_ZONE"; zoneId: string | null }
-  | { type: "SET_HOVER"; lapPct: number | null; sampleIndex?: number | null }
-  | { type: "SET_PLAYBACK_ACTIVE"; active: boolean }
   | { type: "RESET_SELECTION" }
   | { type: "LOAD_RUN"; runId: string; bestLap: number | null }
   | { type: "VALIDATE_RUN_IDS"; runIds: string[] }
@@ -116,10 +123,6 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
         selectedZoneEndPct: action.zoneId == null ? null : state.selectedZoneEndPct,
         selectionSource: "track_map",
       };
-    case "SET_HOVER":
-      return { ...state, hoverLapPct: action.lapPct, hoverSampleIndex: action.sampleIndex ?? state.hoverSampleIndex };
-    case "SET_PLAYBACK_ACTIVE":
-      return { ...state, playbackActive: action.active };
     case "RESET_SELECTION":
       return { ...DEFAULT_SELECTION, selectedRunId: state.selectedRunId, selectedMode: state.selectedMode };
     case "LOAD_RUN":
@@ -230,6 +233,44 @@ type TelemetrySelectionContextValue = {
 
 const TelemetrySelectionContext = createContext<TelemetrySelectionContextValue | null>(null);
 
+export type TelemetryCursorState = Readonly<{
+  hoverLapPct: number | null;
+  hoverSampleIndex: number | null;
+  playbackActive: boolean;
+}>;
+
+const EMPTY_CURSOR: TelemetryCursorState = Object.freeze({
+  hoverLapPct: null,
+  hoverSampleIndex: null,
+  playbackActive: false,
+});
+
+let cursorSnapshot = EMPTY_CURSOR;
+const cursorListeners = new Set<() => void>();
+
+function publishCursor(next: TelemetryCursorState): void {
+  if (
+    next.hoverLapPct === cursorSnapshot.hoverLapPct
+    && next.hoverSampleIndex === cursorSnapshot.hoverSampleIndex
+    && next.playbackActive === cursorSnapshot.playbackActive
+  ) return;
+  cursorSnapshot = Object.freeze(next);
+  cursorListeners.forEach((listener) => listener());
+}
+
+function resetCursor(): void {
+  publishCursor(EMPTY_CURSOR);
+}
+
+function subscribeCursor(listener: () => void): () => void {
+  cursorListeners.add(listener);
+  return () => cursorListeners.delete(listener);
+}
+
+function getCursorSnapshot(): TelemetryCursorState {
+  return cursorSnapshot;
+}
+
 export function TelemetrySelectionProvider({ children }: { children: ReactNode }) {
   const [selection, dispatch] = useReducer(selectionReducer, DEFAULT_SELECTION);
 
@@ -240,8 +281,14 @@ export function TelemetrySelectionProvider({ children }: { children: ReactNode }
     } catch { /* ignore */ }
   }, [selection.selectedWorkspace]);
 
-  const selectRun = useCallback((runId: string | null) => dispatch({ type: "SELECT_RUN", runId }), []);
-  const selectLap = useCallback((lap: number | null) => dispatch({ type: "SELECT_LAP", lap }), []);
+  const selectRun = useCallback((runId: string | null) => {
+    resetCursor();
+    dispatch({ type: "SELECT_RUN", runId });
+  }, []);
+  const selectLap = useCallback((lap: number | null) => {
+    resetCursor();
+    dispatch({ type: "SELECT_LAP", lap });
+  }, []);
   const selectSample = useCallback(
     (sampleIndex: number, lapDistFt?: number, lapPct?: number, source: SelectionSource = "manual") =>
       dispatch({ type: "SELECT_SAMPLE", sampleIndex, lapDistFt, lapPct, source }),
@@ -262,12 +309,15 @@ export function TelemetrySelectionProvider({ children }: { children: ReactNode }
     [],
   );
   const setHover = useCallback(
-    (lapPct: number | null, sampleIndex?: number | null) =>
-      dispatch({ type: "SET_HOVER", lapPct, sampleIndex }),
+    (lapPct: number | null, sampleIndex: number | null = null) => publishCursor({
+      ...cursorSnapshot,
+      hoverLapPct: lapPct,
+      hoverSampleIndex: sampleIndex,
+    }),
     [],
   );
   const setPlaybackActive = useCallback(
-    (active: boolean) => dispatch({ type: "SET_PLAYBACK_ACTIVE", active }),
+    (active: boolean) => publishCursor({ ...cursorSnapshot, playbackActive: active }),
     [],
   );
   const setMode = useCallback((mode: SelectionMode) => dispatch({ type: "SET_MODE", mode }), []);
@@ -277,18 +327,25 @@ export function TelemetrySelectionProvider({ children }: { children: ReactNode }
     [],
   );
   const loadRun = useCallback(
-    (runId: string, bestLap: number | null) => dispatch({ type: "LOAD_RUN", runId, bestLap }),
+    (runId: string, bestLap: number | null) => {
+      resetCursor();
+      dispatch({ type: "LOAD_RUN", runId, bestLap });
+    },
     [],
   );
   const focusTelemetryEvent = useCallback(
-    (eventId: string, lap: number | null, sampleIndex: number | null, lapDistFt: number | null, lapPct: number | null, workspace: Workspace, source: SelectionSource = "priority_stack") =>
-      dispatch({ type: "FOCUS_EVENT", eventId, lap, sampleIndex, lapDistFt, lapPct, workspace, source }),
+    (eventId: string, lap: number | null, sampleIndex: number | null, lapDistFt: number | null, lapPct: number | null, workspace: Workspace, source: SelectionSource = "priority_stack") => {
+      resetCursor();
+      dispatch({ type: "FOCUS_EVENT", eventId, lap, sampleIndex, lapDistFt, lapPct, workspace, source });
+    },
     [],
   );
 
   const focusEvidence = useCallback(
-    (evidence: Partial<EvidenceContext>, workspace?: Workspace) =>
-      dispatch({ type: "FOCUS_EVIDENCE", evidence, workspace }),
+    (evidence: Partial<EvidenceContext>, workspace?: Workspace) => {
+      resetCursor();
+      dispatch({ type: "FOCUS_EVIDENCE", evidence, workspace });
+    },
     [],
   );
   const validateSelectionRunIds = useCallback(
@@ -296,10 +353,45 @@ export function TelemetrySelectionProvider({ children }: { children: ReactNode }
     [],
   );
 
+  useEffect(() => resetCursor(), [selection.selectedRunId, selection.selectedLap]);
+
+  const contextValue = useMemo<TelemetrySelectionContextValue>(() => ({
+    selection,
+    dispatch,
+    selectRun,
+    selectLap,
+    selectSample,
+    selectEvent,
+    selectChannel,
+    selectZone,
+    setHover,
+    setPlaybackActive,
+    setMode,
+    setWorkspace,
+    loadRun,
+    focusTelemetryEvent,
+    focusEvidence,
+    validateSelectionRunIds,
+  }), [
+    focusEvidence,
+    focusTelemetryEvent,
+    loadRun,
+    selectChannel,
+    selectEvent,
+    selectLap,
+    selection,
+    selectRun,
+    selectSample,
+    selectZone,
+    setHover,
+    setMode,
+    setPlaybackActive,
+    setWorkspace,
+    validateSelectionRunIds,
+  ]);
+
   return (
-    <TelemetrySelectionContext.Provider
-      value={{ selection, dispatch, selectRun, selectLap, selectSample, selectEvent, selectChannel, selectZone, setHover, setPlaybackActive, setMode, setWorkspace, loadRun, focusTelemetryEvent, focusEvidence, validateSelectionRunIds }}
-    >
+    <TelemetrySelectionContext.Provider value={contextValue}>
       {children}
     </TelemetrySelectionContext.Provider>
   );
@@ -309,4 +401,9 @@ export function useTelemetrySelection() {
   const ctx = useContext(TelemetrySelectionContext);
   if (!ctx) throw new Error("useTelemetrySelection must be used within TelemetrySelectionProvider");
   return ctx;
+}
+
+/** Subscribe only to high-frequency chart cursor state, without rerendering the cockpit selection tree. */
+export function useTelemetryCursor(): TelemetryCursorState {
+  return useSyncExternalStore(subscribeCursor, getCursorSnapshot, getCursorSnapshot);
 }

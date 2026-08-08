@@ -527,6 +527,26 @@ def test_manifest_detects_non_finite_impossible_saturated_gapped_and_malformed_s
     assert manifest["sample_continuity"]["non_monotonic_timestamp_transition_count"] == 1
 
 
+def test_manifest_numeric_health_keeps_null_and_non_finite_counts_distinct() -> None:
+    definition = IBTVariableDefinition(name="Speed", unit="m/s", data_type_id=4, offset=0)
+    frame = pl.DataFrame({
+        "Speed": [None, math.nan, math.inf, -math.inf, -2.0, 10.0],
+    })
+
+    manifest = build_telemetry_manifest(
+        IBTHeader(version=2, telemetry_rate_hz=60, record_length=4, record_count=6),
+        [definition],
+        frame,
+    )
+    health = manifest["channels"][0]
+
+    assert health["record_count"] == 6
+    assert health["valid_record_count"] == 5
+    assert health["missing_fraction"] == pytest.approx(1 / 6)
+    assert health["non_finite_sample_count"] == 3
+    assert health["impossible_sample_count"] == 1
+
+
 def test_archive_invariant_rejects_missing_unknown_future_channel(tmp_path: Path) -> None:
     cache = write_telemetry_cache(
         "future-channel",

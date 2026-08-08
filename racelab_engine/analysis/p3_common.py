@@ -13,7 +13,7 @@ from racelab_engine.analysis.evidence_contracts import (
     evaluate_evidence_contract,
 )
 from racelab_engine.analysis.lap_eligibility import eligible_laps
-from racelab_engine.analysis.time_alignment import detect_engineering_phases
+from racelab_engine.analysis.time_alignment import detect_engineering_phases, nearest_sorted_index
 from racelab_engine.models.engineering import EngineGate
 from racelab_engine.models.lap import LapSummary
 
@@ -92,15 +92,13 @@ def _phase_rows(
         for row in rows
     ]
     phase_by_position, _intervals, _channels = detect_engineering_phases(detector_rows, grid=grid)
-    phase_map = dict(zip(grid, phase_by_position))
     annotated: list[dict[str, Any]] = []
     observed: set[str] = set()
     for row in rows:
         pct = lap_pct(row)
         if pct is None:
             continue
-        nearest = min(grid, key=lambda item: abs(item - pct))
-        phase = phase_map.get(nearest)
+        phase = phase_by_position[nearest_sorted_index(grid, pct)]
         if phase:
             observed.add(phase)
         if not target_phases or phase in target_phases:

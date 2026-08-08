@@ -617,13 +617,126 @@ def _slug_run_id(file_path: Path, file_hash: str) -> str:
     return f"{stem[:48]}-{file_hash[:8]}"
 
 
+_OVERVIEW_ROW_COLUMNS: frozenset[str] = frozenset({
+    # Canonical lap eligibility and sample-integrity inputs.
+    "lap",
+    "lap_number",
+    "lap_dist_pct",
+    "lap_dist_pct_100",
+    "lap_dist_m",
+    "lap_dist_ft",
+    "session_time",
+    "session_tick",
+    "session_flags",
+    "speed_mps",
+    "speed_mph",
+    "rpm",
+    "throttle_pct",
+    "brake_pct",
+    "dynamic_pressure_psf",
+    "on_pit_road",
+    "is_on_track",
+    "player_track_surface",
+    "player_incident_count",
+    "player_driver_incident_count",
+    "player_team_incident_count",
+    # Platform-event location, validity, and sustained-risk inputs.
+    "cfsr_height_mm",
+    "cfs_ride_height_in",
+    "cfs_ride_height_mm",
+    "cfs_risk_score",
+    "speed_rate_mph_s",
+    "speed_rate_mph_1000ft",
+    "track_x_ft",
+    "track_y_ft",
+    "zone_name",
+    # Phase-at-event inputs. Keep this synchronized with _PHASE_CHANNELS in
+    # time_alignment.py; this projection changes representation, not evidence.
+    "steering_deg",
+    "steering_rad",
+    "abs_steering_deg",
+    "yaw_rate",
+    "lat_accel",
+    "long_accel",
+    "vert_accel",
+    "vert_accel_g",
+    "lat",
+    "lon",
+    "alt",
+    "enter_exit_reset_state",
+    "lf_shock_defl_in",
+    "rf_shock_defl_in",
+    "lr_shock_defl_in",
+    "rr_shock_defl_in",
+    "lf_shock_vel_in_s",
+    "rf_shock_vel_in_s",
+    "lr_shock_vel_in_s",
+    "rr_shock_vel_in_s",
+    "lf_ride_height_in",
+    "rf_ride_height_in",
+    "lr_ride_height_in",
+    "rr_ride_height_in",
+})
+
+_PROXIMITY_ROW_COLUMNS: tuple[str, ...] = (
+    "car_distance_ahead_m",
+    "car_distance_behind_m",
+    "speed_mps",
+    "speed_mph",
+    "CarDistAhead",
+    "CarDistBehind",
+    "Speed",
+)
+
+_FRAME_NATIVE_DRAG_COLUMNS: frozenset[str] = frozenset({
+    "lap_dist_pct",
+    "speed_mph",
+    "rpm",
+    "throttle_pct",
+    "brake_pct",
+    "speed_rate_mph_s",
+    "dynamic_pressure_psf",
+    "abs_steering_deg",
+    "yaw_rate",
+    "cfs_risk_score",
+    "lat_accel",
+    "cfsr_height_mm",
+    "lap_dist_m",
+})
+
+
 def _platform_detection_rows(table: Any) -> list[dict[str, Any]]:
     if isinstance(table, pl.DataFrame):
-        return table.to_dicts()
+        # A production frame contains the lossless raw archive (hundreds of
+        # columns), while overview detectors consume only this explicit evidence
+        # slice. Materializing the full vault into Python dictionaries multiplies
+        # import time and peak memory without changing any conclusion.
+        selected = [name for name in table.columns if name in _OVERVIEW_ROW_COLUMNS]
+        return table.select(selected).to_dicts()
     if isinstance(table, list) and table and isinstance(table[0], dict):
         if "speed_mph" in table[0]:
             return cast(list[dict[str, Any]], table)
     return normalize_telemetry_rows(table)
+
+
+def _usable_channel_names(table: Any) -> frozenset[str]:
+    """Return channels with at least one observed value without row materialization."""
+
+    if isinstance(table, pl.DataFrame):
+        if table.is_empty():
+            return frozenset()
+        null_counts = table.null_count().row(0, named=True)
+        return frozenset(
+            name for name, count in null_counts.items()
+            if int(count) < table.height
+        )
+    rows = _platform_detection_rows(table)
+    return frozenset(
+        key
+        for row in rows
+        for key, value in row.items()
+        if value is not None
+    )
 
 
 def _safe_float(value: Any) -> float | None:
@@ -897,14 +1010,35 @@ def _build_overview_drag_events(
     """Detect drag-like observations only inside the canonical selected flying lap."""
     if best_lap is None:
         return [], None
-    overview_rows = _platform_detection_rows(table)
-    selected_lap_rows = [
-        row
-        for row in overview_rows
-        if _safe_float(row.get("lap")) == float(best_lap.lap_number)
-    ]
+
+    selected_lap_table: Any
+    if isinstance(table, pl.DataFrame) and ({"lap", "lap_number"} & set(table.columns)):
+        lap_expr = (
+            pl.coalesce([pl.col("lap"), pl.col("lap_number")])
+            if {"lap", "lap_number"}.issubset(table.columns)
+            else pl.col("lap" if "lap" in table.columns else "lap_number")
+        )
+        selected_frame = table.filter(
+            lap_expr.cast(pl.Int64, strict=False) == int(best_lap.lap_number)
+        )
+        selected_lap_rows = selected_frame.select(
+            [name for name in _PROXIMITY_ROW_COLUMNS if name in selected_frame.columns]
+        ).to_dicts()
+        selected_lap_table = (
+            selected_frame
+            if _FRAME_NATIVE_DRAG_COLUMNS.issubset(selected_frame.columns)
+            else _platform_detection_rows(selected_frame)
+        )
+    else:
+        overview_rows = _platform_detection_rows(table)
+        selected_lap_rows = [
+            row
+            for row in overview_rows
+            if _safe_float(row.get("lap")) == float(best_lap.lap_number)
+        ]
+        selected_lap_table = selected_lap_rows
     detected = detect_drag_scrub_risk_zones(
-        selected_lap_rows,
+        selected_lap_table,
         run_id=run_id,
         lap_number=best_lap.lap_number,
     )
@@ -991,7 +1125,12 @@ def _build_overview(
     best_lap = min(useful_laps, key=lambda lap: lap.lap_time or 999999.0) if useful_laps else None
     profile["overview_best_lap_pick_s"] = time.perf_counter() - t0
     t0 = time.perf_counter()
-    platform_events = _build_overview_platform_events(telemetry_table, run_id=run_id)
+    # Materialize the narrow row-only detector slice once. The normalized frame
+    # also owns the complete raw archive, which must remain columnar here.
+    overview_rows = _platform_detection_rows(telemetry_table)
+    profile["overview_row_projection_s"] = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    platform_events = _build_overview_platform_events(overview_rows, run_id=run_id)
     profile["overview_platform_events_s"] = time.perf_counter() - t0
     t0 = time.perf_counter()
     drag_events, proximity_warning = _build_overview_drag_events(
@@ -1002,13 +1141,9 @@ def _build_overview(
     profile["overview_drag_scrub_s"] = time.perf_counter() - t0
     t0 = time.perf_counter()
     events = platform_events + drag_events
-    overview_rows = _platform_detection_rows(telemetry_table)
-    usable_channels = frozenset(
-        key
-        for row in overview_rows
-        for key, value in row.items()
-        if value is not None
-    )
+    usable_channels = _usable_channel_names(telemetry_table)
+    profile["overview_usable_channels_s"] = time.perf_counter() - t0
+    t0 = time.perf_counter()
     linked_events = [
         event
         for event in events
@@ -1282,6 +1417,12 @@ def import_ibt(path: str | Path) -> IBTImportResult:
                     }
                     raw_archive_columns = _raw_archive_column_mapping(df.columns, declared_columns)
                     df = _merge_raw_columns(df, declared_columns)
+                    # Polars now owns the decoded buffers. Drop the millions of
+                    # boxed Python values before overview analysis and Parquet
+                    # persistence instead of retaining a duplicate raw vault for
+                    # the remainder of the import.
+                    del declared_columns
+                    columns.clear()
                     normalized_frame = df
                     overview_table = df
                     if profile_enabled:

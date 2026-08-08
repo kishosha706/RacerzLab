@@ -542,6 +542,64 @@ server-qualified evidence may approve a controlled setup test.
 
 ---
 
+## P9 - Performance and responsiveness
+
+Performance work must reduce waiting and memory pressure without weakening an
+evidence contract, dropping a declared channel, changing a canonical API shape,
+or turning an extrema/event-preserving trace into a visually convenient fiction.
+
+### Implemented and verified
+
+- [x] Keep the production `.ibt` overview path frame-native. Materialize only
+  the explicit row evidence required by row-only detectors, retain the complete
+  lossless archive as columns, and release duplicate decoded buffers early.
+- [x] Compute scalar telemetry-manifest health with native column reductions.
+  Preserve exact null, non-finite, impossible-range, clipping, saturation, and
+  channel-health output parity with the row implementation.
+- [x] Bound projected telemetry caching by file signature, lap, projection,
+  entry count, per-entry bytes, and total bytes. Return mutation-safe rows and
+  invalidate both data and schema caches on app-owned writes.
+- [x] Avoid repeated schema/migration work on warm database opens, assemble run
+  lists in one query, build overviews through one connection, and add targeted
+  read-path indexes.
+- [x] Replace whole-grid nearest-position scans with deterministic binary search
+  while preserving lower-position and start/finish tie behavior. Reuse the
+  already interpolated baseline frame during phase classification.
+- [x] Keep track-map decoding and index reads cached without exposing mutable
+  cached objects. Use allocation-light serialization and reuse the canonical
+  cached platform-event result in the render package.
+- [x] Keep canonical channel and track-map API payloads backward-compatible.
+  Use explicit compact render projections only on app requests, retaining every
+  selected channel extremum and telemetry-event anchor.
+- [x] Split heavyweight cockpit surfaces into intent-preloaded chunks, unmount
+  closed overlays and rails, isolate high-frequency cursor/playback updates,
+  prevent zoom-only full-series rebuilds, and size ECharts before initialization.
+
+### Verification evidence
+
+- Real Atlanta `.ibt` (26,556 rows, 277 declared channels, 585 cached columns):
+  direct import fell from 24.70-29.88 s to 4.66-5.59 s; overview analysis fell
+  from 21.29-27.00 s to 2.93-3.83 s. The generated 277-channel manifest remained
+  exactly equal, and peak working memory fell from about 1,150 MB to 518 MB.
+- Native manifest health calculation measured 8.32 s to 0.60 s (13.82x), while
+  end-to-end cache staging measured 7.21 s to 0.74 s.
+- Representative trace output fell from 3,043 points / 509 KB to 437 points /
+  79.6 KB. Warm endpoint median measured 22.88 ms, with extrema and event-anchor
+  preservation covered by regressions.
+- Synthetic 6,000-row, 1,001-position alignment median fell from 0.682 s to
+  0.268 s. A 6,000-position nearest lookup fell from 1,944 ms to 1.34 ms.
+- A 5,463-point track map serialized in 0.86 ms instead of 72.49 ms. The app map
+  package is 619 KB instead of 1.52 MB, while the canonical map endpoint retains
+  its full point contract; warm package median measured 40.55 ms.
+- UI entry JavaScript fell from 307.63 KB to 218.49 KB (29.0%); gzip fell from
+  88.05 KB to 67.61 KB (23.2%); launch artwork fell from 535.00 KB to 453.92 KB.
+- Full Python regression, whole-repository Ruff, TypeScript, production build,
+  browser smoke, exact manifest parity, randomized alignment parity, hostile
+  partial-channel evidence, cache mutation, cache invalidation, and API contract
+  checks passed. Four protected real-fixture checks remain environment-dependent.
+
+---
+
 ## Professional analysis surface, without losing the product thesis
 
 - [x] Match essential professional language: time variance, overlays, math
@@ -619,3 +677,4 @@ Implementation queue completed in this pass:
 | 2026-08-05 | Unified Dial-In recommendation intelligence | Capability and observed evidence are structurally separate; selected zone/phase/objective/priority reach the server; list-position scoring was removed; exact-context models can suppress contradicted directions; recommendation score provenance is included in the controlled-test report; focused backend/UI contracts, Ruff, and TypeScript passed |
 | 2026-08-05 | Closed adversarial P8 authorization and scoring gaps | Candidate-specific event/mechanism linkage, selected-scope containment, exact-control memory isolation, objective-sized measurement missions, immutable score-time A/B/A2 setup validation, multi-control fail-closed behavior, persisted UI context, and context-mismatch action gating gained regression coverage |
 | 2026-08-05 | Hardened production A/B/A2 certification and physical guardrails | Consecutive post-warmup cohorts, file-owned recording chronology, repeated noise floors, six-lap sign states, complete non-target alignment, control-specific platform/cooling/gearing/brake guardrails, hostile platform numeric gates, durable rollback provenance, and fully rendered score distributions passed 1,353 tests with four environment-dependent skips, whole-repo Ruff, UI typecheck/build, diff integrity, and a final adversarial CLEAR review |
+| 2026-08-08 | Completed the P9 whole-app performance pass | Real Atlanta direct import improved about 80-83% with exact 277-channel manifest parity and about 55% lower peak memory; warm reads, trace payloads, alignment lookups, track-map rendering, and UI delivery were reduced without weakening canonical contracts; the corrected tree passed 1,385 Python tests with four environment-dependent skips, Ruff, TypeScript, production build, browser smoke, and a final adversarial CLEAR review |

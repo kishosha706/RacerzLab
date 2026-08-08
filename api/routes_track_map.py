@@ -6,11 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
+from api.routes_events import get_platform_events
 from api.routes_runs import repository
-from racelab_engine.analysis.platform_events import PLATFORM_EVENT_COLUMNS
 from racelab_engine.services.track_map_service import (
     import_mt2_folder,
     list_track_maps,
@@ -78,14 +79,31 @@ def _public_track_map_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _public_track_map_payload(track_map: dict[str, Any] | None) -> dict[str, Any] | None:
+def _public_track_map_payload(
+    track_map: dict[str, Any] | None,
+    *,
+    render_projection: bool = False,
+) -> dict[str, Any] | None:
     if track_map is None:
         return None
+    points = track_map.get("points", [])
+    if render_projection:
+        # The renderer needs geometry identity, position, distance, and kind.
+        # Curvature/radius/section analysis remains server-side and would more
+        # than double this frequently loaded package payload.
+        points = [
+            {
+                key: point.get(key)
+                for key in ("index", "x", "y", "x_m", "y_m", "distance_ft", "lap_pct", "kind")
+            }
+            for point in points
+            if point.get("kind") in {"centerline", "unknown"}
+        ]
     return {
         "map_id": track_map.get("map_id"),
         "metadata": _public_track_map_metadata(track_map.get("metadata", {})),
         "bounds": track_map.get("bounds"),
-        "points": track_map.get("points", []),
+        "points": points,
         "markers": track_map.get("markers", []),
         "sections": track_map.get("sections", []),
         "status": track_map.get("status"),
@@ -99,7 +117,7 @@ def _public_track_map_package(package: dict[str, Any]) -> dict[str, Any]:
     return {
         "run_id": package.get("run_id"),
         "lap": package.get("lap"),
-        "map": _public_track_map_payload(package.get("map")),
+        "map": _public_track_map_payload(package.get("map"), render_projection=True),
         "match": _public_track_map_summary(package.get("match")),
         "overlays": package.get("overlays", []),
         "sections": package.get("sections", []),
@@ -212,14 +230,14 @@ def list_track_maps_endpoint() -> list[dict]:
 
 
 @router.get("/track-maps/{map_id}")
-def get_track_map_endpoint(map_id: str) -> dict:
+def get_track_map_endpoint(map_id: str) -> JSONResponse:
     tm = get_track_map(map_id)
     if tm is None:
         raise HTTPException(404, f"Track map not found: {map_id}")
     payload = _public_track_map_payload(tm.as_dict())
     if payload is None:
         raise HTTPException(500, f"Track map payload unavailable: {map_id}")
-    return payload
+    return JSONResponse(content=payload)
 
 
 @router.get("/runs/{run_id}/track-map-match")
@@ -242,7 +260,7 @@ def run_track_map_package(
     target_zone_start_pct: float | None = None,
     target_zone_end_pct: float | None = None,
     preferred_map_id: str | None = None,
-) -> dict:
+) -> JSONResponse:
     repo = repository()
     overview = repo.get_overview(run_id)
     if overview is None:
@@ -256,23 +274,20 @@ def run_track_map_package(
 
     map_id = match.get("map_id") if match else None
     if not map_id:
-        return _public_track_map_package({
+        return JSONResponse(content=_public_track_map_package({
             "run_id": run_id, "lap": lap,
             "map": None, "match": match,
             "overlays": [], "sections": [], "markers": [],
             "target_zone": None,
             "warnings": ["No track map matched for this run."],
-        })
+        }))
 
     # Get platform events for overlay
     platform_events: list[dict] | None = None
     from contextlib import suppress
     with suppress(Exception):
-        from racelab_engine.analysis.platform_events import detect_platform_events
-        from racelab_engine.services.import_service import read_telemetry_rows
-        rows = read_telemetry_rows(run_id, lap=lap, columns=PLATFORM_EVENT_COLUMNS)
-        if rows and (all_events := detect_platform_events(rows, lap=lap)):
-            platform_events = [e.as_dict() for e in all_events]
+        if all_events := get_platform_events(run_id, lap=lap):
+            platform_events = [event.model_dump(mode="json") for event in all_events]
 
     pkg = build_track_map_package(
         map_id, run_id, lap=lap,
@@ -281,4 +296,4 @@ def run_track_map_package(
         target_zone_end_pct=target_zone_end_pct,
     )
     pkg["match"] = match
-    return _public_track_map_package(pkg)
+    return JSONResponse(content=_public_track_map_package(pkg))

@@ -27,4 +27,5 @@
 - Row engine (`normalize_telemetry_rows`) remains available as fallback/debug parity path.
 - Normal import path is frame-native and avoids full row materialization.
 
-Last verified: 2026-06-01 (docs/code alignment pass; benchmark numbers still require fixture rerun verification).
+Last verified: 2026-08-08 (P9 whole-app performance pass; real-fixture import,
+manifest parity, full regression, UI build, and adversarial review verified).

@@ -138,9 +138,14 @@ CREATE TABLE IF NOT EXISTS import_files (
 
 CREATE INDEX IF NOT EXISTS idx_runs_imported_at ON runs(imported_at);
 CREATE INDEX IF NOT EXISTS idx_laps_run_id ON laps(run_id);
+CREATE INDEX IF NOT EXISTS idx_laps_run_useful_time
+  ON laps(run_id, is_useful, lap_time, lap_number);
 CREATE INDEX IF NOT EXISTS idx_events_run_id ON events(run_id);
 CREATE INDEX IF NOT EXISTS idx_events_lap_type ON events(run_id, lap_number, event_type);
 CREATE INDEX IF NOT EXISTS idx_recommendations_run_id ON recommendations(run_id);
+CREATE INDEX IF NOT EXISTS idx_recommendations_run_priority
+  ON recommendations(run_id, priority_rank);
+CREATE INDEX IF NOT EXISTS idx_setup_snapshots_run_id ON setup_snapshots(run_id);
 
 -- Notebook / Setup Memory tables
 

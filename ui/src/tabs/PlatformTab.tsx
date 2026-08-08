@@ -17,7 +17,7 @@ import { getTraceValues, formatChannelValue, formatForceProxyN, safeStringValue 
 import { echarts, type EChartsType } from "../utils/echarts";
 import { buildPlatformChartAnnotations } from "../utils/platformChartAnnotations";
 import { filterPlatformEvents, isClearPlatformDiagnostic, isMutedPlatformEvent, platformEventScopeLabel, platformEventVisibilityModeLabel } from "../utils/platformEventVisibility";
-import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
+import { useTelemetryCursor, useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
 import type {
   PlatformEventItem,
@@ -930,6 +930,7 @@ function PlatformTraceWorkbench({
   onMapOverlayZoomRangeChange,
 }: PlatformTraceWorkbenchProps) {
   const { selection, setWorkspace, focusEvidence, setHover } = useTelemetrySelection();
+  const telemetryCursor = useTelemetryCursor();
   const chartNode = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<EChartsType | null>(null);
   const cursorLineRef = useRef<HTMLDivElement | null>(null);
@@ -1327,9 +1328,9 @@ function PlatformTraceWorkbench({
 
   const minSplitterIndex = resolveIndex("MIN_SPLITTER", fallbackMinSplitterIndex);
   const worstSpeedLossIndex = resolveIndex("WORST_SPEED_LOSS", fallbackWorstSpeedLossIndex);
-  const playbackIndex = selection.playbackActive
-    ? validSampleIndex(selection.hoverSampleIndex, xs.length)
-      ?? (selection.hoverLapPct != null ? nearestIndexByPct(trace, selection.hoverLapPct) : null)
+  const playbackIndex = telemetryCursor.playbackActive
+    ? validSampleIndex(telemetryCursor.hoverSampleIndex, xs.length)
+      ?? (telemetryCursor.hoverLapPct != null ? nearestIndexByPct(trace, telemetryCursor.hoverLapPct) : null)
     : null;
   const lockedIndex = validSampleIndex(clickedSampleIndex, xs.length);
   const transientHoverIndex = validSampleIndex(hoverSampleIndex, xs.length);
@@ -1628,6 +1629,17 @@ function PlatformTraceWorkbench({
   useEffect(() => {
     const node = chartNode.current;
     if (!node) return;
+    const initialPreset = presetRef.current;
+    const initialLayout = buildPanelLayout(
+      rowsRef.current,
+      initialPreset,
+      chartDensityRef.current,
+      fallbackRowHeight(initialPreset),
+      54,
+    );
+    const initialHeight = layoutTotalHeight(initialLayout, 42);
+    node.style.height = `${initialHeight}px`;
+    node.style.minHeight = `${initialHeight}px`;
     const chart = echarts.init(node, "dark");
     chartRef.current = chart;
 
@@ -2235,7 +2247,6 @@ function PlatformTraceWorkbench({
     selection.selectedZoneLabel,
     selection.selectedZoneStartPct,
     trace,
-    visibleZoomRange,
     xs,
   ]);
 

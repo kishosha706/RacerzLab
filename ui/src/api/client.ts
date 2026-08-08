@@ -342,11 +342,11 @@ export function fetchControlledWorkflowReport(workflowId: string): Promise<{ wor
 }
 
 export function fetchChannels(runId: string): Promise<ChannelCatalogItem[]> {
-  return requestJson<ChannelCatalogItem[]>(`/api/runs/${encodeURIComponent(runId)}/channels`);
+  return requestJson<ChannelCatalogItem[]>(`/api/runs/${encodeURIComponent(runId)}/channels?compact=true`);
 }
 
 export function fetchChannelSummary(runId: string): Promise<ChannelSummaryItem[]> {
-  return requestJson<ChannelSummaryItem[]>(`/api/runs/${encodeURIComponent(runId)}/channels/summary`);
+  return requestJson<ChannelSummaryItem[]>(`/api/runs/${encodeURIComponent(runId)}/channels/summary?compact=true`);
 }
 
 export function fetchTelemetryCapabilities(runId: string): Promise<TelemetryCapabilitiesResponse> {
@@ -356,7 +356,7 @@ export function fetchTelemetryCapabilities(runId: string): Promise<TelemetryCapa
 }
 
 export function fetchChannelsFull(runId: string): Promise<ChannelCatalogItem[]> {
-  return requestJson<ChannelCatalogItem[]>(`/api/runs/${encodeURIComponent(runId)}/channels`);
+  return requestJson<ChannelCatalogItem[]>(`/api/runs/${encodeURIComponent(runId)}/channels?compact=true`);
 }
 
 export function fetchReport(runId: string): Promise<{ run_id: string; markdown: string }> {

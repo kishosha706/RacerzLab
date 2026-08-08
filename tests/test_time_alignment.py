@@ -10,6 +10,7 @@ from racelab_engine.analysis.time_alignment import (
     build_layered_alignment,
     detect_engineering_phases,
     estimate_driver_noise,
+    nearest_sorted_index,
 )
 
 
@@ -73,6 +74,17 @@ def _noise_context() -> dict[str, object]:
         "controlled_setup_change_count": 1,
         "unmapped_setup_changes": False,
     }
+
+
+@pytest.mark.parametrize(
+    ("target", "expected"),
+    [(-1.0, 0), (0.0, 0), (0.49, 0), (0.5, 0), (0.51, 1), (2.0, 2), (3.0, 2)],
+)
+def test_nearest_sorted_index_is_bounded_and_resolves_ties_low(
+    target: float,
+    expected: int,
+) -> None:
+    assert nearest_sorted_index([0.0, 1.0, 2.0], target) == expected
 
 
 def test_phase_engine_detects_sustained_brake_corner_apex_and_exit() -> None:

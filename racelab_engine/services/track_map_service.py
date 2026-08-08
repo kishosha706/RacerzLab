@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+from copy import deepcopy
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -57,9 +59,20 @@ def _load_index() -> list[dict[str, Any]]:
     if not path.exists():
         return []
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        stat = path.stat()
+        # Callers normalize and decorate index entries.  Keep those mutations
+        # isolated from the process cache, including nested alias/warning lists.
+        return deepcopy(
+            list(_load_index_cached(str(path.resolve()), stat.st_mtime_ns, stat.st_size))
+        )
     except (json.JSONDecodeError, OSError):
         return []
+
+
+@lru_cache(maxsize=8)
+def _load_index_cached(_path: str, _mtime_ns: int, _size: int) -> tuple[dict[str, Any], ...]:
+    payload = json.loads(Path(_path).read_text(encoding="utf-8"))
+    return tuple(payload) if isinstance(payload, list) else ()
 
 
 def _save_index(entries: list[dict[str, Any]]) -> None:
@@ -324,10 +337,21 @@ def get_track_map(map_id: str) -> TrackMap | None:
     if not cache_path or not cache_path.exists():
         return None
     try:
-        data = json.loads(cache_path.read_text(encoding="utf-8"))
-        return _dict_to_track_map(data)
+        stat = cache_path.stat()
+        cached = _get_track_map_cached(
+            str(cache_path.resolve()), stat.st_mtime_ns, stat.st_size,
+        )
+        # The cached canonical object is process-owned.  Return a cheap model
+        # reconstruction so callers cannot corrupt later reads by mutating a
+        # point, list, or nested metadata collection.
+        return _dict_to_track_map(cached.as_dict())
     except (json.JSONDecodeError, OSError, KeyError):
         return None
+
+
+@lru_cache(maxsize=8)
+def _get_track_map_cached(_path: str, _mtime_ns: int, _size: int) -> TrackMap:
+    return _dict_to_track_map(json.loads(Path(_path).read_text(encoding="utf-8")))
 
 
 def _dict_to_track_map(d: dict[str, Any]) -> TrackMap:
@@ -404,11 +428,13 @@ def build_track_map_overlays(
     platform_events: list[dict[str, Any]] | None = None,
     target_zone_start_pct: float | None = None,
     target_zone_end_pct: float | None = None,
+    *,
+    _track_map: TrackMap | None = None,
 ) -> list[dict[str, Any]]:
     """Build overlay markers from platform events and target zone."""
     overlays: list[dict[str, Any]] = []
 
-    track_map = get_track_map(map_id)
+    track_map = _track_map or get_track_map(map_id)
     points = track_map.points if track_map else []
     total_dist = track_map.metadata.distance_m if track_map else 0.0
 
@@ -486,6 +512,7 @@ def build_track_map_package(
         platform_events=platform_events,
         target_zone_start_pct=target_zone_start_pct,
         target_zone_end_pct=target_zone_end_pct,
+        _track_map=track_map,
     )
 
     from dataclasses import asdict

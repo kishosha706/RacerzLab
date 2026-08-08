@@ -7,6 +7,7 @@ laps (not telemetry rows) as the statistical experiment unit.
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from dataclasses import asdict, dataclass, field
 import math
 from statistics import median
@@ -151,6 +152,21 @@ def _truthy(value: float | None) -> bool:
     return value is not None and value > 0.5
 
 
+def nearest_sorted_index(values: list[float], target: float) -> int:
+    """Return the closest index in a non-empty sorted sequence.
+
+    Ties resolve to the lower track position.  Using binary search keeps
+    position-grid lookups logarithmic instead of scanning the whole lap.
+    """
+    right = bisect_left(values, target)
+    if right <= 0:
+        return 0
+    if right >= len(values):
+        return len(values) - 1
+    left = right - 1
+    return left if target - values[left] <= values[right] - target else right
+
+
 def _categorical_state_grid(
     rows: list[dict[str, Any]],
     channel: str,
@@ -165,11 +181,14 @@ def _categorical_state_grid(
         samples.append((pct, bool(value)))
     if not samples:
         return [None] * len(grid)
-    return [
-        (nearest[1] if abs(nearest[0] - pct) <= 2.0 else None)
-        for pct in grid
-        for nearest in [min(samples, key=lambda sample: abs(sample[0] - pct))]
-    ]
+    samples.sort(key=lambda sample: sample[0])
+    positions = [sample[0] for sample in samples]
+    states = [sample[1] for sample in samples]
+    result: list[bool | None] = []
+    for pct in grid:
+        index = nearest_sorted_index(positions, pct)
+        result.append(states[index] if abs(positions[index] - pct) <= 2.0 else None)
+    return result
 
 
 def _confirmed_reset_positions(rows: list[dict[str, Any]]) -> list[float]:
@@ -195,10 +214,15 @@ def detect_engineering_phases(
     rows: list[dict[str, Any]],
     *,
     grid: list[float] | None = None,
+    _interpolated_channels: dict[str, list[float | None]] | None = None,
 ) -> tuple[list[str | None], list[PhaseInterval], dict[str, list[float | None]]]:
     """Classify sustained operating phases on a physical-position grid."""
     position_grid = grid or build_lap_grid(0.0, 100.0, 0.1)
-    channels = interpolate_run_to_grid(rows, _PHASE_CHANNELS, position_grid)
+    channels = (
+        _interpolated_channels
+        if _interpolated_channels is not None
+        else interpolate_run_to_grid(rows, _PHASE_CHANNELS, position_grid)
+    )
     pit_state = _categorical_state_grid(rows, "on_pit_road", position_grid)
     confirmed_reset_pcts = _confirmed_reset_positions(rows)
     throttle = _median_window(channels["throttle_pct"])
@@ -767,8 +791,12 @@ def analyze_time_alignment(
     step_pct: float = 0.1,
 ) -> TimeAlignmentResult:
     grid = build_lap_grid(start_pct, end_pct, step_pct)
-    phase_by_position, phases, _phase_channels = detect_engineering_phases(baseline_rows, grid=grid)
     alignment, baseline, test = build_layered_alignment(baseline_rows, test_rows, grid)
+    phase_by_position, phases, _phase_channels = detect_engineering_phases(
+        baseline_rows,
+        grid=grid,
+        _interpolated_channels=baseline,
+    )
     baseline_elapsed = _elapsed(baseline["session_time"])
     test_time = test["session_time"]
     aligned_test_time: list[float | None] = []
@@ -776,7 +804,7 @@ def analyze_time_alignment(
         if point.aligned_test_pct is None:
             aligned_test_time.append(None)
             continue
-        index = min(range(len(grid)), key=lambda i: abs(grid[i] - point.aligned_test_pct))
+        index = nearest_sorted_index(grid, point.aligned_test_pct)
         aligned_test_time.append(test_time[index])
     test_elapsed = _elapsed(aligned_test_time)
 
@@ -808,7 +836,7 @@ def analyze_time_alignment(
             left, right = baseline_dist[index - 1], baseline_dist[index]
             vb = speed_baseline[index]
             aligned_pct = point.aligned_test_pct
-            test_index = min(range(len(grid)), key=lambda i: abs(grid[i] - aligned_pct))  # type: ignore[arg-type]
+            test_index = nearest_sorted_index(grid, aligned_pct)  # type: ignore[arg-type]
             vt = speed_test[test_index]
             if None not in (left, right, vb, vt) and right > left and vb > 1.0 and vt > 1.0:  # type: ignore[operator]
                 distance_m = (right - left) / 3.280839895  # type: ignore[operator]

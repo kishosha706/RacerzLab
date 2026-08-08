@@ -1,4 +1,4 @@
-import { ArrowLeft, Clock, Crosshair, Gauge, Layers, Upload, Wrench } from "lucide-react";
+import { ArrowLeft, ChevronRight, Clock, Crosshair, Gauge, Layers, Upload, Wrench } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
@@ -18,20 +18,14 @@ import {
   importIbtFile,
   importMt2File,
 } from "./api/client";
-import { EventTimeline } from "./components/EventTimeline";
-import { EvidenceInspector } from "./components/EvidenceInspector";
 import { ImportPanel } from "./components/ImportPanel";
-import { PriorityRail } from "./components/PriorityRail";
 import { RunContextBar } from "./components/RunContextBar";
 import { StartupScreen } from "./components/StartupScreen";
-import { TrackMapOverlay } from "./components/TrackMapOverlay";
 import { TelemetrySelectionProvider, useTelemetrySelection } from "./store/TelemetrySelectionContext";
 import { CompareBasketProvider, useCompareBasket } from "./store/CompareBasketContext";
-import { CompareBasket } from "./components/CompareBasket";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 
 import { TRACE_WORKBENCH_CHANNELS } from "./constants/workbenchChannels";
-import { OverviewTab } from "./tabs/OverviewTab";
 import { importDebug } from "./utils/importDebug";
 import { isTauri } from "./utils/env";
 import type {
@@ -46,22 +40,65 @@ import type {
 } from "./types/telemetry";
 import type { RaceLabSession, SessionSelectionSource } from "./types/session";
 
+const loadDialInTab = () => import("./tabs/DialInTab");
+const loadOverviewTab = () => import("./tabs/OverviewTab");
+const loadLapsTab = () => import("./tabs/LapsTab");
+const loadPlatformTab = () => import("./tabs/PlatformTab");
+const loadSetupTab = () => import("./tabs/SetupTab");
+const loadPriorityRail = () => import("./components/PriorityRail");
+const loadEvidenceInspector = () => import("./components/EvidenceInspector");
+const loadEventTimeline = () => import("./components/EventTimeline");
+const loadTrackMapOverlay = () => import("./components/TrackMapOverlay");
+const loadCompareBasket = () => import("./components/CompareBasket");
+
 const DialInTab = lazy(async () => {
-  const module = await import("./tabs/DialInTab");
+  const module = await loadDialInTab();
   return { default: module.DialInTab };
 });
+const OverviewTab = lazy(async () => {
+  const module = await loadOverviewTab();
+  return { default: module.OverviewTab };
+});
+const PriorityRail = lazy(async () => {
+  const module = await loadPriorityRail();
+  return { default: module.PriorityRail };
+});
+const EvidenceInspector = lazy(async () => {
+  const module = await loadEvidenceInspector();
+  return { default: module.EvidenceInspector };
+});
+const EventTimeline = lazy(async () => {
+  const module = await loadEventTimeline();
+  return { default: module.EventTimeline };
+});
+const TrackMapOverlay = lazy(async () => {
+  const module = await loadTrackMapOverlay();
+  return { default: module.TrackMapOverlay };
+});
+const CompareBasket = lazy(async () => {
+  const module = await loadCompareBasket();
+  return { default: module.CompareBasket };
+});
 const LapsTab = lazy(async () => {
-  const module = await import("./tabs/LapsTab");
+  const module = await loadLapsTab();
   return { default: module.LapsTab };
 });
 const PlatformTab = lazy(async () => {
-  const module = await import("./tabs/PlatformTab");
+  const module = await loadPlatformTab();
   return { default: module.PlatformTab };
 });
 const SetupTab = lazy(async () => {
-  const module = await import("./tabs/SetupTab");
+  const module = await loadSetupTab();
   return { default: module.SetupTab };
 });
+
+function preloadWorkspace(workspace: string): void {
+  if (workspace === "overview") void loadOverviewTab();
+  else if (workspace === "laps") void loadLapsTab();
+  else if (workspace === "platform_trace") void loadPlatformTab();
+  else if (workspace === "setup_impact") void loadSetupTab();
+  else if (workspace === "dial_in") void loadDialInTab();
+}
 
 // ── cockpit shell ─────────────────────────────────────────────
 
@@ -91,18 +128,39 @@ function CockpitShell() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [mapOverlayOpen, setMapOverlayOpen] = useState(false);
   const [mapOverlayZoomRange, setMapOverlayZoomRange] = useState<{ startValue?: number; endValue?: number } | null>(null);
+  const mapOverlayOpenRef = useRef(false);
+  const latestMapOverlayZoomRangeRef = useRef<{ startValue?: number; endValue?: number } | null>(null);
   const [platformEventVisibilityMode, setPlatformEventVisibilityMode] = useState<PlatformEventVisibilityMode>("actionable");
   const loadSelectedRunSeqRef = useRef(0);
 
   const { selection, loadRun, selectLap, setWorkspace, validateSelectionRunIds } = useTelemetrySelection();
-  const { validateAvailableRuns } = useCompareBasket();
+  const { basket, validateAvailableRuns } = useCompareBasket();
   const selectedTraceLap = selection.selectedRepresentativeLap ?? selection.selectedLap ?? null;
   const isTraceWorkspace =
     selection.selectedWorkspace === "platform_trace"
     || selection.selectedWorkspace === "speed_delta"
     || selection.selectedWorkspace === "drag_scrub";
+  const hasCompareBasketItems = basket.baseline != null || basket.test != null;
+
+  const openMapOverlay = useCallback(() => {
+    void loadTrackMapOverlay();
+    setMapOverlayZoomRange(latestMapOverlayZoomRangeRef.current);
+    mapOverlayOpenRef.current = true;
+    setMapOverlayOpen(true);
+  }, []);
+
+  const closeMapOverlay = useCallback(() => {
+    mapOverlayOpenRef.current = false;
+    setMapOverlayOpen(false);
+  }, []);
+
+  const handleMapOverlayZoomRangeChange = useCallback((nextRange: { startValue?: number; endValue?: number } | null) => {
+    latestMapOverlayZoomRangeRef.current = nextRange;
+    if (mapOverlayOpenRef.current) setMapOverlayZoomRange(nextRange);
+  }, []);
 
   useEffect(() => {
+    if (selection.selectedMode === "learning") void loadPriorityRail();
     setPriorityRailOpen(selection.selectedMode === "learning");
   }, [selection.selectedMode]);
 
@@ -159,8 +217,14 @@ function CockpitShell() {
   // ── keyboard shortcuts ─────────────────────────────────────
   useKeyboardShortcuts(platformEvents, setWorkspace, {
     onTogglePriorityRail: () => setPriorityRailOpen((open) => !open),
-    onToggleInspector: () => setInspectorOpen((open) => !open),
-    onToggleMapOverlay: () => setMapOverlayOpen((open) => !open),
+    onToggleInspector: () => {
+      void loadEvidenceInspector();
+      setInspectorOpen((open) => !open);
+    },
+    onToggleMapOverlay: () => {
+      if (mapOverlayOpenRef.current) closeMapOverlay();
+      else openMapOverlay();
+    },
     onShowShortcuts: () => setShortcutsOpen(true),
     onHideShortcuts: () => setShortcutsOpen(false),
     shortcutsOpen,
@@ -235,6 +299,8 @@ function CockpitShell() {
       ]);
       setRuns(recentRuns);
       if (session.run_ids.length > 0) {
+        void loadOverviewTab();
+        void loadEventTimeline();
         await loadSelectedRun(session.run_ids[session.run_ids.length - 1], "session_open");
       } else {
         setLoading(false);
@@ -434,7 +500,7 @@ function CockpitShell() {
   const workspaceContent = useMemo(() => {
     if (!overview) return null;
     const ws = selection.selectedWorkspace;
-    if (ws === "overview") return <OverviewTab overview={overview} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
+    if (ws === "overview") return <OverviewTab overview={overview} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={openMapOverlay} />;
     if (ws === "platform_trace" || ws === "speed_delta" || ws === "drag_scrub") {
       const initialWorkbenchView = ws === "drag_scrub"
         ? "scrub_steering"
@@ -449,16 +515,16 @@ function CockpitShell() {
           initialWorkbenchView={initialWorkbenchView}
           platformEventVisibilityMode={platformEventVisibilityMode}
           onPlatformEventVisibilityModeChange={setPlatformEventVisibilityMode}
-          onToggleMapOverlay={() => setMapOverlayOpen(true)}
-          onMapOverlayZoomRangeChange={setMapOverlayZoomRange}
+          onToggleMapOverlay={openMapOverlay}
+          onMapOverlayZoomRangeChange={handleMapOverlayZoomRangeChange}
         />
       );
     }
-    if (ws === "setup_impact") return <SetupTab overview={overview} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
+    if (ws === "setup_impact") return <SetupTab overview={overview} onToggleMapOverlay={openMapOverlay} />;
     if (ws === "dial_in") return <DialInTab overview={overview} />;
     if (ws === "channels") {
       // Channels removed from nav; redirect to overview if stale state exists
-      return <OverviewTab overview={overview} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
+      return <OverviewTab overview={overview} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={openMapOverlay} />;
     }
     if (ws === "laps") {
       return (
@@ -468,12 +534,12 @@ function CockpitShell() {
           sessionRuns={sessionRuns}
           sessionRunsLoading={sessionRunsLoading}
           sessionSelectionSource={sessionSelectionSource}
-          onToggleMapOverlay={() => setMapOverlayOpen(true)}
+          onToggleMapOverlay={openMapOverlay}
         />
       );
     }
-    return <OverviewTab overview={overview} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={() => setMapOverlayOpen(true)} />;
-  }, [currentSession, overview, platformEventVisibilityMode, platformEvents, selectedTraceLap, selection.selectedWorkspace, sessionRuns, sessionRunsLoading, sessionSelectionSource, trace]);
+    return <OverviewTab overview={overview} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={openMapOverlay} />;
+  }, [currentSession, handleMapOverlayZoomRangeChange, openMapOverlay, overview, platformEventVisibilityMode, platformEvents, selection.selectedWorkspace, sessionRuns, sessionRunsLoading, sessionSelectionSource, trace]);
 
   if (engineStatus === "starting") {
     return <main className="boot-screen" role="status" aria-live="polite">Starting the local RacerZLab engine…</main>;
@@ -601,6 +667,8 @@ function CockpitShell() {
               type="button"
               className={`nav-rail-item ${selection.selectedWorkspace === key ? "active" : ""}`}
               onClick={() => setWorkspace(key, "manual")}
+              onPointerEnter={() => preloadWorkspace(key)}
+              onFocus={() => preloadWorkspace(key)}
               title={label}
               aria-label={`Open ${label}`}
               aria-current={selection.selectedWorkspace === key ? "page" : undefined}
@@ -611,14 +679,32 @@ function CockpitShell() {
           ))}
         </nav>
 
-        <PriorityRail
-          runId={overview.run_id}
-          selectedLap={selection.selectedLap}
-          collapsed={!priorityRailOpen}
-          onToggle={() => setPriorityRailOpen(!priorityRailOpen)}
-          platformEvents={platformEvents}
-          eventVisibilityMode={platformEventVisibilityMode}
-        />
+        {priorityRailOpen ? (
+          <Suspense fallback={<aside className="priority-rail" aria-hidden="true" />}>
+            <PriorityRail
+              runId={overview.run_id}
+              selectedLap={selection.selectedLap}
+              collapsed={false}
+              onToggle={() => setPriorityRailOpen(false)}
+              platformEvents={platformEvents}
+              eventVisibilityMode={platformEventVisibilityMode}
+            />
+          </Suspense>
+        ) : (
+          <aside className="priority-rail collapsed">
+            <button
+              className="rail-collapse-btn"
+              onClick={() => setPriorityRailOpen(true)}
+              onPointerEnter={() => { void loadPriorityRail(); }}
+              onFocus={() => { void loadPriorityRail(); }}
+              title="Expand Priority Rail"
+              aria-label="Expand Priority Rail"
+              aria-expanded="false"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </aside>
+        )}
 
         <main className="cockpit-workspace">
           <div className="workspace-toolbar">
@@ -652,32 +738,60 @@ function CockpitShell() {
           </div>
         </main>
 
-        <EvidenceInspector
-          overview={overview}
-          platformEvents={platformEvents}
-          channels={channels}
-          collapsed={!inspectorOpen}
-          onToggle={() => setInspectorOpen(!inspectorOpen)}
-          eventVisibilityMode={platformEventVisibilityMode}
-          onEventVisibilityModeChange={setPlatformEventVisibilityMode}
-          onToggleMapOverlay={() => setMapOverlayOpen(true)}
-        />
+        {inspectorOpen ? (
+          <Suspense fallback={<aside className="evidence-inspector" aria-hidden="true" />}>
+            <EvidenceInspector
+              overview={overview}
+              platformEvents={platformEvents}
+              channels={channels}
+              collapsed={false}
+              onToggle={() => setInspectorOpen(false)}
+              eventVisibilityMode={platformEventVisibilityMode}
+              onEventVisibilityModeChange={setPlatformEventVisibilityMode}
+              onToggleMapOverlay={openMapOverlay}
+            />
+          </Suspense>
+        ) : (
+          <aside className="evidence-inspector collapsed">
+            <button
+              className="inspector-collapse-btn"
+              onClick={() => setInspectorOpen(true)}
+              onPointerEnter={() => { void loadEvidenceInspector(); }}
+              onFocus={() => { void loadEvidenceInspector(); }}
+              title="Expand Inspector"
+              aria-label="Expand Inspector"
+              aria-expanded="false"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </aside>
+        )}
       </div>
 
-      <EventTimeline platformEvents={platformEvents} eventVisibilityMode={platformEventVisibilityMode} />
-      <TrackMapOverlay
-        open={mapOverlayOpen}
-        runId={overview.run_id}
-        lap={selectedTraceLap}
-        trackName={overview.session.track_display_name ?? overview.session.track_name}
-        targetZoneStartPct={selection.selectedZoneStartPct}
-        targetZoneEndPct={selection.selectedZoneEndPct}
-        zoomRangeFt={mapOverlayZoomRange}
-        platformEvents={platformEvents}
-        eventVisibilityMode={platformEventVisibilityMode}
-        onClose={() => setMapOverlayOpen(false)}
-      />
-      <CompareBasket />
+      <Suspense fallback={<footer className="event-timeline" aria-hidden="true" />}>
+        <EventTimeline platformEvents={platformEvents} eventVisibilityMode={platformEventVisibilityMode} />
+      </Suspense>
+      {mapOverlayOpen && (
+        <Suspense fallback={null}>
+          <TrackMapOverlay
+            open={mapOverlayOpen}
+            runId={overview.run_id}
+            lap={selectedTraceLap}
+            trackName={overview.session.track_display_name ?? overview.session.track_name}
+            targetZoneStartPct={selection.selectedZoneStartPct}
+            targetZoneEndPct={selection.selectedZoneEndPct}
+            zoomRangeFt={mapOverlayZoomRange}
+            platformEvents={platformEvents}
+            eventVisibilityMode={platformEventVisibilityMode}
+            onClose={closeMapOverlay}
+          />
+        </Suspense>
+      )}
+      {hasCompareBasketItems && (
+        <Suspense fallback={null}>
+          <CompareBasket />
+        </Suspense>
+      )}
       {shortcutsOpen && (
         <div className="shortcut-modal-backdrop" role="presentation" onClick={() => setShortcutsOpen(false)}>
           <section

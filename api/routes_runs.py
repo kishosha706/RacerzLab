@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 from api.schemas import ChannelCatalogItem, ChannelSummaryItem, DialInRequest, RunListItem, TraceResponse
 from racelab_engine.knowledge.setup.dial_in_schema import DialInResponse
@@ -74,20 +75,37 @@ def dial_in(run_id: str, request: DialInRequest) -> DialInResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/{run_id}/channels", response_model=list[ChannelCatalogItem])
-def get_channels(run_id: str, summary: bool = False) -> list[ChannelCatalogItem]:
+@router.get(
+    "/{run_id}/channels",
+    response_model=list[ChannelCatalogItem],
+)
+def get_channels(
+    run_id: str,
+    summary: bool = False,
+    compact: bool = False,
+) -> list[ChannelCatalogItem] | JSONResponse:
     if repository().get_session(run_id) is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
-    if summary:
-        return [ChannelCatalogItem(**item) for item in build_channel_summary(run_id)]
-    return [ChannelCatalogItem(**item) for item in build_channel_catalog(run_id)]
+    items = [
+        ChannelCatalogItem(**item)
+        for item in (build_channel_summary(run_id) if summary else build_channel_catalog(run_id))
+    ]
+    if compact:
+        return JSONResponse(content=[item.model_dump(mode="json", exclude_none=True) for item in items])
+    return items
 
 
-@router.get("/{run_id}/channels/summary", response_model=list[ChannelSummaryItem])
-def get_channels_summary(run_id: str) -> list[ChannelSummaryItem]:
+@router.get(
+    "/{run_id}/channels/summary",
+    response_model=list[ChannelSummaryItem],
+)
+def get_channels_summary(run_id: str, compact: bool = False) -> list[ChannelSummaryItem] | JSONResponse:
     if repository().get_session(run_id) is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
-    return [ChannelSummaryItem(**item) for item in build_channel_summary(run_id)]
+    items = [ChannelSummaryItem(**item) for item in build_channel_summary(run_id)]
+    if compact:
+        return JSONResponse(content=[item.model_dump(mode="json", exclude_none=True) for item in items])
+    return items
 
 
 @router.get("/{run_id}/telemetry-capabilities", response_model=dict[str, Any])
@@ -113,8 +131,8 @@ def get_trace(
     end_ft: Optional[float] = None,
 ) -> TraceResponse:
     repo = repository()
-    overview = repo.get_overview(run_id)
-    if overview is None:
+    session = repo.get_session(run_id)
+    if session is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
     selected_channels = [item.strip() for item in channels.split(",") if item.strip()] if channels else None
     events = repo.get_events(run_id, lap=lap)
@@ -131,6 +149,6 @@ def get_trace(
         start_ft=start_ft,
         end_ft=end_ft,
         raw_resolution=(resolution or "").lower() == "raw",
-        car_path=overview.session.car_path,
+        car_path=session.car_path,
     )
     return TraceResponse(**payload)

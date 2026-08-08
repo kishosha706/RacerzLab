@@ -1,27 +1,61 @@
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
 import os
+from pathlib import Path
+from threading import RLock
 
 
 DEFAULT_DB_PATH = Path("data/racelab.sqlite")
+
+# Schema creation and the additive compatibility checks are intentionally run
+# once per database file per process.  Before this guard, every repository read
+# reparsed ``schema.sql``, inspected every migrated table, and renegotiated WAL
+# mode.  That added several milliseconds to even a single-row lookup.
+_INITIALIZED_DATABASES: dict[str, tuple[int, int]] = {}
+_INITIALIZE_LOCK = RLock()
 
 
 def default_db_path() -> Path:
     return Path(os.environ.get("RACELAB_DB_PATH", DEFAULT_DB_PATH))
 
 
-def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
+def _database_path(db_path: str | Path | None) -> Path:
     if db_path is None:
         db_path = default_db_path()
-    path = Path(db_path)
+    return Path(db_path)
+
+
+def _database_key(path: Path) -> str:
+    return str(path.resolve())
+
+
+def _database_identity(path: Path) -> tuple[int, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return stat.st_dev, stat.st_ino
+
+
+def _connect(path: Path, *, configure_journal: bool) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
-    connection.execute("PRAGMA journal_mode = WAL")
+    if configure_journal:
+        connection.execute("PRAGMA journal_mode = WAL")
     return connection
+
+
+def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
+    """Open a fully configured standalone connection.
+
+    Repository traffic should continue through :func:`initialize_database`,
+    whose warm path avoids renegotiating WAL mode.  Keeping ``connect`` fully
+    configuring preserves its public standalone behavior.
+    """
+    return _connect(_database_path(db_path), configure_journal=True)
 
 
 def _column_names(connection: sqlite3.Connection, table_name: str) -> set[str]:
@@ -144,9 +178,38 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
 
 
 def initialize_database(db_path: str | Path | None = None) -> sqlite3.Connection:
-    connection = connect(db_path)
-    schema_path = Path(__file__).with_name("schema.sql")
-    connection.executescript(schema_path.read_text(encoding="utf-8"))
-    _run_lightweight_migrations(connection)
-    connection.commit()
-    return connection
+    path = _database_path(db_path)
+
+    # ``:memory:`` databases are connection-local and therefore must always be
+    # initialized.  Normal application and test databases use real files.
+    if str(path) == ":memory:":
+        connection = _connect(path, configure_journal=True)
+        schema_path = Path(__file__).with_name("schema.sql")
+        connection.executescript(schema_path.read_text(encoding="utf-8"))
+        _run_lightweight_migrations(connection)
+        connection.commit()
+        return connection
+
+    key = _database_key(path)
+    identity = _database_identity(path)
+    if identity is not None and _INITIALIZED_DATABASES.get(key) == identity:
+        return _connect(path, configure_journal=False)
+
+    with _INITIALIZE_LOCK:
+        identity = _database_identity(path)
+        if identity is not None and _INITIALIZED_DATABASES.get(key) == identity:
+            return _connect(path, configure_journal=False)
+
+        connection = _connect(path, configure_journal=True)
+        try:
+            schema_path = Path(__file__).with_name("schema.sql")
+            connection.executescript(schema_path.read_text(encoding="utf-8"))
+            _run_lightweight_migrations(connection)
+            connection.commit()
+            refreshed_identity = _database_identity(path)
+            if refreshed_identity is not None:
+                _INITIALIZED_DATABASES[key] = refreshed_identity
+            return connection
+        except Exception:
+            connection.close()
+            raise

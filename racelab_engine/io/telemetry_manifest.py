@@ -299,6 +299,104 @@ def _impossible_bounds(definition: IBTVariableDefinition) -> tuple[float | None,
     return None, None, None
 
 
+def _numeric_health_metrics(
+    values: Any,
+    definition: IBTVariableDefinition,
+    minimum: float | None,
+    maximum: float | None,
+) -> tuple[int, int, int, float, float]:
+    """Calculate scalar health counts in the column engine when available.
+
+    Manifest generation runs once for every declared channel. Converting each
+    numeric Series to Python objects made health validation dominate imports and
+    temporarily duplicated the telemetry vault. The fallback preserves support
+    for non-Polars frame implementations used by tests and optional runtimes.
+    """
+
+    lower_tolerance = max(1e-6, abs(minimum or 0.0) * 1e-6)
+    upper_tolerance = max(1e-6, abs(maximum or 0.0) * 1e-6)
+    integer_limits = _INTEGER_LIMITS.get(definition.data_type_id or -1)
+    is_control = definition.name in {"Throttle", "Brake", "Clutch", "Handbrake"}
+
+    try:
+        finite_mask = values.is_finite()
+        finite_values = values.filter(finite_mask)
+        finite_count = len(finite_values)
+        non_finite_count = len(values) - finite_count
+
+        outside = None
+        if minimum is not None:
+            outside = finite_values < minimum - lower_tolerance
+        if maximum is not None:
+            upper_outside = finite_values > maximum + upper_tolerance
+            outside = upper_outside if outside is None else outside | upper_outside
+        impossible_count = int(outside.sum() or 0) if outside is not None else 0
+        numeric_limit_hit_count = (
+            sum(int((finite_values == limit).sum() or 0) for limit in integer_limits)
+            if integer_limits
+            else 0
+        )
+
+        lower_occupancy = 0.0
+        upper_occupancy = 0.0
+        if finite_count:
+            if minimum is not None:
+                lower_occupancy = int((finite_values == minimum).sum() or 0) / finite_count
+            if maximum is not None:
+                upper_occupancy = int((finite_values == maximum).sum() or 0) / finite_count
+            if is_control:
+                physical_lower, physical_upper, _reason = _KNOWN_BOUNDS[definition.name]
+                lower_occupancy = int(
+                    ((finite_values - float(physical_lower)).abs() <= 1e-6).sum() or 0
+                ) / finite_count
+                upper_occupancy = int(
+                    ((finite_values - float(physical_upper)).abs() <= 1e-6).sum() or 0
+                ) / finite_count
+        return (
+            non_finite_count,
+            impossible_count,
+            numeric_limit_hit_count,
+            lower_occupancy,
+            upper_occupancy,
+        )
+    except Exception:
+        numeric_values, non_finite_count = _numeric_samples(values.to_list())
+
+    def outside_bounds(value: float) -> bool:
+        return (minimum is not None and value < minimum - lower_tolerance) or (
+            maximum is not None and value > maximum + upper_tolerance
+        )
+
+    impossible_count = sum(outside_bounds(value) for value in numeric_values)
+    numeric_limit_hit_count = (
+        sum(value in integer_limits for value in numeric_values)
+        if integer_limits
+        else 0
+    )
+    lower_occupancy = 0.0
+    upper_occupancy = 0.0
+    if numeric_values:
+        if minimum is not None:
+            lower_occupancy = sum(value == minimum for value in numeric_values) / len(numeric_values)
+        if maximum is not None:
+            upper_occupancy = sum(value == maximum for value in numeric_values) / len(numeric_values)
+        if is_control:
+            physical_lower, physical_upper, _reason = _KNOWN_BOUNDS[definition.name]
+            lower_occupancy = sum(
+                abs(value - float(physical_lower)) <= 1e-6 for value in numeric_values
+            ) / len(numeric_values)
+            upper_occupancy = sum(
+                abs(value - float(physical_upper)) <= 1e-6 for value in numeric_values
+            ) / len(numeric_values)
+    return (
+        non_finite_count,
+        impossible_count,
+        numeric_limit_hit_count,
+        lower_occupancy,
+        upper_occupancy,
+    )
+
+
 def _series_health(
     frame: Any,
     definition: IBTVariableDefinition,
@@ -354,49 +452,39 @@ def _series_health(
         except Exception:
             pass
 
-    flat_values, array_lengths = _flat_samples(series)
-    null_element_count = sum(
-        item is None
-        for sample in series.to_list()
-        if isinstance(sample, (list, tuple))
-        for item in sample
-    )
-    numeric_values, non_finite_count = (
-        _numeric_samples(flat_values)
-        if definition.data_type_id in {2, 3, 4, 5}
-        else ([], 0)
-    )
+    array_lengths: list[int] = []
+    null_element_count = 0
+    if is_array:
+        array_samples = series.to_list()
+        for sample in array_samples:
+            if not isinstance(sample, (list, tuple)):
+                continue
+            array_lengths.append(len(sample))
+            null_element_count += sum(item is None for item in sample)
     minimum, maximum, bounds_reason = _impossible_bounds(definition)
-    def outside_bounds(value: float) -> bool:
-        lower_tolerance = max(1e-6, abs(minimum or 0.0) * 1e-6)
-        upper_tolerance = max(1e-6, abs(maximum or 0.0) * 1e-6)
-        return (minimum is not None and value < minimum - lower_tolerance) or (
-            maximum is not None and value > maximum + upper_tolerance
-        )
-
-    impossible_count = sum(outside_bounds(value) for value in numeric_values)
+    if definition.data_type_id in {2, 3, 4, 5}:
+        (
+            non_finite_count,
+            impossible_count,
+            numeric_limit_hit_count,
+            lower_occupancy,
+            upper_occupancy,
+        ) = _numeric_health_metrics(values, definition, minimum, maximum)
+    else:
+        non_finite_count = 0
+        impossible_count = 0
+        numeric_limit_hit_count = 0
+        lower_occupancy = 0.0
+        upper_occupancy = 0.0
     malformed_array_count = sum(length != definition.count for length in array_lengths)
-
-    numeric_limit_hit_count = 0
-    integer_limits = _INTEGER_LIMITS.get(definition.data_type_id or -1)
-    if integer_limits:
-        numeric_limit_hit_count = sum(value in integer_limits for value in numeric_values)
 
     clipping_status = "possible_numeric_limit_clipping" if numeric_limit_hit_count else "none_detected"
     saturation_status = "none_detected"
-    lower_occupancy = 0.0
-    upper_occupancy = 0.0
-    if numeric_values:
-        if minimum is not None:
-            lower_occupancy = sum(value == minimum for value in numeric_values) / len(numeric_values)
-        if maximum is not None:
-            upper_occupancy = sum(value == maximum for value in numeric_values) / len(numeric_values)
-        if definition.name in {"Throttle", "Brake", "Clutch", "Handbrake"}:
-            physical_lower, physical_upper, _reason = _KNOWN_BOUNDS[definition.name]
-            lower_occupancy = sum(abs(value - float(physical_lower)) <= 1e-6 for value in numeric_values) / len(numeric_values)
-            upper_occupancy = sum(abs(value - float(physical_upper)) <= 1e-6 for value in numeric_values) / len(numeric_values)
-            if max(lower_occupancy, upper_occupancy) >= 0.05:
-                saturation_status = "normal_control_boundary_occupancy"
+    if (
+        definition.name in {"Throttle", "Brake", "Clutch", "Handbrake"}
+        and max(lower_occupancy, upper_occupancy) >= 0.05
+    ):
+        saturation_status = "normal_control_boundary_occupancy"
 
     warnings: list[str] = []
     if null_count:

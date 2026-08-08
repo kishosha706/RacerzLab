@@ -144,11 +144,11 @@ def _profile_endpoint_times(run_id: str) -> dict[str, Any]:
     with TestClient(app) as client:
         _clear_caches()
         t0 = time.perf_counter()
-        full_resp = client.get(f"/api/runs/{run_id}/channels")
+        full_resp = client.get(f"/api/runs/{run_id}/channels?compact=true")
         full_ms = (time.perf_counter() - t0) * 1000.0
         _clear_caches()
         t0 = time.perf_counter()
-        summary_resp = client.get(f"/api/runs/{run_id}/channels/summary")
+        summary_resp = client.get(f"/api/runs/{run_id}/channels/summary?compact=true")
         summary_ms = (time.perf_counter() - t0) * 1000.0
     return {
         "full_ms": round(full_ms, 2),

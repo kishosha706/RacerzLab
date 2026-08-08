@@ -75,7 +75,7 @@ def main() -> None:
             ("trace", "GET", f"/api/runs/{run_id}/trace?lap={lap}&x=lap_dist_ft&downsample=auto", None),
             ("platform-events", "GET", f"/api/runs/{run_id}/platform-events?lap={lap}", None),
             ("setup snapshot", "GET", f"/api/runs/{run_id}/setup", None),
-            ("channels", "GET", f"/api/runs/{run_id}/channels", None),
+            ("channels", "GET", f"/api/runs/{run_id}/channels?compact=true", None),
             ("track-map package", "GET", f"/api/runs/{run_id}/track-map-package?lap={lap}", None),
             ("compare preview", "GET", f"/api/compare/preview?baseline_run_id={run_id}&test_run_id={run_id_2}", None),
             ("notebook/findings", "GET", "/api/notebook/findings", None),

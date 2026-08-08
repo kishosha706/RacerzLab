@@ -8,7 +8,9 @@ import math
 import os
 import time
 import uuid
+from bisect import bisect_left
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from threading import RLock
 from typing import Any
@@ -44,6 +46,8 @@ TRACE_DEFAULT_CHANNELS = [
     "brake_pct",
     "cfs_ride_height_mm",
 ]
+
+TRACE_AUTO_POINT_BUDGET = 1200
 
 TRACE_CHANNEL_UNITS = {
     **CALCULATED_CHANNEL_UNITS,
@@ -255,6 +259,26 @@ _NORMALIZED_CALCULATED_COLUMNS = ("cfs_risk_score", "drag_scrub_suspicion", "pla
 _TELEMETRY_ROWS_CACHE: dict[tuple[str, str], _TelemetryRowsCacheEntry] = {}
 _TELEMETRY_ROWS_CACHE_LOCK = RLock()
 _TELEMETRY_ROWS_CACHE_MAX = 24
+
+
+@dataclass
+class _ProjectedTelemetryCacheEntry:
+    frame: Any
+    size_bytes: int
+    last_access: float
+
+
+# Unlike the legacy whole-row cache, this cache retains compact Polars frames
+# and converts them to fresh dictionaries for every caller.  The byte budget is
+# intentionally small enough to prevent wide, long telemetry runs from turning
+# endpoint acceleration into unbounded resident memory.
+_PROJECTED_TELEMETRY_CACHE: dict[
+    tuple[str, int, int, int | None, tuple[str, ...]],
+    _ProjectedTelemetryCacheEntry,
+] = {}
+_PROJECTED_TELEMETRY_CACHE_MAX = 24
+_PROJECTED_TELEMETRY_CACHE_MAX_BYTES = 128 * 1024 * 1024
+_PROJECTED_TELEMETRY_CACHE_MAX_ENTRY_BYTES = 32 * 1024 * 1024
 
 
 @dataclass
@@ -851,6 +875,28 @@ def _source_signature(parquet: Path, csv_file: Path) -> tuple[str, int, int] | N
     return str(source.resolve()), stat.st_mtime_ns, stat.st_size
 
 
+@lru_cache(maxsize=64)
+def _cached_parquet_schema(
+    resolved_path: str,
+    modified_time_ns: int,
+    file_size: int,
+) -> tuple[tuple[str, Any], ...]:
+    del modified_time_ns, file_size
+    pl = importlib.import_module("polars")
+    return tuple(pl.read_parquet_schema(resolved_path).items())
+
+
+def _read_parquet_schema(path: Path) -> dict[str, Any]:
+    stat = path.stat()
+    return dict(
+        _cached_parquet_schema(
+            str(path.resolve()),
+            stat.st_mtime_ns,
+            stat.st_size,
+        )
+    )
+
+
 def _rows_look_normalized(rows: list[dict[str, Any]]) -> bool:
     if not rows:
         return True
@@ -873,6 +919,20 @@ def _evict_if_needed() -> None:
     _TELEMETRY_ROWS_CACHE.pop(oldest_key, None)
 
 
+def _evict_projected_telemetry_if_needed() -> None:
+    total_bytes = sum(entry.size_bytes for entry in _PROJECTED_TELEMETRY_CACHE.values())
+    while (
+        len(_PROJECTED_TELEMETRY_CACHE) > _PROJECTED_TELEMETRY_CACHE_MAX
+        or total_bytes > _PROJECTED_TELEMETRY_CACHE_MAX_BYTES
+    ):
+        oldest_key, oldest = min(
+            _PROJECTED_TELEMETRY_CACHE.items(),
+            key=lambda item: item[1].last_access,
+        )
+        total_bytes -= oldest.size_bytes
+        _PROJECTED_TELEMETRY_CACHE.pop(oldest_key, None)
+
+
 def _evict_channel_catalog_if_needed() -> None:
     if len(_CHANNEL_CATALOG_CACHE) <= _CHANNEL_CATALOG_CACHE_MAX:
         return
@@ -889,9 +949,20 @@ def _evict_channel_summary_if_needed() -> None:
 
 def _invalidate_run_cache(data_root: Path, run_id: str) -> None:
     with _TELEMETRY_ROWS_CACHE_LOCK:
+        # Writes are rare, so clear the small global schema cache atomically.
+        # This closes the equal-size/equal-mtime replacement edge case that a
+        # filesystem signature alone cannot distinguish.
+        _cached_parquet_schema.cache_clear()
         _TELEMETRY_ROWS_CACHE.pop(_cache_key(data_root, run_id), None)
         _CHANNEL_CATALOG_CACHE.pop(_cache_key(data_root, run_id), None)
         _CHANNEL_SUMMARY_CACHE.pop(_cache_key(data_root, run_id), None)
+        source_paths = {
+            str(parquet_path(data_root, run_id).resolve()),
+            str(csv_path(data_root, run_id).resolve()),
+        }
+        for projected_key in list(_PROJECTED_TELEMETRY_CACHE):
+            if projected_key[0] in source_paths:
+                _PROJECTED_TELEMETRY_CACHE.pop(projected_key, None)
 
 
 def read_telemetry_rows(
@@ -906,6 +977,11 @@ def read_telemetry_rows(
     signature = _source_signature(parquet, csv_file)
     key = _cache_key(data_root, run_id)
     requested_columns = list(dict.fromkeys(columns or []))
+    projection_key = (
+        (*signature, lap, tuple(requested_columns))
+        if signature is not None and parquet.exists() and (lap is not None or requested_columns)
+        else None
+    )
 
     def _filter_rows(source_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         scoped_rows = source_rows if lap is None else [row for row in source_rows if row.get("lap") == lap]
@@ -913,18 +989,38 @@ def read_telemetry_rows(
             return scoped_rows
         return [{column: row.get(column) for column in requested_columns} for row in scoped_rows]
 
+    cached_rows: list[dict[str, Any]] | None = None
+    cached_frame: Any | None = None
     with _TELEMETRY_ROWS_CACHE_LOCK:
         entry = _TELEMETRY_ROWS_CACHE.get(key)
         if entry is not None and entry.signature == signature:
             entry.last_access = time.time()
-            return _filter_rows(entry.rows)
+            cached_rows = entry.rows
         if entry is not None and entry.signature != signature:
             _TELEMETRY_ROWS_CACHE.pop(key, None)
+        if cached_rows is None and projection_key is not None:
+            projected_entry = _PROJECTED_TELEMETRY_CACHE.get(projection_key)
+            if projected_entry is not None:
+                projected_entry.last_access = time.time()
+                cached_frame = projected_entry.frame
+
+    # Filtering and Polars-to-dict conversion can be significant.  Perform both
+    # outside the shared cache lock so independent API requests remain parallel.
+    if cached_rows is not None:
+        return _filter_rows(cached_rows)
+    if cached_frame is not None:
+        projected_rows = cached_frame.to_dicts()
+        if requested_columns:
+            return [
+                {column: row.get(column) for column in requested_columns}
+                for row in projected_rows
+            ]
+        return _normalize_if_needed([dict(row) for row in projected_rows])
 
     # Fast miss path for lap/column-scoped calls: avoid reading full parquet into memory.
     if (lap is not None or requested_columns) and parquet.exists() and importlib.util.find_spec("polars") is not None:
         pl = importlib.import_module("polars")
-        schema = pl.read_parquet_schema(parquet)
+        schema = _read_parquet_schema(parquet)
         available_columns = set(schema.keys())
         read_columns = requested_columns or list(schema.keys())
         if lap is not None and "lap" in available_columns and "lap" not in read_columns:
@@ -935,7 +1031,18 @@ def read_telemetry_rows(
         frame = pl.scan_parquet(parquet).select(safe_columns)
         if lap is not None and "lap" in safe_columns:
             frame = frame.filter(pl.col("lap") == lap)
-        rows = frame.collect().to_dicts()
+        collected = frame.collect()
+        if projection_key is not None:
+            estimated_size = int(collected.estimated_size())
+            if estimated_size <= _PROJECTED_TELEMETRY_CACHE_MAX_ENTRY_BYTES:
+                with _TELEMETRY_ROWS_CACHE_LOCK:
+                    _PROJECTED_TELEMETRY_CACHE[projection_key] = _ProjectedTelemetryCacheEntry(
+                        frame=collected,
+                        size_bytes=estimated_size,
+                        last_access=time.time(),
+                    )
+                    _evict_projected_telemetry_if_needed()
+        rows = collected.to_dicts()
         if requested_columns:
             return [{column: row.get(column) for column in requested_columns} for row in rows]
         return _normalize_if_needed([dict(row) for row in rows])
@@ -1042,7 +1149,7 @@ def _precompute_channel_stats_from_parquet(
     if importlib.util.find_spec("polars") is None:
         return {}, []
     pl = importlib.import_module("polars")
-    schema = pl.read_parquet_schema(path)
+    schema = _read_parquet_schema(path)
     columns = list(schema.keys())
     if not columns:
         return {}, []
@@ -1349,8 +1456,7 @@ def build_channel_summary(run_id: str, data_dir: str | Path | None = None) -> li
     path = parquet_path(data_root, run_id)
     columns: list[str]
     if path.exists() and importlib.util.find_spec("polars") is not None:
-        pl = importlib.import_module("polars")
-        columns = list(pl.read_parquet_schema(path).keys())
+        columns = list(_read_parquet_schema(path).keys())
     else:
         rows = read_telemetry_rows(run_id, data_dir)
         columns = list(rows[0].keys()) if rows else []
@@ -1457,9 +1563,47 @@ def _row_delta(row: dict[str, Any], event: TelemetryEvent) -> float | None:
 
 def _nearest_event_indices(rows: list[dict[str, Any]], events: list[TelemetryEvent] | None) -> set[int]:
     indices: set[int] = set()
-    if not events:
+    if not events or not rows:
         return indices
+
+    pct_positions: list[float] = []
+    distance_positions: list[float] = []
+    pct_complete = True
+    distance_complete = True
+    for row in rows:
+        row_pct = _numeric_value(row.get("lap_dist_pct_100"))
+        if row_pct is None:
+            raw_pct = _numeric_value(row.get("lap_dist_pct"))
+            row_pct = raw_pct * 100.0 if raw_pct is not None and raw_pct <= 1.5 else raw_pct
+        distance = _numeric_value(row.get("lap_dist_m"))
+        if row_pct is None:
+            pct_complete = False
+        else:
+            pct_positions.append(row_pct)
+        if distance is None:
+            distance_complete = False
+        else:
+            distance_positions.append(distance)
+
+    pct_sorted = pct_complete and all(
+        left <= right for left, right in zip(pct_positions, pct_positions[1:])
+    )
+    distance_sorted = distance_complete and all(
+        left <= right for left, right in zip(distance_positions, distance_positions[1:])
+    )
+
+    def closest_index(positions: list[float], target: float) -> int:
+        insertion = bisect_left(positions, target)
+        candidates = [index for index in (insertion - 1, insertion) if 0 <= index < len(positions)]
+        return min(candidates, key=lambda index: (abs(positions[index] - target), index))
+
     for event in events:
+        if event.lap_pct_peak is not None and pct_sorted:
+            indices.add(closest_index(pct_positions, event.lap_pct_peak))
+            continue
+        if event.lap_pct_peak is None and event.distance_m_peak is not None and distance_sorted:
+            indices.add(closest_index(distance_positions, event.distance_m_peak))
+            continue
         best_index: int | None = None
         best_delta: float | None = None
         for index, row in enumerate(rows):
@@ -1487,18 +1631,27 @@ def _bucket_downsample(
 
     for start in range(0, len(rows), bucket_size):
         end = min(len(rows), start + bucket_size)
-        bucket = rows[start:end]
-        if not bucket:
-            continue
         indices.add(start)
         indices.add(end - 1)
-        for channel in preserve_channels:
-            numeric = [(index + start, _numeric_value(row.get(channel))) for index, row in enumerate(bucket)]
-            numeric_clean = [(index, value) for index, value in numeric if value is not None]
-            if not numeric_clean:
-                continue
-            indices.add(min(numeric_clean, key=lambda item: item[1])[0])
-            indices.add(max(numeric_clean, key=lambda item: item[1])[0])
+        minimums: list[tuple[float, int] | None] = [None] * len(preserve_channels)
+        maximums: list[tuple[float, int] | None] = [None] * len(preserve_channels)
+        for index in range(start, end):
+            row = rows[index]
+            for channel_index, channel in enumerate(preserve_channels):
+                value = _numeric_value(row.get(channel))
+                if value is None:
+                    continue
+                minimum = minimums[channel_index]
+                maximum = maximums[channel_index]
+                if minimum is None or value < minimum[0]:
+                    minimums[channel_index] = (value, index)
+                if maximum is None or value > maximum[0]:
+                    maximums[channel_index] = (value, index)
+        for minimum, maximum in zip(minimums, maximums):
+            if minimum is not None:
+                indices.add(minimum[1])
+            if maximum is not None:
+                indices.add(maximum[1])
 
     return [rows[index] for index in sorted(indices)]
 
@@ -1524,6 +1677,37 @@ def _resolve_bucket_size(row_count: int, downsample: int | str | None) -> tuple[
     except (TypeError, ValueError):
         bucket_size = 1
     return bucket_size, bucket_size
+
+
+def _extrema_aware_auto_bucket_size(
+    rows: list[dict[str, Any]],
+    channels: list[str],
+    events: list[TelemetryEvent] | None,
+) -> int:
+    """Size auto buckets against the actual extrema-preserving output budget.
+
+    A bucket can contribute its two endpoints plus a minimum and maximum for
+    each active trace channel.  The previous ``rows / 1200`` sizing ignored
+    those retained extrema, so an "auto" trace could return almost every raw
+    sample.  This conservative bound keeps the response near its intended point
+    budget without discarding local extrema or telemetry-event anchors.  If a
+    caller requests so many channels that one minimum and maximum per channel
+    alone exceeds the budget, evidence preservation takes precedence over the
+    display-size target.
+    """
+    if len(rows) <= TRACE_AUTO_POINT_BUDGET:
+        return 1
+    available_columns = set(rows[0]) if rows else set()
+    preserve_channels = {
+        channel
+        for channel in (*channels, *PRESERVE_EXTREMA_CHANNELS)
+        if channel in available_columns
+    }
+    maximum_points_per_bucket = 2 + (2 * len(preserve_channels))
+    event_budget = min(len(events or []), TRACE_AUTO_POINT_BUDGET - 1)
+    bucket_budget = max(1, TRACE_AUTO_POINT_BUDGET - event_budget)
+    maximum_bucket_count = max(1, bucket_budget // maximum_points_per_bucket)
+    return max(2, math.ceil(len(rows) / maximum_bucket_count))
 
 
 def _trace_channel_payload(rows: list[dict[str, Any]], channel: str) -> dict[str, Any]:
@@ -1651,7 +1835,7 @@ def build_trace_payload(
                 ]
             ))
             # Only request columns that actually exist in the parquet file
-            existing = set(pl.read_parquet_schema(path).keys())
+            existing = set(_read_parquet_schema(path).keys())
             safe_cols = [c for c in needed_cols if c in existing]
             df = pl.scan_parquet(path).select(safe_cols) if safe_cols else pl.scan_parquet(path)
             if lap is not None:
@@ -1698,6 +1882,11 @@ def build_trace_payload(
     source_rows = rows
     selected_channels = channels or TRACE_DEFAULT_CHANNELS
     bucket_size, downsample_label = _resolve_bucket_size(len(rows), downsample)
+    if downsample_label == "auto" and preserve_extrema:
+        bucket_size = max(
+            bucket_size,
+            _extrema_aware_auto_bucket_size(rows, selected_channels, events),
+        )
     if bucket_size > 1:
         rows = (
             _bucket_downsample(rows, bucket_size, selected_channels, events=events)

@@ -33,6 +33,7 @@ from racelab_engine.services.track_map_service import (
     import_mt2_file,
     list_track_maps,
 )
+from racelab_engine.services import track_map_service
 
 
 def _load_audit_module():
@@ -649,6 +650,28 @@ def test_track_map_list_endpoint_hides_internal_paths(
     assert "source_removed" not in entry
 
 
+def test_canonical_track_map_endpoint_retains_full_point_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_mt2_bytes: bytes,
+) -> None:
+    monkeypatch.setenv("RACELAB_DATA_DIR", str(tmp_path))
+    source_path = tmp_path / "talladega.mt2"
+    source_path.write_bytes(synthetic_mt2_bytes)
+    entry = import_mt2_file(source_path)
+
+    response = TestClient(app).get(f"/api/track-maps/{entry['map_id']}")
+
+    assert response.status_code == 200
+    point = response.json()["points"][0]
+    assert "distance_m" in point
+    assert "heading_rad" in point
+    assert "curvature_1_per_m" in point
+    assert "radius_m" in point
+    assert "section_name" in point
+    assert "section_type" in point
+
+
 def test_track_map_package_endpoint_returns_sanitized_geometry(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -680,6 +703,9 @@ def test_track_map_package_endpoint_returns_sanitized_geometry(
     assert "source_filename" not in payload["match"]
     assert payload["map"]["map_id"] == entry["map_id"]
     assert payload["map"]["points"]
+    assert set(payload["map"]["points"][0]) == {
+        "index", "x", "y", "x_m", "y_m", "distance_ft", "lap_pct", "kind",
+    }
     assert payload["map"]["markers"]
     assert payload["map"]["sections"]
     assert "source_file" not in payload["map"]
@@ -688,6 +714,63 @@ def test_track_map_package_endpoint_returns_sanitized_geometry(
     assert "file_size_bytes" not in payload["map"]
     assert "format" not in payload["map"]["metadata"]
     assert "point_record" not in payload["map"]["metadata"]
+
+
+def test_track_map_cache_reuses_decode_without_leaking_mutations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_mt2_bytes: bytes,
+) -> None:
+    monkeypatch.setenv("RACELAB_DATA_DIR", str(tmp_path))
+    source_path = tmp_path / "talladega.mt2"
+    source_path.write_bytes(synthetic_mt2_bytes)
+    entry = import_mt2_file(source_path)
+    track_map_service._get_track_map_cached.cache_clear()
+
+    first = get_track_map(entry["map_id"])
+    second = get_track_map(entry["map_id"])
+
+    assert first is not None
+    assert second is not None
+    assert second is not first
+    original_x = second.points[0].x
+    first.points[0].x = original_x + 100.0
+    first.metadata.units["caller"] = "mutation"
+    third = get_track_map(entry["map_id"])
+
+    assert third is not None
+    assert third.points[0].x == original_x
+    assert "caller" not in third.metadata.units
+
+
+def test_track_map_serialization_does_not_share_nested_metadata(
+    synthetic_mt2_bytes: bytes,
+) -> None:
+    track_map = parse_mt2_bytes(synthetic_mt2_bytes, source_file="talladega.mt2")
+    payload = track_map.as_dict()
+    payload["metadata"]["point_record"].append("caller-only-field")
+    payload["metadata"]["units"]["caller"] = "mutation"
+
+    assert "caller-only-field" not in track_map.metadata.point_record
+    assert "caller" not in track_map.metadata.units
+
+
+def test_track_map_index_cache_does_not_leak_caller_mutations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_mt2_bytes: bytes,
+) -> None:
+    monkeypatch.setenv("RACELAB_DATA_DIR", str(tmp_path))
+    source_path = tmp_path / "talladega.mt2"
+    source_path.write_bytes(synthetic_mt2_bytes)
+    import_mt2_file(source_path)
+    track_map_service._load_index_cached.cache_clear()
+
+    first = list_track_maps()
+    first[0]["match_aliases"].append("caller-only-alias")
+    second = list_track_maps()
+
+    assert "caller-only-alias" not in second[0]["match_aliases"]
 
 
 def test_user_facing_track_map_copy_avoids_vendor_branding() -> None:

@@ -1,7 +1,7 @@
 import { MapPin, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { fetchRunTrackMapPackage } from "../api/client";
-import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
+import { useTelemetryCursor, useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { PlatformEventItem, PlatformEventVisibilityMode } from "../types/telemetry";
 import type {
   TrackMapBounds,
@@ -32,6 +32,8 @@ type DrawablePoint = {
   lapPct: number | null;
   distanceFt: number | null;
 };
+
+type LapPositionedPoint = DrawablePoint & { lapPct: number };
 
 type NumericBounds = {
   minX: number;
@@ -142,13 +144,28 @@ function circularLapDifference(a: number, b: number): number {
   return Math.min(diff, 100 - diff);
 }
 
-function nearestPointByLapPct(points: DrawablePoint[], lapPct: number | null | undefined): DrawablePoint | null {
+function nearestPointByLapPct(points: LapPositionedPoint[], lapPct: number | null | undefined): DrawablePoint | null {
   if (!isFiniteNumber(lapPct) || points.length === 0) return null;
-  let best: DrawablePoint | null = null;
+  const target = ((lapPct % 100) + 100) % 100;
+  let low = 0;
+  let high = points.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (points[middle].lapPct < target) low = middle + 1;
+    else high = middle;
+  }
+
+  // Include both insertion neighbors and both ends because lap percentage is
+  // circular at start/finish. This changes a cursor lookup from O(points) to
+  // O(log points) without changing physical-position selection.
+  const candidates = [...new Set([low - 1, low, 0, points.length - 1])]
+    .filter((index) => index >= 0 && index < points.length)
+    .sort((left, right) => left - right);
+  let best: LapPositionedPoint | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
-  for (const point of points) {
-    if (!isFiniteNumber(point.lapPct)) continue;
-    const distance = circularLapDifference(point.lapPct, lapPct);
+  for (const index of candidates) {
+    const point = points[index];
+    const distance = circularLapDifference(point.lapPct, target);
     if (distance < bestDistance) {
       bestDistance = distance;
       best = point;
@@ -172,7 +189,7 @@ function nearestPointByDistance(points: DrawablePoint[], distanceFt: number | nu
   return best;
 }
 
-function markerPosition(marker: TrackMapOverlayMarker, points: DrawablePoint[]): DrawablePoint | null {
+function markerPosition(marker: TrackMapOverlayMarker, points: LapPositionedPoint[]): DrawablePoint | null {
   if (isFiniteNumber(marker.x) && isFiniteNumber(marker.y)) {
     return {
       source: points[0]?.source ?? ({
@@ -289,6 +306,7 @@ export function TrackMapOverlay({
   onClose,
 }: TrackMapOverlayProps) {
   const { selection } = useTelemetrySelection();
+  const telemetryCursor = useTelemetryCursor();
   const [pkg, setPkg] = useState<TrackMapPackage | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -421,6 +439,12 @@ export function TrackMapOverlay({
     () => mergeBounds(getBoundsFromPayload(pkg?.map?.bounds), getBoundsFromPoints(drawablePoints)),
     [drawablePoints, pkg?.map?.bounds],
   );
+  const lapPositionedPoints = useMemo<LapPositionedPoint[]>(
+    () => drawablePoints
+      .filter((point): point is LapPositionedPoint => isFiniteNumber(point.lapPct))
+      .sort((left, right) => left.lapPct - right.lapPct),
+    [drawablePoints],
+  );
 
   const svgViewport = useMemo(() => {
     if (!mergedBounds) return null;
@@ -437,8 +461,8 @@ export function TrackMapOverlay({
   const pointPath = useMemo(() => buildSvgPath(drawablePoints), [drawablePoints]);
   const highlightedPoints = useMemo(() => rangePoints(drawablePoints, zoomRangeFt), [drawablePoints, zoomRangeFt]);
   const highlightedPath = useMemo(() => buildSvgPath(highlightedPoints), [highlightedPoints]);
-  const cursorLapPct = selection.hoverLapPct ?? selection.selectedLapPct ?? null;
-  const cursorPoint = nearestPointByLapPct(drawablePoints, cursorLapPct);
+  const cursorLapPct = telemetryCursor.hoverLapPct ?? selection.selectedLapPct ?? null;
+  const cursorPoint = nearestPointByLapPct(lapPositionedPoints, cursorLapPct);
   const selectedEventMarker = useMemo(() => {
     const overlays = pkg?.overlays ?? [];
     if (!selection.selectedEventId) return null;
@@ -448,8 +472,8 @@ export function TrackMapOverlay({
       || overlay.event_type === selection.selectedEventId) ?? null;
   }, [pkg?.overlays, selection.selectedEventId]);
   const selectedEventPoint = selectedEventMarker
-    ? markerPosition(selectedEventMarker, drawablePoints)
-    : nearestPointByLapPct(drawablePoints, selection.selectedLapPct);
+    ? markerPosition(selectedEventMarker, lapPositionedPoints)
+    : nearestPointByLapPct(lapPositionedPoints, selection.selectedLapPct);
   const rangeStartPoint = nearestPointByDistance(drawablePoints, zoomRangeFt?.startValue);
   const rangeEndPoint = nearestPointByDistance(drawablePoints, zoomRangeFt?.endValue);
   const visiblePlatformEventIds = useMemo(
@@ -465,16 +489,16 @@ export function TrackMapOverlay({
       .filter((overlay) => overlay.kind === "platform_event")
       .filter((overlay) => platformEvents.length === 0 || (overlay.source_id != null && visiblePlatformEventIds.has(overlay.source_id)))
       .slice(0, 24)
-      .map((overlay) => ({ overlay, point: markerPosition(overlay, drawablePoints) }))
+      .map((overlay) => ({ overlay, point: markerPosition(overlay, lapPositionedPoints) }))
       .filter((item): item is { overlay: TrackMapOverlayMarker; point: DrawablePoint } => item.point != null),
-    [drawablePoints, pkg?.overlays, platformEvents.length, visiblePlatformEventIds],
+    [lapPositionedPoints, pkg?.overlays, platformEvents.length, visiblePlatformEventIds],
   );
   const sectionLabels = useMemo(
     () => (pkg?.sections ?? [])
       .slice(0, 16)
-      .map((section) => ({ section, point: nearestPointByLapPct(drawablePoints, sectionMidpoint(section)) }))
+      .map((section) => ({ section, point: nearestPointByLapPct(lapPositionedPoints, sectionMidpoint(section)) }))
       .filter((item): item is { section: TrackMapSection; point: DrawablePoint } => item.point != null),
-    [drawablePoints, pkg?.sections],
+    [lapPositionedPoints, pkg?.sections],
   );
   const hasDrawableTrack = Boolean(svgViewport && pointPath && drawablePoints.length > 1);
   const hasAnyContext = Boolean(cursorPoint || selectedEventPoint || highlightedPath);

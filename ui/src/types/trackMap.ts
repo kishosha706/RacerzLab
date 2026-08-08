@@ -2,18 +2,18 @@ export interface TrackMapPoint {
   index: number;
   x: number;
   y: number;
-  z: number | null;
+  z?: number | null;
   x_m: number | null;
   y_m: number | null;
-  z_m: number | null;
-  distance_m: number | null;
+  z_m?: number | null;
+  distance_m?: number | null;
   distance_ft: number | null;
   lap_pct: number | null;
-  heading_rad: number | null;
-  curvature_1_per_m: number | null;
-  radius_m: number | null;
-  section_name: string | null;
-  section_type: "straight" | "corner" | "unknown" | null;
+  heading_rad?: number | null;
+  curvature_1_per_m?: number | null;
+  radius_m?: number | null;
+  section_name?: string | null;
+  section_type?: "straight" | "corner" | "unknown" | null;
   kind: "centerline" | "left_boundary" | "right_boundary" | "unknown";
 }
 

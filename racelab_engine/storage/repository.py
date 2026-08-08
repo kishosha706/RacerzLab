@@ -376,76 +376,110 @@ class RaceLabRepository:
         connection = initialize_database(self.db_path)
         rows = connection.execute(
             """
-            SELECT run_id, car_name, track_name, track_display_name, setup_name, imported_at
+            SELECT
+              runs.run_id,
+              runs.car_name,
+              runs.track_name,
+              runs.track_display_name,
+              runs.setup_name,
+              runs.imported_at,
+              (
+                SELECT laps.lap_number
+                FROM laps
+                WHERE laps.run_id = runs.run_id AND laps.is_useful = 1
+                ORDER BY laps.lap_time ASC, laps.lap_number ASC
+                LIMIT 1
+              ) AS best_lap_number,
+              (
+                SELECT laps.lap_time
+                FROM laps
+                WHERE laps.run_id = runs.run_id AND laps.is_useful = 1
+                ORDER BY laps.lap_time ASC, laps.lap_number ASC
+                LIMIT 1
+              ) AS best_lap_time,
+              (SELECT COUNT(*) FROM laps WHERE laps.run_id = runs.run_id) AS lap_count,
+              EXISTS(
+                SELECT 1 FROM setup_snapshots
+                WHERE setup_snapshots.run_id = runs.run_id
+              ) AS has_setup_snapshot,
+              (
+                SELECT recommendations.issue
+                FROM recommendations
+                WHERE recommendations.run_id = runs.run_id
+                ORDER BY recommendations.priority_rank ASC,
+                         recommendations.recommendation_id ASC
+                LIMIT 1
+              ) AS primary_issue
             FROM runs
-            ORDER BY imported_at DESC
+            ORDER BY runs.imported_at DESC
             LIMIT ?
             """,
             (limit,),
         ).fetchall()
-        items = [self._build_run_list_item(connection, row) for row in rows]
         connection.close()
-        return items
+        return [self._run_list_item_from_row(row) for row in rows]
 
     def get_run_list_item(self, run_id: str) -> dict[str, Any] | None:
         connection = initialize_database(self.db_path)
         row = connection.execute(
             """
-            SELECT run_id, car_name, track_name, track_display_name, setup_name, imported_at
+            SELECT
+              runs.run_id,
+              runs.car_name,
+              runs.track_name,
+              runs.track_display_name,
+              runs.setup_name,
+              runs.imported_at,
+              (
+                SELECT laps.lap_number
+                FROM laps
+                WHERE laps.run_id = runs.run_id AND laps.is_useful = 1
+                ORDER BY laps.lap_time ASC, laps.lap_number ASC
+                LIMIT 1
+              ) AS best_lap_number,
+              (
+                SELECT laps.lap_time
+                FROM laps
+                WHERE laps.run_id = runs.run_id AND laps.is_useful = 1
+                ORDER BY laps.lap_time ASC, laps.lap_number ASC
+                LIMIT 1
+              ) AS best_lap_time,
+              (SELECT COUNT(*) FROM laps WHERE laps.run_id = runs.run_id) AS lap_count,
+              EXISTS(
+                SELECT 1 FROM setup_snapshots
+                WHERE setup_snapshots.run_id = runs.run_id
+              ) AS has_setup_snapshot,
+              (
+                SELECT recommendations.issue
+                FROM recommendations
+                WHERE recommendations.run_id = runs.run_id
+                ORDER BY recommendations.priority_rank ASC,
+                         recommendations.recommendation_id ASC
+                LIMIT 1
+              ) AS primary_issue
             FROM runs
-            WHERE run_id = ?
+            WHERE runs.run_id = ?
             """,
             (run_id,),
         ).fetchone()
-        if row is None:
-            connection.close()
-            return None
-        item = self._build_run_list_item(connection, row)
         connection.close()
-        return item
+        return self._run_list_item_from_row(row) if row is not None else None
 
-    def _build_run_list_item(self, connection: Any, row: Any) -> dict[str, Any]:
-        best_lap = connection.execute(
-            """
-            SELECT lap_number, lap_time
-            FROM laps
-            WHERE run_id = ? AND is_useful = 1
-            ORDER BY lap_time ASC
-            LIMIT 1
-            """,
-            (row["run_id"],),
-        ).fetchone()
-        lap_count_row = connection.execute(
-            "SELECT COUNT(*) as cnt FROM laps WHERE run_id = ?",
-            (row["run_id"],),
-        ).fetchone()
-        has_setup = connection.execute(
-            "SELECT 1 FROM setup_snapshots WHERE run_id = ? LIMIT 1",
-            (row["run_id"],),
-        ).fetchone()
-        recommendation = connection.execute(
-            """
-            SELECT issue
-            FROM recommendations
-            WHERE run_id = ?
-            ORDER BY priority_rank ASC
-            LIMIT 1
-            """,
-            (row["run_id"],),
-        ).fetchone()
-        best_time = best_lap["lap_time"] if best_lap else None
+    @staticmethod
+    def _run_list_item_from_row(row: Any) -> dict[str, Any]:
+        best_time = row["best_lap_time"]
         return {
             "run_id": row["run_id"],
             "car_name": row["car_name"],
             "track_name": row["track_display_name"] or row["track_name"],
             "setup_name": row["setup_name"],
             "imported_at": row["imported_at"],
-            "best_lap_number": best_lap["lap_number"] if best_lap else None,
+            "best_lap_number": row["best_lap_number"],
             "best_lap_time": best_time,
             "best_lap_time_s": best_time,
-            "lap_count": lap_count_row["cnt"] if lap_count_row else None,
-            "has_setup_snapshot": has_setup is not None,
-            "primary_issue": recommendation["issue"] if recommendation else None,
+            "lap_count": row["lap_count"],
+            "has_setup_snapshot": bool(row["has_setup_snapshot"]),
+            "primary_issue": row["primary_issue"],
         }
 
     def get_session(self, run_id: str) -> SessionSummary | None:
@@ -584,20 +618,61 @@ class RaceLabRepository:
 
     def get_overview(self, run_id: str) -> RunOverview | None:
         connection = initialize_database(self.db_path)
-        row = connection.execute(
-            """
-            SELECT session_json, primary_findings_json, warnings_json, crew_chief_summary, next_test
-            FROM runs
-            WHERE run_id = ?
-            """,
-            (run_id,),
-        ).fetchone()
-        connection.close()
+        try:
+            row = connection.execute(
+                """
+                SELECT session_json, primary_findings_json, warnings_json,
+                       crew_chief_summary, next_test
+                FROM runs
+                WHERE run_id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            lap_rows = connection.execute(
+                "SELECT lap_json FROM laps WHERE run_id = ? ORDER BY lap_number ASC",
+                (run_id,),
+            ).fetchall()
+            event_rows = connection.execute(
+                """
+                SELECT event_json
+                FROM events
+                WHERE run_id = ?
+                ORDER BY lap_number ASC, event_type ASC, lap_pct_peak ASC
+                """,
+                (run_id,),
+            ).fetchall()
+            setup_row = connection.execute(
+                "SELECT snapshot_json FROM setup_snapshots WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            recommendation_rows = connection.execute(
+                """
+                SELECT recommendation_json
+                FROM recommendations
+                WHERE run_id = ?
+                ORDER BY priority_rank ASC
+                """,
+                (run_id,),
+            ).fetchall()
+        finally:
+            connection.close()
         if row is None:
             return None
 
         session = SessionSummary.model_validate_json(row["session_json"])
-        laps = self.get_laps(run_id)
+        laps = [LapSummary.model_validate_json(item["lap_json"]) for item in lap_rows]
+        events = [TelemetryEvent.model_validate_json(item["event_json"]) for item in event_rows]
+        setup_snapshot = (
+            SetupSnapshot.model_validate_json(setup_row["snapshot_json"])
+            if setup_row is not None
+            else None
+        )
+        recommendations = [
+            Recommendation.model_validate_json(item["recommendation_json"])
+            for item in recommendation_rows
+        ]
         useful_laps = eligible_laps(laps)
         best_lap = min(useful_laps, key=lambda lap: lap.lap_time or 999999.0) if useful_laps else None
         return RunOverview(
@@ -605,9 +680,9 @@ class RaceLabRepository:
             session=session,
             best_useful_lap=best_lap,
             laps=laps,
-            events=self.get_events(run_id),
-            setup_snapshot=self.get_setup_snapshot(run_id),
-            recommendations=self.get_recommendations(run_id),
+            events=events,
+            setup_snapshot=setup_snapshot,
+            recommendations=recommendations,
             primary_findings=_load_json(row["primary_findings_json"], []),
             warnings=_load_json(row["warnings_json"], []),
             crew_chief_summary=row["crew_chief_summary"],
