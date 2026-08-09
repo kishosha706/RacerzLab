@@ -176,6 +176,46 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
             "learning_admitted",
             "learning_admitted INTEGER",
         )
+    # P19 append-only mission history tables are created here as well as in the
+    # base schema so existing local databases gain durable measurement memory.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS measurement_mission_contracts (
+          contract_id TEXT PRIMARY KEY,
+          contract_sha256 TEXT NOT NULL UNIQUE,
+          created_at TEXT NOT NULL,
+          contract_json TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS measurement_mission_attempts (
+          attempt_id TEXT PRIMARY KEY,
+          contract_id TEXT NOT NULL,
+          contract_sha256 TEXT NOT NULL,
+          run_id TEXT NOT NULL,
+          completed_at TEXT NOT NULL,
+          outcome TEXT NOT NULL,
+          attempt_json TEXT NOT NULL,
+          FOREIGN KEY(contract_id) REFERENCES measurement_mission_contracts(contract_id)
+            ON DELETE RESTRICT
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_measurement_attempt_contract "
+        "ON measurement_mission_attempts(contract_id, completed_at, attempt_id)"
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS session_intelligence_quarantines (
+          session_id TEXT PRIMARY KEY,
+          reason TEXT NOT NULL,
+          quarantined_at TEXT NOT NULL
+        )
+        """
+    )
 
 
 def initialize_database(db_path: str | Path | None = None) -> sqlite3.Connection:

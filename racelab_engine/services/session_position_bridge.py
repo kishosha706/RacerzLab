@@ -40,12 +40,14 @@ from racelab_engine.models.observation_intelligence import (
 from racelab_engine.models.session_intelligence import (
     AngularOperatingContextMatch,
     CategoricalOperatingContextMatch,
+    ComparabilityDebt,
     NumericOperatingContextMatch,
     OperatingContextAttestation,
     PairedLapOperatingContext,
     PositionAlignedEvidence,
     ProximityOperatingContextMatch,
     RacingLineContextMatch,
+    SessionPositionEvidenceResult,
 )
 from racelab_engine.services.import_service import read_telemetry_rows
 from racelab_engine.services.session_intelligence_service import (
@@ -855,4 +857,133 @@ def build_session_position_evidence(
         return ()
 
 
-__all__ = ["build_session_position_evidence"]
+def build_session_position_evidence_result(
+    current_run_id: str,
+    ordered_session_run_ids: Sequence[str],
+    current_observations: RunObservationIntelligence,
+    *,
+    db_path: str | Path | None = None,
+    data_dir: str | Path | None = None,
+) -> SessionPositionEvidenceResult:
+    """Return evidence or one actionable typed comparability debt."""
+
+    def debt(
+        kind: str,
+        reason: str,
+        recovery: str,
+        *,
+        baseline_run_id: str | None = None,
+        required_channels: tuple[str, ...] = (),
+    ) -> SessionPositionEvidenceResult:
+        digest = _sha256({
+            "kind": kind,
+            "baseline_run_id": baseline_run_id,
+            "test_run_id": current_run_id,
+            "reason": reason,
+        })[:20]
+        return SessionPositionEvidenceResult(
+            current_run_id=current_run_id,
+            comparability_debt=(ComparabilityDebt(
+                debt_id=f"comparability:{digest}",
+                kind=kind,
+                baseline_run_id=baseline_run_id,
+                test_run_id=current_run_id,
+                reason=reason,
+                required_channels=required_channels,
+                recovery=recovery,
+            ),),
+        )
+
+    try:
+        pair = _session_pair(current_run_id, ordered_session_run_ids)
+        if pair is None:
+            return debt(
+                "session_pair",
+                "The current run has no immediately preceding run in the pinned session.",
+                "Record or select a preceding compatible run before comparing position evidence.",
+            )
+        baseline_run_id, _test_run_id = pair
+        repository = RaceLabRepository(db_path)
+        baseline_overview = repository.get_overview(baseline_run_id)
+        current_overview = repository.get_overview(current_run_id)
+        baseline_laps = _canonical_eligible_laps(baseline_overview, baseline_run_id)
+        current_laps = _canonical_eligible_laps(current_overview, current_run_id)
+        if baseline_laps is None or current_laps is None:
+            return debt(
+                "eligible_laps",
+                "One run lacks a canonical eligible-lap cohort.",
+                "Record complete flying laps without pit, reset, incident, caution, or partial-lap contamination.",
+                baseline_run_id=baseline_run_id,
+            )
+        setup = current_overview.setup_snapshot
+        setup_id = setup.setup_id if setup is not None and setup.run_id == current_run_id else None
+        signatures = _observation_signatures(
+            current_run_id,
+            current_observations,
+            current_laps,
+            setup_id,
+        )
+        if signatures is None:
+            return debt(
+                "observation_scope",
+                "Current opportunity signatures are absent, blocked, or stale for this run/setup scope.",
+                "Rebuild same-setup opportunity signatures from the current eligible laps.",
+                baseline_run_id=baseline_run_id,
+            )
+        if min(len(baseline_laps), len(current_laps)) < _MINIMUM_ELIGIBLE_LAPS:
+            return debt(
+                "insufficient_repetition",
+                "Fewer than three eligible laps are available in one comparison run.",
+                "Record at least three eligible laps in both unchanged comparison runs.",
+                baseline_run_id=baseline_run_id,
+            )
+        evidence = build_session_position_evidence(
+            current_run_id,
+            ordered_session_run_ids,
+            current_observations,
+            db_path=db_path,
+            data_dir=data_dir,
+        )
+        if evidence:
+            return SessionPositionEvidenceResult(
+                current_run_id=current_run_id,
+                evidence=evidence,
+            )
+        return debt(
+            "operating_context",
+            (
+                "The exact lap pairs did not pass physical-position alignment, fuel, tire, "
+                "weather, line, proximity, coverage, or beyond-noise signal gates."
+            ),
+            "Repeat the marked window with setup, fuel, tire state, weather, line, and nearby-car context matched.",
+            baseline_run_id=baseline_run_id,
+            required_channels=(
+                "fuel_level",
+                "air_temp",
+                "track_temp",
+                "wind_vel",
+                "wind_dir",
+                "lf_tire_distance_m",
+                "rf_tire_distance_m",
+                "lr_tire_distance_m",
+                "rr_tire_distance_m",
+                "player_tire_compound",
+                "lat",
+                "lon",
+                "car_distance_ahead_m",
+                "car_distance_behind_m",
+                "speed_mps",
+            ),
+        )
+    except (OSError, RuntimeError, sqlite3.Error, TypeError, ValueError):
+        return debt(
+            "integrity",
+            "Position-comparison storage or telemetry integrity could not be verified.",
+            "Re-import the exact source telemetry and rebuild its immutable cache identity.",
+        )
+
+
+__all__ = [
+    "build_session_position_evidence",
+    "build_session_position_evidence_result",
+]

@@ -570,6 +570,18 @@ def build_smart_guidance(
             **workflow_binding,
         )
         mission_stage = "measure" if workflow and workflow.packet.decision != "test" else "test"
+    elif report.best_measurement.kind == "stop_testing":
+        move = NextTrustworthyMove(
+            move_id=f"stop-testing:{report.run_id}",
+            kind="recover",
+            title=report.best_measurement.title,
+            instruction=report.best_measurement.instruction,
+            reason=report.best_measurement.rationale,
+            workspace="engineer",
+            run_id=report.run_id,
+            blocker_reasons=tuple(report.best_measurement.blocker_reasons),
+        )
+        mission_stage = "measure"
     elif report.best_measurement.kind in {"measurement_mission", "discriminator"}:
         move = NextTrustworthyMove(
             move_id=f"measure:{report.run_id}:{report.best_measurement.kind}",

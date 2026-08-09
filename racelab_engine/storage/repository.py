@@ -19,6 +19,10 @@ from racelab_engine.storage.db import initialize_database
 
 if TYPE_CHECKING:
     from racelab_engine.models.controlled_workflow import ControlledWorkflow
+    from racelab_engine.models.experiment import (
+        MeasurementAttempt,
+        MeasurementMissionContract,
+    )
 
 
 def utc_now_iso() -> str:
@@ -453,6 +457,126 @@ class RaceLabRepository:
         ).fetchone()
         connection.close()
         return self._controlled_workflow_from_row(row) if row else None
+
+    def save_measurement_mission_contract(self, contract: MeasurementMissionContract) -> None:
+        """Persist one immutable mission identity without replacing its original record."""
+        connection = initialize_database(self.db_path)
+        try:
+            with connection:
+                existing = connection.execute(
+                    "SELECT contract_sha256 FROM measurement_mission_contracts "
+                    "WHERE contract_id = ? OR contract_sha256 = ?",
+                    (contract.contract_id, contract.contract_sha256),
+                ).fetchone()
+                if existing is not None:
+                    if existing["contract_sha256"] != contract.contract_sha256:
+                        raise ValueError("mission-contract identity conflicts with durable history")
+                    return
+                connection.execute(
+                    """
+                    INSERT INTO measurement_mission_contracts (
+                      contract_id, contract_sha256, created_at, contract_json
+                    ) VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        contract.contract_id,
+                        contract.contract_sha256,
+                        contract.created_at.isoformat(),
+                        contract.model_dump_json(),
+                    ),
+                )
+        finally:
+            connection.close()
+
+    def record_measurement_mission_attempt(
+        self,
+        contract: MeasurementMissionContract,
+        attempt: MeasurementAttempt,
+    ) -> None:
+        """Append a server-validated attempt; duplicate identities must be identical."""
+        from racelab_engine.models.experiment import MeasurementAttempt
+
+        if (
+            attempt.contract_id != contract.contract_id
+            or attempt.contract_sha256 != contract.contract_sha256
+        ):
+            raise ValueError("measurement attempt does not bind the supplied mission contract")
+        self.save_measurement_mission_contract(contract)
+        connection = initialize_database(self.db_path)
+        try:
+            with connection:
+                existing = connection.execute(
+                    "SELECT attempt_json FROM measurement_mission_attempts WHERE attempt_id = ?",
+                    (attempt.attempt_id,),
+                ).fetchone()
+                if existing is not None:
+                    stored = MeasurementAttempt.model_validate_json(existing["attempt_json"])
+                    if stored != attempt:
+                        raise ValueError("measurement-attempt identity conflicts with durable history")
+                    return
+                connection.execute(
+                    """
+                    INSERT INTO measurement_mission_attempts (
+                      attempt_id, contract_id, contract_sha256, run_id, completed_at,
+                      outcome, attempt_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        attempt.attempt_id,
+                        attempt.contract_id,
+                        attempt.contract_sha256,
+                        attempt.run_id,
+                        attempt.completed_at.isoformat(),
+                        attempt.outcome,
+                        attempt.model_dump_json(),
+                    ),
+                )
+        finally:
+            connection.close()
+
+    def list_measurement_mission_attempts(
+        self,
+        contract: MeasurementMissionContract,
+    ) -> tuple[MeasurementAttempt, ...]:
+        """Reload exact-contract attempts and reject any identity or row corruption."""
+        from racelab_engine.models.experiment import MeasurementAttempt
+
+        connection = initialize_database(self.db_path)
+        try:
+            stored_contract = connection.execute(
+                "SELECT contract_sha256 FROM measurement_mission_contracts WHERE contract_id = ?",
+                (contract.contract_id,),
+            ).fetchone()
+            if stored_contract is None:
+                return ()
+            if stored_contract["contract_sha256"] != contract.contract_sha256:
+                raise ValueError("durable mission contract hash does not match the current contract")
+            rows = connection.execute(
+                """
+                SELECT attempt_id, contract_id, contract_sha256, run_id, completed_at,
+                       outcome, attempt_json
+                FROM measurement_mission_attempts
+                WHERE contract_id = ?
+                ORDER BY completed_at ASC, attempt_id ASC
+                """,
+                (contract.contract_id,),
+            ).fetchall()
+        finally:
+            connection.close()
+        attempts: list[MeasurementAttempt] = []
+        for row in rows:
+            attempt = MeasurementAttempt.model_validate_json(row["attempt_json"])
+            if (
+                attempt.attempt_id != row["attempt_id"]
+                or attempt.contract_id != contract.contract_id
+                or attempt.contract_sha256 != contract.contract_sha256
+                or attempt.run_id != row["run_id"]
+                or attempt.outcome != row["outcome"]
+                or attempt.completed_at.isoformat() != row["completed_at"]
+            ):
+                raise ValueError("durable measurement-attempt identity does not match storage")
+            attempts.append(attempt)
+        return tuple(attempts)
 
     def list_controlled_workflows(self, *, active_only: bool = False) -> list[ControlledWorkflow]:
         connection = initialize_database(self.db_path)

@@ -159,6 +159,7 @@ def _setup_authority_blockers(report: InternalIntelligenceReport) -> tuple[str, 
 
 def _action(report: InternalIntelligenceReport) -> IntelligenceActionResponse:
     action = report.briefing.action
+    mission_contract = report.best_measurement.mission_contract
     authority_blockers = _setup_authority_blockers(report)
     if action.setup_authorized and authority_blockers:
         return IntelligenceActionResponse(
@@ -185,6 +186,8 @@ def _action(report: InternalIntelligenceReport) -> IntelligenceActionResponse:
         proposed_value=action.proposed_value,
         evidence_state=action.evidence_state,
         source_event_ids=list(action.source_event_ids),
+        mission_contract_id=(mission_contract.contract_id if mission_contract else None),
+        mission_contract_sha256=(mission_contract.contract_sha256 if mission_contract else None),
         blocker_reasons=list(action.blocker_reasons),
     )
 
@@ -557,6 +560,8 @@ def _graph(
         EvidenceNodeKind.LAP: "evidence",
         EvidenceNodeKind.CHANNEL: "evidence",
         EvidenceNodeKind.SETUP: "evidence",
+        EvidenceNodeKind.CAUSE: "cause",
+        EvidenceNodeKind.OBSERVATION: "evidence",
     }
     edge_map = {
         EvidenceEdgeKind.CONTRADICTED_BY: "contradicts",
@@ -572,6 +577,8 @@ def _graph(
             return node.entity_id.replace("_", " ").title()
         if node.kind is EvidenceNodeKind.WORKFLOW:
             return "Controlled workflow under review"
+        if node.kind is EvidenceNodeKind.CAUSE:
+            return "Cause candidate"
         return node.label
 
     nodes = [
@@ -592,35 +599,6 @@ def _graph(
         )
         for edge in report.evidence_graph.edges
     ]
-    known_ids = {node.node_id for node in nodes}
-    for cause in report.competing_causes:
-        cause_id = f"cause:{cause.cause_id}"
-        nodes.append(IntelligenceGraphNodeResponse(
-            node_id=cause_id,
-            label=cause.label,
-            kind="cause",
-            evidence_state=(
-                cause.evidence_for[0].evidence_state
-                if cause.evidence_for
-                else EvidenceState.UNAVAILABLE
-            ),
-        ))
-        for citation in cause.evidence_for:
-            event_node = f"event:{citation.event_id}" if citation.event_id else ""
-            if event_node in known_ids:
-                edges.append(IntelligenceGraphEdgeResponse(
-                    source_id=cause_id,
-                    target_id=event_node,
-                    relation="supports",
-                ))
-        for citation in cause.evidence_against:
-            event_node = f"event:{citation.event_id}" if citation.event_id else ""
-            if event_node in known_ids:
-                edges.append(IntelligenceGraphEdgeResponse(
-                    source_id=cause_id,
-                    target_id=event_node,
-                    relation="contradicts",
-                ))
     return IntelligenceEvidenceGraphResponse(nodes=nodes, edges=edges)
 
 

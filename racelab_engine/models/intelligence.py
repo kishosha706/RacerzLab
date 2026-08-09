@@ -13,9 +13,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from racelab_engine.analysis.test_director import ControlledTestCard, MeasurementMission
 from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.lap_engineering_context import LapEngineeringContextReport
+from racelab_engine.models.experiment import MeasurementMissionContract
 from racelab_engine.models.smart_guidance import MeasurementPriority, SmartGuidance
 from racelab_engine.models.telemetry_health import TelemetryHealthBaselineReport
 from racelab_engine.models.session_intelligence import (
+    ComparabilityDebt,
     HypothesisLifecycle,
     SessionEngineeringLedger,
 )
@@ -44,6 +47,8 @@ class IntelligenceModel(BaseModel):
 
 class EvidenceNodeKind(str, Enum):
     CLAIM = "claim"
+    CAUSE = "cause"
+    OBSERVATION = "observation"
     EVENT = "event"
     RECOMMENDATION = "recommendation"
     LAP = "lap"
@@ -176,6 +181,9 @@ class EvidenceGraph(IntelligenceModel):
         allowed_endpoint_kinds = {
             EvidenceEdgeKind.SUPPORTED_BY: {
                 (EvidenceNodeKind.CLAIM, EvidenceNodeKind.EVENT),
+                (EvidenceNodeKind.CAUSE, EvidenceNodeKind.EVENT),
+                (EvidenceNodeKind.CAUSE, EvidenceNodeKind.OBSERVATION),
+                (EvidenceNodeKind.CAUSE, EvidenceNodeKind.WORKFLOW),
                 (EvidenceNodeKind.CLAIM, EvidenceNodeKind.RECOMMENDATION),
                 (EvidenceNodeKind.CLAIM, EvidenceNodeKind.WORKFLOW),
                 (EvidenceNodeKind.WORKFLOW, EvidenceNodeKind.EVENT),
@@ -183,13 +191,18 @@ class EvidenceGraph(IntelligenceModel):
             },
             EvidenceEdgeKind.CONTRADICTED_BY: {
                 (EvidenceNodeKind.CLAIM, EvidenceNodeKind.EVENT),
+                (EvidenceNodeKind.CAUSE, EvidenceNodeKind.EVENT),
+                (EvidenceNodeKind.CAUSE, EvidenceNodeKind.OBSERVATION),
+                (EvidenceNodeKind.CAUSE, EvidenceNodeKind.WORKFLOW),
             },
             EvidenceEdgeKind.OBSERVED_ON: {
                 (EvidenceNodeKind.EVENT, EvidenceNodeKind.LAP),
+                (EvidenceNodeKind.OBSERVATION, EvidenceNodeKind.LAP),
                 (EvidenceNodeKind.CLAIM, EvidenceNodeKind.LAP),
             },
             EvidenceEdgeKind.USES_CHANNEL: {
                 (EvidenceNodeKind.EVENT, EvidenceNodeKind.CHANNEL),
+                (EvidenceNodeKind.OBSERVATION, EvidenceNodeKind.CHANNEL),
                 (EvidenceNodeKind.CLAIM, EvidenceNodeKind.CHANNEL),
                 (EvidenceNodeKind.RECOMMENDATION, EvidenceNodeKind.CHANNEL),
             },
@@ -333,8 +346,70 @@ class CauseDiscriminator(IntelligenceModel):
     source_event_ids: tuple[str, ...] = ()
 
 
+class MechanismClaimOutcome(IntelligenceModel):
+    """What a controlled result is allowed to say about the diagnosed mechanism."""
+
+    workflow_id: str = Field(min_length=1)
+    state: Literal["supported", "weakened", "unchanged", "inconclusive", "invalid"]
+    diagnostic_validity: Literal["mechanism_diagnostic", "control_response_only"]
+    reason: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def control_only_results_cannot_change_mechanism_truth(self) -> MechanismClaimOutcome:
+        if (
+            self.diagnostic_validity == "control_response_only"
+            and self.state not in {"unchanged", "inconclusive", "invalid"}
+        ):
+            raise ValueError("control-response-only evidence cannot change mechanism truth")
+        return self
+
+
+class ControlResponseOutcome(IntelligenceModel):
+    """Observed response of one exact setup control, separate from mechanism truth."""
+
+    workflow_id: str = Field(min_length=1)
+    result: Literal["matched", "missed", "inconclusive", "unavailable", "invalid"]
+    metric: str = Field(min_length=1)
+    phase: str = Field(min_length=1)
+    control_key: str | None = None
+    reason: str = Field(min_length=1)
+
+
+class PolicyAcceptabilityOutcome(IntelligenceModel):
+    """Whether the total controlled result should be kept, undone, or retested."""
+
+    workflow_id: str = Field(min_length=1)
+    verdict: Literal["keep", "undo", "retest", "invalid"]
+    acceptable: bool | None
+    countereffects: tuple[str, ...] = ()
+    reason: str = Field(min_length=1)
+
+
+class ControlledOutcomeAssessment(IntelligenceModel):
+    workflow_id: str = Field(min_length=1)
+    mechanism: MechanismClaimOutcome
+    control_response: ControlResponseOutcome
+    policy: PolicyAcceptabilityOutcome
+
+    @model_validator(mode="after")
+    def axes_share_one_workflow(self) -> ControlledOutcomeAssessment:
+        if {
+            self.workflow_id,
+            self.mechanism.workflow_id,
+            self.control_response.workflow_id,
+            self.policy.workflow_id,
+        } != {self.workflow_id}:
+            raise ValueError("controlled outcome axes must share one workflow identity")
+        return self
+
+
 class ControlledCauseOutcome(IntelligenceModel):
-    """One exact, protocol-validated A/B/A2 result used only for cause reasoning."""
+    """Compatibility certificate for one protocol-validated A/B/A2 result.
+
+    ``outcome`` is mechanism evidence only when ``diagnostic_validity`` explicitly
+    declares a producer-owned diagnostic intervention. Ordinary setup-control
+    tests are control-response evidence and cannot falsify the mechanism.
+    """
 
     workflow_id: str = Field(min_length=1)
     outcome: Literal["supported", "contradicted", "inconclusive", "invalid"]
@@ -347,6 +422,12 @@ class ControlledCauseOutcome(IntelligenceModel):
     control_key: str | None = None
     countereffects: tuple[str, ...] = ()
     blocker_reasons: tuple[str, ...] = ()
+    diagnostic_validity: Literal["mechanism_diagnostic", "control_response_only"] = (
+        "control_response_only"
+    )
+    control_direction_result: Literal[
+        "matched", "missed", "inconclusive", "unavailable", "invalid"
+    ] | None = None
 
     @model_validator(mode="after")
     def exact_controlled_outcome_is_complete(self) -> ControlledCauseOutcome:
@@ -370,6 +451,17 @@ class ControlledCauseOutcome(IntelligenceModel):
             raise ValueError(
                 "usable controlled outcomes require exact A/B/A2 runs and nine eligible laps"
             )
+        if self.diagnostic_validity == "control_response_only" and self.outcome in {
+            "supported",
+            "contradicted",
+        }:
+            raise ValueError(
+                "control-response-only outcomes cannot support or contradict mechanism truth"
+            )
+        if self.outcome != "invalid" and self.control_direction_result is None:
+            raise ValueError("usable controlled outcomes require an explicit control response")
+        if self.outcome == "invalid" and self.control_direction_result not in {None, "invalid"}:
+            raise ValueError("invalid controlled outcomes cannot publish a usable response")
         return self
 
 
@@ -381,6 +473,9 @@ class CauseHypothesis(IntelligenceModel):
     related_control_keys: tuple[str, ...] = ()
     supporting_event_ids: tuple[str, ...] = ()
     contradicting_event_ids: tuple[str, ...] = ()
+    supporting_observation_ids: tuple[str, ...] = ()
+    contradicting_observation_ids: tuple[str, ...] = ()
+    contradiction_notes: tuple[str, ...] = ()
     controlled_outcomes: tuple[ControlledCauseOutcome, ...] = ()
     required_evidence: tuple[str, ...] = ()
     blocker_reasons: tuple[str, ...] = ()
@@ -392,12 +487,45 @@ class CauseHypothesis(IntelligenceModel):
             (self.related_control_keys, "related control"),
             (self.supporting_event_ids, "supporting event"),
             (self.contradicting_event_ids, "contradicting event"),
+            (self.supporting_observation_ids, "supporting observation"),
+            (self.contradicting_observation_ids, "contradicting observation"),
+            (self.contradiction_notes, "contradiction note"),
         ):
             if any(not value for value in values) or len(values) != len(set(values)):
                 raise ValueError(f"cause {label} identities must be non-empty and unique")
         workflow_ids = [outcome.workflow_id for outcome in self.controlled_outcomes]
         if len(workflow_ids) != len(set(workflow_ids)):
             raise ValueError("one controlled workflow may contribute only one cause outcome")
+        return self
+
+
+class EvidenceIndependenceCluster(IntelligenceModel):
+    """Repeated correlated laps grouped into one causal-independence unit."""
+
+    cluster_id: str = Field(min_length=1)
+    cause_id: str = Field(min_length=1)
+    polarity: Literal["support", "contradiction"]
+    run_id: str = Field(min_length=1)
+    phase: str | None = None
+    lap_numbers: tuple[int, ...] = Field(min_length=1)
+    citation_ids: tuple[str, ...] = Field(min_length=1)
+    lap_pct_start: float | None = Field(default=None, ge=0.0, le=100.0)
+    lap_pct_end: float | None = Field(default=None, ge=0.0, le=100.0)
+
+    @model_validator(mode="after")
+    def cluster_scope_is_canonical(self) -> EvidenceIndependenceCluster:
+        if len(set(self.lap_numbers)) != len(self.lap_numbers):
+            raise ValueError("evidence-cluster lap identities must be unique")
+        if len(set(self.citation_ids)) != len(self.citation_ids):
+            raise ValueError("evidence-cluster citation identities must be unique")
+        if (self.lap_pct_start is None) != (self.lap_pct_end is None):
+            raise ValueError("evidence-cluster physical-window bounds are paired")
+        if (
+            self.lap_pct_start is not None
+            and self.lap_pct_end is not None
+            and self.lap_pct_end < self.lap_pct_start
+        ):
+            raise ValueError("evidence-cluster physical windows must be ordered")
         return self
 
 
@@ -412,6 +540,8 @@ class RankedCause(IntelligenceModel):
     contradicting_evidence: tuple[EvidenceCitation, ...]
     supporting_evidence_unit_count: int = Field(default=0, ge=0)
     contradicting_evidence_unit_count: int = Field(default=0, ge=0)
+    supporting_clusters: tuple[EvidenceIndependenceCluster, ...] = ()
+    contradicting_clusters: tuple[EvidenceIndependenceCluster, ...] = ()
     controlled_outcomes: tuple[ControlledCauseOutcome, ...] = ()
     controlled_conflict: bool = False
     missing_evidence: tuple[str, ...]
@@ -432,20 +562,34 @@ class RankedCause(IntelligenceModel):
             raise ValueError("ranked-cause evidence identities must be unique")
         if set(supporting_ids) & set(contradicting_ids):
             raise ValueError("one citation cannot both support and contradict a ranked cause")
-        supporting_units = {
-            (citation.run_id, citation.lap_number) for citation in self.supporting_evidence
-        }
-        contradicting_units = {
-            (citation.run_id, citation.lap_number) for citation in self.contradicting_evidence
-        }
+        supporting_units = (
+            {cluster.cluster_id for cluster in self.supporting_clusters}
+            if self.supporting_clusters
+            else {
+                (citation.run_id, citation.lap_number)
+                for citation in self.supporting_evidence
+            }
+        )
+        contradicting_units = (
+            {cluster.cluster_id for cluster in self.contradicting_clusters}
+            if self.contradicting_clusters
+            else {
+                (citation.run_id, citation.lap_number)
+                for citation in self.contradicting_evidence
+            }
+        )
         if self.supporting_evidence_unit_count != len(supporting_units):
-            raise ValueError("supporting evidence-unit count must match distinct eligible laps")
+            raise ValueError("supporting evidence-unit count must match independence clusters")
         if self.contradicting_evidence_unit_count != len(contradicting_units):
-            raise ValueError("contradicting evidence-unit count must match distinct eligible laps")
+            raise ValueError("contradicting evidence-unit count must match independence clusters")
         workflow_ids = [outcome.workflow_id for outcome in self.controlled_outcomes]
         if len(workflow_ids) != len(set(workflow_ids)):
             raise ValueError("ranked controlled outcomes require unique workflow identities")
-        outcomes = {outcome.outcome for outcome in self.controlled_outcomes}
+        outcomes = {
+            outcome.outcome
+            for outcome in self.controlled_outcomes
+            if outcome.diagnostic_validity == "mechanism_diagnostic"
+        }
         expected_conflict = "supported" in outcomes and "contradicted" in outcomes
         if self.controlled_conflict != expected_conflict:
             raise ValueError("controlled-conflict state must match exact controlled outcomes")
@@ -455,7 +599,13 @@ class RankedCause(IntelligenceModel):
 
 
 class InformationPlan(IntelligenceModel):
-    kind: Literal["controlled_test", "measurement_mission", "discriminator", "blocked"]
+    kind: Literal[
+        "controlled_test",
+        "measurement_mission",
+        "discriminator",
+        "stop_testing",
+        "blocked",
+    ]
     title: str = Field(min_length=1)
     instruction: str = Field(min_length=1)
     rationale: str = Field(min_length=1)
@@ -463,6 +613,7 @@ class InformationPlan(IntelligenceModel):
     controlled_test: ControlledTestCard | None = None
     measurement_mission: MeasurementMission | None = None
     discriminator: CauseDiscriminator | None = None
+    mission_contract: MeasurementMissionContract | None = None
     source_event_ids: tuple[str, ...] = ()
     blocker_reasons: tuple[str, ...] = ()
     recovery_priority: MeasurementPriority | None = None
@@ -473,16 +624,17 @@ class InformationPlan(IntelligenceModel):
             item is not None
             for item in (self.controlled_test, self.measurement_mission, self.discriminator)
         )
-        expected = 0 if self.kind == "blocked" else 1
+        expected = 0 if self.kind in {"blocked", "stop_testing"} else 1
         if attached != expected:
             raise ValueError("the plan kind must match exactly one attached plan")
         expected_attachment = {
             "controlled_test": self.controlled_test,
             "measurement_mission": self.measurement_mission,
             "discriminator": self.discriminator,
+            "stop_testing": None,
             "blocked": None,
         }[self.kind]
-        if self.kind != "blocked" and expected_attachment is None:
+        if self.kind not in {"blocked", "stop_testing"} and expected_attachment is None:
             raise ValueError("the plan kind must match its attached plan type")
         if self.kind == "controlled_test":
             if not self.setup_authorized or self.controlled_test is None:
@@ -493,6 +645,14 @@ class InformationPlan(IntelligenceModel):
                 raise ValueError("authorized controlled-test plans cannot carry blockers")
         elif self.setup_authorized:
             raise ValueError("measurement and discriminator plans cannot authorize setup")
+        if self.mission_contract is not None and self.kind not in {
+            "measurement_mission",
+            "discriminator",
+            "stop_testing",
+        }:
+            raise ValueError("mission contracts attach only to collection plans or their stop decision")
+        if self.kind == "stop_testing" and not self.blocker_reasons:
+            raise ValueError("stop-testing plans require an explicit reason")
         if self.kind == "blocked" and not self.blocker_reasons:
             raise ValueError("blocked plans require blocker reasons")
         if self.recovery_priority is not None and self.kind != "blocked":
@@ -621,6 +781,70 @@ class DataQualityAssessment(IntelligenceModel):
             raise ValueError("ready data requires eligible laps, trusted events, and no issues")
         if self.status == "blocked" and not self.recovery_steps:
             raise ValueError("blocked data requires exact recovery steps")
+        return self
+
+
+class ReasoningAuthorityEnvelope(IntelligenceModel):
+    level: Literal["observation", "measurement", "controlled_setup", "blocked"]
+    setup_authorized: bool = False
+    control_key: str | None = None
+    source_event_ids: tuple[str, ...] = ()
+    reason: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def exact_setup_authority_is_structural(self) -> ReasoningAuthorityEnvelope:
+        if self.setup_authorized != (self.level == "controlled_setup"):
+            raise ValueError("only the controlled-setup envelope may authorize setup")
+        if self.setup_authorized and (not self.control_key or not self.source_event_ids):
+            raise ValueError("controlled setup authority requires a control and evidence")
+        if not self.setup_authorized and self.control_key is not None:
+            raise ValueError("non-authoritative reasoning cannot expose a setup control")
+        if len(set(self.source_event_ids)) != len(self.source_event_ids):
+            raise ValueError("authority-envelope event identities must be unique")
+        return self
+
+
+class ReasoningSnapshot(IntelligenceModel):
+    """Canonical backend state consumed by ranking, planning, memory, and UI."""
+
+    run_id: str = Field(min_length=1)
+    session_id: str | None = None
+    evidence_graph: EvidenceGraph
+    causes: tuple[RankedCause, ...]
+    evidence_clusters: tuple[EvidenceIndependenceCluster, ...] = ()
+    controlled_outcomes: tuple[ControlledOutcomeAssessment, ...] = ()
+    measurement_plan: InformationPlan
+    data_quality: DataQualityAssessment
+    lap_context: LapEngineeringContextReport | None = None
+    authority: ReasoningAuthorityEnvelope
+    blocker_reasons: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def snapshot_is_one_consistent_reality(self) -> ReasoningSnapshot:
+        cause_ids = [cause.cause_id for cause in self.causes]
+        if len(set(cause_ids)) != len(cause_ids):
+            raise ValueError("reasoning snapshot cause identities must be unique")
+        graph_cause_ids = {
+            node.entity_id
+            for node in self.evidence_graph.nodes
+            if node.kind is EvidenceNodeKind.CAUSE
+        }
+        if set(cause_ids) != graph_cause_ids:
+            raise ValueError("reasoning snapshot causes must equal backend graph causes")
+        cluster_ids = [cluster.cluster_id for cluster in self.evidence_clusters]
+        if len(set(cluster_ids)) != len(cluster_ids):
+            raise ValueError("reasoning snapshot evidence clusters must be unique")
+        if any(cluster.cause_id not in graph_cause_ids for cluster in self.evidence_clusters):
+            raise ValueError("reasoning snapshot clusters must resolve to a cause")
+        workflow_ids = [outcome.workflow_id for outcome in self.controlled_outcomes]
+        if len(set(workflow_ids)) != len(workflow_ids):
+            raise ValueError("one controlled workflow may enter a snapshot only once")
+        if self.data_quality.scope_run_ids != (self.run_id,):
+            raise ValueError("reasoning snapshot data quality must match the exact run")
+        if self.lap_context is not None and self.lap_context.run_id != self.run_id:
+            raise ValueError("reasoning snapshot lap context must match the exact run")
+        if self.authority.setup_authorized != self.measurement_plan.setup_authorized:
+            raise ValueError("reasoning snapshot authority must match its measurement plan")
         return self
 
 
@@ -779,6 +1003,9 @@ class InternalIntelligenceReport(IntelligenceModel):
     calibration: CalibrationSummary
     data_quality: DataQualityAssessment
     evidence_graph: EvidenceGraph
+    reasoning_snapshot: ReasoningSnapshot
+    lap_context: LapEngineeringContextReport | None = None
+    comparability_debt: tuple[ComparabilityDebt, ...] = ()
     narrative: tuple[str, ...]
     suggested_questions: tuple[str, ...]
     smart_guidance: SmartGuidance | None = None
@@ -793,6 +1020,29 @@ class InternalIntelligenceReport(IntelligenceModel):
 
     @model_validator(mode="after")
     def mind_change_criteria_match_report_scope(self) -> InternalIntelligenceReport:
+        if (
+            self.reasoning_snapshot.run_id != self.run_id
+            or self.reasoning_snapshot.session_id != self.session_id
+            or self.reasoning_snapshot.measurement_plan != self.best_measurement
+            or self.reasoning_snapshot.data_quality != self.data_quality
+        ):
+            raise ValueError("public report scope, plan, and quality must equal its reasoning snapshot")
+        snapshot_by_id = {
+            cause.cause_id: cause for cause in self.reasoning_snapshot.causes
+        }
+        expected_states = {
+            "likely": "leading",
+            "possible": "possible",
+            "ruled_out": "ruled_out",
+            "unresolved": "unresolved",
+        }
+        if any(
+            cause.cause_id not in snapshot_by_id
+            or cause.rank != snapshot_by_id[cause.cause_id].ordinal_rank
+            or cause.state != expected_states[snapshot_by_id[cause.cause_id].status]
+            for cause in self.competing_causes
+        ) or set(snapshot_by_id) != {cause.cause_id for cause in self.competing_causes}:
+            raise ValueError("public competing causes must derive from the reasoning snapshot")
         cause_ids = {cause.cause_id for cause in self.competing_causes}
         controlled_outcomes = tuple(
             outcome
@@ -914,12 +1164,15 @@ __all__ = [
     "CapabilityAssessment",
     "CauseDiscriminator",
     "CauseHypothesis",
+    "ControlResponseOutcome",
     "ControlledCauseOutcome",
+    "ControlledOutcomeAssessment",
     "DataQualityAssessment",
     "EvidenceCitation",
     "EvidenceEdge",
     "EvidenceEdgeKind",
     "EvidenceGraph",
+    "EvidenceIndependenceCluster",
     "EvidenceNode",
     "EvidenceNodeKind",
     "GroundedClaim",
@@ -931,9 +1184,13 @@ __all__ = [
     "InternalIntelligenceReport",
     "LapReference",
     "MindChangeCriterion",
+    "MechanismClaimOutcome",
     "NavigationTarget",
     "PublicCompetingCause",
+    "PolicyAcceptabilityOutcome",
     "RankedCause",
+    "ReasoningAuthorityEnvelope",
+    "ReasoningSnapshot",
     "ResponseMemorySummary",
     "SetupEvidenceValue",
 ]

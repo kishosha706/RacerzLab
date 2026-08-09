@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
@@ -15,15 +16,21 @@ from api.intelligence_adapter import (
 from api.intelligence_schemas import (
     IntelligenceQueryRequest,
     IntelligenceQueryResponse,
+    MeasurementAttemptRequest,
+    MeasurementAttemptResponse,
     RunIntelligenceResponse,
 )
+from racelab_engine.analysis.lap_eligibility import lap_is_eligible
 from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.experiment import MeasurementAttempt
 from racelab_engine.models.intelligence import GroundedQueryResult, InternalIntelligenceReport
 from racelab_engine.services.engineering_memory_service import (
     record_driver_presentation_preference_for_run,
 )
 from racelab_engine.services.intelligence_service import answer_grounded_query
+from racelab_engine.services.experiment_service import record_durable_measurement_attempt
 from racelab_engine.services.run_intelligence_service import build_run_intelligence
+from racelab_engine.storage.repository import RaceLabRepository
 
 
 router = APIRouter(prefix="/api/runs", tags=["internal-intelligence"])
@@ -90,6 +97,89 @@ def get_run_intelligence(
         )
     except ValueError as exc:
         raise _http_error(exc) from exc
+
+
+@router.post(
+    "/{run_id}/intelligence/measurement-attempt",
+    response_model=MeasurementAttemptResponse,
+)
+def record_measurement_attempt(
+    run_id: str,
+    request: MeasurementAttemptRequest,
+) -> MeasurementAttemptResponse:
+    """Append a cleanly scoped mission outcome without granting setup authority."""
+    try:
+        bundle = build_run_intelligence(run_id, session_id=request.session_id)
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+    plan = bundle.report.best_measurement
+    contract = plan.mission_contract
+    if contract is None:
+        raise HTTPException(
+            status_code=409,
+            detail="The current report has no immutable measurement contract to record.",
+        )
+    if (
+        contract.contract_id != request.contract_id
+        or contract.contract_sha256 != request.contract_sha256
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="The supplied attempt does not match the current immutable measurement contract.",
+        )
+    if plan.kind == "stop_testing":
+        raise HTTPException(
+            status_code=409,
+            detail="This exact mission is already stopped; redesign it before recording another attempt.",
+        )
+    attempt_run_id = request.attempt_run_id or run_id
+    overview = RaceLabRepository().get_overview(attempt_run_id)
+    if overview is None:
+        raise HTTPException(status_code=404, detail=f"Run not found: {attempt_run_id}")
+    eligible_ids = {
+        f"{attempt_run_id}:{lap.lap_number}"
+        for lap in overview.laps
+        if lap_is_eligible(lap)
+    }
+    supplied_laps = tuple(request.eligible_lap_ids)
+    if not set(supplied_laps).issubset(eligible_ids):
+        raise HTTPException(
+            status_code=409,
+            detail="Measurement attempts may cite only canonical eligible laps from the declared attempt run.",
+        )
+    if request.outcome in {"completed_clean", "no_signal"} and len(supplied_laps) < contract.required_laps:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A clean or no-signal measurement outcome requires the contract's full "
+                "eligible-lap cohort."
+            ),
+        )
+    try:
+        attempt = MeasurementAttempt(
+            attempt_id=f"measurement-attempt:{uuid.uuid4().hex}",
+            contract_id=contract.contract_id,
+            contract_sha256=contract.contract_sha256,
+            run_id=attempt_run_id,
+            eligible_lap_ids=supplied_laps,
+            outcome=request.outcome,
+            observed_channels=tuple(request.observed_channels),
+            integrity_blockers=tuple(request.integrity_blockers),
+            outcome_reasons=tuple(request.outcome_reasons),
+        )
+        record_durable_measurement_attempt(
+            contract,
+            attempt,
+            repository=RaceLabRepository(),
+        )
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+    return MeasurementAttemptResponse(
+        attempt_id=attempt.attempt_id,
+        contract_id=attempt.contract_id,
+        contract_sha256=attempt.contract_sha256,
+        outcome=attempt.outcome,
+    )
 
 
 _QUERY_HEADLINES = {

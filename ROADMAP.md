@@ -51,6 +51,7 @@ result, and remember only what the evidence supports.
 | P16 - Premium Telemetry Visualization | Verified | Charts preserve raw signal, gap, unit, scope, selection, and proxy truth in a responsive open-canvas system |
 | P17 - Oval Driver Operating System | Verified | An oval driver can read clean-run readiness, corner-cycle evidence, loaded-side tire context, setup identity, and one trustworthy next step without junk-lap or continuity overclaim |
 | P18 - Deterministic Reasoning and Controlled Learning | Verified deterministic slice; statistical activation remains data-locked | Smart Engineer ranks independent evidence, learns exact controlled outcomes, explains falsification criteria, and blocks unsupported or repeated setup authority everywhere |
+| P19 - Engineering Truth, Experiments, and Durable Memory | Verified closed-loop deterministic foundation; statistical activation remains data-locked | One canonical reasoning snapshot separates mechanism, control response, and policy; exact mission attempts and durable cross-session memory reconstruct safely across restart and unreadable history |
 
 ---
 
@@ -1192,6 +1193,62 @@ new setup authority.
 
 ---
 
+## P19 - Engineering Truth, Experiments, and Durable Memory
+
+- [x] Publish one canonical reasoning snapshot that separates mechanism truth,
+  setup-control response, and policy acceptability. Public cause rankings and the
+  evidence graph now derive from the same backend-owned snapshot; the API adapter
+  no longer synthesizes cause nodes or causal edges.
+- [x] Represent signed support and contradiction with explicit evidence nodes,
+  observation nodes, cause nodes, and independence clusters. Same-run correlated
+  evidence cannot inflate causal authority, and observational contradiction cannot
+  rule out a mechanism without a protocol-valid mechanism-diagnostic control.
+- [x] Build per-lap engineering context for eligible laps with explicit continuous,
+  pit-snapshot, constant, missing, and unhealthy channel semantics. Next Gen raw
+  carcass-temperature aliases now have vectorized/row parity; constant wear and
+  carcass values remain snapshots rather than false live trends, and uncorrected
+  rear wheel-speed mismatch remains a geometry-contaminated proxy.
+- [x] Bind measurement and discriminator plans to immutable mission contracts,
+  resource feasibility, supplied exact-contract attempt history, typed outcomes,
+  and a deterministic stop-testing rule. Every stop decision retains the immutable
+  contract that triggered it, and stale attempts cannot satisfy a changed mission.
+- [x] Persist and reload immutable measurement attempts in the runtime planner.
+  Completed-clean, no-signal, integrity-failure, infeasible, and abandoned outcomes
+  are append-only, exact-contract records; restarted planning reconstructs durable
+  `stop_testing`, while stale attempts cannot satisfy a changed contract.
+- [x] Make session-event lifecycle tolerant to small physical-window jitter and
+  preserve new, recurring, and resolved events. Session-position comparison now
+  returns typed comparability debt instead of collapsing every mismatch into an
+  empty result.
+- [x] Revalidate exact-context Keep/Undo policy across each readable saved and archived
+  session. A prior Undo blocks only the identical material policy contract; changed
+  setup, context, corner, or measurement scope remains independently testable.
+- [x] Fail closed when a saved session cannot be revalidated during durable Undo
+  lookup. Typed `history_incomplete` debt identifies the affected session and
+  recovery; only an explicit operator quarantine acknowledges unavailable history,
+  and readable session Undo records continue to block unchanged policy.
+- [ ] Collect held-out controlled histories before activating calibrated
+  probability, formal information gain, hierarchy transfer, or multi-control
+  optimization. This phase adds no new statistical setup authority.
+
+### P19 verification evidence
+
+- The complete 2,073-test Python collection passed with six protected-fixture
+  skips. Focused reasoning, internal-report, run-API, session-lifecycle,
+  Next Gen lap-context, mission-contract, and canonical-snapshot regressions passed.
+- Whole-repository Ruff, TypeScript, the production Vite build, and
+  `git diff --check` passed. The production build transformed 2,188 modules.
+- Verification covers test-only event discovery, tolerant physical-window matches,
+  stale-attempt isolation, exact-contract stop testing, backend graph ownership,
+  evidence-cluster deduplication, observational contradiction limits, vectorized
+  carcass aliases, pit-snapshot tire semantics, and geometry-contaminated wheel-speed
+  authority. Junk laps remain excluded and statistical activation remains locked.
+- Durable lifecycle regressions cover restart-safe exact-contract attempt reload and
+  stop reconstruction, immutable stop-contract provenance, corrupted saved-session
+  debt, explicit quarantine, and fail-closed repeat-policy authority.
+
+---
+
 ## Professional analysis surface, without losing the product thesis
 
 - [x] Match essential professional language: time variance, overlays, math
@@ -1283,3 +1340,4 @@ Implementation queue completed in this pass:
 | 2026-08-08 | Completed P16 premium telemetry visualization | Open telemetry canvases, truthful pace/delta/Platform line hierarchy, honest gaps, active-metric cues, dashed proxy identity, exact units, stale-safe comparison responses, and keyboard sample inspection passed 88 focused chart checks, 227 broad frontend/performance checks, Ruff, TypeScript, production build, diff integrity, live 1280 x 720 Race/Learning inspection, and an independent adversarial CLEAR review |
 | 2026-08-08 | Completed P17 oval driver operating system | Driver-first clean-run readiness, short-versus-race pace, uninterrupted RF/RR evidence, clean-lap ledger, oval setup anchors, entry/center/exit/carry crew board, exact-sample checkpoint, and the Laps-hosted whole-car workbook passed 1,947 collected tests with six protected skips, Ruff, TypeScript, production build, diff integrity, live 1280 x 720 Race/Learning checks, and a final adversarial CLEAR review |
 | 2026-08-09 | Completed P18 deterministic reasoning and controlled learning | Independent evidence tiers, exact controlled-outcome semantics, physical-window semantic repeat memory, blocker-aware measurement planning, typed mind-change criteria, exact grounded-query scope, centralized repeat enforcement, and one fail-closed API/UI Stage B authority projection passed 2,063 collected tests with six protected skips, Ruff, TypeScript, production build, diff integrity, and three independent adversarial CLEAR reviews |
+| 2026-08-09 | Verified RacerZLab Intelligence Spine / Closed-Loop Reasoning Foundation | Canonical reasoning snapshots, backend-owned signed evidence graphs, independence clusters, Next Gen per-lap channel semantics, immutable mission contracts, append-only restart-safe attempt history, durable stop reconstruction, typed comparability debt, tolerant event lifecycle, and fail-closed cross-session Undo memory passed the complete 2,073-test collection with six protected skips, Ruff, TypeScript, production build, and diff integrity; statistical authority remains data-locked |

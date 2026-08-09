@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import sqlite3
 from typing import Any, Sequence
 
 from racelab_engine.analysis.lap_eligibility import eligible_laps
@@ -33,15 +34,18 @@ from racelab_engine.models.intelligence import (
     CauseHypothesis,
     ControlledCauseOutcome,
     GroundedClaim,
+    InformationPlan,
     InternalIntelligenceReport,
     SetupEvidenceValue,
 )
+from racelab_engine.models.lap_engineering_context import LapEngineeringContextReport
 from racelab_engine.models.session_intelligence import (
     HypothesisLifecycle,
     HypothesisLifecycleEntry,
     HypothesisPolicyIdentity,
 )
 from racelab_engine.models.observation_intelligence import (
+    MechanismObservationReport,
     ObservationStatus,
     RunObservationIntelligence,
 )
@@ -61,6 +65,7 @@ from racelab_engine.services.engineering_memory_service import (
     get_prediction_calibration,
     list_engineering_narrative,
 )
+from racelab_engine.services.experiment_service import bind_durable_experiment_lifecycle
 from racelab_engine.services.import_service import (
     build_telemetry_capability_payload,
     read_telemetry_manifest,
@@ -74,16 +79,20 @@ from racelab_engine.services.intelligence_service import (
     rank_competing_causes,
     summarize_stored_response_memory,
 )
+from racelab_engine.services.lap_engineering_context_service import (
+    load_lap_engineering_context_report,
+)
 from racelab_engine.services.observation_intelligence_service import (
     build_observation_intelligence,
 )
 from racelab_engine.services.session_intelligence_service import (
     build_session_intelligence,
     controlled_hypothesis_policy_identity,
+    evaluate_durable_hypothesis_repeat,
     evaluate_hypothesis_repeat,
 )
 from racelab_engine.services.session_position_bridge import (
-    build_session_position_evidence,
+    build_session_position_evidence_result,
 )
 from racelab_engine.services.session_service import (
     get_session as get_racelab_session,
@@ -893,19 +902,10 @@ def _hypotheses(
                     "The controlled lifecycle countereffect criteria must be canonical and unique."
                 )
 
-            if entry.target_effect.direction_result == "matched":
-                derived_outcome = "supported"
-            elif entry.target_effect.direction_result == "missed":
-                derived_outcome = "contradicted"
-            else:
-                derived_outcome = "inconclusive"
-            if (
-                not integrity_blockers
-                and entry.outcome_classification != derived_outcome
-            ):
-                integrity_blockers.append(
-                    "The controlled lifecycle classification conflicts with its exact target-direction effect."
-                )
+            # An ordinary setup-control A/B/A2 result grades the exact treatment
+            # response and policy.  It is not a producer-owned diagnostic
+            # intervention and therefore cannot support or falsify mechanism truth.
+            derived_outcome = "inconclusive"
 
             safe_blockers = tuple(dict.fromkeys(integrity_blockers))
             outcome_classification = "invalid" if safe_blockers else derived_outcome
@@ -929,6 +929,12 @@ def _hypotheses(
                     )
                 ),
                 blocker_reasons=safe_blockers,
+                diagnostic_validity="control_response_only",
+                control_direction_result=(
+                    "invalid"
+                    if safe_blockers
+                    else entry.target_effect.direction_result
+                ),
             )
             exact_current_policy = bool(
                 not safe_blockers
@@ -997,6 +1003,36 @@ def _hypotheses(
     # Broader discrimination must be declared by a producer that can actually
     # distinguish those causes; orchestration cannot invent that coverage.
     return tuple(raw)
+
+
+def _observation_hypotheses(
+    report: MechanismObservationReport,
+) -> tuple[CauseHypothesis, ...]:
+    """Promote producer-owned typed observations into non-authorizing causes."""
+
+    hypotheses: list[CauseHypothesis] = []
+    for observation in report.observations:
+        if not observation.qualified:
+            continue
+        observation_ids = tuple(
+            f"{observation.observation_id}:{index}"
+            for index, _citation in enumerate(observation.citations)
+        )
+        mechanism_key = observation.mechanism.value
+        hypotheses.append(CauseHypothesis(
+            cause_id=f"observation:{observation.observation_id}",
+            label=_humanize(mechanism_key),
+            hypothesis=(
+                "Determine whether this typed same-setup mechanism observation remains "
+                "repeatable under matched fuel, tire, weather, line, and traffic context."
+            ),
+            mechanism_key=mechanism_key,
+            supporting_observation_ids=observation_ids,
+            contradiction_notes=tuple(observation.contradicting_evidence),
+            required_evidence=tuple(observation.required_channels),
+            blocker_reasons=tuple(observation.blocker_reasons),
+        ))
+    return tuple(hypotheses)
 
 
 def _setup_values(
@@ -1080,7 +1116,7 @@ def _capability(
             run_id,
             expected_source_file_sha256=source_file_sha256,
         )
-    except (FileNotFoundError, OSError, TypeError, ValueError):
+    except (FileNotFoundError, OSError, RuntimeError, TypeError, ValueError):
         payload = {}
     summary = payload.get("capability_summary") if isinstance(payload, dict) else None
     if not isinstance(summary, dict):
@@ -1480,15 +1516,18 @@ def build_run_intelligence(
         repository=repository,
         db_path=db_path,
     )
-    position_evidence = (
-        build_session_position_evidence(
+    position_result = (
+        build_session_position_evidence_result(
             run_id,
             scope_run_ids,
             observation_intelligence,
             db_path=db_path,
         )
         if resolved_session_id is not None
-        else ()
+        else None
+    )
+    position_evidence = (
+        position_result.evidence if position_result is not None else ()
     )
     session_intelligence = (
         build_session_intelligence(
@@ -1543,7 +1582,6 @@ def build_run_intelligence(
                 )
         if (
             not card_blockers
-            and session_intelligence is not None
             and workflow.packet.primary_test is not None
         ):
             compatibility_identity = (
@@ -1558,18 +1596,34 @@ def build_run_intelligence(
                     compatibility_identity,
                     source_setup=repository.get_setup_snapshot(workflow.source_run_id),
                 )
-                repeat_policy = evaluate_hypothesis_repeat(
-                    session_intelligence.hypothesis_lifecycle,
-                    current_hypothesis_policy,
+                repeat_policy = (
+                    evaluate_hypothesis_repeat(
+                        session_intelligence.hypothesis_lifecycle,
+                        current_hypothesis_policy,
+                    )
+                    if session_intelligence is not None
+                    else None
                 )
-            except (TypeError, ValueError):
+                durable_repeat_policy = evaluate_durable_hypothesis_repeat(
+                    current_hypothesis_policy,
+                    db_path=db_path,
+                )
+            except (FileNotFoundError, OSError, TypeError, ValueError):
                 card_blockers = (
                     "The exact hypothesis repeat-policy identity could not be verified; rebuild the controlled test from the current evidence before exposing a setup target.",
                 )
             else:
-                if not repeat_policy.allowed:
+                if repeat_policy is not None and not repeat_policy.allowed:
                     card_blockers = (
                         "This unchanged context, setup, symptom, cause, control, direction, metric, phase, and countereffect policy previously produced a valid Undo result in this session and is marked do-not-repeat.",
+                    )
+                elif durable_repeat_policy.history_debt:
+                    card_blockers = (
+                        "Durable engineering history is incomplete. Repair or explicitly quarantine the affected saved session before repeating this policy.",
+                    )
+                elif not durable_repeat_policy.allowed:
+                    card_blockers = (
+                        "A protocol-valid Undo result blocks this unchanged context, setup, symptom, cause, control, direction, metric, phase, and countereffect policy across saved sessions.",
                     )
     card_blockers = tuple(dict.fromkeys((
         *card_blockers,
@@ -1599,7 +1653,11 @@ def build_run_intelligence(
         active_conflict = any(
             cause.cause_id.startswith("workflow:")
             and active_control_key in cause.related_control_keys
-            and {outcome.outcome for outcome in cause.controlled_outcomes}
+            and {
+                outcome.outcome
+                for outcome in cause.controlled_outcomes
+                if outcome.diagnostic_validity == "mechanism_diagnostic"
+            }
             >= {"supported", "contradicted"}
             for cause in preliminary_hypotheses
         )
@@ -1608,9 +1666,27 @@ def build_run_intelligence(
                 *card_blockers,
                 "Exact protocol-valid controlled outcomes conflict for this cause and control; resolve the contradiction before another setup test.",
             )))
+    events_by_id = {event.event_id: event for event in overview.events}
+    hypotheses = (
+        *_hypotheses(
+            overview.recommendations,
+            workflow,
+            events_by_id,
+            card_blockers,
+            lifecycle=lifecycle,
+            workflows=workflows,
+            current_run_id=run_id,
+            current_hypothesis_policy=current_hypothesis_policy,
+        ),
+        *_observation_hypotheses(
+            observation_intelligence.mechanism_observations
+        ),
+    )
     claims = _claims(overview.recommendations, workflow, card_blockers)
     graph = build_evidence_graph(
         claims=claims,
+        causes=hypotheses,
+        observations=observation_intelligence.mechanism_observations.observations,
         events=overview.events,
         recommendations=overview.recommendations,
         laps=overview.laps,
@@ -1621,17 +1697,6 @@ def build_run_intelligence(
             requested_run_id=run_id,
             card_blockers=card_blockers,
         ),
-    )
-    events_by_id = {event.event_id: event for event in overview.events}
-    hypotheses = _hypotheses(
-        overview.recommendations,
-        workflow,
-        events_by_id,
-        card_blockers,
-        lifecycle=lifecycle,
-        workflows=workflows,
-        current_run_id=run_id,
-        current_hypothesis_policy=current_hypothesis_policy,
     )
     causes = rank_competing_causes(
         hypotheses,
@@ -1646,6 +1711,16 @@ def build_run_intelligence(
         events=overview.events,
         capability=capability,
     )
+    try:
+        lap_context = load_lap_engineering_context_report(run_id, db_path=db_path)
+    except (FileNotFoundError, OSError, RuntimeError, TypeError, ValueError):
+        lap_context = LapEngineeringContextReport(
+            run_id=run_id,
+            status="blocked",
+            blocker_reasons=(
+                "Lap engineering context could not be rebuilt from the imported telemetry.",
+            ),
+        )
     overview_integrity_blockers = tuple(
         warning.removeprefix("Evidence integrity: ").strip()
         for warning in overview.warnings
@@ -1698,6 +1773,47 @@ def build_run_intelligence(
     measurement_inputs = _observation_measurement_candidates(
         observation_intelligence
     )
+    if position_result is not None and position_result.comparability_debt:
+        debt_blockers = tuple(
+            MeasurementBlocker(
+                blocker_id=debt.debt_id,
+                priority=(
+                    "integrity"
+                    if debt.kind == "integrity"
+                    else "data_qualification"
+                    if debt.kind in {"eligible_laps", "telemetry_rows"}
+                    else "discrimination"
+                ),
+                reason=debt.reason,
+                affected_channels=debt.required_channels,
+                resolving_candidate_ids=(f"mission:{debt.debt_id}",),
+            )
+            for debt in position_result.comparability_debt
+        )
+        debt_candidates = tuple(
+            MeasurementCandidate(
+                candidate_id=f"mission:{debt.debt_id}",
+                title="Resolve run-comparability debt",
+                purpose=debt.reason,
+                procedure=(debt.recovery,),
+                required_channels=debt.required_channels,
+                available_channels=measurement_inputs.available_channels,
+                resolves_blocker_ids=(debt.debt_id,),
+                required_laps=3,
+                target_phase="producer-marked physical-position window",
+                acceptance_thresholds=(
+                    "Three eligible laps pass physical-position, fuel, tire, weather, line, and nearby-car context gates.",
+                ),
+                stop_rule="Stop after a pit, reset, incident, setup change, or integrity fault.",
+                controlled_variables=("setup", "fuel", "tires", "weather", "line", "traffic"),
+            )
+            for debt in position_result.comparability_debt
+        )
+        measurement_inputs = _ObservationMeasurementInputs(
+            candidates=(*measurement_inputs.candidates, *debt_candidates),
+            blockers=(*measurement_inputs.blockers, *debt_blockers),
+            available_channels=measurement_inputs.available_channels,
+        )
     affected_health_channels = tuple(
         dict.fromkeys(
             channel
@@ -1735,6 +1851,33 @@ def build_run_intelligence(
         affected_health_channels=affected_health_channels,
         channel_lineage_by_channel=channel_lineage_by_channel,
     )
+    try:
+        plan = bind_durable_experiment_lifecycle(
+            plan,
+            candidate_id=f"{plan.kind}:{plan.title.casefold().replace(' ', '-')}",
+            run_id=run_id,
+            repository=repository,
+            session_id=resolved_session_id,
+            required_channels=tuple(sorted(planning_channel_names)),
+            cause_ids=tuple(
+                cause.cause_id for cause in causes if cause.status != "ruled_out"
+            ),
+            telemetry_health_identity=(
+                telemetry_health.session_scope_sha256
+                if telemetry_health is not None
+                else f"run:{run_id}:health-unavailable"
+            ),
+        )
+    except (OSError, TypeError, ValueError, sqlite3.Error):
+        plan = InformationPlan(
+            kind="blocked",
+            title="Measurement history requires recovery",
+            instruction="Repair or quarantine the incomplete durable mission history before testing again.",
+            rationale="Exact-contract attempt history could not be revalidated, so the planner withheld repetition authority.",
+            blocker_reasons=(
+                "Durable measurement-attempt history could not be verified for the current mission.",
+            ),
+        )
     context_matches, response_context_key = _context_matches(
         run_id,
         workflow,
@@ -1789,6 +1932,7 @@ def build_run_intelligence(
         ranked_causes=causes,
         best_measurement=plan,
         data_quality=quality,
+        lap_context=lap_context,
         context_matches=context_matches,
         calibration=calibration_model,
     )
@@ -1805,8 +1949,13 @@ def build_run_intelligence(
             "mechanism_observations": observation_intelligence.mechanism_observations,
             "anomalies": observation_intelligence.anomaly_envelopes,
             "driver_focus": observation_intelligence.driver_repeatability,
-            "telemetry_health": telemetry_health,
-        }
+                "telemetry_health": telemetry_health,
+                "comparability_debt": (
+                    position_result.comparability_debt
+                    if position_result is not None
+                    else ()
+                ),
+            }
     )
     guidance_workflow = workflow or next(
         (

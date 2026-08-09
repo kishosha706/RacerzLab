@@ -83,6 +83,8 @@ class IntelligenceActionResponse(IntelligenceApiModel):
     proposed_value: str | None = None
     evidence_state: EvidenceState
     source_event_ids: list[str] = Field(default_factory=list)
+    mission_contract_id: str | None = None
+    mission_contract_sha256: str | None = None
     blocker_reasons: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -106,7 +108,48 @@ class IntelligenceActionResponse(IntelligenceApiModel):
                 raise ValueError("authorized setup actions require linked evidence and no blockers")
         elif any(value is not None for value in exact_values):
             raise ValueError("unauthorized actions cannot publish exact setup values")
+        if (self.mission_contract_id is None) != (self.mission_contract_sha256 is None):
+            raise ValueError("measurement contract identity and hash must be paired")
         return self
+
+
+class MeasurementAttemptRequest(IntelligenceApiModel):
+    session_id: str | None = Field(default=None, max_length=160)
+    contract_id: str = Field(min_length=1, max_length=160)
+    contract_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    attempt_run_id: str | None = Field(default=None, min_length=1, max_length=160)
+    outcome: Literal[
+        "completed_clean",
+        "no_signal",
+        "failed_integrity",
+        "infeasible",
+        "abandoned",
+    ]
+    eligible_lap_ids: list[str] = Field(default_factory=list)
+    observed_channels: list[str] = Field(default_factory=list)
+    integrity_blockers: list[str] = Field(default_factory=list)
+    outcome_reasons: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def attempt_identity_is_canonical(self) -> MeasurementAttemptRequest:
+        for values, label in (
+            (self.eligible_lap_ids, "eligible lap"),
+            (self.observed_channels, "observed channel"),
+            (self.integrity_blockers, "integrity blocker"),
+            (self.outcome_reasons, "outcome reason"),
+        ):
+            if any(not value or value != value.strip() for value in values):
+                raise ValueError(f"measurement-attempt {label} values must be canonical")
+            if len(set(values)) != len(values):
+                raise ValueError(f"measurement-attempt {label} values must be unique")
+        return self
+
+
+class MeasurementAttemptResponse(IntelligenceApiModel):
+    attempt_id: str
+    contract_id: str
+    contract_sha256: str
+    outcome: str
 
 
 class IntelligenceBriefingResponse(IntelligenceApiModel):
@@ -803,6 +846,8 @@ class IntelligenceQueryResponse(IntelligenceApiModel):
 __all__ = [
     "IntelligenceQueryRequest",
     "IntelligenceQueryResponse",
+    "MeasurementAttemptRequest",
+    "MeasurementAttemptResponse",
     "IntelligenceNavigationResponse",
     "IntelligenceMindChangeCriterionResponse",
     "RunIntelligenceResponse",

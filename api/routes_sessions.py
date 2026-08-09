@@ -12,11 +12,13 @@ from racelab_engine.services.lap_service import build_lap_list_for_run
 from racelab_engine.services.session_service import (
     add_run_to_session,
     archive_session,
+    clear_session_intelligence_quarantine,
     create_session,
     delete_session,
     get_session,
     list_sessions,
     remove_run_from_session,
+    quarantine_session_intelligence_history,
     update_session,
 )
 from racelab_engine.storage.repository import RaceLabRepository
@@ -71,6 +73,10 @@ class UpdateSessionRequest(BaseModel):
 
 class AddRunRequest(BaseModel):
     run_id: str
+
+
+class QuarantineIntelligenceHistoryRequest(BaseModel):
+    reason: str
 
 
 # ── Session CRUD ────────────────────────────────────────────
@@ -162,6 +168,27 @@ def add_run_endpoint(session_id: str, req: AddRunRequest) -> dict:
     if not (session := add_run_to_session(session_id, req.run_id)):
         raise HTTPException(404, f"Session not found: {session_id}")
     return session.as_dict()
+
+
+@router.post("/{session_id}/intelligence-quarantine")
+def quarantine_intelligence_history_endpoint(
+    session_id: str,
+    request: QuarantineIntelligenceHistoryRequest,
+) -> dict:
+    try:
+        quarantine_session_intelligence_history(session_id, request.reason)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"session_id": session_id, "quarantined": True}
+
+
+@router.delete("/{session_id}/intelligence-quarantine")
+def clear_intelligence_history_quarantine_endpoint(session_id: str) -> dict:
+    try:
+        cleared = clear_session_intelligence_quarantine(session_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"session_id": session_id, "cleared": cleared}
 
 
 @router.get("/{session_id}/runs", response_model=list[RunListItem])

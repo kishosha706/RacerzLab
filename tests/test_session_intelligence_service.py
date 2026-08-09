@@ -48,7 +48,9 @@ from racelab_engine.services.session_intelligence_service import (
     build_session_engineering_ledger,
     controlled_hypothesis_fingerprint,
     controlled_hypothesis_policy_identity,
+    _events_match,
     _event_signature,
+    evaluate_durable_hypothesis_repeat,
     evaluate_hypothesis_repeat,
     hypothesis_may_repeat,
     position_evidence_sha256,
@@ -58,6 +60,7 @@ from racelab_engine.services.session_intelligence_service import (
 from racelab_engine.services.session_service import (
     add_run_to_session,
     create_session,
+    quarantine_session_intelligence_history,
     remove_run_from_session,
 )
 from racelab_engine.storage.db import initialize_database
@@ -306,6 +309,16 @@ def test_session_event_signature_requires_actionable_evidence(update) -> None:
     assert _event_signature(event) is None
 
 
+def test_event_matching_tolerates_small_physical_window_jitter() -> None:
+    baseline = _event("run-a")
+    shifted = _event("run-b").model_copy(update={
+        "lap_pct_start": 20.1,
+        "lap_pct_end": 30.1,
+        "lap_pct_peak": 25.1,
+    })
+    assert _events_match(baseline, shifted) is True
+
+
 def _write_artifacts(
     data_dir: Path,
     run_id: str,
@@ -465,6 +478,25 @@ def test_resolved_event_requires_healthy_observable_source_channels(tmp_path) ->
         and "speed_mps" in blocker
         for blocker in withheld.blocker_reasons
     )
+
+
+def test_test_only_event_is_recorded_as_new(tmp_path) -> None:
+    db_path = tmp_path / "new-event.sqlite"
+    data_dir = tmp_path / "data"
+    repo = RaceLabRepository(db_path)
+    _save_run(repo, data_dir, "run-a", include_event=False)
+    _save_run(repo, data_dir, "run-b", include_event=True)
+    session_id = _session_with_runs(db_path, ["run-a", "run-b"])
+
+    ledger = build_session_engineering_ledger(
+        session_id,
+        db_path=db_path,
+        data_dir=data_dir,
+    )
+
+    new_entry = next(entry for entry in ledger.entries if entry.state == "new")
+    assert new_entry.observation_kind == "new_issue"
+    assert any(citation.run_id == "run-b" for citation in new_entry.citations)
 
 
 @pytest.mark.parametrize(
@@ -1399,3 +1431,50 @@ def test_removed_stage_membership_invalidates_controlled_history(tmp_path) -> No
         "no longer a member" in reason
         for reason in lifecycle.entries[0].protocol.blocker_reasons
     )
+
+
+def test_unreadable_saved_session_blocks_durable_repeat_authority(tmp_path) -> None:
+    db_path, _data_dir, _session_id, workflow = _lifecycle_fixture(tmp_path, "keep")
+    candidate = controlled_hypothesis_policy_identity(
+        workflow,
+        IDENTITY,
+        source_setup=_setup(workflow.source_run_id),
+    )
+    connection = initialize_database(db_path)
+    connection.execute(
+        """
+        INSERT INTO racelab_sessions (
+          session_id, name, created_at, updated_at, run_ids_json, status
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "session_unreadable",
+            "Unreadable history",
+            NOW.isoformat(),
+            NOW.isoformat(),
+            "{not-valid-json",
+            "archived",
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+    decision = evaluate_durable_hypothesis_repeat(candidate, db_path=db_path)
+
+    assert decision.status == "blocked"
+    assert not decision.allowed
+    assert decision.matched_workflow_ids == ()
+    assert decision.changed_dimensions == ()
+    assert decision.history_debt[0].session_id == "session_unreadable"
+    assert decision.history_debt[0].kind == "history_incomplete"
+
+    quarantine_session_intelligence_history(
+        "session_unreadable",
+        "The archived session source is intentionally unavailable for recovery.",
+        db_path=db_path,
+    )
+    quarantined = evaluate_durable_hypothesis_repeat(candidate, db_path=db_path)
+
+    assert quarantined.status == "allowed"
+    assert quarantined.allowed
+    assert quarantined.history_debt == ()

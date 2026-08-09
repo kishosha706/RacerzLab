@@ -109,7 +109,11 @@ def _row_to_session(row: dict[str, Any]) -> RaceLabSession:
     )
 
 
-def list_sessions(include_archived: bool = False, db_path: str | Path | None = None) -> list[RaceLabSession]:
+def list_sessions_with_integrity(
+    include_archived: bool = False,
+    db_path: str | Path | None = None,
+) -> tuple[list[RaceLabSession], tuple[tuple[str, str], ...]]:
+    """Return readable sessions plus identities that cannot safely be ignored."""
     conn = initialize_database(db_path)
     _ensure_schema(conn)
     sql = "SELECT * FROM racelab_sessions"
@@ -119,12 +123,94 @@ def list_sessions(include_archived: bool = False, db_path: str | Path | None = N
     rows = conn.execute(sql).fetchall()
     conn.close()
     sessions: list[RaceLabSession] = []
-    for row in rows:
+    failures: list[tuple[str, str]] = []
+    for index, row in enumerate(rows, start=1):
+        raw = dict(row)
+        session_id = raw.get("session_id")
+        identity = (
+            session_id
+            if isinstance(session_id, str) and session_id.strip()
+            else f"unreadable-session-row-{index}"
+        )
         try:
-            sessions.append(_row_to_session(dict(row)))
+            sessions.append(_row_to_session(raw))
         except (TypeError, ValueError):
-            continue
+            failures.append((identity, "Stored session identity or membership is malformed."))
+    return sessions, tuple(failures)
+
+
+def list_sessions(include_archived: bool = False, db_path: str | Path | None = None) -> list[RaceLabSession]:
+    sessions, _failures = list_sessions_with_integrity(include_archived, db_path)
     return sessions
+
+
+def quarantine_session_intelligence_history(
+    session_id: str,
+    reason: str,
+    *,
+    db_path: str | Path | None = None,
+) -> None:
+    """Explicitly acknowledge unavailable history; never infer quarantine from failure."""
+    if not session_id or session_id != session_id.strip():
+        raise ValueError("session quarantine requires a canonical session identity")
+    if not reason or reason != reason.strip():
+        raise ValueError("session quarantine requires a non-empty operator reason")
+    conn = initialize_database(db_path)
+    try:
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO session_intelligence_quarantines (
+                  session_id, reason, quarantined_at
+                ) VALUES (?, ?, ?)
+                ON CONFLICT(session_id) DO UPDATE SET
+                  reason=excluded.reason,
+                  quarantined_at=excluded.quarantined_at
+                """,
+                (session_id, reason, _utc_now()),
+            )
+    finally:
+        conn.close()
+
+
+def clear_session_intelligence_quarantine(
+    session_id: str,
+    *,
+    db_path: str | Path | None = None,
+) -> bool:
+    if not session_id or session_id != session_id.strip():
+        raise ValueError("session quarantine requires a canonical session identity")
+    conn = initialize_database(db_path)
+    try:
+        with conn:
+            cursor = conn.execute(
+                "DELETE FROM session_intelligence_quarantines WHERE session_id = ?",
+                (session_id,),
+            )
+            return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def list_session_intelligence_quarantines(
+    *,
+    db_path: str | Path | None = None,
+) -> dict[str, str]:
+    conn = initialize_database(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT session_id, reason FROM session_intelligence_quarantines"
+        ).fetchall()
+    finally:
+        conn.close()
+    return {
+        row["session_id"]: row["reason"]
+        for row in rows
+        if isinstance(row["session_id"], str)
+        and row["session_id"].strip()
+        and isinstance(row["reason"], str)
+        and row["reason"].strip()
+    }
 
 
 def get_session(session_id: str, db_path: str | Path | None = None) -> RaceLabSession | None:

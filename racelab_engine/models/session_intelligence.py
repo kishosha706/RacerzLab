@@ -342,6 +342,40 @@ class PositionAlignedEvidence(SessionIntelligenceModel):
         return self
 
 
+class ComparabilityDebt(SessionIntelligenceModel):
+    debt_id: str = Field(min_length=1)
+    kind: Literal[
+        "session_pair",
+        "eligible_laps",
+        "observation_scope",
+        "insufficient_repetition",
+        "telemetry_rows",
+        "position_alignment",
+        "operating_context",
+        "no_signal",
+        "integrity",
+    ]
+    baseline_run_id: str | None = None
+    test_run_id: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    required_channels: tuple[str, ...] = ()
+    recovery: str = Field(min_length=1)
+
+
+class SessionPositionEvidenceResult(SessionIntelligenceModel):
+    current_run_id: str = Field(min_length=1)
+    evidence: tuple[PositionAlignedEvidence, ...] = ()
+    comparability_debt: tuple[ComparabilityDebt, ...] = ()
+
+    @model_validator(mode="after")
+    def result_is_explicit(self) -> SessionPositionEvidenceResult:
+        if not self.evidence and not self.comparability_debt:
+            raise ValueError("empty position evidence requires typed comparability debt")
+        if self.evidence and self.comparability_debt:
+            raise ValueError("complete evidence cannot carry unresolved comparability debt")
+        return self
+
+
 class LedgerSetupChange(SessionIntelligenceModel):
     setup_key: str = Field(min_length=1)
     label: str = Field(min_length=1)
@@ -367,13 +401,26 @@ class RunEvidenceIdentity(SessionIntelligenceModel):
         return self
 
 
-LedgerState = Literal["improved", "regressed", "recurring", "resolved", "not_comparable"]
+LedgerState = Literal[
+    "new",
+    "improved",
+    "regressed",
+    "recurring",
+    "resolved",
+    "not_comparable",
+]
 
 
 class SessionLedgerEntry(SessionIntelligenceModel):
     entry_id: str = Field(min_length=1)
     state: LedgerState
-    observation_kind: Literal["pace", "recurring_issue", "resolved_issue", "comparability"]
+    observation_kind: Literal[
+        "pace",
+        "new_issue",
+        "recurring_issue",
+        "resolved_issue",
+        "comparability",
+    ]
     baseline_run_id: str = Field(min_length=1)
     test_run_id: str = Field(min_length=1)
     description: str = Field(min_length=1)
@@ -401,7 +448,7 @@ class SessionLedgerEntry(SessionIntelligenceModel):
             raise ValueError("improved observations require a negative test-minus-baseline delta")
         if self.state == "regressed" and (self.delta_s is None or self.delta_s <= 0.0):
             raise ValueError("regressed observations require a positive test-minus-baseline delta")
-        if self.state in {"recurring", "resolved"} and self.delta_s is not None:
+        if self.state in {"new", "recurring", "resolved"} and self.delta_s is not None:
             raise ValueError("issue-state observations cannot publish a time effect")
         has_window = self.start_pct is not None or self.end_pct is not None
         if has_window and (
@@ -634,6 +681,15 @@ class HypothesisRepeatPolicyComparison(SessionIntelligenceModel):
         return self
 
 
+class HistoricalIntelligenceDebt(SessionIntelligenceModel):
+    """A saved session that cannot safely be treated as absent history."""
+
+    session_id: str = Field(min_length=1)
+    kind: Literal["history_incomplete"] = "history_incomplete"
+    reason: str = Field(min_length=1)
+    recovery: str = Field(min_length=1)
+
+
 class HypothesisRepeatPolicyDecision(SessionIntelligenceModel):
     status: Literal["allowed", "blocked"]
     allowed: bool
@@ -641,6 +697,7 @@ class HypothesisRepeatPolicyDecision(SessionIntelligenceModel):
     matched_workflow_ids: tuple[str, ...] = ()
     comparisons: tuple[HypothesisRepeatPolicyComparison, ...] = ()
     changed_dimensions: tuple[HypothesisPolicyDimension, ...] = ()
+    history_debt: tuple[HistoricalIntelligenceDebt, ...] = ()
     reason: str = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -654,8 +711,10 @@ class HypothesisRepeatPolicyDecision(SessionIntelligenceModel):
         )
         if self.matched_workflow_ids != exact_matches:
             raise ValueError("matched workflows must be exact no-change policy comparisons")
-        if self.allowed == bool(self.matched_workflow_ids):
-            raise ValueError("repeat policy is blocked exactly when a prior policy matches")
+        if self.allowed and (self.matched_workflow_ids or self.history_debt):
+            raise ValueError("repeat policy cannot allow a matching Undo or incomplete history")
+        if not self.allowed and not (self.matched_workflow_ids or self.history_debt):
+            raise ValueError("blocked repeat policy requires a matching Undo or incomplete history")
         expected_changed = () if not self.allowed else tuple(
             dimension
             for dimension in _HYPOTHESIS_POLICY_DIMENSION_ORDER
@@ -666,6 +725,9 @@ class HypothesisRepeatPolicyDecision(SessionIntelligenceModel):
         )
         if self.changed_dimensions != expected_changed:
             raise ValueError("decision changes must equal the deterministic comparison changes")
+        history_ids = [item.session_id for item in self.history_debt]
+        if len(history_ids) != len(set(history_ids)):
+            raise ValueError("incomplete-history sessions must be unique")
         return self
 
 
@@ -774,6 +836,8 @@ class SessionIntelligenceBundle(SessionIntelligenceModel):
 __all__ = [
     "AngularOperatingContextMatch",
     "CategoricalOperatingContextMatch",
+    "ComparabilityDebt",
+    "HistoricalIntelligenceDebt",
     "HypothesisCountereffects",
     "HypothesisLifecycle",
     "HypothesisLifecycleEntry",
@@ -795,4 +859,5 @@ __all__ = [
     "SessionEvidenceCitation",
     "SessionIntelligenceBundle",
     "SessionLedgerEntry",
+    "SessionPositionEvidenceResult",
 ]

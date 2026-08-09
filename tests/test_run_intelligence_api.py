@@ -548,8 +548,12 @@ def test_public_cause_board_cites_controlled_support_and_contradiction() -> None
             metric="corner_exit_speed",
             phase="exit",
             control_key="track_bar_right",
-            countereffects=("No entry penalty beyond the frozen threshold.",),
-        )
+                countereffects=("No entry penalty beyond the frozen threshold.",),
+                diagnostic_validity="mechanism_diagnostic",
+                control_direction_result=(
+                    "matched" if kind == "supported" else "missed"
+                ),
+            )
 
     supported = _cause(
         PublicCompetingCause(

@@ -36,6 +36,7 @@ from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.session_intelligence import (
     HypothesisCountereffects,
+    HistoricalIntelligenceDebt,
     HypothesisLifecycle,
     HypothesisLifecycleEntry,
     HypothesisPolicyDimension,
@@ -60,7 +61,11 @@ from racelab_engine.services.engineering_memory_service import (
     get_prediction_grade,
 )
 from racelab_engine.services.import_service import build_telemetry_capability_payload
-from racelab_engine.services.session_service import get_session
+from racelab_engine.services.session_service import (
+    get_session,
+    list_session_intelligence_quarantines,
+    list_sessions_with_integrity,
+)
 from racelab_engine.storage.repository import (
     RaceLabRepository,
     StoredEvidenceIntegrityError,
@@ -504,6 +509,54 @@ def _event_signature(event: TelemetryEvent) -> str | None:
     )
 
 
+def _event_windows_match(baseline: TelemetryEvent, test: TelemetryEvent) -> bool:
+    baseline_start = _finite(baseline.lap_pct_start)
+    baseline_end = _finite(baseline.lap_pct_end)
+    test_start = _finite(test.lap_pct_start)
+    test_end = _finite(test.lap_pct_end)
+    if None in (baseline_start, baseline_end, test_start, test_end):
+        baseline_peak = _finite(baseline.lap_pct_peak)
+        test_peak = _finite(test.lap_pct_peak)
+        return bool(
+            baseline_peak is not None
+            and test_peak is not None
+            and abs(baseline_peak - test_peak) <= 2.0
+        )
+    assert baseline_start is not None and baseline_end is not None
+    assert test_start is not None and test_end is not None
+    overlap = max(0.0, min(baseline_end, test_end) - max(baseline_start, test_start))
+    union = max(baseline_end, test_end) - min(baseline_start, test_start)
+    return bool(
+        max(abs(baseline_start - test_start), abs(baseline_end - test_end)) <= 2.0
+        or union > 0.0 and overlap / union >= 0.6
+    )
+
+
+def _events_match(baseline: TelemetryEvent, test: TelemetryEvent) -> bool:
+    if any(
+        baseline_value != test_value
+        for baseline_value, test_value in (
+            (baseline.event_type.strip().casefold(), test.event_type.strip().casefold()),
+            ((baseline.event_subtype or "").strip().casefold(), (test.event_subtype or "").strip().casefold()),
+            ((baseline.zone_name or "").strip().casefold(), (test.zone_name or "").strip().casefold()),
+            (
+                str(baseline.evidence_json.get("phase") or "").strip().casefold(),
+                str(test.evidence_json.get("phase") or "").strip().casefold(),
+            ),
+        )
+    ):
+        return False
+    baseline_lineages = tuple(_channel_lineage(channel) for channel in baseline.source_channels)
+    test_lineages = tuple(_channel_lineage(channel) for channel in test.source_channels)
+    channels_match = bool(
+        baseline_lineages
+        and test_lineages
+        and all(any(left & right for right in test_lineages) for left in baseline_lineages)
+        and all(any(left & right for left in baseline_lineages) for right in test_lineages)
+    )
+    return channels_match and _event_windows_match(baseline, test)
+
+
 def _channel_lineage(channel: str) -> frozenset[str]:
     pending = [channel]
     lineage: set[str] = set()
@@ -573,22 +626,51 @@ def _event_entries(
 ) -> tuple[list[SessionLedgerEntry], tuple[str, ...]]:
     eligible_baseline = {lap.lap_number for lap in baseline.eligible}
     eligible_test = {lap.lap_number for lap in test.eligible}
-    baseline_events: dict[str, list[TelemetryEvent]] = {}
-    test_events: dict[str, list[TelemetryEvent]] = {}
-    for event, eligible_numbers, target in (
-        *((event, eligible_baseline, baseline_events) for event in baseline.events),
-        *((event, eligible_test, test_events) for event in test.events),
-    ):
-        signature = _event_signature(event)
-        if signature is not None and event.lap_number in eligible_numbers:
-            target.setdefault(signature, []).append(event)
+    baseline_events = [
+        event
+        for event in baseline.events
+        if _event_signature(event) is not None and event.lap_number in eligible_baseline
+    ]
+    test_events = [
+        event
+        for event in test.events
+        if _event_signature(event) is not None and event.lap_number in eligible_test
+    ]
+
+    def grouped(events: Sequence[TelemetryEvent]) -> list[list[TelemetryEvent]]:
+        groups: list[list[TelemetryEvent]] = []
+        for event in sorted(events, key=lambda item: item.event_id):
+            group = next(
+                (existing for existing in groups if _events_match(existing[0], event)),
+                None,
+            )
+            if group is None:
+                groups.append([event])
+            else:
+                group.append(event)
+        return groups
+
+    baseline_groups = grouped(baseline_events)
+    test_groups = grouped(test_events)
+    matched_test_groups: set[int] = set()
 
     shared_citations = _transition_citations(baseline, test, setup_changes)
     entries: list[SessionLedgerEntry] = []
     blockers: list[str] = []
-    for signature, old_events in baseline_events.items():
-        current_events = test_events.get(signature, [])
+    for old_events in baseline_groups:
         representative = old_events[0]
+        match_index = next(
+            (
+                index
+                for index, current in enumerate(test_groups)
+                if index not in matched_test_groups
+                and _events_match(representative, current[0])
+            ),
+            None,
+        )
+        current_events = test_groups[match_index] if match_index is not None else []
+        if match_index is not None:
+            matched_test_groups.add(match_index)
         if not current_events:
             unobservable = _unobservable_event_channels(
                 test,
@@ -628,7 +710,12 @@ def _event_entries(
         )
         entries.append(
             SessionLedgerEntry(
-                entry_id=_entry_id(kind, baseline.run_id, test.run_id, signature),
+                entry_id=_entry_id(
+                    kind,
+                    baseline.run_id,
+                    test.run_id,
+                    _event_signature(representative) or representative.event_id,
+                ),
                 state=state,
                 observation_kind=kind,
                 baseline_run_id=baseline.run_id,
@@ -642,6 +729,46 @@ def _event_entries(
                 citations=_dedupe_citations(event_citations),
             )
         )
+    for index, current_events in enumerate(test_groups):
+        if index in matched_test_groups:
+            continue
+        representative = current_events[0]
+        event_citations = [
+            *shared_citations,
+            *(
+                SessionEvidenceCitation(
+                    kind="event",
+                    reference_id=event.event_id,
+                    run_id=event.run_id,
+                )
+                for event in current_events
+            ),
+            *(
+                _lap_citation(event.run_id, event.lap_number)
+                for event in current_events
+                if event.lap_number is not None
+            ),
+        ]
+        label = representative.event_subtype or representative.event_type
+        entries.append(SessionLedgerEntry(
+            entry_id=_entry_id(
+                "new-issue",
+                baseline.run_id,
+                test.run_id,
+                _event_signature(representative) or representative.event_id,
+            ),
+            state="new",
+            observation_kind="new_issue",
+            baseline_run_id=baseline.run_id,
+            test_run_id=test.run_id,
+            description=f"A new eligible {label} signature appeared in the next comparable run.",
+            evidence_scope="event_signature",
+            start_pct=representative.lap_pct_start,
+            end_pct=representative.lap_pct_end,
+            phase=str(representative.evidence_json.get("phase") or "").strip() or None,
+            setup_changes=setup_changes,
+            citations=_dedupe_citations(event_citations),
+        ))
     return entries, _unique(blockers)
 
 
@@ -1328,6 +1455,83 @@ def evaluate_hypothesis_repeat(
     )
 
 
+def evaluate_durable_hypothesis_repeat(
+    candidate: HypothesisPolicyIdentity,
+    *,
+    db_path: str | Path | None = None,
+) -> HypothesisRepeatPolicyDecision:
+    """Evaluate exact policy memory across every revalidated saved session."""
+
+    comparisons: list[HypothesisRepeatPolicyComparison] = []
+    matched_workflows: list[str] = []
+    sessions, unreadable_sessions = list_sessions_with_integrity(
+        include_archived=True,
+        db_path=db_path,
+    )
+    quarantines = list_session_intelligence_quarantines(db_path=db_path)
+    history_debt: list[HistoricalIntelligenceDebt] = [
+        HistoricalIntelligenceDebt(
+            session_id=session_id,
+            reason=reason,
+            recovery=(
+                "Repair or explicitly quarantine this saved session before treating "
+                "durable Undo history as complete."
+            ),
+        )
+        for session_id, reason in unreadable_sessions
+        if session_id not in quarantines
+    ]
+    for session in sessions:
+        try:
+            lifecycle = build_hypothesis_lifecycle(
+                session.session_id,
+                expected_run_ids=tuple(session.run_ids),
+                db_path=db_path,
+            )
+            decision = evaluate_hypothesis_repeat(lifecycle, candidate)
+        except (OSError, TypeError, ValueError, StoredEvidenceIntegrityError):
+            if session.session_id in quarantines:
+                continue
+            history_debt.append(HistoricalIntelligenceDebt(
+                session_id=session.session_id,
+                reason="Saved session intelligence could not be revalidated.",
+                recovery=(
+                    "Repair or explicitly quarantine this saved session before treating "
+                    "durable Undo history as complete."
+                ),
+            ))
+            continue
+        comparisons.extend(decision.comparisons)
+        matched_workflows.extend(decision.matched_workflow_ids)
+    unique_comparisons = tuple({
+        (item.workflow_id, item.hypothesis_policy_key): item
+        for item in comparisons
+    }.values())
+    matched = tuple(dict.fromkeys(matched_workflows))
+    unique_history_debt = tuple({item.session_id: item for item in history_debt}.values())
+    changed_dimensions = () if matched or unique_history_debt else tuple(
+        dimension
+        for dimension in _POLICY_DIMENSION_ORDER
+        if any(dimension in item.changed_dimensions for item in unique_comparisons)
+    )
+    return HypothesisRepeatPolicyDecision(
+        status="blocked" if matched or unique_history_debt else "allowed",
+        allowed=not matched and not unique_history_debt,
+        candidate_policy_key=candidate.policy_key,
+        matched_workflow_ids=matched,
+        comparisons=unique_comparisons,
+        changed_dimensions=changed_dimensions,
+        history_debt=unique_history_debt,
+        reason=(
+            "A protocol-valid Undo result blocks this unchanged policy across saved sessions."
+            if matched
+            else "Durable engineering history is incomplete and must be recovered or explicitly quarantined."
+            if unique_history_debt
+            else "No exact durable Undo policy matched; materially changed policies remain testable."
+        ),
+    )
+
+
 def _stage_binding_hash(workflow: ControlledWorkflow) -> str:
     payload = {
         "stage_run_ids": workflow.stage_run_ids,
@@ -1835,6 +2039,7 @@ __all__ = [
     "controlled_hypothesis_fingerprint",
     "controlled_hypothesis_policy_identity",
     "evaluate_hypothesis_repeat",
+    "evaluate_durable_hypothesis_repeat",
     "hypothesis_may_repeat",
     "position_evidence_sha256",
     "setup_policy_fingerprint",

@@ -43,11 +43,14 @@ from racelab_engine.models.intelligence import (
     CapabilityAssessment,
     CauseDiscriminator,
     CauseHypothesis,
+    ControlResponseOutcome,
+    ControlledOutcomeAssessment,
     DataQualityAssessment,
     EvidenceCitation,
     EvidenceEdge,
     EvidenceEdgeKind,
     EvidenceGraph,
+    EvidenceIndependenceCluster,
     EvidenceNode,
     EvidenceNodeKind,
     GroundedClaim,
@@ -57,10 +60,14 @@ from racelab_engine.models.intelligence import (
     IntelligenceAction,
     IntelligenceBriefing,
     InternalIntelligenceReport,
+    MechanismClaimOutcome,
     MindChangeCriterion,
     NavigationTarget,
     PublicCompetingCause,
+    PolicyAcceptabilityOutcome,
     RankedCause,
+    ReasoningAuthorityEnvelope,
+    ReasoningSnapshot,
     ResponseMemorySummary,
     SetupEvidenceValue,
 )
@@ -72,8 +79,12 @@ from racelab_engine.models.smart_guidance import (
     MeasurementSelectionAudit,
     measurement_priority_rank,
 )
-from racelab_engine.models.observation_intelligence import ObservationCitation
+from racelab_engine.models.observation_intelligence import (
+    MechanismObservation,
+    ObservationCitation,
+)
 from racelab_engine.models.lap import LapSummary
+from racelab_engine.models.lap_engineering_context import LapEngineeringContextReport
 from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.services.setup_learning_service import (
     SetupResponseContext,
@@ -322,6 +333,8 @@ def _event_citation(
 def build_evidence_graph(
     *,
     claims: Sequence[GroundedClaim] = (),
+    causes: Sequence[CauseHypothesis] = (),
+    observations: Sequence[MechanismObservation] = (),
     events: Sequence[TelemetryEvent] = (),
     recommendations: Sequence[Recommendation] = (),
     laps: Sequence[LapSummary] = (),
@@ -452,9 +465,76 @@ def build_evidence_graph(
             )
         )
 
+    observation_qualified: dict[str, bool] = {}
+    referenced_channels: dict[str, bool] = {}
+    for observation in observations:
+        if not observation.observation_id.strip() or observation.observation_id != observation.observation_id.strip():
+            graph_blockers.append("A mechanism observation has an invalid identity.")
+            continue
+        for index, citation in enumerate(observation.citations):
+            entity_id = f"{observation.observation_id}:{index}"
+            lap_node_id = f"lap:{citation.run_id}:{citation.lap_number}"
+            lap_node = nodes.get(lap_node_id)
+            qualified = bool(
+                observation.qualified
+                and citation.run_id == observation.run_id
+                and lap_node is not None
+                and lap_node.qualified
+                and citation.evidence_state in _QUALIFIED_STATES
+            )
+            blockers = () if qualified else (
+                "The typed observation is not bound to a qualified eligible lap.",
+            )
+            observation_qualified[entity_id] = qualified
+            node_id = f"observation:{entity_id}"
+            add_node(EvidenceNode(
+                node_id=node_id,
+                entity_id=entity_id,
+                kind=EvidenceNodeKind.OBSERVATION,
+                label=f"{observation.mechanism.value.replace('_', ' ').title()} observation",
+                evidence_state=(
+                    citation.evidence_state if qualified else EvidenceState.BLOCKED_BY_CONTEXT
+                ),
+                qualified=qualified,
+                blocker_reasons=blockers,
+                citation=EvidenceCitation(
+                    citation_id=node_id,
+                    run_id=citation.run_id,
+                    lap_number=citation.lap_number,
+                    lap_pct_start=citation.lap_pct_start,
+                    lap_pct_end=citation.lap_pct_end,
+                    lap_pct_peak=citation.lap_pct_peak,
+                    event_id=None,
+                    workspace="platform",
+                    phase=_typed_phase(citation.phase),
+                    channels=citation.source_channels,
+                    evidence_state=(
+                        citation.evidence_state
+                        if qualified
+                        else EvidenceState.BLOCKED_BY_CONTEXT
+                    ),
+                    valid_for_tuning=False,
+                    summary=observation.summary,
+                ),
+            ))
+            if lap_node is not None:
+                add_edge(
+                    node_id,
+                    lap_node_id,
+                    EvidenceEdgeKind.OBSERVED_ON,
+                    qualified=qualified,
+                )
+            for channel in citation.source_channels:
+                referenced_channels[channel] = referenced_channels.get(channel, False) or qualified
+                add_edge(
+                    node_id,
+                    f"channel:{channel}",
+                    EvidenceEdgeKind.USES_CHANNEL,
+                    qualified=qualified,
+                )
+
     events_by_id: dict[str, TelemetryEvent] = {}
     event_qualified: dict[str, bool] = {}
-    referenced_channels: dict[str, bool] = {}
     referenced_setups: dict[str, bool] = {}
     for event in events:
         if (
@@ -922,9 +1002,18 @@ def build_evidence_graph(
         if recommendation_qualified.get(recommendation.recommendation_id) is True
         for channel in recommendation.source_channels
     }
+    qualified_observation_channels = {
+        channel
+        for observation in observations
+        for index, citation in enumerate(observation.citations)
+        if observation_qualified.get(f"{observation.observation_id}:{index}") is True
+        for channel in citation.source_channels
+    }
     for channel in referenced_channels:
         referenced_channels[channel] = channel in (
-            qualified_event_channels | qualified_recommendation_channels
+            qualified_event_channels
+            | qualified_recommendation_channels
+            | qualified_observation_channels
         )
     qualified_event_setups = {
         setup_key
@@ -1212,6 +1301,101 @@ def build_evidence_graph(
                     qualified=nodes[setup_node_id].qualified and nodes[target].qualified,
                 )
 
+    for cause in causes:
+        cause_node_id = f"cause:{cause.cause_id}"
+        support_targets = tuple(dict.fromkeys((
+            *(f"event:{event_id}" for event_id in cause.supporting_event_ids),
+            *(
+                f"observation:{observation_id}"
+                for observation_id in cause.supporting_observation_ids
+            ),
+        )))
+        contradiction_targets = tuple(dict.fromkeys((
+            *(f"event:{event_id}" for event_id in cause.contradicting_event_ids),
+            *(
+                f"observation:{observation_id}"
+                for observation_id in cause.contradicting_observation_ids
+            ),
+        )))
+        diagnostic_workflows = tuple(
+            outcome.workflow_id
+            for outcome in cause.controlled_outcomes
+            if outcome.diagnostic_validity == "mechanism_diagnostic"
+            and outcome.outcome in {"supported", "contradicted"}
+        )
+        missing_targets = tuple(
+            target
+            for target in (*support_targets, *contradiction_targets)
+            if target not in nodes
+        )
+        qualified_targets = tuple(
+            target
+            for target in (*support_targets, *contradiction_targets)
+            if target in nodes and nodes[target].qualified
+        )
+        qualified_diagnostic_workflows = tuple(
+            workflow_id
+            for workflow_id in diagnostic_workflows
+            if nodes.get(f"workflow:{workflow_id}") is not None
+            and nodes[f"workflow:{workflow_id}"].qualified
+        )
+        cause_blockers = list(cause.blocker_reasons)
+        cause_blockers.extend(
+            f"Cause evidence target {target} is unavailable."
+            for target in missing_targets
+        )
+        qualified = bool(qualified_targets or qualified_diagnostic_workflows)
+        add_node(EvidenceNode(
+            node_id=cause_node_id,
+            entity_id=cause.cause_id,
+            kind=EvidenceNodeKind.CAUSE,
+            label=cause.label,
+            evidence_state=(
+                EvidenceState.OBSERVED_CORRELATION
+                if qualified_targets
+                else EvidenceState.CONTROLLED_TEST_EFFECT
+                if qualified_diagnostic_workflows
+                else EvidenceState.BLOCKED_BY_CONTEXT
+            ),
+            qualified=qualified,
+            blocker_reasons=() if qualified else _unique_text((
+                *cause_blockers,
+                "No qualified evidence currently supports or contradicts this cause.",
+            )),
+        ))
+        for target in support_targets:
+            if target in nodes:
+                add_edge(
+                    cause_node_id,
+                    target,
+                    EvidenceEdgeKind.SUPPORTED_BY,
+                    qualified=qualified and nodes[target].qualified,
+                )
+        for target in contradiction_targets:
+            if target in nodes:
+                add_edge(
+                    cause_node_id,
+                    target,
+                    EvidenceEdgeKind.CONTRADICTED_BY,
+                    qualified=qualified and nodes[target].qualified,
+                )
+        for outcome in cause.controlled_outcomes:
+            target = f"workflow:{outcome.workflow_id}"
+            if target not in nodes or outcome.diagnostic_validity != "mechanism_diagnostic":
+                continue
+            edge_kind = (
+                EvidenceEdgeKind.SUPPORTED_BY
+                if outcome.outcome == "supported"
+                else EvidenceEdgeKind.CONTRADICTED_BY
+            )
+            if outcome.outcome in {"supported", "contradicted"}:
+                add_edge(
+                    cause_node_id,
+                    target,
+                    edge_kind,
+                    qualified=qualified and nodes[target].qualified,
+                )
+
     edge_qualifications: dict[tuple[str, str, EvidenceEdgeKind], list[bool]] = {}
     for edge in edges:
         if edge.source_node_id not in nodes or edge.target_node_id not in nodes:
@@ -1249,14 +1433,13 @@ def build_evidence_graph(
     )
 
 
-def _qualified_event_citations(graph: EvidenceGraph) -> dict[str, EvidenceCitation]:
+def _qualified_evidence_citations(graph: EvidenceGraph) -> dict[str, EvidenceCitation]:
     return {
         node.entity_id: node.citation
         for node in graph.nodes
-        if node.kind is EvidenceNodeKind.EVENT
+        if node.kind in {EvidenceNodeKind.EVENT, EvidenceNodeKind.OBSERVATION}
         and node.qualified
         and node.citation is not None
-        and node.citation.valid_for_tuning
     }
 
 
@@ -1475,6 +1658,7 @@ def _public_non_action_plan(plan: InformationPlan) -> InformationPlan:
             instruction=safe_mission.procedure[0],
             rationale="More qualified evidence is required before any setup action.",
             measurement_mission=safe_mission,
+            mission_contract=plan.mission_contract,
             blocker_reasons=safe_mission.blockers,
         )
     if plan.kind == "discriminator" and plan.discriminator is not None:
@@ -1500,8 +1684,18 @@ def _public_non_action_plan(plan: InformationPlan) -> InformationPlan:
                 instruction=safe_discriminator.instruction,
                 rationale="One unresolved cause requires a controlled observation.",
                 discriminator=safe_discriminator,
+                mission_contract=plan.mission_contract,
                 source_event_ids=safe_discriminator.source_event_ids,
             )
+    if plan.kind == "stop_testing":
+        return InformationPlan(
+            kind="stop_testing",
+            title="Stop repeating this measurement",
+            instruction="Preserve the evidence and redesign the next measurement.",
+            rationale="The exact mission reached a declared feasibility or information stop rule.",
+            mission_contract=plan.mission_contract,
+            blocker_reasons=("The current measurement contract should not be repeated unchanged.",),
+        )
     return InformationPlan(
         kind="blocked",
         title="Setup action withheld",
@@ -1586,6 +1780,8 @@ def _public_evidence_graph(graph: EvidenceGraph) -> EvidenceGraph:
         EvidenceNodeKind.CHANNEL: "Telemetry channel",
         EvidenceNodeKind.SETUP: "Setup evidence",
         EvidenceNodeKind.WORKFLOW: "Controlled workflow",
+        EvidenceNodeKind.CAUSE: "Cause candidate",
+        EvidenceNodeKind.OBSERVATION: "Mechanism observation",
     }
     retained = {
         node.node_id: node
@@ -1795,6 +1991,108 @@ def _revalidate_response_summaries(
     )
 
 
+def _evidence_independence_clusters(
+    cause_id: str,
+    polarity: str,
+    citations: Sequence[EvidenceCitation],
+) -> tuple[EvidenceIndependenceCluster, ...]:
+    """Group correlated same-run, same-phase, overlapping-window observations.
+
+    Repeated laps inside one continuous run show repeatability, but they are not
+    independent causal experiments. A new run creates a new cluster. Distinct
+    non-overlapping physical windows in the same run remain separate.
+    """
+
+    grouped: dict[tuple[str, str | None], list[EvidenceCitation]] = {}
+    for citation in citations:
+        grouped.setdefault((citation.run_id, citation.phase), []).append(citation)
+    result: list[EvidenceIndependenceCluster] = []
+    for (run_id, phase), scoped in sorted(
+        grouped.items(), key=lambda item: (item[0][0], item[0][1] or "")
+    ):
+        ordered = sorted(
+            scoped,
+            key=lambda citation: (
+                citation.lap_pct_start
+                if citation.lap_pct_start is not None
+                else citation.lap_pct_peak
+                if citation.lap_pct_peak is not None
+                else -1.0,
+                citation.lap_pct_end
+                if citation.lap_pct_end is not None
+                else citation.lap_pct_peak
+                if citation.lap_pct_peak is not None
+                else 101.0,
+                citation.lap_number if citation.lap_number is not None else -1,
+                citation.citation_id,
+            ),
+        )
+        partitions: list[list[EvidenceCitation]] = []
+        partition_end: list[float | None] = []
+        for citation in ordered:
+            start = (
+                citation.lap_pct_start
+                if citation.lap_pct_start is not None
+                else citation.lap_pct_peak
+            )
+            end = (
+                citation.lap_pct_end
+                if citation.lap_pct_end is not None
+                else citation.lap_pct_peak
+            )
+            matched_index = next(
+                (
+                    index
+                    for index, current_end in enumerate(partition_end)
+                    if current_end is None or start is None or start <= current_end + 1.0
+                ),
+                None,
+            )
+            if matched_index is None:
+                partitions.append([citation])
+                partition_end.append(end)
+            else:
+                partitions[matched_index].append(citation)
+                if end is not None:
+                    current_end = partition_end[matched_index]
+                    partition_end[matched_index] = (
+                        end if current_end is None else max(current_end, end)
+                    )
+        for partition in partitions:
+            starts = [
+                value
+                for citation in partition
+                if (value := citation.lap_pct_start) is not None
+            ]
+            ends = [
+                value
+                for citation in partition
+                if (value := citation.lap_pct_end) is not None
+            ]
+            citation_ids = tuple(
+                dict.fromkeys(citation.citation_id for citation in partition)
+            )
+            digest = hashlib.sha256(
+                "|".join((cause_id, polarity, run_id, phase or "", *citation_ids)).encode()
+            ).hexdigest()[:16]
+            result.append(EvidenceIndependenceCluster(
+                cluster_id=f"cluster:{digest}",
+                cause_id=cause_id,
+                polarity=polarity,
+                run_id=run_id,
+                phase=phase,
+                lap_numbers=tuple(sorted({
+                    citation.lap_number
+                    for citation in partition
+                    if citation.lap_number is not None
+                })),
+                citation_ids=citation_ids,
+                lap_pct_start=min(starts) if starts and len(starts) == len(partition) else None,
+                lap_pct_end=max(ends) if ends and len(ends) == len(partition) else None,
+            ))
+    return tuple(result)
+
+
 def rank_competing_causes(
     hypotheses: Sequence[CauseHypothesis],
     graph: EvidenceGraph,
@@ -1803,11 +2101,17 @@ def rank_competing_causes(
     cause_ids = [cause.cause_id for cause in hypotheses]
     if len(cause_ids) != len(set(cause_ids)):
         raise ValueError("competing causes require unique cause_id values")
-    citations = _qualified_event_citations(graph)
+    citations = _qualified_evidence_citations(graph)
     preliminary: list[dict[str, Any]] = []
     for cause in hypotheses:
-        supporting_ids = tuple(dict.fromkeys(cause.supporting_event_ids))
-        contradicting_ids = tuple(dict.fromkeys(cause.contradicting_event_ids))
+        supporting_ids = tuple(dict.fromkeys((
+            *cause.supporting_event_ids,
+            *cause.supporting_observation_ids,
+        )))
+        contradicting_ids = tuple(dict.fromkeys((
+            *cause.contradicting_event_ids,
+            *cause.contradicting_observation_ids,
+        )))
         overlapping_ids = set(supporting_ids) & set(contradicting_ids)
         support = tuple(
             citations[event_id]
@@ -1822,12 +2126,12 @@ def rank_competing_causes(
         missing = list(cause.required_evidence)
         missing.extend(
             f"Qualified supporting event {event_id}"
-            for event_id in cause.supporting_event_ids
+            for event_id in supporting_ids
             if event_id not in citations
         )
         missing.extend(
             f"Qualified contradicting event {event_id}"
-            for event_id in cause.contradicting_event_ids
+            for event_id in contradicting_ids
             if event_id not in citations
         )
         if overlapping_ids:
@@ -1835,17 +2139,22 @@ def rank_competing_causes(
                 "Evidence declared as both support and contradiction must be reclassified."
             )
         controlled_support = tuple(
-            outcome for outcome in cause.controlled_outcomes if outcome.outcome == "supported"
+            outcome
+            for outcome in cause.controlled_outcomes
+            if outcome.diagnostic_validity == "mechanism_diagnostic"
+            and outcome.outcome == "supported"
         )
         controlled_against = tuple(
             outcome
             for outcome in cause.controlled_outcomes
-            if outcome.outcome == "contradicted"
+            if outcome.diagnostic_validity == "mechanism_diagnostic"
+            and outcome.outcome == "contradicted"
         )
         controlled_inconclusive = tuple(
             outcome
             for outcome in cause.controlled_outcomes
-            if outcome.outcome == "inconclusive"
+            if outcome.diagnostic_validity == "mechanism_diagnostic"
+            and outcome.outcome == "inconclusive"
         )
         controlled_invalid = tuple(
             outcome for outcome in cause.controlled_outcomes if outcome.outcome == "invalid"
@@ -1863,12 +2172,12 @@ def rank_competing_causes(
         normalized_blockers = _unique_text(
             [*cause.blocker_reasons, *controlled_invalid_blockers]
         )
-        support_units = {
-            (citation.run_id, citation.lap_number) for citation in support
-        }
-        against_units = {
-            (citation.run_id, citation.lap_number) for citation in against
-        }
+        support_clusters = _evidence_independence_clusters(
+            cause.cause_id, "support", support
+        )
+        against_clusters = _evidence_independence_clusters(
+            cause.cause_id, "contradiction", against
+        )
         controlled_conflict = bool(controlled_support and controlled_against)
         ruled_out_by_controlled_result = bool(
             controlled_against
@@ -1876,22 +2185,15 @@ def rank_competing_causes(
             and not controlled_inconclusive
             and not controlled_invalid
         )
-        ruled_out_by_repetition = bool(
-            len(against_units) >= _MIN_REPEATED_CAUSE_EVIDENCE_UNITS
-            and not support_units
-            and not cause.controlled_outcomes
-            and not normalized_missing
-            and not normalized_blockers
-        )
-        ruled_out = ruled_out_by_controlled_result or ruled_out_by_repetition
-        has_any_contradiction = bool(against_units or controlled_against)
+        ruled_out = ruled_out_by_controlled_result
+        has_any_contradiction = bool(against_clusters or controlled_against)
         support_tier = (
             3
             if controlled_support and not controlled_conflict and not controlled_against
             else 2
-            if len(support_units) >= _MIN_REPEATED_CAUSE_EVIDENCE_UNITS
+            if len(support_clusters) >= _MIN_REPEATED_CAUSE_EVIDENCE_UNITS
             else 1
-            if support_units
+            if support_clusters
             else 0
         )
         strength = (
@@ -1899,8 +2201,8 @@ def rank_competing_causes(
             support_tier,
             0 if controlled_conflict else 1,
             0 if controlled_against else 1,
-            0 if against_units else 1,
-            min(len(support_units), _MIN_REPEATED_CAUSE_EVIDENCE_UNITS),
+            0 if against_clusters else 1,
+            min(len(support_clusters), _MIN_REPEATED_CAUSE_EVIDENCE_UNITS),
             -len(normalized_missing),
             -len(normalized_blockers),
         )
@@ -1911,8 +2213,10 @@ def rank_competing_causes(
                 "against": against,
                 "missing": normalized_missing,
                 "blockers": normalized_blockers,
-                "support_unit_count": len(support_units),
-                "against_unit_count": len(against_units),
+                "support_unit_count": len(support_clusters),
+                "against_unit_count": len(against_clusters),
+                "support_clusters": support_clusters,
+                "against_clusters": against_clusters,
                 "controlled_support": controlled_support,
                 "controlled_against": controlled_against,
                 "controlled_inconclusive": controlled_inconclusive,
@@ -1972,6 +2276,10 @@ def rank_competing_causes(
             status = "unresolved"
         elif cause.cause_id == uniquely_likely_id:
             status = "likely"
+        elif not item["support_clusters"] and not item["controlled_support"] and (
+            item["against_clusters"] or item["missing"] or item["blockers"]
+        ):
+            status = "unresolved"
         else:
             status = "possible"
         ranked.append(
@@ -1984,8 +2292,9 @@ def rank_competing_causes(
                 rank_basis=(
                     "Ordinal evidence ordering: "
                     f"{item['support_unit_count']} supporting and "
-                    f"{item['against_unit_count']} contradicting independent eligible-lap "
-                    "units; "
+                    f"{item['against_unit_count']} contradicting run/window independence "
+                    "clusters; repeated laps inside one cluster show repeatability without "
+                    "becoming separate causal votes; "
                     f"{len(item['controlled_support'])} supporting, "
                     f"{len(item['controlled_against'])} contradicting, "
                     f"{len(item['controlled_inconclusive'])} inconclusive, and "
@@ -1997,6 +2306,8 @@ def rank_competing_causes(
                 contradicting_evidence=item["against"],
                 supporting_evidence_unit_count=item["support_unit_count"],
                 contradicting_evidence_unit_count=item["against_unit_count"],
+                supporting_clusters=item["support_clusters"],
+                contradicting_clusters=item["against_clusters"],
                 controlled_outcomes=cause.controlled_outcomes,
                 controlled_conflict=item["controlled_conflict"],
                 missing_evidence=item["missing"],
@@ -2005,6 +2316,232 @@ def rank_competing_causes(
             )
         )
     return tuple(ranked)
+
+
+def _controlled_outcome_assessment(
+    outcome: Any,
+) -> ControlledOutcomeAssessment:
+    if outcome.outcome == "invalid":
+        mechanism_state = "invalid"
+        response_result = "invalid"
+    elif outcome.diagnostic_validity == "mechanism_diagnostic":
+        mechanism_state = {
+            "supported": "supported",
+            "contradicted": "weakened",
+            "inconclusive": "inconclusive",
+        }[outcome.outcome]
+        response_result = outcome.control_direction_result or "inconclusive"
+    else:
+        mechanism_state = "unchanged"
+        response_result = outcome.control_direction_result or "inconclusive"
+    policy_acceptable = (
+        True if outcome.verdict == "keep" else False if outcome.verdict == "undo" else None
+    )
+    return ControlledOutcomeAssessment(
+        workflow_id=outcome.workflow_id,
+        mechanism=MechanismClaimOutcome(
+            workflow_id=outcome.workflow_id,
+            state=mechanism_state,
+            diagnostic_validity=outcome.diagnostic_validity,
+            reason=(
+                "A producer-owned diagnostic intervention may update mechanism evidence."
+                if outcome.diagnostic_validity == "mechanism_diagnostic"
+                else "This setup-control test measures treatment response; mechanism truth is unchanged."
+            ),
+        ),
+        control_response=ControlResponseOutcome(
+            workflow_id=outcome.workflow_id,
+            result=response_result,
+            metric=outcome.metric,
+            phase=outcome.phase,
+            control_key=outcome.control_key,
+            reason=(
+                "The exact control moved the target metric in the declared direction."
+                if response_result == "matched"
+                else "The exact control missed the declared target direction."
+                if response_result == "missed"
+                else "The exact control response was not conclusive."
+            ),
+        ),
+        policy=PolicyAcceptabilityOutcome(
+            workflow_id=outcome.workflow_id,
+            verdict=outcome.verdict,
+            acceptable=policy_acceptable,
+            countereffects=outcome.countereffects,
+            reason=(
+                "Keep is a policy verdict, not proof of the mechanism."
+                if outcome.verdict == "keep"
+                else "Undo rejects this exact policy while preserving separate mechanism evidence."
+                if outcome.verdict == "undo"
+                else "Retest requires another protocol-valid result."
+                if outcome.verdict == "retest"
+                else "Invalid execution cannot update mechanism, response, or policy memory."
+            ),
+        ),
+    )
+
+
+def _graph_with_ranked_causes(
+    graph: EvidenceGraph,
+    causes: Sequence[RankedCause],
+) -> EvidenceGraph:
+    """Ensure the canonical backend graph, not the adapter, owns cause assertions."""
+
+    nodes = {
+        node.node_id: node
+        for node in graph.nodes
+        if node.kind is not EvidenceNodeKind.CAUSE
+    }
+    edges = {
+        (edge.source_node_id, edge.target_node_id, edge.kind): edge
+        for edge in graph.edges
+        if edge.source_node_id in nodes and edge.target_node_id in nodes
+    }
+    for cause in causes:
+        node_id = f"cause:{cause.cause_id}"
+        citations = (*cause.supporting_evidence, *cause.contradicting_evidence)
+        diagnostic = tuple(
+            outcome
+            for outcome in cause.controlled_outcomes
+            if outcome.diagnostic_validity == "mechanism_diagnostic"
+            and outcome.outcome in {"supported", "contradicted"}
+        )
+        qualified = bool(citations or diagnostic)
+        nodes[node_id] = EvidenceNode(
+            node_id=node_id,
+            entity_id=cause.cause_id,
+            kind=EvidenceNodeKind.CAUSE,
+            label=cause.label,
+            evidence_state=(
+                citations[0].evidence_state
+                if citations
+                else EvidenceState.CONTROLLED_TEST_EFFECT
+                if diagnostic
+                else EvidenceState.BLOCKED_BY_CONTEXT
+            ),
+            qualified=qualified,
+            blocker_reasons=(
+                ()
+                if qualified
+                else ("No qualified evidence currently supports or contradicts this cause.",)
+            ),
+        )
+        for polarity, scoped, edge_kind in (
+            ("support", cause.supporting_evidence, EvidenceEdgeKind.SUPPORTED_BY),
+            ("contradiction", cause.contradicting_evidence, EvidenceEdgeKind.CONTRADICTED_BY),
+        ):
+            del polarity
+            for citation in scoped:
+                target = (
+                    f"event:{citation.event_id}"
+                    if citation.event_id is not None
+                    else citation.citation_id
+                )
+                if target in nodes:
+                    edges[(node_id, target, edge_kind)] = EvidenceEdge(
+                        source_node_id=node_id,
+                        target_node_id=target,
+                        kind=edge_kind,
+                        qualified=nodes[target].qualified,
+                    )
+        for outcome in diagnostic:
+            target = f"workflow:{outcome.workflow_id}"
+            if target in nodes:
+                edge_kind = (
+                    EvidenceEdgeKind.SUPPORTED_BY
+                    if outcome.outcome == "supported"
+                    else EvidenceEdgeKind.CONTRADICTED_BY
+                )
+                edges[(node_id, target, edge_kind)] = EvidenceEdge(
+                    source_node_id=node_id,
+                    target_node_id=target,
+                    kind=edge_kind,
+                    qualified=nodes[target].qualified,
+                )
+    return EvidenceGraph(
+        nodes=tuple(nodes[node_id] for node_id in sorted(nodes)),
+        edges=tuple(
+            edges[key]
+            for key in sorted(edges, key=lambda item: (item[0], item[1], item[2].value))
+        ),
+        blocker_reasons=graph.blocker_reasons,
+    )
+
+
+def build_reasoning_snapshot(
+    *,
+    run_id: str,
+    session_id: str | None,
+    graph: EvidenceGraph,
+    ranked_causes: Sequence[RankedCause],
+    measurement_plan: InformationPlan,
+    data_quality: DataQualityAssessment,
+    lap_context: LapEngineeringContextReport | None = None,
+    blocker_reasons: Sequence[str] = (),
+) -> ReasoningSnapshot:
+    canonical_graph = _graph_with_ranked_causes(graph, ranked_causes)
+    clusters = tuple(
+        cluster
+        for cause in ranked_causes
+        for cluster in (*cause.supporting_clusters, *cause.contradicting_clusters)
+    )
+    assessments_by_workflow: dict[str, ControlledOutcomeAssessment] = {}
+    duplicate_workflows: set[str] = set()
+    for cause in ranked_causes:
+        for outcome in cause.controlled_outcomes:
+            assessment = _controlled_outcome_assessment(outcome)
+            existing = assessments_by_workflow.get(outcome.workflow_id)
+            if existing is not None and existing != assessment:
+                duplicate_workflows.add(outcome.workflow_id)
+                continue
+            assessments_by_workflow[outcome.workflow_id] = assessment
+    if duplicate_workflows:
+        raise ValueError(
+            "one controlled workflow cannot publish conflicting reasoning assessments"
+        )
+    if data_quality.status == "blocked" or measurement_plan.kind == "blocked":
+        level = "blocked"
+    elif measurement_plan.kind == "controlled_test" and measurement_plan.setup_authorized:
+        level = "controlled_setup"
+    elif measurement_plan.kind in {"measurement_mission", "discriminator"}:
+        level = "measurement"
+    else:
+        level = "observation"
+    card = measurement_plan.controlled_test
+    authority = ReasoningAuthorityEnvelope(
+        level=level,
+        setup_authorized=level == "controlled_setup",
+        control_key=card.control_key if level == "controlled_setup" and card is not None else None,
+        source_event_ids=(
+            card.evidence_event_ids
+            if level == "controlled_setup" and card is not None
+            else ()
+        ),
+        reason=(
+            "One current-run evidence-linked A/B/A2 setup test is authorized."
+            if level == "controlled_setup"
+            else "Collect the producer-owned measurement without changing setup."
+            if level == "measurement"
+            else "Evidence may be observed but does not authorize setup."
+            if level == "observation"
+            else "Current evidence integrity blocks engineering authority."
+        ),
+    )
+    return ReasoningSnapshot(
+        run_id=run_id,
+        session_id=session_id,
+        evidence_graph=canonical_graph,
+        causes=tuple(ranked_causes),
+        evidence_clusters=clusters,
+        controlled_outcomes=tuple(
+            assessments_by_workflow[key] for key in sorted(assessments_by_workflow)
+        ),
+        measurement_plan=measurement_plan,
+        data_quality=data_quality,
+        lap_context=lap_context,
+        authority=authority,
+        blocker_reasons=_unique_text(blocker_reasons),
+    )
 
 
 def _measurement_channel_lineage(
@@ -3249,12 +3786,14 @@ def build_internal_intelligence_report(
     ranked_causes: Sequence[RankedCause],
     best_measurement: InformationPlan,
     data_quality: DataQualityAssessment,
+    lap_context: LapEngineeringContextReport | None = None,
     context_matches: Sequence[ResponseMemorySummary] = (),
     calibration: CalibrationSummary | None = None,
     narrative: Sequence[str] = (),
     suggested_questions: Sequence[str] = (),
 ) -> InternalIntelligenceReport:
     """Assemble a UI-ready internal report without creating new authority."""
+    graph = _graph_with_ranked_causes(graph, ranked_causes)
     validated_context_matches, context_match_blockers = _revalidate_response_summaries(
         context_matches,
         current_context_key=response_context_key,
@@ -3277,6 +3816,11 @@ def build_internal_intelligence_report(
             **{
                 **data_quality.model_dump(),
                 "status": "blocked",
+                "eligible_lap_count": 0,
+                "trusted_event_count": 0,
+                "scope_run_ids": (run_id,),
+                "eligible_lap_ids": (),
+                "trusted_event_ids": (),
                 "issues": _unique_text(
                     [
                         *data_quality.issues,
@@ -3303,6 +3847,7 @@ def build_internal_intelligence_report(
     ranked_causes = tuple(
         cause for cause in ranked_causes if cause_id_counts[cause.cause_id] == 1
     )
+    normalized_ranked_causes: list[RankedCause] = []
     for cause in ranked_causes:
         supporting_ids = [
             citation.event_id or citation.citation_id
@@ -3324,6 +3869,132 @@ def build_internal_intelligence_report(
             ranking_input_blockers.append(
                 "A ranked cause uses the same evidence as support and contradiction."
             )
+        supporting_by_id = {
+            citation.event_id or citation.citation_id: citation
+            for citation in cause.supporting_evidence
+            if (citation.event_id or citation.citation_id) not in overlap_ids
+            and citation.run_id == run_id
+        }
+        contradicting_by_id = {
+            citation.event_id or citation.citation_id: citation
+            for citation in cause.contradicting_evidence
+            if (citation.event_id or citation.citation_id) not in overlap_ids
+            and citation.run_id == run_id
+        }
+        cross_run_withheld = bool(
+            any(citation.run_id != run_id for citation in cause.supporting_evidence)
+            or any(citation.run_id != run_id for citation in cause.contradicting_evidence)
+        )
+        if cross_run_withheld:
+            ranking_input_blockers.append(
+                "Cross-run ranked evidence was withheld from this exact-run report."
+            )
+        support_clusters = tuple(
+            cluster
+            for cluster in cause.supporting_clusters
+            if set(cluster.citation_ids).issubset(
+                {citation.citation_id for citation in supporting_by_id.values()}
+            )
+        )
+        against_clusters = tuple(
+            cluster
+            for cluster in cause.contradicting_clusters
+            if set(cluster.citation_ids).issubset(
+                {citation.citation_id for citation in contradicting_by_id.values()}
+            )
+        )
+        normalized_ranked_causes.append(RankedCause(
+            **{
+                **cause.model_dump(),
+                "status": (
+                    "unresolved"
+                    if overlap_ids
+                    or len(supporting_ids) != len(set(supporting_ids))
+                    or len(contradicting_ids) != len(set(contradicting_ids))
+                    else "possible"
+                    if cross_run_withheld and cause.status == "likely"
+                    else cause.status
+                ),
+                "supporting_evidence": tuple(supporting_by_id.values()),
+                "contradicting_evidence": tuple(contradicting_by_id.values()),
+                "supporting_clusters": support_clusters,
+                "contradicting_clusters": against_clusters,
+                "supporting_evidence_unit_count": (
+                    len(support_clusters)
+                    if support_clusters
+                    else len({
+                        (citation.run_id, citation.lap_number)
+                        for citation in supporting_by_id.values()
+                    })
+                ),
+                "contradicting_evidence_unit_count": (
+                    len(against_clusters)
+                    if against_clusters
+                    else len({
+                        (citation.run_id, citation.lap_number)
+                        for citation in contradicting_by_id.values()
+                    })
+                ),
+                "missing_evidence": _unique_text(cause.missing_evidence),
+                "blocker_reasons": _unique_text(cause.blocker_reasons),
+            }
+        ))
+    ranked_causes = tuple(
+        cause.model_copy(update={
+            "status": "possible" if cause.status == "likely" else cause.status,
+            "ordinal_rank": 1,
+        })
+        for cause in normalized_ranked_causes
+    ) if ranking_input_blockers else tuple(normalized_ranked_causes)
+    retained_node_ids = {
+        node.node_id
+        for node in graph.nodes
+        if node.citation is None or node.citation.run_id == run_id
+    }
+    scoped_nodes_by_id = {
+        node.node_id: node for node in graph.nodes if node.node_id in retained_node_ids
+    }
+    retained_edges = tuple(
+        edge
+        for edge in graph.edges
+        if edge.source_node_id in retained_node_ids
+        and edge.target_node_id in retained_node_ids
+    )
+    for node_id, node in tuple(scoped_nodes_by_id.items()):
+        if node.kind is not EvidenceNodeKind.SETUP or node.authorization_fingerprint is None:
+            continue
+        has_current_link = any(
+            edge.qualified
+            and edge.target_node_id == node_id
+            and edge.kind is EvidenceEdgeKind.RELATES_TO_SETUP
+            and scoped_nodes_by_id[edge.source_node_id].kind is EvidenceNodeKind.EVENT
+            for edge in retained_edges
+        )
+        if not has_current_link:
+            scoped_nodes_by_id[node_id] = node.model_copy(update={
+                "qualified": False,
+                "evidence_state": EvidenceState.BLOCKED_BY_CONTEXT,
+                "blocker_reasons": ("No exact-run event supports this setup relation.",),
+                "authorization_fingerprint": None,
+            })
+    retained_edges = tuple(
+        edge.model_copy(update={
+            "qualified": bool(
+                edge.qualified
+                and scoped_nodes_by_id[edge.source_node_id].qualified
+                and scoped_nodes_by_id[edge.target_node_id].qualified
+            )
+        })
+        for edge in retained_edges
+    )
+    graph = _graph_with_ranked_causes(
+        EvidenceGraph(
+            nodes=tuple(scoped_nodes_by_id.values()),
+            edges=retained_edges,
+            blocker_reasons=graph.blocker_reasons,
+        ),
+        ranked_causes,
+    )
     effective_measurement = best_measurement
     if best_measurement.kind == "controlled_test":
         proposed_card = best_measurement.controlled_test
@@ -3432,249 +4103,80 @@ def build_internal_intelligence_report(
         success_check = "Collect the missing evidence before making a setup change."
 
     current_citations: dict[str, EvidenceCitation] = {}
+    current_event_ids: set[str] = set()
     for node in graph.nodes:
         if (
-            node.kind is not EvidenceNodeKind.EVENT
+            node.kind not in {EvidenceNodeKind.EVENT, EvidenceNodeKind.OBSERVATION}
             or not node.qualified
             or node.citation is None
-            or not node.citation.valid_for_tuning
             or node.citation.run_id != run_id
         ):
             continue
         public_citation = _public_evidence_citation(node.citation)
-        if public_citation.valid_for_tuning:
-            current_citations[node.entity_id] = public_citation
-    scoped_causes: list[dict[str, Any]] = []
+        evidence_id = public_citation.event_id or public_citation.citation_id
+        current_citations[evidence_id] = public_citation
+        if node.kind is EvidenceNodeKind.EVENT and public_citation.event_id is not None:
+            current_event_ids.add(public_citation.event_id)
+
+    public_causes: list[PublicCompetingCause] = []
     for cause in ranked_causes:
-        supporting_ids = tuple(
-            dict.fromkeys(
-                citation.event_id
-                for citation in cause.supporting_evidence
-                if citation.event_id is not None
-            )
-        )
-        contradicting_ids = tuple(
-            dict.fromkeys(
-                citation.event_id
-                for citation in cause.contradicting_evidence
-                if citation.event_id is not None
-            )
-        )
-        overlapping_ids = set(supporting_ids) & set(contradicting_ids)
         evidence_for = tuple(
-            current_citations[event_id]
-            for event_id in supporting_ids
-            if event_id in current_citations and event_id not in overlapping_ids
+            current_citations[evidence_id]
+            for citation in cause.supporting_evidence
+            if (evidence_id := citation.event_id or citation.citation_id)
+            in current_citations
         )
         evidence_against = tuple(
-            current_citations[event_id]
-            for event_id in contradicting_ids
-            if event_id in current_citations and event_id not in overlapping_ids
-        )
-        withheld_count = sum(
-            event_id not in current_citations
-            for event_id in (*supporting_ids, *contradicting_ids)
+            current_citations[evidence_id]
+            for citation in cause.contradicting_evidence
+            if (evidence_id := citation.event_id or citation.citation_id)
+            in current_citations
         )
         controlled_outcomes = tuple(
             outcome
             for outcome in cause.controlled_outcomes
             if outcome.source_run_id == run_id
         )
-        withheld_controlled_count = len(cause.controlled_outcomes) - len(
-            controlled_outcomes
-        )
-        controlled_support = tuple(
-            outcome for outcome in controlled_outcomes if outcome.outcome == "supported"
-        )
-        controlled_against = tuple(
-            outcome
-            for outcome in controlled_outcomes
-            if outcome.outcome == "contradicted"
-        )
-        controlled_inconclusive = tuple(
-            outcome
-            for outcome in controlled_outcomes
-            if outcome.outcome == "inconclusive"
-        )
-        controlled_invalid = tuple(
-            outcome for outcome in controlled_outcomes if outcome.outcome == "invalid"
-        )
-        controlled_conflict = bool(controlled_support and controlled_against)
-        supporting_units = {
-            (citation.run_id, citation.lap_number) for citation in evidence_for
-        }
-        contradicting_units = {
-            (citation.run_id, citation.lap_number) for citation in evidence_against
-        }
-        missing_evidence = _unique_text(cause.missing_evidence)
-        cause_blockers = _unique_text(cause.blocker_reasons)
-        missing_count = len(missing_evidence)
-        ruled_out_by_controlled_result = bool(
-            controlled_against
-            and not controlled_support
-            and not controlled_inconclusive
-            and not controlled_invalid
-        )
-        ruled_out_by_repetition = bool(
-            len(contradicting_units) >= _MIN_REPEATED_CAUSE_EVIDENCE_UNITS
-            and not supporting_units
-            and not controlled_outcomes
-            and missing_count == 0
-            and withheld_count == 0
-            and not overlapping_ids
-            and not cause_blockers
-        )
-        ruled_out = ruled_out_by_controlled_result or ruled_out_by_repetition
-        support_tier = (
-            3
-            if controlled_support and not controlled_conflict and not controlled_against
-            else 2
-            if len(supporting_units) >= _MIN_REPEATED_CAUSE_EVIDENCE_UNITS
-            else 1
-            if supporting_units
-            else 0
-        )
-        strength = (
-            0 if ruled_out else 1,
-            support_tier,
-            0 if controlled_conflict else 1,
-            0 if controlled_against else 1,
-            0 if contradicting_units else 1,
-            min(len(supporting_units), _MIN_REPEATED_CAUSE_EVIDENCE_UNITS),
-            -missing_count,
-            -len(cause_blockers),
-            -len(overlapping_ids),
-        )
-        scoped_causes.append(
-            {
-                "cause": cause,
-                "evidence_for": evidence_for,
-                "evidence_against": evidence_against,
-                "withheld_count": withheld_count,
-                "withheld_controlled_count": withheld_controlled_count,
-                "supporting_unit_count": len(supporting_units),
-                "contradicting_unit_count": len(contradicting_units),
-                "controlled_outcomes": controlled_outcomes,
-                "controlled_support": controlled_support,
-                "controlled_against": controlled_against,
-                "controlled_inconclusive": controlled_inconclusive,
-                "controlled_invalid": controlled_invalid,
-                "controlled_conflict": controlled_conflict,
-                "missing_count": missing_count,
-                "cause_blockers": cause_blockers,
-                "overlapping_ids": overlapping_ids,
-                "ruled_out": ruled_out,
-                "strength": strength,
-            }
-        )
-
-    strengths = sorted({item["strength"] for item in scoped_causes}, reverse=True)
-    rank_by_strength = {strength: index + 1 for index, strength in enumerate(strengths)}
-    rank_one = [
-        item for item in scoped_causes if rank_by_strength[item["strength"]] == 1
-    ]
-    leading_cause_id = None
-    if len(rank_one) == 1 and not ranking_input_blockers:
-        leader = rank_one[0]
-        if (
-            (
-                leader["controlled_support"]
-                or leader["supporting_unit_count"]
-                >= _MIN_REPEATED_CAUSE_EVIDENCE_UNITS
-            )
-            and not leader["evidence_against"]
-            and not leader["controlled_against"]
-            and not leader["controlled_conflict"]
-            and not leader["controlled_inconclusive"]
-            and not leader["controlled_invalid"]
-            and leader["withheld_controlled_count"] == 0
-            and (
-                leader["controlled_support"]
-                or leader["missing_count"] == 0
-                and leader["withheld_count"] == 0
-                and not leader["overlapping_ids"]
-                and not leader["cause_blockers"]
-            )
-            and not leader["ruled_out"]
-        ):
-            leading_cause_id = leader["cause"].cause_id
-
-    public_causes: list[PublicCompetingCause] = []
-    for item in sorted(
-        scoped_causes,
-        key=lambda value: (
-            rank_by_strength[value["strength"]],
-            value["cause"].cause_id,
-        ),
-    ):
-        cause = item["cause"]
-        evidence_for = item["evidence_for"]
-        evidence_against = item["evidence_against"]
-        if cause.cause_id == leading_cause_id:
-            state = "leading"
-        elif item["ruled_out"]:
-            state = "ruled_out"
-        elif (
-            item["controlled_conflict"]
-            or item["controlled_inconclusive"]
-            or item["controlled_invalid"]
-        ):
-            state = "unresolved"
-        elif evidence_for:
-            state = "possible"
-        else:
-            state = "unresolved"
+        state = {
+            "likely": "leading",
+            "possible": "possible",
+            "ruled_out": "ruled_out",
+            "unresolved": "unresolved",
+        }[cause.status]
         evidence_state = (
             evidence_for[0].evidence_state
             if evidence_for
             else evidence_against[0].evidence_state
             if evidence_against
             else EvidenceState.CONTROLLED_TEST_EFFECT
-            if item["controlled_support"] or item["controlled_against"]
+            if any(
+                outcome.diagnostic_validity == "mechanism_diagnostic"
+                and outcome.outcome in {"supported", "contradicted"}
+                for outcome in controlled_outcomes
+            )
             else EvidenceState.BLOCKED_BY_CONTEXT
-            if item["controlled_inconclusive"] or item["controlled_invalid"]
+            if controlled_outcomes
             else EvidenceState.UNAVAILABLE
         )
-        reason = (
-            "Current-run ordinal evidence ordering: "
-            f"{item['supporting_unit_count']} supporting and "
-            f"{item['contradicting_unit_count']} contradicting independent eligible-lap "
-            "units; "
-            f"{len(item['controlled_support'])} supporting, "
-            f"{len(item['controlled_against'])} contradicting, "
-            f"{len(item['controlled_inconclusive'])} inconclusive, and "
-            f"{len(item['controlled_invalid'])} invalid exact controlled outcomes; "
-            f"{item['missing_count']} missing. "
-            "This is not a probability."
-        )
-        if item["withheld_count"] or item["withheld_controlled_count"]:
-            reason += " Cross-run or stale citations were withheld from this report."
-        if item["controlled_conflict"]:
-            reason += " Exact protocol-valid controlled outcomes conflict; the cause is unresolved."
-        if any(
-            outcome.verdict == "undo"
-            for outcome in item["controlled_outcomes"]
-        ):
-            reason += (
-                " Undo blocks the unchanged control policy; the cause state follows the exact "
-                "target-direction outcome rather than a countereffect alone."
-            )
-        if item["overlapping_ids"]:
-            reason += " Evidence declared as both support and contradiction was withheld."
-        if item["cause_blockers"]:
-            reason += " A producer-declared blocker prevents a stronger conclusion."
+        reason = cause.rank_basis
+        if len(evidence_for) != len(cause.supporting_evidence) or len(
+            evidence_against
+        ) != len(cause.contradicting_evidence):
+            reason += " Cross-run or stale citations were withheld from this exact-run view."
+        if any(outcome.verdict == "undo" for outcome in controlled_outcomes):
+            reason += " Undo rejects the exact control policy; it does not falsify the mechanism."
         public_causes.append(
             PublicCompetingCause(
                 cause_id=cause.cause_id,
                 label=f"Cause candidate {len(public_causes) + 1}",
                 state=state,
-                rank=rank_by_strength[item["strength"]],
+                rank=cause.ordinal_rank,
                 evidence_state=evidence_state,
                 reason=reason,
                 evidence_for=evidence_for,
                 evidence_against=evidence_against,
-                controlled_outcomes=item["controlled_outcomes"],
-                controlled_conflict=item["controlled_conflict"],
+                controlled_outcomes=controlled_outcomes,
+                controlled_conflict=cause.controlled_conflict,
             )
         )
 
@@ -3684,7 +4186,7 @@ def build_internal_intelligence_report(
         causes=public_causes,
         ranked_causes=ranked_causes,
         measurement=criterion_measurement,
-        current_event_ids=set(current_citations),
+        current_event_ids=current_event_ids,
     )
 
     blockers = _unique_text(
@@ -3701,7 +4203,8 @@ def build_internal_intelligence_report(
     )
     status = (
         "blocked"
-        if data_quality.status == "blocked" or effective_measurement.kind == "blocked"
+        if data_quality.status == "blocked"
+        or effective_measurement.kind in {"blocked", "stop_testing"}
         else "ready"
         if effective_measurement.kind == "controlled_test"
         else "measure"
@@ -3780,6 +4283,54 @@ def build_internal_intelligence_report(
             ),
         }
     )
+    snapshot_causes = tuple(
+        RankedCause(
+            **{
+                **cause.model_dump(),
+                "label": f"Cause candidate {index}",
+                "hypothesis": "A producer-owned engineering cause is under evidence review.",
+                "rank_basis": (
+                    "Ordinal evidence ordering uses run/window independence clusters, signed "
+                    "contradictions, and explicitly diagnostic controlled outcomes. This is "
+                    "not a probability."
+                ),
+                "supporting_evidence": tuple(
+                    _public_evidence_citation(citation)
+                    for citation in cause.supporting_evidence
+                ),
+                "contradicting_evidence": tuple(
+                    _public_evidence_citation(citation)
+                    for citation in cause.contradicting_evidence
+                ),
+                "missing_evidence": (
+                    ("Additional producer-owned evidence is required.",)
+                    if cause.missing_evidence
+                    else ()
+                ),
+                "blocker_reasons": (
+                    ("A producer-declared blocker limits this cause.",)
+                    if cause.blocker_reasons
+                    else ()
+                ),
+                "discriminator": None,
+            }
+        )
+        for index, cause in enumerate(ranked_causes, start=1)
+    )
+    reasoning_snapshot = build_reasoning_snapshot(
+        run_id=run_id,
+        session_id=session_id,
+        graph=report_graph,
+        ranked_causes=snapshot_causes,
+        measurement_plan=effective_measurement,
+        data_quality=public_data_quality,
+        lap_context=lap_context,
+        blocker_reasons=(
+            ("One or more canonical reasoning checks blocked authority.",)
+            if blockers
+            else ()
+        ),
+    )
     return InternalIntelligenceReport(
         run_id=run_id,
         session_id=session_id,
@@ -3803,6 +4354,8 @@ def build_internal_intelligence_report(
         calibration=public_calibration,
         data_quality=public_data_quality,
         evidence_graph=report_graph,
+        reasoning_snapshot=reasoning_snapshot,
+        lap_context=lap_context,
         narrative=public_narrative,
         suggested_questions=_unique_text(questions),
         blocker_reasons=blockers,
@@ -4913,8 +5466,8 @@ def answer_grounded_query(
             answer = "No cause has enough qualified contradictory evidence to be ruled out."
             blockers = (
                 (
-                    "At least two independent contradictory eligible-lap units must belong to "
-                    "the exact requested scope before an observational cause can be ruled out."
+                    "Observational contradiction can weaken a cause but cannot rule it out; "
+                    "that requires an explicitly mechanism-diagnostic controlled result."
                 )
                 if local_evidence_scope
                 else "Do not treat an untested alternative as ruled out.",
@@ -5311,6 +5864,7 @@ __all__ = [
     "assess_data_quality",
     "build_evidence_graph",
     "build_internal_intelligence_report",
+    "build_reasoning_snapshot",
     "evaluate_measurement_candidates",
     "plan_best_next_measurement",
     "rank_competing_causes",

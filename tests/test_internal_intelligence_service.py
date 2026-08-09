@@ -993,8 +993,8 @@ def test_competing_causes_are_deterministic_ordinal_and_keep_contradictions() ->
     _, ranked = _ranked_fixture()
     assert [(cause.cause_id, cause.status) for cause in ranked] == [
         ("platform", "possible"),
-        ("tire", "possible"),
-        ("driver", "possible"),
+        ("tire", "unresolved"),
+        ("driver", "unresolved"),
     ]
     assert ranked[0].ordinal_rank == 1
     assert "not a probability" in ranked[0].rank_basis
@@ -1018,7 +1018,7 @@ def test_competing_cause_ties_and_untrusted_events_do_not_create_a_likely_cause(
         ],
         graph,
     )
-    assert all(cause.status == "possible" for cause in ranked)
+    assert all(cause.status in {"possible", "unresolved"} for cause in ranked)
     cause_a = next(cause for cause in ranked if cause.cause_id == "a")
     assert cause_a.supporting_evidence == ()
     assert "Qualified supporting event junk" in cause_a.missing_evidence
@@ -1038,7 +1038,7 @@ def test_missing_evidence_prevents_a_cause_from_being_ruled_out() -> None:
         ],
         graph,
     )
-    assert ranked[0].status == "possible"
+    assert ranked[0].status == "unresolved"
     assert ranked[0].contradicting_evidence
     assert ranked[0].missing_evidence == ("Need the yaw trace",)
 
@@ -1057,7 +1057,7 @@ def test_ranking_withholds_overlapping_evidence_and_normalizes_duplicate_blocker
         ],
         graph,
     )[0]
-    assert overlap.status == "possible"
+    assert overlap.status == "unresolved"
     assert overlap.supporting_evidence == ()
     assert overlap.contradicting_evidence == ()
     assert "both support and contradiction" in overlap.missing_evidence[0]
@@ -2443,7 +2443,7 @@ def test_selected_lap_queries_demote_run_wide_leaders_on_local_ties() -> None:
         best_measurement=plan_best_next_measurement(ranked),
         data_quality=quality,
     )
-    assert any(cause.state == "leading" and cause.cause_id == "a" for cause in report.competing_causes)
+    assert all(cause.state != "leading" for cause in report.competing_causes)
     local_why = answer_grounded_query("Why this call?", report, selected_lap_number=4)
     assert "leads" not in local_why.answer
     assert local_why.citations == ()

@@ -369,6 +369,40 @@ CREATE INDEX IF NOT EXISTS idx_engineering_narrative_scope
 CREATE INDEX IF NOT EXISTS idx_engineering_narrative_workflow
   ON engineering_narrative_entries(workflow_id, created_at, entry_id);
 
+-- Immutable mission identity and append-only outcomes. These deliberately do
+-- not reference import-owned runs: a re-import must not erase the reason a
+-- measurement was stopped or the evidence history that earned that stop.
+CREATE TABLE IF NOT EXISTS measurement_mission_contracts (
+  contract_id TEXT PRIMARY KEY,
+  contract_sha256 TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  contract_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS measurement_mission_attempts (
+  attempt_id TEXT PRIMARY KEY,
+  contract_id TEXT NOT NULL,
+  contract_sha256 TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  completed_at TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  attempt_json TEXT NOT NULL,
+  FOREIGN KEY(contract_id) REFERENCES measurement_mission_contracts(contract_id)
+    ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_measurement_attempt_contract
+  ON measurement_mission_attempts(contract_id, completed_at, attempt_id);
+
+-- A quarantine is an explicit operator decision, never an implicit response to
+-- read failure. It lets the durable-policy scanner distinguish acknowledged
+-- unavailable history from history that must still block repeat authority.
+CREATE TABLE IF NOT EXISTS session_intelligence_quarantines (
+  session_id TEXT PRIMARY KEY,
+  reason TEXT NOT NULL,
+  quarantined_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS driver_presentation_observations (
   observation_id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL,

@@ -76,6 +76,13 @@ def _controlled_outcome(
         blocker_reasons=(
             ("The saved protocol is invalid.",) if outcome == "invalid" else ()
         ),
+        diagnostic_validity="mechanism_diagnostic",
+        control_direction_result=(
+            "matched" if outcome == "supported" else
+            "missed" if outcome == "contradicted" else
+            "inconclusive" if outcome == "inconclusive" else
+            "invalid"
+        ),
     )
 
 
@@ -243,16 +250,16 @@ def test_event_count_cannot_replace_independent_eligible_lap_units() -> None:
         1,
     )
     assert (repeated_support.status, repeated_support.supporting_evidence_unit_count) == (
-        "likely",
-        2,
-    )
-    assert (same_lap_against.status, same_lap_against.contradicting_evidence_unit_count) == (
         "possible",
         1,
     )
+    assert (same_lap_against.status, same_lap_against.contradicting_evidence_unit_count) == (
+        "unresolved",
+        1,
+    )
     assert (repeated_against.status, repeated_against.contradicting_evidence_unit_count) == (
-        "ruled_out",
-        2,
+        "unresolved",
+        1,
     )
 
 
@@ -339,9 +346,9 @@ def test_controlled_support_outranks_no_evidence_without_hiding_contradiction() 
 @pytest.mark.parametrize(
     ("outcome", "verdict", "direction_result", "expected"),
     [
-        ("supported", "keep", "matched", "supported"),
-        ("contradicted", "undo", "missed", "contradicted"),
-        ("contradicted", "keep", "missed", "contradicted"),
+        ("supported", "keep", "matched", "inconclusive"),
+        ("contradicted", "undo", "missed", "inconclusive"),
+        ("contradicted", "keep", "missed", "inconclusive"),
         ("inconclusive", "retest", "inconclusive", "inconclusive"),
         ("invalid", "invalid", "unavailable", "invalid"),
     ],
@@ -374,6 +381,10 @@ def test_lifecycle_outcomes_map_only_from_exact_protocol_contracts(
     )
     assert len(controlled) == 1
     assert controlled[0].outcome == expected
+    assert controlled[0].control_direction_result == (
+        "invalid" if expected == "invalid" else direction_result
+    )
+    assert controlled[0].diagnostic_validity == "control_response_only"
     assert bool(controlled[0].blocker_reasons) is (expected == "invalid")
 
 
@@ -488,8 +499,9 @@ def test_countereffect_only_undo_supports_cause_but_blocks_exact_policy() -> Non
     ranked = rank_competing_causes(hypotheses, _report().evidence_graph)
 
     assert hypotheses[0].controlled_outcomes[0].verdict == "undo"
-    assert hypotheses[0].controlled_outcomes[0].outcome == "supported"
-    assert ranked[0].status == "likely"
+    assert hypotheses[0].controlled_outcomes[0].outcome == "inconclusive"
+    assert hypotheses[0].controlled_outcomes[0].control_direction_result == "matched"
+    assert ranked[0].status != "ruled_out"
     assert entry.lifecycle_state == "do_not_repeat"
 
 
@@ -546,7 +558,8 @@ def test_materially_different_lifecycle_policy_cannot_rule_out_current_cause() -
     assert current_cause.controlled_outcomes == ()
     assert ranked[current_cause.cause_id].status != "ruled_out"
     assert historical_cause.controlled_outcomes[0].phase == "entry"
-    assert historical_cause.controlled_outcomes[0].outcome == "contradicted"
+    assert historical_cause.controlled_outcomes[0].outcome == "inconclusive"
+    assert historical_cause.controlled_outcomes[0].control_direction_result == "missed"
 
 
 def test_exact_workflow_and_recommendation_candidate_merge_without_fuzzy_controls() -> None:
@@ -642,7 +655,7 @@ def test_scoped_ruled_out_query_requires_two_contradiction_laps_inside_scope() -
         best_measurement=plan_best_next_measurement(ranked),
         data_quality=quality,
     )
-    assert report.competing_causes[0].state == "ruled_out"
+    assert report.competing_causes[0].state == "unresolved"
 
     single_lap = answer_grounded_query(
         "What was ruled out?",
@@ -664,19 +677,11 @@ def test_scoped_ruled_out_query_requires_two_contradiction_laps_inside_scope() -
         selected_window_representative_lap=4,
     )
 
-    for partial in (single_lap, partial_window):
+    for partial in (single_lap, partial_window, exact_two_lap_window):
         assert "No cause has enough" in partial.answer
         assert partial.citations == ()
         assert partial.blocker_reasons
-        assert "two independent" in partial.blocker_reasons[0]
-    assert "Ruled out" in exact_two_lap_window.answer
-    assert {
-        (citation.lap_number, citation.event_id)
-        for citation in exact_two_lap_window.citations
-    } == {
-        (4, "contradiction-lap-4"),
-        (5, "contradiction-lap-5"),
-    }
+        assert "mechanism-diagnostic" in partial.blocker_reasons[0]
 
 
 def test_mind_change_contracts_separate_causal_tests_from_collection_only_work() -> None:
