@@ -12,10 +12,15 @@ import math
 import random
 from typing import Any
 
+import polars as pl
 import pytest
 
-from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+from racelab_engine.analysis.calculated_channels import (
+    _compute_compression_index as _compute_row_compression_index,
+    normalize_telemetry_rows,
+)
 from racelab_engine.analysis.vectorized_channels import (
+    _compute_compression_index as _compute_vector_compression_index,
     normalize_telemetry_frame,
     frame_to_rows,
     CORE_CHANNELS,
@@ -535,6 +540,36 @@ class TestParity:
     def test_platform_compression_index_parity(self, medium_rows: list[dict]) -> None:
         ref, vec = self._run_both(medium_rows)
         self._assert_parity(ref, vec, {"platform_compression_index"})
+
+    @pytest.mark.parametrize(
+        "dependency",
+        ["cfs_risk_score", "platform_stability_score", "drag_scrub_suspicion"],
+    )
+    @pytest.mark.parametrize(
+        "invalid_value",
+        [None, math.nan, math.inf, -math.inf, "not-a-number"],
+        ids=["null", "nan", "positive_infinity", "negative_infinity", "malformed_string"],
+    )
+    def test_platform_compression_invalid_dependency_is_null_with_row_parity(
+        self,
+        dependency: str,
+        invalid_value: object,
+    ) -> None:
+        valid = {
+            "cfs_risk_score": 0.5,
+            "platform_stability_score": 0.5,
+            "drag_scrub_suspicion": 0.5,
+        }
+        hostile = {**valid, dependency: invalid_value}
+        row = dict(hostile)
+        _compute_row_compression_index(row)
+
+        vector_rows = _compute_vector_compression_index(
+            pl.DataFrame([valid, hostile], strict=False),
+        ).to_dicts()
+
+        assert row["platform_compression_index"] is None
+        assert vector_rows[1]["platform_compression_index"] is None
 
     def test_platform_compression_missing_columns(self) -> None:
         """Missing columns should not crash compression index."""

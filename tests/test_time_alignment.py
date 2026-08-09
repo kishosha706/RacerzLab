@@ -52,6 +52,37 @@ def _lap_rows(
     return rows
 
 
+def _fractional_lap_rows(
+    *,
+    speed_mps: float,
+    start_pct: float,
+    end_pct: float,
+    step_pct: float,
+) -> list[dict[str, float]]:
+    rows: list[dict[str, float]] = []
+    pct = start_pct
+    while pct <= end_pct + 1e-9:
+        distance_ft = pct * 100.0
+        angle = 2 * math.pi * pct / 100.0
+        rows.append({
+            "lap_dist_pct_100": round(pct, 6),
+            "lap_dist_ft": distance_ft,
+            "session_time": (distance_ft / 3.280839895) / speed_mps,
+            "speed_mps": speed_mps,
+            "throttle_pct": 100.0,
+            "brake_pct": 0.0,
+            "steering_deg": 0.0,
+            "yaw_rate": 0.0,
+            "lat_accel": 0.0,
+            "vert_accel": 9.80665,
+            "lat": 33.0 + 0.001 * math.sin(angle),
+            "lon": -84.0 + 0.001 * math.cos(angle),
+            "alt": 300.0 + math.sin(3 * angle),
+        })
+        pct += step_pct
+    return rows
+
+
 def _noise_context() -> dict[str, object]:
     return {
         "baseline_driver_identity": "driver-7",
@@ -217,6 +248,50 @@ def test_alignment_never_extrapolates_and_preserves_honest_gaps() -> None:
     assert result.cumulative_delta_s[0] is None
     assert result.cumulative_delta_s[-1] is None
     assert any("remain gaps" in warning for warning in result.warnings)
+
+
+def test_sampling_sized_full_lap_boundary_is_admitted_by_bounded_circular_rule() -> None:
+    result = analyze_time_alignment(
+        _fractional_lap_rows(speed_mps=50.0, start_pct=0.2, end_pct=99.8, step_pct=0.2),
+        _fractional_lap_rows(speed_mps=52.0, start_pct=0.2, end_pct=99.8, step_pct=0.2),
+        step_pct=1.0,
+    )
+
+    assert result.time_delta_complete is True
+    assert not result.alignment[0].is_gap
+    assert not result.alignment[-1].is_gap
+    assert "bounded_circular_boundary" in result.alignment[0].methods
+    assert "bounded_circular_boundary" in result.alignment[-1].methods
+    assert result.alignment[0].confidence <= 0.7
+
+
+def test_wide_full_lap_boundary_omission_remains_a_gap() -> None:
+    result = analyze_time_alignment(
+        _fractional_lap_rows(speed_mps=50.0, start_pct=2.0, end_pct=98.0, step_pct=0.2),
+        _fractional_lap_rows(speed_mps=52.0, start_pct=2.0, end_pct=98.0, step_pct=0.2),
+        step_pct=1.0,
+    )
+
+    assert result.time_delta_complete is False
+    assert result.alignment[0].is_gap
+    assert result.alignment[-1].is_gap
+    assert "bounded_circular_boundary" not in result.source_channels
+
+
+def test_circular_boundary_rule_never_repairs_an_interior_gap() -> None:
+    baseline = _fractional_lap_rows(speed_mps=50.0, start_pct=0.2, end_pct=99.8, step_pct=0.2)
+    test = [
+        row for row in _fractional_lap_rows(
+            speed_mps=52.0, start_pct=0.2, end_pct=99.8, step_pct=0.2,
+        )
+        if not 40.0 <= row["lap_dist_pct_100"] <= 60.0
+    ]
+    result = analyze_time_alignment(baseline, test, step_pct=1.0)
+
+    assert result.time_delta_complete is False
+    assert not result.alignment[0].is_gap
+    assert not result.alignment[-1].is_gap
+    assert any(point.is_gap for point in result.alignment[40:61])
 
 
 def test_interior_gap_cannot_emit_a_complete_or_theoretical_lap_effect() -> None:
@@ -454,6 +529,77 @@ def test_repeatability_fails_closed_for_uncontrolled_fuel_span() -> None:
     assert noise.is_repeatable is None
     assert "narrow baseline fuel range" in noise.context_blockers
     assert "narrow test fuel range" in noise.context_blockers
+
+
+@pytest.mark.parametrize(
+    ("path", "invalid_value", "expected_blocker"),
+    [
+        (("baseline_tire_age_range_m",), [math.nan, 1_200.0], "baseline tire age"),
+        (("test_tire_age_range_m",), [1_000.0, math.inf], "test tire age"),
+        (("baseline_fuel_range",), ["30.0", 31.0], "baseline fuel range"),
+        (("test_fuel_range",), [30.0], "test fuel range"),
+        (("baseline_fuel_range",), [True, 31.0], "baseline fuel range"),
+        (("baseline_weather_range", "air_temp"), [21.0, 20.0], "baseline weather range"),
+        (("test_weather_range", "track_temp"), [30.0, None], "test weather range"),
+        (("baseline_weather_range", "wind_vel"), [-1.0, 1.0], "baseline weather range"),
+        (("test_weather_range", "air_temp"), [-101.0, 20.0], "test weather range"),
+    ],
+)
+def test_repeatability_fails_closed_for_invalid_numeric_context_ranges(
+    path: tuple[str, ...],
+    invalid_value: object,
+    expected_blocker: str,
+) -> None:
+    context = _noise_context()
+    target = context
+    for key in path[:-1]:
+        nested = target[key]
+        assert isinstance(nested, dict)
+        target = nested
+    target[path[-1]] = invalid_value
+
+    noise = estimate_driver_noise(
+        [60.0, 60.1, 59.9, 60.0],
+        [59.7, 59.8, 59.6, 59.7],
+        context_key=context,
+    )
+
+    assert noise.context_complete is False
+    assert noise.is_repeatable is None
+    assert noise.context_blockers == [expected_blocker]
+    assert any("Repeatability is blocked" in warning for warning in noise.warnings)
+
+
+def test_repeatability_fails_closed_when_weather_channel_range_is_missing() -> None:
+    context = _noise_context()
+    weather = context["baseline_weather_range"]
+    assert isinstance(weather, dict)
+    weather.pop("wind_vel")
+
+    noise = estimate_driver_noise(
+        [60.0, 60.1, 59.9, 60.0],
+        [59.7, 59.8, 59.6, 59.7],
+        context_key=context,
+    )
+
+    assert noise.context_complete is False
+    assert noise.is_repeatable is None
+    assert noise.context_blockers == ["baseline weather range"]
+
+
+def test_boolean_setup_change_count_cannot_pass_the_one_change_gate() -> None:
+    context = _noise_context()
+    context["controlled_setup_change_count"] = True
+
+    noise = estimate_driver_noise(
+        [60.0, 60.1, 59.9],
+        [59.7, 59.8, 59.6],
+        context_key=context,
+    )
+
+    assert noise.context_complete is False
+    assert noise.is_repeatable is None
+    assert "exactly one mapped setup change" in noise.context_blockers
 
 
 def test_time_analysis_api_fails_closed_on_missing_compatibility_identity(

@@ -1482,12 +1482,19 @@ def _compute_compression_index(df: pl.DataFrame) -> pl.DataFrame:
 
     # Row path: first row gets None (via _init_derivative_row), subsequent rows computed
     row_idx = pl.int_range(0, df.height, dtype=pl.Int64)
-    cfs_risk = pl.col("cfs_risk_score").fill_null(0.0)
-    plat_stab = pl.col("platform_stability_score").fill_null(0.0)
-    drag_susp = pl.col("drag_scrub_suspicion").fill_null(0.0)
+    # Hostile or future files can declare these columns as strings. Coerce
+    # numeric text and turn malformed text into null, matching the row engine's
+    # finite-value gate instead of letting Polars raise during arithmetic.
+    cfs_risk = pl.col("cfs_risk_score").cast(pl.Float64, strict=False)
+    plat_stab = pl.col("platform_stability_score").cast(pl.Float64, strict=False)
+    drag_susp = pl.col("drag_scrub_suspicion").cast(pl.Float64, strict=False)
+    valid_inputs = pl.all_horizontal(
+        expression.is_not_null() & expression.is_finite()
+        for expression in (cfs_risk, plat_stab, drag_susp)
+    )
 
     comp = (cfs_risk * 0.4 + plat_stab * 0.3 + drag_susp * 0.3).clip(0.0, 1.0)
-    comp = pl.when(row_idx == 0).then(None).otherwise(comp)
+    comp = pl.when((row_idx > 0) & valid_inputs).then(comp).otherwise(None)
     df = df.with_columns(comp.alias("platform_compression_index"))
     return df
 

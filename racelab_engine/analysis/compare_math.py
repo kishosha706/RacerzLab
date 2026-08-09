@@ -238,7 +238,8 @@ def aggregate_tire_comparison(
     """Build a TireComparison from baseline and test rows in the target zone.
 
     Returns available=false with explanation if tire data is missing.
-    Short runs get low confidence.
+    ``lap_count`` is the smaller uninterrupted eligible-lap block from the two
+    runs. Short or split runs get low confidence and no tire verdict.
     """
     grid = build_lap_grid(start, end)
     tire_channels = [

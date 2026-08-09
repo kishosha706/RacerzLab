@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   BarChart3,
+  BrainCircuit,
   ChevronDown,
   ChevronRight,
   CheckCircle2,
@@ -10,6 +11,7 @@ import {
   Layers,
   List,
   MapPin,
+  RotateCcw,
   SlidersHorizontal,
   Star,
   Target,
@@ -17,7 +19,7 @@ import {
   Trophy,
   X,
 } from "lucide-react";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { compareStints, fetchLapWindows, fetchStints } from "../api/client";
 import { makeBasketItem } from "../components/CompareBasket";
 import { TimeDeltaComparison } from "../components/TimeDeltaComparison";
@@ -25,7 +27,8 @@ import { EngineeringSystemsComparison } from "../components/EngineeringSystemsCo
 import { ValueDisplay } from "../components/ValueDisplay";
 import { useCompareBasket } from "../store/CompareBasketContext";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
-import type { LapWindowSummary, LapWindowsResponse, StintCompareResult, StintResponse, StintSummary } from "../types/laps";
+import { bestUsefulLapMatchesRun, overviewWarningBlocksDecision } from "../utils/evidenceTrust";
+import type { LapWindowSummary, LapWindowsResponse, StintCompareResult, StintResponse, StintRunSummary, StintSummary } from "../types/laps";
 import type { RaceLabSession, SessionSelectionSource } from "../types/session";
 import type { LapSummary, RunListItem, RunOverview } from "../types/telemetry";
 
@@ -38,8 +41,55 @@ type LapsTabProps = {
   onToggleMapOverlay?: () => void;
 };
 
+const WholeCarCompareTab = React.lazy(async () => {
+  const module = await import("./CompareTab");
+  return { default: module.CompareTab };
+});
+
 type StintMode = "ev" | "delta" | "falloff";
 type StintGraphMode = "lap_time" | "delta" | "rolling_5";
+type RunResourceLoadState = {
+  runId: string | null;
+  status: "idle" | "loading" | "ready" | "error";
+  error: string | null;
+};
+
+type StintCompareRequestState = {
+  requestKey: string | null;
+  data: StintCompareResult | null;
+  loading: boolean;
+  error: string | null;
+};
+
+type StintCompareRequestIdentity = {
+  requestKey: string;
+  sequence: number;
+};
+
+function stintResponseMatchesRun(response: StintResponse, runId: string): boolean {
+  const returnedStints = [
+    ...response.stints,
+    ...response.stint_rows,
+    ...response.best_window_cards,
+    ...response.primary_stints,
+    ...response.all_windows,
+  ];
+  return response.run_id === runId
+    && (response.run_summary == null || response.run_summary.run_id === runId)
+    && returnedStints.every((stint) => stint.run_id === runId);
+}
+
+function lapWindowsResponseMatchesRun(response: LapWindowsResponse, runId: string): boolean {
+  const returnedLaps = response.fastest_groups.flatMap((group) => group.laps);
+  const returnedWindows = response.best_windows.flatMap((group) => [
+    ...group.windows,
+    ...(group.best_window ? [group.best_window] : []),
+  ]);
+  return response.run_id === runId
+    && (response.degradation == null || response.degradation.run_id === runId)
+    && returnedLaps.every((lap) => lap.run_id === runId)
+    && returnedWindows.every((window) => window.run_id === runId);
+}
 
 type EvidenceDescriptor = {
   id: string;
@@ -124,6 +174,94 @@ const stintProgressionColumns = [
   { label: "L56-60", startOffset: 56, endOffset: 60 },
 ] as const;
 
+const sustainedAveragePriority = [60, 50, 40, 30, 25, 20, 15, 10] as const;
+const shortRunAveragePriority = [5, 3] as const;
+const raceRunAveragePriority = [60, 50, 40, 30, 25, 20] as const;
+
+type RunAverageRead = {
+  size: number;
+  value: number;
+};
+
+type CornerTireReadiness = {
+  state: "observed" | "withheld" | "collecting";
+  headline: string;
+  detail: string;
+};
+
+function firstAvailableRunAverage(
+  summary: StintRunSummary | null | undefined,
+  sizes: readonly number[],
+): RunAverageRead | null {
+  if (!summary) return null;
+  for (const size of sizes) {
+    const value = summary.best_avg_by_size?.[String(size)];
+    if (typeof value === "number" && Number.isFinite(value)) return { size, value };
+  }
+  return null;
+}
+
+function humanizeLapExclusion(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function cornerTireReadiness(
+  corner: "RF" | "RR",
+  stint: StintSummary | null,
+  evidenceUnavailable: boolean,
+): CornerTireReadiness {
+  if (evidenceUnavailable) {
+    return {
+      state: "withheld",
+      headline: "Evidence unavailable",
+      detail: "The exact stint result is unavailable, so no tire trend is carried forward.",
+    };
+  }
+  if (!stint || stint.valid_lap_count < 10) {
+    const lapsNeeded = Math.max(0, 10 - (stint?.valid_lap_count ?? 0));
+    return {
+      state: "collecting",
+      headline: "Needs a clean long run",
+      detail: `${lapsNeeded} more continuous clean lap${lapsNeeded === 1 ? "" : "s"} needed before a ${corner} thermal or wear read.`,
+    };
+  }
+  if (stint.valid_lap_count !== stint.lap_count || stint.lap_points.some((point) => !point.valid)) {
+    return {
+      state: "collecting",
+      headline: "Needs an uninterrupted clean block",
+      detail: `This ${stint.lap_count}-lap scope contains excluded laps. The app will not bridge them into a ${corner} thermal or wear trend.`,
+    };
+  }
+  if (stint.end_lap - stint.start_lap + 1 !== stint.lap_count) {
+    return {
+      state: "collecting",
+      headline: "Needs consecutive lap numbers",
+      detail: `This scope contains a missing lap number. The app will not bridge separate blocks into a ${corner} thermal or wear trend.`,
+    };
+  }
+  const label = stint.tire_trend_label?.trim() ?? "";
+  const normalized = label.toUpperCase();
+  if (!label || normalized.includes("LIMITED") || !normalized.includes(corner)) {
+    return {
+      state: "withheld",
+      headline: "Corner trend not reported",
+      detail: `${stint.valid_lap_count} clean laps are available, but this stint summary does not separate ${corner} temperature and wear history.`,
+    };
+  }
+  const separatesWear = /WEAR/.test(normalized);
+  const separatesThermal = /TEMP|THERMAL|HEAT/.test(normalized);
+  return {
+    state: "observed",
+    headline: label,
+    detail: separatesWear || separatesThermal
+      ? `Observed across ${stint.valid_lap_count} clean laps; this is a ${separatesWear ? "wear" : "thermal"} trend, not a pressure or setup prescription.`
+      : `Observed across ${stint.valid_lap_count} clean laps; tire work is flagged, but thermal and wear causes are not separated.`,
+  };
+}
+
 function stintBucket(stint: StintSummary, label: string) {
   return stint.bucket_averages.find((bucket) => bucket.label === label) ?? null;
 }
@@ -147,24 +285,63 @@ function stintAverage(stint: StintSummary, size: number): number | null {
   }
 }
 
+function bestSustainedAverage(stint: StintSummary): { size: number; value: number } | null {
+  for (const size of sustainedAveragePriority) {
+    const value = stintAverage(stint, size);
+    if (value != null && Number.isFinite(value)) return { size, value };
+  }
+  return null;
+}
+
 function visibleNumberValues(values: Array<number | null | undefined>): number[] {
   return values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
 }
 
-function stintChartPolyline(
+function stintChartPolylineSegments(points: StintGraphRenderPoint[]): string[] {
+  const segments: string[] = [];
+  let current: string[] = [];
+  let previousX: number | null = null;
+  const flush = () => {
+    if (current.length > 1) segments.push(current.join(" "));
+    current = [];
+  };
+  points.forEach((point) => {
+    const drawable = point.valid && !point.excludedFromScale;
+    const consecutive = previousX == null || Math.abs(point.x - previousX - 1) < 1e-6;
+    if (!drawable || (!consecutive && current.length > 0)) flush();
+    if (drawable) current.push(`${point.screenX.toFixed(1)},${point.screenY.toFixed(1)}`);
+    previousX = point.x;
+  });
+  flush();
+  return segments;
+}
+
+function bestPointForGraphMode(
   points: StintGraphRenderPoint[],
-  xMin: number,
-  xMax: number,
-  yMin: number,
-  yMax: number,
-): string {
-  const xSpan = Math.max(1, xMax - xMin);
-  const ySpan = Math.max(0.001, yMax - yMin);
-  return points.map((point) => {
-    const x = CHART_PAD_LEFT + ((point.x - xMin) / xSpan) * (CHART_WIDTH - CHART_PAD_LEFT - CHART_PAD_RIGHT);
-    const y = CHART_PAD_TOP + (1 - ((point.y - yMin) / ySpan)) * (CHART_HEIGHT - CHART_PAD_TOP - CHART_PAD_BOTTOM);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ");
+  mode: StintGraphMode,
+): StintGraphRenderPoint | null {
+  return points.reduce<StintGraphRenderPoint | null>((best, point) => {
+    if (!point.valid) return best;
+    const value = mode === "rolling_5"
+      ? point.rolling5
+      : mode === "delta"
+        ? point.deltaToBest
+        : point.lapTime;
+    if (value == null || !Number.isFinite(value)) return best;
+    if (best == null) return point;
+    const bestValue = mode === "rolling_5"
+      ? best.rolling5
+      : mode === "delta"
+        ? best.deltaToBest
+        : best.lapTime;
+    return bestValue == null || value < bestValue ? point : best;
+  }, null);
+}
+
+function graphBestCueLabel(mode: StintGraphMode): string {
+  if (mode === "rolling_5") return "Best R5";
+  if (mode === "lap_time") return "Fastest";
+  return "Best";
 }
 
 function chartX(x: number, xMin: number, xMax: number): number {
@@ -307,7 +484,7 @@ function classifyPaceTrust(
 }
 
 function lapTrustTier(lap: LapSummary): string {
-  if (!lap.is_useful) return "Invalid";
+  if (!bestUsefulLapMatchesRun(lap, lap.run_id)) return "Invalid";
   return "Usable";
 }
 
@@ -321,7 +498,7 @@ function windowTrustTier(window: LapWindowSummary): string {
 
 function lapFlags(lap: LapSummary): string[] {
   const flags: string[] = [];
-  if (!lap.is_useful) flags.push("Invalid");
+  if (!bestUsefulLapMatchesRun(lap, lap.run_id)) flags.push("Invalid");
   if (lap.lap_type !== "timed") flags.push(lap.lap_type);
   return flags;
 }
@@ -375,23 +552,23 @@ type RepresentativeLapInfo = {
   isFallback: boolean;
 };
 
-function bestEvidenceLapInSet(laps: LapSummary[]): LapSummary | null {
-  const usefulLaps = laps.filter((lap) => lap.is_useful);
+function bestEvidenceLapInSet(laps: LapSummary[], runId: string): LapSummary | null {
+  const usefulLaps = laps.filter((lap) => bestUsefulLapMatchesRun(lap, runId));
   const source = usefulLaps;
   return [...source]
     .filter((lap) => lap.lap_time != null)
     .sort((left, right) => (left.lap_time ?? 9999) - (right.lap_time ?? 9999))[0] ?? null;
 }
 
-function fastestUsableLapInSet(laps: LapSummary[]): LapSummary | null {
+function fastestUsableLapInSet(laps: LapSummary[], runId: string): LapSummary | null {
   return [...laps]
-    .filter((lap) => lap.is_useful && lap.lap_time != null)
+    .filter((lap) => bestUsefulLapMatchesRun(lap, runId))
     .sort((left, right) => (left.lap_time ?? 9999) - (right.lap_time ?? 9999))[0] ?? null;
 }
 
 function deriveRepresentativeLap(window: LapWindowSummary, laps: LapSummary[]): RepresentativeLapInfo {
   const lapsInWindow = laps.filter((lap) => lap.lap_number >= window.start_lap && lap.lap_number <= window.end_lap);
-  const bestEvidenceLap = bestEvidenceLapInSet(lapsInWindow);
+  const bestEvidenceLap = bestEvidenceLapInSet(lapsInWindow, window.run_id);
   if (bestEvidenceLap) {
     return {
       lapNumber: bestEvidenceLap.lap_number,
@@ -399,7 +576,7 @@ function deriveRepresentativeLap(window: LapWindowSummary, laps: LapSummary[]): 
       isFallback: false,
     };
   }
-  const fastestUsableLap = fastestUsableLapInSet(lapsInWindow);
+  const fastestUsableLap = fastestUsableLapInSet(lapsInWindow, window.run_id);
   if (fastestUsableLap) {
     return {
       lapNumber: fastestUsableLap.lap_number,
@@ -543,7 +720,8 @@ function descriptorForWindow(
 }
 
 export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, sessionSelectionSource, onToggleMapOverlay }: LapsTabProps) {
-  const { selection, focusEvidence, setWorkspace } = useTelemetrySelection();
+  const { selection, focusEvidence } = useTelemetrySelection();
+  const chartDefinitionId = React.useId().replace(/:/g, "");
   const {
     basket,
     setBaseline,
@@ -556,17 +734,29 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
   } = useCompareBasket();
 
   const [windowsData, setWindowsData] = useState<LapWindowsResponse | null>(null);
+  const [windowsDataRunId, setWindowsDataRunId] = useState<string | null>(null);
+  const [windowsLoadState, setWindowsLoadState] = useState<RunResourceLoadState>({ runId: null, status: "idle", error: null });
+  const [windowsRetryToken, setWindowsRetryToken] = useState(0);
   const [stintData, setStintData] = useState<StintResponse | null>(null);
-  const [stintsLoading, setStintsLoading] = useState(false);
+  const [stintDataRunId, setStintDataRunId] = useState<string | null>(null);
+  const [stintsLoadState, setStintsLoadState] = useState<RunResourceLoadState>({ runId: null, status: "idle", error: null });
+  const [stintsRetryToken, setStintsRetryToken] = useState(0);
   const [showBestWindows, setShowBestWindows] = useState(false);
-  const [stintCompareLoading, setStintCompareLoading] = useState(false);
-  const [stintCompareError, setStintCompareError] = useState<string | null>(null);
+  const [stintCompareRequestState, setStintCompareRequestState] = useState<StintCompareRequestState>({
+    requestKey: null,
+    data: null,
+    loading: false,
+    error: null,
+  });
+  const stintCompareRequestSequenceRef = useRef(0);
+  const latestStintCompareRequestRef = useRef<StintCompareRequestIdentity | null>(null);
   const [baselineStintId, setBaselineStintId] = useState<string | null>(null);
   const [testStintId, setTestStintId] = useState<string | null>(null);
   const [selectedStintId, setSelectedStintId] = useState<string | null>(null);
-  const [stintCompare, setStintCompare] = useState<StintCompareResult | null>(null);
   const [showFieldCompare, setShowFieldCompare] = useState(false);
   const [showAdvancedControls, setShowAdvancedControls] = useState(false);
+  const [showEngineeringStintColumns, setShowEngineeringStintColumns] = useState(false);
+  const [wholeCarCompareOpen, setWholeCarCompareOpen] = useState(false);
   const [graphStintIds, setGraphStintIds] = useState<string[]>([]);
   const [stintGraphMode, setStintGraphMode] = useState<StintGraphMode>("lap_time");
   const [showRolling5, setShowRolling5] = useState(false);
@@ -583,13 +773,33 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
   const [expandedRunIds, setExpandedRunIds] = useState<Set<string>>(() => new Set([overview.run_id]));
   const [historyStintData, setHistoryStintData] = useState<Record<string, StintResponse>>({});
   const [historyStintsLoading, setHistoryStintsLoading] = useState<Record<string, boolean>>({});
+  const [historyStintErrors, setHistoryStintErrors] = useState<Record<string, string>>({});
+  const historyStintGenerationRef = useRef(0);
   const [expandedLap, setExpandedLap] = useState<number | null>(null);
   const [stintMode, setStintMode] = useState<StintMode>("ev");
   const [hoveredWindowId, setHoveredWindowId] = useState<string | null>(null);
 
-  const { laps } = overview;
+  useEffect(() => {
+    setWholeCarCompareOpen(false);
+  }, [overview.run_id]);
+
+  const laps = useMemo(
+    () => overview.laps.filter((lap) => lap.run_id === overview.run_id),
+    [overview.laps, overview.run_id],
+  );
+  const authoritativeBestUsefulLap = bestUsefulLapMatchesRun(overview.best_useful_lap, overview.run_id)
+    ? overview.best_useful_lap
+    : null;
+  const currentWindowsData = windowsDataRunId === overview.run_id ? windowsData : null;
+  const currentStintData = stintDataRunId === overview.run_id ? stintData : null;
+  const currentWindowsLoadStatus = windowsLoadState.runId === overview.run_id ? windowsLoadState.status : "loading";
+  const currentWindowsLoadError = windowsLoadState.runId === overview.run_id ? windowsLoadState.error : null;
+  const currentStintsLoadStatus = stintsLoadState.runId === overview.run_id ? stintsLoadState.status : "loading";
+  const currentStintsLoadError = stintsLoadState.runId === overview.run_id ? stintsLoadState.error : null;
+  const stintsLoading = currentStintsLoadStatus === "loading";
 
   useEffect(() => {
+    historyStintGenerationRef.current += 1;
     setExpandedRunIds(new Set([overview.run_id]));
     setGraphStintIds([]);
     setSummaryDrawerStintId(null);
@@ -597,36 +807,89 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     setSelectedGraphLap(null);
     setHistoryStintData({});
     setHistoryStintsLoading({});
+    setHistoryStintErrors({});
   }, [overview.run_id]);
 
   useEffect(() => {
-    fetchLapWindows(overview.run_id)
-      .then(setWindowsData)
-      .catch(() => setWindowsData(null));
-  }, [overview.run_id]);
+    let cancelled = false;
+    const requestedRunId = overview.run_id;
+    setWindowsData(null);
+    setWindowsDataRunId(null);
+    setWindowsLoadState({ runId: requestedRunId, status: "loading", error: null });
+    fetchLapWindows(requestedRunId)
+      .then((response) => {
+        if (cancelled) return;
+        if (!lapWindowsResponseMatchesRun(response, requestedRunId)) {
+          throw new Error("Lap-window scope error: the response did not match the selected run.");
+        }
+        setWindowsData(response);
+        setWindowsDataRunId(requestedRunId);
+        setWindowsLoadState({ runId: requestedRunId, status: "ready", error: null });
+      })
+      .catch((caught: unknown) => {
+        if (cancelled) return;
+        setWindowsData(null);
+        setWindowsDataRunId(null);
+        setWindowsLoadState({
+          runId: requestedRunId,
+          status: "error",
+          error: caught instanceof Error ? caught.message : "Lap-window evidence could not be loaded.",
+        });
+      });
+    return () => { cancelled = true; };
+  }, [overview.run_id, windowsRetryToken]);
 
   useEffect(() => {
-    setStintsLoading(true);
+    let cancelled = false;
+    const requestedRunId = overview.run_id;
+    setStintData(null);
+    setStintDataRunId(null);
+    setStintsLoadState({ runId: requestedRunId, status: "loading", error: null });
     setBaselineStintId(null);
     setTestStintId(null);
     setSelectedStintId(null);
     setGraphStintIds([]);
     setSummaryDrawerStintId(null);
-    setStintCompare(null);
-    setStintCompareError(null);
-    fetchStints(overview.run_id)
-      .then(setStintData)
-      .catch(() => setStintData(null))
-      .finally(() => setStintsLoading(false));
-  }, [overview.run_id]);
+    latestStintCompareRequestRef.current = null;
+    setStintCompareRequestState({ requestKey: null, data: null, loading: false, error: null });
+    fetchStints(requestedRunId)
+      .then((response) => {
+        if (cancelled) return;
+        if (!stintResponseMatchesRun(response, requestedRunId)) {
+          throw new Error("Stint scope error: the response did not match the selected run.");
+        }
+        setStintData(response);
+        setStintDataRunId(requestedRunId);
+        setStintsLoadState({ runId: requestedRunId, status: "ready", error: null });
+      })
+      .catch((caught: unknown) => {
+        if (cancelled) return;
+        setStintData(null);
+        setStintDataRunId(null);
+        setStintsLoadState({
+          runId: requestedRunId,
+          status: "error",
+          error: caught instanceof Error ? caught.message : "Stint evidence could not be loaded.",
+        });
+      })
+    return () => { cancelled = true; };
+  }, [overview.run_id, stintsRetryToken]);
+
+  const usefulLaps = useMemo(
+    () => laps.filter((lap) => bestUsefulLapMatchesRun(lap, overview.run_id)),
+    [laps, overview.run_id],
+  );
+  const cleanUsefulLaps = useMemo(() => usefulLaps, [usefulLaps]);
 
   const bestTime = useMemo(() => {
-    const times = laps.filter((lap) => lap.lap_time != null).map((lap) => lap.lap_time as number);
+    if (authoritativeBestUsefulLap) {
+      return authoritativeBestUsefulLap.lap_time;
+    }
+    const times = usefulLaps
+      .map((lap) => lap.lap_time)
+      .filter((lapTime): lapTime is number => lapTime != null && Number.isFinite(lapTime) && lapTime > 0);
     return times.length > 0 ? Math.min(...times) : null;
-  }, [laps]);
-
-  const usefulLaps = useMemo(() => laps.filter((lap) => lap.is_useful), [laps]);
-  const cleanUsefulLaps = useMemo(() => usefulLaps, [usefulLaps]);
+  }, [authoritativeBestUsefulLap, usefulLaps]);
 
   const fastestUsableLap = useMemo(
     () => [...usefulLaps].filter((lap) => lap.lap_time != null).sort((left, right) => (left.lap_time ?? 9999) - (right.lap_time ?? 9999))[0] ?? null,
@@ -644,23 +907,23 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
   }, [cleanUsefulLaps, usefulLaps]);
 
   const availableBestWindows = useMemo(
-    () => (windowsData?.best_windows ?? [])
+    () => (currentWindowsData?.best_windows ?? [])
       .filter((group) => group.best_window != null)
       .map((group) => group.best_window as LapWindowSummary),
-    [windowsData],
+    [currentWindowsData],
   );
 
   const stints = useMemo(
-    () => stintData?.stint_rows ?? stintData?.primary_stints ?? stintData?.stints ?? [],
-    [stintData],
+    () => currentStintData?.stint_rows ?? currentStintData?.primary_stints ?? currentStintData?.stints ?? [],
+    [currentStintData],
   );
   const bestWindowCards = useMemo(
-    () => stintData?.best_window_cards ?? [],
-    [stintData],
+    () => currentStintData?.best_window_cards ?? [],
+    [currentStintData],
   );
   const alternateStintWindows = useMemo(
-    () => (stintData?.all_windows ?? []).filter((stint) => !bestWindowCards.some((card) => card.stint_id === stint.stint_id)),
-    [bestWindowCards, stintData],
+    () => (currentStintData?.all_windows ?? []).filter((stint) => !bestWindowCards.some((card) => card.stint_id === stint.stint_id)),
+    [bestWindowCards, currentStintData],
   );
   const historyStintCandidates = useMemo(
     () => {
@@ -680,10 +943,10 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
   const stintSelectionCandidates = useMemo(
     () => {
       const byId = new Map<string, StintSummary>();
-      [...stints, ...bestWindowCards, ...(stintData?.all_windows ?? []), ...historyStintCandidates].forEach((stint) => byId.set(stint.stint_id, stint));
+      [...stints, ...bestWindowCards, ...(currentStintData?.all_windows ?? []), ...historyStintCandidates].forEach((stint) => byId.set(stint.stint_id, stint));
       return [...byId.values()];
     },
-    [bestWindowCards, historyStintCandidates, stintData, stints],
+    [bestWindowCards, currentStintData, historyStintCandidates, stints],
   );
   const selectedStint = useMemo(
     () => selectedStintId ? stintSelectionCandidates.find((stint) => stint.stint_id === selectedStintId) ?? null : null,
@@ -697,13 +960,28 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     () => stintSelectionCandidates.find((stint) => stint.stint_id === testStintId) ?? null,
     [stintSelectionCandidates, testStintId],
   );
+  const stintCompareRequest = useMemo(() => !baselineStint || !testStint ? null : ({
+    baseline_run_id: baselineStint.run_id,
+    baseline_stint_id: baselineStint.stint_id,
+    test_run_id: testStint.run_id,
+    test_stint_id: testStint.stint_id,
+  }), [baselineStint, testStint]);
+  const stintCompareRequestKey = useMemo(
+    () => stintCompareRequest == null ? null : JSON.stringify(stintCompareRequest),
+    [stintCompareRequest],
+  );
+  const stintCompareStateOwnsRequest = stintCompareRequestState.requestKey === stintCompareRequestKey;
+  const stintCompare = stintCompareStateOwnsRequest ? stintCompareRequestState.data : null;
+  const stintCompareLoading = stintCompareRequestKey != null
+    && (!stintCompareStateOwnsRequest || stintCompareRequestState.loading);
+  const stintCompareError = stintCompareStateOwnsRequest ? stintCompareRequestState.error : null;
   const strongestSetupStintId = useMemo(
     () => [...stintSelectionCandidates].sort((left, right) => (right.setup_usefulness_score ?? -1) - (left.setup_usefulness_score ?? -1))[0]?.stint_id ?? null,
     [stintSelectionCandidates],
   );
   const bestSustainedStint = useMemo(
     () => [...bestWindowCards]
-      .filter((stint) => stint.is_best_for_size)
+      .filter((stint) => stint.is_best_for_size && stint.lap_count >= 20)
       .sort((left, right) => {
         const leftLong = left.lap_count >= 20 ? left.lap_count : 0;
         const rightLong = right.lap_count >= 20 ? right.lap_count : 0;
@@ -740,26 +1018,67 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     return values;
   }, [stints]);
   useEffect(() => {
-    if (!baselineStint || !testStint) {
-      setStintCompare(null);
-      setStintCompareError(null);
+    if (stintCompareRequest == null || stintCompareRequestKey == null) {
+      latestStintCompareRequestRef.current = null;
+      setStintCompareRequestState({ requestKey: null, data: null, loading: false, error: null });
       return;
     }
-    setStintCompareLoading(true);
-    setStintCompareError(null);
-    compareStints({
-      baseline_run_id: baselineStint.run_id,
-      baseline_stint_id: baselineStint.stint_id,
-      test_run_id: testStint.run_id,
-      test_stint_id: testStint.stint_id,
-    })
-      .then(setStintCompare)
-      .catch((err: unknown) => {
-        setStintCompare(null);
-        setStintCompareError((err as Error).message ?? "Stint compare failed.");
+    const requestIdentity = {
+      requestKey: stintCompareRequestKey,
+      sequence: ++stintCompareRequestSequenceRef.current,
+    };
+    latestStintCompareRequestRef.current = requestIdentity;
+    setStintCompareRequestState({
+      requestKey: stintCompareRequestKey,
+      data: null,
+      loading: true,
+      error: null,
+    });
+    const isLatestRequest = () => {
+      const latestRequest = latestStintCompareRequestRef.current;
+      return latestRequest?.requestKey === requestIdentity.requestKey
+        && latestRequest.sequence === requestIdentity.sequence;
+    };
+    void compareStints(stintCompareRequest)
+      .then((nextData) => {
+        if (!isLatestRequest()) return;
+        const responseMatchesRequest = nextData.baseline_stint.run_id === stintCompareRequest.baseline_run_id
+          && nextData.baseline_stint.stint_id === stintCompareRequest.baseline_stint_id
+          && nextData.test_stint.run_id === stintCompareRequest.test_run_id
+          && nextData.test_stint.stint_id === stintCompareRequest.test_stint_id;
+        if (!responseMatchesRequest) {
+          setStintCompareRequestState({
+            requestKey: stintCompareRequestKey,
+            data: null,
+            loading: false,
+            error: "Stint comparison scope error: the response did not match the selected runs and stints.",
+          });
+          return;
+        }
+        setStintCompareRequestState({
+          requestKey: stintCompareRequestKey,
+          data: nextData,
+          loading: false,
+          error: null,
+        });
       })
-      .finally(() => setStintCompareLoading(false));
-  }, [baselineStint, testStint]);
+      .catch((err: unknown) => {
+        if (!isLatestRequest()) return;
+        setStintCompareRequestState({
+          requestKey: stintCompareRequestKey,
+          data: null,
+          loading: false,
+          error: (err as Error).message ?? "Stint compare failed.",
+        });
+      });
+    return () => {
+      const latestRequest = latestStintCompareRequestRef.current;
+      if (latestRequest?.requestKey === requestIdentity.requestKey
+        && latestRequest.sequence === requestIdentity.sequence) {
+        latestStintCompareRequestRef.current = null;
+      }
+    };
+  }, [stintCompareRequest, stintCompareRequestKey]);
 
   const bestWindow = useMemo(
     () => [...availableBestWindows].sort((left, right) => candidateScore(right) - candidateScore(left))[0] ?? null,
@@ -826,7 +1145,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     return dedupeDescriptors(rows);
   }, [availableBestWindows, bestEvidenceLap, currentSelectionDescriptor, engineeringCueLap, fastestUsableLap, representativeLapByWindowId]);
 
-  const focusLapEvidence = useCallback((lap: LapSummary, workspace?: "platform_trace") => {
+  const focusLapEvidence = useCallback((lap: LapSummary, workspace?: "platform_trace" | "engineer") => {
     focusEvidence({
       runId: overview.run_id,
       lapNumber: lap.lap_number,
@@ -837,6 +1156,11 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
       sampleIndex: null,
       lapDistFt: null,
       lapPct: null,
+      zoneId: null,
+      zoneLabel: null,
+      zoneStartPct: null,
+      zoneEndPct: null,
+      channelId: null,
       lockState: "none",
       trustTier: lapTrustTier(lap),
       valueBasis: "full_lap",
@@ -844,7 +1168,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     }, workspace);
   }, [focusEvidence, overview.run_id]);
 
-  const focusWindowEvidence = useCallback((window: LapWindowSummary, workspace?: "platform_trace") => {
+  const focusWindowEvidence = useCallback((window: LapWindowSummary, workspace?: "platform_trace" | "engineer") => {
     const representative = representativeLapByWindowId.get(window.window_id) ?? deriveRepresentativeLap(window, laps);
     focusEvidence({
       runId: overview.run_id,
@@ -857,6 +1181,11 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
       sampleIndex: null,
       lapDistFt: null,
       lapPct: null,
+      zoneId: null,
+      zoneLabel: null,
+      zoneStartPct: null,
+      zoneEndPct: null,
+      channelId: null,
       lockState: "none",
       trustTier: windowTrustTier(window),
       valueBasis: "selected_window",
@@ -944,6 +1273,285 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     pace_quality_components: null,
   }), []);
 
+  const bestCurrentSustainedStint = bestSustainedStint?.run_id === overview.run_id
+    && bestSustainedStint.valid_lap_count > 0
+    ? bestSustainedStint
+    : null;
+  const bestCurrentWindow = bestWindow?.run_id === overview.run_id && bestWindow.valid_lap_count > 0
+    ? bestWindow
+    : null;
+  const blockingRunWarning = overview.warnings.find(overviewWarningBlocksDecision) ?? null;
+  const paceDecisionWindow = useMemo(
+    () => blockingRunWarning
+      ? null
+      : bestCurrentSustainedStint
+      ? stintToWindowSummary(bestCurrentSustainedStint)
+      : bestCurrentWindow,
+    [bestCurrentSustainedStint, bestCurrentWindow, blockingRunWarning, stintToWindowSummary],
+  );
+  const paceDecisionLap = blockingRunWarning ? null : fastestUsableLap;
+  const paceEvidenceLoading = currentWindowsLoadStatus === "loading" || currentStintsLoadStatus === "loading";
+  const lapWindowRequestFailed = currentWindowsLoadStatus === "error";
+  const stintRequestFailed = currentStintsLoadStatus === "error";
+  const paceEvidenceRequestFailed = lapWindowRequestFailed || stintRequestFailed;
+  const currentValidLapCount = currentWindowsData?.total_valid_laps ?? usefulLaps.length;
+  const currentTotalLapCount = currentWindowsData?.total_laps ?? laps.length;
+  const excludedLapCount = Math.max(0, currentTotalLapCount - currentValidLapCount);
+  const backendStintReady = !blockingRunWarning && currentStintData?.run_summary?.data_status === "Ready";
+  const longRunPaceReady = Boolean(
+    paceDecisionWindow
+    && paceDecisionWindow.valid_lap_count >= 10
+    && paceDecisionWindow.window_size >= 10
+    && backendStintReady
+    && !paceEvidenceRequestFailed,
+  );
+  const paceDecisionState = blockingRunWarning
+    ? "NO CALL"
+    : paceEvidenceLoading
+    ? "CHECKING"
+    : !paceDecisionWindow && !paceDecisionLap
+      ? "NO CALL"
+      : paceEvidenceRequestFailed
+        ? "GUARDED"
+        : !paceDecisionWindow
+          ? "LAP ONLY"
+          : currentValidLapCount < 10 || paceDecisionWindow.window_size < 10
+            ? "SHORT RUN"
+            : longRunPaceReady
+              ? "PACE READY"
+              : "GUARDED";
+  const paceDecisionDataState = paceDecisionState === "PACE READY"
+    ? "ready"
+    : paceDecisionState === "CHECKING"
+      ? "loading"
+      : paceDecisionState === "NO CALL"
+        ? "blocked"
+        : "guarded";
+  const paceWindowLabel = bestCurrentSustainedStint?.display_label_short
+    ?? (paceDecisionWindow ? `${paceDecisionWindow.window_size}-lap window` : null);
+  const paceDecisionHeadline = blockingRunWarning
+    ? "Hold the pace call: run integrity is blocked."
+    : paceEvidenceLoading
+    ? paceDecisionLap
+      ? `Clean reference settled: Lap ${paceDecisionLap.lap_number} at ${formatTime(paceDecisionLap.lap_time)}.`
+      : "Checking this run for a clean pace reference."
+    : paceDecisionWindow
+      ? `${longRunPaceReady ? "Race pace" : paceEvidenceRequestFailed ? "Guarded pace block" : "Best clean block"}: ${paceWindowLabel} at ${formatTime(paceDecisionWindow.average_lap_time)}.`
+      : paceDecisionLap
+        ? `Fastest clean reference: Lap ${paceDecisionLap.lap_number} at ${formatTime(paceDecisionLap.lap_time)}.`
+        : "No clean pace reference yet.";
+  const paceDecisionDetail = blockingRunWarning
+    ? blockingRunWarning
+    : lapWindowRequestFailed && stintRequestFailed
+    ? "Lap-window and stint evidence requests failed. No missing result is converted into a pace conclusion."
+    : stintRequestFailed && paceDecisionWindow
+      ? "Lap-window pace is available for this exact scope, but stint evidence failed. No stint falloff or long-run conclusion is shown from the missing result."
+      : lapWindowRequestFailed && paceDecisionWindow
+        ? "Stint pace is available for this exact scope, but lap-window evidence failed. Treat the block as guarded until that evidence is restored."
+        : paceEvidenceRequestFailed
+          ? "A timing evidence request failed. Only the stated eligible-lap reference remains available."
+    : paceDecisionWindow
+      ? `Laps ${paceDecisionWindow.start_lap}-${paceDecisionWindow.end_lap}; ${paceDecisionWindow.valid_lap_count}/${paceDecisionWindow.window_size} valid${paceDecisionWindow.falloff_sec != null ? `; observed pace change ${formatSignedDelta(paceDecisionWindow.falloff_sec)}s` : ""}. This does not identify a tire or setup cause.`
+      : paceDecisionLap
+        ? `This eligible lap supports a pace reference only. Need ${Math.max(0, 3 - currentValidLapCount)} more clean lap${Math.max(0, 3 - currentValidLapCount) === 1 ? "" : "s"} for the first stint window.`
+        : "Out laps, pit laps, cooldowns, wrecks, and invalid or partial laps are excluded from the call.";
+  const visiblePaceRunLabel = selection.selectedMode === "learning"
+    ? `Run ${overview.run_id}`
+    : "Current run";
+  const paceDecisionScope = blockingRunWarning
+    ? `${visiblePaceRunLabel} | Evidence blocked`
+    : paceDecisionWindow
+    ? `${visiblePaceRunLabel} | Laps ${paceDecisionWindow.start_lap}-${paceDecisionWindow.end_lap}`
+    : paceDecisionLap
+      ? `${visiblePaceRunLabel} | Lap ${paceDecisionLap.lap_number}`
+      : `${visiblePaceRunLabel} | No eligible lap`;
+  const sustainedToBestGap = paceDecisionWindow?.average_lap_time != null
+    && paceDecisionLap?.lap_time != null
+    ? paceDecisionWindow.average_lap_time - paceDecisionLap.lap_time
+    : null;
+  const paceComparisonLabel = sustainedToBestGap != null
+    ? `${formatSignedDelta(sustainedToBestGap)}s vs fastest clean lap`
+    : paceDecisionLap?.lap_time != null
+      ? `${formatTime(paceDecisionLap.lap_time)} clean-lap reference`
+      : "No clean comparison";
+  const paceTrendLabel = paceDecisionWindow?.falloff_sec != null
+    ? `${formatSignedDelta(paceDecisionWindow.falloff_sec)}s across this block`
+    : paceDecisionWindow
+      ? "No qualified trend"
+      : "Need a lap block";
+  const firstWindowLapsNeeded = Math.max(0, 3 - currentValidLapCount);
+  const sustainedBlockLapsNeeded = paceDecisionWindow
+    ? Math.max(0, 10 - paceDecisionWindow.window_size)
+    : Math.max(0, 10 - currentValidLapCount);
+  const paceDecisionNext = blockingRunWarning
+    ? "Resolve the integrity warning before comparing laps or staging a test."
+    : paceEvidenceLoading
+      ? "Keep the settled clean-lap reference while the exact stint scope finishes loading."
+      : paceEvidenceRequestFailed
+        ? "Retry the missing timing evidence; do not fill the gap with a degradation or setup story."
+        : !paceDecisionLap
+          ? "Bank one complete timed lap without pit-road, cooldown, wreck, invalid-speed, or partial-lap flags."
+          : !paceDecisionWindow
+            ? firstWindowLapsNeeded > 0
+              ? `Bank ${firstWindowLapsNeeded} more clean lap${firstWindowLapsNeeded === 1 ? "" : "s"} for the first comparable stint block.`
+              : "Review the exclusions: the available clean laps did not form one qualified continuous stint block."
+            : !longRunPaceReady
+              ? sustainedBlockLapsNeeded > 0
+                ? `Extend this continuous block by ${sustainedBlockLapsNeeded} clean lap${sustainedBlockLapsNeeded === 1 ? "" : "s"} before treating it as sustained pace.`
+                : "Recover the backend stint qualification before treating this block as sustained pace."
+              : "Use this block as the pace reference, then compare the next qualified run at matched track positions.";
+
+  const currentRunSummary = currentStintData?.run_summary ?? null;
+  const shortRunPace = !blockingRunWarning && !stintRequestFailed
+    ? firstAvailableRunAverage(currentRunSummary, shortRunAveragePriority)
+    : null;
+  const raceRunPace = !blockingRunWarning && !stintRequestFailed
+    ? firstAvailableRunAverage(currentRunSummary, raceRunAveragePriority)
+    : null;
+  const shortToRaceRunGap = shortRunPace && raceRunPace
+    ? raceRunPace.value - shortRunPace.value
+    : null;
+  const ovalPrimaryStint = useMemo(
+    () => [...bestWindowCards, ...stints]
+      .filter((stint) => (
+        stint.run_id === overview.run_id
+        && stint.valid_lap_count >= 10
+        && stint.valid_lap_count === stint.lap_count
+        && stint.end_lap - stint.start_lap + 1 === stint.lap_count
+        && !stint.lap_points.some((point) => !point.valid)
+      ))
+      .sort((left, right) => right.valid_lap_count - left.valid_lap_count)[0]
+      ?? null,
+    [bestWindowCards, overview.run_id, stints],
+  );
+  const rfTireReadiness = cornerTireReadiness(
+    "RF",
+    ovalPrimaryStint,
+    Boolean(blockingRunWarning || stintRequestFailed || !backendStintReady),
+  );
+  const rrTireReadiness = cornerTireReadiness(
+    "RR",
+    ovalPrimaryStint,
+    Boolean(blockingRunWarning || stintRequestFailed || !backendStintReady),
+  );
+  const exclusionReasonSummary = useMemo(() => {
+    const counts = new Map<string, number>();
+    laps.forEach((lap) => {
+      if (bestUsefulLapMatchesRun(lap, overview.run_id)) return;
+      const tags = lap.classification_tags.filter((tag) => !/^(SOLO_CLEAN|TIMED|USEFUL)$/i.test(tag));
+      const labels = tags.length > 0 ? tags : [lap.lap_type || "ineligible"];
+      labels.forEach((label) => counts.set(label, (counts.get(label) ?? 0) + 1));
+    });
+    const ranked = [...counts.entries()]
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .slice(0, 3)
+      .map(([label, count]) => `${humanizeLapExclusion(label)} ${count}`);
+    return ranked.length > 0 ? ranked.join(" · ") : "None";
+  }, [laps, overview.run_id]);
+  const balanceObservation = useMemo(() => {
+    if (blockingRunWarning) {
+      return {
+        state: "withheld" as const,
+        headline: "Withheld by run integrity",
+        detail: "Resolve the run warning before reading handling drift.",
+        sourceChannels: [] as string[],
+      };
+    }
+    if (
+      !paceDecisionWindow
+      || paceDecisionWindow.valid_lap_count < 10
+      || paceDecisionWindow.valid_lap_count !== paceDecisionWindow.window_size
+    ) {
+      return {
+        state: "collecting" as const,
+        headline: "Needs a clean stint",
+        detail: "A directional balance-drift read needs at least 10 eligible laps in one continuous block.",
+        sourceChannels: [] as string[],
+      };
+    }
+    const eligibleLapNumbers = new Set(cleanUsefulLaps.map((lap) => lap.lap_number));
+    const events = overview.events.filter((event) => (
+      event.run_id === overview.run_id
+      && event.valid_for_tuning
+      && event.lap_number != null
+      && eligibleLapNumbers.has(event.lap_number)
+      && event.lap_number >= paceDecisionWindow.start_lap
+      && event.lap_number <= paceDecisionWindow.end_lap
+      && /YAW|ROTATION|BALANCE/.test(event.event_type)
+      && event.source_channels.length > 0
+    ));
+    if (events.length === 0) {
+      return {
+        state: "withheld" as const,
+        headline: "No qualified drift signal",
+        detail: "Pace changed, if at all, without a qualified yaw, rotation, or balance event in this block. No cause is inferred.",
+        sourceChannels: [] as string[],
+      };
+    }
+    const midpoint = (paceDecisionWindow.start_lap + paceDecisionWindow.end_lap) / 2;
+    const earlyEvents = events.filter((event) => (event.lap_number ?? 0) <= midpoint);
+    const lateEvents = events.filter((event) => (event.lap_number ?? 0) > midpoint);
+    const sourceChannels = [...new Set(events.flatMap((event) => event.source_channels))];
+    if (lateEvents.length > 0 && earlyEvents.length === 0) {
+      const observedLapNumbers = [...new Set(lateEvents.map((event) => event.lap_number))];
+      const lapsObserved = observedLapNumbers.join(", ");
+      return {
+        state: "observed" as const,
+        headline: "Late-run handling signal observed",
+        detail: `Qualified yaw/rotation evidence appears on lap${observedLapNumbers.length === 1 ? "" : "s"} ${lapsObserved}. This is an observation, not a tire or setup cause.`,
+        sourceChannels,
+      };
+    }
+    return {
+      state: "observed" as const,
+      headline: "No directional drift call",
+      detail: earlyEvents.length > 0 && lateEvents.length > 0
+        ? "Qualified handling evidence appears in both halves of the block, so the app does not label it as late-run drift."
+        : "Qualified handling evidence appears only in the early half of the block, so no late-run drift is claimed.",
+      sourceChannels,
+    };
+  }, [blockingRunWarning, cleanUsefulLaps, overview.events, overview.run_id, paceDecisionWindow]);
+
+  const openPaceEvidence = useCallback((workspace: "platform_trace" | "engineer") => {
+    if (paceDecisionWindow) {
+      focusWindowEvidence(paceDecisionWindow, workspace);
+      return;
+    }
+    if (paceDecisionLap) {
+      focusLapEvidence(paceDecisionLap, workspace);
+      return;
+    }
+    if (workspace === "engineer") {
+      focusEvidence({
+        runId: overview.run_id,
+        lapNumber: null,
+        lapScope: "run",
+        lapWindowStart: null,
+        lapWindowEnd: null,
+        representativeLap: null,
+        eventId: null,
+        sampleIndex: null,
+        lapDistFt: null,
+        lapPct: null,
+        zoneId: null,
+        zoneLabel: null,
+        zoneStartPct: null,
+        zoneEndPct: null,
+        channelId: null,
+        lockState: "none",
+        valueBasis: "run_level",
+        selectionSource: "laps",
+      }, "engineer");
+    }
+  }, [focusEvidence, focusLapEvidence, focusWindowEvidence, overview.run_id, paceDecisionLap, paceDecisionWindow]);
+
+  const openPaceMap = useCallback(() => {
+    if (paceDecisionWindow) focusWindowEvidence(paceDecisionWindow);
+    else if (paceDecisionLap) focusLapEvidence(paceDecisionLap);
+    else return;
+    onToggleMapOverlay?.();
+  }, [focusLapEvidence, focusWindowEvidence, onToggleMapOverlay, paceDecisionLap, paceDecisionWindow]);
+
   const makeStintBasket = useCallback((stint: StintSummary, label: string) => makeBasketItem(
     stint.run_id,
     stint.start_lap,
@@ -977,15 +1585,37 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
 
   const loadHistoryRunStints = useCallback((runId: string) => {
     if (runId === overview.run_id || historyStintData[runId] || historyStintsLoading[runId]) return;
+    const generation = historyStintGenerationRef.current;
     setHistoryStintsLoading((current) => ({ ...current, [runId]: true }));
+    setHistoryStintErrors((current) => {
+      const next = { ...current };
+      delete next[runId];
+      return next;
+    });
     fetchStints(runId)
-      .then((response) => setHistoryStintData((current) => ({ ...current, [runId]: response })))
-      .catch(() => setHistoryStintData((current) => {
-        const next = { ...current };
-        delete next[runId];
-        return next;
-      }))
-      .finally(() => setHistoryStintsLoading((current) => ({ ...current, [runId]: false })));
+      .then((response) => {
+        if (generation !== historyStintGenerationRef.current) return;
+        if (!stintResponseMatchesRun(response, runId)) {
+          throw new Error("Stint scope error: the response did not match the requested history run.");
+        }
+        setHistoryStintData((current) => ({ ...current, [runId]: response }));
+      })
+      .catch((caught: unknown) => {
+        if (generation !== historyStintGenerationRef.current) return;
+        setHistoryStintData((current) => {
+          const next = { ...current };
+          delete next[runId];
+          return next;
+        });
+        setHistoryStintErrors((current) => ({
+          ...current,
+          [runId]: caught instanceof Error ? caught.message : "Stint evidence could not be loaded.",
+        }));
+      })
+      .finally(() => {
+        if (generation !== historyStintGenerationRef.current) return;
+        setHistoryStintsLoading((current) => ({ ...current, [runId]: false }));
+      });
   }, [historyStintData, historyStintsLoading, overview.run_id]);
 
   const toggleHistoryRun = useCallback((runId: string) => {
@@ -1009,8 +1639,8 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
       track_name: overview.session.track_display_name ?? overview.session.track_name ?? null,
       setup_name: overview.session.setup_name ?? null,
       imported_at: overview.session.import_time ?? null,
-      best_lap_number: overview.best_useful_lap?.lap_number ?? null,
-      best_lap_time: overview.best_useful_lap?.lap_time ?? bestTime,
+      best_lap_number: authoritativeBestUsefulLap?.lap_number ?? null,
+      best_lap_time: authoritativeBestUsefulLap?.lap_time ?? bestTime,
       lap_count: laps.length,
       has_setup_snapshot: overview.setup_snapshot != null,
       primary_issue: overview.primary_findings?.[0] ?? null,
@@ -1027,7 +1657,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
       .filter((run): run is RunListItem => run != null && run.run_id !== overview.run_id)
       ?? [];
     return [current, ...orderedSessionRuns];
-  }, [bestTime, laps.length, overview, session, sessionRuns]);
+  }, [authoritativeBestUsefulLap, bestTime, laps.length, overview, session, sessionRuns]);
 
   const sessionRunsSubtitle = useMemo(() => {
     if (runHistory.length <= 1) {
@@ -1124,6 +1754,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
       return rows;
     });
     const allRawPoints = series.flatMap((item) => item.points);
+    const baseRawPoints = series.filter((item) => !item.dashed).flatMap((item) => item.points);
     const visibleRawPoints = allRawPoints.filter((point) => !excludeInvalidGraphLaps || point.valid);
     const scaleCandidateValues = visibleRawPoints
       .filter((point) => point.valid || includeOutliersInScale)
@@ -1141,7 +1772,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
         zeroLineY: null as number | null,
         scaleLabel: "Scale: Race pace",
         validLapCount: 0,
-        excludedLapCount: allRawPoints.length,
+        excludedLapCount: baseRawPoints.length,
         fastestValidLap: null as number | null,
         bestRolling5: null as number | null,
         bestRolling10: bestSustainedStint?.rolling_10_avg_best ?? null,
@@ -1184,9 +1815,16 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
           };
         }),
     }));
-    const validLapTimes = visibleRawPoints.filter((point) => point.valid && point.lapTime != null).map((point) => point.lapTime as number);
-    const rolling5Values = visibleRawPoints.filter((point) => point.valid && point.rolling5 != null).map((point) => point.rolling5 as number);
-    const excludedLapCount = seriesWithCoords.flatMap((item) => item.points).filter((point) => point.excludedFromScale || !point.valid).length;
+    const visibleBaseRawPoints = baseRawPoints.filter((point) => !excludeInvalidGraphLaps || point.valid);
+    const validLapTimes = visibleBaseRawPoints.filter((point) => point.valid && point.lapTime != null).map((point) => point.lapTime as number);
+    const rolling5Values = visibleBaseRawPoints.filter((point) => point.valid && point.rolling5 != null).map((point) => point.rolling5 as number);
+    const excludedBasePointIds = new Set(
+      baseRawPoints.filter((point) => !point.valid).map((point) => point.id),
+    );
+    // Valid pace outliers remain graphed at the visible scale edge and are not
+    // junk laps. Keep the scope count aligned with the clean-lap ledger: only
+    // canonically invalid base laps are excluded.
+    const excludedLapCount = excludedBasePointIds.size;
     const selectedLapCandidate = selectedGraphLap != null
       ? seriesWithCoords
         .flatMap((item) => item.points)
@@ -1222,6 +1860,12 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
       selectedLapDetail: selectedLapCandidate ?? null,
     };
   }, [baselineStint, baselineStintId, bestSustainedStint, excludeInvalidGraphLaps, graphStints, includeOutliersInScale, selectedGraphLap, selection.selectedLap, showRolling5, stintGraphMode, testStint, testStintId]);
+
+  const selectedGraphPointIsMetricBest = graphChart.selectedLapDetail != null
+    && graphChart.series.some((series) => {
+      if (series.dashed) return false;
+      return bestPointForGraphMode(series.points, stintGraphMode)?.id === graphChart.selectedLapDetail?.id;
+    });
 
   const summaryDrawerStint = useMemo(
     () => summaryDrawerStintId
@@ -1499,7 +2143,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
       && item.window.valid_lap_count > 0;
     const hasLapContext = item.lap != null
       && item.lap.lap_number != null
-      && item.lap.is_useful === true;
+      && bestUsefulLapMatchesRun(item.lap, overview.run_id);
     const canStage = hasWindowContext || hasLapContext;
     const canOpenPlatform = canStage;
     const disabledReason = "Not available for this run";
@@ -1671,6 +2315,193 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
 
   return (
     <div className="tab-grid">
+      <section
+        className="tab-decision-broadcast"
+        data-state={paceDecisionDataState}
+        data-run-id={overview.run_id}
+        aria-label="Laps pace briefing"
+        aria-live="polite"
+      >
+        <div>
+          <span className="eyebrow">
+            {paceDecisionState === "PACE READY"
+              ? <CheckCircle2 size={12} />
+              : paceDecisionState === "CHECKING"
+                ? <Clock size={12} />
+                : <AlertTriangle size={12} />}
+            {paceDecisionState}
+          </span>
+          <h2>{paceDecisionHeadline}</h2>
+          <p><strong>Why:</strong> {paceDecisionDetail}</p>
+          <p><strong>What next:</strong> {paceDecisionNext}</p>
+          <p title={`Exact run ${overview.run_id}`}>Exact scope: {paceDecisionScope}</p>
+          {selection.selectedMode === "learning" && (
+            <div className="tab-decision-learning">
+              <p>
+                Pace readiness is based only on currently eligible laps. A longer sample supports sustained-pace description, but observed falloff alone does not establish tire degradation or a setup cause.
+              </p>
+              <p>
+                The fastest clean lap is a single-lap reference. The window average describes repeatable race pace; their gap is context, not a reason to change the car.
+              </p>
+            </div>
+          )}
+          <div className="tab-decision-facts">
+            <span>
+              <strong>Scope</strong>{" "}
+              {paceDecisionWindow
+                ? `L${paceDecisionWindow.start_lap}-${paceDecisionWindow.end_lap}`
+                : paceDecisionLap
+                  ? `L${paceDecisionLap.lap_number}`
+                  : "none"}
+            </span>
+            <span><strong>Eligible</strong> {currentValidLapCount}/{currentTotalLapCount}</span>
+            <span><strong>Excluded</strong> {excludedLapCount}</span>
+            <span><strong>Pace gap</strong> {paceComparisonLabel}</span>
+            <span><strong>Trend</strong> {paceTrendLabel}</span>
+            <span><strong>Long run</strong> {longRunPaceReady ? "ready" : "not ready"}</span>
+          </div>
+        </div>
+        <div className="tab-handoff-actions" aria-label="Laps evidence handoffs">
+          <button
+            type="button"
+            onClick={() => openPaceEvidence("platform_trace")}
+            disabled={!paceDecisionWindow && !paceDecisionLap}
+          >
+            <Layers size={13} /> Inspect pace
+          </button>
+          <button type="button" onClick={() => openPaceEvidence("engineer")}>
+            <BrainCircuit size={13} /> Engineer briefing
+          </button>
+          {onToggleMapOverlay && (
+            <button
+              type="button"
+              onClick={openPaceMap}
+              disabled={!paceDecisionWindow && !paceDecisionLap}
+            >
+              <MapPin size={13} /> Show on map
+            </button>
+          )}
+        </div>
+      </section>
+
+      <section
+        className="workspace-section oval-run-brief"
+        data-driver-briefing="oval-stint"
+        data-authority="observation-only"
+        aria-labelledby="oval-run-brief-title"
+      >
+        <div className="section-heading-row">
+          <div>
+            <span className="eyebrow">Run Brief</span>
+            <h2 id="oval-run-brief-title"><Gauge size={16} /> What the next run needs</h2>
+            <p className="section-note">Short-run speed, race-run hold, loaded-side tire readiness, and the laps the app refused to use.</p>
+          </div>
+          <span className="lap-flag-badge">Observation only</span>
+        </div>
+        <div className="oval-run-brief-grid">
+          <article
+            className="oval-run-brief-card oval-run-pace-card"
+            data-readiness={raceRunPace ? "race-run" : shortRunPace ? "short-run" : "withheld"}
+          >
+            <span className="eyebrow">Short vs race run</span>
+            <div className="oval-run-brief-metric">
+              <span>Short run</span>
+              <strong>{shortRunPace ? `Best ${shortRunPace.size} · ${formatTime(shortRunPace.value)}` : "Not qualified"}</strong>
+            </div>
+            <div className="oval-run-brief-metric">
+              <span>Race run</span>
+              <strong>{raceRunPace ? `Best ${raceRunPace.size} · ${formatTime(raceRunPace.value)}` : "Need 20 clean laps"}</strong>
+            </div>
+            <p>
+              {shortToRaceRunGap != null
+                ? `${formatSignedDelta(shortToRaceRunGap)}s from the best ${shortRunPace?.size}-lap average to the best ${raceRunPace?.size}-lap average.`
+                : "The app will not estimate race-run hold from a short block."}
+            </p>
+          </article>
+
+          <article className="oval-run-brief-card oval-tire-readiness-card" data-readiness="corner-specific">
+            <span className="eyebrow">Loaded-side tires</span>
+            <div className="oval-tire-readiness-row" data-corner="RF" data-state={rfTireReadiness.state}>
+              <strong>RF</strong>
+              <span>{rfTireReadiness.headline}</span>
+              <small>{rfTireReadiness.detail}</small>
+            </div>
+            <div className="oval-tire-readiness-row" data-corner="RR" data-state={rrTireReadiness.state}>
+              <strong>RR</strong>
+              <span>{rrTireReadiness.headline}</span>
+              <small>{rrTireReadiness.detail}</small>
+            </div>
+          </article>
+
+          <article className="oval-run-brief-card oval-balance-observation-card" data-state={balanceObservation.state}>
+            <span className="eyebrow">Balance drift</span>
+            <strong>{balanceObservation.headline}</strong>
+            <p>{balanceObservation.detail}</p>
+            {selection.selectedMode === "learning" && balanceObservation.sourceChannels.length > 0 && (
+              <small>Observed channels: {balanceObservation.sourceChannels.join(", ")}</small>
+            )}
+          </article>
+
+          <article className="oval-run-brief-card oval-clean-lap-ledger" data-state={excludedLapCount > 0 ? "excluded" : "clean"}>
+            <span className="eyebrow">Clean-lap ledger</span>
+            <div className="oval-run-brief-metric">
+              <span>Used</span>
+              <strong>{currentValidLapCount}</strong>
+            </div>
+            <div className="oval-run-brief-metric">
+              <span>Excluded</span>
+              <strong>{excludedLapCount}</strong>
+            </div>
+            <p>{exclusionReasonSummary}</p>
+            {selection.selectedMode === "learning" && (
+              <small>Out-laps, cooldowns, pit-road laps, wrecks, invalid-speed laps, and partial laps never drive the setup read.</small>
+            )}
+          </article>
+        </div>
+      </section>
+
+      <section
+        className="workspace-section oval-whole-car-launch"
+        data-comparison-readiness={runHistory.length >= 2 ? "ready" : "needs-run"}
+        aria-labelledby="oval-whole-car-title"
+      >
+        <div className="section-heading-row oval-whole-car-launch-header">
+          <div>
+            <span className="eyebrow">A/B run review</span>
+            <h2 id="oval-whole-car-title"><BarChart3 size={16} /> Whole-car comparison</h2>
+            <p className="section-note">
+              Answer five oval questions first: pace, location, driver match, right-front trend, and whether the test was clean.
+            </p>
+          </div>
+          <div className="oval-whole-car-launch-actions">
+            <span className="lap-flag-badge">
+              {runHistory.length} session run{runHistory.length === 1 ? "" : "s"}
+            </span>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setWholeCarCompareOpen((open) => !open)}
+              disabled={runHistory.length < 2}
+              aria-expanded={wholeCarCompareOpen}
+              aria-controls="oval-whole-car-workbook"
+              title={runHistory.length < 2 ? "Add a second session run before opening the workbook" : "Review the complete baseline and test comparison"}
+            >
+              <BarChart3 size={14} /> {wholeCarCompareOpen ? "Close workbook" : "Open whole-car workbook"}
+            </button>
+          </div>
+        </div>
+        {runHistory.length < 2 && (
+          <p className="oval-whole-car-recovery">Bank a second run in this session. Match car, track, fuel, tire age, weather, and line; change only one setup item if this is a controlled test.</p>
+        )}
+        {wholeCarCompareOpen && runHistory.length >= 2 && (
+          <div id="oval-whole-car-workbook" className="oval-whole-car-workbook">
+            <React.Suspense fallback={<div className="workspace-placeholder" role="status">Preparing the whole-car comparison...</div>}>
+              <WholeCarCompareTab runs={runHistory} currentRunId={overview.run_id} />
+            </React.Suspense>
+          </div>
+        )}
+      </section>
+
       <section className="workspace-section">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div>
@@ -1693,7 +2524,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
           </div>
         </div>
         <div className="laps-chip-row" style={{ marginTop: 8 }}>
-          <span className="lap-flag-badge">Valid laps {windowsData?.total_valid_laps ?? usefulLaps.length}/{windowsData?.total_laps ?? laps.length}</span>
+          <span className="lap-flag-badge">Valid laps {currentWindowsData?.total_valid_laps ?? usefulLaps.length}/{currentWindowsData?.total_laps ?? laps.length}</span>
           {selection.selectedLapScope === "lap_window" && selection.selectedLapWindowStart != null && selection.selectedLapWindowEnd != null ? (
             <span className="lap-flag-badge" style={{ background: "rgba(56,189,248,0.12)", color: "#38bdf8" }}>
               Current selection: Window {selection.selectedLapWindowStart}-{selection.selectedLapWindowEnd}
@@ -1704,12 +2535,21 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
               Current selection: Lap {selection.selectedLap}
             </span>
           ) : null}
-          {windowsData && windowsData.total_valid_laps < 10 && (
+          {currentWindowsData && currentWindowsData.total_valid_laps < 10 && (
             <span className="lap-flag-badge" style={{ background: "rgba(239,68,68,0.12)", color: "#ef4444" }}>
               <AlertTriangle size={12} /> Need 10+ valid laps for deeper window analysis
             </span>
           )}
         </div>
+        {currentWindowsLoadStatus === "error" && (
+          <div className="warning-banner" role="alert">
+            <span>Lap-window evidence is unavailable. No best-window conclusion is shown.</span>
+            {selection.selectedMode === "learning" && currentWindowsLoadError && <span className="muted">Technical detail: {currentWindowsLoadError}</span>}
+            <button type="button" className="secondary-button" onClick={() => setWindowsRetryToken((token) => token + 1)}>
+              <RotateCcw size={13} /> Retry lap windows
+            </button>
+          </div>
+        )}
       </section>
 
       {showPhysicalTimeComparison && basket.baseline && basket.test && (
@@ -1747,16 +2587,16 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
             </div>
           </div>
 
-          {stintData?.warnings && stintData.warnings.length > 0 && (
+          {currentStintData?.warnings && currentStintData.warnings.length > 0 && (
             <div className="laps-chip-row" style={{ marginBottom: 10 }}>
-              {stintData.warnings.slice(0, 4).map((warning) => (
+              {currentStintData.warnings.slice(0, 4).map((warning) => (
                 <span key={warning} className="lap-flag-badge" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>{warning}</span>
               ))}
-              {stintData.warnings.length > 4 && (
+              {currentStintData.warnings.length > 4 && (
                 <details className="stint-warning-more">
-                  <summary className="lap-flag-badge">+{stintData.warnings.length - 4} more warnings</summary>
+                  <summary className="lap-flag-badge">+{currentStintData.warnings.length - 4} more warnings</summary>
                   <div className="laps-chip-row">
-                    {stintData.warnings.slice(4).map((warning) => (
+                    {currentStintData.warnings.slice(4).map((warning) => (
                       <span key={warning} className="lap-flag-badge" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>{warning}</span>
                     ))}
                   </div>
@@ -1768,45 +2608,95 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
           <div className="stint-run-summary">
             <div>
               <span className="eyebrow">Run / Setup</span>
-              <strong>{stintData?.run_summary?.setup_name ?? overview.session.setup_name ?? "Setup unknown"}</strong>
-              <span className="muted">{stintData?.run_summary?.track_name ?? overview.session.track_display_name ?? overview.session.track_name ?? "-"} - {stintData?.run_summary?.car_name ?? overview.session.car_name ?? "-"}</span>
+              <strong>{currentStintData?.run_summary?.setup_name ?? overview.session.setup_name ?? "Setup unknown"}</strong>
+              <span className="muted">{currentStintData?.run_summary?.track_name ?? overview.session.track_display_name ?? overview.session.track_name ?? "-"} - {currentStintData?.run_summary?.car_name ?? overview.session.car_name ?? "-"}</span>
             </div>
-            <div><span>Total</span><strong>{stintData?.run_summary?.total_laps ?? windowsData?.total_laps ?? laps.length}</strong></div>
-            <div><span>Valid</span><strong>{stintData?.run_summary?.valid_laps ?? windowsData?.total_valid_laps ?? usefulLaps.length}</strong></div>
-            <div><span>Best Lap</span><strong>{formatTime(stintData?.run_summary?.best_lap_time ?? bestTime)}</strong></div>
-            <div><span>Best Sustained</span><strong>{bestSustainedStint ? `${bestSustainedStint.display_label_short} ${formatTime(bestSustainedStint.avg_lap_time)}` : "-"}</strong></div>
-            <div><span>Data</span><strong>{stintData?.run_summary?.data_status ?? (stintData?.warnings?.length ? "Limited" : "Ready")}</strong></div>
+            <div><span>Total</span><strong>{currentStintData?.run_summary?.total_laps ?? currentWindowsData?.total_laps ?? laps.length}</strong></div>
+            <div><span>Valid</span><strong>{currentStintData?.run_summary?.valid_laps ?? currentWindowsData?.total_valid_laps ?? usefulLaps.length}</strong></div>
+            <div><span>Best Lap</span><strong>{formatTime(currentStintData?.run_summary?.best_lap_time ?? bestTime)}</strong></div>
+            <div><span>Best Sustained</span><strong>{bestSustainedStint ? `${bestSustainedStint.display_label_short} ${formatTime(bestSustainedStint.avg_lap_time)}` : "Need 20 clean"}</strong></div>
+            <div><span>Data</span><strong>{blockingRunWarning ? "Blocked" : currentStintsLoadStatus === "loading" ? "Loading" : currentStintsLoadStatus === "error" ? "Unavailable" : currentStintData?.run_summary?.data_status ?? (currentStintData ? "Limited" : "Unavailable")}</strong></div>
           </div>
 
           {stintsLoading && <p className="muted">Loading stint windows...</p>}
-          {!stintsLoading && visibleStints.length === 0 && visibleBestWindowCards.length === 0 && (
+          {currentStintsLoadStatus === "error" && (
+            <div className="stint-empty-state" role="alert">
+              <h3>Stint evidence is unavailable.</h3>
+              <p>No stint-length or valid-lap conclusion is available from this failed request.</p>
+              {selection.selectedMode === "learning" && currentStintsLoadError && <p className="muted">Technical detail: {currentStintsLoadError}</p>}
+              <button type="button" className="secondary-button" onClick={() => setStintsRetryToken((token) => token + 1)}>
+                <RotateCcw size={13} /> Retry stint evidence
+              </button>
+            </div>
+          )}
+          {currentStintsLoadStatus === "ready" && visibleStints.length === 0 && visibleBestWindowCards.length === 0 && (
             <div className="stint-empty-state">
               <h3>No eligible stint windows yet.</h3>
               <p>Need at least 3 valid laps to start short-run averages.</p>
-              <p className="muted">Need 10+ valid laps for meaningful long-run read.</p>
+              <p className="muted">Need 10 uninterrupted clean laps for a preliminary tire read.</p>
+              <p className="muted">Need 20 uninterrupted clean laps before race-run or best-long-run labels.</p>
               <p className="muted">Need 50/60 valid laps for 50/60-lap averages.</p>
               <p className="muted">Out laps, pit laps, cooldowns, wrecks, and invalid laps are excluded.</p>
               <p className="muted">Import or select a longer clean run to unlock Stint Intelligence.</p>
             </div>
           )}
-          {!stintsLoading && (visibleStints.length > 0 || visibleBestWindowCards.length > 0) && (
+          {currentStintsLoadStatus === "ready" && (visibleStints.length > 0 || visibleBestWindowCards.length > 0) && (
             <>
             {visibleStints.length > 0 && (
             <div className="stint-subsection">
-              <span className="eyebrow">My Stints</span>
+              <div className="stint-table-heading">
+                <div>
+                  <span className="eyebrow">My Stints</span>
+                  <p className="section-note">
+                    {selection.selectedMode === "learning"
+                      ? "Decision view prioritizes current pace, sustained pace, falloff, consistency, and setup evidence. Expand the engineering columns for every rolling average."
+                      : "Decision pace and evidence first. Expand for every rolling average."}
+                  </p>
+                </div>
+                <div className="stint-column-controls">
+                  <span className="stint-column-status" aria-live="polite">
+                    {showEngineeringStintColumns ? "Full engineering table" : "7 decision columns"}
+                  </span>
+                  <button
+                    type="button"
+                    className="secondary-button stint-columns-toggle"
+                    onClick={() => setShowEngineeringStintColumns((visible) => !visible)}
+                    aria-expanded={showEngineeringStintColumns}
+                    aria-controls="stint-timing-sheet"
+                  >
+                    <SlidersHorizontal size={13} />
+                    {showEngineeringStintColumns ? "Fewer columns" : "More columns"}
+                  </button>
+                </div>
+              </div>
               <div className="stint-table-wrap">
-                <table className="compact-table stint-table timing-sheet-table">
+                <table
+                  id="stint-timing-sheet"
+                  className={`compact-table stint-table timing-sheet-table ${showEngineeringStintColumns ? "engineering-columns" : "decision-columns"}`}
+                >
                   <thead>
                     <tr>
-                      <th>Stint</th>
-                      <th># Laps</th>
-                      <th>Last Lap</th>
-                      <th>Current Avg Lap</th>
-                      <th>Fastest Lap</th>
-                      {stintAverageColumns.map((column) => <th key={column.size}>{column.label}</th>)}
-                      <th>Falloff</th>
-                      <th>Consistency</th>
-                      <th>Setup EV</th>
+                      <th scope="col">Stint</th>
+                      <th scope="col">Laps</th>
+                      {showEngineeringStintColumns ? (
+                        <>
+                          <th scope="col">Last Lap</th>
+                          <th scope="col">Current Avg Lap</th>
+                          <th scope="col">Fastest Lap</th>
+                          {stintAverageColumns.map((column) => <th scope="col" key={column.size}>{column.label}</th>)}
+                          <th scope="col">Falloff</th>
+                          <th scope="col">Consistency</th>
+                          <th scope="col">Setup EV</th>
+                        </>
+                      ) : (
+                        <>
+                          <th scope="col">Current Avg</th>
+                          <th scope="col">Best Lap</th>
+                          <th scope="col">Best Sustained</th>
+                          <th scope="col">Falloff</th>
+                          <th scope="col">Evidence</th>
+                        </>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -1818,6 +2708,10 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
                       const hasLimitedWarning = stint.warnings.some((warning) => /limited|shorter|excluded/i.test(warning));
                       const fastestLapBest = bestFastestLapValue != null && stint.best_lap_time != null && Math.abs(stint.best_lap_time - bestFastestLapValue) < 0.0005;
                       const topSetupEv = bestSetupEvValue != null && stint.setup_usefulness_score != null && Math.abs(stint.setup_usefulness_score - bestSetupEvValue) < 0.0005;
+                      const sustained = bestSustainedAverage(stint);
+                      const sustainedIsBest = sustained != null
+                        && bestAverageValues[sustained.size] != null
+                        && Math.abs(sustained.value - (bestAverageValues[sustained.size] as number)) < 0.0005;
                       return (
                         <tr
                           key={stint.stint_id}
@@ -1833,33 +2727,70 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
                               {stint.is_best_long_run && <span className="lap-flag-badge">Best long-run</span>}
                               {(isStrongest || topSetupEv) && <span className="lap-flag-badge">Top EV</span>}
                               {hasLimitedWarning && <span className="lap-flag-badge" style={{ color: "#f59e0b" }}>Limited</span>}
+                              <button
+                                type="button"
+                                className="stint-row-summary-button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedStintId(stint.stint_id);
+                                  setSummaryDrawerStintId(stint.stint_id);
+                                }}
+                                onDoubleClick={(event) => event.stopPropagation()}
+                                aria-label={`Select ${stint.display_label_short} and open stint summary`}
+                              >
+                                <ChevronRight size={11} /> Details
+                              </button>
                             </div>
                           </td>
                           <td>{stint.lap_count}</td>
-                          <td>{formatTime(stint.last_lap_time)}</td>
-                          <td>{formatTime(stint.avg_lap_time)}</td>
-                          <td className={fastestLapBest ? "stint-bucket-cell fastest" : ""}>{formatTime(stint.best_lap_time)}</td>
-                          {stintAverageColumns.map((column) => {
-                            const avg = stintAverage(stint, column.size);
-                            const bestAvg = bestAverageValues[column.size];
-                            const bucketClass = bestAvg != null && avg != null && Math.abs(avg - bestAvg) < 0.0005
-                              ? "stint-bucket-cell fastest"
-                              : avg == null
-                                ? "stint-bucket-cell unavailable"
-                                : "stint-bucket-cell";
-                            return (
-                              <td
-                                key={column.size}
-                                className={bucketClass}
-                                title={avg == null ? `Need ${column.size} valid laps for this average.` : undefined}
-                              >
-                                {avg != null ? formatTime(avg) : "\u2014"}
+                          {showEngineeringStintColumns ? (
+                            <>
+                              <td>{formatTime(stint.last_lap_time)}</td>
+                              <td>{formatTime(stint.avg_lap_time)}</td>
+                              <td className={fastestLapBest ? "stint-bucket-cell fastest" : ""}>{formatTime(stint.best_lap_time)}</td>
+                              {stintAverageColumns.map((column) => {
+                                const avg = stintAverage(stint, column.size);
+                                const bestAvg = bestAverageValues[column.size];
+                                const bucketClass = bestAvg != null && avg != null && Math.abs(avg - bestAvg) < 0.0005
+                                  ? "stint-bucket-cell fastest"
+                                  : avg == null
+                                    ? "stint-bucket-cell unavailable"
+                                    : "stint-bucket-cell";
+                                return (
+                                  <td
+                                    key={column.size}
+                                    className={bucketClass}
+                                    title={avg == null ? `Need ${column.size} valid laps for this average.` : undefined}
+                                  >
+                                    {avg != null ? formatTime(avg) : "\u2014"}
+                                  </td>
+                                );
+                              })}
+                              <td className={stint.falloff_total != null && stint.falloff_total > 0.5 ? "falloff-warn-cell" : ""}>{stint.falloff_total != null ? `${stint.falloff_total > 0 ? "+" : ""}${stint.falloff_total.toFixed(2)}s` : "-"}</td>
+                              <td>{formatScore(stint.consistency_score)}</td>
+                              <td className={topSetupEv ? "stint-bucket-cell fastest" : ""} style={{ color: paceQualityColor(stint.setup_usefulness_score) }}>{formatScore(stint.setup_usefulness_score)}</td>
+                            </>
+                          ) : (
+                            <>
+                              <td>{formatTime(stint.avg_lap_time)}</td>
+                              <td className={fastestLapBest ? "stint-bucket-cell fastest" : ""}>{formatTime(stint.best_lap_time)}</td>
+                              <td className={`stint-sustained-cell ${sustainedIsBest ? "best" : ""}`}>
+                                <strong>{sustained != null ? formatTime(sustained.value) : "\u2014"}</strong>
+                                <small>{sustained != null ? `${sustained.size}-lap average` : "Need 10+ valid laps"}</small>
                               </td>
-                            );
-                          })}
-                          <td className={stint.falloff_total != null && stint.falloff_total > 0.5 ? "falloff-warn-cell" : ""}>{stint.falloff_total != null ? `${stint.falloff_total > 0 ? "+" : ""}${stint.falloff_total.toFixed(2)}s` : "-"}</td>
-                          <td>{formatScore(stint.consistency_score)}</td>
-                          <td className={topSetupEv ? "stint-bucket-cell fastest" : ""} style={{ color: paceQualityColor(stint.setup_usefulness_score) }}>{formatScore(stint.setup_usefulness_score)}</td>
+                              <td className={stint.falloff_total != null && stint.falloff_total > 0.5 ? "falloff-warn-cell" : ""}>{stint.falloff_total != null ? `${stint.falloff_total > 0 ? "+" : ""}${stint.falloff_total.toFixed(2)}s` : "-"}</td>
+                              <td className="stint-decision-evidence">
+                                <span title="Consistency score">
+                                  <small>Consistency</small>
+                                  <strong>{formatScore(stint.consistency_score)}</strong>
+                                </span>
+                                <span title="Setup evidence usefulness score">
+                                  <small>Setup</small>
+                                  <strong style={{ color: paceQualityColor(stint.setup_usefulness_score) }}>{formatScore(stint.setup_usefulness_score)}</strong>
+                                </span>
+                              </td>
+                            </>
+                          )}
                         </tr>
                       );
                     })}
@@ -1869,11 +2800,11 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
             </div>
             )}
 
-            <div className="stint-graph-panel">
+            <div className="stint-graph-panel telemetry-visualization-panel" data-visualization="stint-pace">
               <div className="section-heading-row">
                 <div>
-                  <span className="eyebrow">Lap-Time Graph</span>
-                  <h3><LineChart size={15} /> Main Graph</h3>
+                  <span className="eyebrow">Main Graph</span>
+                  <h3><LineChart size={15} /> Stint Pace Trace</h3>
                   <p className="section-note">
                     {graphStintIds.length > 0
                       ? "Showing the selected stint lines."
@@ -1888,137 +2819,295 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
                   </button>
                 )}
               </div>
-              <div className="stint-graph-controls">
-                <button className={`segmented-option ${stintGraphMode === "lap_time" ? "active" : ""}`} onClick={() => setStintGraphMode("lap_time")}>Lap Time</button>
-                <button className={`segmented-option ${stintGraphMode === "delta" ? "active" : ""}`} onClick={() => setStintGraphMode("delta")}>Delta to Best</button>
-                <button className={`segmented-option ${stintGraphMode === "rolling_5" ? "active" : ""}`} onClick={() => setStintGraphMode("rolling_5")}>Rolling 5</button>
+              <div className="stint-graph-controls" role="group" aria-label="Pace trace metric">
+                <button type="button" className={`segmented-option ${stintGraphMode === "lap_time" ? "active" : ""}`} aria-pressed={stintGraphMode === "lap_time"} onClick={() => setStintGraphMode("lap_time")}>Lap Time</button>
+                <button type="button" className={`segmented-option ${stintGraphMode === "delta" ? "active" : ""}`} aria-pressed={stintGraphMode === "delta"} onClick={() => setStintGraphMode("delta")}>Delta to Best</button>
+                <button type="button" className={`segmented-option ${stintGraphMode === "rolling_5" ? "active" : ""}`} aria-pressed={stintGraphMode === "rolling_5"} onClick={() => setStintGraphMode("rolling_5")}>Rolling 5</button>
               </div>
               {graphChart.series.some((series) => series.points.length > 0) ? (
-                <div className="stint-graph-canvas">
-                  <div className="stint-graph-summary-strip">
-                    <span>Mode {stintGraphMode === "lap_time" ? "Lap Time" : stintGraphMode === "delta" ? "Delta to Best" : "Rolling 5"}</span>
-                    <span>{graphChart.scaleLabel}</span>
-                    <span>Graphing {graphChart.validLapCount} valid laps</span>
-                    <span>{graphChart.excludedLapCount} excluded</span>
-                    <span>Best {formatTime(graphChart.fastestValidLap)}</span>
-                    <span>Best 5 {formatTime(graphChart.bestRolling5)}</span>
-                    <span>Best 10 {formatTime(graphChart.bestRolling10)}</span>
-                    <span>{graphStints.length} selected stint{graphStints.length === 1 ? "" : "s"}</span>
+                <div className="stint-graph-canvas telemetry-chart-shell">
+                  <div className="stint-graph-summary-strip" aria-label="Pace trace summary">
+                    <span className="stint-graph-stat primary"><small>Fastest lap</small><strong>{formatTime(graphChart.fastestValidLap)}</strong></span>
+                    <span className="stint-graph-stat primary"><small>Best rolling 5</small><strong>{formatTime(graphChart.bestRolling5)}</strong></span>
+                    <span className="stint-graph-stat primary"><small>Best rolling 10</small><strong>{formatTime(graphChart.bestRolling10)}</strong></span>
+                    <span className="stint-graph-stat"><small>Metric</small><strong>{stintGraphMode === "lap_time" ? "Lap Time" : stintGraphMode === "delta" ? "Delta to Best" : "Rolling 5"}</strong></span>
+                    <span className="stint-graph-stat"><small>Scope</small><strong>{graphChart.validLapCount} valid / {graphChart.excludedLapCount} excluded</strong></span>
+                    <span className="stint-graph-stat"><small>View</small><strong>{graphChart.scaleLabel.replace("Scale: ", "")}</strong></span>
+                    <span className="stint-graph-stat"><small>Traces</small><strong>{graphStints.length} stint{graphStints.length === 1 ? "" : "s"}</strong></span>
                   </div>
                   <svg
+                    className="stint-chart-svg telemetry-line-chart"
                     viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-                    role="img"
-                    aria-label="Selected stint lap-time line chart"
+                    role="group"
+                    aria-roledescription="interactive line chart"
+                    aria-labelledby={`${chartDefinitionId}-title ${chartDefinitionId}-description`}
+                    data-chart-kind="stint-pace"
+                    data-chart-mode={stintGraphMode}
                     onMouseLeave={() => setHoveredGraphPoint(null)}
                   >
-                    {graphChart.bucketGuides.map((tick) => {
-                      const x = chartX(tick, graphChart.xMin, graphChart.xMax);
-                      return (
-                        <line
-                          key={`bucket:${tick}`}
-                          x1={x}
-                          y1={CHART_PAD_TOP}
-                          x2={x}
-                          y2={CHART_HEIGHT - CHART_PAD_BOTTOM}
-                          className="stint-chart-bucket-guide"
+                    <title id={`${chartDefinitionId}-title`}>Stint pace trace</title>
+                    <desc id={`${chartDefinitionId}-description`}>
+                      {`${stintGraphMode === "lap_time" ? "Lap time" : stintGraphMode === "delta" ? "Delta to best" : "Rolling five-lap average"} by stint lap. ${graphChart.validLapCount} valid laps are graphed and ${graphChart.excludedLapCount} laps are excluded. Use Tab to focus a point and Enter or Space to select it.`}
+                    </desc>
+                    <defs>
+                      <linearGradient id={`${chartDefinitionId}-plot-fill`} x1="0" y1="0" x2="0" y2="1">
+                        <stop className="stint-chart-plot-stop top" offset="0%" stopColor="#101b2a" stopOpacity="0.96" />
+                        <stop className="stint-chart-plot-stop bottom" offset="100%" stopColor="#070b12" stopOpacity="0.98" />
+                      </linearGradient>
+                      <radialGradient id={`${chartDefinitionId}-plot-glow`} cx="82%" cy="4%" r="88%">
+                        <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.12" />
+                        <stop offset="72%" stopColor="#38bdf8" stopOpacity="0" />
+                      </radialGradient>
+                      <clipPath id={`${chartDefinitionId}-plot-clip`}>
+                        <rect
+                          x={CHART_PAD_LEFT}
+                          y={CHART_PAD_TOP}
+                          width={CHART_WIDTH - CHART_PAD_LEFT - CHART_PAD_RIGHT}
+                          height={CHART_HEIGHT - CHART_PAD_TOP - CHART_PAD_BOTTOM}
+                          rx="12"
                         />
-                      );
-                    })}
-                    {graphChart.yTicks.map((tick) => {
-                      const y = chartY(tick, graphChart.yMin, graphChart.yMax);
-                      return (
-                        <g key={`ytick:${tick.toFixed(4)}`}>
+                      </clipPath>
+                      <filter id={`${chartDefinitionId}-line-glow`} x="-20%" y="-30%" width="140%" height="160%" colorInterpolationFilters="sRGB">
+                        <feGaussianBlur stdDeviation="3.2" />
+                      </filter>
+                      {graphChart.series.map((series, index) => (
+                        <linearGradient key={`${series.id}:gradient`} id={`${chartDefinitionId}-series-${index}`} gradientUnits="userSpaceOnUse" x1={CHART_PAD_LEFT} y1="0" x2={CHART_WIDTH - CHART_PAD_RIGHT} y2="0">
+                          <stop offset="0%" stopColor={series.color} stopOpacity="0.58" />
+                          <stop offset="52%" stopColor={series.color} stopOpacity="1" />
+                          <stop offset="100%" stopColor={series.color} stopOpacity="0.78" />
+                        </linearGradient>
+                      ))}
+                    </defs>
+                    <rect
+                      className="stint-chart-plot-backdrop"
+                      x={CHART_PAD_LEFT}
+                      y={CHART_PAD_TOP}
+                      width={CHART_WIDTH - CHART_PAD_LEFT - CHART_PAD_RIGHT}
+                      height={CHART_HEIGHT - CHART_PAD_TOP - CHART_PAD_BOTTOM}
+                      rx="12"
+                      fill={`url(#${chartDefinitionId}-plot-fill)`}
+                    />
+                    <rect
+                      className="stint-chart-plot-glow"
+                      x={CHART_PAD_LEFT}
+                      y={CHART_PAD_TOP}
+                      width={CHART_WIDTH - CHART_PAD_LEFT - CHART_PAD_RIGHT}
+                      height={CHART_HEIGHT - CHART_PAD_TOP - CHART_PAD_BOTTOM}
+                      rx="12"
+                      fill={`url(#${chartDefinitionId}-plot-glow)`}
+                      aria-hidden="true"
+                    />
+                    <g className="stint-chart-grid" aria-hidden="true">
+                      {graphChart.bucketGuides.map((tick) => {
+                        const x = chartX(tick, graphChart.xMin, graphChart.xMax);
+                        return (
                           <line
+                            key={`bucket:${tick}`}
+                            x1={x}
+                            y1={CHART_PAD_TOP}
+                            x2={x}
+                            y2={CHART_HEIGHT - CHART_PAD_BOTTOM}
+                            className="stint-chart-bucket-guide"
+                          />
+                        );
+                      })}
+                      {graphChart.yTicks.map((tick) => {
+                        const y = chartY(tick, graphChart.yMin, graphChart.yMax);
+                        return (
+                          <line
+                            key={`ygrid:${tick.toFixed(4)}`}
                             x1={CHART_PAD_LEFT}
                             y1={y}
                             x2={CHART_WIDTH - CHART_PAD_RIGHT}
                             y2={y}
                             className="stint-chart-gridline"
                           />
-                          <text x={CHART_PAD_LEFT - 8} y={y + 4} className="stint-chart-label stint-chart-label-y" textAnchor="end">
+                        );
+                      })}
+                    </g>
+                    <g className="stint-chart-range-layer" clipPath={`url(#${chartDefinitionId}-plot-clip)`}>
+                      {graphRangeOverlays.map((overlay, index) => (
+                        <g
+                          key={overlay.key}
+                          className={`stint-chart-range ${overlay.className}`}
+                          data-range-kind={overlay.className}
+                          role="group"
+                          aria-label={overlay.label}
+                        >
+                          <rect
+                            x={Math.min(overlay.startX, overlay.endX)}
+                            y={CHART_PAD_TOP}
+                            width={Math.max(4, Math.abs(overlay.endX - overlay.startX))}
+                            height={CHART_HEIGHT - CHART_PAD_TOP - CHART_PAD_BOTTOM}
+                          />
+                          <line x1={overlay.startX} y1={CHART_PAD_TOP} x2={overlay.startX} y2={CHART_HEIGHT - CHART_PAD_BOTTOM} />
+                          <line x1={overlay.endX} y1={CHART_PAD_TOP} x2={overlay.endX} y2={CHART_HEIGHT - CHART_PAD_BOTTOM} />
+                          <text x={Math.min(overlay.startX, overlay.endX) + 6} y={CHART_PAD_TOP + 16 + (index % 4) * 14}>
+                            {overlay.label}
+                          </text>
+                        </g>
+                      ))}
+                    </g>
+                    <g className="stint-chart-axis-layer" aria-hidden="true">
+                      {graphChart.yTicks.map((tick) => {
+                        const y = chartY(tick, graphChart.yMin, graphChart.yMax);
+                        return (
+                          <text key={`ylabel:${tick.toFixed(4)}`} x={CHART_PAD_LEFT - 10} y={y + 4} className="stint-chart-label stint-chart-label-y" textAnchor="end">
                             {graphYLabel(tick, stintGraphMode)}
                           </text>
-                        </g>
-                      );
-                    })}
-                    {graphChart.xTicks.map((tick) => {
-                      const x = chartX(tick, graphChart.xMin, graphChart.xMax);
-                      const selectedTick = graphChart.selectedLapDetail?.x === tick;
-                      return (
-                        <g key={`xtick:${tick}`}>
-                          <line x1={x} y1={CHART_HEIGHT - CHART_PAD_BOTTOM} x2={x} y2={CHART_HEIGHT - CHART_PAD_BOTTOM + 5} className="stint-chart-axis-tick" />
-                          <text x={x} y={CHART_HEIGHT - 10} className={`stint-chart-label stint-chart-label-x ${selectedTick ? "highlight" : ""}`} textAnchor="middle">
-                            {tick}
-                          </text>
-                        </g>
-                      );
-                    })}
-                    {graphChart.zeroLineY != null && (
-                      <line
-                        x1={CHART_PAD_LEFT}
-                        y1={graphChart.zeroLineY}
-                        x2={CHART_WIDTH - CHART_PAD_RIGHT}
-                        y2={graphChart.zeroLineY}
-                        className="stint-chart-zero-line"
-                      />
-                    )}
-                    <line x1={CHART_PAD_LEFT} y1={CHART_PAD_TOP} x2={CHART_PAD_LEFT} y2={CHART_HEIGHT - CHART_PAD_BOTTOM} className="stint-chart-axis" />
-                    <line x1={CHART_PAD_LEFT} y1={CHART_HEIGHT - CHART_PAD_BOTTOM} x2={CHART_WIDTH - CHART_PAD_RIGHT} y2={CHART_HEIGHT - CHART_PAD_BOTTOM} className="stint-chart-axis" />
-                    {graphRangeOverlays.map((overlay, index) => (
-                      <g key={overlay.key} className={`stint-chart-range ${overlay.className}`}>
-                        <rect
-                          x={Math.min(overlay.startX, overlay.endX)}
-                          y={CHART_PAD_TOP}
-                          width={Math.max(4, Math.abs(overlay.endX - overlay.startX))}
-                          height={CHART_HEIGHT - CHART_PAD_TOP - CHART_PAD_BOTTOM}
+                        );
+                      })}
+                      {graphChart.xTicks.map((tick) => {
+                        const x = chartX(tick, graphChart.xMin, graphChart.xMax);
+                        const selectedTick = graphChart.selectedLapDetail?.x === tick;
+                        return (
+                          <g key={`xtick:${tick}`}>
+                            <line x1={x} y1={CHART_HEIGHT - CHART_PAD_BOTTOM} x2={x} y2={CHART_HEIGHT - CHART_PAD_BOTTOM + 5} className="stint-chart-axis-tick" />
+                            <text x={x} y={CHART_HEIGHT - 10} className={`stint-chart-label stint-chart-label-x ${selectedTick ? "highlight" : ""}`} textAnchor="middle">
+                              {tick}
+                            </text>
+                          </g>
+                        );
+                      })}
+                      {graphChart.zeroLineY != null && (
+                        <line
+                          x1={CHART_PAD_LEFT}
+                          y1={graphChart.zeroLineY}
+                          x2={CHART_WIDTH - CHART_PAD_RIGHT}
+                          y2={graphChart.zeroLineY}
+                          className="stint-chart-zero-line"
                         />
-                        <line x1={overlay.startX} y1={CHART_PAD_TOP} x2={overlay.startX} y2={CHART_HEIGHT - CHART_PAD_BOTTOM} />
-                        <line x1={overlay.endX} y1={CHART_PAD_TOP} x2={overlay.endX} y2={CHART_HEIGHT - CHART_PAD_BOTTOM} />
-                        <text x={Math.min(overlay.startX, overlay.endX) + 5} y={CHART_PAD_TOP + 14 + (index % 4) * 13}>
-                          {overlay.label}
-                        </text>
-                      </g>
-                    ))}
-                    {graphChart.series.map((series) => (
-                      <polyline
-                        key={series.id}
-                        points={stintChartPolyline(series.points, graphChart.xMin, graphChart.xMax, graphChart.yMin, graphChart.yMax)}
-                        fill="none"
-                        stroke={series.color}
-                        strokeWidth={series.dashed ? 1.8 : 2.6}
-                        strokeDasharray={series.dashed ? "6 5" : undefined}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    ))}
+                      )}
+                      <line x1={CHART_PAD_LEFT} y1={CHART_PAD_TOP} x2={CHART_PAD_LEFT} y2={CHART_HEIGHT - CHART_PAD_BOTTOM} className="stint-chart-axis" />
+                      <line x1={CHART_PAD_LEFT} y1={CHART_HEIGHT - CHART_PAD_BOTTOM} x2={CHART_WIDTH - CHART_PAD_RIGHT} y2={CHART_HEIGHT - CHART_PAD_BOTTOM} className="stint-chart-axis" />
+                      <text x={CHART_WIDTH / 2} y={CHART_HEIGHT - 10} className="stint-chart-axis-title" textAnchor="middle">Stint Lap</text>
+                    </g>
+                    <g className="stint-chart-series-layer" clipPath={`url(#${chartDefinitionId}-plot-clip)`}>
+                      {graphChart.series.map((series, index) => {
+                        const seriesBaseId = series.id.replace(":rolling5", "");
+                        const isSelectedSeries = seriesBaseId === selectedStint?.stint_id;
+                        const seriesRole = seriesBaseId === baselineStintId
+                          ? "baseline"
+                          : seriesBaseId === testStintId
+                            ? "test"
+                            : isSelectedSeries
+                              ? "selected"
+                              : "reference";
+                        const lineSegments = stintChartPolylineSegments(series.points);
+                        const endpoint = [...series.points].reverse().find((point) => point.valid && !point.excludedFromScale) ?? null;
+                        return (
+                          <g
+                            key={series.id}
+                            className={`stint-chart-series ${series.dashed ? "rolling" : "pace"} ${isSelectedSeries ? "selected" : ""}`}
+                            data-series-role={seriesRole}
+                            data-series-id={seriesBaseId}
+                            role="group"
+                            aria-label={`${series.label}, ${seriesRole} trace`}
+                          >
+                            {lineSegments.map((linePoints, segmentIndex) => (
+                              <React.Fragment key={`${series.id}:line:${segmentIndex}`}>
+                                <polyline
+                                  className="stint-chart-line-halo"
+                                  points={linePoints}
+                                  fill="none"
+                                  stroke={series.color}
+                                  strokeWidth={series.dashed ? 5 : isSelectedSeries ? 8 : 6}
+                                  strokeOpacity={series.dashed ? 0.08 : isSelectedSeries ? 0.22 : 0.14}
+                                  strokeDasharray={series.dashed ? "7 6" : undefined}
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  filter={`url(#${chartDefinitionId}-line-glow)`}
+                                  aria-hidden="true"
+                                />
+                                <polyline
+                                  className="stint-chart-line"
+                                  points={linePoints}
+                                  fill="none"
+                                  stroke={`url(#${chartDefinitionId}-series-${index})`}
+                                  strokeWidth={series.dashed ? 1.9 : isSelectedSeries ? 3.2 : 2.7}
+                                  strokeDasharray={series.dashed ? "7 6" : undefined}
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  vectorEffect="non-scaling-stroke"
+                                />
+                              </React.Fragment>
+                            ))}
+                            {endpoint && !series.dashed && (
+                              <circle
+                                className="stint-chart-endpoint-marker"
+                                cx={endpoint.screenX}
+                                cy={endpoint.screenY}
+                                r="4.6"
+                                fill="#090d14"
+                                stroke={series.color}
+                                strokeWidth="2"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </g>
+                        );
+                      })}
+                    </g>
                     {graphChart.selectedLapDetail && (
-                      <line
-                        x1={graphChart.selectedLapDetail.screenX}
-                        y1={CHART_PAD_TOP}
-                        x2={graphChart.selectedLapDetail.screenX}
-                        y2={CHART_HEIGHT - CHART_PAD_BOTTOM}
-                        className="stint-chart-selected-guide"
-                      />
+                      <g className="stint-chart-selected-guide-group" aria-hidden="true">
+                        <line
+                          x1={graphChart.selectedLapDetail.screenX}
+                          y1={CHART_PAD_TOP}
+                          x2={graphChart.selectedLapDetail.screenX}
+                          y2={CHART_HEIGHT - CHART_PAD_BOTTOM}
+                          className="stint-chart-selected-guide-halo"
+                          stroke="#e2e8f0"
+                          strokeOpacity="0.08"
+                          strokeWidth="6"
+                        />
+                        <line
+                          x1={graphChart.selectedLapDetail.screenX}
+                          y1={CHART_PAD_TOP}
+                          x2={graphChart.selectedLapDetail.screenX}
+                          y2={CHART_HEIGHT - CHART_PAD_BOTTOM}
+                          className="stint-chart-selected-guide"
+                        />
+                      </g>
                     )}
                     {graphChart.series.map((series) => {
-                      const fastest = series.dashed ? null : series.points.reduce<StintGraphRenderPoint | null>((best, point) => {
-                        if (point.lapTime == null || !point.valid) return best;
-                        return best == null || point.lapTime < (best.lapTime ?? Number.POSITIVE_INFINITY) ? point : best;
-                      }, null);
+                      const metricBest = series.dashed ? null : bestPointForGraphMode(series.points, stintGraphMode);
+                      const metricBestIsSelected = metricBest?.id === graphChart.selectedLapDetail?.id;
+                      const metricBestLabel = graphBestCueLabel(stintGraphMode);
                       return (
                         <React.Fragment key={`${series.id}:markers`}>
-                          {series.points.map((point) => (
-                            <circle
-                              key={`${series.id}:${point.lapNumber}`}
-                              className={`stint-chart-point ${point.valid ? "" : "invalid"} ${point.excludedFromScale ? "excluded" : ""}`}
-                              cx={point.screenX}
-                              cy={point.screenY}
-                              r={point.valid ? 3.2 : 2.5}
-                              fill={point.color}
-                              onMouseEnter={(event) => setHoveredGraphPoint({ ...point, clientX: event.clientX, clientY: event.clientY })}
-                              onClick={() => setSelectedGraphLap({ stintId: series.id.replace(":rolling5", ""), lapNumber: point.lapNumber })}
-                            />
-                          ))}
+                          {series.points.map((point) => {
+                            const pointSelected = graphChart.selectedLapDetail?.id === point.id;
+                            const selectPoint = () => setSelectedGraphLap({ stintId: series.id.replace(":rolling5", ""), lapNumber: point.lapNumber });
+                            return (
+                              <g
+                                key={`${series.id}:${point.lapNumber}`}
+                                className={`stint-chart-point-group ${pointSelected ? "selected" : ""}`}
+                                data-point-state={!point.valid ? "invalid" : point.excludedFromScale ? "excluded" : "eligible"}
+                                data-selected={pointSelected ? "true" : "false"}
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`${point.sourceLabel}. Lap ${point.lapNumber}, stint lap ${point.stintLap}. Lap time ${formatTime(point.lapTime)}. Delta to best ${formatSignedDelta(point.deltaToBest)}. ${point.valid ? "Valid lap" : `Invalid lap: ${point.invalidReason ?? point.warning ?? "reason unavailable"}`}. Press Enter or Space to select.`}
+                                onMouseEnter={(event) => setHoveredGraphPoint({ ...point, clientX: event.clientX, clientY: event.clientY })}
+                                onClick={selectPoint}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    selectPoint();
+                                  }
+                                }}
+                              >
+                                <title>{`${point.sourceLabel}, lap ${point.lapNumber}, ${formatTime(point.lapTime)}`}</title>
+                                <circle className="stint-chart-point-hit-area" cx={point.screenX} cy={point.screenY} r="9" fill="transparent" />
+                                <circle
+                                  className={`stint-chart-point ${point.valid ? "" : "invalid"} ${point.excludedFromScale ? "excluded" : ""}`}
+                                  cx={point.screenX}
+                                  cy={point.screenY}
+                                  r={point.valid ? 3.2 : 2.5}
+                                  fill={point.color}
+                                />
+                              </g>
+                            );
+                          })}
                           {series.points.filter((point) => point.outlierAboveScale || point.outlierBelowScale).map((point) => (
                             <text
                               key={`${series.id}:${point.lapNumber}:outlier`}
@@ -2029,22 +3118,39 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
                               !
                             </text>
                           ))}
-                          {fastest && (
-                            <g className="stint-chart-best-group">
-                              <circle className="stint-chart-fastest-marker" cx={fastest.screenX} cy={fastest.screenY} r="6" />
-                              <text x={fastest.screenX + 8} y={fastest.screenY - 8} className="stint-chart-best-label">Best</text>
+                          {metricBest && (
+                            <g className="stint-chart-best-group" data-cue="metric-best" aria-label={`${stintGraphMode === "rolling_5" ? "Best rolling five" : stintGraphMode === "lap_time" ? "Fastest valid lap" : "Best delta"} in ${series.label}: lap ${metricBest.lapNumber}, ${formatTime(stintGraphMode === "rolling_5" ? metricBest.rolling5 : metricBest.lapTime)}`}>
+                              <circle className="stint-chart-fastest-halo" cx={metricBest.screenX} cy={metricBest.screenY} r="10" fill="none" stroke="#facc15" strokeOpacity="0.18" strokeWidth="5" />
+                              <circle className="stint-chart-fastest-marker" cx={metricBest.screenX} cy={metricBest.screenY} r="6" />
+                              {!metricBestIsSelected && (
+                                <text
+                                  x={metricBest.screenX > CHART_WIDTH - 76 ? metricBest.screenX - 9 : metricBest.screenX + 9}
+                                  y={metricBest.screenY < CHART_PAD_TOP + 22 ? metricBest.screenY + 17 : metricBest.screenY - 9}
+                                  className="stint-chart-best-label"
+                                  textAnchor={metricBest.screenX > CHART_WIDTH - 76 ? "end" : "start"}
+                                >
+                                  {metricBestLabel}
+                                </text>
+                              )}
                             </g>
                           )}
                         </React.Fragment>
                       );
                     })}
                     {graphChart.selectedLapDetail && (
-                      <g className="stint-chart-selected-group">
+                      <g className="stint-chart-selected-group" data-cue="selected" aria-label={`Selected lap ${graphChart.selectedLapDetail.lapNumber}`}>
+                        <circle className="stint-chart-selected-halo" cx={graphChart.selectedLapDetail.screenX} cy={graphChart.selectedLapDetail.screenY} r="12" fill="none" stroke="#e2e8f0" strokeOpacity="0.18" strokeWidth="6" />
                         <circle className="stint-chart-selected-marker" cx={graphChart.selectedLapDetail.screenX} cy={graphChart.selectedLapDetail.screenY} r="8" />
-                        <text x={graphChart.selectedLapDetail.screenX + 10} y={graphChart.selectedLapDetail.screenY + 4} className="stint-chart-selected-label">Selected</text>
+                        <text
+                          x={graphChart.selectedLapDetail.screenX > CHART_WIDTH - 92 ? graphChart.selectedLapDetail.screenX - 11 : graphChart.selectedLapDetail.screenX + 11}
+                          y={graphChart.selectedLapDetail.screenY < CHART_PAD_TOP + 22 ? graphChart.selectedLapDetail.screenY + 18 : graphChart.selectedLapDetail.screenY + 4}
+                          className="stint-chart-selected-label"
+                          textAnchor={graphChart.selectedLapDetail.screenX > CHART_WIDTH - 92 ? "end" : "start"}
+                        >
+                          {selectedGraphPointIsMetricBest ? `${graphBestCueLabel(stintGraphMode)} · Selected` : "Selected"}
+                        </text>
                       </g>
                     )}
-                    <text x={CHART_WIDTH / 2} y={CHART_HEIGHT - 10} className="stint-chart-axis-title" textAnchor="middle">Stint Lap</text>
                   </svg>
                   {hoveredGraphPoint && (
                     <div className="stint-graph-tooltip" style={{ left: hoveredGraphPoint.clientX + 12, top: hoveredGraphPoint.clientY + 12 }}>
@@ -2072,16 +3178,31 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
                       {graphStatusesForPoint(graphChart.selectedLapDetail).length > 0 && <span>{graphStatusesForPoint(graphChart.selectedLapDetail).join(" | ")}</span>}
                     </div>
                   )}
-                  <div className="stint-graph-legend">
-                    {graphChart.series.map((series) => (
-                      <span key={series.id}>
-                        <i style={{ backgroundColor: series.color }} />
-                        {series.label}
-                        {series.id.replace(":rolling5", "") === selectedStint?.stint_id && <b>Selected</b>}
-                        {series.id.replace(":rolling5", "") === baselineStintId && <b>Baseline</b>}
-                        {series.id.replace(":rolling5", "") === testStintId && <b>Test</b>}
-                      </span>
-                    ))}
+                  <div className="stint-graph-legend" aria-label="Pace trace legend">
+                    {graphChart.series.map((series) => {
+                      const seriesBaseId = series.id.replace(":rolling5", "");
+                      const seriesRole = seriesBaseId === baselineStintId
+                        ? "baseline"
+                        : seriesBaseId === testStintId
+                          ? "test"
+                          : seriesBaseId === selectedStint?.stint_id
+                            ? "selected"
+                            : "reference";
+                      return (
+                        <span
+                          key={series.id}
+                          className={`stint-graph-legend-item ${series.dashed ? "rolling" : "pace"}`}
+                          data-series-role={seriesRole}
+                          data-line-style={series.dashed ? "dashed" : "solid"}
+                        >
+                          <i className="stint-graph-legend-swatch" style={{ backgroundColor: series.color }} aria-hidden="true" />
+                          {series.label}
+                          {seriesBaseId === selectedStint?.stint_id && <b>Selected</b>}
+                          {seriesBaseId === baselineStintId && <b>Baseline</b>}
+                          {seriesBaseId === testStintId && <b>Test</b>}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
@@ -2139,8 +3260,15 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
               <div className="stint-compare-panel">
                 <div>
                   <span className="eyebrow">Stint Compare</span>
-                  <h3>{stintCompare?.verdict ?? (stintCompareLoading ? "Comparing selected stints..." : "Comparison pending")}</h3>
-                  <p className="section-note">{stintCompareError ?? stintCompare?.summary ?? "Select clean windows with enough laps for stronger deltas."}</p>
+                  <h3>{stintCompareError ? "Comparison unavailable" : stintCompare?.verdict ?? (stintCompareLoading ? "Comparing selected stints..." : "Comparison pending")}</h3>
+                  {stintCompareError ? (
+                    <div className="warning-banner" role="alert">
+                      <AlertTriangle size={16} />
+                      <span>{stintCompareError} No comparison metrics are shown.</span>
+                    </div>
+                  ) : (
+                    <p className="section-note">{stintCompare?.summary ?? "Select clean windows with enough laps for stronger deltas."}</p>
+                  )}
                   <svg className="stint-sparkline" viewBox="0 0 104 52" role="img" aria-label="Selected stint pace bucket preview">
                     {[baselineStint, testStint].map((stint, index) => {
                       const values = [stint.early_avg, stint.middle_avg, stint.late_avg].filter((value): value is number => value != null);
@@ -2157,16 +3285,18 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
                     })}
                   </svg>
                 </div>
-                <div className="stint-compare-metrics">
-                  <div><span>Avg</span><strong>{formatSignedDelta(stintCompare?.avg_delta)}</strong></div>
-                  <div><span>Best</span><strong>{formatSignedDelta(stintCompare?.best_delta)}</strong></div>
-                  {bucketLabels.slice(0, 4).map((label) => {
-                    const bucketDelta = stintCompare?.bucket_deltas.find((bucket) => bucket.label === label);
-                    return <div key={label}><span>{label}</span><strong>{formatSignedDelta(bucketDelta?.delta)}</strong></div>;
-                  })}
-                  <div><span>Falloff</span><strong>{formatSignedDelta(stintCompare?.falloff_delta)}</strong></div>
-                  <div><span>Consistency</span><strong>{formatSignedDelta(stintCompare?.consistency_delta)}</strong></div>
-                </div>
+                {stintCompare && (
+                  <div className="stint-compare-metrics">
+                    <div><span>Avg</span><strong>{formatSignedDelta(stintCompare.avg_delta)}</strong></div>
+                    <div><span>Best</span><strong>{formatSignedDelta(stintCompare.best_delta)}</strong></div>
+                    {bucketLabels.slice(0, 4).map((label) => {
+                      const bucketDelta = stintCompare.bucket_deltas.find((bucket) => bucket.label === label);
+                      return <div key={label}><span>{label}</span><strong>{formatSignedDelta(bucketDelta?.delta)}</strong></div>;
+                    })}
+                    <div><span>Falloff</span><strong>{formatSignedDelta(stintCompare.falloff_delta)}</strong></div>
+                    <div><span>Consistency</span><strong>{formatSignedDelta(stintCompare.consistency_delta)}</strong></div>
+                  </div>
+                )}
                 <div className="laps-chip-row">
                   <span className="lap-flag-badge">Baseline {formatStintRange(baselineStint)}</span>
                   <span className="lap-flag-badge">Test {formatStintRange(testStint)}</span>
@@ -2255,16 +3385,13 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
                           const isTest = testStintId === stint.stint_id;
                           const isGraphed = graphStintIds.includes(stint.stint_id);
                           return (
-                            <div
+                            <button
+                              type="button"
                               key={stint.stint_id}
                               className={`stint-window-card ${isSelected ? "selected" : ""} ${isBaseline ? "baseline" : ""} ${isTest ? "test" : ""} ${isGraphed ? "graphed" : ""}`}
                               onClick={() => setSelectedStintId(stint.stint_id)}
                               onDoubleClick={() => setSummaryDrawerStintId(stint.stint_id)}
-                              role="button"
-                              tabIndex={0}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter" || event.key === " ") setSelectedStintId(stint.stint_id);
-                              }}
+                              aria-label={`Select ${stint.display_label_short} ${formatStintRange(stint)}`}
                             >
                               <span>{stint.display_label_short}</span>
                               <strong>{formatTime(stint.avg_lap_time)}</strong>
@@ -2274,7 +3401,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
                                 <span className="lap-flag-badge">EV {formatScore(stint.setup_usefulness_score)}</span>
                                 {isGraphed && <span className="lap-flag-badge">Graphed</span>}
                               </div>
-                            </div>
+                            </button>
                           );
                         })}
                       </div>
@@ -2315,13 +3442,19 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
               {visibleRunHistory.map((run) => {
                 const isCurrentRun = run.run_id === overview.run_id;
                 const expanded = expandedRunIds.has(run.run_id);
-                const response = isCurrentRun ? stintData : historyStintData[run.run_id];
+                const response = isCurrentRun ? currentStintData : historyStintData[run.run_id];
                 const runRows = response?.stint_rows ?? response?.stints ?? [];
                 const runCards = response?.best_window_cards ?? [];
                 const loading = historyStintsLoading[run.run_id] ?? false;
+                const historyError = historyStintErrors[run.run_id] ?? null;
                 return (
                   <div key={run.run_id} className={`stint-history-run ${isCurrentRun ? "current" : ""}`}>
-                    <div className="stint-history-header" onClick={() => toggleHistoryRun(run.run_id)} aria-expanded={expanded} role="button" tabIndex={0}>
+                    <button
+                      type="button"
+                      className="stint-history-header"
+                      onClick={() => toggleHistoryRun(run.run_id)}
+                      aria-expanded={expanded}
+                    >
                       {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                       <span>
                         <strong>{isCurrentRun ? `Current run - ${run.setup_name ?? "Setup unknown"}` : run.setup_name ?? run.run_id}</strong>
@@ -2337,33 +3470,59 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
                         <b>Best 20</b> {formatTime(response?.run_summary?.best_20_avg)}
                         {pinnedRunIds.has(run.run_id) && <b>Pinned</b>}
                       </span>
-                    </div>
+                    </button>
                     {expanded && (
                       <div className="stint-history-body">
                         {isCurrentRun && <p className="muted">Current run timing sheet, graph, and advanced best windows are shown above.</p>}
                         {!isCurrentRun && loading && <p className="muted">Loading stint data for this run...</p>}
-                        {!isCurrentRun && !loading && !response && <p className="muted">Expand a run to load its stint data.</p>}
+                        {!isCurrentRun && !loading && historyError && (
+                          <div className="warning-banner" role="alert">
+                            <span>Stint evidence for this run is unavailable.</span>
+                            {selection.selectedMode === "learning" && <span className="muted">Technical detail: {historyError}</span>}
+                            <button type="button" className="secondary-button" onClick={(event) => {
+                              event.stopPropagation();
+                              loadHistoryRunStints(run.run_id);
+                            }}>
+                              <RotateCcw size={13} /> Retry run
+                            </button>
+                          </div>
+                        )}
+                        {!isCurrentRun && !loading && !response && !historyError && <p className="muted">Expand a run to load its stint data.</p>}
                         {!isCurrentRun && response && (
                           <>
                             <div className="stint-window-card-row compact-history">
                               {runCards.map((stint) => {
                                 const isGraphed = graphStintIds.includes(stint.stint_id);
                                 return (
-                                  <div key={stint.stint_id} className={`stint-window-card compact ${isGraphed ? "graphed" : ""}`} onClick={() => setSelectedStintId(stint.stint_id)} onDoubleClick={() => setSummaryDrawerStintId(stint.stint_id)} role="button" tabIndex={0}>
+                                  <button
+                                    type="button"
+                                    key={stint.stint_id}
+                                    className={`stint-window-card compact ${isGraphed ? "graphed" : ""}`}
+                                    onClick={() => setSelectedStintId(stint.stint_id)}
+                                    onDoubleClick={() => setSummaryDrawerStintId(stint.stint_id)}
+                                    aria-label={`Select ${stint.display_label_short} ${formatStintRange(stint)}`}
+                                  >
                                     <span>{stint.display_label_short}</span>
                                     <strong>{formatTime(stint.avg_lap_time)}</strong>
                                     <small>{formatStintRange(stint)}</small>
-                                  </div>
+                                  </button>
                                 );
                               })}
                             </div>
                             <div className="stint-history-row-list">
                               {runRows.map((stint) => (
-                                <div key={stint.stint_id} className={`stint-history-stint-row ${selectedStint?.stint_id === stint.stint_id ? "selected" : ""}`} onClick={() => setSelectedStintId(stint.stint_id)} onDoubleClick={() => setSummaryDrawerStintId(stint.stint_id)} role="button" tabIndex={0}>
+                                <button
+                                  type="button"
+                                  key={stint.stint_id}
+                                  className={`stint-history-stint-row ${selectedStint?.stint_id === stint.stint_id ? "selected" : ""}`}
+                                  onClick={() => setSelectedStintId(stint.stint_id)}
+                                  onDoubleClick={() => setSummaryDrawerStintId(stint.stint_id)}
+                                  aria-label={`Select ${stint.display_label_short} ${formatStintRange(stint)}`}
+                                >
                                   <span><strong>{stint.display_label_short}</strong> {formatStintRange(stint)}</span>
                                   <span>Avg {formatTime(stint.avg_lap_time)}</span>
                                   <span>Valid {stint.valid_lap_count}/{stint.lap_count}</span>
-                                </div>
+                                </button>
                               ))}
                             </div>
                           </>

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import csv
+import ctypes
+from copy import deepcopy
 import importlib.util
+import hashlib
 import json
 import logging
 import math
 import os
+import sys
 import time
 import uuid
 from bisect import bisect_left
@@ -168,6 +172,10 @@ class TelemetryCacheResult:
     used_fallback: bool
 
 
+class TelemetryArtifactIdentityError(RuntimeError):
+    """Raised when persisted telemetry artifacts no longer share one owner."""
+
+
 @dataclass
 class _StagedImportCache:
     temp_run_id: str
@@ -175,6 +183,7 @@ class _StagedImportCache:
     metadata_path: Path
     manifest_path: Path
     final_cache_path: Path
+    alternate_cache_path: Path
     final_metadata_path: Path
     final_manifest_path: Path
     data_root: Path
@@ -228,7 +237,10 @@ class _StagedImportCache:
         self.backups = {}
         self.promoted_destinations = []
         try:
-            for _source, destination in self._artifacts():
+            backup_destinations = [destination for _source, destination in self._artifacts()]
+            if self.alternate_cache_path not in backup_destinations:
+                backup_destinations.append(self.alternate_cache_path)
+            for destination in backup_destinations:
                 if destination.exists():
                     backup = _temp_cache_path(destination, f"{self.run_id}.backup")
                     _atomic_replace(destination, backup)
@@ -249,8 +261,9 @@ class _StagedImportCache:
 
 @dataclass
 class _TelemetryRowsCacheEntry:
-    signature: tuple[str, int, int]
+    signature: tuple[Any, ...]
     rows: list[dict[str, Any]]
+    size_bytes: int
     last_access: float
 
 
@@ -259,6 +272,8 @@ _NORMALIZED_CALCULATED_COLUMNS = ("cfs_risk_score", "drag_scrub_suspicion", "pla
 _TELEMETRY_ROWS_CACHE: dict[tuple[str, str], _TelemetryRowsCacheEntry] = {}
 _TELEMETRY_ROWS_CACHE_LOCK = RLock()
 _TELEMETRY_ROWS_CACHE_MAX = 24
+_TELEMETRY_ROWS_CACHE_MAX_BYTES = 128 * 1024 * 1024
+_TELEMETRY_ROWS_CACHE_MAX_ENTRY_BYTES = 32 * 1024 * 1024
 
 
 @dataclass
@@ -273,7 +288,7 @@ class _ProjectedTelemetryCacheEntry:
 # intentionally small enough to prevent wide, long telemetry runs from turning
 # endpoint acceleration into unbounded resident memory.
 _PROJECTED_TELEMETRY_CACHE: dict[
-    tuple[str, int, int, int | None, tuple[str, ...]],
+    tuple[Any, ...],
     _ProjectedTelemetryCacheEntry,
 ] = {}
 _PROJECTED_TELEMETRY_CACHE_MAX = 24
@@ -285,22 +300,28 @@ _PROJECTED_TELEMETRY_CACHE_MAX_ENTRY_BYTES = 32 * 1024 * 1024
 class _ChannelCatalogCacheEntry:
     signature: tuple[Any, ...] | None
     catalog: list[dict[str, Any]]
+    size_bytes: int
     last_access: float
 
 
 _CHANNEL_CATALOG_CACHE: dict[tuple[str, str], _ChannelCatalogCacheEntry] = {}
 _CHANNEL_CATALOG_CACHE_MAX = 16
+_CHANNEL_CATALOG_CACHE_MAX_BYTES = 16 * 1024 * 1024
+_CHANNEL_CATALOG_CACHE_MAX_ENTRY_BYTES = 4 * 1024 * 1024
 
 
 @dataclass
 class _ChannelSummaryCacheEntry:
     signature: tuple[Any, ...] | None
     summary: list[dict[str, Any]]
+    size_bytes: int
     last_access: float
 
 
 _CHANNEL_SUMMARY_CACHE: dict[tuple[str, str], _ChannelSummaryCacheEntry] = {}
 _CHANNEL_SUMMARY_CACHE_MAX = 24
+_CHANNEL_SUMMARY_CACHE_MAX_BYTES = 12 * 1024 * 1024
+_CHANNEL_SUMMARY_CACHE_MAX_ENTRY_BYTES = 2 * 1024 * 1024
 _CHANNEL_SCHEMA_VERSION = "v4-health-provenance"
 
 def default_data_dir() -> Path:
@@ -610,6 +631,7 @@ def write_channel_metadata(
         if staged:
             return path
         _atomic_replace(path, final_path)
+        _invalidate_channel_context_cache(data_root, run_id)
         return final_path
     except Exception:
         _safe_unlink(path)
@@ -631,6 +653,11 @@ def write_telemetry_manifest(
     raw_archive_columns: dict[str, str] | None = None,
     data_dir: str | Path | None = None,
     staged: bool = False,
+    *,
+    manifest_run_id: str | None = None,
+    source_file_sha256: str | None = None,
+    source_file_size_bytes: int | None = None,
+    telemetry_cache_sha256: str | None = None,
 ) -> Path:
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
     final_path = telemetry_manifest_path(data_root, run_id)
@@ -644,6 +671,10 @@ def write_telemetry_manifest(
                     frame,
                     session_yaml,
                     raw_archive_columns,
+                    run_id=manifest_run_id or run_id,
+                    source_file_sha256=source_file_sha256,
+                    source_file_size_bytes=source_file_size_bytes,
+                    telemetry_cache_sha256=telemetry_cache_sha256,
                 ),
                 indent=2,
             ),
@@ -652,6 +683,7 @@ def write_telemetry_manifest(
         if staged:
             return path
         _atomic_replace(path, final_path)
+        _invalidate_channel_context_cache(data_root, run_id)
         return final_path
     except Exception:
         _safe_unlink(path)
@@ -667,12 +699,37 @@ def read_telemetry_manifest(run_id: str, data_dir: str | Path | None = None) -> 
 def build_telemetry_capability_payload(
     run_id: str,
     data_dir: str | Path | None = None,
+    *,
+    expected_source_file_sha256: str | None = None,
 ) -> dict[str, Any]:
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
     manifest = dict(read_telemetry_manifest(run_id, data_root))
-    cache_present = parquet_path(data_root, run_id).exists() or csv_path(data_root, run_id).exists()
+    cache_source = _telemetry_cache_source(data_root, run_id)
+    cache_present = cache_source is not None
     if not manifest and not cache_present:
         return {}
+    identity = _telemetry_artifact_identity(
+        manifest,
+        requested_run_id=run_id,
+        expected_source_file_sha256=expected_source_file_sha256,
+        cache_source=cache_source,
+    )
+    if identity["status"] != "verified":
+        unavailable: dict[str, Any] = {
+            # This is response-envelope identity only. No manifest content is
+            # relabelled when artifact identity cannot be verified.
+            "run_id": run_id,
+            "manifest_identity": identity,
+            "cache_compatibility": assess_cache_compatibility(
+                {},
+                cache_present=cache_present,
+            ),
+            "capabilities": [],
+            "channels": [],
+        }
+        unavailable["capability_summary"] = compact_capability_summary(unavailable)
+        return unavailable
+    manifest["manifest_identity"] = identity
     manifest["cache_compatibility"] = assess_cache_compatibility(
         manifest,
         cache_present=cache_present,
@@ -681,6 +738,35 @@ def build_telemetry_capability_payload(
     manifest.setdefault("capabilities", [])
     manifest.setdefault("channels", [])
     return manifest
+
+
+def _persist_minimal_cache_identity(
+    data_root: Path,
+    run_id: str,
+    cache_result: TelemetryCacheResult,
+) -> TelemetryCacheResult:
+    """Make every newly written cache self-identifying before it can be read."""
+    _invalidate_run_cache(data_root, run_id)
+    final_path = telemetry_manifest_path(data_root, run_id)
+    temp_path = _temp_cache_path(final_path, run_id)
+    try:
+        temp_path.write_text(
+            json.dumps(
+                {
+                    "run_id": run_id,
+                    "telemetry_cache_sha256": _sha256_file(cache_result.path),
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        _atomic_replace(temp_path, final_path)
+        _invalidate_channel_context_cache(data_root, run_id)
+        return cache_result
+    except Exception:
+        _safe_unlink(temp_path)
+        _safe_unlink(cache_result.path)
+        raise
 
 
 def write_telemetry_cache(
@@ -706,12 +792,19 @@ def write_telemetry_cache(
                 profile_out["cache_write_from_frame"] = 1.0
                 profile_out["cache_dataframe_and_parquet_write_s"] = time.perf_counter() - t0
                 profile_out["cache_schema_inference_mode"] = -2.0
-            _invalidate_run_cache(data_root, run_id)
-            return TelemetryCacheResult(path=path, format="parquet", used_fallback=False)
+            return _persist_minimal_cache_identity(
+                data_root,
+                run_id,
+                TelemetryCacheResult(path=path, format="parquet", used_fallback=False),
+            )
 
         if not rows:
             pl.DataFrame().write_parquet(path)
-            return TelemetryCacheResult(path=path, format="parquet", used_fallback=False)
+            return _persist_minimal_cache_identity(
+                data_root,
+                run_id,
+                TelemetryCacheResult(path=path, format="parquet", used_fallback=False),
+            )
 
         # Fast path: use first row keys (all vec output columns are scalar)
         # Skip _scalar_columns() full scan — saves ~5s on 54K rows
@@ -735,8 +828,11 @@ def write_telemetry_cache(
             if profile_out is not None:
                 profile_out["cache_dataframe_and_parquet_write_s"] = time.perf_counter() - t0
                 profile_out["cache_schema_inference_mode"] = -1.0
-        _invalidate_run_cache(data_root, run_id)
-        return TelemetryCacheResult(path=path, format="parquet", used_fallback=False)
+        return _persist_minimal_cache_identity(
+            data_root,
+            run_id,
+            TelemetryCacheResult(path=path, format="parquet", used_fallback=False),
+        )
 
     if importlib.util.find_spec("pandas") is not None and importlib.util.find_spec("pyarrow") is not None:
         pd = importlib.import_module("pandas")
@@ -751,11 +847,13 @@ def write_telemetry_cache(
         pd.DataFrame(data).to_parquet(path)
         if profile_out is not None:
             profile_out["cache_dataframe_and_parquet_write_s"] = time.perf_counter() - t0
-        _invalidate_run_cache(data_root, run_id)
-        return TelemetryCacheResult(path=path, format="parquet", used_fallback=False)
+        return _persist_minimal_cache_identity(
+            data_root,
+            run_id,
+            TelemetryCacheResult(path=path, format="parquet", used_fallback=False),
+        )
     cache_result = _write_csv(rows, csv_path(data_root, run_id))
-    _invalidate_run_cache(data_root, run_id)
-    return cache_result
+    return _persist_minimal_cache_identity(data_root, run_id, cache_result)
 
 
 def _stage_import_cache(
@@ -768,6 +866,8 @@ def _stage_import_cache(
     raw_archive_columns: dict[str, str],
     normalized_frame: Any | None,
     data_dir: str | Path,
+    source_file_sha256: str | None,
+    source_file_size_bytes: int | None,
     profile_out: dict[str, float] | None = None,
 ) -> _StagedImportCache:
     data_root = Path(data_dir)
@@ -825,6 +925,10 @@ def _stage_import_cache(
             session_yaml,
             archive_mapping,
             data_root,
+            manifest_run_id=run_id,
+            source_file_sha256=source_file_sha256,
+            source_file_size_bytes=source_file_size_bytes,
+            telemetry_cache_sha256=_sha256_file(cache_result.path),
         )
     except Exception:
         _safe_unlink(cache_result.path if cache_result is not None else None)
@@ -832,6 +936,7 @@ def _stage_import_cache(
         _safe_unlink(csv_path(data_root, temp_run_id))
         _safe_unlink(locals().get("metadata_path"))
         _safe_unlink(locals().get("manifest_path"))
+        _safe_unlink(telemetry_manifest_path(data_root, temp_run_id))
         raise
 
     assert cache_result is not None
@@ -843,6 +948,11 @@ def _stage_import_cache(
         metadata_path=metadata_path,
         manifest_path=manifest_path,
         final_cache_path=final_cache_path,
+        alternate_cache_path=(
+            csv_path(data_root, run_id)
+            if cache_result.format == "parquet"
+            else parquet_path(data_root, run_id)
+        ),
         final_metadata_path=channel_metadata_path(data_root, run_id),
         final_manifest_path=telemetry_manifest_path(data_root, run_id),
         data_root=data_root,
@@ -867,12 +977,314 @@ def _cache_key(data_root: Path, run_id: str) -> tuple[str, str]:
     return str(data_root.resolve()), run_id
 
 
-def _source_signature(parquet: Path, csv_file: Path) -> tuple[str, int, int] | None:
-    source = parquet if parquet.exists() else csv_file if csv_file.exists() else None
-    if source is None:
+_FILE_IDENTITY_SAMPLE_BYTES = 16 * 1024
+_FILE_IDENTITY_SAMPLE_COUNT = 8
+
+
+def _sampled_file_identity(path: Path, file_size: int) -> str:
+    """Bounded content fallback for platforms without a change-time identity."""
+    digest = hashlib.blake2b(digest_size=16)
+    digest.update(str(file_size).encode("ascii"))
+    with path.open("rb") as file_obj:
+        if file_size <= _FILE_IDENTITY_SAMPLE_BYTES * _FILE_IDENTITY_SAMPLE_COUNT:
+            for block in iter(lambda: file_obj.read(64 * 1024), b""):
+                digest.update(block)
+        else:
+            last_offset = file_size - _FILE_IDENTITY_SAMPLE_BYTES
+            offsets = {
+                round(last_offset * index / (_FILE_IDENTITY_SAMPLE_COUNT - 1))
+                for index in range(_FILE_IDENTITY_SAMPLE_COUNT)
+            }
+            for offset in sorted(offsets):
+                file_obj.seek(offset)
+                digest.update(offset.to_bytes(8, "little", signed=False))
+                digest.update(file_obj.read(_FILE_IDENTITY_SAMPLE_BYTES))
+    return digest.hexdigest()
+
+
+@lru_cache(maxsize=1)
+def _windows_change_time_api() -> tuple[Any, Any, Any, type[ctypes.Structure]]:
+    class _FileBasicInfo(ctypes.Structure):
+        _fields_ = [
+            ("creation_time", ctypes.c_longlong),
+            ("last_access_time", ctypes.c_longlong),
+            ("last_write_time", ctypes.c_longlong),
+            ("change_time", ctypes.c_longlong),
+            ("file_attributes", ctypes.c_ulong),
+        ]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = [
+        ctypes.c_wchar_p,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+        ctypes.c_void_p,
+        ctypes.c_ulong,
+        ctypes.c_ulong,
+        ctypes.c_void_p,
+    ]
+    create_file.restype = ctypes.c_void_p
+    get_file_information = kernel32.GetFileInformationByHandleEx
+    get_file_information.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        ctypes.c_ulong,
+    ]
+    get_file_information.restype = ctypes.c_int
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [ctypes.c_void_p]
+    close_handle.restype = ctypes.c_int
+    return create_file, get_file_information, close_handle, _FileBasicInfo
+
+
+def _windows_file_change_time(path: Path) -> int:
+    create_file, get_file_information, close_handle, info_type = _windows_change_time_api()
+    handle = create_file(
+        str(path),
+        0,
+        0x1 | 0x2 | 0x4,  # Share read, write, and delete access.
+        None,
+        3,  # OPEN_EXISTING
+        0x80,  # FILE_ATTRIBUTE_NORMAL
+        None,
+    )
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        info = info_type()
+        if not get_file_information(handle, 0, ctypes.byref(info), ctypes.sizeof(info)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return int(info.change_time)
+    finally:
+        close_handle(handle)
+
+
+def _file_signature(path: Path) -> tuple[Any, ...] | None:
+    try:
+        stat = path.stat()
+        if os.name == "nt":
+            try:
+                generation: int | str = _windows_file_change_time(path)
+            except (AttributeError, OSError):
+                generation = _sampled_file_identity(path, stat.st_size)
+        else:
+            generation = stat.st_ctime_ns
+        return (
+            str(path.resolve()),
+            stat.st_mtime_ns,
+            stat.st_size,
+            stat.st_dev,
+            stat.st_ino,
+            generation,
+        )
+    except OSError:
         return None
-    stat = source.stat()
-    return str(source.resolve()), stat.st_mtime_ns, stat.st_size
+
+
+@lru_cache(maxsize=64)
+def _cached_file_sha256(
+    resolved_path: str,
+    modified_time_ns: int,
+    file_size: int,
+    device: int,
+    inode: int,
+    generation: int | str,
+) -> str:
+    del modified_time_ns, file_size, device, inode, generation
+    digest = hashlib.sha256()
+    with Path(resolved_path).open("rb") as file_obj:
+        for block in iter(lambda: file_obj.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _sha256_file(path: Path) -> str:
+    signature = _file_signature(path)
+    if signature is None:
+        raise FileNotFoundError(path)
+    return _cached_file_sha256(*signature)
+
+
+def _telemetry_cache_source(data_root: Path, run_id: str) -> Path | None:
+    candidates = [
+        path
+        for path in (parquet_path(data_root, run_id), csv_path(data_root, run_id))
+        if path.exists()
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _valid_sha256(value: Any) -> str | None:
+    text = str(value or "").strip().lower()
+    return text if len(text) == 64 and all(char in "0123456789abcdef" for char in text) else None
+
+
+def _telemetry_cache_artifact_identity(
+    manifest: dict[str, Any],
+    *,
+    requested_run_id: str,
+    cache_source: Path | None,
+) -> dict[str, Any]:
+    stored_run_id = manifest.get("run_id")
+    if not isinstance(stored_run_id, str) or not stored_run_id:
+        return {
+            "status": "blocked",
+            "reason_code": "missing_manifest_run_id",
+            "reason": "Telemetry samples are unavailable until the original file is re-imported with immutable run ownership.",
+        }
+    if stored_run_id != requested_run_id:
+        return {
+            "status": "blocked",
+            "reason_code": "manifest_run_mismatch",
+            "reason": "Telemetry samples are unavailable because the cache manifest belongs to a different run.",
+        }
+    stored_cache_sha256 = _valid_sha256(manifest.get("telemetry_cache_sha256"))
+    if stored_cache_sha256 is None:
+        return {
+            "status": "blocked",
+            "reason_code": "missing_manifest_cache_hash",
+            "reason": "Telemetry samples are unavailable until the original file is re-imported with immutable cache ownership.",
+        }
+    if cache_source is None:
+        return {
+            "status": "blocked",
+            "reason_code": "cache_missing_or_ambiguous",
+            "reason": "Telemetry samples are unavailable because exactly one cache artifact is required.",
+        }
+    if stored_cache_sha256 != _sha256_file(cache_source):
+        return {
+            "status": "blocked",
+            "reason_code": "telemetry_cache_mismatch",
+            "reason": "Telemetry samples are unavailable because the cache does not match its imported manifest.",
+        }
+    return {
+        "status": "verified",
+        "run_id": requested_run_id,
+        "telemetry_cache_sha256": stored_cache_sha256,
+    }
+
+
+def _telemetry_artifact_identity(
+    manifest: dict[str, Any],
+    *,
+    requested_run_id: str,
+    expected_source_file_sha256: str | None,
+    cache_source: Path | None,
+) -> dict[str, Any]:
+    stored_run_id = manifest.get("run_id")
+    if not isinstance(stored_run_id, str) or not stored_run_id:
+        return {
+            "status": "blocked",
+            "reason_code": "missing_manifest_run_id",
+            "reason": "The telemetry manifest predates immutable run ownership.",
+            "required_action": "reimport_original_ibt",
+        }
+    if stored_run_id != requested_run_id:
+        return {
+            "status": "blocked",
+            "reason_code": "manifest_run_mismatch",
+            "reason": "The telemetry manifest belongs to a different run.",
+            "required_action": "reimport_original_ibt",
+        }
+    stored_source_sha256 = _valid_sha256(manifest.get("source_file_sha256"))
+    if stored_source_sha256 is None:
+        return {
+            "status": "blocked",
+            "reason_code": "missing_manifest_source_hash",
+            "reason": "The telemetry manifest predates immutable source-file ownership.",
+            "required_action": "reimport_original_ibt",
+        }
+    expected_source_sha256 = _valid_sha256(expected_source_file_sha256)
+    if expected_source_sha256 is None:
+        return {
+            "status": "blocked",
+            "reason_code": "source_reference_unavailable",
+            "reason": "The run record cannot verify the manifest's source file.",
+            "required_action": "reimport_original_ibt",
+        }
+    if stored_source_sha256 != expected_source_sha256:
+        return {
+            "status": "blocked",
+            "reason_code": "manifest_source_mismatch",
+            "reason": "The telemetry manifest belongs to a different source file.",
+            "required_action": "reimport_original_ibt",
+        }
+    stored_cache_sha256 = _valid_sha256(manifest.get("telemetry_cache_sha256"))
+    if stored_cache_sha256 is None:
+        return {
+            "status": "blocked",
+            "reason_code": "missing_manifest_cache_hash",
+            "reason": "The telemetry manifest predates immutable cache ownership.",
+            "required_action": "reimport_original_ibt",
+        }
+    if cache_source is None:
+        return {
+            "status": "blocked",
+            "reason_code": "cache_missing_or_ambiguous",
+            "reason": "Exactly one telemetry cache artifact is required for this run.",
+            "required_action": "reimport_original_ibt",
+        }
+    actual_cache_sha256 = _sha256_file(cache_source)
+    if stored_cache_sha256 != actual_cache_sha256:
+        return {
+            "status": "blocked",
+            "reason_code": "telemetry_cache_mismatch",
+            "reason": "The telemetry cache does not match its imported manifest.",
+            "required_action": "reimport_original_ibt",
+        }
+    return {
+        "status": "verified",
+        "run_id": requested_run_id,
+        "source_file_sha256": stored_source_sha256,
+        "telemetry_cache_sha256": stored_cache_sha256,
+    }
+
+
+def _assert_telemetry_cache_identity(
+    data_root: Path,
+    run_id: str,
+    cache_source: Path | None,
+) -> None:
+    manifest = read_telemetry_manifest(run_id, data_root)
+    identity = _telemetry_cache_artifact_identity(
+        manifest,
+        requested_run_id=run_id,
+        cache_source=cache_source,
+    )
+    if identity["status"] != "verified":
+        raise TelemetryArtifactIdentityError(str(identity["reason"]))
+
+
+def assert_telemetry_cache_identity(
+    run_id: str,
+    data_dir: str | Path | None = None,
+) -> None:
+    data_root = Path(data_dir) if data_dir is not None else default_data_dir()
+    _assert_telemetry_cache_identity(
+        data_root,
+        run_id,
+        _telemetry_cache_source(data_root, run_id),
+    )
+
+
+def _source_signature(parquet: Path, csv_file: Path) -> tuple[Any, ...] | None:
+    source = parquet if parquet.exists() else csv_file if csv_file.exists() else None
+    return _file_signature(source) if source is not None else None
+
+
+def _channel_context_signature(
+    data_root: Path,
+    run_id: str,
+    source_signature: tuple[Any, ...] | None,
+) -> tuple[Any, ...]:
+    return (
+        source_signature,
+        _file_signature(channel_metadata_path(data_root, run_id)),
+        _file_signature(telemetry_manifest_path(data_root, run_id)),
+        _CHANNEL_SCHEMA_VERSION,
+    )
 
 
 @lru_cache(maxsize=64)
@@ -880,21 +1292,21 @@ def _cached_parquet_schema(
     resolved_path: str,
     modified_time_ns: int,
     file_size: int,
+    device: int,
+    inode: int,
+    generation: int | str,
 ) -> tuple[tuple[str, Any], ...]:
-    del modified_time_ns, file_size
+    del modified_time_ns, file_size, device, inode, generation
     pl = importlib.import_module("polars")
     return tuple(pl.read_parquet_schema(resolved_path).items())
 
 
-def _read_parquet_schema(path: Path) -> dict[str, Any]:
-    stat = path.stat()
-    return dict(
-        _cached_parquet_schema(
-            str(path.resolve()),
-            stat.st_mtime_ns,
-            stat.st_size,
-        )
-    )
+def _read_parquet_schema(
+    path: Path,
+    signature: tuple[Any, ...] | None = None,
+) -> dict[str, Any]:
+    resolved_signature = signature or _file_signature(path)
+    return dict(_cached_parquet_schema(*resolved_signature)) if resolved_signature is not None else {}
 
 
 def _rows_look_normalized(rows: list[dict[str, Any]]) -> bool:
@@ -912,11 +1324,77 @@ def _normalize_if_needed(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows if _rows_look_normalized(rows) else normalize_telemetry_rows(rows)
 
 
+def _copy_telemetry_value(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, list):
+        return [_copy_telemetry_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_copy_telemetry_value(item) for item in value)
+    if isinstance(value, dict):
+        return {key: _copy_telemetry_value(item) for key, item in value.items()}
+    return deepcopy(value)
+
+
+def _copy_telemetry_rows(
+    rows: list[dict[str, Any]],
+    columns: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    if columns is None:
+        return [
+            {key: _copy_telemetry_value(value) for key, value in row.items()}
+            for row in rows
+        ]
+    return [
+        {column: _copy_telemetry_value(row.get(column)) for column in columns}
+        for row in rows
+    ]
+
+
+def _estimate_telemetry_value_size(value: Any, seen: set[int]) -> int:
+    value_id = id(value)
+    if value_id in seen:
+        return 0
+    seen.add(value_id)
+    size = sys.getsizeof(value)
+    if isinstance(value, dict):
+        size += sum(
+            _estimate_telemetry_value_size(item, seen)
+            for pair in value.items()
+            for item in pair
+        )
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        size += sum(_estimate_telemetry_value_size(item, seen) for item in value)
+    return size
+
+
+def _estimate_telemetry_rows_size(
+    rows: list[dict[str, Any]],
+    *,
+    maximum_bytes: int | None = None,
+) -> int:
+    """Measure the retained Python object graph without sampling blind spots."""
+    seen = {id(rows)}
+    size = sys.getsizeof(rows)
+    for row in rows:
+        size += _estimate_telemetry_value_size(row, seen)
+        if maximum_bytes is not None and size > maximum_bytes:
+            return size
+    return size
+
+
 def _evict_if_needed() -> None:
-    if len(_TELEMETRY_ROWS_CACHE) <= _TELEMETRY_ROWS_CACHE_MAX:
-        return
-    oldest_key = min(_TELEMETRY_ROWS_CACHE.items(), key=lambda item: item[1].last_access)[0]
-    _TELEMETRY_ROWS_CACHE.pop(oldest_key, None)
+    total_bytes = sum(entry.size_bytes for entry in _TELEMETRY_ROWS_CACHE.values())
+    while (
+        len(_TELEMETRY_ROWS_CACHE) > _TELEMETRY_ROWS_CACHE_MAX
+        or total_bytes > _TELEMETRY_ROWS_CACHE_MAX_BYTES
+    ):
+        oldest_key, oldest = min(
+            _TELEMETRY_ROWS_CACHE.items(),
+            key=lambda item: item[1].last_access,
+        )
+        total_bytes -= oldest.size_bytes
+        _TELEMETRY_ROWS_CACHE.pop(oldest_key, None)
 
 
 def _evict_projected_telemetry_if_needed() -> None:
@@ -934,17 +1412,29 @@ def _evict_projected_telemetry_if_needed() -> None:
 
 
 def _evict_channel_catalog_if_needed() -> None:
-    if len(_CHANNEL_CATALOG_CACHE) <= _CHANNEL_CATALOG_CACHE_MAX:
-        return
-    oldest_key = min(_CHANNEL_CATALOG_CACHE.items(), key=lambda item: item[1].last_access)[0]
-    _CHANNEL_CATALOG_CACHE.pop(oldest_key, None)
+    total_bytes = sum(entry.size_bytes for entry in _CHANNEL_CATALOG_CACHE.values())
+    while _CHANNEL_CATALOG_CACHE and (
+        len(_CHANNEL_CATALOG_CACHE) > _CHANNEL_CATALOG_CACHE_MAX
+        or total_bytes > _CHANNEL_CATALOG_CACHE_MAX_BYTES
+    ):
+        oldest_key, oldest = min(
+            _CHANNEL_CATALOG_CACHE.items(), key=lambda item: item[1].last_access,
+        )
+        total_bytes -= oldest.size_bytes
+        _CHANNEL_CATALOG_CACHE.pop(oldest_key, None)
 
 
 def _evict_channel_summary_if_needed() -> None:
-    if len(_CHANNEL_SUMMARY_CACHE) <= _CHANNEL_SUMMARY_CACHE_MAX:
-        return
-    oldest_key = min(_CHANNEL_SUMMARY_CACHE.items(), key=lambda item: item[1].last_access)[0]
-    _CHANNEL_SUMMARY_CACHE.pop(oldest_key, None)
+    total_bytes = sum(entry.size_bytes for entry in _CHANNEL_SUMMARY_CACHE.values())
+    while _CHANNEL_SUMMARY_CACHE and (
+        len(_CHANNEL_SUMMARY_CACHE) > _CHANNEL_SUMMARY_CACHE_MAX
+        or total_bytes > _CHANNEL_SUMMARY_CACHE_MAX_BYTES
+    ):
+        oldest_key, oldest = min(
+            _CHANNEL_SUMMARY_CACHE.items(), key=lambda item: item[1].last_access,
+        )
+        total_bytes -= oldest.size_bytes
+        _CHANNEL_SUMMARY_CACHE.pop(oldest_key, None)
 
 
 def _invalidate_run_cache(data_root: Path, run_id: str) -> None:
@@ -953,6 +1443,7 @@ def _invalidate_run_cache(data_root: Path, run_id: str) -> None:
         # This closes the equal-size/equal-mtime replacement edge case that a
         # filesystem signature alone cannot distinguish.
         _cached_parquet_schema.cache_clear()
+        _cached_file_sha256.cache_clear()
         _TELEMETRY_ROWS_CACHE.pop(_cache_key(data_root, run_id), None)
         _CHANNEL_CATALOG_CACHE.pop(_cache_key(data_root, run_id), None)
         _CHANNEL_SUMMARY_CACHE.pop(_cache_key(data_root, run_id), None)
@@ -965,6 +1456,13 @@ def _invalidate_run_cache(data_root: Path, run_id: str) -> None:
                 _PROJECTED_TELEMETRY_CACHE.pop(projected_key, None)
 
 
+def _invalidate_channel_context_cache(data_root: Path, run_id: str) -> None:
+    with _TELEMETRY_ROWS_CACHE_LOCK:
+        key = _cache_key(data_root, run_id)
+        _CHANNEL_CATALOG_CACHE.pop(key, None)
+        _CHANNEL_SUMMARY_CACHE.pop(key, None)
+
+
 def read_telemetry_rows(
     run_id: str,
     data_dir: str | Path | None = None,
@@ -974,6 +1472,11 @@ def read_telemetry_rows(
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
     parquet = parquet_path(data_root, run_id)
     csv_file = csv_path(data_root, run_id)
+    _assert_telemetry_cache_identity(
+        data_root,
+        run_id,
+        _telemetry_cache_source(data_root, run_id),
+    )
     signature = _source_signature(parquet, csv_file)
     key = _cache_key(data_root, run_id)
     requested_columns = list(dict.fromkeys(columns or []))
@@ -983,8 +1486,17 @@ def read_telemetry_rows(
         else None
     )
 
-    def _filter_rows(source_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _filter_rows(
+        source_rows: list[dict[str, Any]],
+        *,
+        isolate_from_cache: bool,
+    ) -> list[dict[str, Any]]:
         scoped_rows = source_rows if lap is None else [row for row in source_rows if row.get("lap") == lap]
+        if isolate_from_cache:
+            return _copy_telemetry_rows(
+                scoped_rows,
+                requested_columns or None,
+            )
         if not requested_columns:
             return scoped_rows
         return [{column: row.get(column) for column in requested_columns} for row in scoped_rows]
@@ -1007,7 +1519,7 @@ def read_telemetry_rows(
     # Filtering and Polars-to-dict conversion can be significant.  Perform both
     # outside the shared cache lock so independent API requests remain parallel.
     if cached_rows is not None:
-        return _filter_rows(cached_rows)
+        return _filter_rows(cached_rows, isolate_from_cache=True)
     if cached_frame is not None:
         projected_rows = cached_frame.to_dicts()
         if requested_columns:
@@ -1020,7 +1532,7 @@ def read_telemetry_rows(
     # Fast miss path for lap/column-scoped calls: avoid reading full parquet into memory.
     if (lap is not None or requested_columns) and parquet.exists() and importlib.util.find_spec("polars") is not None:
         pl = importlib.import_module("polars")
-        schema = _read_parquet_schema(parquet)
+        schema = _read_parquet_schema(parquet, signature)
         available_columns = set(schema.keys())
         read_columns = requested_columns or list(schema.keys())
         if lap is not None and "lap" in available_columns and "lap" not in read_columns:
@@ -1064,16 +1576,25 @@ def read_telemetry_rows(
                 ]
             rows = _normalize_if_needed(rows)
 
+    cache_admitted = False
     if signature is not None and not requested_columns:
-        with _TELEMETRY_ROWS_CACHE_LOCK:
-            _TELEMETRY_ROWS_CACHE[key] = _TelemetryRowsCacheEntry(
-                signature=signature,
-                rows=rows,
-                last_access=time.time(),
-            )
-            _evict_if_needed()
+        estimated_size = _estimate_telemetry_rows_size(
+            rows,
+            maximum_bytes=_TELEMETRY_ROWS_CACHE_MAX_ENTRY_BYTES,
+        )
+        if estimated_size <= _TELEMETRY_ROWS_CACHE_MAX_ENTRY_BYTES:
+            with _TELEMETRY_ROWS_CACHE_LOCK:
+                entry = _TelemetryRowsCacheEntry(
+                    signature=signature,
+                    rows=rows,
+                    size_bytes=estimated_size,
+                    last_access=time.time(),
+                )
+                _TELEMETRY_ROWS_CACHE[key] = entry
+                _evict_if_needed()
+                cache_admitted = _TELEMETRY_ROWS_CACHE.get(key) is entry
 
-    return _filter_rows(rows)
+    return _filter_rows(rows, isolate_from_cache=cache_admitted)
 
 
 def _channel_stats(rows: list[dict[str, Any]], channel: str) -> dict[str, Any]:
@@ -1145,11 +1666,12 @@ def _is_numeric_dtype(dtype: Any) -> bool:
 
 def _precompute_channel_stats_from_parquet(
     path: Path,
+    signature: tuple[Any, ...] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], list[str]]:
     if importlib.util.find_spec("polars") is None:
         return {}, []
     pl = importlib.import_module("polars")
-    schema = _read_parquet_schema(path)
+    schema = _read_parquet_schema(path, signature)
     columns = list(schema.keys())
     if not columns:
         return {}, []
@@ -1340,18 +1862,26 @@ def _build_summary_item(
     }
 def build_channel_catalog(run_id: str, data_dir: str | Path | None = None) -> list[dict[str, Any]]:
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
+    _assert_telemetry_cache_identity(
+        data_root,
+        run_id,
+        _telemetry_cache_source(data_root, run_id),
+    )
     key = _cache_key(data_root, run_id)
     source_signature = _source_signature(parquet_path(data_root, run_id), csv_path(data_root, run_id))
-    signature = None if source_signature is None else (*source_signature, _CHANNEL_SCHEMA_VERSION)
+    signature = _channel_context_signature(data_root, run_id, source_signature)
+    cached_catalog: list[dict[str, Any]] | None = None
     with _TELEMETRY_ROWS_CACHE_LOCK:
         entry = _CHANNEL_CATALOG_CACHE.get(key)
         if entry is not None and entry.signature == signature:
             entry.last_access = time.time()
-            return entry.catalog
+            cached_catalog = entry.catalog
+    if cached_catalog is not None:
+        return deepcopy(cached_catalog)
 
     path = parquet_path(data_root, run_id)
     if path.exists() and importlib.util.find_spec("polars") is not None:
-        stats_map, columns = _precompute_channel_stats_from_parquet(path)
+        stats_map, columns = _precompute_channel_stats_from_parquet(path, source_signature)
     else:
         rows = read_telemetry_rows(run_id, data_dir)
         stats_map = _precompute_channel_stats(rows)
@@ -1432,31 +1962,43 @@ def build_channel_catalog(run_id: str, data_dir: str | Path | None = None) -> li
             )
         )
 
+    estimated_size = _estimate_telemetry_value_size(catalog, set())
     with _TELEMETRY_ROWS_CACHE_LOCK:
-        _CHANNEL_CATALOG_CACHE[key] = _ChannelCatalogCacheEntry(
-            signature=signature,
-            catalog=catalog,
-            last_access=time.time(),
-        )
-        _evict_channel_catalog_if_needed()
-    return catalog
+        _CHANNEL_CATALOG_CACHE.pop(key, None)
+        if estimated_size <= _CHANNEL_CATALOG_CACHE_MAX_ENTRY_BYTES:
+            _CHANNEL_CATALOG_CACHE[key] = _ChannelCatalogCacheEntry(
+                signature=signature,
+                catalog=catalog,
+                size_bytes=estimated_size,
+                last_access=time.time(),
+            )
+            _evict_channel_catalog_if_needed()
+    return deepcopy(catalog)
 
 
 def build_channel_summary(run_id: str, data_dir: str | Path | None = None) -> list[dict[str, Any]]:
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
+    _assert_telemetry_cache_identity(
+        data_root,
+        run_id,
+        _telemetry_cache_source(data_root, run_id),
+    )
     key = _cache_key(data_root, run_id)
     source_signature = _source_signature(parquet_path(data_root, run_id), csv_path(data_root, run_id))
-    signature = None if source_signature is None else (*source_signature, _CHANNEL_SCHEMA_VERSION)
+    signature = _channel_context_signature(data_root, run_id, source_signature)
+    cached_summary: list[dict[str, Any]] | None = None
     with _TELEMETRY_ROWS_CACHE_LOCK:
         entry = _CHANNEL_SUMMARY_CACHE.get(key)
         if entry is not None and entry.signature == signature:
             entry.last_access = time.time()
-            return entry.summary
+            cached_summary = entry.summary
+    if cached_summary is not None:
+        return deepcopy(cached_summary)
 
     path = parquet_path(data_root, run_id)
     columns: list[str]
     if path.exists() and importlib.util.find_spec("polars") is not None:
-        columns = list(_read_parquet_schema(path).keys())
+        columns = list(_read_parquet_schema(path, source_signature).keys())
     else:
         rows = read_telemetry_rows(run_id, data_dir)
         columns = list(rows[0].keys()) if rows else []
@@ -1536,14 +2078,18 @@ def build_channel_summary(run_id: str, data_dir: str | Path | None = None) -> li
             )
         )
 
+    estimated_size = _estimate_telemetry_value_size(summary, set())
     with _TELEMETRY_ROWS_CACHE_LOCK:
-        _CHANNEL_SUMMARY_CACHE[key] = _ChannelSummaryCacheEntry(
-            signature=signature,
-            summary=summary,
-            last_access=time.time(),
-        )
-        _evict_channel_summary_if_needed()
-    return summary
+        _CHANNEL_SUMMARY_CACHE.pop(key, None)
+        if estimated_size <= _CHANNEL_SUMMARY_CACHE_MAX_ENTRY_BYTES:
+            _CHANNEL_SUMMARY_CACHE[key] = _ChannelSummaryCacheEntry(
+                signature=signature,
+                summary=summary,
+                size_bytes=estimated_size,
+                last_access=time.time(),
+            )
+            _evict_channel_summary_if_needed()
+    return deepcopy(summary)
 
 
 def _row_delta(row: dict[str, Any], event: TelemetryEvent) -> float | None:
@@ -1813,6 +2359,11 @@ def build_trace_payload(
     car_path: Any = None,
 ) -> dict[str, Any]:
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
+    _assert_telemetry_cache_identity(
+        data_root,
+        run_id,
+        _telemetry_cache_source(data_root, run_id),
+    )
     selected_channels = channels or TRACE_DEFAULT_CHANNELS
     read_channels = list(selected_channels)
     should_refresh_lr_platform = car_path is not None and bool(LR_RIDE_HEIGHT_OFFSET_DERIVED_CHANNELS.intersection(selected_channels))
@@ -1976,6 +2527,19 @@ class ImportService:
             variable_count=len(result.variable_definitions),
             record_count=(normalized_frame.height if normalized_frame is not None else len(result.records)),
         )
+        source_file_sha256 = (
+            result.fingerprint.sha256
+            if result.fingerprint is not None
+            else result.overview.session.file_hash
+        )
+        if (
+            result.fingerprint is not None
+            and result.overview.session.file_hash
+            and result.fingerprint.sha256 != result.overview.session.file_hash
+        ):
+            raise RuntimeError(
+                "Telemetry import identity failed: decoded source fingerprints disagree."
+            )
         staged_cache = _stage_import_cache(
             run_id,
             result.records,
@@ -1985,6 +2549,10 @@ class ImportService:
             raw_archive_columns=result.raw_archive_columns,
             normalized_frame=normalized_frame,
             data_dir=self.data_dir,
+            source_file_sha256=source_file_sha256,
+            source_file_size_bytes=(
+                result.fingerprint.file_size if result.fingerprint is not None else None
+            ),
             profile_out=cache_profile,
         )
         _timings["write_parquet_cache"] = time.perf_counter() - t0

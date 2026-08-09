@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -9,9 +10,17 @@ from racelab_engine.analysis.shock_reader import (
     build_shock_reader_response as _build_shock_reader_response,
     compute_corner_read,
 )
+from racelab_engine.analysis.setup_controls import (
+    resolve_adjacent_setup_target,
+    setup_control_spec,
+)
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.setup import SetupSnapshot
-from racelab_engine.services.import_service import write_telemetry_cache
+from racelab_engine.services.import_service import (
+    TelemetryArtifactIdentityError,
+    parquet_path,
+    write_telemetry_cache,
+)
 
 
 def _setup(value: int = 5, *, include: bool = True, setting: str | None = None) -> SetupSnapshot | None:
@@ -81,6 +90,22 @@ def _write(tmp_path: Path, values: list[float], **kwargs) -> None:
     write_telemetry_cache("run-1", _rows(values, **kwargs), data_dir=tmp_path)
 
 
+def test_shock_reader_rejects_cache_relabelled_from_another_run(tmp_path: Path) -> None:
+    _write(tmp_path, [0.2, -0.2] * 40)
+    write_telemetry_cache(
+        "run-2",
+        _rows([3.0, -3.0] * 40),
+        data_dir=tmp_path,
+    )
+    shutil.copyfile(
+        parquet_path(tmp_path, "run-2"),
+        parquet_path(tmp_path, "run-1"),
+    )
+
+    with pytest.raises(TelemetryArtifactIdentityError, match="does not match"):
+        build_shock_reader_response("run-1", data_dir=tmp_path)
+
+
 def _lap_summary(*, useful: bool, tags: list[str] | None = None, lap_number: int = 1) -> LapSummary:
     return LapSummary(
         lap_id=f"run-1:lap:{lap_number}",
@@ -98,6 +123,99 @@ def _lap_summary(*, useful: bool, tags: list[str] | None = None, lap_number: int
 def build_shock_reader_response(*args, **kwargs):
     kwargs.setdefault("lap_summaries", [_lap_summary(useful=True)])
     return _build_shock_reader_response(*args, **kwargs)
+
+
+_INLINE_SHOCK_SETTINGS = (
+    "ls_compression",
+    "hs_compression",
+    "hs_compression_slope",
+    "ls_rebound",
+    "hs_rebound",
+    "hs_rebound_slope",
+)
+
+
+def _qualified_legal_options(value: int = 5) -> dict[str, object]:
+    values = (value - 1, value, value + 1)
+    return {
+        "legal_options_by_corner_setting": {
+            corner: {setting: list(values) for setting in _INLINE_SHOCK_SETTINGS}
+            for corner in ("LF", "RF", "LR", "RR")
+        },
+        "legal_option_provenance_by_corner_setting": {
+            corner: {
+                setting: {
+                    option: [f"tech-passing-setup:{corner}:{setting}:{option}"]
+                    for option in values
+                }
+                for setting in _INLINE_SHOCK_SETTINGS
+            }
+            for corner in ("LF", "RF", "LR", "RR")
+        },
+    }
+
+
+def _single_row_options(
+    values: list[int],
+    provenance: dict[int, list[str]],
+) -> dict[str, object]:
+    return {
+        "legal_options_by_corner_setting": {"LF": {"ls_compression": values}},
+        "legal_option_provenance_by_corner_setting": {
+            "LF": {"ls_compression": provenance},
+        },
+    }
+
+
+def _assert_action_is_fully_withheld(recommendation) -> None:
+    dumped = " ".join(
+        str(value)
+        for value in (
+            recommendation.action_text,
+            recommendation.expected_effect,
+            recommendation.change_size_explanation,
+            recommendation.keep_if,
+            recommendation.undo_if,
+        )
+    ).lower()
+    assert recommendation.delta is None
+    assert recommendation.suggested_value is None
+    assert recommendation.direction == "needs_more_evidence"
+    assert recommendation.magnitude == "hold"
+    assert not any(token in dumped for token in ("increase ", "decrease ", "one click", "one available click"))
+
+
+@pytest.mark.parametrize("setting", _INLINE_SHOCK_SETTINGS)
+@pytest.mark.parametrize(("direction_sign", "expected"), [(-1, 4), (1, 6)])
+def test_every_shock_row_resolves_the_exact_one_click_garage_direction(
+    setting: str,
+    direction_sign: int,
+    expected: int,
+) -> None:
+    resolution = resolve_adjacent_setup_target(
+        setting,
+        5,
+        direction_sign,
+        legal_values=[4, 5, 6],
+        legal_value_provenance={
+            4: [f"tech-passing-setup:{setting}:4"],
+            6: [f"tech-passing-setup:{setting}:6"],
+        },
+    )
+
+    assert resolution.ready is True
+    assert resolution.target_value == expected
+    assert resolution.provenance == (f"tech-passing-setup:{setting}:{expected}",)
+    spec = setup_control_spec(setting)
+    assert spec.nominal_test_increment == 1.0
+    if setting.endswith("_slope"):
+        expected_shape = "more linear" if direction_sign > 0 else "more digressive"
+        effect = spec.increase_effect if direction_sign > 0 else spec.decrease_effect
+        assert expected_shape in effect
+    else:
+        expected_strength = "adds" if direction_sign > 0 else "removes"
+        effect = spec.increase_effect if direction_sign > 0 else spec.decrease_effect
+        assert expected_strength in effect
 
 
 def test_selected_pit_lap_keeps_observations_but_suppresses_exact_actions(tmp_path: Path) -> None:
@@ -121,6 +239,9 @@ def test_selected_pit_lap_keeps_observations_but_suppresses_exact_actions(tmp_pa
         for corner in response.corners
         for recommendation in corner.setting_recommendations
     )
+    for corner in response.corners:
+        for recommendation in corner.setting_recommendations:
+            _assert_action_is_fully_withheld(recommendation)
     assert response.evidence_state == "blocked_by_context"
     assert response.blocker_reasons
     assert any("exact setting actions are suppressed" in warning for warning in response.warnings)
@@ -137,7 +258,9 @@ def test_no_eligible_laps_suppresses_all_run_shock_actions(tmp_path: Path) -> No
 
     assert response.corners
     assert response.recommendations == []
-    assert all(rec.delta is None for corner in response.corners for rec in corner.setting_recommendations)
+    for corner in response.corners:
+        for recommendation in corner.setting_recommendations:
+            _assert_action_is_fully_withheld(recommendation)
 
 
 def test_missing_lap_eligibility_context_fails_closed(tmp_path: Path) -> None:
@@ -152,13 +275,18 @@ def test_missing_lap_eligibility_context_fails_closed(tmp_path: Path) -> None:
 
     assert response.corners
     assert response.recommendations == []
-    assert all(rec.delta is None for corner in response.corners for rec in corner.setting_recommendations)
+    for corner in response.corners:
+        for recommendation in corner.setting_recommendations:
+            _assert_action_is_fully_withheld(recommendation)
     assert any("eligibility is unavailable" in warning for warning in response.warnings)
 
 
 def test_balanced_histogram_returns_leave_alone(tmp_path: Path) -> None:
     _write(tmp_path, [-0.8, -0.4, 0.2, 0.7] * 30)
-    response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path)
+    response = build_shock_reader_response(
+        "run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path,
+        **_qualified_legal_options(),
+    )
     assert response.corners[0].pattern == "balanced"
     assert all(len(corner.setting_recommendations) == 6 for corner in response.corners)
     assert response.recommendations[0].semantic_direction == "leave_alone"
@@ -182,28 +310,40 @@ def test_per_corner_setting_recommendations_exist_for_all_corners(tmp_path: Path
 
 def test_strong_low_speed_bump_signal_stays_one_adjacent_click(tmp_path: Path) -> None:
     _write(tmp_path, ([0.2] * 70) + ([-0.2] * 20) + ([1.4] * 10))
-    response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path)
+    response = build_shock_reader_response(
+        "run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path,
+        **_qualified_legal_options(),
+    )
     rec = response.corners[0].setting_recommendations[0]
     assert response.corners[0].pattern == "low_speed_bump_heavy"
     assert rec.setting == "ls_compression"
     assert rec.direction == "subtract"
     assert rec.delta == -1
     assert rec.current_value is not None
-    assert rec.suggested_value is None
+    assert rec.suggested_value == 4
+    assert rec.target_value_raw == 4
+    assert rec.legal_option_provenance == ["tech-passing-setup:LF:ls_compression:4"]
 
 
 def test_low_speed_rebound_heavy_returns_subtract_ls_rebound(tmp_path: Path) -> None:
     _write(tmp_path, ([-0.2] * 70) + ([0.2] * 20) + ([-1.4] * 10))
-    response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path)
+    response = build_shock_reader_response(
+        "run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path,
+        **_qualified_legal_options(),
+    )
     rec = response.corners[0].setting_recommendations[3]
     assert response.corners[0].pattern == "low_speed_rebound_heavy"
     assert rec.setting == "ls_rebound"
     assert rec.direction == "subtract"
+    assert rec.suggested_value == 4
 
 
 def test_excessive_high_speed_shoulders_no_contact_returns_soften_candidate(tmp_path: Path) -> None:
     _write(tmp_path, ([2.2] * 35) + ([-2.1] * 35) + ([0.2] * 30), chatter=True)
-    response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path)
+    response = build_shock_reader_response(
+        "run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path,
+        **_qualified_legal_options(),
+    )
     rec = response.recommendations[0]
     assert response.corners[0].pattern == "excessive_high_speed_shoulders"
     assert rec.semantic_direction == "leave_alone"
@@ -217,11 +357,17 @@ def test_excessive_high_speed_shoulders_no_contact_returns_soften_candidate(tmp_
 
 def test_high_speed_bump_contact_returns_add_hs_or_linear_slope(tmp_path: Path) -> None:
     _write(tmp_path, ([2.4] * 60) + ([-0.3] * 20) + ([0.2] * 20), contact=True)
-    response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path)
+    response = build_shock_reader_response(
+        "run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path,
+        **_qualified_legal_options(),
+    )
     rec = response.recommendations[0]
     assert response.corners[0].pattern == "high_speed_bump_heavy"
     assert rec.setting == "hs_compression"
     assert rec.semantic_direction == "add"
+    assert rec.suggested_value == 6
+    assert rec.target_value_raw == 6
+    assert rec.legal_option_provenance == ["tech-passing-setup:LF:hs_compression:6"]
 
 
 def test_slope_candidate_requires_selected_platform_context(tmp_path: Path) -> None:
@@ -270,6 +416,7 @@ def test_unverified_car_boundary_withholds_slope_action(tmp_path: Path) -> None:
         zone_start_pct=20,
         zone_end_pct=30,
         setup_snapshot=_setup(),
+        **_qualified_legal_options(),
         lap_summaries=[
             _lap_summary(useful=True, lap_number=1),
             _lap_summary(useful=True, lap_number=2),
@@ -303,6 +450,7 @@ def test_rear_contact_cannot_authorize_front_slope_change(tmp_path: Path) -> Non
         boundary_basis="Verified test fixture boundary.",
         slope_boundary_verified=True,
         setup_snapshot=_setup(),
+        **_qualified_legal_options(),
         lap_summaries=[
             _lap_summary(useful=True, lap_number=1),
             _lap_summary(useful=True, lap_number=2),
@@ -340,6 +488,95 @@ def test_selected_zone_fails_closed_without_lap_position(tmp_path: Path) -> None
     assert response.corners == []
     assert response.slope_actions_available is False
     assert any("full-lap data was not substituted" in warning for warning in response.warnings)
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        {"lap": 1},
+        {"lap_window": (1, 2)},
+    ],
+    ids=("lap", "lap-window"),
+)
+def test_explicit_lap_scope_fails_closed_without_lap_identity(
+    tmp_path: Path,
+    selection: dict[str, object],
+) -> None:
+    rows = _rows(([0.2] * 70) + ([-0.2] * 30), laps=2)
+    for row in rows:
+        row.pop("lap")
+    write_telemetry_cache("run-1", rows, data_dir=tmp_path)
+
+    response = build_shock_reader_response(
+        "run-1",
+        **selection,
+        setup_snapshot=_setup(),
+        lap_summaries=[
+            _lap_summary(useful=True, lap_number=1),
+            _lap_summary(useful=True, lap_number=2),
+        ],
+        data_dir=tmp_path,
+    )
+
+    assert response.evidence_state == "unavailable"
+    assert response.corners == []
+    assert response.recommendations == []
+    assert any("lap identity telemetry is missing" in warning for warning in response.warnings)
+    assert any("full-run data was not substituted" in warning for warning in response.warnings)
+
+
+@pytest.mark.parametrize(
+    ("phase", "missing_channels"),
+    [
+        ("braking", ("brake_pct",)),
+        ("entry", ("abs_steering_deg", "steering_deg")),
+        ("exit", ("throttle_pct",)),
+        ("straight", ("throttle_pct",)),
+    ],
+)
+def test_explicit_phase_fails_closed_without_selector_channels(
+    tmp_path: Path,
+    phase: str,
+    missing_channels: tuple[str, ...],
+) -> None:
+    rows = _rows(([0.2] * 70) + ([-0.2] * 30))
+    for row in rows:
+        for channel in missing_channels:
+            row.pop(channel, None)
+    write_telemetry_cache("run-1", rows, data_dir=tmp_path)
+
+    response = build_shock_reader_response(
+        "run-1", lap=1, phase=phase, setup_snapshot=_setup(), data_dir=tmp_path,
+    )
+
+    assert response.evidence_state == "unavailable"
+    assert response.corners == []
+    assert response.recommendations == []
+    assert any("selector telemetry is missing" in warning for warning in response.warnings)
+    assert any("unfiltered data was not substituted" in warning for warning in response.warnings)
+
+
+def test_shock_recommendation_provenance_names_only_archived_channels(tmp_path: Path) -> None:
+    rows = _rows(([0.2] * 70) + ([-0.2] * 30))
+    for row in rows:
+        row.pop("lap_dist_pct")
+    write_telemetry_cache("run-1", rows, data_dir=tmp_path)
+
+    response = build_shock_reader_response(
+        "run-1", lap=1, setup_snapshot=_setup(), data_dir=tmp_path,
+        **_qualified_legal_options(),
+    )
+
+    archived = set(rows[0])
+    actionable = [
+        recommendation
+        for corner in response.corners
+        for recommendation in corner.setting_recommendations
+        if recommendation.direction in {"add", "subtract"}
+    ]
+    assert actionable
+    assert all(set(recommendation.source_channels) <= archived for recommendation in actionable)
+    assert all("lap_dist_pct" not in recommendation.source_channels for recommendation in actionable)
 
 
 def test_boundary_stability_must_hold_on_each_lap_not_the_pooled_window(tmp_path: Path) -> None:
@@ -470,9 +707,12 @@ def test_rear_contact_cannot_boost_front_low_speed_action(tmp_path: Path) -> Non
     assert lf_ls_compression.direction not in {"add", "subtract"}
 
 
-def test_only_one_inline_shock_action_survives_and_no_target_is_invented(tmp_path: Path) -> None:
+def test_only_one_inline_shock_action_survives_with_exact_sourced_target(tmp_path: Path) -> None:
     _write(tmp_path, ([2.4] * 60) + ([-0.3] * 20) + ([0.2] * 20), contact=True)
-    response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(9), data_dir=tmp_path)
+    response = build_shock_reader_response(
+        "run-1", lap=1, setup_snapshot=_setup(9), data_dir=tmp_path,
+        **_qualified_legal_options(9),
+    )
 
     actionable = [
         recommendation
@@ -482,7 +722,9 @@ def test_only_one_inline_shock_action_survives_and_no_target_is_invented(tmp_pat
     ]
     assert len(actionable) == 1
     assert actionable[0].delta in {-1, 1}
-    assert actionable[0].suggested_value is None
+    assert actionable[0].suggested_value == 10
+    assert actionable[0].target_value_raw == 10
+    assert actionable[0].legal_option_provenance
 
 
 def test_slope_availability_requires_an_actionable_row_not_only_context(tmp_path: Path) -> None:
@@ -534,6 +776,7 @@ def test_slope_candidate_uses_strong_selected_context(tmp_path: Path) -> None:
         boundary_basis="Verified test fixture boundary.",
         slope_boundary_verified=True,
         setup_snapshot=_setup(),
+        **_qualified_legal_options(),
         lap_summaries=[
             _lap_summary(useful=True, lap_number=1),
             _lap_summary(useful=True, lap_number=2),
@@ -544,9 +787,11 @@ def test_slope_candidate_uses_strong_selected_context(tmp_path: Path) -> None:
     assert slope.setting == "hs_compression_slope"
     assert slope.direction == "add"
     assert slope.delta == 1
-    assert slope.suggested_value is None
+    assert slope.suggested_value == 6
+    assert slope.target_value_raw == 6
+    assert slope.legal_option_provenance == ["tech-passing-setup:LF:hs_compression_slope:6"]
     assert slope.action_text == (
-        "Increase compression slope by one adjacent available garage option toward a more linear curve."
+        "Increase compression slope from 5 to 6 toward a more linear curve."
     )
     assert slope.change_size_explanation.startswith("One adjacent slope option is a small control input")
     assert response.corners[0].repeatability_lap_count == 2
@@ -580,34 +825,92 @@ def test_weak_signal_stays_one_click_when_context_is_unselected(tmp_path: Path) 
     assert rec.delta is None
 
 
-def test_click_action_does_not_invent_a_numeric_target(tmp_path: Path) -> None:
+def test_click_action_fails_closed_without_a_sourced_adjacent_legal_option(tmp_path: Path) -> None:
     _write(tmp_path, ([0.2] * 70) + ([-0.2] * 30))
     response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(5), data_dir=tmp_path)
     rec = response.corners[0].setting_recommendations[0]
     assert rec.current_value == 5
+    _assert_action_is_fully_withheld(rec)
+    assert "option" in (rec.blocked_reason or "").lower()
+    assert "source" in (rec.blocked_reason or "").lower()
+
+
+def test_adjacent_option_requires_provenance_for_that_exact_target(tmp_path: Path) -> None:
+    _write(tmp_path, ([0.2] * 70) + ([-0.2] * 30))
+    response = build_shock_reader_response(
+        "run-1",
+        lap=1,
+        setup_snapshot=_setup(5),
+        data_dir=tmp_path,
+        **_single_row_options([4, 5], {5: ["tech-passing-setup:current-only"]}),
+    )
+
+    rec = response.corners[0].setting_recommendations[0]
+    _assert_action_is_fully_withheld(rec)
+    assert rec.target_value_raw is None
+    assert rec.legal_option_provenance == []
+    assert "no observed or configured source provenance" in (rec.blocked_reason or "")
+
+
+def test_sparse_far_only_shock_option_cannot_authorize_multi_click_jump(tmp_path: Path) -> None:
+    _write(tmp_path, ([0.2] * 70) + ([-0.2] * 30))
+    response = build_shock_reader_response(
+        "run-1",
+        lap=1,
+        setup_snapshot=_setup(5),
+        data_dir=tmp_path,
+        **_single_row_options([2, 5], {2: ["tech-passing-setup:far-option"]}),
+    )
+
+    rec = response.corners[0].setting_recommendations[0]
+    _assert_action_is_fully_withheld(rec)
+    assert rec.target_value_raw is None
+    assert rec.legal_option_provenance == []
+    assert "smallest controlled increment" in (rec.blocked_reason or "")
+
+
+def test_exact_adjacent_shock_target_and_only_its_provenance_are_preserved(tmp_path: Path) -> None:
+    _write(tmp_path, ([0.2] * 70) + ([-0.2] * 30))
+    response = build_shock_reader_response(
+        "run-1",
+        lap=1,
+        setup_snapshot=_setup(5),
+        data_dir=tmp_path,
+        **_single_row_options(
+            [4, 5],
+            {
+                4: ["tech-passing-setup:exact-target"],
+                5: ["tech-passing-setup:current-value"],
+            },
+        ),
+    )
+
+    rec = response.corners[0].setting_recommendations[0]
+    assert rec.direction == "subtract"
     assert rec.delta == -1
-    assert rec.suggested_value is None
+    assert rec.suggested_value == 4
+    assert rec.target_value_raw == 4
+    assert rec.legal_option_provenance == ["tech-passing-setup:exact-target"]
+    assert response.recommendations[0].target_value_raw == 4
+    assert response.recommendations[0].legal_option_provenance == [
+        "tech-passing-setup:exact-target"
+    ]
 
 
-def test_unknown_legal_range_uses_direction_not_fake_limit(tmp_path: Path) -> None:
+def test_unknown_legal_range_cannot_authorize_a_direction_only_click(tmp_path: Path) -> None:
     _write(tmp_path, ([0.2] * 70) + ([-0.2] * 30))
     response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(1), data_dir=tmp_path)
     rec = response.corners[0].setting_recommendations[0]
     assert rec.current_value == 1
-    assert rec.suggested_value is None
-    assert rec.delta == -1
-    assert rec.direction == "subtract"
-    assert rec.blocked_reason is None
+    _assert_action_is_fully_withheld(rec)
 
 
-def test_high_speed_action_stays_one_adjacent_click_without_fake_upper_bound(tmp_path: Path) -> None:
+def test_high_speed_action_fails_closed_without_sourced_upper_option(tmp_path: Path) -> None:
     _write(tmp_path, ([2.4] * 60) + ([-0.3] * 20) + ([0.2] * 20), contact=True)
     response = build_shock_reader_response("run-1", lap=1, setup_snapshot=_setup(8), data_dir=tmp_path)
     rec = response.corners[0].setting_recommendations[1]
     assert rec.setting == "hs_compression"
-    assert rec.direction == "add"
-    assert rec.delta == 1
-    assert rec.suggested_value is None
+    _assert_action_is_fully_withheld(rec)
 
 
 def test_no_full_row_materialization(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

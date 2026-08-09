@@ -13,6 +13,7 @@ export type SelectionMode =
 
 export type Workspace =
   | "overview"
+  | "engineer"
   | "map"
   | "laps"
   | "platform_trace"
@@ -33,6 +34,7 @@ export type SelectionSource =
   | "channel_catalog"
   | "compare_verdict"
   | "overview"
+  | "engineer"
   | "laps"
   | "manual";
 

@@ -74,6 +74,7 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
     if "runs" in {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
         for column_name, ddl in {
             "analysis_engine_version": "analysis_engine_version TEXT DEFAULT '1.0.0'",
+            "lap_eligibility_version": "lap_eligibility_version TEXT",
             "analysis_config_hash": "analysis_config_hash TEXT",
             "analysis_mode": "analysis_mode TEXT DEFAULT 'row'",
             "analyzed_at": "analyzed_at TEXT",

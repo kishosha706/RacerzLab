@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from api import routes_events
 from api.main import app
 from racelab_engine.analysis.platform_events import (
     PlatformEvent,
@@ -18,6 +19,7 @@ from racelab_engine.analysis.platform_events import (
     _window_support,
     detect_platform_events,
 )
+from racelab_engine.models.lap import LapSummary
 from test_setup_evidence_adapter import _configure_env, _seed_run
 
 
@@ -158,7 +160,18 @@ def test_clear_internal_evidence_is_preserved_in_backend_payload() -> None:
     assert event.severity == "info"
     assert event.display_scope == "internal"
     assert event.is_visible_default is False
+    assert event.diagnostic_state == "context"
     assert event.contributes_to_backend_evidence is True
+
+
+def test_only_explicit_supported_risk_checks_can_be_classified_clear() -> None:
+    events = detect_platform_events([_row(platform_compression_index=0.2)])
+
+    assert _event(events, "MIN_SPLITTER").diagnostic_state == "clear_check"
+    assert _event(events, "MIN_REAR_RIDE_HEIGHT").diagnostic_state == "clear_check"
+    assert _event(events, "WHOLE_CAR_BOTTOMING_RISK").diagnostic_state == "clear_check"
+    assert _event(events, "MAX_DYNAMIC_PRESSURE").diagnostic_state == "context"
+    assert _event(events, "HIGHEST_PLATFORM_COMPRESSION").diagnostic_state == "context"
 
 
 def test_highest_platform_compression_is_internal_without_contact_gate() -> None:
@@ -278,4 +291,152 @@ def test_platform_events_api_includes_display_metadata(tmp_path: Path, monkeypat
     assert "display_scope" in first
     assert "is_visible_default" in first
     assert "reason_for_hidden" in first
+    assert "diagnostic_state" in first
     assert "contributes_to_backend_evidence" in first
+
+
+def test_platform_event_report_separates_clear_context_findings_and_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Repo:
+        @staticmethod
+        def get_session(_run_id: str) -> object:
+            return object()
+
+        @staticmethod
+        def get_laps(run_id: str) -> list[LapSummary]:
+            return [LapSummary(
+                lap_id=f"{run_id}:lap:1", run_id=run_id, lap_number=1,
+                lap_type="timed", is_complete=True, is_useful=True, lap_time=30.0,
+            )]
+
+    monkeypatch.setattr(routes_events, "repository", lambda: Repo())
+    monkeypatch.setattr(routes_events, "_source_signature", lambda run_id: (run_id,))
+    routes_events._PLATFORM_EVENTS_CACHE.clear()
+
+    def platform_event(run_id: str) -> PlatformEvent:
+        state_by_run = {
+            "clear": ("MIN_SPLITTER", "clear_check", "internal"),
+            "context": ("MAX_DYNAMIC_PRESSURE", "context", "internal"),
+            "finding": ("MIN_SPLITTER", "finding", "watch"),
+        }
+        event_type, diagnostic_state, display_scope = state_by_run[run_id]
+        return PlatformEvent(
+            event_id=run_id,
+            event_type=event_type,
+            title=run_id,
+            severity="info" if display_scope == "internal" else "watch",
+            confidence="high",
+            lap=1,
+            sample_index=0,
+            lap_dist_ft=100.0,
+            lap_pct=20.0,
+            diagnostic_state=diagnostic_state,
+            display_scope=display_scope,
+            is_visible_default=display_scope != "internal",
+        )
+
+    monkeypatch.setattr(
+        routes_events,
+        "read_telemetry_rows",
+        lambda run_id, **_kwargs: (
+            [] if run_id == "missing" else [{"run_id": run_id, "lap": 1}]
+        ),
+    )
+    monkeypatch.setattr(
+        routes_events,
+        "detect_platform_events",
+        lambda rows, **_kwargs: [platform_event(str(rows[0]["run_id"]))],
+    )
+
+    clear = routes_events.get_platform_events_report("clear")
+    assert clear.run_id == "clear"
+    assert clear.lap is None
+    assert clear.evidence_status == "clear"
+    assert routes_events.get_platform_events_report("finding").evidence_status == "findings"
+    context = routes_events.get_platform_events_report("context")
+    assert context.evidence_status == "unavailable"
+    assert context.blocker_reasons
+    missing = routes_events.get_platform_events_report("missing")
+    assert missing.evidence_status == "unavailable"
+    assert "No telemetry rows" in missing.blocker_reasons[0]
+
+
+def test_platform_event_report_withholds_events_from_a_different_requested_lap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Repo:
+        @staticmethod
+        def get_session(_run_id: str) -> object:
+            return object()
+
+        @staticmethod
+        def get_laps(run_id: str) -> list[LapSummary]:
+            return [LapSummary(
+                lap_id=f"{run_id}:lap:5", run_id=run_id, lap_number=5,
+                lap_type="timed", is_complete=True, is_useful=True, lap_time=30.0,
+            )]
+
+    monkeypatch.setattr(routes_events, "repository", lambda: Repo())
+    monkeypatch.setattr(routes_events, "_source_signature", lambda run_id: (run_id,))
+    monkeypatch.setattr(
+        routes_events,
+        "read_telemetry_rows",
+        lambda *_args, **_kwargs: [{"run_id": "run-a", "lap": 5}],
+    )
+    monkeypatch.setattr(
+        routes_events,
+        "detect_platform_events",
+        lambda *_args, **_kwargs: [PlatformEvent(
+            event_id="wrong-lap",
+            event_type="MIN_SPLITTER",
+            title="Wrong lap",
+            severity="watch",
+            confidence="high",
+            lap=7,
+            sample_index=0,
+            lap_dist_ft=100.0,
+            lap_pct=20.0,
+            diagnostic_state="finding",
+            display_scope="watch",
+        )],
+    )
+    routes_events._PLATFORM_EVENTS_CACHE.clear()
+
+    report = routes_events.get_platform_events_report("run-a", lap=5)
+
+    assert report.run_id == "run-a"
+    assert report.lap == 5
+    assert report.evidence_status == "unavailable"
+    assert report.events == []
+    assert "requested lap" in report.blocker_reasons[0]
+
+
+def test_platform_event_report_rejects_a_cooldown_lap_before_detection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Repo:
+        @staticmethod
+        def get_session(_run_id: str) -> object:
+            return object()
+
+        @staticmethod
+        def get_laps(run_id: str) -> list[LapSummary]:
+            return [LapSummary(
+                lap_id=f"{run_id}:lap:52", run_id=run_id, lap_number=52,
+                lap_type="invalid", is_complete=True, is_useful=False, lap_time=39.7,
+                classification_tags=["COOLDOWN", "NO_SETUP_CONCLUSION"],
+            )]
+
+    monkeypatch.setattr(routes_events, "repository", lambda: Repo())
+    monkeypatch.setattr(
+        routes_events,
+        "read_telemetry_rows",
+        lambda *_args, **_kwargs: pytest.fail("Ineligible lap telemetry must not be analyzed."),
+    )
+
+    report = routes_events.get_platform_events_report("cooldown", lap=52)
+
+    assert report.evidence_status == "unavailable"
+    assert report.events == []
+    assert "Cool-down or abnormally slow lap" in report.blocker_reasons[0]

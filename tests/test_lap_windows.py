@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from racelab_engine.analysis.lap_windows import (
     _is_lap_valid_for_ranking,
+    compute_best_windows,
     compute_degradation,
     compute_lap_windows_response,
 )
@@ -40,3 +41,17 @@ def test_response_counts_valid_laps() -> None:
     assert resp.total_laps == 11
     assert resp.total_valid_laps == 11
     assert resp.fastest_groups[0].laps[0].valid_for_compare is True
+
+
+def test_missing_lap_numbers_split_windows_and_degradation() -> None:
+    laps = [
+        *[_lap(number, 50 + number * 0.1) for number in range(1, 11)],
+        *[_lap(number, 50 + number * 0.1) for number in range(12, 22)],
+    ]
+
+    best_20 = compute_best_windows(laps, [20])[0]
+    degradation = compute_degradation(laps)
+
+    assert best_20.is_available is False
+    assert best_20.best_window is None
+    assert degradation.lap_count == 10

@@ -8,6 +8,9 @@ from racelab_engine.reports.markdown_report import (
     generate_controlled_workflow_report,
     generate_markdown_report,
 )
+from racelab_engine.services.controlled_workflow_service import (
+    validate_workflow_for_authoritative_use,
+)
 from racelab_engine.storage.repository import RaceLabRepository
 
 
@@ -25,6 +28,11 @@ class ReportService:
         workflow = self.repository.get_controlled_workflow(workflow_id)
         if workflow is None:
             return None
+        workflow = validate_workflow_for_authoritative_use(
+            workflow,
+            repository=self.repository,
+            require_complete_stages=workflow.status == "scored",
+        )
         stage_overviews = {
             stage: self.repository.get_overview(run_id)
             for stage, run_id in workflow.stage_run_ids.items()

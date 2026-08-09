@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { ChannelCatalogItem, PlatformEventItem, PlatformEventVisibilityMode, RunOverview } from "../types/telemetry";
 import { buildWindowEvidence, buildZoneEvidence, hasWindowSelection } from "../utils/evidenceFocus";
+import { bestUsefulLapMatchesRun, recommendationBlockedReason, recommendationIsActionable } from "../utils/evidenceTrust";
 import { filterPlatformEvents, platformEventScopeLabel, platformEventVisibilityModeLabel } from "../utils/platformEventVisibility";
 import { ProxyBadge } from "./ProxyBadge";
 
@@ -175,9 +176,9 @@ function RunInspector({ overview, channels, collapsed, onToggle }: { overview: R
         <dt>Setup</dt>
         <dd>{overview.session.setup_name ?? "None"}</dd>
         <dt>Best Lap</dt>
-        <dd>{overview.best_useful_lap ? `Lap ${overview.best_useful_lap.lap_number} (${overview.best_useful_lap.lap_time?.toFixed(2)}s)` : "None"}</dd>
+        <dd>{bestUsefulLapMatchesRun(overview.best_useful_lap, overview.run_id) ? `Lap ${overview.best_useful_lap.lap_number} (${overview.best_useful_lap.lap_time.toFixed(2)}s)` : "None"}</dd>
         <dt>Useful Laps</dt>
-        <dd>{overview.laps.filter((l) => l.is_useful).length} / {overview.laps.length}</dd>
+        <dd>{overview.laps.filter((lap) => bestUsefulLapMatchesRun(lap, overview.run_id)).length} / {overview.laps.length}</dd>
       </dl>
       {hasWindowSelection(selection) && (
         <div className="inspector-source-stack">
@@ -236,13 +237,18 @@ function RunInspector({ overview, channels, collapsed, onToggle }: { overview: R
 
 function CrewChiefSummary({ overview }: { overview: RunOverview }) {
   const [open, setOpen] = useState(true);
-  const recommendation = overview.recommendations?.[0];
+  const recommendation = overview.recommendations.find((candidate) => (
+    recommendationIsActionable(candidate, overview.events)
+  ));
+  const blockedRecommendation = overview.recommendations.find((candidate) => (
+    !recommendationIsActionable(candidate, overview.events)
+  ));
   return (
     <details className="crew-chief-inline" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>
         <ClipboardCheck size={14} /> Crew Chief
       </summary>
-      <p className="crew-summary">{overview.crew_chief_summary}</p>
+      {recommendation && <p className="crew-summary">{overview.crew_chief_summary}</p>}
       {recommendation ? (
         <div className="inspector-crew-block">
           <span className="eyebrow">Next test</span>
@@ -253,6 +259,7 @@ function CrewChiefSummary({ overview }: { overview: RunOverview }) {
         <div className="inspector-crew-block">
           <span className="eyebrow">No call</span>
           <p>No recommendation is shown without supporting evidence.</p>
+          {blockedRecommendation && <strong>{recommendationBlockedReason(blockedRecommendation)}</strong>}
         </div>
       )}
     </details>
@@ -298,7 +305,7 @@ function EventInspector({
       runId: selection.selectedRunId,
       lapNumber: event.lap,
       ...buildWindowEvidence(selection, event.lap),
-      ...buildZoneEvidence(selection, { lapPct: event.lap_pct ?? null, preserveWithoutLapPct: true }),
+      ...buildZoneEvidence(selection, { lapPct: event.lap_pct ?? null }),
       eventId: event.event_id,
       sampleIndex: eventSampleIndex,
       lapDistFt: event.lap_dist_ft,
@@ -320,7 +327,7 @@ function EventInspector({
       runId: selection.selectedRunId,
       lapNumber: event.lap,
       ...buildWindowEvidence(selection, event.lap),
-      ...buildZoneEvidence(selection, { lapPct: event.lap_pct ?? null, preserveWithoutLapPct: true }),
+      ...buildZoneEvidence(selection, { lapPct: event.lap_pct ?? null }),
       eventId: event.event_id,
       sampleIndex: eventSampleIndex,
       lapDistFt: event.lap_dist_ft,

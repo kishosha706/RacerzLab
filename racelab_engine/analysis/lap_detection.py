@@ -253,6 +253,11 @@ def _apply_relative_pace_filter(laps: list[LapSummary]) -> list[LapSummary]:
     return result
 
 
+def apply_relative_pace_filter(laps: list[LapSummary]) -> list[LapSummary]:
+    """Reapply the current cohort gate to imported or legacy lap summaries."""
+    return _apply_relative_pace_filter(laps)
+
+
 def _ensure_normalized(table: Any) -> list[dict[str, Any]]:
     if isinstance(table, list) and table and isinstance(table[0], dict):
         if "speed_mph" in table[0]:

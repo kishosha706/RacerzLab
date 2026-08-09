@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from racelab_engine.analysis.damper_response import _dominant_psd
+from racelab_engine.analysis.damper_response import _dominant_psd, _fingerprint
 
 
 def _sine(*, frequency_hz: float = 5.0, rate_hz: float = 60.0, seconds: float = 4.0):
@@ -56,3 +56,18 @@ def test_psd_withholds_short_duration() -> None:
     values, times = _sine(seconds=0.8)
 
     assert _dominant_psd(values, times) == (None, None)
+
+
+def test_cross_corner_coherence_uses_same_row_pairs_only() -> None:
+    rows = [
+        {"lap": 1, "lap_dist_pct_100": float(index), "lf_shock_vel_in_s": left, "rf_shock_vel_in_s": right}
+        for index, (left, right) in enumerate((
+            (1.0, 1.0), (10.0, None), (None, -10.0),
+            (2.0, 2.0), (20.0, None), (None, -20.0),
+            (3.0, 3.0),
+        ))
+    ]
+
+    fingerprint = _fingerprint(rows, {1})
+
+    assert fingerprint.cross_corner_coherence["LF-RF"] == pytest.approx(1.0)

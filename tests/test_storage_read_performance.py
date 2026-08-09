@@ -17,8 +17,7 @@ from racelab_engine.storage.db import initialize_database
 from racelab_engine.storage.repository import RaceLabRepository
 
 
-def _seed_run(db_path: Path) -> RaceLabRepository:
-    run_id = "read-path-run"
+def _seed_run(db_path: Path, run_id: str = "read-path-run") -> RaceLabRepository:
     overview = RunOverview(
         run_id=run_id,
         session=SessionSummary(
@@ -134,6 +133,157 @@ def test_run_list_uses_one_select_instead_of_per_run_queries(
             "primary_issue": "Test issue",
         }
     ]
+
+
+def test_session_run_summaries_use_one_connection_and_bounded_bulk_query(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "session-list.sqlite"
+    repository = _seed_run(db_path, "session-run-a")
+    _seed_run(db_path, "session-run-b")
+    statements: list[str] = []
+    open_count = 0
+    original = repository_module.initialize_database
+
+    def traced_connection(path):
+        nonlocal open_count
+        open_count += 1
+        connection = original(path)
+        connection.set_trace_callback(statements.append)
+        return connection
+
+    monkeypatch.setattr(repository_module, "initialize_database", traced_connection)
+    items = repository.get_run_list_items(
+        ["session-run-b", "missing-run", "session-run-a", "session-run-b"]
+    )
+    selects = [statement for statement in statements if statement.lstrip().upper().startswith("SELECT")]
+
+    assert [item["run_id"] for item in items] == ["session-run-b", "session-run-a"]
+    assert open_count == 1
+    assert len(selects) == 1
+
+
+def test_run_lists_requalify_legacy_implausibly_fast_laps(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy-run-list.sqlite"
+    run_id = "legacy-fast"
+    repository = RaceLabRepository(db_path)
+    overview = RunOverview(
+        run_id=run_id,
+        session=SessionSummary(run_id=run_id, car_name="Test Car", track_name="Test Track"),
+        laps=[
+            LapSummary(
+                lap_id=f"{run_id}:lap:{lap_number}", run_id=run_id, lap_number=lap_number,
+                lap_type="timed", is_complete=True, is_useful=True, lap_time=lap_time,
+                classification_tags=["SOLO_CLEAN"],
+            )
+            for lap_number, lap_time in ((1, 90.0), (2, 91.0), (3, 1.0))
+        ],
+    )
+    repository.save_import(overview)
+    legacy_fast = overview.laps[-1]
+    connection = initialize_database(db_path)
+    with connection:
+        connection.execute(
+            """
+            UPDATE laps
+            SET lap_type = ?, is_useful = 1, classification_tags = ?, lap_json = ?
+            WHERE lap_id = ?
+            """,
+            (
+                legacy_fast.lap_type,
+                '["SOLO_CLEAN"]',
+                legacy_fast.model_dump_json(),
+                legacy_fast.lap_id,
+            ),
+        )
+        connection.execute(
+            "UPDATE runs SET lap_eligibility_version = NULL WHERE run_id = ?",
+            (run_id,),
+        )
+    connection.close()
+
+    listed = repository.list_runs()[0]
+    single = repository.get_run_list_item(run_id)
+    bulk = repository.get_run_list_items([run_id])[0]
+    refreshed = repository.get_overview(run_id)
+
+    assert single is not None
+    assert refreshed is not None
+    assert listed["best_lap_number"] == single["best_lap_number"] == bulk["best_lap_number"] == 1
+    assert listed["best_lap_time"] == single["best_lap_time"] == bulk["best_lap_time"] == 90.0
+    assert refreshed.best_useful_lap is not None
+    assert refreshed.best_useful_lap.lap_number == 1
+    connection = initialize_database(db_path)
+    version = connection.execute(
+        "SELECT lap_eligibility_version FROM runs WHERE run_id = ?", (run_id,)
+    ).fetchone()[0]
+    connection.close()
+    assert version == "relative-pace-v2"
+
+
+def test_tech_passing_setup_candidates_use_one_indexed_bulk_read(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "setup-options.sqlite"
+    repository = _seed_run(db_path, "matching-run")
+    matching = repository.get_overview("matching-run")
+    assert matching is not None
+    repository.save_import(matching.model_copy(update={
+        "session": matching.session.model_copy(update={
+            "car_path": "cars/cup",
+            "track_id_or_path": "track-1",
+            "session_type": "Test",
+            "setup_passed_tech": True,
+        }),
+    }))
+    statements: list[str] = []
+    open_count = 0
+    original = repository_module.initialize_database
+
+    def traced_connection(path):
+        nonlocal open_count
+        open_count += 1
+        connection = original(path)
+        connection.set_trace_callback(statements.append)
+        return connection
+
+    monkeypatch.setattr(repository_module, "initialize_database", traced_connection)
+    candidates = repository.list_tech_passing_setup_candidates(
+        car_path="cars/cup",
+        track_id_or_path="track-1",
+        session_type="Test",
+    )
+    selects = [statement for statement in statements if statement.lstrip().upper().startswith("SELECT")]
+
+    assert [(run_id, setup.run_id) for run_id, setup in candidates] == [
+        ("matching-run", "matching-run")
+    ]
+    assert open_count == 1
+    assert len(selects) == 1
+
+    connection = original(db_path)
+    try:
+        query_plan = " ".join(
+            str(row["detail"])
+            for row in connection.execute(
+                """
+                EXPLAIN QUERY PLAN
+                SELECT runs.run_id, setup_snapshots.snapshot_json
+                FROM runs
+                JOIN setup_snapshots ON setup_snapshots.run_id = runs.run_id
+                WHERE runs.setup_passed_tech = 1
+                  AND runs.car_path = ?
+                  AND runs.track_id_or_path = ?
+                  AND runs.session_type = ?
+                """,
+                ("cars/cup", "track-1", "Test"),
+            )
+        )
+    finally:
+        connection.close()
+    assert "idx_runs_tech_setup_context" in query_plan
 
 
 def test_overview_uses_one_database_connection(tmp_path: Path, monkeypatch) -> None:

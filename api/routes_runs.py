@@ -110,9 +110,13 @@ def get_channels_summary(run_id: str, compact: bool = False) -> list[ChannelSumm
 
 @router.get("/{run_id}/telemetry-capabilities", response_model=dict[str, Any])
 def get_telemetry_capabilities(run_id: str) -> dict[str, Any]:
-    if repository().get_session(run_id) is None:
+    session = repository().get_session(run_id)
+    if session is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
-    manifest = build_telemetry_capability_payload(run_id)
+    manifest = build_telemetry_capability_payload(
+        run_id,
+        expected_source_file_sha256=session.file_hash,
+    )
     if not manifest:
         raise HTTPException(status_code=404, detail=f"Telemetry capability manifest not found for run: {run_id}")
     return manifest

@@ -17,7 +17,7 @@ def test_setup_page_hides_noisy_corner_fields_from_default_view() -> None:
     assert "shock_collar_offset_mm" not in setup
     assert "Rear Caster" not in setup
     assert 'const frontCorner = corner === "lf" || corner === "rf";' in setup
-    assert '{frontCorner && <Field l="Caster" v={caster} u="deg" />}' in setup
+    assert '{frontCorner && <Field l="Caster" v={caster} u="deg" relevant={relevant("caster_deg", "caster")} />}' in setup
 
 
 def test_setup_page_hides_low_value_diff_side_fields_from_default_view() -> None:
@@ -102,3 +102,48 @@ def test_setup_rows_align_label_value_and_unit_columns() -> None:
     assert "font-variant-numeric: tabular-nums" in value_block
     assert "min-width: 44px" in unit_block
     assert "text-align: left" in unit_block
+
+
+def test_setup_page_uses_axle_oriented_two_by_two_corner_board() -> None:
+    setup = _read("ui/src/tabs/SetupTab.tsx")
+    styles = _read("ui/src/styles.css")
+
+    corners = setup.split('{/* 3) 2x2 Corner Board */}', 1)[1].split('{/* 5) Related Evidence Links */}', 1)[0]
+    assert 'className="gr-axle-label front"' in corners
+    assert 'className="gr-axle-label rear"' in corners
+    assert corners.index('corner="lf"') < corners.index('corner="rf"') < corners.index('corner="lr"') < corners.index('corner="rr"')
+    assert 'aria-label="Setup by car corner"' in corners
+    assert ".gr-axle-label" in styles
+
+
+def test_setup_defaults_to_diff_only_for_a_real_distinct_available_baseline() -> None:
+    setup = _read("ui/src/tabs/SetupTab.tsx")
+
+    assert "const hasValidBaselineComparison = Boolean(" in setup
+    assert "basket.baseline.has_setup_snapshot" in setup
+    assert "!basket.baseline.stale" in setup
+    assert "basket.baseline.run_id !== overview.run_id" in setup
+    assert 'useState<"current" | "diff">(hasValidBaselineComparison ? "diff" : "current")' in setup
+    assert 'if (comparisonKey && comparisonKey !== defaultedComparisonKeyRef.current)' in setup
+    assert 'setDiffMode("diff")' in setup
+    assert 'else if (!comparisonKey && defaultedComparisonKeyRef.current)' in setup
+    assert 'setDiffMode("current")' in setup
+    assert 'onClick={() => setDiffMode("current")}' in setup
+
+
+def test_setup_highlights_only_explicit_evidence_linked_controls() -> None:
+    setup = _read("ui/src/tabs/SetupTab.tsx")
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    styles = _read("ui/src/styles.css")
+
+    assert "selectedEvent?.related_setup_keys" in setup
+    assert "isEvidenceLinkedControl" in setup
+    assert 'data-evidence-linked={relevant ? "true" : undefined}' in setup
+    assert "Evidence-linked" in setup
+    assert '.gr-row.evidence-linked' in styles
+    assert '.setup-system-card[data-evidence-relevant="true"]' in styles
+    assert 'window.sessionStorage.setItem("racelab_setup_evidence_focus"' in platform
+    assert 'related_setup_keys: []' in platform
+    assert 'handoff.run_id !== overview.run_id || handoff.event_id !== selection.selectedEventId' in setup
+    assert 'data-evidence-context=' in setup
+    assert '.setup-system-card[data-evidence-context="true"]' in styles

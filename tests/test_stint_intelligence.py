@@ -7,7 +7,10 @@ from fastapi.testclient import TestClient
 
 from api.main import app
 from racelab_engine.analysis.stint_intelligence import build_stint_response, compare_stints
+from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.lap import LapSummary
+from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.services.session_service import add_run_to_session, create_session
 from racelab_engine.storage.repository import RaceLabRepository
@@ -58,6 +61,182 @@ def _seed_run(tmp_path: Path, run_id: str = "run-1", lap_count: int = 18) -> Non
             laps=_laps(lap_count, run_id=run_id),
         )
     )
+
+
+def test_short_windows_never_claim_long_run_honors() -> None:
+    short_response = build_stint_response(_laps(3))
+
+    short_rows = [
+        *short_response.stints,
+        *short_response.best_window_cards,
+        *short_response.all_windows,
+    ]
+    assert short_rows
+    assert all(stint.is_best_long_run is False for stint in short_rows)
+    assert all("best_long_run" not in stint.highlight_tags for stint in short_rows)
+
+    long_response = build_stint_response(_laps(20))
+    long_rows = [
+        *long_response.stints,
+        *long_response.best_window_cards,
+        *long_response.all_windows,
+    ]
+    assert any(stint.lap_count >= 20 and stint.is_best_long_run for stint in long_rows)
+
+
+def test_missing_lap_numbers_never_form_a_twenty_lap_race_run() -> None:
+    gapped_laps = [
+        *[_lap(number, 50 + number * 0.02) for number in range(1, 11)],
+        *[_lap(number, 50 + number * 0.02) for number in range(12, 22)],
+    ]
+
+    response = build_stint_response(gapped_laps)
+    rows = [*response.stints, *response.best_window_cards, *response.all_windows]
+
+    assert response.run_summary is not None
+    assert response.run_summary.best_20_avg is None
+    assert not any(stint.lap_count >= 20 and stint.is_best_long_run for stint in rows)
+    assert not any(stint.lap_count == 20 and stint.is_best_for_size for stint in rows)
+    assert any("Missing lap numbers split" in warning for warning in response.stints[0].warnings)
+
+
+def test_missing_lap_numbers_break_graph_buckets_and_stint_comparison() -> None:
+    baseline_laps = [
+        *[_lap(number, 50 + number * 0.02, run_id="baseline") for number in range(1, 7)],
+        *[_lap(number, 50 + number * 0.02, run_id="baseline") for number in range(8, 14)],
+    ]
+    test_laps = [
+        *[_lap(number, 49.8 + number * 0.02, run_id="test") for number in range(1, 7)],
+        *[_lap(number, 49.8 + number * 0.02, run_id="test") for number in range(8, 14)],
+    ]
+    baseline = build_stint_response(baseline_laps).stints[0]
+    test = build_stint_response(test_laps).stints[0]
+
+    first_after_gap = next(point for point in baseline.lap_points if point.lap_number == 8)
+    split_bucket = next(bucket for bucket in baseline.bucket_averages if bucket.label == "L6-10")
+    comparison = compare_stints(baseline, test)
+
+    assert first_after_gap.stint_lap == 8
+    assert first_after_gap.rolling_5 is None
+    assert split_bucket.avg_lap_time is None
+    assert split_bucket.warning == "Need 5 consecutive valid laps for this bucket."
+    assert comparison.avg_delta is None
+    assert comparison.same_length_avg_delta is None
+    assert all(delta.delta is None for delta in comparison.bucket_deltas)
+    assert comparison.verdict == "Stint comparison withheld; select uninterrupted clean windows."
+    assert any("Uninterrupted stint comparison is unavailable" in warning for warning in comparison.comparison_warnings)
+
+
+def test_legacy_stored_cooldown_is_requalified_before_stint_math(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    run_id = "legacy-cooldown"
+    laps = [
+        _lap(number, lap_time, run_id=run_id).model_copy(update={
+            "avg_throttle_pct": throttle,
+            "avg_speed_mph": speed,
+            "max_speed_mph": 136.0,
+        })
+        for number, lap_time, throttle, speed in (
+            (1, 15.5, 50.0, 116.0),
+            (2, 15.6, 49.0, 115.0),
+            (3, 15.7, 48.0, 114.0),
+            (4, 39.7, 8.0, 43.0),
+        )
+    ]
+    repo = RaceLabRepository()
+    repo.save_import(RunOverview(
+        run_id=run_id,
+        session=SessionSummary(run_id=run_id, track_name="Bristol", car_name="Cup"),
+        laps=laps,
+    ))
+
+    requalified = repo.get_laps(run_id)
+    cooldown = next(lap for lap in requalified if lap.lap_number == 4)
+    response = build_stint_response(requalified, repo.get_session(run_id))
+    client = TestClient(app)
+    api_lap = next(
+        lap for lap in client.get(f"/api/runs/{run_id}/laps").json()
+        if lap["lap_number"] == 4
+    )
+    api_stint = client.get(f"/api/runs/{run_id}/stints").json()["stints"][0]
+
+    assert cooldown.is_useful is False
+    assert "COOLDOWN" in cooldown.classification_tags
+    assert "NO_SETUP_CONCLUSION" in cooldown.classification_tags
+    assert response.stints[0].valid_lap_count == 3
+    assert response.stints[0].worst_lap_time == pytest.approx(15.7)
+    assert api_lap["is_useful"] is False
+    assert api_stint["valid_lap_count"] == 3
+    assert api_stint["worst_lap_time"] == pytest.approx(15.7)
+
+
+def test_requalified_laps_block_stale_events_recommendations_and_crew_copy(tmp_path: Path) -> None:
+    run_id = "legacy-derived-evidence"
+    laps = [
+        _lap(number, lap_time, run_id=run_id).model_copy(update={
+            "avg_throttle_pct": throttle,
+            "avg_speed_mph": speed,
+            "max_speed_mph": 136.0,
+        })
+        for number, lap_time, throttle, speed in (
+            (1, 15.5, 50.0, 116.0),
+            (2, 15.6, 49.0, 115.0),
+            (3, 15.7, 48.0, 114.0),
+            (4, 39.7, 8.0, 43.0),
+        )
+    ]
+    invalid_lap_event = TelemetryEvent(
+        event_id="invalid-lap-event", run_id=run_id, lap_number=4,
+        event_type="PLATFORM_LOW", valid_for_tuning=True,
+        evidence_state=EvidenceState.MEASURED, source_channels=["speed_mph"],
+        blocker_reasons=[], recommended_actions=["Raise front ride height."],
+    )
+    legacy_event = TelemetryEvent(
+        event_id="legacy-event", run_id=run_id, lap_number=1,
+        event_type="DRAG_SCRUB", valid_for_tuning=True,
+        recommended_actions=["Reduce tape."],
+    )
+    recommendations = [
+        Recommendation(
+            recommendation_id="invalid-lap-rec", run_id=run_id, issue="Platform",
+            recommendation_text="Raise front ride height.",
+            evidence_state=EvidenceState.MEASURED, source_channels=["speed_mph"],
+            evidence_event_ids=[invalid_lap_event.event_id], blocker_reasons=[],
+        ),
+        Recommendation(
+            recommendation_id="legacy-rec", run_id=run_id, issue="Scrub",
+            recommendation_text="Reduce tape.", evidence_event_ids=[legacy_event.event_id],
+        ),
+    ]
+    repo = RaceLabRepository(tmp_path / "legacy-derived.sqlite")
+    repo.save_import(RunOverview(
+        run_id=run_id,
+        session=SessionSummary(run_id=run_id, track_name="Bristol", car_name="Cup"),
+        laps=laps,
+        events=[invalid_lap_event, legacy_event],
+        recommendations=recommendations,
+        primary_findings=["Run a platform setup change."],
+        crew_chief_summary="Focus the next test on platform behavior.",
+        next_test="Raise front ride height.",
+    ))
+
+    loaded = repo.get_overview(run_id)
+    direct_events = repo.get_events(run_id)
+    direct_recommendations = repo.get_recommendations(run_id)
+
+    assert loaded is not None
+    assert all(event.valid_for_tuning is False for event in loaded.events)
+    assert all(event.recommended_actions == [] for event in direct_events)
+    assert all(
+        recommendation.recommendation_text == "No setup change is authorized from the available evidence."
+        for recommendation in direct_recommendations
+    )
+    assert loaded.primary_findings == []
+    assert loaded.crew_chief_summary == "No evidence-qualified setup recommendation is available."
+    assert loaded.next_test is None
 
 
 def test_stint_response_returns_curated_primary_rows_and_buckets() -> None:

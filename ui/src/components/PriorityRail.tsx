@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Gauge, Lightbulb, Shield, ShieldOff, Siren, ToggleLeft, Waves } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Gauge, Lightbulb, LoaderCircle, SearchX, Shield, ShieldOff, Siren, ToggleLeft, Waves } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchPlatformEvents } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
@@ -17,7 +17,10 @@ type PriorityRailProps = {
   selectedLap?: number | null;
   collapsed?: boolean;
   onToggle?: () => void;
+  collapseDisabled?: boolean;
   platformEvents?: PlatformEventItem[];
+  loadStatus?: "idle" | "loading" | "ready" | "clear" | "unavailable" | "error";
+  loadError?: string | null;
   eventVisibilityMode: PlatformEventVisibilityMode;
 };
 
@@ -26,24 +29,37 @@ export function PriorityRail({
   selectedLap,
   collapsed,
   onToggle,
+  collapseDisabled = false,
   platformEvents: externalEvents,
+  loadStatus = "ready",
+  loadError,
   eventVisibilityMode,
 }: PriorityRailProps) {
   const { selection, setWorkspace, focusEvidence } = useTelemetrySelection();
-  const [events, setEvents] = useState<PlatformEventItem[]>([]);
+  const internalRequestKey = `${runId}:${selectedLap ?? "all"}`;
+  const [internalEvents, setInternalEvents] = useState<{
+    requestKey: string | null;
+    events: PlatformEventItem[];
+  }>({ requestKey: null, events: [] });
   const [showInvalid, setShowInvalid] = useState(false);
 
   useEffect(() => {
-    if (externalEvents) {
-      setEvents(externalEvents);
-      return;
-    }
+    if (externalEvents !== undefined) return;
     let cancelled = false;
+    setInternalEvents({ requestKey: null, events: [] });
     fetchPlatformEvents(runId, { lap: selectedLap ?? undefined })
-      .then((e) => { if (!cancelled) setEvents(e); })
-      .catch(() => { if (!cancelled) setEvents([]); });
+      .then((events) => {
+        if (!cancelled) setInternalEvents({ requestKey: internalRequestKey, events });
+      })
+      .catch(() => {
+        if (!cancelled) setInternalEvents({ requestKey: internalRequestKey, events: [] });
+      });
     return () => { cancelled = true; };
-  }, [runId, selectedLap, externalEvents]);
+  }, [runId, selectedLap, externalEvents, internalRequestKey]);
+
+  const events = externalEvents !== undefined
+    ? externalEvents
+    : internalEvents.requestKey === internalRequestKey ? internalEvents.events : [];
 
   const visibleEvents = useMemo(
     () => filterPlatformEvents(events, eventVisibilityMode),
@@ -53,6 +69,18 @@ export function PriorityRail({
     () => events.filter((event) => isClearPlatformDiagnostic(event)).length,
     [events],
   );
+  const eventsRenderable = loadStatus === "ready" || (loadStatus === "clear" && eventVisibilityMode !== "actionable");
+  const railStatus = loadStatus === "ready"
+    ? { label: "Ready", tone: "attention" }
+    : loadStatus === "clear"
+      ? { label: "Clear", tone: "clear" }
+      : loadStatus === "loading"
+        ? { label: "Checking", tone: "loading" }
+        : loadStatus === "error"
+          ? { label: "Retry", tone: "blocked" }
+          : loadStatus === "unavailable"
+            ? { label: "Limited", tone: "blocked" }
+            : { label: "Waiting", tone: "idle" };
 
   const { valid, invalid } = useMemo(() => {
     const v: PlatformEventItem[] = [];
@@ -98,7 +126,7 @@ export function PriorityRail({
       runId,
       lapNumber: event.lap,
       ...buildWindowEvidence(selection, event.lap),
-      ...buildZoneEvidence(selection, { lapPct: event.lap_pct ?? null, preserveWithoutLapPct: true }),
+      ...buildZoneEvidence(selection, { lapPct: event.lap_pct ?? null }),
       eventId: event.event_id,
       sampleIndex,
       lapDistFt: event.lap_dist_ft,
@@ -160,22 +188,36 @@ export function PriorityRail({
   }, [valid, selection]);
 
   return (
-    <aside className={`priority-rail${collapsed ? " collapsed" : ""}`}>
-      <button className="rail-collapse-btn" onClick={onToggle} title={collapsed ? "Expand Priority Rail" : "Collapse Priority Rail"} aria-label={collapsed ? "Expand Priority Rail" : "Collapse Priority Rail"} aria-expanded={!collapsed}>
+    <aside className={`priority-rail${collapsed ? " collapsed" : ""}`} aria-label="Priority evidence">
+      <button
+        type="button"
+        className="rail-collapse-btn"
+        onClick={onToggle}
+        disabled={collapseDisabled}
+        title={collapseDisabled ? "Priority Rail stays open until evidence is genuinely clear" : collapsed ? "Expand Priority Rail" : "Collapse Priority Rail"}
+        aria-label={collapseDisabled ? "Priority Rail stays open until evidence is genuinely clear" : collapsed ? "Expand Priority Rail" : "Collapse Priority Rail"}
+        aria-expanded={!collapsed}
+      >
         {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
       </button>
       <header className="rail-header">
-        <h3>Priority Stack</h3>
-        <span className="rail-count">{valid.length} events</span>
+        <span className="rail-heading-copy">
+          <small>Evidence queue</small>
+          <h3>Priority</h3>
+        </span>
+        <span className="rail-count" data-tone={railStatus.tone}>
+          <i aria-hidden="true" /> {eventsRenderable ? `${valid.length} events` : railStatus.label}
+        </span>
       </header>
 
-      <div className="rail-next-action">
-        <div className="nbc-body" style={{ flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--muted)", fontSize: "0.68rem", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.5px" }}>
+      {eventsRenderable && <div className="rail-next-action">
+        <div className="rail-next-action-body">
+          <span className="rail-next-action-label">
             <Lightbulb size={12} /> Next Action
           </span>
           <span className="nbc-question">{suggestion.question}</span>
           <button
+            type="button"
             className="nbc-action"
             onClick={() => {
               if ("event" in suggestion && suggestion.event) {
@@ -189,31 +231,82 @@ export function PriorityRail({
             <ArrowRight size={14} /> {suggestion.action}
           </button>
         </div>
-      </div>
+      </div>}
 
       <div className="rail-list">
-        {valid.length === 0 && (
-          <div className="rail-empty">
+        {loadStatus === "error" && (
+          <div className="rail-empty rail-state" data-state="error" role="alert">
+            <span className="rail-state-icon" aria-hidden="true"><AlertTriangle size={18} /></span>
+            <strong>Priority evidence unavailable</strong>
+            <p>Platform events could not be loaded.</p>
+            {selection.selectedMode === "learning" && loadError && (
+              <p className="muted">Technical detail: {loadError}</p>
+            )}
+            <button type="button" className="secondary-button" onClick={() => setWorkspace("platform_trace", "manual")}>
+              Open Platform to retry
+            </button>
+          </div>
+        )}
+        {loadStatus === "loading" && (
+          <div className="rail-empty rail-state rail-loading-state" role="status" aria-live="polite" aria-busy="true">
+            <span className="rail-state-icon" aria-hidden="true"><LoaderCircle size={18} /></span>
+            <strong>Qualifying evidence</strong>
+            <p>Checking the selected lap for supported platform events.</p>
+            <span className="rail-loading-bars" aria-hidden="true"><i /><i /><i /></span>
+          </div>
+        )}
+        {loadStatus === "unavailable" && (
+          <div className="rail-empty rail-state" data-state="limited" role="status">
+            <span className="rail-state-icon" aria-hidden="true"><ShieldOff size={18} /></span>
+            <strong>Evidence is limited</strong>
+            <p>Platform diagnostics unavailable.</p>
+            <p className="muted">Missing evidence is not a clear result.</p>
+            {selection.selectedMode === "learning" && loadError && <p className="muted">Needed evidence: {loadError}</p>}
+          </div>
+        )}
+        {loadStatus === "clear" && !eventsRenderable && (
+          <div className="rail-empty rail-state" data-state="clear" role="status">
+            <span className="rail-state-icon" aria-hidden="true"><CheckCircle2 size={18} /></span>
+            <strong>Supported checks are clear</strong>
+            <p>Supported platform risk checks are clear for this eligible lap.</p>
+            <p className="muted">{clearDiagnosticCount} qualified checks; no broader safety claim is implied.</p>
+          </div>
+        )}
+        {eventsRenderable && valid.length === 0 && (
+          <div className="rail-empty rail-state" data-state="empty" role="status">
+            <span className="rail-state-icon" aria-hidden="true"><SearchX size={18} /></span>
+            <strong>Nothing needs priority</strong>
             <p>{eventVisibilityMode === "actionable" ? "No actionable platform events for this lap." : "No platform events for this lap."}</p>
             {eventVisibilityMode === "actionable" && events.length > 0 && (
               <p className="muted">Internal evidence is still available for analysis.</p>
             )}
             {clearDiagnosticCount > 0 && (
-              <p className="muted">{clearDiagnosticCount} internal checks hidden/clear.</p>
+              <p className="muted">{clearDiagnosticCount} qualified clear checks hidden.</p>
             )}
           </div>
         )}
-        {valid.map((event, idx) => (
+        {eventsRenderable && valid.map((event, idx) => (
           <button
+            type="button"
             key={event.event_id}
             className={`priority-card ${selection.selectedEventId === event.event_id ? "active" : ""}${isMutedPlatformEvent(event, eventVisibilityMode) ? " internal" : ""}`}
             data-severity={event.severity}
+            data-active={selection.selectedEventId === event.event_id ? "true" : "false"}
             onClick={() => handleClick(event)}
             onDoubleClick={() => handleSecondaryAction(event)}
+            onKeyDown={(keyEvent) => {
+              if (keyEvent.key === "Enter" && keyEvent.shiftKey) {
+                keyEvent.preventDefault();
+                handleSecondaryAction(event);
+              }
+            }}
+            aria-keyshortcuts="Shift+Enter"
+            aria-pressed={selection.selectedEventId === event.event_id}
             aria-label={`${event.title}, ${event.severity}, ${event.lap_dist_ft != null ? `${Math.round(event.lap_dist_ft)} feet` : "unknown location"}`}
+            title="Open evidence. Shift+Enter opens the related secondary view."
           >
-            <span className="priority-rank">{idx + 1}</span>
-            <span className="priority-colour" style={{ backgroundColor: SEVERITY_COLOURS[event.severity] ?? "#8d9aaa" }} />
+            <span className="priority-rank" aria-hidden="true">{idx + 1}</span>
+            <span className="priority-colour" aria-hidden="true" style={{ backgroundColor: SEVERITY_COLOURS[event.severity] ?? "#8d9aaa" }} />
             <div className="priority-body">
               <span className="priority-severity" style={{ color: SEVERITY_COLOURS[event.severity] }}>
                 <AlertTriangle size={12} /> {event.severity.toUpperCase()}
@@ -228,7 +321,7 @@ export function PriorityRail({
               {isMutedPlatformEvent(event, eventVisibilityMode) && (
                 <span className="event-scope-pill">{platformEventScopeLabel(event)}</span>
               )}
-              <span className="muted" style={{ fontSize: 11 }}>
+              <span className="priority-recommendation">
                 {event.recommended_action ?? event.reason_for_hidden ?? event.evidence?.[0] ?? "Open this event for detailed evidence."}
               </span>
               <span className="priority-next">
@@ -240,16 +333,23 @@ export function PriorityRail({
         ))}
       </div>
 
-      {invalid.length > 0 && (
+      {eventsRenderable && invalid.length > 0 && (
         <div className="rail-invalid-section">
-          <button className="rail-invalid-toggle" onClick={() => setShowInvalid(!showInvalid)}>
+          <button
+            type="button"
+            className="rail-invalid-toggle"
+            onClick={() => setShowInvalid(!showInvalid)}
+            aria-expanded={showInvalid}
+            aria-controls="low-confidence-priority-events"
+          >
             {showInvalid ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             <ShieldOff size={14} /> Invalid / Low Confidence ({invalid.length})
           </button>
           {showInvalid && (
-            <div className="rail-list">
+            <div id="low-confidence-priority-events" className="rail-list">
               {invalid.map((event) => (
                 <button
+                  type="button"
                   key={event.event_id}
                   className="priority-card invalid"
                   onClick={() => handleClick(event)}

@@ -44,6 +44,36 @@ def test_director_outputs_one_small_aba_test() -> None:
     assert tuple(stage.stage for stage in decision.card.stages) == ("A", "B", "A2")
     assert decision.card.exact_change == "50.0% -> 50.5% (adjacent observed tech-passing option)"
     assert decision.card.evidence_event_ids == ("event-1",)
+    assert "incident" in decision.card.stop_rule
+
+
+def test_director_blocks_a_far_only_sparse_option_despite_tech_pass_provenance() -> None:
+    decision = build_controlled_test(
+        control_key="cross_weight_percent",
+        current_value=50.0,
+        direction_sign=1,
+        hypothesis="Test entry balance.",
+        target_phase="entry",
+        success_metrics=["Entry time improves."],
+        countereffects=["Center speed does not worsen."],
+        evidence_links=[TestEvidenceLink(
+            event_id="event-1",
+            eligible_lap=True,
+            valid_for_tuning=True,
+            phase="entry",
+            related_setup_keys=("cross_weight_percent",),
+        )],
+        eligible_baseline_laps=3,
+        context_matched=True,
+        driver_matched=True,
+        sim_integrity_clear=True,
+        legal_values=[50.0, 60.0],
+        legal_value_provenance={"60": ["tech-passing-setup:far-run"]},
+    )
+
+    assert decision.ready is False
+    assert decision.mission is not None
+    assert any("not the smallest controlled increment" in item for item in decision.mission.blockers)
 
 
 def test_director_returns_concrete_mission_when_evidence_is_blocked() -> None:
@@ -197,6 +227,57 @@ def test_aba_cannot_keep_unmatched_or_one_sided_result() -> None:
     ))
     assert result.verdict == "invalid"
     assert result.controlled_effect_eligible is False
+
+
+def test_distribution_state_must_match_its_flag_and_aggregate_aba_effect() -> None:
+    common = {
+        "eligible_laps_a": 3,
+        "eligible_laps_b": 3,
+        "eligible_laps_a2": 3,
+        "unrelated_setup_changes": 0,
+        "control_key": "cross_weight_percent",
+        "planned_b_value": 50.5,
+        "observed_a_value": 50.0,
+        "observed_b_value": 50.5,
+        "observed_a2_value": 50.0,
+        "context_match_score": 0.95,
+        "driver_match_score": 0.95,
+        "sim_integrity_score": 0.95,
+        "minimum_alignment_confidence": 0.95,
+        "empirical_noise_observations": 4,
+        "control_guardrails_passed": True,
+        "empirical_noise_s": 0.05,
+        "countereffect_passed": True,
+    }
+    hostile = (
+        ("slower", True, -0.20, -0.18, "aggregate"),
+        ("inconclusive", False, -0.20, -0.18, "aggregate"),
+        ("faster", False, -0.20, -0.18, "consistency flag"),
+        ("faster", True, 0.20, 0.18, "aggregate"),
+    )
+
+    for state, consistent, effect_a, effect_a2, expected_blocker in hostile:
+        result = score_test_execution(TestExecution(
+            **common,
+            target_effect_distributions_consistent=consistent,
+            target_effect_distribution_state=state,
+            phase_effect_b_vs_a_s=effect_a,
+            phase_effect_b_vs_a2_s=effect_a2,
+        ))
+        assert result.verdict == "invalid"
+        assert result.controlled_effect_eligible is False
+        assert any(expected_blocker in blocker for blocker in result.blockers)
+
+    coherent_slow = score_test_execution(TestExecution(
+        **common,
+        target_effect_distributions_consistent=True,
+        target_effect_distribution_state="slower",
+        phase_effect_b_vs_a_s=0.20,
+        phase_effect_b_vs_a2_s=0.18,
+    ))
+    assert coherent_slow.protocol_valid is True
+    assert coherent_slow.verdict == "undo"
+    assert coherent_slow.controlled_effect_eligible is True
 
 
 def test_noise_level_reversal_cannot_be_certified_as_undo() -> None:
@@ -412,14 +493,14 @@ def test_observed_adjacent_option_is_the_persisted_raw_plan_value() -> None:
         context_matched=True,
         driver_matched=True,
         sim_integrity_clear=True,
-        legal_values=[50.0, 51.0],
-        legal_value_provenance={"51.0": ["tech-passing-setup:run-51"]},
+        legal_values=[50.0, 50.5],
+        legal_value_provenance={"50.5": ["tech-passing-setup:run-50-5"]},
     )
 
     assert decision.card is not None
-    assert decision.card.proposed_value_raw == 51.0
-    assert decision.card.proposed_value_provenance == ("tech-passing-setup:run-51",)
-    assert _planned_numeric_value(decision.card) == 51.0
+    assert decision.card.proposed_value_raw == 50.5
+    assert decision.card.proposed_value_provenance == ("tech-passing-setup:run-50-5",)
+    assert _planned_numeric_value(decision.card) == 50.5
 
 
 def test_unproven_garage_option_returns_measurement_mission() -> None:
@@ -502,15 +583,15 @@ def test_steering_ratio_option_preserves_raw_type_and_ignores_pinion_options() -
         context_matched=True,
         driver_matched=True,
         sim_integrity_clear=True,
-        legal_values=["14:1", "12:1", "11 mm/rev"],
+        legal_values=["14:1", "13:1", "11 mm/rev"],
         legal_value_provenance={
-            "12:1": ["tech-passing-setup:ratio-12"],
+            "13:1": ["tech-passing-setup:ratio-13"],
             "11 mm/rev": ["tech-passing-setup:pinion-11"],
         },
     )
 
     assert decision.ready is True
     assert decision.card is not None
-    assert decision.card.proposed_value_raw == "12:1"
-    assert decision.card.proposed_value == "12:1"
-    assert "12:1" in decision.card.exact_change
+    assert decision.card.proposed_value_raw == "13:1"
+    assert decision.card.proposed_value == "13:1"
+    assert "13:1" in decision.card.exact_change

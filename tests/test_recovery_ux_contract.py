@@ -21,6 +21,8 @@ def test_failed_import_ui_shows_user_safe_recovery_copy() -> None:
     assert "Try importing again, or choose a different .ibt file." in panel
     assert "Technical detail" in panel
     assert "errorMessageFromResponseText" in client
+    assert 'detail.title ?? fallback' in client
+    assert 'detail.title ?? "Import failed"' not in client
     assert "No completed run was created." in app
 
 
@@ -30,7 +32,8 @@ def test_frontend_waits_for_local_engine_health_before_sessions_load() -> None:
 
     assert "fetchHealth" in app
     assert "engineStatus" in app
-    assert "Starting the local RacerZLab engine…" in app
+    assert "Starting RacerZLab" in app
+    assert "Connecting the decision cockpit to your local analysis engine." in app
     assert "Local engine failed to start." in app
     assert "Close and reopen RacerZLab, then retry." in app
     assert "Retry engine check" in app
@@ -59,7 +62,12 @@ def test_packaged_startup_error_hides_dev_backend_command() -> None:
 def test_import_panel_hides_advanced_recent_folder_scan_and_manual_track_maps() -> None:
     panel = _read("ui/src/components/ImportPanel.tsx")
 
-    assert "Choose Telemetry File" in panel
+    assert "Choose run file" in panel
+    assert "Bring in the next run" in panel
+    assert "Local only" in panel
+    assert "Decode archive" in panel
+    assert "Qualify evidence" in panel
+    assert "Open cockpit" in panel
     assert "Advanced" not in panel
     assert "Import Debug" not in panel
     assert "ImportDebugPanel" not in panel

@@ -14,6 +14,7 @@ from racelab_engine.services import import_service as import_service_module
 from racelab_engine.services.import_service import (
     ImportService,
     channel_metadata_path,
+    csv_path,
     parquet_path,
     read_telemetry_manifest,
     read_telemetry_rows,
@@ -33,7 +34,11 @@ def _fake_result(run_id: str = "atomic-run") -> IBTImportResult:
     )
     overview = RunOverview(
         run_id=run_id,
-        session=SessionSummary(run_id=run_id, source_file="fake.ibt"),
+        session=SessionSummary(
+            run_id=run_id,
+            source_file="fake.ibt",
+            file_hash="a" * 64,
+        ),
         best_useful_lap=lap,
         laps=[lap],
     )
@@ -85,6 +90,52 @@ def test_successful_import_promotes_cache_and_duplicate_import_replaces_metadata
     assert first_cache.path.exists()
     assert telemetry_manifest_path(tmp_path / "data", "duplicate-run").exists()
     assert RaceLabRepository(tmp_path / "racelab.sqlite").get_overview("duplicate-run") is not None
+
+
+def test_import_retires_obsolete_csv_when_promoting_parquet(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_id = "format-switch"
+    legacy_csv = csv_path(tmp_path / "data", run_id)
+    legacy_csv.parent.mkdir(parents=True, exist_ok=True)
+    legacy_csv.write_bytes(b"legacy,csv\n1,2\n")
+    monkeypatch.setattr(import_service_module, "import_ibt", lambda _path: _fake_result(run_id))
+
+    service = ImportService(db_path=tmp_path / "racelab.sqlite", data_dir=tmp_path / "data")
+    service.import_ibt_file(tmp_path / "sample.ibt")
+
+    assert parquet_path(tmp_path / "data", run_id).exists()
+    assert not legacy_csv.exists()
+
+
+def test_failed_format_switch_restores_obsolete_cache_atomically(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_id = "format-switch-rollback"
+    data_dir = tmp_path / "data"
+    legacy_csv = csv_path(data_dir, run_id)
+    legacy_csv.parent.mkdir(parents=True, exist_ok=True)
+    legacy_bytes = b"legacy,csv\n1,2\n"
+    legacy_csv.write_bytes(legacy_bytes)
+    monkeypatch.setattr(import_service_module, "import_ibt", lambda _path: _fake_result(run_id))
+    real_replace = import_service_module._atomic_replace
+
+    def fail_final_manifest(source: Path, destination: Path) -> None:
+        if destination == telemetry_manifest_path(data_dir, run_id):
+            raise OSError("injected format switch failure")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(import_service_module, "_atomic_replace", fail_final_manifest)
+    service = ImportService(db_path=tmp_path / "racelab.sqlite", data_dir=data_dir)
+
+    with pytest.raises(OSError, match="format switch failure"):
+        service.import_ibt_file(tmp_path / "sample.ibt")
+
+    assert legacy_csv.read_bytes() == legacy_bytes
+    assert not parquet_path(data_dir, run_id).exists()
+    assert RaceLabRepository(tmp_path / "racelab.sqlite").get_overview(run_id) is None
 
 
 def test_import_refuses_to_save_run_when_declared_raw_channel_is_not_archived(

@@ -23,6 +23,8 @@ DAMPER_PHASES = {
 _CORNERS = ("lf", "rf", "lr", "rr")
 _BINS = (-math.inf, -10.0, -5.0, -1.0, 0.0, 1.0, 5.0, 10.0, math.inf)
 _BIN_LABELS = ("<-10", "-10:-5", "-5:-1", "-1:0", "0:1", "1:5", "5:10", ">10")
+MIN_PAIRED_VELOCITY_TIME_SAMPLES = 32
+MIN_PAIRED_VELOCITY_TIME_COVERAGE = 0.80
 
 
 class DamperSpectralEvidence(EngineeringModel):
@@ -66,6 +68,7 @@ class TrackResponseFingerprint(EngineeringModel):
 
 
 class DamperResponseReport(EngineeringModel):
+    run_id: str | None = None
     selected_lap: int
     phases: list[str] = Field(default_factory=list)
     gate: EngineGate
@@ -274,9 +277,16 @@ def _fingerprint(
         repeatability = len(repeated) / len(union) if union else None
     coherence: dict[str, float] = {}
     for left, right in (("lf", "rf"), ("lr", "rr"), ("lf", "lr"), ("rf", "rr")):
+        paired = [
+            (left_value, right_value)
+            for row in all_rows
+            if lap_number(row) in eligible_numbers
+            and (left_value := finite(row.get(f"{left}_shock_vel_in_s"))) is not None
+            and (right_value := finite(row.get(f"{right}_shock_vel_in_s"))) is not None
+        ]
         coefficient = _correlation(
-            values(all_rows, f"{left}_shock_vel_in_s"),
-            values(all_rows, f"{right}_shock_vel_in_s"),
+            [item[0] for item in paired],
+            [item[1] for item in paired],
         )
         if coefficient is not None:
             coherence[f"{left.upper()}-{right.upper()}"] = round(coefficient, 5)
@@ -292,6 +302,7 @@ def analyze_damper_response(
     rows: list[dict[str, Any]],
     lap_summaries: list[LapSummary] | None,
     *,
+    run_id: str | None = None,
     selected_lap: int,
     sim_integrity_clear: bool | None,
     setup_snapshot_captured: bool,
@@ -310,6 +321,7 @@ def analyze_damper_response(
     eligible_numbers = {lap.lap_number for lap in eligible_laps(lap_summaries or [])}
     if not evaluation.eligible:
         return DamperResponseReport(
+            run_id=run_id,
             selected_lap=selected_lap,
             phases=sorted(phases & DAMPER_PHASES),
             gate=gate,
@@ -321,15 +333,53 @@ def analyze_damper_response(
                 blocker_reasons=gate.blocker_reasons,
             )],
         )
-    corner_metrics: list[DamperCornerMetrics] = []
-    conclusions: list[EngineeringConclusion] = []
-    for corner in _CORNERS:
-        paired = [
+    paired_by_corner = {
+        corner: [
             (velocity, time)
             for row in scoped
             if (velocity := finite(row.get(f"{corner}_shock_vel_in_s"))) is not None
             and (time := finite(row.get("session_time"))) is not None
         ]
+        for corner in _CORNERS
+    }
+    pairwise_blockers = [
+        (
+            f"{corner.upper()} damper response has {len(paired)}/{len(scoped)} phase-scoped samples "
+            "with paired shaft velocity and session time; at least "
+            f"{MIN_PAIRED_VELOCITY_TIME_SAMPLES} samples and "
+            f"{MIN_PAIRED_VELOCITY_TIME_COVERAGE:.0%} coverage are required."
+        )
+        for corner, paired in paired_by_corner.items()
+        if len(paired) < MIN_PAIRED_VELOCITY_TIME_SAMPLES
+        or len(paired) / len(scoped) < MIN_PAIRED_VELOCITY_TIME_COVERAGE
+    ]
+    if pairwise_blockers:
+        measurement = (
+            "Record continuous phase-scoped session time and shaft velocity together for all four corners."
+        )
+        blocked_gate = gate.model_copy(update={
+            "eligible": False,
+            "confidence_cap": 0.0,
+            "blocker_reasons": [*gate.blocker_reasons, *pairwise_blockers],
+            "needed_measurements": [*gate.needed_measurements, measurement],
+        })
+        return DamperResponseReport(
+            run_id=run_id,
+            selected_lap=selected_lap,
+            phases=sorted(phases & DAMPER_PHASES),
+            gate=blocked_gate,
+            conclusions=[EngineeringConclusion(
+                key="damper_response_unavailable",
+                summary="Damper response is unavailable because shaft velocity and time are not sufficiently co-observed.",
+                evidence_state=EvidenceState.UNAVAILABLE,
+                confidence_score=0.0,
+                blocker_reasons=pairwise_blockers,
+            )],
+        )
+    corner_metrics: list[DamperCornerMetrics] = []
+    conclusions: list[EngineeringConclusion] = []
+    for corner in _CORNERS:
+        paired = paired_by_corner[corner]
         velocities = [item[0] for item in paired]
         times = [item[1] for item in paired]
         deflections = values(scoped, f"{corner}_shock_defl_in")
@@ -418,6 +468,7 @@ def analyze_damper_response(
         eligible_numbers,
     )
     return DamperResponseReport(
+        run_id=run_id,
         selected_lap=selected_lap,
         phases=sorted(phases & DAMPER_PHASES),
         gate=gate,

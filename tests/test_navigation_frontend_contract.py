@@ -31,6 +31,7 @@ def test_notebook_workspace_is_hidden_from_app_navigation() -> None:
     assert "Open Notebook" not in app
     assert "Open Notebook" not in shortcut_block
     assert "<span>N</span>" not in shortcut_block
+    assert 'dial_in: "Dial-In"' in _read("ui/src/constants/ui.ts")
 
 
 def test_stale_notebook_workspace_normalizes_to_overview() -> None:
@@ -64,3 +65,12 @@ def test_visible_notebook_buttons_are_removed_from_primary_cockpit() -> None:
         assert "Add to Notebook" not in source
         assert "Create Test Note" not in source
         assert "Stage Test" not in source
+
+
+def test_switching_runs_preserves_the_active_workspace() -> None:
+    selection = _read("ui/src/store/TelemetrySelectionContext.tsx")
+    load_run_block = selection.split('case "LOAD_RUN":', 1)[1].split(
+        'case "VALIDATE_RUN_IDS":', 1
+    )[0]
+
+    assert "selectedWorkspace: state.selectedWorkspace" in load_run_block

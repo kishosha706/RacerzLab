@@ -1,6 +1,7 @@
 import type { EChartsOption, SeriesOption } from "echarts";
-import { Activity, AlertTriangle, BarChart3, LocateFixed, MapPin, RotateCcw, Wrench, X } from "lucide-react";
+import { Activity, AlertTriangle, BarChart3, BrainCircuit, LocateFixed, MapPin, RotateCcw, ShieldCheck, Wrench, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
 import { DamperSpectrumSummary } from "../components/DamperSpectrumSummary";
@@ -12,7 +13,7 @@ import { ProxyBadge } from "../components/ProxyBadge";
 import { PlatformChartPanelReadout } from "../components/PlatformChartPanelReadout";
 import { fetchPlatformEvents, fetchShockReader, fetchTrace } from "../api/client";
 import { TRACE_WORKBENCH_CHANNELS } from "../constants/workbenchChannels";
-import { isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
+import { getChannelUnit, isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
 import { getTraceValues, formatChannelValue, formatForceProxyN, safeStringValue } from "../utils/channelFormat";
 import { echarts, type EChartsType } from "../utils/echarts";
 import { buildPlatformChartAnnotations } from "../utils/platformChartAnnotations";
@@ -30,10 +31,18 @@ import type {
 } from "../types/telemetry";
 import type { ShockReaderResponse } from "../types/shockReader";
 
+type PlatformLoadStatus = "idle" | "loading" | "ready" | "clear" | "unavailable" | "error";
+
 type PlatformTabProps = {
   overview: RunOverview;
   trace: TraceResponse | null;
+  traceLoadStatus?: PlatformLoadStatus;
+  traceLoadError?: string | null;
+  onRetryTrace?: () => void;
   platformEvents?: PlatformEventItem[];
+  platformEventsLoadStatus?: PlatformLoadStatus;
+  platformEventsLoadError?: string | null;
+  onRetryPlatformEvents?: () => void;
   initialWorkbenchView?: WorkbenchView;
   platformEventVisibilityMode?: PlatformEventVisibilityMode;
   onPlatformEventVisibilityModeChange?: (mode: PlatformEventVisibilityMode) => void;
@@ -45,6 +54,9 @@ type PlatformTraceWorkbenchProps = {
   overview: RunOverview;
   trace: TraceResponse;
   platformEvents?: PlatformEventItem[];
+  platformEventsLoadStatus?: PlatformLoadStatus;
+  platformEventsLoadError?: string | null;
+  onRetryPlatformEvents?: () => void;
   initialWorkbenchView?: WorkbenchView;
   platformEventVisibilityMode?: PlatformEventVisibilityMode;
   onPlatformEventVisibilityModeChange?: (mode: PlatformEventVisibilityMode) => void;
@@ -634,6 +646,16 @@ function semanticSeverity(value: number | null | undefined): "missing" | "safe" 
   return "safe";
 }
 
+function platformEventPriority(event: PlatformEventItem): number {
+  const scope = event.display_scope ?? (event.is_visible_default ? "actionable" : "internal");
+  const scopeRank = scope === "actionable" ? 300 : scope === "watch" ? 200 : 100;
+  const severity = String(event.severity ?? "").toLowerCase();
+  const severityRank = severity === "critical" ? 40 : severity === "high" ? 30 : severity === "watch" ? 20 : 10;
+  const confidence = String(event.confidence ?? "").toLowerCase();
+  const confidenceRank = confidence === "high" ? 3 : confidence === "medium" ? 2 : 1;
+  return scopeRank + severityRank + confidenceRank;
+}
+
 function eventDistanceFt(event: TelemetryEvent) {
   return event.distance_m_peak == null ? null : event.distance_m_peak * 3.280839895;
 }
@@ -713,6 +735,379 @@ function RiskCorridorSVG({
         );
       })}
     </svg>
+  );
+}
+
+type LocalTraceChannel = {
+  name: string;
+  label: string;
+  color: string;
+  isProxy: boolean;
+  unit: string;
+};
+
+type PlatformChartTooltipMeta = {
+  channelName: string;
+  channelLabel: string;
+  rowLabel: string;
+  color: string;
+  isProxy: boolean;
+};
+
+type PlatformChartTooltipParam = {
+  axisValue?: unknown;
+  color?: unknown;
+  data?: unknown;
+  seriesId?: string | number;
+};
+
+function escapeChartTooltipText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function platformChartTooltipMarkup(
+  rawParams: unknown,
+  metadataBySeriesId: Map<string, PlatformChartTooltipMeta>,
+): string {
+  const params = (Array.isArray(rawParams) ? rawParams : [rawParams])
+    .filter((param): param is PlatformChartTooltipParam => typeof param === "object" && param != null);
+  if (params.length === 0) return "";
+
+  const firstData = Array.isArray(params[0].data) ? params[0].data : [];
+  const axisValue = typeof firstData[0] === "number"
+    ? firstData[0]
+    : typeof params[0].axisValue === "number"
+      ? params[0].axisValue
+      : Number(params[0].axisValue);
+  const entries = params.flatMap((param) => {
+    const meta = metadataBySeriesId.get(String(param.seriesId ?? ""));
+    const data = Array.isArray(param.data) ? param.data : [];
+    const value = typeof data[1] === "number" && Number.isFinite(data[1]) ? data[1] : null;
+    return meta && value != null ? [{ meta, value }] : [];
+  });
+  if (entries.length === 0) return "";
+
+  const rowLabel = entries[0].meta.rowLabel;
+  const rows = entries.map(({ meta, value }) => {
+    const unit = rowUnit(meta.channelName);
+    const proxyTag = meta.isProxy
+      ? '<span style="margin-left:6px;color:#fbbf24;font-size:9px;font-weight:800;letter-spacing:.08em">PROXY</span>'
+      : "";
+    return [
+      '<div style="display:grid;grid-template-columns:auto minmax(84px,1fr) auto;align-items:center;gap:8px;margin-top:7px">',
+      `<span style="width:7px;height:7px;border-radius:999px;background:${meta.color};box-shadow:0 0 8px ${meta.color}88"></span>`,
+      `<span style="color:#aebdcb">${escapeChartTooltipText(meta.channelLabel)}${proxyTag}</span>`,
+      `<strong style="color:#f8fafc;font-variant-numeric:tabular-nums">${formatTooltipValue(meta.channelName, value)}${unit ? ` ${escapeChartTooltipText(unit)}` : ""}</strong>`,
+      "</div>",
+    ].join("");
+  }).join("");
+
+  return [
+    '<div class="platform-chart-tooltip" data-chart-tooltip="telemetry" style="min-width:190px;padding:10px 12px">',
+    `<div style="color:#e2e8f0;font-size:11px;font-weight:800;letter-spacing:.02em">${escapeChartTooltipText(rowLabel)}</div>`,
+    `<div style="margin-top:2px;color:#67e8f9;font-size:10px;font-weight:700">${formatDistanceFt(Number.isFinite(axisValue) ? axisValue : null)}</div>`,
+    rows,
+    "</div>",
+  ].join("");
+}
+
+function LocalPlatformTrace({
+  trace,
+  xs,
+  centerIndex,
+  channels,
+  contextLabel,
+}: {
+  trace: TraceResponse;
+  xs: Array<number | null>;
+  centerIndex: number | null;
+  channels: LocalTraceChannel[];
+  contextLabel: string;
+}) {
+  const safeCenter = centerIndex != null && centerIndex >= 0 && centerIndex < xs.length
+    ? centerIndex
+    : Math.max(0, Math.floor(xs.length / 2));
+  const halfWindow = Math.max(10, Math.min(42, Math.floor(xs.length * 0.025)));
+  const startIndex = Math.max(0, safeCenter - halfWindow);
+  const endIndex = Math.min(xs.length - 1, safeCenter + halfWindow);
+  const availableChannels = channels
+    .filter((channel) => {
+      const samples = values(trace, channel.name);
+      return samples.slice(startIndex, endIndex + 1).some((sample) => typeof sample === "number" && Number.isFinite(sample));
+    })
+    .slice(0, 3);
+  const localXs = xs
+    .slice(startIndex, endIndex + 1)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const xMin = localXs.length > 0 ? Math.min(...localXs) : null;
+  const xMax = localXs.length > 0 ? Math.max(...localXs) : null;
+  const centerX = xs[safeCenter];
+  const width = 720;
+  const height = 154;
+  const plot = { left: 16, right: 12, top: 12, bottom: 25 };
+  const plotWidth = width - plot.left - plot.right;
+  const plotHeight = height - plot.top - plot.bottom;
+  const scaleX = (value: number) => plot.left + ((value - (xMin ?? value)) / Math.max(1, (xMax ?? value) - (xMin ?? value))) * plotWidth;
+
+  if (availableChannels.length === 0 || xMin == null || xMax == null) {
+    return (
+      <div className="platform-local-trace-empty" role="status">
+        Local trace unavailable for this evidence location. Whole-lap data is not substituted.
+      </div>
+    );
+  }
+
+  const lineSegments = availableChannels.map((channel) => {
+    const samples = values(trace, channel.name) as Array<number | null>;
+    const localValues = samples
+      .slice(startIndex, endIndex + 1)
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    const yMin = Math.min(...localValues);
+    const yMax = Math.max(...localValues);
+    const ySpan = Math.max(1e-9, yMax - yMin);
+    const segments: string[] = [];
+    let points: string[] = [];
+    for (let index = startIndex; index <= endIndex; index += 1) {
+      const x = xs[index];
+      const value = samples[index];
+      if (typeof x !== "number" || !Number.isFinite(x) || typeof value !== "number" || !Number.isFinite(value)) {
+        if (points.length > 1) segments.push(points.join(" "));
+        points = [];
+        continue;
+      }
+      const y = plot.top + (1 - (value - yMin) / ySpan) * plotHeight;
+      points.push(`${scaleX(x).toFixed(2)},${y.toFixed(2)}`);
+    }
+    if (points.length > 1) segments.push(points.join(" "));
+    const focusedValue = samples[safeCenter];
+    const focusPoint = (
+      typeof centerX === "number"
+      && Number.isFinite(centerX)
+      && typeof focusedValue === "number"
+      && Number.isFinite(focusedValue)
+    ) ? {
+      x: scaleX(centerX),
+      y: plot.top + (1 - (focusedValue - yMin) / ySpan) * plotHeight,
+    } : null;
+    return { channel, segments, value: focusedValue ?? null, focusPoint };
+  });
+
+  return (
+    <figure className="platform-local-trace">
+      <figcaption>
+        <span>Local trace</span>
+        <strong>{contextLabel}</strong>
+        <small>
+          {formatDistanceFt(xMin)} to {formatDistanceFt(xMax)} · recorded samples only · signals auto-scaled independently
+          {availableChannels.some((channel) => channel.isProxy) ? " · proxies dashed" : ""}
+        </small>
+      </figcaption>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Local telemetry trace for ${contextLabel}`} data-chart-kind="local-telemetry">
+        <defs>
+          <linearGradient id="platform-local-trace-background" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#0f1d2b" stopOpacity="0.7" />
+            <stop offset="100%" stopColor="#071019" stopOpacity="0.16" />
+          </linearGradient>
+        </defs>
+        <rect
+          x={plot.left}
+          y={plot.top}
+          width={plotWidth}
+          height={plotHeight}
+          rx="8"
+          fill="url(#platform-local-trace-background)"
+          className="platform-local-trace-field"
+        />
+        {[0.25, 0.5, 0.75].map((ratio) => (
+          <line
+            key={`horizontal-${ratio}`}
+            x1={plot.left}
+            y1={plot.top + plotHeight * ratio}
+            x2={width - plot.right}
+            y2={plot.top + plotHeight * ratio}
+            stroke="rgba(148, 163, 184, 0.13)"
+            strokeDasharray="3 7"
+            className="platform-local-trace-grid"
+          />
+        ))}
+        {[0.25, 0.75].map((ratio) => (
+          <line
+            key={`vertical-${ratio}`}
+            x1={plot.left + plotWidth * ratio}
+            y1={plot.top}
+            x2={plot.left + plotWidth * ratio}
+            y2={height - plot.bottom}
+            stroke="rgba(148, 163, 184, 0.08)"
+            strokeDasharray="2 9"
+            className="platform-local-trace-grid"
+          />
+        ))}
+        <line x1={plot.left} y1={height - plot.bottom} x2={width - plot.right} y2={height - plot.bottom} className="platform-local-trace-axis" />
+        {typeof centerX === "number" && Number.isFinite(centerX) && (
+          <>
+            <rect
+              x={scaleX(centerX) - 8}
+              y={plot.top}
+              width="16"
+              height={plotHeight}
+              fill="rgba(56, 189, 248, 0.055)"
+              className="platform-local-trace-focus-band"
+            />
+            <line x1={scaleX(centerX)} y1={plot.top} x2={scaleX(centerX)} y2={height - plot.bottom} className="platform-local-trace-marker" />
+          </>
+        )}
+        {lineSegments.flatMap(({ channel, segments }) => segments.map((points, segmentIndex) => (
+          <g key={`${channel.name}-${segmentIndex}`} data-channel-basis={channel.isProxy ? "proxy" : "measured"}>
+            <polyline
+              points={points}
+              fill="none"
+              stroke={channel.color}
+              strokeWidth="6"
+              strokeOpacity="0.12"
+              strokeDasharray={channel.isProxy ? "7 6" : undefined}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+              className={`platform-local-trace-glow ${channel.isProxy ? "is-proxy" : ""}`}
+            />
+            <polyline
+              points={points}
+              fill="none"
+              stroke={channel.color}
+              strokeWidth="2"
+              strokeDasharray={channel.isProxy ? "7 6" : undefined}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+              className={`platform-local-trace-line ${channel.isProxy ? "is-proxy" : ""}`}
+            />
+          </g>
+        )))}
+        {lineSegments.map(({ channel, focusPoint }) => focusPoint && (
+          <g key={`${channel.name}-focus`} className="platform-local-trace-focus" data-channel-basis={channel.isProxy ? "proxy" : "measured"} aria-hidden="true">
+            <circle cx={focusPoint.x} cy={focusPoint.y} r="6" fill={channel.color} fillOpacity="0.18" />
+            <circle cx={focusPoint.x} cy={focusPoint.y} r="2.5" fill="#071019" stroke={channel.color} strokeWidth="1.5" strokeDasharray={channel.isProxy ? "2 1" : undefined} />
+          </g>
+        ))}
+        <text x={plot.left} y={height - 7} className="platform-local-trace-label">{formatDistanceFt(xMin)}</text>
+        <text x={width - plot.right} y={height - 7} textAnchor="end" className="platform-local-trace-label">{formatDistanceFt(xMax)}</text>
+      </svg>
+      <div className="platform-local-trace-legend" aria-label="Values at the focused sample">
+        {lineSegments.map(({ channel, value }) => (
+          <span key={channel.name} data-channel-basis={channel.isProxy ? "proxy" : "measured"}>
+            <i className={channel.isProxy ? "is-proxy" : ""} style={{ background: channel.color, color: channel.color }} aria-hidden="true" />
+            {channel.label}{channel.isProxy && <b>Proxy</b>}:
+            <strong>
+              {typeof value === "number" && Number.isFinite(value) ? formatTooltipValue(channel.name, value) : "Unavailable"}
+              {channel.unit ? ` ${channel.unit}` : ""}
+            </strong>
+          </span>
+        ))}
+      </div>
+    </figure>
+  );
+}
+
+function PlatformOvalCheckpoint({
+  trace,
+  xs,
+  sampleIndex,
+  event,
+  learning,
+  onAskEngineer,
+}: {
+  trace: TraceResponse;
+  xs: Array<number | null>;
+  sampleIndex: number | null;
+  event: PlatformEventItem | null;
+  learning: boolean;
+  onAskEngineer: () => void;
+}) {
+  if (sampleIndex == null || sampleIndex < 0 || sampleIndex >= xs.length) return null;
+  const signedSteering = valueAt(trace, "steering_deg", sampleIndex);
+  const absoluteSteering = valueAt(trace, "abs_steering_deg", sampleIndex);
+  const readings = [
+    {
+      key: "braking",
+      cue: "Entry tool",
+      label: "Brake input",
+      value: formatChannelValue(valueAt(trace, "brake_pct", sampleIndex), "%", 1),
+      channel: "brake_pct",
+    },
+    {
+      key: "rotation",
+      cue: "Center context",
+      label: signedSteering != null ? "Steering angle" : "Steering magnitude",
+      value: formatChannelValue(signedSteering ?? absoluteSteering, "deg", 1),
+      channel: signedSteering != null ? "steering_deg" : "abs_steering_deg",
+    },
+    {
+      key: "throttle",
+      cue: "Exit tool",
+      label: "Throttle input",
+      value: formatChannelValue(valueAt(trace, "throttle_pct", sampleIndex), "%", 1),
+      channel: "throttle_pct",
+    },
+    {
+      key: "carry",
+      cue: "Carry context",
+      label: "Speed at point",
+      value: formatChannelValue(valueAt(trace, "speed_mph", sampleIndex), "mph", 1),
+      channel: "speed_mph",
+    },
+  ];
+  if (readings.every((reading) => reading.value === "Unavailable")) return null;
+  const distance = xs[sampleIndex];
+  const position = typeof distance === "number" && Number.isFinite(distance)
+    ? formatDistanceFt(distance)
+    : "exact sample";
+  return (
+    <section
+      className="platform-decision-card platform-oval-checkpoint"
+      data-authority="measurement-only"
+      data-location-basis="single-sample"
+      data-evidence-state={event?.evidence_state ?? "measured-sample"}
+      aria-labelledby="platform-oval-checkpoint-heading"
+    >
+      <header>
+        <div>
+          <span className="eyebrow">Corner checkpoint</span>
+          <h3 id="platform-oval-checkpoint-heading">Driver inputs at {position}</h3>
+        </div>
+        <span className="platform-decision-severity">Single sample</span>
+      </header>
+      <p>Brake, steering, throttle, and speed at one exact track position. The crew labels are checkpoints, not detected corner phases.</p>
+      <div className="tab-decision-facts platform-oval-checkpoint-grid" aria-label="Measured corner checkpoint channels">
+        {readings.map((reading) => (
+          <span key={reading.key} data-driver-check={reading.key} data-channel={reading.channel}>
+            <small>{reading.cue}</small>
+            <strong>{reading.label} · {reading.value}</strong>
+            {learning && <em>{reading.channel}</em>}
+          </span>
+        ))}
+      </div>
+      {event && (
+        <p className="platform-oval-checkpoint-evidence">
+          <strong>Bound evidence:</strong> {event.title} · {event.evidence_state.replace(/_/g, " ")} · {platformEventScopeLabel(event)}
+        </p>
+      )}
+      {event?.is_proxy_based && (
+        <p className="proxy-note">
+          Proxy evidence only. {event.proxy_warning?.trim() || "It cannot establish an aerodynamic force, coefficient, or vehicle cause."}
+        </p>
+      )}
+      <div className="platform-decision-actions">
+        <button type="button" className="secondary-button" onClick={onAskEngineer}>
+          <BrainCircuit size={14} /> Check repeatability in Engineer
+        </button>
+      </div>
+      <small>Single-sample context cannot grade timing or repeatability. Engineer compares eligible same-setup laps at physical position.</small>
+    </section>
   );
 }
 
@@ -864,14 +1259,80 @@ function validSampleIndex(index: number | null | undefined, length: number): num
 export function PlatformTab({
   overview,
   trace,
+  traceLoadStatus,
+  traceLoadError,
+  onRetryTrace,
   platformEvents,
+  platformEventsLoadStatus,
+  platformEventsLoadError,
+  onRetryPlatformEvents,
   initialWorkbenchView,
   platformEventVisibilityMode,
   onPlatformEventVisibilityModeChange,
   onToggleMapOverlay,
   onMapOverlayZoomRangeChange,
 }: PlatformTabProps) {
+  const { selection, setWorkspace } = useTelemetrySelection();
   const xs = useMemo(() => xValues(trace), [trace]);
+  const effectiveTraceLoadStatus = traceLoadStatus ?? (trace ? "ready" : "loading");
+  const traceLap = selection.selectedLap ?? overview.best_useful_lap?.lap_number ?? "n/a";
+  const traceScopeLabel = selection.selectedMode === "learning"
+    ? `Run ${overview.run_id} · Lap ${traceLap}`
+    : `Current run · Lap ${traceLap}`;
+
+  if (effectiveTraceLoadStatus === "error") {
+    return (
+      <section className="platform-workbench">
+        <header className="platform-header">
+          <div>
+            <span className="eyebrow">Platform / Aero Workbench</span>
+            <h2>Platform Trace Workbench</h2>
+          </div>
+        </header>
+        <section className="tab-decision-broadcast platform-decision-broadcast" data-state="error" data-diagnostic-state="unavailable" data-authority="withheld" role="alert">
+          <div>
+            <h3>Trace data could not be loaded for this run and lap.</h3>
+            <p>No platform conclusion or setup action is available from this request.</p>
+            <div className="tab-decision-facts" aria-label="Platform trace scope and authority">
+              <span>Diagnostic <strong>Unavailable</strong></span>
+              <span>Scope <strong>{traceScopeLabel}</strong></span>
+              <span>Evidence <strong>Request failed</strong></span>
+              <span><ShieldCheck size={12} /> Authority <strong>Withheld</strong></span>
+            </div>
+            {selection.selectedMode === "learning" && traceLoadError && <p>Technical detail: {traceLoadError}</p>}
+          </div>
+          <div className="tab-handoff-actions" aria-label="Platform trace recovery">
+            {onRetryTrace && <button type="button" onClick={onRetryTrace}><RotateCcw size={14} /> Retry trace</button>}
+            <button type="button" onClick={() => setWorkspace("engineer", "trace_cursor")}><BrainCircuit size={14} /> Explain evidence gap</button>
+          </div>
+        </section>
+      </section>
+    );
+  }
+
+  if (effectiveTraceLoadStatus === "loading") {
+    return (
+      <section className="platform-workbench">
+        <header className="platform-header">
+          <div>
+            <span className="eyebrow">Platform / Aero Workbench</span>
+            <h2>Platform Trace Workbench</h2>
+          </div>
+        </header>
+        <section className="tab-decision-broadcast platform-decision-broadcast" data-state="loading" data-diagnostic-state="loading" data-authority="withheld" aria-live="polite">
+          <div>
+            <h3>Loading trace data...</h3>
+            <p>Old platform evidence is cleared while this exact run and lap load.</p>
+            <div className="tab-decision-facts" aria-label="Platform trace loading scope">
+              <span>Diagnostic <strong>Checking</strong></span>
+              <span>Scope <strong>{traceScopeLabel}</strong></span>
+              <span><ShieldCheck size={12} /> Authority <strong>Withheld</strong></span>
+            </div>
+          </div>
+        </section>
+      </section>
+    );
+  }
 
   if (!trace) {
     return (
@@ -882,9 +1343,21 @@ export function PlatformTab({
             <h2>Platform Trace Workbench</h2>
           </div>
         </header>
-        <div className="platform-empty">
-          <p className="loading-text">Loading trace data...</p>
-        </div>
+        <section className="tab-decision-broadcast platform-decision-broadcast" data-state="blocked" data-diagnostic-state="unavailable" data-authority="withheld" role="status">
+          <div>
+            <h3>{effectiveTraceLoadStatus === "idle" ? "Select a run and lap to view telemetry." : "Trace telemetry is unavailable for this run and lap."}</h3>
+            <p>No platform conclusion or setup action is available.</p>
+            <div className="tab-decision-facts" aria-label="Platform trace unavailable scope">
+              <span>Diagnostic <strong>Unavailable</strong></span>
+              <span>Scope <strong>{traceScopeLabel}</strong></span>
+              <span><ShieldCheck size={12} /> Authority <strong>Withheld</strong></span>
+            </div>
+            {selection.selectedMode === "learning" && effectiveTraceLoadStatus === "ready" && <p>No trace samples were returned.</p>}
+          </div>
+          <div className="tab-handoff-actions" aria-label="Platform trace handoff">
+            <button type="button" onClick={() => setWorkspace("engineer", "trace_cursor")}><BrainCircuit size={14} /> Explain evidence gap</button>
+          </div>
+        </section>
       </section>
     );
   }
@@ -898,9 +1371,22 @@ export function PlatformTab({
             <h2>Platform Trace Workbench</h2>
           </div>
         </header>
-        <div className="platform-empty">
-          <p>Select a run and lap to view telemetry.</p>
-        </div>
+        <section className="tab-decision-broadcast platform-decision-broadcast" data-state="blocked" data-diagnostic-state="unavailable" data-authority="withheld" role="status">
+          <div>
+            <h3>Trace telemetry is unavailable for this run and lap.</h3>
+            <p>No usable physical-position samples were returned, so no platform conclusion is available.</p>
+            <div className="tab-decision-facts" aria-label="Platform physical-position scope">
+              <span>Diagnostic <strong>Unavailable</strong></span>
+              <span>Scope <strong>{traceScopeLabel}</strong></span>
+              <span>Alignment <strong>No physical-position samples</strong></span>
+              <span><ShieldCheck size={12} /> Authority <strong>Withheld</strong></span>
+            </div>
+          </div>
+          <div className="tab-handoff-actions" aria-label="Platform trace recovery">
+            {onRetryTrace && <button type="button" onClick={onRetryTrace}><RotateCcw size={14} /> Retry trace</button>}
+            <button type="button" onClick={() => setWorkspace("engineer", "trace_cursor")}><BrainCircuit size={14} /> Explain evidence gap</button>
+          </div>
+        </section>
       </section>
     );
   }
@@ -910,6 +1396,9 @@ export function PlatformTab({
       overview={overview}
       trace={trace}
       platformEvents={platformEvents}
+      platformEventsLoadStatus={platformEventsLoadStatus}
+      platformEventsLoadError={platformEventsLoadError}
+      onRetryPlatformEvents={onRetryPlatformEvents}
       initialWorkbenchView={initialWorkbenchView}
       platformEventVisibilityMode={platformEventVisibilityMode}
       onPlatformEventVisibilityModeChange={onPlatformEventVisibilityModeChange}
@@ -923,6 +1412,9 @@ function PlatformTraceWorkbench({
   overview,
   trace: overviewTrace,
   platformEvents: externalPlatformEvents,
+  platformEventsLoadStatus = "ready",
+  platformEventsLoadError,
+  onRetryPlatformEvents,
   initialWorkbenchView = "balance",
   platformEventVisibilityMode = "actionable",
   onPlatformEventVisibilityModeChange,
@@ -956,8 +1448,15 @@ function PlatformTraceWorkbench({
   const pendingHoverCursorDistanceFtRef = useRef<number | null>(null);
   const lastHoverCommitRef = useRef(0);
   const [platformEvents, setPlatformEvents] = useState<PlatformEventItem[]>([]);
-  const [shockReader, setShockReader] = useState<ShockReaderResponse | null>(null);
+  const [shockReaderPayload, setShockReaderPayload] = useState<ShockReaderResponse | null>(null);
+  const [shockReaderLoadState, setShockReaderLoadState] = useState<{
+    requestKey: string | null;
+    status: "idle" | "loading" | "ready" | "unavailable" | "error";
+    error: string | null;
+  }>({ requestKey: null, status: "idle", error: null });
+  const [shockReaderRetryToken, setShockReaderRetryToken] = useState(0);
   const [selectedPlatformEvent, setSelectedPlatformEvent] = useState<PlatformEventItem | null>(null);
+  const [wholeLapExpanded, setWholeLapExpanded] = useState(selection.selectedMode === "learning");
   const [clickedSampleIndex, setClickedSampleIndex] = useState<number | null>(null);
   const [hoverSampleIndex, setHoverSampleIndex] = useState<number | null>(null);
   const [clickedCursorDistanceFt, setClickedCursorDistanceFt] = useState<number | null>(null);
@@ -975,7 +1474,8 @@ function PlatformTraceWorkbench({
   const [workbenchView, setWorkbenchView] = useState<WorkbenchView>(normalizedInitialView);
   useEffect(() => {
     setWorkbenchView(normalizedInitialView);
-  }, [normalizedInitialView]);
+    setWholeLapExpanded(selection.selectedMode === "learning");
+  }, [normalizedInitialView, overviewTrace.lap, overviewTrace.run_id, selection.selectedMode]);
 
   const presetFromView: Record<WorkbenchView, string> = {
     balance: "Platform / Rake / Ride Height",
@@ -996,9 +1496,10 @@ function PlatformTraceWorkbench({
   }, [preset]);
   const handleViewChange = useCallback((view: WorkbenchView) => {
     setWorkbenchView(visiblePlatformWorkbenchView(view));
+    setWholeLapExpanded(selection.selectedMode === "learning");
     setHoverSampleIndex(null);
     setHoverCursorDistanceFt(null);
-  }, [setWorkbenchView, setHoverSampleIndex]);
+  }, [selection.selectedMode, setWorkbenchView, setHoverSampleIndex]);
   const overviewXs = useMemo(() => xValues(overviewTrace), [overviewTrace]);
   const detailTraceActive = rawZoomTraceEnabled
     && visibleZoomRange != null
@@ -1035,6 +1536,7 @@ function PlatformTraceWorkbench({
       window.clearTimeout(detailTraceDebounceRef.current);
       detailTraceDebounceRef.current = null;
     }
+    const requestId = ++detailTraceRequestRef.current;
 
     if (!rawZoomTraceEnabled || visibleZoomRange == null) {
       setDetailTraceLoading(false);
@@ -1081,7 +1583,6 @@ function PlatformTraceWorkbench({
 
     setDetailTraceLoading(true);
     setDetailTraceStatus("Loading raw zoom data...");
-    const requestId = ++detailTraceRequestRef.current;
     detailTraceDebounceRef.current = window.setTimeout(() => {
       detailTraceDebounceRef.current = null;
       fetchTrace(overview.run_id, {
@@ -1096,6 +1597,25 @@ function PlatformTraceWorkbench({
       })
         .then((payload) => {
           if (detailTraceRequestRef.current !== requestId) return;
+          const returnedWindowStart = payload.trace_meta?.window_start_ft;
+          const returnedWindowEnd = payload.trace_meta?.window_end_ft;
+          const responseMatchesWindow = typeof returnedWindowStart === "number"
+            && Number.isFinite(returnedWindowStart)
+            && Math.abs(returnedWindowStart - rawRange.start) <= 0.01
+            && typeof returnedWindowEnd === "number"
+            && Number.isFinite(returnedWindowEnd)
+            && Math.abs(returnedWindowEnd - rawRange.end) <= 0.01;
+          const responseMatchesRequest = payload.run_id === overview.run_id
+            && (lap == null ? payload.lap == null : payload.lap === lap)
+            && responseMatchesWindow;
+          if (!responseMatchesRequest) {
+            setDetailTrace(null);
+            setDetailTraceLoading(false);
+            setDetailTraceStatus(
+              "Raw zoom scope error: the response did not match the selected run, lap, and distance window. Overview trace remains visible.",
+            );
+            return;
+          }
           detailTraceCacheRef.current.set(cacheKey, payload);
           if (detailTraceCacheRef.current.size > 8) {
             const oldestKey = detailTraceCacheRef.current.keys().next().value;
@@ -1182,10 +1702,34 @@ function PlatformTraceWorkbench({
   const shockReaderLapWindow = windowContextActive
     ? `${selection.selectedLapWindowStart}-${selection.selectedLapWindowEnd}`
     : null;
+  const shockReaderRequestKey = workbenchView === "shocks"
+    ? JSON.stringify({
+      run_id: overview.run_id,
+      lap: shockReaderLapWindow ? null : overviewTrace.lap ?? representativeLap,
+      lap_window: shockReaderLapWindow,
+      zone_start_pct: selection.selectedZoneStartPct,
+      zone_end_pct: selection.selectedZoneEndPct,
+    })
+    : null;
+  const shockReaderStateOwnsRequest = shockReaderLoadState.requestKey === shockReaderRequestKey;
+  const currentShockReaderLoadStatus = shockReaderRequestKey == null
+    ? "idle"
+    : shockReaderStateOwnsRequest ? shockReaderLoadState.status : "loading";
+  const currentShockReaderLoadError = shockReaderStateOwnsRequest ? shockReaderLoadState.error : null;
+  const shockReader = shockReaderStateOwnsRequest
+    && (shockReaderLoadState.status === "ready" || shockReaderLoadState.status === "unavailable")
+    ? shockReaderPayload
+    : null;
 
   useEffect(() => {
     let cancelled = false;
-    if (workbenchView !== "shocks") return;
+    if (workbenchView !== "shocks" || shockReaderRequestKey == null) {
+      setShockReaderPayload(null);
+      setShockReaderLoadState({ requestKey: null, status: "idle", error: null });
+      return;
+    }
+    setShockReaderPayload(null);
+    setShockReaderLoadState({ requestKey: shockReaderRequestKey, status: "loading", error: null });
     fetchShockReader(overview.run_id, {
       lap: shockReaderLapWindow ? null : overviewTrace.lap ?? representativeLap,
       lapWindow: shockReaderLapWindow,
@@ -1194,11 +1738,36 @@ function PlatformTraceWorkbench({
       includeDebug: false,
     })
       .then((payload) => {
-        if (!cancelled) setShockReader(payload);
+        if (cancelled) return;
+        const requestedLap = shockReaderLapWindow ? null : overviewTrace.lap ?? representativeLap;
+        const expectedLapWindow = shockReaderLapWindow ?? (requestedLap != null ? String(requestedLap) : null);
+        const responseMatchesRequest = payload.run_id === overview.run_id
+          && payload.lap_window === expectedLapWindow
+          && payload.zone_start_pct === (selection.selectedZoneStartPct ?? null)
+          && payload.zone_end_pct === (selection.selectedZoneEndPct ?? null);
+        if (!responseMatchesRequest) {
+          setShockReaderLoadState({
+            requestKey: shockReaderRequestKey,
+            status: "error",
+            error: "Shock analysis response did not match the selected run, lap scope, or zone.",
+          });
+          return;
+        }
+        setShockReaderPayload(payload);
+        setShockReaderLoadState({
+          requestKey: shockReaderRequestKey,
+          status: payload.evidence_state === "unavailable" ? "unavailable" : "ready",
+          error: payload.blocker_reasons.join(" ") || null,
+        });
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setShockReader(null);
+          setShockReaderPayload(null);
+          setShockReaderLoadState({
+            requestKey: shockReaderRequestKey,
+            status: "error",
+            error: err instanceof Error ? err.message : "Shock analysis could not be loaded.",
+          });
         }
       })
     return () => {
@@ -1210,7 +1779,9 @@ function PlatformTraceWorkbench({
     representativeLap,
     selection.selectedZoneEndPct,
     selection.selectedZoneStartPct,
+    shockReaderRequestKey,
     shockReaderLapWindow,
+    shockReaderRetryToken,
     workbenchView,
   ]);
 
@@ -1224,7 +1795,7 @@ function PlatformTraceWorkbench({
     runId: overview.run_id,
     lapNumber,
     ...buildWindowEvidence(selection, lapNumber),
-    ...buildZoneEvidence(selection, { lapPct, preserveWithoutLapPct: true }),
+    ...buildZoneEvidence(selection, { lapPct }),
     eventId,
     sampleIndex,
     lapDistFt,
@@ -1233,6 +1804,11 @@ function PlatformTraceWorkbench({
   }), [overview.run_id, selection]);
 
   // ── load structured platform events from API (or use external prop) ──
+  useEffect(() => {
+    setSelectedPlatformEvent(null);
+    setPlatformEvents([]);
+  }, [overview.run_id, overviewTrace.lap]);
+
   useEffect(() => {
     if (externalPlatformEvents) {
       setPlatformEvents(externalPlatformEvents);
@@ -1244,6 +1820,12 @@ function PlatformTraceWorkbench({
       .catch(() => { if (!cancelled) setPlatformEvents([]); });
     return () => { cancelled = true; };
   }, [overview.run_id, overviewTrace.lap, externalPlatformEvents]);
+
+  useEffect(() => {
+    setSelectedPlatformEvent((selected) => selected
+      ? platformEvents.find((event) => event.event_id === selected.event_id) ?? null
+      : null);
+  }, [platformEvents]);
 
   const visiblePlatformEvents = useMemo(
     () => filterPlatformEvents(platformEvents, platformEventVisibilityMode),
@@ -1488,6 +2070,26 @@ function PlatformTraceWorkbench({
     setZoomSummary("Full range");
     chartRef.current?.dispatchAction({ type: "dataZoom", start: 0, end: 100 });
   }, [onMapOverlayZoomRangeChange]);
+
+  const keyboardTraceIndices = useMemo(
+    () => xs.flatMap((value, index) => typeof value === "number" && Number.isFinite(value) ? [index] : []),
+    [xs],
+  );
+  const handleChartKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || keyboardTraceIndices.length === 0) return;
+    event.preventDefault();
+    const currentIndex = clickedSampleIndex ?? selectedIndex;
+    const currentPosition = currentIndex == null ? -1 : keyboardTraceIndices.indexOf(currentIndex);
+    const fallbackPosition = currentPosition >= 0 ? currentPosition : 0;
+    const nextPosition = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? keyboardTraceIndices.length - 1
+        : event.key === "ArrowLeft"
+          ? Math.max(0, fallbackPosition - 1)
+          : Math.min(keyboardTraceIndices.length - 1, fallbackPosition + 1);
+    jumpToIndex(keyboardTraceIndices[nextPosition] ?? null);
+  }, [clickedSampleIndex, jumpToIndex, keyboardTraceIndices, selectedIndex]);
 
   const focusRepresentativeLap = useCallback((lapNumber: number) => {
     if (!windowContextActive) return;
@@ -1916,7 +2518,7 @@ function PlatformTraceWorkbench({
       if (cancelDragZoomRef.current === cancelDragZoom) cancelDragZoomRef.current = () => {};
       if (restoreHoverAtPointerRef.current === restoreHoverAtPointer) restoreHoverAtPointerRef.current = () => false;
     };
-  }, [onMapOverlayZoomRangeChange]);;
+  }, [onMapOverlayZoomRangeChange, wholeLapExpanded]);;
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -1940,6 +2542,8 @@ function PlatformTraceWorkbench({
       right: GRID_RIGHT,
       top: panelLayout[index]?.top ?? 54,
       height: panelLayout[index]?.height ?? fallbackRowHeight(preset),
+      show: false,
+      containLabel: false,
     }));
     const xAxis = rows.map((_, index) => ({
       type: "value" as const,
@@ -1949,15 +2553,25 @@ function PlatformTraceWorkbench({
       scale: isTires,
       axisLabel: {
         show: index === rows.length - 1,
-        color: "#8d9aaa",
+        color: "#94a3b8",
         fontSize: 10,
         hideOverlap: true,
         margin: 8,
         formatter: (value: number) => formatDistanceFt(value, decimalDistanceLabels ? 1 : 0),
       },
-      axisLine: { lineStyle: { color: "#263241" } },
-      axisTick: { show: index === rows.length - 1 },
-      splitLine: { lineStyle: { color: index === rows.length - 1 ? "#1f2937" : "rgba(31,41,55,0.42)" } },
+      axisLine: {
+        show: index === rows.length - 1,
+        onZero: false,
+        lineStyle: { color: "rgba(100, 116, 139, 0.46)", width: 1 },
+      },
+      axisTick: {
+        show: index === rows.length - 1,
+        lineStyle: { color: "rgba(100, 116, 139, 0.46)" },
+      },
+      splitLine: {
+        show: chartDensity === "detailed",
+        lineStyle: { color: "rgba(148, 163, 184, 0.075)", type: "dashed" as const, width: 1 },
+      },
     }));
     const yAxis = rows.map((row, index) => ({
       type: "value" as const,
@@ -1967,16 +2581,21 @@ function PlatformTraceWorkbench({
       scale: isTires,
       splitNumber: chartDensity === "detailed" ? 4 : 3,
       axisLabel: {
-        color: "#8d9aaa",
+        color: "#91a0af",
         fontSize: 10,
+        margin: 10,
         formatter: (value: number) => formatYAxisTick(value, row.yAxisUnit),
       },
-      axisLine: { lineStyle: { color: "#263241" } },
-      splitLine: { lineStyle: { color: "#1f2937" } },
-      minorTick: { show: chartDensity === "detailed", splitNumber: 2 },
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: {
+        show: true,
+        lineStyle: { color: "rgba(148, 163, 184, 0.11)", type: "dashed" as const, width: 1 },
+      },
+      minorTick: { show: false, splitNumber: 2 },
       minorSplitLine: {
         show: chartDensity === "detailed",
-        lineStyle: { color: "rgba(31,41,55,0.34)" },
+        lineStyle: { color: "rgba(148, 163, 184, 0.045)", type: "dotted" as const },
       },
     }));
 
@@ -1986,61 +2605,28 @@ function PlatformTraceWorkbench({
       const top = panel.top;
       graphic.push({
         type: "line",
-        shape: { x1: GRID_LEFT, y1: top, x2: 9999, y2: top },
-        style: { stroke: "rgba(71,85,105,0.52)", lineWidth: 1 },
+        shape: { x1: LABEL_LEFT, y1: top + 4, x2: LABEL_LEFT + 24, y2: top + 4 },
+        style: { stroke: row.channels[0]?.color ?? "#38bdf8", lineWidth: 2.5, opacity: 0.82 },
         silent: true,
-        z: 1,
-      });
-      graphic.push({
-        type: "rect",
-        left: 0,
-        right: 0,
-        top,
-        height: panel.height,
-        style: { fill: index % 2 === 0 ? "rgba(11,16,24,0.72)" : "rgba(15,21,31,0.64)", opacity: 1 },
-        silent: true,
-        z: 0,
-      });
-      graphic.push({
-        type: "line",
-        shape: { x1: GRID_LEFT, y1: top, x2: GRID_LEFT, y2: top + panel.height },
-        style: { stroke: "rgba(31,41,55,0.4)", lineWidth: 1 },
-        silent: true,
-        z: 1,
-      });
-      graphic.push({
-        type: "line",
-        shape: { x1: GRID_LEFT, y1: top + panel.height, x2: 9999, y2: top + panel.height },
-        style: { stroke: "rgba(15,23,42,0.95)", lineWidth: Math.max(1, panel.gap - 8) },
-        silent: true,
-        z: 1,
+        z: 2,
       });
       graphic.push({
         type: "text",
         left: LABEL_LEFT,
-        top: top + 6,
+        top: top + 10,
         style: {
           text: row.label,
-          fill: "#8d9aaa",
-          fontSize: 10,
-          fontWeight: 600,
+          fill: "#aebdcb",
+          fontSize: 9,
+          fontWeight: 700,
           fontFamily: "Inter, sans-serif",
           lineWidth: 0,
+          width: Math.max(56, GRID_LEFT - 16),
+          overflow: "truncate",
         },
-        z: 2,
+        z: 3,
       });
     });
-
-    if (rows.length > 0) {
-      const last = panelLayout[panelLayout.length - 1];
-      graphic.push({
-        type: "line",
-        shape: { x1: GRID_LEFT, y1: last.top + last.height, x2: 9999, y2: last.top + last.height },
-        style: { stroke: "rgba(31,41,55,0.5)", lineWidth: 1 },
-        silent: true,
-        z: 1,
-      });
-    }
 
     const totalChartH = layoutTotalHeight(panelLayout, 42);
     chartNode.current.style.height = `${totalChartH}px`;
@@ -2050,6 +2636,20 @@ function PlatformTraceWorkbench({
       platformEvents,
       legacyEvents,
       mode: platformEventVisibilityMode,
+    });
+    const polishedEventMarkLines = eventAnnotations.markLines.map((line, index) => {
+      const color = eventAnnotations.markAreas[index]?.color ?? "#f59e0b";
+      return {
+        ...line,
+        lineStyle: {
+          ...line.lineStyle,
+          color,
+          width: 1.25,
+          type: "dashed" as const,
+          shadowBlur: 4,
+          shadowColor: `${color}66`,
+        },
+      };
     });
     const selectedOverlayEvent = selectedPlatformEvent ?? selectedEventForContext;
     const selectedEventCenter = selectedOverlayEvent?.lap_dist_ft
@@ -2079,11 +2679,21 @@ function PlatformTraceWorkbench({
       : [];
 
     const series: SeriesOption[] = [];
+    const tooltipMetadataBySeriesId = new Map<string, PlatformChartTooltipMeta>();
     const activeSampleIndices = traceAxisValues(trace, "sample_index");
     const activeSessionTimes = traceAxisValues(trace, "session_time");
     const zoomedRawDetailMode = isRawDetailPreset && detailTraceActive;
     rows.forEach((row, rowIndex) => {
       row.channels.forEach((channel, channelIndex) => {
+        const seriesId = `platform-trace:${rowIndex}:${channel.name}`;
+        const proxyChannel = isProxyChannel(channel.name);
+        tooltipMetadataBySeriesId.set(seriesId, {
+          channelName: channel.name,
+          channelLabel: channel.label,
+          rowLabel: row.label,
+          color: channel.color,
+          isProxy: proxyChannel,
+        });
         const channelValues = displaySeriesSamples(trace, channel.name);
         const data = xs.map((x, index) => [
           x,
@@ -2099,10 +2709,10 @@ function PlatformTraceWorkbench({
           else if (label === "middle") lineType = "dashed";
           else if (label === "outer") lineType = "dotted";
         }
-        if (isProxyChannel(channel.name)) lineType = "dashed";
+        if (proxyChannel) lineType = "dashed";
         const markLineData: any[] = [];
         if (rowIndex === 0 && channelIndex === 0) {
-          markLineData.push(...eventAnnotations.markLines);
+          markLineData.push(...polishedEventMarkLines);
         }
         if (row.zeroLine && channelIndex === 0) {
           markLineData.push({
@@ -2135,7 +2745,10 @@ function PlatformTraceWorkbench({
           : [];
         const rowSelectedBandArea = channelIndex === 0 ? selectedBandAreaData : [];
         const markAreaData: any[] = [...contactBandAreas, ...eventAreaData, ...rowSelectedBandArea];
+        const baseLineWidth = channelIndex === 0 ? 1.8 : row.channels.length <= 2 ? 1.55 : 1.3;
+        const singleMeasuredTrace = row.channels.length === 1 && !proxyChannel;
         series.push({
+          id: seriesId,
           type: "line",
           name: channel.label,
           xAxisIndex: rowIndex,
@@ -2151,9 +2764,31 @@ function PlatformTraceWorkbench({
           dimensions: ["lap_dist_ft", "value", "sample_index", "session_time"],
           connectNulls: false,
           legendHoverLink: false,
-          lineStyle: { width: 1.35, color: channel.color, type: lineType },
+          z: channelIndex === 0 ? 4 : 3,
+          lineStyle: {
+            width: baseLineWidth,
+            color: channel.color,
+            type: lineType,
+            opacity: proxyChannel ? 0.86 : 0.96,
+            cap: "round",
+            join: "round",
+          },
+          areaStyle: singleMeasuredTrace ? {
+            color: channel.color,
+            opacity: 0.045,
+            origin: "auto",
+          } : undefined,
           itemStyle: { color: channel.color },
-          emphasis: { disabled: true },
+          emphasis: {
+            disabled: false,
+            focus: "none",
+            lineStyle: {
+              width: baseLineWidth + 0.8,
+              opacity: 1,
+              shadowBlur: 7,
+              shadowColor: `${channel.color}73`,
+            },
+          },
           data,
           markLine: markLineData.length > 0 ? {
             symbol: "none",
@@ -2173,37 +2808,83 @@ function PlatformTraceWorkbench({
       backgroundColor: "transparent",
       animation: false,
       color: rows.flatMap((row) => row.channels.map((channel) => channel.color)),
-      tooltip: { show: false, trigger: "none", axisPointer: { type: "cross" } },
+      tooltip: {
+        show: true,
+        trigger: "axis",
+        triggerOn: "mousemove",
+        confine: true,
+        enterable: false,
+        transitionDuration: 0,
+        renderMode: "html",
+        backgroundColor: "rgba(5, 10, 16, 0.96)",
+        borderColor: "rgba(56, 189, 248, 0.34)",
+        borderWidth: 1,
+        padding: 0,
+        extraCssText: "border-radius:10px;box-shadow:0 16px 42px rgba(0,0,0,.38);backdrop-filter:blur(10px);",
+        textStyle: { color: "#dbe7f1", fontSize: 11 },
+        axisPointer: {
+          type: "line",
+          lineStyle: { color: "rgba(103, 232, 249, 0.38)", width: 1, type: "dashed" },
+        },
+        formatter: (params: unknown) => platformChartTooltipMarkup(params, tooltipMetadataBySeriesId),
+      },
       legend: {
         type: "scroll",
         top: 4,
         left: 18,
-        right: 18,
+        right: 90,
         data: rows.flatMap((row) => row.channels.map((channel) => channel.label)),
-        itemWidth: 10,
-        itemHeight: 7,
-        itemGap: 8,
+        itemWidth: 18,
+        itemHeight: 3,
+        itemGap: 11,
         inactiveColor: "#475569",
-        textStyle: { color: "#cbd6e3", fontSize: 10, fontWeight: 600 },
-        pageIconColor: "#38bdf8",
+        textStyle: { color: "#cbd6e3", fontSize: 10, fontWeight: 650 },
+        pageIconColor: "#67e8f9",
         pageIconInactiveColor: "#334155",
-        pageTextStyle: { color: "#8d9aaa" },
+        pageTextStyle: { color: "#94a3b8" },
       },
       grid,
       xAxis,
       yAxis,
       graphic,
       dataZoom: [
-        { type: "slider", xAxisIndex: rows.map((_, i) => i), bottom: 0, height: 14, filterMode: "none",
-          borderColor: "#1f2937", backgroundColor: "rgba(15,17,23,0.6)", fillerColor: "rgba(59,130,246,0.15)",
-          handleStyle: { color: "#3b82f6", borderColor: "#3b82f6" },
-          textStyle: { color: "#7d8a99", fontSize: 9 },
+        { type: "slider", xAxisIndex: rows.map((_, i) => i), bottom: 2, height: 18, filterMode: "none",
+          borderColor: "transparent", backgroundColor: "rgba(15, 23, 42, 0.62)", fillerColor: "rgba(56, 189, 248, 0.16)",
+          showDataShadow: true,
+          dataBackground: {
+            lineStyle: { color: "#64748b", opacity: 0.32 },
+            areaStyle: { color: "#1e293b", opacity: 0.2 },
+          },
+          selectedDataBackground: {
+            lineStyle: { color: "#67e8f9", opacity: 0.72 },
+            areaStyle: { color: "#0e7490", opacity: 0.18 },
+          },
+          handleSize: "92%",
+          handleStyle: {
+            color: "#0e7490",
+            borderColor: "#67e8f9",
+            borderWidth: 1,
+            shadowBlur: 8,
+            shadowColor: "rgba(34, 211, 238, 0.28)",
+          },
+          moveHandleSize: 5,
+          moveHandleStyle: { color: "#67e8f9", opacity: 0.7 },
+          emphasis: {
+            handleLabel: { show: false },
+            handleStyle: { color: "#0891b2", borderColor: "#cffafe", borderWidth: 1.5 },
+            moveHandleStyle: { color: "#cffafe", opacity: 0.9 },
+          },
+          brushSelect: false,
+          textStyle: { color: "#94a3b8", fontSize: 9 },
           labelFormatter: (value: number) => formatDistanceFt(value, decimalDistanceLabels ? 1 : 0),
           showDetail: false,
           ...(zoomRangeRef.current ?? {}),
         },
       ],
       toolbox: {
+        top: 2,
+        right: 12,
+        itemSize: 13,
         feature: {
           dataZoom: {
             yAxisIndex: "none",
@@ -2211,12 +2892,20 @@ function PlatformTraceWorkbench({
           },
           restore: { title: "Reset ride-height zoom" },
         },
-        iconStyle: { borderColor: "#8d9aaa" },
+        iconStyle: { borderColor: "#94a3b8", borderWidth: 1.2 },
+        emphasis: { iconStyle: { borderColor: "#67e8f9", borderWidth: 1.5 } },
       },
       axisPointer: {
         link: [{ xAxisIndex: rows.map((_, i) => i) }],
         snap: false,
+        lineStyle: { color: "rgba(103, 232, 249, 0.32)", width: 1, type: "dashed" },
         label: {
+          show: true,
+          color: "#e6f7fb",
+          backgroundColor: "rgba(8, 47, 73, 0.94)",
+          borderColor: "rgba(103, 232, 249, 0.35)",
+          borderWidth: 1,
+          padding: [3, 6],
           formatter: (params: { value?: unknown }) => {
             const value = typeof params.value === "number" ? params.value : Number(params.value);
             return formatDistanceFt(value, decimalDistanceLabels ? 1 : 0);
@@ -2254,37 +2943,40 @@ function PlatformTraceWorkbench({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      const tag = target?.tagName.toLowerCase() ?? "";
+      if (tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable) return;
+      if (e.ctrlKey || e.metaKey) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      const timelineOwnsKeyboard = target?.closest('[data-event-timeline-keyboard-owner="true"]') != null
+        || (document.activeElement instanceof HTMLElement
+          && document.activeElement.closest('[data-event-timeline-keyboard-owner="true"]') != null);
+      if (timelineOwnsKeyboard) return;
       cancelDragZoomRef.current();
+      if (hoverRafRef.current != null) {
+        cancelAnimationFrame(hoverRafRef.current);
+        hoverRafRef.current = null;
+      }
+      pendingHoverSampleIndexRef.current = null;
+      pendingHoverCursorDistanceFtRef.current = null;
       if (clickedSampleIndexRef.current != null) {
         e.preventDefault();
-        e.stopPropagation();
-        clickedSampleIndexRef.current = null;
-        hoverSampleIndexRef.current = null;
-        setClickedSampleIndex(null);
-        setHoverSampleIndex(null);
-        focusEvidence({
-          ...buildTraceEvidence(
-            trace?.lap ?? overview.best_useful_lap?.lap_number ?? null,
-            null,
-            null,
-            null,
-            null,
-          ),
-          sampleIndex: null,
-          lapDistFt: null,
-          lapPct: null,
-          eventId: null,
-          lockState: "none",
-          valueBasis: "unavailable",
-          selectionSource: "trace_cursor",
-        });
       }
+      clickedSampleIndexRef.current = null;
+      hoverSampleIndexRef.current = null;
+      clickedCursorDistanceFtRef.current = null;
+      hoverCursorDistanceFtRef.current = null;
+      setClickedSampleIndex(null);
+      setClickedCursorDistanceFt(null);
+      setHoverSampleIndex(null);
+      setHoverCursorDistanceFt(null);
+      setSelectedPlatformEvent(null);
       const restoredHover = restoreHoverAtPointerRef.current();
       if (!restoredHover) hideCursorLine();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [overview.best_useful_lap?.lap_number, trace?.lap, hideCursorLine, focusEvidence, buildTraceEvidence]);
+  }, [hideCursorLine]);
 
   const handleOpenMapFromCursor = useCallback(() => {
     const lapNumber = trace?.lap ?? overview.best_useful_lap?.lap_number ?? null;
@@ -2338,6 +3030,19 @@ function PlatformTraceWorkbench({
   }, [buildTraceEvidence, focusEvidence, onToggleMapOverlay, overview.best_useful_lap?.lap_number, trace?.lap]);
 
   const handleOpenSetupFromPlatformEvent = useCallback((event: PlatformEventItem) => {
+    try {
+      window.sessionStorage.setItem("racelab_setup_evidence_focus", JSON.stringify({
+        run_id: overview.run_id,
+        event_id: event.event_id,
+        event_type: event.event_type,
+        event_title: event.title,
+        lap_number: event.lap ?? trace?.lap ?? overview.best_useful_lap?.lap_number ?? null,
+        lap_pct_peak: event.lap_pct ?? null,
+        related_setup_keys: [],
+      }));
+    } catch {
+      // Selection state still carries the exact run/event identity if browser storage is unavailable.
+    }
     focusEvidence({
       ...buildTraceEvidence(
         event.lap ?? trace?.lap ?? overview.best_useful_lap?.lap_number ?? null,
@@ -2351,6 +3056,31 @@ function PlatformTraceWorkbench({
       selectionSource: "trace_cursor",
     }, "setup_impact");
   }, [buildTraceEvidence, focusEvidence, overview.best_useful_lap?.lap_number, trace?.lap]);
+
+  const handleOpenEngineerFromPlatformEvent = useCallback((event: PlatformEventItem | null) => {
+    const lapNumber = event?.lap ?? trace?.lap ?? overview.best_useful_lap?.lap_number ?? null;
+    const lapPct = event ? event.lap_pct ?? null : selection.selectedLapPct ?? null;
+    const sampleIndex = event ? event.sample_index ?? null : selection.selectedSampleIndex ?? null;
+    const lapDistFt = event ? event.lap_dist_ft ?? null : selection.selectedLapDistFt ?? null;
+    focusEvidence({
+      ...buildTraceEvidence(lapNumber, lapPct, sampleIndex, lapDistFt, event?.event_id ?? null),
+      eventId: event?.event_id ?? null,
+      sampleIndex,
+      lapDistFt,
+      lapPct,
+      lockState: event || sampleIndex != null || lapDistFt != null ? "locked" : "none",
+      valueBasis: sampleIndex != null || lapDistFt != null ? "selected_sample" : "full_lap",
+      selectionSource: "trace_cursor",
+    }, "engineer");
+  }, [
+    buildTraceEvidence,
+    focusEvidence,
+    overview.best_useful_lap?.lap_number,
+    selection.selectedLapDistFt,
+    selection.selectedLapPct,
+    selection.selectedSampleIndex,
+    trace?.lap,
+  ]);
 
   // ── clear clicked sample when trace/preset changes ───────────
   useEffect(() => {
@@ -2536,9 +3266,12 @@ function PlatformTraceWorkbench({
   const hiddenPlatformEventCount = Math.max(0, platformEvents.length - visiblePlatformEvents.length);
   const clearPlatformDiagnosticCount = clearPlatformDiagnostics.length;
   const hiddenPlatformEventSummary = clearPlatformDiagnosticCount > 0
-    ? `${clearPlatformDiagnosticCount} internal checks hidden/clear`
+    ? `${clearPlatformDiagnosticCount} qualified clear checks hidden`
     : `${hiddenPlatformEventCount} internal evidence item${hiddenPlatformEventCount === 1 ? "" : "s"} hidden`;
-  const topVisiblePlatformEvent = visiblePlatformEvents[0] ?? null;
+  const topVisiblePlatformEvent = visiblePlatformEvents.reduce<PlatformEventItem | null>(
+    (highest, event) => highest == null || platformEventPriority(event) > platformEventPriority(highest) ? event : highest,
+    null,
+  );
   const platformEventSummaryText = topVisiblePlatformEvent
     ? `${platformEventVisibilityModeLabel(platformEventVisibilityMode)} mode · ${visiblePlatformEvents.length} shown · ${hiddenPlatformEventCount} hidden · Top issue: ${topVisiblePlatformEvent.title} · ${topVisiblePlatformEvent.severity} / ${topVisiblePlatformEvent.confidence} confidence · Inspect Platform/Setup`
     : hiddenPlatformEventCount > 0
@@ -2548,6 +3281,107 @@ function PlatformTraceWorkbench({
   const groupedPlatformEventSummaryText = !topVisiblePlatformEvent && hiddenPlatformEventCount > 0
     ? `No actionable platform events shown - ${hiddenPlatformEventSummary}`
     : platformEventSummaryText;
+
+  const platformEvidenceReady = platformEventsLoadStatus === "ready" || platformEventsLoadStatus === "clear";
+  const selectedVisiblePlatformEvent = selectedPlatformEvent ?? selectedEventForContext;
+  const focusedPlatformEvent = platformEvidenceReady ? selectedVisiblePlatformEvent ?? topVisiblePlatformEvent : null;
+  const platformDecisionState = platformEventsLoadStatus === "error"
+    ? "error"
+    : platformEventsLoadStatus === "loading"
+      ? "loading"
+      : platformEventsLoadStatus === "unavailable"
+        ? "blocked"
+        : platformEventsLoadStatus === "clear" && !focusedPlatformEvent
+          ? "clear"
+          : focusedPlatformEvent
+            ? "attention"
+            : "guarded";
+  const platformDiagnosticState = focusedPlatformEvent
+    ? "finding"
+    : platformEventsLoadStatus === "clear"
+      ? "qualified_clear"
+      : platformEventsLoadStatus === "ready"
+        ? "no_actionable_finding"
+        : platformEventsLoadStatus;
+  const platformScopeSummary = focusedPlatformEvent
+    ? [
+      `Lap ${focusedPlatformEvent.lap ?? overviewTrace.lap ?? "n/a"}`,
+      focusedPlatformEvent.lap_dist_ft != null ? formatDistanceFt(focusedPlatformEvent.lap_dist_ft) : null,
+      focusedPlatformEvent.lap_pct != null ? `${focusedPlatformEvent.lap_pct.toFixed(1)}%` : null,
+    ].filter((value): value is string => value != null).join(" · ")
+    : `Lap ${overviewTrace.lap ?? overview.best_useful_lap?.lap_number ?? "n/a"}`;
+  const platformEvidenceSummary = focusedPlatformEvent
+    ? `${focusedPlatformEvent.evidence_state.replace(/_/g, " ")} · ${platformEventScopeLabel(focusedPlatformEvent)}`
+    : platformEventsLoadStatus === "clear"
+      ? `${clearPlatformDiagnosticCount} qualified clear checks`
+      : platformEventsLoadStatus.replace(/_/g, " ");
+  const platformBroadcastHeadline = focusedPlatformEvent?.title
+    ?? (platformEventsLoadStatus === "clear"
+      ? "Qualified platform checks are clear"
+      : platformEventsLoadStatus === "loading"
+        ? "Checking platform evidence"
+        : platformEventsLoadStatus === "error"
+          ? "Platform evidence request failed"
+          : platformEventsLoadStatus === "unavailable"
+            ? "Platform conclusion unavailable"
+            : "No actionable platform finding");
+  const platformBroadcastWhy = focusedPlatformEvent
+    ? focusedPlatformEvent.evidence.find((item) => item.trim().length > 0)
+      ?? "This is a diagnostic finding, not an authorized setup target. Preserve its exact location when investigating the cause."
+    : platformEventsLoadStatus === "clear"
+      ? `Clear applies only to ${clearPlatformDiagnosticCount} supported checks on this eligible lap; unmeasured mechanisms remain unknown.`
+      : platformEventsLoadStatus === "loading"
+        ? "Old platform evidence is cleared while this exact run and lap load."
+        : platformEventsLoadStatus === "error"
+          ? "The evidence request failed, so no prior result is reused as a current finding."
+          : platformEventsLoadStatus === "unavailable"
+            ? "Required physical-position or platform channels are unavailable for this scope."
+            : "No qualified actionable event was returned; this is not a clear-data certificate.";
+  const platformBroadcastNext = focusedPlatformEvent
+    ? focusedPlatformEvent.recommended_action?.trim()
+      ? `Diagnostic follow-up: ${focusedPlatformEvent.recommended_action}`
+      : "Lock the exact location and ask Engineer which measurement would separate the leading explanations."
+    : platformEventsLoadStatus === "clear"
+      ? "Hold the platform call for this lap and move to another evidence-backed priority."
+      : platformEventsLoadStatus === "loading"
+        ? "Wait for the exact-scope result before inspecting or comparing a platform signal."
+        : platformEventsLoadStatus === "error"
+          ? "Retry this exact-scope request for the same run and lap."
+          : platformEventsLoadStatus === "unavailable"
+            ? "Recover the missing telemetry, then repeat one eligible lap in the same context."
+            : "Use Learning Mode for internal/proxy evidence, or ask Engineer for the highest-value missing measurement.";
+  const platformSignalSummary = focusedPlatformEvent
+    ? `${focusedPlatformEvent.severity} | ${focusedPlatformEvent.confidence} confidence`
+    : platformEventsLoadStatus === "clear"
+      ? `${clearPlatformDiagnosticCount} supported checks clear`
+      : "Withheld";
+  const localFocusIndex = indexForPlatformEvent(focusedPlatformEvent) ?? selectedIndex;
+  const rowChannelLookup = new Map(
+    rows.flatMap((row) => row.channels.map((channel) => [channel.name, channel] as const)),
+  );
+  const localTraceChannels: LocalTraceChannel[] = [];
+  const localTraceChannelNames = [
+    ...(focusedPlatformEvent?.channels_used ?? []),
+    ...rows.flatMap((row) => row.channels.map((channel) => channel.name)),
+  ];
+  for (const channelName of localTraceChannelNames) {
+    if (localTraceChannels.some((channel) => channel.name === channelName)) continue;
+    if (!channelHasNumericData(trace, channelName)) continue;
+    const configured = rowChannelLookup.get(channelName);
+    localTraceChannels.push({
+      name: channelName,
+      label: configured?.label ?? channelName.replace(/_/g, " "),
+      color: configured?.color ?? ["#38bdf8", "#f59e0b", "#a78bfa"][localTraceChannels.length % 3],
+      isProxy: isProxyChannel(channelName),
+      unit: getChannelUnit(channelName) || rowUnit(channelName),
+    });
+    if (localTraceChannels.length === 3) break;
+  }
+  const localTraceContextLabel = focusedPlatformEvent
+    ? focusedPlatformEvent.title
+    : localFocusIndex != null && xs[localFocusIndex] != null
+      ? `Selected sample at ${formatDistanceFt(xs[localFocusIndex])}`
+      : "Representative lap sample";
 
   const scatterPoints = useMemo(() => {
     if (workbenchView !== "aero_load") return [];
@@ -2674,6 +3508,33 @@ function PlatformTraceWorkbench({
         </div>
       </header>
 
+      {currentShockReaderLoadStatus === "loading" && (
+        <div className="shock-workstation-warning" role="status" aria-live="polite">
+          <span>Loading shock evidence for the selected run, lap scope, and zone...</span>
+        </div>
+      )}
+      {currentShockReaderLoadStatus === "error" && (
+        <div className="shock-workstation-warning" role="alert">
+          <AlertTriangle size={14} />
+          <span>
+            Shock analysis could not be loaded. No setup action is available from this request.
+            {selection.selectedMode === "learning" && currentShockReaderLoadError ? ` Technical detail: ${currentShockReaderLoadError}` : ""}
+          </span>
+          <button type="button" className="secondary-button" onClick={() => setShockReaderRetryToken((token) => token + 1)}>
+            <RotateCcw size={13} /> Retry shock analysis
+          </button>
+        </div>
+      )}
+      {currentShockReaderLoadStatus === "unavailable" && (
+        <div className="shock-workstation-warning" role="status">
+          <AlertTriangle size={14} />
+          <span>
+            Shock evidence is unavailable for the selected scope. No exact click action is authorized.
+            {selection.selectedMode === "learning" && currentShockReaderLoadError ? ` Needed evidence: ${currentShockReaderLoadError}` : ""}
+          </span>
+        </div>
+      )}
+
       {shockReader && (
         <div className="shock-workstation-toolbar" aria-label="Shock evidence status">
           <p className="shock-range-note">
@@ -2709,7 +3570,11 @@ function PlatformTraceWorkbench({
             ? `${shockReader.boundary_basis} ${shockReader.slope_actions_available
               ? "Slope actions are available only where repeatability and boundary-stability gates pass."
               : "Slope actions are withheld because the server has not verified a car-specific curve transition."}`
-            : "The server-defined high/low boundary and action eligibility are loading."}
+            : currentShockReaderLoadStatus === "error"
+              ? "Server-owned action evidence failed to load; no click direction is available."
+              : currentShockReaderLoadStatus === "unavailable"
+                ? "Server-owned action evidence is unavailable; no click direction is available."
+                : "The server-defined high/low boundary and action eligibility are loading."}
         </p>
       </div>
 
@@ -2767,6 +3632,63 @@ function PlatformTraceWorkbench({
 
   return (
     <section className="platform-workbench" data-analysis-surface="platform_channel_overlay">
+      <section
+        className="tab-decision-broadcast platform-decision-broadcast"
+        data-state={platformDecisionState}
+        data-diagnostic-state={platformDiagnosticState}
+        data-authority="withheld"
+        aria-label="Platform status and exact workspace handoffs"
+        role={platformEventsLoadStatus === "error" ? "alert" : undefined}
+        aria-live={platformEventsLoadStatus === "error" ? undefined : "polite"}
+      >
+        <div>
+          <h3>{platformBroadcastHeadline}</h3>
+          <p><strong>Why:</strong> {platformBroadcastWhy}</p>
+          <p><strong>What next:</strong> {platformBroadcastNext}</p>
+          {selection.selectedMode === "learning" && (
+            <p>
+              {focusedPlatformEvent
+                ? "This is a diagnostic finding, not an authorized setup target."
+                : platformEventsLoadStatus === "clear"
+                  ? "Clear applies only to supported checks on this eligible lap; no setup change is implied."
+                  : "No setup change is authorized from this Platform state."}
+            </p>
+          )}
+          <div className="tab-decision-facts" aria-label="Platform scope and authority">
+            <span>Diagnostic <strong>{platformDiagnosticState.replace(/_/g, " ")}</strong></span>
+            <span>Scope <strong>{platformScopeSummary}</strong></span>
+            <span>Signal <strong>{platformSignalSummary}</strong></span>
+            <span>Evidence <strong>{platformEvidenceSummary}</strong></span>
+            <span className="platform-event-summary-strip" aria-label="Platform Diagnostic Events">
+              Events <strong>{visiblePlatformEvents.length} shown · {hiddenPlatformEventCount} hidden</strong>
+            </span>
+            <span><ShieldCheck size={12} /> Authority <strong>Withheld</strong></span>
+          </div>
+          {selection.selectedMode === "learning" && (
+            <p>{groupedPlatformEventSummaryText}</p>
+          )}
+        </div>
+        <div className="tab-handoff-actions" aria-label="Platform workspace handoffs">
+          {platformEventsLoadStatus === "error" && onRetryPlatformEvents && (
+            <button type="button" onClick={onRetryPlatformEvents}>
+              <RotateCcw size={14} /> Retry platform evidence
+            </button>
+          )}
+          {focusedPlatformEvent && (
+            <button type="button" onClick={() => handleOpenSetupFromPlatformEvent(focusedPlatformEvent)}>
+              <Wrench size={14} /> Inspect setup
+            </button>
+          )}
+          <button type="button" onClick={() => handleOpenEngineerFromPlatformEvent(focusedPlatformEvent)}>
+            <BrainCircuit size={14} /> Ask Engineer
+          </button>
+          {focusedPlatformEvent && onToggleMapOverlay && (
+            <button type="button" onClick={() => handleOpenMapFromPlatformEvent(focusedPlatformEvent)}>
+              <MapPin size={14} /> Show on map
+            </button>
+          )}
+        </div>
+      </section>
       <header className="platform-header">
         <div>
           <span className="eyebrow">Platform / Aero Workbench</span>
@@ -2863,9 +3785,133 @@ function PlatformTraceWorkbench({
           Force values are estimates/proxies derived from telemetry, setup spring rates, ride heights, shock movement, and dynamic pressure. They are not direct iRacing aerodynamic force channels.
         </p>
       )}
-      <div className="platform-event-summary-strip" aria-label="Platform event visibility summary">
-        <span>{groupedPlatformEventSummaryText}</span>
-      </div>
+      {selection.selectedMode === "learning" && (
+        <section
+          className="platform-decision-card"
+          data-state={focusedPlatformEvent ? "finding" : platformEventsLoadStatus}
+          aria-labelledby="platform-decision-title"
+        >
+        <header>
+          <div>
+            <span className="eyebrow">Decision first</span>
+            <h3 id="platform-decision-title">
+              {selectedVisiblePlatformEvent ? "Selected platform evidence" : "Highest-priority platform evidence"}
+            </h3>
+          </div>
+          {focusedPlatformEvent && (
+            <span className="platform-decision-severity" data-severity={String(focusedPlatformEvent.severity ?? "").toLowerCase()}>
+              {focusedPlatformEvent.severity} · {focusedPlatformEvent.confidence} confidence
+            </span>
+          )}
+        </header>
+        {platformEventsLoadStatus === "loading" && (
+          <p>Loading platform evidence before showing engineering detail...</p>
+        )}
+        {platformEventsLoadStatus === "error" && (
+          <div className="platform-decision-message">
+            <AlertTriangle size={17} />
+            <div>
+              <strong>Platform evidence could not be loaded.</strong>
+              <p>No clear or setup conclusion is available from this request.</p>
+              {selection.selectedMode === "learning" && platformEventsLoadError && <p>Technical detail: {platformEventsLoadError}</p>}
+            </div>
+          </div>
+        )}
+        {platformEventsLoadStatus === "unavailable" && (
+          <div className="platform-decision-message">
+            <AlertTriangle size={17} />
+            <div>
+              <strong>Platform conclusion unavailable.</strong>
+              <p>Missing telemetry remains unavailable, never safe or zero.</p>
+              {selection.selectedMode === "learning" && platformEventsLoadError && <p>Needed evidence: {platformEventsLoadError}</p>}
+            </div>
+          </div>
+        )}
+        {platformEventsLoadStatus === "clear" && !focusedPlatformEvent && (
+          <div className="platform-decision-message clear">
+            <Activity size={17} />
+            <div>
+              <strong>Supported platform risk checks are clear for this eligible lap.</strong>
+              <p>Clear applies only to {clearPlatformDiagnosticCount} qualified checks; other mechanisms are not implied safe.</p>
+            </div>
+          </div>
+        )}
+        {platformEventsLoadStatus === "ready" && !focusedPlatformEvent && (
+          <div className="platform-decision-message">
+            <AlertTriangle size={17} />
+            <div>
+              <strong>No actionable platform event is available.</strong>
+              <p>This is not a clear-data certificate. Inspect proxy/internal evidence only when engineering context is needed.</p>
+            </div>
+          </div>
+        )}
+        {(platformEventsLoadStatus === "ready" || platformEventsLoadStatus === "clear") && focusedPlatformEvent && (
+          <div className="platform-decision-finding">
+            <div>
+              <strong>{focusedPlatformEvent.title}</strong>
+              <span>
+                Lap {focusedPlatformEvent.lap ?? overviewTrace.lap ?? "n/a"}
+                {focusedPlatformEvent.lap_dist_ft != null && ` · ${formatDistanceFt(focusedPlatformEvent.lap_dist_ft)}`}
+                {` · ${platformEventScopeLabel(focusedPlatformEvent)}`}
+              </span>
+              {focusedPlatformEvent.evidence[0] && <p>{focusedPlatformEvent.evidence[0]}</p>}
+              {focusedPlatformEvent.recommended_action && (
+                <p className="recommended-action"><strong>Diagnostic follow-up:</strong> {focusedPlatformEvent.recommended_action}</p>
+              )}
+              <p className="proxy-note">No setup target is authorized by this event. Use Dial-In to verify one legal change before testing.</p>
+              {focusedPlatformEvent.is_proxy_based && (
+                <p className="proxy-note">Proxy evidence only. It does not measure aerodynamic force.</p>
+              )}
+              {selection.selectedMode === "learning" && (
+                <p className="section-note">
+                  Evidence state: {focusedPlatformEvent.evidence_state.replace(/_/g, " ")}
+                  {focusedPlatformEvent.source_channels.length > 0
+                    ? ` · Channels: ${focusedPlatformEvent.source_channels.join(", ")}`
+                    : ""}
+                  {focusedPlatformEvent.blocker_reasons[0]
+                    ? ` · Blocker: ${focusedPlatformEvent.blocker_reasons[0]}`
+                    : ""}
+                </p>
+              )}
+            </div>
+            <div className="platform-decision-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  setSelectedPlatformEvent(focusedPlatformEvent);
+                  jumpToIndex(localFocusIndex, focusedPlatformEvent.event_id);
+                }}
+                disabled={localFocusIndex == null}
+              >
+                <LocateFixed size={14} /> Lock this location
+              </button>
+              <button type="button" className="secondary-button" onClick={() => handleOpenSetupFromPlatformEvent(focusedPlatformEvent)}>
+                <Wrench size={14} /> Inspect linked controls
+              </button>
+              <button type="button" className="secondary-button" onClick={() => handleOpenEngineerFromPlatformEvent(focusedPlatformEvent)}>
+                <BrainCircuit size={14} /> Explain evidence
+              </button>
+            </div>
+          </div>
+        )}
+        </section>
+      )}
+      <PlatformOvalCheckpoint
+        trace={trace}
+        xs={xs}
+        sampleIndex={localFocusIndex}
+        event={focusedPlatformEvent}
+        learning={selection.selectedMode === "learning"}
+        onAskEngineer={() => handleOpenEngineerFromPlatformEvent(focusedPlatformEvent)}
+      />
+      <LocalPlatformTrace
+        trace={trace}
+        xs={xs}
+        centerIndex={localFocusIndex}
+        channels={localTraceChannels}
+        contextLabel={localTraceContextLabel}
+      />
       <WorkbenchSubnav active={workbenchView} onChange={handleViewChange} />
       {workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
@@ -2882,6 +3928,23 @@ function PlatformTraceWorkbench({
         </div>
       )}
       {workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && renderEngineeringPanel()}
+      <div className="platform-whole-lap-disclosure">
+        <button
+          type="button"
+          className="platform-whole-lap-toggle"
+          aria-expanded={wholeLapExpanded}
+          aria-controls="platform-whole-lap-charts"
+          onClick={() => setWholeLapExpanded((expanded) => !expanded)}
+        >
+          <span>
+            <BarChart3 size={16} />
+            <strong>Whole-lap engineering charts</strong>
+            <small>Inspect every recorded sample after reviewing the priority and local trace.</small>
+          </span>
+          <span aria-hidden="true">{wholeLapExpanded ? "Hide charts" : "Show charts"}</span>
+        </button>
+        {wholeLapExpanded && (
+          <div id="platform-whole-lap-charts" className="platform-whole-lap-content">
       <div className="trace-toolbar" aria-label="Trace chart controls">
         <span className="trace-toolbar-label">{scrapeScrubChartView ? "Ride Height vs Speed Loss" : "Ride-height chart density"}</span>
         <div className="trace-density-toggle" role="group" aria-label="Ride-height chart density">
@@ -2925,8 +3988,24 @@ function PlatformTraceWorkbench({
         )}
       </div>
       <div className="platform-layout balance-chart-layout">
-        <div className="trace-panel-wrapper">
-          <div className="trace-panel" ref={chartNode} />
+        <div
+          className="trace-panel-wrapper platform-telemetry-surface"
+          data-chart-density={chartDensity}
+          data-chart-selection={readoutSource.toLowerCase()}
+          data-proxy-semantics="dashed"
+        >
+          <div
+            className="trace-panel platform-telemetry-canvas"
+            ref={chartNode}
+            role="group"
+            aria-roledescription="interactive telemetry line chart"
+            aria-label={`${preset} whole-lap telemetry line charts. Drag horizontally to zoom, click to lock, or use Left and Right Arrow, Home, and End to inspect recorded samples.`}
+            tabIndex={0}
+            onKeyDown={handleChartKeyDown}
+            title="Use Left and Right Arrow to inspect samples. Home and End jump to the first and last recorded sample."
+            data-chart-kind="stacked-telemetry"
+            data-chart-motion="disabled"
+          />
           <div className="trace-cursor-line" ref={cursorLineRef} hidden />
           <div className="trace-drag-zoom-band" ref={dragZoomBandRef} hidden />
           <PlatformChartPanelReadout
@@ -2942,9 +4021,50 @@ function PlatformTraceWorkbench({
         </div>
       </div>
       {workbenchView === "balance" && renderBalanceSetupContext()}
+          </div>
+        )}
+      </div>
 
       {/* ── structured platform event evidence cards ── */}
-      {(visiblePlatformEvents.length > 0 || platformEvents.length > 0) && (
+      {platformEventsLoadStatus === "loading" && (
+        <div className="platform-events-section" role="status" aria-live="polite">
+          <h3>Platform Diagnostic Events</h3>
+          <div className="platform-events-empty"><p>Loading platform events...</p></div>
+        </div>
+      )}
+      {platformEventsLoadStatus === "unavailable" && (
+        <div className="platform-events-section" role="status">
+          <h3>Platform Diagnostic Events</h3>
+          <div className="platform-events-empty">
+            <p>Platform diagnostics are unavailable for this run and lap.</p>
+            <p className="muted">Missing telemetry remains unavailable, never safe or zero.</p>
+            {selection.selectedMode === "learning" && platformEventsLoadError && (
+              <p className="muted">Needed evidence: {platformEventsLoadError}</p>
+            )}
+          </div>
+        </div>
+      )}
+      {platformEventsLoadStatus === "clear" && platformEvents.length === 0 && (
+        <div className="platform-events-section" role="status">
+          <h3>Platform Diagnostic Events</h3>
+          <div className="platform-events-empty">
+            <p>Supported platform risk checks are clear for this eligible lap.</p>
+            <p className="muted">Clear applies only to the {clearPlatformDiagnosticCount} checks with qualified telemetry; other mechanisms are not implied safe.</p>
+          </div>
+        </div>
+      )}
+      {platformEventsLoadStatus === "ready" && platformEvents.length === 0 && (
+        <div className="platform-events-section" role="status">
+          <h3>Platform Diagnostic Events</h3>
+          <div className="platform-events-empty">
+            <p>No platform diagnostic events were returned for this lap.</p>
+            {selection.selectedMode === "learning" && (
+              <p className="muted">This is not a clear-data certificate; missing telemetry remains unavailable, never safe or zero.</p>
+            )}
+          </div>
+        </div>
+      )}
+      {(platformEventsLoadStatus === "ready" || platformEventsLoadStatus === "clear") && (visiblePlatformEvents.length > 0 || platformEvents.length > 0) && (
         <div className="platform-events-section">
           <h3>Platform Diagnostic Events</h3>
           {visiblePlatformEvents.length > 0 ? (
@@ -2969,8 +4089,8 @@ function PlatformTraceWorkbench({
           ) : (
             <div className="platform-events-empty">
               <p>No actionable platform events shown.</p>
-              {clearPlatformDiagnosticCount > 0 && (
-                <p className="muted">All visible platform checks are clear.</p>
+              {platformEventsLoadStatus === "clear" && clearPlatformDiagnosticCount > 0 && (
+                <p className="muted">Supported platform risk checks are clear for this eligible lap.</p>
               )}
               <p className="muted">Missing telemetry remains unavailable, never safe or zero.</p>
               <p className="muted">Internal evidence is still preserved for analysis.</p>
@@ -3034,9 +4154,10 @@ function PlatformTraceWorkbench({
               )}
               {selectedPlatformEvent.recommended_action && (
                 <p className="recommended-action">
-                  <strong>Recommended:</strong> {selectedPlatformEvent.recommended_action}
+                  <strong>Diagnostic follow-up:</strong> {selectedPlatformEvent.recommended_action}
                 </p>
               )}
+              <p className="proxy-note">No setup target is authorized by this event. Dial-In must verify one legal change.</p>
               {selectedPlatformEvent.reason_for_hidden && (
                 <p className="proxy-note">Hidden by default: {selectedPlatformEvent.reason_for_hidden}</p>
               )}
@@ -3045,7 +4166,10 @@ function PlatformTraceWorkbench({
                   <MapPin size={10} /> Map Overlay
                 </button>
                 <button className="trackmap-action-btn" onClick={() => handleOpenSetupFromPlatformEvent(selectedPlatformEvent)} title="Open Setup with selected event">
-                  <Wrench size={10} /> Open Setup
+                  <Wrench size={10} /> Inspect Setup
+                </button>
+                <button className="trackmap-action-btn" onClick={() => handleOpenEngineerFromPlatformEvent(selectedPlatformEvent)} title="Explain the exact selected event in Smart Engineer">
+                  <BrainCircuit size={10} /> Explain Evidence
                 </button>
               </div>
               {selectedPlatformEvent.is_proxy_based && selectedPlatformEvent.proxy_warning && (
@@ -3062,7 +4186,7 @@ function PlatformTraceWorkbench({
       )}
 
       {/* ── legacy platform events (only shown when no structured events exist) ── */}
-      {platformEvents.length === 0 && visiblePlatformEvents.length === 0 && visibleLegacyEvents.length > 0 && (
+      {platformEventsLoadStatus === "ready" && platformEvents.length === 0 && visiblePlatformEvents.length === 0 && visibleLegacyEvents.length > 0 && (
         <>
           <div className="event-jump-row">
             {visibleLegacyEvents.map((event) => (

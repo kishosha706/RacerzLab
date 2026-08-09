@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import math
 import re
@@ -51,6 +52,21 @@ class MagnitudeAssessment:
     display_delta: float | None
     relative_delta_percent: float | None
     basis: str
+
+
+@dataclass(frozen=True)
+class SetupTargetResolution:
+    """A setup target that is usable only when its exact adjacent option is sourced."""
+
+    target_value: Any = None
+    target_label: str | None = None
+    transition: str = ""
+    provenance: tuple[str, ...] = ()
+    blocker: str | None = None
+
+    @property
+    def ready(self) -> bool:
+        return self.target_label is not None and self.blocker is None and bool(self.provenance)
 
 
 def _spec(
@@ -119,8 +135,72 @@ SETUP_CONTROL_SPECS: dict[str, SetupControlSpec] = {
 }
 
 
+# Shock Reader resolves exact click targets through the same sourced-adjacent
+# option gate as the main setup planner.  Keep these row-level specs separate
+# from SETUP_CONTROL_SPECS: they are corner-qualified inside Shock Reader and
+# must not be mistaken for whole-setup canonical controls by setup diffing.
+SHOCK_ROW_CONTROL_SPECS: dict[str, SetupControlSpec] = {
+    "ls_compression": _spec(
+        "ls_compression", "LS Compression", "dampers", "clicks", 0,
+        small=1.0, medium=2.0, increment=1.0, step_strategy="legal_option",
+        influence="Corner-specific low-speed compression influence",
+        policy="One adjacent sourced click is a small controlled input; do not skip an unrecorded option.",
+        increase="Increasing the recorded click adds low-speed compression damping in the garage direction.",
+        decrease="Decreasing the recorded click removes low-speed compression damping in the garage direction.",
+        guardrail="Change one corner and one shock row at a time, then compare the same eligible track-position window.",
+    ),
+    "hs_compression": _spec(
+        "hs_compression", "HS Compression", "dampers", "clicks", 0,
+        small=1.0, medium=2.0, increment=1.0, step_strategy="legal_option",
+        influence="Corner-specific high-speed compression influence",
+        policy="One adjacent sourced click is a small controlled input; do not skip an unrecorded option.",
+        increase="Increasing the recorded click adds high-speed compression damping in the garage direction.",
+        decrease="Decreasing the recorded click removes high-speed compression damping in the garage direction.",
+        guardrail="Change one corner and one shock row at a time, then compare the same eligible track-position window.",
+    ),
+    "hs_compression_slope": _spec(
+        "hs_compression_slope", "HS Compression Slope", "dampers", "clicks", 0,
+        small=1.0, medium=2.0, increment=1.0, step_strategy="legal_option",
+        influence="Corner-specific high-speed compression curve-shape influence",
+        policy="One adjacent sourced slope option is a small input but a package-level curve-shape experiment.",
+        increase="Increasing the recorded slope option moves the high-speed compression curve more linear in the Shock Reader garage convention.",
+        decrease="Decreasing the recorded slope option moves the high-speed compression curve more digressive in the Shock Reader garage convention.",
+        guardrail="Change one corner and one slope row at a time, then repeat the same eligible high-speed event window.",
+    ),
+    "ls_rebound": _spec(
+        "ls_rebound", "LS Rebound", "dampers", "clicks", 0,
+        small=1.0, medium=2.0, increment=1.0, step_strategy="legal_option",
+        influence="Corner-specific low-speed rebound influence",
+        policy="One adjacent sourced click is a small controlled input; do not skip an unrecorded option.",
+        increase="Increasing the recorded click adds low-speed rebound damping in the garage direction.",
+        decrease="Decreasing the recorded click removes low-speed rebound damping in the garage direction.",
+        guardrail="Change one corner and one shock row at a time, then compare the same eligible track-position window.",
+    ),
+    "hs_rebound": _spec(
+        "hs_rebound", "HS Rebound", "dampers", "clicks", 0,
+        small=1.0, medium=2.0, increment=1.0, step_strategy="legal_option",
+        influence="Corner-specific high-speed rebound influence",
+        policy="One adjacent sourced click is a small controlled input; do not skip an unrecorded option.",
+        increase="Increasing the recorded click adds high-speed rebound damping in the garage direction.",
+        decrease="Decreasing the recorded click removes high-speed rebound damping in the garage direction.",
+        guardrail="Change one corner and one shock row at a time, then compare the same eligible track-position window.",
+    ),
+    "hs_rebound_slope": _spec(
+        "hs_rebound_slope", "HS Rebound Slope", "dampers", "clicks", 0,
+        small=1.0, medium=2.0, increment=1.0, step_strategy="legal_option",
+        influence="Corner-specific high-speed rebound curve-shape influence",
+        policy="One adjacent sourced slope option is a small input but a package-level curve-shape experiment.",
+        increase="Increasing the recorded slope option moves the high-speed rebound curve more linear in the Shock Reader garage convention.",
+        decrease="Decreasing the recorded slope option moves the high-speed rebound curve more digressive in the Shock Reader garage convention.",
+        guardrail="Change one corner and one slope row at a time, then repeat the same eligible high-speed event window.",
+    ),
+}
+
+
 def setup_control_spec(key: str) -> SetupControlSpec:
-    return SETUP_CONTROL_SPECS[key]
+    if key in SETUP_CONTROL_SPECS:
+        return SETUP_CONTROL_SPECS[key]
+    return SHOCK_ROW_CONTROL_SPECS[key]
 
 
 def numeric_setup_value(value: Any) -> float | None:
@@ -227,6 +307,31 @@ def assess_setup_change(key: str, baseline_value: Any, test_value: Any) -> Magni
     return MagnitudeAssessment(label, display_delta, relative, basis)
 
 
+def setup_target_increment_blocker(key: str, current_value: Any, target_value: Any) -> str | None:
+    """Reject a sparse observed option that is too large to be the next safe test."""
+    spec = setup_control_spec(key)
+    assessment = assess_setup_change(key, current_value, target_value)
+    if assessment.label != "small":
+        return (
+            f"The nearest sourced {spec.label} option is a {assessment.label} input, not the smallest "
+            "controlled increment; record an intermediate tech-passing option before authorizing it."
+        )
+    current = setup_value_numeric_representation(key, current_value)
+    target = setup_value_numeric_representation(key, target_value)
+    if (
+        spec.nominal_test_increment is not None
+        and current is not None
+        and target is not None
+        and current[0] == target[0]
+        and abs(target[1] - current[1]) > spec.nominal_test_increment + 1e-9
+    ):
+        return (
+            f"The nearest sourced {spec.label} option skips the declared small-test increment; "
+            "record the intervening tech-passing option or an authoritative complete option catalog."
+        )
+    return None
+
+
 def format_setup_delta(key: str, assessment: MagnitudeAssessment, baseline_value: Any, test_value: Any) -> str | None:
     if assessment.display_delta is None:
         if baseline_value is None and test_value is not None:
@@ -241,26 +346,144 @@ def format_setup_delta(key: str, assessment: MagnitudeAssessment, baseline_value
     return f"{delta} {spec.display_unit}" if spec.display_unit else delta
 
 
-def nominal_test_target(key: str, current_value: Any, direction_sign: int) -> tuple[str | None, str]:
-    """Return a proposed target when a conservative numeric increment is defined.
+def _option_provenance(
+    key: str,
+    raw_option: Any,
+    legal_value_provenance: Mapping[Any, Sequence[str] | str] | None,
+) -> tuple[str, ...]:
+    target_key = canonical_setup_value_key(key, raw_option)
+    sources: list[str] = []
+    for supplied_value, supplied_sources in (legal_value_provenance or {}).items():
+        supplied_key = str(supplied_value)
+        if supplied_key != target_key and canonical_setup_value_key(key, supplied_value) != target_key:
+            continue
+        values = (supplied_sources,) if isinstance(supplied_sources, str) else supplied_sources
+        sources.extend(str(source).strip() for source in values if str(source).strip())
+    return tuple(dict.fromkeys(sources))
 
-    Controls with car/track-specific discrete choices intentionally return a
-    next-available instruction rather than inventing a legal garage value.
-    """
+
+def resolve_adjacent_setup_target(
+    key: str,
+    current_value: Any,
+    direction_sign: int,
+    *,
+    legal_values: Sequence[Any] | None = None,
+    legal_value_provenance: Mapping[Any, Sequence[str] | str] | None = None,
+) -> SetupTargetResolution:
+    """Resolve the exact adjacent sourced option without inventing a nominal value."""
     spec = setup_control_spec(key)
-    current = numeric_setup_value(current_value)
-    if spec.nominal_test_increment is None:
-        current_text = format_setup_value(key, current_value) if current_value is not None else None
-        prefix = f"{current_text} -> " if current_text else ""
-        return None, f"{prefix}next available garage setting"
-    delta = spec.nominal_test_increment * (1 if direction_sign >= 0 else -1)
-    delta_display = spec.to_display(delta)
-    delta_text = spec.format_number(delta_display, signed=True)
-    delta_unit = "percentage points" if spec.display_unit == "%" else spec.display_unit or "units"
-    if current is None:
-        return None, f"{delta_text} {delta_unit} from the current setting"
-    target = current + delta
-    return format_setup_value(key, target), f"{format_setup_value(key, current)} -> {format_setup_value(key, target)} ({delta_text} {delta_unit})"
+    if direction_sign not in {-1, 1}:
+        blocker = f"Choose an explicit increase or decrease direction for {spec.label} before selecting a target."
+        return SetupTargetResolution(transition=blocker, blocker=blocker)
+
+    current_representation = setup_value_numeric_representation(key, current_value)
+    if current_representation is None:
+        blocker = (
+            f"Capture the current {spec.label} value and its unit or representation in the setup snapshot "
+            "before choosing an adjacent option."
+        )
+        return SetupTargetResolution(transition=blocker, blocker=blocker)
+
+    current_text = format_setup_value(key, current_value)
+    if legal_values is None:
+        blocker = (
+            f"Record the tech-passing {spec.label} option catalog for this car and control, including "
+            f"source provenance, before choosing a target from {current_text}."
+        )
+        return SetupTargetResolution(transition=blocker, blocker=blocker)
+
+    current_kind, current_numeric = current_representation
+    comparable: list[tuple[float, Any]] = []
+    seen_options: set[str] = set()
+    for raw_option in legal_values:
+        represented = setup_value_numeric_representation(key, raw_option)
+        if represented is None or represented[0] != current_kind:
+            continue
+        option_key = canonical_setup_value_key(key, raw_option)
+        if option_key in seen_options:
+            continue
+        comparable.append((represented[1], raw_option))
+        seen_options.add(option_key)
+
+    if not comparable:
+        blocker = (
+            f"The recorded {spec.label} option catalog has no values comparable with the current "
+            f"{current_text}; record a tech-passing option in the same unit or representation with source provenance."
+        )
+        return SetupTargetResolution(transition=blocker, blocker=blocker)
+
+    if direction_sign > 0:
+        directional = [option for option in comparable if option[0] > current_numeric + 1e-9]
+        adjacent = min(directional, key=lambda option: option[0]) if directional else None
+        boundary = "highest"
+        requested_side = "above"
+    else:
+        directional = [option for option in comparable if option[0] < current_numeric - 1e-9]
+        adjacent = max(directional, key=lambda option: option[0]) if directional else None
+        boundary = "lowest"
+        requested_side = "below"
+    if adjacent is None:
+        blocker = (
+            f"{current_text} is the {boundary} recorded comparable {spec.label} option; record a tech-passing "
+            f"option {requested_side} it with source provenance or choose a different control."
+        )
+        return SetupTargetResolution(transition=blocker, blocker=blocker)
+
+    _, raw_target = adjacent
+    target_label = format_setup_value(key, raw_target)
+    provenance = _option_provenance(key, raw_target, legal_value_provenance)
+    if not provenance:
+        blocker = (
+            f"The adjacent recorded {spec.label} option {target_label} has no observed or configured source "
+            "provenance; archive its source run or car configuration catalog before instructing that target."
+        )
+        return SetupTargetResolution(
+            target_value=raw_target,
+            transition=blocker,
+            blocker=blocker,
+        )
+
+    if increment_blocker := setup_target_increment_blocker(key, current_value, raw_target):
+        return SetupTargetResolution(
+            target_value=raw_target,
+            transition=increment_blocker,
+            provenance=provenance,
+            blocker=increment_blocker,
+        )
+
+    transition = (
+        f"{current_text} -> {target_label} "
+        "(adjacent observed/configured tech-passing option)"
+    )
+    return SetupTargetResolution(
+        target_value=raw_target,
+        target_label=target_label,
+        transition=transition,
+        provenance=provenance,
+    )
+
+
+def nominal_test_target(
+    key: str,
+    current_value: Any,
+    direction_sign: int,
+    *,
+    legal_values: Sequence[Any] | None = None,
+    legal_value_provenance: Mapping[Any, Sequence[str] | str] | None = None,
+) -> tuple[str | None, str]:
+    """Legacy tuple wrapper around the sourced adjacent-option resolver.
+
+    The function name is retained for callers, but nominal arithmetic is no
+    longer allowed to create an exact garage target.
+    """
+    resolution = resolve_adjacent_setup_target(
+        key,
+        current_value,
+        direction_sign,
+        legal_values=legal_values,
+        legal_value_provenance=legal_value_provenance,
+    )
+    return resolution.target_label, resolution.transition
 
 
 def recommended_test_size_label(key: str) -> str:

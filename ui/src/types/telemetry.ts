@@ -191,6 +191,7 @@ export type TelemetryCapabilitySummary = {
 };
 
 export type TelemetryCapabilitiesResponse = {
+  run_id: string;
   manifest_schema_version?: number;
   universal_archive_version?: number;
   cache_compatibility: TelemetryCacheCompatibility;
@@ -339,6 +340,7 @@ export type ControlledTestCard = {
   countereffects: string[];
   rollback_rule: string;
   keep_rule: string;
+  stop_rule: string;
   stages: ControlledTestStage[];
 };
 
@@ -378,6 +380,7 @@ export type TestQualityResult = {
 
 export type ControlledWorkflow = {
   workflow_id: string;
+  updated_at?: string;
   status: "planned" | "a_recorded" | "b_recorded" | "a2_recorded" | "scored" | "cancelled";
   source_run_id: string;
   complaint: string;
@@ -529,6 +532,8 @@ export type PlatformEventSeverity = "info" | "watch" | "high" | "critical";
 export type PlatformEventConfidence = "low" | "medium" | "high";
 export type PlatformEventDisplayScope = "actionable" | "watch" | "internal";
 export type PlatformEventVisibilityMode = "actionable" | "proxy" | "all";
+export type PlatformDiagnosticState = "finding" | "clear_check" | "context";
+export type PlatformEventsEvidenceStatus = "findings" | "clear" | "unavailable";
 
 export type PlatformEventItem = {
   event_id: string;
@@ -539,6 +544,7 @@ export type PlatformEventItem = {
   display_scope: PlatformEventDisplayScope;
   is_visible_default: boolean;
   reason_for_hidden?: string | null;
+  diagnostic_state: PlatformDiagnosticState;
   contributes_to_backend_evidence: boolean;
   lap?: number | null;
   sample_index?: number | null;
@@ -556,5 +562,13 @@ export type PlatformEventItem = {
   metadata: Record<string, unknown>;
   evidence_state: EvidenceState;
   source_channels: string[];
+  blocker_reasons: string[];
+};
+
+export type PlatformEventsReport = {
+  run_id: string;
+  lap: number | null;
+  evidence_status: PlatformEventsEvidenceStatus;
+  events: PlatformEventItem[];
   blocker_reasons: string[];
 };

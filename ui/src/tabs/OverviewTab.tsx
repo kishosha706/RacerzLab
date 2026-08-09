@@ -1,11 +1,20 @@
-import { AlertTriangle, CheckCircle2, Clock, Layers, MapPin, Wrench } from "lucide-react";
+import { AlertTriangle, BrainCircuit, CheckCircle2, Clock, Layers, MapPin, Wrench } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { SEVERITY_COLOURS, humanizeEventLabel } from "../constants/ui";
 import { isProxyChannel } from "../utils/channelMeta";
-import type { RunOverview, TelemetryCapabilitiesResponse, TelemetryEvent } from "../types/telemetry";
+import { buildZoneEvidence } from "../utils/evidenceFocus";
+import {
+  bestUsefulLapMatchesRun,
+  overviewWarningBlocksDecision,
+  recommendationBlockedReason,
+  recommendationIsActionable,
+  setupSnapshotMatchesRun,
+  telemetryEventIsActionable,
+} from "../utils/evidenceTrust";
+import type { LapSummary, RunOverview, TelemetryCapabilitiesResponse, TelemetryEvent } from "../types/telemetry";
 
 type OverviewTabProps = {
   overview: RunOverview;
@@ -13,20 +22,36 @@ type OverviewTabProps = {
   onToggleMapOverlay?: () => void;
 };
 
-const NON_BLOCKING_RACE_WARNING_PREFIXES = [
-  "short runs cannot support strong tire degradation or cooling conclusions",
-  "do not overclaim exact aerodynamic drag force",
-  "missing optional channels",
-  "shock movement telemetry is unavailable",
-  "at least one low/negative splitter event occurred in slowdown context",
-];
+const LONG_RUN_REVIEW_MIN_LAPS = 10;
 
-function isDecisionBlockingWarning(warning: string): boolean {
-  const lower = warning.toLowerCase();
-  if (NON_BLOCKING_RACE_WARNING_PREFIXES.some((prefix) => lower.startsWith(prefix))) return false;
-  // New warning text must fail closed until it is explicitly reviewed as a
-  // scope-only caution. Unknown warnings cannot silently earn a Race call.
-  return true;
+function longestContinuousEligibleLapBlock(laps: readonly LapSummary[]): number {
+  const lapNumbers = [...new Set(laps.map((lap) => lap.lap_number))].sort((left, right) => left - right);
+  let longest = 0;
+  let current = 0;
+  let previous: number | null = null;
+  for (const lapNumber of lapNumbers) {
+    current = previous != null && lapNumber === previous + 1 ? current + 1 : 1;
+    longest = Math.max(longest, current);
+    previous = lapNumber;
+  }
+  return longest;
+}
+
+function explicitOvalPhase(event: TelemetryEvent): "Entry" | "Center" | "Exit" | "Straight" | null {
+  const evidenceLabel = `${event.event_type} ${event.event_subtype ?? ""} ${event.zone_name ?? ""}`.toLowerCase();
+  if (/entry|brak|turn.?in/.test(evidenceLabel)) return "Entry";
+  if (/center|centre|mid.?corner|apex|rotation|yaw/.test(evidenceLabel)) return "Center";
+  if (/exit|throttle|drive.?off|power.?down/.test(evidenceLabel)) return "Exit";
+  if (/straight|full.?throttle|speed.?loss|resist|scrub/.test(evidenceLabel)) return "Straight";
+  return null;
+}
+
+function eventLocationLabel(event: TelemetryEvent): string {
+  if (event.zone_name?.trim()) return event.zone_name.trim();
+  const lapPct = event.lap_pct_peak ?? event.lap_pct_start;
+  return lapPct != null && Number.isFinite(lapPct)
+    ? `${lapPct.toFixed(1)}% lap distance`
+    : "Run-level evidence";
 }
 
 function severityLabel(severity: TelemetryEvent["severity"]): "CRITICAL" | "HIGH" | "WATCH" | "INFO" {
@@ -60,7 +85,19 @@ function orderedWarnings(warnings: string[]): Array<{ key: string; label: string
   const definitions = [
     { key: "missing_required", label: "Missing required telemetry", matches: ["missing required"] },
     { key: "missing_optional", label: "Missing optional telemetry", matches: ["missing optional"] },
-    { key: "setup_snapshot", label: "Setup snapshot unavailable", matches: ["setup", "snapshot", "carsetup"] },
+    {
+      key: "setup_snapshot",
+      label: "Setup snapshot unavailable",
+      matches: [
+        "setup snapshot",
+        "snapshot unavailable",
+        "snapshot missing",
+        "carsetup unavailable",
+        "carsetup missing",
+        "no setup data",
+        "garage values unavailable",
+      ],
+    },
     { key: "proxy_heavy", label: "Proxy/estimate-heavy result", matches: ["proxy", "estimate"] },
     { key: "short_run", label: "Short run / low confidence", matches: ["short", "low confidence", "insufficient", "few laps"] },
   ];
@@ -80,7 +117,9 @@ function orderedWarnings(warnings: string[]): Array<{ key: string; label: string
 }
 
 export function OverviewTab({ overview, telemetryCapabilities, onToggleMapOverlay }: OverviewTabProps) {
-  const lap = overview.best_useful_lap;
+  const lap = bestUsefulLapMatchesRun(overview.best_useful_lap, overview.run_id)
+    ? overview.best_useful_lap
+    : null;
   const { setWorkspace, focusEvidence, selection } = useTelemetrySelection();
   const [openWarningKeys, setOpenWarningKeys] = useState<Record<string, boolean>>({});
   const isLearning = selection.selectedMode === "learning";
@@ -88,7 +127,9 @@ export function OverviewTab({ overview, telemetryCapabilities, onToggleMapOverla
   const sortedEvents = useMemo(() => {
     const sevOrder: Record<string, number> = { critical: 0, high: 1, watch: 2, info: 3 };
     return [...overview.events].sort((a, b) => {
-      if (a.valid_for_tuning !== b.valid_for_tuning) return a.valid_for_tuning ? -1 : 1;
+      const aActionable = telemetryEventIsActionable(a);
+      const bActionable = telemetryEventIsActionable(b);
+      if (aActionable !== bActionable) return aActionable ? -1 : 1;
       const sevDiff = (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9);
       if (sevDiff !== 0) return sevDiff;
       const confA = a.confidence_score ?? 0;
@@ -98,29 +139,57 @@ export function OverviewTab({ overview, telemetryCapabilities, onToggleMapOverla
     });
   }, [overview.events]);
 
-  const topEvent = sortedEvents.find((event) => event.valid_for_tuning) ?? null;
+  const topEvent = sortedEvents.find(telemetryEventIsActionable) ?? null;
+  const topObservedEvent = useMemo(() => {
+    const severityOrder: Record<string, number> = { critical: 0, high: 1, watch: 2, info: 3 };
+    return [...overview.events].sort((left, right) => {
+      const severityDifference = (severityOrder[left.severity] ?? 9) - (severityOrder[right.severity] ?? 9);
+      if (severityDifference !== 0) return severityDifference;
+      return (right.confidence_score ?? 0) - (left.confidence_score ?? 0);
+    })[0] ?? null;
+  }, [overview.events]);
+  const evidenceQualifiedRecommendations = useMemo(
+    () => overview.recommendations.filter((recommendation) => (
+      recommendationIsActionable(recommendation, overview.events)
+    )),
+    [overview.events, overview.recommendations],
+  );
 
   const buildOverviewEvidence = useCallback((event: TelemetryEvent) => {
     const hasLocation = event.lap_pct_peak != null || event.lap_pct_start != null || event.distance_m_peak != null;
     const lapDistFt = event.distance_m_peak != null ? event.distance_m_peak * 3.280839895 : null;
     const lapPct = event.lap_pct_peak ?? event.lap_pct_start ?? null;
+    const zoneEvidence = selection.selectedRunId === overview.run_id
+      ? buildZoneEvidence(selection, { lapPct })
+      : { zoneId: null, zoneLabel: null, zoneStartPct: null, zoneEndPct: null };
     return {
       runId: overview.run_id,
       lapNumber: event.lap_number ?? null,
+      lapScope: event.lap_number != null ? "single_lap" as const : "run" as const,
+      lapWindowStart: null,
+      lapWindowEnd: null,
+      representativeLap: null,
       eventId: event.event_id,
       sampleIndex: null,
       lapDistFt,
       lapPct,
+      ...zoneEvidence,
+      channelId: null,
       lockState: (hasLocation ? "locked" : "none") as "locked" | "none",
       valueBasis: (hasLocation ? "selected_sample" : "run_level") as "selected_sample" | "run_level",
       selectionSource: "overview" as const,
     };
-  }, [overview.run_id]);
+  }, [overview.run_id, selection]);
 
   const openTopEvent = useCallback(() => {
     if (!topEvent) return;
     focusEvidence(buildOverviewEvidence(topEvent), "platform_trace");
   }, [topEvent, buildOverviewEvidence, focusEvidence]);
+
+  const openObservedEvent = useCallback(() => {
+    if (!topObservedEvent) return;
+    focusEvidence(buildOverviewEvidence(topObservedEvent), "platform_trace");
+  }, [buildOverviewEvidence, focusEvidence, topObservedEvent]);
 
   const openTopEventMapOverlay = useCallback(() => {
     if (!topEvent) return;
@@ -128,108 +197,268 @@ export function OverviewTab({ overview, telemetryCapabilities, onToggleMapOverla
     onToggleMapOverlay?.();
   }, [topEvent, buildOverviewEvidence, focusEvidence, onToggleMapOverlay]);
 
+  const openEngineerBriefing = useCallback(() => {
+    if (topEvent) {
+      focusEvidence(buildOverviewEvidence(topEvent), "engineer");
+      return;
+    }
+    focusEvidence({
+      runId: overview.run_id,
+      lapNumber: lap?.lap_number ?? null,
+      lapScope: lap ? "single_lap" : "run",
+      lapWindowStart: null,
+      lapWindowEnd: null,
+      representativeLap: null,
+      eventId: null,
+      sampleIndex: null,
+      lapDistFt: null,
+      lapPct: null,
+      zoneId: null,
+      zoneLabel: null,
+      zoneStartPct: null,
+      zoneEndPct: null,
+      channelId: null,
+      lockState: "none",
+      valueBasis: lap ? "full_lap" : "run_level",
+      selectionSource: "overview",
+    }, "engineer");
+  }, [buildOverviewEvidence, focusEvidence, lap, overview.run_id, topEvent]);
+
   const warningsByOrder = useMemo(() => orderedWarnings(overview.warnings), [overview.warnings]);
   const proxyEventCount = useMemo(
     () => overview.events.filter((event) => Object.keys(event.evidence_json ?? {}).some((key) => isProxyChannel(key))).length,
     [overview.events],
   );
 
-  const usefulCount = overview.laps.filter((l) => l.is_useful).length;
-  const invalidCount = overview.laps.length - usefulCount;
-  const topSeverity = topEvent ? severityLabel(topEvent.severity) : "INFO";
+  const eligibleTimedLaps = useMemo(
+    () => overview.laps.filter((candidate) => bestUsefulLapMatchesRun(candidate, overview.run_id)),
+    [overview.laps, overview.run_id],
+  );
+  const usefulCount = eligibleTimedLaps.length;
+  const excludedCount = overview.laps.length - usefulCount;
+  const usefulTimedLapTimes = useMemo(
+    () => eligibleTimedLaps
+      .map((candidate) => candidate.lap_time as number)
+      .sort((left, right) => left - right),
+    [eligibleTimedLaps],
+  );
+  const longestCleanBlock = useMemo(
+    () => longestContinuousEligibleLapBlock(eligibleTimedLaps),
+    [eligibleTimedLaps],
+  );
+  const longRunLapsNeeded = Math.max(0, LONG_RUN_REVIEW_MIN_LAPS - longestCleanBlock);
+  const medianUsefulLapTime = usefulTimedLapTimes.length > 0
+    ? usefulTimedLapTimes.length % 2 === 1
+      ? usefulTimedLapTimes[Math.floor(usefulTimedLapTimes.length / 2)]
+      : (
+        usefulTimedLapTimes[usefulTimedLapTimes.length / 2 - 1]
+        + usefulTimedLapTimes[usefulTimedLapTimes.length / 2]
+      ) / 2
+    : null;
+  const bestToMedianDelta = lap?.lap_time != null && medianUsefulLapTime != null
+    ? medianUsefulLapTime - lap.lap_time
+    : null;
+  const actionableSeverity = topEvent ? severityLabel(topEvent.severity) : "NONE";
+  const observedSeverity = topObservedEvent ? severityLabel(topObservedEvent.severity) : "NONE";
+  const timedLapCount = overview.laps.filter((l) => l.lap_type === "timed" || l.lap_type === "flying" || l.lap_type === "complete").length;
+  const setupAvailable = setupSnapshotMatchesRun(overview.setup_snapshot, overview.run_id);
+  const setupTechReady = overview.session.setup_passed_tech !== false;
+  const archiveVerified = Boolean(
+    telemetryCapabilities
+    && telemetryCapabilities.cache_compatibility.status === "current"
+    && telemetryCapabilities.capability_summary.lossless_archive_complete
+    && telemetryCapabilities.capability_summary.warning_channels === 0,
+  );
+  const blockingOverviewWarnings = overview.warnings.filter(overviewWarningBlocksDecision);
+  const dataTrustReady = archiveVerified && blockingOverviewWarnings.length === 0;
+  const decisionContextReady = Boolean(lap && setupAvailable && setupTechReady && dataTrustReady);
+  const trustBlocker = !telemetryCapabilities
+    ? "Telemetry capability verification is unavailable for this run."
+    : telemetryCapabilities.cache_compatibility.status !== "current"
+      ? telemetryCapabilities.cache_compatibility.reason
+      : !telemetryCapabilities.capability_summary.lossless_archive_complete
+        ? "The universal telemetry archive is incomplete."
+        : telemetryCapabilities.capability_summary.warning_channels > 0
+          ? `${telemetryCapabilities.capability_summary.warning_channels} telemetry channels have health warnings.`
+          : blockingOverviewWarnings[0] ?? null;
+  const decisionState = !decisionContextReady
+    ? "NO CALL"
+    : topEvent
+      ? "INVESTIGATE"
+      : "HOLD";
+  const priorityPhase = topEvent ? explicitOvalPhase(topEvent) : null;
+  const priorityLocation = topEvent ? eventLocationLabel(topEvent) : null;
+  const cornerPriorityLabel = topEvent
+    ? `${priorityPhase ? `${priorityPhase} · ` : ""}${priorityLocation} · ${humanizeEventLabel(topEvent.event_type)}`
+    : "No tuning-valid corner call";
+  const longRunReadinessLabel = longRunLapsNeeded === 0
+    ? `${longestCleanBlock}-lap clean block · inspect in Laps`
+    : `${longestCleanBlock}/${LONG_RUN_REVIEW_MIN_LAPS} clean · need ${longRunLapsNeeded} more`;
+  const decisionHeadline = !lap
+    ? "Bank one clean lap before tuning."
+    : !setupAvailable
+      ? "Clean lap found; garage context is missing."
+      : !setupTechReady
+        ? "Reset to a tech-passing baseline."
+      : !dataTrustReady
+        ? "Data warning: hold the setup call."
+        : topEvent
+          ? `${humanizeEventLabel(topEvent.event_type)} needs inspection.`
+          : "No setup issue earned a call.";
+  const decisionDetail = !lap
+    ? "Complete a clean timed lap before making a setup decision."
+    : !setupAvailable
+      ? "Capture the setup before the next run so every change can be attributed."
+      : !setupTechReady
+        ? "Return to a tech-passing baseline before drawing a setup conclusion."
+      : !dataTrustReady
+        ? trustBlocker ?? "Resolve the run warnings before using this run for a setup decision."
+      : topEvent
+          ? `${priorityPhase ? `${priorityPhase} | ` : ""}${priorityLocation}${topEvent.lap_number != null ? ` | Lap ${topEvent.lap_number}` : ""}`
+          : "Hold the current setup or begin one small, controlled test.";
+  const decisionNext = !lap
+    ? "Bank one complete, clean timed lap. Out laps, pit laps, cooldowns, wrecks, and partial laps will stay out of the call."
+    : !setupAvailable
+      ? "Capture the exact setup snapshot on the next run, then repeat the same clean-lap process."
+      : !setupTechReady
+        ? "Return to a tech-passing baseline before collecting comparison evidence."
+        : !dataTrustReady
+          ? "Recover the blocked telemetry evidence, then let the run be re-qualified."
+          : topEvent
+            ? "Inspect the exact event location, ask Engineer to separate competing causes, then validate at most one setup change in Dial-In."
+            : longRunLapsNeeded > 0
+              ? `Hold the setup. If long-run pace matters, extend this same-setup clean block by ${longRunLapsNeeded} lap${longRunLapsNeeded === 1 ? "" : "s"} before reviewing falloff.`
+              : "Hold the setup. Review the continuous clean block in Laps; only stage a test when qualified evidence supports one change."
+  const decisionPaceComparison = lap?.lap_time != null
+    ? bestToMedianDelta != null && usefulTimedLapTimes.length >= 2
+      ? bestToMedianDelta >= 0
+        ? `${lap.lap_time.toFixed(3)}s | ${bestToMedianDelta.toFixed(3)}s quicker than clean-lap median`
+        : `${lap.lap_time.toFixed(3)}s | ${Math.abs(bestToMedianDelta).toFixed(3)}s slower than clean-lap median`
+      : `${lap.lap_time.toFixed(3)}s | single clean reference`
+    : "No clean reference";
+  const decisionSignal = topEvent
+    ? `${severityLabel(topEvent.severity)} | ${(topEvent.confidence_score * 100).toFixed(0)}% confidence`
+    : decisionContextReady
+      ? "No tuning-valid event"
+      : "Withheld";
+  const visibleRunLabel = isLearning ? `Run ${overview.run_id}` : "Current run";
+  const decisionScope = topEvent
+    ? `${visibleRunLabel} | ${topEvent.lap_number != null ? `Lap ${topEvent.lap_number}` : "run-level evidence"}${(topEvent.lap_pct_peak ?? topEvent.lap_pct_start) != null ? ` | ${(topEvent.lap_pct_peak ?? topEvent.lap_pct_start)?.toFixed(1)}% lap distance` : ""}`
+    : lap
+      ? `${visibleRunLabel} | Best eligible Lap ${lap.lap_number}`
+      : `${visibleRunLabel} | No eligible lap`;
+  const actionableRecommendations = decisionContextReady ? evidenceQualifiedRecommendations : [];
+  const firstBlockedRecommendation = overview.recommendations.find((recommendation) => (
+    !recommendationIsActionable(recommendation, overview.events)
+  ));
+  const recommendationNoCallReason = !decisionContextReady
+    ? decisionDetail
+    : firstBlockedRecommendation
+      ? recommendationBlockedReason(firstBlockedRecommendation)
+      : "No evidence-qualified recommendation was produced for this run.";
+  const trustedPrimaryFindings = topEvent && dataTrustReady ? overview.primary_findings : [];
+  const broadcastWarning = blockingOverviewWarnings[0] ?? overview.warnings[0] ?? null;
 
   const runRiskEvents = useMemo(
     () => overview.events.filter((event) => event.lap_pct_peak != null || event.lap_pct_start != null || event.distance_m_peak != null).slice(0, 24),
     [overview.events],
   );
+  const decisionBroadcastState = decisionState === "NO CALL"
+    ? "blocked"
+    : decisionState === "INVESTIGATE"
+      ? "attention"
+      : "clear";
+  const decisionBroadcast = (
+    <section
+      className="tab-decision-broadcast"
+      data-state={decisionBroadcastState}
+      data-run-id={overview.run_id}
+      data-long-run-state={longRunLapsNeeded === 0 ? "review-ready" : "short-run"}
+      data-oval-priority={topEvent ? priorityPhase?.toLowerCase() ?? "located" : "clear"}
+      aria-label="Overview decision briefing"
+      aria-live="polite"
+    >
+      <div>
+        <span className="eyebrow">
+          {decisionState === "HOLD" ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+          {decisionState}
+        </span>
+        <h2>{decisionHeadline}</h2>
+        <p><strong>Why:</strong> {decisionDetail}</p>
+        <p><strong>What next:</strong> {decisionNext}</p>
+        <p title={`Exact run ${overview.run_id}`}>Exact scope: {decisionScope}</p>
+        <div className="tab-decision-facts">
+          <span>
+            <strong>Scope</strong>{" "}
+            {topEvent?.lap_number != null ? `L${topEvent.lap_number}` : lap ? `L${lap.lap_number}` : "run"}
+          </span>
+          <span><strong>Clean</strong> {usefulCount}/{overview.laps.length} laps</span>
+          <span data-driver-signal="long-run"><strong>Long run</strong> {longRunReadinessLabel}</span>
+          <span data-driver-signal="corner-priority"><strong>Corner / area</strong> {cornerPriorityLabel}</span>
+          <span><strong>Pace</strong> {decisionPaceComparison}</span>
+          <span><strong>Signal</strong> {decisionSignal}</span>
+          <span><strong>Setup</strong> {!setupAvailable ? "missing" : setupTechReady ? "captured" : "tech failed"}</span>
+          <span><strong>Archive</strong> {archiveVerified ? "verified" : "not verified"}</span>
+        </div>
+        {isLearning && (
+          <div className="tab-decision-learning">
+            <p>
+              The pace comparison uses only complete, useful pace laps from this exact run. The median is descriptive context, not evidence that setup caused the gap.
+            </p>
+            <p>
+              Long-run readiness uses the longest uninterrupted eligible block. Invalid, pit, cooldown, wreck, reset, and partial laps break the chain. Ten clean laps open inspection; they do not prove tire degradation or a setup cause.
+            </p>
+            <p>
+              Driver debrief: describe what the car did on entry, center, and exit at {priorityLocation ?? "the area you felt most"}. That observation narrows the review but does not authorize a setup change.
+            </p>
+            {topObservedEvent && (
+              <p>
+                Strongest observed signal: {humanizeEventLabel(topObservedEvent.event_type)} | evidence state {topObservedEvent.evidence_state.replace(/_/g, " ")} | {topObservedEvent.source_channels.length} source channel{topObservedEvent.source_channels.length === 1 ? "" : "s"}.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="tab-handoff-actions" aria-label="Overview handoffs">
+        {topEvent && (
+          <button type="button" onClick={openTopEvent}>
+            <Layers size={13} /> Inspect evidence
+          </button>
+        )}
+        {!topEvent && topObservedEvent && (
+          <button type="button" onClick={openObservedEvent}>
+            <Layers size={13} /> Inspect evidence limit
+          </button>
+        )}
+        {topEvent && onToggleMapOverlay && (
+          <button type="button" onClick={openTopEventMapOverlay}>
+            <MapPin size={13} /> Show on map
+          </button>
+        )}
+        <button type="button" onClick={openEngineerBriefing}>
+          <BrainCircuit size={13} /> Engineer briefing
+        </button>
+        <button type="button" onClick={() => setWorkspace("laps", "overview")}>
+          <Clock size={13} /> Review laps
+        </button>
+        {topEvent && decisionContextReady && (
+          <button type="button" onClick={() => focusEvidence(buildOverviewEvidence(topEvent), "setup_impact")}>
+            <Wrench size={13} /> Setup impact
+          </button>
+        )}
+      </div>
+    </section>
+  );
 
   if (!isLearning) {
-    const setupAvailable = overview.setup_snapshot != null;
-    const archiveVerified = Boolean(
-      telemetryCapabilities
-      && telemetryCapabilities.cache_compatibility.status === "current"
-      && telemetryCapabilities.capability_summary.lossless_archive_complete
-      && telemetryCapabilities.capability_summary.warning_channels === 0,
-    );
-    const blockingOverviewWarnings = overview.warnings.filter(isDecisionBlockingWarning);
-    const dataTrustReady = archiveVerified && blockingOverviewWarnings.length === 0;
-    const trustBlocker = !telemetryCapabilities
-      ? "Telemetry capability verification is unavailable for this run."
-      : telemetryCapabilities.cache_compatibility.status !== "current"
-        ? telemetryCapabilities.cache_compatibility.reason
-        : !telemetryCapabilities.capability_summary.lossless_archive_complete
-          ? "The universal telemetry archive is incomplete."
-          : telemetryCapabilities.capability_summary.warning_channels > 0
-            ? `${telemetryCapabilities.capability_summary.warning_channels} telemetry channels have health warnings.`
-            : blockingOverviewWarnings[0] ?? null;
-    const decisionState = !lap || !setupAvailable || !dataTrustReady
-      ? "NO CALL"
-      : topEvent
-        ? "INVESTIGATE"
-        : "HOLD";
-    const decisionHeadline = !lap
-      ? "No eligible timed lap is available."
-      : !setupAvailable
-        ? "Telemetry is usable, but the setup snapshot is missing."
-        : !dataTrustReady
-          ? "Data quality needs review before a setup call."
-        : topEvent
-          ? humanizeEventLabel(topEvent.event_type)
-          : "No tuning-valid issue was detected in this run.";
-    const decisionDetail = !lap
-      ? "Complete a clean timed lap before making a setup decision."
-      : !setupAvailable
-        ? "Capture the setup before the next run so every change can be attributed."
-        : !dataTrustReady
-          ? trustBlocker ?? "Resolve the run warnings before using this run for a setup decision."
-        : topEvent
-          ? `${topEvent.zone_name ? `Zone ${topEvent.zone_name}` : "Located event"}${topEvent.lap_number != null ? ` · Lap ${topEvent.lap_number}` : ""}${(topEvent.lap_pct_peak ?? topEvent.lap_pct_start) != null ? ` · Peak ${(topEvent.lap_pct_peak ?? topEvent.lap_pct_start)?.toFixed(1)}%` : ""}`
-          : "Hold the current setup or begin one small, controlled test.";
-
     return (
-      <div className="race-decision-shell">
-        <section className="race-decision-card" data-state={decisionState.toLowerCase().replace(" ", "-")}>
-          <div className="race-decision-kicker">
-            {decisionState === "HOLD" ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
-            <span>{decisionState}</span>
-          </div>
-          <h2>{decisionHeadline}</h2>
-          <p className="race-decision-detail">{decisionDetail}</p>
+      <div className="race-decision-shell" style={{ alignContent: "start" }}>
+        {decisionBroadcast}
 
-          {topEvent && lap && setupAvailable && dataTrustReady && (
-            <p className="race-decision-caveat">
-              Highest-confidence valid telemetry event—not yet a setup conclusion.
-            </p>
-          )}
-
-          <div className="race-decision-actions">
-            {topEvent && (
-              <button className="primary-button" onClick={openTopEvent}>
-                <Layers size={14} /> Inspect evidence
-              </button>
-            )}
-            <button className="secondary-button" onClick={() => setWorkspace("laps", "overview")}>
-              <Clock size={14} /> Review laps
-            </button>
-            {topEvent && (
-              <button className="secondary-button" onClick={() => focusEvidence(buildOverviewEvidence(topEvent), "setup_impact")}>
-                <Wrench size={14} /> Setup impact
-              </button>
-            )}
-          </div>
-        </section>
-
-        <section className="race-proof-strip" aria-label="Decision evidence quality">
-          <div><span>Eligible laps</span><strong>{usefulCount}</strong></div>
-          <div><span>Setup captured</span><strong>{setupAvailable ? "YES" : "NO"}</strong></div>
-          <div><span>Archive verified</span><strong>{archiveVerified ? "YES" : "NO"}</strong></div>
-          <div><span>Blocking warnings</span><strong>{blockingOverviewWarnings.length}</strong></div>
-        </section>
-
-        {overview.warnings.length > 0 && (
+        {broadcastWarning && (
           <section className="race-warning-line">
             <AlertTriangle size={14} />
-            <span>{overview.warnings[0]}</span>
+            <span>{broadcastWarning}</span>
             {overview.warnings.length > 1 && <span className="muted">+{overview.warnings.length - 1} more in Learning Mode</span>}
           </section>
         )}
@@ -239,52 +468,47 @@ export function OverviewTab({ overview, telemetryCapabilities, onToggleMapOverla
 
   return (
     <div className="tab-grid">
+      {decisionBroadcast}
+
       <section className="overview-hero">
         <div className="overview-hero-header">
-          <h2>Top Issue</h2>
-          {topEvent && (
-            <span className="gain-badge" style={{ borderColor: SEVERITY_COLOURS[topEvent.severity], color: SEVERITY_COLOURS[topEvent.severity] }}>
-              {severityLabel(topEvent.severity)}
+          <h2>Observed Signal</h2>
+          {topObservedEvent && (
+            <span className="gain-badge" style={{ borderColor: SEVERITY_COLOURS[topObservedEvent.severity], color: SEVERITY_COLOURS[topObservedEvent.severity] }}>
+              {severityLabel(topObservedEvent.severity)}
             </span>
           )}
         </div>
-        {topEvent ? (
-          <button className="overview-hero-issue" onClick={openTopEvent} style={{ textAlign: "left", background: "transparent", border: "1px solid var(--line)" }}>
+        {topObservedEvent ? (
+          <button className="overview-hero-issue" onClick={openObservedEvent} style={{ textAlign: "left", background: "transparent", border: "1px solid var(--line)" }}>
             <p className="overview-hero-location">
-              <MapPin size={14} /> {humanizeEventLabel(topEvent.event_type)}
-              {topEvent.lap_number != null ? ` · Lap ${topEvent.lap_number}` : ""}
-              {topEvent.zone_name ? ` · ${topEvent.zone_name}` : ""}
-              {(topEvent.lap_pct_peak ?? topEvent.lap_pct_start) != null ? ` · ${(topEvent.lap_pct_peak ?? topEvent.lap_pct_start)?.toFixed(1)}%` : ""}
+              <MapPin size={14} /> {humanizeEventLabel(topObservedEvent.event_type)}
+              {topObservedEvent.lap_number != null ? ` · Lap ${topObservedEvent.lap_number}` : ""}
+              {topObservedEvent.zone_name ? ` · ${topObservedEvent.zone_name}` : ""}
+              {(topObservedEvent.lap_pct_peak ?? topObservedEvent.lap_pct_start) != null ? ` · ${(topObservedEvent.lap_pct_peak ?? topObservedEvent.lap_pct_start)?.toFixed(1)}%` : ""}
             </p>
-            <p className="overview-hero-why">{buildWhyText(topEvent, isLearning)}</p>
+            <p className="overview-hero-why">{buildWhyText(topObservedEvent, isLearning)}</p>
+            {!telemetryEventIsActionable(topObservedEvent) && (
+              <p className="overview-hero-proxy-warning">
+                Evidence only - this signal does not authorize a setup call.
+                {topObservedEvent.blocker_reasons[0] ? ` ${topObservedEvent.blocker_reasons[0]}` : ""}
+              </p>
+            )}
           </button>
         ) : (
-          <p className="muted">No issues detected in this run.</p>
+          <p className="muted">No evidence-qualified issue is available for a setup call.</p>
         )}
-      </section>
-
-      <section className="workspace-section">
-        <h2>Next Actions</h2>
-        <div className="toolbar-actions">
-          <button className="secondary-button" onClick={() => topEvent && focusEvidence(buildOverviewEvidence(topEvent), "platform_trace")}>
-            <Layers size={14} /> Open Platform
-          </button>
-          <button className="secondary-button" onClick={openTopEventMapOverlay}>
-            <MapPin size={14} /> Map Overlay
-          </button>
-          <button className="secondary-button" onClick={() => topEvent && focusEvidence(buildOverviewEvidence(topEvent), "setup_impact")}>
-            <Wrench size={14} /> Open Setup
-          </button>
-        </div>
       </section>
 
       <section className="workspace-section overview-visual-summary">
         <h2>Run Health / Risk Summary</h2>
         <div className="overview-trust-summary">
           <span>Useful {usefulCount}</span>
-          <span>Invalid {invalidCount}</span>
+          <span>Excluded {excludedCount}</span>
           <span>Events {overview.events.length}</span>
-          <span>Top Severity {topSeverity}</span>
+          <span>Observed severity {observedSeverity}</span>
+          <span>Actionable severity {actionableSeverity}</span>
+          <span>Decision {decisionState}</span>
         </div>
       </section>
 
@@ -313,13 +537,24 @@ export function OverviewTab({ overview, telemetryCapabilities, onToggleMapOverla
 
       <section className="metrics-row">
         <EngineeringMetricCard title="Best Useful Lap" value={lap ? `Lap ${lap.lap_number} · ${lap.lap_time?.toFixed(3)}s` : null} color="#22c55e" />
-        <EngineeringMetricCard title="Lap Count / Useful Laps" value={`${overview.laps.length} / ${usefulCount}`} subtitle={`Invalid: ${invalidCount}`} color="#38bdf8" />
-        <EngineeringMetricCard title="Classification Breakdown" value={`${overview.laps.filter((l) => l.lap_type === "flying").length} flying`} subtitle={`${overview.laps.filter((l) => l.lap_type !== "flying").length} non-flying`} color="#60a5fa" />
-        <EngineeringMetricCard title="Top Severity" value={topSeverity} color="#ef4444" />
-        <EngineeringMetricCard title="Platform Risk Score" value={topEvent?.severity ? severityLabel(topEvent.severity) : "INFO"} subtitle={topEvent?.event_type ? humanizeEventLabel(topEvent.event_type) : "No active issue"} color="#f97316" />
+        <EngineeringMetricCard title="Lap Count / Clean Pace Laps" value={`${overview.laps.length} / ${usefulCount}`} subtitle={`Excluded: ${excludedCount}`} color="#38bdf8" />
+        <EngineeringMetricCard
+          title="Longest Clean Block"
+          value={`${longestCleanBlock} lap${longestCleanBlock === 1 ? "" : "s"}`}
+          subtitle={longRunLapsNeeded > 0 ? `${longRunLapsNeeded} more for long-run inspection` : "Long-run inspection gate met"}
+          color={longRunLapsNeeded > 0 ? "#f59e0b" : "#22c55e"}
+        />
+        <EngineeringMetricCard
+          title="Canonical Pace Laps"
+          value={`${timedLapCount} timed/flying/complete`}
+          subtitle={`${overview.laps.length - timedLapCount} other or legacy classifications`}
+          color="#60a5fa"
+        />
+        <EngineeringMetricCard title="Observed Severity" value={observedSeverity} subtitle="Includes evidence-only events" color="#ef4444" />
+        <EngineeringMetricCard title="Actionable Platform Signal" value={actionableSeverity} subtitle={topEvent?.event_type ? humanizeEventLabel(topEvent.event_type) : "No qualified event"} color="#f97316" />
         <EngineeringMetricCard title="Scrub / Resistance Risk" value={overview.events.filter((event) => /SCRUB|RESIST|DRAG/i.test(event.event_type)).length} color="#f59e0b" />
         <EngineeringMetricCard title="Tire Condition Summary" value={overview.events.filter((event) => /TIRE|TEMP|PRESSURE|CAMBER/i.test(event.event_type)).length} subtitle="tire-related events" color="#22d3ee" />
-        <EngineeringMetricCard title="Setup Snapshot Status" value={overview.setup_snapshot ? "Available" : "Unavailable"} color={overview.setup_snapshot ? "#22c55e" : "#ef4444"} />
+        <EngineeringMetricCard title="Setup Snapshot Status" value={setupAvailable ? "Available" : "Unavailable"} color={setupAvailable ? "#22c55e" : "#ef4444"} />
         <EngineeringMetricCard title="Data Quality Status" value={overview.warnings.length === 0 ? "Clean" : `${overview.warnings.length} warning(s)`} subtitle={proxyEventCount > 0 ? `${proxyEventCount} proxy/estimate event(s)` : undefined} color={overview.warnings.length === 0 ? "#22c55e" : "#f59e0b"} />
       </section>
 
@@ -370,16 +605,20 @@ export function OverviewTab({ overview, telemetryCapabilities, onToggleMapOverla
 
       <section className="workspace-section">
         <h2>Recommendations from Crew Chief</h2>
-        {overview.recommendations.length > 0 ? (
+        {actionableRecommendations.length > 0 ? (
           <ol className="findings-list">
-            {overview.recommendations.map((rec) => (
+            {actionableRecommendations.map((rec) => (
               <li key={rec.recommendation_id}>
                 <strong>P{rec.priority_rank}:</strong> {rec.recommendation_text}
               </li>
             ))}
           </ol>
         ) : (
-          <p className="muted">No recommendations yet.</p>
+          <div className="inspector-crew-block">
+            <span className="eyebrow">No call</span>
+            <p>No recommendation is shown without supporting evidence.</p>
+            <p className="muted">{recommendationNoCallReason}</p>
+          </div>
         )}
       </section>
 
@@ -389,13 +628,10 @@ export function OverviewTab({ overview, telemetryCapabilities, onToggleMapOverla
           <button className="secondary-button" onClick={() => setWorkspace("laps", "overview")}>
             <Clock size={14} /> Review in Laps
           </button>
-          <button className="secondary-button" onClick={() => setWorkspace("laps", "overview")}>
-            <Clock size={14} /> Open Laps
-          </button>
         </div>
         <ol className="findings-list">
-          {overview.primary_findings.length > 0
-            ? overview.primary_findings.map((finding) => <li key={finding}>{finding}</li>)
+          {trustedPrimaryFindings.length > 0
+            ? trustedPrimaryFindings.map((finding) => <li key={finding}>{finding}</li>)
             : <li className="muted">No findings yet.</li>}
         </ol>
       </section>

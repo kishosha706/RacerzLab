@@ -1,5 +1,6 @@
 import { AlertTriangle, ClipboardCheck, Gauge, Lightbulb, MapPin, ShieldAlert, Wrench } from "lucide-react";
 import type { RunOverview } from "../types/telemetry";
+import { recommendationBlockedReason, recommendationIsActionable } from "../utils/evidenceTrust";
 
 type CrewChiefPanelProps = {
   overview: RunOverview;
@@ -18,7 +19,12 @@ function warnColor(text: string): string {
 }
 
 export function CrewChiefPanel({ overview, onOpenMap, onOpenPlatform, onOpenSetup, onOpenNotebook, isLearning }: CrewChiefPanelProps) {
-  const recommendation = overview.recommendations?.[0];
+  const recommendation = overview.recommendations.find((candidate) => (
+    recommendationIsActionable(candidate, overview.events)
+  ));
+  const blockedRecommendation = overview.recommendations.find((candidate) => (
+    !recommendationIsActionable(candidate, overview.events)
+  ));
 
   return (
     <aside className="crew-panel">
@@ -26,9 +32,11 @@ export function CrewChiefPanel({ overview, onOpenMap, onOpenPlatform, onOpenSetu
         <ClipboardCheck size={18} />
         <h2>Crew Chief</h2>
       </header>
-      <p className="crew-summary">
-        {isLearning ? overview.crew_chief_summary : ((overview.crew_chief_summary?.split(". ").slice(0, 2).join(". ") ?? "") + ".") || ""}
-      </p>
+      {recommendation && (
+        <p className="crew-summary">
+          {isLearning ? overview.crew_chief_summary : ((overview.crew_chief_summary?.split(". ").slice(0, 2).join(". ") ?? "") + ".") || ""}
+        </p>
+      )}
       {recommendation ? (
         <section className="crew-block">
           <span className="eyebrow">Next test</span>
@@ -39,6 +47,7 @@ export function CrewChiefPanel({ overview, onOpenMap, onOpenPlatform, onOpenSetu
         <section className="crew-block">
           <span className="eyebrow">No call</span>
           <p>No recommendation is shown without supporting evidence.</p>
+          {blockedRecommendation && <strong>{recommendationBlockedReason(blockedRecommendation)}</strong>}
         </section>
       )}
 

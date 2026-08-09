@@ -5,10 +5,12 @@ from types import SimpleNamespace
 from racelab_engine.analysis.setup_controls import (
     SETUP_CONTROL_SPECS,
     assess_setup_change,
+    canonical_setup_value_key,
     expected_control_effect,
     format_setup_value,
     nominal_test_target,
     recommended_test_size_label,
+    resolve_adjacent_setup_target,
     setup_control_values_equal,
 )
 from racelab_engine.knowledge.setup.dial_in_controls import _PLANS, garage_action_for_effect
@@ -48,14 +50,154 @@ def test_input_size_is_separate_for_absolute_and_relative_controls() -> None:
     assert assess_setup_change("rf_front_spring_n_per_mm", 100.0, 120.0).label == "large"
 
 
-def test_nominal_target_is_exact_only_when_control_has_a_safe_numeric_increment() -> None:
-    target, transition = nominal_test_target("cross_weight_percent", 50.0, 1)
-    assert target == "50.5%"
-    assert transition == "50.0% -> 50.5% (+0.5 percentage points)"
+def _provenance(key: str, value: object, source: str = "run-observed-option") -> dict[str, list[str]]:
+    return {canonical_setup_value_key(key, value): [source]}
 
-    spring_target, spring_transition = nominal_test_target("rf_front_spring_n_per_mm", 175.0, 1)
-    assert spring_target is None
-    assert spring_transition.endswith("next available garage setting")
+
+def test_target_uses_the_sourced_adjacent_option_not_the_nominal_increment() -> None:
+    resolution = resolve_adjacent_setup_target(
+        "cross_weight_percent",
+        50.0,
+        1,
+        legal_values=[49.5, 50.0, 50.2, 51.0],
+        legal_value_provenance=_provenance("cross_weight_percent", 50.2),
+    )
+
+    assert resolution.ready is True
+    assert resolution.target_value == 50.2
+    assert resolution.target_label == "50.2%"
+    assert resolution.transition == (
+        "50.0% -> 50.2% (adjacent observed/configured tech-passing option)"
+    )
+    assert "50.5%" not in resolution.transition
+
+    target, transition = nominal_test_target(
+        "cross_weight_percent",
+        50.0,
+        1,
+        legal_values=[50.0, 50.2, 51.0],
+        legal_value_provenance=_provenance("cross_weight_percent", 50.2),
+    )
+    assert target == resolution.target_label
+    assert transition == resolution.transition
+
+
+def test_adjacent_target_formats_driver_units_from_the_recorded_raw_value() -> None:
+    resolution = resolve_adjacent_setup_target(
+        "lf_ride_height_mm",
+        25.4,
+        1,
+        legal_values=[25.4, 25.9, 30.48],
+        legal_value_provenance=_provenance("lf_ride_height_mm", 25.9),
+    )
+
+    assert resolution.ready is True
+    assert resolution.target_label == "1.020 in"
+    assert resolution.transition.startswith("1.000 in -> 1.020 in")
+
+
+def test_recorded_minimum_and_maximum_fail_closed_in_the_blocked_direction() -> None:
+    upper = resolve_adjacent_setup_target(
+        "cross_weight_percent",
+        50.5,
+        1,
+        legal_values=[49.5, 50.0, 50.5],
+        legal_value_provenance=_provenance("cross_weight_percent", 50.5),
+    )
+    lower = resolve_adjacent_setup_target(
+        "cross_weight_percent",
+        49.5,
+        -1,
+        legal_values=[49.5, 50.0, 50.5],
+        legal_value_provenance=_provenance("cross_weight_percent", 49.5),
+    )
+
+    assert upper.ready is False
+    assert upper.target_label is None
+    assert "highest recorded comparable" in upper.transition
+    assert lower.ready is False
+    assert lower.target_label is None
+    assert "lowest recorded comparable" in lower.transition
+
+
+def test_missing_current_or_option_catalog_returns_needed_data_not_a_target() -> None:
+    missing_current = resolve_adjacent_setup_target(
+        "front_brake_bias_percent",
+        None,
+        1,
+        legal_values=[52.0, 52.5],
+        legal_value_provenance=_provenance("front_brake_bias_percent", 52.5),
+    )
+    missing_catalog = resolve_adjacent_setup_target(
+        "front_brake_bias_percent",
+        52.0,
+        1,
+    )
+
+    assert missing_current.target_label is None
+    assert "Capture the current Front Brake Bias" in missing_current.transition
+    assert missing_catalog.target_label is None
+    assert "option catalog" in missing_catalog.transition
+    assert "52.5%" not in missing_catalog.transition
+
+
+def test_unproven_adjacent_option_cannot_be_skipped_for_a_farther_sourced_value() -> None:
+    resolution = resolve_adjacent_setup_target(
+        "cross_weight_percent",
+        50.0,
+        1,
+        legal_values=[50.0, 50.2, 50.5],
+        legal_value_provenance=_provenance("cross_weight_percent", 50.5, "farther-option"),
+    )
+
+    assert resolution.ready is False
+    assert resolution.target_label is None
+    assert "50.2%" in resolution.transition
+    assert "50.5%" not in resolution.transition
+
+
+def test_sparse_far_only_observation_cannot_masquerade_as_an_adjacent_small_option() -> None:
+    resolution = resolve_adjacent_setup_target(
+        "cross_weight_percent",
+        50.0,
+        1,
+        legal_values=[50.0, 60.0],
+        legal_value_provenance=_provenance(
+            "cross_weight_percent", 60.0, "tech-passing-setup:far-run",
+        ),
+    )
+
+    assert resolution.ready is False
+    assert resolution.target_label is None
+    assert "not the smallest controlled increment" in resolution.transition
+
+
+def test_garage_action_exposes_exact_value_only_for_a_sourced_adjacent_option() -> None:
+    sourced = garage_action_for_effect(
+        _effect_item("add_crossweight_small"),
+        {"cross_weight_percent": 50.0},
+        legal_values_by_control={"cross_weight_percent": [50.0, 50.2, 50.5]},
+        legal_value_provenance_by_control={
+            "cross_weight_percent": _provenance(
+                "cross_weight_percent", 50.2, "run-42:tech-pass"
+            )
+        },
+    )
+    unsourced = garage_action_for_effect(
+        _effect_item("add_crossweight_small"),
+        {"cross_weight_percent": 50.0},
+    )
+
+    assert sourced is not None
+    assert sourced.target_ready is True
+    assert sourced.proposed_value_label == "Cross Weight 50.2%"
+    assert "50.0% -> 50.2%" in sourced.change_this
+    assert "run-42:tech-pass" in sourced.change_size_explanation
+    assert unsourced is not None
+    assert unsourced.target_ready is False
+    assert unsourced.proposed_value_label is None
+    assert unsourced.change_this.startswith("Do not change Cross Weight yet.")
+    assert "50.5%" not in unsourced.change_this
 
 
 def test_every_control_explains_size_direction_and_guardrail() -> None:

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from collections import Counter
+import sqlite3
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from api.schemas import RunListItem
+from racelab_engine.models.racelab_session import RaceLabSession
 from racelab_engine.services.lap_service import build_lap_list_for_run
 from racelab_engine.services.session_service import (
     add_run_to_session,
@@ -18,6 +22,37 @@ from racelab_engine.services.session_service import (
 from racelab_engine.storage.repository import RaceLabRepository
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
+
+
+def _session_picker_payload(session: RaceLabSession, run_items: list[dict]) -> dict:
+    """Add truthful, presentation-only run context to a session card."""
+    payload = session.as_dict()
+    returned_run_ids = [item.get("run_id") for item in run_items]
+    if (
+        len(returned_run_ids) != len(session.run_ids)
+        or any(not isinstance(run_id, str) or not run_id for run_id in returned_run_ids)
+        or len(set(returned_run_ids)) != len(returned_run_ids)
+        or set(returned_run_ids) != set(session.run_ids)
+    ):
+        return payload
+
+    def summarize(field: str, multiple_label: str) -> str | None:
+        values = list(dict.fromkeys(
+            str(item[field]).strip()
+            for item in run_items
+            if item.get(field) is not None and str(item[field]).strip()
+        ))
+        if len(values) == 1:
+            return values[0]
+        if len(values) > 1:
+            return multiple_label
+        return None
+
+    if not payload.get("track_name"):
+        payload["track_name"] = summarize("track_name", "Multiple tracks")
+    if not payload.get("car_name"):
+        payload["car_name"] = summarize("car_name", "Multiple cars")
+    return payload
 
 
 class CreateSessionRequest(BaseModel):
@@ -49,7 +84,36 @@ def create_session_endpoint(req: CreateSessionRequest) -> dict:
 @router.get("")
 def list_sessions_endpoint(include_archived: bool = False) -> list[dict]:
     sessions = list_sessions(include_archived=include_archived)
-    return [s.as_dict() for s in sessions]
+    repository = RaceLabRepository()
+    all_run_ids = list(dict.fromkeys(
+        run_id
+        for session in sessions
+        for run_id in session.run_ids
+    ))
+    try:
+        all_run_items = repository.get_run_list_items(all_run_ids)
+    except (OSError, RuntimeError, ValueError, sqlite3.Error):
+        # Session selection is presentation-only. A damaged run summary must
+        # not hide sessions or manufacture context for them.
+        all_run_items = []
+    returned_run_ids = [
+        run_id
+        for item in all_run_items
+        if isinstance((run_id := item.get("run_id")), str) and run_id
+    ]
+    run_id_counts = Counter(returned_run_ids)
+    run_items_by_id = {
+        run_id: item
+        for item in all_run_items
+        if isinstance((run_id := item.get("run_id")), str) and run_id_counts[run_id] == 1
+    }
+    return [
+        _session_picker_payload(
+            session,
+            [run_items_by_id[run_id] for run_id in session.run_ids if run_id in run_items_by_id],
+        )
+        for session in sessions
+    ]
 
 
 @router.get("/{session_id}")
@@ -106,8 +170,7 @@ def list_session_runs_endpoint(session_id: str) -> list[RunListItem]:
     if not session:
         raise HTTPException(404, f"Session not found: {session_id}")
     repo = RaceLabRepository()
-    items = [repo.get_run_list_item(run_id) for run_id in session.run_ids]
-    return [RunListItem(**item) for item in items if item is not None]
+    return [RunListItem(**item) for item in repo.get_run_list_items(session.run_ids)]
 
 
 @router.delete("/{session_id}/runs/{run_id}")

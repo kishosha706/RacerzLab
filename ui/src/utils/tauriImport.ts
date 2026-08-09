@@ -14,7 +14,7 @@ export interface NativeImportResult {
 }
 
 /**
- * Open a native file picker for .ibt/.sto telemetry files.
+ * Open a native file picker for completed .ibt telemetry files.
  * Returns the selected file path, or null if cancelled.
  */
 export async function pickTelemetryFile(): Promise<NativeImportResult> {
@@ -27,7 +27,7 @@ export async function pickTelemetryFile(): Promise<NativeImportResult> {
       filters: [
         {
           name: "iRacing Telemetry",
-          extensions: ["ibt", "sto"],
+          extensions: ["ibt"],
         },
       ],
       title: "Import iRacing Telemetry",

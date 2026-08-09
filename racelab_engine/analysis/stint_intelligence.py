@@ -6,7 +6,11 @@ import math
 import statistics
 from typing import Iterable
 
-from racelab_engine.analysis.lap_windows import _is_lap_valid_for_ranking, compute_best_windows
+from racelab_engine.analysis.lap_windows import (
+    _is_lap_valid_for_ranking,
+    _lap_numbers_are_consecutive,
+    compute_best_windows,
+)
 from racelab_engine.analysis.pace_quality import compute_pace_quality_score, score_consistency
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.lap_analysis import (
@@ -23,6 +27,7 @@ from racelab_engine.models.session import SessionSummary
 STINT_WINDOW_SIZES = [3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 60]
 STINT_BUCKET_SIZE = 5
 STINT_BUCKET_COUNT = 12
+MIN_LONG_RUN_WINDOW_SIZE = 20
 
 
 def _avg(values: Iterable[float]) -> float | None:
@@ -45,6 +50,8 @@ def _best_rolling_average(laps: list[LapSummary], size: int) -> float | None:
     best: float | None = None
     for index in range(len(ordered) - size + 1):
         window = ordered[index:index + size]
+        if not _lap_numbers_are_consecutive(window):
+            continue
         if not all(_is_lap_valid_for_ranking(lap)[0] for lap in window):
             continue
         values = _times(window)
@@ -61,18 +68,24 @@ def _best_average_map(laps: list[LapSummary]) -> dict[str, float | None]:
 
 def _bucket_averages(laps: list[LapSummary]) -> list[StintBucket]:
     ordered = sorted(laps, key=lambda lap: lap.lap_number)
+    first_lap_number = ordered[0].lap_number if ordered else 0
     buckets: list[StintBucket] = []
     for bucket_index in range(STINT_BUCKET_COUNT):
         start_offset = bucket_index * STINT_BUCKET_SIZE + 1
         end_offset = start_offset + STINT_BUCKET_SIZE - 1
-        bucket_laps = ordered[bucket_index * STINT_BUCKET_SIZE:(bucket_index + 1) * STINT_BUCKET_SIZE]
+        bucket_laps = [
+            lap
+            for lap in ordered
+            if start_offset <= lap.lap_number - first_lap_number + 1 <= end_offset
+        ]
         valid = _valid_laps(bucket_laps)
-        avg = _avg(_times(valid)) if len(valid) == STINT_BUCKET_SIZE else None
+        consecutive = _lap_numbers_are_consecutive(bucket_laps)
+        avg = _avg(_times(valid)) if len(valid) == STINT_BUCKET_SIZE and consecutive else None
         warning = None
         if not bucket_laps:
             warning = "No laps in bucket."
-        elif len(valid) < STINT_BUCKET_SIZE:
-            warning = f"Need {STINT_BUCKET_SIZE} valid laps for this bucket."
+        elif len(valid) < STINT_BUCKET_SIZE or not consecutive:
+            warning = f"Need {STINT_BUCKET_SIZE} consecutive valid laps for this bucket."
         buckets.append(StintBucket(
             label=f"L{start_offset}-{end_offset}",
             start_offset=start_offset,
@@ -98,6 +111,7 @@ def _bucket_averages(laps: list[LapSummary]) -> list[StintBucket]:
 
 def _graph_points(laps: list[LapSummary]) -> list[StintGraphPoint]:
     ordered = sorted(laps, key=lambda lap: lap.lap_number)
+    first_lap_number = ordered[0].lap_number if ordered else 0
     valid_times = [
         lap.lap_time
         for lap in ordered
@@ -106,7 +120,10 @@ def _graph_points(laps: list[LapSummary]) -> list[StintGraphPoint]:
     best_time = min(valid_times, default=None)
     rolling_source: list[float | None] = []
     points: list[StintGraphPoint] = []
-    for index, lap in enumerate(ordered, start=1):
+    previous_lap_number: int | None = None
+    for lap in ordered:
+        if previous_lap_number is not None and lap.lap_number != previous_lap_number + 1:
+            rolling_source = []
         valid, warning = _is_lap_valid_for_ranking(lap)
         lap_time = lap.lap_time if lap.lap_time is not None else None
         fuel = next(
@@ -124,7 +141,7 @@ def _graph_points(laps: list[LapSummary]) -> list[StintGraphPoint]:
             if all(value is not None for value in window):
                 rolling_5 = sum(value for value in window if value is not None) / 5
         points.append(StintGraphPoint(
-            stint_lap=index,
+            stint_lap=lap.lap_number - first_lap_number + 1,
             lap_number=lap.lap_number,
             lap_time=lap_time,
             valid=valid,
@@ -137,6 +154,7 @@ def _graph_points(laps: list[LapSummary]) -> list[StintGraphPoint]:
             invalid_reason=None if valid else warning,
             warning=None if valid else warning,
         ))
+        previous_lap_number = lap.lap_number
     return points
 
 
@@ -304,7 +322,8 @@ def _build_stint_summary(
     worst = max(values) if values else None
     last_lap_time = next((lap.lap_time for lap in reversed(ordered) if lap.lap_time is not None), None)
     std = statistics.stdev(values) if len(values) >= 2 else (0.0 if values else None)
-    early_avg, middle_avg, late_avg = _third_averages(valid)
+    continuous_valid_scope = valid_count == lap_count and _lap_numbers_are_consecutive(ordered)
+    early_avg, middle_avg, late_avg = _third_averages(valid) if continuous_valid_scope else (None, None, None)
     falloff_total = (late_avg - early_avg) if early_avg is not None and late_avg is not None else None
     falloff_per_lap = falloff_total / max(1, valid_count) if falloff_total is not None else None
 
@@ -327,6 +346,10 @@ def _build_stint_summary(
         stint_warnings.append("Window is shorter than 10 valid laps - long-run conclusions are limited.")
     if valid_count < lap_count:
         stint_warnings.append(f"{lap_count - valid_count} lap(s) excluded from stint summary.")
+    if not _lap_numbers_are_consecutive(ordered):
+        stint_warnings.append(
+            "Missing lap numbers split this scope; uninterrupted falloff and component trends are withheld."
+        )
     stint_warnings.extend(pq.warnings)
 
     label = _falloff_label(
@@ -392,9 +415,9 @@ def _build_stint_summary(
         display_group=display_group,
         display_label_short=display_label_short,
         rank_reason=rank_reason,
-        tire_trend_label=_tire_trend_label(valid),
-        platform_trend_label=_platform_trend_label(valid),
-        shock_trend_label=_shock_trend_label(valid),
+        tire_trend_label=_tire_trend_label(valid) if continuous_valid_scope else "tire data limited",
+        platform_trend_label=_platform_trend_label(valid) if continuous_valid_scope else "platform data limited",
+        shock_trend_label=_shock_trend_label(valid) if continuous_valid_scope else "shock data limited",
         stint_label=label,
         warnings=sorted(set(stint_warnings)),
     )
@@ -452,6 +475,7 @@ def _with_highlight_metadata(stints: list[StintSummary]) -> list[StintSummary]:
         (
             size
             for size in STINT_WINDOW_SIZES
+            if size >= MIN_LONG_RUN_WINDOW_SIZE
             if any(stint.best_avg_by_size.get(str(size)) is not None for stint in stints)
         ),
         default=None,
@@ -513,7 +537,8 @@ def build_stint_response(laps: list[LapSummary], session: SessionSummary | None 
         warnings.extend([
             f"No eligible stint windows yet. Only {len(valid)} valid lap{'s' if len(valid) != 1 else ''}; need at least 3 valid laps for short windows.",
             "Need at least 3 valid laps to start short-run averages.",
-            "Need 10+ valid laps for a useful long-run read.",
+            "Need 10+ uninterrupted valid laps for a preliminary tire and pace review.",
+            "Need 20+ uninterrupted valid laps before race-run or best-long-run labels.",
             "Need 50/60 valid laps for 50/60-lap averages.",
             "Out laps, pit laps, cooldowns, wrecks, and invalid laps are excluded.",
             "Import or select a longer clean run to unlock Stint Intelligence.",
@@ -566,7 +591,8 @@ def build_stint_response(laps: list[LapSummary], session: SessionSummary | None 
     if not stint_rows and not warnings:
         warnings.append("No eligible stint windows yet.")
         warnings.append("Need at least 3 valid laps to start short-run averages.")
-        warnings.append("Need 10+ valid laps for a useful long-run read.")
+        warnings.append("Need 10+ uninterrupted valid laps for a preliminary tire and pace review.")
+        warnings.append("Need 20+ uninterrupted valid laps before race-run or best-long-run labels.")
         warnings.append("Need 50/60 valid laps for 50/60-lap averages.")
         warnings.append("Out laps, pit laps, cooldowns, wrecks, and invalid laps are excluded.")
         warnings.append("Import or select a longer clean run to unlock Stint Intelligence.")
@@ -612,24 +638,54 @@ def _trend_delta(test: str, baseline: str) -> str:
     return f"similar: {test}" if test == baseline else f"{baseline} -> {test}"
 
 
+def _stint_scope_is_uninterrupted(stint: StintSummary) -> bool:
+    if (
+        stint.valid_lap_count != stint.lap_count
+        or stint.end_lap - stint.start_lap + 1 != stint.lap_count
+    ):
+        return False
+    if not stint.lap_points:
+        return True
+    ordered_points = sorted(stint.lap_points, key=lambda point: point.lap_number)
+    return (
+        len(ordered_points) == stint.lap_count
+        and ordered_points[0].lap_number == stint.start_lap
+        and ordered_points[-1].lap_number == stint.end_lap
+        and all(point.valid for point in ordered_points)
+        and all(
+            current.lap_number == previous.lap_number + 1
+            for previous, current in zip(ordered_points, ordered_points[1:])
+        )
+    )
+
+
 def compare_stints(baseline: StintSummary, test: StintSummary) -> StintCompareResult:
-    avg_delta = _delta(test.avg_lap_time, baseline.avg_lap_time)
+    uninterrupted = _stint_scope_is_uninterrupted(baseline) and _stint_scope_is_uninterrupted(test)
+    avg_delta = _delta(test.avg_lap_time, baseline.avg_lap_time) if uninterrupted else None
     best_delta = _delta(test.best_lap_time, baseline.best_lap_time)
-    rolling_5_delta = _delta(test.rolling_5_avg_best, baseline.rolling_5_avg_best)
-    rolling_10_delta = _delta(test.rolling_10_avg_best, baseline.rolling_10_avg_best)
-    rolling_20_delta = _delta(test.rolling_20_avg_best, baseline.rolling_20_avg_best)
+    rolling_5_delta = _delta(test.rolling_5_avg_best, baseline.rolling_5_avg_best) if uninterrupted else None
+    rolling_10_delta = _delta(test.rolling_10_avg_best, baseline.rolling_10_avg_best) if uninterrupted else None
+    rolling_20_delta = _delta(test.rolling_20_avg_best, baseline.rolling_20_avg_best) if uninterrupted else None
     rolling_delta_by_size = {
-        str(size): _delta(test.best_avg_by_size.get(str(size)), baseline.best_avg_by_size.get(str(size)))
+        str(size): (
+            _delta(test.best_avg_by_size.get(str(size)), baseline.best_avg_by_size.get(str(size)))
+            if uninterrupted
+            else None
+        )
         for size in STINT_WINDOW_SIZES
     }
     comparison_warnings: list[str] = []
-    same_length_avg_delta = avg_delta if baseline.lap_count == test.lap_count else None
+    if not uninterrupted:
+        comparison_warnings.append(
+            "Uninterrupted stint comparison is unavailable; select consecutive clean windows without missing or excluded laps."
+        )
+    same_length_avg_delta = avg_delta if uninterrupted and baseline.lap_count == test.lap_count else None
     if baseline.lap_count != test.lap_count:
         comparison_warnings.append(
             f"Overall average delta is cross-length ({baseline.lap_count} laps vs {test.lap_count} laps); same-length average delta is unavailable."
         )
-    falloff_delta = _delta(test.falloff_total, baseline.falloff_total)
-    consistency_delta = _delta(test.consistency_score, baseline.consistency_score)
+    falloff_delta = _delta(test.falloff_total, baseline.falloff_total) if uninterrupted else None
+    consistency_delta = _delta(test.consistency_score, baseline.consistency_score) if uninterrupted else None
     baseline_buckets = {bucket.label: bucket for bucket in baseline.bucket_averages}
     test_buckets = {bucket.label: bucket for bucket in test.bucket_averages}
     labels = [bucket.label for bucket in baseline.bucket_averages] or [bucket.label for bucket in test.bucket_averages]
@@ -639,17 +695,23 @@ def compare_stints(baseline: StintSummary, test: StintSummary) -> StintCompareRe
         test_bucket = test_buckets.get(label)
         baseline_avg = baseline_bucket.avg_lap_time if baseline_bucket else None
         test_avg = test_bucket.avg_lap_time if test_bucket else None
-        warning = None if baseline_avg is not None and test_avg is not None else "Bucket delta unavailable."
+        warning = (
+            None
+            if uninterrupted and baseline_avg is not None and test_avg is not None
+            else "Bucket delta unavailable for a split or incomplete stint scope."
+        )
         bucket_deltas.append(StintBucketDelta(
             label=label,
             baseline_avg=baseline_avg,
             test_avg=test_avg,
-            delta=_delta(test_avg, baseline_avg),
+            delta=_delta(test_avg, baseline_avg) if uninterrupted else None,
             warning=warning,
         ))
     best_bucket_delta = min((bucket.delta for bucket in bucket_deltas if bucket.delta is not None), default=None)
 
-    if baseline.valid_lap_count < 5 or test.valid_lap_count < 5:
+    if not uninterrupted:
+        verdict = "Stint comparison withheld; select uninterrupted clean windows."
+    elif baseline.valid_lap_count < 5 or test.valid_lap_count < 5:
         verdict = "Data is limited; need more clean laps."
     elif avg_delta is not None and avg_delta < -0.05 and falloff_delta is not None and falloff_delta > 0.15:
         verdict = "Test stint is faster early but falls off harder."
@@ -677,7 +739,13 @@ def compare_stints(baseline: StintSummary, test: StintSummary) -> StintCompareRe
         summary_parts.append(f"Best bucket delta {best_bucket_delta:+.3f}s.")
     if falloff_delta is not None:
         summary_parts.append(f"Falloff delta {falloff_delta:+.3f}s.")
-    summary = " ".join(summary_parts) if summary_parts else "Stint comparison is limited by available clean lap data."
+    summary = (
+        "Stint comparison is withheld because at least one scope contains a missing or excluded lap."
+        if not uninterrupted
+        else " ".join(summary_parts)
+        if summary_parts
+        else "Stint comparison is limited by available clean lap data."
+    )
 
     return StintCompareResult(
         baseline_stint=baseline,

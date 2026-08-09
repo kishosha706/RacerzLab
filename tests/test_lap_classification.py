@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from racelab_engine.analysis.lap_classification import classify_laps
-from racelab_engine.analysis.lap_eligibility import lap_ineligibility_reasons, lap_is_eligible
+from racelab_engine.analysis.lap_eligibility import (
+    lap_ineligibility_reasons,
+    lap_is_eligible,
+    longest_contiguous_eligible_lap_count,
+)
 from racelab_engine.models.lap import LapSummary
 
 
@@ -56,3 +60,22 @@ def test_complete_lap_with_caution_tag_is_not_eligible() -> None:
 
 def test_empty_lap_list_stays_empty() -> None:
     assert classify_laps([]) == []
+
+
+def test_longest_eligible_block_never_bridges_missing_or_invalid_laps() -> None:
+    missing_number = [
+        *[_lap(lap_id=f"run:lap:{number}", lap_number=number, lap_time=50.0) for number in range(1, 6)],
+        *[_lap(lap_id=f"run:lap:{number}", lap_number=number, lap_time=50.0) for number in range(7, 12)],
+    ]
+    invalid_middle = [
+        _lap(
+            lap_id=f"run:lap:{number}",
+            lap_number=number,
+            lap_time=50.0,
+            classification_tags=["PIT_ROAD"] if number == 6 else [],
+        )
+        for number in range(1, 12)
+    ]
+
+    assert longest_contiguous_eligible_lap_count(missing_number) == 5
+    assert longest_contiguous_eligible_lap_count(invalid_middle) == 5

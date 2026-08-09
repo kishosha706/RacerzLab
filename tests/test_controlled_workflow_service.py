@@ -7,8 +7,13 @@ from types import SimpleNamespace
 import pytest
 
 from racelab_engine.analysis.crew_chief_packet import CauseCandidate, OpportunityEvidence, build_kaizen_packet
-from racelab_engine.analysis.test_director import TestEvidenceLink
+from racelab_engine.analysis.test_director import (
+    TestEvidenceLink,
+    TestExecution,
+    TestQualityResult as WorkflowQualityResult,
+)
 from racelab_engine.models.controlled_workflow import ControlledWorkflow
+from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
@@ -16,6 +21,8 @@ from racelab_engine.services import controlled_workflow_service as service
 from racelab_engine.storage.repository import RaceLabRepository
 from racelab_engine.knowledge.setup.dial_in_controls import _PLANS, garage_action_for_effect
 from racelab_engine.models.evidence import EvidenceState
+from test_setup_evidence_adapter import _configure_env, _seed_run
+from racelab_engine.models.segment import SegmentSummary
 
 
 def _packet():
@@ -41,9 +48,9 @@ def _packet():
         current_setup_values={"cross_weight_percent": 50.0},
         eligible_baseline_laps=3, context_matched=True, driver_matched=True,
         sim_integrity_clear=True,
-        legal_values_by_control={"cross_weight_percent": [50.0, 51.0]},
+        legal_values_by_control={"cross_weight_percent": [50.0, 50.5]},
         legal_value_provenance_by_control={
-            "cross_weight_percent": {"51.0": ["tech-passing-setup:option-run"]},
+            "cross_weight_percent": {"50.5": ["tech-passing-setup:option-run"]},
         },
     )
 
@@ -104,6 +111,14 @@ def test_attach_rejects_historical_b_run_even_when_stage_order_is_chronological(
         "compatibility_identity": identity,
         "recording_session_time_bounds_s": bounds[run_id],
     })
+    monkeypatch.setattr(
+        service,
+        "revalidate_controlled_workflow_packet",
+        lambda _workflow, **_kwargs: (_workflow.packet, ()),
+    )
+    monkeypatch.setattr(service, "_validate_recorded_stage_bindings", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(service, "read_telemetry_rows", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(service, "_workflow_decision_context", lambda _workflow: {})
 
     with pytest.raises(ValueError, match="workflow was planned"):
         service.attach_stage("aba-historical", "B", "run-b-old", repository=_Repo(workflow))
@@ -131,8 +146,57 @@ def test_source_run_can_be_frozen_as_a_but_b_must_be_post_plan() -> None:
 def test_card_keeps_observed_option_provenance() -> None:
     packet = _packet()
     assert packet.primary_test is not None
-    assert packet.primary_test.proposed_value_raw == 51.0
+    assert packet.primary_test.proposed_value_raw == 50.5
     assert packet.primary_test.proposed_value_provenance == ("tech-passing-setup:option-run",)
+
+
+def test_only_one_active_controlled_test_can_touch_a_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = datetime.now(timezone.utc)
+    active = ControlledWorkflow(
+        workflow_id="aba-active", created_at=now, updated_at=now,
+        status="planned", source_run_id="source", complaint="tight entry", packet=_packet(),
+    )
+
+    class Repo:
+        db_path = None
+
+        def list_controlled_workflows(self, *, active_only: bool = False):
+            assert active_only is True
+            return [active]
+
+        def save_controlled_workflow(self, _workflow: ControlledWorkflow) -> None:
+            raise AssertionError("A competing workflow must not be saved.")
+
+    monkeypatch.setattr(service, "build_server_kaizen_packet", lambda *args, **kwargs: _packet())
+
+    with pytest.raises(ValueError, match="Finish or explicitly abandon"):
+        service.create_workflow("source", "loose exit", repository=Repo())
+
+
+def test_cancel_workflow_preserves_an_auditable_cancelled_record() -> None:
+    now = datetime.now(timezone.utc)
+    active = ControlledWorkflow(
+        workflow_id="aba-abandon", created_at=now, updated_at=now,
+        status="a_recorded", source_run_id="source", complaint="tight entry", packet=_packet(),
+    )
+
+    class Repo:
+        def __init__(self):
+            self.saved: ControlledWorkflow | None = None
+
+        def get_controlled_workflow(self, workflow_id: str):
+            return active if workflow_id == active.workflow_id else None
+
+        def save_controlled_workflow(self, workflow: ControlledWorkflow) -> None:
+            self.saved = workflow
+
+    repo = Repo()
+    cancelled = service.cancel_workflow(active.workflow_id, repository=repo)
+
+    assert cancelled.status == "cancelled"
+    assert cancelled.workflow_id == active.workflow_id
+    assert cancelled.stage_run_ids == active.stage_run_ids
+    assert repo.saved == cancelled
 
 
 @pytest.mark.parametrize(
@@ -197,6 +261,14 @@ def test_attach_b_accepts_exact_typed_garage_value_without_float_coercion(
         "compatibility_identity": identity,
         "recording_session_time_bounds_s": bounds[run_id],
     })
+    monkeypatch.setattr(
+        service,
+        "revalidate_controlled_workflow_packet",
+        lambda _workflow, **_kwargs: (_workflow.packet, ()),
+    )
+    monkeypatch.setattr(service, "_validate_recorded_stage_bindings", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(service, "read_telemetry_rows", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(service, "_workflow_decision_context", lambda _workflow: {})
     monkeypatch.setattr(service, "setup_controls_comparable", lambda _left, _right: True)
     monkeypatch.setattr(service, "unmapped_setup_change_paths", lambda _left, _right, _changes: [])
     monkeypatch.setattr(service, "_continuous_stage_cohort", lambda _numbers, _rows: (True, None))
@@ -289,6 +361,32 @@ def test_context_matching_allows_normal_progression_but_compares_stage_ordinals(
     assert service._context_score(stint, allow_stint_progression=True) == 1.0
     for ordinal in range(3):
         assert service._context_score([stint[ordinal], stint[ordinal], stint[ordinal]]) == 1.0
+
+
+@pytest.mark.parametrize(
+    "b_context",
+    [
+        {"car_distance_ahead_m": 5.0, "car_distance_behind_m": 500000.0},
+        {"car_distance_ahead_m": 500000.0, "car_distance_behind_m": 5.0},
+        {"car_distance_ahead_m": None, "car_distance_behind_m": 500000.0},
+    ],
+)
+def test_context_matching_blocks_nearby_or_unknown_proximity(
+    b_context: dict[str, float | None],
+) -> None:
+    def lap(proximity: dict[str, float | None]) -> list[dict[str, object]]:
+        return [{
+            "player_tire_compound": "dry", "tire_sets_used": 1,
+            "fuel_level": 50.0, "air_temp": 25.0, "track_temp": 30.0, "wind_vel": 1.0,
+            "lf_tire_distance_m": 1000.0, "rf_tire_distance_m": 1000.0,
+            "lr_tire_distance_m": 1000.0, "rr_tire_distance_m": 1000.0,
+            "speed_mps": 50.0,
+            **proximity,
+        }]
+
+    far = {"car_distance_ahead_m": 500000.0, "car_distance_behind_m": 500000.0}
+
+    assert service._context_score([lap(far), lap(b_context), lap(far)]) == 0.0
 
 
 def test_every_dial_in_plan_preserves_structured_direction_without_parsing_prose() -> None:
@@ -603,6 +701,197 @@ def test_server_packet_requires_same_qualified_mechanism_event_as_opportunity(
     assert any("No setup cause" in blocker for blocker in packet.blockers)
 
 
+def test_server_packet_uses_proven_adjacent_option_before_candidate_gating(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+
+    def setup_values(cross_weight: float) -> dict[str, object]:
+        return {
+            "lf_ride_height_mm": 50.0,
+            "rf_ride_height_mm": 51.0,
+            "lr_ride_height_mm": 70.0,
+            "rr_ride_height_mm": 71.0,
+            "lf_front_spring_n_per_mm": 100.0,
+            "rf_front_spring_n_per_mm": 101.0,
+            "lr_rear_spring_n_per_mm": 90.0,
+            "rr_rear_spring_n_per_mm": 91.0,
+            "nose_weight_percent": 52.0,
+            "cross_weight_percent": cross_weight,
+            "tape_percent": 45.0,
+            "rear_end_ratio": 3.5,
+            "front_brake_bias_percent": 54.0,
+            "steering_ratio": "14:1",
+            "steering_offset_deg": 0.0,
+        }
+
+    def raw_setup(cross_weight: float) -> dict[str, object]:
+        return {"Chassis": {
+            "LeftFront": {"RideHeight": 50.0, "SpringRate": 100.0},
+            "RightFront": {"RideHeight": 51.0, "SpringRate": 101.0},
+            "LeftRear": {"RideHeight": 70.0, "SpringRate": 90.0},
+            "RightRear": {"RideHeight": 71.0, "SpringRate": 91.0},
+            "Front": {
+                "NoseWeight": 52.0,
+                "CrossWeight": cross_weight,
+                "Tape": 45.0,
+                "FrontBrakeBias": 54.0,
+                "SteeringRatio": "14:1",
+                "SteeringOffset": 0.0,
+            },
+            "Rear": {"RearEndRatio": 3.5},
+            "Other": {"DeclaredLeafA": 1, "DeclaredLeafB": 2},
+        }}
+
+    _seed_run(
+        tmp_path,
+        run_id="source",
+        channels={
+            "yaw_rate": 1.0,
+            "lf_tire_pressure": 30.0,
+            "rf_tire_pressure": 30.0,
+        },
+        setup_json=raw_setup(50.0),
+        extracted_values=setup_values(50.0),
+        useful_laps=3,
+    )
+    _seed_run(
+        tmp_path,
+        run_id="option-run",
+        channels={"yaw_rate": 1.0},
+        setup_json=raw_setup(49.5),
+        extracted_values=setup_values(49.5),
+        useful_laps=3,
+    )
+    repo = RaceLabRepository()
+    source = repo.get_overview("source")
+    option = repo.get_overview("option-run")
+    assert source is not None and option is not None
+
+    def event(event_id: str, event_type: str, source_channels: list[str]) -> TelemetryEvent:
+        return TelemetryEvent(
+            event_id=event_id,
+            run_id="source",
+            lap_number=1,
+            event_type=event_type,
+            lap_pct_start=24.0,
+            lap_pct_end=26.0,
+            lap_pct_peak=25.0,
+            confidence_score=0.9,
+            valid_for_tuning=True,
+            evidence_state=EvidenceState.CALCULATED,
+            evidence_json={"phase": "center"},
+            source_channels=source_channels,
+            related_setup_keys=["cross_weight_percent"],
+            blocker_reasons=[],
+        )
+
+    mechanism_events = [
+        event("center-yaw-proof", "YAW_EXIT", ["yaw_rate"]),
+        event(
+            "center-tire-proof",
+            "TIRE_PRESSURE",
+            ["lf_tire_pressure", "rf_tire_pressure"],
+        ),
+    ]
+    repo.save_import(source.model_copy(update={
+        "events": mechanism_events,
+        "session": source.session.model_copy(update={"setup_passed_tech": True}),
+    }))
+    repo.save_import(option.model_copy(update={
+        "session": option.session.model_copy(update={"setup_passed_tech": True}),
+    }))
+    for index in range(51):
+        decoy_run_id = f"newer-baseline-{index:02d}"
+        repo.save_import(RunOverview(
+            run_id=decoy_run_id,
+            session=source.session.model_copy(update={
+                "run_id": decoy_run_id,
+                "setup_passed_tech": True,
+            }),
+            setup_snapshot=SetupSnapshot(
+                setup_id=f"{decoy_run_id}:setup",
+                run_id=decoy_run_id,
+                setup_name="Unchanged baseline",
+                setup_json=raw_setup(50.0),
+                extracted_values=setup_values(50.0),
+            ),
+        ))
+    assert "option-run" not in {item["run_id"] for item in repo.list_runs()}
+
+    compatibility_identity = {
+        "car_id": "car",
+        "car_path": "cars/cup",
+        "car_version": "1",
+        "car_configuration_id": "configuration",
+        "iracing_build_version": "build",
+        "track_id": "track",
+        "track_configuration_name": "oval",
+        "track_version": "1",
+        "session_type": "test",
+    }
+    manifest_reads: list[str] = []
+
+    def manifest_for(run_id: str) -> dict[str, object]:
+        manifest_reads.append(run_id)
+        return {"compatibility_identity": compatibility_identity}
+
+    monkeypatch.setattr(
+        service,
+        "read_telemetry_manifest",
+        manifest_for,
+    )
+    opportunity = OpportunityEvidence(
+        start_pct=20.0,
+        end_pct=30.0,
+        phase="center",
+        observed_time_loss_s=0.2,
+        empirical_noise_s=0.04,
+        alignment_confidence=0.95,
+        repeatable=True,
+        evidence_links=tuple(
+            TestEvidenceLink(
+                event_id=item.event_id,
+                eligible_lap=True,
+                valid_for_tuning=True,
+                phase="center",
+                related_setup_keys=("cross_weight_percent",),
+            )
+            for item in mechanism_events
+        ),
+        source_channels=("yaw_rate", "lf_tire_pressure", "rf_tire_pressure"),
+        supporting_evidence=("Repeated center loss on three eligible laps.",),
+    )
+    monkeypatch.setattr(
+        service,
+        "_derive_opportunity",
+        lambda *_args, **_kwargs: (opportunity, 1.0, 1.0, True),
+    )
+
+    packet = service.build_server_kaizen_packet(
+        "source",
+        "tight center",
+        selected_zone_start_pct=20.0,
+        selected_zone_end_pct=30.0,
+        selected_phase="center",
+        repository=repo,
+    )
+
+    assert packet.decision == "test"
+    assert packet.primary_test is not None
+    assert packet.primary_test.control_key == "cross_weight_percent"
+    assert packet.primary_test.proposed_value_raw == 49.5
+    assert packet.primary_test.exact_change == (
+        "50.0% -> 49.5% (adjacent observed tech-passing option)"
+    )
+    assert packet.primary_test.proposed_value_provenance == (
+        "tech-passing-setup:option-run",
+    )
+    assert not packet.blockers
+    assert manifest_reads == ["source", "option-run"]
+
+
 def test_repository_round_trips_explicit_learning_admission_outcome(tmp_path) -> None:
     repo = RaceLabRepository(tmp_path / "workflow.sqlite")
     source = _overview("source", "2026-08-04T10:00:00+00:00")
@@ -620,6 +909,100 @@ def test_repository_round_trips_explicit_learning_admission_outcome(tmp_path) ->
 
     assert loaded is not None
     assert loaded.learning_admitted is False
+
+
+def test_duplicate_run_import_preserves_controlled_workflow_history(tmp_path) -> None:
+    repo = RaceLabRepository(tmp_path / "workflow-reimport.sqlite")
+    source = _overview("source", "2026-08-04T10:00:00+00:00")
+    source.session.source_file = "source.ibt"
+    repo.save_import(source)
+    now = datetime(2026, 8, 4, 12, 0, tzinfo=timezone.utc)
+    workflow = ControlledWorkflow(
+        workflow_id="aba-survives-reimport",
+        created_at=now,
+        updated_at=now,
+        status="scored",
+        source_run_id="source",
+        complaint="tight entry",
+        packet=_packet(),
+        stage_run_ids={"A": "source", "B": "source-b", "A2": "source-a2"},
+        stage_eligible_lap_numbers={"A": (1, 2, 3), "B": (4, 5, 6), "A2": (7, 8, 9)},
+        analysis_version="immutable-history-test",
+        execution=TestExecution(
+            eligible_laps_a=3,
+            eligible_laps_b=3,
+            eligible_laps_a2=3,
+            unrelated_setup_changes=0,
+            control_key="cross_weight_percent",
+            planned_b_value=50.5,
+            observed_a_value=50.0,
+            observed_b_value=50.5,
+            observed_a2_value=50.0,
+            context_match_score=1.0,
+            driver_match_score=1.0,
+            sim_integrity_score=1.0,
+            phase_effect_b_vs_a_s=-0.05,
+            phase_effect_b_vs_a2_s=-0.04,
+            empirical_noise_s=0.01,
+            minimum_alignment_confidence=0.95,
+            target_effect_distributions_consistent=True,
+            countereffect_passed=True,
+            control_guardrails_passed=True,
+        ),
+        reproduction_snapshot={
+            "certificate_inputs": {"run_ids": ["source", "source-b", "source-a2"]},
+            "decision_context": {"selected_zone_start_pct": 20.0, "selected_zone_end_pct": 30.0},
+        },
+        quality=WorkflowQualityResult(
+            protocol_valid=True,
+            score=94.0,
+            verdict="keep",
+            blockers=(),
+            supporting_evidence=("A/B/A2 effect reproduced.",),
+            contradictory_evidence=(),
+            controlled_effect_eligible=True,
+        ),
+        learning_admitted=False,
+    )
+    repo.save_controlled_workflow(workflow)
+    persisted_before = repo.get_controlled_workflow("aba-survives-reimport")
+    assert persisted_before is not None
+
+    source.session.setup_name = "Re-imported setup snapshot"
+    repo.save_import(source)
+
+    loaded = repo.get_controlled_workflow("aba-survives-reimport")
+    assert loaded is not None
+    assert loaded.model_dump(mode="json") == persisted_before.model_dump(mode="json")
+    assert loaded.source_run_id == "source"
+    assert loaded.status == "scored"
+    assert loaded.learning_admitted is False
+    refreshed = repo.get_overview("source")
+    assert refreshed is not None
+    assert refreshed.session.setup_name == "Re-imported setup snapshot"
+
+
+def test_duplicate_run_import_clears_segments_from_the_previous_analysis(tmp_path) -> None:
+    repo = RaceLabRepository(tmp_path / "segment-reimport.sqlite")
+    source = _overview("source", "2026-08-04T10:00:00+00:00")
+    source.session.source_file = "source.ibt"
+    repo.save_import(source)
+    repo.save_segments("source", [SegmentSummary(
+        segment_id="source:lap:1:0-5",
+        run_id="source",
+        lap_number=1,
+        segment_name="0-5%",
+        pct_start=0.0,
+        pct_end=5.0,
+    )])
+    assert [segment.segment_id for segment in repo.list_segments("source")] == [
+        "source:lap:1:0-5"
+    ]
+
+    source.session.setup_name = "Re-import with a new analysis generation"
+    repo.save_import(source)
+
+    assert repo.list_segments("source") == []
 
 
 def test_scoring_rejects_unequal_eligible_cohorts_before_effect_selection() -> None:
@@ -682,7 +1065,7 @@ def test_score_workflow_persists_a_retest_without_learning(
                     setup_id="setup-a", run_id="run-a", cross_weight_percent=50.0,
                 ),
                 "run-b": SetupSnapshot(
-                    setup_id="setup-b", run_id="run-b", cross_weight_percent=51.0,
+                    setup_id="setup-b", run_id="run-b", cross_weight_percent=50.5,
                 ),
                 "run-a2": SetupSnapshot(
                     setup_id="setup-a2", run_id="run-a2", cross_weight_percent=50.0,
@@ -702,6 +1085,12 @@ def test_score_workflow_persists_a_retest_without_learning(
             self.workflow = updated
 
     repo = ScoreRepo()
+    monkeypatch.setattr(
+        service,
+        "validate_workflow_for_authoritative_use",
+        lambda current, **_kwargs: current,
+    )
+    monkeypatch.setattr(service, "_workflow_decision_context", lambda _workflow: {})
     identity = {"driver_user_id": "driver", "car_id": "car", "track_id": "track"}
     monkeypatch.setattr(
         service,
@@ -754,6 +1143,114 @@ def test_score_workflow_persists_a_retest_without_learning(
     assert repo.workflow == scored
 
 
+@pytest.mark.parametrize(
+    ("b_ahead_m", "b_behind_m"),
+    [
+        (5.0, 500000.0),
+        (500000.0, None),
+    ],
+    ids=("nearby-in-b", "unknown-in-b"),
+)
+def test_score_workflow_cannot_certify_or_learn_with_b_only_proximity_context(
+    monkeypatch: pytest.MonkeyPatch,
+    b_ahead_m: float,
+    b_behind_m: float | None,
+) -> None:
+    now = datetime(2026, 8, 4, 12, 0, tzinfo=timezone.utc)
+    workflow = ControlledWorkflow(
+        workflow_id="aba-proximity", created_at=now, updated_at=now,
+        status="a2_recorded", source_run_id="source", complaint="tight entry",
+        packet=_packet(), stage_run_ids={"A": "run-a", "B": "run-b", "A2": "run-a2"},
+        stage_eligible_lap_numbers={"A": (3, 4, 5), "B": (3, 4, 5), "A2": (3, 4, 5)},
+    )
+
+    class ScoreRepo:
+        db_path = None
+
+        def __init__(self) -> None:
+            self.workflow = workflow
+            self.overviews = {
+                stage: _overview(stage, f"2026-08-04T{hour:02d}:00:00+00:00")
+                for stage, hour in (("source", 12), ("run-a", 13), ("run-b", 14), ("run-a2", 15))
+            }
+            self.setups = {
+                "source": SetupSnapshot(setup_id="setup-source", run_id="source", cross_weight_percent=50.0),
+                "run-a": SetupSnapshot(setup_id="setup-a", run_id="run-a", cross_weight_percent=50.0),
+                "run-b": SetupSnapshot(setup_id="setup-b", run_id="run-b", cross_weight_percent=50.5),
+                "run-a2": SetupSnapshot(setup_id="setup-a2", run_id="run-a2", cross_weight_percent=50.0),
+            }
+
+        def get_controlled_workflow(self, workflow_id: str):
+            return self.workflow if workflow_id == self.workflow.workflow_id else None
+
+        def get_overview(self, run_id: str):
+            return self.overviews.get(run_id)
+
+        def get_setup_snapshot(self, run_id: str):
+            return self.setups.get(run_id)
+
+        def save_controlled_workflow(self, updated: ControlledWorkflow) -> None:
+            self.workflow = updated
+
+    identity = {"driver_user_id": "driver", "car_id": "car", "track_id": "track"}
+    monkeypatch.setattr(
+        service,
+        "validate_workflow_for_authoritative_use",
+        lambda current, **_kwargs: current,
+    )
+    monkeypatch.setattr(service, "_workflow_decision_context", lambda _workflow: {})
+    monkeypatch.setattr(service, "read_telemetry_manifest", lambda _run_id: {
+        "compatibility_identity": identity, "schema_fingerprint": "schema", "cache_version": "cache",
+    })
+
+    def lap_rows(run_id: str, lap_numbers: list[int]) -> dict[int, list[dict[str, object]]]:
+        proximity = (
+            {"car_distance_ahead_m": b_ahead_m, "car_distance_behind_m": b_behind_m}
+            if run_id == "run-b"
+            else {"car_distance_ahead_m": 500000.0, "car_distance_behind_m": 500000.0}
+        )
+        stage = "B" if run_id == "run-b" else "baseline"
+        return {
+            number: [{
+                "lap": number, "lap_dist_pct_100": 25.0, "stage": stage,
+                "player_tire_compound": "dry", "tire_sets_used": 1,
+                "fuel_level": 50.0, "air_temp": 25.0, "track_temp": 30.0, "wind_vel": 1.0,
+                "lf_tire_distance_m": 1000.0, "rf_tire_distance_m": 1000.0,
+                "lr_tire_distance_m": 1000.0, "rr_tire_distance_m": 1000.0,
+                "speed_mps": 50.0, **proximity,
+            }]
+            for number in lap_numbers
+        }
+
+    def alignment(left: list[dict[str, object]], right: list[dict[str, object]], **_kwargs):
+        delta = -0.20 if right[0]["stage"] == "B" else -0.01
+        return SimpleNamespace(
+            grid_pct=[25.0], phase_by_position=["entry"], incremental_delta_s=[delta],
+            source_channels=["lap_dist_pct_100", "session_time"],
+            time_delta_complete=True, coverage_fraction=1.0, local_alignment_confidence=1.0,
+            alignment=[SimpleNamespace(is_gap=False, confidence=1.0)], phase_effects=[],
+        )
+
+    monkeypatch.setattr(service, "_lap_rows", lap_rows)
+    monkeypatch.setattr(service, "_driver_similarity", lambda _left, _right: 1.0)
+    monkeypatch.setattr(service, "setup_controls_comparable", lambda _left, _right: True)
+    monkeypatch.setattr(service, "unmapped_setup_change_paths", lambda _left, _right, _changes: [])
+    monkeypatch.setattr(service, "build_sim_integrity_certificate", lambda _rows, **_kwargs: SimpleNamespace(
+        is_clear_for_analysis=True, confidence_cap=1.0,
+    ))
+    monkeypatch.setattr(service, "analyze_time_alignment", alignment)
+    monkeypatch.setattr(service, "_score_countereffect_guardrail", lambda *_args, **_kwargs: (True, {}))
+    monkeypatch.setattr(service, "_control_guardrail_evaluation", lambda *_args, **_kwargs: (True, {}))
+
+    scored = service.score_workflow(workflow.workflow_id, repository=ScoreRepo())
+
+    assert scored.quality is not None
+    assert scored.quality.verdict == "invalid"
+    assert scored.quality.controlled_effect_eligible is False
+    assert "Context match is below the controlled-test threshold." in scored.quality.blockers
+    assert scored.learning_admitted is not True
+
+
 def test_scoring_rechecks_complete_a2_setup_isolation(monkeypatch: pytest.MonkeyPatch) -> None:
     now = datetime(2026, 8, 4, 12, 0, tzinfo=timezone.utc)
     workflow = ControlledWorkflow(
@@ -776,7 +1273,7 @@ def test_scoring_rechecks_complete_a2_setup_isolation(monkeypatch: pytest.Monkey
             values = {
                 "source": (50.0, 50.0),
                 "run-a": (50.0, 50.0),
-                "run-b": (51.0, 50.0),
+                "run-b": (50.5, 50.0),
                 "run-a2": (50.0, 55.0),
             }
             cross, brake = values[run_id]
@@ -787,6 +1284,11 @@ def test_scoring_rechecks_complete_a2_setup_isolation(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(service, "setup_controls_comparable", lambda _left, _right: True)
     monkeypatch.setattr(service, "unmapped_setup_change_paths", lambda _left, _right, _changes: [])
+    monkeypatch.setattr(
+        service,
+        "validate_workflow_for_authoritative_use",
+        lambda current, **_kwargs: current,
+    )
 
     with pytest.raises(ValueError, match="A and A2 must exactly restore"):
         service.score_workflow(workflow.workflow_id, repository=DriftRepo())

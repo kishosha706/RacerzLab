@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
+import { ChevronDown, ChevronUp, Play, Pause, SkipBack, SkipForward } from "lucide-react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
-import type { TelemetrySelection } from "../store/types";
+import type { TelemetrySelection, Workspace } from "../store/types";
 import { SEVERITY_COLOURS, EVENT_SHAPES } from "../constants/ui";
 import type { PlatformEventItem, PlatformEventVisibilityMode } from "../types/telemetry";
 import { buildWindowEvidence, buildZoneEvidence, lapPctInRange } from "../utils/evidenceFocus";
@@ -10,10 +10,17 @@ import { filterPlatformEvents, isMutedPlatformEvent, platformEventScopeLabel } f
 type EventTimelineProps = {
   platformEvents: PlatformEventItem[];
   eventVisibilityMode: PlatformEventVisibilityMode;
+  workspace: Workspace;
+  onKeyboardOwnershipChange?: (ownsKeyboard: boolean) => void;
 };
 
 const CLUSTER_THRESHOLD_PCT = 0.25;
 const PLAYBACK_SPEEDS = [0.5, 1, 2] as const;
+const TRACE_HEAVY_WORKSPACES: ReadonlySet<Workspace> = new Set([
+  "platform_trace",
+  "speed_delta",
+  "drag_scrub",
+]);
 
 type StaggeredEvent = PlatformEventItem & { staggerOffset: number; _lapPct: number };
 
@@ -52,12 +59,15 @@ function timelineEventLocationLabel(event: PlatformEventItem, selection: Telemet
   return "location unavailable";
 }
 
-export function EventTimeline({ platformEvents, eventVisibilityMode }: EventTimelineProps) {
+export function EventTimeline({ platformEvents, eventVisibilityMode, workspace, onKeyboardOwnershipChange }: EventTimelineProps) {
   const { selection, focusEvidence, setHover, setPlaybackActive } = useTelemetrySelection();
   const [browseIndex, setBrowseIndex] = useState<number | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<number>(1);
+  const [expanded, setExpanded] = useState(() => TRACE_HEAVY_WORKSPACES.has(workspace));
+  const [focusWithin, setFocusWithin] = useState(false);
+  const timelineRef = useRef<HTMLElement | null>(null);
   const playbackRef = useRef<number | null>(null);
   const indexRef = useRef(0);
   const visibleEvents = useMemo(
@@ -65,6 +75,21 @@ export function EventTimeline({ platformEvents, eventVisibilityMode }: EventTime
     [platformEvents, eventVisibilityMode],
   );
   const staggered = useMemo(() => staggerMarkers(visibleEvents), [visibleEvents]);
+  const traceHeavy = TRACE_HEAVY_WORKSPACES.has(workspace);
+  const eventScopeKey = useMemo(() => JSON.stringify({
+    run_id: selection.selectedRunId ?? null,
+    lap: selection.selectedLap ?? null,
+    visibility: eventVisibilityMode,
+    events: visibleEvents.map((event) => [
+      event.event_id,
+      event.lap ?? null,
+      event.lap_pct ?? null,
+      event.sample_index ?? null,
+      event.lap_dist_ft ?? null,
+      event.event_type,
+    ]),
+  }), [eventVisibilityMode, selection.selectedLap, selection.selectedRunId, visibleEvents]);
+  const ownsKeyboard = expanded && focusWithin && visibleEvents.length > 0;
 
   const sorted = useMemo(
     () => [...visibleEvents].filter((e) => e.lap_pct != null).sort((a, b) => (a.lap_pct ?? 0) - (b.lap_pct ?? 0)),
@@ -75,6 +100,24 @@ export function EventTimeline({ platformEvents, eventVisibilityMode }: EventTime
     setPlaybackActive(playing);
     return () => setPlaybackActive(false);
   }, [playing, setPlaybackActive]);
+
+  useEffect(() => {
+    setExpanded(TRACE_HEAVY_WORKSPACES.has(workspace));
+  }, [workspace]);
+
+  useEffect(() => {
+    if (!expanded) {
+      setPlaying(false);
+      setBrowseIndex(null);
+      setHoveredIndex(null);
+      setHover(null, null);
+    }
+  }, [expanded, setHover]);
+
+  useEffect(() => {
+    onKeyboardOwnershipChange?.(ownsKeyboard);
+    return () => onKeyboardOwnershipChange?.(false);
+  }, [onKeyboardOwnershipChange, ownsKeyboard]);
 
   const setPreviewHover = useCallback((event: PlatformEventItem | null) => {
     if (!event) {
@@ -87,6 +130,19 @@ export function EventTimeline({ platformEvents, eventVisibilityMode }: EventTime
         : null;
     setHover(event.lap_pct ?? null, sampleIndex);
   }, [setHover]);
+
+  useEffect(() => {
+    if (playbackRef.current != null) {
+      cancelAnimationFrame(playbackRef.current);
+      playbackRef.current = null;
+    }
+    indexRef.current = 0;
+    setPlaying(false);
+    setBrowseIndex(null);
+    setHoveredIndex(null);
+    setPreviewHover(null);
+    setPlaybackActive(false);
+  }, [eventScopeKey, setPlaybackActive, setPreviewHover]);
 
   const stepTo = useCallback((index: number) => {
     const event = sorted[index];
@@ -104,7 +160,7 @@ export function EventTimeline({ platformEvents, eventVisibilityMode }: EventTime
       runId: selection.selectedRunId ?? null,
       lapNumber: event.lap,
       ...buildWindowEvidence(selection, event.lap),
-      ...buildZoneEvidence(selection, { lapPct: event.lap_pct ?? null, preserveWithoutLapPct: true }),
+      ...buildZoneEvidence(selection, { lapPct: event.lap_pct ?? null }),
       eventId: event.event_id,
       sampleIndex: validSampleIdx,
       lapDistFt: event.lap_dist_ft,
@@ -184,11 +240,15 @@ export function EventTimeline({ platformEvents, eventVisibilityMode }: EventTime
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (!expanded || !timelineRef.current?.contains(document.activeElement)) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (sorted.length === 0) return;
-      if (e.target instanceof HTMLElement && e.target.closest("button, select, [contenteditable='true']")) return;
+      if (e.target instanceof HTMLElement && e.target.closest("select, [contenteditable='true']")) return;
+      const buttonOwnsActivation = e.target instanceof HTMLElement && e.target.closest("button") != null;
 
       if (e.key === " ") {
+        if (buttonOwnsActivation) return;
         e.preventDefault();
         togglePlay();
         return;
@@ -206,6 +266,7 @@ export function EventTimeline({ platformEvents, eventVisibilityMode }: EventTime
         return;
       }
       if (e.key === "Enter") {
+        if (buttonOwnsActivation) return;
         e.preventDefault();
         setPlaying(false);
         commitEvent(indexRef.current);
@@ -221,7 +282,7 @@ export function EventTimeline({ platformEvents, eventVisibilityMode }: EventTime
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [togglePlay, sorted, stepTo, commitEvent, setHover]);
+  }, [expanded, togglePlay, sorted, stepTo, commitEvent, setHover]);
 
   useEffect(() => {
     if (sorted.length === 0) {
@@ -251,90 +312,114 @@ export function EventTimeline({ platformEvents, eventVisibilityMode }: EventTime
   const currentEvent = sorted[currentIndex];
 
   return (
-    <footer className="event-timeline">
+    <footer
+      ref={timelineRef}
+      className={`event-timeline${expanded ? " expanded" : " compact"}`}
+      data-workspace={workspace}
+      data-event-timeline-keyboard-owner={ownsKeyboard ? "true" : "false"}
+      tabIndex={expanded ? 0 : -1}
+      aria-label="Lap event storyline"
+      onFocusCapture={() => setFocusWithin(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusWithin(false);
+      }}
+    >
       <div className="timeline-header">
-        <span className="timeline-label">Lap Storyline</span>
-        <span className="timeline-shortcuts">Esc clear preview - Left/Right browse - Enter commit - Space play</span>
+        <button
+          type="button"
+          className="timeline-collapse-toggle"
+          onClick={() => setExpanded((open) => !open)}
+          aria-expanded={expanded}
+          aria-controls="event-timeline-details"
+          aria-label={`${expanded ? "Collapse" : "Expand"} lap storyline`}
+        >
+          {expanded ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+          <span className="timeline-label">{traceHeavy ? "Lap Storyline" : "Lap Context"}</span>
+          <span className="timeline-event-count">{sorted.length} events</span>
+        </button>
+        {expanded && <span className="timeline-shortcuts">Esc clear preview - Left/Right browse - Enter commit - Space play</span>}
         <span className="timeline-lap">Lap {selection.selectedLap ?? "-"}</span>
       </div>
 
-      <div className="playback-controls">
-        <button className="playback-btn" onClick={stepPrev} title="Previous event" aria-label="Previous event">
-          <SkipBack size={14} />
-        </button>
-        <button className="playback-btn playback-btn-play" onClick={togglePlay} title={playing ? "Pause" : "Play"} aria-label={playing ? "Pause playback" : "Start playback"}>
-          {playing ? <Pause size={14} /> : <Play size={14} />}
-        </button>
-        <button className="playback-btn" onClick={stepNext} title="Next event" aria-label="Next event">
-          <SkipForward size={14} />
-        </button>
-        <div className="playback-speed">
-          {PLAYBACK_SPEEDS.map((s) => (
-            <button
-              key={s}
-              className={`playback-speed-btn${speed === s ? " active" : ""}`}
-              onClick={() => setSpeed(s)}
-              aria-label={`${s}x speed`}
-            >
-              {s}x
+      <div id="event-timeline-details" className="timeline-details" hidden={!expanded}>
+          <div className="playback-controls">
+            <button className="playback-btn" onClick={stepPrev} title="Previous event" aria-label="Previous event">
+              <SkipBack size={14} />
             </button>
-          ))}
-        </div>
-        {currentEvent && (
-          <span className="playback-location" title={currentEvent.title} aria-live="polite">
-            {currentEvent.title} · {timelineEventLocationLabel(currentEvent, selection)}
-          </span>
-        )}
-      </div>
-
-      <div className="timeline-track">
-        {[0, 25, 50, 75, 100].map((pct) => (
-          <span key={pct} className="timeline-pct-marker" style={{ left: `${pct}%` }}>
-            <span className="timeline-pct-label">{pct}%</span>
-            <span className="timeline-pct-tick" />
-          </span>
-        ))}
-
-        {staggered.map((event) => {
-          const left = Math.max(0, Math.min(100, event._lapPct));
-          const isActive = selection.selectedEventId === event.event_id;
-          const isBrowsed = previewIndex != null && sorted[previewIndex]?.event_id === event.event_id;
-          const colour = SEVERITY_COLOURS[event.severity] ?? "#8d9aaa";
-          const shape = EVENT_SHAPES[event.event_type] ?? "*";
-          const muted = isMutedPlatformEvent(event, eventVisibilityMode);
-          const locationLabel = timelineEventLocationLabel(event, selection);
-
-          return (
-            <button
-              key={event.event_id}
-              className={`timeline-marker${isActive ? " active" : ""}${isBrowsed ? " browsed" : ""}${muted ? " muted" : ""}`}
-              style={{ left: `${left}%`, top: `${event.staggerOffset}px`, color: colour }}
-              title={`${event.title} - ${locationLabel} - ${left.toFixed(1)} percent lap - ${platformEventScopeLabel(event)} - ${event.severity}`}
-              aria-label={`${event.title}, ${locationLabel}, ${platformEventScopeLabel(event)}, ${event.severity}`}
-              onClick={() => {
-                const idx = sorted.findIndex((e) => e.event_id === event.event_id);
-                if (idx >= 0) commitEvent(idx);
-              }}
-              onMouseEnter={() => {
-                const idx = sorted.findIndex((e) => e.event_id === event.event_id);
-                if (idx >= 0) {
-                  setHoveredIndex(idx);
-                  setPreviewHover(event);
-                }
-              }}
-              onMouseLeave={() => {
-                setHoveredIndex(null);
-                if (browseIndex != null) {
-                  setPreviewHover(sorted[browseIndex] ?? null);
-                } else {
-                  setHover(null, null);
-                }
-              }}
-            >
-              <span className="timeline-shape" style={{ color: colour }}>{shape}</span>
+            <button className="playback-btn playback-btn-play" onClick={togglePlay} title={playing ? "Pause" : "Play"} aria-label={playing ? "Pause playback" : "Start playback"}>
+              {playing ? <Pause size={14} /> : <Play size={14} />}
             </button>
-          );
-        })}
+            <button className="playback-btn" onClick={stepNext} title="Next event" aria-label="Next event">
+              <SkipForward size={14} />
+            </button>
+            <div className="playback-speed">
+              {PLAYBACK_SPEEDS.map((s) => (
+                <button
+                  key={s}
+                  className={`playback-speed-btn${speed === s ? " active" : ""}`}
+                  onClick={() => setSpeed(s)}
+                  aria-label={`${s}x speed`}
+                >
+                  {s}x
+                </button>
+              ))}
+            </div>
+            {currentEvent && (
+              <span className="playback-location" title={currentEvent.title} aria-live="polite">
+                {currentEvent.title} · {timelineEventLocationLabel(currentEvent, selection)}
+              </span>
+            )}
+          </div>
+
+          <div className="timeline-track">
+            {[0, 25, 50, 75, 100].map((pct) => (
+              <span key={pct} className="timeline-pct-marker" style={{ left: `${pct}%` }}>
+                <span className="timeline-pct-label">{pct}%</span>
+                <span className="timeline-pct-tick" />
+              </span>
+            ))}
+
+            {staggered.map((event) => {
+              const left = Math.max(0, Math.min(100, event._lapPct));
+              const isActive = selection.selectedEventId === event.event_id;
+              const isBrowsed = previewIndex != null && sorted[previewIndex]?.event_id === event.event_id;
+              const colour = SEVERITY_COLOURS[event.severity] ?? "#8d9aaa";
+              const shape = EVENT_SHAPES[event.event_type] ?? "*";
+              const muted = isMutedPlatformEvent(event, eventVisibilityMode);
+              const locationLabel = timelineEventLocationLabel(event, selection);
+
+              return (
+                <button
+                  key={event.event_id}
+                  className={`timeline-marker${isActive ? " active" : ""}${isBrowsed ? " browsed" : ""}${muted ? " muted" : ""}`}
+                  style={{ left: `${left}%`, top: `${event.staggerOffset}px`, color: colour }}
+                  title={`${event.title} - ${locationLabel} - ${left.toFixed(1)} percent lap - ${platformEventScopeLabel(event)} - ${event.severity}`}
+                  aria-label={`${event.title}, ${locationLabel}, ${platformEventScopeLabel(event)}, ${event.severity}`}
+                  onClick={() => {
+                    const idx = sorted.findIndex((e) => e.event_id === event.event_id);
+                    if (idx >= 0) commitEvent(idx);
+                  }}
+                  onMouseEnter={() => {
+                    const idx = sorted.findIndex((e) => e.event_id === event.event_id);
+                    if (idx >= 0) {
+                      setHoveredIndex(idx);
+                      setPreviewHover(event);
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    setHoveredIndex(null);
+                    if (browseIndex != null) {
+                      setPreviewHover(sorted[browseIndex] ?? null);
+                    } else {
+                      setHover(null, null);
+                    }
+                  }}
+                >
+                  <span className="timeline-shape" style={{ color: colour }}>{shape}</span>
+                </button>
+              );
+            })}
+          </div>
       </div>
     </footer>
   );

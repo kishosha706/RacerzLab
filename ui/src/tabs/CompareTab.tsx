@@ -59,7 +59,17 @@ type PreviewData = {
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { headers: { "Content-Type": "application/json" }, ...init });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const raw = await res.text();
+    let message = raw;
+    try {
+      const parsed = JSON.parse(raw) as { detail?: unknown };
+      if (typeof parsed.detail === "string" && parsed.detail.trim()) message = parsed.detail.trim();
+    } catch {
+      // Keep a plain-text backend recovery message intact.
+    }
+    throw new Error(message || `Request failed (${res.status})`);
+  }
   return res.json();
 }
 
@@ -148,6 +158,203 @@ function cornerMini(c: CornerName, m: CornerMetric | undefined) {
 }
 
 // ── Sub-views ───────────────────────────────────────────────
+
+type OvalBriefTone = "good" | "watch" | "blocked" | "neutral";
+
+type OvalBriefFact = {
+  label: string;
+  value: string;
+  detail: string;
+  tone: OvalBriefTone;
+};
+
+function paceBriefFact(pace: PaceComparison | null): OvalBriefFact {
+  if (!pace || pace.direction === "insufficient_data" || pace.cohort_delta_s == null) {
+    return {
+      label: "Clean-lap pace",
+      value: "No clean pace call",
+      detail: "A qualified baseline and test cohort are required.",
+      tone: "blocked",
+    };
+  }
+
+  const magnitude = Math.abs(pace.cohort_delta_s).toFixed(3);
+  const direction = pace.cohort_delta_s < 0 ? "faster" : pace.cohort_delta_s > 0 ? "slower" : "unchanged";
+  const noise = pace.noise_band_s != null ? ` · noise band ${pace.noise_band_s.toFixed(3)}s` : "";
+  if (pace.is_significant === true && direction !== "unchanged") {
+    return {
+      label: "Clean-lap pace",
+      value: `${magnitude}s ${direction}`,
+      detail: `${pace.baseline_eligible_laps} baseline vs ${pace.test_eligible_laps} test laps${noise}`,
+      tone: direction === "faster" ? "good" : "watch",
+    };
+  }
+  return {
+    label: "Clean-lap pace",
+    value: direction === "unchanged" ? "No measured change" : `${magnitude}s ${direction}, not clear`,
+    detail: `The observed cohort change does not clear the empirical noise floor${noise}.`,
+    tone: "neutral",
+  };
+}
+
+function targetBriefFact(data: CompareResponse, friendlyLabel?: string | null): OvalBriefFact {
+  const speed = data.target_zone?.channel_deltas.find((delta) => delta.channel === "speed_mph") ?? null;
+  const scope = friendlyLabel ?? `${data.target_zone_start_pct.toFixed(1)}-${data.target_zone_end_pct.toFixed(1)}% lap`;
+  if (speed?.delta == null) {
+    return {
+      label: "Where it changed",
+      value: scope,
+      detail: "Target-zone speed evidence is unavailable.",
+      tone: "blocked",
+    };
+  }
+  const sign = speed.delta > 0 ? "+" : "";
+  return {
+    label: "Where it changed",
+    value: `${sign}${speed.delta.toFixed(2)} mph`,
+    detail: `${scope} · observed speed, not a cause assignment`,
+    tone: speed.delta > 0 ? "good" : speed.delta < 0 ? "watch" : "neutral",
+  };
+}
+
+function driverBriefFact(driver: DriverComparison | null): OvalBriefFact {
+  if (!driver) {
+    return { label: "Driver match", value: "Unavailable", detail: "No input comparison was returned.", tone: "blocked" };
+  }
+  if (driver.driver_changed_warning) {
+    return {
+      label: "Driver match",
+      value: "Inputs changed",
+      detail: "Setup credit is limited until the driving trace is comparable.",
+      tone: "watch",
+    };
+  }
+  if (driver.repeatability_score != null) {
+    return {
+      label: "Driver match",
+      value: `${driver.repeatability_score.toFixed(0)} repeatability`,
+      detail: "Brake, throttle, and steering comparison is available.",
+      tone: driver.repeatability_score >= 70 ? "good" : "neutral",
+    };
+  }
+  return { label: "Driver match", value: "Not scored", detail: "No repeatability score is available.", tone: "neutral" };
+}
+
+function rightFrontBriefFact(tire: TireComparison | null): OvalBriefFact {
+  if (!tire) {
+    return { label: "Right-front watch", value: "Unavailable", detail: "No tire comparison was returned.", tone: "blocked" };
+  }
+  if (tire.short_run_warning) {
+    return {
+      label: "Right-front watch",
+      value: "Long-run read withheld",
+      detail: "The run is too short for a strong wear or falloff conclusion.",
+      tone: "watch",
+    };
+  }
+  const rightFront = tire.corners?.RF;
+  const observed = rightFront?.tire_wear ?? rightFront?.temp_spread ?? rightFront?.tire_pressure_gain ?? rightFront?.tire_pressure;
+  if (!observed || observed.delta_avg == null) {
+    return {
+      label: "Right-front watch",
+      value: "No comparable trend",
+      detail: "Pressure, temperature-spread, or wear evidence is incomplete.",
+      tone: "neutral",
+    };
+  }
+  return {
+    label: "Right-front watch",
+    value: formatDelta(observed),
+    detail: `${observed.label} · observed comparison only`,
+    tone: observed.direction === "better" ? "good" : observed.direction === "worse" ? "watch" : "neutral",
+  };
+}
+
+function testDisciplineBriefFact(data: CompareResponse): OvalBriefFact {
+  const changeCount = data.setup_changes.length;
+  const score = data.test_discipline?.score;
+  const scoreText = score != null ? ` · discipline ${score.toFixed(0)}` : "";
+  if (changeCount > 1) {
+    return {
+      label: "Test discipline",
+      value: `${changeCount} setup changes`,
+      detail: `Causal credit is limited${scoreText}.`,
+      tone: "watch",
+    };
+  }
+  if (changeCount === 1) {
+    return {
+      label: "Test discipline",
+      value: "One change recorded",
+      detail: `${data.setup_changes[0]?.label ?? "Setup delta"}${scoreText}`,
+      tone: "good",
+    };
+  }
+  return {
+    label: "Test discipline",
+    value: "No setup delta",
+    detail: `Use this as an observational or reference comparison${scoreText}.`,
+    tone: "neutral",
+  };
+}
+
+function OvalComparisonBrief({
+  data,
+  friendlyZoneLabel,
+  learningMode,
+  onOpen,
+}: {
+  data: CompareResponse;
+  friendlyZoneLabel?: string | null;
+  learningMode: boolean;
+  onOpen: (view: SubView) => void;
+}) {
+  const facts = [
+    paceBriefFact(data.pace_comparison),
+    targetBriefFact(data, friendlyZoneLabel),
+    driverBriefFact(data.driver_comparison),
+    rightFrontBriefFact(data.tire_comparison),
+    testDisciplineBriefFact(data),
+  ];
+  const pace = facts[0];
+  return (
+    <section
+      className="oval-compare-brief"
+      data-decision-state={pace.tone}
+      data-authority="comparison-only"
+      aria-labelledby="oval-compare-title"
+    >
+      <header className="oval-compare-header">
+        <div>
+          <span className="eyebrow">Oval comparison brief</span>
+          <h3 id="oval-compare-title">{pace.value}</h3>
+          <p>{data.verdict?.headline ?? "Read the qualified observations before making the next change."}</p>
+        </div>
+        <span className="oval-compare-authority">Comparison only</span>
+      </header>
+      <div className="oval-compare-facts">
+        {facts.map((fact) => (
+          <article key={fact.label} className="oval-compare-fact" data-tone={fact.tone}>
+            <span>{fact.label}</span>
+            <strong>{fact.value}</strong>
+            <small>{fact.detail}</small>
+          </article>
+        ))}
+      </div>
+      <div className="oval-compare-actions" aria-label="Oval comparison details">
+        <button type="button" onClick={() => onOpen("target-zone")}>Where</button>
+        <button type="button" onClick={() => onOpen("driver")}>Driver</button>
+        <button type="button" onClick={() => onOpen("tires")}>RF / tires</button>
+        <button type="button" onClick={() => onOpen("what-changed")}>Setup delta</button>
+      </div>
+      {learningMode && (
+        <p className="oval-compare-coaching">
+          Start with cohort pace, then check where the gain began, whether the inputs matched, and whether the right-front trend stayed acceptable. A comparison can support a keep, undo, or retest decision; it does not authorize a new setup change by itself.
+        </p>
+      )}
+    </section>
+  );
+}
 
 function VerdictView({ verdict: v, disc, wci, pace, confidence, targetSpeedDeltaMph, setupChanges, contextChanges, weatherWarning, onStageNextTest, isSelfCompare }: {
   verdict: DidItWorkVerdict | null; disc: { score: number; label: string } | null;
@@ -542,8 +749,12 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
   const [error, setError] = useState<string | null>(null);
   const [insights, setInsights] = useState<ComparisonInsightsResponse | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
+  const [insightsScopeKey, setInsightsScopeKey] = useState<string | null>(null);
   const [activeZoneLabel, setActiveZoneLabel] = useState<string | null>(null);
   const lastSyncedZoneKeyRef = useRef<string | null>(null);
+  const comparisonRequestSequenceRef = useRef(0);
+  const insightsRequestSequenceRef = useRef(0);
   const basketBaselineLap = basket.baseline?.representative_lap ?? basket.baseline?.lap_number ?? null;
   const basketTestLap = basket.test?.representative_lap ?? basket.test?.lap_number ?? null;
   const effectiveBaselineLap = isBasketDriven ? basketBaselineLap : preview?.suggested_baseline_lap ?? null;
@@ -568,6 +779,18 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
   const selectedZoneRangeLabel = selectedZoneReady
     ? selection.selectedZoneLabel ?? `Zone ${selection.selectedZoneStartPct?.toFixed(1)}-${selection.selectedZoneEndPct?.toFixed(1)}%`
     : null;
+  const comparisonScopeKey = JSON.stringify({
+    baselineRunId,
+    testRunId,
+    baselineLap: effectiveBaselineLap,
+    testLap: effectiveTestLap,
+    startPct,
+    endPct,
+  });
+  const insightsStateOwnsScope = insightsScopeKey === comparisonScopeKey;
+  const scopedInsights = insightsStateOwnsScope ? insights : null;
+  const scopedInsightsLoading = insightsStateOwnsScope && insightsLoading;
+  const scopedInsightsError = insightsStateOwnsScope ? insightsError : null;
 
   // ── Same-run reference mode ──────────────────────────────────
   const isSelfCompare = result != null && result.baseline_lap === result.test_lap && isSameRun;
@@ -581,12 +804,24 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
           <p className="section-note">Whole-car comparison workbook.</p>
         </header>
         <div className="compare-empty">
-          <p>Import another run to compare.</p>
-          <p className="muted">You need at least two imported runs to use the compare workbook.</p>
+          <p>Bank one more comparable run.</p>
+          <p className="muted">Keep the same car and track, match fuel, tire age, weather, and line as closely as possible, and change only one setup item if this is a test.</p>
         </div>
       </section>
     );
   }
+
+  useEffect(() => {
+    comparisonRequestSequenceRef.current += 1;
+    insightsRequestSequenceRef.current += 1;
+    setResult(null);
+    setInsights(null);
+    setInsightsLoading(false);
+    setInsightsError(null);
+    setInsightsScopeKey(null);
+    setLoading(false);
+    setError(null);
+  }, [comparisonScopeKey]);
 
   useEffect(() => {
     if (!testRunId || testRunId === baselineRunId) return;
@@ -630,48 +865,125 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
 
   const handleCompare = useCallback(async () => {
     if (!testRunId) return;
+    const request = {
+      baseline_run_id: baselineRunId,
+      test_run_id: testRunId,
+      baseline_lap: effectiveBaselineLap,
+      test_lap: effectiveTestLap,
+      target_zone_start_pct: startPct,
+      target_zone_end_pct: endPct,
+    };
+    const sequence = ++comparisonRequestSequenceRef.current;
     setLoading(true);
     setError(null);
+    setResult(null);
+    setInsights(null);
     try {
       const res = await req<CompareResponse>("/api/compare", {
         method: "POST",
-        body: JSON.stringify({
-          baseline_run_id: baselineRunId,
-          test_run_id: testRunId,
-          baseline_lap: effectiveBaselineLap,
-          test_lap: effectiveTestLap,
-          target_zone_start_pct: startPct,
-          target_zone_end_pct: endPct,
-        }),
+        body: JSON.stringify(request),
       });
+      if (sequence !== comparisonRequestSequenceRef.current) return;
+      const responseMatchesRequest = res.baseline_run_id === request.baseline_run_id
+        && res.test_run_id === request.test_run_id
+        && (request.baseline_lap == null || res.baseline_lap === request.baseline_lap)
+        && (request.test_lap == null || res.test_lap === request.test_lap)
+        && Math.abs(res.target_zone_start_pct - request.target_zone_start_pct) <= 0.001
+        && Math.abs(res.target_zone_end_pct - request.target_zone_end_pct) <= 0.001;
+      if (!responseMatchesRequest) {
+        setError("Comparison scope error: the result did not match the selected runs, laps, and target zone.");
+        return;
+      }
       setResult(res);
       setSubview("verdict");
     } catch (e) {
+      if (sequence !== comparisonRequestSequenceRef.current) return;
       setError(e instanceof Error ? e.message : "Comparison failed");
     } finally {
-      setLoading(false);
+      if (sequence === comparisonRequestSequenceRef.current) setLoading(false);
     }
   }, [baselineRunId, effectiveBaselineLap, effectiveTestLap, testRunId, startPct, endPct]);
 
   // ── load insights when comparison exists ────────────────────
   useEffect(() => {
-    if (!result) return;
-    let cancelled = false;
-    setInsightsLoading(true);
-    fetchCompareInsights({
-      baseline_run_id: baselineRunId,
-      test_run_id: testRunId,
+    if (!result) {
+      insightsRequestSequenceRef.current += 1;
+      setInsights(null);
+      setInsightsLoading(false);
+      setInsightsError(null);
+      setInsightsScopeKey(null);
+      return;
+    }
+
+    const resultMatchesCurrentScope = result.baseline_run_id === baselineRunId
+      && result.test_run_id === testRunId
+      && (effectiveBaselineLap == null || result.baseline_lap === effectiveBaselineLap)
+      && (effectiveTestLap == null || result.test_lap === effectiveTestLap)
+      && Math.abs(result.target_zone_start_pct - startPct) <= 0.001
+      && Math.abs(result.target_zone_end_pct - endPct) <= 0.001;
+    if (!resultMatchesCurrentScope) {
+      insightsRequestSequenceRef.current += 1;
+      setInsights(null);
+      setInsightsLoading(false);
+      setInsightsError(null);
+      setInsightsScopeKey(null);
+      return;
+    }
+
+    const request = {
+      baseline_run_id: result.baseline_run_id,
+      test_run_id: result.test_run_id,
       baseline_lap: result.baseline_lap,
       test_lap: result.test_lap,
-      target_zone_start_pct: startPct,
-      target_zone_end_pct: endPct,
-    }).then((data) => {
-      if (!cancelled) { setInsights(data); setInsightsLoading(false); }
-    }).catch(() => {
-      if (!cancelled) { setInsights(null); setInsightsLoading(false); }
+      target_zone_start_pct: result.target_zone_start_pct,
+      target_zone_end_pct: result.target_zone_end_pct,
+    };
+    const requestScopeKey = comparisonScopeKey;
+    const sequence = ++insightsRequestSequenceRef.current;
+    let cancelled = false;
+    const isLatestInsightsRequest = () => !cancelled
+      && sequence === insightsRequestSequenceRef.current;
+
+    setInsights(null);
+    setInsightsLoading(true);
+    setInsightsError(null);
+    setInsightsScopeKey(requestScopeKey);
+    fetchCompareInsights(request).then((nextData) => {
+      if (!isLatestInsightsRequest()) return;
+      const responseMatchesRequest = nextData.baseline_run_id === request.baseline_run_id
+        && nextData.test_run_id === request.test_run_id
+        && nextData.baseline_lap === request.baseline_lap
+        && nextData.test_lap === request.test_lap
+        && Math.abs(nextData.target_zone_start_pct - request.target_zone_start_pct) <= 0.001
+        && Math.abs(nextData.target_zone_end_pct - request.target_zone_end_pct) <= 0.001;
+      if (!responseMatchesRequest) {
+        setInsights(null);
+        setInsightsError("Comparison insights scope error: the response did not match the selected runs, laps, and target zone. No insight recommendation is shown.");
+        setInsightsLoading(false);
+        return;
+      }
+      setInsights(nextData);
+      setInsightsError(null);
+      setInsightsLoading(false);
+    }).catch((caught: unknown) => {
+      if (!isLatestInsightsRequest()) return;
+      setInsights(null);
+      setInsightsError(caught instanceof Error
+        ? `Comparison insights unavailable: ${caught.message}`
+        : "Comparison insights unavailable.");
+      setInsightsLoading(false);
     });
     return () => { cancelled = true; };
-  }, [result, baselineRunId, testRunId, startPct, endPct]);
+  }, [
+    result,
+    comparisonScopeKey,
+    baselineRunId,
+    testRunId,
+    effectiveBaselineLap,
+    effectiveTestLap,
+    startPct,
+    endPct,
+  ]);
 
   const subviewContent = useMemo(() => {
     if (!result) return null;
@@ -711,8 +1023,9 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
       case "delta-traces": return <DeltaTracesView baselineRunId={baselineRunId} testRunId={testRunId} startPct={startPct} endPct={endPct} result={result} />;
       case "evidence": return <EvidenceView verdict={result.verdict} />;
       case "insights": {
-        if (insightsLoading) return <p className="muted">Loading insights…</p>;
-        if (!insights) return <p className="muted">Insights not available.</p>;
+        if (scopedInsightsLoading) return <p className="muted">Loading insights…</p>;
+        if (scopedInsightsError) return <p className="error-text" role="alert">{scopedInsightsError}</p>;
+        if (!scopedInsights) return <p className="muted">Insights not available.</p>;
         return (
           <div>
             {isSelfCompare && (
@@ -721,13 +1034,13 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
                 <p className="self-compare-text">Baseline and test are the same run/lap, so no setup decision should be made from this comparison.</p>
               </div>
             )}
-            <ComparisonInsightPanel insights={insights} onOpenDeltaTraces={() => setSubview("delta-traces")} />
+            <ComparisonInsightPanel insights={scopedInsights} onOpenDeltaTraces={() => setSubview("delta-traces")} />
           </div>
         );
       }
       default: return null;
     }
-  }, [result, subview, insights, insightsLoading]);
+  }, [result, subview, scopedInsights, scopedInsightsError, scopedInsightsLoading]);
 
   useEffect(() => {
     if (SUBVIEW_GROUPS[subviewGroup].includes(subview)) return;
@@ -811,7 +1124,12 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
         <span className="lap-flag-badge">Test Lap {effectiveTestLap ?? "auto"}</span>
       </div>
 
-      {error && <p className="error-text">{error}</p>}
+      {error && (
+        <div className="warning-banner compare-error-recovery" role="alert">
+          <AlertTriangle size={14} />
+          <span><strong>Comparison unavailable.</strong> {error} No comparison metrics are shown.</span>
+        </div>
+      )}
 
       {/* Compare Basket status */}
       <div className="compare-basket-status" style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
@@ -883,6 +1201,12 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
       {/* workbook */}
       {result && (
         <div className="compare-workbook">
+          <OvalComparisonBrief
+            data={result}
+            friendlyZoneLabel={activeZoneLabel}
+            learningMode={selection.selectedMode === "learning"}
+            onOpen={setSubview}
+          />
           <p className="section-note compare-group-explainer" style={{ marginTop: 0, marginBottom: 8 }}>
             Grouped navigation: start with Verdict, then drill into Platform, Systems, and Detail.
           </p>
@@ -917,9 +1241,15 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
       )}
 
       {!testRunId && (
-        <div className="workspace-placeholder">
-          <h3>Select a test run to compare</h3>
-          <p>Compare against the baseline to see what changed and whether it worked.</p>
+        <div className="workspace-placeholder oval-compare-empty">
+          <span className="eyebrow">Build a trustworthy oval comparison</span>
+          <h3>Select the test run</h3>
+          <div className="oval-compare-empty-steps">
+            <span><strong>1</strong> Bank a clean baseline</span>
+            <span><strong>2</strong> Match fuel, tires, weather, and line</span>
+            <span><strong>3</strong> Test one setup change</span>
+          </div>
+          <p>The brief will lead with race pace, location, driver match, right-front trend, and test discipline.</p>
         </div>
       )}
     </section>

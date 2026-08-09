@@ -10,7 +10,7 @@ from racelab_engine.io.ibt_types import IBTHeader, IBTVariableDefinition
 from racelab_engine.io.session_yaml import parse_session_yaml
 
 
-MANIFEST_SCHEMA_VERSION = 3
+MANIFEST_SCHEMA_VERSION = 4
 UNIVERSAL_ARCHIVE_VERSION = 1
 
 
@@ -755,6 +755,11 @@ def build_telemetry_manifest(
     frame: Any,
     session_yaml: str | None = None,
     raw_archive_columns: dict[str, str] | None = None,
+    *,
+    run_id: str | None = None,
+    source_file_sha256: str | None = None,
+    source_file_size_bytes: int | None = None,
+    telemetry_cache_sha256: str | None = None,
 ) -> dict[str, Any]:
     declared = {definition.name for definition in definitions}
     channels: list[dict[str, Any]] = []
@@ -815,6 +820,12 @@ def build_telemetry_manifest(
     manifest = {
         "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
         "universal_archive_version": UNIVERSAL_ARCHIVE_VERSION,
+        # These values are supplied by the import service from the decoded file,
+        # never inferred from the path used to read this manifest later.
+        "run_id": run_id,
+        "source_file_sha256": source_file_sha256,
+        "source_file_size_bytes": source_file_size_bytes,
+        "telemetry_cache_sha256": telemetry_cache_sha256,
         "schema_fingerprint": schema_id,
         "compatibility_fingerprint": compatibility_fingerprint(schema_id, identity),
         "compatibility_identity": identity,

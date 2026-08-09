@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from racelab_engine.analysis.setup_controls import (
     SETUP_CONTROL_SPECS,
+    assess_setup_change,
     expected_control_effect,
     format_setup_value,
-    nominal_test_target,
-    recommended_test_size_label,
+    resolve_adjacent_setup_target,
 )
 
 
@@ -48,6 +49,8 @@ class GarageAction:
     control_guardrail: str
     current_value_label: str | None = None
     proposed_value_label: str | None = None
+    target_ready: bool = False
+    target_blockers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -135,62 +138,69 @@ def _coordinated_ride_height_wording(plan: _ActionPlan) -> tuple[str, str]:
     return expectation, guardrail
 
 
-def _next_available_transition(key: str, current_value: Any, direction_sign: int) -> str:
-    current = format_setup_value(key, current_value) if current_value is not None else "current setting"
-    if "spring" in key:
-        destination = "next stiffer available rate" if direction_sign > 0 else "next softer available rate"
-    elif key == "rear_end_ratio":
-        destination = "next numerically higher available ratio" if direction_sign > 0 else "next numerically lower available ratio"
-    elif key == "steering_ratio":
-        if isinstance(current_value, str) and "mm/rev" in current_value.lower():
-            destination = "next quicker available pinion" if direction_sign > 0 else "next slower available pinion"
-        else:
-            destination = "next quicker available ratio" if direction_sign < 0 else "next slower available ratio"
-    elif "ride_height" in key:
-        destination = "next higher available ride-height value" if direction_sign > 0 else "next lower available ride-height value"
-    elif key == "tape_percent":
-        destination = "next more-closed cooling option" if direction_sign > 0 else "next more-open cooling option"
-    else:
-        destination = "next higher available setting" if direction_sign > 0 else "next lower available setting"
-    return f"{current} -> {destination}"
-
-
-def garage_action_for_effect(item: Any, setup_values: dict[str, Any] | None = None) -> GarageAction | None:
+def garage_action_for_effect(
+    item: Any,
+    setup_values: dict[str, Any] | None = None,
+    *,
+    legal_values_by_control: Mapping[str, Sequence[Any]] | None = None,
+    legal_value_provenance_by_control: Mapping[
+        str, Mapping[Any, Sequence[str] | str]
+    ] | None = None,
+) -> GarageAction | None:
     plan = _PLANS.get(item.effect.effect_id)
     if plan is None:
         return None
     setup_values = setup_values or {}
+    legal_values_by_control = legal_values_by_control or {}
+    legal_value_provenance_by_control = legal_value_provenance_by_control or {}
     target_lines: list[str] = []
     proposed_values: list[str] = []
+    resolutions = {}
     for key in plan.control_keys:
-        target, transition = nominal_test_target(key, setup_values.get(key), plan.direction_sign)
-        target_lines.append(f"{SETUP_CONTROL_SPECS[key].label}: {transition}")
-        if target:
-            proposed_values.append(f"{SETUP_CONTROL_SPECS[key].label} {target}")
+        resolution = resolve_adjacent_setup_target(
+            key,
+            setup_values.get(key),
+            plan.direction_sign,
+            legal_values=legal_values_by_control.get(key),
+            legal_value_provenance=legal_value_provenance_by_control.get(key),
+        )
+        resolutions[key] = resolution
+        target_lines.append(f"{SETUP_CONTROL_SPECS[key].label}: {resolution.transition}")
+        if resolution.ready:
+            proposed_values.append(f"{SETUP_CONTROL_SPECS[key].label} {resolution.target_label}")
+
+    target_blockers = tuple(dict.fromkeys(
+        resolution.blocker
+        for resolution in resolutions.values()
+        if resolution.blocker is not None
+    ))
+    target_ready = not target_blockers and all(resolution.ready for resolution in resolutions.values())
 
     if len(plan.control_keys) == 1:
         key = plan.control_keys[0]
         spec = SETUP_CONTROL_SPECS[key]
-        transition = target_lines[0].split(": ", 1)[1]
-        if spec.nominal_test_increment is None:
-            transition = _next_available_transition(key, setup_values.get(key), plan.direction_sign)
-            change_this = f"{spec.label}: {transition} (one available garage step)."
+        resolution = resolutions[key]
+        if target_ready:
+            change_this = f"{spec.label}: {resolution.transition}."
         else:
-            change_this = f"{spec.label}: {transition}."
+            change_this = f"Do not change {spec.label} yet. {resolution.blocker}"
         lever = spec.garage_label or spec.label
         influence = spec.influence_label
     else:
-        joined = "; ".join(target_lines)
-        scope_instruction = (
-            "Move both front ride-height controls by the same amount"
-            if len(plan.control_keys) == 2 and plan.control_keys[0].startswith("lf_")
-            else "Move both rear ride-height controls by the same amount"
-            if len(plan.control_keys) == 2
-            else "Move all four ride-height controls by the same amount"
-        )
-        change_this = f"{joined}. {scope_instruction} as one coordinated ride-height test."
         lever = " + ".join(SETUP_CONTROL_SPECS[key].garage_label or SETUP_CONTROL_SPECS[key].label for key in plan.control_keys)
         influence = "Strong, coupled ride-height influence"
+        if target_ready:
+            joined = "; ".join(target_lines)
+            scope_instruction = (
+                "Move both front ride-height controls to their recorded adjacent values"
+                if len(plan.control_keys) == 2 and plan.control_keys[0].startswith("lf_")
+                else "Move both rear ride-height controls to their recorded adjacent values"
+                if len(plan.control_keys) == 2
+                else "Move all four ride-height controls to their recorded adjacent values"
+            )
+            change_this = f"{joined}. {scope_instruction} as one coordinated ride-height test."
+        else:
+            change_this = f"Do not change {lever} yet. {' '.join(target_blockers)}"
 
     if len(plan.control_keys) > 1:
         control_expectation, control_guardrail = _coordinated_ride_height_wording(plan)
@@ -198,17 +208,42 @@ def garage_action_for_effect(item: Any, setup_values: dict[str, Any] | None = No
         control_expectation = expected_control_effect(plan.control_keys[0], plan.direction_sign, setup_values.get(plan.control_keys[0]))
         control_guardrail = SETUP_CONTROL_SPECS[plan.control_keys[0]].guardrail
 
+    if target_ready:
+        assessments = [
+            assess_setup_change(key, setup_values.get(key), resolutions[key].target_value)
+            for key in plan.control_keys
+        ]
+        if len(assessments) == 1:
+            change_size_label = (
+                f"{assessments[0].label.title()} test input - adjacent recorded garage option"
+            )
+        else:
+            change_size_label = "Recorded adjacent-option ride-height test"
+        change_size_explanation = _unique_join([
+            *(assessment.basis for assessment in assessments),
+            *(
+                f"{SETUP_CONTROL_SPECS[key].label} target source: "
+                f"{', '.join(resolutions[key].provenance)}."
+                for key in plan.control_keys
+            ),
+        ])
+    else:
+        change_size_label = "Target unavailable - record adjacent option"
+        change_size_explanation = _unique_join(list(target_blockers))
+
     return GarageAction(
         title=plan.title,
         change_this=change_this,
         garage_lever=lever,
         control_keys=list(plan.control_keys),
         direction_sign=plan.direction_sign,
-        change_size_label=recommended_test_size_label(plan.control_keys[0]),
-        change_size_explanation=_unique_join([SETUP_CONTROL_SPECS[key].magnitude_policy for key in plan.control_keys]),
+        change_size_label=change_size_label,
+        change_size_explanation=change_size_explanation,
         influence_label=influence,
         control_expectation=control_expectation,
         control_guardrail=control_guardrail,
         current_value_label=_current_summary(plan.control_keys, setup_values),
-        proposed_value_label="; ".join(proposed_values) or None,
+        proposed_value_label="; ".join(proposed_values) if target_ready else None,
+        target_ready=target_ready,
+        target_blockers=target_blockers,
     )

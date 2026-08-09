@@ -39,7 +39,13 @@ from racelab_engine.analysis.sim_integrity import (
 from racelab_engine.analysis.test_discipline import score_test_discipline
 from racelab_engine.analysis.time_alignment import analyze_time_alignment
 from racelab_engine.analysis.phase_engineering import analyze_phase_engineering_systems
-from racelab_engine.analysis.lap_eligibility import eligible_laps, find_lap, lap_ineligibility_reasons, lap_is_eligible
+from racelab_engine.analysis.lap_eligibility import (
+    eligible_laps,
+    find_lap,
+    lap_ineligibility_reasons,
+    lap_is_eligible,
+    longest_contiguous_eligible_lap_count,
+)
 from racelab_engine.analysis.pace_comparison import build_pace_comparison
 from racelab_engine.analysis.proximity_context import (
     ProximityContext,
@@ -809,7 +815,10 @@ def run_comparison(req: CompareRequest) -> dict:
     powertrain = aggregate_powertrain_stats(bl_rows, t_rows, s, e)
     tire_comparison = aggregate_tire_comparison(
         bl_rows, t_rows, s, e,
-        lap_count=min(len(eligible_laps(bl_overview.laps)), len(eligible_laps(t_overview.laps))),
+        lap_count=min(
+            longest_contiguous_eligible_lap_count(bl_overview.laps),
+            longest_contiguous_eligible_lap_count(t_overview.laps),
+        ),
     )
     shock_comparison = aggregate_shock_comparison(bl_rows, t_rows, s, e)
 

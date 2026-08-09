@@ -19,6 +19,7 @@ from racelab_engine.services.track_map_service import (
     find_best_map_for_run,
     build_track_map_package,
     save_and_import_mt2_upload,
+    validate_target_zone,
 )
 router = APIRouter(prefix="/api", tags=["track-maps"])
 
@@ -261,6 +262,11 @@ def run_track_map_package(
     target_zone_end_pct: float | None = None,
     preferred_map_id: str | None = None,
 ) -> JSONResponse:
+    try:
+        validate_target_zone(target_zone_start_pct, target_zone_end_pct)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     repo = repository()
     overview = repo.get_overview(run_id)
     if overview is None:
@@ -284,10 +290,14 @@ def run_track_map_package(
 
     # Get platform events for overlay
     platform_events: list[dict] | None = None
-    from contextlib import suppress
-    with suppress(Exception):
+    overlay_warnings: list[str] = []
+    try:
         if all_events := get_platform_events(run_id, lap=lap):
             platform_events = [event.model_dump(mode="json") for event in all_events]
+    except Exception:
+        overlay_warnings.append(
+            "Platform-event overlay unavailable; map geometry remains available."
+        )
 
     pkg = build_track_map_package(
         map_id, run_id, lap=lap,
@@ -296,4 +306,5 @@ def run_track_map_package(
         target_zone_end_pct=target_zone_end_pct,
     )
     pkg["match"] = match
+    pkg["warnings"] = [*pkg.get("warnings", []), *overlay_warnings]
     return JSONResponse(content=_public_track_map_package(pkg))

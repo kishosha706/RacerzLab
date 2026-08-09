@@ -10,7 +10,7 @@ import {
 } from "react";
 import type { EvidenceContext, SelectionMode, SelectionSource, TelemetrySelection, Workspace } from "./types";
 
-const VALID_WORKSPACES: Workspace[] = ["overview", "map", "laps", "platform_trace", "speed_delta", "drag_scrub", "setup_impact", "dial_in", "compare", "notebook", "channels"];
+const VALID_WORKSPACES: Workspace[] = ["overview", "engineer", "map", "laps", "platform_trace", "speed_delta", "drag_scrub", "setup_impact", "dial_in", "compare", "notebook", "channels"];
 
 function normalizeWorkspace(workspace: Workspace): Workspace {
   if (workspace === "compare") return "laps";
@@ -53,6 +53,7 @@ type SelectionAction =
   | { type: "SET_MODE"; mode: SelectionMode }
   | { type: "SET_WORKSPACE"; workspace: Workspace; source: SelectionSource }
   | { type: "SELECT_ZONE"; zoneId: string | null }
+  | { type: "CLEAR_EVIDENCE_FOCUS" }
   | { type: "RESET_SELECTION" }
   | { type: "LOAD_RUN"; runId: string; bestLap: number | null }
   | { type: "VALIDATE_RUN_IDS"; runIds: string[] }
@@ -123,6 +124,55 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
         selectedZoneEndPct: action.zoneId == null ? null : state.selectedZoneEndPct,
         selectionSource: "track_map",
       };
+    case "CLEAR_EVIDENCE_FOCUS": {
+      // Escape drops every evidence-owned value. Rebuild from the durable
+      // run/lap scope instead of spreading state so a newly-added focus field
+      // cannot silently survive this boundary.
+      const selectedLapScope = state.selectedLapScope === "lap_window"
+        ? "lap_window"
+        : state.selectedLap != null
+          ? "single_lap"
+          : state.selectedRunId != null
+            ? "run"
+            : "unknown";
+      const selectedValueBasis = selectedLapScope === "lap_window"
+        ? "selected_window"
+        : selectedLapScope === "single_lap"
+          ? "full_lap"
+          : selectedLapScope === "run"
+            ? "run_level"
+            : "unavailable";
+      return {
+        ...DEFAULT_SELECTION,
+        selectedRunId: state.selectedRunId,
+        selectedCompareRunId: state.selectedCompareRunId ?? null,
+        selectedLap: state.selectedLap ?? null,
+        selectedLapScope,
+        selectedLapWindowStart: selectedLapScope === "lap_window" ? state.selectedLapWindowStart ?? null : null,
+        selectedLapWindowEnd: selectedLapScope === "lap_window" ? state.selectedLapWindowEnd ?? null : null,
+        selectedRepresentativeLap: selectedLapScope === "lap_window" ? state.selectedRepresentativeLap ?? null : null,
+        selectedMode: state.selectedMode,
+        selectedWorkspace: state.selectedWorkspace,
+        selectedEventId: null,
+        selectedSampleIndex: null,
+        selectedLapDistFt: null,
+        selectedLapDistM: null,
+        selectedLapPct: null,
+        selectedChannel: null,
+        selectedSetupKey: null,
+        selectedZoneId: null,
+        selectedZoneLabel: null,
+        selectedZoneStartPct: null,
+        selectedZoneEndPct: null,
+        selectedValueBasis,
+        selectedLockState: "none",
+        selectedTrustTier: null,
+        selectionSource: "manual",
+        hoverLapPct: null,
+        hoverSampleIndex: null,
+        playbackActive: false,
+      };
+    }
     case "RESET_SELECTION":
       return { ...DEFAULT_SELECTION, selectedRunId: state.selectedRunId, selectedMode: state.selectedMode };
     case "LOAD_RUN":
@@ -133,6 +183,7 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
         selectedLapScope: "single_lap",
         selectedRepresentativeLap: null,
         selectedMode: state.selectedMode,
+        selectedWorkspace: state.selectedWorkspace,
         selectedValueBasis: action.bestLap != null ? "full_lap" : "unavailable",
       };
     case "VALIDATE_RUN_IDS":
@@ -228,6 +279,8 @@ type TelemetrySelectionContextValue = {
   focusTelemetryEvent: (eventId: string, lap: number | null, sampleIndex: number | null, lapDistFt: number | null, lapPct: number | null, workspace: Workspace, source?: SelectionSource) => void;
   /** Set all relevant evidence context in one transaction. */
   focusEvidence: (evidence: Partial<EvidenceContext>, workspace?: Workspace) => void;
+  /** Clear evidence focus while preserving only the active run/lap scope. */
+  clearEvidenceFocus: () => void;
   validateSelectionRunIds: (runIds: string[]) => void;
 };
 
@@ -348,6 +401,10 @@ export function TelemetrySelectionProvider({ children }: { children: ReactNode }
     },
     [],
   );
+  const clearEvidenceFocus = useCallback(() => {
+    resetCursor();
+    dispatch({ type: "CLEAR_EVIDENCE_FOCUS" });
+  }, []);
   const validateSelectionRunIds = useCallback(
     (runIds: string[]) => dispatch({ type: "VALIDATE_RUN_IDS", runIds }),
     [],
@@ -371,8 +428,10 @@ export function TelemetrySelectionProvider({ children }: { children: ReactNode }
     loadRun,
     focusTelemetryEvent,
     focusEvidence,
+    clearEvidenceFocus,
     validateSelectionRunIds,
   }), [
+    clearEvidenceFocus,
     focusEvidence,
     focusTelemetryEvent,
     loadRun,

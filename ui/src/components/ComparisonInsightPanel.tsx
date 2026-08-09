@@ -1,4 +1,5 @@
 import { AlertTriangle, BarChart3, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { ProxyBadge } from "./ProxyBadge";
 import type { ComparisonInsightsResponse, TraceAnnotation, CorrelationInsight, SectorDeltaSummary } from "../types/compare";
 
 type ComparisonInsightPanelProps = {
@@ -48,6 +49,10 @@ export function ComparisonInsightPanel({ insights, onOpenDeltaTraces }: Comparis
           <h3>{insights.summary_headline}</h3>
         </div>
       )}
+
+      <p className="proxy-note comparison-insight-proxy-authority" data-value-basis="proxy">
+        <ProxyBadge kind="proxy" /> Any drag/scrub language below means telemetry-derived resistance or scrub suspicion, not measured aerodynamic drag force or a drag coefficient.
+      </p>
 
       {/* ── Key takeaways ── */}
       {insights.key_takeaways.length > 0 && (
@@ -156,7 +161,13 @@ export function ComparisonInsightPanel({ insights, onOpenDeltaTraces }: Comparis
                 <th>Speed Δ</th>
                 <th>CFS Δ</th>
                 <th>Steering Δ</th>
-                <th>Drag Δ</th>
+                <th
+                  scope="col"
+                  data-value-basis="proxy"
+                  title="Telemetry-derived drag/scrub suspicion proxy; not measured aerodynamic drag"
+                >
+                  Drag/scrub proxy Δ <ProxyBadge kind="proxy" title="Inferred resistance/scrub suspicion; not measured aerodynamic drag force or coefficient" />
+                </th>
                 <th>RPM Δ</th>
               </tr>
             </thead>
@@ -171,7 +182,13 @@ export function ComparisonInsightPanel({ insights, onOpenDeltaTraces }: Comparis
                     {formatVal(s.min_cfs_delta_in, 3)}
                   </td>
                   <td className="cell-val">{formatVal(s.avg_steering_delta_deg, 2)}</td>
-                  <td className="cell-val">{formatVal(s.avg_drag_scrub_delta, 3)}</td>
+                  <td
+                    className="cell-val"
+                    data-value-basis="proxy"
+                    title="Drag/scrub suspicion proxy delta; not measured aerodynamic drag"
+                  >
+                    {formatVal(s.avg_drag_scrub_delta, 3)}
+                  </td>
                   <td className="cell-val">{formatVal(s.avg_rpm_delta, 0)}</td>
                 </tr>
               ))}

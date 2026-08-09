@@ -250,6 +250,51 @@ def test_damper_engine_requires_measured_regime_occupancy_and_never_claims_force
     assert "not one of racerzlab's supported driver-changeable controls" in text
 
 
+def test_damper_disjoint_velocity_and_time_returns_unavailable() -> None:
+    rows = _damper_rows()
+    for row in rows:
+        if row["lap"] != 1:
+            continue
+        first_sample = row["session_tick"] == 0
+        row["session_time"] = None if first_sample else row["session_time"]
+        for corner in ("lf", "rf", "lr", "rr"):
+            row[f"{corner}_shock_vel_in_s"] = 1.0 if first_sample else None
+
+    report = analyze_damper_response(
+        rows,
+        _laps(2),
+        selected_lap=1,
+        sim_integrity_clear=True,
+        setup_snapshot_captured=True,
+    )
+
+    assert report.gate.eligible is False
+    assert report.gate.confidence_cap == 0.0
+    assert report.corners == []
+    assert report.conclusions[0].evidence_state == "unavailable"
+    assert all("paired shaft velocity and session time" in reason for reason in report.gate.blocker_reasons)
+
+
+def test_damper_sparse_pairwise_coverage_on_one_corner_blocks_distribution_math() -> None:
+    rows = _damper_rows()
+    selected_rows = [row for row in rows if row["lap"] == 1]
+    for row in selected_rows[20:]:
+        row["rr_shock_vel_in_s"] = None
+
+    report = analyze_damper_response(
+        rows,
+        _laps(2),
+        selected_lap=1,
+        sim_integrity_clear=True,
+        setup_snapshot_captured=True,
+    )
+
+    assert report.gate.eligible is False
+    assert report.corners == []
+    assert any(reason.startswith("RR damper response has 20/101") for reason in report.gate.blocker_reasons)
+    assert report.gate.needed_measurements
+
+
 def test_damper_setting_test_is_suppressed_without_regime_occupancy() -> None:
     rows = _damper_rows()
     for row in rows:
@@ -1580,6 +1625,8 @@ def test_damper_endpoint_executes_setup_capture_path_without_type_error(monkeypa
 
     report = routes.get_damper_response("run", lap=1)
 
+    assert report.run_id == "run"
+    assert report.selected_lap == 1
     assert report.gate.eligible is True
 
 

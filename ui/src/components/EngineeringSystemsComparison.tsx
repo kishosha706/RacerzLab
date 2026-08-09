@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, RefreshCw, ShieldCheck } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchEngineeringSystems } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type {
@@ -13,6 +13,18 @@ type Props = {
   testRunId: string;
   baselineLap: number | null;
   testLap: number | null;
+};
+
+type EngineeringSystemsRequestState = {
+  requestKey: string | null;
+  data: EngineeringSystemsResponse | null;
+  loading: boolean;
+  error: string | null;
+};
+
+type RequestIdentity = {
+  requestKey: string;
+  sequence: number;
 };
 
 function label(value: string): string {
@@ -61,31 +73,78 @@ function ConclusionDetails({ conclusion }: { conclusion: EngineeringConclusion }
 export function EngineeringSystemsComparison({ baselineRunId, testRunId, baselineLap, testLap }: Props) {
   const { selection } = useTelemetrySelection();
   const learning = selection.selectedMode === "learning";
-  const [data, setData] = useState<EngineeringSystemsResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const request = useMemo(() => baselineLap == null || testLap == null ? null : ({
+    baseline_run_id: baselineRunId,
+    test_run_id: testRunId,
+    baseline_lap: baselineLap,
+    test_lap: testLap,
+    step_pct: 0.2,
+  }), [baselineLap, baselineRunId, testLap, testRunId]);
+  const requestKey = useMemo(() => request == null ? null : JSON.stringify(request), [request]);
+  const requestSequenceRef = useRef(0);
+  const latestRequestRef = useRef<RequestIdentity | null>(null);
+  const [requestState, setRequestState] = useState<EngineeringSystemsRequestState>({
+    requestKey: null,
+    data: null,
+    loading: false,
+    error: null,
+  });
+  const stateOwnsRequest = requestState.requestKey === requestKey;
+  const data = stateOwnsRequest ? requestState.data : null;
+  const loading = requestKey != null && (!stateOwnsRequest || requestState.loading);
+  const error = stateOwnsRequest ? requestState.error : null;
 
   const load = useCallback(async () => {
-    if (baselineLap == null || testLap == null) return;
-    setLoading(true);
-    setError(null);
-    try {
-      setData(await fetchEngineeringSystems({
-        baseline_run_id: baselineRunId,
-        test_run_id: testRunId,
-        baseline_lap: baselineLap,
-        test_lap: testLap,
-        step_pct: 0.2,
-      }));
-    } catch (caught) {
-      setData(null);
-      setError(caught instanceof Error ? caught.message : "Engineering evidence unavailable");
-    } finally {
-      setLoading(false);
+    if (request == null || requestKey == null) {
+      latestRequestRef.current = null;
+      setRequestState({ requestKey: null, data: null, loading: false, error: null });
+      return;
     }
-  }, [baselineLap, baselineRunId, testLap, testRunId]);
+    const requestIdentity = {
+      requestKey,
+      sequence: ++requestSequenceRef.current,
+    };
+    latestRequestRef.current = requestIdentity;
+    setRequestState({ requestKey, data: null, loading: true, error: null });
+    const isLatestRequest = () => {
+      const latestRequest = latestRequestRef.current;
+      return latestRequest?.requestKey === requestIdentity.requestKey
+        && latestRequest.sequence === requestIdentity.sequence;
+    };
+    try {
+      const nextData = await fetchEngineeringSystems(request);
+      if (!isLatestRequest()) return;
+      const responseMatchesRequest = nextData.baseline_run_id === request.baseline_run_id
+        && nextData.test_run_id === request.test_run_id
+        && nextData.baseline_lap === request.baseline_lap
+        && nextData.test_lap === request.test_lap;
+      if (!responseMatchesRequest) {
+        setRequestState({
+          requestKey,
+          data: null,
+          loading: false,
+          error: "Engineering comparison scope error: the response did not match the selected runs and laps.",
+        });
+        return;
+      }
+      setRequestState({ requestKey, data: nextData, loading: false, error: null });
+    } catch (caught) {
+      if (!isLatestRequest()) return;
+      setRequestState({
+        requestKey,
+        data: null,
+        loading: false,
+        error: caught instanceof Error ? caught.message : "Engineering evidence unavailable",
+      });
+    }
+  }, [request, requestKey]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => {
+      if (latestRequestRef.current?.requestKey === requestKey) latestRequestRef.current = null;
+    };
+  }, [load, requestKey]);
 
   const decision = useMemo(() => {
     if (!data) return null;

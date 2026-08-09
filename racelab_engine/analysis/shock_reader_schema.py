@@ -51,6 +51,8 @@ class ShockSettingRecommendation(BaseModel):
     current_value: int | None = None
     delta: int | None = Field(default=None, ge=-5, le=5)
     suggested_value: int | None = None
+    target_value_raw: Any = None
+    legal_option_provenance: list[str] = Field(default_factory=list)
     direction: SettingDirection
     magnitude: SettingMagnitude
     confidence: SettingConfidence
@@ -104,6 +106,8 @@ class ShockRecommendation(BaseModel):
     numeric_step: int | None = Field(default=None, ge=-5, le=5)
     current_value: int | None = None
     suggested_value: int | None = None
+    target_value_raw: Any = None
+    legal_option_provenance: list[str] = Field(default_factory=list)
     blocked_by_limit: bool = False
     classification: RecommendationClassification
     goal: str

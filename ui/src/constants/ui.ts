@@ -195,6 +195,7 @@ export function humanizeEventLabel(eventType: string): string {
 export function humanizeWorkspaceLabel(ws: string): string {
   const map: Record<string, string> = {
     overview: "Overview",
+    engineer: "Smart Engineer",
     map: "Track Map",
     platform_trace: "Platform Trace",
     speed_delta: "Speed Delta",
@@ -204,6 +205,7 @@ export function humanizeWorkspaceLabel(ws: string): string {
     notebook: "Notes",
     channels: "Raw Channels",
     laps: "Laps",
+    dial_in: "Dial-In",
     setup: "Setup",
   };
   return map[ws] ?? ws.replace(/_/g, " ");

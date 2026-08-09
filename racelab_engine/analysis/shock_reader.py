@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 import math
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Iterable
 
+from racelab_engine.analysis.setup_controls import resolve_adjacent_setup_target
 from racelab_engine.analysis.shock_reader_schema import (
     Confidence,
     Pattern,
@@ -17,8 +19,13 @@ from racelab_engine.analysis.shock_reader_schema import (
 )
 from racelab_engine.analysis.lap_eligibility import eligible_laps, find_lap, lap_ineligibility_reasons
 from racelab_engine.models.lap import LapSummary
+from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.setup import SetupSnapshot
-from racelab_engine.services.import_service import default_data_dir, parquet_path
+from racelab_engine.services.import_service import (
+    assert_telemetry_cache_identity,
+    default_data_dir,
+    parquet_path,
+)
 
 
 SHOCK_CORNERS = ("LF", "RF", "LR", "RR")
@@ -30,6 +37,10 @@ MIN_CONTINUOUS_DURATION_S = 0.75
 MIN_FINITE_SHOCK_COVERAGE = 0.80
 CENTER_DEADBAND_IN_S = 0.05
 MAX_SLOPE_ZONE_WIDTH_PCT = 20.0
+LEGAL_SHOCK_OPTION_BLOCKER = (
+    "A sourced adjacent tech-passing legal option is unavailable for this corner and shock row. "
+    "Archive the car-specific option catalog and provenance before authorizing a click or slope change."
+)
 
 VELOCITY_CHANNELS = {
     "LF": "lf_shock_vel_in_s",
@@ -118,6 +129,11 @@ def build_shock_reader_response(
     expected_sample_rate_hz: float = 60.0,
     include_debug: bool = False,
     setup_snapshot: SetupSnapshot | None = None,
+    legal_options_by_corner_setting: Mapping[str, Mapping[str, Sequence[Any]]] | None = None,
+    legal_option_provenance_by_corner_setting: Mapping[
+        str,
+        Mapping[str, Mapping[Any, Sequence[str] | str]],
+    ] | None = None,
     lap_summaries: list[LapSummary] | None = None,
     data_dir: str | Path | None = None,
 ) -> ShockReaderResponse:
@@ -154,7 +170,7 @@ def build_shock_reader_response(
             corners=[],
             recommendations=[],
             warnings=[*warnings, "Shock telemetry unavailable for this run/window."],
-            evidence_state="unavailable",
+            evidence_state=EvidenceState.UNAVAILABLE,
             blocker_reasons=["Shock telemetry unavailable for this run/window."],
         )
 
@@ -173,7 +189,13 @@ def build_shock_reader_response(
         slope_boundary_verified=slope_boundary_verified,
     )
     corners = _apply_context_patterns(corners, context)
-    corners = _attach_setting_recommendations(corners, context, setup_snapshot)
+    corners = _attach_setting_recommendations(
+        corners,
+        context,
+        setup_snapshot,
+        legal_options_by_corner_setting=legal_options_by_corner_setting,
+        legal_option_provenance_by_corner_setting=legal_option_provenance_by_corner_setting,
+    )
     corners = _enforce_one_change(corners)
     recommendations = _build_recommendations(
         corners,
@@ -187,6 +209,22 @@ def build_shock_reader_response(
         warnings.append(tuning_blocked_reason)
     if all(corner.pattern == "insufficient_evidence" for corner in corners):
         warnings.append("Shock velocity channels are missing or too sparse for guarded recommendations.")
+    legal_option_blockers = list(dict.fromkeys(
+        recommendation.blocked_reason
+        for corner in corners
+        for recommendation in corner.setting_recommendations
+        if recommendation.blocked_reason is not None
+        and LEGAL_SHOCK_OPTION_BLOCKER in recommendation.blocked_reason
+    ))
+    actionable_option_exists = any(
+        recommendation.direction in {"add", "subtract"}
+        for corner in corners
+        for recommendation in corner.setting_recommendations
+    )
+    legal_option_response_blocked = bool(legal_option_blockers) and not actionable_option_exists
+    if legal_option_response_blocked:
+        recommendations = []
+    warnings.extend(legal_option_blockers)
 
     return ShockReaderResponse(
         run_id=run_id,
@@ -208,11 +246,11 @@ def build_shock_reader_response(
         recommendations=recommendations,
         warnings=warnings,
         evidence_state=(
-            "blocked_by_context"
-            if tuning_blocked_reason is not None
-            else "unavailable"
+            EvidenceState.BLOCKED_BY_CONTEXT
+            if tuning_blocked_reason is not None or legal_option_response_blocked
+            else EvidenceState.UNAVAILABLE
             if all(corner.pattern == "insufficient_evidence" for corner in corners)
-            else "needs_confirmation"
+            else EvidenceState.NEEDS_CONFIRMATION
         ),
         source_channels=[
             channel for channel in VELOCITY_CHANNELS.values() if data.get(channel)
@@ -220,6 +258,8 @@ def build_shock_reader_response(
         blocker_reasons=(
             [tuning_blocked_reason]
             if tuning_blocked_reason is not None
+            else legal_option_blockers
+            if legal_option_response_blocked
             else ["Shock velocity channels are missing or too sparse."]
             if all(corner.pattern == "insufficient_evidence" for corner in corners)
             else []
@@ -291,12 +331,21 @@ def _suppress_ineligible_shock_actions(
                         update={
                             "delta": None,
                             "suggested_value": None,
+                            "target_value_raw": None,
+                            "legal_option_provenance": [],
                             "direction": "needs_more_evidence",
                             "magnitude": "hold",
                             "confidence": "needs_more_evidence",
                             "reason_short": "Observation only; this lap selection cannot support a tuning action.",
+                            "action_text": f"Hold {recommendation.display_label}; {reason}",
+                            "expected_effect": "No damping or curve-shape effect is claimed from an ineligible lap selection.",
+                            "change_size_explanation": "No test input is authorized.",
+                            "keep_if": "Keep the recorded setting unchanged while collecting an eligible flying-lap window.",
+                            "undo_if": "Do not make a shock change from this observation-only result.",
+                            "goal": "Preserve the measured histogram without converting it into setup advice.",
+                            "tradeoff": "Acting on an ineligible lap could attribute contamination to the shock package.",
                             "blocked_reason": reason,
-                            "evidence_state": "blocked_by_context",
+                            "evidence_state": EvidenceState.BLOCKED_BY_CONTEXT,
                             "blocker_reasons": [reason],
                         }
                     )
@@ -568,12 +617,26 @@ def _attach_setting_recommendations(
     corners: list[ShockCornerRead],
     context: dict[str, Any],
     setup_snapshot: SetupSnapshot | None,
+    *,
+    legal_options_by_corner_setting: Mapping[str, Mapping[str, Sequence[Any]]] | None,
+    legal_option_provenance_by_corner_setting: Mapping[
+        str,
+        Mapping[str, Mapping[Any, Sequence[str] | str]],
+    ] | None,
 ) -> list[ShockCornerRead]:
     return [
         corner.model_copy(
             update={
                 "setup_values": _corner_setup_values(setup_snapshot, corner.corner),
-                "setting_recommendations": _build_setting_recommendations(corner, context, setup_snapshot),
+                "setting_recommendations": _build_setting_recommendations(
+                    corner,
+                    context,
+                    setup_snapshot,
+                    legal_options_by_corner_setting=legal_options_by_corner_setting,
+                    legal_option_provenance_by_corner_setting=(
+                        legal_option_provenance_by_corner_setting
+                    ),
+                ),
             }
         )
         for corner in corners
@@ -606,6 +669,8 @@ def _enforce_one_change(corners: list[ShockCornerRead]) -> list[ShockCornerRead]
                 else recommendation.model_copy(update={
                     "delta": None,
                     "suggested_value": None,
+                    "target_value_raw": None,
+                    "legal_option_provenance": [],
                     "direction": "hold",
                     "magnitude": "hold",
                     "confidence": "low",
@@ -615,8 +680,11 @@ def _enforce_one_change(corners: list[ShockCornerRead]) -> list[ShockCornerRead]
                     "change_size_explanation": "No test input in this stage.",
                     "keep_if": "Keep this row unchanged through A/B/A2.",
                     "undo_if": "Not applicable; this row was not changed.",
+                    "goal": "Preserve one-change test discipline for this stage.",
+                    "tradeoff": "Testing this row simultaneously would make the measured response ambiguous.",
                     "blocked_reason": reason,
                     "blocker_reasons": [reason],
+                    "evidence_state": EvidenceState.BLOCKED_BY_CONTEXT,
                 })
                 if recommendation.direction in {"add", "subtract"}
                 else recommendation
@@ -631,13 +699,83 @@ def _corner_setup_values(setup_snapshot: SetupSnapshot | None, corner: str) -> d
     return {setting: _setup_value(setup_snapshot, corner, _schema_setting) for setting, _label, _schema_setting in INLINE_SETTINGS}
 
 
+def _corner_setting_mapping(
+    catalog: Mapping[str, Mapping[str, Any]] | None,
+    corner: str,
+    setting: ShockSetting,
+) -> Any:
+    if catalog is None:
+        return None
+    corner_catalog = next(
+        (
+            value
+            for key, value in catalog.items()
+            if str(key).strip().casefold() == corner.casefold()
+        ),
+        None,
+    )
+    if not isinstance(corner_catalog, Mapping):
+        return None
+    aliases = {candidate.casefold() for candidate in SETUP_KEY_CANDIDATES[setting]}
+    return next(
+        (
+            value
+            for key, value in corner_catalog.items()
+            if str(key).strip().casefold() in aliases
+        ),
+        None,
+    )
+
+
+def _corner_setting_options(
+    catalog: Mapping[str, Mapping[str, Sequence[Any]]] | None,
+    corner: str,
+    setting: ShockSetting,
+) -> Sequence[Any] | None:
+    options = _corner_setting_mapping(catalog, corner, setting)
+    if isinstance(options, Sequence) and not isinstance(options, (str, bytes, bytearray)):
+        return options
+    return None
+
+
+def _corner_setting_provenance(
+    catalog: Mapping[str, Mapping[str, Mapping[Any, Sequence[str] | str]]] | None,
+    corner: str,
+    setting: ShockSetting,
+) -> Mapping[Any, Sequence[str] | str] | None:
+    provenance = _corner_setting_mapping(catalog, corner, setting)
+    return provenance if isinstance(provenance, Mapping) else None
+
+
 def _build_setting_recommendations(
     corner: ShockCornerRead,
     context: dict[str, Any],
     setup_snapshot: SetupSnapshot | None,
+    *,
+    legal_options_by_corner_setting: Mapping[str, Mapping[str, Sequence[Any]]] | None,
+    legal_option_provenance_by_corner_setting: Mapping[
+        str,
+        Mapping[str, Mapping[Any, Sequence[str] | str]],
+    ] | None,
 ) -> list[ShockSettingRecommendation]:
     return [
-        _setting_recommendation(corner, context, setup_snapshot, label, schema_setting)
+        _setting_recommendation(
+            corner,
+            context,
+            setup_snapshot,
+            label,
+            schema_setting,
+            legal_options=_corner_setting_options(
+                legal_options_by_corner_setting,
+                corner.corner,
+                schema_setting,
+            ),
+            legal_option_provenance=_corner_setting_provenance(
+                legal_option_provenance_by_corner_setting,
+                corner.corner,
+                schema_setting,
+            ),
+        )
         for _setup_key, label, schema_setting in INLINE_SETTINGS
     ]
 
@@ -648,6 +786,9 @@ def _setting_recommendation(
     setup_snapshot: SetupSnapshot | None,
     display_label: str,
     setting: ShockSetting,
+    *,
+    legal_options: Sequence[Any] | None,
+    legal_option_provenance: Mapping[Any, Sequence[str] | str] | None,
 ) -> ShockSettingRecommendation:
     current = _setup_value(setup_snapshot, corner.corner, setting)
     slope_blocker = _slope_blocker(corner, context, setting)
@@ -659,6 +800,8 @@ def _setting_recommendation(
     blocked_reason: str | None = None
     delta: int | None = None
     suggested: int | None = None
+    target_value_raw: Any = None
+    target_provenance: tuple[str, ...] = ()
 
     if slope_blocker is not None:
         direction = "needs_more_evidence"
@@ -679,10 +822,36 @@ def _setting_recommendation(
         blocked_reason = "setup value missing"
         reason = "Capture the current corner-specific setting before authorizing a setup change."
     else:
-        # The setup snapshot carries the current value, not every car's legal option
-        # table. Authorize only an adjacent direction and never invent a target value.
-        delta = desired_delta
-        suggested = None
+        target = resolve_adjacent_setup_target(
+            setting,
+            current,
+            1 if desired_delta > 0 else -1,
+            legal_values=legal_options,
+            legal_value_provenance=legal_option_provenance,
+        )
+        target_click = _click_value(target.target_value)
+        exact_delta = target_click - current if target_click is not None else None
+        if (
+            target.ready
+            and exact_delta in {-1, 1}
+            and (exact_delta > 0) == (desired_delta > 0)
+        ):
+            delta = exact_delta
+            suggested = target_click
+            target_value_raw = target.target_value
+            target_provenance = target.provenance
+        else:
+            # The current setup value alone cannot prove that an arithmetic
+            # next click exists.  Only the resolver's exact sourced target may
+            # authorize action; all other paths retain observations and scrub
+            # action prose.
+            direction = "needs_more_evidence"
+            confidence = "needs_more_evidence"
+            detail = target.blocker or (
+                "The resolved option is not an exact one-click move in the requested garage direction."
+            )
+            blocked_reason = f"{LEGAL_SHOCK_OPTION_BLOCKER} {detail}"
+            reason = blocked_reason
 
     magnitude = _setting_magnitude(delta if delta is not None else desired_delta if direction in {"add", "subtract"} else 0)
     goal, tradeoff, watch_for = _setting_text(setting, direction, reason)
@@ -701,6 +870,8 @@ def _setting_recommendation(
         current_value=current,
         delta=delta,
         suggested_value=suggested,
+        target_value_raw=target_value_raw,
+        legal_option_provenance=list(target_provenance),
         direction=direction,  # type: ignore[arg-type]
         magnitude=magnitude,  # type: ignore[arg-type]
         confidence=confidence,  # type: ignore[arg-type]
@@ -715,15 +886,24 @@ def _setting_recommendation(
         watch_for=watch_for,
         blocked_reason=blocked_reason,
         source_channels=[
-            f"{corner.corner.lower()}_shock_vel_in_s",
-            "lap_dist_pct",
-            *(
-                ["platform_compression_index", "rear_scrape_margin_mm", "shock_activity_index"]
-                if setting in {"hs_compression_slope", "hs_rebound_slope"}
-                else []
-            ),
+            channel
+            for channel in [
+                f"{corner.corner.lower()}_shock_vel_in_s",
+                "lap_dist_pct",
+                *(
+                    ["platform_compression_index", "rear_scrape_margin_mm", "shock_activity_index"]
+                    if setting in {"hs_compression_slope", "hs_rebound_slope"}
+                    else []
+                ),
+            ]
+            if channel in context["available_channels"]
         ],
         blocker_reasons=[blocked_reason] if blocked_reason else [],
+        evidence_state=(
+            EvidenceState.BLOCKED_BY_CONTEXT
+            if blocked_reason
+            else EvidenceState.NEEDS_CONFIRMATION
+        ),
     )
 
 
@@ -1041,6 +1221,8 @@ def _compat_recommend(
         numeric_step=rec.delta,
         current_value=rec.current_value,
         suggested_value=rec.suggested_value,
+        target_value_raw=rec.target_value_raw,
+        legal_option_provenance=rec.legal_option_provenance,
         blocked_by_limit=rec.direction == "blocked",
         classification=classification,  # type: ignore[arg-type]
         goal=rec.goal,
@@ -1059,6 +1241,7 @@ def _compat_recommend(
         } if include_debug else None,
         source_channels=rec.source_channels,
         blocker_reasons=[rec.blocked_reason] if rec.blocked_reason else [],
+        evidence_state=rec.evidence_state,
     )
 
 
@@ -1117,7 +1300,11 @@ def _recommend(
             "chatter": context["chatter"],
             "recovery": context["recovery"],
         } if include_debug else None,
-        source_channels=[f"{corner.corner.lower()}_shock_vel_in_s", "lap_dist_pct"],
+        source_channels=[
+            channel
+            for channel in (f"{corner.corner.lower()}_shock_vel_in_s", "lap_dist_pct")
+            if channel in context["available_channels"]
+        ],
         blocker_reasons=["Shock setting is at its configured limit."] if blocked else [],
     )
 
@@ -1182,6 +1369,7 @@ def _read_shock_reader_columns(
         return {}
     pl = __import__("polars")
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
+    assert_telemetry_cache_identity(run_id, data_root)
     path = parquet_path(data_root, run_id)
     if not path.exists():
         warnings.append(f"Parquet cache not found for run {run_id}.")
@@ -1196,10 +1384,19 @@ def _read_shock_reader_columns(
     safe = [column for column in dict.fromkeys(wanted) if column in existing]
     if all(channel not in safe for channel in VELOCITY_CHANNELS.values()):
         return {}
+    if (lap is not None or lap_window is not None or eligible_lap_numbers is not None) and "lap" not in safe:
+        warnings.append(
+            "Lap-scoped shock analysis is unavailable because lap identity telemetry is missing; "
+            "full-run data was not substituted."
+        )
+        return {}
     if zone is not None and "lap_dist_pct" not in safe:
         warnings.append(
             "Selected-zone shock analysis is unavailable because lap-position telemetry is missing; full-lap data was not substituted."
         )
+        return {}
+    if phase_blocker := _phase_filter_blocker(phase, safe):
+        warnings.append(phase_blocker)
         return {}
 
     frame = pl.scan_parquet(path).select(safe)
@@ -1221,10 +1418,34 @@ def _read_shock_reader_columns(
     return {column: collected.get_column(column).to_list() for column in collected.columns}
 
 
+def _phase_filter_blocker(phase: str | None, columns: list[str]) -> str | None:
+    if not phase:
+        return None
+    normalized = phase.strip().lower().replace("-", "_").replace(" ", "_")
+    steering_available = "abs_steering_deg" in columns or "steering_deg" in columns
+    available = {
+        "braking": "brake_pct" in columns,
+        "turn_in": steering_available,
+        "entry": steering_available,
+        "exit": "throttle_pct" in columns,
+        "straight": steering_available and "throttle_pct" in columns,
+    }
+    if normalized not in available:
+        return (
+            f"Selected shock phase {phase!r} is unsupported; unfiltered data was not substituted."
+        )
+    if available[normalized]:
+        return None
+    return (
+        f"Selected shock phase {phase!r} is unavailable because its selector telemetry is missing; "
+        "unfiltered data was not substituted."
+    )
+
+
 def _apply_phase_filter(frame: Any, pl: Any, phase: str | None, columns: list[str]) -> Any:
     if not phase:
         return frame
-    normalized = phase.lower()
+    normalized = phase.strip().lower().replace("-", "_").replace(" ", "_")
     has_brake = "brake_pct" in columns
     has_throttle = "throttle_pct" in columns
     steering_col = "abs_steering_deg" if "abs_steering_deg" in columns else "steering_deg" if "steering_deg" in columns else None
@@ -1303,6 +1524,11 @@ def _build_context(
     repeated_context = contact_lap_count >= 2 or packed_lap_count >= 2
     recovery = phase in {"transition", "exit", "entry"} or observed["chatter"]
     return {
+        "available_channels": frozenset(
+            channel
+            for channel, samples in data.items()
+            if any(_finite(sample) is not None for sample in samples)
+        ),
         "selected_zone": selected_zone,
         "phase": phase,
         "contact": observed["contact"],

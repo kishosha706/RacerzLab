@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from api.schemas import DialInObjective, DialInPriority
 from racelab_engine.analysis.advanced_experimentation import (
@@ -22,7 +22,10 @@ from racelab_engine.models.controlled_workflow import ControlledWorkflow
 from racelab_engine.services.controlled_workflow_service import (
     attach_stage,
     build_server_kaizen_packet,
+    cancel_workflow,
     create_workflow,
+    project_kaizen_packet_for_publication,
+    project_workflow_for_publication,
     score_workflow,
 )
 from racelab_engine.services.report_service import ReportService
@@ -48,12 +51,61 @@ class ServerEvidenceRequest(BaseModel):
     run_id: str = Field(min_length=1)
     complaint: str = Field(min_length=1)
     selected_lap: int | None = Field(default=None, ge=1)
+    lap_scope: Literal["run", "single_lap", "lap_window", "track_zone"] | None = None
+    window_start_lap: int | None = Field(default=None, ge=1)
+    window_end_lap: int | None = Field(default=None, ge=1)
+    representative_lap: int | None = Field(default=None, ge=1)
     selected_zone_start_pct: float | None = Field(default=None, ge=0.0, lt=100.0)
     selected_zone_end_pct: float | None = Field(default=None, gt=0.0, le=100.0)
     selected_zone_label: str | None = Field(default=None, max_length=120)
     selected_phase: str | None = Field(default=None, max_length=64)
     objective: DialInObjective = "race-pace"
     priority: DialInPriority = "overall-pace"
+
+    @model_validator(mode="after")
+    def validate_lap_selection_scope(self) -> ServerEvidenceRequest:
+        if self.lap_scope is None:
+            self.lap_scope = "single_lap" if self.selected_lap is not None else "run"
+        if self.lap_scope == "lap_window":
+            if None in (
+                self.window_start_lap,
+                self.window_end_lap,
+                self.representative_lap,
+                self.selected_lap,
+            ):
+                raise ValueError(
+                    "Lap-window workflows require start, end, representative, and selected lap identities."
+                )
+            assert self.window_start_lap is not None
+            assert self.window_end_lap is not None
+            assert self.representative_lap is not None
+            if not self.window_start_lap <= self.representative_lap <= self.window_end_lap:
+                raise ValueError("The representative lap must fall inside the selected lap window.")
+            if self.selected_lap != self.representative_lap:
+                raise ValueError("The planner selected lap must equal the window representative lap.")
+        elif any(
+            value is not None
+            for value in (
+                self.window_start_lap,
+                self.window_end_lap,
+                self.representative_lap,
+            )
+        ):
+            raise ValueError("Lap-window identities require lap_scope='lap_window'.")
+        if self.lap_scope == "single_lap" and self.selected_lap is None:
+            raise ValueError("Single-lap workflow scope requires selected_lap.")
+        selected_zone = (self.selected_zone_start_pct, self.selected_zone_end_pct)
+        if (selected_zone[0] is None) != (selected_zone[1] is None):
+            raise ValueError("A selected track zone requires both start and end positions.")
+        if (
+            selected_zone[0] is not None
+            and selected_zone[1] is not None
+            and selected_zone[0] >= selected_zone[1]
+        ):
+            raise ValueError("A selected track zone must have a non-zero ordered window.")
+        if self.lap_scope == "track_zone" and selected_zone[0] is None:
+            raise ValueError("Track-zone workflow scope requires an exact physical window.")
+        return self
 
 
 class WorkflowScoreRequest(BaseModel):
@@ -89,7 +141,8 @@ class ExperimentDesignRequest(BaseModel):
 @router.post("/test-director/plan", response_model=KaizenEvidencePacket)
 def plan_controlled_test(request: ServerEvidenceRequest) -> KaizenEvidencePacket:
     try:
-        return build_server_kaizen_packet(
+        repository = RaceLabRepository()
+        packet = build_server_kaizen_packet(
             request.run_id,
             request.complaint,
             selected_lap=request.selected_lap,
@@ -99,6 +152,13 @@ def plan_controlled_test(request: ServerEvidenceRequest) -> KaizenEvidencePacket
             selected_phase=request.selected_phase,
             objective=request.objective,
             priority=request.priority,
+            repository=repository,
+        )
+        return project_kaizen_packet_for_publication(
+            request.run_id,
+            request.complaint,
+            packet,
+            repository=repository,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404 if "not found" in str(exc).lower() else 409, detail=str(exc)) from exc
@@ -124,6 +184,10 @@ def start_workflow(request: ServerEvidenceRequest) -> ControlledWorkflow:
             request.run_id,
             request.complaint,
             selected_lap=request.selected_lap,
+            lap_scope=request.lap_scope,
+            window_start_lap=request.window_start_lap,
+            window_end_lap=request.window_end_lap,
+            representative_lap=request.representative_lap,
             selected_zone_start_pct=request.selected_zone_start_pct,
             selected_zone_end_pct=request.selected_zone_end_pct,
             selected_zone_label=request.selected_zone_label,
@@ -137,20 +201,38 @@ def start_workflow(request: ServerEvidenceRequest) -> ControlledWorkflow:
 
 @router.get("/workflows", response_model=list[ControlledWorkflow])
 def list_workflows(active_only: bool = True) -> list[ControlledWorkflow]:
-    return RaceLabRepository().list_controlled_workflows(active_only=active_only)
+    repository = RaceLabRepository()
+    return [
+        project_workflow_for_publication(workflow, repository=repository)
+        for workflow in repository.list_controlled_workflows(active_only=active_only)
+    ]
 
 
 @router.get("/workflows/{workflow_id}", response_model=ControlledWorkflow)
 def get_workflow(workflow_id: str) -> ControlledWorkflow:
-    workflow = RaceLabRepository().get_controlled_workflow(workflow_id)
+    repository = RaceLabRepository()
+    workflow = repository.get_controlled_workflow(workflow_id)
     if workflow is None:
         raise HTTPException(status_code=404, detail=f"Workflow not found: {workflow_id}")
-    return workflow
+    return project_workflow_for_publication(workflow, repository=repository)
+
+
+@router.post("/workflows/{workflow_id}/cancel", response_model=ControlledWorkflow)
+def cancel_controlled_workflow(workflow_id: str) -> ControlledWorkflow:
+    try:
+        cancelled = cancel_workflow(workflow_id)
+        return project_workflow_for_publication(cancelled)
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 409
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
 @router.get("/workflows/{workflow_id}/report", response_model=WorkflowReportResponse)
 def get_workflow_report(workflow_id: str) -> WorkflowReportResponse:
-    markdown = ReportService().generate_workflow_markdown(workflow_id)
+    try:
+        markdown = ReportService().generate_workflow_markdown(workflow_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if markdown is None:
         raise HTTPException(status_code=404, detail=f"Workflow not found: {workflow_id}")
     return WorkflowReportResponse(workflow_id=workflow_id, markdown=markdown)

@@ -19,10 +19,13 @@ from racelab_engine.analysis.crew_chief_packet import (
     build_kaizen_packet,
 )
 from racelab_engine.analysis.lap_eligibility import eligible_laps
+from racelab_engine.analysis.proximity_context import classify_proximity_time_gap_window
 from racelab_engine.analysis.setup_controls import (
     SETUP_CONTROL_SPECS,
     canonical_setup_value_key,
+    format_setup_value,
     numeric_setup_value,
+    resolve_adjacent_setup_target,
     setup_control_values_equal,
 )
 from racelab_engine.analysis.setup_diff import (
@@ -33,6 +36,8 @@ from racelab_engine.analysis.setup_diff import (
 )
 from racelab_engine.analysis.sim_integrity import build_sim_integrity_certificate
 from racelab_engine.analysis.test_director import (
+    ControlledTestCard,
+    MeasurementMission,
     TestEvidenceLink,
     TestExecution,
     score_test_execution,
@@ -46,7 +51,20 @@ from racelab_engine.knowledge.setup.evidence_adapter import (
     event_mechanism_flags,
 )
 from racelab_engine.models.controlled_workflow import ControlledWorkflow
+from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.services.engineering_memory_service import (
+    record_workflow_cancellation,
+    record_workflow_outcome,
+    record_workflow_plan,
+    record_workflow_stage,
+)
 from racelab_engine.services.import_service import read_telemetry_manifest, read_telemetry_rows
+from racelab_engine.services.session_intelligence_service import (
+    build_hypothesis_lifecycle,
+    controlled_hypothesis_policy_identity,
+    evaluate_hypothesis_repeat,
+)
+from racelab_engine.services.session_service import list_sessions
 from racelab_engine.storage.repository import RaceLabRepository
 
 
@@ -74,6 +92,33 @@ _WORKFLOW_COLUMNS = [
 _TIME_COUNTEREFFECT_GUARDRAIL = (
     "Median non-target phase time must not worsen beyond empirical noise."
 )
+_WORKFLOW_PACKET_BLOCKER = (
+    "Stored workflow evidence failed server revalidation. Exact setup targets and "
+    "protocol instructions are withheld; cancel this workflow and create a new one."
+)
+_REPEAT_POLICY_UNVERIFIABLE_BLOCKER = (
+    "The exact hypothesis repeat-policy identity could not be verified; rebuild the "
+    "controlled test from current evidence before exposing or executing a setup target."
+)
+_REPEAT_POLICY_BLOCKED_BLOCKER = (
+    "This unchanged context, setup, physical target, symptom, cause, control, direction, "
+    "metric, phase, and countereffect policy previously produced a valid Undo result in "
+    "this session and is marked do-not-repeat."
+)
+_DECISION_CONTEXT_KEYS = frozenset({
+    "selected_lap",
+    "lap_scope",
+    "window_start_lap",
+    "window_end_lap",
+    "representative_lap",
+    "selected_zone_start_pct",
+    "selected_zone_end_pct",
+    "selected_zone_label",
+    "selected_phase",
+    "objective",
+    "priority",
+})
+_WORKFLOW_LAP_SCOPES = frozenset({"run", "single_lap", "lap_window", "track_zone"})
 
 def _expanded_related_setup_keys(keys: list[str] | tuple[str, ...]) -> tuple[str, ...]:
     return expanded_related_setup_keys(keys)
@@ -485,6 +530,11 @@ def _context_score(
 ) -> float:
     if len(lap_sets) < 3:
         return 0.0
+    if any(
+        classify_proximity_time_gap_window(rows).hard_blocker_active
+        for rows in lap_sets
+    ):
+        return 0.0
     compounds = []
     for rows in lap_sets:
         values = [str(row.get("player_tire_compound") or row.get("tire_compound")) for row in rows if row.get("player_tire_compound") is not None or row.get("tire_compound") is not None]
@@ -698,6 +748,241 @@ def _derive_opportunity(
     ), driver_score, integrity
 
 
+def _discover_legal_setup_options(
+    run_id: str,
+    *,
+    overview: Any,
+    objective: str,
+    priority: str | None,
+    repository: RaceLabRepository,
+) -> tuple[
+    dict[str, object],
+    dict[str, list[object]],
+    dict[str, dict[str, list[str]]],
+    dict[str, dict[str, Any]],
+    dict[str, str],
+]:
+    """Load only exact-context, sourced setup options before Dial-In selects a target."""
+    setup = repository.get_setup_snapshot(run_id)
+    values = {key: setup_control_value(setup, key) for key in SETUP_CONTROL_SPECS}
+    legal_values_by_control: dict[str, list[object]] = {}
+    legal_value_provenance_by_control: dict[str, dict[str, list[str]]] = {}
+    response_models: dict[str, dict[str, Any]] = {}
+    surrounding_fingerprint_by_control: dict[str, str] = {}
+    if setup is None:
+        return (
+            values,
+            legal_values_by_control,
+            legal_value_provenance_by_control,
+            response_models,
+            surrounding_fingerprint_by_control,
+        )
+
+    from racelab_engine.services.setup_learning_service import (
+        build_setup_response_context,
+        get_observed_tech_envelope,
+        get_setup_response_models,
+        surrounding_setup_fingerprint,
+    )
+
+    eligible_numbers = [lap.lap_number for lap in eligible_laps(overview.laps)]
+    context_rows_by_lap = _lap_rows(run_id, eligible_numbers)
+    context_rows = [row for number in eligible_numbers for row in context_rows_by_lap[number]]
+    identity = read_telemetry_manifest(run_id).get("compatibility_identity") or {}
+    response_context = build_setup_response_context(
+        compatibility_identity=identity,
+        rows=context_rows,
+        baseline_setup=setup.model_dump(mode="json"),
+        package_archetype=str(
+            identity.get("track_configuration_name") or identity.get("track_name") or "unknown"
+        ),
+        objective=_memory_objective(objective, priority),
+    )
+    envelope = get_observed_tech_envelope(response_context, db_path=repository.db_path)
+    response_models = get_setup_response_models(response_context, db_path=repository.db_path)
+    setup_payload = setup.model_dump(mode="json")
+    for key in values:
+        surrounding_fingerprint_by_control[key] = surrounding_setup_fingerprint(
+            setup_payload, key,
+        )
+    legal_identity_fields = (
+        "car_id", "car_path", "car_version", "car_configuration_id", "iracing_build_version",
+        "track_id", "track_configuration_name", "track_version", "session_type",
+    )
+    observed_snapshot_options: dict[str, list[tuple[str, object]]] = {}
+    for candidate_run_id, candidate_setup in repository.list_tech_passing_setup_candidates(
+        car_path=overview.session.car_path,
+        track_id_or_path=overview.session.track_id_or_path,
+        session_type=overview.session.session_type,
+    ):
+        if candidate_run_id == run_id:
+            continue
+        changes = diff_setups(setup, candidate_setup)
+        if (
+            not setup_controls_comparable(setup, candidate_setup)
+            or len(changes) != 1
+            or unmapped_setup_change_paths(setup, candidate_setup, changes)
+        ):
+            continue
+        key = changes[0].setup_key
+        if key not in values:
+            continue
+        candidate_payload = candidate_setup.model_dump(mode="json")
+        if (
+            surrounding_setup_fingerprint(candidate_payload, key)
+            != surrounding_fingerprint_by_control[key]
+        ):
+            continue
+        candidate_value = setup_control_value(candidate_setup, key)
+        if candidate_value is None:
+            continue
+        candidate_identity = read_telemetry_manifest(candidate_run_id).get("compatibility_identity") or {}
+        if any(
+            identity.get(field) is None
+            or candidate_identity.get(field) is None
+            or identity.get(field) != candidate_identity.get(field)
+            for field in legal_identity_fields
+        ):
+            continue
+        observed_snapshot_options.setdefault(key, []).append(
+            (candidate_run_id, candidate_value)
+        )
+    for key, current_value in values.items():
+        surrounding = surrounding_fingerprint_by_control[key]
+        match = next((
+            item for item in envelope.values()
+            if item.get("setup_key") == key
+            and item.get("surrounding_setup_fingerprint") == surrounding
+        ), None)
+        observed_values: list[object] = []
+        provenance: dict[str, list[str]] = {}
+        for candidate_run_id, candidate_value in observed_snapshot_options.get(key, []):
+            observed_values.append(candidate_value)
+            provenance.setdefault(_provenance_value_key(key, candidate_value), []).append(
+                f"tech-passing-setup:{candidate_run_id}"
+            )
+        if match is not None:
+            observed_options = match.get("observed_options", [])
+            observed_values.extend(
+                option.get("value") for option in observed_options if option.get("value") is not None
+            )
+            for option in observed_options:
+                observed = option.get("value")
+                if observed is None:
+                    continue
+                provenance.setdefault(_provenance_value_key(key, observed), []).extend(
+                    f"controlled-observation:{observation_id}"
+                    for observation_id in option.get("source_observation_ids", [])
+                )
+        if observed_values:
+            legal_values_by_control[key] = list(dict.fromkeys([current_value, *observed_values]))
+            legal_value_provenance_by_control[key] = {
+                value_key: list(dict.fromkeys(source_ids))
+                for value_key, source_ids in provenance.items()
+            }
+    return (
+        values,
+        legal_values_by_control,
+        legal_value_provenance_by_control,
+        response_models,
+        surrounding_fingerprint_by_control,
+    )
+
+
+def validate_controlled_test_target(
+    run_id: str,
+    card: ControlledTestCard,
+    *,
+    overview: Any,
+    objective: str,
+    priority: str | None,
+    repository: RaceLabRepository,
+) -> tuple[str, ...]:
+    """Re-prove a persisted exact target against the current server-owned catalog.
+
+    Stored card strings and provenance tokens are an audit record, not authority.
+    Authorization is retained only when the exact current value, adjacent target,
+    display transition, and every recorded source are reproduced from immutable
+    same-context tech/observation evidence.
+    """
+    if overview.session.setup_passed_tech is not True:
+        return (
+            "The source baseline setup is not currently recorded as tech-passing.",
+        )
+    try:
+        (
+            current_values,
+            legal_values_by_control,
+            legal_provenance_by_control,
+            _,
+            _,
+        ) = _discover_legal_setup_options(
+            run_id,
+            overview=overview,
+            objective=objective,
+            priority=priority,
+            repository=repository,
+        )
+    except (FileNotFoundError, KeyError, OSError, TypeError, ValueError):
+        return (
+            "The stored setup target could not be revalidated from the current immutable run context.",
+        )
+
+    key = card.control_key
+    current_value = current_values.get(key)
+    blockers: list[str] = []
+    if (
+        current_value is None
+        or card.current_value != current_value
+        or not setup_control_values_equal(key, current_value, card.current_value)
+    ):
+        blockers.append(
+            "The stored controlled-test baseline no longer matches the run's setup snapshot."
+        )
+
+    resolution = resolve_adjacent_setup_target(
+        key,
+        current_value,
+        card.direction_sign,
+        legal_values=legal_values_by_control.get(key),
+        legal_value_provenance=legal_provenance_by_control.get(key),
+    )
+    if resolution.blocker:
+        blockers.append(
+            "The current server-owned catalog does not prove a sourced, small adjacent target "
+            "for this control and direction."
+        )
+        return tuple(dict.fromkeys(blockers))
+
+    target_value = resolution.target_value
+    if target_value is None or not setup_control_values_equal(
+        key, target_value, card.proposed_value_raw,
+    ):
+        blockers.append(
+            "The stored controlled-test target is not the currently proven adjacent garage option."
+        )
+    expected_label = format_setup_value(key, target_value)
+    if card.proposed_value != expected_label:
+        blockers.append(
+            "The stored controlled-test target label does not match the proven adjacent option."
+        )
+    expected_transition = (
+        f"{format_setup_value(key, current_value)} -> {expected_label} "
+        "(adjacent observed tech-passing option)"
+    )
+    if card.exact_change != expected_transition:
+        blockers.append(
+            "The stored controlled-test instruction does not match the proven adjacent transition."
+        )
+    proven_sources = set(resolution.provenance)
+    stored_sources = set(card.proposed_value_provenance)
+    if not stored_sources or not stored_sources.issubset(proven_sources):
+        blockers.append(
+            "The stored controlled-test provenance is not tied to that exact current legal option."
+        )
+    return tuple(dict.fromkeys(blockers))
+
+
 def build_server_kaizen_packet(
     run_id: str,
     complaint: str,
@@ -716,6 +1001,19 @@ def build_server_kaizen_packet(
     if overview is None:
         raise ValueError(f"Run not found: {run_id}")
     effective_phase = selected_phase or _priority_phase(priority)
+    (
+        values,
+        legal_values_by_control,
+        legal_value_provenance_by_control,
+        response_models,
+        surrounding_fingerprint_by_control,
+    ) = _discover_legal_setup_options(
+        run_id,
+        overview=overview,
+        objective=objective,
+        priority=priority,
+        repository=repo,
+    )
     dial = build_dial_in_response(
         run_id,
         complaint,
@@ -726,6 +1024,8 @@ def build_server_kaizen_packet(
         objective=objective,
         priority=priority,
         limit=18,
+        legal_values_by_control=legal_values_by_control,
+        legal_value_provenance_by_control=legal_value_provenance_by_control,
     )
     resolved_phase = effective_phase or dial.interpreted_phase
     opportunity, context_score, driver_score, integrity = _derive_opportunity(
@@ -820,90 +1120,6 @@ def build_server_kaizen_packet(
                     ])),
                 })
             candidates.append(candidate)
-    setup = repo.get_setup_snapshot(run_id)
-    values = {key: setup_control_value(setup, key) for key in SETUP_CONTROL_SPECS}
-    legal_values_by_control: dict[str, list[object]] = {}
-    legal_value_provenance_by_control: dict[str, dict[str, list[str]]] = {}
-    response_models: dict[str, dict[str, Any]] = {}
-    surrounding_fingerprint_by_control: dict[str, str] = {}
-    if setup is not None:
-        from racelab_engine.services.setup_learning_service import (
-            build_setup_response_context,
-            get_observed_tech_envelope,
-            get_setup_response_models,
-            surrounding_setup_fingerprint,
-        )
-
-        eligible_numbers = [lap.lap_number for lap in eligible_laps(overview.laps)]
-        context_rows_by_lap = _lap_rows(run_id, eligible_numbers)
-        context_rows = [row for number in eligible_numbers for row in context_rows_by_lap[number]]
-        identity = read_telemetry_manifest(run_id).get("compatibility_identity") or {}
-        response_context = build_setup_response_context(
-            compatibility_identity=identity,
-            rows=context_rows,
-            baseline_setup=setup.model_dump(mode="json"),
-            package_archetype=str(identity.get("track_configuration_name") or identity.get("track_name") or "unknown"),
-            objective=_memory_objective(objective, priority),
-        )
-        envelope = get_observed_tech_envelope(response_context, db_path=repo.db_path)
-        response_models = get_setup_response_models(response_context, db_path=repo.db_path)
-        setup_payload = setup.model_dump(mode="json")
-        legal_identity_fields = (
-            "car_id", "car_path", "car_version", "car_configuration_id", "iracing_build_version",
-            "track_id", "track_configuration_name", "track_version", "session_type",
-        )
-        compatible_snapshots: list[tuple[str, Any]] = []
-        for item in repo.list_runs():
-            candidate_run_id = str(item.get("run_id") or "")
-            candidate_overview = repo.get_overview(candidate_run_id) if candidate_run_id else None
-            candidate_setup = repo.get_setup_snapshot(candidate_run_id) if candidate_run_id else None
-            if (
-                candidate_overview is None
-                or candidate_setup is None
-                or candidate_overview.session.setup_passed_tech is not True
-            ):
-                continue
-            candidate_identity = read_telemetry_manifest(candidate_run_id).get("compatibility_identity") or {}
-            if any(
-                identity.get(field) is None
-                or candidate_identity.get(field) is None
-                or identity.get(field) != candidate_identity.get(field)
-                for field in legal_identity_fields
-            ):
-                continue
-            compatible_snapshots.append((candidate_run_id, candidate_setup))
-        for key, current_value in values.items():
-            surrounding = surrounding_setup_fingerprint(setup_payload, key)
-            surrounding_fingerprint_by_control[key] = surrounding
-            match = next((
-                item for item in envelope.values()
-                if item.get("setup_key") == key
-                and item.get("surrounding_setup_fingerprint") == surrounding
-            ), None)
-            observed_values: list[object] = []
-            provenance: dict[str, list[str]] = {}
-            for candidate_run_id, candidate_setup in compatible_snapshots:
-                candidate_payload = candidate_setup.model_dump(mode="json")
-                if (
-                    _is_complete_single_control_option(setup, candidate_setup, key)
-                    and surrounding_setup_fingerprint(candidate_payload, key) == surrounding
-                ):
-                    candidate_value = setup_control_value(candidate_setup, key)
-                    if candidate_value is not None:
-                        observed_values.append(candidate_value)
-                        provenance.setdefault(_provenance_value_key(key, candidate_value), []).append(
-                            f"tech-passing-setup:{candidate_run_id}"
-                        )
-            if match is not None:
-                observed_values.extend(match.get("observed_values", []))
-                for observed in match.get("observed_values", []):
-                    provenance.setdefault(_provenance_value_key(key, observed), []).extend(
-                        f"controlled-observation:{observation_id}"
-                        for observation_id in match.get("source_observation_ids", [])
-                    )
-            if observed_values:
-                legal_values_by_control[key] = list(dict.fromkeys([current_value, *observed_values]))
-                legal_value_provenance_by_control[key] = provenance
     candidates = _apply_personal_response_models(
         candidates,
         opportunity=opportunity,
@@ -925,9 +1141,461 @@ def build_server_kaizen_packet(
         legal_value_provenance_by_control=legal_value_provenance_by_control,
         external_blockers=[reason for reason in [
             _decision_context_blocker(objective, priority),
-            *getattr(dial, "blocker_reasons", ()),
+            *(
+                getattr(dial, "blocker_reasons", ())
+                if not dial.top_swings or getattr(dial, "evidence_state", None) == "blocked_by_context"
+                else ()
+            ),
         ] if reason],
     )
+
+
+def _normalize_workflow_lap_context(
+    *,
+    selected_lap: int | None,
+    lap_scope: str | None,
+    window_start_lap: int | None,
+    window_end_lap: int | None,
+    representative_lap: int | None,
+) -> tuple[str, int | None, int | None, int | None]:
+    scope = lap_scope or ("single_lap" if selected_lap is not None else "run")
+    if scope not in _WORKFLOW_LAP_SCOPES:
+        raise ValueError("Workflow lap scope must be run, single_lap, lap_window, or track_zone.")
+    identities = (selected_lap, window_start_lap, window_end_lap, representative_lap)
+    if any(value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1) for value in identities):
+        raise ValueError("Workflow lap identities must be positive integer lap numbers.")
+    if scope == "lap_window":
+        if None in identities:
+            raise ValueError(
+                "Lap-window workflows require start, end, representative, and selected lap identities."
+            )
+        assert window_start_lap is not None
+        assert window_end_lap is not None
+        assert representative_lap is not None
+        if not window_start_lap <= representative_lap <= window_end_lap:
+            raise ValueError("The representative lap must fall inside the selected lap window.")
+        if selected_lap != representative_lap:
+            raise ValueError("The planner selected lap must equal the window representative lap.")
+    elif any(value is not None for value in (window_start_lap, window_end_lap, representative_lap)):
+        raise ValueError("Lap-window identities require lap_scope='lap_window'.")
+    if scope == "single_lap" and selected_lap is None:
+        raise ValueError("Single-lap workflow scope requires selected_lap.")
+    if scope == "run" and selected_lap is not None:
+        raise ValueError("Run-scoped workflows cannot carry a selected lap identity.")
+    return scope, window_start_lap, window_end_lap, representative_lap
+
+
+def _workflow_decision_context(workflow: ControlledWorkflow) -> dict[str, Any]:
+    snapshot = workflow.reproduction_snapshot
+    if not isinstance(snapshot, dict):
+        raise ValueError("The stored workflow reproduction snapshot is malformed.")
+    context = snapshot.get("decision_context") or {}
+    if not isinstance(context, dict) or set(context) != _DECISION_CONTEXT_KEYS:
+        raise ValueError("The stored workflow decision context is malformed.")
+    if not isinstance(workflow.complaint, str) or not workflow.complaint.strip():
+        raise ValueError("The stored workflow complaint is unavailable.")
+    lap_scope, _window_start, _window_end, _representative = _normalize_workflow_lap_context(
+        selected_lap=context.get("selected_lap"),
+        lap_scope=context.get("lap_scope"),
+        window_start_lap=context.get("window_start_lap"),
+        window_end_lap=context.get("window_end_lap"),
+        representative_lap=context.get("representative_lap"),
+    )
+    selected_zone = _validated_selected_zone(
+        context.get("selected_zone_start_pct"),
+        context.get("selected_zone_end_pct"),
+    )
+    if lap_scope == "track_zone" and selected_zone is None:
+        raise ValueError("Track-zone workflow scope requires an exact physical window.")
+    return dict(context)
+
+
+def _workflow_plan_binding_hash(
+    workflow: ControlledWorkflow,
+    packet: KaizenEvidencePacket,
+    context: dict[str, Any],
+) -> str:
+    payload = {
+        "source_run_id": workflow.source_run_id,
+        "complaint": workflow.complaint,
+        "decision_context": context,
+        "packet": packet.model_dump(mode="json"),
+    }
+    encoded = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def _workflow_packet_authority_signature(packet: KaizenEvidencePacket) -> dict[str, Any]:
+    """Stable authority fields unaffected by post-test response-model learning."""
+    payload = packet.model_dump(mode="json")
+    for key in (
+        "confidence_score",
+        "recommendation_score_components",
+        "recommendation_score_basis",
+        "held_back_alternatives",
+        "race_mode_summary",
+        "learning_mode_explanation",
+    ):
+        payload.pop(key, None)
+    card = payload.get("primary_test")
+    if isinstance(card, dict):
+        # A scored result may itself enter response memory and add a personal
+        # estimate to these explanatory fields. The create-time binding still
+        # seals their exact stored text; current evidence must continue to agree
+        # on every executable target, protocol, guardrail, and evidence identity.
+        card.pop("hypothesis", None)
+        card.pop("expected_mechanism", None)
+    return payload
+
+
+def revalidate_controlled_workflow_packet(
+    workflow: ControlledWorkflow,
+    *,
+    repository: RaceLabRepository | None = None,
+) -> tuple[KaizenEvidencePacket | None, tuple[str, ...]]:
+    """Rebuild a persisted workflow packet before it can be consumed or published.
+
+    The full opportunity and card/mission must match the server planner. This is
+    intentionally stricter than checking only the control and target: protocol
+    prose, evidence identity, lap window, and action rules are authority-bearing.
+    """
+    try:
+        context = _workflow_decision_context(workflow)
+    except ValueError as exc:
+        return None, (str(exc),)
+    objective = str(context.get("objective") or "setup-development")
+    raw_priority = str(context.get("priority") or "").strip()
+    try:
+        rebuilt = build_server_kaizen_packet(
+            workflow.source_run_id,
+            workflow.complaint,
+            selected_lap=context.get("selected_lap"),
+            selected_zone_start_pct=context.get("selected_zone_start_pct"),
+            selected_zone_end_pct=context.get("selected_zone_end_pct"),
+            selected_zone_label=context.get("selected_zone_label"),
+            selected_phase=context.get("selected_phase"),
+            objective=objective,
+            priority=raw_priority or None,
+            repository=repository,
+        )
+    except Exception:
+        return None, (
+            "The stored workflow could not be rebuilt from current immutable evidence.",
+        )
+    stored_binding = workflow.reproduction_snapshot.get("plan_binding_sha256")
+    if not isinstance(stored_binding, str) or not stored_binding:
+        return None, (
+            "The immutable workflow plan binding is unavailable; recreate this workflow from current evidence.",
+        )
+    if stored_binding != _workflow_plan_binding_hash(
+        workflow, workflow.packet, context,
+    ):
+        return None, (
+            "The stored complaint, decision context, or packet no longer matches the immutable workflow plan binding.",
+        )
+    if workflow.packet.model_dump(mode="json") != rebuilt.model_dump(mode="json"):
+        if (
+            workflow.status == "scored"
+            and stored_binding is not None
+            and _workflow_packet_authority_signature(workflow.packet)
+            == _workflow_packet_authority_signature(rebuilt)
+        ):
+            # Scoring can add this same workflow to response memory. Preserve the
+            # create-time sealed prose while requiring the fresh planner to agree
+            # on every executable and evidence-bearing field.
+            return workflow.packet, ()
+        return None, (
+            "The stored opportunity, evidence, target, or protocol does not match the current server-owned workflow packet.",
+        )
+    return rebuilt, ()
+
+
+def revalidate_controlled_test_packet(
+    workflow: ControlledWorkflow,
+    *,
+    repository: RaceLabRepository | None = None,
+) -> tuple[KaizenEvidencePacket | None, tuple[str, ...]]:
+    """Compatibility wrapper for consumers that specifically require a test."""
+    rebuilt, blockers = revalidate_controlled_workflow_packet(
+        workflow,
+        repository=repository,
+    )
+    if blockers or rebuilt is None:
+        return None, blockers
+    if rebuilt.decision != "test" or rebuilt.primary_test is None:
+        return None, ("The stored workflow does not contain a controlled-test card.",)
+    return rebuilt, ()
+
+
+def _blocked_workflow_packet(
+    *additional_blockers: str,
+) -> KaizenEvidencePacket:
+    blockers = tuple(dict.fromkeys((
+        _WORKFLOW_PACKET_BLOCKER,
+        *(reason for reason in additional_blockers if reason),
+    )))
+    mission = MeasurementMission(
+        purpose="Recover a workflow whose stored evidence can no longer be trusted.",
+        procedure=(
+            "Cancel the blocked workflow.",
+            "Create a new workflow from the current server-owned run evidence.",
+        ),
+        required_laps_or_passes=1,
+        controlled_variables=("No setup change is authorized.",),
+        target_phase="unavailable",
+        acceptance_thresholds=("A newly generated server-owned packet passes revalidation.",),
+        stop_rule="Do not execute any stored setup action or protocol from this workflow.",
+        blockers=blockers,
+    )
+    return KaizenEvidencePacket(
+        decision="measure",
+        opportunity=OpportunityEvidence(
+            start_pct=0.0,
+            end_pct=0.0,
+            phase="unavailable",
+            observed_time_loss_s=None,
+            empirical_noise_s=None,
+            alignment_confidence=0.0,
+            repeatable=False,
+            evidence_links=(),
+            source_channels=(),
+        ),
+        canonical_symptom="unresolved",
+        primary_cause_bucket=None,
+        evidence_state=EvidenceState.BLOCKED_BY_CONTEXT,
+        confidence_score=0.0,
+        blockers=blockers,
+        supporting_evidence=(),
+        contradictory_evidence=(),
+        measurement_mission=mission,
+        held_back_alternatives=0,
+        race_mode_summary="Workflow evidence blocked. No setup action is authorized.",
+        learning_mode_explanation=(
+            "The workflow identity remains visible so it can be explicitly cancelled, but its "
+            "stored evidence and instructions did not pass server revalidation."
+        ),
+    )
+
+
+def _exact_repeat_policy_session_scope(
+    repository: RaceLabRepository,
+    source_run_id: str,
+) -> tuple[str, tuple[str, ...]] | None:
+    """Resolve one immutable session membership for repeat-policy evaluation.
+
+    A standalone run has no exact-session memory to evaluate. Multiple matching
+    sessions, or malformed membership in the matching session, are ambiguous and
+    therefore non-authoritative.
+    """
+
+    matches: list[tuple[str, tuple[str, ...]]] = []
+    for session in list_sessions(include_archived=True, db_path=repository.db_path):
+        ordered_run_ids = tuple(session.run_ids)
+        if source_run_id not in ordered_run_ids:
+            continue
+        if (
+            any(
+                not isinstance(run_id, str)
+                or not run_id.strip()
+                or run_id != run_id.strip()
+                for run_id in ordered_run_ids
+            )
+            or len(set(ordered_run_ids)) != len(ordered_run_ids)
+        ):
+            raise ValueError("The repeat-policy session membership is malformed or duplicated.")
+        matches.append((session.session_id, ordered_run_ids))
+    matches.sort(key=lambda item: item[0])
+    if len(matches) > 1:
+        raise ValueError(
+            "The source run belongs to more than one session, so exact repeat-policy scope is ambiguous."
+        )
+    return matches[0] if matches else None
+
+
+def enforce_hypothesis_repeat_policy(
+    workflow: ControlledWorkflow,
+    *,
+    repository: RaceLabRepository | None = None,
+) -> tuple[KaizenEvidencePacket | None, tuple[str, ...]]:
+    """Fail closed when an exact test repeats a valid same-session Undo policy.
+
+    The guard owns no setup recommendation. It only verifies the candidate card's
+    exact semantic policy against controlled outcome memory. Measurement missions
+    and dependency-injected test repositories remain outside exact-session memory.
+    """
+
+    packet = workflow.packet
+    if packet.decision != "test" or packet.primary_test is None:
+        return packet, ()
+    repo = repository or RaceLabRepository()
+    if not isinstance(repo, RaceLabRepository):
+        return packet, ()
+    try:
+        scope = _exact_repeat_policy_session_scope(repo, workflow.source_run_id)
+        if scope is None:
+            return packet, ()
+        session_id, ordered_run_ids = scope
+        lifecycle = build_hypothesis_lifecycle(
+            session_id,
+            expected_run_ids=ordered_run_ids,
+            db_path=repo.db_path,
+        )
+        if (
+            lifecycle.session_id != session_id
+            or lifecycle.ordered_run_ids != ordered_run_ids
+            or lifecycle.status == "blocked"
+            or any(entry.lifecycle_state == "invalid" for entry in lifecycle.entries)
+            or (lifecycle.entries and lifecycle.blocker_reasons)
+        ):
+            return None, (_REPEAT_POLICY_UNVERIFIABLE_BLOCKER,)
+        compatibility_identity = (
+            read_telemetry_manifest(workflow.source_run_id).get("compatibility_identity")
+            or {}
+        )
+        candidate_policy = controlled_hypothesis_policy_identity(
+            workflow,
+            compatibility_identity,
+            source_setup=repo.get_setup_snapshot(workflow.source_run_id),
+        )
+        decision = evaluate_hypothesis_repeat(lifecycle, candidate_policy)
+    except Exception:
+        return None, (_REPEAT_POLICY_UNVERIFIABLE_BLOCKER,)
+    if not decision.allowed:
+        return None, (_REPEAT_POLICY_BLOCKED_BLOCKER,)
+    return packet, ()
+
+
+def project_kaizen_packet_for_publication(
+    run_id: str,
+    complaint: str,
+    packet: KaizenEvidencePacket,
+    *,
+    repository: RaceLabRepository | None = None,
+) -> KaizenEvidencePacket:
+    """Publish a packet only after exact-session semantic repeat-policy review."""
+
+    if packet.decision != "test" or packet.primary_test is None:
+        return packet
+    payload = {
+        "run_id": run_id,
+        "complaint": complaint,
+        "packet": packet.model_dump(mode="json"),
+    }
+    encoded = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
+    now = datetime.now(timezone.utc)
+    probe = ControlledWorkflow(
+        workflow_id=f"repeat_policy_probe_{hashlib.sha256(encoded.encode()).hexdigest()[:20]}",
+        created_at=now,
+        updated_at=now,
+        status="planned",
+        source_run_id=run_id,
+        complaint=complaint,
+        packet=packet,
+    )
+    authorized, blockers = enforce_hypothesis_repeat_policy(
+        probe,
+        repository=repository,
+    )
+    return authorized if authorized is not None else _blocked_workflow_packet(*blockers)
+
+
+def project_workflow_for_publication(
+    workflow: ControlledWorkflow,
+    *,
+    repository: RaceLabRepository | None = None,
+) -> ControlledWorkflow:
+    """Return a fresh authoritative packet or a non-actionable recovery projection."""
+    packet, blockers = revalidate_controlled_workflow_packet(
+        workflow,
+        repository=repository,
+    )
+    if packet is not None and not blockers:
+        fresh = workflow.model_copy(update={"packet": packet})
+        try:
+            _validate_recorded_stage_bindings(
+                fresh,
+                packet,
+                repository or RaceLabRepository(),
+                require_complete=fresh.status == "scored",
+            )
+        except (AttributeError, FileNotFoundError, KeyError, OSError, TypeError, ValueError):
+            pass
+        else:
+            # A scored workflow is immutable audit history, not a new setup
+            # authority surface. Its exact tested target/result remains visible
+            # only after packet, stage, execution, and quality integrity pass.
+            if fresh.status == "scored":
+                return fresh
+            packet, repeat_blockers = enforce_hypothesis_repeat_policy(
+                fresh,
+                repository=repository,
+            )
+            blockers = tuple(dict.fromkeys((*blockers, *repeat_blockers)))
+            if packet is not None and not blockers:
+                return fresh.model_copy(update={"packet": packet})
+    return workflow.model_copy(update={
+        "packet": _blocked_workflow_packet(*blockers),
+        "stage_eligible_lap_numbers": {},
+        "execution": None,
+        "reproduction_snapshot": {},
+        "quality": None,
+        "learning_admitted": None,
+    })
+
+
+def _workflow_scope_run_ids(
+    repository: Any,
+    run_ids: tuple[str, ...] | list[str] | set[str],
+) -> tuple[str, ...]:
+    scope = {run_id for run_id in run_ids if isinstance(run_id, str) and run_id}
+    if isinstance(repository, RaceLabRepository):
+        sessions = list_sessions(include_archived=True, db_path=repository.db_path)
+        changed = True
+        while changed:
+            changed = False
+            for session in sessions:
+                session_run_ids = set(session.run_ids)
+                if scope & session_run_ids and not session_run_ids <= scope:
+                    scope.update(session_run_ids)
+                    changed = True
+    return tuple(sorted(scope))
+
+
+def _active_workflow_conflict(
+    repository: Any,
+    scope_run_ids: tuple[str, ...],
+    *,
+    exclude_workflow_id: str | None = None,
+) -> ControlledWorkflow | None:
+    list_workflows = getattr(repository, "list_controlled_workflows", None)
+    if not callable(list_workflows):
+        return None
+    scope = set(scope_run_ids)
+    for item in list_workflows(active_only=True):
+        if item.workflow_id == exclude_workflow_id:
+            continue
+        occupied = {item.source_run_id, *item.stage_run_ids.values()}
+        if scope & occupied:
+            return item
+    return None
+
+
+def _assert_active_workflow_slot(
+    repository: Any,
+    scope_run_ids: tuple[str, ...],
+    *,
+    exclude_workflow_id: str | None = None,
+) -> None:
+    conflict = _active_workflow_conflict(
+        repository,
+        scope_run_ids,
+        exclude_workflow_id=exclude_workflow_id,
+    )
+    if conflict is not None:
+        raise ValueError(
+            "Finish or explicitly abandon the active controlled workflow "
+            f"{conflict.workflow_id} before continuing another workflow in this session."
+        )
 
 
 def create_workflow(
@@ -935,6 +1603,10 @@ def create_workflow(
     complaint: str,
     *,
     selected_lap: int | None = None,
+    lap_scope: str | None = None,
+    window_start_lap: int | None = None,
+    window_end_lap: int | None = None,
+    representative_lap: int | None = None,
     selected_zone_start_pct: float | None = None,
     selected_zone_end_pct: float | None = None,
     selected_zone_label: str | None = None,
@@ -944,6 +1616,26 @@ def create_workflow(
     repository: RaceLabRepository | None = None,
 ) -> ControlledWorkflow:
     repo = repository or RaceLabRepository()
+    (
+        lap_scope,
+        window_start_lap,
+        window_end_lap,
+        representative_lap,
+    ) = _normalize_workflow_lap_context(
+        selected_lap=selected_lap,
+        lap_scope=lap_scope,
+        window_start_lap=window_start_lap,
+        window_end_lap=window_end_lap,
+        representative_lap=representative_lap,
+    )
+    selected_zone = _validated_selected_zone(
+        selected_zone_start_pct,
+        selected_zone_end_pct,
+    )
+    if lap_scope == "track_zone" and selected_zone is None:
+        raise ValueError("Track-zone workflow scope requires an exact physical window.")
+    scoped_run_ids = _workflow_scope_run_ids(repo, (run_id,))
+    _assert_active_workflow_slot(repo, scoped_run_ids)
     packet = build_server_kaizen_packet(
         run_id,
         complaint,
@@ -959,6 +1651,10 @@ def create_workflow(
     now = datetime.now(timezone.utc)
     decision_context = {
         "selected_lap": selected_lap,
+        "lap_scope": lap_scope,
+        "window_start_lap": window_start_lap,
+        "window_end_lap": window_end_lap,
+        "representative_lap": representative_lap,
         "selected_zone_start_pct": selected_zone_start_pct,
         "selected_zone_end_pct": selected_zone_end_pct,
         "selected_zone_label": selected_zone_label,
@@ -971,7 +1667,49 @@ def create_workflow(
         status="planned", source_run_id=run_id, complaint=complaint, packet=packet,
         reproduction_snapshot={"decision_context": decision_context},
     )
+    authorized_packet, repeat_blockers = enforce_hypothesis_repeat_policy(
+        workflow,
+        repository=repo,
+    )
+    if authorized_packet is None:
+        authorized_packet = _blocked_workflow_packet(*repeat_blockers)
+    workflow.packet = authorized_packet
+    workflow.reproduction_snapshot["plan_binding_sha256"] = _workflow_plan_binding_hash(
+        workflow,
+        authorized_packet,
+        decision_context,
+    )
+    if isinstance(repo, RaceLabRepository):
+        repo.create_controlled_workflow_if_scope_available(workflow, scoped_run_ids)
+    else:
+        # Dependency-injected repositories retain the same invariant, while the
+        # production SQLite path closes the concurrent check/insert race above.
+        _assert_active_workflow_slot(repo, scoped_run_ids)
+        repo.save_controlled_workflow(workflow)
+    if isinstance(repo, RaceLabRepository):
+        record_workflow_plan(workflow, db_path=repo.db_path)
+    return workflow
+
+
+def cancel_workflow(
+    workflow_id: str,
+    *,
+    repository: RaceLabRepository | None = None,
+) -> ControlledWorkflow:
+    """Explicitly abandon an unfinished controlled test without erasing its audit trail."""
+    repo = repository or RaceLabRepository()
+    workflow = repo.get_controlled_workflow(workflow_id)
+    if workflow is None:
+        raise ValueError(f"Workflow not found: {workflow_id}")
+    if workflow.status == "scored":
+        raise ValueError("A scored controlled test is immutable and cannot be abandoned.")
+    if workflow.status == "cancelled":
+        return workflow
+    workflow.status = "cancelled"
+    workflow.updated_at = datetime.now(timezone.utc)
     repo.save_controlled_workflow(workflow)
+    if isinstance(repo, RaceLabRepository):
+        record_workflow_cancellation(workflow, db_path=repo.db_path)
     return workflow
 
 
@@ -1017,6 +1755,20 @@ def _analysis_code_hash(packet: KaizenEvidencePacket) -> str:
 def _setup_snapshot_hash(payload: dict[str, Any] | None) -> str | None:
     if not payload:
         return None
+    encoded = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def _stage_binding_hash(
+    stage_run_ids: dict[str, str],
+    stage_eligible_lap_numbers: dict[str, tuple[int, ...]],
+    chronology: dict[str, Any],
+) -> str:
+    payload = {
+        "stage_run_ids": stage_run_ids,
+        "stage_eligible_lap_numbers": stage_eligible_lap_numbers,
+        "recording_chronology": chronology,
+    }
     encoded = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(encoded.encode()).hexdigest()
 
@@ -1213,13 +1965,38 @@ def attach_stage(workflow_id: str, stage: Literal["A", "B", "A2"], run_id: str, 
     workflow = repo.get_controlled_workflow(workflow_id)
     if workflow is None:
         raise ValueError(f"Workflow not found: {workflow_id}")
-    if workflow.packet.decision != "test" or workflow.packet.primary_test is None:
+    if workflow.status in {"scored", "cancelled"}:
+        raise ValueError(f"A {workflow.status} workflow cannot accept another stage.")
+    fresh_packet, packet_blockers = revalidate_controlled_workflow_packet(
+        workflow,
+        repository=repo,
+    )
+    if fresh_packet is None or packet_blockers:
+        raise ValueError(_WORKFLOW_PACKET_BLOCKER)
+    if fresh_packet.decision != "test" or fresh_packet.primary_test is None:
         raise ValueError("This workflow is a measurement mission and has no A/B/A2 setup stage to attach.")
+    fresh_packet, repeat_blockers = enforce_hypothesis_repeat_policy(
+        workflow.model_copy(update={"packet": fresh_packet}),
+        repository=repo,
+    )
+    if fresh_packet is None or repeat_blockers:
+        raise ValueError(" ".join(repeat_blockers or (_REPEAT_POLICY_UNVERIFIABLE_BLOCKER,)))
+    _validate_recorded_stage_bindings(
+        workflow.model_copy(update={"packet": fresh_packet}),
+        fresh_packet,
+        repo,
+        require_complete=False,
+    )
+    scope = _workflow_scope_run_ids(
+        repo,
+        {workflow.source_run_id, run_id, *workflow.stage_run_ids.values()},
+    )
+    _assert_active_workflow_slot(repo, scope, exclude_workflow_id=workflow.workflow_id)
     expected = ("A", "B", "A2")[len(workflow.stage_run_ids)] if len(workflow.stage_run_ids) < 3 else None
     if stage != expected:
         raise ValueError(f"Next required stage is {expected or 'none'}; stages must be attached in A/B/A2 order.")
     overview = repo.get_overview(run_id)
-    card = workflow.packet.primary_test
+    card = fresh_packet.primary_test
     stage_plan = next(item for item in card.stages if item.stage == stage)
     ordered_eligible = sorted(eligible_laps(overview.laps), key=lambda item: item.lap_number) if overview else []
     required_total = stage_plan.warmup_laps + stage_plan.required_flying_laps
@@ -1314,15 +2091,265 @@ def attach_stage(workflow_id: str, stage: Literal["A", "B", "A2"], run_id: str, 
     chronology.setdefault("source", _recording_provenance(source_overview, source_manifest))
     chronology[stage] = _recording_provenance(overview, stage_manifest)
     reproduction_snapshot["recording_chronology"] = chronology
+    reproduction_snapshot["plan_binding_sha256"] = _workflow_plan_binding_hash(
+        workflow,
+        fresh_packet,
+        _workflow_decision_context(workflow),
+    )
+    reproduction_snapshot["stage_binding_sha256"] = _stage_binding_hash(
+        stage_ids,
+        stage_cohorts,
+        chronology,
+    )
     updated = workflow.model_copy(update={
+        "packet": fresh_packet,
         "stage_run_ids": stage_ids,
         "stage_eligible_lap_numbers": stage_cohorts,
         "status": status,
         "reproduction_snapshot": reproduction_snapshot,
         "updated_at": datetime.now(timezone.utc),
     })
-    repo.save_controlled_workflow(updated)
+    if isinstance(repo, RaceLabRepository):
+        repo.save_controlled_workflow_if_scope_exclusive(updated, scope)
+    else:
+        repo.save_controlled_workflow(updated)
+    if isinstance(repo, RaceLabRepository):
+        record_workflow_stage(updated, stage, db_path=repo.db_path)
     return updated
+
+
+def _validate_recorded_stage_bindings(
+    workflow: ControlledWorkflow,
+    packet: KaizenEvidencePacket,
+    repository: Any,
+    *,
+    require_complete: bool,
+) -> None:
+    """Recompute stage identity, chronology, setup isolation, and lap cohorts."""
+    card = packet.primary_test
+    if packet.decision != "test" or card is None:
+        if workflow.stage_run_ids or workflow.stage_eligible_lap_numbers:
+            raise ValueError("A measurement workflow cannot contain A/B/A2 stage bindings.")
+        if workflow.status not in {"planned", "cancelled"}:
+            raise ValueError("A measurement workflow has an impossible controlled-test status.")
+        return
+
+    stage_order = ("A", "B", "A2")
+    stage_count = len(workflow.stage_run_ids)
+    if stage_count > len(stage_order) or set(workflow.stage_run_ids) != set(stage_order[:stage_count]):
+        raise ValueError("Stored stage run identities are not an exact A/B/A2 prefix.")
+    if set(workflow.stage_eligible_lap_numbers) != set(workflow.stage_run_ids):
+        raise ValueError("Stored stage lap cohorts do not exactly match the recorded stage identities.")
+    expected_status = {
+        0: "planned",
+        1: "a_recorded",
+        2: "b_recorded",
+        3: "a2_recorded",
+    }[stage_count]
+    valid_statuses = {expected_status, "cancelled"}
+    if stage_count == 3:
+        valid_statuses.add("scored")
+    if workflow.status not in valid_statuses:
+        raise ValueError("Workflow status does not match its exact recorded A/B/A2 stage prefix.")
+    if require_complete and (stage_count != 3 or workflow.status not in {"a2_recorded", "scored"}):
+        raise ValueError("A, B, and A2 must all be server-verified before authoritative use.")
+    if stage_count == 0:
+        return
+    stored_binding = workflow.reproduction_snapshot.get("stage_binding_sha256")
+    if not isinstance(stored_binding, str) or not stored_binding:
+        raise ValueError(
+            "The immutable stage binding is unavailable; cancel and recreate this workflow."
+        )
+
+    stage_ids = [workflow.stage_run_ids[stage] for stage in stage_order[:stage_count]]
+    if any(not isinstance(run_id, str) or not run_id.strip() for run_id in stage_ids):
+        raise ValueError("Stored stage run identities are malformed.")
+    if len(stage_ids) != len(set(stage_ids)):
+        # A may use the source run, but no two named stages may reuse one run.
+        raise ValueError("A, B, and A2 must bind to distinct named stage runs.")
+
+    source_overview = repository.get_overview(workflow.source_run_id)
+    source_setup = repository.get_setup_snapshot(workflow.source_run_id)
+    if source_overview is None or source_setup is None:
+        raise ValueError("The workflow source run or complete baseline setup is unavailable.")
+    if source_overview.run_id != workflow.source_run_id or source_setup.run_id != workflow.source_run_id:
+        raise ValueError("The workflow source evidence was relabelled across run identities.")
+    if source_overview.session.setup_passed_tech is not True:
+        raise ValueError("The workflow source setup is not recorded as passing tech inspection.")
+    source_manifest = read_telemetry_manifest(workflow.source_run_id)
+    identity_fields = (
+        "driver_user_id", "car_id", "car_path", "car_version", "track_id",
+        "track_configuration_name", "track_version", "iracing_build_version", "session_type",
+    )
+    source_identity = source_manifest.get("compatibility_identity") or {}
+    if any(source_identity.get(key) is None for key in identity_fields):
+        raise ValueError("The source compatibility identity is incomplete.")
+    previous_overview = source_overview
+    previous_manifest = source_manifest
+    chronology = workflow.reproduction_snapshot.get("recording_chronology") or {}
+    if not isinstance(chronology, dict):
+        raise ValueError("Stored recording chronology is malformed.")
+    expected_chronology: dict[str, Any] = {
+        "source": _recording_provenance(source_overview, source_manifest),
+    }
+    expected_reproduction_stages: dict[str, dict[str, Any]] = {}
+
+    baseline_setup = source_setup
+    for stage in stage_order[:stage_count]:
+        run_id = workflow.stage_run_ids[stage]
+        overview = repository.get_overview(run_id)
+        setup = repository.get_setup_snapshot(run_id)
+        if overview is None or setup is None:
+            raise ValueError(f"Stage {stage} run or complete setup snapshot is unavailable.")
+        if overview.run_id != run_id or setup.run_id != run_id:
+            raise ValueError(f"Stage {stage} evidence was relabelled across run identities.")
+        if overview.session.setup_passed_tech is not True:
+            raise ValueError(f"Stage {stage} setup is not recorded as passing tech inspection.")
+        manifest = read_telemetry_manifest(run_id)
+        identity = manifest.get("compatibility_identity") or {}
+        if any(identity.get(key) is None for key in identity_fields) or any(
+            identity.get(key) != source_identity.get(key) for key in identity_fields
+        ):
+            raise ValueError(f"Stage {stage} compatibility identity is incomplete or mismatched.")
+        previous_interval = _recording_interval(previous_overview, previous_manifest)
+        current_interval = _recording_interval(overview, manifest)
+        if previous_interval is None or current_interval is None or not _recording_order_is_valid(
+            stage=stage,
+            run_id=run_id,
+            source_run_id=workflow.source_run_id,
+            current_interval=current_interval,
+            previous_interval=previous_interval,
+            workflow_created_epoch_s=workflow.created_at.timestamp(),
+        ):
+            raise ValueError(f"Stage {stage} recording chronology is missing, overlapping, or out of order.")
+        expected_chronology[stage] = _recording_provenance(overview, manifest)
+
+        stage_plan = next(item for item in card.stages if item.stage == stage)
+        ordered_eligible = sorted(eligible_laps(overview.laps), key=lambda item: item.lap_number)
+        required_total = stage_plan.warmup_laps + stage_plan.required_flying_laps
+        if len(ordered_eligible) < required_total:
+            raise ValueError(f"Stage {stage} no longer contains its full warm-up and measured cohort.")
+        expected_measured = tuple(
+            lap.lap_number
+            for lap in ordered_eligible[
+                stage_plan.warmup_laps:stage_plan.warmup_laps + stage_plan.required_flying_laps
+            ]
+        )
+        if workflow.stage_eligible_lap_numbers[stage] != expected_measured:
+            raise ValueError(
+                f"Stage {stage} stored measured laps are not the deterministic post-warmup cohort; "
+                "cherry-picked eligible laps are rejected."
+            )
+        cohort_laps = [lap.lap_number for lap in ordered_eligible[:required_total]]
+        cohort_ok, cohort_reason = _continuous_stage_cohort(
+            cohort_laps,
+            _lap_rows(run_id, cohort_laps),
+        )
+        if not cohort_ok:
+            raise ValueError(
+                cohort_reason
+                or f"Stage {stage} warm-up and measured cohort is no longer continuous."
+            )
+
+        changes = diff_setups(baseline_setup, setup)
+        if (
+            not setup_controls_comparable(baseline_setup, setup)
+            or unmapped_setup_change_paths(baseline_setup, setup, changes)
+        ):
+            raise ValueError(f"Stage {stage} setup isolation is incomplete or contains unmapped changes.")
+        allowed = 1 if stage == "B" else 0
+        if len(changes) != allowed or (
+            stage == "B" and (not changes or changes[0].setup_key != card.control_key)
+        ):
+            raise ValueError(f"Stage {stage} does not match the one-change immutable setup plan.")
+        observed = setup_control_value(setup, card.control_key)
+        expected_value = _planned_numeric_value(card) if stage == "B" else card.current_value
+        if expected_value is None or not setup_control_values_equal(
+            card.control_key,
+            observed,
+            expected_value,
+        ):
+            raise ValueError(f"Stage {stage} setup value does not match the immutable test card.")
+
+        setup_payload = setup.model_dump(mode="json") if hasattr(setup, "model_dump") else setup
+        expected_reproduction_stages[stage] = {
+            "run_id": run_id,
+            "source_file_sha256": overview.session.file_hash,
+            "schema_fingerprint": manifest.get("schema_fingerprint"),
+            "cache_version": manifest.get("cache_version"),
+            "compatibility_identity": identity,
+            "setup_fingerprint": _setup_snapshot_hash(setup_payload),
+            "setup_values": setup_payload,
+            "eligible_lap_numbers": list(expected_measured),
+        }
+
+        previous_overview = overview
+        previous_manifest = manifest
+
+    if set(chronology) != set(expected_chronology) or chronology != expected_chronology:
+        raise ValueError("Stored recording chronology does not exactly match the bound source and stage runs.")
+    expected_binding = _stage_binding_hash(
+        workflow.stage_run_ids,
+        workflow.stage_eligible_lap_numbers,
+        chronology,
+    )
+    if stored_binding != expected_binding:
+        raise ValueError("Stored stage run, cohort, or chronology bindings failed integrity validation.")
+    if workflow.status == "scored":
+        if workflow.reproduction_snapshot.get("stages") != expected_reproduction_stages:
+            raise ValueError(
+                "The scored certificate stage identities, setups, or cohorts do not match current bound evidence."
+            )
+        execution = workflow.execution
+        quality = workflow.quality
+        if execution is None or quality is None:
+            raise ValueError("A scored workflow requires its immutable execution and quality certificate.")
+        counts = {
+            stage: len(workflow.stage_eligible_lap_numbers[stage])
+            for stage in stage_order
+        }
+        if (
+            execution.eligible_laps_a != counts["A"]
+            or execution.eligible_laps_b != counts["B"]
+            or execution.eligible_laps_a2 != counts["A2"]
+            or execution.control_key != card.control_key
+            or not setup_control_values_equal(
+                card.control_key,
+                execution.planned_b_value,
+                _planned_numeric_value(card),
+            )
+            or quality != score_test_execution(execution)
+        ):
+            raise ValueError("The scored execution or quality certificate failed integrity validation.")
+
+
+def validate_workflow_for_authoritative_use(
+    workflow: ControlledWorkflow,
+    *,
+    repository: RaceLabRepository | None = None,
+    require_complete_stages: bool = False,
+) -> ControlledWorkflow:
+    """Return a fresh workflow only after all authority-bearing bindings pass."""
+    repo = repository or RaceLabRepository()
+    packet, blockers = revalidate_controlled_workflow_packet(workflow, repository=repo)
+    if packet is None or blockers:
+        raise ValueError(_WORKFLOW_PACKET_BLOCKER)
+    fresh = workflow.model_copy(update={"packet": packet})
+    _validate_recorded_stage_bindings(
+        fresh,
+        packet,
+        repo,
+        require_complete=require_complete_stages,
+    )
+    if fresh.status != "scored":
+        packet, repeat_blockers = enforce_hypothesis_repeat_policy(
+            fresh,
+            repository=repo,
+        )
+        if packet is None or repeat_blockers:
+            raise ValueError(" ".join(repeat_blockers or (_REPEAT_POLICY_UNVERIFIABLE_BLOCKER,)))
+        fresh = fresh.model_copy(update={"packet": packet})
+    return fresh
 
 
 def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = None) -> ControlledWorkflow:
@@ -1332,6 +2359,18 @@ def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = N
         raise ValueError("A, B, and A2 must all be server-verified before scoring.")
     if workflow.status == "scored":
         raise ValueError("A scored controlled workflow is immutable; create a new workflow for another test.")
+    if workflow.status == "cancelled":
+        raise ValueError("A cancelled controlled workflow cannot be scored.")
+    scope = _workflow_scope_run_ids(
+        repo,
+        {workflow.source_run_id, *workflow.stage_run_ids.values()},
+    )
+    _assert_active_workflow_slot(repo, scope, exclude_workflow_id=workflow.workflow_id)
+    workflow = validate_workflow_for_authoritative_use(
+        workflow,
+        repository=repo,
+        require_complete_stages=True,
+    )
     card = workflow.packet.primary_test
     assert card is not None
     decision_context = workflow.reproduction_snapshot.get("decision_context", {})
@@ -1724,6 +2763,16 @@ def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = N
     reproduction_snapshot = {
         "analysis_version": workflow.analysis_version,
         "analysis_code_and_config_sha256": _analysis_code_hash(workflow.packet),
+        "plan_binding_sha256": _workflow_plan_binding_hash(
+            workflow,
+            workflow.packet,
+            _workflow_decision_context(workflow),
+        ),
+        "stage_binding_sha256": _stage_binding_hash(
+            workflow.stage_run_ids,
+            stage_eligible_lap_numbers,
+            workflow.reproduction_snapshot.get("recording_chronology", {}),
+        ),
         "stages": reproduction_stages,
         "target_effect_distributions_s": {
             "b_vs_a": target_effects["AB"],
@@ -1745,8 +2794,25 @@ def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = N
         "status": "scored",
         "updated_at": datetime.now(timezone.utc),
     })
-    repo.save_controlled_workflow(updated)
+    if isinstance(repo, RaceLabRepository):
+        repo.save_controlled_workflow_if_scope_exclusive(updated, scope)
+    else:
+        repo.save_controlled_workflow(updated)
+    if isinstance(repo, RaceLabRepository):
+        record_workflow_outcome(updated, db_path=repo.db_path)
     return updated
 
 
-__all__ = ["attach_stage", "build_server_kaizen_packet", "create_workflow", "score_workflow"]
+__all__ = [
+    "attach_stage",
+    "build_server_kaizen_packet",
+    "cancel_workflow",
+    "create_workflow",
+    "enforce_hypothesis_repeat_policy",
+    "project_kaizen_packet_for_publication",
+    "project_workflow_for_publication",
+    "revalidate_controlled_test_packet",
+    "revalidate_controlled_workflow_packet",
+    "score_workflow",
+    "validate_workflow_for_authoritative_use",
+]

@@ -22,6 +22,7 @@ from racelab_engine.services.session_service import (
     remove_run_from_session,
     update_session,
 )
+from racelab_engine.storage.db import initialize_database
 
 
 @pytest.fixture
@@ -146,6 +147,23 @@ def test_get_session(db_path: Path) -> None:
 
 def test_get_session_not_found(db_path: Path) -> None:
     assert get_session("nonexistent", db_path) is None
+
+
+def test_session_run_id_collection_rejects_non_list_or_ambiguous_identities(
+    db_path: Path,
+) -> None:
+    session = create_session(name="Malformed scope", db_path=db_path)
+    connection = initialize_database(db_path)
+    with connection:
+        connection.execute(
+            "UPDATE racelab_sessions SET run_ids_json = ? WHERE session_id = ?",
+            ('"prefix-run-A-suffix"', session.session_id),
+        )
+    connection.close()
+
+    with pytest.raises(ValueError, match="run identities"):
+        get_session(session.session_id, db_path)
+    assert list_sessions(db_path=db_path) == []
 
 
 def test_list_sessions(db_path: Path) -> None:

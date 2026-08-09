@@ -57,14 +57,18 @@ function recommendationBadgeText(recommendation?: ShockSettingRecommendation | n
     return shape;
   }
   if (recommendation.direction === "blocked") return "limit";
-  if (recommendation.direction === "needs_more_evidence") return recommendation.blocked_reason === "setup value missing" ? "need setup" : "need data";
+  if (recommendation.direction === "needs_more_evidence") {
+    if (recommendation.blocked_reason === "setup value missing") return "need setup";
+    if (recommendation.blocked_reason?.includes("legal option")) return "need option";
+    return "need data";
+  }
   if (recommendation.direction === "hold") return "hold";
   if (recommendation.delta != null && recommendation.suggested_value != null) {
     const sign = recommendation.delta > 0 ? "+" : "";
     return `${sign}${recommendation.delta} -> ${recommendation.suggested_value}`;
   }
   if (recommendation.blocked_reason === "setup value missing") return "need setup";
-  return recommendation.direction === "add" ? "add" : "subtract";
+  return "action withheld";
 }
 
 function recommendationTitle(recommendation?: ShockSettingRecommendation | null, learningMode = false): string {

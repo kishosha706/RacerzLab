@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from api.routes_compare import router as compare_router
 from api.routes_analysis_contracts import router as analysis_contracts_router
 from api.routes_events import router as events_router
 from api.routes_engineering import router as engineering_router
 from api.routes_imports import router as imports_router
+from api.routes_intelligence import router as intelligence_router
 from api.routes_laps import router as laps_router
 from api.routes_laps import stints_router
 from api.routes_notebook import router as notebook_router
@@ -19,8 +21,26 @@ from api.routes_shock_reader import router as shock_reader_router
 from api.routes_track_map import router as track_map_router
 from api.schemas import HealthResponse
 from racelab_engine import __version__
+from racelab_engine.services.import_service import TelemetryArtifactIdentityError
+from racelab_engine.storage.repository import StoredEvidenceIntegrityError
 
 app = FastAPI(title="RacerZLab API", version=__version__)
+
+
+@app.exception_handler(StoredEvidenceIntegrityError)
+def stored_evidence_integrity_error(
+    _request: Request,
+    exc: StoredEvidenceIntegrityError,
+) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+@app.exception_handler(TelemetryArtifactIdentityError)
+def telemetry_artifact_identity_error(
+    _request: Request,
+    exc: TelemetryArtifactIdentityError,
+) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
 
 app.add_middleware(
     CORSMiddleware,
@@ -49,6 +69,7 @@ app.include_router(runs_router)
 app.include_router(laps_router)
 app.include_router(stints_router)
 app.include_router(events_router)
+app.include_router(intelligence_router)
 app.include_router(engineering_router)
 app.include_router(p3_engineering_router)
 app.include_router(reports_router)

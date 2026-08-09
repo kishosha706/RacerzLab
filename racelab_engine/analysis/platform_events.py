@@ -28,6 +28,7 @@ PlatformEventType = EventType
 Severity = Literal["info", "watch", "high", "critical"]
 Confidence = Literal["low", "medium", "high"]
 DisplayScope = Literal["actionable", "watch", "internal"]
+DiagnosticState = Literal["finding", "clear_check", "context"]
 
 PLATFORM_EVENT_COLUMNS = [
     "lap",
@@ -113,6 +114,7 @@ class PlatformEvent:
     display_scope: DisplayScope = "actionable"
     is_visible_default: bool = True
     reason_for_hidden: str | None = None
+    diagnostic_state: DiagnosticState = "finding"
     contributes_to_backend_evidence: bool = True
     evidence_state: EvidenceState = EvidenceState.CALCULATED
     source_channels: list[str] = field(default_factory=list)
@@ -128,6 +130,7 @@ class PlatformEvent:
             "display_scope": self.display_scope,
             "is_visible_default": self.is_visible_default,
             "reason_for_hidden": self.reason_for_hidden,
+            "diagnostic_state": self.diagnostic_state,
             "contributes_to_backend_evidence": self.contributes_to_backend_evidence,
             "lap": self.lap,
             "sample_index": self.sample_index,
@@ -355,6 +358,7 @@ def _with_display(
     scope: DisplayScope,
     *,
     reason_for_hidden: str | None = None,
+    diagnostic_state: DiagnosticState | None = None,
 ) -> PlatformEvent:
     visible = scope in ("actionable", "watch")
     return replace(
@@ -362,6 +366,7 @@ def _with_display(
         display_scope=scope,
         is_visible_default=visible,
         reason_for_hidden=None if visible else reason_for_hidden,
+        diagnostic_state=diagnostic_state or ("finding" if visible else "context"),
         contributes_to_backend_evidence=True,
     )
 
@@ -386,6 +391,7 @@ def _classify_min_splitter_display(
         event,
         "internal",
         reason_for_hidden="Minimum splitter height stayed above the visible contact gate, so it remains backend evidence only.",
+        diagnostic_state="clear_check",
     )
 
 
@@ -410,6 +416,7 @@ def _classify_event_display(event: PlatformEvent, rows: list[dict[str, Any]]) ->
             event,
             "internal",
             reason_for_hidden="Rear minimum ride height did not reach the visible contact or sustained-risk gate.",
+            diagnostic_state="clear_check",
         )
 
     if event.event_type == "REAR_PLATFORM_SCRAPE":
@@ -430,6 +437,7 @@ def _classify_event_display(event: PlatformEvent, rows: list[dict[str, Any]]) ->
             event,
             "internal",
             reason_for_hidden="Whole-car bottoming risk did not cross the visible threshold and was not sustained.",
+            diagnostic_state="clear_check",
         )
 
     if event.event_type == "HIGHEST_SHOCK_ACTIVITY":

@@ -22,7 +22,14 @@ export function DamperSpectrumSummary({ runId, lap }: Props) {
     setError(null);
     if (lap == null) return () => { live = false; };
     void fetchDamperResponse(runId, lap)
-      .then((payload) => { if (live) setReport(payload); })
+      .then((payload) => {
+        if (!live) return;
+        if (payload.run_id !== runId || payload.selected_lap !== lap) {
+          setError("Damper spectrum response did not match the selected run and lap.");
+          return;
+        }
+        setReport(payload);
+      })
       .catch((reason: unknown) => {
         if (live) setError(reason instanceof Error ? reason.message : "Damper spectrum unavailable");
       });

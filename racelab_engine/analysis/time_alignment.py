@@ -10,6 +10,7 @@ from __future__ import annotations
 from bisect import bisect_left
 from dataclasses import asdict, dataclass, field
 import math
+from numbers import Real
 from statistics import median
 from typing import Any, Literal
 
@@ -384,6 +385,101 @@ def _has_local_signal_variation(
     return _has_signal_variation(values[max(0, index - radius):index + radius + 1], minimum_range)
 
 
+_MAX_CIRCULAR_BOUNDARY_GAP_PCT = 2.0
+_BOUNDARY_SPACING_MULTIPLIER = 3.0
+_MIN_BOUNDARY_SAMPLES = 8
+
+
+def _channel_boundary_samples(
+    rows: list[dict[str, Any]],
+    channel: str,
+) -> tuple[list[float], list[float]]:
+    grouped: dict[float, list[float]] = {}
+    for row in rows:
+        pct = _finite(row.get("lap_dist_pct_100"))
+        value = _finite(row.get(channel))
+        if pct is None or value is None or not 0.0 <= pct <= 100.0:
+            continue
+        grouped.setdefault(pct, []).append(value)
+    positions = sorted(grouped)
+    return positions, [median(grouped[position]) for position in positions]
+
+
+def _admit_bounded_circular_boundary(
+    rows: list[dict[str, Any]],
+    channels: dict[str, list[float | None]],
+    grid: list[float],
+) -> set[int]:
+    """Fill only a sampling-sized start/finish omission on a full-lap grid.
+
+    The admissible width comes from each channel's observed position spacing and
+    is capped at two percent of a lap. Interior gaps are never touched.
+    """
+    if not grid or min(grid) > 1e-9 or max(grid) < 100.0 - 1e-9:
+        return set()
+    timing_boundary_indices: set[int] = set()
+    for channel, values in channels.items():
+        if channel in {"on_pit_road", "enter_exit_reset_state"}:
+            continue
+        positions, samples = _channel_boundary_samples(rows, channel)
+        if len(positions) < _MIN_BOUNDARY_SAMPLES:
+            continue
+        spacings = [right - left for left, right in zip(positions, positions[1:]) if right > left]
+        if not spacings:
+            continue
+        observed_spacing = median(spacings)
+        allowed_gap = min(
+            _MAX_CIRCULAR_BOUNDARY_GAP_PCT,
+            _BOUNDARY_SPACING_MULTIPLIER * observed_spacing,
+        )
+        circular_gap = positions[0] + (100.0 - positions[-1])
+        if allowed_gap <= 0.0 or circular_gap <= 0.0 or circular_gap > allowed_gap + 1e-9:
+            continue
+        if channel in {"session_time", "lap_dist_ft"} and (
+            positions[1] - positions[0] > allowed_gap + 1e-9
+            or positions[-1] - positions[-2] > allowed_gap + 1e-9
+        ):
+            continue
+
+        admitted: set[int] = set()
+        for index, pct in enumerate(grid):
+            if values[index] is not None or positions[0] <= pct <= positions[-1]:
+                continue
+            if pct < positions[0]:
+                if positions[0] - pct > allowed_gap + 1e-9:
+                    continue
+                if channel == "lap_dist_pct_100":
+                    estimate = pct
+                elif channel in {"session_time", "lap_dist_ft"}:
+                    span = positions[1] - positions[0]
+                    estimate = samples[0] + (pct - positions[0]) * (samples[1] - samples[0]) / span
+                else:
+                    wrapped_pct = pct + 100.0
+                    estimate = samples[-1] + (
+                        (wrapped_pct - positions[-1]) / circular_gap
+                    ) * (samples[0] - samples[-1])
+            else:
+                if pct - positions[-1] > allowed_gap + 1e-9:
+                    continue
+                if channel == "lap_dist_pct_100":
+                    estimate = pct
+                elif channel in {"session_time", "lap_dist_ft"}:
+                    span = positions[-1] - positions[-2]
+                    estimate = samples[-1] + (pct - positions[-1]) * (
+                        samples[-1] - samples[-2]
+                    ) / span
+                else:
+                    estimate = samples[-1] + (
+                        (pct - positions[-1]) / circular_gap
+                    ) * (samples[0] - samples[-1])
+            if math.isfinite(estimate):
+                values[index] = estimate
+                admitted.add(index)
+        if channel == "session_time":
+            timing_boundary_indices.update(admitted)
+    return timing_boundary_indices
+
+
 def _context_missing(value: Any) -> bool:
     if value is None or value == "":
         return True
@@ -392,6 +488,59 @@ def _context_missing(value: Any) -> bool:
     if isinstance(value, (list, tuple)):
         return not value or any(item is None for item in value)
     return False
+
+
+_CONTEXT_RANGE_LIMITS: dict[str, tuple[float, float]] = {
+    # These deliberately broad physical limits reject corrupt context without
+    # constraining a plausible tire stint or vehicle fuel capacity.
+    "baseline_tire_age_range_m": (0.0, 10_000_000.0),
+    "test_tire_age_range_m": (0.0, 10_000_000.0),
+    "baseline_fuel_range": (0.0, 1_000.0),
+    "test_fuel_range": (0.0, 1_000.0),
+}
+_WEATHER_RANGE_LIMITS: dict[str, tuple[float, float]] = {
+    "air_temp": (-100.0, 100.0),
+    "track_temp": (-100.0, 200.0),
+    "wind_vel": (0.0, 200.0),
+}
+
+
+def _validated_context_range(
+    value: Any,
+    *,
+    minimum: float,
+    maximum: float,
+) -> tuple[float, float] | None:
+    """Return one ordered finite numeric context range, or fail closed."""
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        return None
+    if any(isinstance(item, bool) or not isinstance(item, Real) for item in value):
+        return None
+    try:
+        lower, upper = float(value[0]), float(value[1])
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(lower) or not math.isfinite(upper):
+        return None
+    if lower > upper or lower < minimum or upper > maximum:
+        return None
+    return lower, upper
+
+
+def _validated_weather_ranges(value: Any) -> dict[str, tuple[float, float]] | None:
+    if not isinstance(value, dict):
+        return None
+    ranges: dict[str, tuple[float, float]] = {}
+    for channel, (minimum, maximum) in _WEATHER_RANGE_LIMITS.items():
+        validated = _validated_context_range(
+            value.get(channel),
+            minimum=minimum,
+            maximum=maximum,
+        )
+        if validated is None:
+            return None
+        ranges[channel] = validated
+    return ranges
 
 
 def _noise_context_blockers(context: dict[str, Any]) -> list[str]:
@@ -416,31 +565,56 @@ def _noise_context_blockers(context: dict[str, Any]) -> list[str]:
         "controlled_setup_change_count": "controlled setup change count",
         "unmapped_setup_changes": "unmapped setup-change status",
     }
-    blockers = [label for key, label in required.items() if _context_missing(context.get(key))]
+    blockers: list[str] = []
+    validated_ranges: dict[str, tuple[float, float]] = {}
+    validated_weather: dict[str, dict[str, tuple[float, float]]] = {}
+    for key, label in required.items():
+        if key in _CONTEXT_RANGE_LIMITS:
+            minimum, maximum = _CONTEXT_RANGE_LIMITS[key]
+            validated = _validated_context_range(
+                context.get(key),
+                minimum=minimum,
+                maximum=maximum,
+            )
+            if validated is None:
+                blockers.append(label)
+            else:
+                validated_ranges[key] = validated
+        elif key in {"baseline_weather_range", "test_weather_range"}:
+            weather_ranges = _validated_weather_ranges(context.get(key))
+            if weather_ranges is None:
+                blockers.append(label)
+            else:
+                validated_weather[key] = weather_ranges
+        elif _context_missing(context.get(key)):
+            blockers.append(label)
     if (
         context.get("baseline_driver_identity") is not None
         and context.get("test_driver_identity") is not None
         and str(context.get("baseline_driver_identity")) != str(context.get("test_driver_identity"))
     ):
         blockers.append("same driver")
-    if context.get("controlled_setup_change_count") != 1:
+    controlled_change_count = context.get("controlled_setup_change_count")
+    if (
+        isinstance(controlled_change_count, bool)
+        or not isinstance(controlled_change_count, int)
+        or controlled_change_count != 1
+    ):
         blockers.append("exactly one mapped setup change")
     if context.get("unmapped_setup_changes") is not False:
         blockers.append("no unmapped setup changes")
-
-    def _center(key: str) -> float | None:
-        value = context.get(key)
-        if not isinstance(value, (list, tuple)) or len(value) != 2:
-            return None
-        left, right = _finite(value[0]), _finite(value[1])
-        return (left + right) / 2 if left is not None and right is not None else None
 
     for baseline_key, test_key, tolerance, label in (
         ("baseline_tire_age_range_m", "test_tire_age_range_m", 1_000.0, "matched tire age"),
         ("baseline_fuel_range", "test_fuel_range", 2.0, "matched fuel range"),
     ):
-        baseline_center, test_center = _center(baseline_key), _center(test_key)
-        if baseline_center is not None and test_center is not None and abs(test_center - baseline_center) > tolerance:
+        baseline_range = validated_ranges.get(baseline_key)
+        test_range = validated_ranges.get(test_key)
+        if baseline_range is None or test_range is None:
+            continue
+        baseline_center = sum(baseline_range) / 2
+        test_center = sum(test_range) / 2
+        if abs(test_center - baseline_center) > tolerance:
             blockers.append(label)
     for key, maximum_span, label in (
         ("baseline_tire_age_range_m", 5_000.0, "narrow baseline tire-age range"),
@@ -448,26 +622,23 @@ def _noise_context_blockers(context: dict[str, Any]) -> list[str]:
         ("baseline_fuel_range", 10.0, "narrow baseline fuel range"),
         ("test_fuel_range", 10.0, "narrow test fuel range"),
     ):
-        value = context.get(key)
-        if isinstance(value, (list, tuple)) and len(value) == 2:
-            left, right = _finite(value[0]), _finite(value[1])
-            if left is not None and right is not None and right - left > maximum_span:
-                blockers.append(label)
-    baseline_weather = context.get("baseline_weather_range")
-    test_weather = context.get("test_weather_range")
-    if isinstance(baseline_weather, dict) and isinstance(test_weather, dict):
+        value = validated_ranges.get(key)
+        if value is not None and value[1] - value[0] > maximum_span:
+            blockers.append(label)
+    baseline_weather = validated_weather.get("baseline_weather_range")
+    test_weather = validated_weather.get("test_weather_range")
+    if baseline_weather is not None and test_weather is not None:
         for channel, tolerance in (("air_temp", 5.0), ("track_temp", 5.0), ("wind_vel", 2.0)):
-            baseline_value, test_value = baseline_weather.get(channel), test_weather.get(channel)
-            if isinstance(baseline_value, (list, tuple)) and isinstance(test_value, (list, tuple)):
-                baseline_center = sum(float(value) for value in baseline_value) / len(baseline_value)
-                test_center = sum(float(value) for value in test_value) / len(test_value)
-                if abs(test_center - baseline_center) > tolerance:
-                    blockers.append(f"matched {channel.replace('_', ' ')}")
-                maximum_span = {"air_temp": 5.0, "track_temp": 8.0, "wind_vel": 3.0}[channel]
-                if max(baseline_value) - min(baseline_value) > maximum_span:
-                    blockers.append(f"stable baseline {channel.replace('_', ' ')}")
-                if max(test_value) - min(test_value) > maximum_span:
-                    blockers.append(f"stable test {channel.replace('_', ' ')}")
+            baseline_value, test_value = baseline_weather[channel], test_weather[channel]
+            baseline_center = sum(baseline_value) / 2
+            test_center = sum(test_value) / 2
+            if abs(test_center - baseline_center) > tolerance:
+                blockers.append(f"matched {channel.replace('_', ' ')}")
+            maximum_span = {"air_temp": 5.0, "track_temp": 8.0, "wind_vel": 3.0}[channel]
+            if baseline_value[1] - baseline_value[0] > maximum_span:
+                blockers.append(f"stable baseline {channel.replace('_', ' ')}")
+            if test_value[1] - test_value[0] > maximum_span:
+                blockers.append(f"stable test {channel.replace('_', ' ')}")
     return list(dict.fromkeys(blockers))
 
 
@@ -480,6 +651,8 @@ def build_layered_alignment(
     evidence_channels = list(dict.fromkeys([*_PHASE_CHANNELS, "lap_dist_pct_100"]))
     baseline = interpolate_run_to_grid(baseline_rows, evidence_channels, grid)
     test = interpolate_run_to_grid(test_rows, evidence_channels, grid)
+    baseline_boundary_indices = _admit_bounded_circular_boundary(baseline_rows, baseline, grid)
+    test_boundary_indices = _admit_bounded_circular_boundary(test_rows, test, grid)
     gps_available = all(
         _has_signal_variation(run[name], 1e-7)
         for run in (baseline, test)
@@ -613,8 +786,13 @@ def build_layered_alignment(
         else:
             last_index = candidate
             reuse_count = 0
-        layer_count = len(set(methods) - {"lap_percentage"})
+        boundary_admitted = index in baseline_boundary_indices or candidate in test_boundary_indices
+        if boundary_admitted:
+            methods.append("bounded_circular_boundary")
+        layer_count = len(set(methods) - {"lap_percentage", "bounded_circular_boundary"})
         confidence = max(0.2, min(1.0, 0.55 + layer_count * 0.12 - min(score, 3.0) * 0.12))
+        if boundary_admitted:
+            confidence = min(confidence, 0.7)
         uncertainty = step * (1.0 + max(0.0, score) + 0.5 * reuse_count) / max(confidence, 0.1)
         points.append(AlignmentPoint(
             lap_pct=pct,

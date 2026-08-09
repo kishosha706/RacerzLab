@@ -19,10 +19,7 @@ export function isPlatformEventVisibleInMode(
 }
 
 export function isClearPlatformDiagnostic(event: PlatformEventItem): boolean {
-  const scope = platformEventScope(event);
-  return scope === "internal"
-    && event.severity === "info"
-    && !event.is_visible_default;
+  return event.diagnostic_state === "clear_check";
 }
 
 export function filterPlatformEvents(

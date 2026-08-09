@@ -42,6 +42,15 @@ result, and remember only what the evidence supports.
 | P6 - Setup Response Memory | Verified guarded response learning | Only controlled, provenance-complete effects become durable knowledge |
 | P7 - Advanced Experimentation | Offline engine verified; activation LOCKED | No real controlled dataset has met the production unlock threshold |
 | P8 - Unified Recommendation Intelligence | Production slice verified; calibration remains data-locked | One evidence authority ranks one context-aware next decision and explains its basis |
+| P10 - Evidence Integrity and Resilience | Verified | Hostile context, cache, persistence, and stale-UI paths fail closed without losing evidence |
+| P11 - Decision-First Desktop UX | Verified | Race Mode exposes the next trustworthy decision first; Learning Mode preserves the complete evidence trail |
+| P12 - Internal Engineering Intelligence | Verified | One evidence-bound Smart Engineer explains the decision, best next measurement, memory, and uncertainty without creating new setup authority |
+| P13 - Cross-Tab Decision Broadcasting | Verified | Every workspace and shell signal shares exact scope, authority, recovery, and handoff truth |
+| P14 - Evidence Compounding and Adaptive Engineering | Verified deterministic slice; statistical activation remains data-locked | Repeated observations, session history, recording health, and workflow state improve the next move without inventing probability or setup authority |
+| P15 - Premium Race Engineering Experience | Verified | The whole app communicates one trustworthy next move with clear hierarchy, honest recovery, exact scope, and keyboard-safe responsive interaction |
+| P16 - Premium Telemetry Visualization | Verified | Charts preserve raw signal, gap, unit, scope, selection, and proxy truth in a responsive open-canvas system |
+| P17 - Oval Driver Operating System | Verified | An oval driver can read clean-run readiness, corner-cycle evidence, loaded-side tire context, setup identity, and one trustworthy next step without junk-lap or continuity overclaim |
+| P18 - Deterministic Reasoning and Controlled Learning | Verified deterministic slice; statistical activation remains data-locked | Smart Engineer ranks independent evidence, learns exact controlled outcomes, explains falsification criteria, and blocks unsupported or repeated setup authority everywhere |
 
 ---
 
@@ -524,10 +533,10 @@ server-qualified evidence may approve a controlled setup test.
   Until then every score remains explicitly ordinal, not a probability.
 - [ ] Add formal competing-cause contradiction matrices and information-gain
   test selection after enough labeled mechanism outcomes exist.
-- [ ] Add producer-owned typed observed-mechanism roles plus qualified yaw,
-  brake, RPM/gear, tire, and driver-correction event detectors. Until those
-  detectors exist, unsupported actions correctly produce measurement missions
-  instead of borrowing meaning from raw provenance channels.
+- [x] Add producer-owned typed observed-mechanism roles plus qualified yaw,
+  brake, RPM/gear, tire, and driver-correction event detectors. Unsupported
+  actions still produce measurement missions instead of borrowing meaning from
+  raw provenance channels.
 - [ ] Add validated context-distance and hierarchical transfer models without
   allowing broad priors to override exact controlled local evidence.
 
@@ -600,6 +609,589 @@ or turning an extrema/event-preserving trace into a visually convenient fiction.
 
 ---
 
+## P10 - Evidence Integrity and Resilience
+
+This phase was opened by the 2026-08-08 whole-product adversarial audit. It
+targets failures that can certify invalid evidence, lose immutable experiment
+history, attach old results to a new driver decision, or leave the local app
+unresponsive. Valid canonical payloads remain backward-compatible; malformed or
+incomplete evidence must fail closed and explain what is needed.
+
+### P0 implementation queue
+
+- [x] Validate every numeric context range used by the driver-noise and
+  repeatability gate. NaN, infinity, malformed strings, sparse ranges, and
+  inverted ranges must produce blockers instead of repeatability credit or an
+  exception.
+- [x] Preserve null semantics in the production vector calculation for platform
+  compression. A missing dependency must remain unavailable and cannot create a
+  platform event or recommendation.
+- [x] Screen every controlled A/B/A2 cohort for complete nearby-car distance and
+  player-speed context using the established asymmetric time-gap policy. Unknown
+  or nearby context must block setup attribution and response-memory admission;
+  it must not introduce draft or clean-air labels.
+- [x] Preserve controlled-test workflows and certificates when the same run is
+  re-imported. Updating a run must not trigger `ON DELETE CASCADE` data loss.
+- [x] Key comparison UI results to the exact baseline/test run and lap request.
+  Clear old results immediately and ignore late responses so evidence from one
+  pair can never render under another pair.
+- [x] Reject incomplete, non-finite, zero-width, reversed, or out-of-range track
+  zones before overlay generation. No malformed request may create an
+  unbounded loop or exhaust API workers.
+
+### P1 implementation queue
+
+- [x] Make explicit shock-reader lap, window, and phase selectors fail closed
+  when their selector channels are absent. Never emit an exact click direction
+  from an unfiltered archive or claim provenance from an absent channel.
+- [x] Require pairwise damper velocity/time coverage before distribution math;
+  disjoint sparse channels must return unavailable instead of dividing by zero.
+- [x] Preserve a valid 0% start/finish target in notebook findings and test plans
+  rather than replacing it with the legacy 55% default.
+- [x] Load a session's run summaries in bounded bulk queries instead of opening
+  one database connection per run, while preserving session order and response
+  shape.
+- [x] Preserve platform events at exactly 0% track position and make overlay
+  acquisition failures visible rather than presenting missing evidence as a
+  clear result.
+- [x] Make telemetry, manifest, channel-catalog, and track-map caches mutation
+  safe, byte bounded, and fresh across metadata-only or identical-size/time file
+  replacement.
+- [x] Admit full-lap timing endpoints only through a bounded circular boundary
+  rule derived from observed sample spacing; interior gaps must remain blocked.
+- [x] Prevent Dial-In and shock surfaces from publishing an exact setup target
+  that lacks an observed adjacent legal option and tech-passing provenance.
+- [x] Scope resumed controlled workflows to the current run and preserve the
+  complete warm-up, measured-lap, rollback, and stop protocol after navigation.
+- [x] Distinguish Platform loading, error, unavailable, and genuinely clear
+  states; a failed request must never be worded as clean evidence.
+
+### P10 verification evidence
+
+- Hostile regressions cover non-finite and inverted context ranges, missing
+  vector dependencies, nearby-car A/B/A2 context, exact run/lap response
+  identity, malformed zones, disjoint damper clocks, valid 0% targets, stale
+  cache replacement, bounded circular endpoints, and every loading/error/clear
+  distinction named above.
+- Re-import tests prove the complete controlled workflow remains byte-for-byte
+  equivalent at the contract level, including stage identifiers and laps,
+  execution history, reproduction inputs, quality state, learning, and
+  certificate evidence, while stale import-owned segments are removed.
+- Dial-In and Shock Reader publish an exact target only for a sourced,
+  tech-passing adjacent option. Missing provenance, far-only sparse options,
+  wrong-direction options, and client-supplied authorization all withhold the
+  target, provenance, and action-bearing wording.
+- Session summary assembly for 160 runs across nine repetitions improved from a
+  frozen-HEAD median of 240.820 ms to 2.140 ms (about 112.5x) through the bounded
+  bulk read while preserving session order and response shape.
+- Final verification collected 1,499 Python tests: 1,495 passed and four
+  protected real-fixture checks skipped because their external fixture was not
+  present. Whole-repository Ruff, TypeScript, the production UI build, and
+  `git diff --check` passed. The final UI entry was 222.69 KB (68.86 KB gzip);
+  Laps, Platform, and Dial-In remained lazy chunks.
+- In-app browser smoke exercised a locally imported two-run session, Laps and
+  52-lap stint evidence, Platform, Setup, Dial-In, Race/Learning mode, and a run
+  switch that remains in the selected workspace. The browser console was clean.
+- Independent backend/integration and UI adversarial reviews returned CLEAR
+  after the final unauthorized Shock target and run-switch workspace defects
+  were fixed and replayed.
+
+---
+
+## P11 - Decision-First Desktop UX
+
+This phase turns the verified engineering foundation into a cockpit that stays
+fast, legible, and trustworthy at a 1280 x 720 desktop target. Race Mode keeps
+the next decision prominent; Learning Mode reveals the supporting evidence
+without changing the underlying authorization rules.
+
+### Complete and verified
+
+- [x] Rebuild the shell as a responsive two-tier context bar with an intentional
+  session drawer, compact run identity, unclipped session details, and no
+  document-level horizontal overflow at the target viewport.
+- [x] Add an exact-identity controlled-test ribbon. It may resume only the
+  selected server workflow, survives navigation and re-import, and never binds
+  an unrelated run or session.
+- [x] Compact the Race Mode Priority Rail only after a server-confirmed clear
+  result. Loading, findings, unavailable evidence, and errors remain visible.
+- [x] Give the event timeline explicit expanded/focused keyboard ownership,
+  reset playback on evidence-scope changes, and isolate modal shortcuts so
+  hidden playback cannot hijack page navigation.
+- [x] Reduce the default Laps stint table to seven decision columns, keep the
+  full engineering sheet behind a disclosure, preserve a sticky stint identity,
+  and make every selection and detail action keyboard accessible.
+- [x] Derive visible best-lap, stint, and falloff conclusions only from currently
+  qualified useful laps. Legacy persisted junk laps are requalified on read and
+  cannot remain a false session best or drive derived evidence.
+- [x] Order Platform as decision, local recorded-sample trace, subsystem
+  controls, then optional whole-lap context. Race Mode starts collapsed;
+  Learning Mode starts expanded.
+- [x] Present Setup as an axle-oriented four-corner workbench. Default to Diff
+  only for a different, current-scope, non-stale baseline with a real snapshot;
+  otherwise default to Current.
+- [x] Make Dial-In advisory and progressive: quick symptom entry, optional
+  refinement, one next-action card, exact legal-option authorization, persistent
+  measurement protocol, and one active controlled test at a time with an
+  explicit auditable abandon action.
+- [x] Key async session, run, lap, workflow, comparison, Platform, and cache
+  commits to exact request identity. Clear old state immediately and ignore late
+  responses after navigation or mutation.
+- [x] Fail closed across Overview, evidence cards, recommendations, Platform,
+  and Setup. Unqualified or provenance-free evidence renders as `No call`,
+  disables action links, and cannot preserve stale recommendation prose.
+
+### P11 verification evidence
+
+- Final verification collected 1,525 Python tests: 1,521 passed and four
+  protected real-fixture checks skipped because their external fixture was not
+  present. Whole-repository Ruff, TypeScript, the production UI build, and
+  `git diff --check` passed.
+- The final production UI kept major workspaces lazy: Setup was 19.45 KB (5.77
+  KB gzip), Dial-In 35.93 KB (9.40 KB gzip), Laps 93.18 KB (24.11 KB gzip), and
+  Platform 101.40 KB (29.36 KB gzip). The entry bundle was 230.42 KB (71.22 KB
+  gzip).
+- Live 1280 x 720 browser checks covered populated short and 54-lap runs, all
+  five workspaces, both UI modes, compact and expanded rails, keyboard-only
+  controls, modal focus trapping, run/session transitions, exact workflow
+  abandonment, and stale-event replacement. The console remained clean.
+- A hostile Bristol replay invalidated the stored 39.667-second cooldown-like
+  lap before best-lap, stint, falloff, or Platform conclusions. A legacy
+  Talladega replay removed provenance-free tuning actions and rendered `No
+  call`, empty findings, and no next test.
+- The independent integrated review and accessibility/responsive sub-audit both
+  returned CLEAR with no remaining P0/P1 findings after 225 and 102 focused
+  checks respectively.
+
+---
+
+## P12 - Internal Engineering Intelligence
+
+This phase adds a deterministic local Smart Engineer above the existing evidence
+and controlled-test authorities. It may organize evidence, compare causes,
+select a producer-owned measurement, answer a fixed set of grounded questions,
+and remember verified outcomes. It does not invent telemetry, probability, or
+setup authority.
+
+### Complete and verified
+
+- [x] Build a typed evidence graph whose public claims, causes, controls, and
+  citations bind to exact run, session, lap, event, channel, and setup identities.
+- [x] Rank competing causes ordinally as leading, possible, ruled out, or
+  unresolved. Do not present unsupported probabilities or hidden confidence
+  arithmetic.
+- [x] Select one evidence-qualified next step: an already-authorized controlled
+  test, a producer-declared discriminator, a measurement mission, driver focus,
+  or an explicit no-call with recovery blockers.
+- [x] Keep exact setup values behind repository revalidation of the current
+  source-A baseline, adjacent legal option, immutable provenance, complete
+  protocol, and source-event relationship. B/A2, cross-run, ambiguous-workflow,
+  and caller-attested paths fail closed.
+- [x] Add immutable engineering memory for prediction contracts, outcome grades,
+  controlled-test narrative, exact-context setup response, and presentation-only
+  driver preferences. Memory cannot create evidence or setup authority.
+- [x] Report calibration as observed protocol-valid direction counts with its
+  sample size and caveat, never as a calibrated probability.
+- [x] Answer the supported engineering questions only from the selected run and,
+  when supplied, the exact selected lap. Every action-bearing answer requires the
+  controlled card's complete qualified citation set.
+- [x] Add a lazy Smart Engineer workspace. Race Mode leads with one short
+  briefing and next step; Learning Mode adds competing causes, the compact/full
+  evidence graph, context matches, calibration, narrative, and citation detail.
+- [x] Make citations navigable to their exact lap, track position, event, and
+  workspace while clearing answers and stale state whenever evidence scope
+  changes.
+- [x] Withhold malformed, mismatched, stale, cross-context, or untrusted derived
+  rows and optional memory. Data-integrity faults remain visible as blockers but
+  cannot expose action prose or take down the report.
+
+### Data-locked follow-ons
+
+- [ ] Calibrated probabilities remain locked until enough held-out, protocol-valid
+  outcomes exist for honest validation.
+- [ ] Formal information-gain and DOE selection remain locked behind their P7/P8
+  dataset prerequisites. The current planner uses only producer-declared,
+  evidence-qualified discriminators.
+- [ ] Open-ended generative engineering answers remain locked. The current query
+  surface is deterministic, fixed-intent, citation-bound, and locally auditable.
+
+### P12 verification evidence
+
+- Final verification collected 1,666 Python tests: 1,662 passed and four protected
+  real-fixture checks skipped because their external fixture was not present.
+  Whole-repository Ruff, TypeScript, the production UI build, and
+  `git diff --check` passed.
+- The production build kept Smart Engineer lazy at 26.04 KB (6.97 KB gzip); the
+  entry bundle was 233.48 KB (72.09 KB gzip).
+- Live 1280 x 720 browser checks covered populated Race and Learning reports,
+  measurement-only fail-closed behavior, the UI's suggested grounded question,
+  exact-lap response clearing, compact and full evidence graphs, exact citation
+  navigation to Lap 14 at 12.5%, zero horizontal overflow, and a clean console.
+- Independent release review returned CLEAR after 230 focused backend and 25
+  frontend contract checks. It replayed the authorized source-A path and verified
+  that B/A2, cross-run, malformed, missing-verifier, ambiguous-session, memory,
+  and untrusted-prose paths remain blocked.
+
+---
+
+## P13 - Cross-Tab Decision Broadcasting
+
+This phase makes every primary workspace state its decision, exact evidence
+scope, authority, and next handoff before exposing deeper analysis. The shell
+and tabs share one truth contract, while Race Mode stays concise and Learning
+Mode adds the supporting explanation.
+
+### Complete and verified
+
+- [x] Give Overview, Laps, Platform, Setup, Dial-In, and Smart Engineer a shared
+  first-card broadcast for status, exact scope, evidence readiness, authority,
+  and the most useful next workspace.
+- [x] Keep shell navigation signals consistent with each tab's fail-closed
+  decision. Integrity warnings, unavailable capability, short runs, loading,
+  and transport failures cannot appear green elsewhere in the app.
+- [x] Bind every run, lap, lap-window, representative lap, track zone, event,
+  setup snapshot, comparison, raw zoom, and damper response before publishing
+  it or handing it to another workspace.
+- [x] Make controlled workflows durable and unambiguous: one active workflow per
+  scope, exact source/window identity, immutable plan and stage bindings,
+  deterministic A/B/A2 cohorts, safe recovery, and cancellable blocked legacy
+  records.
+- [x] Separate an authorized source-run test plan from an unverified current-run
+  stage candidate. Dial-In never relabels the plan with the candidate run's lap
+  or window.
+- [x] Clear stale zones, channels, setup keys, events, and answers whenever the
+  new evidence identity cannot prove they still belong. A locationless event
+  cannot inherit the previous event's track zone.
+- [x] Bind telemetry manifests and normalized caches to their run, original
+  source hash, and cache hash. Swapped, stripped, ambiguous, or pre-v4 artifacts
+  fail closed with re-import guidance, including direct Shock Reader access.
+- [x] Keep recovery singular and usable: one primary Platform retry, in-tab
+  workflow-status retry, explicit workflow conflict resolution, readable status
+  text, human Race Mode run labels, and exact IDs retained in audit metadata.
+
+### P13 verification evidence
+
+- Final verification collected 1,740 Python tests: 1,734 passed and six protected
+  checks skipped. Four require external real fixtures; two local persisted-cache
+  checks correctly require original `.ibt` re-import because their pre-v4
+  artifacts lack immutable ownership.
+- Whole-repository Ruff, TypeScript, the production UI build, and
+  `git diff --check` passed. Major workspaces remain lazy: Overview 14.46 KB,
+  Setup 24.23 KB, Smart Engineer 30.68 KB, Dial-In 53.70 KB, Laps 99.11 KB,
+  and Platform 108.65 KB; the entry bundle is 242.52 KB (75.01 KB gzip).
+- Live 1280 x 720 Race and Learning checks covered all six primary workspaces,
+  aligned shell/tab states, exact Platform-to-Setup-to-Engineer and
+  Laps-to-Platform-to-Engineer handoffs, zero document overflow, and a clean
+  console.
+- Hostile replay covered cross-run and cross-session responses, same-lap
+  different-window workflows, multiple active workflows, packet/stage/cohort
+  corruption, stale zones, malformed nested evidence, manifest swaps,
+  same-schema cache swaps, direct parquet access, and CSV-to-Parquet rollback.
+- Independent tab-content and final cross-tab adversarial reviews returned CLEAR
+  with no remaining reproducible P0/P1 issue.
+
+---
+
+## P14 - Evidence Compounding and Adaptive Engineering
+
+This phase makes the app smarter by compounding only qualified observations,
+exact session history, recording health, and persisted workflow state. It may
+route attention, coach measurement, and remember a contradicted hypothesis. It
+does not turn observational correlation into a cause, probability, optimum, or
+new setup authority.
+
+### Complete and verified
+
+- [x] Promote producer-owned brake, rotation, tire, damper, powertrain, and
+  driver conclusions into typed observation-only mechanism evidence. Every
+  cited sample must co-observe the required channels, repetition counts must
+  equal distinct cited supporting laps, and untrusted producer prose cannot
+  become a public action.
+- [x] Detect repeatable same-setup opportunities at matched physical positions
+  only when at least three eligible laps clear the empirical same-run noise
+  floor. Keep the finding observational and separate from setup authorization.
+- [x] Build robust same-setup anomaly envelopes and driver-repeatability
+  coaching. Incomplete common coverage, reciprocal/bimodal cohorts, junk laps,
+  and broad pointwise multiplicity fail closed instead of creating a fleet of
+  false alerts.
+- [x] Build an exact ordered-session engineering ledger. Pace changes require
+  paired eligible laps, physical alignment, fuel, all four tire-distance
+  channels, tire compound, air/track temperature, wind, racing-line median and
+  tail limits, nearby-car exclusion, and an effect above paired-lap empirical
+  noise. The ledger labels every change observation-only.
+- [x] Track recurring and resolved event signatures only from actionable,
+  positive-confidence, blocker-free evidence. A resolved claim additionally
+  requires the next run to prove healthy observable coverage for every source
+  channel.
+- [x] Rebuild each controlled hypothesis lifecycle from immutable workflow,
+  prediction, grade, stage, compatibility, source-run, and full source-setup
+  identities. An exact Undo/invalid fingerprint becomes `do_not_repeat`; a
+  changed source context remains a different hypothesis.
+- [x] Rank typed measurement debt and one feasible next mission using producer
+  requirements, current channel availability, blockers resolved, unresolved
+  causes covered, required laps, acceptance checks, and stop rules. This is an
+  inspectable deterministic utility order, not formal information gain.
+- [x] Add a navigation-only next-trustworthy-move router, mission stage,
+  controlled-test preflight, certified-result reminder, and typed recovery.
+  Workflow-derived moves bind the exact workflow revision; setup-authorized
+  moves additionally bind the exact control and complete source-event set.
+- [x] Compare recording health against two exact compatible trusted prior runs.
+  Coverage, range, variation, effective rate, missingness, dropout, constant,
+  saturation, and range/rate changes may request re-import or a verification
+  run, but can never diagnose a vehicle cause or authorize setup.
+- [x] Add robust observational stint-state intelligence: continuous eligible
+  segments, Theil-Sen pace drift, MAD/noise-guarded change points, measured
+  fuel/tire/weather/driver covariates, right censoring, and hard boundaries for
+  pit, refuel, reset, repair, caution, incident, and tow context. Tire or causal
+  attribution requires repeated comparable sets and remains withheld otherwise.
+- [x] Add a deterministic scoped question parser for run, lap, lap-window,
+  phase, and setup-control entities. Ambiguous, reversed, missing, hyphenated,
+  and out-of-scope requests clarify or withhold rather than silently widening.
+- [x] Add Race/Learning smart cards for opportunity, mechanisms, driver focus,
+  anomalies, session changes, lifecycle, telemetry health, measurement debt,
+  preflight, and one next move. Structured questions lead generic suggestions;
+  disclosure and explicit `Mark updates seen` memory are presentation-only.
+- [x] Keep exact-context guarded counterfactual ranges inside observed legal
+  response envelopes with immutable source observations. Do not publish an
+  optimum, extrapolation, or universal response.
+
+### Data-locked follow-ons
+
+- [ ] Calibrate detector thresholds, alignment intervals, evidence scores, and
+  prediction reliability against frozen held-out same-setup and controlled-test
+  outcomes. Current empirical bands report their sample basis and remain
+  descriptive, not probabilities.
+- [ ] Add formal expected-information-gain selection only after producer-owned
+  competing-cause outcomes can validate it out of sample. The current planner
+  stays deterministic and blocker-aware.
+- [ ] Add hierarchical or context-distance transfer only after leave-one-context-
+  out validation proves it does not create negative transfer. Exact local
+  controlled evidence must remain dominant.
+- [ ] Keep multi-control DOE, response optimization, and Bayesian search locked
+  until at least 30 controlled experiments, six observations per factor, three
+  contexts, held-out score at least 0.65, contradiction at most 25%, and 100%
+  traceability are all satisfied.
+
+### P14 verification evidence
+
+- Final verification collected 1,877 Python tests: 1,871 passed and six
+  protected checks skipped. Whole-repository Ruff, TypeScript, the production
+  UI build, and `git diff --check` passed.
+- The production build keeps Smart Engineer lazy at 56.72 KB (14.14 KB gzip);
+  the entry bundle is 249.47 KB (76.93 KB gzip).
+- Focused hostile suites covered co-observed mechanism samples, false repetition,
+  low-confidence/action-prose injection, multimodal anomalies, missing tire or
+  racing-line context, unobservable resolved events, exact query windows,
+  current-versus-previous session selection, workflow revision/control/event
+  binding, explicit attention acknowledgement, recording-health lineage, and
+  observational stint boundaries.
+- Fresh-process 1280 x 720 Race and Learning browser checks had zero document
+  overflow, zero unlabeled visible buttons, a visible 2 px keyboard focus ring,
+  and a clean console. Legacy artifacts correctly showed recovery and retained
+  no stale Smart Engineer briefing or action.
+- Independent backend and UI adversarial reviews returned CLEAR after 228 and
+  174 focused checks respectively; the stint/P3 slice passed 95 focused checks.
+
+---
+
+## P15 - Premium Race Engineering Experience
+
+- [x] Rebuild launch, session selection, and import around a premium local race-
+  engineering workflow. Session cards derive truthful single/mixed track and car
+  context only from complete exact membership; duplicate names remain distinct
+  visually and to assistive technology.
+- [x] Make import progress stage-based and outcome-aware. Native and browser
+  flows require a real persisted run plus verified cockpit load before claiming
+  completion; saved-but-not-opened runs receive accurate, non-destructive
+  recovery rather than a false re-import failure.
+- [x] Establish a two-tier track/car/setup then run/lap/mode context hierarchy,
+  labeled workspace rail, one visible page heading, unclipped decision signals,
+  deliberate loading states, and a keyboard-visible skip path.
+- [x] Give Overview, Laps, Platform, and Setup a consistent decision briefing:
+  state, why, what next, exact scope, comparison context, evidence authority,
+  and the shortest valid handoff. Learning Mode retains the deeper coaching and
+  provenance trail without bloating Race Mode.
+- [x] Turn Smart Engineer and Dial-In into a single mission flow with why-now
+  context, typed recovery, evidence trail, A/B/A2 progress, exact run/lap
+  bindings, preflight checks, done/stop/rollback guardrails, and one controlled
+  next move. Shell readiness follows exact server report and workflow state.
+- [x] Make every recovery state truthful and actionable. Workflow-catalog and
+  Smart Engineer failures broadcast Checking/Unavailable instead of advisory
+  authority, Platform errors have one primary retry, and session deletion shows
+  an explicit nothing-was-deleted outcome.
+- [x] Harden keyboard and stale-scope behavior. Escape atomically clears the
+  full evidence cursor while preserving intended run/lap scope; delete
+  confirmation focuses Keep and restores a stable neighboring target; stale
+  event, zone, workflow, import, and session responses cannot relabel current
+  context.
+- [x] Verify compact and expanded layouts, reduced-motion behavior, visible
+  focus, complete accessible names, and zero horizontal page overflow at the
+  1280 x 720 desktop target.
+
+### P15 verification evidence
+
+- Final verification collected 1,904 Python tests: 1,898 passed and six
+  protected real-fixture checks skipped. The suite passed in three bounded
+  batches; whole-repository Ruff, TypeScript, the production UI build, and
+  `git diff --check` passed.
+- The final production entry is 264.21 KB (80.51 KB gzip). Smart Engineer stays
+  lazy at 64.80 KB (16.53 KB gzip), Dial-In at 56.85 KB (15.16 KB gzip), and
+  charting remains isolated from the entry path.
+- Fresh-process 1280 x 720 Race and Learning checks covered launch, truthful
+  session metadata, Overview, Smart Engineer recovery, and Dial-In. Document
+  width remained 1280/1280, all six workspace signals were unclipped, visible
+  buttons had complete names, the active workspace exposed one visible `h1`,
+  and delete/Keep focus returned to the exact stable session control.
+- An independent final adversarial review returned CLEAR after import,
+  session-membership, shell readiness, navigation, stale-focus, accessibility,
+  and responsive checks. The post-review readability/error polish also passed
+  focused contracts, typecheck, live HMR inspection, and the final full suite.
+
+---
+
+## P16 - Premium Telemetry Visualization
+
+- [x] Replace nested hard-edged chart boxes with one open telemetry-canvas
+  language: subtle plot fields, restrained grids, signal-color hierarchy,
+  readable metric strips, glass tooltips, and responsive Race/Learning layouts.
+- [x] Rebuild the Laps pace trace with truthful lap-time, delta, and Rolling-5
+  metric cues; separate fastest/selected states; explicit baseline/test/range
+  layers; keyboard-selectable points; and honest line breaks across invalid,
+  excluded, or missing stint laps.
+- [x] Rebuild Platform whole-lap charts as open signal lanes with unsmoothed raw
+  traces, visible units, severity/event markers, selected-location context,
+  static premium zoom controls, exact-sample keyboard inspection, and a layered
+  local trace. Proxy channels stay dashed and explicitly labeled in both views.
+- [x] Upgrade run-to-run delta traces with physical-position axes, synchronized
+  cursors, unit-aware tooltips, an explicit zero reference, target-zone wash,
+  honest gaps, dashed proxy identity, container-aware resizing, and an
+  accessible reset. Stale or cross-scope responses cannot replace the selected
+  run/lap/channel/zone result.
+- [x] Preserve mathematical and evidence truth: no smoothing, no null-to-zero,
+  no false continuity, no proxy-as-measured styling, and no duplicated overlay
+  counts. Reduced-motion, focus, accessible names, and 1280 x 720 overflow were
+  verified.
+
+### P16 verification evidence
+
+- 88 focused chart/trace contracts and 227 broad frontend, chart-visibility,
+  stint, and performance contracts passed. Whole-repository Ruff, TypeScript,
+  the production Vite build, and `git diff --check` passed.
+- Live 1280 x 720 Race and Learning checks verified the pace surface, honest
+  junk-lap gaps, active-metric best markers, complete scope counts, zero page
+  overflow, zero clipped chart stats, zero unnamed visible buttons, and visible
+  keyboard point focus.
+- The production entry remains 264.21 KB (80.51 KB gzip); charting remains in
+  its isolated lazy chunk. An independent adversarial chart review returned
+  CLEAR after proxy, unit, gap, stale-response, metric-marker, count, keyboard,
+  reduced-motion, and responsive replays.
+
+---
+
+## P17 - Oval Driver Operating System
+
+- [x] Reframe the first five minutes around an oval driver's actual questions:
+  how many laps are clean, what is the longest uninterrupted block, what is the
+  best clean pace, where in the corner is the priority, and what should be
+  verified next. Run and session surfaces keep track temperature, setup tech
+  state, and exact run identity visible without adding another workspace.
+- [x] Add an observation-only Laps run brief that separates best three/five-lap
+  speed from qualified 20-60-lap race-run pace, withholds estimates below the
+  gate, names excluded-lap categories, and distinguishes observed balance drift
+  from tire or setup causality.
+- [x] Add RF/RR readiness that requires at least ten uninterrupted canonically
+  eligible laps plus an explicit producer-owned corner trend. Missing, invalid,
+  excluded, or nonconsecutive laps break the chain; short or split runs never
+  become tire, falloff, or best-long-run conclusions.
+- [x] Add a run-owned Setup-at-a-glance surface for oval anchors: cross weight,
+  nose weight, brake bias, grille tape, RF/RR cold pressure, rear gear, and
+  steering ratio. The one-change audit verifies known matching car/track scope
+  and remains non-authoritative until Dial-In revalidates the full plan.
+- [x] Add an evidence-bound crew board for entry, center, exit, and straightaway
+  carry, plus an exact-sample Platform checkpoint for brake, steering,
+  throttle, and speed. Only typed producer phases are named; proxy resistance or
+  scrub observations remain visibly proxy and never become measured aero.
+- [x] Make the whole-car comparison workbook reachable from Laps without
+  expanding the six-tab navigation. Lead with clean-lap pace, matched location,
+  driver repeatability, RF readiness, and one-change discipline; independently
+  bind both comparison and insight responses to exact runs, laps, and zone.
+- [x] Preserve continuity everywhere: missing lap numbers reset Rolling-5,
+  split timing buckets and chart lines, block full-stint verdicts, and cannot be
+  pooled into 10/20-lap readiness. The browser gate mirrors the complete
+  canonical invalid-lap taxonomy rather than trusting `is_useful` alone.
+
+### P17 verification evidence
+
+- 1,947 tests were collected: 1,941 passed and six protected-fixture checks
+  skipped. Focused oval, stint-continuity, comparison-scope, shell, and
+  responsive contracts passed after hostile missing-lap, junk-tag, stale-result,
+  split-bucket, and proxy replays.
+- Whole-repository Ruff, TypeScript, the production Vite build, and
+  `git diff --check` passed. Compare remains a lazy Laps workbook rather than
+  increasing initial shell weight or navigation complexity.
+- Live 1280 x 720 Race and Learning checks verified clean-lap and 10-lap shell
+  readiness, 20-lap race-run withholding, RF/RR and balance states, setup
+  anchors, the whole-car workbook, zero page overflow, and zero unnamed visible
+  buttons. A final independent continuity and authority review returned CLEAR.
+
+---
+
+## P18 - Deterministic Reasoning and Controlled Learning
+
+- [x] Rank causes by independent evidence units rather than raw event count.
+  Repeated eligible-lap observations can strengthen a cause, same-lap correlated
+  events cannot vote twice, and an exact protocol-valid controlled contradiction
+  outranks an observational count contest.
+- [x] Admit verified A/B/A2 outcomes into current reasoning without conflating
+  diagnosis with control acceptability. A target effect may support the mechanism
+  while a countereffect still produces Undo and blocks that exact setup policy;
+  inconclusive or invalid execution never becomes contradiction or support.
+- [x] Bind learned outcomes and do-not-repeat policy to canonical context,
+  material setup, physical track window, symptom, cause, control, direction,
+  metric, phase, and countereffect contract. Presentation wording, event IDs,
+  source-run churn, case, whitespace, and numeric representation cannot evade a
+  prior Undo; a materially different setup or corner remains independently testable.
+- [x] Enforce semantic repeat policy before every exact-target surface: direct
+  packet planning, workflow creation, public projection, Stage B attachment,
+  scoring, and report authority. Valid scored history remains visible and
+  certificate-auditable while future unchanged failed plans remain blocked.
+- [x] Replace self-asserted measurement ranking with an inspectable planner that
+  validates blocker ownership, event/cause provenance, channel readiness, health
+  lineage, and honest additional-lap cost. Integrity recovery outranks lap
+  qualification, affected-channel recovery, repetition, and discrimination.
+- [x] Publish typed mind-change criteria with the exact metric, evidence scope,
+  threshold provenance, required independent laps or A/B/A2 stages, stop rule,
+  countereffect, and deterministic next state. Collection guidance cannot invent
+  causal falsification authority.
+- [x] Make grounded questions exact and fail-closed across run, single-lap,
+  lap-window, phase, and control scope. Missing representative laps, competing or
+  shorthand lap scopes, out-of-scope history, and mismatched navigation request
+  clarification instead of silently broadening or narrowing the answer.
+- [x] Use one setup-authority projection across the API, Engineer, shell ribbon,
+  and Dial-In. The exact control, values, three-step protocol, qualified event set,
+  workflow revision, Stage B preflight, and current artifact generation must all
+  agree; blocked, malformed, stale, or free-form query payloads expose only safe
+  recovery and never stored setup prose.
+- [ ] Collect held-out controlled outcomes before activating calibrated
+  probabilities, formal information gain, hierarchical context transfer, or
+  multi-control optimization. Deterministic evidence tiers remain authoritative
+  until the existing P7/P8/P14 unlock criteria are truly met.
+
+### P18 verification evidence
+
+- 2,063 tests were collected: 2,057 passed and six protected-fixture checks
+  skipped. Focused reasoning, query, planner, workflow-policy, public-authority,
+  Engineer, ribbon, and Dial-In hostile regressions passed after independent
+  evidence, countereffect-only Undo, semantic-policy churn, competing lap scope,
+  stale artifact, and appended Stage B command replays.
+- Whole-repository Ruff, TypeScript, the production Vite build, and
+  `git diff --check` passed. The production build transformed 2,188 modules;
+  Smart Engineer remains lazy-loaded and no new probabilistic authority was added.
+- Independent backend, UI-authority, and final cross-boundary adversarial audits
+  returned CLEAR with no remaining reproducible P0/P1 intelligence blocker.
+
+---
+
 ## Professional analysis surface, without losing the product thesis
 
 - [x] Match essential professional language: time variance, overlays, math
@@ -656,6 +1248,10 @@ Implementation queue completed in this pass:
    driver-facing decision kinds.
 9. [ ] Collect held-out controlled outcomes for P8 score calibration and formal
    competing-cause evaluation; do not relabel ordinal evidence as probability.
+10. [ ] Collect frozen same-setup and controlled histories for P14 detector,
+    alignment, and prediction calibration; keep formal information gain,
+    hierarchical transfer, and multi-control optimization locked until their
+    stated validation thresholds are met.
 
 ## Roadmap update log
 
@@ -678,3 +1274,12 @@ Implementation queue completed in this pass:
 | 2026-08-05 | Closed adversarial P8 authorization and scoring gaps | Candidate-specific event/mechanism linkage, selected-scope containment, exact-control memory isolation, objective-sized measurement missions, immutable score-time A/B/A2 setup validation, multi-control fail-closed behavior, persisted UI context, and context-mismatch action gating gained regression coverage |
 | 2026-08-05 | Hardened production A/B/A2 certification and physical guardrails | Consecutive post-warmup cohorts, file-owned recording chronology, repeated noise floors, six-lap sign states, complete non-target alignment, control-specific platform/cooling/gearing/brake guardrails, hostile platform numeric gates, durable rollback provenance, and fully rendered score distributions passed 1,353 tests with four environment-dependent skips, whole-repo Ruff, UI typecheck/build, diff integrity, and a final adversarial CLEAR review |
 | 2026-08-08 | Completed the P9 whole-app performance pass | Real Atlanta direct import improved about 80-83% with exact 277-channel manifest parity and about 55% lower peak memory; warm reads, trace payloads, alignment lookups, track-map rendering, and UI delivery were reduced without weakening canonical contracts; the corrected tree passed 1,385 Python tests with four environment-dependent skips, Ruff, TypeScript, production build, browser smoke, and a final adversarial CLEAR review |
+| 2026-08-08 | Verified P10 evidence integrity and resilience | Hostile context, provenance, persistence, cache-mutation, endpoint, and stale-UI regressions passed; 1,499 tests were collected with 1,495 passing and four protected fixture skips; Ruff, TypeScript, production build, browser smoke, and two independent CLEAR reviews passed |
+| 2026-08-08 | Completed P11 decision-first desktop UX | Responsive Race/Learning surfaces, exact workflow/session identity, seven-column stint decisions, progressive Platform/Setup/Dial-In disclosure, legacy junk-lap requalification, evidence-trust fallbacks, keyboard access, and 1280 x 720 layouts passed 1,525 collected tests with four protected skips, Ruff, TypeScript, production build, browser smoke, and independent integrated plus accessibility CLEAR reviews |
+| 2026-08-08 | Completed P12 internal engineering intelligence | Evidence graph, ordinal cause comparison, one evidence-qualified next measurement, grounded exact-scope questions, immutable engineering memory, honest calibration counts, presentation-only personalization, and the Race/Learning Smart Engineer workspace passed 1,666 collected tests with four protected skips, Ruff, TypeScript, production build, 1280 x 720 browser smoke, and an independent release CLEAR review |
+| 2026-08-08 | Completed P13 cross-tab decision broadcasting | Six decision-first workspace broadcasts, shell/tab truth parity, exact scope handoffs, durable one-workflow authority, telemetry artifact ownership, stale-zone clearing, responsive recovery, and human Race Mode labels passed 1,740 collected tests with six protected skips, Ruff, TypeScript, production build, 1280 x 720 checks, and independent tab-content plus final adversarial CLEAR reviews |
+| 2026-08-08 | Completed P14 evidence compounding and adaptive engineering | Typed mechanism observations, repeatable physical-position opportunities, robust anomalies, driver coaching, exact-context session ledger and hypothesis lifecycle, blocker-aware measurement guidance, telemetry-health comparison, observational stint state, adaptive smart cards, and scoped questions passed 1,877 collected tests with six protected skips, Ruff, TypeScript, production build, fresh-process 1280 x 720 browser checks, and independent backend plus UI adversarial CLEAR reviews; calibrated probability, formal information gain, hierarchical transfer, and optimization remain data-locked |
+| 2026-08-08 | Completed P15 premium race-engineering experience polish | Premium launch/import/session flow, exact shell readiness, comparative workspace briefings, Smart Engineer and Dial-In mission progress, honest recovery, keyboard-safe focus, accessible duplicate-session context, and responsive 1280 x 720 presentation passed 1,904 collected tests with six protected skips, Ruff, TypeScript, production build, diff integrity, live Race/Learning checks, and independent adversarial CLEAR review |
+| 2026-08-08 | Completed P16 premium telemetry visualization | Open telemetry canvases, truthful pace/delta/Platform line hierarchy, honest gaps, active-metric cues, dashed proxy identity, exact units, stale-safe comparison responses, and keyboard sample inspection passed 88 focused chart checks, 227 broad frontend/performance checks, Ruff, TypeScript, production build, diff integrity, live 1280 x 720 Race/Learning inspection, and an independent adversarial CLEAR review |
+| 2026-08-08 | Completed P17 oval driver operating system | Driver-first clean-run readiness, short-versus-race pace, uninterrupted RF/RR evidence, clean-lap ledger, oval setup anchors, entry/center/exit/carry crew board, exact-sample checkpoint, and the Laps-hosted whole-car workbook passed 1,947 collected tests with six protected skips, Ruff, TypeScript, production build, diff integrity, live 1280 x 720 Race/Learning checks, and a final adversarial CLEAR review |
+| 2026-08-09 | Completed P18 deterministic reasoning and controlled learning | Independent evidence tiers, exact controlled-outcome semantics, physical-window semantic repeat memory, blocker-aware measurement planning, typed mind-change criteria, exact grounded-query scope, centralized repeat enforcement, and one fail-closed API/UI Stage B authority projection passed 2,063 collected tests with six protected skips, Ruff, TypeScript, production build, diff integrity, and three independent adversarial CLEAR reviews |

@@ -34,6 +34,7 @@ export interface DamperConclusion {
 }
 
 export interface DamperResponseReport {
+  run_id: string;
   selected_lap: number;
   phases: string[];
   gate: {

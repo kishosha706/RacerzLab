@@ -86,5 +86,25 @@ def eligible_laps(laps: Iterable[LapSummary]) -> list[LapSummary]:
     return [lap for lap in laps if lap_is_eligible(lap)]
 
 
+def longest_contiguous_eligible_lap_count(laps: Iterable[LapSummary]) -> int:
+    """Return the longest consecutive eligible block without bridging gaps."""
+    longest = 0
+    current = 0
+    previous_lap_number: int | None = None
+    for lap in sorted(laps, key=lambda item: item.lap_number):
+        if not lap_is_eligible(lap):
+            current = 0
+            previous_lap_number = None
+            continue
+        current = (
+            current + 1
+            if previous_lap_number is not None and lap.lap_number == previous_lap_number + 1
+            else 1
+        )
+        longest = max(longest, current)
+        previous_lap_number = lap.lap_number
+    return longest
+
+
 def find_lap(laps: Iterable[LapSummary], lap_number: int) -> LapSummary | None:
     return next((lap for lap in laps if lap.lap_number == lap_number), None)

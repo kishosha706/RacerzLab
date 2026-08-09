@@ -46,6 +46,32 @@ def _to_quality_summary(lap: LapSummary) -> LapQualitySummary:
     )
 
 
+def _lap_numbers_are_consecutive(laps: list[LapSummary]) -> bool:
+    ordered = sorted(laps, key=lambda lap: lap.lap_number)
+    return all(
+        current.lap_number == previous.lap_number + 1
+        for previous, current in zip(ordered, ordered[1:])
+    )
+
+
+def _contiguous_valid_segments(laps: list[LapSummary]) -> list[list[LapSummary]]:
+    segments: list[list[LapSummary]] = []
+    current: list[LapSummary] = []
+    for lap in sorted(laps, key=lambda item: item.lap_number):
+        if not _is_lap_valid_for_ranking(lap)[0]:
+            if current:
+                segments.append(current)
+                current = []
+            continue
+        if current and lap.lap_number != current[-1].lap_number + 1:
+            segments.append(current)
+            current = []
+        current.append(lap)
+    if current:
+        segments.append(current)
+    return segments
+
+
 def _compute_window_stats(laps: list[LapSummary]) -> dict[str, Any]:
     times = [la.lap_time for la in laps if la.lap_time is not None]
     if not times:
@@ -130,6 +156,8 @@ def compute_best_windows(laps: list[LapSummary], sizes: list[int] | None = None)
         windows: list[LapWindowSummary] = []
         for i in range(len(sorted_laps) - size + 1):
             window_laps = sorted_laps[i:i + size]
+            if not _lap_numbers_are_consecutive(window_laps):
+                continue
             excluded: list[dict[str, Any]] = []
             valid_window_laps: list[LapSummary] = []
             for wl in window_laps:
@@ -196,7 +224,8 @@ def compute_best_windows(laps: list[LapSummary], sizes: list[int] | None = None)
 
 def compute_degradation(laps: list[LapSummary]) -> LapDegradationSummary:
     sorted_laps = sorted(laps, key=lambda la: la.lap_number)
-    valid = [la for la in sorted_laps if _is_lap_valid_for_ranking(la)[0]]
+    segments = _contiguous_valid_segments(sorted_laps)
+    valid = max(segments, key=len, default=[])
     n = len(valid)
     if n < 10:
         return LapDegradationSummary(

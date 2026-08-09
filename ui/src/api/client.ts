@@ -8,6 +8,7 @@ import type {
   ControlledWorkflow,
   LapSummary,
   PlatformEventItem,
+  PlatformEventsReport,
   RunListItem,
   RunOverview,
   SetupSnapshot,
@@ -16,6 +17,11 @@ import type {
   TraceResponse,
 } from "../types/telemetry";
 import type { DamperResponseReport } from "../types/damperResponse";
+import type {
+  IntelligenceQueryRequest,
+  IntelligenceQueryResponse,
+  RunIntelligenceReport,
+} from "../types/intelligence";
 
 const API_BASE =
   import.meta.env.VITE_RACELAB_API_BASE_URL ??
@@ -52,6 +58,7 @@ export type HealthResponse = {
 
 const inflightGetRequests = new Map<string, Promise<unknown>>();
 const getResponseCache = new Map<string, JsonCacheEntry>();
+let apiCacheGeneration = 0;
 
 function requestMethod(init?: RequestInit): string {
   return (init?.method ?? "GET").toUpperCase();
@@ -67,6 +74,7 @@ function cacheTtlMs(path: string): number {
 }
 
 function invalidateApiCache(pathPrefix?: string): void {
+  apiCacheGeneration += 1;
   if (!pathPrefix) {
     inflightGetRequests.clear();
     getResponseCache.clear();
@@ -122,7 +130,7 @@ function errorMessageFromResponseText(text: string, fallback: string): string {
     if (payload.detail && typeof payload.detail === "object") {
       const detail = payload.detail;
       return [
-        detail.title ?? "Import failed",
+        detail.title ?? fallback,
         detail.message,
         detail.impact,
         detail.next_step,
@@ -139,6 +147,7 @@ function errorMessageFromResponseText(text: string, fallback: string): string {
 async function requestJson<T>(path: string, init?: RequestInit, timeoutMs: number = REQUEST_TIMEOUT_MS, timeoutLabel: string = "Request"): Promise<T> {
   const method = requestMethod(init);
   const key = requestKey(path, timeoutMs);
+  const requestCacheGeneration = apiCacheGeneration;
   if (method === "GET") {
     const cached = getResponseCache.get(key);
     if (cached && cached.expiresAt > Date.now()) {
@@ -178,10 +187,12 @@ async function requestJson<T>(path: string, init?: RequestInit, timeoutMs: numbe
     }
     const payload = (await response.json()) as T;
     if (method === "GET") {
-      getResponseCache.set(key, {
-        value: payload,
-        expiresAt: Date.now() + cacheTtlMs(path),
-      });
+      if (requestCacheGeneration === apiCacheGeneration) {
+        getResponseCache.set(key, {
+          value: payload,
+          expiresAt: Date.now() + cacheTtlMs(path),
+        });
+      }
     } else {
       invalidateApiCache();
     }
@@ -191,7 +202,9 @@ async function requestJson<T>(path: string, init?: RequestInit, timeoutMs: numbe
   if (method !== "GET") return run();
 
   const promise = run().finally(() => {
-    inflightGetRequests.delete(key);
+    if (inflightGetRequests.get(key) === promise) {
+      inflightGetRequests.delete(key);
+    }
   });
   inflightGetRequests.set(key, promise);
   return promise;
@@ -279,6 +292,29 @@ export function fetchOverview(runId: string): Promise<RunOverview> {
   return requestJson<RunOverview>(`/api/runs/${encodeURIComponent(runId)}/overview`);
 }
 
+export function fetchRunIntelligence(
+  runId: string,
+  options?: { sessionId?: string | null; refreshKey?: string | number },
+): Promise<RunIntelligenceReport> {
+  const params = new URLSearchParams();
+  if (options?.sessionId) params.set("session_id", options.sessionId);
+  if (options?.refreshKey != null) params.set("refresh", String(options.refreshKey));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestJson<RunIntelligenceReport>(
+    `/api/runs/${encodeURIComponent(runId)}/intelligence${suffix}`,
+  );
+}
+
+export function queryRunIntelligence(
+  runId: string,
+  payload: IntelligenceQueryRequest,
+): Promise<IntelligenceQueryResponse> {
+  return requestJson<IntelligenceQueryResponse>(
+    `/api/runs/${encodeURIComponent(runId)}/intelligence/query`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
 export function fetchLaps(runId: string): Promise<LapSummary[]> {
   return requestJson<LapSummary[]>(`/api/runs/${encodeURIComponent(runId)}/laps`);
 }
@@ -306,6 +342,10 @@ export function startControlledWorkflow(payload: {
   run_id: string;
   complaint: string;
   selected_lap?: number | null;
+  lap_scope?: "run" | "single_lap" | "lap_window" | "track_zone" | null;
+  window_start_lap?: number | null;
+  window_end_lap?: number | null;
+  representative_lap?: number | null;
 } & DialInDecisionContext): Promise<ControlledWorkflow> {
   return requestJson<ControlledWorkflow>("/api/engineering/workflows", {
     method: "POST",
@@ -331,8 +371,20 @@ export function scoreControlledWorkflow(workflowId: string): Promise<ControlledW
   });
 }
 
-export function fetchControlledWorkflows(activeOnly = false): Promise<ControlledWorkflow[]> {
-  return requestJson<ControlledWorkflow[]>(`/api/engineering/workflows?active_only=${activeOnly ? "true" : "false"}`);
+export function cancelControlledWorkflow(workflowId: string): Promise<ControlledWorkflow> {
+  return requestJson<ControlledWorkflow>(
+    `/api/engineering/workflows/${encodeURIComponent(workflowId)}/cancel`,
+    { method: "POST" },
+  );
+}
+
+export function fetchControlledWorkflows(
+  activeOnly = false,
+  options?: { refreshKey?: string | number },
+): Promise<ControlledWorkflow[]> {
+  const params = new URLSearchParams({ active_only: activeOnly ? "true" : "false" });
+  if (options?.refreshKey != null) params.set("refresh", String(options.refreshKey));
+  return requestJson<ControlledWorkflow[]>(`/api/engineering/workflows?${params.toString()}`);
 }
 
 export function fetchControlledWorkflowReport(workflowId: string): Promise<{ workflow_id: string; markdown: string }> {
@@ -473,6 +525,17 @@ export function importMt2FileFromPath(filePath: string): Promise<TrackMapIndexEn
     invalidateApiCache("/api/track-maps");
     return payload;
   });
+}
+
+export function fetchPlatformEventsReport(
+  runId: string,
+  options?: { lap?: number; event_type?: string },
+): Promise<PlatformEventsReport> {
+  const params = new URLSearchParams();
+  if (options?.lap != null) params.set("lap", String(options.lap));
+  if (options?.event_type) params.set("event_type", options.event_type);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestJson<PlatformEventsReport>(`/api/runs/${encodeURIComponent(runId)}/platform-events-report${suffix}`);
 }
 
 export function fetchCompareTimeAnalysis(request: TimeAnalysisRequest): Promise<TimeAnalysisResponse> {

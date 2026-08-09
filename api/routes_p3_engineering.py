@@ -298,6 +298,7 @@ def get_damper_response(run_id: str, lap: int | None = None) -> DamperResponseRe
     return analyze_damper_response(
         rows,
         overview.laps,
+        run_id=run_id,
         selected_lap=selected,
         sim_integrity_clear=cohort_clear,
         sim_integrity_confidence_cap=cohort_cap,

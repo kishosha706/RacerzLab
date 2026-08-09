@@ -25,11 +25,13 @@ from racelab_engine.services.setup_learning_service import (
     get_setup_response_models,
     record_interaction_response,
     record_setup_response,
+    response_environment_key,
 )
 from racelab_engine.analysis.advanced_experimentation import (
     ExperimentHistorySummary,
     evaluate_experiment_unlock,
 )
+from racelab_engine.storage.db import initialize_database
 
 
 def _context(*, build: str = "2026.08.01") -> SetupResponseContext:
@@ -310,6 +312,131 @@ def test_response_graph_preserves_traceability_and_contradictions(tmp_path: Path
     ) == {}
 
 
+def test_response_graph_skips_malformed_or_cross_context_memory_rows(tmp_path: Path) -> None:
+    db_path = tmp_path / "malformed-learning.sqlite"
+    assert _record(db_path, "malformed-memory") is True
+    connection = initialize_database(db_path)
+    with connection:
+        connection.execute(
+            "UPDATE setup_response_observations SET evidence_json = ?",
+            ("{bad",),
+        )
+    connection.close()
+    assert get_setup_response_models(_context(), db_path=db_path) == {}
+    assert get_setup_response_graph(_context(), db_path=db_path)["edges"] == []
+
+    other_db_path = tmp_path / "cross-context-learning.sqlite"
+    assert _record(other_db_path, "cross-context-memory") is True
+    connection = initialize_database(other_db_path)
+    with connection:
+        connection.execute(
+            "UPDATE setup_response_observations SET response_context_json = ?",
+            ('{"driver_id":"other"}',),
+        )
+    connection.close()
+    assert get_setup_response_graph(_context(), db_path=other_db_path)["edges"] == []
+
+    interaction_db_path = tmp_path / "malformed-interaction.sqlite"
+    unlock = evaluate_experiment_unlock(ExperimentHistorySummary(
+        phase_exit_passed={f"P{index}": True for index in range(7)},
+        controlled_experiments=40,
+        distinct_contexts=4,
+        experiments_per_factor={"f0": 8, "f1": 8},
+        held_out_validation_score=0.8,
+        contradiction_rate=0.1,
+        traceable_fraction=1.0,
+    ))
+    assert record_interaction_response(
+        experiment_id="malformed-interaction",
+        response_context=_context(),
+        factor_deltas={"f0": 1.0, "f1": -1.0},
+        outcomes={"lap_delta_s": -0.1},
+        uncertainty=0.02,
+        setup_passed_tech=True,
+        evidence_packet_ids=["packet-1"],
+        source_run_ids=["a", "b", "a2"],
+        experiment_unlock=unlock,
+        controlled_effect_eligible=True,
+        evidence_state=EvidenceState.CONTROLLED_TEST_EFFECT,
+        driver_matched=True,
+        sim_integrity_clear=True,
+        db_path=interaction_db_path,
+    )
+    connection = initialize_database(interaction_db_path)
+    with connection:
+        connection.execute(
+            "UPDATE setup_interaction_observations SET factor_deltas_json = ?",
+            ("{bad",),
+        )
+    connection.close()
+    assert get_interaction_response_models(
+        _context(), db_path=interaction_db_path,
+    ) == {}
+    assert get_setup_response_graph(
+        _context(), db_path=interaction_db_path,
+    )["interaction_models"] == {}
+
+
+def test_reassigned_response_rows_cannot_cross_driver_or_context_scope(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "reassigned-memory.sqlite"
+    foreign = replace(_context(), driver_id="driver-foreign")
+    victim = _context()
+    for index in range(6):
+        assert _record(
+            db_path,
+            f"foreign-{index}",
+            response_context=foreign,
+        ) is True
+    connection = initialize_database(db_path)
+    with connection:
+        rows = connection.execute(
+            "SELECT observation_id FROM setup_response_observations ORDER BY observation_id"
+        ).fetchall()
+        pairs = ((300.0, 295.0), (300.0, 295.0), (300.0, 305.0),
+                 (300.0, 305.0), (300.0, 310.0), (300.0, 310.0))
+        for row, (baseline, test) in zip(rows, pairs):
+            connection.execute(
+                """
+                UPDATE setup_response_observations
+                SET baseline_value = ?, test_value = ?, numeric_delta = ?,
+                    direction_sign = ?
+                WHERE observation_id = ?
+                """,
+                (
+                    str(baseline),
+                    str(test),
+                    test - baseline,
+                    1 if test > baseline else -1,
+                    row["observation_id"],
+                ),
+            )
+        connection.execute(
+            """
+            UPDATE setup_response_observations
+            SET response_context_key = ?, environment_context_key = ?
+            """,
+            (victim.key, response_environment_key(victim)),
+        )
+    connection.close()
+
+    assert get_setup_area_biases(
+        victim.car_name,
+        victim.track_name,
+        response_context=victim,
+        minimum_observations=1,
+        db_path=db_path,
+    ) == {}
+    assert get_setup_response_models(
+        victim,
+        minimum_observations=1,
+        db_path=db_path,
+    ) == {}
+    assert get_observed_tech_envelope(victim, db_path=db_path) == {}
+    assert get_setup_response_graph(victim, db_path=db_path)["edges"] == []
+
+
 def test_response_context_builder_fails_closed_and_versions_setup() -> None:
     identity = {
         "driver_user_id": 42,
@@ -551,6 +678,34 @@ def test_nonlinear_model_groups_baseline_levels_only_when_surrounding_package_ma
     assert item["value_kind"] == "continuous_observed_range"
     assert item["scope"] == "observed_tech_passing_exact_context_not_a_universal_limit"
     assert len(item["source_observation_ids"]) == 6
+
+
+def test_observed_options_keep_provenance_attached_to_each_exact_value(tmp_path: Path) -> None:
+    db_path = tmp_path / "per-value-provenance.sqlite"
+    assert _record_model_point(
+        db_path,
+        comparison_id="lower-edge",
+        baseline=50.0,
+        delta=0.5,
+        outcome_s=-0.02,
+    )
+    assert _record_model_point(
+        db_path,
+        comparison_id="upper-edge",
+        baseline=50.5,
+        delta=0.5,
+        outcome_s=-0.03,
+    )
+
+    envelope = get_observed_tech_envelope(_context(), db_path=db_path)
+    item = next(iter(envelope.values()))
+    options = {float(option["value"]): set(option["source_observation_ids"]) for option in item["observed_options"]}
+
+    assert set(options) == {50.0, 50.5, 51.0}
+    assert len(options[50.0]) == 1
+    assert len(options[51.0]) == 1
+    assert options[50.0].isdisjoint(options[51.0])
+    assert options[50.5] == options[50.0] | options[51.0]
 
 
 def test_response_model_requires_both_directions_and_replicated_levels(tmp_path: Path) -> None:

@@ -42,8 +42,11 @@ def test_startup_screen_uses_local_racerzlab_banner_and_keeps_session_actions() 
     assert "rgba(6, 10, 16, 0.72)" in styles
     assert "position: absolute;" in styles
     assert "object-fit: cover;" in styles
-    assert "New Session" in startup
-    assert "Previous Sessions" in startup
+    assert "New engineering session" in startup
+    assert "Continue engineering" in startup
+    assert "Turn telemetry into one trustworthy next move." in startup
+    assert 'className="startup-value-grid"' in startup
+    assert "Runs, setups, reports, and learning stay on this machine." in startup
 
     image_urls = re.findall(r"<img[^>]+src=[{'\"]([^}'\"]+)", startup)
     assert all(not url.startswith(("http://", "https://")) for url in image_urls)

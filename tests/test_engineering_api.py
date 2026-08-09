@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from api.routes_p3_engineering import _has_corner_damper_setting
@@ -137,6 +138,10 @@ def test_workflow_route_forwards_driver_decision_context(monkeypatch) -> None:
         "run_id": "run-1",
         "complaint": "loose over the Turn 4 exit seam",
         "selected_lap": 7,
+        "lap_scope": "single_lap",
+        "window_start_lap": None,
+        "window_end_lap": None,
+        "representative_lap": None,
         "selected_zone_start_pct": 72.5,
         "selected_zone_end_pct": 78.0,
         "selected_zone_label": "Turn 4 exit",
@@ -150,6 +155,10 @@ def test_workflow_route_forwards_driver_decision_context(monkeypatch) -> None:
         "run_id": "run-1",
         "complaint": "loose over the Turn 4 exit seam",
         "selected_lap": 7,
+        "lap_scope": "single_lap",
+        "window_start_lap": None,
+        "window_end_lap": None,
+        "representative_lap": None,
         "selected_zone_start_pct": 72.5,
         "selected_zone_end_pct": 78.0,
         "selected_zone_label": "Turn 4 exit",
@@ -157,6 +166,73 @@ def test_workflow_route_forwards_driver_decision_context(monkeypatch) -> None:
         "objective": "long-run",
         "priority": "exit-drive",
     }
+
+
+def test_workflow_route_binds_the_exact_lap_window_and_representative(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_create_workflow(run_id: str, complaint: str, **kwargs):
+        captured.update({"run_id": run_id, "complaint": complaint, **kwargs})
+        raise ValueError("captured")
+
+    monkeypatch.setattr("api.routes_engineering.create_workflow", fake_create_workflow)
+    response = client.post("/api/engineering/workflows", json={
+        "run_id": "run-window",
+        "complaint": "tight through the long-run window",
+        "selected_lap": 5,
+        "lap_scope": "lap_window",
+        "window_start_lap": 3,
+        "window_end_lap": 7,
+        "representative_lap": 5,
+    })
+
+    assert response.status_code == 409
+    assert captured["lap_scope"] == "lap_window"
+    assert captured["selected_lap"] == 5
+    assert captured["window_start_lap"] == 3
+    assert captured["window_end_lap"] == 7
+    assert captured["representative_lap"] == 5
+
+
+def test_workflow_route_rejects_incomplete_or_mismatched_lap_windows(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "api.routes_engineering.create_workflow",
+        lambda *_args, **_kwargs: pytest.fail("An invalid window must not reach planning."),
+    )
+    missing_bound = client.post("/api/engineering/workflows", json={
+        "run_id": "run-window",
+        "complaint": "tight through the long-run window",
+        "selected_lap": 5,
+        "lap_scope": "lap_window",
+        "window_end_lap": 7,
+        "representative_lap": 5,
+    })
+    mismatched_representative = client.post("/api/engineering/workflows", json={
+        "run_id": "run-window",
+        "complaint": "tight through the long-run window",
+        "selected_lap": 5,
+        "lap_scope": "lap_window",
+        "window_start_lap": 3,
+        "window_end_lap": 7,
+        "representative_lap": 6,
+    })
+
+    assert missing_bound.status_code == 422
+    assert mismatched_representative.status_code == 422
+
+
+def test_workflow_cancel_route_forwards_the_exact_workflow_id(monkeypatch) -> None:
+    captured: list[str] = []
+
+    def fake_cancel_workflow(workflow_id: str):
+        captured.append(workflow_id)
+        raise ValueError("captured")
+
+    monkeypatch.setattr("api.routes_engineering.cancel_workflow", fake_cancel_workflow)
+    response = client.post("/api/engineering/workflows/aba-exact/cancel")
+
+    assert response.status_code == 409
+    assert captured == ["aba-exact"]
 
 
 def test_advanced_api_rejects_client_asserted_history() -> None:

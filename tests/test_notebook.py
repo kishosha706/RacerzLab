@@ -66,6 +66,41 @@ def test_save_and_get_finding(db_path: Path) -> None:
     assert retrieved.key_takeaways[0] == "Speed +0.3 mph in target zone"
 
 
+def test_start_finish_zone_round_trips_without_legacy_default_substitution(
+    db_path: Path,
+) -> None:
+    finding = save_finding(
+        comparison_id="start-finish-comparison",
+        baseline_run_id="baseline",
+        test_run_id="test",
+        target_zone_start_pct=0.0,
+        target_zone_end_pct=5.0,
+        verdict="retest",
+        db_path=db_path,
+    )
+
+    loaded = get_finding(finding.finding_id, db_path)
+    assert loaded is not None
+    assert loaded.target_zone_start_pct == 0.0
+    assert loaded.target_zone_end_pct == 5.0
+
+    plan = create_test_plan(
+        finding.finding_id,
+        target_zone_start_pct=0.0,
+        target_zone_end_pct=5.0,
+        db_path=db_path,
+    )
+    assert plan is not None
+    listed = next(item for item in list_test_plans(db_path=db_path) if item.test_plan_id == plan.test_plan_id)
+    assert listed.target_zone_start_pct == 0.0
+    assert listed.target_zone_end_pct == 5.0
+
+    updated = update_test_plan(plan.test_plan_id, planned_notes="Start/finish retest", db_path=db_path)
+    assert updated is not None
+    assert updated.target_zone_start_pct == 0.0
+    assert updated.target_zone_end_pct == 5.0
+
+
 def test_list_findings_with_filters(db_path: Path) -> None:
     save_finding(car_name="Car A", track_name="Track 1", verdict="keep_direction", db_path=db_path)
     save_finding(car_name="Car B", track_name="Track 2", verdict="undo", db_path=db_path)

@@ -6,7 +6,7 @@ import math
 from statistics import mean, median
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from racelab_engine.analysis.evidence_contracts import EvidenceEvaluationInput, evaluate_evidence_contract
 from racelab_engine.analysis.lap_eligibility import eligible_laps
@@ -32,6 +32,124 @@ class StintLapPoint(EngineeringModel):
     fuel_burn: float | None = None
     average_tire_temp: float | None = None
     average_tire_distance_m: float | None = None
+
+
+StintCovariateKey = Literal[
+    "fuel_level",
+    "tire_distance",
+    "tire_temperature",
+    "tire_wear_remaining",
+    "air_temperature",
+    "track_temperature",
+    "wind_speed",
+    "driver_throttle",
+    "driver_brake",
+    "driver_steering",
+]
+
+
+class StintCovariateAssociation(EngineeringModel):
+    """One measured covariate observed alongside pace, never a causal allocation."""
+
+    key: StintCovariateKey
+    source_channels: list[str] = Field(min_length=1)
+    observed_lap_count: int = Field(ge=3)
+    coverage_pct: float = Field(ge=0.0, le=100.0)
+    start_value: float
+    end_value: float
+    robust_change_per_lap: float
+    pace_ordinal_association: float = Field(ge=-1.0, le=1.0)
+    attribution: Literal["unresolved_observational"] = "unresolved_observational"
+
+
+class StintPaceSegment(EngineeringModel):
+    start_lap: int = Field(ge=1)
+    end_lap: int = Field(ge=1)
+    lap_numbers: list[int] = Field(min_length=3)
+    robust_slope_s_per_lap: float
+    observed_change_s: float
+    direction: Literal["improving", "stable", "slowing"]
+
+
+class StintPaceChangePoint(EngineeringModel):
+    before_lap: int = Field(ge=1)
+    after_lap: int = Field(ge=1)
+    median_shift_s: float
+    noise_guard_threshold_s: float = Field(ge=0.0)
+    direction: Literal["improving", "slowing"]
+    left_window_laps: list[int] = Field(min_length=4)
+    right_window_laps: list[int] = Field(min_length=4)
+
+
+class StintPaceDrift(EngineeringModel):
+    """Right-censored observational pace history for one canonical stint segment."""
+
+    status: Literal["observed", "blocked"]
+    evidence_state: EvidenceState
+    lap_numbers: list[int] = Field(default_factory=list)
+    minimum_required_laps: Literal[10] = 10
+    robust_slope_s_per_lap: float | None = None
+    empirical_lap_noise_s: float | None = Field(default=None, ge=0.0)
+    direction: Literal["improving", "stable", "slowing", "unavailable"] = "unavailable"
+    segments: list[StintPaceSegment] = Field(default_factory=list)
+    change_points: list[StintPaceChangePoint] = Field(default_factory=list)
+    covariates: list[StintCovariateAssociation] = Field(default_factory=list)
+    missing_covariates: list[StintCovariateKey] = Field(default_factory=list)
+    attribution: Literal[
+        "unresolved_observational",
+        "repeated_tire_set_observation",
+    ] = "unresolved_observational"
+    repeated_comparable_tire_sets: int = Field(default=0, ge=0)
+    repeated_set_evidence_ids: list[str] = Field(default_factory=list)
+    right_censored: Literal[True] = True
+    extrapolation_allowed: Literal[False] = False
+    source_channels: list[str] = Field(default_factory=list)
+    blocker_reasons: list[str] = Field(default_factory=list)
+    caveats: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_observational_contract(self) -> StintPaceDrift:
+        if self.status == "blocked":
+            if self.evidence_state != EvidenceState.BLOCKED_BY_CONTEXT or not self.blocker_reasons:
+                raise ValueError("blocked stint pace drift requires structural blocker evidence")
+            if (
+                self.robust_slope_s_per_lap is not None
+                or self.empirical_lap_noise_s is not None
+                or self.direction != "unavailable"
+                or self.segments
+                or self.change_points
+                or self.covariates
+            ):
+                raise ValueError("blocked stint pace drift cannot expose pace findings")
+        else:
+            if self.evidence_state != EvidenceState.OBSERVED_CORRELATION:
+                raise ValueError("stint pace drift is observational evidence only")
+            if len(self.lap_numbers) < self.minimum_required_laps:
+                raise ValueError("observed stint pace drift requires the minimum eligible lap history")
+            if (
+                self.robust_slope_s_per_lap is None
+                or self.empirical_lap_noise_s is None
+                or self.direction == "unavailable"
+                or not self.segments
+                or not self.source_channels
+                or not self.caveats
+            ):
+                raise ValueError("observed stint pace drift requires a sourced slope and caveats")
+            if self.blocker_reasons:
+                raise ValueError("observed stint pace drift cannot carry blocking reasons")
+        if (
+            self.attribution == "repeated_tire_set_observation"
+            and (
+                self.repeated_comparable_tire_sets < 2
+                or len(set(self.repeated_set_evidence_ids)) < 2
+            )
+        ):
+            raise ValueError(
+                "repeated tire-set attribution requires two verified comparable sets and exact evidence IDs"
+            )
+        if self.attribution == "unresolved_observational" and self.repeated_set_evidence_ids:
+            raise ValueError("unresolved stint attribution cannot claim repeated-set evidence IDs")
+        return self
 
 
 class TireLifePoint(EngineeringModel):
@@ -109,6 +227,7 @@ class StintStrategyReport(EngineeringModel):
     degradation_s_per_lap: float | None = None
     tire_set_resets_observed: int = 0
     repair_context_observed: bool | None = None
+    pace_drift: StintPaceDrift | None = None
     tire_life_curves: dict[str, TireLifeCurve] = Field(default_factory=dict)
     pit_window: PitWindowRecommendation | None = None
     pit_strategy_context: PitStrategyContext | None = None
@@ -124,6 +243,51 @@ def _linear_slope(points: list[tuple[float, float]]) -> float | None:
     if denominator <= 0:
         return None
     return sum((x - x_mean) * (y - y_mean) for x, y in points) / denominator
+
+
+def _robust_slope(points: list[tuple[float, float]]) -> float | None:
+    """Theil-Sen slope; telemetry rows are never treated as independent trials."""
+    slopes = [
+        (right_y - left_y) / (right_x - left_x)
+        for index, (left_x, left_y) in enumerate(points)
+        for right_x, right_y in points[index + 1:]
+        if right_x > left_x
+    ]
+    return float(median(slopes)) if slopes else None
+
+
+def _median_absolute_deviation(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    center = median(values)
+    return float(median(abs(value - center) for value in values))
+
+
+def _ordinal_association(pairs: list[tuple[float, float]]) -> float:
+    """Return a bounded concordance statistic, not a probability or causal share."""
+    concordant = 0
+    discordant = 0
+    for index, (left_x, left_y) in enumerate(pairs):
+        for right_x, right_y in pairs[index + 1:]:
+            product = (right_x - left_x) * (right_y - left_y)
+            if product > 0.0:
+                concordant += 1
+            elif product < 0.0:
+                discordant += 1
+    comparable = concordant + discordant
+    return (concordant - discordant) / comparable if comparable else 0.0
+
+
+def _pace_direction(slope: float, lap_count: int, empirical_noise: float) -> Literal[
+    "improving", "stable", "slowing"
+]:
+    observed_change = slope * max(0, lap_count - 1)
+    threshold = max(0.10, 2.0 * empirical_noise)
+    if observed_change > threshold:
+        return "slowing"
+    if observed_change < -threshold:
+        return "improving"
+    return "stable"
 
 
 def _row_average(rows: list[dict[str, Any]], channels: tuple[str, ...]) -> float | None:
@@ -382,6 +546,39 @@ def _complete_fuel_trace(lap_rows: list[dict[str, Any]]) -> list[float]:
     return [float(fuel) for _, fuel in samples]
 
 
+def _lap_has_stint_boundary_context(lap_rows: list[dict[str, Any]]) -> bool:
+    """Reject a lap carrying a service, reset, repair, caution, or pacing boundary."""
+    for row in lap_rows:
+        flags = finite(row.get("session_flags"))
+        caution_flag = int(flags) & (0x0008 | 0x0100 | 0x4000 | 0x8000) if flags is not None else 0
+        if (
+            bool(row.get("on_pit_road"))
+            or bool(row.get("pitstop_active"))
+            or bool(row.get("player_in_pit_stall"))
+            or bool(row.get("under_caution"))
+            or bool(row.get("pace_mode_active"))
+            or (finite(row.get("pace_mode")) or 0.0) != 0.0
+            or caution_flag != 0
+            or (finite(row.get("enter_exit_reset_state")) or 0.0) != 0.0
+            or bool(row.get("reset_event"))
+            or bool(row.get("active_reset_event"))
+            or bool(row.get("reset_discontinuity"))
+            or bool(row.get("slowdown"))
+            or bool(row.get("incident"))
+            or bool(row.get("wreck"))
+            or bool(row.get("invalid_speed"))
+            or row.get("is_on_track") is False
+            or (finite(row.get("repair_required")) or 0.0) > 0.0
+            or (finite(row.get("repair_time_s")) or 0.0) > 0.0
+            or (finite(row.get("pit_repair_remaining_s")) or 0.0) > 0.0
+            or (finite(row.get("pit_optional_repair_remaining_s")) or 0.0) > 0.0
+            or (finite(row.get("player_tow_service_time_s")) or 0.0) > 0.0
+        ):
+            return True
+    fuel = _complete_fuel_trace(lap_rows)
+    return any(right > left + 0.1 for left, right in zip(fuel, fuel[1:]))
+
+
 def _continuous_segments(
     rows_by_lap: dict[int, list[dict[str, Any]]],
     eligible: list[LapSummary],
@@ -414,12 +611,7 @@ def _continuous_segments(
                 None,
             )]
         )
-        repair = any(
-            (finite(row.get("repair_required")) or 0.0) > 0
-            or (finite(row.get("repair_time_s")) or 0.0) > 0
-            for row in lap_rows
-        )
-        if repair:
+        if _lap_has_stint_boundary_context(lap_rows):
             if current:
                 segments.append(current)
                 current = []
@@ -466,6 +658,294 @@ def _continuous_segments(
     if current:
         segments.append(current)
     return segments
+
+
+def _covered_channel_median(
+    lap_rows: list[dict[str, Any]],
+    channel: str,
+    *,
+    minimum_coverage: float = 0.80,
+) -> float | None:
+    if not lap_rows:
+        return None
+    values = [value for row in lap_rows if (value := finite(row.get(channel))) is not None]
+    if len(values) / len(lap_rows) < minimum_coverage:
+        return None
+    return float(median(values))
+
+
+def _covered_multi_channel_mean(
+    lap_rows: list[dict[str, Any]],
+    channels: tuple[str, ...],
+) -> float | None:
+    values = [_covered_channel_median(lap_rows, channel) for channel in channels]
+    if any(value is None for value in values):
+        return None
+    return float(mean(value for value in values if value is not None))
+
+
+def _covered_tire_wear(lap_rows: list[dict[str, Any]]) -> float | None:
+    if not lap_rows:
+        return None
+    corners: list[float] = []
+    for corner in ("lf", "rf", "lr", "rr"):
+        samples = []
+        for row in lap_rows:
+            profile = [
+                _remaining_wear_pct(row.get(f"{corner}_wear_{position}"))
+                for position in ("inner", "middle", "outer")
+            ]
+            if all(value is not None for value in profile):
+                samples.append(min(float(value) for value in profile if value is not None))
+        if len(samples) / len(lap_rows) < 0.80:
+            return None
+        corners.append(float(median(samples)))
+    return float(mean(corners))
+
+
+def _driver_covariate(
+    lap: LapSummary,
+    lap_rows: list[dict[str, Any]],
+    *,
+    summary_field: str,
+    row_channels: tuple[str, ...],
+) -> tuple[float | None, tuple[str, ...]]:
+    summary_value = finite(getattr(lap, summary_field, None))
+    if summary_value is not None:
+        return float(summary_value), (f"lap_summary.{summary_field}",)
+    for channel in row_channels:
+        value = _covered_channel_median(lap_rows, channel)
+        if value is not None:
+            return value, (channel,)
+    return None, ()
+
+
+def _pace_change_points(
+    lap_numbers: list[int],
+    lap_times: list[float],
+    *,
+    full_slope: float,
+    empirical_noise: float,
+) -> list[StintPaceChangePoint]:
+    threshold = max(0.05, 3.0 * empirical_noise)
+    candidates: list[tuple[float, float, int, float]] = []
+    for split in range(4, len(lap_times) - 3):
+        left_indices = list(range(split - 4, split))
+        right_indices = list(range(split, split + 4))
+        left_center = median(left_indices)
+        right_center = median(right_indices)
+        level_shift = (
+            median(lap_times[index] for index in right_indices)
+            - median(lap_times[index] for index in left_indices)
+            - full_slope * (right_center - left_center)
+        )
+        if abs(level_shift) >= threshold:
+            adjacent_jump = abs(lap_times[split] - lap_times[split - 1] - full_slope)
+            candidates.append((abs(level_shift), adjacent_jump, split, float(level_shift)))
+    selected: list[tuple[int, float]] = []
+    for _magnitude, _jump, split, shift in sorted(candidates, reverse=True):
+        neighborhood = [
+            candidate for candidate in candidates if abs(candidate[2] - split) < 4
+        ]
+        _best_magnitude, _best_jump, split, shift = max(
+            neighborhood,
+            key=lambda candidate: (candidate[1], candidate[0]),
+        )
+        if all(abs(split - chosen) >= 4 for chosen, _value in selected):
+            selected.append((split, shift))
+    return [
+        StintPaceChangePoint(
+            before_lap=lap_numbers[split - 1],
+            after_lap=lap_numbers[split],
+            median_shift_s=round(shift, 6),
+            noise_guard_threshold_s=round(threshold, 6),
+            direction="slowing" if shift > 0.0 else "improving",
+            left_window_laps=lap_numbers[split - 4:split],
+            right_window_laps=lap_numbers[split:split + 4],
+        )
+        for split, shift in sorted(selected)
+    ]
+
+
+def _build_stint_pace_drift(
+    rows_by_lap: dict[int, list[dict[str, Any]]],
+    laps: list[LapSummary],
+) -> StintPaceDrift:
+    lap_numbers = [lap.lap_number for lap in laps]
+    if len(laps) < 10:
+        return StintPaceDrift(
+            status="blocked",
+            evidence_state=EvidenceState.BLOCKED_BY_CONTEXT,
+            lap_numbers=lap_numbers,
+            blocker_reasons=[
+                f"At least 10 canonical continuous eligible laps are required; {len(laps)} are available."
+            ],
+            caveats=[
+                "Short runs cannot establish pace drift, tire degradation, or cooling behavior."
+            ],
+        )
+
+    lap_times = [float(lap.lap_time) for lap in laps if lap.lap_time is not None]
+    full_slope = _robust_slope([
+        (float(index), lap_time) for index, lap_time in enumerate(lap_times)
+    ])
+    if full_slope is None:
+        return StintPaceDrift(
+            status="blocked",
+            evidence_state=EvidenceState.BLOCKED_BY_CONTEXT,
+            lap_numbers=lap_numbers,
+            blocker_reasons=["A robust lap-level pace slope could not be calculated."],
+        )
+    delta_residuals = [
+        right - left - full_slope
+        for left, right in zip(lap_times, lap_times[1:])
+    ]
+    empirical_noise = 1.4826 * _median_absolute_deviation(delta_residuals)
+    change_points = _pace_change_points(
+        lap_numbers,
+        lap_times,
+        full_slope=full_slope,
+        empirical_noise=empirical_noise,
+    )
+    boundaries = [0, *[lap_numbers.index(point.after_lap) for point in change_points], len(laps)]
+    pace_segments: list[StintPaceSegment] = []
+    for start, end in zip(boundaries, boundaries[1:]):
+        segment_times = lap_times[start:end]
+        segment_laps = lap_numbers[start:end]
+        segment_slope = _robust_slope([
+            (float(index), lap_time) for index, lap_time in enumerate(segment_times)
+        ])
+        if segment_slope is None or len(segment_laps) < 3:
+            continue
+        segment_noise = 1.4826 * _median_absolute_deviation([
+            right - left - segment_slope
+            for left, right in zip(segment_times, segment_times[1:])
+        ])
+        pace_segments.append(StintPaceSegment(
+            start_lap=segment_laps[0],
+            end_lap=segment_laps[-1],
+            lap_numbers=segment_laps,
+            robust_slope_s_per_lap=round(segment_slope, 6),
+            observed_change_s=round(segment_slope * (len(segment_laps) - 1), 6),
+            direction=_pace_direction(segment_slope, len(segment_laps), segment_noise),
+        ))
+
+    wear_channels = tuple(
+        f"{corner}_wear_{position}"
+        for corner in ("lf", "rf", "lr", "rr")
+        for position in ("inner", "middle", "outer")
+    )
+    tire_distance_channels = tuple(
+        f"{corner}_tire_distance_m" for corner in ("lf", "rf", "lr", "rr")
+    )
+    tire_temperature_channels = tuple(
+        f"{corner}_temp_middle" for corner in ("lf", "rf", "lr", "rr")
+    )
+    series: dict[StintCovariateKey, list[tuple[int, float, tuple[str, ...]]]] = {
+        key: [] for key in (
+            "fuel_level", "tire_distance", "tire_temperature", "tire_wear_remaining",
+            "air_temperature", "track_temperature", "wind_speed",
+            "driver_throttle", "driver_brake", "driver_steering",
+        )
+    }
+    for index, lap in enumerate(laps):
+        lap_rows = rows_by_lap.get(lap.lap_number, [])
+        fuel = _complete_fuel_trace(lap_rows)
+        if fuel:
+            series["fuel_level"].append((index, (fuel[0] + fuel[-1]) / 2.0, ("fuel_level",)))
+        multi_values = (
+            ("tire_distance", _covered_multi_channel_mean(lap_rows, tire_distance_channels), tire_distance_channels),
+            ("tire_temperature", _covered_multi_channel_mean(lap_rows, tire_temperature_channels), tire_temperature_channels),
+            ("tire_wear_remaining", _covered_tire_wear(lap_rows), wear_channels),
+            ("air_temperature", _covered_channel_median(lap_rows, "air_temp"), ("air_temp",)),
+            ("track_temperature", _covered_channel_median(lap_rows, "track_temp"), ("track_temp",)),
+            ("wind_speed", _covered_channel_median(lap_rows, "wind_vel"), ("wind_vel",)),
+        )
+        for key, value, channels in multi_values:
+            if value is not None:
+                series[key].append((index, value, channels))  # type: ignore[index]
+        driver_values = (
+            ("driver_throttle", *_driver_covariate(
+                lap, lap_rows, summary_field="avg_throttle_pct",
+                row_channels=("throttle_pct", "throttle_01"),
+            )),
+            ("driver_brake", *_driver_covariate(
+                lap, lap_rows, summary_field="avg_brake_pct",
+                row_channels=("brake_pct", "brake_01"),
+            )),
+            ("driver_steering", *_driver_covariate(
+                lap, lap_rows, summary_field="avg_abs_steering_deg",
+                row_channels=("abs_steering_deg",),
+            )),
+        )
+        for key, value, channels in driver_values:
+            if value is not None:
+                series[key].append((index, value, channels))  # type: ignore[index]
+
+    minimum_covariate_laps = max(3, math.ceil(len(laps) * 0.80))
+    associations: list[StintCovariateAssociation] = []
+    missing_covariates: list[StintCovariateKey] = []
+    for key, observations in series.items():
+        if len(observations) < minimum_covariate_laps:
+            missing_covariates.append(key)
+            continue
+        covariate_slope = _robust_slope([
+            (float(index), value) for index, value, _channels in observations
+        ])
+        if covariate_slope is None:
+            missing_covariates.append(key)
+            continue
+        first_values = [value for _index, value, _channels in observations[:3]]
+        last_values = [value for _index, value, _channels in observations[-3:]]
+        sources = sorted({
+            channel for _index, _value, channels in observations for channel in channels
+        })
+        associations.append(StintCovariateAssociation(
+            key=key,
+            source_channels=sources,
+            observed_lap_count=len(observations),
+            coverage_pct=round(len(observations) / len(laps) * 100.0, 3),
+            start_value=round(float(median(first_values)), 6),
+            end_value=round(float(median(last_values)), 6),
+            robust_change_per_lap=round(covariate_slope, 6),
+            pace_ordinal_association=round(_ordinal_association([
+                (value, lap_times[index]) for index, value, _channels in observations
+            ]), 6),
+        ))
+    source_channels = sorted({
+        "lap_summary.lap_time",
+        *(channel for association in associations for channel in association.source_channels),
+    })
+    caveats = [
+        "Observed pace drift is correlated with recorded stint state; it does not isolate a tire or setup cause.",
+        "Fuel, tire state, weather, and driver execution can move together, so covariate associations are not contribution estimates.",
+        "The history is right-censored at the final recorded eligible lap and cannot be extrapolated beyond the observed range.",
+        "Any controlled intervention remains separate P4 controlled-test evidence and cannot be inferred by this observational producer.",
+    ]
+    if missing_covariates:
+        caveats.append(
+            "Incomplete covariate coverage leaves unresolved context: "
+            + ", ".join(missing_covariates) + "."
+        )
+    caveats.append(
+        "Fewer than two strictly comparable repeated tire sets are verified here; tire attribution remains unresolved."
+    )
+    return StintPaceDrift(
+        status="observed",
+        evidence_state=EvidenceState.OBSERVED_CORRELATION,
+        lap_numbers=lap_numbers,
+        robust_slope_s_per_lap=round(full_slope, 6),
+        empirical_lap_noise_s=round(empirical_noise, 6),
+        direction=_pace_direction(full_slope, len(laps), empirical_noise),
+        segments=pace_segments,
+        change_points=change_points,
+        covariates=associations,
+        missing_covariates=missing_covariates,
+        attribution="unresolved_observational",
+        repeated_comparable_tire_sets=0,
+        source_channels=source_channels,
+        caveats=caveats,
+    )
 
 
 def _build_tire_life_curves(
@@ -838,11 +1318,21 @@ def analyze_stint_strategy(
         needed_measurements=[item.instruction for item in evaluation.needed_measurements],
     )
     if not evaluation.eligible:
+        pace_drift = StintPaceDrift(
+            status="blocked",
+            evidence_state=EvidenceState.BLOCKED_BY_CONTEXT,
+            lap_numbers=[lap.lap_number for lap in eligible],
+            blocker_reasons=(
+                gate.blocker_reasons
+                or ["The stint evidence contract did not pass."]
+            ),
+        )
         return StintStrategyReport(
             gate=gate,
             eligible_lap_count=len(eligible),
             historical_segment_laps=[lap.lap_number for lap in eligible],
             active_segment_laps=[lap.lap_number for lap in active_segment],
+            pace_drift=pace_drift,
             pit_strategy_context=pit_strategy_context,
             conclusions=[EngineeringConclusion(
                 key="stint_strategy_blocked",
@@ -913,11 +1403,9 @@ def analyze_stint_strategy(
         if all(value is not None for value in window) and max(float(value) for value in window) - min(float(value) for value in window) <= 1.0:
             stabilization = points[index - 2].lap_number
             break
-    degradation = None
-    adequate = len(points) >= 10
-    if adequate:
-        start_index = next((index for index, point in enumerate(points) if point.lap_number >= (stabilization or points[0].lap_number)), 0)
-        degradation = _linear_slope([(float(index), point.lap_time_s) for index, point in enumerate(points[start_index:])])
+    pace_drift = _build_stint_pace_drift(rows_by_lap, eligible)
+    adequate = pace_drift.status == "observed"
+    degradation = pace_drift.robust_slope_s_per_lap if adequate else None
     all_lap_numbers = sorted(rows_by_lap)
     all_corner_distances = [
         tuple(
@@ -988,13 +1476,42 @@ def analyze_stint_strategy(
         f"Observed {resets} tire-distance reset(s); this is tire-set accounting context.",
     ]
     degradation_blockers = [] if adequate else ["At least 10 canonical eligible laps are required for a degradation conclusion."]
+    pace_drift_conclusion = (
+        EngineeringConclusion(
+            key="stint_pace_drift",
+            summary=(
+                f"Observed continuous-stint robust pace drift is {pace_drift.robust_slope_s_per_lap:.4f} s/lap "
+                f"({pace_drift.direction})."
+            ),
+            evidence_state=EvidenceState.OBSERVED_CORRELATION,
+            confidence_score=min(0.65, cap, 0.55 if pace_drift.missing_covariates else 0.65),
+            source_channels=pace_drift.source_channels,
+            supporting_evidence=[
+                f"{len(pace_drift.lap_numbers)} canonical continuous eligible laps were treated as lap-level evidence units.",
+                (
+                    f"{len(pace_drift.change_points)} robust pace level change point(s) exceeded the lap-noise/resolution guard."
+                ),
+                (
+                    f"{len(pace_drift.covariates)} measured covariate series met at least 80% lap coverage."
+                ),
+            ],
+            contradicting_evidence=pace_drift.caveats,
+        )
+        if adequate else EngineeringConclusion(
+            key="stint_pace_drift",
+            summary="Observational pace drift is unavailable from this stint.",
+            evidence_state=EvidenceState.BLOCKED_BY_CONTEXT,
+            confidence_score=0.0,
+            blocker_reasons=pace_drift.blocker_reasons or degradation_blockers,
+        )
+    )
     degradation_conclusion = (
         EngineeringConclusion(
             key="stint_degradation_hypothesis",
-            summary=f"Observed eligible-stint pace slope is {degradation:.4f} s/lap." if degradation is not None else "Adequate history exists, but no stable degradation slope was established.",
+            summary=f"Observed eligible-stint robust pace slope is {degradation:.4f} s/lap." if degradation is not None else "Adequate history exists, but no stable pace slope was established.",
             evidence_state=EvidenceState.OBSERVED_CORRELATION,
-            confidence_score=min(0.75, cap),
-            source_channels=fuel_sources,
+            confidence_score=min(0.65, cap, 0.55 if pace_drift.missing_covariates else 0.65),
+            source_channels=pace_drift.source_channels,
             supporting_evidence=[
                 f"{len(points)} eligible laps; stabilization lap {stabilization or 'not established'}.",
                 "The slope is fuel/tire/driver-correlated stint behavior, not tire degradation in isolation.",
@@ -1002,6 +1519,7 @@ def analyze_stint_strategy(
             contradicting_evidence=[
                 "Fuel mass, traffic, driver variation, tire state, and repairs can counteract or mimic long-run falloff.",
                 "A short-run gain must be confirmed against later tire and thermal behavior.",
+                *pace_drift.caveats,
             ],
         )
         if adequate else EngineeringConclusion(
@@ -1132,6 +1650,7 @@ def analyze_stint_strategy(
         degradation_s_per_lap=degradation,
         tire_set_resets_observed=resets,
         repair_context_observed=repair_observed,
+        pace_drift=pace_drift,
         tire_life_curves=tire_life_curves,
         pit_window=pit_window,
         pit_strategy_context=pit_strategy_context,
@@ -1151,12 +1670,14 @@ def analyze_stint_strategy(
             tire_life_conclusion,
             bound_conclusion,
             pit_conclusion,
+            pace_drift_conclusion,
             degradation_conclusion,
         ],
     )
 
 
 __all__ = [
-    "PitWindowRecommendation", "StintLapPoint", "StintStrategyReport",
+    "PitWindowRecommendation", "StintCovariateAssociation", "StintLapPoint",
+    "StintPaceChangePoint", "StintPaceDrift", "StintPaceSegment", "StintStrategyReport",
     "TireLifeCurve", "TireLifePoint", "analyze_stint_strategy",
 ]

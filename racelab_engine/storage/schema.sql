@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS runs (
   import_time TEXT NOT NULL,
   imported_at TEXT NOT NULL,
   analysis_engine_version TEXT DEFAULT '1.0.0',
+  lap_eligibility_version TEXT,
   analysis_config_hash TEXT,
   analysis_mode TEXT DEFAULT 'row',
   analyzed_at TEXT,
@@ -137,6 +138,8 @@ CREATE TABLE IF NOT EXISTS import_files (
 );
 
 CREATE INDEX IF NOT EXISTS idx_runs_imported_at ON runs(imported_at);
+CREATE INDEX IF NOT EXISTS idx_runs_tech_setup_context
+  ON runs(setup_passed_tech, car_path, track_id_or_path, session_type, imported_at);
 CREATE INDEX IF NOT EXISTS idx_laps_run_id ON laps(run_id);
 CREATE INDEX IF NOT EXISTS idx_laps_run_useful_time
   ON laps(run_id, is_useful, lap_time, lap_number);
@@ -329,3 +332,55 @@ CREATE TABLE IF NOT EXISTS controlled_test_workflows (
 
 CREATE INDEX IF NOT EXISTS idx_controlled_workflow_status
   ON controlled_test_workflows(status, updated_at);
+
+-- Append-only internal engineering memory. These records intentionally avoid
+-- run foreign keys: re-import may replace import-owned evidence rows, but it
+-- must never cascade-delete a prediction, grade, narrative, or presentation
+-- observation that cites the prior immutable workflow/run identity.
+CREATE TABLE IF NOT EXISTS engineering_prediction_contracts (
+  contract_id TEXT PRIMARY KEY,
+  workflow_id TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  source_run_id TEXT NOT NULL,
+  contract_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS engineering_prediction_grades (
+  grade_id TEXT PRIMARY KEY,
+  contract_id TEXT NOT NULL UNIQUE,
+  workflow_id TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  grade_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS engineering_narrative_entries (
+  entry_id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  scope_id TEXT NOT NULL,
+  session_id TEXT,
+  entry_type TEXT NOT NULL,
+  workflow_id TEXT NOT NULL,
+  run_ids_json TEXT NOT NULL,
+  entry_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_engineering_narrative_scope
+  ON engineering_narrative_entries(scope_id, created_at, entry_id);
+CREATE INDEX IF NOT EXISTS idx_engineering_narrative_workflow
+  ON engineering_narrative_entries(workflow_id, created_at, entry_id);
+
+CREATE TABLE IF NOT EXISTS driver_presentation_observations (
+  observation_id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  source_key TEXT NOT NULL UNIQUE,
+  profile_id TEXT NOT NULL,
+  driver_id TEXT NOT NULL,
+  context_key TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  run_id TEXT,
+  workflow_id TEXT,
+  observation_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_driver_presentation_profile
+  ON driver_presentation_observations(profile_id, created_at, observation_id);

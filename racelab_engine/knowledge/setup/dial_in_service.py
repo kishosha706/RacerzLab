@@ -5,6 +5,7 @@ from typing import Any
 from racelab_engine.analysis.lap_eligibility import eligible_laps, find_lap, lap_ineligibility_reasons
 from racelab_engine.analysis.setup_controls import SETUP_CONTROL_SPECS
 from racelab_engine.analysis.setup_diff import setup_control_value
+from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.storage.repository import RaceLabRepository
 
 from .dial_in_controls import GarageAction, garage_action_for_effect
@@ -286,6 +287,12 @@ def _legacy_garage_action_for_effect(item: RankedSetupEffect) -> tuple[str, str]
 
 
 def _specific_one_change_test(item: RankedSetupEffect, action: GarageAction) -> str:
+    if not action.target_ready:
+        blocker = " ".join(action.target_blockers)
+        return (
+            f"Do not start an A/B setup test yet. {blocker} Then generate one sourced target and "
+            "compare eligible laps at the same track positions."
+        )
     scope = "these linked ride-height controls" if len(action.control_keys) > 1 else "this control"
     return (
         f"Change only {scope}. Repeat the baseline run length with similar fuel and tire age, "
@@ -497,12 +504,19 @@ def _build_swing(
     item: RankedSetupEffect,
     *,
     setup_values: dict[str, Any],
+    legal_values_by_control: dict[str, list[Any]] | None,
+    legal_value_provenance_by_control: dict[str, dict[Any, list[str]]] | None,
     supporting_event_ids_by_flag: dict[str, list[str]],
     supporting_event_ids_by_setup_key: dict[str, list[str]],
     source_channels_by_event_id: dict[str, list[str]],
     include_debug_evidence: bool,
 ) -> DialInSwing:
-    garage_action = garage_action_for_effect(item, setup_values)
+    garage_action = garage_action_for_effect(
+        item,
+        setup_values,
+        legal_values_by_control=legal_values_by_control,
+        legal_value_provenance_by_control=legal_value_provenance_by_control,
+    )
     if garage_action is None:
         raise ValueError(f"Dial-In swing lacks a specific garage action: {item.effect.effect_id}")
     debug: dict[str, Any] | None = None
@@ -556,12 +570,15 @@ def _build_swing(
     )
     if item.readiness == "ready" and not candidate_mechanism_complete:
         readiness_label = "Unverified hypothesis"
+    if not garage_action.target_ready:
+        readiness_label = "Setup option data required"
     change_this = garage_action.change_this
     proposed_value_label = garage_action.proposed_value_label
     if not candidate_mechanism_complete:
         change_this = (
             f"Do not change {garage_action.garage_lever} yet; first measure whether it is linked "
-            "to the selected symptom and phase."
+            "to the selected symptom and phase. "
+            f"{' '.join(garage_action.target_blockers)}"
         )
         proposed_value_label = None
     return DialInSwing(
@@ -596,6 +613,13 @@ def _build_swing(
         source_channels=source_channels,
         observed_evidence_flags=linked_observed_flags,
         supporting_event_ids=supporting_event_ids,
+        disabled_reason=" ".join(garage_action.target_blockers) or None,
+        evidence_state=(
+            EvidenceState.BLOCKED_BY_CONTEXT
+            if garage_action.target_blockers
+            else EvidenceState.NEEDS_CONFIRMATION
+        ),
+        blocker_reasons=list(garage_action.target_blockers),
         debug=debug,
     )
 
@@ -618,6 +642,11 @@ def _readiness_sentence(readiness_label: str) -> str:
         return "The data profile can measure this, but the mechanism is not fully observed. Treat it as one test hypothesis."
     if readiness_label == "Need cleaner data":
         return "I need a cleaner run to be sure."
+    if readiness_label == "Need setup option data":
+        return (
+            "The data profile may support the mechanism, but a sourced adjacent garage option is still required "
+            "before starting a setup test."
+        )
     return f"Readiness: {readiness_label}."
 
 
@@ -738,6 +767,11 @@ def _evidence_strength_signal(
         swing.readiness_label == "Observed mechanism" and bool(swing.supporting_event_ids)
         for swing in swings
     )
+    target_blockers = list(dict.fromkeys(
+        blocker
+        for swing in swings or ()
+        for blocker in swing.blocker_reasons
+    ))
     return EvidenceStrengthSignal(
         level="observed_mechanism",
         readiness="test_hypothesis_ready" if ready else "measurement_required",
@@ -748,6 +782,8 @@ def _evidence_strength_signal(
         reason=(
             "Eligible telemetry events support a one-change setup test; a controlled A/B result is still required."
             if ready
+            else "Eligible telemetry events support the mechanism, but a sourced adjacent garage option is still required."
+            if target_blockers
             else "Eligible events were observed, but none supplies the mechanism evidence required by a listed setup test."
         ),
     )
@@ -781,6 +817,8 @@ def build_dial_in_response(
     priority: str | None = None,
     limit: int = 3,
     include_debug_evidence: bool = False,
+    legal_values_by_control: dict[str, list[Any]] | None = None,
+    legal_value_provenance_by_control: dict[str, dict[Any, list[str]]] | None = None,
 ) -> DialInResponse:
     selected_zone: tuple[float, float] | None = None
     if selected_zone_start_pct is not None or selected_zone_end_pct is not None:
@@ -978,6 +1016,8 @@ def build_dial_in_response(
         _build_swing(
             item,
             setup_values=setup_values,
+            legal_values_by_control=legal_values_by_control,
+            legal_value_provenance_by_control=legal_value_provenance_by_control,
             supporting_event_ids_by_flag=query_result.supporting_event_ids_by_flag,
             supporting_event_ids_by_setup_key=query_result.supporting_event_ids_by_setup_key,
             source_channels_by_event_id=query_result.source_channels_by_event_id,
@@ -996,13 +1036,25 @@ def build_dial_in_response(
         for swing in swings
     ]
     readiness_label = _readiness_label(linked_readiness, missing_hint=missing_hint)
+    target_ready = any(not swing.blocker_reasons and swing.proposed_value_label for swing in swings)
+    if swings and not target_ready:
+        readiness_label = "Need setup option data"
     next_step = "Change one test plan, match fuel and tire age, then compare eligible laps by track position."
+    if swings and not target_ready:
+        next_step = (
+            "Record the current control and its adjacent tech-passing garage options with source provenance, "
+            "then generate one controlled test."
+        )
     if readiness_label == "Need cleaner data":
         next_step = "Data's noisy here. Try a cleaner run or narrow the complaint."
     if missing_hint:
         next_step = f"{next_step} {missing_hint}"
 
-    blocker_reasons = []
+    blocker_reasons = list(dict.fromkeys(
+        blocker
+        for swing in swings
+        for blocker in swing.blocker_reasons
+    ))
     evidence_state = "needs_confirmation"
     if not swings:
         evidence_state = "unavailable"

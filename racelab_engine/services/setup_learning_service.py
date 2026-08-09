@@ -20,6 +20,7 @@ from racelab_engine.analysis.comparison import (
     TargetZoneComparison,
     TestDisciplineResult,
 )
+from racelab_engine.analysis.setup_controls import canonical_setup_value_key
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.storage.db import initialize_database
 
@@ -259,6 +260,152 @@ def _number(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if math.isfinite(number) else None
+
+
+def _json_object(value: Any) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(value or "{}")
+    except (TypeError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _json_string_list(value: Any) -> list[str] | None:
+    try:
+        payload = json.loads(value or "[]")
+    except (TypeError, ValueError):
+        return None
+    if (
+        not isinstance(payload, list)
+        or any(not isinstance(item, str) or not item.strip() for item in payload)
+        or len(set(payload)) != len(payload)
+    ):
+        return None
+    return payload
+
+
+def _same_optional_number(left: Any, right: Any) -> bool:
+    if left is None or right is None:
+        return left is None and right is None
+    left_number = _number(left)
+    right_number = _number(right)
+    return bool(
+        left_number is not None
+        and right_number is not None
+        and math.isclose(left_number, right_number, rel_tol=1e-9, abs_tol=1e-9)
+    )
+
+
+def _qualified_setup_response_row(
+    row: Any,
+    response_context: SetupResponseContext,
+    *,
+    exact_context: bool,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]] | None:
+    """Bind a stored response row to its immutable context and evidence payload."""
+    payload = dict(row)
+    context_payload = _json_object(payload.get("response_context_json"))
+    evidence = _json_object(payload.get("evidence_json"))
+    if context_payload is None or evidence is None:
+        return None
+    try:
+        stored_context = SetupResponseContext(**context_payload)
+    except (TypeError, ValueError):
+        return None
+    expected_environment = response_environment_key(response_context)
+    stored_environment = response_environment_key(stored_context)
+    if (
+        not stored_context.is_complete
+        or payload.get("response_context_key") != stored_context.key
+        or payload.get("environment_context_key") != stored_environment
+        or stored_environment != expected_environment
+        or exact_context and stored_context != response_context
+        or payload.get("car_name") != stored_context.car_name
+        or payload.get("track_name") != stored_context.track_name
+    ):
+        return None
+
+    from racelab_engine.analysis.setup_controls import SETUP_CONTROL_SPECS
+
+    setup_key = str(payload.get("setup_key") or "")
+    spec = SETUP_CONTROL_SPECS.get(setup_key)
+    comparison_id = str(payload.get("comparison_id") or "")
+    source_runs = evidence.get("source_run_ids")
+    source_channels = evidence.get("source_channels")
+    source_events = evidence.get("evidence_event_ids")
+    if (
+        spec is None
+        or not comparison_id
+        or not str(payload.get("surrounding_setup_fingerprint") or "")
+        or payload.get("baseline_setup_passed_tech") != 1
+        or payload.get("test_setup_passed_tech") != 1
+        or payload.get("context_problem_count") != 0
+        or evidence.get("evidence_packet_id") != comparison_id
+        or evidence.get("evidence_state") != EvidenceState.CONTROLLED_TEST_EFFECT.value
+        or not isinstance(source_runs, list)
+        or len(source_runs) != 3
+        or len(set(source_runs)) != 3
+        or any(
+            not isinstance(item, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]*", item) is None
+            for item in source_runs
+        )
+        or source_runs[0] != payload.get("baseline_run_id")
+        or source_runs[1] != payload.get("test_run_id")
+        or not isinstance(source_channels, list)
+        or not source_channels
+        or any(
+            not isinstance(item, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]*", item) is None
+            for item in source_channels
+        )
+        or not isinstance(source_events, list)
+        or not source_events
+        or any(
+            not isinstance(item, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]*", item) is None
+            for item in source_events
+        )
+    ):
+        return None
+    expected_provenance = hashlib.sha256(
+        "|".join([*source_runs, setup_key]).encode()
+    ).hexdigest()
+    start = _number(payload.get("target_zone_start_pct"))
+    end = _number(payload.get("target_zone_end_pct"))
+    baseline = _number(payload.get("baseline_value"))
+    test = _number(payload.get("test_value"))
+    numeric_delta = _number(payload.get("numeric_delta"))
+    if (
+        payload.get("source_run_provenance_key") != expected_provenance
+        or start is None
+        or end is None
+        or not 0.0 <= start < end <= 100.0
+        or baseline is None
+        or test is None
+        or numeric_delta is None
+        or not math.isclose(test - baseline, numeric_delta, rel_tol=1e-9, abs_tol=1e-9)
+        or int(payload.get("direction_sign") or 0) != (1 if numeric_delta > 0.0 else -1)
+        or payload.get("observation_id")
+        != _observation_id(comparison_id, setup_key, start, end)
+        or payload.get("setup_unit") != spec.display_unit
+        or payload.get("setup_value_kind")
+        != ("continuous" if spec.step_strategy == "numeric_test" else "discrete")
+    ):
+        return None
+    observed = evidence.get("observed_phase_effects")
+    if not isinstance(observed, dict) or any(
+        not _same_optional_number(observed.get(evidence_key), payload.get(row_key))
+        for evidence_key, row_key in (
+            ("target_zone_start_pct", "target_zone_start_pct"),
+            ("target_zone_end_pct", "target_zone_end_pct"),
+            ("median_lap_delta_s", "median_lap_delta_s"),
+            ("target_speed_delta_mph", "target_speed_delta_mph"),
+            ("cfs_delta_in", "cfs_delta_in"),
+        )
+    ):
+        return None
+    return payload, evidence, context_payload
 
 
 def _channel_delta(zone: TargetZoneComparison, channel: str) -> float | None:
@@ -539,10 +686,7 @@ def get_setup_area_biases(
     conn = initialize_database(db_path)
     rows = conn.execute(
         """
-        SELECT setup_key, direction_sign, verdict, confidence_score,
-               numeric_delta, magnitude_label, relative_delta_percent,
-               median_lap_delta_s, target_speed_delta_mph,
-               target_zone_start_pct, target_zone_end_pct, evidence_json
+        SELECT *
         FROM setup_response_observations
         WHERE car_name = ? AND track_name = ?
           AND response_context_key = ? AND direction_sign != 0
@@ -551,18 +695,24 @@ def get_setup_area_biases(
     ).fetchall()
     conn.close()
 
-    grouped: dict[tuple[str, int], list[Any]] = {}
+    grouped: dict[tuple[str, int], list[dict[str, Any]]] = {}
     for row in rows:
+        qualified = _qualified_setup_response_row(
+            row,
+            response_context,
+            exact_context=True,
+        )
+        if qualified is None:
+            continue
+        row_payload, evidence, _ = qualified
+        row = row_payload
         if target_zone is not None and (
             abs(float(row["target_zone_start_pct"]) - target_zone[0]) > 1e-3
             or abs(float(row["target_zone_end_pct"]) - target_zone[1]) > 1e-3
         ):
             continue
         if target_phase is not None:
-            try:
-                observed_phase = str(json.loads(row["evidence_json"] or "{}").get("target_phase") or "")
-            except (TypeError, ValueError, json.JSONDecodeError):
-                continue
+            observed_phase = str(evidence.get("target_phase") or "")
             if observed_phase.casefold() != target_phase.casefold():
                 continue
         setup_key = str(row["setup_key"] or "")
@@ -663,10 +813,7 @@ def get_setup_response_models(
     conn = initialize_database(db_path)
     rows = conn.execute(
         """
-        SELECT observation_id, setup_key, surrounding_setup_fingerprint,
-               baseline_value, test_value, numeric_delta, median_lap_delta_s,
-               pace_noise_band_s, confidence_score, target_zone_start_pct,
-               target_zone_end_pct, evidence_json
+        SELECT *
         FROM setup_response_observations
         WHERE environment_context_key = ?
           AND baseline_setup_passed_tech = 1
@@ -678,6 +825,21 @@ def get_setup_response_models(
         (response_environment_key(response_context),),
     ).fetchall()
     conn.close()
+    evidence_by_observation: dict[str, dict[str, Any]] = {}
+    valid_rows: list[dict[str, Any]] = []
+    for row in rows:
+        qualified = _qualified_setup_response_row(
+            row,
+            response_context,
+            exact_context=False,
+        )
+        if qualified is None:
+            continue
+        row, evidence, _ = qualified
+        observation_id = str(row["observation_id"])
+        evidence_by_observation[observation_id] = evidence
+        valid_rows.append(row)
+    rows = valid_rows
     grouped: dict[tuple[str, str, float, float], list[Any]] = {}
     for row in rows:
         grouped.setdefault((
@@ -745,7 +907,7 @@ def get_setup_response_models(
         observations_with_countereffects = 0
         event_ids: list[str] = []
         for row in observations:
-            evidence = json.loads(row["evidence_json"] or "{}")
+            evidence = evidence_by_observation[str(row["observation_id"])]
             row_warnings = [str(item) for item in evidence.get("warnings", [])]
             row_warnings.extend(str(item) for item in evidence.get("countereffects", {}).get("do_not_change", []))
             if row_warnings:
@@ -794,8 +956,7 @@ def get_observed_tech_envelope(
     conn = initialize_database(db_path)
     rows = conn.execute(
         """
-        SELECT observation_id, setup_key, surrounding_setup_fingerprint,
-               baseline_value, test_value, setup_unit, setup_value_kind
+        SELECT *
         FROM setup_response_observations
         WHERE environment_context_key = ?
           AND baseline_setup_passed_tech = 1
@@ -805,8 +966,16 @@ def get_observed_tech_envelope(
         (response_environment_key(response_context),),
     ).fetchall()
     conn.close()
-    grouped: dict[tuple[str, str], list[Any]] = {}
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for row in rows:
+        qualified = _qualified_setup_response_row(
+            row,
+            response_context,
+            exact_context=False,
+        )
+        if qualified is None:
+            continue
+        row, _, _ = qualified
         grouped.setdefault((
             str(row["setup_key"]),
             str(row["surrounding_setup_fingerprint"] or ""),
@@ -815,25 +984,44 @@ def get_observed_tech_envelope(
     for (setup_key, surrounding_fingerprint), observations in grouped.items():
         if not surrounding_fingerprint:
             continue
-        values = sorted({
-            value
-            for row in observations
-            for value in (_number(row["baseline_value"]), _number(row["test_value"]))
-            if value is not None
-        })
+        option_sources: dict[str, dict[str, Any]] = {}
+        for row in observations:
+            observation_id = str(row["observation_id"])
+            for raw_value in (row["baseline_value"], row["test_value"]):
+                if raw_value is None:
+                    continue
+                canonical_key = canonical_setup_value_key(setup_key, raw_value)
+                numeric = _number(raw_value)
+                option = option_sources.setdefault(canonical_key, {
+                    "value": numeric if numeric is not None else str(raw_value),
+                    "canonical_value_key": canonical_key,
+                    "source_observation_ids": [],
+                })
+                if observation_id not in option["source_observation_ids"]:
+                    option["source_observation_ids"].append(observation_id)
+        observed_options = sorted(
+            option_sources.values(),
+            key=lambda item: (
+                _number(item["value"]) is None,
+                _number(item["value"]) if _number(item["value"]) is not None else str(item["value"]),
+            ),
+        )
+        values = [item["value"] for item in observed_options]
         if len(values) < 2:
             continue
         from racelab_engine.analysis.setup_controls import SETUP_CONTROL_SPECS
 
         spec = SETUP_CONTROL_SPECS.get(setup_key)
         is_discrete = spec is None or spec.step_strategy != "numeric_test"
+        numeric_values = [value for value in (_number(item) for item in values) if value is not None]
         envelope[f"{setup_key}:{surrounding_fingerprint[:16]}"] = {
             "setup_key": setup_key,
             "environment_context_key": response_environment_key(response_context),
             "surrounding_setup_fingerprint": surrounding_fingerprint,
-            "observed_minimum": None if is_discrete else values[0],
-            "observed_maximum": None if is_discrete else values[-1],
+            "observed_minimum": None if is_discrete or not numeric_values else min(numeric_values),
+            "observed_maximum": None if is_discrete or not numeric_values else max(numeric_values),
             "observed_values": values,
+            "observed_options": observed_options,
             "value_kind": "discrete_observed_options" if is_discrete else "continuous_observed_range",
             "unit": observations[0]["setup_unit"],
             "distinct_tech_passing_values": len(values),
@@ -952,7 +1140,7 @@ def get_interaction_response_models(
     conn = initialize_database(db_path)
     rows = conn.execute(
         """
-        SELECT experiment_id, factor_deltas_json, outcomes_json, uncertainty,
+        SELECT experiment_id, response_context_json, factor_deltas_json, outcomes_json, uncertainty,
                evidence_packet_ids_json, source_run_ids_json
         FROM setup_interaction_observations
         WHERE response_context_key = ? AND setup_passed_tech = 1
@@ -961,10 +1149,55 @@ def get_interaction_response_models(
         (response_context.key,),
     ).fetchall()
     conn.close()
-    if not rows:
+    parsed_rows: list[dict[str, Any]] = []
+    for row in rows:
+        context_payload = _json_object(row["response_context_json"])
+        factors_payload = _json_object(row["factor_deltas_json"])
+        outcomes_payload = _json_object(row["outcomes_json"])
+        packet_ids = _json_string_list(row["evidence_packet_ids_json"])
+        source_run_ids = _json_string_list(row["source_run_ids_json"])
+        try:
+            stored_context = (
+                SetupResponseContext(**context_payload)
+                if context_payload is not None
+                else None
+            )
+            factors = {
+                key: float(value) for key, value in (factors_payload or {}).items()
+            }
+            outcomes = {
+                key: float(value) for key, value in (outcomes_payload or {}).items()
+            }
+            uncertainty = float(row["uncertainty"])
+        except (TypeError, ValueError):
+            continue
+        if (
+            stored_context is None
+            or not stored_context.is_complete
+            or stored_context.key != response_context.key
+            or not factors
+            or not outcomes
+            or not all(math.isfinite(value) for value in [*factors.values(), *outcomes.values()])
+            or not math.isfinite(uncertainty)
+            or uncertainty < 0.0
+            or packet_ids is None
+            or not packet_ids
+            or source_run_ids is None
+            or not source_run_ids
+        ):
+            continue
+        parsed_rows.append({
+            "experiment_id": str(row["experiment_id"]),
+            "factors": factors,
+            "outcomes": outcomes,
+            "uncertainty": uncertainty,
+            "evidence_packet_ids": packet_ids,
+            "source_run_ids": source_run_ids,
+        })
+    if not parsed_rows:
         return {}
-    factor_sets = [set(json.loads(row["factor_deltas_json"])) for row in rows]
-    outcome_sets = [set(json.loads(row["outcomes_json"])) for row in rows]
+    factor_sets = [set(row["factors"]) for row in parsed_rows]
+    outcome_sets = [set(row["outcomes"]) for row in parsed_rows]
     if any(keys != factor_sets[0] for keys in factor_sets) or any(keys != outcome_sets[0] for keys in outcome_sets):
         return {}
     factors = sorted(factor_sets[0])
@@ -975,13 +1208,13 @@ def get_interaction_response_models(
         for index, left in enumerate(factors)
         for right in factors[index + 1:]
     )
-    if len(rows) < len(term_names) + 2:
+    if len(parsed_rows) < len(term_names) + 2:
         return {}
     feature_rows: list[list[float]] = []
     outcome_payloads: list[dict[str, float]] = []
     weights: list[float] = []
-    for row in rows:
-        values = {key: float(value) for key, value in json.loads(row["factor_deltas_json"]).items()}
+    for row in parsed_rows:
+        values = row["factors"]
         features = [1.0, *(values[key] for key in factors)]
         features.extend(
             values[left] * values[right]
@@ -989,8 +1222,8 @@ def get_interaction_response_models(
             for right in factors[index + 1:]
         )
         feature_rows.append(features)
-        outcome_payloads.append({key: float(value) for key, value in json.loads(row["outcomes_json"]).items()})
-        weights.append(1.0 / max(float(row["uncertainty"]) ** 2, 1e-4))
+        outcome_payloads.append(row["outcomes"])
+        weights.append(1.0 / max(row["uncertainty"] ** 2, 1e-4))
     fitted: dict[str, Any] = {}
     for outcome in outcomes:
         targets = [payload[outcome] for payload in outcome_payloads]
@@ -1010,19 +1243,19 @@ def get_interaction_response_models(
         return {}
     return {
         "context_key": response_context.key,
-        "observation_count": len(rows),
+        "observation_count": len(parsed_rows),
         "factors": factors,
         "outcomes": fitted,
-        "source_experiment_ids": [str(row["experiment_id"]) for row in rows],
+        "source_experiment_ids": [row["experiment_id"] for row in parsed_rows],
         "evidence_packet_ids": list(dict.fromkeys(
             item
-            for row in rows
-            for item in json.loads(row["evidence_packet_ids_json"])
+            for row in parsed_rows
+            for item in row["evidence_packet_ids"]
         )),
         "source_run_ids": list(dict.fromkeys(
             item
-            for row in rows
-            for item in json.loads(row["source_run_ids_json"])
+            for row in parsed_rows
+            for item in row["source_run_ids"]
         )),
         "scope": "qualified_tech_passing_exact_context_doe_only",
     }
@@ -1046,14 +1279,7 @@ def get_setup_response_graph(
     conn = initialize_database(db_path)
     rows = conn.execute(
         """
-        SELECT observation_id, comparison_id, baseline_run_id, test_run_id,
-               baseline_lap, test_lap, setup_key, setup_label, setup_group,
-               direction_sign, baseline_value, test_value, numeric_delta,
-               magnitude_label, relative_delta_percent, verdict,
-               confidence_score, target_zone_start_pct, target_zone_end_pct,
-               median_lap_delta_s, pace_noise_band_s, target_speed_delta_mph,
-               cfs_delta_in, evidence_json, response_context_json
-               , baseline_setup_passed_tech, test_setup_passed_tech
+        SELECT *
         FROM setup_response_observations
         WHERE response_context_key = ?
           AND baseline_setup_passed_tech = 1
@@ -1066,9 +1292,18 @@ def get_setup_response_graph(
     edges: list[dict[str, Any]] = []
     grouped: dict[tuple[str, int], list[dict[str, Any]]] = {}
     for row in rows:
-        edge = dict(row)
-        edge["evidence"] = json.loads(edge.pop("evidence_json") or "{}")
-        edge["response_context"] = json.loads(edge.pop("response_context_json") or "{}")
+        qualified = _qualified_setup_response_row(
+            row,
+            response_context,
+            exact_context=True,
+        )
+        if qualified is None:
+            continue
+        edge, evidence, stored_context_payload = qualified
+        edge.pop("evidence_json", None)
+        edge.pop("response_context_json", None)
+        edge["evidence"] = evidence
+        edge["response_context"] = stored_context_payload
         evidence_source_runs = edge["evidence"].get("source_run_ids")
         edge["source_runs"] = (
             list(evidence_source_runs)

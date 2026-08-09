@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import math
+import hashlib
+import json
+import shutil
 import struct
 from pathlib import Path
 
@@ -34,10 +37,13 @@ from racelab_engine.io.telemetry_manifest import (
 from racelab_engine.services.import_service import (
     _assert_declared_channels_archived,
     ImportService,
+    TelemetryArtifactIdentityError,
     build_telemetry_capability_payload,
     build_channel_catalog,
     build_channel_summary,
     read_telemetry_manifest,
+    read_telemetry_rows,
+    telemetry_manifest_path,
     write_channel_metadata,
     write_telemetry_cache,
     write_telemetry_manifest,
@@ -140,7 +146,7 @@ def test_raw_canonical_name_collision_uses_explicit_raw_namespace_in_both_engine
     assert manifest["lossless_archive_complete"] is True
 
     run_id = "raw-canonical-collision"
-    write_telemetry_cache(run_id, [], normalized_frame=merged_frame, data_dir=tmp_path)
+    cache = write_telemetry_cache(run_id, [], normalized_frame=merged_frame, data_dir=tmp_path)
     write_channel_metadata(run_id, definitions, data_dir=tmp_path)
     write_telemetry_manifest(
         run_id,
@@ -149,6 +155,8 @@ def test_raw_canonical_name_collision_uses_explicit_raw_namespace_in_both_engine
         merged_frame,
         raw_archive_columns=mapping,
         data_dir=tmp_path,
+        source_file_sha256="a" * 64,
+        telemetry_cache_sha256=hashlib.sha256(cache.path.read_bytes()).hexdigest(),
     )
     catalog = {item["name"]: item for item in build_channel_catalog(run_id, tmp_path)}
     canonical_item = catalog["speed_mps"]
@@ -218,10 +226,124 @@ def test_legacy_cache_requires_source_reimport_instead_of_lossy_migration(tmp_pa
 
     payload = build_telemetry_capability_payload(run_id, tmp_path)
 
+    assert payload["run_id"] == run_id
     assert payload["cache_compatibility"]["status"] == "reimport_required"
     assert payload["cache_compatibility"]["required_action"] == "reimport_original_ibt"
     assert payload["cache_compatibility"]["automatic_migration_supported"] is False
     assert payload["capability_summary"]["lossless_archive_complete"] is False
+
+
+def _write_identity_bound_manifest(
+    data_dir: Path,
+    run_id: str,
+    source_file_sha256: str,
+    speeds: list[float],
+) -> Path:
+    definition = IBTVariableDefinition(
+        name="Speed",
+        unit="m/s",
+        data_type="float",
+        data_type_id=4,
+        offset=0,
+    )
+    frame = pl.DataFrame({"Speed": speeds, "speed_mps": speeds})
+    cache = write_telemetry_cache(run_id, [], normalized_frame=frame, data_dir=data_dir)
+    write_telemetry_manifest(
+        run_id,
+        IBTHeader(
+            version=2,
+            telemetry_rate_hz=60,
+            record_length=4,
+            record_count=len(speeds),
+        ),
+        [definition],
+        frame,
+        data_dir=data_dir,
+        source_file_sha256=source_file_sha256,
+        telemetry_cache_sha256=hashlib.sha256(cache.path.read_bytes()).hexdigest(),
+    )
+    return cache.path
+
+
+def test_capability_authority_rejects_manifest_swapped_between_runs(tmp_path: Path) -> None:
+    source_a = "a" * 64
+    _write_identity_bound_manifest(tmp_path, "run-a", source_a, [10.0, 11.0])
+    _write_identity_bound_manifest(tmp_path, "run-b", "b" * 64, [20.0, 21.0])
+
+    shutil.copyfile(
+        telemetry_manifest_path(tmp_path, "run-b"),
+        telemetry_manifest_path(tmp_path, "run-a"),
+    )
+    payload = build_telemetry_capability_payload(
+        "run-a",
+        tmp_path,
+        expected_source_file_sha256=source_a,
+    )
+
+    assert payload["run_id"] == "run-a"
+    assert payload["manifest_identity"]["status"] == "blocked"
+    assert payload["manifest_identity"]["reason_code"] == "manifest_run_mismatch"
+    assert payload["capabilities"] == []
+    assert payload["channels"] == []
+    assert payload["capability_summary"]["lossless_archive_complete"] is False
+    with pytest.raises(TelemetryArtifactIdentityError, match="different run"):
+        read_telemetry_rows("run-a", tmp_path)
+
+
+def test_capability_authority_rejects_missing_or_wrong_source_identity(tmp_path: Path) -> None:
+    source_a = "a" * 64
+    _write_identity_bound_manifest(tmp_path, "run-a", source_a, [10.0, 11.0])
+    manifest_path = telemetry_manifest_path(tmp_path, "run-a")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["source_file_sha256"] = "b" * 64
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    wrong_source = build_telemetry_capability_payload(
+        "run-a",
+        tmp_path,
+        expected_source_file_sha256=source_a,
+    )
+    assert wrong_source["manifest_identity"]["reason_code"] == "manifest_source_mismatch"
+    assert wrong_source["capability_summary"]["lossless_archive_complete"] is False
+
+    for field in ("run_id", "source_file_sha256", "telemetry_cache_sha256"):
+        manifest.pop(field, None)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    missing_identity = build_telemetry_capability_payload(
+        "run-a",
+        tmp_path,
+        expected_source_file_sha256=source_a,
+    )
+    assert missing_identity["manifest_identity"]["reason_code"] == "missing_manifest_run_id"
+    assert missing_identity["capabilities"] == []
+    with pytest.raises(TelemetryArtifactIdentityError, match="re-imported"):
+        read_telemetry_rows("run-a", tmp_path)
+
+
+def test_same_schema_cache_swap_blocks_capability_and_bound_reads(tmp_path: Path) -> None:
+    source_a = "a" * 64
+    cache_a = _write_identity_bound_manifest(tmp_path, "run-a", source_a, [10.0, 11.0])
+    cache_b = _write_identity_bound_manifest(tmp_path, "run-b", "b" * 64, [90.0, 91.0])
+    verified = build_telemetry_capability_payload(
+        "run-a",
+        tmp_path,
+        expected_source_file_sha256=source_a,
+    )
+    assert verified["manifest_identity"]["status"] == "verified"
+    assert verified["capability_summary"]["lossless_archive_complete"] is True
+    assert read_telemetry_rows("run-a", tmp_path)[0]["Speed"] == 10.0
+
+    shutil.copyfile(cache_b, cache_a)
+    payload = build_telemetry_capability_payload(
+        "run-a",
+        tmp_path,
+        expected_source_file_sha256=source_a,
+    )
+
+    assert payload["manifest_identity"]["reason_code"] == "telemetry_cache_mismatch"
+    assert payload["capability_summary"]["lossless_archive_complete"] is False
+    with pytest.raises(TelemetryArtifactIdentityError, match="does not match"):
+        read_telemetry_rows("run-a", tmp_path)
 
 
 def test_newer_archive_requires_app_upgrade() -> None:
@@ -319,7 +441,7 @@ def test_catalog_represents_raw_canonical_alias_with_manifest_health_provenance(
             "steering_wheel_torque_subtick_nm": [[1.0] * 6, [2.0] * 6],
         }
     )
-    write_telemetry_cache(run_id, [], normalized_frame=frame, data_dir=tmp_path)
+    cache = write_telemetry_cache(run_id, [], normalized_frame=frame, data_dir=tmp_path)
     write_channel_metadata(run_id, [definition, subtick_definition], data_dir=tmp_path)
     write_telemetry_manifest(
         run_id,
@@ -327,6 +449,8 @@ def test_catalog_represents_raw_canonical_alias_with_manifest_health_provenance(
         [definition, subtick_definition],
         frame,
         data_dir=tmp_path,
+        source_file_sha256="b" * 64,
+        telemetry_cache_sha256=hashlib.sha256(cache.path.read_bytes()).hexdigest(),
     )
 
     catalog = {item["name"]: item for item in build_channel_catalog(run_id, tmp_path)}

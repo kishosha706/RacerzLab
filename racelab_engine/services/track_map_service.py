@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import math
 import os
 from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
+from threading import RLock
 from typing import Any
+from uuid import uuid4
 
 from racelab_engine.io.mt2_reader import (
     TrackMap,
@@ -22,6 +26,9 @@ from racelab_engine.analysis.track_matching import (
 DEFAULT_DATA_DIR = Path("data")
 TRACK_MAPS_DIR_NAME = "track_maps"
 IMPORTS_MT2_DIR_NAME = Path("imports/mt2")
+_TRACK_MAP_CACHE_MAX_ENTRY_BYTES = 4 * 1024 * 1024
+_TRACK_MAP_INDEX_CACHE_MAX_ENTRY_BYTES = 2 * 1024 * 1024
+_TRACK_MAP_STORAGE_LOCK = RLock()
 
 
 def _data_dir() -> Path:
@@ -54,29 +61,89 @@ def _sanitize_filename(name: str) -> str:
 
 # ── index management ─────────────────────────────────────────
 
+def _read_stable_file(path: Path) -> tuple[tuple[Any, ...], bytes]:
+    """Read one coherent generation and include content identity in its cache key."""
+    for _attempt in range(3):
+        before = path.stat()
+        payload = path.read_bytes()
+        after = path.stat()
+        before_key = (
+            before.st_mtime_ns, before.st_size, before.st_ctime_ns, before.st_dev, before.st_ino,
+        )
+        after_key = (
+            after.st_mtime_ns, after.st_size, after.st_ctime_ns, after.st_dev, after.st_ino,
+        )
+        if before_key == after_key and len(payload) == after.st_size:
+            return (
+                str(path.resolve()),
+                *after_key,
+                hashlib.sha256(payload).hexdigest(),
+            ), payload
+    raise OSError(f"Track-map file changed while it was being read: {path}")
+
+
+def _atomic_write_text(path: Path, payload: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    try:
+        with temporary.open("x", encoding="utf-8", newline="") as file_obj:
+            file_obj.write(payload)
+            file_obj.flush()
+            os.fsync(file_obj.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _invalidate_track_map_file_caches() -> None:
+    _load_index_cached.cache_clear()
+    _get_track_map_cached.cache_clear()
+
+
 def _load_index() -> list[dict[str, Any]]:
     path = _index_path()
     if not path.exists():
         return []
     try:
-        stat = path.stat()
+        signature, payload = _read_stable_file(path)
         # Callers normalize and decorate index entries.  Keep those mutations
         # isolated from the process cache, including nested alias/warning lists.
         return deepcopy(
-            list(_load_index_cached(str(path.resolve()), stat.st_mtime_ns, stat.st_size))
+            list(
+                _load_index_cached(*signature, payload)
+                if len(payload) <= _TRACK_MAP_INDEX_CACHE_MAX_ENTRY_BYTES
+                else _decode_index(payload)
+            )
         )
     except (json.JSONDecodeError, OSError):
         return []
 
 
+def _decode_index(payload: bytes) -> tuple[dict[str, Any], ...]:
+    decoded = json.loads(payload.decode("utf-8"))
+    return tuple(decoded) if isinstance(decoded, list) else ()
+
+
 @lru_cache(maxsize=8)
-def _load_index_cached(_path: str, _mtime_ns: int, _size: int) -> tuple[dict[str, Any], ...]:
-    payload = json.loads(Path(_path).read_text(encoding="utf-8"))
+def _load_index_cached(
+    _path: str,
+    _mtime_ns: int,
+    _size: int,
+    _ctime_ns: int,
+    _device: int,
+    _inode: int,
+    _digest: str,
+    payload_bytes: bytes,
+) -> tuple[dict[str, Any], ...]:
+    del _path, _mtime_ns, _size, _ctime_ns, _device, _inode, _digest
+    payload = json.loads(payload_bytes.decode("utf-8"))
     return tuple(payload) if isinstance(payload, list) else ()
 
 
 def _save_index(entries: list[dict[str, Any]]) -> None:
-    _index_path().write_text(json.dumps(entries, indent=2, default=str), encoding="utf-8")
+    _atomic_write_text(_index_path(), json.dumps(entries, indent=2, default=str))
+    _invalidate_track_map_file_caches()
 
 
 def _find_index_entry(entries: list[dict[str, Any]], *, map_id: str | None = None, sha256: str | None = None) -> int | None:
@@ -90,15 +157,16 @@ def _find_index_entry(entries: list[dict[str, Any]], *, map_id: str | None = Non
 
 def _upsert_index_entry(entry: dict[str, Any]) -> bool:
     """Insert or update an index entry. Returns True if new (inserted), False if updated."""
-    entries = _load_index()
-    existing_index = _find_index_entry(entries, map_id=entry["map_id"], sha256=entry.get("sha256"))
-    if existing_index is not None:
-        entries[existing_index] = entry
+    with _TRACK_MAP_STORAGE_LOCK:
+        entries = _load_index()
+        existing_index = _find_index_entry(entries, map_id=entry["map_id"], sha256=entry.get("sha256"))
+        if existing_index is not None:
+            entries[existing_index] = entry
+            _save_index(entries)
+            return False  # updated
+        entries.append(entry)
         _save_index(entries)
-        return False  # updated
-    entries.append(entry)
-    _save_index(entries)
-    return True  # inserted
+        return True  # inserted
 
 
 def _canonical_cache_dict(track_map: TrackMap) -> dict[str, Any]:
@@ -227,7 +295,8 @@ def _sanitize_canonical_cache(entry: dict[str, Any]) -> bool:
 
     if json.dumps(data, sort_keys=True) == original:
         return False
-    cache_path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    _atomic_write_text(cache_path, json.dumps(data, indent=2, default=str))
+    _invalidate_track_map_file_caches()
     return True
 
 
@@ -271,7 +340,8 @@ def import_mt2_file(path: Path) -> dict[str, Any]:
 
     # Cache canonical RacerZLab track-map JSON
     cache_path = _track_maps_dir() / f"{track_map.map_id}.json"
-    cache_path.write_text(json.dumps(_canonical_cache_dict(track_map), indent=2, default=str), encoding="utf-8")
+    _atomic_write_text(cache_path, json.dumps(_canonical_cache_dict(track_map), indent=2, default=str))
+    _invalidate_track_map_file_caches()
 
     entry = _canonical_index_entry(
         track_map,
@@ -288,7 +358,8 @@ def save_and_import_mt2_upload(filename: str, data: bytes) -> dict[str, Any]:
     safe_name = _sanitize_filename(filename)
     track_map = parse_mt2_bytes(data, source_file=safe_name)
     cache_path = _track_maps_dir() / f"{track_map.map_id}.json"
-    cache_path.write_text(json.dumps(_canonical_cache_dict(track_map), indent=2, default=str), encoding="utf-8")
+    _atomic_write_text(cache_path, json.dumps(_canonical_cache_dict(track_map), indent=2, default=str))
+    _invalidate_track_map_file_caches()
     entry = _canonical_index_entry(
         track_map,
         source_filename=safe_name,
@@ -337,9 +408,11 @@ def get_track_map(map_id: str) -> TrackMap | None:
     if not cache_path or not cache_path.exists():
         return None
     try:
-        stat = cache_path.stat()
-        cached = _get_track_map_cached(
-            str(cache_path.resolve()), stat.st_mtime_ns, stat.st_size,
+        signature, payload = _read_stable_file(cache_path)
+        cached = (
+            _get_track_map_cached(*signature, payload)
+            if len(payload) <= _TRACK_MAP_CACHE_MAX_ENTRY_BYTES
+            else _dict_to_track_map(json.loads(payload.decode("utf-8")))
         )
         # The cached canonical object is process-owned.  Return a cheap model
         # reconstruction so callers cannot corrupt later reads by mutating a
@@ -350,8 +423,18 @@ def get_track_map(map_id: str) -> TrackMap | None:
 
 
 @lru_cache(maxsize=8)
-def _get_track_map_cached(_path: str, _mtime_ns: int, _size: int) -> TrackMap:
-    return _dict_to_track_map(json.loads(Path(_path).read_text(encoding="utf-8")))
+def _get_track_map_cached(
+    _path: str,
+    _mtime_ns: int,
+    _size: int,
+    _ctime_ns: int,
+    _device: int,
+    _inode: int,
+    _digest: str,
+    payload_bytes: bytes,
+) -> TrackMap:
+    del _path, _mtime_ns, _size, _ctime_ns, _device, _inode, _digest
+    return _dict_to_track_map(json.loads(payload_bytes.decode("utf-8")))
 
 
 def _dict_to_track_map(d: dict[str, Any]) -> TrackMap:
@@ -423,6 +506,38 @@ def find_best_map_for_run(run_id: str, track_name: str, layout: str | None = Non
 
 # ── overlay builders ─────────────────────────────────────────
 
+_TARGET_ZONE_ERROR = (
+    "Target zone requires finite start and end positions satisfying "
+    "0 <= start < end <= 100."
+)
+
+
+def validate_target_zone(
+    start_pct: float | None,
+    end_pct: float | None,
+) -> tuple[float, float] | None:
+    """Normalize a complete, bounded target zone or fail closed."""
+    if start_pct is None and end_pct is None:
+        return None
+    if start_pct is None or end_pct is None:
+        raise ValueError(_TARGET_ZONE_ERROR)
+    if isinstance(start_pct, bool) or isinstance(end_pct, bool):
+        raise ValueError(_TARGET_ZONE_ERROR)
+    try:
+        start = float(start_pct)
+        end = float(end_pct)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(_TARGET_ZONE_ERROR) from exc
+    if (
+        not math.isfinite(start)
+        or not math.isfinite(end)
+        or start < 0.0
+        or end > 100.0
+        or start >= end
+    ):
+        raise ValueError(_TARGET_ZONE_ERROR)
+    return start, end
+
 def build_track_map_overlays(
     map_id: str,
     platform_events: list[dict[str, Any]] | None = None,
@@ -433,6 +548,7 @@ def build_track_map_overlays(
 ) -> list[dict[str, Any]]:
     """Build overlay markers from platform events and target zone."""
     overlays: list[dict[str, Any]] = []
+    target_zone = validate_target_zone(target_zone_start_pct, target_zone_end_pct)
 
     track_map = _track_map or get_track_map(map_id)
     points = track_map.points if track_map else []
@@ -441,7 +557,9 @@ def build_track_map_overlays(
     # Platform event overlays
     if platform_events:
         for event in platform_events:
-            pct = event.get("lap_pct") or event.get("position_pct")
+            pct = event.get("lap_pct")
+            if pct is None:
+                pct = event.get("position_pct")
             if pct is None:
                 continue
             from racelab_engine.io.mt2_reader import interpolate_at_pct
@@ -471,17 +589,17 @@ def build_track_map_overlays(
             })
 
     # Target zone
-    if target_zone_start_pct is not None and target_zone_end_pct is not None and points and total_dist > 0:
+    if target_zone is not None and points and total_dist > 0:
         from racelab_engine.io.mt2_reader import interpolate_at_pct
+        target_zone_start_pct, target_zone_end_pct = target_zone
         zone_points = []
-        step = (target_zone_end_pct - target_zone_start_pct) / 50.0
-        p = target_zone_start_pct
         from contextlib import suppress
-        while p <= target_zone_end_pct:
+        span = target_zone_end_pct - target_zone_start_pct
+        for sample_index in range(51):
+            p = target_zone_start_pct + span * sample_index / 50.0
             with suppress(Exception):
                 pos = interpolate_at_pct(points, p, total_dist)
                 zone_points.append({"x": pos["x_m"], "y": pos["y_m"], "pct": p})
-            p += step
         overlays.append({
             "marker_id": "target_zone",
             "kind": "target_zone",
@@ -503,6 +621,9 @@ def build_track_map_package(
     target_zone_end_pct: float | None = None,
 ) -> dict[str, Any]:
     """Build the full track map package for frontend rendering."""
+    target_zone = validate_target_zone(target_zone_start_pct, target_zone_end_pct)
+    if target_zone is not None:
+        target_zone_start_pct, target_zone_end_pct = target_zone
     track_map = get_track_map(map_id)
     entries = _load_index()
     match = next((e for e in entries if e.get("map_id") == map_id), None)
@@ -527,7 +648,7 @@ def build_track_map_package(
         "target_zone": {
             "start_pct": target_zone_start_pct,
             "end_pct": target_zone_end_pct,
-        } if target_zone_start_pct is not None else None,
+        } if target_zone is not None else None,
         "warnings": track_map.warnings if track_map else [],
     }
 

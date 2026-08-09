@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,11 @@ from racelab_engine.io.ibt_types import IBTVariableDefinition
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
-from racelab_engine.services.import_service import write_channel_metadata, write_telemetry_cache
+from racelab_engine.services.import_service import (
+    telemetry_manifest_path,
+    write_channel_metadata,
+    write_telemetry_cache,
+)
 from racelab_engine.storage.repository import RaceLabRepository
 from test_setup_evidence_adapter import _configure_env
 
@@ -113,6 +118,52 @@ def test_shock_reader_api_returns_stable_shape(tmp_path: Path, monkeypatch: pyte
     assert payload["slope_actions_available"] is False
     assert "Official iRacing Next Gen guidance" in payload["boundary_basis"]
     assert len(payload["recommendations"]) <= 1
+    inline = payload["corners"][0]["setting_recommendations"][0]
+    assert inline["direction"] == "needs_more_evidence"
+    assert inline["delta"] is None
+    assert inline["suggested_value"] is None
+    assert inline["target_value_raw"] is None
+    assert inline["legal_option_provenance"] == []
+    assert inline["evidence_state"] == "blocked_by_context"
+    assert payload["evidence_state"] == "blocked_by_context"
+
+
+def test_shock_reader_api_returns_recovery_conflict_for_unbound_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_shock_run(tmp_path)
+    path = telemetry_manifest_path(tmp_path / "data", "run-1")
+    identity = json.loads(path.read_text(encoding="utf-8"))
+    identity.pop("telemetry_cache_sha256")
+    path.write_text(json.dumps(identity), encoding="utf-8")
+
+    response = TestClient(app).get("/api/runs/run-1/shock-reader?lap=1")
+
+    assert response.status_code == 409
+    assert "re-imported" in response.json()["detail"]
+
+
+def test_client_query_cannot_inject_a_shock_option_catalog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_shock_run(tmp_path)
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/runs/run-1/shock-reader?lap=1"
+        "&legal_options_by_corner_setting=4"
+        "&legal_option_provenance_by_corner_setting=client-claim"
+    )
+
+    assert response.status_code == 200
+    rec = response.json()["corners"][0]["setting_recommendations"][0]
+    assert rec["direction"] == "needs_more_evidence"
+    assert rec["suggested_value"] is None
+    assert rec["legal_option_provenance"] == []
 
 
 def test_shock_reader_api_missing_setup_has_no_numeric_suggestion(

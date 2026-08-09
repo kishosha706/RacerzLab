@@ -214,8 +214,12 @@ def _row_to_finding(row: dict[str, Any]) -> NotebookFinding:
         comparison_id=row["comparison_id"],
         baseline_lap=row["baseline_lap"],
         test_lap=row["test_lap"],
-        target_zone_start_pct=row["target_zone_start_pct"] or 55.0,
-        target_zone_end_pct=row["target_zone_end_pct"] or 70.0,
+        target_zone_start_pct=(
+            55.0 if row["target_zone_start_pct"] is None else row["target_zone_start_pct"]
+        ),
+        target_zone_end_pct=(
+            70.0 if row["target_zone_end_pct"] is None else row["target_zone_end_pct"]
+        ),
         verdict=row["verdict"],
         confidence_score=row["confidence_score"] or 0.0,
         confidence_tier=row["confidence_tier"],
@@ -401,8 +405,12 @@ def list_test_plans(
             change_to_try=row["change_to_try"],
             do_not_change=_load_json(row["do_not_change_json"], []),
             success_metric=row["success_metric"],
-            target_zone_start_pct=row["target_zone_start_pct"] or 55.0,
-            target_zone_end_pct=row["target_zone_end_pct"] or 70.0,
+            target_zone_start_pct=(
+                55.0 if row["target_zone_start_pct"] is None else row["target_zone_start_pct"]
+            ),
+            target_zone_end_pct=(
+                70.0 if row["target_zone_end_pct"] is None else row["target_zone_end_pct"]
+            ),
             planned_notes=row["planned_notes"] or "",
             status=row["status"],
         ))
@@ -449,8 +457,12 @@ def update_test_plan(
         change_to_try=r["change_to_try"],
         do_not_change=_load_json(r["do_not_change_json"], []),
         success_metric=r["success_metric"],
-        target_zone_start_pct=r["target_zone_start_pct"] or 55.0,
-        target_zone_end_pct=r["target_zone_end_pct"] or 70.0,
+        target_zone_start_pct=(
+            55.0 if r["target_zone_start_pct"] is None else r["target_zone_start_pct"]
+        ),
+        target_zone_end_pct=(
+            70.0 if r["target_zone_end_pct"] is None else r["target_zone_end_pct"]
+        ),
         planned_notes=r["planned_notes"] or "",
         status=r["status"],
     )

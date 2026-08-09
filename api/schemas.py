@@ -200,6 +200,7 @@ class PlatformEventItem(BaseModel):
     display_scope: str = "actionable"
     is_visible_default: bool = True
     reason_for_hidden: Optional[str] = None
+    diagnostic_state: Literal["finding", "clear_check", "context"] = "finding"
     contributes_to_backend_evidence: bool = True
     lap: Optional[int] = None
     sample_index: int
@@ -217,4 +218,12 @@ class PlatformEventItem(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     evidence_state: str = "needs_confirmation"
     source_channels: list[str] = Field(default_factory=list)
+    blocker_reasons: list[str] = Field(default_factory=list)
+
+
+class PlatformEventsReport(BaseModel):
+    run_id: str
+    lap: Optional[int] = None
+    evidence_status: Literal["findings", "clear", "unavailable"]
+    events: list[PlatformEventItem] = Field(default_factory=list)
     blocker_reasons: list[str] = Field(default_factory=list)

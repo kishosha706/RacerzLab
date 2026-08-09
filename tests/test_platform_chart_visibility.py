@@ -106,13 +106,14 @@ def test_ride_height_panels_receive_increased_density_aware_heights() -> None:
     assert "layoutTotalHeight(panelLayout, 42)" in platform
 
 
-def test_chart_uses_separated_grid_panels_without_wheel_scroll_trap() -> None:
+def test_chart_uses_open_grid_lanes_without_wheel_scroll_trap() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
     styles = _read("ui/src/styles.css")
 
     assert "rowGap(preset, density)" in platform
     assert 'return density === "compact" ? 12 : 18' in platform
-    assert 'stroke: "rgba(15,23,42,0.95)"' in platform
+    assert 'stroke: row.channels[0]?.color ?? "#38bdf8"' in platform
+    assert 'color: "rgba(148, 163, 184, 0.11)"' in platform
     wrapper_block = styles.split(".trace-panel-wrapper {", 1)[1].split("}", 1)[0]
     assert "overflow: visible" in wrapper_block
     assert "max-height" not in wrapper_block
@@ -167,7 +168,7 @@ def test_only_bottom_x_axis_shows_full_distance_labels() -> None:
     assert "formatter: (value: number) => formatDistanceFt(value, decimalDistanceLabels ? 1 : 0)" in platform
     assert "labelFormatter: (value: number) => formatDistanceFt(value, decimalDistanceLabels ? 1 : 0)" in platform
     assert "formatter: (params: { value?: unknown })" in platform
-    assert "axisTick: { show: index === rows.length - 1 }" in platform
+    assert "axisTick: {\n        show: index === rows.length - 1," in platform
 
 
 def test_platform_charts_use_per_panel_readouts_without_side_cursor() -> None:
@@ -429,7 +430,7 @@ def test_balance_panel_readout_prefers_hover_and_shows_no_cursor_helper() -> Non
     assert "panelIndex === 0 && lockedSummary" in readout
     assert '<span className="balance-selected-context">{lockedSummary}</span>' in readout
     assert "Cursor: hover or scrub" in readout
-    assert platform.index('className="trace-panel" ref={chartNode}') < platform.index("<PlatformChartPanelReadout")
+    assert platform.index('className="trace-panel platform-telemetry-canvas"') < platform.index("<PlatformChartPanelReadout")
 
 
 def test_balance_panel_stats_include_accessible_motec_icons() -> None:
@@ -757,16 +758,17 @@ def test_selected_event_or_zone_draws_subtle_cross_panel_context() -> None:
     assert "channelIndex === 0 ? selectedBandAreaData : []" in platform
 
 
-def test_ride_height_series_do_not_use_hover_focus_or_blur_emphasis() -> None:
+def test_ride_height_series_uses_nondimming_hover_emphasis() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
 
-    assert 'emphasis: { disabled: true }' in platform
-    assert 'focus: "self"' not in platform
-    assert 'focus: "series"' not in platform
+    assert "const baseLineWidth = channelIndex === 0 ? 1.8" in platform
+    assert "width: baseLineWidth + 0.8" in platform
+    assert 'focus: "none"' in platform
+    assert "shadowColor: `${channel.color}73`" in platform
     assert "blur: { lineStyle" not in platform
     assert "legendHoverLink: false" in platform
     assert 'inactiveColor: "#475569"' in platform
-    assert "itemGap: 8" in platform
+    assert "itemGap: 11" in platform
 
 
 def test_chart_config_includes_x_axis_data_zoom_across_stacked_grids() -> None:
@@ -818,6 +820,19 @@ def test_reset_zoom_does_not_clear_selected_event_or_session_state() -> None:
     assert "setWorkspace" not in reset_body
 
 
+def test_platform_event_selection_is_replaced_from_the_current_run_collection() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    event_load_effect = platform.split(
+        "if (externalPlatformEvents) {", 1
+    )[1].split("const visiblePlatformEvents", 1)[0]
+
+    assert "setSelectedPlatformEvent(null);\n    setPlatformEvents([]);" in platform
+    assert "}, [overview.run_id, overviewTrace.lap]);" in platform
+    assert "setPlatformEvents([]);" in event_load_effect
+    assert "platformEvents.find((event) => event.event_id === selected.event_id) ?? null" in event_load_effect
+    assert "platformEvents.some((event) => event.event_id === selected.event_id) ? selected" not in event_load_effect
+
+
 def test_escape_unlock_restores_live_cursor_hover_readout() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
     escape_body = platform.split('if (e.key !== "Escape") return;', 1)[1].split("window.addEventListener", 1)[0]
@@ -831,7 +846,10 @@ def test_escape_unlock_restores_live_cursor_hover_readout() -> None:
     assert "const restoredHover = restoreHoverAtPointerRef.current()" in platform
     assert "if (!restoredHover) hideCursorLine()" in platform
     assert "e.preventDefault()" in escape_body
-    assert "e.stopPropagation()" in escape_body
+    # The local chart lock clears first, but the shell-level atomic evidence
+    # clear must still receive Escape and erase zone/channel/trust context.
+    assert "e.stopPropagation()" not in escape_body
+    assert "focusEvidence(" not in escape_body
     assert "setVisibleZoomRange(null)" not in escape_body
     assert "dispatchAction({ type: \"dataZoom\"" not in escape_body
     assert "setSelectedRun" not in escape_body
@@ -894,8 +912,8 @@ def test_no_visible_events_state_displays_cleanly() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
 
     assert "No actionable platform events shown" in platform
-    assert "All visible platform checks are clear." in platform
-    assert "internal checks hidden/clear" in platform
+    assert "Supported platform risk checks are clear for this eligible lap." in platform
+    assert "qualified clear checks hidden" in platform
     assert "internal evidence item" in platform
     assert "No platform diagnostic events for this lap" in platform
 
@@ -916,12 +934,12 @@ def test_clear_platform_diagnostics_are_grouped_not_visible_events() -> None:
     visibility = _read("ui/src/utils/platformEventVisibility.ts")
 
     assert "export function isClearPlatformDiagnostic" in visibility
-    assert 'event.severity === "info"' in visibility
+    assert 'event.diagnostic_state === "clear_check"' in visibility
     assert "clearPlatformDiagnostics" in platform
     assert "platform-clear-checks" in platform
     assert "Clear checks ({clearPlatformDiagnosticCount})" in platform
     assert "clearDiagnosticCount" in rail
-    assert "internal checks hidden/clear." in rail
+    assert "qualified clear checks hidden." in rail
 
 
 def test_hidden_selected_event_fallback_appears_when_selected_event_is_filtered_out() -> None:
@@ -973,3 +991,42 @@ def test_focus_visible_css_coverage_includes_platform_controls() -> None:
     assert ".platform-event-filter select:focus-visible" in styles
     assert ".playback-btn:focus-visible" in styles
     assert ".playback-speed-btn:focus-visible" in styles
+
+
+def test_platform_decision_and_local_trace_precede_whole_lap_charts() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    decision = platform.index('className="platform-decision-card"')
+    local_trace = platform.index("<LocalPlatformTrace", decision)
+    disclosure = platform.index('className="platform-whole-lap-disclosure"', local_trace)
+    whole_lap_chart = platform.index('className="platform-layout balance-chart-layout"', disclosure)
+    assert decision < local_trace < disclosure < whole_lap_chart
+    assert "Highest-priority platform evidence" in platform
+    assert "platformEventPriority" in platform
+    assert "recorded samples only" in platform
+    assert "Whole-lap data is not substituted." in platform
+
+
+def test_whole_lap_charts_are_accessibly_disclosed_by_mode() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+    styles = _read("ui/src/styles.css")
+
+    assert 'useState(selection.selectedMode === "learning")' in platform
+    assert 'setWholeLapExpanded(selection.selectedMode === "learning")' in platform
+    assert 'aria-expanded={wholeLapExpanded}' in platform
+    assert 'aria-controls="platform-whole-lap-charts"' in platform
+    assert '{wholeLapExpanded && (' in platform
+    assert ".platform-whole-lap-toggle:focus-visible" in styles
+
+
+def test_platform_decision_preserves_error_unavailable_and_clear_truth() -> None:
+    platform = _read("ui/src/tabs/PlatformTab.tsx")
+
+    decision = platform.split('className="platform-decision-card"', 1)[1].split("<WorkbenchSubnav", 1)[0]
+    assert 'platformEventsLoadStatus === "error"' in decision
+    assert 'platformEventsLoadStatus === "unavailable"' in decision
+    assert 'platformEventsLoadStatus === "clear"' in decision
+    assert "Missing telemetry remains unavailable, never safe or zero." in decision
+    assert "Supported platform risk checks are clear for this eligible lap." in decision
+    assert "other mechanisms are not implied safe" in decision
+    assert "Proxy evidence only. It does not measure aerodynamic force." in decision

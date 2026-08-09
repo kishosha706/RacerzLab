@@ -57,7 +57,6 @@ export function buildZoneEvidence(
   selection: TelemetrySelection,
   options?: {
     lapPct?: number | null;
-    preserveWithoutLapPct?: boolean;
   },
 ): Pick<EvidenceContext, "zoneId" | "zoneLabel" | "zoneStartPct" | "zoneEndPct"> {
   const zoneContext = {
@@ -74,9 +73,7 @@ export function buildZoneEvidence(
     return { zoneId: null, zoneLabel: null, zoneStartPct: null, zoneEndPct: null };
   }
   if (options?.lapPct == null) {
-    return options?.preserveWithoutLapPct
-      ? zoneContext
-      : { zoneId: null, zoneLabel: null, zoneStartPct: null, zoneEndPct: null };
+    return { zoneId: null, zoneLabel: null, zoneStartPct: null, zoneEndPct: null };
   }
   return lapPctInRange(options.lapPct, zoneContext.zoneStartPct, zoneContext.zoneEndPct)
     ? zoneContext

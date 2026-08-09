@@ -18,6 +18,7 @@ from racelab_engine.analysis.setup_controls import (
     expected_control_effect,
     format_setup_value,
     setup_control_values_equal,
+    setup_target_increment_blocker,
     setup_value_numeric_representation,
 )
 
@@ -72,6 +73,10 @@ class ControlledTestCard(DirectorModel):
     countereffects: tuple[str, ...]
     rollback_rule: str
     keep_rule: str
+    stop_rule: str = (
+        "Stop the stage after a pit entry, reset, caution, incident, simulator-integrity fault, "
+        "unexpected contact, or unsafe handling; discard contaminated laps and restore A before continuing."
+    )
     stages: tuple[TestStage, TestStage, TestStage]
     evidence_event_ids: tuple[str, ...]
     do_not_change: tuple[str, ...]
@@ -300,6 +305,11 @@ def build_controlled_test(
     )
     if adjacent_numeric is not None and not adjacent_provenance:
         blockers.append("The adjacent garage option has no server-observed tech-passing provenance.")
+    if adjacent_raw is not None:
+        if increment_blocker := setup_target_increment_blocker(
+            control_key, current_value, adjacent_raw,
+        ):
+            blockers.append(increment_blocker)
     if blockers:
         return _mission(target_phase, blockers)
 
@@ -337,6 +347,10 @@ def build_controlled_test(
             countereffects=tuple(countereffects),
             rollback_rule=f"Restore {spec.label} to the recorded A value immediately if any countereffect worsens.",
             keep_rule="Keep only if B beats both A and restored A2 beyond the empirical noise floor without a countereffect.",
+            stop_rule=(
+                "Stop the stage after a pit entry, reset, caution, incident, simulator-integrity fault, "
+                "unexpected contact, or unsafe handling; discard contaminated laps and restore A before continuing."
+            ),
             stages=(
                 TestStage(stage="A", setup_instruction=baseline_instruction, warmup_laps=2, required_flying_laps=3, purpose="Measure baseline variability."),
                 TestStage(stage="B", setup_instruction=test_instruction, warmup_laps=2, required_flying_laps=3, purpose="Test one hypothesis."),
@@ -370,9 +384,15 @@ def score_test_execution(execution: TestExecution) -> TestQualityResult:
         blockers.append("Simulator integrity is unavailable or below the controlled-test threshold.")
     if execution.minimum_alignment_confidence is None or execution.minimum_alignment_confidence < 0.8:
         blockers.append("Target-window alignment is incomplete or below the controlled-test threshold.")
-    if execution.target_effect_distribution_state is None:
+    distribution_state = execution.target_effect_distribution_state
+    distributions_consistent = execution.target_effect_distributions_consistent
+    if distribution_state is None or distributions_consistent is None:
         blockers.append("The A/B and B/A2 lap-level effect distribution state is unavailable.")
-    elif execution.target_effect_distribution_state == "inconsistent":
+    elif distributions_consistent != (distribution_state in {"faster", "slower"}):
+        blockers.append(
+            "The lap-level effect distribution consistency flag conflicts with its declared state."
+        )
+    elif distribution_state == "inconsistent":
         blockers.append("A/B and B/A2 medians are not supported by every lap-level effect beyond noise.")
     if execution.empirical_noise_observations < 3:
         blockers.append("At least three qualified within-baseline effects are required to establish noise.")
@@ -401,14 +421,23 @@ def score_test_execution(execution: TestExecution) -> TestQualityResult:
     if all(effect is not None for effect in effects) and execution.empirical_noise_s is not None:
         numeric_effects = tuple(float(effect) for effect in effects if effect is not None)
         if all(effect < -execution.empirical_noise_s for effect in numeric_effects):
+            aggregate_state = "faster"
             supporting.append("B beat both A and restored A2 beyond the empirical noise floor.")
             score += 20.0
-        elif any(effect > execution.empirical_noise_s for effect in numeric_effects):
+        elif all(effect > execution.empirical_noise_s for effect in numeric_effects):
+            aggregate_state = "slower"
             contradictory.append("B was slower than A or restored A2 beyond the empirical noise floor.")
-            if all(effect > execution.empirical_noise_s for effect in numeric_effects):
-                score += 20.0
+            score += 20.0
         else:
+            aggregate_state = "inconclusive"
             contradictory.append("B did not beat both baselines beyond normal variation.")
+        if distribution_state is not None and (
+            distribution_state in {"faster", "slower", "inconclusive"}
+            and distribution_state != aggregate_state
+        ):
+            blockers.append(
+                "The aggregate A/B/A2 target effect conflicts with the lap-level distribution state."
+            )
     if execution.countereffect_passed is False:
         contradictory.append("A declared countereffect worsened.")
     if execution.control_guardrails_passed is False:

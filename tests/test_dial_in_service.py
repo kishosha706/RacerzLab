@@ -554,8 +554,12 @@ def test_visible_dial_in_swings_include_specific_change_this_actions(tmp_path: P
         if "brake bias" in action:
             assert any(direction in action for direction in ["forward", "rearward", "increase", "decrease"])
         assert "one small step" not in action
-        assert swing.change_size_label.startswith(("Small test input", "Smallest available garage step"))
+        assert swing.change_size_label == "Target unavailable - record adjacent option"
         assert swing.change_size_explanation
+        assert swing.proposed_value_label is None
+        assert swing.blocker_reasons
+        assert swing.evidence_state == "blocked_by_context"
+        assert swing.change_this.lower().startswith("do not change")
         assert swing.control_expectation
         assert swing.control_guardrail
         assert swing.keep_if.startswith("Keep it only if")
@@ -576,11 +580,16 @@ def test_driver_response_uses_direct_setup_change_vocabulary(tmp_path: Path, mon
     _seed_run(tmp_path, channels={"throttle_pct": 100.0, "yaw_rate": 1.2})
     response = build_dial_in_response("run-1", "loose off")
 
-    assert response.next_step == "Change one test plan, match fuel and tire age, then compare eligible laps by track position."
+    assert response.next_step == (
+        "Record the current control and its adjacent tech-passing garage options with source provenance, "
+        "then generate one controlled test."
+    )
     assert response.validation_summary is not None
     assert response.validation_summary.startswith("Primary evidence signals: ")
     assert "Test one swing" not in response.next_step
     assert "What to watch for" not in response.validation_summary
+    assert response.readiness_label == "Need setup option data"
+    assert response.blocker_reasons
 
 
 def test_next_gen_response_never_includes_legacy_disabled_areas(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

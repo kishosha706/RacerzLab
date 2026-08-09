@@ -25,7 +25,7 @@ def test_heavy_cockpit_surfaces_are_loaded_on_demand() -> None:
 
     assert "{mapOverlayOpen && (" in app
     assert "{hasCompareBasketItems && (" in app
-    assert "priorityRailOpen ? (" in app
+    assert "priorityRailExpanded ? (" in app
     assert "inspectorOpen ? (" in app
     assert "onPointerEnter={() => preloadWorkspace(key)}" in app
 

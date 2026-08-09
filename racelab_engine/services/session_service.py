@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,26 @@ def _json(value: Any) -> str:
 
 def _load_json(value: str | None, fallback: Any = None) -> Any:
     return json.loads(value) if value else fallback
+
+
+def _load_identity_list(value: str | None, *, label: str) -> list[str]:
+    try:
+        payload = _load_json(value, [])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Stored session {label} are malformed.") from exc
+    if (
+        not isinstance(payload, list)
+        or any(
+            not isinstance(item, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]*", item) is None
+            for item in payload
+        )
+        or len(payload) != len(set(payload))
+    ):
+        raise ValueError(
+            f"Stored session {label} must be unique canonical string identities."
+        )
+    return payload
 
 
 def _ensure_schema(conn: Any) -> None:
@@ -76,11 +97,14 @@ def _row_to_session(row: dict[str, Any]) -> RaceLabSession:
         updated_at=row["updated_at"],
         track_name=row.get("track_name"),
         car_name=row.get("car_name"),
-        run_ids=_load_json(row.get("run_ids_json"), []),
+        run_ids=_load_identity_list(row.get("run_ids_json"), label="run identities"),
         last_opened_run_id=row.get("last_opened_run_id"),
         last_selected_lap=row.get("last_selected_lap"),
         last_workspace=row.get("last_workspace"),
-        notebook_finding_ids=_load_json(row.get("notebook_finding_ids_json"), []),
+        notebook_finding_ids=_load_identity_list(
+            row.get("notebook_finding_ids_json"),
+            label="notebook-finding identities",
+        ),
         status=row.get("status", "active"),
     )
 
@@ -94,7 +118,13 @@ def list_sessions(include_archived: bool = False, db_path: str | Path | None = N
     sql += " ORDER BY updated_at DESC"
     rows = conn.execute(sql).fetchall()
     conn.close()
-    return [_row_to_session(dict(r)) for r in rows]
+    sessions: list[RaceLabSession] = []
+    for row in rows:
+        try:
+            sessions.append(_row_to_session(dict(row)))
+        except (TypeError, ValueError):
+            continue
+    return sessions
 
 
 def get_session(session_id: str, db_path: str | Path | None = None) -> RaceLabSession | None:

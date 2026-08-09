@@ -21,9 +21,10 @@ export function useKeyboardShortcuts(
     onShowShortcuts?: () => void;
     onHideShortcuts?: () => void;
     shortcutsOpen?: boolean;
+    eventTimelineOwnsKeyboard?: boolean;
   },
 ) {
-  const { selection, focusEvidence, setMode } = useTelemetrySelection();
+  const { selection, focusEvidence, clearEvidenceFocus, setMode } = useTelemetrySelection();
 
   useEffect(() => {
     function handler(e: KeyboardEvent) {
@@ -34,11 +35,17 @@ export function useKeyboardShortcuts(
       if (e.ctrlKey || e.metaKey) return; // pass browser shortcuts through
 
       const key = e.key;
-      if (options?.shortcutsOpen && key === "Escape") {
-        e.preventDefault();
-        options.onHideShortcuts?.();
+      const timelineTargetOwnsKeyboard = e.target instanceof HTMLElement
+        && e.target.closest('[data-event-timeline-keyboard-owner="true"]') != null;
+      const timelineOwnsEventKey = options?.eventTimelineOwnsKeyboard || timelineTargetOwnsKeyboard;
+      if (options?.shortcutsOpen) {
+        if (key === "Escape") {
+          e.preventDefault();
+          options.onHideShortcuts?.();
+        }
         return;
       }
+      if (timelineOwnsEventKey && [" ", "ArrowLeft", "ArrowRight", "Enter", "Escape"].includes(key)) return;
 
       switch (key) {
         case "?":
@@ -46,7 +53,8 @@ export function useKeyboardShortcuts(
           options?.onShowShortcuts?.();
           break;
         case "Escape":
-          focusEvidence({ eventId: null, selectionSource: "manual" });
+          e.preventDefault();
+          clearEvidenceFocus();
           break;
         case "[":
           options?.onTogglePriorityRail?.();
@@ -66,6 +74,10 @@ export function useKeyboardShortcuts(
         case "O":
           openWorkspace("overview");
           break;
+        case "e":
+        case "E":
+          openWorkspace("engineer");
+          break;
         case "c":
         case "C":
           openWorkspace("laps");
@@ -80,6 +92,7 @@ export function useKeyboardShortcuts(
           break;
         case "ArrowLeft":
         case "ArrowRight": {
+          if (e.defaultPrevented || options?.eventTimelineOwnsKeyboard || timelineTargetOwnsKeyboard) return;
           e.preventDefault();
           const dir = key === "ArrowLeft" ? -1 : 1;
           const filtered = platformEvents.filter((evt) => {
@@ -96,7 +109,7 @@ export function useKeyboardShortcuts(
             runId: selection.selectedRunId,
             lapNumber: nextEvt.lap ?? null,
             ...buildWindowEvidence(selection, nextEvt.lap),
-            ...buildZoneEvidence(selection, { lapPct: nextEvt.lap_pct ?? null, preserveWithoutLapPct: true }),
+            ...buildZoneEvidence(selection, { lapPct: nextEvt.lap_pct ?? null }),
             eventId: nextEvt.event_id,
             sampleIndex: validSampleIdx,
             lapDistFt: nextEvt.lap_dist_ft,
@@ -111,5 +124,5 @@ export function useKeyboardShortcuts(
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [platformEvents, selection.selectedLap, selection.selectedMode, focusEvidence, setMode, openWorkspace, options]);
+  }, [platformEvents, selection.selectedLap, selection.selectedMode, focusEvidence, clearEvidenceFocus, setMode, openWorkspace, options]);
 }

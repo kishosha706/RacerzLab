@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import struct
 import importlib.util
 from pathlib import Path
@@ -577,6 +578,62 @@ def test_overlay_and_package_use_canonical_cache(tmp_path: Path, monkeypatch: py
     assert package["markers"]
 
 
+def test_overlay_preserves_start_finish_event_and_uses_bounded_zone_sampling(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_mt2_bytes: bytes,
+) -> None:
+    monkeypatch.setenv("RACELAB_DATA_DIR", str(tmp_path))
+    source_path = tmp_path / "talladega.mt2"
+    source_path.write_bytes(synthetic_mt2_bytes)
+    entry = import_mt2_file(source_path)
+
+    overlays = build_track_map_overlays(
+        entry["map_id"],
+        platform_events=[{
+            "event_id": "start-finish",
+            "event_type": "MIN_SPLITTER",
+            "lap_pct": 0.0,
+            "position_pct": 25.0,
+        }],
+        target_zone_start_pct=0.0,
+        target_zone_end_pct=5.0,
+    )
+
+    event = next(item for item in overlays if item["kind"] == "platform_event")
+    zone = next(item for item in overlays if item["kind"] == "target_zone")
+    assert event["lap_pct"] == 0.0
+    assert event["x"] == pytest.approx(0.0)
+    assert len(zone["points"]) == 51
+    assert zone["points"][0]["pct"] == 0.0
+    assert zone["points"][-1]["pct"] == 5.0
+
+
+@pytest.mark.parametrize(
+    ("start_pct", "end_pct"),
+    [
+        (None, 5.0),
+        (0.0, None),
+        (5.0, 5.0),
+        (10.0, 5.0),
+        (-0.1, 5.0),
+        (95.0, 100.1),
+        (float("nan"), 5.0),
+        (0.0, float("inf")),
+    ],
+)
+def test_overlay_rejects_invalid_target_zone(
+    start_pct: float | None,
+    end_pct: float | None,
+) -> None:
+    with pytest.raises(ValueError, match="finite start and end positions"):
+        build_track_map_overlays(
+            "missing-map",
+            target_zone_start_pct=start_pct,
+            target_zone_end_pct=end_pct,
+        )
+
+
 def test_cleanup_removes_retained_staging_and_rewrites_index(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -716,6 +773,58 @@ def test_track_map_package_endpoint_returns_sanitized_geometry(
     assert "point_record" not in payload["map"]["metadata"]
 
 
+def test_track_map_package_endpoint_rejects_zero_width_target_zone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class UnexpectedRepo:
+        def get_overview(self, run_id: str):
+            raise AssertionError("invalid target zones must fail before repository access")
+
+    monkeypatch.setattr("api.routes_track_map.repository", lambda: UnexpectedRepo())
+
+    response = TestClient(app).get(
+        "/api/runs/run-1/track-map-package",
+        params={"target_zone_start_pct": 5.0, "target_zone_end_pct": 5.0},
+    )
+
+    assert response.status_code == 400
+    assert "0 <= start < end <= 100" in response.json()["detail"]
+
+
+def test_track_map_package_endpoint_surfaces_platform_overlay_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_mt2_bytes: bytes,
+) -> None:
+    monkeypatch.setenv("RACELAB_DATA_DIR", str(tmp_path))
+    source_path = tmp_path / "talladega.mt2"
+    source_path.write_bytes(synthetic_mt2_bytes)
+    import_mt2_file(source_path)
+
+    class DummyRepo:
+        def get_overview(self, run_id: str):
+            return SimpleNamespace(
+                session=SimpleNamespace(
+                    track_name="Talladega Superspeedway",
+                    track_display_name="Talladega Superspeedway",
+                ),
+            )
+
+    def fail_events(*_args, **_kwargs):
+        raise RuntimeError("synthetic event read failure")
+
+    monkeypatch.setattr("api.routes_track_map.repository", lambda: DummyRepo())
+    monkeypatch.setattr("api.routes_track_map.get_platform_events", fail_events)
+
+    response = TestClient(app).get("/api/runs/run-1/track-map-package")
+
+    assert response.status_code == 200
+    assert (
+        "Platform-event overlay unavailable; map geometry remains available."
+        in response.json()["warnings"]
+    )
+
+
 def test_track_map_cache_reuses_decode_without_leaking_mutations(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -741,6 +850,36 @@ def test_track_map_cache_reuses_decode_without_leaking_mutations(
     assert third is not None
     assert third.points[0].x == original_x
     assert "caller" not in third.metadata.units
+
+
+def test_track_map_and_index_caches_refresh_after_equal_size_equal_mtime_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_mt2_bytes: bytes,
+) -> None:
+    monkeypatch.setenv("RACELAB_DATA_DIR", str(tmp_path))
+    source_path = tmp_path / "talladega.mt2"
+    source_path.write_bytes(synthetic_mt2_bytes)
+    entry = import_mt2_file(source_path)
+    track_map_service._get_track_map_cached.cache_clear()
+    track_map_service._load_index_cached.cache_clear()
+    assert get_track_map(entry["map_id"]).metadata.track_name == "Talladega Superspeedway"
+    assert "Talladega" in list_track_maps()[0]["display_name"]
+
+    for path in (Path(entry["cache_path"]), tmp_path / "track_maps" / "track_map_index.json"):
+        original_stat = path.stat()
+        original = path.read_bytes()
+        replacement = original.replace(b"Talladega", b"Cachetest")
+        assert replacement != original and len(replacement) == len(original)
+        path.write_bytes(replacement)
+        os.utime(path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+        assert path.stat().st_size == original_stat.st_size
+        assert path.stat().st_mtime_ns == original_stat.st_mtime_ns
+
+    refreshed = get_track_map(entry["map_id"])
+    assert refreshed is not None
+    assert refreshed.metadata.track_name == "Cachetest Superspeedway"
+    assert "Cachetest" in list_track_maps()[0]["display_name"]
 
 
 def test_track_map_serialization_does_not_share_nested_metadata(

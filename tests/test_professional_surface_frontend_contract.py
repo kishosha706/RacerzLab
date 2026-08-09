@@ -12,6 +12,8 @@ def test_platform_consumes_server_qualified_damper_psd_and_explains_withholding(
     assert "<DamperSpectrumSummary" in platform
     assert "/damper-response" in client
     assert "PSD withheld" in component
+    assert "payload.run_id !== runId || payload.selected_lap !== lap" in component
+    assert "Damper spectrum response did not match the selected run and lap." in component
     assert "Gaps, clock jitter, clipping, short windows, and non-repeated peaks are withheld" in component
     assert "Not measured damper force" in component
 
