@@ -167,6 +167,33 @@ export type P23FlightRecorderEntry = {
   sub_tick_coverage_fraction: number;
 };
 
+export type P25NullSessionRunCard = {
+  card_id: string;
+  card_hash: string;
+  state: "ready" | "blocked";
+  protocol_id: string;
+  reference_run_id: string;
+  car_identity: string;
+  build_identity: string;
+  track_identity: string;
+  setup_identity: string;
+  ffb_fingerprint_sha256: string;
+  steering_conversion_model: string;
+  minimum_warmup_laps: 1;
+  minimum_eligible_laps: 10;
+  fuel_band_minimum: number;
+  fuel_band_maximum: number;
+  tire_compound: string;
+  tire_context_requirement: string;
+  control_state_requirements: string[];
+  telemetry_requirements: string[];
+  null_expectation: string;
+  qualification_criteria: string[];
+  blocker_reasons: string[];
+  observed_run_id: null;
+  observed_qualification_state: null;
+};
+
 export type P23AcquisitionProgress = {
   total_attempts: number;
   qualified_attempts: number;
@@ -192,6 +219,13 @@ export type P23AcquisitionProgress = {
   latest_eligible_laps: number;
   latest_excluded_laps: number;
   latest_blocker: string | null;
+  latest_blockers: string[];
+  latest_signal_truth_state: "ready" | "limited" | "scientific_debt" | "missing" | null;
+  latest_ffb_fingerprint_state: "ready" | "limited" | "unavailable" | null;
+  latest_ffb_fingerprint_sha256: string | null;
+  latest_dataset_admissions: string[];
+  latest_telemetry_ownership_state: "verified" | "blocked" | null;
+  latest_null_run_card: P25NullSessionRunCard | null;
   latest_flight_recorder: P23FlightRecorderEntry[];
   latest_flight_recorder_total: number;
   latest_flight_recorder_truncated: boolean;

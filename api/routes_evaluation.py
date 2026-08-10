@@ -13,8 +13,11 @@ from racelab_engine.evaluation.acquisition_operations import (
     P23CollectionKind,
     P23CollectionTemplate,
     P23PreRunChecklist,
+    P25NullSessionRunCard,
     build_pre_run_checklist,
     freeze_negative_control_expectation,
+    freeze_null_session_run_card,
+    latest_null_session_run_card,
     list_qualification_certificates,
     negative_control_recipe_catalog,
     p23_acquisition_progress,
@@ -75,6 +78,10 @@ class FreezeNegativeControlRequest(BaseModel):
     recipe_id: str = Field(min_length=1)
 
 
+class FreezeNullRunCardRequest(BaseModel):
+    reference_run_id: str = Field(min_length=1)
+
+
 @router.get("/first-activation-audit", response_model=P23FirstActivationAudit)
 def get_first_activation_audit() -> P23FirstActivationAudit:
     return build_first_activation_audit()
@@ -83,6 +90,23 @@ def get_first_activation_audit() -> P23FirstActivationAudit:
 @router.get("/p23-acquisition-progress", response_model=P23AcquisitionProgress)
 def get_p23_acquisition_progress() -> P23AcquisitionProgress:
     return p23_acquisition_progress()
+
+
+@router.get("/p25-null-session-run-card", response_model=P25NullSessionRunCard | None)
+def get_p25_null_session_run_card() -> P25NullSessionRunCard | None:
+    return latest_null_session_run_card()
+
+
+@router.post("/p25-null-session-run-card", response_model=P25NullSessionRunCard)
+def freeze_p25_null_session_run_card(
+    payload: FreezeNullRunCardRequest,
+) -> P25NullSessionRunCard:
+    try:
+        return freeze_null_session_run_card(payload.reference_run_id)
+    except ValueError as exc:
+        message = str(exc)
+        status = 404 if "not found" in message.casefold() else 409
+        raise HTTPException(status_code=status, detail=message) from exc
 
 
 @router.get(

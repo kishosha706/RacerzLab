@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import sqlite3
 import os
+import sqlite3
 from pathlib import Path
 from threading import RLock
-
 
 DEFAULT_DB_PATH = Path("data/racelab.sqlite")
 
@@ -577,6 +576,22 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
           FOREIGN KEY(certificate_id) REFERENCES p24_qualification_certificates(certificate_id)
             ON DELETE RESTRICT,
           FOREIGN KEY(dataset_id) REFERENCES evidence_datasets(dataset_id)
+            ON DELETE RESTRICT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS p25_null_session_run_cards (
+          card_id TEXT PRIMARY KEY,
+          card_hash TEXT NOT NULL UNIQUE,
+          reference_run_id TEXT NOT NULL,
+          operation_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          state TEXT NOT NULL,
+          card_json TEXT NOT NULL,
+          UNIQUE(reference_run_id),
+          FOREIGN KEY(operation_id) REFERENCES evidence_campaign_operations(operation_id)
             ON DELETE RESTRICT
         )
         """

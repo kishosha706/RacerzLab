@@ -481,7 +481,24 @@ function LearningReadinessCard({
               <summary>Latest session certificate / {stateLabel(projection.p23_acquisition.latest_qualification_state ?? "inventory_only")}</summary>
               <div>
                 <p>{projection.p23_acquisition.latest_eligible_laps} eligible / {projection.p23_acquisition.latest_excluded_laps} excluded</p>
-                {projection.p23_acquisition.latest_blocker && <small>{projection.p23_acquisition.latest_blocker}</small>}
+                <p>
+                  Signal truth: <strong>{stateLabel(projection.p23_acquisition.latest_signal_truth_state ?? "missing")}</strong>
+                  {" / "}FFB: <strong>{stateLabel(projection.p23_acquisition.latest_ffb_fingerprint_state ?? "unavailable")}</strong>
+                  {" / "}Ownership: <strong>{stateLabel(projection.p23_acquisition.latest_telemetry_ownership_state ?? "blocked")}</strong>
+                </p>
+                {projection.p23_acquisition.latest_ffb_fingerprint_sha256 && (
+                  <small>FFB {projection.p23_acquisition.latest_ffb_fingerprint_sha256.slice(0, 16)}</small>
+                )}
+                {projection.p23_acquisition.latest_blockers.length > 0 && (
+                  <ul aria-label="Exact qualification blockers">
+                    {projection.p23_acquisition.latest_blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+                  </ul>
+                )}
+                <small>
+                  Dataset admissions: {projection.p23_acquisition.latest_dataset_admissions.length
+                    ? projection.p23_acquisition.latest_dataset_admissions.join(", ")
+                    : "none"}
+                </small>
                 <ol>
                   {projection.p23_acquisition.latest_flight_recorder.map((entry) => (
                     <li key={entry.lap_number} data-state={entry.state}>
@@ -501,6 +518,19 @@ function LearningReadinessCard({
               <strong>No qualification certificate yet</strong>
               <span>The next source-owned import will preserve its lap decisions here.</span>
             </div>
+          )}
+          {projection.p23_acquisition.latest_null_run_card && (
+            <article className="engineer-p23-run-card" data-state={projection.p23_acquisition.latest_null_run_card.state}>
+              <span className="eyebrow">P23 steering workload / null session 01</span>
+              <h4>Need {projection.p23_acquisition.latest_null_run_card.minimum_eligible_laps} eligible clean laps</h4>
+              <p><strong>Hold:</strong> same setup, FFB, steering ratio, tire compound, and control state.</p>
+              <p><strong>Avoid:</strong> pit changes, brake-bias changes, reset fragments, FFB changes, and telemetry faults.</p>
+              <p><strong>Target:</strong> no intentional steering or handling intervention.</p>
+              <small>
+                Fuel {projection.p23_acquisition.latest_null_run_card.fuel_band_minimum.toFixed(2)}–{projection.p23_acquisition.latest_null_run_card.fuel_band_maximum.toFixed(2)} / tire {projection.p23_acquisition.latest_null_run_card.tire_compound} / {projection.p23_acquisition.latest_null_run_card.steering_conversion_model}
+              </small>
+              <small>RacerZLab qualifies or rejects only after import. Card {projection.p23_acquisition.latest_null_run_card.card_hash.slice(0, 12)}</small>
+            </article>
           )}
           <footer>Certificate-owned admission / unique source session / shadow only</footer>
         </section>

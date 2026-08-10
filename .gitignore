@@ -90,6 +90,7 @@ data/exports/debug/*
 logs/
 tmp/
 temp/
+.benchmarks/
 
 # OS junk
 .DS_Store

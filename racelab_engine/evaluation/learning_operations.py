@@ -7,7 +7,8 @@ statistical authority.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from itertools import pairwise
 from pathlib import Path
 from typing import Any, Literal
 
@@ -26,18 +27,21 @@ from racelab_engine.evaluation.campaigns import (
 )
 from racelab_engine.evaluation.dataset_registry import EvidenceLabModel, canonical_hash
 from racelab_engine.models.engineering_context import SteeringContextFingerprint
-from racelab_engine.services.engineering_context_service import detect_control_mutations
 from racelab_engine.services.engineering_context_service import (
+    P23_STEERING_FINGERPRINT_FIELDS,
     build_steering_context_fingerprint,
     compare_steering_contexts,
+    detect_control_mutations,
 )
-from racelab_engine.services.import_service import read_telemetry_manifest, read_telemetry_rows
+from racelab_engine.services.import_service import (
+    read_telemetry_manifest,
+    read_telemetry_rows,
+)
 from racelab_engine.services.lap_engineering_context_service import (
     load_lap_engineering_context_report,
 )
 from racelab_engine.storage.db import initialize_database
 from racelab_engine.storage.repository import RaceLabRepository
-
 
 OperationEventType = Literal["started", "paused", "resumed", "completed", "abandoned"]
 OperationState = Literal["active", "paused", "completed", "abandoned"]
@@ -363,6 +367,7 @@ def build_campaign_operation(
         ffb_fingerprint = build_steering_context_fingerprint(
             ffb_rows,
             steering_conversion_model=steering_conversion,
+            required_fields=P23_STEERING_FINGERPRINT_FIELDS,
         )
         if ffb_fingerprint.state != "ready":
             raise ValueError(
@@ -454,7 +459,7 @@ def build_campaign_operation(
         "campaign_id": campaign.campaign_id,
         "campaign_hash": campaign.campaign_hash,
         "campaign_kind": campaign.campaign_kind,
-        "created_at": created_at or datetime.now(timezone.utc),
+        "created_at": created_at or datetime.now(UTC),
         "context": operation_context,
         "allowed_outputs": ("qualification", "collection_guidance"),
         "authority": "data_collection_only",
@@ -475,7 +480,7 @@ def build_operation_event(
         {
             "operation_id": operation.operation_id,
             "operation_hash": operation.operation_hash,
-            "recorded_at": recorded_at or datetime.now(timezone.utc),
+            "recorded_at": recorded_at or datetime.now(UTC),
             "event_type": event_type,
             "reason": reason,
         },
@@ -763,6 +768,7 @@ def assess_run_for_operation(
         observed_ffb = build_steering_context_fingerprint(
             control_rows,
             steering_conversion_model=_steering_conversion_model(overview),
+            required_fields=P23_STEERING_FINGERPRINT_FIELDS,
         )
         comparability = compare_steering_contexts(context.ffb_fingerprint, observed_ffb)
         if comparability.state != "comparable":
@@ -771,8 +777,14 @@ def assess_run_for_operation(
             )
             if not comparability.material_mismatches:
                 reasons.extend(comparability.blocker_reasons)
-    if context.reject_control_mutations and mutations:
-        reasons.append("A material or requested control changed inside the recording.")
+    # Mutation identities remain part of the immutable assessment. Requested
+    # pit state never masquerades as an applied setup change; confirmed/applied
+    # changes remain hard blockers for generic campaign qualification.
+    applied_mutations = tuple(
+        item for item in mutations if item.mutation_kind.value != "requested_state"
+    )
+    if context.reject_control_mutations and applied_mutations:
+        reasons.append("An applied control changed inside the recording.")
     accepted: list[int] = []
     rejected: list[int] = []
     lap_rejection_reasons: dict[int, tuple[str, ...]] = {}
@@ -819,7 +831,7 @@ def assess_run_for_operation(
             f"{context.minimum_clean_laps_per_unit} are required."
         )
     elif operation.campaign_kind == "long_run_development" and any(
-        right != left + 1 for left, right in zip(accepted, accepted[1:])
+        right != left + 1 for left, right in pairwise(accepted)
     ):
         state = "rejected"
         reasons.append("The qualifying laps are not one uninterrupted clean stint.")
@@ -831,7 +843,7 @@ def assess_run_for_operation(
         "campaign_id": operation.campaign_id,
         "campaign_hash": operation.campaign_hash,
         "run_id": run_id,
-        "recorded_at": recorded_at or datetime.now(timezone.utc),
+        "recorded_at": recorded_at or datetime.now(UTC),
         "source_file_fingerprint": fingerprint,
         "independence_unit_id": f"source-session:{fingerprint}",
         "state": state,
@@ -1082,10 +1094,27 @@ def acquisition_options(
     eligible = eligible_laps(overview.laps)
     eligible_count = len(eligible)
     eligible_numbers = {lap.lap_number for lap in eligible}
-    matched_context_ready = False
+    source_fingerprint = str(
+        manifest.get("source_file_sha256") or overview.session.file_hash or ""
+    )
+    frozen_context = next(
+        (
+            operation.context
+            for operation in list_campaign_operations(db_path=db_path)
+            if operation.context.reference_run_id == run_id
+            and operation.context.source_file_fingerprint == source_fingerprint
+            and operation.context.fuel_band is not None
+            and operation.context.track_temperature_band is not None
+            and operation.context.air_temperature_band is not None
+        ),
+        None,
+    )
+    matched_context_ready = frozen_context is not None
     if (
-        manifest.get("source_file_sha256") or overview.session.file_hash
-    ) and identity.get("iracing_build_version"):
+        not matched_context_ready
+        and (manifest.get("source_file_sha256") or overview.session.file_hash)
+        and identity.get("iracing_build_version")
+    ):
         try:
             report = load_lap_engineering_context_report(run_id, db_path=db_path)
             contexts = [

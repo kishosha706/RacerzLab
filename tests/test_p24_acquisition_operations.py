@@ -11,6 +11,7 @@ from racelab_engine.evaluation.acquisition_operations import (
     build_qualification_certificate,
     build_steering_signal_truth_audit,
     freeze_negative_control_expectation,
+    freeze_null_session_run_card,
     get_qualification_certificate,
     list_qualification_certificates,
     negative_control_recipe_catalog,
@@ -87,6 +88,7 @@ def _channel(
         "raw_name": raw_name,
         "canonical_name": canonical_name,
         "unit": unit,
+        "data_type": "bool" if raw_name == "SteeringWheelUseLinear" else "float",
         "base_sample_rate_hz": 60.0,
         "effective_sample_rate_hz": 360.0 if subtick else 60.0,
         "samples_per_record": 6 if subtick else 1,
@@ -95,6 +97,10 @@ def _channel(
         "valid_record_count": 10,
         "malformed_array_record_count": malformed,
         "non_finite_sample_count": 0,
+        "numeric_limit_hit_count": 0,
+        "health_status": "healthy",
+        "clipping_status": "none_detected",
+        "saturation_status": "none_detected",
         "variation": "varying" if raw_name in {
             "SteeringWheelTorque_ST",
             "SteeringWheelTorque",
@@ -117,13 +123,25 @@ def _manifest(source: str, *, malformed_subtick: int = 0) -> dict[str, object]:
         _channel("SteeringWheelLimiter", "steering_ffb_limiter_01", "%"),
     ]
     return {
+        "run_id": "run-a",
         "source_file_sha256": source,
+        "source_file_size_bytes": 123456,
+        "telemetry_cache_sha256": "c" * 64,
+        "schema_fingerprint": "d" * 64,
         "compatibility_identity": {
             "car_path": "stockcars chevycamarozl12022",
             "track_id": "atlanta-oval",
             "iracing_build_version": "2026.08.1",
         },
-        "sample_continuity": {"status": "healthy", "discontinuity_count": 0},
+        "sample_continuity": {
+            "status": "healthy",
+            "session_tick_available": True,
+            "invalid_tick_sample_count": 0,
+            "duplicate_tick_transition_count": 0,
+            "reversed_tick_transition_count": 0,
+            "estimated_dropped_tick_count": 0,
+            "discontinuity_count": 0,
+        },
         "channels": channels,
     }
 
@@ -156,6 +174,7 @@ def _rows(
                 "SteeringWheelLimiter": 1.0,
                 "applied_brake_bias": 44.0,
                 "dcBrakeBias": 44.0,
+                "player_tire_compound": 0,
             }
         )
     return rows
@@ -188,6 +207,10 @@ def _context_report():
 
 
 def _patch_sources(monkeypatch, manifests, rows_by_run):
+    manifests = {
+        run_id: {**manifest, "run_id": run_id}
+        for run_id, manifest in manifests.items()
+    }
     def manifest(run_id):
         return manifests[run_id]
 
@@ -285,6 +308,9 @@ def test_clean_import_produces_certificate_flight_recorder_and_certificate_owned
     assert certificate.p19_authority_unchanged is True
     assert certificate.p20_authority_unchanged is True
     assert certificate.p23_authority == "shadow_only"
+    assert certificate.telemetry_ownership is not None
+    assert certificate.telemetry_ownership.state == "verified"
+    assert certificate.certificate_version == "p25-qualification-certificate-v2"
     progress = p23_acquisition_progress(db_path=database)
     assert progress.historical_sessions == 1
     assert progress.profile_status == "complete"
@@ -302,6 +328,104 @@ def test_clean_import_produces_certificate_flight_recorder_and_certificate_owned
     forged = certificate.model_copy(update={"eligible_laps": (1,)})
     with pytest.raises(ValueError, match="stored immutable certificate"):
         admit_qualification_certificate(forged, db_path=database)
+
+
+def test_unproven_telemetry_ownership_blocks_certificate_admission(tmp_path, monkeypatch):
+    database = tmp_path / "ownership.sqlite"
+    manifest = _manifest(SOURCE_A)
+    manifest.pop("telemetry_cache_sha256")
+    _patch_sources(monkeypatch, {"run-a": manifest}, {"run-a": _rows()})
+    _operation, assessment = _start_and_assess(database, monkeypatch)
+    certificate = qualify_p23_operations_for_run(
+        "run-a", assessments=(assessment,), db_path=database, created_at=NOW
+    )[0]
+    assert certificate.telemetry_ownership is not None
+    assert certificate.telemetry_ownership.state == "blocked"
+    assert certificate.qualification_state != "qualified"
+    assert "cache SHA-256" in " ".join(certificate.blocker_reasons)
+    assert certificate.dataset_admissions == ()
+    with pytest.raises(ValueError, match="cannot admit evidence"):
+        admit_qualification_certificate(certificate, db_path=database)
+
+
+def test_current_reimport_can_repair_ownership_without_inflating_source_count(
+    tmp_path,
+    monkeypatch,
+):
+    database = tmp_path / "ownership-repair.sqlite"
+    repo = RaceLabRepository(database)
+    repo.save_import(_overview("legacy", source=SOURCE_A))
+    repo.save_import(_overview("reimport", source=SOURCE_A))
+    legacy_manifest = _manifest(SOURCE_A)
+    legacy_manifest.pop("telemetry_cache_sha256")
+    _patch_sources(
+        monkeypatch,
+        {"legacy": legacy_manifest, "reimport": _manifest(SOURCE_A)},
+        {"legacy": _rows(), "reimport": _rows()},
+    )
+    start_campaign_operation(
+        "control_workload", "legacy", db_path=database, created_at=NOW
+    )
+    legacy_assessment = assess_active_operations_for_run("legacy", db_path=database)[0]
+    legacy_certificate = qualify_p23_operations_for_run(
+        "legacy",
+        assessments=(legacy_assessment,),
+        db_path=database,
+        created_at=NOW,
+    )[0]
+    assert legacy_certificate.qualification_state != "qualified"
+    current_assessment = assess_active_operations_for_run("reimport", db_path=database)[0]
+    current_certificate = qualify_p23_operations_for_run(
+        "reimport",
+        assessments=(current_assessment,),
+        db_path=database,
+        created_at=NOW,
+    )[0]
+    assert current_certificate.qualification_state == "qualified"
+    progress = p23_acquisition_progress(db_path=database)
+    assert progress.total_attempts == 1
+    assert progress.qualified_attempts == 1
+    assert progress.historical_sessions == 1
+    assert progress.latest_certificate_id == current_certificate.certificate_id
+
+
+def test_null_session_run_card_is_frozen_before_outcome(tmp_path, monkeypatch):
+    database = tmp_path / "null-card.sqlite"
+    _patch_sources(
+        monkeypatch,
+        {"run-a": _manifest(SOURCE_A)},
+        {"run-a": _rows()},
+    )
+    _operation, assessment = _start_and_assess(database, monkeypatch)
+    qualify_p23_operations_for_run(
+        "run-a", assessments=(assessment,), db_path=database, created_at=NOW
+    )
+    card = freeze_null_session_run_card("run-a", db_path=database, created_at=NOW)
+    assert card.state == "ready"
+    assert card.minimum_eligible_laps == 10
+    assert card.telemetry_requirements == (
+        "SteeringWheelTorque_ST",
+        "SteeringWheelTorque",
+        "SteeringWheelAngle",
+        "SteeringWheelAngleMax",
+        "SteeringWheelMaxForceNm",
+        "SteeringWheelUseLinear",
+        "SteeringWheelPctIntensity",
+        "SteeringWheelPctSmoothing",
+        "SteeringWheelPctDamper",
+        "SteeringWheelLimiter",
+    )
+    assert card.observed_run_id is None
+    assert card.observed_qualification_state is None
+    assert freeze_null_session_run_card("run-a", db_path=database) == card
+    certificate_count = len(list_qualification_certificates(db_path=database))
+    assessments = assess_active_operations_for_run("run-a", db_path=database)
+    qualify_p23_operations_for_run(
+        "run-a", assessments=assessments, db_path=database, created_at=NOW
+    )
+    assert len(list_qualification_certificates(db_path=database)) == certificate_count
+    progress = p23_acquisition_progress(db_path=database)
+    assert progress.latest_null_run_card == card
 
 
 def test_renamed_reimport_and_adjacent_laps_cannot_inflate_source_session_count(
@@ -343,9 +467,9 @@ def test_renamed_reimport_and_adjacent_laps_cannot_inflate_source_session_count(
         list_qualification_certificates(db_path=database, limit=0)
     progress = p23_acquisition_progress(db_path=database)
     assert progress.historical_sessions == 1
-    assert progress.total_attempts == 2
+    assert progress.total_attempts == 1
     assert progress.qualified_attempts == 1
-    assert progress.rejected_attempts == 1
+    assert progress.rejected_attempts == 0
     assert progress.next_best_collection_kind == "historical_exact_ffb"
     assert progress.latest_flight_recorder_total == len(stored[-1].flight_recorder)
     assert progress.latest_flight_recorder_truncated is False

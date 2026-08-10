@@ -40,12 +40,14 @@ from racelab_engine.evaluation.learning_operations import (
     CampaignRunAssessment,
     list_campaign_operations,
     operation_state,
+    start_campaign_operation,
 )
 from racelab_engine.models.engineering_context import (
     ControlMutationEvent,
     SteeringContextFingerprint,
 )
 from racelab_engine.services.engineering_context_service import (
+    P23_STEERING_FINGERPRINT_FIELDS,
     build_steering_context_fingerprint,
     compare_steering_contexts,
     detect_control_mutations,
@@ -124,8 +126,10 @@ class SignalTruth(EvidenceLabModel):
     channel_key: str
     source_channel: str | None = None
     raw_unit: str | None = None
+    data_type: str | None = None
     expected_units: tuple[str, ...]
     unit_verified: bool
+    sample_structure: Literal["scalar", "count_as_time_array", "unavailable"]
     sign_semantics: Literal[
         "observed_signed", "unsigned_configuration", "not_applicable", "unproven"
     ]
@@ -135,6 +139,21 @@ class SignalTruth(EvidenceLabModel):
     count_as_time: bool = False
     coverage_fraction: float = Field(ge=0.0, le=1.0)
     variation: str
+    update_behavior: Literal[
+        "continuous_per_record",
+        "stable_configuration",
+        "changing_configuration",
+        "fixed_limit",
+        "unavailable",
+    ]
+    canonical_mapping: str | None = None
+    comparison_role: Literal["measurement", "configuration", "limit"]
+    campaign_requirement: Literal["required_for_p23_admission"] = (
+        "required_for_p23_admission"
+    )
+    health_status: str
+    clipping_status: str
+    saturation_status: str
     state: TruthState
     scientific_debt: tuple[str, ...] = ()
     required_for_admission: bool = True
@@ -145,6 +164,31 @@ class SignalTruth(EvidenceLabModel):
             raise ValueError("ready steering signals cannot retain scientific debt")
         if self.state != "ready" and not self.scientific_debt:
             raise ValueError("unready steering signals must explain their scientific debt")
+        return self
+
+
+class SubTickClockTruth(EvidenceLabModel):
+    state: Literal["pass", "fail", "unknown"]
+    ordering_source: Literal["session_tick_count_as_time", "unavailable"]
+    samples_per_record: int = Field(ge=0)
+    base_sample_rate_hz: float | None = Field(default=None, gt=0.0)
+    effective_sample_rate_hz: float | None = Field(default=None, gt=0.0)
+    session_tick_available: bool
+    invalid_tick_sample_count: int = Field(ge=0)
+    duplicate_tick_transition_count: int = Field(ge=0)
+    reversed_tick_transition_count: int = Field(ge=0)
+    estimated_dropped_tick_count: int = Field(ge=0)
+    invalid_timestamp_sample_count: int = Field(ge=0)
+    non_monotonic_timestamp_transition_count: int = Field(ge=0)
+    timestamp_gap_count: int = Field(ge=0)
+    scientific_debt: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def clock_state_is_explained(self) -> SubTickClockTruth:
+        if self.state == "pass" and self.scientific_debt:
+            raise ValueError("passing sub-tick clocks cannot retain scientific debt")
+        if self.state != "pass" and not self.scientific_debt:
+            raise ValueError("unproven sub-tick clocks require exact scientific debt")
         return self
 
 
@@ -164,6 +208,7 @@ class SteeringSignalTruthAudit(EvidenceLabModel):
     ]
     scalar_subtick_normalized_error: float | None = Field(default=None, ge=0.0)
     sub_tick_coverage_fraction: float = Field(ge=0.0, le=1.0)
+    sub_tick_clock: SubTickClockTruth
     sample_clock_integrity: Literal["pass", "fail", "unknown"]
     effective_sub_tick_rate_hz: float | None = Field(default=None, gt=0.0)
     steering_conversion_model: str | None = None
@@ -180,6 +225,7 @@ class SteeringSignalTruthAudit(EvidenceLabModel):
         if self.state == "ready" and (
             self.ffb_fingerprint.state != "ready"
             or self.scalar_subtick_relation in {"inconsistent", "unavailable"}
+            or self.sub_tick_clock.state != "pass"
             or self.sample_clock_integrity != "pass"
             or self.sub_tick_coverage_fraction < 0.95
             or self.steering_conversion_model is None
@@ -226,6 +272,32 @@ class ControlStateBoundary(EvidenceLabModel):
     previous_value: float | int | bool | str | None = None
     new_value: float | int | bool | str
     applied_state_confirmed: bool
+
+
+class TelemetryOwnershipTruth(EvidenceLabModel):
+    state: Literal["verified", "blocked"]
+    run_id: str
+    source_file_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    source_file_size_bytes: int | None = Field(default=None, gt=0)
+    telemetry_cache_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    schema_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    blocker_reasons: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def ownership_is_fail_closed(self) -> TelemetryOwnershipTruth:
+        complete = all(
+            (
+                self.source_file_sha256,
+                self.source_file_size_bytes,
+                self.telemetry_cache_sha256,
+                self.schema_fingerprint,
+            )
+        )
+        if self.state == "verified" and (not complete or self.blocker_reasons):
+            raise ValueError("verified telemetry ownership requires complete immutable identity")
+        if self.state == "blocked" and not self.blocker_reasons:
+            raise ValueError("blocked telemetry ownership requires exact reasons")
+        return self
 
 
 class DatasetAdmissionRule(EvidenceLabModel):
@@ -303,7 +375,10 @@ class NegativeControlResult(EvidenceLabModel):
 class CampaignQualificationCertificate(EvidenceLabModel):
     certificate_id: str = Field(pattern=r"^p24c-[0-9a-f]{20}$")
     certificate_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
-    certificate_version: Literal["p24-qualification-certificate-v1"]
+    certificate_version: Literal[
+        "p24-qualification-certificate-v1",
+        "p25-qualification-certificate-v2",
+    ]
     created_at: datetime
     collection_kind: P23CollectionKind
     campaign_id: str
@@ -313,6 +388,7 @@ class CampaignQualificationCertificate(EvidenceLabModel):
     operation_id: str
     operation_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_file_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    telemetry_ownership: TelemetryOwnershipTruth | None = None
     run_id: str
     session_id: str
     car_identity: str
@@ -365,6 +441,19 @@ class CampaignQualificationCertificate(EvidenceLabModel):
             item.partition == "prospective" for item in self.dataset_admissions
         ):
             raise ValueError("historical evidence cannot masquerade as prospective")
+        if self.certificate_version == "p25-qualification-certificate-v2":
+            if self.telemetry_ownership is None:
+                raise ValueError("P25 certificates require immutable telemetry ownership")
+            if (
+                self.telemetry_ownership.run_id != self.run_id
+                or self.telemetry_ownership.source_file_sha256 != self.source_file_hash
+            ):
+                raise ValueError("certificate identity does not match telemetry ownership")
+            if (
+                self.qualification_state == "qualified"
+                and self.telemetry_ownership.state != "verified"
+            ):
+                raise ValueError("unverified telemetry ownership cannot authorize admission")
         payload = self.model_dump(
             mode="json", exclude={"certificate_id", "certificate_hash"}
         )
@@ -396,6 +485,61 @@ class CertificateAdmission(EvidenceLabModel):
         return self
 
 
+class P25NullSessionRunCard(EvidenceLabModel):
+    card_id: str = Field(pattern=r"^p25n-[0-9a-f]{20}$")
+    card_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    card_version: Literal["p25-null-session-run-card-v1"]
+    created_at: datetime
+    protocol_id: str
+    protocol_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation_id: str
+    operation_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    reference_certificate_id: str
+    reference_certificate_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    reference_run_id: str
+    source_file_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    car_identity: str
+    build_identity: str
+    profile_identity: str
+    track_identity: str
+    setup_identity: str
+    ffb_fingerprint_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    steering_conversion_model: str
+    minimum_warmup_laps: Literal[1] = 1
+    minimum_eligible_laps: Literal[10] = 10
+    fuel_band_minimum: float = Field(allow_inf_nan=False)
+    fuel_band_maximum: float = Field(allow_inf_nan=False)
+    tire_compound: str
+    tire_context_requirement: str
+    control_state_requirements: tuple[str, ...] = Field(min_length=1)
+    telemetry_requirements: tuple[str, ...] = Field(min_length=10, max_length=10)
+    null_expectation: str
+    qualification_criteria: tuple[str, ...] = Field(min_length=1)
+    state: Literal["ready", "blocked"]
+    blocker_reasons: tuple[str, ...] = ()
+    observed_run_id: None = None
+    observed_qualification_state: None = None
+    authority: Literal["pre_outcome_collection_contract_only"] = (
+        "pre_outcome_collection_contract_only"
+    )
+
+    @model_validator(mode="after")
+    def card_is_frozen_before_outcome(self) -> P25NullSessionRunCard:
+        if self.fuel_band_maximum < self.fuel_band_minimum:
+            raise ValueError("null-session fuel band must be ordered")
+        if self.protocol_id != _P23_PROTOCOL.protocol_id or self.protocol_hash != _P23_PROTOCOL.protocol_hash:
+            raise ValueError("null-session card must bind the frozen P23 protocol")
+        if self.state == "ready" and self.blocker_reasons:
+            raise ValueError("ready null-session cards cannot retain blockers")
+        if self.state == "blocked" and not self.blocker_reasons:
+            raise ValueError("blocked null-session cards require exact blockers")
+        payload = self.model_dump(mode="json", exclude={"card_id", "card_hash"})
+        digest = canonical_hash(payload)
+        if self.card_hash != digest or self.card_id != f"p25n-{digest[:20]}":
+            raise ValueError("null-session run-card identity does not match its contract")
+        return self
+
+
 class P23AcquisitionProgress(EvidenceLabModel):
     total_attempts: int = Field(ge=0)
     qualified_attempts: int = Field(ge=0)
@@ -421,6 +565,13 @@ class P23AcquisitionProgress(EvidenceLabModel):
     latest_eligible_laps: int = Field(default=0, ge=0)
     latest_excluded_laps: int = Field(default=0, ge=0)
     latest_blocker: str | None = None
+    latest_blockers: tuple[str, ...] = ()
+    latest_signal_truth_state: TruthState | None = None
+    latest_ffb_fingerprint_state: Literal["ready", "limited", "unavailable"] | None = None
+    latest_ffb_fingerprint_sha256: str | None = None
+    latest_dataset_admissions: tuple[str, ...] = ()
+    latest_telemetry_ownership_state: Literal["verified", "blocked"] | None = None
+    latest_null_run_card: P25NullSessionRunCard | None = None
     latest_flight_recorder: tuple[FlightRecorderEntry, ...] = ()
     latest_flight_recorder_total: int = Field(default=0, ge=0)
     latest_flight_recorder_truncated: bool = False
@@ -686,6 +837,7 @@ def _content_addressed(model: type[EvidenceLabModel], prefix: str, payload: dict
         "p24r": ("result_id", "result_hash"),
         "p24c": ("certificate_id", "certificate_hash"),
         "p24a": ("admission_id", "admission_hash"),
+        "p25n": ("card_id", "card_hash"),
     }[prefix]
     constructed = model.model_construct(
         **{id_field: f"{prefix}-" + "0" * 20, hash_field: "0" * 64, **payload}
@@ -715,7 +867,14 @@ def _manifest_channel(manifest: Mapping[str, Any], aliases: Sequence[str]) -> Ma
     return None
 
 
-def _unit_matches(actual: str | None, expected: Sequence[str]) -> bool:
+def _unit_matches(
+    actual: str | None,
+    expected: Sequence[str],
+    *,
+    data_type: str | None = None,
+) -> bool:
+    if any(item.casefold() == "bool" for item in expected):
+        return str(data_type or "").casefold() in {"bool", "boolean"}
     if actual is None:
         return False
     normalized = actual.casefold().replace(" ", "").replace("·", "*")
@@ -772,10 +931,83 @@ def _clock_integrity(manifest: Mapping[str, Any]) -> Literal["pass", "fail", "un
     status = str(continuity.get("status") or "").casefold()
     if status in {"healthy", "ready", "pass"}:
         return "pass"
-    if status in {"warning", "failed", "fail", "invalid"}:
+    tick_available = continuity.get("session_tick_available") is True
+    tick_faults = sum(
+        int(continuity.get(key) or 0)
+        for key in (
+            "invalid_tick_sample_count",
+            "duplicate_tick_transition_count",
+            "reversed_tick_transition_count",
+            "estimated_dropped_tick_count",
+        )
+    )
+    if tick_available:
+        return "pass" if tick_faults == 0 else "fail"
+    if status in {"warning", "failed", "fail", "invalid", "issues_detected"}:
         return "fail"
     discontinuities = continuity.get("discontinuity_count")
     return "pass" if discontinuities == 0 else "fail" if discontinuities else "unknown"
+
+
+def _sub_tick_clock_truth(
+    manifest: Mapping[str, Any],
+    channel: SignalTruth,
+) -> SubTickClockTruth:
+    continuity = manifest.get("sample_continuity")
+    source = continuity if isinstance(continuity, Mapping) else {}
+    debt: list[str] = []
+    if source.get("session_tick_available") is not True:
+        debt.append("SessionTick is unavailable for record-to-record reconstruction.")
+    for key, label in (
+        ("invalid_tick_sample_count", "invalid SessionTick samples"),
+        ("duplicate_tick_transition_count", "duplicate SessionTick transitions"),
+        ("reversed_tick_transition_count", "reversed SessionTick transitions"),
+        ("estimated_dropped_tick_count", "dropped SessionTick records"),
+    ):
+        if int(source.get(key) or 0) > 0:
+            debt.append(f"The recording contains {label}.")
+    if not channel.count_as_time:
+        debt.append("The sub-tick array is not declared count-as-time.")
+    if channel.samples_per_record != 6:
+        debt.append("The sub-tick array does not contain exactly six ordered samples per record.")
+    if channel.base_sample_rate_hz is None or not math.isclose(
+        channel.base_sample_rate_hz, 60.0, rel_tol=0.0, abs_tol=0.1
+    ):
+        debt.append("The base record clock is not proven at 60 Hz.")
+    if channel.effective_sample_rate_hz is None or not math.isclose(
+        channel.effective_sample_rate_hz, 360.0, rel_tol=0.0, abs_tol=0.5
+    ):
+        debt.append("The reconstructed sub-tick clock is not proven at 360 Hz.")
+    state: Literal["pass", "fail", "unknown"]
+    state = "pass" if not debt else "fail" if continuity is not None else "unknown"
+    return SubTickClockTruth(
+        state=state,
+        ordering_source=(
+            "session_tick_count_as_time"
+            if source.get("session_tick_available") is True and channel.count_as_time
+            else "unavailable"
+        ),
+        samples_per_record=channel.samples_per_record,
+        base_sample_rate_hz=channel.base_sample_rate_hz,
+        effective_sample_rate_hz=channel.effective_sample_rate_hz,
+        session_tick_available=source.get("session_tick_available") is True,
+        invalid_tick_sample_count=int(source.get("invalid_tick_sample_count") or 0),
+        duplicate_tick_transition_count=int(
+            source.get("duplicate_tick_transition_count") or 0
+        ),
+        reversed_tick_transition_count=int(
+            source.get("reversed_tick_transition_count") or 0
+        ),
+        estimated_dropped_tick_count=int(source.get("estimated_dropped_tick_count") or 0),
+        invalid_timestamp_sample_count=int(
+            source.get("invalid_timestamp_sample_count") or 0
+        ),
+        non_monotonic_timestamp_transition_count=int(
+            source.get("non_monotonic_timestamp_transition_count") or 0
+        ),
+        timestamp_gap_count=int(source.get("timestamp_gap_count") or 0),
+        scientific_debt=tuple(debt),
+    )
 
 
 def _source_hash(manifest: Mapping[str, Any], fallback: str | None = None) -> str:
@@ -806,19 +1038,40 @@ def build_steering_signal_truth_audit(
     created_at: datetime | None = None,
 ) -> SteeringSignalTruthAudit:
     source_hash = _source_hash(manifest, source_file_hash)
-    clock = _clock_integrity(manifest)
     channels: list[SignalTruth] = []
     for key, aliases, expected_units, required in _STEERING_CHANNELS:
         manifest_channel = _manifest_channel(manifest, aliases)
         debt: list[str] = []
         source_channel = None
         raw_unit = None
+        data_type = None
         base_rate = None
         effective_rate = None
         samples_per_record = 0
         count_as_time = False
         coverage = 0.0
         variation = "missing"
+        sample_structure: Literal["scalar", "count_as_time_array", "unavailable"] = (
+            "unavailable"
+        )
+        update_behavior: Literal[
+            "continuous_per_record",
+            "stable_configuration",
+            "changing_configuration",
+            "fixed_limit",
+            "unavailable",
+        ] = "unavailable"
+        canonical_mapping = None
+        comparison_role: Literal["measurement", "configuration", "limit"] = (
+            "measurement"
+            if key in {"SteeringWheelTorque_ST", "SteeringWheelTorque", "SteeringWheelAngle"}
+            else "limit"
+            if key == "SteeringWheelAngleMax"
+            else "configuration"
+        )
+        health_status = "missing"
+        clipping_status = "unavailable"
+        saturation_status = "unavailable"
         sign = "not_applicable"
         if manifest_channel is None:
             debt.append("Channel is not declared in the immutable telemetry manifest.")
@@ -830,6 +1083,10 @@ def build_steering_signal_truth_audit(
                 or key
             )
             raw_unit = str(manifest_channel.get("unit") or "") or None
+            data_type = str(manifest_channel.get("data_type") or "") or None
+            canonical_mapping = (
+                str(manifest_channel.get("canonical_name") or "") or None
+            )
             base_rate = _finite(manifest_channel.get("base_sample_rate_hz"))
             effective_rate = _finite(manifest_channel.get("effective_sample_rate_hz"))
             samples_per_record = int(manifest_channel.get("samples_per_record") or 0)
@@ -838,14 +1095,44 @@ def build_steering_signal_truth_audit(
             valid_count = int(manifest_channel.get("valid_record_count") or 0)
             coverage = valid_count / record_count if record_count > 0 else 0.0
             variation = str(manifest_channel.get("variation") or "unknown")
-            if not _unit_matches(raw_unit, expected_units):
+            health_status = str(manifest_channel.get("health_status") or "unknown")
+            clipping_status = str(
+                manifest_channel.get("clipping_status") or "unknown"
+            )
+            saturation_status = str(
+                manifest_channel.get("saturation_status") or "unknown"
+            )
+            sample_structure = (
+                "count_as_time_array"
+                if count_as_time and samples_per_record > 1
+                else "scalar"
+            )
+            update_behavior = (
+                "fixed_limit"
+                if comparison_role == "limit"
+                else "stable_configuration"
+                if comparison_role == "configuration" and variation == "constant"
+                else "changing_configuration"
+                if comparison_role == "configuration"
+                else "continuous_per_record"
+            )
+            if not _unit_matches(raw_unit, expected_units, data_type=data_type):
                 debt.append("Manifest unit does not match the frozen channel contract.")
             if coverage < 0.95:
                 debt.append("Channel coverage is below 95 percent.")
+            if health_status.casefold() not in {"healthy", "ready", "pass"}:
+                debt.append("Manifest channel health is not proven healthy.")
             if int(manifest_channel.get("malformed_array_record_count") or 0) > 0:
                 debt.append("Malformed array records are present.")
             if int(manifest_channel.get("non_finite_sample_count") or 0) > 0:
                 debt.append("Non-finite samples are present.")
+            if int(manifest_channel.get("numeric_limit_hit_count") or 0) > 0:
+                debt.append("Numeric rail or limit hits are present.")
+            if key in {"SteeringWheelTorque_ST", "SteeringWheelTorque"} and (
+                clipping_status.casefold() not in {"none_detected", "none", "clear"}
+                or saturation_status.casefold() not in {"none_detected", "none", "clear"}
+            ):
+                debt.append("Steering torque clipping or saturation is present.")
             if key == "SteeringWheelTorque_ST":
                 sign = "observed_signed"
                 if not count_as_time or samples_per_record < 2:
@@ -862,8 +1149,14 @@ def build_steering_signal_truth_audit(
                 channel_key=key,
                 source_channel=source_channel,
                 raw_unit=raw_unit,
+                data_type=data_type,
                 expected_units=expected_units,
-                unit_verified=_unit_matches(raw_unit, expected_units),
+                unit_verified=_unit_matches(
+                    raw_unit,
+                    expected_units,
+                    data_type=data_type,
+                ),
+                sample_structure=sample_structure,
                 sign_semantics=sign,
                 base_sample_rate_hz=base_rate,
                 effective_sample_rate_hz=effective_rate,
@@ -871,6 +1164,12 @@ def build_steering_signal_truth_audit(
                 count_as_time=count_as_time,
                 coverage_fraction=coverage,
                 variation=variation,
+                update_behavior=update_behavior,
+                canonical_mapping=canonical_mapping,
+                comparison_role=comparison_role,
+                health_status=health_status,
+                clipping_status=clipping_status,
+                saturation_status=saturation_status,
                 state=state,
                 scientific_debt=tuple(debt),
                 required_for_admission=required,
@@ -878,9 +1177,11 @@ def build_steering_signal_truth_audit(
         )
     relation, normalized_error = _scalar_subtick_relation(rows)
     sub_tick = next(item for item in channels if item.channel_key == "SteeringWheelTorque_ST")
+    sub_tick_clock = _sub_tick_clock_truth(manifest, sub_tick)
     ffb = build_steering_context_fingerprint(
         rows,
         steering_conversion_model=steering_conversion_model,
+        required_fields=P23_STEERING_FINGERPRINT_FIELDS,
     )
     blockers = [
         f"{item.channel_key}: {reason}"
@@ -892,8 +1193,8 @@ def build_steering_signal_truth_audit(
         blockers.append("The 60 Hz versus sub-tick torque relationship is unavailable.")
     elif relation == "inconsistent":
         blockers.append("The 60 Hz versus sub-tick torque relationship is inconsistent.")
-    if clock != "pass":
-        blockers.append("The telemetry sample clock is not proven healthy.")
+    if sub_tick_clock.state != "pass":
+        blockers.extend(sub_tick_clock.scientific_debt)
     if steering_conversion_model is None:
         blockers.append("Steering ratio/pinion conversion is not source validated.")
     blockers.extend(ffb.blocker_reasons)
@@ -910,7 +1211,8 @@ def build_steering_signal_truth_audit(
         "scalar_subtick_relation": relation,
         "scalar_subtick_normalized_error": normalized_error,
         "sub_tick_coverage_fraction": sub_tick.coverage_fraction,
-        "sample_clock_integrity": clock,
+        "sub_tick_clock": sub_tick_clock,
+        "sample_clock_integrity": sub_tick_clock.state,
         "effective_sub_tick_rate_hz": sub_tick.effective_sample_rate_hz,
         "steering_conversion_model": steering_conversion_model,
         "state": state,
@@ -1147,6 +1449,67 @@ def _scientific_blocker_keys(reasons: Sequence[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(keys))
 
 
+def _longest_uninterrupted_lap_block(
+    lap_numbers: Sequence[int],
+    *,
+    boundary_laps: set[int],
+) -> tuple[int, ...]:
+    """Select one clean block without bridging rejected or mutation laps."""
+
+    groups: list[list[int]] = []
+    for lap_number in sorted(set(lap_numbers) - boundary_laps):
+        if not groups or lap_number != groups[-1][-1] + 1:
+            groups.append([lap_number])
+        else:
+            groups[-1].append(lap_number)
+    if not groups:
+        return ()
+    return tuple(max(groups, key=lambda group: (len(group), -group[0])))
+
+
+def _telemetry_ownership_truth(
+    manifest: Mapping[str, Any],
+    *,
+    run_id: str,
+    source_file_hash: str,
+) -> TelemetryOwnershipTruth:
+    manifest_run_id = str(manifest.get("run_id") or "").strip()
+    manifest_source = str(manifest.get("source_file_sha256") or "").strip()
+    cache_hash = str(manifest.get("telemetry_cache_sha256") or "").strip()
+    schema_fingerprint = str(manifest.get("schema_fingerprint") or "").strip()
+    source_size = manifest.get("source_file_size_bytes")
+    blockers: list[str] = []
+    def valid_sha256(value: str) -> bool:
+        return len(value) == 64 and not any(
+            character not in "0123456789abcdef" for character in value.casefold()
+        )
+
+    if manifest_run_id != run_id:
+        blockers.append(
+            f"Telemetry manifest run identity {manifest_run_id or 'missing'} does not match {run_id}."
+        )
+    if manifest_source != source_file_hash:
+        blockers.append("Telemetry manifest source SHA-256 does not match the imported source.")
+    if not isinstance(source_size, int) or isinstance(source_size, bool) or source_size <= 0:
+        blockers.append("Telemetry manifest source-file byte size is missing or invalid.")
+        source_size = None
+    if not valid_sha256(cache_hash):
+        blockers.append("Telemetry cache SHA-256 is missing or invalid.")
+        cache_hash = ""
+    if not valid_sha256(schema_fingerprint):
+        blockers.append("Telemetry schema fingerprint is missing or invalid.")
+        schema_fingerprint = ""
+    return TelemetryOwnershipTruth(
+        state="blocked" if blockers else "verified",
+        run_id=run_id,
+        source_file_sha256=manifest_source if valid_sha256(manifest_source) else None,
+        source_file_size_bytes=source_size,
+        telemetry_cache_sha256=cache_hash or None,
+        schema_fingerprint=schema_fingerprint or None,
+        blocker_reasons=tuple(blockers),
+    )
+
+
 def build_qualification_certificate(
     *,
     collection_kind: P23CollectionKind,
@@ -1161,6 +1524,11 @@ def build_qualification_certificate(
     created_at: datetime | None = None,
 ) -> CampaignQualificationCertificate:
     source_hash = _source_hash(manifest, overview.session.file_hash)
+    ownership = _telemetry_ownership_truth(
+        manifest,
+        run_id=assessment.run_id,
+        source_file_hash=source_hash,
+    )
     identity = manifest.get("compatibility_identity") or {}
     car_identity = str(identity.get("car_path") or overview.session.car_path or "").strip()
     track_identity = str(
@@ -1177,6 +1545,8 @@ def build_qualification_certificate(
     ]
     if truth_audit.state != "ready":
         blockers.extend(truth_audit.blocker_reasons)
+    if ownership.state != "verified":
+        blockers.extend(ownership.blocker_reasons)
     if duplicate_source:
         blockers.append("This immutable source-file session already counted.")
     expected_ffb = operation.context.ffb_fingerprint_sha256
@@ -1188,16 +1558,15 @@ def build_qualification_certificate(
         mismatches = comparability.material_mismatches if comparability else ("ffb_fingerprint",)
         blockers.extend(f"FFB mismatch: {item}" for item in mismatches)
     mutation_laps = {item.lap for item in mutations}
-    eligible_laps = tuple(
-        lap for lap in assessment.accepted_lap_numbers if lap not in mutation_laps
+    eligible_laps = _longest_uninterrupted_lap_block(
+        assessment.accepted_lap_numbers,
+        boundary_laps=mutation_laps,
     )
     if len(eligible_laps) < operation.context.minimum_clean_laps_per_unit:
         blockers.append(
             f"Only {len(eligible_laps)} clean laps qualify; "
             f"{operation.context.minimum_clean_laps_per_unit} are required."
         )
-    if mutations and operation.context.reject_control_mutations:
-        blockers.append("Control-state mutation created an incompatible context boundary.")
     if not car_identity:
         blockers.append("Car identity is unavailable.")
     if not build_identity:
@@ -1240,7 +1609,7 @@ def build_qualification_certificate(
     )
     setup_identity = _setup_identity(overview)
     payload = {
-        "certificate_version": "p24-qualification-certificate-v1",
+        "certificate_version": "p25-qualification-certificate-v2",
         "created_at": created_at or datetime.now(UTC),
         "collection_kind": collection_kind,
         "campaign_id": operation.campaign_id,
@@ -1250,6 +1619,7 @@ def build_qualification_certificate(
         "operation_id": operation.operation_id,
         "operation_hash": operation.operation_hash,
         "source_file_hash": source_hash,
+        "telemetry_ownership": ownership,
         "run_id": assessment.run_id,
         "session_id": f"source-session:{source_hash}",
         "car_identity": car_identity or "unavailable",
@@ -1397,9 +1767,10 @@ def _save_immutable(
         "p24_negative_control_expectations",
         "p24_negative_control_results",
         "p24_certificate_admissions",
+        "p25_null_session_run_cards",
     }
     if table not in allowed:
-        raise ValueError("unsupported immutable P24 table")
+        raise ValueError("unsupported immutable acquisition table")
     connection = initialize_database(db_path)
     try:
         with connection:
@@ -1409,7 +1780,7 @@ def _save_immutable(
             ).fetchone()
             if existing is not None:
                 if existing[0] != digest or existing[1] != model.model_dump_json():
-                    raise ValueError("immutable P24 identity collision")
+                    raise ValueError("immutable acquisition identity collision")
                 return False
             columns = (id_column, hash_column, *extra_columns, json_column)
             placeholders = ", ".join("?" for _ in columns)
@@ -1504,6 +1875,154 @@ def get_qualification_certificate(
     return CampaignQualificationCertificate.model_validate_json(row[0])
 
 
+def latest_null_session_run_card(
+    *,
+    db_path: str | Path | None = None,
+    reference_run_id: str | None = None,
+) -> P25NullSessionRunCard | None:
+    connection = initialize_database(db_path)
+    try:
+        if reference_run_id is None:
+            row = connection.execute(
+                "SELECT card_json FROM p25_null_session_run_cards "
+                "ORDER BY created_at DESC, rowid DESC LIMIT 1"
+            ).fetchone()
+        else:
+            row = connection.execute(
+                "SELECT card_json FROM p25_null_session_run_cards "
+                "WHERE reference_run_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                (reference_run_id,),
+            ).fetchone()
+    finally:
+        connection.close()
+    return None if row is None else P25NullSessionRunCard.model_validate_json(row[0])
+
+
+def freeze_null_session_run_card(
+    reference_run_id: str,
+    *,
+    db_path: str | Path | None = None,
+    created_at: datetime | None = None,
+) -> P25NullSessionRunCard:
+    existing = latest_null_session_run_card(
+        db_path=db_path,
+        reference_run_id=reference_run_id,
+    )
+    if existing is not None:
+        return existing
+    certificates = [
+        item
+        for item in list_qualification_certificates(db_path=db_path)
+        if item.run_id == reference_run_id
+    ]
+    if not certificates:
+        raise ValueError("A source-owned pilot certificate is required before freezing the null run card.")
+    certificate = certificates[-1]
+    operation = start_campaign_operation(
+        "no_change_null",
+        reference_run_id,
+        db_path=db_path,
+        created_at=created_at,
+    )
+    rows = read_telemetry_rows(
+        reference_run_id,
+        columns=["player_tire_compound", "PlayerTireCompound"],
+    )
+    compounds = tuple(
+        dict.fromkeys(
+            str(value)
+            for row in rows
+            if (value := _row_value(row, ("player_tire_compound", "PlayerTireCompound")))
+            is not None
+        )
+    )
+    context = operation.context
+    blockers: list[str] = []
+    ownership = certificate.telemetry_ownership
+    if ownership is None or ownership.state != "verified":
+        blockers.append("The reference pilot does not have verified immutable telemetry ownership.")
+    if certificate.channel_health != "pass" or certificate.ffb_fingerprint.state != "ready":
+        blockers.append("The reference pilot steering/FFB truth is not ready.")
+    if certificate.profile_identity is None:
+        blockers.append("The reference vehicle/profile identity is unavailable.")
+    if certificate.setup_identity is None:
+        blockers.append("The reference setup identity is unavailable.")
+    if context.fuel_band is None:
+        blockers.append("The reference eligible-lap fuel band is unavailable.")
+    if len(compounds) != 1:
+        blockers.append("One exact reference tire compound could not be frozen.")
+    if context.minimum_clean_laps_per_unit != 10:
+        blockers.append("The frozen operation does not require exactly 10 clean laps.")
+    fuel_min = context.fuel_band.minimum if context.fuel_band is not None else 0.0
+    fuel_max = context.fuel_band.maximum if context.fuel_band is not None else 0.0
+    payload = {
+        "card_version": "p25-null-session-run-card-v1",
+        "created_at": created_at or datetime.now(UTC),
+        "protocol_id": _P23_PROTOCOL.protocol_id,
+        "protocol_hash": _P23_PROTOCOL.protocol_hash,
+        "operation_id": operation.operation_id,
+        "operation_hash": operation.operation_hash,
+        "reference_certificate_id": certificate.certificate_id,
+        "reference_certificate_hash": certificate.certificate_hash,
+        "reference_run_id": reference_run_id,
+        "source_file_hash": certificate.source_file_hash,
+        "car_identity": certificate.car_identity,
+        "build_identity": certificate.build_identity,
+        "profile_identity": certificate.profile_identity or "unavailable",
+        "track_identity": certificate.track_identity,
+        "setup_identity": certificate.setup_identity or "unavailable",
+        "ffb_fingerprint_sha256": certificate.ffb_fingerprint.fingerprint_sha256,
+        "steering_conversion_model": certificate.ffb_fingerprint.steering_conversion_model
+        or "unavailable",
+        "minimum_warmup_laps": 1,
+        "minimum_eligible_laps": 10,
+        "fuel_band_minimum": fuel_min,
+        "fuel_band_maximum": fuel_max,
+        "tire_compound": compounds[0] if len(compounds) == 1 else "unavailable",
+        "tire_context_requirement": (
+            "Use the same compound and a fresh, unchanged tire set; carcass/wear snapshots "
+            "remain context-only until a pit-boundary update is observed."
+        ),
+        "control_state_requirements": (
+            "same setup identity",
+            "same complete FFB fingerprint",
+            "same steering ratio/pinion representation",
+            "no applied brake-bias change",
+            "no pit-service or setup change inside the clean block",
+        ),
+        "telemetry_requirements": tuple(item[0] for item in _STEERING_CHANNELS),
+        "null_expectation": (
+            "No meaningful steering-workload intervention is intentionally introduced; "
+            "qualification or rejection is decided only after import."
+        ),
+        "qualification_criteria": tuple(_P23_PROTOCOL.context_requirements),
+        "state": "blocked" if blockers else "ready",
+        "blocker_reasons": tuple(blockers),
+        "observed_run_id": None,
+        "observed_qualification_state": None,
+        "authority": "pre_outcome_collection_contract_only",
+    }
+    card = _content_addressed(P25NullSessionRunCard, "p25n", payload)
+    _save_immutable(
+        table="p25_null_session_run_cards",
+        id_column="card_id",
+        hash_column="card_hash",
+        json_column="card_json",
+        identity=card.card_id,
+        digest=card.card_hash,
+        model=card,
+        extra_columns=("reference_run_id", "operation_id", "created_at", "state"),
+        extra_values=(
+            card.reference_run_id,
+            card.operation_id,
+            card.created_at.isoformat(),
+            card.state,
+        ),
+        db_path=db_path,
+    )
+    return card
+
+
 def _build_dataset_from_certificate(
     certificate: CampaignQualificationCertificate,
     rule: DatasetAdmissionRule,
@@ -1527,7 +2046,7 @@ def _build_dataset_from_certificate(
                     (certificate.profile_identity,) if certificate.profile_identity else ()
                 ),
                 "analysis_artifact_versions": (
-                    "p24-qualification-certificate-v1",
+                    certificate.certificate_version,
                     _P23_PROTOCOL.formula_version,
                 ),
                 "setup_identities": (
@@ -1605,6 +2124,8 @@ def admit_qualification_certificate(
     )
     if stored != certificate:
         raise ValueError("only the stored immutable certificate may admit a dataset")
+    if certificate.qualification_state != "qualified" or not certificate.dataset_admissions:
+        raise ValueError("a rejected or admission-empty certificate cannot admit evidence")
     admissions = []
     for rule in certificate.dataset_admissions:
         dataset = _build_dataset_from_certificate(certificate, rule)
@@ -1715,6 +2236,13 @@ def qualify_p23_operations_for_run(
             continue
         if operation.campaign_kind not in {"control_workload", "no_change_null"}:
             continue
+        if (
+            operation.campaign_kind == "no_change_null"
+            and source_hash == operation.context.source_file_fingerprint
+        ):
+            # The frozen pilot is the comparison anchor, never the future null
+            # observation. Re-importing it must not manufacture an attempt.
+            continue
         connection = initialize_database(db_path)
         try:
             existing = connection.execute(
@@ -1807,10 +2335,22 @@ def p23_acquisition_progress(
     *, db_path: str | Path | None = None
 ) -> P23AcquisitionProgress:
     certificates = list_qualification_certificates(db_path=db_path)
-    qualified = [item for item in certificates if item.qualification_state == "qualified"]
-    unique: dict[tuple[str, P23CollectionKind], CampaignQualificationCertificate] = {}
+    source_attempts: dict[str, CampaignQualificationCertificate] = {}
+    for certificate in certificates:
+        existing = source_attempts.get(certificate.source_file_hash)
+        if existing is None or (
+            existing.qualification_state != "qualified"
+            and certificate.qualification_state == "qualified"
+        ):
+            # A current-version re-import may repair absent ownership, but one
+            # source still projects as one attempt and one collection kind.
+            source_attempts[certificate.source_file_hash] = certificate
+    qualified = [
+        item for item in source_attempts.values() if item.qualification_state == "qualified"
+    ]
+    unique: dict[str, CampaignQualificationCertificate] = {}
     for certificate in qualified:
-        unique.setdefault((certificate.source_file_hash, certificate.collection_kind), certificate)
+        unique.setdefault(certificate.source_file_hash, certificate)
     historical = sum(item.collection_kind == "historical_exact_ffb" for item in unique.values())
     null = sum(item.collection_kind == "same_setup_null" for item in unique.values())
     prospective = sum(item.collection_kind == "prospective" for item in unique.values())
@@ -1861,10 +2401,12 @@ def p23_acquisition_progress(
     else:
         next_kind = "historical_gate_review"
         next_best = "Grade the frozen historical gate before any prospective session is accepted."
-    latest_recorder = certificates[-1].flight_recorder if certificates else ()
+    attempt_values = tuple(source_attempts.values())
+    latest_certificate = attempt_values[-1] if attempt_values else None
+    latest_recorder = latest_certificate.flight_recorder if latest_certificate else ()
     recorder_preview = latest_recorder[:12]
     return P23AcquisitionProgress(
-        total_attempts=len(certificates),
+        total_attempts=len(source_attempts),
         qualified_attempts=len(qualified),
         historical_sessions=historical,
         null_stints=null,
@@ -1880,21 +2422,50 @@ def p23_acquisition_progress(
             if historical_passed
             else "locked_until_historical_gate"
         ),
-        rejected_attempts=sum(item.qualification_state != "qualified" for item in certificates),
+        rejected_attempts=sum(
+            item.qualification_state != "qualified" for item in source_attempts.values()
+        ),
         next_best_collection_kind=next_kind,
         next_best_collection=next_best,
-        latest_certificate_id=certificates[-1].certificate_id if certificates else None,
-        latest_run_id=certificates[-1].run_id if certificates else None,
+        latest_certificate_id=latest_certificate.certificate_id if latest_certificate else None,
+        latest_run_id=latest_certificate.run_id if latest_certificate else None,
         latest_qualification_state=(
-            certificates[-1].qualification_state if certificates else None
+            latest_certificate.qualification_state if latest_certificate else None
         ),
-        latest_eligible_laps=(len(certificates[-1].eligible_laps) if certificates else 0),
-        latest_excluded_laps=(len(certificates[-1].excluded_laps) if certificates else 0),
+        latest_eligible_laps=(len(latest_certificate.eligible_laps) if latest_certificate else 0),
+        latest_excluded_laps=(len(latest_certificate.excluded_laps) if latest_certificate else 0),
         latest_blocker=(
-            certificates[-1].blocker_reasons[0]
-            if certificates and certificates[-1].blocker_reasons
+            latest_certificate.blocker_reasons[0]
+            if latest_certificate and latest_certificate.blocker_reasons
             else None
         ),
+        latest_blockers=(latest_certificate.blocker_reasons if latest_certificate else ()),
+        latest_signal_truth_state=(
+            "ready"
+            if latest_certificate and latest_certificate.channel_health == "pass"
+            else "scientific_debt"
+            if latest_certificate
+            else None
+        ),
+        latest_ffb_fingerprint_state=(
+            latest_certificate.ffb_fingerprint.state if latest_certificate else None
+        ),
+        latest_ffb_fingerprint_sha256=(
+            latest_certificate.ffb_fingerprint.fingerprint_sha256
+            if latest_certificate
+            else None
+        ),
+        latest_dataset_admissions=(
+            tuple(item.admission_key for item in latest_certificate.dataset_admissions)
+            if latest_certificate
+            else ()
+        ),
+        latest_telemetry_ownership_state=(
+            latest_certificate.telemetry_ownership.state
+            if latest_certificate and latest_certificate.telemetry_ownership
+            else None
+        ),
+        latest_null_run_card=latest_null_session_run_card(db_path=db_path),
         latest_flight_recorder=recorder_preview,
         latest_flight_recorder_total=len(latest_recorder),
         latest_flight_recorder_truncated=len(latest_recorder) > len(recorder_preview),

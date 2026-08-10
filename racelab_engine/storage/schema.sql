@@ -703,3 +703,19 @@ CREATE TABLE IF NOT EXISTS p24_certificate_admissions (
   FOREIGN KEY(dataset_id) REFERENCES evidence_datasets(dataset_id)
     ON DELETE RESTRICT
 );
+
+-- P25 freezes the first same-setup/null collection contract before driving.
+-- Outcome fields remain empty in the immutable card; a later certificate owns
+-- qualification and admission.
+CREATE TABLE IF NOT EXISTS p25_null_session_run_cards (
+  card_id TEXT PRIMARY KEY,
+  card_hash TEXT NOT NULL UNIQUE,
+  reference_run_id TEXT NOT NULL,
+  operation_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  state TEXT NOT NULL,
+  card_json TEXT NOT NULL,
+  UNIQUE(reference_run_id),
+  FOREIGN KEY(operation_id) REFERENCES evidence_campaign_operations(operation_id)
+    ON DELETE RESTRICT
+);

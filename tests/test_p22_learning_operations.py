@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -27,8 +27,7 @@ from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.storage.repository import RaceLabRepository
 
-
-NOW = datetime(2026, 8, 11, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 11, tzinfo=UTC)
 SOURCE = "a" * 64
 
 
@@ -241,7 +240,7 @@ def test_applied_brake_bias_change_invalidates_campaign_unit(tmp_path, monkeypat
     assessment = assess_active_operations_for_run("run-1", db_path=database)[0]
     assert assessment.state == "rejected"
     assert assessment.control_mutation_ids
-    assert "control changed" in " ".join(assessment.rejection_reasons).casefold()
+    assert "applied control changed" in " ".join(assessment.rejection_reasons).casefold()
 
 
 def test_learning_ledger_separates_guardrails_from_empirical_validation(tmp_path):

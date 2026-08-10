@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 import hashlib
 import math
+from collections.abc import Mapping, Sequence
 from typing import Any
 
+from racelab_engine.models.engineering_awareness import ChannelRole
 from racelab_engine.models.engineering_context import (
     CompatibilityAssessment,
     ContextValue,
@@ -19,8 +20,6 @@ from racelab_engine.models.engineering_context import (
     vehicle_compatibility_hash,
 )
 from racelab_engine.models.evidence import EvidenceState
-from racelab_engine.models.engineering_awareness import ChannelRole
-
 
 _FFB_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("ffb_enabled", ("steering_ffb_enabled", "SteeringWheelFFBEnabled")),
@@ -30,6 +29,14 @@ _FFB_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("smoothing_01", ("steering_ffb_smoothing_01", "SteeringWheelPctSmoothing")),
     ("damper_01", ("steering_ffb_damper_01", "SteeringWheelPctDamper")),
     ("limiter_01", ("steering_ffb_limiter_01", "SteeringWheelLimiter")),
+)
+P23_STEERING_FINGERPRINT_FIELDS: tuple[str, ...] = (
+    "max_force_nm",
+    "use_linear",
+    "intensity_01",
+    "smoothing_01",
+    "damper_01",
+    "limiter_01",
 )
 _CONTROL_SPECS: tuple[tuple[str, ControlMutationKind, tuple[str, ...]], ...] = (
     (
@@ -165,7 +172,16 @@ def build_steering_context_fingerprint(
     rows: Sequence[Mapping[str, Any]],
     *,
     steering_conversion_model: str | None = None,
+    required_fields: Sequence[str] | None = None,
 ) -> SteeringContextFingerprint:
+    known_fields = {field_name for field_name, _names in _FFB_FIELDS}
+    required = known_fields if required_fields is None else set(required_fields)
+    unknown_required = required - known_fields
+    if unknown_required:
+        raise ValueError(
+            "Unknown steering fingerprint field(s): "
+            + ", ".join(sorted(unknown_required))
+        )
     values: dict[str, Any] = {}
     source_channels: list[str] = []
     missing: list[str] = []
@@ -174,7 +190,8 @@ def build_steering_context_fingerprint(
         source_name, distinct = _distinct_values(rows, names)
         if source_name is None or not distinct:
             values[field_name] = None
-            missing.append(field_name)
+            if field_name in required:
+                missing.append(field_name)
             continue
         source_channels.append(source_name)
         if len(distinct) != 1:
@@ -200,7 +217,7 @@ def build_steering_context_fingerprint(
     if not source_channels:
         state = "unavailable"
         blockers.append("No force-feedback configuration channels are available.")
-    elif missing:
+    elif missing or blockers:
         state = "limited"
         blockers.append("The complete material FFB configuration is not available.")
     else:
@@ -257,8 +274,10 @@ def compare_steering_contexts(
             state="not_comparable",
             material_mismatches=mismatches or ("fingerprint_sha256",),
             blocker_reasons=(
-                "Material force-feedback configuration differs; steering workload "
-                "and effort proxies are not comparable.",
+                (
+                    "Material force-feedback configuration differs; steering workload "
+                    "and effort proxies are not comparable."
+                ),
             ),
             steering_effort_comparison_allowed=False,
         )
@@ -491,8 +510,10 @@ def compare_vehicle_compatibility(
             state="not_comparable",
             material_mismatches=mismatches,
             blocker_reasons=(
-                "Material vehicle, build, regulation, or operating context differs; "
-                "setup and powertrain causal attribution are blocked.",
+                (
+                    "Material vehicle, build, regulation, or operating context differs; "
+                    "setup and powertrain causal attribution are blocked."
+                ),
             ),
             setup_attribution_allowed=False,
             powertrain_attribution_allowed=False,

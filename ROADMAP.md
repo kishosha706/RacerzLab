@@ -57,6 +57,7 @@ result, and remember only what the evidence supports.
 | P22 - Prospective Field Validation and Learning Operations | Verified operational foundation; real campaigns and advanced authority remain data-locked | Frozen campaign operations, automatic qualification, prospective P19 predictions/outcomes, deterministic collection guidance, and the Learning Ledger survive restart without granting setup or statistical authority |
 | P23 - First Earned Adaptive Capability | No activation earned | Steering-workload protocol is frozen, but no qualified historical, prospective, negative-control, subgroup, or profile evidence exists |
 | P24 - Evidence Acquisition Operations | Verified collection infrastructure; P23 evidence collection ongoing | Protocol-bound certificates, flight recorders, steering truth audits, and certificate-owned admission make real collection auditable without changing authority |
+| P25 - First Qualified Evidence Campaign | Verified acquisition pilot; no qualified session earned because traffic contamination blocked every eligible lap | One source-owned Next Gen re-import proved immutable ownership, ten-signal/sub-tick/FFB truth, certificate-owned rejection, duplicate resistance, and a frozen future null-session card without changing P23 authority |
 
 ---
 
@@ -1578,7 +1579,7 @@ not activate the steering-workload envelope or add intelligence authority.
 - [x] Publish actual P23 acquisition debt, next collection, latest certificate,
   and flight recorder in Learning Mode only while leaving Race Mode and P19/P20
   authority unchanged.
-- [ ] Re-import a source-owned Next Gen recording and complete steering signal
+- [x] Re-import a source-owned Next Gen recording and complete steering signal
   truth/profile validation.
 - [ ] Collect the 9 historical sessions, 10 null stints, 8 negative controls,
   and 9 subgroup requirements under the frozen certificate contract.
@@ -1591,13 +1592,14 @@ not activate the steering-workload envelope or add intelligence authority.
 - Same-setup null stints: **0 / 10**
 - Frozen negative controls: **0 / 8**
 - Required subgroup groups: **0 / 9**
-- Steering/profile truth: **incomplete**
+- Steering/profile truth: **complete**
 - Prospective: **locked until historical validation passes**
 - P23 activation: **NO ACTIVATION EARNED; shadow only**
 
 The older Atlanta archive remains inventory because immutable telemetry-cache
-ownership cannot be proven. The pre-run checklist requests re-import and does
-not infer missing steering truth or fabricate progress.
+ownership cannot be proven. P25 used a different, source-owned Atlanta practice
+recording to complete steering truth without retroactively trusting that legacy
+artifact or fabricating campaign progress.
 
 ### P24 verification evidence
 
@@ -1627,6 +1629,71 @@ not infer missing steering truth or fabricate progress.
   was 87.976 ms cold and 78.453 ms warm mean.
 - Full architecture, signal contracts, operations, evidence counts, and
   performance are recorded in `docs/p24_evidence_acquisition_operations.md`.
+
+---
+
+## P25 - First Qualified Evidence Campaign
+
+**Status: verified field-acquisition pilot; NO QUALIFIED SESSION EARNED.** The
+owned Next Gen Atlanta practice recording passed source/cache/schema ownership,
+all ten steering-signal truth gates, the 360 Hz reconstruction contract, exact
+FFB identity, and flight-recorder construction. Its 29 otherwise useful flying
+laps were all rejected for nearby-car contamination, so the certificate admits
+nothing and the frozen P23 thresholds remain unchanged.
+
+- [x] Re-import one source-owned real Next Gen `.ibt` through the application
+  path and bind source SHA-256, byte size, cache SHA-256, schema, run, setup,
+  vehicle/build/profile, campaign, and certificate identity.
+- [x] Audit all ten frozen P23 steering/FFB signals, including declared type,
+  unit, structure, coverage, update behavior, canonical role, health, clipping,
+  saturation, and scientific debt.
+- [x] Prove six ordered count-as-time samples at 60 Hz reconstruct 360 Hz from a
+  clean `SessionTick` sequence, while retaining timestamp anomalies as facts.
+- [x] Bind the exact material FFB settings and `73 mm/rev` steering conversion
+  into one immutable fingerprint.
+- [x] Preserve every relevant lap and exact exclusion in the flight recorder;
+  do not bridge the rejected traffic laps or the requested pit-state boundary.
+- [x] Make the P25 certificate fail closed on absent source/cache/schema
+  ownership and prevent a rejected or admission-empty certificate from reaching
+  the dataset registry.
+- [x] Collapse copied, renamed, moved, cache-rebuilt, and re-imported recordings
+  to one source-session attempt/count identity; a frozen null card cannot reuse
+  its own reference source as an observed null attempt.
+- [x] Freeze the future same-setup/null run card before outcome, including exact
+  car/build/profile, track, setup, FFB, steering conversion, fuel band, tire
+  compound, control state, ten telemetry requirements, one warmup lap, and ten
+  clean eligible laps.
+- [x] Expose exact ownership, signal/FFB state, all certificate blockers,
+  admissions, recorder decisions, counts, and the null run card in Learning
+  Mode only; Race Mode remains unchanged.
+- [ ] Earn the first qualified historical source session with at least ten
+  uninterrupted clean laps and acceptable traffic/context evidence.
+- [ ] Drive and import Null Session 01 under immutable card
+  `p25n-4cb35044c911b200f334`; do not qualify it before the real file passes.
+
+### P25 real scientific result
+
+- Real source SHA-256:
+  `37e380ebc4e70ca33190a0bace40c9a88508744fec4115177559083a7aeb50a7`
+- Ownership: **verified**; fresh current-version cache and schema identity are
+  bound to run `stockcars-chevycamarozl12022-atlanta-2022-oval-2-37e380eb`.
+- Steering/profile truth: **complete**; all ten signals ready, full coverage,
+  no malformed/non-finite/rail/saturation debt.
+- Sub-tick truth: **pass**; 6 samples/record, 60 Hz base, 360 Hz effective,
+  contiguous `SessionTick`, scalar relation `last_consistent`, normalized error
+  0.0.
+- FFB fingerprint:
+  `7d5868401be0d368ffdeef7651a9b1b0f4a037f2e255d123fdffaf6d06a1e207`.
+- Certificate `p24c-36d0f278b166d6f8bb36`: **rejected**; 0 clean
+  admitted laps, 33 recorder entries, and no dataset admissions. Twenty-nine
+  useful laps are explicitly traffic-contaminated.
+- P23 counts: historical **0 / 9**, null **0 / 10**, negative controls **0 / 8**,
+  subgroups **0 / 9**, prospective **locked**, activation **NO ACTIVATION
+  EARNED**, authority `shadow_only`.
+
+Complete source identity, signal matrix, duplicate audit, run card, performance,
+and validation evidence are recorded in
+`docs/p25_first_qualified_evidence_campaign.md`.
 
 ---
 
@@ -1727,3 +1794,4 @@ Implementation queue completed in this pass:
 | 2026-08-10 | Verified P22 prospective field-validation operational foundation | Frozen campaign lifecycles, import-time exact qualification, immutable pre-outcome P19 predictions, canonical later outcomes, deterministic collection guidance, cloned field gates, and the Learning Ledger passed the 2,201-test collection with six protected skips, Ruff, TypeScript, a 2,189-module production build, diff integrity, and live Race/Learning smoke; no real evidence campaign or advanced activation is claimed, so P19/P20 remain authoritative |
 | 2026-08-10 | Completed P23 first-earned-capability audit with no activation earned | All 15 P21/P22 candidates were ranked; the deterministic exact-FFB steering-workload envelope was selected and frozen under immutable protocol `p23p-7039505728f07034d6f5`; the empty qualified archive correctly produced no authority envelope. Twenty-six hostile focused regressions and the complete 2,209-test collection passed with six protected skips, plus Ruff, TypeScript, the 2,189-module production build, diff integrity, live Race/Learning smoke, and real-archive latency checks; P19/P20 authority remains unchanged |
 | 2026-08-10 | Polished and re-verified P24 evidence acquisition operations; P23 collection remains at zero | Protocol-bound immutable certificates, lap flight recorders, steering truth audits, bounded history/preview contracts, direct certificate retrieval, typed negative-control discovery, accessible Learning-only campaign gates, source duplicate protection, fact-only checklists, and five collection templates passed 91 focused P21-P24 regressions and the complete 2,225-test collection with six protected skips, changed-file Ruff, TypeScript, the 2,189-module production build, diff integrity, and live Race/Learning smoke; a whole-repo Ruff audit truthfully retains 1,026 inherited findings outside P24, the archive remains inventory, profile truth is incomplete, prospective collection is locked, and P23 remains shadow-only |
+| 2026-08-10 | Verified P25 acquisition pilot; no qualified session earned | A source-owned 63,657-record Next Gen Atlanta re-import proved source/cache/schema ownership, all ten steering signals, contiguous 360 Hz sub-tick reconstruction, exact FFB/73 mm-rev identity, a 33-lap immutable recorder, duplicate-source resistance, and a pre-outcome null run card; all 29 otherwise useful laps were traffic-contaminated, so certificate `p24c-36d0f278b166d6f8bb36` admitted nothing and P23 counts remained zero. Ninety-four focused P21-P25 regressions and all 2,228 collected Python tests passed (2,223 passed, five protected skips), plus changed-file Ruff, TypeScript, the 2,189-module production build, diff integrity, and live Race/Learning smoke; Learning Readiness was reduced from about 6.2 seconds to about 121 ms by reusing the frozen operation context, and P23 remains locked and shadow-only |

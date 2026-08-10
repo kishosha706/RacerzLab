@@ -48,6 +48,9 @@ const SCAN_TIMEOUT_MS = 30_000;
 
 /** Timeout for full telemetry trace payloads (1 minute). */
 const TRACE_TIMEOUT_MS = 60_000;
+
+/** Learning-only archive projection; never blocks Race Mode or cockpit open. */
+const LEARNING_READINESS_TIMEOUT_MS = 30_000;
 const GET_CACHE_DEFAULT_TTL_MS = 8_000;
 const GET_CACHE_TRACE_TTL_MS = 2_000;
 
@@ -332,6 +335,9 @@ export function fetchLearningReadiness(
   if (options?.sessionId) params.set("session_id", options.sessionId);
   return requestJson<LearningReadinessProjection>(
     `/api/evaluation/learning-readiness?${params.toString()}`,
+    undefined,
+    LEARNING_READINESS_TIMEOUT_MS,
+    "Learning readiness",
   );
 }
 
