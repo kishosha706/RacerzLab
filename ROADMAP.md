@@ -1270,9 +1270,12 @@ projection, and UI integration are not yet verified.
 - [x] Add material control-context boundaries, requested-versus-applied semantics,
   FFB comparability, weight/power/build compatibility, and source-backed vehicle
   engineering profiles without guessing missing geometry.
-- [ ] Add descriptive transient response, workload, chassis, tire, brake, combined
-  acceleration, and disturbance metrics under explicit proxy/forbidden-claim
-  contracts.
+- [x] Add descriptive steering-to-yaw transient response and preserved 360 Hz
+  steering workload metrics under explicit proxy/forbidden-claim contracts. Exact
+  FFB, steering conversion, physical-position, speed, driver, and clock context is
+  mandatory for comparison.
+- [ ] Add descriptive chassis, tire, brake, combined-acceleration, and disturbance
+  exposure metrics under explicit proxy/forbidden-claim contracts.
 - [ ] Build temporal state transitions, observation-only mechanism episodes, and a
   state-drift ledger, then feed their evidence into P19 without adding another
   cause ranker or setup-policy evaluator.
@@ -1316,6 +1319,13 @@ projection, and UI integration are not yet verified.
   comparison therefore remains blocked. The identity-only vehicle profile pins
   exact car/build provenance while leaving all unproven geometry and conventions
   missing.
+- Slice D: eight hostile tests cover frame/row parity, exact temporal response,
+  junk-lap and applied-mutation blocking, preserved 360 Hz torque samples, missing
+  sub-tick data, invalid phases, FFB mismatch, limited fingerprints, proxy-only
+  comparison, and structural denial of setup authority. On the real Atlanta lap 4,
+  detector-owned phase windows produced ready transient descriptors and 360 Hz
+  workload artifacts; workload comparison stayed blocked because the FFB-enabled
+  state is absent.
 
 ---
 
