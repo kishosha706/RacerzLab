@@ -2672,6 +2672,22 @@ td {
   stroke-width: 2px;
   pointer-events: none;
 }
+.trackmap-turn-marker circle {
+  fill: #f8fafc;
+  stroke: #0ea5e9;
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+.trackmap-turn-label {
+  fill: #f8fafc;
+  font-size: 11px;
+  font-weight: 800;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  paint-order: stroke;
+  stroke: rgba(2, 6, 12, 0.96);
+  stroke-width: 3px;
+  pointer-events: none;
+}
 .trackmap-empty {
   min-height: 420px;
   display: flex;
@@ -3421,6 +3437,23 @@ td {
   stroke-width: 3;
   text-anchor: middle;
   text-transform: uppercase;
+  pointer-events: none;
+}
+
+.track-map-overlay-turn-marker circle {
+  fill: #f8fafc;
+  stroke: #0ea5e9;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.track-map-overlay-turn-label {
+  fill: #f8fafc;
+  font-size: 10px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: rgba(2, 6, 12, 0.95);
+  stroke-width: 3;
   pointer-events: none;
 }
 

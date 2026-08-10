@@ -9,6 +9,7 @@ import type {
   TrackMapPackage,
   TrackMapPoint,
   TrackMapSection,
+  TrackMapTurn,
 } from "../types/trackMap";
 import { filterPlatformEvents, isClearPlatformDiagnostic } from "../utils/platformEventVisibility";
 
@@ -495,10 +496,17 @@ export function TrackMapOverlay({
   );
   const sectionLabels = useMemo(
     () => (pkg?.sections ?? [])
+      .filter((section) => !(pkg?.turns?.length && section.section_type === "corner"))
       .slice(0, 16)
       .map((section) => ({ section, point: nearestPointByLapPct(lapPositionedPoints, sectionMidpoint(section)) }))
       .filter((item): item is { section: TrackMapSection; point: DrawablePoint } => item.point != null),
-    [lapPositionedPoints, pkg?.sections],
+    [lapPositionedPoints, pkg?.sections, pkg?.turns?.length],
+  );
+  const turnLabels = useMemo(
+    () => (pkg?.turns ?? [])
+      .map((turn) => ({ turn, point: nearestPointByLapPct(lapPositionedPoints, turn.lap_pct) }))
+      .filter((item): item is { turn: TrackMapTurn; point: DrawablePoint } => item.point != null),
+    [lapPositionedPoints, pkg?.turns],
   );
   const hasDrawableTrack = Boolean(svgViewport && pointPath && drawablePoints.length > 1);
   const hasAnyContext = Boolean(cursorPoint || selectedEventPoint || highlightedPath);
@@ -590,6 +598,14 @@ export function TrackMapOverlay({
               <text key={section.section_id} className="track-map-overlay-section-label" x={point.x} y={point.y}>
                 {section.name}
               </text>
+            ))}
+            {showLabels && turnLabels.map(({ turn, point }) => (
+              <g key={turn.turn_id} className="track-map-overlay-turn-marker">
+                <circle cx={point.x} cy={point.y} r={4} />
+                <text className="track-map-overlay-turn-label" x={point.x + 7} y={point.y - 7}>
+                  {turn.short_label}
+                </text>
+              </g>
             ))}
             {showEvents && visibleEventMarkers.map(({ overlay, point }) => (
               <circle

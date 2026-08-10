@@ -30,6 +30,21 @@ export interface TrackMapMarker {
   source: "mt2" | "telemetry" | "fallback";
 }
 
+export interface TrackMapTurn {
+  turn_id: string;
+  number: number;
+  label: string;
+  short_label: string;
+  lap_pct: number;
+  distance_m: number;
+  distance_ft: number;
+  x: number;
+  y: number;
+  z: number | null;
+  heading_rad: number | null;
+  placement_source: string;
+}
+
 export interface TrackMapSection {
   section_id: string;
   name: string;
@@ -158,6 +173,7 @@ export interface TrackMapPackage {
   overlays: TrackMapOverlayMarker[];
   sections: TrackMapSection[];
   markers: TrackMapMarker[];
+  turns: TrackMapTurn[];
   target_zone: TrackMapTargetZone | null;
   warnings: string[];
 }

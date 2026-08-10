@@ -14,14 +14,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from racelab_engine.analysis.track_matching import (  # type: ignore  # noqa: E402
+from racelab_engine.analysis.track_matching import (  # type: ignore
     infer_layout_key,
     match_track_map_for_run,
     rank_track_map_matches,
     suggest_track_map_display_name,
 )
-from racelab_engine.services.track_map_service import get_track_map  # type: ignore  # noqa: E402
-
+from racelab_engine.services.track_map_service import (  # type: ignore
+    build_oval_turn_markers,
+    get_track_map,
+    is_oval_track_map,
+)
 
 LOW_POINT_COUNT_THRESHOLD = 100
 SHORT_DISTANCE_MILES_THRESHOLD = 0.25
@@ -164,6 +167,21 @@ def _validate_track_map_object(entry: dict[str, Any], track_map: Any) -> list[st
     if len(sections) != int(entry.get("sections_count", len(sections))):
         issues.append("section count mismatch")
 
+    if is_oval_track_map(track_map, entry):
+        turns = build_oval_turn_markers(track_map, entry)
+        labels = [turn.get("short_label") for turn in turns]
+        expected_labels = [f"T{number}" for number in range(1, len(turns) + 1)]
+        if len(turns) not in {3, 4}:
+            issues.append("oval map does not expose three or four canonical turns")
+        elif labels != expected_labels:
+            issues.append("oval turn labels are not sequential")
+        elif any(
+            not _is_finite_number(turn.get(field))
+            for turn in turns
+            for field in ("lap_pct", "x", "y")
+        ):
+            issues.append("oval turn placement is not finite")
+
     for snippet in EXPECTED_WARNING_SNIPPETS:
         if not any(snippet in warning for warning in warnings):
             issues.append(f"missing expected warning: {snippet}")
@@ -177,13 +195,13 @@ def _validate_track_map_object(entry: dict[str, Any], track_map: Any) -> list[st
 def _run_matching_coverage(index_entries: list[dict[str, Any]]) -> dict[str, Any]:
     try:
         from racelab_engine.storage.repository import RaceLabRepository
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive
         return {"available": False, "reason": f"run repository unavailable: {exc}"}
 
     try:
         repo = RaceLabRepository()
         runs = repo.list_runs(limit=500)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - report repository failures in the audit
         return {"available": False, "reason": f"run repository query failed: {exc}"}
 
     if not runs:
@@ -335,6 +353,7 @@ def audit_track_map_coverage(
     suspicious_low_points: list[dict[str, Any]] = []
     suspicious_distances: list[dict[str, Any]] = []
     naming_cleanup_candidates: list[dict[str, Any]] = []
+    oval_turn_coverage: list[dict[str, Any]] = []
     coverage_rows: list[dict[str, Any]] = []
 
     with _data_dir_env(data_dir):
@@ -354,7 +373,7 @@ def audit_track_map_coverage(
 
             try:
                 cache_payload = _load_json(cache_path)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - record invalid map payloads
                 invalid_json_maps.append({"map_id": entry.get("map_id"), "error": str(exc)})
                 continue
 
@@ -365,6 +384,18 @@ def audit_track_map_coverage(
             track_map_issues = _validate_track_map_object(entry, track_map)
             if track_map_issues:
                 broken_maps.append({"map_id": entry.get("map_id"), "issues": track_map_issues})
+            if track_map is not None and is_oval_track_map(track_map, entry):
+                turns = build_oval_turn_markers(track_map, entry)
+                oval_turn_coverage.append(
+                    {
+                        "map_id": entry.get("map_id"),
+                        "display_name": entry.get("display_name"),
+                        "turn_count": len(turns),
+                        "labels": [turn["short_label"] for turn in turns],
+                        "lap_pcts": [round(float(turn["lap_pct"]), 3) for turn in turns],
+                        "placement_source": turns[0]["placement_source"] if turns else None,
+                    }
+                )
 
             coverage_rows.append(_coverage_row(entry))
             if entry.get("partial") or not entry.get("supported") or entry.get("status") != "parsed":
@@ -438,6 +469,8 @@ def audit_track_map_coverage(
     audit["suspicious_low_point_maps"] = suspicious_low_points
     audit["suspicious_distance_maps"] = suspicious_distances
     audit["manual_naming_layout_cleanup_candidates"] = naming_cleanup_candidates
+    audit["oval_turn_coverage"] = oval_turn_coverage
+    audit["oval_turn_map_count"] = len(oval_turn_coverage)
     audit["show_warnings"] = show_warnings
 
     if check_runs:
@@ -497,6 +530,7 @@ def _print_human_report(audit: dict[str, Any], show_warnings: bool) -> None:
     print(f"Canonical JSON files: {audit.get('canonical_json_count', 0)}")
     print(f"Unique map_id count: {audit.get('unique_map_id_count', 0)}")
     print(f"Unique source hash count: {audit.get('unique_source_hash_count', 0)}")
+    print(f"Oval maps with canonical turns: {audit.get('oval_turn_map_count', 0)}")
     print(f"Staging files: {', '.join(audit.get('staging_files', [])) or '(empty)'}")
     print(f"Violations: {len(audit.get('violations', []))}")
     for violation in audit.get("violations", []):

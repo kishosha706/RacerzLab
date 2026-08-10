@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import struct
-import importlib.util
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -26,7 +27,9 @@ from racelab_engine.io.mt2_reader import (
     interpolate_at_pct,
     parse_mt2_bytes,
 )
+from racelab_engine.services import track_map_service
 from racelab_engine.services.track_map_service import (
+    build_oval_turn_markers,
     build_track_map_overlays,
     build_track_map_package,
     cleanup_track_map_storage,
@@ -34,7 +37,6 @@ from racelab_engine.services.track_map_service import (
     import_mt2_file,
     list_track_maps,
 )
-from racelab_engine.services import track_map_service
 
 
 def _load_audit_module():
@@ -138,7 +140,7 @@ def build_synthetic_mt2_bytes(
     section_groups_node = _node("SectionGroups", children=[group_node])
 
     return _node(
-        "".join(("Mo", "TeC", "TrackV2")),
+        "".join(("Mo", "TeC", "TrackV2")),  # noqa: FLY002 - keep vendor text out of UI-source scans
         attrs={
             "Name": _ascii(track_name),
             "Dist": _f32(total_distance_m),
@@ -247,6 +249,38 @@ def test_interpolation_helpers_work(synthetic_mt2_bytes: bytes) -> None:
     assert pos_25["y_m"] == pytest.approx(0.0)
     wrapped = interpolate_at_distance(track_map.points, track_map.metadata.distance_m + 10.0, track_map.metadata.distance_m)
     assert "x_m" in wrapped and "y_m" in wrapped
+
+
+def test_two_end_oval_gets_four_geometry_positioned_turn_markers(
+    synthetic_mt2_bytes: bytes,
+) -> None:
+    track_map = parse_mt2_bytes(synthetic_mt2_bytes)
+    corner = next(section for section in track_map.sections if section.section_type == "corner")
+    track_map.sections = [
+        replace(corner, section_id="corner_a", start_lap_pct=10.0, end_lap_pct=40.0),
+        replace(corner, section_id="corner_b", start_lap_pct=60.0, end_lap_pct=90.0),
+    ]
+
+    turns = build_oval_turn_markers(
+        track_map,
+        {"layout_key": "oval", "display_name": "Test Oval"},
+    )
+
+    assert [turn["short_label"] for turn in turns] == ["T1", "T2", "T3", "T4"]
+    assert [turn["lap_pct"] for turn in turns] == pytest.approx([17.5, 32.5, 67.5, 82.5])
+    assert all(turn["placement_source"] == "split two-end oval sections" for turn in turns)
+    assert all(turn["x"] is not None and turn["y"] is not None for turn in turns)
+
+
+def test_road_layout_never_receives_oval_turn_markers(synthetic_mt2_bytes: bytes) -> None:
+    track_map = parse_mt2_bytes(synthetic_mt2_bytes)
+
+    turns = build_oval_turn_markers(
+        track_map,
+        {"layout_key": "road", "display_name": "Talladega Road Course"},
+    )
+
+    assert turns == []
 
 
 def test_talladega_style_synthetic_file_parses() -> None:
@@ -576,6 +610,7 @@ def test_overlay_and_package_use_canonical_cache(tmp_path: Path, monkeypatch: py
     assert package["match"]["map_id"] == entry["map_id"]
     assert package["sections"]
     assert package["markers"]
+    assert [turn["short_label"] for turn in package["turns"]] == ["T1", "T2", "T3", "T4"]
 
 
 def test_overlay_preserves_start_finish_event_and_uses_bounded_zone_sampling(
@@ -765,6 +800,7 @@ def test_track_map_package_endpoint_returns_sanitized_geometry(
     }
     assert payload["map"]["markers"]
     assert payload["map"]["sections"]
+    assert [turn["short_label"] for turn in payload["turns"]] == ["T1", "T2", "T3", "T4"]
     assert "source_file" not in payload["map"]
     assert "source_type" not in payload["map"]
     assert "sha256" not in payload["map"]
@@ -918,7 +954,7 @@ def test_user_facing_track_map_copy_avoids_vendor_branding() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
 
     assert "imported file" not in track_map_tab.lower()
-    forbidden = "".join(("mo", "tec", "trackv2"))
+    forbidden = "".join(("mo", "tec", "trackv2"))  # noqa: FLY002 - intentional scan token
     assert forbidden not in import_panel.lower()
     assert forbidden not in readme.lower()
 
@@ -940,6 +976,8 @@ def test_audit_track_map_coverage_accepts_valid_canonical_map(
     assert report["canonical_json_count"] == 1
     assert report["imports_dir_only_gitkeep"] is True
     assert report["broken_maps"] == []
+    assert report["oval_turn_map_count"] == 1
+    assert report["oval_turn_coverage"][0]["labels"] == ["T1", "T2", "T3", "T4"]
     assert report["violations"] == []
 
 

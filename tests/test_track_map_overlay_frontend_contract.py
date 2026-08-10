@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -71,6 +70,8 @@ def test_overlay_quiet_defaults_hide_labels_events_and_legend() -> None:
     assert "const [showLabels, setShowLabels] = useState(false)" in overlay
     assert "const [showEvents, setShowEvents] = useState(false)" in overlay
     assert "showLabels && sectionLabels.map" in overlay
+    assert "showLabels && turnLabels.map" in overlay
+    assert "track-map-overlay-turn-label" in overlay
     assert "showEvents && visibleEventMarkers.map" in overlay
     assert "track-map-overlay-legend" not in overlay
     assert "track-map-overlay-legend" not in styles

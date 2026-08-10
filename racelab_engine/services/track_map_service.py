@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import math
 import os
 from copy import deepcopy
@@ -11,16 +11,17 @@ from threading import RLock
 from typing import Any
 from uuid import uuid4
 
-from racelab_engine.io.mt2_reader import (
-    TrackMap,
-    parse_mt2_bytes,
-)
 from racelab_engine.analysis.track_matching import (
     build_match_aliases,
-    normalize_track_key,
     infer_layout_key,
     match_track_map_for_run,
+    normalize_track_key,
     suggest_track_map_display_name,
+)
+from racelab_engine.io.mt2_reader import (
+    TrackMap,
+    interpolate_at_pct,
+    parse_mt2_bytes,
 )
 
 DEFAULT_DATA_DIR = Path("data")
@@ -29,6 +30,24 @@ IMPORTS_MT2_DIR_NAME = Path("imports/mt2")
 _TRACK_MAP_CACHE_MAX_ENTRY_BYTES = 4 * 1024 * 1024
 _TRACK_MAP_INDEX_CACHE_MAX_ENTRY_BYTES = 2 * 1024 * 1024
 _TRACK_MAP_STORAGE_LOCK = RLock()
+
+_DEFAULT_OVAL_FAMILIES = {
+    "bristol",
+    "chicagoland",
+    "darlington",
+    "dover",
+    "lakeland",
+    "langley",
+    "martinsville",
+    "michigan",
+    "milwaukee",
+    "myrtlebeach",
+    "newsmyrna",
+    "northwilkesboro",
+    "richmond",
+    "talladega",
+}
+_OVAL_VARIANT_LAYOUTS = {"oval", "outer", "fullpit", "dirt"}
 
 
 def _data_dir() -> Path:
@@ -381,7 +400,7 @@ def import_mt2_folder(folder_path: str | Path) -> list[dict[str, Any]]:
         try:
             entry = import_mt2_file(f)
             entries.append(entry)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - continue auditing the remaining files
             errors.append(f"{f.name}: {exc}")
     # If nothing succeeded, raise
     if not entries and errors:
@@ -440,8 +459,12 @@ def _get_track_map_cached(
 def _dict_to_track_map(d: dict[str, Any]) -> TrackMap:
     """Reconstitute a TrackMap from its dict form (cheap deserialization)."""
     from racelab_engine.io.mt2_reader import (
-        TrackMapMetadata, TrackMapBounds, TrackMapOrigin, TrackMapPoint,
-        TrackMapMarker, TrackMapSection,
+        TrackMapBounds,
+        TrackMapMarker,
+        TrackMapMetadata,
+        TrackMapOrigin,
+        TrackMapPoint,
+        TrackMapSection,
     )
     meta = d["metadata"]
     metadata = TrackMapMetadata(
@@ -506,6 +529,177 @@ def find_best_map_for_run(run_id: str, track_name: str, layout: str | None = Non
 
 # ── overlay builders ─────────────────────────────────────────
 
+def _lap_pct_at_fraction(start_pct: float, end_pct: float, fraction: float) -> float:
+    span = (float(end_pct) - float(start_pct) + 100.0) % 100.0
+    return (float(start_pct) + span * fraction) % 100.0
+
+
+def _section_fraction_pct(section: Any, fraction: float) -> float:
+    return _lap_pct_at_fraction(section.start_lap_pct, section.end_lap_pct, fraction)
+
+
+def _oval_map_family(track_map: TrackMap, match: dict[str, Any] | None) -> str:
+    candidates = [
+        match.get("display_name") if match else None,
+        track_map.metadata.display_name,
+        track_map.metadata.track_name,
+        match.get("track_key") if match else None,
+        track_map.map_id,
+    ]
+    for candidate in candidates:
+        family = normalize_track_key(candidate)
+        if family and family != "unknown":
+            return family
+    return "unknown"
+
+
+def is_oval_track_map(track_map: TrackMap, match: dict[str, Any] | None = None) -> bool:
+    """Return whether a matched map represents an oval racing layout."""
+    family = _oval_map_family(track_map, match)
+    layout = str(match.get("layout_key") if match else "").strip().lower()
+    if not layout:
+        layout = infer_layout_key(
+            (match or {}).get("source_filename")
+            or track_map.metadata.display_name
+            or track_map.metadata.track_name
+            or track_map.map_id
+        )
+    if layout in {"road", "roval"}:
+        return False
+    if layout == "oval":
+        return True
+    if layout in _OVAL_VARIANT_LAYOUTS:
+        return family in {"bristol", "irwindale"}
+    return layout == "default" and family in _DEFAULT_OVAL_FAMILIES
+
+
+def _heading_quarter_turn_pcts(track_map: TrackMap) -> list[float]:
+    cumulative: list[tuple[float, float]] = []
+    prior_heading: float | None = None
+    rotation = 0.0
+    for point in track_map.points:
+        if point.lap_pct is None or point.heading_rad is None:
+            continue
+        heading = float(point.heading_rad)
+        if not math.isfinite(heading):
+            continue
+        if prior_heading is not None:
+            rotation += (heading - prior_heading + math.pi) % (2.0 * math.pi) - math.pi
+        cumulative.append((float(point.lap_pct), rotation))
+        prior_heading = heading
+    if len(cumulative) < 4 or abs(rotation) < 1.5 * math.pi:
+        return []
+    return [
+        min(cumulative, key=lambda item: abs(item[1] - rotation * fraction))[0]
+        for fraction in (0.125, 0.375, 0.625, 0.875)
+    ]
+
+
+def _oval_turn_anchor_pcts(
+    track_map: TrackMap,
+    match: dict[str, Any] | None,
+) -> tuple[list[float], str]:
+    corners = [section for section in track_map.sections if section.section_type == "corner"]
+    map_id = track_map.map_id.lower()
+    family = _oval_map_family(track_map, match)
+
+    if family == "pocono" and len(corners) >= 3:
+        return ([_section_fraction_pct(section, 0.5) for section in corners[:3]], "three-corner oval sections")
+
+    if "atlanta-quadoval" in map_id and len(corners) >= 5:
+        return (
+            [
+                _section_fraction_pct(corners[2], 0.25),
+                _section_fraction_pct(corners[2], 0.75),
+                _section_fraction_pct(corners[3], 0.5),
+                _section_fraction_pct(corners[4], 0.5),
+            ],
+            "quad-oval conventional corner sections",
+        )
+
+    if family == "talladega" and len(corners) >= 3:
+        return (
+            [
+                _section_fraction_pct(corners[0], 0.5),
+                _section_fraction_pct(corners[1], 0.5),
+                _section_fraction_pct(corners[2], 0.25),
+                _section_fraction_pct(corners[2], 0.75),
+            ],
+            "tri-oval conventional corner sections",
+        )
+
+    if (
+        family == "indianapolis"
+        and "indianapolis-oval-" in map_id
+        and "2022" not in map_id
+        and "indypit" not in map_id
+        and len(corners) >= 5
+    ):
+        return (
+            [
+                _section_fraction_pct(corners[0], 0.5),
+                _section_fraction_pct(corners[1], 0.5),
+                _section_fraction_pct(corners[2], 0.5),
+                _lap_pct_at_fraction(corners[3].start_lap_pct, corners[4].end_lap_pct, 0.5),
+            ],
+            "four-corner oval sections with merged final corner",
+        )
+
+    if len(corners) == 2:
+        return (
+            [
+                _section_fraction_pct(corners[0], 0.25),
+                _section_fraction_pct(corners[0], 0.75),
+                _section_fraction_pct(corners[1], 0.25),
+                _section_fraction_pct(corners[1], 0.75),
+            ],
+            "split two-end oval sections",
+        )
+
+    if len(corners) == 4:
+        return ([_section_fraction_pct(section, 0.5) for section in corners], "four-corner oval sections")
+
+    fallback = _heading_quarter_turn_pcts(track_map)
+    return (fallback, "centerline heading quarters" if fallback else "unavailable")
+
+
+def build_oval_turn_markers(
+    track_map: TrackMap,
+    match: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Build conventional, geometry-positioned turn labels for an oval map."""
+    if not is_oval_track_map(track_map, match):
+        return []
+    lap_pcts, placement_source = _oval_turn_anchor_pcts(track_map, match)
+    total_distance_m = float(track_map.metadata.distance_m)
+    if not lap_pcts or total_distance_m <= 0.0 or not track_map.points:
+        return []
+
+    turns: list[dict[str, Any]] = []
+    for number, lap_pct in enumerate(lap_pcts, start=1):
+        if not math.isfinite(lap_pct):
+            continue
+        position = interpolate_at_pct(track_map.points, lap_pct, total_distance_m)
+        distance_m = lap_pct / 100.0 * total_distance_m
+        turns.append(
+            {
+                "turn_id": f"turn_{number}",
+                "number": number,
+                "label": f"Turn {number}",
+                "short_label": f"T{number}",
+                "lap_pct": lap_pct,
+                "distance_m": distance_m,
+                "distance_ft": distance_m * 3.280839895013123,
+                "x": position["x_m"],
+                "y": position["y_m"],
+                "z": position["z_m"],
+                "heading_rad": position["heading_rad"],
+                "placement_source": placement_source,
+            }
+        )
+    return turns
+
+
 _TARGET_ZONE_ERROR = (
     "Target zone requires finite start and end positions satisfying "
     "0 <= start < end <= 100."
@@ -522,7 +716,7 @@ def validate_target_zone(
     if start_pct is None or end_pct is None:
         raise ValueError(_TARGET_ZONE_ERROR)
     if isinstance(start_pct, bool) or isinstance(end_pct, bool):
-        raise ValueError(_TARGET_ZONE_ERROR)
+        raise ValueError(_TARGET_ZONE_ERROR)  # noqa: TRY004 - API validation uses one error contract
     try:
         start = float(start_pct)
         end = float(end_pct)
@@ -565,7 +759,7 @@ def build_track_map_overlays(
             from racelab_engine.io.mt2_reader import interpolate_at_pct
             try:
                 pos = interpolate_at_pct(points, pct, total_dist)
-            except Exception:
+            except Exception:  # noqa: BLE001 - one malformed event must not remove the map
                 pos = None
             overlays.append({
                 "marker_id": event.get("event_id", f"evt_{event.get('event_type','')}"),
@@ -627,6 +821,7 @@ def build_track_map_package(
     track_map = get_track_map(map_id)
     entries = _load_index()
     match = next((e for e in entries if e.get("map_id") == map_id), None)
+    turns = build_oval_turn_markers(track_map, match) if track_map else []
 
     overlays = build_track_map_overlays(
         map_id,
@@ -645,6 +840,7 @@ def build_track_map_package(
         "overlays": overlays,
         "sections": [asdict(s) for s in (track_map.sections if track_map else [])],
         "markers": [asdict(m) for m in (track_map.markers if track_map else [])],
+        "turns": turns,
         "target_zone": {
             "start_pct": target_zone_start_pct,
             "end_pct": target_zone_end_pct,

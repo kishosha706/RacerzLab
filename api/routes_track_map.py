@@ -13,14 +13,15 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from api.routes_events import get_platform_events
 from api.routes_runs import repository
 from racelab_engine.services.track_map_service import (
+    build_track_map_package,
+    find_best_map_for_run,
+    get_track_map,
     import_mt2_folder,
     list_track_maps,
-    get_track_map,
-    find_best_map_for_run,
-    build_track_map_package,
     save_and_import_mt2_upload,
     validate_target_zone,
 )
+
 router = APIRouter(prefix="/api", tags=["track-maps"])
 
 MAX_MT2_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB
@@ -33,9 +34,11 @@ class ImportMt2FolderRequest(BaseModel):
 def _get_track_name(overview) -> str:
     """Safely extract track_name from a RunOverview."""
     session = getattr(overview, "session", None)
-    if session is not None:
-        if name := getattr(session, "track_name", None) or getattr(session, "track_display_name", None):
-            return name
+    if session is not None and (
+        name := getattr(session, "track_name", None)
+        or getattr(session, "track_display_name", None)
+    ):
+        return name
     return ""
 
 
@@ -123,6 +126,7 @@ def _public_track_map_package(package: dict[str, Any]) -> dict[str, Any]:
         "overlays": package.get("overlays", []),
         "sections": package.get("sections", []),
         "markers": package.get("markers", []),
+        "turns": package.get("turns", []),
         "target_zone": package.get("target_zone"),
         "warnings": package.get("warnings", []),
     }
@@ -283,7 +287,7 @@ def run_track_map_package(
         return JSONResponse(content=_public_track_map_package({
             "run_id": run_id, "lap": lap,
             "map": None, "match": match,
-            "overlays": [], "sections": [], "markers": [],
+            "overlays": [], "sections": [], "markers": [], "turns": [],
             "target_zone": None,
             "warnings": ["No track map matched for this run."],
         }))
@@ -294,7 +298,7 @@ def run_track_map_package(
     try:
         if all_events := get_platform_events(run_id, lap=lap):
             platform_events = [event.model_dump(mode="json") for event in all_events]
-    except Exception:
+    except Exception:  # noqa: BLE001 - an overlay failure must not hide map geometry
         overlay_warnings.append(
             "Platform-event overlay unavailable; map geometry remains available."
         )

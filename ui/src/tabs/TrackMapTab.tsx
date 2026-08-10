@@ -10,6 +10,7 @@ import type {
   TrackMapPackage,
   TrackMapPoint,
   TrackMapSection,
+  TrackMapTurn,
 } from "../types/trackMap";
 import { fetchRunTrackMapPackage, fetchTrackMaps } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
@@ -73,6 +74,7 @@ type DrawablePoint = {
 };
 
 type DrawableMarker = TrackMapMarker & { x: number; y: number };
+type DrawableTurn = TrackMapTurn & { x: number; y: number };
 type DrawableOverlay = TrackMapOverlayMarker & { x: number; y: number };
 
 type NumericBounds = {
@@ -273,6 +275,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
   const bounds = pkg?.map?.bounds;
   const overlays = pkg?.overlays ?? [];
   const markers = pkg?.markers?.length ? pkg.markers : pkg?.map?.markers ?? [];
+  const turns = pkg?.turns ?? [];
   const sections = pkg?.sections?.length ? pkg.sections : pkg?.map?.sections ?? [];
   const metadata = pkg?.map?.metadata;
   const match = pkg?.match;
@@ -340,6 +343,11 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
         })
         .filter((marker): marker is DrawableMarker => marker != null),
     [markers],
+  );
+
+  const drawableTurns = useMemo<DrawableTurn[]>(
+    () => turns.filter((turn): turn is DrawableTurn => isFiniteNumber(turn.x) && isFiniteNumber(turn.y)),
+    [turns],
   );
 
   useEffect(() => {
@@ -861,7 +869,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
             <span className="source-badge source-mt2">Imported map</span>
             {metadata && <span>{metadata.distance_miles.toFixed(2)} mi · {metadata.distance_ft.toFixed(0)} ft</span>}
             <span>{points.length.toLocaleString()} pts</span>
-            <span>{markers.length} mk · {sections.length} sec</span>
+            <span>{turns.length ? `${turns.length} turns · ` : ""}{markers.length} mk · {sections.length} sec</span>
           </div>
           <div className="trackmap-header-run">
             {trackName && <span className="muted">{trackName}</span>}
@@ -1146,7 +1154,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
               )}
               {sectionPolylines.map((sp) => {
               const stat = sectionStats.find((ss) => ss.section.section_id === sp.section.section_id);
-              const loc = getLocation(sp.section.start_lap_pct);
+              const loc = getLocation(sectionMidLapPct(sp.section));
               return (
                 <g
                   key={`${currentMapId}-${sp.section.section_id}`}
@@ -1175,7 +1183,7 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
                     strokeOpacity={selSecId === sp.section.section_id ? 0.9 : heatmap === "normal" ? 0.45 : 0.7}
                     strokeLinecap="round" strokeLinejoin="round"
                   />
-                  {sp.label && (
+                  {sp.label && (drawableTurns.length === 0 || sp.section.section_type !== "corner") && (
                     <text x={sp.label.x} y={sp.label.y} className="trackmap-label" textAnchor="middle" dy="-8">
                       {loc.short_label}
                     </text>
@@ -1184,7 +1192,17 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
               );
             })}
             {activeLayers.has("markers") &&
-              drawableMarkers.map((marker) => {
+              drawableTurns.map((turn) => (
+                <g key={`${currentMapId}-${turn.turn_id}`} className="trackmap-turn-marker">
+                  <title>{turn.label} — {turn.lap_pct.toFixed(1)}% lap position</title>
+                  <circle cx={turn.x} cy={turn.y} r={5} />
+                  <text x={turn.x + 8} y={turn.y - 8} className="trackmap-turn-label">
+                    {turn.short_label}
+                  </text>
+                </g>
+              ))}
+            {activeLayers.has("markers") &&
+              drawableTurns.length === 0 && drawableMarkers.map((marker) => {
                 const loc = getLocation(marker.lap_pct);
                 const m = marker;
                 return (

@@ -1126,6 +1126,11 @@ new setup authority.
   split timing buckets and chart lines, block full-stint verdicts, and cannot be
   pooled into 10/20-lap readiness. The browser gate mirrors the complete
   canonical invalid-lap taxonomy rather than trusting `is_useful` alone.
+- [x] Project conventional oval turn anchors from the imported centerline and
+  section geometry. Every current oval map exposes correctly ordered T1-T4
+  labels at the corner centers, except Pocono's truthful T1-T3 layout; road and
+  roval maps never inherit oval labels, and tri-oval frontstretch bends cannot
+  become fictitious Turn 5-7 markers.
 
 ### P17 verification evidence
 
@@ -1140,6 +1145,11 @@ new setup authority.
   readiness, 20-lap race-run withholding, RF/RR and balance states, setup
   anchors, the whole-car workbook, zero page overflow, and zero unnamed visible
   buttons. A final independent continuity and authority review returned CLEAR.
+- The 82-map canonical coverage audit verified all 43 oval layouts with finite,
+  sequential geometry anchors and zero violations. Sixty-four focused map/UI
+  contracts and the complete 2,230-test collection passed (2,225 passed, five
+  protected skips), plus changed-file Ruff, TypeScript, the 2,189-module build,
+  diff integrity, and a live Atlanta overlay inspection showing T1-T4 in place.
 
 ---
 
@@ -1795,3 +1805,4 @@ Implementation queue completed in this pass:
 | 2026-08-10 | Completed P23 first-earned-capability audit with no activation earned | All 15 P21/P22 candidates were ranked; the deterministic exact-FFB steering-workload envelope was selected and frozen under immutable protocol `p23p-7039505728f07034d6f5`; the empty qualified archive correctly produced no authority envelope. Twenty-six hostile focused regressions and the complete 2,209-test collection passed with six protected skips, plus Ruff, TypeScript, the 2,189-module production build, diff integrity, live Race/Learning smoke, and real-archive latency checks; P19/P20 authority remains unchanged |
 | 2026-08-10 | Polished and re-verified P24 evidence acquisition operations; P23 collection remains at zero | Protocol-bound immutable certificates, lap flight recorders, steering truth audits, bounded history/preview contracts, direct certificate retrieval, typed negative-control discovery, accessible Learning-only campaign gates, source duplicate protection, fact-only checklists, and five collection templates passed 91 focused P21-P24 regressions and the complete 2,225-test collection with six protected skips, changed-file Ruff, TypeScript, the 2,189-module production build, diff integrity, and live Race/Learning smoke; a whole-repo Ruff audit truthfully retains 1,026 inherited findings outside P24, the archive remains inventory, profile truth is incomplete, prospective collection is locked, and P23 remains shadow-only |
 | 2026-08-10 | Verified P25 acquisition pilot; no qualified session earned | A source-owned 63,657-record Next Gen Atlanta re-import proved source/cache/schema ownership, all ten steering signals, contiguous 360 Hz sub-tick reconstruction, exact FFB/73 mm-rev identity, a 33-lap immutable recorder, duplicate-source resistance, and a pre-outcome null run card; all 29 otherwise useful laps were traffic-contaminated, so certificate `p24c-36d0f278b166d6f8bb36` admitted nothing and P23 counts remained zero. Ninety-four focused P21-P25 regressions and all 2,228 collected Python tests passed (2,223 passed, five protected skips), plus changed-file Ruff, TypeScript, the 2,189-module production build, diff integrity, and live Race/Learning smoke; Learning Readiness was reduced from about 6.2 seconds to about 121 ms by reusing the frozen operation context, and P23 remains locked and shadow-only |
+| 2026-08-10 | Corrected conventional turn placement across every oval map | Canonical section and centerline geometry now produces T1-T4 anchors for all standard ovals and truthful T1-T3 for Pocono, while road/roval maps remain untouched and tri-oval frontstretch bends cannot become fake Turn 5-7 labels. The real 82-map audit verified 43 oval layouts with zero violations; 64 focused contracts, all 2,230 collected tests (2,225 passed, five protected skips), changed-file Ruff, TypeScript, the 2,189-module production build, diff integrity, and live Atlanta T1-T4 overlay inspection passed |
