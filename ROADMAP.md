@@ -1249,6 +1249,52 @@ new setup authority.
 
 ---
 
+## P20 - Engineering State Awareness and Whole-Car Mechanism Fusion
+
+Overall status: **Partial**. The semantic foundation is backend verified; producer
+fusion, context profiles, transient/exposure metrics, episode production, public
+projection, and UI integration are not yet verified.
+
+- [x] Define immutable, extra-forbid `ChannelRole`, `DerivedMetricContract`,
+  `EngineeringStateFrame`, `StateTransition`, `MechanismEpisode`, and
+  independently blocked `TrustBudget` contracts. State awareness is structurally
+  observation-only and cannot carry setup targets, cause rank, Keep/Undo, or
+  intervention authority.
+- [x] Complete the read-only existing-producer map. Six mechanism families have a
+  direct producer-owned typed P19 path; platform response, resistance/scrub-like,
+  stint trend, and sim integrity retain explicit Slice B fusion debt rather than
+  fabricated findings.
+- [ ] Give all ten existing mechanism families one exact-scope, producer-owned path
+  into canonical P19 reasoning while preserving independent blockers and distinct
+  same-kind physical windows.
+- [ ] Add material control-context boundaries, requested-versus-applied semantics,
+  FFB comparability, weight/power/build compatibility, and source-backed vehicle
+  engineering profiles without guessing missing geometry.
+- [ ] Add descriptive transient response, workload, chassis, tire, brake, combined
+  acceleration, and disturbance metrics under explicit proxy/forbidden-claim
+  contracts.
+- [ ] Build temporal state transitions, observation-only mechanism episodes, and a
+  state-drift ledger, then feed their evidence into P19 without adding another
+  cause ranker or setup-policy evaluator.
+- [ ] Publish one stale-safe engineering-awareness projection and integrate it into
+  existing workspaces without adding cockpit startup work or a new top-level tab.
+- [ ] Keep probabilistic authority, formal information gain, Bayesian optimization,
+  and multi-control automatic optimization data locked.
+
+### P20 verification evidence
+
+- Slice A: 15 hostile contract tests pass. They cover unknown channel roles,
+  derived-metric authority ceilings, cross-run/setup/lap evidence rejection,
+  material-control mutation boundaries, complete channel semantics/coverage,
+  temporal-only relationship vocabulary, observation-only episodes, independence
+  cluster accounting, separate trust axes, frozen models, and extra-field denial.
+- Focused Ruff passes for the Slice A contracts and hostile tests. The producer
+  audit records current canonical ownership, direct-path coverage, fusion debt,
+  and the one-projected-read performance boundary. No telemetry formula, API, UI,
+  reasoning ranker, or setup authority changed in this slice.
+
+---
+
 ## Professional analysis surface, without losing the product thesis
 
 - [x] Match essential professional language: time variance, overlays, math
