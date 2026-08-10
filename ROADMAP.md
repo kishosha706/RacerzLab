@@ -1251,9 +1251,9 @@ new setup authority.
 
 ## P20 - Engineering State Awareness and Whole-Car Mechanism Fusion
 
-Overall status: **Partial**. The semantic foundation is backend verified; producer
-fusion, context profiles, transient/exposure metrics, episode production, public
-projection, and UI integration are not yet verified.
+Overall status: **Partial**. The semantic foundation, producer fusion, context
+profiles, transient response, and whole-car exposure metrics are backend verified;
+episode production, public projection, and UI integration are not yet verified.
 
 - [x] Define immutable, extra-forbid `ChannelRole`, `DerivedMetricContract`,
   `EngineeringStateFrame`, `StateTransition`, `MechanismEpisode`, and
@@ -1274,7 +1274,7 @@ projection, and UI integration are not yet verified.
   steering workload metrics under explicit proxy/forbidden-claim contracts. Exact
   FFB, steering conversion, physical-position, speed, driver, and clock context is
   mandatory for comparison.
-- [ ] Add descriptive chassis, tire, brake, combined-acceleration, and disturbance
+- [x] Add descriptive chassis, tire, brake, combined-acceleration, and disturbance
   exposure metrics under explicit proxy/forbidden-claim contracts.
 - [ ] Build temporal state transitions, observation-only mechanism episodes, and a
   state-drift ledger, then feed their evidence into P19 without adding another
@@ -1326,6 +1326,17 @@ projection, and UI integration are not yet verified.
   detector-owned phase windows produced ready transient descriptors and 360 Hz
   workload artifacts; workload comparison stayed blocked because the FFB-enabled
   state is absent.
+- Slice E: nine hostile tests cover force/grip/thermal overclaim denial, junk-lap
+  blocking, straight-versus-corner geometry gates, source-profile binding,
+  pressure-velocity rather than brake-energy semantics, constant/snapshot tire
+  exclusion, raw acceleration caveats, row/frame parity, and repeated exact-position
+  disturbance identity. Focused Ruff and model compilation pass.
+- On the 26,556-row Atlanta **schema/capability** fixture, executable-path checks
+  produced descriptive artifacts while the identity-only profile correctly
+  blocked corner slip correction and damper-band classification. This is evidence
+  for channel/update-semantic gates and exact scope only, not validation of chassis,
+  tire, powertrain, platform, or other performance physics. The repeated-position
+  signature also states that track input was not directly measured.
 
 ---
 
