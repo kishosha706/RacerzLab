@@ -483,3 +483,36 @@ CREATE TABLE IF NOT EXISTS profile_validation_records (
 
 CREATE INDEX IF NOT EXISTS idx_profile_validation_field
   ON profile_validation_records(profile_id, field_key, created_at, record_id);
+
+CREATE TABLE IF NOT EXISTS shadow_model_contracts (
+  model_id TEXT PRIMARY KEY,
+  model_hash TEXT NOT NULL UNIQUE,
+  model_key TEXT NOT NULL,
+  version TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  contract_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS shadow_predictions (
+  prediction_id TEXT PRIMARY KEY,
+  prediction_hash TEXT NOT NULL UNIQUE,
+  model_id TEXT NOT NULL,
+  predicted_at TEXT NOT NULL,
+  prospective INTEGER NOT NULL,
+  prediction_json TEXT NOT NULL,
+  FOREIGN KEY(model_id) REFERENCES shadow_model_contracts(model_id)
+    ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS shadow_prediction_outcomes (
+  outcome_id TEXT PRIMARY KEY,
+  outcome_hash TEXT NOT NULL UNIQUE,
+  prediction_id TEXT NOT NULL UNIQUE,
+  observed_at TEXT NOT NULL,
+  outcome_json TEXT NOT NULL,
+  FOREIGN KEY(prediction_id) REFERENCES shadow_predictions(prediction_id)
+    ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_shadow_prediction_model
+  ON shadow_predictions(model_id, predicted_at, prediction_id);
