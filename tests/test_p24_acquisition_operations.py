@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -11,7 +11,9 @@ from racelab_engine.evaluation.acquisition_operations import (
     build_qualification_certificate,
     build_steering_signal_truth_audit,
     freeze_negative_control_expectation,
+    get_qualification_certificate,
     list_qualification_certificates,
+    negative_control_recipe_catalog,
     negative_control_recipes,
     p23_acquisition_progress,
     p23_collection_templates,
@@ -29,8 +31,7 @@ from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.storage.repository import RaceLabRepository
 
-
-NOW = datetime(2026, 8, 11, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 11, tzinfo=UTC)
 SOURCE_A = "a" * 64
 SOURCE_B = "b" * 64
 
@@ -331,10 +332,23 @@ def test_renamed_reimport_and_adjacent_laps_cannot_inflate_source_session_count(
     assert copied.duplicate_source is True
     assert copied.qualification_state != "qualified"
     assert copied.inventory_retained is True
-    assert len(list_qualification_certificates(db_path=database)) == 2
+    stored = list_qualification_certificates(db_path=database)
+    assert len(stored) == 2
+    assert list_qualification_certificates(db_path=database, limit=1) == stored[-1:]
+    assert get_qualification_certificate(
+        copied.certificate_id, db_path=database
+    ) == copied
+    assert get_qualification_certificate("p24c-missing", db_path=database) is None
+    with pytest.raises(ValueError, match="at least one"):
+        list_qualification_certificates(db_path=database, limit=0)
     progress = p23_acquisition_progress(db_path=database)
     assert progress.historical_sessions == 1
+    assert progress.total_attempts == 2
+    assert progress.qualified_attempts == 1
     assert progress.rejected_attempts == 1
+    assert progress.next_best_collection_kind == "historical_exact_ffb"
+    assert progress.latest_flight_recorder_total == len(stored[-1].flight_recorder)
+    assert progress.latest_flight_recorder_truncated is False
     campaign = next(
         item for item in initial_campaigns() if item.campaign_id == operation.campaign_id
     )
@@ -486,6 +500,16 @@ def test_collection_templates_are_executable_debt_not_new_authority(tmp_path):
     assert prospective.state == "locked"
     assert prospective.authority == "collection_template_only"
     assert all(item.protocol_hash == first_activation_protocol().protocol_hash for item in templates)
+
+
+def test_negative_control_catalog_is_discoverable_without_freezing_an_outcome():
+    catalog = negative_control_recipe_catalog()
+    assert {item.recipe_id for item in catalog} == set(negative_control_recipes())
+    assert {item.protocol_control_id for item in catalog} == set(
+        first_activation_protocol().negative_control_ids
+    )
+    assert all(item.authority == "expectation_template_only" for item in catalog)
+    assert all(item.label and item.expected_blocker_keys for item in catalog)
 
 
 def test_prospective_collection_is_hard_locked_and_protocol_is_unchanged(

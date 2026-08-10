@@ -168,6 +168,8 @@ export type P23FlightRecorderEntry = {
 };
 
 export type P23AcquisitionProgress = {
+  total_attempts: number;
+  qualified_attempts: number;
   historical_sessions: number;
   required_historical_sessions: 9;
   null_stints: number;
@@ -182,6 +184,7 @@ export type P23AcquisitionProgress = {
   required_prospective_sessions: 10;
   prospective_status: "locked_until_historical_gate" | "available" | "collecting";
   rejected_attempts: number;
+  next_best_collection_kind: "profile_validation" | "historical_exact_ffb" | "same_setup_null" | "negative_control" | "subgroup_coverage" | "historical_gate_review";
   next_best_collection: string;
   latest_certificate_id: string | null;
   latest_run_id: string | null;
@@ -190,6 +193,8 @@ export type P23AcquisitionProgress = {
   latest_excluded_laps: number;
   latest_blocker: string | null;
   latest_flight_recorder: P23FlightRecorderEntry[];
+  latest_flight_recorder_total: number;
+  latest_flight_recorder_truncated: boolean;
   activation_status: "no_activation_earned";
   p23_authority: "shadow_only";
 };

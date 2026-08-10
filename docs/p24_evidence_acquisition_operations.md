@@ -159,14 +159,27 @@ single session unit.
 
 Learning Mode now shows:
 
-- historical, null, negative-control, and subgroup counts;
-- steering truth/profile status;
-- the hard prospective lock;
-- the deterministic next collection mission;
-- the latest certificate decision and its lap flight recorder; and
+- four accessible progress meters for historical, null, negative-control, and
+  subgroup gates;
+- qualified-versus-recorded attempt counts and steering truth/profile status;
+- the hard prospective lock and typed deterministic next collection class;
+- the latest certificate decision and a bounded lap-flight-recorder preview;
+- a truthful empty state before the first qualification certificate exists; and
 - the certificate-owned, unique-session, shadow-only authority statement.
 
 Race Mode remains unchanged and contains no P24 collection clutter.
+
+Certificate history is bounded to the latest 50 records on the public API. The
+Learning Readiness projection carries at most 12 lap decisions plus the full
+count and an explicit truncation flag; the immutable certificate endpoint
+remains the source for the complete recorder. Dataset admission now retrieves
+its exact certificate identity directly rather than scanning campaign history.
+
+The 13 negative-control recipe variants are also exposed as typed,
+expectation-only templates. Their catalog makes protocol-control identity,
+expected blocker class, and expected outcome inspectable before a campaign
+freezes an experiment. The variants still collapse to the same eight frozen
+P23 control identities for progress.
 
 ## Performance
 
@@ -185,16 +198,18 @@ No cache keyed by mutable run wording or filenames was introduced.
 
 ## Validation
 
-- 59 focused P21-P24 campaign, dataset, leakage, prediction, activation, API,
-  and UI regressions passed.
-- The complete Python collection passed: **2,223 collected, 2,217 passed, and
+- 91 focused P21-P24 campaign, dataset, leakage, prediction, activation, API,
+  and UI regressions passed after the polish pass; 16 directly exercise P24.
+- The complete Python collection passed: **2,225 collected, 2,219 passed, and
   six protected fixture tests skipped**.
-- Whole-repository Ruff, TypeScript, the 2,189-module production build, and
-  `git diff --check` passed.
-- Live smoke reported no console errors. Race Mode contained no P24 campaign or
-  certificate surface. Learning Mode showed exactly one card with the actual
-  zero counts, incomplete profile, prospective lock, next mission, and
-  shadow-only certificate admission.
+- Ruff passed for every file changed by P24 polish; TypeScript, the 2,189-module
+  production build, and `git diff --check` passed. A repository-wide Ruff audit
+  currently reports 1,026 inherited findings outside this slice, so P24 does
+  not claim a clean whole-repository lint baseline.
+- Live smoke found zero P24 content in Race Mode and exactly one card in
+  Learning Mode. The card rendered four accessible meters, actual zero counts,
+  the signal-truth requirement, prospective lock, typed next mission, honest
+  no-certificate state, and shadow-only authority at the working viewport.
 
 ## Authority boundary
 

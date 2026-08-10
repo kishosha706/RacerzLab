@@ -117,7 +117,7 @@ function scopeMatches(
   return payload.run_id === runId && (payload.session_id ?? null) === sessionId;
 }
 
-function stateLabel(state: EvidenceState): string {
+function stateLabel(state: string): string {
   return state.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
@@ -445,39 +445,64 @@ function LearningReadinessCard({
       </details>
       {projection.p23_acquisition && (
         <section className="engineer-p23-acquisition" data-profile={projection.p23_acquisition.profile_status}>
-          <span className="eyebrow">P23 steering workload campaign</span>
-          <h3>Evidence acquisition operations</h3>
-          <div className="engineer-operation-progress">
-            <span>Historical <strong>{projection.p23_acquisition.historical_sessions} / {projection.p23_acquisition.required_historical_sessions}</strong></span>
-            <span>Null <strong>{projection.p23_acquisition.null_stints} / {projection.p23_acquisition.required_null_stints}</strong></span>
-            <span>Controls <strong>{projection.p23_acquisition.negative_controls} / {projection.p23_acquisition.required_negative_controls}</strong></span>
-            <span>Subgroups <strong>{projection.p23_acquisition.covered_subgroups} / {projection.p23_acquisition.required_subgroups}</strong></span>
+          <header className="engineer-p23-header">
+            <div>
+              <span className="eyebrow">P23 steering workload campaign</span>
+              <h3>Evidence acquisition operations</h3>
+            </div>
+            <span data-state={projection.p23_acquisition.profile_status}>
+              {projection.p23_acquisition.profile_status === "complete" ? "Signal truth ready" : "Signal truth required"}
+            </span>
+          </header>
+          <div className="engineer-p23-gates" role="list" aria-label="P23 evidence gates">
+            {([
+              ["Historical", projection.p23_acquisition.historical_sessions, projection.p23_acquisition.required_historical_sessions],
+              ["Null stints", projection.p23_acquisition.null_stints, projection.p23_acquisition.required_null_stints],
+              ["Controls", projection.p23_acquisition.negative_controls, projection.p23_acquisition.required_negative_controls],
+              ["Subgroups", projection.p23_acquisition.covered_subgroups, projection.p23_acquisition.required_subgroups],
+            ] as const).map(([label, current, required]) => (
+              <article key={label} role="listitem">
+                <span>{label}</span>
+                <strong>{current} / {required}</strong>
+                <progress value={current} max={required} aria-label={`${label}: ${current} of ${required}`} />
+              </article>
+            ))}
           </div>
-          <p><strong>Steering signal truth:</strong> {projection.p23_acquisition.profile_status}</p>
-          <p><strong>Prospective:</strong> {projection.p23_acquisition.prospective_status.replace(/_/g, " ")}</p>
+          <div className="engineer-p23-state-row">
+            <span><strong>Attempts</strong>{projection.p23_acquisition.qualified_attempts} qualified / {projection.p23_acquisition.total_attempts} recorded</span>
+            <span data-state={projection.p23_acquisition.prospective_status}><strong>Prospective</strong>{stateLabel(projection.p23_acquisition.prospective_status)}</span>
+          </div>
           <div className="engineer-p23-next">
-            <span>Next best collection</span>
+            <span>Next: {stateLabel(projection.p23_acquisition.next_best_collection_kind)}</span>
             <p>{projection.p23_acquisition.next_best_collection}</p>
           </div>
-          {projection.p23_acquisition.latest_certificate_id && (
+          {projection.p23_acquisition.latest_certificate_id ? (
             <details className="engineer-p23-certificate">
-              <summary>Latest session certificate · {projection.p23_acquisition.latest_qualification_state?.replace(/_/g, " ")}</summary>
+              <summary>Latest session certificate / {stateLabel(projection.p23_acquisition.latest_qualification_state ?? "inventory_only")}</summary>
               <div>
-                <p>{projection.p23_acquisition.latest_eligible_laps} eligible · {projection.p23_acquisition.latest_excluded_laps} excluded</p>
+                <p>{projection.p23_acquisition.latest_eligible_laps} eligible / {projection.p23_acquisition.latest_excluded_laps} excluded</p>
                 {projection.p23_acquisition.latest_blocker && <small>{projection.p23_acquisition.latest_blocker}</small>}
                 <ol>
-                  {projection.p23_acquisition.latest_flight_recorder.slice(0, 8).map((entry) => (
+                  {projection.p23_acquisition.latest_flight_recorder.map((entry) => (
                     <li key={entry.lap_number} data-state={entry.state}>
                       <strong>Lap {entry.lap_number}</strong>
-                      <span>{entry.state.replace(/_/g, " ")}</span>
+                      <span>{stateLabel(entry.state)}</span>
                       {entry.reasons[0] && <small>{entry.reasons[0]}</small>}
                     </li>
                   ))}
                 </ol>
+                {projection.p23_acquisition.latest_flight_recorder_truncated && (
+                  <small>Showing {projection.p23_acquisition.latest_flight_recorder.length} of {projection.p23_acquisition.latest_flight_recorder_total} lap decisions. Open the immutable certificate for the complete recorder.</small>
+                )}
               </div>
             </details>
+          ) : (
+            <div className="engineer-p23-empty">
+              <strong>No qualification certificate yet</strong>
+              <span>The next source-owned import will preserve its lap decisions here.</span>
+            </div>
           )}
-          <small>Certificate-owned admission · unique source session · shadow only</small>
+          <footer>Certificate-owned admission / unique source session / shadow only</footer>
         </section>
       )}
       {projection.first_activation_audit && (

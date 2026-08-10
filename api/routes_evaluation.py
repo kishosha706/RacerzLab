@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from racelab_engine.evaluation.campaigns import CampaignKind
 from racelab_engine.evaluation.acquisition_operations import (
     CampaignQualificationCertificate,
     NegativeControlExpectation,
+    NegativeControlRecipe,
     P23AcquisitionProgress,
     P23CollectionKind,
     P23CollectionTemplate,
@@ -16,10 +16,12 @@ from racelab_engine.evaluation.acquisition_operations import (
     build_pre_run_checklist,
     freeze_negative_control_expectation,
     list_qualification_certificates,
+    negative_control_recipe_catalog,
     p23_acquisition_progress,
     p23_collection_templates,
     save_negative_control_expectation,
 )
+from racelab_engine.evaluation.campaigns import CampaignKind
 from racelab_engine.evaluation.first_activation import (
     P23FirstActivationAudit,
     build_first_activation_audit,
@@ -44,7 +46,6 @@ from racelab_engine.evaluation.readiness import (
     LearningReadinessProjection,
     build_learning_readiness_projection,
 )
-
 
 router = APIRouter(prefix="/api/evaluation", tags=["evidence-evaluation"])
 
@@ -96,8 +97,18 @@ def get_p23_collection_templates() -> tuple[P23CollectionTemplate, ...]:
     "/p23-qualification-certificates",
     response_model=tuple[CampaignQualificationCertificate, ...],
 )
-def get_p23_qualification_certificates() -> tuple[CampaignQualificationCertificate, ...]:
-    return list_qualification_certificates()
+def get_p23_qualification_certificates(
+    limit: int = Query(default=50, ge=1, le=200),
+) -> tuple[CampaignQualificationCertificate, ...]:
+    return list_qualification_certificates(limit=limit)
+
+
+@router.get(
+    "/p23-negative-control-recipes",
+    response_model=tuple[NegativeControlRecipe, ...],
+)
+def get_p23_negative_control_recipes() -> tuple[NegativeControlRecipe, ...]:
+    return negative_control_recipe_catalog()
 
 
 @router.get("/p23-pre-run-checklist", response_model=P23PreRunChecklist)

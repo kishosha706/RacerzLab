@@ -7,11 +7,12 @@ change P19/P20 authority or the P23 activation state.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import math
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from statistics import median
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
@@ -49,10 +50,12 @@ from racelab_engine.services.engineering_context_service import (
     compare_steering_contexts,
     detect_control_mutations,
 )
-from racelab_engine.services.import_service import read_telemetry_manifest, read_telemetry_rows
+from racelab_engine.services.import_service import (
+    read_telemetry_manifest,
+    read_telemetry_rows,
+)
 from racelab_engine.storage.db import initialize_database
 from racelab_engine.storage.repository import RaceLabRepository
-
 
 P23CollectionKind = Literal[
     "historical_exact_ffb",
@@ -64,6 +67,14 @@ P23CollectionKind = Literal[
 CertificateState = Literal["qualified", "rejected", "partial", "inventory_only"]
 TruthState = Literal["ready", "limited", "scientific_debt", "missing"]
 ExpectedControlOutcome = Literal["comparison_rejected", "comparison_allowed"]
+P23CollectionPriority = Literal[
+    "profile_validation",
+    "historical_exact_ffb",
+    "same_setup_null",
+    "negative_control",
+    "subgroup_coverage",
+    "historical_gate_review",
+]
 
 _P23_PROTOCOL = first_activation_protocol()
 _REQUIRED_SUBGROUPS = frozenset(_P23_PROTOCOL.required_subgroups)
@@ -386,6 +397,8 @@ class CertificateAdmission(EvidenceLabModel):
 
 
 class P23AcquisitionProgress(EvidenceLabModel):
+    total_attempts: int = Field(ge=0)
+    qualified_attempts: int = Field(ge=0)
     historical_sessions: int = Field(ge=0)
     required_historical_sessions: Literal[9] = 9
     null_stints: int = Field(ge=0)
@@ -400,6 +413,7 @@ class P23AcquisitionProgress(EvidenceLabModel):
     required_prospective_sessions: Literal[10] = 10
     prospective_status: Literal["locked_until_historical_gate", "available", "collecting"]
     rejected_attempts: int = Field(ge=0)
+    next_best_collection_kind: P23CollectionPriority
     next_best_collection: str
     latest_certificate_id: str | None = None
     latest_run_id: str | None = None
@@ -408,8 +422,24 @@ class P23AcquisitionProgress(EvidenceLabModel):
     latest_excluded_laps: int = Field(default=0, ge=0)
     latest_blocker: str | None = None
     latest_flight_recorder: tuple[FlightRecorderEntry, ...] = ()
+    latest_flight_recorder_total: int = Field(default=0, ge=0)
+    latest_flight_recorder_truncated: bool = False
     activation_status: Literal["no_activation_earned"] = "no_activation_earned"
     p23_authority: Literal["shadow_only"] = "shadow_only"
+
+    @model_validator(mode="after")
+    def progress_is_internally_consistent(self) -> P23AcquisitionProgress:
+        if self.qualified_attempts + self.rejected_attempts != self.total_attempts:
+            raise ValueError("attempt counts must reconcile")
+        if self.covered_subgroups != len(set(self.subgroup_memberships)):
+            raise ValueError("subgroup count must match distinct memberships")
+        if self.latest_flight_recorder_total < len(self.latest_flight_recorder):
+            raise ValueError("flight-recorder total cannot be smaller than its preview")
+        if self.latest_flight_recorder_truncated != (
+            self.latest_flight_recorder_total > len(self.latest_flight_recorder)
+        ):
+            raise ValueError("flight-recorder truncation state is inconsistent")
+        return self
 
 
 class PreRunRequirement(EvidenceLabModel):
@@ -445,6 +475,15 @@ class P23CollectionTemplate(EvidenceLabModel):
     requirements: tuple[str, ...]
     blocker_reasons: tuple[str, ...]
     authority: Literal["collection_template_only"] = "collection_template_only"
+
+
+class NegativeControlRecipe(EvidenceLabModel):
+    recipe_id: str
+    label: str
+    protocol_control_id: str
+    expected_blocker_keys: tuple[str, ...]
+    expected_outcome: ExpectedControlOutcome
+    authority: Literal["expectation_template_only"] = "expectation_template_only"
 
 
 _NEGATIVE_CONTROL_RECIPES: dict[
@@ -517,12 +556,47 @@ _NEGATIVE_CONTROL_RECIPES: dict[
     ),
 }
 
+_NEGATIVE_CONTROL_LABELS = {
+    "same_setup_unchanged": "Same setup, unchanged context",
+    "stable_steering_response": "Stable steering response",
+    "max_force_mismatch": "FFB MaxForce mismatch",
+    "linear_mode_mismatch": "FFB linear-mode mismatch",
+    "smoothing_mismatch": "FFB smoothing mismatch",
+    "damper_mismatch": "FFB damper mismatch",
+    "steering_ratio_mismatch": "Steering conversion mismatch",
+    "sample_clock_corruption": "Sample-clock corruption",
+    "sub_tick_corruption": "Sub-tick integrity corruption",
+    "profile_build_mismatch": "Vehicle profile or build mismatch",
+    "driver_line_mismatch": "Driver-line context mismatch",
+    "traffic_context_mismatch": "Traffic context mismatch",
+    "pit_context_boundary": "Pit-context boundary",
+}
+
 
 def negative_control_recipes() -> dict[str, tuple[str, ...]]:
     return {
         recipe_id: expected_keys
         for recipe_id, (_protocol_id, expected_keys, _outcome) in _NEGATIVE_CONTROL_RECIPES.items()
     }
+
+
+def negative_control_recipe_catalog() -> tuple[NegativeControlRecipe, ...]:
+    """Return frozen expectation templates without creating an experiment."""
+
+    return tuple(
+        NegativeControlRecipe(
+            recipe_id=recipe_id,
+            label=_NEGATIVE_CONTROL_LABELS[recipe_id],
+            protocol_control_id=protocol_control_id,
+            expected_blocker_keys=expected_keys,
+            expected_outcome=expected_outcome,
+        )
+        for recipe_id, (
+            protocol_control_id,
+            expected_keys,
+            expected_outcome,
+        ) in _NEGATIVE_CONTROL_RECIPES.items()
+    )
 
 
 def p23_collection_templates(
@@ -826,7 +900,7 @@ def build_steering_signal_truth_audit(
     state: TruthState = "ready" if not blockers else "scientific_debt"
     payload = {
         "audit_version": "p24-steering-signal-truth-v1",
-        "created_at": created_at or datetime.now(timezone.utc),
+        "created_at": created_at or datetime.now(UTC),
         "run_id": run_id,
         "source_file_hash": source_hash,
         "protocol_id": _P23_PROTOCOL.protocol_id,
@@ -859,7 +933,7 @@ def freeze_negative_control_expectation(
     ]
     payload = {
         "expectation_version": "p24-negative-control-v1",
-        "created_at": created_at or datetime.now(timezone.utc),
+        "created_at": created_at or datetime.now(UTC),
         "recipe_id": recipe_id,
         "protocol_control_id": protocol_control_id,
         "operation_id": operation.operation_id,
@@ -1167,7 +1241,7 @@ def build_qualification_certificate(
     setup_identity = _setup_identity(overview)
     payload = {
         "certificate_version": "p24-qualification-certificate-v1",
-        "created_at": created_at or datetime.now(timezone.utc),
+        "created_at": created_at or datetime.now(UTC),
         "collection_kind": collection_kind,
         "campaign_id": operation.campaign_id,
         "protocol_id": _P23_PROTOCOL.protocol_id,
@@ -1382,19 +1456,52 @@ def save_negative_control_expectation(
 
 
 def list_qualification_certificates(
-    *, db_path: str | Path | None = None
+    *, db_path: str | Path | None = None, limit: int | None = None
 ) -> tuple[CampaignQualificationCertificate, ...]:
+    if limit is not None and limit < 1:
+        raise ValueError("certificate limit must be at least one")
     connection = initialize_database(db_path)
     try:
-        rows = connection.execute(
-            "SELECT certificate_json FROM p24_qualification_certificates "
-            "ORDER BY created_at, certificate_id"
-        ).fetchall()
+        if limit is None:
+            rows = connection.execute(
+                "SELECT certificate_json FROM p24_qualification_certificates "
+                "ORDER BY created_at, rowid"
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                "SELECT certificate_json FROM ("
+                "SELECT certificate_json, created_at, rowid AS persistence_order "
+                "FROM p24_qualification_certificates "
+                "ORDER BY created_at DESC, rowid DESC LIMIT ?"
+                ") ORDER BY created_at, persistence_order",
+                (limit,),
+            ).fetchall()
     finally:
         connection.close()
     return tuple(
         CampaignQualificationCertificate.model_validate_json(row[0]) for row in rows
     )
+
+
+def get_qualification_certificate(
+    certificate_id: str,
+    *,
+    db_path: str | Path | None = None,
+) -> CampaignQualificationCertificate | None:
+    """Read one immutable certificate without scanning campaign history."""
+
+    connection = initialize_database(db_path)
+    try:
+        row = connection.execute(
+            "SELECT certificate_json FROM p24_qualification_certificates "
+            "WHERE certificate_id = ?",
+            (certificate_id,),
+        ).fetchone()
+    finally:
+        connection.close()
+    if row is None:
+        return None
+    return CampaignQualificationCertificate.model_validate_json(row[0])
 
 
 def _build_dataset_from_certificate(
@@ -1492,13 +1599,9 @@ def admit_qualification_certificate(
     *,
     db_path: str | Path | None = None,
 ) -> tuple[CertificateAdmission, ...]:
-    stored = next(
-        (
-            item
-            for item in list_qualification_certificates(db_path=db_path)
-            if item.certificate_id == certificate.certificate_id
-        ),
-        None,
+    stored = get_qualification_certificate(
+        certificate.certificate_id,
+        db_path=db_path,
     )
     if stored != certificate:
         raise ValueError("only the stored immutable certificate may admit a dataset")
@@ -1672,7 +1775,7 @@ def qualify_p23_operations_for_run(
                 "expectation_hash": expectation.expectation_hash,
                 "certificate_id": certificate.certificate_id,
                 "certificate_hash": certificate.certificate_hash,
-                "observed_at": created_at or datetime.now(timezone.utc),
+                "observed_at": created_at or datetime.now(UTC),
                 "observed_outcome": observed_outcome,
                 "observed_blocker_keys": observed_blockers,
                 "passed": passed,
@@ -1741,18 +1844,28 @@ def p23_acquisition_progress(
     finally:
         connection.close()
     if not profile_ready:
+        next_kind: P23CollectionPriority = "profile_validation"
         next_best = "Validate steering signal units, sub-tick timing, scalar relationship, and steering ratio/pinion identity."
     elif historical < 9:
+        next_kind = "historical_exact_ffb"
         next_best = f"Record historical exact-FFB source session {historical + 1} of 9 with at least 10 clean laps."
     elif null < 10:
+        next_kind = "same_setup_null"
         next_best = f"Record same-setup null stint {null + 1} of 10 under the frozen FFB fingerprint."
     elif controls < 8:
+        next_kind = "negative_control"
         next_best = "Freeze and run the next unmet negative-control expectation before importing its outcome."
     elif len(subgroups) < 9:
+        next_kind = "subgroup_coverage"
         next_best = "Collect the highest-priority missing P23 subgroup under the exact frozen context."
     else:
+        next_kind = "historical_gate_review"
         next_best = "Grade the frozen historical gate before any prospective session is accepted."
+    latest_recorder = certificates[-1].flight_recorder if certificates else ()
+    recorder_preview = latest_recorder[:12]
     return P23AcquisitionProgress(
+        total_attempts=len(certificates),
+        qualified_attempts=len(qualified),
         historical_sessions=historical,
         null_stints=null,
         negative_controls=min(controls, 8),
@@ -1768,6 +1881,7 @@ def p23_acquisition_progress(
             else "locked_until_historical_gate"
         ),
         rejected_attempts=sum(item.qualification_state != "qualified" for item in certificates),
+        next_best_collection_kind=next_kind,
         next_best_collection=next_best,
         latest_certificate_id=certificates[-1].certificate_id if certificates else None,
         latest_run_id=certificates[-1].run_id if certificates else None,
@@ -1781,9 +1895,9 @@ def p23_acquisition_progress(
             if certificates and certificates[-1].blocker_reasons
             else None
         ),
-        latest_flight_recorder=(
-            certificates[-1].flight_recorder if certificates else ()
-        ),
+        latest_flight_recorder=recorder_preview,
+        latest_flight_recorder_total=len(latest_recorder),
+        latest_flight_recorder_truncated=len(latest_recorder) > len(recorder_preview),
     )
 
 
@@ -1890,9 +2004,11 @@ __all__ = [
     "DatasetAdmissionRule",
     "FlightRecorderEntry",
     "NegativeControlExpectation",
+    "NegativeControlRecipe",
     "NegativeControlResult",
     "P23AcquisitionProgress",
     "P23CollectionKind",
+    "P23CollectionPriority",
     "P23CollectionTemplate",
     "P23PreRunChecklist",
     "PreRunRequirement",
@@ -1903,7 +2019,9 @@ __all__ = [
     "build_qualification_certificate",
     "build_steering_signal_truth_audit",
     "freeze_negative_control_expectation",
+    "get_qualification_certificate",
     "list_qualification_certificates",
+    "negative_control_recipe_catalog",
     "negative_control_recipes",
     "p23_acquisition_progress",
     "p23_collection_templates",
