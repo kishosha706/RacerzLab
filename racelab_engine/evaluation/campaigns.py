@@ -379,7 +379,7 @@ def initial_campaigns(
     *,
     created_at: datetime | None = None,
 ) -> tuple[EvidenceCampaign, ...]:
-    timestamp = created_at or datetime.now(timezone.utc)
+    timestamp = created_at or datetime(2026, 8, 10, tzinfo=timezone.utc)
     shared_forbidden = (
         "setup_authority",
         "cause_probability",

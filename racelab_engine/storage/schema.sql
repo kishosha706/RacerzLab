@@ -516,3 +516,15 @@ CREATE TABLE IF NOT EXISTS shadow_prediction_outcomes (
 
 CREATE INDEX IF NOT EXISTS idx_shadow_prediction_model
   ON shadow_predictions(model_id, predicted_at, prediction_id);
+
+CREATE TABLE IF NOT EXISTS activation_decisions (
+  decision_id TEXT PRIMARY KEY,
+  decision_hash TEXT NOT NULL UNIQUE,
+  capability_key TEXT NOT NULL,
+  state TEXT NOT NULL,
+  evaluated_at TEXT NOT NULL,
+  decision_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_activation_decision_capability
+  ON activation_decisions(capability_key, evaluated_at, decision_id);

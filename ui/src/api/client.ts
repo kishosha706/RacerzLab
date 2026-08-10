@@ -23,6 +23,7 @@ import type {
   RunIntelligenceReport,
 } from "../types/intelligence";
 import type { EngineeringAwarenessProjection } from "../types/engineeringAwareness";
+import type { LearningReadinessProjection } from "../types/learningReadiness";
 
 const API_BASE =
   import.meta.env.VITE_RACELAB_API_BASE_URL ??
@@ -316,6 +317,17 @@ export function fetchEngineeringAwareness(
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return requestJson<EngineeringAwarenessProjection>(
     `/api/runs/${encodeURIComponent(runId)}/engineering-awareness${suffix}`,
+  );
+}
+
+export function fetchLearningReadiness(
+  runId: string,
+  options?: { sessionId?: string | null },
+): Promise<LearningReadinessProjection> {
+  const params = new URLSearchParams({ run_id: runId });
+  if (options?.sessionId) params.set("session_id", options.sessionId);
+  return requestJson<LearningReadinessProjection>(
+    `/api/evaluation/learning-readiness?${params.toString()}`,
   );
 }
 

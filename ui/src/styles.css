@@ -6394,6 +6394,95 @@ td {
   gap: 10px;
 }
 
+.engineer-readiness {
+  grid-column: 1 / -1;
+}
+
+.engineer-readiness > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.engineer-readiness-state {
+  margin-left: auto;
+  padding: 4px 7px;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  border-radius: 999px;
+  color: #93c5fd;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.engineer-readiness-authority,
+.engineer-readiness-archive,
+.engineer-readiness[data-status="error"] > p {
+  margin: 5px 0 0;
+  color: #a8b5c3;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.engineer-readiness[data-status="error"] > strong {
+  display: block;
+  margin-top: 6px;
+  color: #fbbf24;
+  font-size: 10px;
+}
+
+.engineer-readiness-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.engineer-readiness-counts > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #263244;
+  border-radius: 6px;
+  background: #080c12;
+}
+
+.engineer-readiness-counts span,
+.engineer-readiness-counts small { color: #718096; font-size: 8px; }
+.engineer-readiness-counts strong { color: #e2e8f0; font-size: 13px; text-transform: capitalize; }
+
+.engineer-readiness-capabilities {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.engineer-readiness-capabilities article {
+  padding: 8px;
+  border: 1px solid #263244;
+  border-left: 3px solid #64748b;
+  border-radius: 6px;
+  background: rgba(8, 12, 18, 0.72);
+}
+
+.engineer-readiness-capabilities article[data-state="shadow"] { border-left-color: #60a5fa; }
+.engineer-readiness-capabilities article[data-state="descriptive_only"] { border-left-color: #fbbf24; }
+.engineer-readiness-capabilities article > header { display: flex; gap: 6px; }
+.engineer-readiness-capabilities article strong { color: #e2e8f0; font-size: 10px; }
+.engineer-readiness-capabilities article span { margin-left: auto; color: #93c5fd; font-size: 8px; font-weight: 800; text-transform: uppercase; }
+.engineer-readiness-capabilities article p { margin: 5px 0; color: #a8b5c3; font-size: 9px; line-height: 1.4; }
+.engineer-readiness-capabilities article small { color: #fbbf24; font-size: 8px; }
+
+.engineer-readiness-debt { margin-top: 9px; border-top: 1px solid #1f2937; }
+.engineer-readiness-debt > summary { padding-top: 8px; color: #93c5fd; cursor: pointer; font-size: 9px; font-weight: 800; }
+.engineer-readiness-debt > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.engineer-readiness-debt ul { display: grid; gap: 5px; margin: 8px 0 0; padding: 0; list-style: none; }
+.engineer-readiness-debt li { display: grid; gap: 2px; padding: 6px; border: 1px solid #263244; border-radius: 5px; }
+.engineer-readiness-debt li strong { color: #cbd5e1; font-size: 9px; }
+.engineer-readiness-debt li span { color: #7d8a99; font-size: 8px; line-height: 1.35; }
+
 .engineer-learning-card > header {
   margin-bottom: 9px;
 }

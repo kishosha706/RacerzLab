@@ -343,6 +343,22 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_shadow_prediction_model "
         "ON shadow_predictions(model_id, predicted_at, prediction_id)"
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS activation_decisions (
+          decision_id TEXT PRIMARY KEY,
+          decision_hash TEXT NOT NULL UNIQUE,
+          capability_key TEXT NOT NULL,
+          state TEXT NOT NULL,
+          evaluated_at TEXT NOT NULL,
+          decision_json TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_activation_decision_capability "
+        "ON activation_decisions(capability_key, evaluated_at, decision_id)"
+    )
 
 
 def initialize_database(db_path: str | Path | None = None) -> sqlite3.Connection:

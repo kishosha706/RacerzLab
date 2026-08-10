@@ -16,7 +16,11 @@ import {
   XCircle,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchRunIntelligence, queryRunIntelligence } from "../api/client";
+import {
+  fetchLearningReadiness,
+  fetchRunIntelligence,
+  queryRunIntelligence,
+} from "../api/client";
 import {
   exactMindChangeCriteria,
   MindChangeCriteriaCard,
@@ -33,6 +37,7 @@ import type {
   RunIntelligenceReport,
 } from "../types/intelligence";
 import type { EvidenceState } from "../types/telemetry";
+import type { LearningReadinessProjection } from "../types/learningReadiness";
 import { deriveCurrentReportSetupAuthority } from "../utils/currentIntelligenceAuthority";
 import {
   exactEventIdentitySet,
@@ -68,6 +73,13 @@ type QueryState = {
   requestKey: string | null;
   status: "idle" | "loading" | "ready" | "error";
   response: IntelligenceQueryResponse | null;
+  error: string | null;
+};
+
+type ReadinessLoadState = {
+  requestKey: string | null;
+  status: "idle" | "loading" | "ready" | "error";
+  projection: LearningReadinessProjection | null;
   error: string | null;
 };
 
@@ -234,6 +246,97 @@ function DataQualityCard({
   );
 }
 
+function LearningReadinessCard({ state }: { state: ReadinessLoadState }) {
+  if (state.status === "loading" || state.status === "idle") {
+    return (
+      <section className="engineer-learning-card engineer-readiness" aria-busy="true">
+        <header>
+          <FlaskConical size={16} aria-hidden="true" />
+          <div><span className="eyebrow">Evidence lab</span><h2>Learning readiness</h2></div>
+        </header>
+        <p className="engineer-empty-detail">Checking qualified scientific evidence…</p>
+      </section>
+    );
+  }
+  if (state.status === "error" || !state.projection) {
+    return (
+      <section className="engineer-learning-card engineer-readiness" data-status="error">
+        <header>
+          <AlertTriangle size={16} aria-hidden="true" />
+          <div><span className="eyebrow">Evidence lab</span><h2>Learning readiness unavailable</h2></div>
+        </header>
+        <p>{state.error ?? "No readiness record was returned."}</p>
+        <strong>No statistical authority was inferred.</strong>
+      </section>
+    );
+  }
+  const projection = state.projection;
+  return (
+    <section className="engineer-learning-card engineer-readiness" aria-labelledby="engineer-readiness-heading">
+      <header>
+        <FlaskConical size={16} aria-hidden="true" />
+        <div>
+          <span className="eyebrow">Evidence lab · Offline evaluation</span>
+          <h2 id="engineer-readiness-heading">Learning readiness</h2>
+        </div>
+        <span className="engineer-readiness-state">Advanced models: {projection.advanced_models_summary}</span>
+      </header>
+      <p className="engineer-readiness-authority">
+        Production authority stays with <strong>{projection.deterministic_authority}</strong>.
+      </p>
+      <div className="engineer-readiness-counts" aria-label="Qualified evidence counts">
+        {projection.counts.map((count) => (
+          <div key={count.key}>
+            <span>{count.label}</span>
+            <strong>{count.current} / {count.required}</strong>
+            <small>{count.unit}</small>
+          </div>
+        ))}
+        <div>
+          <span>Vehicle profile</span>
+          <strong>{projection.vehicle_profile_status}</strong>
+          <small>{projection.vehicle_profile_fields_blocked.length > 0
+            ? `Missing: ${projection.vehicle_profile_fields_blocked.join(", ")}`
+            : "Required geometry fields confirmed"}</small>
+        </div>
+      </div>
+      <div className="engineer-readiness-capabilities">
+        {projection.capabilities.map((capability) => (
+          <article key={capability.capability_key} data-state={capability.state}>
+            <header><strong>{capability.label}</strong><span>{capability.state.replace(/_/g, " ")}</span></header>
+            <p>{capability.summary}</p>
+            {capability.blockers[0] && <small>{capability.blockers[0]}</small>}
+          </article>
+        ))}
+      </div>
+      <details className="engineer-readiness-debt">
+        <summary>Collection missions and scientific debt</summary>
+        <div>
+          <ul>
+            {projection.campaigns.map((campaign) => (
+              <li key={campaign.campaign_kind}>
+                <strong>{campaign.label}</strong>
+                <span>{campaign.usable_units} / {campaign.required_units} units · {campaign.state.replace(/_/g, " ")}</span>
+              </li>
+            ))}
+          </ul>
+          <ul>
+            {projection.debts.map((debt) => (
+              <li key={debt.debt_key}>
+                <strong>{debt.summary}</strong>
+                <span>{debt.collection_action}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </details>
+      <p className="engineer-readiness-archive">
+        Archive inventory: {projection.archived_sessions} saved sessions · {projection.archived_runs} runs. Archived does not mean qualified.
+      </p>
+    </section>
+  );
+}
+
 function MeasurementCard({
   measurement,
   learning,
@@ -358,6 +461,7 @@ export function IntelligencePanel({
   });
   const reportSequence = useRef(0);
   const querySequence = useRef(0);
+  const readinessSequence = useRef(0);
   const [retryToken, setRetryToken] = useState(0);
   const [reportState, setReportState] = useState<ReportLoadState>({
     requestKey: scopeKey,
@@ -372,6 +476,53 @@ export function IntelligencePanel({
     response: null,
     error: null,
   });
+  const [readinessState, setReadinessState] = useState<ReadinessLoadState>({
+    requestKey: null,
+    status: "idle",
+    projection: null,
+    error: null,
+  });
+
+  useEffect(() => {
+    const sequence = ++readinessSequence.current;
+    if (!learning) {
+      setReadinessState({ requestKey: null, status: "idle", projection: null, error: null });
+      return;
+    }
+    const requestedRunId = runId;
+    const requestedSessionId = sessionId;
+    const requestKey = `${requestedRunId}:${requestedSessionId ?? "no-session"}:${workflowUpdatedAt ?? "no-workflow"}`;
+    let cancelled = false;
+    setReadinessState({ requestKey, status: "loading", projection: null, error: null });
+    void fetchLearningReadiness(requestedRunId, { sessionId: requestedSessionId })
+      .then((projection) => {
+        if (cancelled || sequence !== readinessSequence.current) return;
+        if (
+          projection.run_id !== requestedRunId
+          || (projection.session_id ?? null) !== requestedSessionId
+          || projection.scope_key !== `${requestedRunId}:${requestedSessionId ?? "no-session"}`
+        ) {
+          setReadinessState({
+            requestKey,
+            status: "error",
+            projection: null,
+            error: "Learning readiness returned a different run or session. No result was shown.",
+          });
+          return;
+        }
+        setReadinessState({ requestKey, status: "ready", projection, error: null });
+      })
+      .catch((caught: unknown) => {
+        if (cancelled || sequence !== readinessSequence.current) return;
+        setReadinessState({
+          requestKey,
+          status: "error",
+          projection: null,
+          error: caught instanceof Error ? caught.message : "Learning readiness failed.",
+        });
+      });
+    return () => { cancelled = true; };
+  }, [learning, runId, sessionId, workflowUpdatedAt]);
 
   useEffect(() => {
     const sequence = ++reportSequence.current;
@@ -1098,6 +1249,7 @@ export function IntelligencePanel({
 
       {learning && (
         <div className="engineer-learning-grid">
+          <LearningReadinessCard state={readinessState} />
           <section className="engineer-learning-card engineer-evidence-graph" aria-labelledby="engineer-graph-heading">
             <header>
               <Link2 size={16} aria-hidden="true" />
