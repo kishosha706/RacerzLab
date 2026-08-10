@@ -3224,6 +3224,11 @@ def test_observation_candidates_report_only_required_new_laps() -> None:
             observations=(
                 MechanismObservation(
                     observation_id="platform-repeat",
+                    producer_id="test.platform",
+                    artifact_id="platform-repeat",
+                    source_run_ids=("run-1",),
+                    source_setup_ids=("setup-1",),
+                    sample_coverage=0.0,
                     mechanism="platform_response",
                     run_id="run-1",
                     setup_id="setup-1",

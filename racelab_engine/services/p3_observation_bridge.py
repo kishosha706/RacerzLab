@@ -17,6 +17,9 @@ from typing import Any
 
 from racelab_engine.analysis.braking_efficiency import analyze_braking_efficiency
 from racelab_engine.analysis.damper_response import analyze_damper_response
+from racelab_engine.analysis.evidence_contracts import (
+    RELATIVE_HIGH_SPEED_RESISTANCE_CONTRACT,
+)
 from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.analysis.observation_intelligence import (
     adapt_p3_report_observations,
@@ -26,15 +29,21 @@ from racelab_engine.analysis.p3_contracts import (
     BRAKING_EFFICIENCY_CONTRACT,
     DAMPER_RESPONSE_CONTRACT,
     POWERTRAIN_GEARING_CONTRACT,
+    SIM_INTEGRITY_CONTRACT,
+    STINT_STRATEGY_CONTRACT,
     TIRE_STATE_CONTRACT,
 )
 from racelab_engine.analysis.phase_engineering import analyze_phase_engineering_systems
+from racelab_engine.analysis.phase_engineering_contracts import (
+    AERO_PLATFORM_WINDOW_CONTRACT,
+)
 from racelab_engine.analysis.powertrain_gearing import analyze_powertrain_gearing
 from racelab_engine.analysis.sim_integrity import (
     SimIntegrityCertificate,
     build_sim_integrity_certificate,
     comparison_integrity_gate,
 )
+from racelab_engine.analysis.stint_strategy import analyze_stint_strategy
 from racelab_engine.analysis.time_alignment import TimeAlignmentResult, analyze_time_alignment
 from racelab_engine.analysis.tire_state_energy import analyze_tire_state
 from racelab_engine.models.evidence import EvidenceState
@@ -132,6 +141,7 @@ _PRODUCER_CONTRACTS = {
 _PAIRED_KINDS = frozenset({
     MechanismKind.DRIVER_EXECUTION,
     MechanismKind.CORNER_ROTATION,
+    MechanismKind.PLATFORM_RESPONSE,
 })
 _PRODUCER_ERRORS = (ArithmeticError, IndexError, KeyError, TypeError, ValueError)
 _P3_BINDING_REQUIREMENTS = {
@@ -141,6 +151,9 @@ _P3_BINDING_REQUIREMENTS = {
     MechanismKind.POWERTRAIN_RESPONSE: (3, 0.90),
     MechanismKind.DRIVER_EXECUTION: (3, 0.90),
     MechanismKind.CORNER_ROTATION: (3, 0.90),
+    MechanismKind.PLATFORM_RESPONSE: (3, 0.90),
+    MechanismKind.STINT_TREND: (3, 0.90),
+    MechanismKind.SIM_INTEGRITY: (3, 0.90),
 }
 
 
@@ -171,6 +184,13 @@ def p3_observation_columns(
         columns.extend(_PHASE_COMPARISON_CHANNELS)
     if MechanismKind.TIRE_STATE not in excluded:
         columns.extend(_TIRE_HISTORY_CHANNELS)
+    if MechanismKind.STINT_TREND not in excluded:
+        columns.extend(
+            sorted(
+                STINT_STRATEGY_CONTRACT.required_channels
+                | STINT_STRATEGY_CONTRACT.preferred_channels
+            )
+        )
     return tuple(dict.fromkeys(columns))
 
 
@@ -274,8 +294,14 @@ def _blocked_observation(
     window: _ObservationWindow | None = None,
 ) -> MechanismObservation:
     reasons = _ordered_unique(blockers) or ("The producing P3 evidence contract did not pass.",)
+    observation_id = f"p3:{run_id}:{mechanism.value}:blocked"
     return MechanismObservation(
-        observation_id=f"p3:{run_id}:{mechanism.value}:blocked",
+        observation_id=observation_id,
+        producer_id=f"p3:{mechanism.value}",
+        artifact_id=observation_id,
+        source_run_ids=(run_id,),
+        source_setup_ids=((setup_id,) if setup_id is not None else ()),
+        sample_coverage=0.0,
         mechanism=mechanism,
         run_id=run_id,
         setup_id=setup_id,
@@ -351,6 +377,7 @@ def _adapt_report(
         lap_pct_peak=window.peak_pct,
         telemetry_sample_count=window.sample_count,
         repetition_count=max(1, repetition_count),
+        mechanism_override=mechanism,
     )
     if adapted.observations:
         return adapted
@@ -528,12 +555,26 @@ def merge_mechanism_observation_reports(
             blocker_reasons=tuple(scope_blockers),
         )
     observations: list[MechanismObservation] = []
-    seen: set[str] = set()
+    seen: dict[tuple[str, str], MechanismObservation] = {}
+    artifact_conflicts: list[str] = []
     for report in reports:
         for observation in report.observations:
-            if observation.observation_id not in seen:
-                seen.add(observation.observation_id)
+            artifact_identity = (observation.producer_id, observation.artifact_id)
+            if artifact_identity not in seen:
+                seen[artifact_identity] = observation
                 observations.append(observation)
+            elif seen[artifact_identity] != observation:
+                artifact_conflicts.append(
+                    "Producer artifact identity has conflicting observation payloads: "
+                    f"{observation.producer_id}/{observation.artifact_id}."
+                )
+    if artifact_conflicts:
+        return MechanismObservationReport(
+            status=ObservationStatus.BLOCKED,
+            run_id=run_id,
+            setup_id=setup_id,
+            blocker_reasons=_ordered_unique(artifact_conflicts),
+        )
     qualified = tuple(item for item in observations if item.qualified)
     blockers = _ordered_unique(
         reason
@@ -583,6 +624,7 @@ def _rebind_p3_observation_rows(
             (3, 0.90),
         )
         citations: list[ObservationCitation] = []
+        citation_coverages: list[float] = []
         blockers: list[str] = []
         for citation in observation.citations:
             window_rows = [
@@ -624,6 +666,7 @@ def _rebind_p3_observation_rows(
             citation_payload = citation.model_dump()
             citation_payload["telemetry_sample_count"] = len(coobserved)
             citations.append(ObservationCitation.model_validate(citation_payload))
+            citation_coverages.append(coverage)
         if blockers or len(citations) != len(observation.citations):
             payload = observation.model_dump()
             payload.update({
@@ -636,6 +679,7 @@ def _rebind_p3_observation_rows(
                 "supporting_evidence": (),
                 "contradicting_evidence": (),
                 "telemetry_sample_count": 0,
+                "sample_coverage": 0.0,
                 "repetition_count": 0,
                 "citations": (),
                 "blocker_reasons": _ordered_unique(blockers),
@@ -647,6 +691,7 @@ def _rebind_p3_observation_rows(
             "telemetry_sample_count": sum(
                 citation.telemetry_sample_count for citation in citations
             ),
+            "sample_coverage": min(citation_coverages),
             "citations": [citation.model_dump() for citation in citations],
         })
         rebound.append(MechanismObservation.model_validate(payload))
@@ -680,6 +725,7 @@ def revalidate_event_mechanism_observations(
             rebound.append(observation)
             continue
         citations: list[ObservationCitation] = []
+        citation_coverages: list[float] = []
         missing_channels: set[str] = set()
         for citation in observation.citations:
             window_rows = [
@@ -706,6 +752,9 @@ def revalidate_event_mechanism_observations(
             payload = citation.model_dump()
             payload["telemetry_sample_count"] = len(coobserved)
             citations.append(ObservationCitation.model_validate(payload))
+            citation_coverages.append(
+                len(coobserved) / len(window_rows) if window_rows else 0.0
+            )
         if len(citations) != len(observation.citations):
             payload = observation.model_dump()
             payload.update({
@@ -715,6 +764,7 @@ def revalidate_event_mechanism_observations(
                 "supporting_evidence": (),
                 "contradicting_evidence": (),
                 "telemetry_sample_count": 0,
+                "sample_coverage": 0.0,
                 "repetition_count": 0,
                 "citations": (),
                 "blocker_reasons": (
@@ -730,8 +780,197 @@ def revalidate_event_mechanism_observations(
             "telemetry_sample_count": sum(
                 citation.telemetry_sample_count for citation in citations
             ),
+            "sample_coverage": min(citation_coverages),
             "citations": [citation.model_dump() for citation in citations],
         })
+        rebound.append(MechanismObservation.model_validate(payload))
+    qualified = tuple(item for item in rebound if item.qualified)
+    blockers = _ordered_unique(
+        reason for item in rebound for reason in item.blocker_reasons
+    )
+    return MechanismObservationReport(
+        status=(
+            ObservationStatus.READY
+            if qualified
+            else ObservationStatus.BLOCKED
+            if blockers
+            else ObservationStatus.NO_FINDING
+        ),
+        run_id=report.run_id,
+        setup_id=report.setup_id,
+        observations=tuple(rebound),
+        blocker_reasons=() if qualified else blockers,
+    )
+
+
+def _adapt_integrity_certificate(
+    certificate: SimIntegrityCertificate,
+    *,
+    run_id: str,
+    setup_id: str | None,
+    lap_number_value: int,
+    rows: Sequence[Mapping[str, Any]],
+) -> MechanismObservationReport:
+    """Publish the integrity producer's own state without clearing other producers."""
+    window = _window_for_phases(
+        rows,
+        lap_number_value=lap_number_value,
+        phases=(),
+        phase_label="sim_integrity_window",
+    )
+    conclusion = certificate.conclusion
+    blockers: list[str] = []
+    if setup_id is None:
+        blockers.append("A recorded setup identity is required for integrity scope.")
+    if window is None:
+        blockers.append("The integrity certificate has no exact lap-position scope to cite.")
+    if conclusion.evidence_state not in {
+        EvidenceState.CALCULATED,
+        EvidenceState.OBSERVED_CORRELATION,
+    }:
+        blockers.extend(conclusion.blocker_reasons)
+        blockers.append("The simulator/data integrity state is unavailable.")
+    if not conclusion.source_channels:
+        blockers.append("The integrity certificate has no source-channel provenance.")
+    state_evidence = tuple(
+        dict.fromkeys(
+            (*conclusion.supporting_evidence, *conclusion.contradicting_evidence)
+        )
+    )
+    if not state_evidence:
+        blockers.append("The integrity certificate has no typed check evidence.")
+    observation_id = f"p3:{run_id}:sim_integrity:{lap_number_value}"
+    if blockers or window is None or setup_id is None:
+        blocked = _blocked_observation(
+            run_id=run_id,
+            setup_id=setup_id,
+            mechanism=MechanismKind.SIM_INTEGRITY,
+            label="Simulator/data integrity",
+            blockers=blockers,
+            required_channels=SIM_INTEGRITY_CONTRACT.required_channels,
+            lap_number_value=lap_number_value,
+            window=window,
+        )
+        return MechanismObservationReport(
+            status=ObservationStatus.BLOCKED,
+            run_id=run_id,
+            setup_id=setup_id,
+            observations=(blocked,),
+            blocker_reasons=blocked.blocker_reasons,
+        )
+    source_channels = _ordered_unique(conclusion.source_channels)
+    citation = ObservationCitation(
+        run_id=run_id,
+        lap_number=lap_number_value,
+        setup_id=setup_id,
+        lap_pct_start=window.start_pct,
+        lap_pct_end=window.end_pct,
+        lap_pct_peak=window.peak_pct,
+        phase=window.phase,
+        evidence_state=conclusion.evidence_state,
+        source_channels=source_channels,
+        telemetry_sample_count=window.sample_count,
+    )
+    observation = MechanismObservation(
+        observation_id=observation_id,
+        producer_id=SIM_INTEGRITY_CONTRACT.key,
+        artifact_id=observation_id,
+        source_run_ids=(run_id,),
+        source_setup_ids=(setup_id,),
+        sample_coverage=1.0,
+        mechanism=MechanismKind.SIM_INTEGRITY,
+        run_id=run_id,
+        setup_id=setup_id,
+        lap_number=lap_number_value,
+        phase=window.phase,
+        lap_pct_start=window.start_pct,
+        lap_pct_end=window.end_pct,
+        lap_pct_peak=window.peak_pct,
+        summary=conclusion.summary,
+        evidence_state=conclusion.evidence_state,
+        qualified=True,
+        source_channels=source_channels,
+        required_channels=tuple(sorted(SIM_INTEGRITY_CONTRACT.required_channels)),
+        supporting_evidence=state_evidence,
+        contradicting_evidence=tuple(conclusion.contradicting_evidence),
+        telemetry_sample_count=window.sample_count,
+        repetition_count=1,
+        citations=(citation,),
+    )
+    return MechanismObservationReport(
+        status=ObservationStatus.READY,
+        run_id=run_id,
+        setup_id=setup_id,
+        observations=(observation,),
+    )
+
+
+def _add_stint_citations(
+    report: MechanismObservationReport,
+    *,
+    lap_numbers: Sequence[int],
+    grouped_rows: Mapping[int, list[dict[str, Any]]],
+) -> MechanismObservationReport:
+    """Bind aggregate stint conclusions to every exact producer-used lap scope."""
+    rebound: list[MechanismObservation] = []
+    for observation in report.observations:
+        if not observation.qualified:
+            rebound.append(observation)
+            continue
+        assert observation.setup_id is not None
+        citations: list[ObservationCitation] = []
+        for number in lap_numbers:
+            positioned = [
+                (row, float(position))
+                for row in grouped_rows.get(number, ())
+                if (position := lap_pct(row)) is not None
+            ]
+            if not positioned:
+                continue
+            positions = [position for _row, position in positioned]
+            citations.append(
+                ObservationCitation(
+                    run_id=observation.run_id,
+                    lap_number=number,
+                    setup_id=observation.setup_id,
+                    lap_pct_start=min(positions),
+                    lap_pct_end=max(positions),
+                    lap_pct_peak=float(median(positions)),
+                    phase="continuous_stint",
+                    evidence_state=observation.evidence_state,
+                    source_channels=observation.source_channels,
+                    telemetry_sample_count=len(positioned),
+                )
+            )
+        if not citations or observation.lap_number not in {
+            citation.lap_number for citation in citations
+        }:
+            rebound.append(
+                _blocked_observation(
+                    run_id=observation.run_id,
+                    setup_id=observation.setup_id,
+                    mechanism=MechanismKind.STINT_TREND,
+                    label="Stint trend",
+                    blockers=(
+                        "The producer-used continuous stint has no exact position scope "
+                        "for the anchor lap.",
+                    ),
+                    required_channels=observation.required_channels,
+                    lap_number_value=observation.lap_number,
+                )
+            )
+            continue
+        payload = observation.model_dump()
+        payload.update(
+            {
+                "phase": "continuous_stint",
+                "repetition_count": len(citations),
+                "telemetry_sample_count": sum(
+                    citation.telemetry_sample_count for citation in citations
+                ),
+                "citations": [citation.model_dump() for citation in citations],
+            }
+        )
         rebound.append(MechanismObservation.model_validate(payload))
     qualified = tuple(item for item in rebound if item.qualified)
     blockers = _ordered_unique(
@@ -812,6 +1051,38 @@ def build_p3_mechanism_observations(
         )
 
     reports: list[MechanismObservationReport] = []
+    if MechanismKind.RESISTANCE_SCRUB_LIKE not in existing:
+        resistance_blocker = _blocked_observation(
+            run_id=run_id,
+            setup_id=setup_id,
+            mechanism=MechanismKind.RESISTANCE_SCRUB_LIKE,
+            label="Resistance/scrub-like response",
+            blockers=(
+                "A server-verified controlled A/B/A2 producer artifact is required; "
+                "a single-run resistance-like proxy cannot establish this mechanism.",
+            ),
+            required_channels=RELATIVE_HIGH_SPEED_RESISTANCE_CONTRACT.required_channels,
+            lap_number_value=selected.lap_number,
+        )
+        reports.append(
+            MechanismObservationReport(
+                status=ObservationStatus.BLOCKED,
+                run_id=run_id,
+                setup_id=setup_id,
+                observations=(resistance_blocker,),
+                blocker_reasons=resistance_blocker.blocker_reasons,
+            )
+        )
+    if MechanismKind.SIM_INTEGRITY not in existing:
+        reports.append(
+            _adapt_integrity_certificate(
+                certificates[selected.lap_number],
+                run_id=run_id,
+                setup_id=setup_id,
+                lap_number_value=selected.lap_number,
+                rows=normalized_rows,
+            )
+        )
     single_specs = (
         (
             MechanismKind.BRAKING_RESPONSE,
@@ -929,11 +1200,75 @@ def build_p3_mechanism_observations(
                 )
             )
 
+    if MechanismKind.STINT_TREND not in existing:
+        try:
+            stint_report = analyze_stint_strategy(
+                normalized_rows,
+                list(laps),
+                sim_integrity_clear=cohort_clear,
+                sim_integrity_confidence_cap=cohort_cap,
+            )
+            producer_laps = tuple(
+                dict.fromkeys(
+                    (
+                        *getattr(stint_report, "historical_segment_laps", ()),
+                        *getattr(stint_report, "active_segment_laps", ()),
+                    )
+                )
+            )
+            anchor_lap = (
+                selected.lap_number
+                if selected.lap_number in producer_laps
+                else producer_laps[-1]
+                if producer_laps
+                else selected.lap_number
+            )
+            adapted_stint = _adapt_report(
+                stint_report,
+                laps,
+                normalized_rows,
+                run_id=run_id,
+                setup_id=setup_id,
+                lap_number_value=anchor_lap,
+                mechanism=MechanismKind.STINT_TREND,
+                label="Stint trend",
+                required_channels=STINT_STRATEGY_CONTRACT.required_channels,
+                phase_label="continuous_stint",
+                repetition_count=max(1, len(producer_laps)),
+            )
+            reports.append(
+                _add_stint_citations(
+                    adapted_stint,
+                    lap_numbers=producer_laps,
+                    grouped_rows=grouped,
+                )
+            )
+        except _PRODUCER_ERRORS as exc:
+            blocker = _blocked_observation(
+                run_id=run_id,
+                setup_id=setup_id,
+                mechanism=MechanismKind.STINT_TREND,
+                label="Stint trend",
+                blockers=(f"The stint trend producer failed closed: {exc}",),
+                required_channels=STINT_STRATEGY_CONTRACT.required_channels,
+                lap_number_value=selected.lap_number,
+            )
+            reports.append(
+                MechanismObservationReport(
+                    status=ObservationStatus.BLOCKED,
+                    run_id=run_id,
+                    setup_id=setup_id,
+                    observations=(blocker,),
+                    blocker_reasons=blocker.blocker_reasons,
+                )
+            )
+
     paired_needed = bool(_PAIRED_KINDS - existing)
     if paired_needed and reference is None:
         for mechanism, label in (
             (MechanismKind.DRIVER_EXECUTION, "Driver comparison"),
             (MechanismKind.CORNER_ROTATION, "Rotation comparison"),
+            (MechanismKind.PLATFORM_RESPONSE, "Platform comparison"),
         ):
             if mechanism in existing:
                 continue
@@ -1016,6 +1351,12 @@ def build_p3_mechanism_observations(
                         "lat_accel",
                     ),
                 ),
+                (
+                    MechanismKind.PLATFORM_RESPONSE,
+                    "Platform response",
+                    phase_report.aero_platform,
+                    tuple(sorted(AERO_PLATFORM_WINDOW_CONTRACT.required_channels)),
+                ),
             ):
                 if mechanism in existing:
                     continue
@@ -1068,6 +1409,7 @@ def build_p3_mechanism_observations(
                     lap_pct_peak=exact_pair_window.peak_pct,
                     telemetry_sample_count=exact_pair_window.sample_count,
                     repetition_count=2,
+                    mechanism_override=mechanism,
                 )
                 if not adapted.observations:
                     blocker = _blocked_observation(
@@ -1099,6 +1441,7 @@ def build_p3_mechanism_observations(
             for mechanism, label in (
                 (MechanismKind.DRIVER_EXECUTION, "Driver comparison"),
                 (MechanismKind.CORNER_ROTATION, "Rotation comparison"),
+                (MechanismKind.PLATFORM_RESPONSE, "Platform comparison"),
             ):
                 if mechanism in existing:
                     continue

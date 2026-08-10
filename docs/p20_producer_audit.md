@@ -1,14 +1,15 @@
 # P20 existing-producer audit
 
-Status: **complete read-only audit; Slice A only**
+Status: **complete read-only audit; Slice B backend verified**
 
 Audited commit: `143b1b4ef88b09d4d425502c9b4e1463b51753a5`
 
 Audit date: 2026-08-09
 
 This audit maps existing telemetry producers into the canonical P19 observation
-and reasoning path before P20 adds any formula. It does not promote a producer,
-invent a finding, or create setup authority.
+and reasoning path before P20 adds any formula. Slice B closed the identified
+fusion debt without promoting a producer, inventing a finding, or creating setup
+authority.
 
 ## Canonical path and ownership
 
@@ -23,11 +24,12 @@ to hypotheses and asks `intelligence_service` to build the signed evidence graph
 and canonical reasoning snapshot. P20 state frames and future episodes must remain
 inputs to that path; they may not rank causes or authorize setup policy.
 
-The P3 bridge currently preserves run/setup/lap identity, exact physical-position
-windows, phase, source channels, evidence state, citations, sample count,
-repetition count, and blocker reasons. Producer exceptions fail closed. Existing
-mechanism observations suppress only their own missing-producer invocation, and
-report merging deduplicates exact observation identity rather than mechanism kind.
+The P3 bridge preserves producer and artifact identity, every source run/setup,
+run/lap identity, exact physical-position windows, phase, source channels,
+evidence state, sample coverage, citations, sample count, repetition count, and
+blocker reasons. Producer exceptions fail closed. Existing mechanism observations
+suppress only their own missing-producer invocation, and report merging
+deduplicates exact producer/artifact identity rather than mechanism kind.
 
 ## Producer map
 
@@ -38,11 +40,11 @@ report merging deduplicates exact observation identity rather than mechanism kin
 | `corner_rotation` | `phase_engineering.analyze_phase_engineering_systems` -> `CornerRotationReport` under `CORNER_ROTATION_CONTRACT` | **Yes.** Same-setup eligible-lap pair, matched by physical track position, adapted by `p3_observation_bridge`. | Preserve distinct physical windows and driver-comparability blockers. |
 | `tire_state` | `tire_state_energy.analyze_tire_state` -> `TireStateReport` under `TIRE_STATE_CONTRACT` | **Yes.** Direct single-producer bridge with explicit working-history repetition. | Retain P19 pit-snapshot/constant/unhealthy semantics. Constant carcass/wear values cannot become live trends. |
 | `damper_response` | `damper_response.analyze_damper_response` -> `DamperResponseReport` under `DAMPER_RESPONSE_CONTRACT` | **Yes.** Direct single-producer bridge with minimum sample binding and integrity gate. | A response observation remains descriptive; a repeated bump alone cannot authorize a damper change. |
-| `platform_response` | `phase_engineering.analyze_phase_engineering_systems` -> `AeroPlatformReport` under `AERO_PLATFORM_WINDOW_CONTRACT` | **No direct P3 bridge.** The phase producer runs for driver/rotation, but `aero_platform` is not adapted by the current bridge. Word-based persisted-event mapping can classify platform events, but is not a complete producer-owned path. | Add an exact-scope adapter for the existing platform artifact. Preserve proxy language and the producer's driver/integrity/attribution blockers. No new platform formula is required. |
-| `resistance_scrub_like` | `relative_resistance.analyze_relative_resistance_aba` -> `RelativeResistanceReport` under the relative-resistance evidence contract | **No direct observation bridge.** Existing analysis is controlled A/B/A2 and context-gated; only word-based event mapping can currently land in this mechanism kind. | Adapt only qualified existing report outputs with all three run/setup stages, traffic and integrity blockers, and proxy wording. Never emit exact drag, CdA, or exact power loss. |
+| `platform_response` | `phase_engineering.analyze_phase_engineering_systems` -> `AeroPlatformReport` under `AERO_PLATFORM_WINDOW_CONTRACT` | **Yes.** The paired phase producer now adapts platform evidence with both same-setup lap citations and the exact common-position scope. | Preserve proxy language and the producer's driver/integrity/attribution blockers. No new platform formula was added. |
+| `resistance_scrub_like` | `relative_resistance.analyze_relative_resistance_aba` -> `RelativeResistanceReport` under the relative-resistance evidence contract | **Yes, controlled path only.** The controlled-producer adapter requires distinct server-verified A1/B/A2 run/setup/lap/window scopes and preserves all three citations. A single-run resistance-like proxy remains explicitly blocked. | Traffic, grade, integrity, compatibility, and isolated-change gates stay producer-owned. Never emit exact drag, CdA, or exact power loss. |
 | `powertrain_response` | `powertrain_gearing.analyze_powertrain_gearing` -> `PowertrainGearingReport` under `POWERTRAIN_GEARING_CONTRACT` | **Yes.** Direct single-producer bridge with integrity and comparable-lap binding. | Preserve redline unavailability and compatibility blockers. Weight/power/build compatibility becomes explicit in Slice C. |
-| `stint_trend` | `stint_strategy.analyze_stint_strategy` -> `StintStrategyReport` under `STINT_STRATEGY_CONTRACT` | **No direct observation bridge.** The report exists, but canonical typed mechanism observations do not consume it. | Add an observation-only exact stint/lap scope adapter. Traffic, fuel, weather, tire update semantics, short-run limits, and integrity remain producer blockers; another producer cannot clear them. |
-| `sim_integrity` | `sim_integrity.build_sim_integrity_certificate` -> `SimIntegrityCertificate` under `SIM_INTEGRITY_CONTRACT` | **Gate only, not a direct mechanism observation.** The P3 bridge builds certificates for eligible laps and uses them to block/cap other producers. | Publish the certificate's own exact-scope typed observation/status without converting integrity success into a physical finding or using it to clear another producer. |
+| `stint_trend` | `stint_strategy.analyze_stint_strategy` -> `StintStrategyReport` under `STINT_STRATEGY_CONTRACT` | **Yes.** The run bridge adapts qualified conclusions and cites every exact producer-used continuous-stint lap before row-level source-channel rebinding. | Traffic, fuel, weather, tire update semantics, short-run limits, and integrity remain producer blockers; another producer cannot clear them. |
+| `sim_integrity` | `sim_integrity.build_sim_integrity_certificate` -> `SimIntegrityCertificate` under `SIM_INTEGRITY_CONTRACT` | **Yes.** The certificate publishes its own exact selected-lap typed state while continuing to gate every other producer independently. | A passing certificate is not a physical finding and cannot clear another subsystem. Failure evidence remains integrity state, not a setup cause. |
 
 ## Event-adapter boundary
 
@@ -62,10 +64,11 @@ add repeated full-frame reads or make the row fallback the production default.
 The vectorized normalizer remains authoritative, and exact row-path parity remains
 the debug/fallback contract.
 
-## Slice A conclusion
+## Slice B conclusion
 
-Six families have a direct producer-owned typed bridge. Four families have real
-existing producers but lack a complete direct typed path. This is a fusion gap,
-not permission to add a second ranker, infer missing values, or add new telemetry
-formulas. Slice B should close only those four paths and prove that blocked,
-unavailable, and no-finding states remain independent and fail closed.
+All ten families now have a typed producer-owned route to canonical P19 input.
+Nine run-owned families share one projected telemetry read; controlled resistance
+preserves its three independent stage scopes. Distinct same-kind physical windows
+survive fusion, and only a true duplicate producer/artifact identity deduplicates.
+No second ranker, telemetry formula, inferred missing value, or setup authority was
+added.

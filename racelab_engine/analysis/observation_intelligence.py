@@ -29,6 +29,7 @@ from racelab_engine.models.observation_intelligence import (
     MechanismObservationReport,
     ObservationCitation,
     ObservationStatus,
+    ProducerArtifactScope,
     OpportunitySignature,
     OpportunitySignatureReport,
     SameSetupAnomaly,
@@ -592,6 +593,11 @@ def adapt_event_mechanism_observations(
             observations.append(
                 MechanismObservation(
                     observation_id=f"event:{event.event_id}",
+                    producer_id=f"telemetry_event:{event.event_type}",
+                    artifact_id=f"event:{event.event_id}",
+                    source_run_ids=(run_id,),
+                    source_setup_ids=(setup_id,),
+                    sample_coverage=0.0,
                     mechanism=mechanism,
                     run_id=run_id,
                     setup_id=setup_id,
@@ -631,6 +637,11 @@ def adapt_event_mechanism_observations(
         observations.append(
             MechanismObservation(
                 observation_id=f"event:{event.event_id}",
+                producer_id=f"telemetry_event:{event.event_type}",
+                artifact_id=f"event:{event.event_id}",
+                source_run_ids=(run_id,),
+                source_setup_ids=(setup_id,),
+                sample_coverage=1.0,
                 mechanism=mechanism,
                 run_id=run_id,
                 setup_id=setup_id,
@@ -689,6 +700,7 @@ def adapt_p3_report_observations(
     lap_pct_peak: float,
     telemetry_sample_count: int,
     repetition_count: int | None = None,
+    mechanism_override: MechanismKind | None = None,
 ) -> MechanismObservationReport:
     """Adapt an existing P3 report without propagating its setup recommendation text."""
     gate = getattr(report, "gate", None)
@@ -741,8 +753,18 @@ def adapt_p3_report_observations(
             observations.append(
                 MechanismObservation(
                     observation_id=observation_id,
-                    mechanism=_mechanism_kind(
-                        str(getattr(gate, "contract_key", "")), conclusion.key
+                    producer_id=str(
+                        getattr(gate, "contract_key", "") or "p3_unknown"
+                    ),
+                    artifact_id=observation_id,
+                    source_run_ids=(run_id,),
+                    source_setup_ids=(setup_id,),
+                    sample_coverage=0.0,
+                    mechanism=(
+                        mechanism_override
+                        or _mechanism_kind(
+                            str(getattr(gate, "contract_key", "")), conclusion.key
+                        )
                     ),
                     run_id=run_id,
                     setup_id=setup_id,
@@ -776,8 +798,16 @@ def adapt_p3_report_observations(
         observations.append(
             MechanismObservation(
                 observation_id=observation_id,
-                mechanism=_mechanism_kind(
-                    str(getattr(gate, "contract_key", "")), conclusion.key
+                producer_id=str(getattr(gate, "contract_key", "") or "p3_unknown"),
+                artifact_id=observation_id,
+                source_run_ids=(run_id,),
+                source_setup_ids=(setup_id,),
+                sample_coverage=1.0,
+                mechanism=(
+                    mechanism_override
+                    or _mechanism_kind(
+                        str(getattr(gate, "contract_key", "")), conclusion.key
+                    )
                 ),
                 run_id=run_id,
                 setup_id=setup_id,
@@ -812,6 +842,189 @@ def adapt_p3_report_observations(
         setup_id=setup_id,
         observations=tuple(observations),
         blocker_reasons=tuple(dict.fromkeys(blocked)) if observations and not qualified else (),
+    )
+
+
+def adapt_controlled_producer_observations(
+    report: Any,
+    scopes: Sequence[ProducerArtifactScope],
+    *,
+    anchor_run_id: str,
+    anchor_setup_id: str | None,
+    mechanism: MechanismKind,
+) -> MechanismObservationReport:
+    """Adapt one server-verified multi-run producer artifact for canonical P19 input."""
+    gate = getattr(report, "gate", None)
+    conclusions = tuple(getattr(report, "conclusions", ()) or ())
+    producer_id = str(getattr(gate, "contract_key", "") or "controlled_producer")
+    blockers: list[str] = []
+    if anchor_setup_id is None or not anchor_setup_id.strip():
+        blockers.append("A recorded anchor setup identity is required.")
+    if not scopes:
+        blockers.append("The controlled producer artifact has no exact stage scopes.")
+    stage_ids = [scope.stage for scope in scopes]
+    run_ids = [scope.run_id for scope in scopes]
+    run_lap_scopes = [(scope.run_id, scope.lap_number) for scope in scopes]
+    if len(stage_ids) != len(set(stage_ids)):
+        blockers.append("Controlled producer stage identities are duplicated.")
+    if len(run_ids) != len(set(run_ids)):
+        blockers.append("Controlled producer stages require distinct run identities.")
+    if len(run_lap_scopes) != len(set(run_lap_scopes)):
+        blockers.append("Controlled producer run/lap scopes are duplicated.")
+    anchor = next(
+        (
+            scope
+            for scope in scopes
+            if scope.run_id == anchor_run_id and scope.setup_id == anchor_setup_id
+        ),
+        None,
+    )
+    if anchor is None:
+        blockers.append("The anchor run/setup is absent from the producer artifact scopes.")
+    if gate is None or getattr(gate, "eligible", False) is not True:
+        blockers.extend(tuple(getattr(gate, "blocker_reasons", ()) or ()))
+        blockers.append("The controlled producer evidence contract did not pass.")
+    if not conclusions:
+        blockers.append("The controlled producer returned no conclusions.")
+    elif not any(isinstance(item, EngineeringConclusion) for item in conclusions):
+        blockers.append("The controlled producer returned unsupported conclusion types.")
+    if mechanism is MechanismKind.RESISTANCE_SCRUB_LIKE:
+        if tuple(stage_ids) != ("A1", "B", "A2"):
+            blockers.append("Controlled resistance requires ordered A1/B/A2 stage scopes.")
+        if getattr(report, "aba_confirmed", False) is not True:
+            blockers.append("The resistance producer did not confirm its A/B/A2 response.")
+
+    if anchor is None or anchor_setup_id is None:
+        return MechanismObservationReport(
+            status=ObservationStatus.BLOCKED,
+            run_id=anchor_run_id,
+            setup_id=anchor_setup_id,
+            blocker_reasons=tuple(dict.fromkeys(blockers)),
+        )
+
+    observations: list[MechanismObservation] = []
+    for index, conclusion in enumerate(conclusions):
+        if not isinstance(conclusion, EngineeringConclusion):
+            continue
+        item_blockers = [*blockers, *conclusion.blocker_reasons]
+        if conclusion.evidence_state not in _QUALIFIED_STATES:
+            item_blockers.append("The controlled conclusion is not evidence-qualified.")
+        if not conclusion.source_channels:
+            item_blockers.append("The controlled conclusion has no source channels.")
+        if not conclusion.supporting_evidence:
+            item_blockers.append("The controlled conclusion has no supporting evidence.")
+        scope_identity = tuple(
+            (
+                scope.stage,
+                scope.run_id,
+                scope.setup_id,
+                scope.lap_number,
+                scope.lap_pct_start,
+                scope.lap_pct_end,
+            )
+            for scope in scopes
+        )
+        artifact_id = _stable_id(
+            "controlled_producer",
+            producer_id,
+            conclusion.key,
+            scope_identity,
+            index,
+        )
+        item_blockers = list(dict.fromkeys(item_blockers))
+        if item_blockers:
+            observations.append(
+                MechanismObservation(
+                    observation_id=artifact_id,
+                    producer_id=producer_id,
+                    artifact_id=artifact_id,
+                    source_run_ids=tuple(dict.fromkeys(run_ids)) or (anchor_run_id,),
+                    source_setup_ids=tuple(
+                        dict.fromkeys(scope.setup_id for scope in scopes)
+                    ),
+                    sample_coverage=0.0,
+                    mechanism=mechanism,
+                    run_id=anchor_run_id,
+                    setup_id=anchor_setup_id,
+                    summary=(
+                        "The controlled producer artifact was retained but is not "
+                        "evidence-qualified."
+                    ),
+                    evidence_state=EvidenceState.BLOCKED_BY_CONTEXT,
+                    source_channels=_ordered_unique(conclusion.source_channels),
+                    required_channels=_ordered_unique(conclusion.source_channels),
+                    telemetry_sample_count=0,
+                    repetition_count=0,
+                    blocker_reasons=tuple(item_blockers),
+                )
+            )
+            continue
+        source_channels = _ordered_unique(conclusion.source_channels)
+        citations = tuple(
+            ObservationCitation(
+                run_id=scope.run_id,
+                lap_number=scope.lap_number,
+                setup_id=scope.setup_id,
+                lap_pct_start=scope.lap_pct_start,
+                lap_pct_end=scope.lap_pct_end,
+                lap_pct_peak=scope.lap_pct_peak,
+                phase=scope.phase,
+                evidence_state=conclusion.evidence_state,
+                source_channels=source_channels,
+                telemetry_sample_count=scope.telemetry_sample_count,
+            )
+            for scope in scopes
+        )
+        observations.append(
+            MechanismObservation(
+                observation_id=artifact_id,
+                producer_id=producer_id,
+                artifact_id=artifact_id,
+                source_run_ids=tuple(run_ids),
+                source_setup_ids=tuple(
+                    dict.fromkeys(scope.setup_id for scope in scopes)
+                ),
+                sample_coverage=min(scope.sample_coverage for scope in scopes),
+                mechanism=mechanism,
+                run_id=anchor_run_id,
+                setup_id=anchor_setup_id,
+                lap_number=anchor.lap_number,
+                phase=anchor.phase,
+                lap_pct_start=anchor.lap_pct_start,
+                lap_pct_end=anchor.lap_pct_end,
+                lap_pct_peak=anchor.lap_pct_peak,
+                summary=conclusion.summary,
+                evidence_state=conclusion.evidence_state,
+                qualified=True,
+                source_channels=source_channels,
+                required_channels=source_channels,
+                supporting_evidence=tuple(conclusion.supporting_evidence),
+                contradicting_evidence=tuple(conclusion.contradicting_evidence),
+                telemetry_sample_count=sum(
+                    scope.telemetry_sample_count for scope in scopes
+                ),
+                repetition_count=len(scopes),
+                citations=citations,
+            )
+        )
+    qualified = tuple(item for item in observations if item.qualified)
+    all_blockers = tuple(
+        dict.fromkeys(
+            reason for observation in observations for reason in observation.blocker_reasons
+        )
+    )
+    return MechanismObservationReport(
+        status=(
+            ObservationStatus.READY
+            if qualified
+            else ObservationStatus.BLOCKED
+            if all_blockers or blockers
+            else ObservationStatus.NO_FINDING
+        ),
+        run_id=anchor_run_id,
+        setup_id=anchor_setup_id,
+        observations=tuple(observations),
+        blocker_reasons=() if qualified else all_blockers or tuple(dict.fromkeys(blockers)),
     )
 
 
@@ -1361,6 +1574,7 @@ def build_driver_repeatability_signature(
 
 
 __all__ = [
+    "adapt_controlled_producer_observations",
     "adapt_event_mechanism_observations",
     "adapt_p3_report_observations",
     "build_driver_repeatability_signature",

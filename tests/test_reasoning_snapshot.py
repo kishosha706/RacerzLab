@@ -55,6 +55,11 @@ def _observation() -> MechanismObservation:
     )
     return MechanismObservation(
         observation_id="typed-exit-drive",
+        producer_id="test.powertrain",
+        artifact_id="typed-exit-drive",
+        source_run_ids=("run-1",),
+        source_setup_ids=("setup-1",),
+        sample_coverage=1.0,
         mechanism=MechanismKind.POWERTRAIN_RESPONSE,
         run_id="run-1",
         setup_id="setup-1",

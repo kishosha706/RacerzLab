@@ -1264,7 +1264,7 @@ projection, and UI integration are not yet verified.
   direct producer-owned typed P19 path; platform response, resistance/scrub-like,
   stint trend, and sim integrity retain explicit Slice B fusion debt rather than
   fabricated findings.
-- [ ] Give all ten existing mechanism families one exact-scope, producer-owned path
+- [x] Give all ten existing mechanism families one exact-scope, producer-owned path
   into canonical P19 reasoning while preserving independent blockers and distinct
   same-kind physical windows.
 - [ ] Add material control-context boundaries, requested-versus-applied semantics,
@@ -1292,6 +1292,18 @@ projection, and UI integration are not yet verified.
   audit records current canonical ownership, direct-path coverage, fusion debt,
   and the one-projected-read performance boundary. No telemetry formula, API, UI,
   reasoning ranker, or setup authority changed in this slice.
+- Slice B: all ten existing mechanism families preserve explicit producer/artifact
+  identity, source run/setup scope, sample coverage, and exact citations. Platform,
+  stint, and integrity now use the shared single projected read; controlled
+  resistance requires three distinct server-verified stage scopes. Hostile tests
+  retain two same-kind physical windows, dedupe only an exact artifact identity,
+  keep per-producer blockers independent, strip setup prose, and prove a qualified
+  resistance artifact reaches P19 with observation-only authority.
+- The real 26,556-row Atlanta Next Gen fixture produced explicit artifacts for all
+  ten mechanism families from one observation build (28 distinct producer/artifact
+  identities). Only platform and simulator-integrity evidence qualified in that
+  file; every other family remained visibly blocked instead of inheriting another
+  producer's success.
 
 ---
 

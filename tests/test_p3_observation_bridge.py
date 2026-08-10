@@ -3,16 +3,24 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from racelab_engine.analysis.observation_intelligence import adapt_event_mechanism_observations
+from racelab_engine.analysis.observation_intelligence import (
+    adapt_controlled_producer_observations,
+    adapt_event_mechanism_observations,
+)
 from racelab_engine.models.engineering import EngineGate, EngineeringConclusion
 from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.lap import LapSummary
-from racelab_engine.models.observation_intelligence import MechanismKind, ObservationStatus
+from racelab_engine.models.observation_intelligence import (
+    MechanismKind,
+    ObservationStatus,
+    ProducerArtifactScope,
+)
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.services import p3_observation_bridge as bridge
 from racelab_engine.services import observation_intelligence_service as observation_service
+from racelab_engine.services.run_intelligence_service import _observation_hypotheses
 from racelab_engine.services.import_service import TelemetryArtifactIdentityError
 
 
@@ -117,11 +125,24 @@ def test_bridge_calls_each_missing_producer_once_and_preserves_paired_laps(
         "rotation_phase_metrics",
         "yaw_rate",
     )
+    platform = _report(
+        "aero_platform_window",
+        "platform_phase_metrics",
+        "lf_shock_vel_in_s",
+    )
+    stint = _report(
+        "stint_tire_strategy",
+        "stint_pace_drift",
+        "rpm",
+        historical_segment_laps=[1, 2, 3],
+        active_segment_laps=[1, 2, 3],
+    )
     producer_mocks = {
         "analyze_braking_efficiency": Mock(return_value=brake),
         "analyze_tire_state": Mock(return_value=tire),
         "analyze_damper_response": Mock(return_value=damper),
         "analyze_powertrain_gearing": Mock(return_value=powertrain),
+        "analyze_stint_strategy": Mock(return_value=stint),
     }
     for name, producer in producer_mocks.items():
         monkeypatch.setattr(bridge, name, producer)
@@ -130,6 +151,14 @@ def test_bridge_calls_each_missing_producer_once_and_preserves_paired_laps(
             is_clear_for_analysis=True,
             confidence_cap=1.0,
             status="pass",
+            conclusion=EngineeringConclusion(
+                key="sim_integrity_certificate",
+                summary="Simulator/data integrity certificate: pass.",
+                evidence_state=EvidenceState.CALCULATED,
+                confidence_score=0.9,
+                source_channels=["session_tick", "session_time"],
+                supporting_evidence=["Clock continuity passed."],
+            ),
         )
         for number in (1, 2, 3)
     }
@@ -154,6 +183,7 @@ def test_bridge_calls_each_missing_producer_once_and_preserves_paired_laps(
     phase_producer = Mock(return_value=SimpleNamespace(
         driver_line=driver,
         corner_rotation=rotation,
+        aero_platform=platform,
     ))
     monkeypatch.setattr(bridge, "analyze_phase_engineering_systems", phase_producer)
 
@@ -175,6 +205,9 @@ def test_bridge_calls_each_missing_producer_once_and_preserves_paired_laps(
         MechanismKind.POWERTRAIN_RESPONSE,
         MechanismKind.DRIVER_EXECUTION,
         MechanismKind.CORNER_ROTATION,
+        MechanismKind.PLATFORM_RESPONSE,
+        MechanismKind.STINT_TREND,
+        MechanismKind.SIM_INTEGRITY,
     }
     for producer in producer_mocks.values():
         assert producer.call_count == 1
@@ -186,6 +219,7 @@ def test_bridge_calls_each_missing_producer_once_and_preserves_paired_laps(
         if item.mechanism in {
             MechanismKind.DRIVER_EXECUTION,
             MechanismKind.CORNER_ROTATION,
+            MechanismKind.PLATFORM_RESPONSE,
         }
     ]
     assert all({citation.lap_number for citation in item.citations} == {1, 2} for item in paired)
@@ -197,13 +231,27 @@ def test_bridge_calls_each_missing_producer_once_and_preserves_paired_laps(
         for citation in item.citations
     )
     single = [item for item in qualified if item not in paired]
-    assert all({citation.lap_number for citation in item.citations} == {2} for item in single)
-    assert all(item.telemetry_sample_count == 41 for item in single)
-    assert all(item.citations[0].telemetry_sample_count == 41 for item in single)
+    stint_observation = next(
+        item for item in single if item.mechanism is MechanismKind.STINT_TREND
+    )
+    assert {citation.lap_number for citation in stint_observation.citations} == {1, 2, 3}
+    selected_lap_observations = [item for item in single if item is not stint_observation]
+    assert all(
+        {citation.lap_number for citation in item.citations} == {2}
+        for item in selected_lap_observations
+    )
+    assert all(item.sample_coverage == 1.0 for item in qualified)
     assert all(item.authority == "observation_only" for item in qualified)
+    resistance = next(
+        item
+        for item in report.observations
+        if item.mechanism is MechanismKind.RESISTANCE_SCRUB_LIKE
+    )
+    assert resistance.qualified is False
+    assert "A/B/A2" in " ".join(resistance.blocker_reasons)
 
 
-def test_missing_p3_channels_fail_closed_without_citations() -> None:
+def test_each_missing_producer_retains_its_own_blocked_state() -> None:
     report = bridge.build_p3_mechanism_observations(
         _rows(),
         [_lap(1, 50.0), _lap(2, 49.0), _lap(3, 53.0)],
@@ -213,20 +261,84 @@ def test_missing_p3_channels_fail_closed_without_citations() -> None:
         preferred_lap_number=2,
     )
 
-    assert report.status is ObservationStatus.BLOCKED
-    assert not any(item.qualified for item in report.observations)
-    assert not any(item.citations for item in report.observations)
-    assert {
-        item.mechanism for item in report.observations
-    } == {
+    assert report.status is ObservationStatus.READY
+    qualified = [item for item in report.observations if item.qualified]
+    assert {item.mechanism for item in qualified} == {MechanismKind.SIM_INTEGRITY}
+    blocked = [item for item in report.observations if not item.qualified]
+    assert not any(item.citations for item in blocked)
+    assert {item.mechanism for item in blocked} == {
         MechanismKind.BRAKING_RESPONSE,
         MechanismKind.TIRE_STATE,
         MechanismKind.DAMPER_RESPONSE,
         MechanismKind.POWERTRAIN_RESPONSE,
         MechanismKind.DRIVER_EXECUTION,
         MechanismKind.CORNER_ROTATION,
+        MechanismKind.PLATFORM_RESPONSE,
+        MechanismKind.STINT_TREND,
+        MechanismKind.RESISTANCE_SCRUB_LIKE,
     }
-    assert all(item.blocker_reasons for item in report.observations)
+    assert all(item.blocker_reasons for item in blocked)
+
+
+def test_controlled_resistance_artifact_reaches_p19_without_setup_authority() -> None:
+    report = _report(
+        "relative_high_speed_resistance",
+        "relative_resistance_direction",
+        "speed_rate_mph_s",
+        aba_confirmed=True,
+    )
+    scopes = tuple(
+        ProducerArtifactScope(
+            stage=stage,
+            run_id=run_id,
+            setup_id=setup_id,
+            lap_number=4,
+            phase="high_speed_coastdown",
+            lap_pct_start=72.0,
+            lap_pct_end=78.0,
+            lap_pct_peak=75.0,
+            telemetry_sample_count=24,
+            sample_coverage=0.96,
+        )
+        for stage, run_id, setup_id in (
+            ("A1", "run-a1", "setup-a"),
+            ("B", "run-b", "setup-b"),
+            ("A2", "run-a2", "setup-a"),
+        )
+    )
+
+    observations = adapt_controlled_producer_observations(
+        report,
+        scopes,
+        anchor_run_id="run-b",
+        anchor_setup_id="setup-b",
+        mechanism=MechanismKind.RESISTANCE_SCRUB_LIKE,
+    )
+    hypotheses = _observation_hypotheses(observations)
+
+    assert observations.status is ObservationStatus.READY
+    observation = observations.observations[0]
+    assert observation.source_run_ids == ("run-a1", "run-b", "run-a2")
+    assert {citation.run_id for citation in observation.citations} == {
+        "run-a1",
+        "run-b",
+        "run-a2",
+    }
+    assert observation.sample_coverage == 0.96
+    assert observation.authority == "observation_only"
+    assert "52%" not in str(observation.model_dump())
+    assert hypotheses[0].mechanism_key == "resistance_scrub_like"
+
+    wrong_order = adapt_controlled_producer_observations(
+        report,
+        (scopes[1], scopes[0], scopes[2]),
+        anchor_run_id="run-b",
+        anchor_setup_id="setup-b",
+        mechanism=MechanismKind.RESISTANCE_SCRUB_LIKE,
+    )
+    assert wrong_order.status is ObservationStatus.BLOCKED
+    assert not any(item.qualified for item in wrong_order.observations)
+    assert "ordered A1/B/A2" in " ".join(wrong_order.blocker_reasons)
 
 
 def test_cross_run_rows_block_before_any_producer_is_called(monkeypatch) -> None:
@@ -348,10 +460,76 @@ def test_persisted_event_requires_coobserved_source_channels_in_exact_window() -
 
     assert qualified.status is ObservationStatus.READY
     assert qualified.observations[0].telemetry_sample_count == 1
+    assert qualified.observations[0].sample_coverage == 0.5
     assert qualified.observations[0].citations[0].telemetry_sample_count == 1
     assert blocked.status is ObservationStatus.BLOCKED
     assert not blocked.observations[0].citations
     assert "long_accel" in " ".join(blocked.observations[0].blocker_reasons)
+
+
+def test_distinct_same_kind_windows_survive_and_true_artifact_duplicates_dedupe() -> None:
+    laps = [_lap(1, 50.0), _lap(2, 49.0), _lap(3, 53.0)]
+    events = [
+        TelemetryEvent(
+            event_id=event_id,
+            run_id="run-a",
+            lap_number=2,
+            event_type="corner_rotation",
+            event_subtype="center",
+            lap_pct_start=start,
+            lap_pct_end=end,
+            lap_pct_peak=(start + end) / 2.0,
+            confidence_score=0.8,
+            valid_for_tuning=True,
+            evidence_state=EvidenceState.CALCULATED,
+            source_channels=["yaw_rate", "steering_deg"],
+            blocker_reasons=[],
+        )
+        for event_id, start, end in (
+            ("rotation-one", 35.0, 42.0),
+            ("rotation-two", 68.0, 74.0),
+        )
+    ]
+    adapted = adapt_event_mechanism_observations(
+        events,
+        laps,
+        run_id="run-a",
+        setup_id="setup-a",
+    )
+    merged = bridge.merge_mechanism_observation_reports(
+        "run-a",
+        "setup-a",
+        (adapted, adapted),
+    )
+
+    assert len(adapted.observations) == 2
+    assert len(merged.observations) == 2
+    assert {item.artifact_id for item in merged.observations} == {
+        "event:rotation-one",
+        "event:rotation-two",
+    }
+    assert {
+        (item.lap_pct_start, item.lap_pct_end) for item in merged.observations
+    } == {(35.0, 42.0), (68.0, 74.0)}
+
+    conflicting_payload = adapted.observations[1].model_dump()
+    conflicting_payload["artifact_id"] = adapted.observations[0].artifact_id
+    conflicting = adapted.model_copy(
+        update={
+            "observations": (
+                adapted.observations[0],
+                type(adapted.observations[1]).model_validate(conflicting_payload),
+            )
+        }
+    )
+    conflict = bridge.merge_mechanism_observation_reports(
+        "run-a",
+        "setup-a",
+        (adapted, conflicting),
+    )
+    assert conflict.status is ObservationStatus.BLOCKED
+    assert not conflict.observations
+    assert "conflicting observation payloads" in " ".join(conflict.blocker_reasons)
 
 
 def test_p3_citation_fails_closed_when_claimed_channels_only_coexist_once(

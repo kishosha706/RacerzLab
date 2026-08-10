@@ -75,6 +75,28 @@ class ObservationCitation(ObservationModel):
         return self
 
 
+class ProducerArtifactScope(ObservationModel):
+    """Exact server-verified scope for one stage of a producer artifact."""
+
+    stage: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    setup_id: str = Field(min_length=1)
+    lap_number: int = Field(ge=0)
+    phase: str = Field(min_length=1)
+    lap_pct_start: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
+    lap_pct_end: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
+    lap_pct_peak: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
+    telemetry_sample_count: int = Field(ge=1)
+    sample_coverage: float = Field(gt=0.0, le=1.0, allow_inf_nan=False)
+    eligible: Literal[True] = True
+
+    @model_validator(mode="after")
+    def producer_scope_is_exact(self) -> ProducerArtifactScope:
+        if not self.lap_pct_start <= self.lap_pct_peak <= self.lap_pct_end:
+            raise ValueError("producer artifact peak must be inside its physical window")
+        return self
+
+
 class OpportunitySignature(ObservationModel):
     signature_id: str = Field(min_length=1)
     run_id: str = Field(min_length=1)
@@ -168,6 +190,11 @@ class OpportunitySignatureReport(ObservationModel):
 
 class MechanismObservation(ObservationModel):
     observation_id: str = Field(min_length=1)
+    producer_id: str = Field(min_length=1)
+    artifact_id: str = Field(min_length=1)
+    source_run_ids: tuple[str, ...] = Field(min_length=1)
+    source_setup_ids: tuple[str, ...]
+    sample_coverage: float = Field(ge=0.0, le=1.0, allow_inf_nan=False)
     mechanism: MechanismKind
     run_id: str = Field(min_length=1)
     setup_id: str | None
@@ -194,6 +221,17 @@ class MechanismObservation(ObservationModel):
 
     @model_validator(mode="after")
     def qualified_observations_are_fully_cited(self) -> MechanismObservation:
+        for values, label in ((self.source_run_ids, "source run"),):
+            if any(not value for value in values) or len(values) != len(set(values)):
+                raise ValueError(f"{label} identities must be non-empty and unique")
+        if any(not value for value in self.source_setup_ids) or len(
+            self.source_setup_ids
+        ) != len(set(self.source_setup_ids)):
+            raise ValueError("source setup identities must be non-empty and unique")
+        if self.run_id not in self.source_run_ids:
+            raise ValueError("the observation run must be one of its producer artifact runs")
+        if self.setup_id is not None and self.setup_id not in self.source_setup_ids:
+            raise ValueError("the observation setup must be one of its producer artifact setups")
         scope = (self.lap_pct_start, self.lap_pct_end, self.lap_pct_peak)
         if self.qualified:
             if (
@@ -216,14 +254,29 @@ class MechanismObservation(ObservationModel):
             if not self.lap_pct_start <= self.lap_pct_peak <= self.lap_pct_end:
                 raise ValueError("mechanism peak must be inside its physical window")
             for citation in self.citations:
-                if citation.run_id != self.run_id or citation.setup_id != self.setup_id:
-                    raise ValueError("mechanism citations must match run and setup identity")
-            citation_laps = {citation.lap_number for citation in self.citations}
+                if (
+                    citation.run_id not in self.source_run_ids
+                    or citation.setup_id not in self.source_setup_ids
+                ):
+                    raise ValueError(
+                        "mechanism citations must belong to declared producer artifact scope"
+                    )
+            citation_run_ids = {citation.run_id for citation in self.citations}
+            if citation_run_ids != set(self.source_run_ids):
+                raise ValueError("mechanism citations must cover every producer artifact run")
+            citation_laps = {
+                citation.lap_number
+                for citation in self.citations
+                if citation.run_id == self.run_id
+            }
             if self.lap_number not in citation_laps:
-                raise ValueError("mechanism citations must include the reported lap")
-            if self.repetition_count != len(citation_laps):
+                raise ValueError("mechanism citations must include the reported run and lap")
+            citation_scopes = {
+                (citation.run_id, citation.lap_number) for citation in self.citations
+            }
+            if self.repetition_count != len(citation_scopes):
                 raise ValueError(
-                    "mechanism repetition count must equal distinct cited supporting laps"
+                    "mechanism repetition count must equal distinct cited run/lap scopes"
                 )
         elif not self.blocker_reasons or self.citations:
             raise ValueError("blocked mechanism observations require blockers and no citations")
@@ -442,6 +495,7 @@ __all__ = [
     "MechanismObservationReport",
     "ObservationCitation",
     "ObservationStatus",
+    "ProducerArtifactScope",
     "OpportunitySignature",
     "OpportunitySignatureReport",
     "RunObservationIntelligence",
