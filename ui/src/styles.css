@@ -5869,6 +5869,61 @@ td {
   min-width: 0;
 }
 
+.vehicle-systems-panel {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(8, 19, 34, 0.96), rgba(12, 26, 43, 0.88));
+  color: #cbd5e1;
+}
+
+.vehicle-systems-panel > header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vehicle-systems-panel > header > div { min-width: 0; }
+.vehicle-systems-panel > header span { color: #60a5fa; font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.vehicle-systems-panel > header h2 { margin: 2px 0 0; color: #f8fafc; font-size: 17px; line-height: 1.2; }
+.vehicle-systems-panel > header small { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: #94a3b8; font-size: 9px; font-weight: 700; }
+.vehicle-systems-next { margin: 0; color: #b8c6d8; font-size: 11px; line-height: 1.55; }
+.vehicle-systems-next strong { color: #f8fafc; }
+
+.vehicle-systems-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.vehicle-systems-grid > article {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 9px;
+  background: rgba(2, 8, 18, 0.52);
+}
+
+.vehicle-systems-grid > article > div { display: flex; justify-content: space-between; gap: 8px; }
+.vehicle-systems-grid > article strong { color: #eef6ff; font-size: 11px; }
+.vehicle-systems-grid > article span { color: #93c5fd; font-size: 9px; }
+.vehicle-systems-grid > article p,
+.vehicle-systems-grid > article small { margin: 0; color: #8797aa; font-size: 9px; line-height: 1.4; }
+.vehicle-systems-grid > article em { color: #c4d4e7; font-size: 9px; font-style: normal; }
+.vehicle-systems-grid > article b { color: #fca5a5; font-size: 9px; }
+.vehicle-systems-grid > article[data-relevance="supported"] { border-color: rgba(52, 211, 153, 0.3); }
+.vehicle-systems-grid > article[data-relevance="blocked"] { border-color: rgba(248, 113, 113, 0.3); }
+.vehicle-systems-panel[data-mode="race"] .vehicle-systems-grid { display: none; }
+
+@media (max-width: 900px) {
+  .vehicle-systems-grid { grid-template-columns: 1fr; }
+}
+
 .engineer-smart-layer-heading {
   display: flex;
   align-items: end;

@@ -4,6 +4,7 @@ import { fetchSetup } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useCompareBasket } from "../store/CompareBasketContext";
 import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPanel";
+import { VehicleSystemsPanel } from "../components/VehicleSystemsPanel";
 import type { RunOverview, SetupSnapshot, TelemetryEvent } from "../types/telemetry";
 
 type SetupTabProps = {
@@ -213,6 +214,7 @@ export function SetupTab({ overview, sessionId = null, onToggleMapOverlay }: Set
   );
   const setup = setupIdentityMismatch ? null : overview.setup_snapshot;
   const { selection, setWorkspace } = useTelemetrySelection();
+  const learning = selection.selectedMode === "learning";
   const { basket } = useCompareBasket();
   const hasValidBaselineComparison = Boolean(
     setup
@@ -543,6 +545,7 @@ export function SetupTab({ overview, sessionId = null, onToggleMapOverlay }: Set
   return (
     <section className="garage-board">
       <EngineeringAwarenessPanel runId={overview.run_id} sessionId={sessionId} surface="setup" />
+      <VehicleSystemsPanel runId={overview.run_id} sessionId={sessionId} learning={learning} surface="setup" />
       {/* 1) Setup Context / Evidence Focus strip */}
       <div className="gr-topbar">
         <div className="gr-topbar-left">

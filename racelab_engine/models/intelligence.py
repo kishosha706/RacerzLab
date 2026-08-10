@@ -1106,6 +1106,7 @@ class GroundedQueryResult(IntelligenceModel):
         "how_reliable",
         "what_would_change_mind",
         "data_quality",
+        "component_awareness",
         "unsupported",
     ]
     answer: str

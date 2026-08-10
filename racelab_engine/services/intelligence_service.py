@@ -4418,6 +4418,7 @@ class _ParsedGroundedQuery:
     window_end_lap: int | None = None
     phase: str | None = None
     control_key: str | None = None
+    component_id: str | None = None
     track_region_id: str | None = None
     track_region_label: str | None = None
     clarification: str | None = None
@@ -4454,6 +4455,15 @@ def _query_intent(normalized: str) -> str | None:
         (
             "what_worked_before",
             r"\b(worked (?:here )?before|prior result|previous result|history)\b",
+        ),
+        (
+            "component_awareness",
+            r"\b(tire|pressure|camber|caster|toe|spring|damper|shock|arb|anti roll|"
+            r"crossweight|cross weight|ride height|platform|brake|differential|diff|"
+            r"final drive|rear end ratio|steering|cooling|tape)\b.*"
+            r"\b(doing|role|function|involved|component|interact|observable|know)\b|"
+            r"\b(what|how|why)\b.*\b(tire|spring|damper|shock|arb|anti roll|crossweight|"
+            r"cross weight|ride height|brake|differential|diff|final drive|steering)\b",
         ),
         ("how_reliable", r"\b(reliable|reliability|track record|calibrat)"),
         ("what_would_change_mind", r"\b(change (your|the) mind|disprove|contradict)\b"),
@@ -4582,6 +4592,33 @@ def _parse_grounded_query(query: str) -> _ParsedGroundedQuery:
             track_region_label=region_matches[0][1] if region_matches else None,
             clarification="The question names multiple setup controls; ask about one control at a time.",
         )
+    component_aliases = {
+        "tires": ("tire", "pressure"),
+        "alignment": ("camber", "caster", "toe", "alignment"),
+        "springs": ("spring",),
+        "dampers": ("damper", "shock"),
+        "anti_roll_bars": ("arb", "anti roll", "antiroll"),
+        "weight_distribution": ("crossweight", "cross weight", "nose weight"),
+        "platform": ("ride height", "platform", "rake", "clearance"),
+        "brakes": ("brake", "braking"),
+        "differential": ("differential", "diff preload", "diff"),
+        "final_drive": ("final drive", "rear end ratio", "gearing"),
+        "steering": ("steering ratio", "steering offset", "steering"),
+        "cooling_configuration": ("cooling", "tape"),
+    }
+    component_matches = tuple(
+        component_id
+        for component_id, aliases in component_aliases.items()
+        if any(re.search(rf"\b{re.escape(alias)}\b", normalized) for alias in aliases)
+    )
+    component_id = component_matches[0] if len(component_matches) == 1 else None
+    component_clarification = (
+        "The question names multiple vehicle systems; ask about one component family at a time."
+        if intent == "component_awareness" and len(component_matches) > 1
+        else "Name one supported vehicle system or component in the question."
+        if intent == "component_awareness" and not component_matches
+        else None
+    )
     return _ParsedGroundedQuery(
         intent=intent,
         lap_number=lap_number,
@@ -4589,8 +4626,10 @@ def _parse_grounded_query(query: str) -> _ParsedGroundedQuery:
         window_end_lap=window_end,
         phase=phases[0] if phases else None,
         control_key=control_matches[0] if control_matches else None,
+        component_id=component_id,
         track_region_id=region_matches[0][0] if region_matches else None,
         track_region_label=region_matches[0][1] if region_matches else None,
+        clarification=component_clarification,
     )
 
 
@@ -4630,6 +4669,7 @@ def answer_grounded_query(
     selected_window_representative_lap: int | None = None,
     track_region_resolver: Callable[[str, float], Mapping[str, Any] | None] | None = None,
     track_region_catalog: Mapping[str, str] | Callable[[], Mapping[str, str]] | None = None,
+    vehicle_car_path: str | None = None,
 ) -> GroundedQueryResult:
     """Answer supported intent and scope combinations using report evidence only."""
     normalized = _normalize_query(query)
@@ -5111,7 +5151,81 @@ def answer_grounded_query(
     extra_navigation: tuple[NavigationTarget, ...] = ()
     action_authorized = False
     action_source_event_ids: tuple[str, ...] = ()
-    if intent == "how_repeatable":
+    if intent == "component_awareness":
+        from racelab_engine.services.vehicle_systems_service import (
+            build_component_awareness,
+            inspect_component,
+        )
+
+        assert parsed.component_id is not None
+        component_projection = build_component_awareness(report, car_path=vehicle_car_path)
+        inspected = inspect_component(parsed.component_id, component_projection)
+        definition = inspected["definition"]
+        component_state = inspected["state"]
+        interactions = inspected["interactions"]
+        assert component_state is not None
+        artifact_ids = set(component_state.supporting_artifact_ids)
+        component_citations: list[EvidenceCitation] = []
+        for observation in (
+            report.mechanism_observations.observations
+            if report.mechanism_observations is not None
+            else ()
+        ):
+            if observation.artifact_id not in artifact_ids or not observation.qualified:
+                continue
+            for index, item in enumerate(observation.citations, start=1):
+                citation = observation_citation(
+                    item,
+                    citation_id=f"component:{parsed.component_id}:{observation.observation_id}:{index}",
+                    summary=observation.summary,
+                    phase=observation.phase or item.phase,
+                )
+                if in_query_scope(citation):
+                    component_citations.append(citation)
+        for history in component_state.controlled_history:
+            component_citations.append(EvidenceCitation(
+                citation_id=f"component-history:{history.workflow_id}:{history.control_key}",
+                run_id=report.run_id,
+                workspace="dial_in",
+                channels=(),
+                evidence_state=EvidenceState.CONTROLLED_TEST_EFFECT,
+                valid_for_tuning=False,
+                summary=(
+                    f"Exact controlled response was {history.control_response}; "
+                    f"policy verdict {history.policy_verdict}."
+                ),
+            ))
+        citations = tuple(dict.fromkeys(component_citations))
+        current_evidence = (
+            f"Current response: {component_state.relevance.value.replace('_', ' ')} from "
+            f"{len(component_state.supporting_artifact_ids)} supporting and "
+            f"{len(component_state.contradicting_artifact_ids)} contradicting artifacts."
+            if component_state.current_response_state == "observed"
+            else "Current response: unavailable; no qualified exact-scope observation activates the general definition."
+        )
+        history_text = (
+            " ".join(
+                f"History: {item.control_key} response {item.control_response}, policy {item.policy_verdict}."
+                for item in component_state.controlled_history
+            )
+            or "History: no exact-context controlled component result is available."
+        )
+        interaction_labels = ", ".join(
+            sorted({
+                item.target_component_id
+                if item.source_component_id == parsed.component_id
+                else item.source_component_id
+                for item in interactions
+            })
+        ) or "none declared"
+        answer = (
+            f"{definition.label}: {definition.physical_role} {current_evidence} "
+            f"Interactions: {interaction_labels}. {history_text} "
+            f"Current authority: {component_state.current_testability.replace('_', ' ')}. "
+            f"Next discriminator: {component_projection.next_discriminator}"
+        )
+        blockers = tuple(component_state.blocker_reasons)
+    elif intent == "how_repeatable":
         opportunity = report.opportunity_signature
         signatures = tuple(opportunity.signatures) if opportunity is not None else ()
         scoped_signatures: list[tuple[Any, tuple[EvidenceCitation, ...]]] = []

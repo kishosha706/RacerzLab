@@ -58,6 +58,7 @@ result, and remember only what the evidence supports.
 | P23 - First Earned Adaptive Capability | No activation earned | Steering-workload protocol is frozen, but no qualified historical, prospective, negative-control, subgroup, or profile evidence exists |
 | P24 - Evidence Acquisition Operations | Verified collection infrastructure; P23 evidence collection ongoing | Protocol-bound certificates, flight recorders, steering truth audits, and certificate-owned admission make real collection auditable without changing authority |
 | P25 - First Qualified Evidence Campaign | Verified acquisition pilot; no qualified session earned because traffic contamination blocked every eligible lap | One source-owned Next Gen re-import proved immutable ownership, ten-signal/sub-tick/FFB truth, certificate-owned rejection, duplicate resistance, and a frozen future null-session card without changing P23 authority |
+| P26 - Vehicle Systems Intelligence and Crew-Chief Component Graph | Verified deterministic Next Gen foundation | Source-backed component contracts, typed interactions, explicit observability debt, one-physical-factor experiments, P19/P20 runtime projection, grounded component tools, and compact Setup/Engineer surfaces enrich reasoning without creating setup authority |
 
 ---
 
@@ -1720,6 +1721,67 @@ and validation evidence are recorded in
 
 ---
 
+## P26 - Vehicle Systems Intelligence and Crew-Chief Component Graph
+
+**Status: verified deterministic Next Gen foundation.** The existing Dial-In
+knowledge now compiles into an immutable backend graph that separates controls,
+component properties, whole-car states, observations, symptoms, outcomes, and
+context. P26 projects P20 observations and exact P19 controlled history onto
+that graph; it does not create another setup-authority path.
+
+- [x] Define source-backed, build-scoped contracts for tires, alignment,
+  springs, dampers, anti-roll bars, weight distribution, ride height/platform,
+  brakes, differential, final drive, steering, and cooling configuration.
+- [x] Compile every supported `SetupControlSpec` and every Next Gen-applicable
+  accepted `SetupEffect` into typed nodes and safe expectation edges, with no
+  broad runtime `causes` relation, orphan edge, or unmapped production control.
+- [x] Preserve direct settings, live channels, derived metrics, indirect
+  proxies, interpretation blockers, and unavailable quantities for every
+  component. No bar-load, spring-force, damper-force, wheel-load, tire-force,
+  exact drag, downforce, torque, or horsepower authority is inferred.
+- [x] Make mechanical coupling, manual rechecks, and the scoped 2026 Next Gen
+  spring/ride-height garage auto-compensation explicit and version-bound.
+- [x] Generalize one garage row into seven immutable one-physical-factor
+  experiment contracts, including coordinated front/rear ride-height controls,
+  invariants, preconditions, expected response, countereffects, success metrics,
+  and rollback rules. The contracts remain non-authoritative until P19 supplies
+  one exact legal target and controlled-test authorization.
+- [x] Assemble exact-run `ComponentAwarenessState` from P20 producer artifacts
+  and P19 causes/outcomes without rereading telemetry. Generic whole-car
+  observations create coupled component candidates, not proven component
+  causes; exact-context Undo policy blocks a generic prior from reopening the
+  rejected control.
+- [x] Expose read-only run, component-inspection, and control-trace endpoints;
+  ground component questions such as “What is the RF spring doing?” through the
+  same scoped Engineer query path while keeping controlled-history questions
+  higher priority.
+- [x] Add compact Vehicle Systems projections to the existing Setup and Engineer
+  workspaces. Race Mode shows the leading family and next discriminator;
+  Learning Mode adds agreement, evidence counts, settings, interactions,
+  controlled history, policy blockers, and the P19 authority boundary.
+
+### P26 verification evidence
+
+- The compiled graph contains 12 component definitions, 24 build-scoped
+  interactions, 360 typed nodes, 665 typed edges, all 15 production setup
+  controls, and zero untyped `causes` edges.
+- The real local Next Gen Atlanta run
+  `stockcars-chevycamarozl12022-atlanta-2022-oval-2-37e380eb` completed the full
+  P19/P20 build and P26 projection. Its platform observation produced four
+  candidate components—springs, dampers, anti-roll bars, and platform—with
+  current observations but no isolated mechanism claim and no setup authority.
+- Hostile regressions prove manufactured component authority is rejected,
+  unavailable state cannot be mixed with usable observability, one exact P19
+  control authorizes at most one component projection, a prior Undo blocks the
+  generic component prior, coupled whole-car evidence stays candidate-only,
+  history-query precedence remains intact, and experiment factors cannot
+  authorize setup.
+- The complete 2,250-test collection passed: 2,245 passed and five protected skips. Changed-file
+  Ruff, TypeScript, the 2,191-module production build, OpenAPI route inspection,
+  bytecode compilation, and diff integrity passed.
+
+---
+
 ## Professional analysis surface, without losing the product thesis
 
 - [x] Match essential professional language: time variance, overlays, math
@@ -1822,3 +1884,4 @@ Implementation queue completed in this pass:
 | 2026-08-10 | Unified oval map regions with Smart Engineer location awareness | All 171 oval turns now expose bounded entry/center/exit regions backed by section geometry or centerline fallbacks; every anchor resolves to its own region center, public packages and 82 migrated local caches are vendor-neutral, and grounded AI citations carry the same canonical location without gaining setup authority. The 82-map/43-oval audit had zero violations; all 2,233 tests passed (2,228 passed, five protected skips), plus targeted Ruff, TypeScript, the 2,190-module production build, diff integrity, and a real Atlanta package check |
 | 2026-08-10 | Re-verified oval geometry and made regions native Smart Engineer scope | The independent centerline audit proved all 171 bounded turn regions across 43 oval layouts contain measurable direction change, consume plausible lap area, and retain center-phase anchors. Canonical non-overlapping gaps now add 86 Front/Back stretches plus five real Indianapolis/Pocono connectors, and all 82 map payloads are continuously checked for vendor-neutral output. Smart Engineer parses turns, T-number shorthand, stretches, connectors, and entry/center/exit; it filters evidence by physical region, rejects undefined or ambiguous regions, and exposes the interpreted scope without weakening setup authority. The complete 2,238-test collection passed (2,233 passed, five protected skips), plus focused region/API contracts, changed-file Ruff, TypeScript, the 2,190-module production build, zero audit violations, and diff integrity |
 | 2026-08-10 | Enforced one greenfield canonical map registry | The mapbase contains exactly 82 index entries, 82 JSON files, 82 map IDs, 82 SHA-256 identities, and zero duplicate track/layout keys, cache paths, or orphan files. Same-byte imports remain idempotent; a changed file with the same canonical track/layout now replaces its prior entry and safely removes only the superseded cache. Track maps now accept only current `track_map_v2`/`mt2` records with one `sha256`; the migration cleanup API, retained-source handling, legacy source variants, and redundant `source_hash`/`source_removed` fields were removed. The zero-violation real-map audit, focused map tests, changed-file Ruff, TypeScript, diff integrity, and the complete 2,238-test collection passed (2,233 passed, five protected skips) |
+| 2026-08-10 | Verified P26 Vehicle Systems Intelligence foundation | A source-backed, immutable Next Gen component graph now separates physical parts, garage controls, properties, whole-car states, observations, symptoms, outcomes, context, interactions, unavailable quantities, and one-physical-factor experiments. Runtime awareness projects only P20 observations and P19 controlled history/authority; the real Atlanta run correctly produced an unresolved platform/suspension candidate family rather than four false component causes. Grounded component questions and compact Race/Learning Setup/Engineer surfaces preserve prior Undo and exact authority. The complete 2,250-test collection passed (2,245 passed, five protected skips), plus changed-file Ruff, TypeScript, the 2,191-module production build, OpenAPI inspection, bytecode compilation, real Next Gen projection, and diff integrity |

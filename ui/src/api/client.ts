@@ -22,6 +22,7 @@ import type {
   IntelligenceQueryResponse,
   RunIntelligenceReport,
 } from "../types/intelligence";
+import type { VehicleSystemsProjection } from "../types/vehicleSystems";
 import type { EngineeringAwarenessProjection } from "../types/engineeringAwareness";
 import type {
   CampaignOperationStartResponse,
@@ -311,6 +312,18 @@ export function fetchRunIntelligence(
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return requestJson<RunIntelligenceReport>(
     `/api/runs/${encodeURIComponent(runId)}/intelligence${suffix}`,
+  );
+}
+
+export function fetchVehicleSystems(
+  runId: string,
+  options?: { sessionId?: string | null },
+): Promise<VehicleSystemsProjection> {
+  const params = new URLSearchParams();
+  if (options?.sessionId) params.set("session_id", options.sessionId);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestJson<VehicleSystemsProjection>(
+    `/api/runs/${encodeURIComponent(runId)}/vehicle-systems${suffix}`,
   );
 }
 

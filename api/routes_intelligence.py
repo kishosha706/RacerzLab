@@ -43,6 +43,11 @@ from racelab_engine.services.track_map_service import (
     get_track_map,
     locate_track_region,
 )
+from racelab_engine.services.vehicle_systems_service import (
+    build_component_awareness,
+    inspect_component,
+    trace_control_mechanism,
+)
 from racelab_engine.storage.repository import RaceLabRepository
 
 router = APIRouter(prefix="/api/runs", tags=["internal-intelligence"])
@@ -200,6 +205,67 @@ def get_run_intelligence(
         raise _http_error(exc) from exc
 
 
+@router.get("/{run_id}/vehicle-systems")
+def get_run_vehicle_systems(run_id: str, session_id: str | None = None) -> dict[str, object]:
+    """Return component cognition as a read-only projection of P19/P20 truth."""
+    try:
+        bundle = build_run_intelligence(run_id, session_id=session_id)
+        overview = RaceLabRepository().get_overview(run_id)
+        projection = build_component_awareness(
+            bundle.report,
+            setup_snapshot=overview.setup_snapshot if overview is not None else None,
+            car_path=overview.session.car_path if overview is not None else None,
+        )
+        return projection.model_dump(mode="json")
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/{run_id}/vehicle-systems/components/{component_id}")
+def get_run_vehicle_component(
+    run_id: str,
+    component_id: str,
+    session_id: str | None = None,
+) -> dict[str, object]:
+    """Inspect one sourced component, its interactions, and exact-run state."""
+    try:
+        bundle = build_run_intelligence(run_id, session_id=session_id)
+        overview = RaceLabRepository().get_overview(run_id)
+        projection = build_component_awareness(
+            bundle.report,
+            setup_snapshot=overview.setup_snapshot if overview is not None else None,
+            car_path=overview.session.car_path if overview is not None else None,
+        )
+        return {
+            key: value.model_dump(mode="json")
+            if hasattr(value, "model_dump")
+            else [item.model_dump(mode="json") for item in value]
+            if isinstance(value, tuple) and value and hasattr(value[0], "model_dump")
+            else value
+            for key, value in inspect_component(component_id, projection).items()
+        }
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/{run_id}/vehicle-systems/controls/{control_key}/trace")
+def get_vehicle_control_trace(run_id: str, control_key: str) -> dict[str, object]:
+    """Trace only source-declared expectation edges; never infer a runtime cause."""
+    try:
+        if RaceLabRepository().get_overview(run_id) is None:
+            raise ValueError(f"Run not found: {run_id}")
+        edges = trace_control_mechanism(control_key)
+        return {
+            "run_id": run_id,
+            "control_key": control_key,
+            "authority": "engineering_expectation_only",
+            "setup_authorized": False,
+            "edges": [edge.model_dump(mode="json") for edge in edges],
+        }
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+
+
 @router.post(
     "/{run_id}/intelligence/measurement-attempt",
     response_model=MeasurementAttemptResponse,
@@ -300,6 +366,7 @@ _QUERY_HEADLINES = {
     "how_reliable": "Prediction track record",
     "what_would_change_mind": "What would change the call",
     "data_quality": "Data quality",
+    "component_awareness": "Vehicle system awareness",
     "unsupported": "Question not supported",
 }
 
@@ -316,6 +383,7 @@ def query_run_intelligence(
         bundle = build_run_intelligence(run_id, session_id=request.session_id)
     except ValueError as exc:
         raise _http_error(exc) from exc
+    overview = RaceLabRepository().get_overview(run_id)
     selected_scope_laps = tuple(
         dict.fromkeys(
             lap_number
@@ -356,6 +424,7 @@ def query_run_intelligence(
         ),
         track_region_resolver=track_region_context.locate,
         track_region_catalog=lambda: track_region_context.catalog(run_id),
+        vehicle_car_path=overview.session.car_path if overview is not None else None,
     )
     if request.presentation_mode is not None:
         digest = hashlib.sha256(

@@ -3728,3 +3728,14 @@ def test_natural_language_lap_scope_must_resolve_inside_the_run() -> None:
     assert result.supported is False
     assert result.clarification_required is True
     assert result.citations == ()
+
+
+def test_component_question_uses_typed_vehicle_systems_without_setup_authority() -> None:
+    result = answer_grounded_query("What is the RF spring doing?", _report())
+
+    assert result.supported is True
+    assert result.intent == "component_awareness"
+    assert "Springs:" in result.answer
+    assert "Current response: unavailable" in result.answer
+    assert "Current authority: measurement only" in result.answer
+    assert result.action_authorized is False
