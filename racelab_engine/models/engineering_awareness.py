@@ -117,7 +117,9 @@ class DerivedMetricContract(AwarenessModel):
             ChannelUpdateSemantic.UNHEALTHY,
         }
         if unavailable & set(self.allowed_channel_semantics):
-            raise ValueError("missing or unhealthy telemetry cannot be an allowed input semantic")
+            raise ValueError(
+                "missing or unhealthy telemetry cannot be an allowed input semantic"
+            )
         if set(self.allowed_outputs) & set(self.forbidden_claims):
             raise ValueError("a metric output cannot also be a forbidden claim")
         return self
@@ -238,7 +240,9 @@ class EngineeringStateFrame(AwarenessModel):
         if any(state not in _USABLE_STATE_EVIDENCE for state in self.evidence_states):
             raise ValueError("state frames require usable evidence states")
         if (self.vehicle_profile_id is None) != (self.vehicle_profile_hash is None):
-            raise ValueError("vehicle profile identity and hash must be present together")
+            raise ValueError(
+                "vehicle profile identity and hash must be present together"
+            )
 
         semantic_channels = [item.channel for item in self.channel_semantics]
         coverage_channels = [item.channel for item in self.coverage_by_channel]
@@ -248,9 +252,13 @@ class EngineeringStateFrame(AwarenessModel):
         _require_unique(analyzer_ids, "analyzer")
         source_channel_set = set(self.source_channels)
         if set(semantic_channels) != source_channel_set:
-            raise ValueError("channel semantics must cover every and only source channel")
+            raise ValueError(
+                "channel semantics must cover every and only source channel"
+            )
         if set(coverage_channels) != source_channel_set:
-            raise ValueError("channel coverage must cover every and only source channel")
+            raise ValueError(
+                "channel coverage must cover every and only source channel"
+            )
 
         evidence_references = (*self.supporting_evidence, *self.contradicting_evidence)
         evidence_ids = [reference.evidence_id for reference in evidence_references]
@@ -258,9 +266,13 @@ class EngineeringStateFrame(AwarenessModel):
         for reference in evidence_references:
             _validate_reference_scope(reference, self)
             if reference.artifact_id not in self.source_artifact_ids:
-                raise ValueError("frame evidence artifacts must be declared as frame sources")
+                raise ValueError(
+                    "frame evidence artifacts must be declared as frame sources"
+                )
             if not set(reference.source_channels) <= source_channel_set:
-                raise ValueError("frame evidence channels must be declared as frame sources")
+                raise ValueError(
+                    "frame evidence channels must be declared as frame sources"
+                )
         expected_mechanisms = {
             "driver": MechanismKind.DRIVER_EXECUTION,
             "braking": MechanismKind.BRAKING_RESPONSE,
@@ -281,7 +293,9 @@ class EngineeringStateFrame(AwarenessModel):
                 raise ValueError(f"{field_name} reference has the wrong mechanism kind")
             _validate_subsystem_scope(reference, self)
             if reference.artifact_id not in self.source_artifact_ids:
-                raise ValueError("subsystem artifacts must be declared as frame sources")
+                raise ValueError(
+                    "subsystem artifacts must be declared as frame sources"
+                )
         return self
 
 
@@ -331,7 +345,9 @@ class StateTransition(AwarenessModel):
         _require_unique(self.source_channels, "source channel")
         for reference in (*self.supporting_evidence, *self.contradicting_evidence):
             if reference.run_id != self.run_id or reference.setup_id != self.setup_id:
-                raise ValueError("transition evidence must match run and setup identity")
+                raise ValueError(
+                    "transition evidence must match run and setup identity"
+                )
         return self
 
 
@@ -374,6 +390,7 @@ class MechanismEpisode(AwarenessModel):
     context_blockers: tuple[str, ...] = ()
     mind_change_requirements: tuple[str, ...] = Field(min_length=1)
     measurement_requirements: tuple[str, ...] = Field(min_length=1)
+    signature_keys: tuple[str, ...] = ()
     authority: Literal["observation_only"] = "observation_only"
 
     @model_validator(mode="after")
@@ -393,14 +410,156 @@ class MechanismEpisode(AwarenessModel):
             (self.independence_cluster_ids, "independence cluster"),
             (self.mind_change_requirements, "mind-change requirement"),
             (self.measurement_requirements, "measurement requirement"),
+            (self.signature_keys, "mechanism signature"),
         ):
             _require_unique(values, label)
-        if set(self.supporting_mechanism_kinds) & set(self.contradicting_mechanism_kinds):
-            raise ValueError("a mechanism cannot both support and contradict one episode")
+        if set(self.supporting_mechanism_kinds) & set(
+            self.contradicting_mechanism_kinds
+        ):
+            raise ValueError(
+                "a mechanism cannot both support and contradict one episode"
+            )
         if self.repeatability.independent_cluster_count != len(
             self.independence_cluster_ids
         ):
-            raise ValueError("episode repeatability must match exact independence clusters")
+            raise ValueError(
+                "episode repeatability must match exact independence clusters"
+            )
+        return self
+
+
+class MechanismSignatureDefinition(AwarenessModel):
+    """Inspectable expected/contradicting pattern contract, never a probability."""
+
+    signature_key: str = Field(min_length=1)
+    signature_version: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    valid_phases: tuple[str, ...] = Field(min_length=1)
+    required_mechanism_kinds: tuple[MechanismKind, ...] = Field(min_length=1)
+    expected_patterns: tuple[str, ...] = Field(min_length=1)
+    contradiction_patterns: tuple[str, ...] = Field(min_length=1)
+    mind_change_requirements: tuple[str, ...] = Field(min_length=1)
+    measurement_requirements: tuple[str, ...] = Field(min_length=1)
+    authority: Literal["observation_only"] = "observation_only"
+
+    @model_validator(mode="after")
+    def definition_is_deterministic_and_non_authoritative(
+        self,
+    ) -> MechanismSignatureDefinition:
+        for values, label in (
+            (self.valid_phases, "valid phase"),
+            (self.required_mechanism_kinds, "required mechanism"),
+            (self.expected_patterns, "expected pattern"),
+            (self.contradiction_patterns, "contradiction pattern"),
+            (self.mind_change_requirements, "mind-change requirement"),
+            (self.measurement_requirements, "measurement requirement"),
+        ):
+            _require_unique(values, label)
+        return self
+
+
+class StateDriftMetric(AwarenessModel):
+    metric_key: Literal[
+        "center_steering_demand",
+        "yaw_response_delay",
+        "rf_slip_exposure",
+        "rr_slip_exposure",
+        "throttle_pickup",
+        "chassis_response",
+        "platform_clearance",
+        "surface_temperature_response",
+        "running_pressure",
+        "fuel_normalized_phase_time",
+        "driver_control_workload",
+    ]
+    value: float = Field(allow_inf_nan=False)
+    unit: str = Field(min_length=1)
+    source_artifact_ids: tuple[str, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def metric_sources_are_exact(self) -> StateDriftMetric:
+        _require_unique(self.source_artifact_ids, "drift metric source artifact")
+        return self
+
+
+class StateDriftEntry(AwarenessModel):
+    entry_id: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    setup_id: str = Field(min_length=1)
+    context_id: str = Field(min_length=1)
+    independence_cluster_id: str = Field(min_length=1)
+    lap_number: int = Field(ge=0)
+    phase: str = Field(min_length=1)
+    lap_pct_start: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
+    lap_pct_end: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
+    metrics: tuple[StateDriftMetric, ...] = Field(min_length=1)
+    eligible: Literal[True] = True
+    authority: Literal["observation_only"] = "observation_only"
+
+    @model_validator(mode="after")
+    def drift_entry_is_one_exact_window(self) -> StateDriftEntry:
+        if self.lap_pct_end < self.lap_pct_start:
+            raise ValueError("state-drift physical window must be ordered")
+        _require_unique([metric.metric_key for metric in self.metrics], "drift metric")
+        return self
+
+
+class StateDriftFinding(AwarenessModel):
+    finding_id: str = Field(min_length=1)
+    metric_key: str = Field(min_length=1)
+    from_lap_number: int = Field(ge=0)
+    to_lap_number: int = Field(ge=0)
+    observed_delta: float = Field(allow_inf_nan=False)
+    empirical_noise_floor: float = Field(ge=0.0, allow_inf_nan=False)
+    persistence_lap_count: int = Field(ge=2)
+    relationship: Literal["state_shift_observed"] = "state_shift_observed"
+    source_entry_ids: tuple[str, ...] = Field(min_length=3)
+    source_artifact_ids: tuple[str, ...] = Field(min_length=1)
+    evidence_state: Literal[EvidenceState.OBSERVED_CORRELATION] = (
+        EvidenceState.OBSERVED_CORRELATION
+    )
+    authority: Literal["observation_only"] = "observation_only"
+
+    @model_validator(mode="after")
+    def drift_finding_is_persistent_not_causal(self) -> StateDriftFinding:
+        if self.to_lap_number <= self.from_lap_number:
+            raise ValueError("state drift must move forward across eligible laps")
+        if abs(self.observed_delta) <= self.empirical_noise_floor:
+            raise ValueError("state drift must exceed same-context empirical noise")
+        _require_unique(self.source_entry_ids, "drift source entry")
+        _require_unique(self.source_artifact_ids, "drift source artifact")
+        return self
+
+
+class StateDriftLedger(AwarenessModel):
+    ledger_id: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    setup_id: str = Field(min_length=1)
+    status: Literal["ready", "no_finding", "blocked"]
+    entries: tuple[StateDriftEntry, ...] = ()
+    findings: tuple[StateDriftFinding, ...] = ()
+    blocker_reasons: tuple[str, ...] = ()
+    formal_change_point_authority: Literal[False] = False
+    authority: Literal["observation_only"] = "observation_only"
+
+    @model_validator(mode="after")
+    def ledger_is_clean_stint_only(self) -> StateDriftLedger:
+        if self.status == "blocked" and (self.findings or not self.blocker_reasons):
+            raise ValueError("blocked drift ledgers require blockers and no findings")
+        if self.status == "ready" and (not self.findings or self.blocker_reasons):
+            raise ValueError("ready drift ledgers require findings and no blockers")
+        if self.status == "no_finding" and (self.findings or self.blocker_reasons):
+            raise ValueError(
+                "no-finding drift ledgers cannot carry findings or blockers"
+            )
+        if any(
+            entry.run_id != self.run_id or entry.setup_id != self.setup_id
+            for entry in self.entries
+        ):
+            raise ValueError("state-drift entries must match exact run and setup")
+        laps = [entry.lap_number for entry in self.entries]
+        if laps != sorted(laps) or len(laps) != len(set(laps)):
+            raise ValueError("state-drift entries require unique chronological laps")
         return self
 
 
@@ -423,9 +582,15 @@ class TrustAxis(AwarenessModel):
         _require_unique(self.source_artifact_ids, "source artifact")
         if self.state is TrustState.TRUSTED and self.blockers:
             raise ValueError("trusted axes cannot hide blockers")
-        if self.state in {TrustState.LIMITED, TrustState.BLOCKED, TrustState.UNAVAILABLE}:
+        if self.state in {
+            TrustState.LIMITED,
+            TrustState.BLOCKED,
+            TrustState.UNAVAILABLE,
+        }:
             if not self.blockers:
-                raise ValueError("limited, blocked, and unavailable axes require blockers")
+                raise ValueError(
+                    "limited, blocked, and unavailable axes require blockers"
+                )
         return self
 
 
@@ -458,7 +623,9 @@ def _validate_reference_scope(
         or reference.lap_pct_start < frame.lap_pct_start
         or reference.lap_pct_end > frame.lap_pct_end
     ):
-        raise ValueError("frame evidence must remain inside the exact run/setup/lap window")
+        raise ValueError(
+            "frame evidence must remain inside the exact run/setup/lap window"
+        )
 
 
 def _validate_subsystem_scope(
@@ -472,7 +639,9 @@ def _validate_subsystem_scope(
         or reference.lap_pct_start < frame.lap_pct_start
         or reference.lap_pct_end > frame.lap_pct_end
     ):
-        raise ValueError("subsystem references must remain inside the exact frame scope")
+        raise ValueError(
+            "subsystem references must remain inside the exact frame scope"
+        )
 
 
 __all__ = [
@@ -484,8 +653,13 @@ __all__ = [
     "EpisodeRepeatability",
     "FrameChannelSemantic",
     "MechanismEpisode",
+    "MechanismSignatureDefinition",
     "MetricProvenance",
     "StateEvidenceReference",
+    "StateDriftEntry",
+    "StateDriftFinding",
+    "StateDriftLedger",
+    "StateDriftMetric",
     "StateTransition",
     "SubsystemStateReference",
     "TemporalRelationship",

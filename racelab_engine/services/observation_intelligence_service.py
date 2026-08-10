@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,10 @@ from racelab_engine.models.observation_intelligence import (
 from racelab_engine.services.import_service import (
     TelemetryArtifactIdentityError,
     read_telemetry_rows,
+)
+from racelab_engine.services.engineering_awareness_service import (
+    EngineeringAwarenessEvidenceBuild,
+    build_engineering_awareness_evidence,
 )
 from racelab_engine.services.p3_observation_bridge import (
     build_p3_mechanism_observations,
@@ -63,6 +68,12 @@ _OBSERVATION_COLUMNS = [
     "lr_shock_vel_in_s",
     "rr_shock_vel_in_s",
 ]
+
+
+@dataclass(frozen=True)
+class ObservationAwarenessBuild:
+    observations: RunObservationIntelligence
+    awareness: EngineeringAwarenessEvidenceBuild
 
 
 def _blocked_bundle(run_id: str, reason: str) -> RunObservationIntelligence:
@@ -109,7 +120,27 @@ def _blocked_bundle(run_id: str, reason: str) -> RunObservationIntelligence:
     )
 
 
-def build_observation_intelligence(
+def _blocked_build(run_id: str, reason: str) -> ObservationAwarenessBuild:
+    observations = _blocked_bundle(run_id, reason)
+    episode_report = MechanismObservationReport(
+        status=ObservationStatus.BLOCKED,
+        run_id=run_id,
+        setup_id=None,
+        blocker_reasons=(reason,),
+    )
+    return ObservationAwarenessBuild(
+        observations=observations,
+        awareness=EngineeringAwarenessEvidenceBuild(
+            frames=(),
+            transitions=(),
+            episodes=(),
+            episode_observations=episode_report,
+            blocker_reasons=(reason,),
+        ),
+    )
+
+
+def _build_observation_intelligence_with_awareness(
     run_id: str,
     session_run_ids: Sequence[str] | None = None,
     *,
@@ -117,7 +148,7 @@ def build_observation_intelligence(
     db_path: str | Path | None = None,
     data_dir: str | Path | None = None,
     anomaly_channels: Sequence[str] = _DEFAULT_ANOMALY_CHANNELS,
-) -> RunObservationIntelligence:
+) -> ObservationAwarenessBuild:
     """Load one exact run and assemble non-authorizing observation reports.
 
     ``session_run_ids`` is only an ownership guard.  This builder never merges
@@ -125,13 +156,13 @@ def build_observation_intelligence(
     evidence.
     """
     if not run_id.strip():
-        return _blocked_bundle("invalid-run", "A non-empty run identity is required.")
+        return _blocked_build("invalid-run", "A non-empty run identity is required.")
     if session_run_ids is not None:
         scope = tuple(session_run_ids)
         if len(scope) != len(set(scope)):
-            return _blocked_bundle(run_id, "Session run identities are duplicated.")
+            return _blocked_build(run_id, "Session run identities are duplicated.")
         if run_id not in scope:
-            return _blocked_bundle(
+            return _blocked_build(
                 run_id,
                 "The requested run is not part of the supplied session scope.",
             )
@@ -139,11 +170,11 @@ def build_observation_intelligence(
     try:
         overview = repo.get_overview(run_id)
     except (OSError, TypeError, ValueError) as exc:
-        return _blocked_bundle(run_id, f"Stored run evidence could not be verified: {exc}")
+        return _blocked_build(run_id, f"Stored run evidence could not be verified: {exc}")
     if overview is None:
-        return _blocked_bundle(run_id, f"Run not found: {run_id}")
+        return _blocked_build(run_id, f"Run not found: {run_id}")
     if overview.run_id != run_id or overview.session.run_id != run_id:
-        return _blocked_bundle(
+        return _blocked_build(
             run_id, "The stored run identity does not match the requested scope."
         )
     integrity_warnings = tuple(
@@ -152,7 +183,7 @@ def build_observation_intelligence(
         if warning.casefold().startswith("evidence integrity:")
     )
     if integrity_warnings:
-        return _blocked_bundle(run_id, " ".join(integrity_warnings))
+        return _blocked_build(run_id, " ".join(integrity_warnings))
 
     setup = overview.setup_snapshot
     setup_id = setup.setup_id if setup is not None and setup.run_id == run_id else None
@@ -239,6 +270,18 @@ def build_observation_intelligence(
             setup_id,
             (event_mechanisms, p3_mechanisms),
         )
+    awareness = build_engineering_awareness_evidence(
+        mechanisms,
+        scoped_rows,
+        run_id=run_id,
+        setup_id=setup_id,
+    )
+    if awareness.episode_observations.status is ObservationStatus.READY:
+        mechanisms = merge_mechanism_observation_reports(
+            run_id,
+            setup_id,
+            (mechanisms, awareness.episode_observations),
+        )
     anomalies = build_same_setup_anomaly_envelopes(
         scoped_rows,
         overview.laps,
@@ -260,21 +303,67 @@ def build_observation_intelligence(
             (read_blocker,) if read_blocker else (),
             opportunity.blocker_reasons,
             mechanisms.blocker_reasons,
+            awareness.blocker_reasons,
             anomalies.blocker_reasons,
             driver.blocker_reasons,
         )
         for blocker in group
         if blocker
     ))
-    return RunObservationIntelligence(
-        run_id=run_id,
-        setup_id=setup_id,
-        opportunity_signatures=opportunity,
-        mechanism_observations=mechanisms,
-        anomaly_envelopes=anomalies,
-        driver_repeatability=driver,
-        blocker_reasons=aggregate_blockers,
+    return ObservationAwarenessBuild(
+        observations=RunObservationIntelligence(
+            run_id=run_id,
+            setup_id=setup_id,
+            opportunity_signatures=opportunity,
+            mechanism_observations=mechanisms,
+            anomaly_envelopes=anomalies,
+            driver_repeatability=driver,
+            blocker_reasons=aggregate_blockers,
+        ),
+        awareness=awareness,
     )
 
 
-__all__ = ["build_observation_intelligence"]
+def build_observation_intelligence(
+    run_id: str,
+    session_run_ids: Sequence[str] | None = None,
+    *,
+    repository: Any | None = None,
+    db_path: str | Path | None = None,
+    data_dir: str | Path | None = None,
+    anomaly_channels: Sequence[str] = _DEFAULT_ANOMALY_CHANNELS,
+) -> RunObservationIntelligence:
+    return _build_observation_intelligence_with_awareness(
+        run_id,
+        session_run_ids,
+        repository=repository,
+        db_path=db_path,
+        data_dir=data_dir,
+        anomaly_channels=anomaly_channels,
+    ).observations
+
+
+def build_observation_intelligence_with_awareness(
+    run_id: str,
+    session_run_ids: Sequence[str] | None = None,
+    *,
+    repository: Any | None = None,
+    db_path: str | Path | None = None,
+    data_dir: str | Path | None = None,
+    anomaly_channels: Sequence[str] = _DEFAULT_ANOMALY_CHANNELS,
+) -> ObservationAwarenessBuild:
+    return _build_observation_intelligence_with_awareness(
+        run_id,
+        session_run_ids,
+        repository=repository,
+        db_path=db_path,
+        data_dir=data_dir,
+        anomaly_channels=anomaly_channels,
+    )
+
+
+__all__ = [
+    "ObservationAwarenessBuild",
+    "build_observation_intelligence",
+    "build_observation_intelligence_with_awareness",
+]

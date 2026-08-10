@@ -36,6 +36,7 @@ from racelab_engine.analysis.test_director import (
     score_test_execution,
 )
 from racelab_engine.models.controlled_workflow import ControlledWorkflow
+from racelab_engine.models.engineering_awareness import MechanismEpisode
 from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.intelligence import (
@@ -2477,6 +2478,8 @@ def build_reasoning_snapshot(
     measurement_plan: InformationPlan,
     data_quality: DataQualityAssessment,
     lap_context: LapEngineeringContextReport | None = None,
+    mechanism_episodes: Sequence[MechanismEpisode] = (),
+    mechanism_episode_blocker_reasons: Sequence[str] = (),
     blocker_reasons: Sequence[str] = (),
 ) -> ReasoningSnapshot:
     canonical_graph = _graph_with_ranked_causes(graph, ranked_causes)
@@ -2539,6 +2542,10 @@ def build_reasoning_snapshot(
         measurement_plan=measurement_plan,
         data_quality=data_quality,
         lap_context=lap_context,
+        mechanism_episodes=tuple(mechanism_episodes),
+        mechanism_episode_blocker_reasons=_unique_text(
+            mechanism_episode_blocker_reasons
+        ),
         authority=authority,
         blocker_reasons=_unique_text(blocker_reasons),
     )
@@ -3787,6 +3794,8 @@ def build_internal_intelligence_report(
     best_measurement: InformationPlan,
     data_quality: DataQualityAssessment,
     lap_context: LapEngineeringContextReport | None = None,
+    mechanism_episodes: Sequence[MechanismEpisode] = (),
+    mechanism_episode_blocker_reasons: Sequence[str] = (),
     context_matches: Sequence[ResponseMemorySummary] = (),
     calibration: CalibrationSummary | None = None,
     narrative: Sequence[str] = (),
@@ -4325,6 +4334,8 @@ def build_internal_intelligence_report(
         measurement_plan=effective_measurement,
         data_quality=public_data_quality,
         lap_context=lap_context,
+        mechanism_episodes=mechanism_episodes,
+        mechanism_episode_blocker_reasons=mechanism_episode_blocker_reasons,
         blocker_reasons=(
             ("One or more canonical reasoning checks blocked authority.",)
             if blockers

@@ -12,6 +12,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from racelab_engine.analysis.test_director import ControlledTestCard, MeasurementMission
+from racelab_engine.models.engineering_awareness import MechanismEpisode
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.lap_engineering_context import LapEngineeringContextReport
 from racelab_engine.models.experiment import MeasurementMissionContract
@@ -816,6 +817,8 @@ class ReasoningSnapshot(IntelligenceModel):
     measurement_plan: InformationPlan
     data_quality: DataQualityAssessment
     lap_context: LapEngineeringContextReport | None = None
+    mechanism_episodes: tuple[MechanismEpisode, ...] = ()
+    mechanism_episode_blocker_reasons: tuple[str, ...] = ()
     authority: ReasoningAuthorityEnvelope
     blocker_reasons: tuple[str, ...] = ()
 
@@ -843,6 +846,15 @@ class ReasoningSnapshot(IntelligenceModel):
             raise ValueError("reasoning snapshot data quality must match the exact run")
         if self.lap_context is not None and self.lap_context.run_id != self.run_id:
             raise ValueError("reasoning snapshot lap context must match the exact run")
+        episode_ids = [episode.episode_id for episode in self.mechanism_episodes]
+        if len(episode_ids) != len(set(episode_ids)):
+            raise ValueError("reasoning snapshot mechanism episodes must be unique")
+        if any(episode.run_id != self.run_id for episode in self.mechanism_episodes):
+            raise ValueError("reasoning snapshot episodes must match the exact run")
+        if len(self.mechanism_episode_blocker_reasons) != len(
+            set(self.mechanism_episode_blocker_reasons)
+        ):
+            raise ValueError("reasoning snapshot episode blockers must be unique")
         if self.authority.setup_authorized != self.measurement_plan.setup_authorized:
             raise ValueError("reasoning snapshot authority must match its measurement plan")
         return self

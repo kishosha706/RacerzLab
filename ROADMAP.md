@@ -1252,8 +1252,8 @@ new setup authority.
 ## P20 - Engineering State Awareness and Whole-Car Mechanism Fusion
 
 Overall status: **Partial**. The semantic foundation, producer fusion, context
-profiles, transient response, and whole-car exposure metrics are backend verified;
-episode production, public projection, and UI integration are not yet verified.
+profiles, transient response, whole-car exposure metrics, and temporal episode
+fusion are backend verified; public projection and UI integration are not yet verified.
 
 - [x] Define immutable, extra-forbid `ChannelRole`, `DerivedMetricContract`,
   `EngineeringStateFrame`, `StateTransition`, `MechanismEpisode`, and
@@ -1276,7 +1276,7 @@ episode production, public projection, and UI integration are not yet verified.
   mandatory for comparison.
 - [x] Add descriptive chassis, tire, brake, combined-acceleration, and disturbance
   exposure metrics under explicit proxy/forbidden-claim contracts.
-- [ ] Build temporal state transitions, observation-only mechanism episodes, and a
+- [x] Build temporal state transitions, observation-only mechanism episodes, and a
   state-drift ledger, then feed their evidence into P19 without adding another
   cause ranker or setup-policy evaluator.
 - [ ] Publish one stale-safe engineering-awareness projection and integrate it into
@@ -1337,6 +1337,16 @@ episode production, public projection, and UI integration are not yet verified.
   for channel/update-semantic gates and exact scope only, not validation of chassis,
   tire, powertrain, platform, or other performance physics. The repeated-position
   signature also states that track input was not directly measured.
+- Slice F: nine hostile tests prove exact frame binding, missing-channel and setup
+  denial, noncausal transition vocabulary, conservative independence clustering,
+  deterministic non-probabilistic signatures, P19 graph/snapshot ingestion, and
+  persistent above-noise clean-stint drift gates. The surrounding P20/P19 focused
+  checkpoint passed 250 tests with Ruff clean.
+- The Atlanta schema/capability fixture produced 12 exact state frames and no
+  temporal episode, which is the correct no-finding result because no qualified
+  producer evidence repeated at one exact context. The combined existing
+  observation plus awareness build was about 6.0 seconds cold and warm. It remains
+  lazy and is not a cockpit-startup dependency; Slice G owns bounded caching.
 
 ---
 

@@ -83,7 +83,7 @@ from racelab_engine.services.lap_engineering_context_service import (
     load_lap_engineering_context_report,
 )
 from racelab_engine.services.observation_intelligence_service import (
-    build_observation_intelligence,
+    build_observation_intelligence_with_awareness,
 )
 from racelab_engine.services.session_intelligence_service import (
     build_session_intelligence,
@@ -1510,12 +1510,14 @@ def build_run_intelligence(
     if overview is None:
         raise ValueError(f"Run not found: {run_id}")
     resolved_session_id, scope_run_ids = _resolve_session(run_id, session_id, db_path)
-    observation_intelligence = build_observation_intelligence(
+    observation_build = build_observation_intelligence_with_awareness(
         run_id,
         scope_run_ids,
         repository=repository,
         db_path=db_path,
     )
+    observation_intelligence = observation_build.observations
+    awareness_evidence = observation_build.awareness
     position_result = (
         build_session_position_evidence_result(
             run_id,
@@ -1933,6 +1935,8 @@ def build_run_intelligence(
         best_measurement=plan,
         data_quality=quality,
         lap_context=lap_context,
+        mechanism_episodes=awareness_evidence.episodes,
+        mechanism_episode_blocker_reasons=awareness_evidence.blocker_reasons,
         context_matches=context_matches,
         calibration=calibration_model,
     )
