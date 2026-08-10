@@ -471,6 +471,38 @@ def p21_activation_gates(
     return tuple(build_activation_gate({**common, **definition}) for definition in definitions)
 
 
+def p22_field_activation_gates(
+    *,
+    created_at: datetime | None = None,
+) -> tuple[ActivationGate, ...]:
+    """Freeze P22 review ceilings before prospective field evidence arrives.
+
+    Passing these gates makes a non-planner capability eligible for a separate,
+    bounded observation-overlay activation review. It does not activate code and
+    cannot change P19 cause, setup, measurement, or policy authority.
+    """
+    timestamp = created_at or datetime(2026, 8, 10, tzinfo=timezone.utc)
+    still_shadow_only = {
+        "formal_information_gain": "eligible_for_prospective_shadow",
+        "bayesian_optimization": "shadow",
+        "multi_control_optimization": "shadow",
+    }
+    gates = []
+    for p21_gate in p21_activation_gates():
+        payload = p21_gate.model_dump(
+            mode="python",
+            exclude={"gate_id", "gate_hash"},
+        )
+        payload["gate_version"] = "p22-field-validation-v1"
+        payload["created_at"] = timestamp
+        payload["maximum_state"] = still_shadow_only.get(
+            p21_gate.capability_key,
+            "eligible_for_limited_activation",
+        )
+        gates.append(build_activation_gate(payload))
+    return tuple(gates)
+
+
 def _passes(observed: float | int | None, threshold: MetricThreshold) -> bool:
     if observed is None:
         return False
@@ -498,5 +530,6 @@ __all__ = [
     "build_activation_gate",
     "evaluate_activation_gate",
     "p21_activation_gates",
+    "p22_field_activation_gates",
     "save_activation_decision",
 ]

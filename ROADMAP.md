@@ -54,6 +54,7 @@ result, and remember only what the evidence supports.
 | P19 - Engineering Truth, Experiments, and Durable Memory | Verified closed-loop deterministic foundation; statistical activation remains data-locked | One canonical reasoning snapshot separates mechanism, control response, and policy; exact mission attempts and durable cross-session memory reconstruct safely across restart and unreadable history |
 | P20 - Engineering State Awareness and Whole-Car Mechanism Fusion | Verified deterministic production slice; shadow observers and statistical activation remain data-locked | Exact state, context, temporal episodes, producer blockers, P19 authority, and stale-safe whole-car projection reach existing workspaces without a second reasoning path |
 | P21 - Evidence Lab, Calibration, and Shadow Intelligence | Verified scientific infrastructure; advanced statistical authority remains locked | Immutable datasets, leakage-safe evaluation, collection campaigns, proxy/profile validation, prospective shadow records, and identity-bound activation gates expose exact learning debt without changing P19/P20 authority |
+| P22 - Prospective Field Validation and Learning Operations | Verified operational foundation; real campaigns and advanced authority remain data-locked | Frozen campaign operations, automatic qualification, prospective P19 predictions/outcomes, deterministic collection guidance, and the Learning Ledger survive restart without granting setup or statistical authority |
 
 ---
 
@@ -1432,6 +1433,64 @@ setup-policy authority and P20 remains the sole whole-car projection.
 
 ---
 
+## P22 - Prospective Field Validation and Learning Operations
+
+Overall status: **Verified operational foundation; real campaigns and advanced
+authority remain data-locked**. P22 makes P21 evidence campaigns executable and
+prospective while P19 retains all production reasoning, measurement, setup,
+Keep/Undo, and stop-testing authority and P20 retains whole-car projection.
+
+- [x] Add content-addressed campaign operations with frozen run/context identity
+  and append-only, restart-safe start, pause, resume, complete, and abandon
+  lifecycles that reject invalid direct transitions.
+- [x] Qualify successful `.ibt` imports automatically using canonical eligible
+  laps, exact source/car/build/setup identity, fuel/weather/traffic bands, control
+  mutation checks, immutable independence units, and per-lap rejection reasons.
+- [x] Promote only protocol-sufficient driver-noise and uninterrupted long-run
+  assessments automatically; keep controlled setup, tire semantics, geometry,
+  control-workload, and null campaigns pending their required workflow or source
+  validation record.
+- [x] Freeze exact P19 controlled-test predictions before outcome exposure and
+  attach one immutable canonical A/B/A2 outcome later with mechanism, control
+  response, countereffect, and policy kept separate.
+- [x] Rank feasible evidence acquisition with an inspectable deterministic
+  deficit/rule-fit/gates/lap-cost heuristic that is structurally collection-only,
+  not formal information gain or setup authority.
+- [x] Review every advanced capability against cloned pre-registered P22 field
+  gates without manual selection or a preselected model; limited activation is
+  only eligibility for a later bounded observer review.
+- [x] Publish active test-session progress, exact rejection feedback, frozen
+  prospective state, Learning Ledger categories, and remain-locked capability
+  review in Smart Engineer Learning Mode only.
+- [x] Keep formal information gain, probability authority, sideslip/gravity/
+  geometry observers, response authority, Bayesian optimization, and
+  multi-control optimization locked until qualified real and prospective data
+  passes every exact gate.
+
+### P22 verification evidence
+
+- The complete Python collection contains 2,201 tests. The full suite passed with
+  six protected fixture-dependent skips; 20 focused P21/P22 lifecycle,
+  qualification, prediction, outcome, UI-contract, and activation regressions
+  passed again after final lifecycle hardening.
+- Hostile coverage includes duplicate source assessment, contaminated traffic,
+  brake-bias mutation, invalid/equal-timestamp lifecycle events, hindsight
+  freezing, immutable prediction collision, one-to-one outcome matching,
+  mechanism-supported plus Undo separation, no-model preselection, and planner/
+  optimizer authority denial.
+- Whole-repository Ruff, TypeScript, the 2,189-module production Vite build, and
+  diff integrity passed.
+- Live local browser smoke against the existing 13-run archive showed no feasible
+  campaign from an unreadable legacy recording, zero qualified campaign progress,
+  the Proven/In validation/Locked ledger, `Decision: REMAIN LOCKED`, and no browser
+  console errors. Race Mode contained zero P22 test-session or ledger content.
+- No real campaign, proxy validation, controlled response population, or model
+  activation was claimed. The next limiting reagent is qualified Next Gen field
+  data collected under the frozen operations. The detailed contract is in
+  `docs/p22_field_validation.md`.
+
+---
+
 ## Professional analysis surface, without losing the product thesis
 
 - [x] Match essential professional language: time variance, overlays, math
@@ -1526,3 +1585,4 @@ Implementation queue completed in this pass:
 | 2026-08-09 | Verified RacerZLab Intelligence Spine / Closed-Loop Reasoning Foundation | Canonical reasoning snapshots, backend-owned signed evidence graphs, independence clusters, Next Gen per-lap channel semantics, immutable mission contracts, append-only restart-safe attempt history, durable stop reconstruction, typed comparability debt, tolerant event lifecycle, and fail-closed cross-session Undo memory passed the complete 2,073-test collection with six protected skips, Ruff, TypeScript, production build, and diff integrity; statistical authority remains data-locked |
 | 2026-08-09 | Verified P20 deterministic engineering-awareness production slice | Producer-owned state frames, context/control boundaries, source-backed profiles, descriptive transient/exposure metrics, temporal episodes, exact P19 projection, bounded API cache, and six stale-safe existing-workspace surfaces passed the complete 2,134-test collection with six protected skips, Ruff, TypeScript, production build, diff integrity, and a real Atlanta schema/capability route check; state drift remains typed unavailable until a canonical numeric ledger is attached, while shadow observers and statistical authority remain data-locked |
 | 2026-08-10 | Verified P21 Evidence Lab, Calibration, and Shadow Intelligence foundation | Immutable evidence registries, frozen split/evaluation identity, hostile leakage detection, seven collection campaigns, bounded proxy/profile validation, prospective shadow records, causal/planner evaluation, thirteen activation gates, and Learning-only readiness passed 2,182 tests with six protected skips, Ruff, TypeScript, a 2,189-module production build, diff integrity, performance checks, and live Race/Learning smoke; the archive contains no qualified controlled population, so P19/P20 remain authoritative and advanced statistical methods remain locked or shadow-only |
+| 2026-08-10 | Verified P22 prospective field-validation operational foundation | Frozen campaign lifecycles, import-time exact qualification, immutable pre-outcome P19 predictions, canonical later outcomes, deterministic collection guidance, cloned field gates, and the Learning Ledger passed the 2,201-test collection with six protected skips, Ruff, TypeScript, a 2,189-module production build, diff integrity, and live Race/Learning smoke; no real evidence campaign or advanced activation is claimed, so P19/P20 remain authoritative |

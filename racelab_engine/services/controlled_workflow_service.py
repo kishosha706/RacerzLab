@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import hashlib
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import median
@@ -66,6 +67,9 @@ from racelab_engine.services.session_intelligence_service import (
 )
 from racelab_engine.services.session_service import list_sessions
 from racelab_engine.storage.repository import RaceLabRepository
+
+
+_log = logging.getLogger(__name__)
 
 
 _WORKFLOW_COLUMNS = [
@@ -2800,6 +2804,24 @@ def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = N
         repo.save_controlled_workflow(updated)
     if isinstance(repo, RaceLabRepository):
         record_workflow_outcome(updated, db_path=repo.db_path)
+        try:
+            from racelab_engine.evaluation.prospective import (
+                attach_matching_outcome_after_score,
+            )
+
+            attach_matching_outcome_after_score(
+                updated.workflow_id,
+                updated.source_run_id,
+                db_path=repo.db_path,
+            )
+        except Exception as exc:
+            # P22 shadow grading cannot weaken or roll back the canonical P19
+            # score. The frozen prediction remains visibly unscored for recovery.
+            _log.warning(
+                "Prospective outcome attachment failed closed for workflow %s: %s",
+                updated.workflow_id,
+                exc,
+            )
     return updated
 
 

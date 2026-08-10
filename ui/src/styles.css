@@ -6483,6 +6483,83 @@ td {
 .engineer-readiness-debt li strong { color: #cbd5e1; font-size: 9px; }
 .engineer-readiness-debt li span { color: #7d8a99; font-size: 8px; line-height: 1.35; }
 
+.engineer-learning-operation,
+.engineer-capability-review {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #263244;
+  border-radius: 7px;
+  background: rgba(10, 18, 30, 0.7);
+}
+
+.engineer-learning-operation > header {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+}
+
+.engineer-learning-operation > header > span {
+  margin-left: auto;
+  color: #93c5fd;
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.engineer-learning-operation h3,
+.engineer-capability-review h3 { margin: 1px 0 0; color: #e2e8f0; font-size: 12px; text-transform: capitalize; }
+.engineer-learning-operation p,
+.engineer-capability-review p { margin: 0; color: #9aabba; font-size: 9px; line-height: 1.45; }
+.engineer-learning-operation small { color: #fbbf24; font-size: 8px; line-height: 1.4; }
+
+.engineer-operation-progress {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.engineer-operation-progress span {
+  display: grid;
+  gap: 2px;
+  padding: 5px;
+  border-radius: 4px;
+  background: rgba(30, 41, 59, 0.65);
+  color: #718096;
+  font-size: 8px;
+}
+
+.engineer-operation-progress strong { color: #e2e8f0; font-size: 10px; }
+.engineer-operation-error { color: #fca5a5 !important; }
+
+.engineer-prospective-lock {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #263244;
+}
+
+.engineer-prospective-lock > span { color: #718096; font-size: 8px; }
+.engineer-prospective-lock > span strong { color: #dbeafe; }
+.engineer-prospective-lock > button { margin-left: auto; }
+
+.engineer-learning-ledger { margin-top: 9px; border-top: 1px solid #1f2937; }
+.engineer-learning-ledger > summary { padding-top: 8px; color: #93c5fd; cursor: pointer; font-size: 9px; font-weight: 800; }
+.engineer-learning-ledger > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.engineer-learning-ledger h4 { margin: 0 0 5px; color: #cbd5e1; font-size: 9px; text-transform: uppercase; }
+.engineer-learning-ledger ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.engineer-learning-ledger li { display: grid; grid-template-columns: 1fr auto; gap: 2px 6px; padding: 6px; border: 1px solid #263244; border-radius: 5px; }
+.engineer-learning-ledger li strong { color: #dbeafe; font-size: 9px; }
+.engineer-learning-ledger li span { color: #93c5fd; font-size: 8px; }
+.engineer-learning-ledger li small { grid-column: 1 / -1; color: #7d8a99; font-size: 8px; line-height: 1.35; }
+
+.engineer-capability-review > strong { color: #fbbf24; font-size: 9px; }
+.engineer-capability-review[data-decision="eligible_for_limited_activation"] { border-color: #2f855a; }
+.engineer-capability-review[data-decision="eligible_for_limited_activation"] > strong { color: #86efac; }
+
 .engineer-learning-card > header {
   margin-bottom: 9px;
 }

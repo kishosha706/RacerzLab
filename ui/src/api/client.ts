@@ -23,7 +23,11 @@ import type {
   RunIntelligenceReport,
 } from "../types/intelligence";
 import type { EngineeringAwarenessProjection } from "../types/engineeringAwareness";
-import type { LearningReadinessProjection } from "../types/learningReadiness";
+import type {
+  CampaignOperationStartResponse,
+  LearningReadinessProjection,
+  ProspectivePredictionResponse,
+} from "../types/learningReadiness";
 
 const API_BASE =
   import.meta.env.VITE_RACELAB_API_BASE_URL ??
@@ -328,6 +332,37 @@ export function fetchLearningReadiness(
   if (options?.sessionId) params.set("session_id", options.sessionId);
   return requestJson<LearningReadinessProjection>(
     `/api/evaluation/learning-readiness?${params.toString()}`,
+  );
+}
+
+export function startEvidenceCampaign(
+  runId: string,
+  campaignKind: string,
+): Promise<CampaignOperationStartResponse> {
+  return requestJson<CampaignOperationStartResponse>(
+    "/api/evaluation/campaign-operations/start",
+    {
+      method: "POST",
+      body: JSON.stringify({ run_id: runId, campaign_kind: campaignKind }),
+    },
+  );
+}
+
+export function freezeProspectivePrediction(
+  operationId: string,
+  runId: string,
+  sessionId?: string | null,
+): Promise<ProspectivePredictionResponse> {
+  return requestJson<ProspectivePredictionResponse>(
+    "/api/evaluation/prospective-predictions",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        operation_id: operationId,
+        run_id: runId,
+        session_id: sessionId ?? null,
+      }),
+    },
   );
 }
 

@@ -226,6 +226,32 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
                 message="Track map resolution unavailable.",
             )
 
+    # P22 evaluates newly imported telemetry against active, frozen campaign
+    # contracts. Qualification failures never fail the telemetry import and
+    # never change P19/P20 engineering authority.
+    if run_id is not None:
+        try:
+            from racelab_engine.evaluation.learning_operations import (
+                assess_active_operations_for_run,
+            )
+
+            assessments = await run_in_threadpool(
+                assess_active_operations_for_run,
+                run_id,
+            )
+            if assessments:
+                _log.info(
+                    "[%s] P22 assessed %d active evidence campaign(s).",
+                    req_id,
+                    len(assessments),
+                )
+        except Exception as exc:
+            _log.warning(
+                "[%s] P22 campaign qualification failed closed without affecting import: %s",
+                req_id,
+                exc,
+            )
+
     _log.info("[%s] Returning response: run_id=%s track_map=%s", req_id, run_id, track_map_resolution.status if track_map_resolution else "None")
     return ImportIbtResponse(
         run_id=run_id,

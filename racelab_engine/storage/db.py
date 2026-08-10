@@ -359,6 +359,99 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_activation_decision_capability "
         "ON activation_decisions(capability_key, evaluated_at, decision_id)"
     )
+    # P22 prospective learning operations are append-only overlays on P21.
+    # They operationalize frozen campaign and prediction contracts without
+    # changing P19 reasoning or P20 whole-car authority.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS evidence_campaign_operations (
+          operation_id TEXT PRIMARY KEY,
+          operation_hash TEXT NOT NULL UNIQUE,
+          campaign_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          operation_json TEXT NOT NULL,
+          FOREIGN KEY(campaign_id) REFERENCES evidence_campaigns(campaign_id)
+            ON DELETE RESTRICT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS evidence_campaign_operation_events (
+          event_id TEXT PRIMARY KEY,
+          event_hash TEXT NOT NULL UNIQUE,
+          operation_id TEXT NOT NULL,
+          recorded_at TEXT NOT NULL,
+          event_type TEXT NOT NULL,
+          event_json TEXT NOT NULL,
+          FOREIGN KEY(operation_id) REFERENCES evidence_campaign_operations(operation_id)
+            ON DELETE RESTRICT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS evidence_campaign_run_assessments (
+          assessment_id TEXT PRIMARY KEY,
+          assessment_hash TEXT NOT NULL UNIQUE,
+          operation_id TEXT NOT NULL,
+          campaign_id TEXT NOT NULL,
+          run_id TEXT NOT NULL,
+          source_file_fingerprint TEXT NOT NULL,
+          recorded_at TEXT NOT NULL,
+          state TEXT NOT NULL,
+          assessment_json TEXT NOT NULL,
+          FOREIGN KEY(operation_id) REFERENCES evidence_campaign_operations(operation_id)
+            ON DELETE RESTRICT,
+          FOREIGN KEY(campaign_id) REFERENCES evidence_campaigns(campaign_id)
+            ON DELETE RESTRICT
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_campaign_operation_events "
+        "ON evidence_campaign_operation_events(operation_id, recorded_at, event_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_campaign_run_assessment "
+        "ON evidence_campaign_run_assessments(operation_id, recorded_at, assessment_id)"
+    )
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_campaign_run_assessment_scope "
+        "ON evidence_campaign_run_assessments(operation_id, run_id)"
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS prospective_test_predictions (
+          prediction_id TEXT PRIMARY KEY,
+          prediction_hash TEXT NOT NULL UNIQUE,
+          operation_id TEXT NOT NULL,
+          source_run_id TEXT NOT NULL,
+          predicted_at TEXT NOT NULL,
+          prediction_json TEXT NOT NULL,
+          FOREIGN KEY(operation_id) REFERENCES evidence_campaign_operations(operation_id)
+            ON DELETE RESTRICT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS prospective_test_outcomes (
+          outcome_id TEXT PRIMARY KEY,
+          outcome_hash TEXT NOT NULL UNIQUE,
+          prediction_id TEXT NOT NULL UNIQUE,
+          workflow_id TEXT NOT NULL UNIQUE,
+          observed_at TEXT NOT NULL,
+          outcome_json TEXT NOT NULL,
+          FOREIGN KEY(prediction_id) REFERENCES prospective_test_predictions(prediction_id)
+            ON DELETE RESTRICT
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_prospective_prediction_operation "
+        "ON prospective_test_predictions(operation_id, predicted_at, prediction_id)"
+    )
 
 
 def initialize_database(db_path: str | Path | None = None) -> sqlite3.Connection:

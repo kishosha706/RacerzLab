@@ -8,8 +8,20 @@ from typing import Literal
 
 from pydantic import Field
 
+from racelab_engine.evaluation.activation_gates import (
+    ActivationDecision,
+    p22_field_activation_gates,
+)
 from racelab_engine.evaluation.campaigns import campaign_progress, initial_campaigns
 from racelab_engine.evaluation.dataset_registry import EvidenceDataset, EvidenceLabModel
+from racelab_engine.evaluation.learning_operations import (
+    AcquisitionOption,
+    ActiveCampaignProjection,
+    LearningLedgerEntry,
+    acquisition_options,
+    active_campaign_projections,
+    learning_ledger,
+)
 from racelab_engine.services.session_service import get_session
 from racelab_engine.storage.db import initialize_database
 from racelab_engine.storage.repository import RaceLabRepository
@@ -61,6 +73,26 @@ class LearningDebt(EvidenceLabModel):
     collection_action: str
 
 
+class CapabilityReviewItem(EvidenceLabModel):
+    capability_key: str
+    state: str
+    historical_gate: Literal["pass", "fail", "pending"]
+    prospective_gate: Literal["pass", "fail", "pending"]
+    subgroup_gate: Literal["pass", "fail", "pending"]
+    negative_control_gate: Literal["pass", "fail", "pending"]
+    decision_id: str | None = None
+    blockers: tuple[str, ...]
+
+
+class AdvancedCapabilityReview(EvidenceLabModel):
+    decision: Literal["remain_locked", "eligible_for_limited_activation"]
+    eligible_capability_key: str | None = None
+    explanation: str
+    capabilities: tuple[CapabilityReviewItem, ...]
+    manual_selection: Literal[False] = False
+    authority: Literal["gate_review_only"] = "gate_review_only"
+
+
 class LearningReadinessProjection(EvidenceLabModel):
     run_id: str
     session_id: str | None
@@ -79,7 +111,101 @@ class LearningReadinessProjection(EvidenceLabModel):
     vehicle_profile_fields_ready: tuple[str, ...]
     vehicle_profile_fields_blocked: tuple[str, ...]
     debts: tuple[LearningDebt, ...]
+    active_campaigns: tuple[ActiveCampaignProjection, ...] = ()
+    acquisition_options: tuple[AcquisitionOption, ...] = ()
+    learning_ledger: tuple[LearningLedgerEntry, ...] = ()
+    capability_review: AdvancedCapabilityReview | None = None
     offline_evaluation_only: Literal[True] = True
+
+
+def _capability_review(
+    *,
+    db_path: str | Path | None,
+) -> AdvancedCapabilityReview:
+    connection = initialize_database(db_path)
+    try:
+        rows = connection.execute(
+            "SELECT decision_json FROM activation_decisions "
+            "ORDER BY evaluated_at DESC, decision_id DESC"
+        ).fetchall()
+    finally:
+        connection.close()
+    latest: dict[str, ActivationDecision] = {}
+    for row in rows:
+        decision = ActivationDecision.model_validate_json(row[0])
+        latest.setdefault(decision.capability_key, decision)
+    items = []
+    eligible = []
+    for gate in p22_field_activation_gates():
+        decision = latest.get(gate.capability_key)
+        exact = decision is not None and decision.gate_hash == gate.gate_hash
+        state = decision.state if exact and decision is not None else "locked_insufficient_data"
+        evaluation = decision.evaluation if exact and decision is not None else None
+        historical = (
+            "pass"
+            if state
+            in {
+                "eligible_for_prospective_shadow",
+                "eligible_for_limited_activation",
+                "activated",
+            }
+            else "fail"
+            if state == "locked_failed_validation"
+            else "pending"
+        )
+        prospective = (
+            "pass"
+            if state in {"eligible_for_limited_activation", "activated"}
+            else "fail"
+            if state == "locked_failed_validation"
+            else "pending"
+        )
+        subgroup = (
+            "fail"
+            if evaluation is not None and evaluation.failed_subgroups
+            else "pass"
+            if evaluation is not None and evaluation.evaluation_artifact_id is not None
+            else "pending"
+        )
+        controls = (
+            "fail"
+            if evaluation is not None and evaluation.failed_negative_controls
+            else "pass"
+            if evaluation is not None and evaluation.evaluation_artifact_id is not None
+            else "pending"
+        )
+        blockers = (
+            decision.blockers
+            if exact and decision is not None
+            else ("No exact current-gate activation decision has been earned.",)
+        )
+        items.append(
+            CapabilityReviewItem(
+                capability_key=gate.capability_key,
+                state=state,
+                historical_gate=historical,
+                prospective_gate=prospective,
+                subgroup_gate=subgroup,
+                negative_control_gate=controls,
+                decision_id=decision.decision_id if exact and decision is not None else None,
+                blockers=blockers,
+            )
+        )
+        if state == "eligible_for_limited_activation":
+            eligible.append(gate.capability_key)
+    eligible_key = sorted(eligible)[0] if eligible else None
+    return AdvancedCapabilityReview(
+        decision=(
+            "eligible_for_limited_activation" if eligible_key else "remain_locked"
+        ),
+        eligible_capability_key=eligible_key,
+        explanation=(
+            f"{eligible_key} passed its exact frozen limited-activation gate."
+            if eligible_key
+            else "No advanced capability has passed historical, prospective, subgroup, and negative-control gates."
+        ),
+        capabilities=tuple(items),
+    )
 
 
 def build_learning_readiness_projection(
@@ -136,6 +262,11 @@ def build_learning_readiness_projection(
         prospective_predictions = int(
             connection.execute(
                 "SELECT COUNT(*) FROM shadow_predictions WHERE prospective = 1"
+            ).fetchone()[0]
+        )
+        prospective_test_predictions = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM prospective_test_predictions"
             ).fetchone()[0]
         )
     finally:
@@ -245,7 +376,7 @@ def build_learning_readiness_projection(
         ReadinessCount(
             key="prospective_predictions",
             label="Prospective shadow",
-            current=prospective_predictions,
+            current=prospective_predictions + prospective_test_predictions,
             required=10,
             unit="immutable predictions",
         ),
@@ -408,11 +539,17 @@ def build_learning_readiness_projection(
         vehicle_profile_fields_ready=fields_ready,
         vehicle_profile_fields_blocked=fields_blocked,
         debts=tuple(debts),
+        active_campaigns=active_campaign_projections(db_path=db_path),
+        acquisition_options=acquisition_options(run_id, db_path=db_path),
+        learning_ledger=learning_ledger(db_path=db_path),
+        capability_review=_capability_review(db_path=db_path),
     )
 
 
 __all__ = [
     "CampaignReadiness",
+    "AdvancedCapabilityReview",
+    "CapabilityReviewItem",
     "CapabilityReadiness",
     "LearningDebt",
     "LearningReadinessProjection",

@@ -18,8 +18,10 @@ import {
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchLearningReadiness,
+  freezeProspectivePrediction,
   fetchRunIntelligence,
   queryRunIntelligence,
+  startEvidenceCampaign,
 } from "../api/client";
 import {
   exactMindChangeCriteria,
@@ -80,6 +82,12 @@ type ReadinessLoadState = {
   requestKey: string | null;
   status: "idle" | "loading" | "ready" | "error";
   projection: LearningReadinessProjection | null;
+  error: string | null;
+};
+
+type CampaignActionState = {
+  campaignKind: string | null;
+  status: "idle" | "loading" | "ready" | "error";
   error: string | null;
 };
 
@@ -246,7 +254,19 @@ function DataQualityCard({
   );
 }
 
-function LearningReadinessCard({ state }: { state: ReadinessLoadState }) {
+function LearningReadinessCard({
+  state,
+  campaignAction,
+  predictionAction,
+  onFreezePrediction,
+  onStartCampaign,
+}: {
+  state: ReadinessLoadState;
+  campaignAction: CampaignActionState;
+  predictionAction: CampaignActionState;
+  onFreezePrediction: (operationId: string) => void;
+  onStartCampaign: (campaignKind: string) => void;
+}) {
   if (state.status === "loading" || state.status === "idle") {
     return (
       <section className="engineer-learning-card engineer-readiness" aria-busy="true">
@@ -271,6 +291,18 @@ function LearningReadinessCard({ state }: { state: ReadinessLoadState }) {
     );
   }
   const projection = state.projection;
+  const activeCampaign = projection.active_campaigns[0] ?? null;
+  const highestOption = projection.acquisition_options.find((option) => option.state === "highest") ?? null;
+  const latestRejectedLap = activeCampaign?.latest_assessment?.rejected_lap_numbers[0] ?? null;
+  const latestLapRejection = latestRejectedLap == null
+    ? null
+    : activeCampaign?.latest_assessment?.lap_rejection_reasons[String(latestRejectedLap)]?.[0] ?? null;
+  const ledgerSections = [
+    ["proven_guardrail", "Proven guardrails"],
+    ["in_validation", "In validation"],
+    ["failed_validation", "Failed validation"],
+    ["locked", "Locked"],
+  ] as const;
   return (
     <section className="engineer-learning-card engineer-readiness" aria-labelledby="engineer-readiness-heading">
       <header>
@@ -284,6 +316,66 @@ function LearningReadinessCard({ state }: { state: ReadinessLoadState }) {
       <p className="engineer-readiness-authority">
         Production authority stays with <strong>{projection.deterministic_authority}</strong>.
       </p>
+      <section className="engineer-learning-operation" aria-labelledby="engineer-operation-heading">
+        <header>
+          <div><span className="eyebrow">Today&apos;s test session</span><h3 id="engineer-operation-heading">{activeCampaign
+            ? activeCampaign.operation.campaign_kind.replace(/_/g, " ")
+            : highestOption?.label ?? "No feasible campaign"}</h3></div>
+          <span>{activeCampaign?.state ?? "recommended"}</span>
+        </header>
+        {activeCampaign ? (
+          <>
+            <div className="engineer-operation-progress">
+              <span>Independent <strong>{activeCampaign.progress.independent_units}</strong></span>
+              <span>Clean laps <strong>{activeCampaign.progress.eligible_laps}</strong></span>
+              <span>Need units <strong>{activeCampaign.progress.remaining_independent_units}</strong></span>
+              <span>Rejected <strong>{activeCampaign.latest_assessment?.rejected_lap_numbers.length ?? 0}</strong></span>
+            </div>
+            <p>Next recording: {activeCampaign.operation.context.minimum_clean_laps_per_unit} clean laps · exact car/build
+              {activeCampaign.operation.context.maximum_traffic_exposure_fraction === 0 ? " · no nearby traffic" : " · bounded nearby traffic"}.</p>
+            {activeCampaign.latest_assessment && (
+              <small>Latest import: {activeCampaign.latest_assessment.state.replace(/_/g, " ")}
+                {latestLapRejection ? ` · Lap ${latestRejectedLap}: ${latestLapRejection}`
+                  : activeCampaign.latest_assessment.rejection_reasons[0] ? ` · ${activeCampaign.latest_assessment.rejection_reasons[0]}` : ""}</small>
+            )}
+            {activeCampaign.operation.campaign_kind === "controlled_setup_response" && (
+              <div className="engineer-prospective-lock">
+                <span>Frozen predictions <strong>{activeCampaign.prospective_prediction_count}</strong></span>
+                <span>Awaiting outcomes <strong>{activeCampaign.unscored_prediction_count}</strong></span>
+                {activeCampaign.unscored_prediction_count === 0 && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={predictionAction.status === "loading"}
+                    onClick={() => onFreezePrediction(activeCampaign.operation.operation_id)}
+                  >{predictionAction.status === "loading" ? "Freezing prediction…" : "Freeze P19 prediction before B"}</button>
+                )}
+                {predictionAction.status === "error" && <small className="engineer-operation-error">{predictionAction.error}</small>}
+              </div>
+            )}
+          </>
+        ) : highestOption ? (
+          <>
+            <p>{highestOption.need_next[0]} · helps {highestOption.helps.join(", ")}.</p>
+            <div className="engineer-operation-progress">
+              <span>Expected cost <strong>{highestOption.score.estimated_driver_laps} laps</strong></span>
+              <span>Rule fit <strong>{Math.round(highestOption.score.rule_fit_estimate * 100)}%</strong></span>
+              <span>Gates helped <strong>{highestOption.score.gates_helped}</strong></span>
+            </div>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={campaignAction.status === "loading"}
+              onClick={() => onStartCampaign(highestOption.campaign_kind)}
+            >
+              {campaignAction.status === "loading" ? "Starting campaign…" : "Start this campaign"}
+            </button>
+            {campaignAction.status === "error" && <small className="engineer-operation-error">{campaignAction.error}</small>}
+          </>
+        ) : (
+          <p>No campaign can start from this run. Recover immutable run, build, and setup identity first.</p>
+        )}
+      </section>
       <div className="engineer-readiness-counts" aria-label="Qualified evidence counts">
         {projection.counts.map((count) => (
           <div key={count.key}>
@@ -330,6 +422,37 @@ function LearningReadinessCard({ state }: { state: ReadinessLoadState }) {
           </ul>
         </div>
       </details>
+      <details className="engineer-learning-ledger">
+        <summary>RacerZLab Learning Ledger</summary>
+        <div>
+          {ledgerSections.map(([section, label]) => {
+            const entries = projection.learning_ledger.filter((entry) => entry.section === section);
+            if (entries.length === 0) return null;
+            return (
+              <section key={section}>
+                <h4>{label}</h4>
+                <ul>{entries.map((entry) => (
+                  <li key={entry.ledger_key}>
+                    <strong>{entry.label}</strong>
+                    {entry.current != null && entry.required != null && <span>{entry.current} / {entry.required}</span>}
+                    <small>{entry.summary}</small>
+                  </li>
+                ))}</ul>
+              </section>
+            );
+          })}
+        </div>
+      </details>
+      {projection.capability_review && (
+        <section className="engineer-capability-review" data-decision={projection.capability_review.decision}>
+          <span className="eyebrow">Advanced capability review</span>
+          <h3>{projection.capability_review.decision === "eligible_for_limited_activation"
+            ? `${projection.capability_review.eligible_capability_key?.replace(/_/g, " ")} earned review`
+            : "No advanced capability has earned activation"}</h3>
+          <p>{projection.capability_review.explanation}</p>
+          <strong>{projection.capability_review.decision === "remain_locked" ? "Decision: REMAIN LOCKED" : "Decision: ELIGIBLE FOR LIMITED ACTIVATION"}</strong>
+        </section>
+      )}
       <p className="engineer-readiness-archive">
         Archive inventory: {projection.archived_sessions} saved sessions · {projection.archived_runs} runs. Archived does not mean qualified.
       </p>
@@ -482,6 +605,81 @@ export function IntelligencePanel({
     projection: null,
     error: null,
   });
+  const [readinessRefreshToken, setReadinessRefreshToken] = useState(0);
+  const [campaignAction, setCampaignAction] = useState<CampaignActionState>({
+    campaignKind: null,
+    status: "idle",
+    error: null,
+  });
+  const [predictionAction, setPredictionAction] = useState<CampaignActionState>({
+    campaignKind: null,
+    status: "idle",
+    error: null,
+  });
+
+  const startCampaign = useCallback(async (campaignKind: string) => {
+    const requestedRunId = runId;
+    setCampaignAction({ campaignKind, status: "loading", error: null });
+    try {
+      const operation = await startEvidenceCampaign(requestedRunId, campaignKind);
+      if (
+        operation.campaign_kind !== campaignKind
+        || operation.context.reference_run_id !== requestedRunId
+      ) {
+        setCampaignAction({
+          campaignKind,
+          status: "error",
+          error: "The campaign operation did not match the current run and was not shown.",
+        });
+        return;
+      }
+      setCampaignAction({ campaignKind, status: "ready", error: null });
+      setReadinessRefreshToken((value) => value + 1);
+    } catch (caught: unknown) {
+      setCampaignAction({
+        campaignKind,
+        status: "error",
+        error: caught instanceof Error ? caught.message : "The evidence campaign could not start.",
+      });
+    }
+  }, [runId]);
+
+  const freezePrediction = useCallback(async (operationId: string) => {
+    const requestedRunId = runId;
+    setPredictionAction({ campaignKind: operationId, status: "loading", error: null });
+    try {
+      const prediction = await freezeProspectivePrediction(
+        operationId,
+        requestedRunId,
+        sessionId,
+      );
+      if (
+        prediction.operation_id !== operationId
+        || prediction.source_run_id !== requestedRunId
+        || prediction.authority !== "shadow_only"
+      ) {
+        setPredictionAction({
+          campaignKind: operationId,
+          status: "error",
+          error: "The prospective record did not match the current run and was not shown.",
+        });
+        return;
+      }
+      setPredictionAction({ campaignKind: operationId, status: "ready", error: null });
+      setReadinessRefreshToken((value) => value + 1);
+    } catch (caught: unknown) {
+      setPredictionAction({
+        campaignKind: operationId,
+        status: "error",
+        error: caught instanceof Error ? caught.message : "The prospective prediction could not be frozen.",
+      });
+    }
+  }, [runId, sessionId]);
+
+  useEffect(() => {
+    setCampaignAction({ campaignKind: null, status: "idle", error: null });
+    setPredictionAction({ campaignKind: null, status: "idle", error: null });
+  }, [runId, sessionId]);
 
   useEffect(() => {
     const sequence = ++readinessSequence.current;
@@ -522,7 +720,7 @@ export function IntelligencePanel({
         });
       });
     return () => { cancelled = true; };
-  }, [learning, runId, sessionId, workflowUpdatedAt]);
+  }, [learning, readinessRefreshToken, runId, sessionId, workflowUpdatedAt]);
 
   useEffect(() => {
     const sequence = ++reportSequence.current;
@@ -774,7 +972,7 @@ export function IntelligencePanel({
             </button>
           </div>
         </section>
-        {learning && <LearningReadinessCard state={readinessState} />}
+        {learning && <LearningReadinessCard state={readinessState} campaignAction={campaignAction} predictionAction={predictionAction} onFreezePrediction={freezePrediction} onStartCampaign={startCampaign} />}
       </div>
     );
   }
@@ -824,7 +1022,7 @@ export function IntelligencePanel({
             <RefreshCcw size={14} aria-hidden="true" /> Retry
           </button>
         </section>
-        {learning && <LearningReadinessCard state={readinessState} />}
+        {learning && <LearningReadinessCard state={readinessState} campaignAction={campaignAction} predictionAction={predictionAction} onFreezePrediction={freezePrediction} onStartCampaign={startCampaign} />}
         {report?.best_measurement && (
           <MeasurementCard measurement={report.best_measurement} learning={learning} onNavigate={onNavigateCitation} />
         )}
@@ -1253,7 +1451,7 @@ export function IntelligencePanel({
 
       {learning && (
         <div className="engineer-learning-grid">
-          <LearningReadinessCard state={readinessState} />
+          <LearningReadinessCard state={readinessState} campaignAction={campaignAction} predictionAction={predictionAction} onFreezePrediction={freezePrediction} onStartCampaign={startCampaign} />
           <section className="engineer-learning-card engineer-evidence-graph" aria-labelledby="engineer-graph-heading">
             <header>
               <Link2 size={16} aria-hidden="true" />
