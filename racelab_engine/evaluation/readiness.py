@@ -14,6 +14,10 @@ from racelab_engine.evaluation.activation_gates import (
 )
 from racelab_engine.evaluation.campaigns import campaign_progress, initial_campaigns
 from racelab_engine.evaluation.dataset_registry import EvidenceDataset, EvidenceLabModel
+from racelab_engine.evaluation.first_activation import (
+    P23FirstActivationAudit,
+    build_first_activation_audit,
+)
 from racelab_engine.evaluation.learning_operations import (
     AcquisitionOption,
     ActiveCampaignProjection,
@@ -115,6 +119,7 @@ class LearningReadinessProjection(EvidenceLabModel):
     acquisition_options: tuple[AcquisitionOption, ...] = ()
     learning_ledger: tuple[LearningLedgerEntry, ...] = ()
     capability_review: AdvancedCapabilityReview | None = None
+    first_activation_audit: P23FirstActivationAudit | None = None
     offline_evaluation_only: Literal[True] = True
 
 
@@ -525,6 +530,20 @@ def build_learning_readiness_projection(
         )
     )
     scope_key = f"{run_id}:{session_id or 'no-session'}"
+    first_activation = build_first_activation_audit(db_path=db_path)
+    ledger = learning_ledger(db_path=db_path) + (
+        LearningLedgerEntry(
+            ledger_key="p23:first_activation",
+            section="in_validation",
+            label="P23 steering-workload envelope",
+            summary=(
+                "Frozen protocol; no activation earned. Historical field validation has not started."
+            ),
+            current=first_activation.historical.qualified_real_units,
+            required=first_activation.historical.required_real_units,
+            evidence_basis="frozen_gate_policy",
+        ),
+    )
     return LearningReadinessProjection(
         run_id=run_id,
         session_id=session_id,
@@ -541,8 +560,9 @@ def build_learning_readiness_projection(
         debts=tuple(debts),
         active_campaigns=active_campaign_projections(db_path=db_path),
         acquisition_options=acquisition_options(run_id, db_path=db_path),
-        learning_ledger=learning_ledger(db_path=db_path),
+        learning_ledger=ledger,
         capability_review=_capability_review(db_path=db_path),
+        first_activation_audit=first_activation,
     )
 
 

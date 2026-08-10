@@ -137,6 +137,25 @@ export type AdvancedCapabilityReview = {
   }>;
 };
 
+export type P23FirstActivationAudit = {
+  audit_id: string;
+  audit_hash: string;
+  selected_capability: "steering_workload_envelope";
+  selection_summary: string;
+  protocol_id: string;
+  protocol_hash: string;
+  historical: { state: string; qualified_real_units: number; required_real_units: number; blockers: string[] };
+  prospective: { state: string; qualified_real_units: number; required_real_units: number; blockers: string[] };
+  negative_controls: { state: string; qualified_real_units: number; required_real_units: number; blockers: string[] };
+  subgroups: { state: string; qualified_real_units: number; required_real_units: number; blockers: string[] };
+  activation_decision: "no_activation_earned" | "historical_validation_passed" | "prospective_shadow_active" | "limited_activation_earned" | "blocked_by_evidence_deficit";
+  exact_authority_envelope: string[];
+  remaining_locks: string[];
+  next_collection_missions: string[];
+  p19_sole_reasoning_setup_authority: true;
+  p20_sole_state_projection: true;
+};
+
 export type LearningReadinessProjection = {
   run_id: string;
   session_id: string | null;
@@ -157,5 +176,6 @@ export type LearningReadinessProjection = {
   acquisition_options: AcquisitionOption[];
   learning_ledger: LearningLedgerEntry[];
   capability_review: AdvancedCapabilityReview | null;
+  first_activation_audit: P23FirstActivationAudit | null;
   offline_evaluation_only: true;
 };

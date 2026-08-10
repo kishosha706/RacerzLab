@@ -443,6 +443,28 @@ function LearningReadinessCard({
           })}
         </div>
       </details>
+      {projection.first_activation_audit && (
+        <section
+          className="engineer-first-activation"
+          data-decision={projection.first_activation_audit.activation_decision}
+        >
+          <span className="eyebrow">P23 first earned capability</span>
+          <h3>{projection.first_activation_audit.activation_decision === "limited_activation_earned"
+            ? "Limited activation earned"
+            : "No activation earned"}</h3>
+          <p><strong>Selected:</strong> steering workload envelope</p>
+          <p>{projection.first_activation_audit.selection_summary}</p>
+          <div className="engineer-operation-progress">
+            <span>Historical <strong>{projection.first_activation_audit.historical.qualified_real_units} / {projection.first_activation_audit.historical.required_real_units}</strong></span>
+            <span>Prospective <strong>{projection.first_activation_audit.prospective.qualified_real_units} / {projection.first_activation_audit.prospective.required_real_units}</strong></span>
+            <span>Controls <strong>{projection.first_activation_audit.negative_controls.qualified_real_units} / {projection.first_activation_audit.negative_controls.required_real_units}</strong></span>
+            <span>Subgroups <strong>{projection.first_activation_audit.subgroups.qualified_real_units} / {projection.first_activation_audit.subgroups.required_real_units}</strong></span>
+          </div>
+          <small>Protocol {projection.first_activation_audit.protocol_hash.slice(0, 12)} | shadow only</small>
+          <p>{projection.first_activation_audit.next_collection_missions[0]}</p>
+          <strong>P19/P20 authority unchanged.</strong>
+        </section>
+      )}
       {projection.capability_review && (
         <section className="engineer-capability-review" data-decision={projection.capability_review.decision}>
           <span className="eyebrow">Advanced capability review</span>

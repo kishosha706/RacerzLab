@@ -6,6 +6,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from racelab_engine.evaluation.campaigns import CampaignKind
+from racelab_engine.evaluation.first_activation import (
+    P23FirstActivationAudit,
+    build_first_activation_audit,
+)
 from racelab_engine.evaluation.learning_operations import (
     CampaignOperation,
     CampaignOperationEvent,
@@ -48,6 +52,11 @@ class FreezeProspectivePredictionRequest(BaseModel):
 
 class AttachProspectiveOutcomeRequest(BaseModel):
     workflow_id: str = Field(min_length=1)
+
+
+@router.get("/first-activation-audit", response_model=P23FirstActivationAudit)
+def get_first_activation_audit() -> P23FirstActivationAudit:
+    return build_first_activation_audit()
 
 
 @router.get("/learning-readiness", response_model=LearningReadinessProjection)

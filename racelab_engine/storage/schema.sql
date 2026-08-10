@@ -600,3 +600,27 @@ CREATE TABLE IF NOT EXISTS prospective_test_outcomes (
 
 CREATE INDEX IF NOT EXISTS idx_prospective_prediction_operation
   ON prospective_test_predictions(operation_id, predicted_at, prediction_id);
+
+CREATE TABLE IF NOT EXISTS p23_validation_protocols (
+  protocol_id TEXT PRIMARY KEY,
+  protocol_hash TEXT NOT NULL UNIQUE,
+  protocol_version TEXT NOT NULL,
+  capability_key TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  protocol_json TEXT NOT NULL,
+  UNIQUE(capability_key, protocol_version)
+);
+
+CREATE TABLE IF NOT EXISTS p23_activation_audits (
+  audit_id TEXT PRIMARY KEY,
+  audit_hash TEXT NOT NULL UNIQUE,
+  protocol_id TEXT NOT NULL,
+  activation_decision TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  audit_json TEXT NOT NULL,
+  FOREIGN KEY(protocol_id) REFERENCES p23_validation_protocols(protocol_id)
+    ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_p23_activation_audit_decision
+  ON p23_activation_audits(activation_decision, created_at, audit_id);

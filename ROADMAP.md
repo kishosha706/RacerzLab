@@ -55,6 +55,7 @@ result, and remember only what the evidence supports.
 | P20 - Engineering State Awareness and Whole-Car Mechanism Fusion | Verified deterministic production slice; shadow observers and statistical activation remain data-locked | Exact state, context, temporal episodes, producer blockers, P19 authority, and stale-safe whole-car projection reach existing workspaces without a second reasoning path |
 | P21 - Evidence Lab, Calibration, and Shadow Intelligence | Verified scientific infrastructure; advanced statistical authority remains locked | Immutable datasets, leakage-safe evaluation, collection campaigns, proxy/profile validation, prospective shadow records, and identity-bound activation gates expose exact learning debt without changing P19/P20 authority |
 | P22 - Prospective Field Validation and Learning Operations | Verified operational foundation; real campaigns and advanced authority remain data-locked | Frozen campaign operations, automatic qualification, prospective P19 predictions/outcomes, deterministic collection guidance, and the Learning Ledger survive restart without granting setup or statistical authority |
+| P23 - First Earned Adaptive Capability | No activation earned | Steering-workload protocol is frozen, but no qualified historical, prospective, negative-control, subgroup, or profile evidence exists |
 
 ---
 
@@ -1491,6 +1492,61 @@ Keep/Undo, and stop-testing authority and P20 retains whole-car projection.
 
 ---
 
+## P23 - First Earned Adaptive Capability
+
+Overall status: **NO ACTIVATION EARNED**. This is the scientific result, not a
+missing implementation. The complete archive is inventory only and contains no
+qualified population that can pass an activation gate.
+
+- [x] Audit and rank every P21/P22 candidate before selecting one, including
+  workload/transient descriptors, geometry/gravity/sideslip observers,
+  change-point/response/calibration/transfer methods, information gain, and both
+  optimizers.
+- [x] Select the existing steering-workload descriptor as the lowest-risk useful
+  candidate because it has a deterministic 360 Hz formula, exact FFB context,
+  strong null/block controls, no geometry dependency, and an observation-only
+  authority ceiling.
+- [x] Freeze and persist content-addressed protocol
+  `p23p-7039505728f07034d6f5` with whole-session independence, exact context,
+  exclusions, metrics, thresholds, subgroups, negative controls, prospective
+  boundary, drift rules, and authority bans.
+- [x] Reject aggregate or architectural success as activation evidence and
+  publish `NO ACTIVATION EARNED` through Learning Mode while preserving P19/P20
+  authority and leaving Race Mode uncluttered.
+- [ ] Collect 9 qualified historical exact-FFB sessions and 90 clean laps across
+  short, intermediate, and superspeedway contexts.
+- [ ] Pass the frozen historical held-out metrics, all 8 real negative controls,
+  all 9 required subgroup reports, and exact build/profile checks.
+- [ ] After historical passage, collect and grade 10 new immutable prospective
+  source sessions with predictions frozen before outcomes.
+- [ ] Consider a limited observation-overlay activation only if every unchanged
+  gate passes; setup values, probabilities, cause rank, planning, and Keep/Undo
+  remain forbidden.
+
+### P23 verification evidence
+
+- The read-only activation audit found zero qualified datasets, campaign
+  attempts, evaluation artifacts, prospective outcomes, profile validations, or
+  activation decisions. Thirteen archived runs across three saved sessions do
+  not count as qualified evidence.
+- Twenty-six focused P21/P22/P23 regressions passed during implementation.
+  Hostile coverage includes protocol mutation, invalid aggregate activation,
+  source-session independence, prospective boundary, synthetic exclusion,
+  subgroup/control completeness, context drift, and P19/P20 authority isolation.
+- The complete Python collection passed: 2,209 tests collected, 2,203 passed,
+  and six protected fixture tests skipped. Whole-repository Ruff, TypeScript,
+  the 2,189-module production build, and diff-integrity checks also passed.
+- Live Race/Learning smoke confirmed the P23 card is absent in Race Mode,
+  appears exactly once in Learning Mode, reports `NO ACTIVATION EARNED`, exposes
+  no activation control, and leaves the P19/P20 locked-authority decision intact.
+- On the real Talladega archive, the P23 audit completed in 15.106 ms cold and
+  14.564 ms warm mean; full Learning Readiness completed in 62.397 ms cold and
+  65.162 ms warm mean. Both are Learning-only and outside startup authority.
+- The full ranked matrix, selection rationale, frozen thresholds, result, and
+  next collection missions are in `docs/p23_first_activation_audit.md`.
+
+---
+
 ## Professional analysis surface, without losing the product thesis
 
 - [x] Match essential professional language: time variance, overlays, math
@@ -1586,3 +1642,4 @@ Implementation queue completed in this pass:
 | 2026-08-09 | Verified P20 deterministic engineering-awareness production slice | Producer-owned state frames, context/control boundaries, source-backed profiles, descriptive transient/exposure metrics, temporal episodes, exact P19 projection, bounded API cache, and six stale-safe existing-workspace surfaces passed the complete 2,134-test collection with six protected skips, Ruff, TypeScript, production build, diff integrity, and a real Atlanta schema/capability route check; state drift remains typed unavailable until a canonical numeric ledger is attached, while shadow observers and statistical authority remain data-locked |
 | 2026-08-10 | Verified P21 Evidence Lab, Calibration, and Shadow Intelligence foundation | Immutable evidence registries, frozen split/evaluation identity, hostile leakage detection, seven collection campaigns, bounded proxy/profile validation, prospective shadow records, causal/planner evaluation, thirteen activation gates, and Learning-only readiness passed 2,182 tests with six protected skips, Ruff, TypeScript, a 2,189-module production build, diff integrity, performance checks, and live Race/Learning smoke; the archive contains no qualified controlled population, so P19/P20 remain authoritative and advanced statistical methods remain locked or shadow-only |
 | 2026-08-10 | Verified P22 prospective field-validation operational foundation | Frozen campaign lifecycles, import-time exact qualification, immutable pre-outcome P19 predictions, canonical later outcomes, deterministic collection guidance, cloned field gates, and the Learning Ledger passed the 2,201-test collection with six protected skips, Ruff, TypeScript, a 2,189-module production build, diff integrity, and live Race/Learning smoke; no real evidence campaign or advanced activation is claimed, so P19/P20 remain authoritative |
+| 2026-08-10 | Completed P23 first-earned-capability audit with no activation earned | All 15 P21/P22 candidates were ranked; the deterministic exact-FFB steering-workload envelope was selected and frozen under immutable protocol `p23p-7039505728f07034d6f5`; the empty qualified archive correctly produced no authority envelope. Twenty-six hostile focused regressions and the complete 2,209-test collection passed with six protected skips, plus Ruff, TypeScript, the 2,189-module production build, diff integrity, live Race/Learning smoke, and real-archive latency checks; P19/P20 authority remains unchanged |
