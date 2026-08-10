@@ -378,6 +378,8 @@ def test_query_entity_interpretation_is_visible_but_cannot_weaken_action_scope()
     assert "interpreted_window_start_lap?: number | null" in types
     assert "interpreted_phase?:" in types
     assert "interpreted_control_key?: string | null" in types
+    assert "interpreted_track_region_id?: string | null" in types
+    assert "interpreted_track_region_label?: string | null" in types
     assert "clarification_required?: boolean" in types
     assert "const queryInterpretationMatchesScope = Boolean(" in engineer
     assert "!queryResponse.clarification_required" in engineer
@@ -386,6 +388,7 @@ def test_query_entity_interpretation_is_visible_but_cannot_weaken_action_scope()
     assert "queryResponse.interpreted_window_end_lap === selectedLapWindowEnd" in engineer
     assert "&& queryInterpretationMatchesScope" in engineer
     assert 'aria-label="Server-interpreted question context"' in engineer
+    assert "queryResponse.interpreted_track_region_label" in engineer
     assert "The answer remains bound to the selected run and question scope." in engineer
 
 

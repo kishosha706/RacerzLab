@@ -1118,6 +1118,8 @@ class GroundedQueryResult(IntelligenceModel):
     interpreted_window_representative_lap: int | None = Field(default=None, ge=1)
     interpreted_phase: Literal["braking", "entry", "center", "exit", "straight"] | None = None
     interpreted_control_key: str | None = None
+    interpreted_track_region_id: str | None = None
+    interpreted_track_region_label: str | None = None
     clarification_required: bool = False
     action_authorized: bool = False
     action_source_event_ids: tuple[str, ...] = ()
@@ -1125,6 +1127,17 @@ class GroundedQueryResult(IntelligenceModel):
 
     @model_validator(mode="after")
     def authorized_query_actions_require_grounding(self) -> GroundedQueryResult:
+        if (self.interpreted_track_region_id is None) != (
+            self.interpreted_track_region_label is None
+        ):
+            raise ValueError("interpreted track-region identity and label must be supplied together")
+        if self.interpreted_track_region_id is not None and (
+            not self.interpreted_track_region_id
+            or self.interpreted_track_region_id.strip() != self.interpreted_track_region_id
+            or not self.interpreted_track_region_label
+            or self.interpreted_track_region_label.strip() != self.interpreted_track_region_label
+        ):
+            raise ValueError("interpreted track-region context must be canonical")
         if (self.interpreted_window_start_lap is None) != (
             self.interpreted_window_end_lap is None
         ):

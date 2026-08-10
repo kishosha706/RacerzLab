@@ -762,6 +762,7 @@ def build_track_regions(
     """Build vendor-neutral physical regions for maps and grounded intelligence."""
     turns = build_oval_turn_markers(track_map, match)
     regions: list[dict[str, Any]] = []
+    placement_source = ""
     turn_bounds: dict[int, tuple[float, float, str]] = {}
     if turns:
         lap_pcts = [float(turn["lap_pct"]) for turn in turns]
@@ -824,6 +825,7 @@ def build_track_regions(
                 }
             )
 
+    straight_candidates: list[dict[str, Any]] = []
     for section in track_map.sections:
         if section.section_type == "corner" and turns:
             continue
@@ -834,8 +836,7 @@ def build_track_regions(
             raw_label = section.name.strip()
             label = raw_label if raw_label and "motec" not in raw_label.casefold() else "Track Section"
             kind = section.section_type
-        regions.append(
-            {
+        region = {
                 "region_id": f"section:{section.section_id}",
                 "kind": kind,
                 "number": None,
@@ -847,7 +848,71 @@ def build_track_regions(
                 "placement_source": "source section geometry",
                 "confidence": "section_geometry",
             }
+        if kind == "straight" and turns:
+            straight_candidates.append(region)
+        else:
+            regions.append(region)
+
+    turn_regions = [region for region in regions if region["kind"] == "turn"]
+    if turns:
+        gap_candidates: list[dict[str, Any]] = []
+        for index, region in enumerate(turn_regions):
+            following = turn_regions[(index + 1) % len(turn_regions)]
+            start_pct = float(region["end_lap_pct"])
+            end_pct = float(following["start_lap_pct"])
+            span = _lap_pct_offset(start_pct, end_pct)
+            if span < 5.0:
+                continue
+            anchor_pct = _lap_pct_at_fraction(start_pct, end_pct, 0.5)
+            label = "Front Stretch" if anchor_pct >= 75.0 or anchor_pct < 25.0 else "Backstretch"
+            gap_candidates.append(
+                {
+                    "region_id": "",
+                    "kind": "straight",
+                    "number": None,
+                    "label": label,
+                    "short_label": label,
+                    "start_lap_pct": start_pct,
+                    "end_lap_pct": end_pct,
+                    "anchor_lap_pct": anchor_pct,
+                    "placement_source": "canonical gaps between turn regions",
+                    "confidence": (
+                        "section_geometry"
+                        if region["confidence"] == following["confidence"] == "section_geometry"
+                        else "centerline_geometry"
+                    ),
+                }
+            )
+        straight_candidates = gap_candidates
+
+    if turns:
+        primary_by_label: dict[str, dict[str, Any]] = {}
+        for region in straight_candidates:
+            label = str(region["label"])
+            span = _lap_pct_offset(region["start_lap_pct"], region["end_lap_pct"])
+            current = primary_by_label.get(label)
+            current_span = (
+                _lap_pct_offset(current["start_lap_pct"], current["end_lap_pct"])
+                if current is not None
+                else -1.0
+            )
+            if span > current_span:
+                primary_by_label[label] = region
+        primary_ids = {id(region) for region in primary_by_label.values()}
+        connectors = sorted(
+            (region for region in straight_candidates if id(region) not in primary_ids),
+            key=lambda region: float(region["anchor_lap_pct"]),
         )
+        for label, region in primary_by_label.items():
+            region["region_id"] = (
+                "straight:front_stretch" if label == "Front Stretch" else "straight:backstretch"
+            )
+            regions.append(region)
+        for number, region in enumerate(connectors, start=1):
+            region["region_id"] = f"straight:connector_{number}"
+            region["label"] = f"Connector {number}"
+            region["short_label"] = f"Conn {number}"
+            regions.append(region)
     return regions
 
 

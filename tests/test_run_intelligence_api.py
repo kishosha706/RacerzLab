@@ -25,6 +25,7 @@ from api.intelligence_schemas import (
 )
 from api.main import app
 from api.routes_intelligence import (
+    _TrackRegionContext,
     _citation_track_locations,
     _query_action_matches_current_report,
     _region_aware_query_answer,
@@ -143,9 +144,11 @@ def test_grounded_query_citations_resolve_canonical_track_regions(monkeypatch) -
         lambda track_map, match: regions,
     )
 
-    locations = _citation_track_locations((citation,))
+    context = _TrackRegionContext()
+    locations = _citation_track_locations((citation,), context=context)
 
     assert locations["event-location"]["display_label"] == "Turn 1 center"
+    assert context.catalog("smart-run") == {"turn_1": "Turn 1"}
     public_citation = IntelligenceCitationResponse(
         citation_id=citation.citation_id,
         label=citation.summary,

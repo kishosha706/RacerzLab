@@ -659,6 +659,8 @@ export type IntelligenceQueryResponse = {
   interpreted_window_representative_lap?: number | null;
   interpreted_phase?: "braking" | "entry" | "center" | "exit" | "straight" | null;
   interpreted_control_key?: string | null;
+  interpreted_track_region_id?: string | null;
+  interpreted_track_region_label?: string | null;
   clarification_required?: boolean;
   action_authorized: boolean;
   action_source_event_ids: string[];

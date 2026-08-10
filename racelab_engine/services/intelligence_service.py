@@ -4418,6 +4418,8 @@ class _ParsedGroundedQuery:
     window_end_lap: int | None = None
     phase: str | None = None
     control_key: str | None = None
+    track_region_id: str | None = None
+    track_region_label: str | None = None
     clarification: str | None = None
 
 
@@ -4435,6 +4437,12 @@ def _query_intent(normalized: str) -> str | None:
     if exact is not None:
         return exact
     rules = (
+        (
+            "what_evidence",
+            r"^(?:(?:turn|corner|t)\s*[1-9]\d*|front\s*stretch|frontstretch|"
+            r"back\s*stretch|backstretch|connector\s*[1-9]\d*)"
+            r"(?:\s+(?:entry|center|centre|exit))?$",
+        ),
         ("what_changed", r"\b(what changed|improved|regressed|different since)\b"),
         ("how_repeatable", r"\b(repeatable|repeatability)\b.*\b(loss|opportunity|window)\b"),
         ("driver_focus", r"\b(driver|my inputs|steering|pedal)\b.*\b(consistent|repeat|focus|practice)\b"),
@@ -4451,6 +4459,11 @@ def _query_intent(normalized: str) -> str | None:
         ("what_would_change_mind", r"\b(change (your|the) mind|disprove|contradict)\b"),
         ("data_quality", r"\b(data quality|data good|telemetry healthy|trust the data)\b"),
         ("where_is_loss", r"\b(where|location|part of (the )?lap)\b.*\b(loss|slow|time)\b"),
+        (
+            "what_evidence",
+            r"\b(what happened|show me|inspect)\b.*"
+            r"(?:\b(turn|corner|stretch|frontstretch|backstretch|connector)\b|\bt\s*[1-9]\d*\b)",
+        ),
         ("what_evidence", r"\b(evidence|support|proof|citation)\b"),
         ("why_this_call", r"\bwhy\b.*\b(call|recommend|decision|cause|think)\b"),
         ("what_next", r"\b(what next|do next|next move|next step|should i do)\b"),
@@ -4504,6 +4517,32 @@ def _parse_grounded_query(query: str) -> _ParsedGroundedQuery:
         )
     lap_match = standalone_lap_matches[0] if standalone_lap_matches else None
     lap_number = int(lap_match.group(1)) if lap_match is not None else None
+    region_matches: list[tuple[str, str]] = []
+    for match in re.finditer(
+        r"\b(?:turn|corner)\s*([1-9]\d*)\b|\bt\s*([1-9]\d*)\b",
+        normalized,
+    ):
+        number = int(match.group(1) or match.group(2))
+        region_matches.append((f"turn_{number}", f"Turn {number}"))
+    if re.search(r"\bfront\s*stretch\b|\bfrontstretch\b", normalized):
+        region_matches.append(("front_stretch", "Front Stretch"))
+    if re.search(r"\bback\s*stretch\b|\bbackstretch\b", normalized):
+        region_matches.append(("backstretch", "Backstretch"))
+    for match in re.finditer(r"\bconnector\s*([1-9]\d*)\b", normalized):
+        number = int(match.group(1))
+        region_matches.append((f"connector_{number}", f"Connector {number}"))
+    region_matches = list(dict.fromkeys(region_matches))
+    if len(region_matches) > 1:
+        return _ParsedGroundedQuery(
+            intent=intent,
+            lap_number=lap_number,
+            window_start_lap=window_start,
+            window_end_lap=window_end,
+            clarification=(
+                "The question names more than one track region; ask about one turn or "
+                "straight at a time."
+            ),
+        )
     phases = tuple(
         phase
         for phase, terms in _PHASE_QUERY_TERMS.items()
@@ -4515,6 +4554,8 @@ def _parse_grounded_query(query: str) -> _ParsedGroundedQuery:
             lap_number=lap_number,
             window_start_lap=window_start,
             window_end_lap=window_end,
+            track_region_id=region_matches[0][0] if region_matches else None,
+            track_region_label=region_matches[0][1] if region_matches else None,
             clarification="The question names more than one driving phase; ask about one phase at a time.",
         )
     control_matches: list[str] = []
@@ -4537,6 +4578,8 @@ def _parse_grounded_query(query: str) -> _ParsedGroundedQuery:
             window_start_lap=window_start,
             window_end_lap=window_end,
             phase=phases[0] if phases else None,
+            track_region_id=region_matches[0][0] if region_matches else None,
+            track_region_label=region_matches[0][1] if region_matches else None,
             clarification="The question names multiple setup controls; ask about one control at a time.",
         )
     return _ParsedGroundedQuery(
@@ -4546,6 +4589,8 @@ def _parse_grounded_query(query: str) -> _ParsedGroundedQuery:
         window_end_lap=window_end,
         phase=phases[0] if phases else None,
         control_key=control_matches[0] if control_matches else None,
+        track_region_id=region_matches[0][0] if region_matches else None,
+        track_region_label=region_matches[0][1] if region_matches else None,
     )
 
 
@@ -4583,6 +4628,8 @@ def answer_grounded_query(
     selected_window_start_lap: int | None = None,
     selected_window_end_lap: int | None = None,
     selected_window_representative_lap: int | None = None,
+    track_region_resolver: Callable[[str, float], Mapping[str, Any] | None] | None = None,
+    track_region_catalog: Mapping[str, str] | Callable[[], Mapping[str, str]] | None = None,
 ) -> GroundedQueryResult:
     """Answer supported intent and scope combinations using report evidence only."""
     normalized = _normalize_query(query)
@@ -4623,6 +4670,23 @@ def answer_grounded_query(
         and not selected_window_complete
         and selected_lap_number is None
     )
+    region_clarification: str | None = None
+    if parsed.track_region_id is not None:
+        if track_region_resolver is None or track_region_catalog is None:
+            region_clarification = (
+                "Track-region geometry is unavailable for this run; select a run with a "
+                "matched canonical map before asking a region-scoped question."
+            )
+        else:
+            resolved_region_catalog = (
+                track_region_catalog() if callable(track_region_catalog) else track_region_catalog
+            )
+            if parsed.track_region_id not in resolved_region_catalog:
+                available = ", ".join(resolved_region_catalog.values()) or "no canonical regions"
+                region_clarification = (
+                    f"{parsed.track_region_label} is not defined on this matched layout. "
+                    f"Available regions: {available}."
+                )
     scope_clarification: str | None = None
     if selected_window_supplied and not selected_window_complete:
         scope_clarification = (
@@ -4743,10 +4807,11 @@ def answer_grounded_query(
         intent is None
         or parsed.clarification is not None
         or scope_clarification is not None
+        or region_clarification is not None
         or requested_lap_missing
         or requested_window_missing
     ):
-        clarification = parsed.clarification or scope_clarification or (
+        clarification = parsed.clarification or scope_clarification or region_clarification or (
             f"Lap {requested_lap_number} does not belong to run {report.run_id}."
             if requested_lap_missing
             else (
@@ -4774,6 +4839,8 @@ def answer_grounded_query(
             ),
             interpreted_phase=parsed.phase,
             interpreted_control_key=parsed.control_key,
+            interpreted_track_region_id=parsed.track_region_id,
+            interpreted_track_region_label=parsed.track_region_label,
             clarification_required=clarification is not None,
             blocker_reasons=(
                 clarification or "Unsupported grounded-query intent.",
@@ -4781,7 +4848,21 @@ def answer_grounded_query(
         )
 
     effective_lap_number = requested_lap_number
+    region_scope_requested = parsed.track_region_id is not None
     qualified_control_links = _qualified_event_setup_links(report.evidence_graph)
+
+    def canonical_location_region(location: Mapping[str, Any]) -> str | None:
+        region_id = location.get("region_id")
+        if isinstance(region_id, str) and region_id.startswith("turn_"):
+            return region_id
+        label = str(location.get("label") or "").casefold().replace(" ", "")
+        if label == "frontstretch":
+            return "front_stretch"
+        if label == "backstretch":
+            return "backstretch"
+        if isinstance(region_id, str) and region_id.startswith("straight:"):
+            return region_id.split(":", 1)[1]
+        return str(region_id) if region_id is not None else None
 
     def in_query_scope(citation: EvidenceCitation) -> bool:
         phase_matches = parsed.phase is None or citation.phase == parsed.phase
@@ -4804,11 +4885,29 @@ def answer_grounded_query(
             )
             in qualified_control_links
         )
+        region_matches = True
+        if parsed.track_region_id is not None:
+            lap_pct = (
+                citation.lap_pct_peak
+                if citation.lap_pct_peak is not None
+                else citation.lap_pct_start
+            )
+            location = (
+                track_region_resolver(citation.run_id, lap_pct)
+                if track_region_resolver is not None and lap_pct is not None
+                else None
+            )
+            region_matches = bool(
+                location is not None
+                and canonical_location_region(location) == parsed.track_region_id
+                and (parsed.phase is None or location.get("phase") == parsed.phase)
+            )
         return (
             citation.run_id == report.run_id
             and lap_matches
             and phase_matches
             and control_matches
+            and region_matches
         )
 
     def reference_in_lap_scope(
@@ -4864,7 +4963,11 @@ def answer_grounded_query(
         *,
         outcomes: tuple[str, ...],
     ) -> tuple[EvidenceCitation, ...]:
-        if effective_lap_number is not None or effective_window_start_lap is not None:
+        if (
+            effective_lap_number is not None
+            or effective_window_start_lap is not None
+            or region_scope_requested
+        ):
             return ()
         citations: list[EvidenceCitation] = []
         for outcome in cause.controlled_outcomes:
@@ -4930,7 +5033,11 @@ def answer_grounded_query(
             phase=_typed_phase(phase),
         )
 
-    if effective_lap_number is None and effective_window_start_lap is None:
+    if (
+        effective_lap_number is None
+        and effective_window_start_lap is None
+        and not region_scope_requested
+    ):
         candidate_leading = next(
             (cause for cause in report.competing_causes if cause.state == "leading"),
             None,
@@ -5030,6 +5137,7 @@ def answer_grounded_query(
                 effective_lap_number is None
                 and effective_window_start_lap is None
                 and parsed.control_key is None
+                and not region_scope_requested
                 or len(scoped_citations) == len(signature.citations)
             ):
                 scoped_signatures.append((signature, scoped_citations))
@@ -5089,6 +5197,7 @@ def answer_grounded_query(
                 effective_lap_number is not None
                 or effective_window_start_lap is not None
                 or parsed.control_key is not None
+                or region_scope_requested
             ) and len(citations) != len(focus.citations):
                 answer = "No driver-input coaching focus is fully grounded in this lap scope."
                 citations = ()
@@ -5129,6 +5238,7 @@ def answer_grounded_query(
                 effective_lap_number is None
                 and effective_window_start_lap is None
                 and parsed.control_key is None
+                and not region_scope_requested
                 or len(scoped_citations) == len(anomaly.citations)
             ):
                 scoped_anomalies.append((anomaly, scoped_citations))
@@ -5183,6 +5293,7 @@ def answer_grounded_query(
                 effective_lap_number is None
                 and effective_window_start_lap is None
                 and parsed.control_key is None
+                and not region_scope_requested
                 or len(scoped_citations) == len(observation.citations)
             ):
                 scoped_observations.append((observation, scoped_citations))
@@ -5264,6 +5375,7 @@ def answer_grounded_query(
             if (
                 effective_lap_number is not None
                 or effective_window_start_lap is not None
+                or region_scope_requested
             ):
                 answer = (
                     "No do-not-repeat controlled outcome has provenance in the requested "
@@ -5288,6 +5400,7 @@ def answer_grounded_query(
             or effective_window_start_lap is not None
             or parsed.phase is not None
             or parsed.control_key is not None
+            or region_scope_requested
         ):
             answer = "No recovery priority is grounded in this narrower evidence scope."
             blockers = (
@@ -5432,6 +5545,7 @@ def answer_grounded_query(
         local_evidence_scope = bool(
             effective_lap_number is not None
             or effective_window_start_lap is not None
+            or region_scope_requested
         )
         ruled_out_evidence: list[
             tuple[PublicCompetingCause, tuple[EvidenceCitation, ...]]
@@ -5494,6 +5608,7 @@ def answer_grounded_query(
         local_transition_scope = (
             effective_lap_number is not None
             or effective_window_start_lap is not None
+            or region_scope_requested
         )
         relevant = tuple(
             entry
@@ -5560,6 +5675,7 @@ def answer_grounded_query(
             effective_lap_number is not None
             or effective_window_start_lap is not None
             or parsed.phase is not None
+            or region_scope_requested
         ):
             query_context_matches = ()
             query_context_blockers = (
@@ -5640,6 +5756,7 @@ def answer_grounded_query(
             or effective_window_start_lap is not None
             or parsed.phase is not None
             or parsed.control_key is not None
+            or region_scope_requested
         ):
             answer = "No calibration record is attributable to this narrower evidence scope."
             blockers = (
@@ -5670,6 +5787,7 @@ def answer_grounded_query(
             if (
                 effective_lap_number is None
                 and effective_window_start_lap is None
+                and not region_scope_requested
                 or bool(criterion.source_event_ids)
                 and all(
                     event_id in graph_event_citations
@@ -5743,7 +5861,11 @@ def answer_grounded_query(
             )
     else:
         quality = report.data_quality
-        if effective_lap_number is None and effective_window_start_lap is None:
+        if (
+            effective_lap_number is None
+            and effective_window_start_lap is None
+            and not region_scope_requested
+        ):
             answer = (
                 f"Data quality is {quality.status}: {quality.eligible_lap_count} of "
                 f"{quality.total_lap_count} laps are eligible and {quality.trusted_event_count} "
@@ -5753,6 +5875,22 @@ def answer_grounded_query(
                 citation for citation in quality.citations if in_query_scope(citation)
             )
             blockers = quality.issues
+        elif region_scope_requested:
+            selected_events = tuple(graph_event_citations.values())
+            citations = selected_events
+            selected_status = (
+                "ready" if selected_events and quality.status == "ready" else "limited"
+            )
+            answer = (
+                f"Region data quality is {selected_status}: {len(selected_events)} trusted "
+                "position-resolved events are linked to this region."
+            )
+            blockers = _unique_text(
+                (
+                    *(("No provenance-complete tuning event is linked to this region.",) if not selected_events else ()),
+                    *(quality.issues if quality.status != "ready" else ()),
+                )
+            )
         elif (
             effective_window_start_lap is not None
             and effective_window_end_lap is not None
@@ -5843,6 +5981,16 @@ def answer_grounded_query(
                     blockers = quality.issues
 
     citations = tuple(dict.fromkeys(citations))
+    if parsed.track_region_label is not None:
+        if citations:
+            answer = f"{parsed.track_region_label} scope: {answer}"
+        elif not any(parsed.track_region_label in reason for reason in blockers):
+            blockers = _unique_text(
+                (
+                    *blockers,
+                    f"No qualified position-resolved evidence belongs to {parsed.track_region_label}.",
+                )
+            )
     navigation = list(_navigation(citations))
     for target in extra_navigation:
         if target not in navigation:
@@ -5864,6 +6012,8 @@ def answer_grounded_query(
         ),
         interpreted_phase=parsed.phase,
         interpreted_control_key=parsed.control_key,
+        interpreted_track_region_id=parsed.track_region_id,
+        interpreted_track_region_label=parsed.track_region_label,
         action_authorized=action_authorized,
         action_source_event_ids=action_source_event_ids,
         blocker_reasons=_unique_text(blockers),

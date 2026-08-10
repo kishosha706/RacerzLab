@@ -2551,6 +2551,93 @@ def test_grounded_query_supported_vocabulary(question: str, intent: str) -> None
         assert result.suggested_navigation
 
 
+def test_grounded_query_uses_canonical_track_region_as_evidence_scope() -> None:
+    def resolve_region(_run_id: str, lap_pct: float) -> dict[str, object]:
+        return {
+            "region_id": "turn_2" if lap_pct < 50.0 else "turn_3",
+            "label": "Turn 2" if lap_pct < 50.0 else "Turn 3",
+            "phase": "center",
+        }
+
+    result = answer_grounded_query(
+        "T2",
+        _report(),
+        track_region_resolver=resolve_region,
+        track_region_catalog={"turn_1": "Turn 1", "turn_2": "Turn 2"},
+    )
+
+    assert result.supported is True
+    assert result.intent == "what_evidence"
+    assert result.interpreted_track_region_id == "turn_2"
+    assert result.interpreted_track_region_label == "Turn 2"
+    assert result.citations
+    assert result.answer.startswith("Turn 2 scope:")
+
+
+def test_grounded_query_turn_phase_uses_physical_region_phase() -> None:
+    result = answer_grounded_query(
+        "What happened in Turn 2 exit?",
+        _report(),
+        track_region_resolver=lambda _run_id, _lap_pct: {
+            "region_id": "turn_2",
+            "label": "Turn 2",
+            "phase": "center",
+        },
+        track_region_catalog={"turn_2": "Turn 2"},
+    )
+
+    assert result.supported is True
+    assert result.interpreted_phase == "exit"
+    assert result.citations == ()
+    assert any("Turn 2" in reason for reason in result.blocker_reasons)
+
+
+def test_grounded_query_uses_named_straight_as_evidence_scope() -> None:
+    result = answer_grounded_query(
+        "What happened on Backstretch?",
+        _report(),
+        track_region_resolver=lambda _run_id, _lap_pct: {
+            "region_id": "straight:backstretch",
+            "label": "Backstretch",
+            "phase": "straight",
+        },
+        track_region_catalog={"backstretch": "Backstretch"},
+    )
+
+    assert result.supported is True
+    assert result.interpreted_track_region_id == "backstretch"
+    assert result.citations
+    assert result.answer.startswith("Backstretch scope:")
+
+
+def test_grounded_query_rejects_region_not_defined_on_matched_layout() -> None:
+    result = answer_grounded_query(
+        "Inspect Turn 5",
+        _report(),
+        track_region_resolver=lambda _run_id, _lap_pct: None,
+        track_region_catalog={"turn_1": "Turn 1", "turn_2": "Turn 2"},
+    )
+
+    assert result.supported is False
+    assert result.clarification_required is True
+    assert result.interpreted_track_region_id == "turn_5"
+    assert "not defined" in result.answer
+    assert "Turn 1, Turn 2" in result.answer
+
+
+def test_grounded_query_rejects_ambiguous_multiple_regions() -> None:
+    result = answer_grounded_query(
+        "Compare Turn 1 and Turn 3 evidence",
+        _report(),
+        track_region_resolver=lambda _run_id, _lap_pct: None,
+        track_region_catalog={"turn_1": "Turn 1", "turn_3": "Turn 3"},
+    )
+
+    assert result.supported is False
+    assert result.clarification_required is True
+    assert "more than one track region" in result.answer
+
+
 def test_strongest_repeatable_loss_query_does_not_invent_strength_or_recurrence() -> None:
     result = answer_grounded_query(
         "Where is the strongest repeatable loss?",

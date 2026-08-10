@@ -290,6 +290,16 @@ def test_two_end_oval_gets_four_geometry_positioned_turn_markers(
     assert [region["end_lap_pct"] for region in turn_regions] == pytest.approx(
         [25.0, 40.0, 75.0, 90.0]
     )
+    straight_regions = [region for region in regions if region["kind"] == "straight"]
+    assert {region["label"] for region in straight_regions} == {
+        "Front Stretch",
+        "Backstretch",
+    }
+    assert all(
+        locate_track_region(regions, region["anchor_lap_pct"])["region_id"]
+        == region["region_id"]
+        for region in straight_regions
+    )
     assert locate_track_region(regions, 12.0)["display_label"] == "Turn 1 entry"
     assert locate_track_region(regions, 17.5)["display_label"] == "Turn 1 center"
     assert locate_track_region(regions, 23.0)["display_label"] == "Turn 1 exit"
@@ -1053,6 +1063,8 @@ def test_audit_track_map_coverage_accepts_valid_canonical_map(
     assert report["broken_maps"] == []
     assert report["oval_turn_map_count"] == 1
     assert report["oval_turn_coverage"][0]["labels"] == ["T1", "T2", "T3", "T4"]
+    assert report["oval_turn_coverage"][0]["geometry_check_available"] is False
+    assert report["oval_turn_coverage"][0]["geometry_validated"] is False
     assert report["violations"] == []
 
 

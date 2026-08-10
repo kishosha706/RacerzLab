@@ -657,6 +657,8 @@ class IntelligenceQueryResponse(IntelligenceApiModel):
     interpreted_window_representative_lap: int | None = Field(default=None, ge=1)
     interpreted_phase: Literal["braking", "entry", "center", "exit", "straight"] | None = None
     interpreted_control_key: str | None = None
+    interpreted_track_region_id: str | None = None
+    interpreted_track_region_label: str | None = None
     clarification_required: bool = False
     action_authorized: bool = False
     action_source_event_ids: list[str] = Field(default_factory=list)
@@ -673,6 +675,10 @@ class IntelligenceQueryResponse(IntelligenceApiModel):
     def query_scope_and_authority_require_exact_citations(
         self,
     ) -> IntelligenceQueryResponse:
+        if (self.interpreted_track_region_id is None) != (
+            self.interpreted_track_region_label is None
+        ):
+            raise ValueError("interpreted track-region identity and label must be supplied together")
         if (
             any(not run_id or run_id.strip() != run_id for run_id in self.scope_run_ids)
             or len(set(self.scope_run_ids)) != len(self.scope_run_ids)

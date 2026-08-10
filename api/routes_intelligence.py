@@ -48,12 +48,60 @@ from racelab_engine.storage.repository import RaceLabRepository
 router = APIRouter(prefix="/api/runs", tags=["internal-intelligence"])
 
 
+class _TrackRegionContext:
+    """Cache one canonical region model for AI scoping and citation display."""
+
+    def __init__(self) -> None:
+        self._repository = RaceLabRepository()
+        self._regions_by_run: dict[str, list[dict[str, object]]] = {}
+
+    def regions(self, run_id: str) -> list[dict[str, object]]:
+        if run_id in self._regions_by_run:
+            return self._regions_by_run[run_id]
+        regions: list[dict[str, object]] = []
+        try:
+            overview = self._repository.get_overview(run_id)
+            session = getattr(overview, "session", None) if overview is not None else None
+            track_name = (
+                getattr(session, "track_name", None)
+                or getattr(session, "track_display_name", None)
+                or ""
+            )
+            match = find_best_map_for_run(run_id, track_name)
+            track_map = get_track_map(match["map_id"]) if match and match.get("map_id") else None
+            if track_map is not None:
+                regions = build_track_regions(track_map, match)
+        except (OSError, TypeError, ValueError, KeyError, sqlite3.Error):
+            regions = []
+        self._regions_by_run[run_id] = regions
+        return regions
+
+    def locate(self, run_id: str, lap_pct: float) -> dict[str, object] | None:
+        return locate_track_region(self.regions(run_id), lap_pct)
+
+    def catalog(self, run_id: str) -> dict[str, str]:
+        catalog: dict[str, str] = {}
+        for region in self.regions(run_id):
+            region_id = str(region.get("region_id") or "")
+            label = str(region.get("label") or "")
+            if region_id.startswith("turn_"):
+                catalog[region_id] = label
+            elif region_id.startswith("straight:"):
+                catalog[region_id.split(":", 1)[1]] = label
+            elif label.casefold().replace(" ", "") == "frontstretch":
+                catalog["front_stretch"] = "Front Stretch"
+            elif label.casefold().replace(" ", "") == "backstretch":
+                catalog["backstretch"] = "Backstretch"
+        return catalog
+
+
 def _citation_track_locations(
     citations: tuple[EvidenceCitation, ...],
+    *,
+    context: _TrackRegionContext | None = None,
 ) -> dict[str, dict[str, object]]:
     """Resolve citation positions through the same canonical map regions the UI receives."""
-    repository = RaceLabRepository()
-    regions_by_run: dict[str, list[dict[str, object]]] = {}
+    region_context = context or _TrackRegionContext()
     result: dict[str, dict[str, object]] = {}
     for citation in citations:
         lap_pct = (
@@ -63,24 +111,7 @@ def _citation_track_locations(
         )
         if lap_pct is None:
             continue
-        if citation.run_id not in regions_by_run:
-            regions: list[dict[str, object]] = []
-            try:
-                overview = repository.get_overview(citation.run_id)
-                session = getattr(overview, "session", None) if overview is not None else None
-                track_name = (
-                    getattr(session, "track_name", None)
-                    or getattr(session, "track_display_name", None)
-                    or ""
-                )
-                match = find_best_map_for_run(citation.run_id, track_name)
-                track_map = get_track_map(match["map_id"]) if match and match.get("map_id") else None
-                if track_map is not None:
-                    regions = build_track_regions(track_map, match)
-            except (OSError, TypeError, ValueError, KeyError):
-                regions = []
-            regions_by_run[citation.run_id] = regions
-        location = locate_track_region(regions_by_run[citation.run_id], lap_pct)
+        location = region_context.locate(citation.run_id, lap_pct)
         if location is not None:
             result[citation.citation_id] = location
     return result
@@ -313,6 +344,7 @@ def query_run_intelligence(
             detail=f"Selected lap scope ({missing}) does not belong to run {run_id}.",
         )
     selected_window = request.selected_window_start_lap is not None
+    track_region_context = _TrackRegionContext()
     result = answer_grounded_query(
         request.question,
         bundle.report,
@@ -322,6 +354,8 @@ def query_run_intelligence(
         selected_window_representative_lap=(
             request.selected_window_representative_lap
         ),
+        track_region_resolver=track_region_context.locate,
+        track_region_catalog=lambda: track_region_context.catalog(run_id),
     )
     if request.presentation_mode is not None:
         digest = hashlib.sha256(
@@ -352,7 +386,7 @@ def query_run_intelligence(
             status_code=409,
             detail="Query evidence escaped the exact run/session scope and was withheld.",
         )
-    track_locations = _citation_track_locations(result.citations)
+    track_locations = _citation_track_locations(result.citations, context=track_region_context)
     citations = []
     for item in result.citations:
         citation = to_public_intelligence_citation(item)
@@ -425,6 +459,8 @@ def query_run_intelligence(
         ),
         interpreted_phase=result.interpreted_phase,
         interpreted_control_key=result.interpreted_control_key,
+        interpreted_track_region_id=getattr(result, "interpreted_track_region_id", None),
+        interpreted_track_region_label=getattr(result, "interpreted_track_region_label", None),
         clarification_required=result.clarification_required,
         action_authorized=action_authorized,
         action_source_event_ids=(

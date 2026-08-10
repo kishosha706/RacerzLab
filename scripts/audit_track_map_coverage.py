@@ -55,6 +55,51 @@ def _is_finite_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and math.isfinite(float(value))
 
 
+def _lap_pct_in_region(start_pct: float, end_pct: float, lap_pct: float) -> bool:
+    span = (float(end_pct) - float(start_pct) + 100.0) % 100.0
+    offset = (float(lap_pct) - float(start_pct) + 100.0) % 100.0
+    return offset <= span + 1e-9
+
+
+def _turn_heading_change_rad(track_map: Any, region: dict[str, Any]) -> float:
+    """Independently measure how much centerline heading changes inside a region."""
+    points = [
+        point
+        for point in track_map.points
+        if point.lap_pct is not None
+        and point.heading_rad is not None
+        and _lap_pct_in_region(
+            float(region["start_lap_pct"]),
+            float(region["end_lap_pct"]),
+            float(point.lap_pct),
+        )
+    ]
+    return sum(
+        abs(
+            (float(right.heading_rad) - float(left.heading_rad) + math.pi)
+            % (2.0 * math.pi)
+            - math.pi
+        )
+        for left, right in zip(points, points[1:])
+    )
+
+
+def _lap_heading_rotation_rad(track_map: Any) -> float:
+    points = [
+        point
+        for point in track_map.points
+        if point.heading_rad is not None and math.isfinite(float(point.heading_rad))
+    ]
+    return abs(
+        sum(
+            (float(right.heading_rad) - float(left.heading_rad) + math.pi)
+            % (2.0 * math.pi)
+            - math.pi
+            for left, right in zip(points, points[1:])
+        )
+    )
+
+
 def _track_maps_dir(data_dir: Path) -> Path:
     return data_dir / "track_maps"
 
@@ -186,6 +231,13 @@ def _validate_track_map_object(entry: dict[str, Any], track_map: Any) -> list[st
         else:
             regions = build_track_regions(track_map, entry)
             turn_regions = [region for region in regions if region.get("kind") == "turn"]
+            heading_changes = [
+                _turn_heading_change_rad(track_map, region) for region in turn_regions
+            ]
+            heading_geometry_available = (
+                len(track_map.points) >= LOW_POINT_COUNT_THRESHOLD
+                and _lap_heading_rotation_rad(track_map) >= 1.5 * math.pi
+            )
             if len(turn_regions) != len(turns):
                 issues.append("oval turn-region count does not match turn anchors")
             elif any(
@@ -209,6 +261,27 @@ def _validate_track_map_object(entry: dict[str, Any], track_map: Any) -> list[st
                 for turn in turns
             ):
                 issues.append("oval turn anchor does not resolve to its canonical center region")
+            elif heading_geometry_available and any(change < 0.2 for change in heading_changes):
+                issues.append("oval turn region does not contain a measurable centerline heading change")
+            elif sum(
+                (float(region["end_lap_pct"]) - float(region["start_lap_pct"]) + 100.0) % 100.0
+                for region in turn_regions
+            ) > 90.0:
+                issues.append("oval turn regions consume implausibly much of the lap")
+            straight_regions = [region for region in regions if region.get("kind") == "straight"]
+            if heading_geometry_available and not {"Front Stretch", "Backstretch"}.issubset(
+                {str(region.get("label")) for region in straight_regions}
+            ):
+                issues.append("oval map does not expose canonical front and back stretches")
+            elif len({str(region.get("region_id")) for region in regions}) != len(regions):
+                issues.append("oval region identities are not unique")
+            elif any(
+                (location := locate_track_region(regions, float(region["anchor_lap_pct"]))) is None
+                or location.get("region_id") != region.get("region_id")
+                or location.get("phase") != "straight"
+                for region in straight_regions
+            ):
+                issues.append("oval straight anchor does not resolve to its canonical region")
 
     for snippet in EXPECTED_WARNING_SNIPPETS:
         if not any(snippet in warning for warning in warnings):
@@ -407,6 +480,13 @@ def audit_track_map_coverage(
 
             if cache_payload.get("source_file") not in (None, ""):
                 broken_maps.append({"map_id": entry.get("map_id"), "issues": ["canonical payload exposes source_file"]})
+            if "motec" in json.dumps(cache_payload, sort_keys=True).casefold():
+                broken_maps.append(
+                    {
+                        "map_id": entry.get("map_id"),
+                        "issues": ["canonical map payload exposes vendor branding"],
+                    }
+                )
 
             track_map = get_track_map(str(entry.get("map_id")))
             track_map_issues = _validate_track_map_object(entry, track_map)
@@ -414,6 +494,19 @@ def audit_track_map_coverage(
                 broken_maps.append({"map_id": entry.get("map_id"), "issues": track_map_issues})
             if track_map is not None and is_oval_track_map(track_map, entry):
                 turns = build_oval_turn_markers(track_map, entry)
+                all_regions = build_track_regions(track_map, entry)
+                regions = [
+                    region
+                    for region in all_regions
+                    if region.get("kind") == "turn"
+                ]
+                heading_changes = [
+                    _turn_heading_change_rad(track_map, region) for region in regions
+                ]
+                heading_geometry_available = (
+                    len(track_map.points) >= LOW_POINT_COUNT_THRESHOLD
+                    and _lap_heading_rotation_rad(track_map) >= 1.5 * math.pi
+                )
                 oval_turn_coverage.append(
                     {
                         "map_id": entry.get("map_id"),
@@ -422,6 +515,21 @@ def audit_track_map_coverage(
                         "labels": [turn["short_label"] for turn in turns],
                         "lap_pcts": [round(float(turn["lap_pct"]), 3) for turn in turns],
                         "placement_source": turns[0]["placement_source"] if turns else None,
+                        "min_heading_change_rad": (
+                            round(min(heading_changes), 3) if heading_changes else None
+                        ),
+                        "geometry_check_available": heading_geometry_available,
+                        "geometry_validated": bool(
+                            heading_geometry_available
+                            and heading_changes
+                            and min(heading_changes) >= 0.2
+                        ),
+                        "region_count": len(all_regions),
+                        "straight_region_labels": [
+                            str(region["label"])
+                            for region in all_regions
+                            if region.get("kind") == "straight"
+                        ],
                     }
                 )
 

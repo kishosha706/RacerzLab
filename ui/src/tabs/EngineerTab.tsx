@@ -1518,6 +1518,7 @@ export function IntelligencePanel({
                 || queryResponse.interpreted_window_start_lap != null
                 || queryResponse.interpreted_phase
                 || queryResponse.interpreted_control_key
+                || queryResponse.interpreted_track_region_label
                 || queryResponse.clarification_required) && (
                 <div className="engineer-query-interpretation" aria-label="Server-interpreted question context">
                   <span>{queryResponse.clarification_required ? "Clarification needed" : "Interpreted context"}</span>
@@ -1527,6 +1528,7 @@ export function IntelligencePanel({
                   )}
                   {queryResponse.interpreted_phase && <strong>{driverFacingLabel(queryResponse.interpreted_phase)}</strong>}
                   {queryResponse.interpreted_control_key && <strong>{driverFacingLabel(queryResponse.interpreted_control_key)}</strong>}
+                  {queryResponse.interpreted_track_region_label && <strong>{queryResponse.interpreted_track_region_label}</strong>}
                   <small>The answer remains bound to the selected run and question scope.</small>
                 </div>
               )}
