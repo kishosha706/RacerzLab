@@ -233,6 +233,24 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_evidence_dataset_kind "
         "ON evidence_datasets(dataset_kind, created_at, dataset_id)"
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS evaluation_artifacts (
+          evaluation_id TEXT PRIMARY KEY,
+          evaluation_hash TEXT NOT NULL UNIQUE,
+          capability_key TEXT NOT NULL,
+          dataset_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          evaluation_json TEXT NOT NULL,
+          FOREIGN KEY(dataset_id) REFERENCES evidence_datasets(dataset_id)
+            ON DELETE RESTRICT
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_evaluation_artifact_dataset "
+        "ON evaluation_artifacts(dataset_id, created_at, evaluation_id)"
+    )
 
 
 def initialize_database(db_path: str | Path | None = None) -> sqlite3.Connection:
