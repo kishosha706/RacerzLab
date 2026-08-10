@@ -31,6 +31,9 @@ class ProxyValidationContract(EvidenceLabModel):
     context_dependencies: tuple[str, ...] = Field(min_length=1)
     failure_modes: tuple[str, ...] = Field(min_length=1)
     required_profile_fields: tuple[str, ...] = ()
+    allowed_reference_semantics: tuple[
+        Literal["continuous", "event_updated", "pit_snapshot"] , ...
+    ] = ("continuous", "event_updated")
     independence_unit: Literal["event", "lap", "stint", "run", "session"]
     authority_ceiling: Literal["descriptive_proxy"] = "descriptive_proxy"
 
@@ -44,6 +47,7 @@ class ProxyValidationContract(EvidenceLabModel):
             (self.context_dependencies, "context dependency"),
             (self.failure_modes, "failure mode"),
             (self.required_profile_fields, "profile field"),
+            (self.allowed_reference_semantics, "reference semantic"),
         ):
             if len(values) != len(set(values)):
                 raise ValueError(f"{label} values must be unique")
@@ -64,6 +68,14 @@ class ProxyValidationCase(EvidenceLabModel):
     profile_fields_ready: bool = True
     context_ready: bool = True
     synthetic: bool = False
+    reference_update_semantic: Literal[
+        "continuous",
+        "event_updated",
+        "pit_snapshot",
+        "constant",
+        "missing",
+        "unhealthy",
+    ] = "continuous"
 
 
 class ProxyValidationResult(EvidenceLabModel):
@@ -96,7 +108,11 @@ def evaluate_proxy_cases(
     if len(case_ids) != len(set(case_ids)):
         blockers.append("Proxy validation case identities are duplicated.")
     blocked_cases = [
-        case for case in cases if not case.profile_fields_ready or not case.context_ready
+        case
+        for case in cases
+        if not case.profile_fields_ready
+        or not case.context_ready
+        or case.reference_update_semantic not in contract.allowed_reference_semantics
     ]
     if blocked_cases:
         blockers.append("Profile or context prerequisites failed for one or more cases.")
@@ -206,6 +222,7 @@ def p20_proxy_contracts() -> tuple[ProxyValidationContract, ...]:
             context_dependencies=("phase", "yaw", "bank", "driven_axle"),
             failure_modes=("turn_geometry", "missing_track_width", "wheel_speed_semantics"),
             required_profile_fields=("wheel_speed_semantics",),
+            allowed_reference_semantics=("continuous", "event_updated"),
             independence_unit="event",
         ),
         ProxyValidationContract(
@@ -261,6 +278,7 @@ def p20_proxy_contracts() -> tuple[ProxyValidationContract, ...]:
             sensitivity_test_ids=("known_thermal_lag",),
             context_dependencies=("channel_update_semantics", "pit_boundary"),
             failure_modes=("snapshot_channel_used_as_continuous",),
+            allowed_reference_semantics=("continuous", "event_updated"),
             independence_unit="stint",
         ),
         ProxyValidationContract(

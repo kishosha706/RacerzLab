@@ -94,6 +94,64 @@ def test_proxy_negative_control_false_positive_blocks_mechanics():
     assert not result.eligible_for_real_world_validation
 
 
+def test_snapshot_tire_channel_cannot_validate_live_thermal_trend():
+    contract = next(
+        item for item in p20_proxy_contracts() if item.proxy_key == "thermal_response_lag"
+    )
+    result = evaluate_proxy_cases(
+        contract,
+        (
+            ProxyValidationCase(
+                case_id="snapshot-tire",
+                independence_unit_id="stint-1",
+                context_key="atlanta",
+                expected_direction=1,
+                observed_direction=1,
+                reference_update_semantic="pit_snapshot",
+            ),
+            ProxyValidationCase(
+                case_id="snapshot-null",
+                independence_unit_id="stint-2",
+                context_key="atlanta",
+                expected_direction=0,
+                observed_direction=0,
+                negative_control=True,
+                reference_update_semantic="pit_snapshot",
+            ),
+        ),
+    )
+    assert not result.passed_mechanics
+    assert "Profile or context prerequisites failed" in result.blockers[0]
+
+
+def test_ffb_mismatch_blocks_steering_workload_calibration():
+    contract = next(
+        item for item in p20_proxy_contracts() if item.proxy_key == "steering_effort_work_proxy"
+    )
+    result = evaluate_proxy_cases(
+        contract,
+        (
+            ProxyValidationCase(
+                case_id="ffb-mismatch",
+                independence_unit_id="session-1",
+                context_key="atlanta",
+                expected_direction=1,
+                observed_direction=1,
+                context_ready=False,
+            ),
+            ProxyValidationCase(
+                case_id="stable-null",
+                independence_unit_id="session-2",
+                context_key="atlanta",
+                expected_direction=0,
+                observed_direction=0,
+                negative_control=True,
+            ),
+        ),
+    )
+    assert not result.passed_mechanics
+
+
 def _profile_record(
     field: str,
     state: str,

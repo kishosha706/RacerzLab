@@ -189,4 +189,7 @@ def test_learning_readiness_ui_is_learning_only_and_stale_safe():
     assert "Advanced models: {projection.advanced_models_summary}" in engineer
     assert "Production authority stays with" in engineer
     assert "Archived does not mean qualified" in engineer
+    assert engineer.count(
+        "{learning && <LearningReadinessCard state={readinessState} />}"
+    ) == 2
     assert "/api/evaluation/learning-readiness" in client

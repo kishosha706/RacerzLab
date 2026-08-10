@@ -53,6 +53,7 @@ result, and remember only what the evidence supports.
 | P18 - Deterministic Reasoning and Controlled Learning | Verified deterministic slice; statistical activation remains data-locked | Smart Engineer ranks independent evidence, learns exact controlled outcomes, explains falsification criteria, and blocks unsupported or repeated setup authority everywhere |
 | P19 - Engineering Truth, Experiments, and Durable Memory | Verified closed-loop deterministic foundation; statistical activation remains data-locked | One canonical reasoning snapshot separates mechanism, control response, and policy; exact mission attempts and durable cross-session memory reconstruct safely across restart and unreadable history |
 | P20 - Engineering State Awareness and Whole-Car Mechanism Fusion | Verified deterministic production slice; shadow observers and statistical activation remain data-locked | Exact state, context, temporal episodes, producer blockers, P19 authority, and stale-safe whole-car projection reach existing workspaces without a second reasoning path |
+| P21 - Evidence Lab, Calibration, and Shadow Intelligence | Verified scientific infrastructure; advanced statistical authority remains locked | Immutable datasets, leakage-safe evaluation, collection campaigns, proxy/profile validation, prospective shadow records, and identity-bound activation gates expose exact learning debt without changing P19/P20 authority |
 
 ---
 
@@ -1366,6 +1367,71 @@ creating another reasoning, setup, or policy authority.
 
 ---
 
+## P21 - Evidence Lab, Calibration, and Shadow Intelligence
+
+Overall status: **Verified scientific infrastructure; advanced statistical
+authority remains locked**. P21 can measure evidence readiness and evaluate
+offline/shadow candidates, but P19 remains the sole production reasoning and
+setup-policy authority and P20 remains the sole whole-car projection.
+
+- [x] Audit every data-locked capability against its current authority, required
+  dataset, independence unit, ground truth, held-out test, activation threshold,
+  archive inventory, and remaining deficit.
+- [x] Add content-addressed immutable dataset, manifest, unit, artifact,
+  qualification, and split-policy records with fail-closed source, workflow,
+  lineage, stage, and pseudoreplication leakage detection.
+- [x] Freeze reproducible evaluation artifacts against code, dataset, split,
+  configuration, vehicle-profile, metric, threshold, subgroup, and negative-control
+  identity.
+- [x] Add append-only evidence campaigns for driver noise, controlled A/B/A2
+  response, tire semantics, long runs, vehicle geometry, control workload, and
+  null/no-change behavior.
+- [x] Define bounded proxy-validation contracts and exact car/build field-level
+  vehicle-profile validation without treating snapshot channels or identity-only
+  profiles as dynamic/empirical truth.
+- [x] Add non-authoritative prospective shadow contracts, frozen predictions,
+  later outcomes, calibration metrics, change-point candidates, response-model
+  scoring, negative-transfer tests, controlled-effect evaluation, and deterministic
+  planner comparison.
+- [x] Add identity-bound activation gates with pre-registered thresholds, subgroup
+  and prospective requirements, maximum authority ceilings, and no client/manual
+  override.
+- [x] Publish exact-scope Learning Readiness in Smart Engineer Learning Mode only,
+  including fail-closed recovery screens, while leaving Race Mode free of
+  calibration clutter.
+- [x] Keep probability, formal information gain, sideslip/gravity/geometry
+  observers, response authority, Bayesian optimization, and multi-control
+  optimization locked until qualified real and prospective evidence passes every
+  gate.
+
+### P21 verification evidence
+
+- The read-only archive inventory found 13 runs across three saved sessions, 626
+  laps, 602 complete laps, and 506 existing useful markers, but zero protocol-valid
+  controlled workflows or frozen prospective predictions. Those counts remain
+  inventory, not qualified evidence.
+- Fifty-four focused P21 regressions passed before final semantic closure; the
+  added causal/planner/semantic group passed 20 focused tests. Hostile coverage
+  includes duplicate source files, adjacent-window pseudoreplication, A/B/A2 split
+  leakage, synthetic activation denial, snapshot/live-trend mismatch, FFB mismatch,
+  failed restoration, mechanism/policy separation, planner authority violations,
+  false stops, gate identity, and client override denial.
+- The full Python suite passed 2,182 tests with six protected fixture-dependent
+  skips. Whole-repository Ruff, TypeScript, the 2,189-module production Vite build,
+  and diff integrity passed.
+- Learning Readiness measured 18.051 ms cold and 15.735 ms mean warm against a
+  fresh temporary database. It reads metadata and registries only and is not a
+  cockpit-startup dependency.
+- Live local browser smoke showed exact zero-qualified-evidence deficits,
+  `Advanced models: Shadow only`, P19/P20 production authority, and missing vehicle
+  geometry in Learning Mode. Race Mode contained zero Learning Readiness headings,
+  and the browser console remained clear.
+- Synthetic data validated mechanics and failure handling only. P21 did not claim
+  real proxy accuracy, causal response, calibration, transfer, or statistical
+  setup authority. The detailed contract is in `docs/p21_evidence_lab.md`.
+
+---
+
 ## Professional analysis surface, without losing the product thesis
 
 - [x] Match essential professional language: time variance, overlays, math
@@ -1459,3 +1525,4 @@ Implementation queue completed in this pass:
 | 2026-08-09 | Completed P18 deterministic reasoning and controlled learning | Independent evidence tiers, exact controlled-outcome semantics, physical-window semantic repeat memory, blocker-aware measurement planning, typed mind-change criteria, exact grounded-query scope, centralized repeat enforcement, and one fail-closed API/UI Stage B authority projection passed 2,063 collected tests with six protected skips, Ruff, TypeScript, production build, diff integrity, and three independent adversarial CLEAR reviews |
 | 2026-08-09 | Verified RacerZLab Intelligence Spine / Closed-Loop Reasoning Foundation | Canonical reasoning snapshots, backend-owned signed evidence graphs, independence clusters, Next Gen per-lap channel semantics, immutable mission contracts, append-only restart-safe attempt history, durable stop reconstruction, typed comparability debt, tolerant event lifecycle, and fail-closed cross-session Undo memory passed the complete 2,073-test collection with six protected skips, Ruff, TypeScript, production build, and diff integrity; statistical authority remains data-locked |
 | 2026-08-09 | Verified P20 deterministic engineering-awareness production slice | Producer-owned state frames, context/control boundaries, source-backed profiles, descriptive transient/exposure metrics, temporal episodes, exact P19 projection, bounded API cache, and six stale-safe existing-workspace surfaces passed the complete 2,134-test collection with six protected skips, Ruff, TypeScript, production build, diff integrity, and a real Atlanta schema/capability route check; state drift remains typed unavailable until a canonical numeric ledger is attached, while shadow observers and statistical authority remain data-locked |
+| 2026-08-10 | Verified P21 Evidence Lab, Calibration, and Shadow Intelligence foundation | Immutable evidence registries, frozen split/evaluation identity, hostile leakage detection, seven collection campaigns, bounded proxy/profile validation, prospective shadow records, causal/planner evaluation, thirteen activation gates, and Learning-only readiness passed 2,182 tests with six protected skips, Ruff, TypeScript, a 2,189-module production build, diff integrity, performance checks, and live Race/Learning smoke; the archive contains no qualified controlled population, so P19/P20 remain authoritative and advanced statistical methods remain locked or shadow-only |

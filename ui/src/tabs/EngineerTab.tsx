@@ -756,23 +756,26 @@ export function IntelligencePanel({
   if (reportState.status === "error") {
     const evidenceRecoveryNeeded = /422|artifact|archive|cache|manifest|integrity/i.test(reportState.error ?? "");
     return (
-      <section className="engineer-state engineer-state-error" role="alert">
-        <AlertTriangle size={24} aria-hidden="true" />
-        <div>
-          <span className="eyebrow">Smart Engineer unavailable</span>
-          <h2>{evidenceRecoveryNeeded ? "Current evidence needs recovery" : "No stale briefing was kept"}</h2>
-          <p>{evidenceRecoveryNeeded
-            ? "Re-import the original telemetry or review run health before asking Smart Engineer for a current briefing."
-            : "The briefing could not be loaded. Your previous run context was not reused."}</p>
-          {learning && <small>{reportState.error}</small>}
-        </div>
-        <div className="toolbar-actions">
-          <button type="button" className="secondary-button" onClick={() => setWorkspace("overview", "engineer")}>Review run health</button>
-          <button type="button" className="secondary-button" onClick={() => setRetryToken((value) => value + 1)}>
-            <RefreshCcw size={14} aria-hidden="true" /> Retry
-          </button>
-        </div>
-      </section>
+      <div className="smart-engineer-workspace">
+        <section className="engineer-state engineer-state-error" role="alert">
+          <AlertTriangle size={24} aria-hidden="true" />
+          <div>
+            <span className="eyebrow">Smart Engineer unavailable</span>
+            <h2>{evidenceRecoveryNeeded ? "Current evidence needs recovery" : "No stale briefing was kept"}</h2>
+            <p>{evidenceRecoveryNeeded
+              ? "Re-import the original telemetry or review run health before asking Smart Engineer for a current briefing."
+              : "The briefing could not be loaded. Your previous run context was not reused."}</p>
+            {learning && <small>{reportState.error}</small>}
+          </div>
+          <div className="toolbar-actions">
+            <button type="button" className="secondary-button" onClick={() => setWorkspace("overview", "engineer")}>Review run health</button>
+            <button type="button" className="secondary-button" onClick={() => setRetryToken((value) => value + 1)}>
+              <RefreshCcw size={14} aria-hidden="true" /> Retry
+            </button>
+          </div>
+        </section>
+        {learning && <LearningReadinessCard state={readinessState} />}
+      </div>
     );
   }
 
@@ -821,6 +824,7 @@ export function IntelligencePanel({
             <RefreshCcw size={14} aria-hidden="true" /> Retry
           </button>
         </section>
+        {learning && <LearningReadinessCard state={readinessState} />}
         {report?.best_measurement && (
           <MeasurementCard measurement={report.best_measurement} learning={learning} onNavigate={onNavigateCitation} />
         )}

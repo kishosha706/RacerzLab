@@ -194,3 +194,27 @@ def test_workflow_stages_cannot_cross_partitions():
     assert "workflow_split_or_duplicated" in {
         finding.code for finding in report.findings
     }
+
+
+def test_adjacent_windows_from_one_lap_cannot_inflate_units():
+    payload = _dataset_payload()
+    payload["units"][0]["independence_level"] = "window"
+    payload["units"][0]["lap_numbers"] = (4,)
+    payload["units"][0]["window_ids"] = ("20-30",)
+    payload["units"][1]["independence_level"] = "window"
+    payload["units"][1]["source_run_ids"] = ("run-a",)
+    payload["units"][1]["lap_numbers"] = (4,)
+    payload["units"][1]["window_ids"] = ("20-30",)
+    dataset = build_evidence_dataset(payload)
+    policy = build_split_policy(
+        {
+            "policy_version": "v1",
+            "kind": "chronological",
+            "required_independence_level": "window",
+        }
+    )
+    report = evaluate_dataset_leakage(dataset, policy)
+    assert not report.valid
+    assert "adjacent_window_or_lap_pseudoreplication" in {
+        finding.code for finding in report.findings
+    }
