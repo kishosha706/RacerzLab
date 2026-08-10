@@ -52,6 +52,7 @@ result, and remember only what the evidence supports.
 | P17 - Oval Driver Operating System | Verified | An oval driver can read clean-run readiness, corner-cycle evidence, loaded-side tire context, setup identity, and one trustworthy next step without junk-lap or continuity overclaim |
 | P18 - Deterministic Reasoning and Controlled Learning | Verified deterministic slice; statistical activation remains data-locked | Smart Engineer ranks independent evidence, learns exact controlled outcomes, explains falsification criteria, and blocks unsupported or repeated setup authority everywhere |
 | P19 - Engineering Truth, Experiments, and Durable Memory | Verified closed-loop deterministic foundation; statistical activation remains data-locked | One canonical reasoning snapshot separates mechanism, control response, and policy; exact mission attempts and durable cross-session memory reconstruct safely across restart and unreadable history |
+| P20 - Engineering State Awareness and Whole-Car Mechanism Fusion | Verified deterministic production slice; shadow observers and statistical activation remain data-locked | Exact state, context, temporal episodes, producer blockers, P19 authority, and stale-safe whole-car projection reach existing workspaces without a second reasoning path |
 
 ---
 
@@ -1251,9 +1252,9 @@ new setup authority.
 
 ## P20 - Engineering State Awareness and Whole-Car Mechanism Fusion
 
-Overall status: **Partial**. The semantic foundation, producer fusion, context
-profiles, transient response, whole-car exposure metrics, and temporal episode
-fusion are backend verified; public projection and UI integration are not yet verified.
+Overall status: **Verified deterministic production slice; shadow observers and
+statistical activation remain data locked**. State awareness extends P19 without
+creating another reasoning, setup, or policy authority.
 
 - [x] Define immutable, extra-forbid `ChannelRole`, `DerivedMetricContract`,
   `EngineeringStateFrame`, `StateTransition`, `MechanismEpisode`, and
@@ -1279,9 +1280,9 @@ fusion are backend verified; public projection and UI integration are not yet ve
 - [x] Build temporal state transitions, observation-only mechanism episodes, and a
   state-drift ledger, then feed their evidence into P19 without adding another
   cause ranker or setup-policy evaluator.
-- [ ] Publish one stale-safe engineering-awareness projection and integrate it into
+- [x] Publish one stale-safe engineering-awareness projection and integrate it into
   existing workspaces without adding cockpit startup work or a new top-level tab.
-- [ ] Keep probabilistic authority, formal information gain, Bayesian optimization,
+- [x] Keep probabilistic authority, formal information gain, Bayesian optimization,
   and multi-control automatic optimization data locked.
 
 ### P20 verification evidence
@@ -1347,6 +1348,21 @@ fusion are backend verified; public projection and UI integration are not yet ve
   producer evidence repeated at one exact context. The combined existing
   observation plus awareness build was about 6.0 seconds cold and warm. It remains
   lazy and is not a cockpit-startup dependency; Slice G owns bounded caching.
+- Slice G: the immutable public projection binds exact run, P19 snapshot SHA,
+  state revision, profile hash, authority, producer artifacts, and analyzer/schema
+  versions. All ten subsystem states remain independently fail-closed; setup
+  leverage contains only P19-owned controls; mechanism, control response, and
+  policy remain separate. The route carries no raw trace and uses an eight-entry
+  identity-invalidated cache.
+- Overview, Laps, Platform, Setup, Compare, and Smart Engineer now consume the
+  same backend projection with request-sequence and exact-run stale guards and
+  canonical `focusEvidence` navigation. No top-level tab or cockpit-startup
+  dependency was added. The real Atlanta schema/capability projection measured
+  about 29 ms cold and under 1 ms warm in a fresh process; its lack of episodes
+  and drift findings stayed explicit debt, not fabricated physics.
+- Slice H remains intentionally unimplemented for production. Body-sideslip,
+  bank/gravity compensation, and geometry-corrected wheel observers are shadow/data
+  locked until source-backed constants and held-out validation exist.
 
 ---
 
@@ -1442,3 +1458,4 @@ Implementation queue completed in this pass:
 | 2026-08-08 | Completed P17 oval driver operating system | Driver-first clean-run readiness, short-versus-race pace, uninterrupted RF/RR evidence, clean-lap ledger, oval setup anchors, entry/center/exit/carry crew board, exact-sample checkpoint, and the Laps-hosted whole-car workbook passed 1,947 collected tests with six protected skips, Ruff, TypeScript, production build, diff integrity, live 1280 x 720 Race/Learning checks, and a final adversarial CLEAR review |
 | 2026-08-09 | Completed P18 deterministic reasoning and controlled learning | Independent evidence tiers, exact controlled-outcome semantics, physical-window semantic repeat memory, blocker-aware measurement planning, typed mind-change criteria, exact grounded-query scope, centralized repeat enforcement, and one fail-closed API/UI Stage B authority projection passed 2,063 collected tests with six protected skips, Ruff, TypeScript, production build, diff integrity, and three independent adversarial CLEAR reviews |
 | 2026-08-09 | Verified RacerZLab Intelligence Spine / Closed-Loop Reasoning Foundation | Canonical reasoning snapshots, backend-owned signed evidence graphs, independence clusters, Next Gen per-lap channel semantics, immutable mission contracts, append-only restart-safe attempt history, durable stop reconstruction, typed comparability debt, tolerant event lifecycle, and fail-closed cross-session Undo memory passed the complete 2,073-test collection with six protected skips, Ruff, TypeScript, production build, and diff integrity; statistical authority remains data-locked |
+| 2026-08-09 | Verified P20 deterministic engineering-awareness production slice | Producer-owned state frames, context/control boundaries, source-backed profiles, descriptive transient/exposure metrics, temporal episodes, exact P19 projection, bounded API cache, and six stale-safe existing-workspace surfaces passed the complete 2,134-test collection with six protected skips, Ruff, TypeScript, production build, diff integrity, and a real Atlanta schema/capability route check; state drift remains typed unavailable until a canonical numeric ledger is attached, while shadow observers and statistical authority remain data-locked |

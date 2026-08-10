@@ -22,6 +22,7 @@ import {
   MindChangeCriteriaCard,
   SmartIntelligenceCards,
 } from "../components/SmartIntelligenceCards";
+import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPanel";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { LapScope } from "../store/types";
 import type {
@@ -849,6 +850,7 @@ export function IntelligencePanel({
       data-mode={learning ? "learning" : "race"}
       data-decision-status={decisionStatus}
     >
+      <EngineeringAwarenessPanel runId={runId} sessionId={sessionId} surface="engineer" />
       <header className="engineer-workspace-header">
         <div>
           <span className="eyebrow"><BrainCircuit size={13} aria-hidden="true" /> Smart Engineer</span>

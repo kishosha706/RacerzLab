@@ -8,6 +8,7 @@ from api.routes_compare import router as compare_router
 from api.routes_analysis_contracts import router as analysis_contracts_router
 from api.routes_events import router as events_router
 from api.routes_engineering import router as engineering_router
+from api.routes_engineering_awareness import router as engineering_awareness_router
 from api.routes_imports import router as imports_router
 from api.routes_intelligence import router as intelligence_router
 from api.routes_laps import router as laps_router
@@ -71,6 +72,7 @@ app.include_router(stints_router)
 app.include_router(events_router)
 app.include_router(intelligence_router)
 app.include_router(engineering_router)
+app.include_router(engineering_awareness_router)
 app.include_router(p3_engineering_router)
 app.include_router(reports_router)
 app.include_router(notebook_router)

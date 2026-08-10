@@ -67,6 +67,17 @@ _OBSERVATION_COLUMNS = [
     "rf_shock_vel_in_s",
     "lr_shock_vel_in_s",
     "rr_shock_vel_in_s",
+    "applied_brake_bias",
+    "requested_lf_tire_cold_pressure_pa",
+    "requested_rf_tire_cold_pressure_pa",
+    "requested_lr_tire_cold_pressure_pa",
+    "requested_rr_tire_cold_pressure_pa",
+    "requested_left_tire_change",
+    "requested_right_tire_change",
+    "requested_fuel_fill",
+    "requested_fuel_add_kg",
+    "requested_fuel_auto_fill_enabled",
+    "requested_fuel_auto_fill_active",
 ]
 
 

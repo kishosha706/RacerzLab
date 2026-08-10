@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
+import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPanel";
 import { DamperSpectrumSummary } from "../components/DamperSpectrumSummary";
 import { ShockHistogram } from "../components/ShockHistogram";
 import type { ShockSetupField } from "../components/ShockHistogram";
@@ -35,6 +36,7 @@ type PlatformLoadStatus = "idle" | "loading" | "ready" | "clear" | "unavailable"
 
 type PlatformTabProps = {
   overview: RunOverview;
+  sessionId?: string | null;
   trace: TraceResponse | null;
   traceLoadStatus?: PlatformLoadStatus;
   traceLoadError?: string | null;
@@ -52,6 +54,7 @@ type PlatformTabProps = {
 
 type PlatformTraceWorkbenchProps = {
   overview: RunOverview;
+  sessionId?: string | null;
   trace: TraceResponse;
   platformEvents?: PlatformEventItem[];
   platformEventsLoadStatus?: PlatformLoadStatus;
@@ -1258,6 +1261,7 @@ function validSampleIndex(index: number | null | undefined, length: number): num
 
 export function PlatformTab({
   overview,
+  sessionId = null,
   trace,
   traceLoadStatus,
   traceLoadError,
@@ -1394,6 +1398,7 @@ export function PlatformTab({
   return (
     <PlatformTraceWorkbench
       overview={overview}
+      sessionId={sessionId}
       trace={trace}
       platformEvents={platformEvents}
       platformEventsLoadStatus={platformEventsLoadStatus}
@@ -1410,6 +1415,7 @@ export function PlatformTab({
 
 function PlatformTraceWorkbench({
   overview,
+  sessionId = null,
   trace: overviewTrace,
   platformEvents: externalPlatformEvents,
   platformEventsLoadStatus = "ready",
@@ -3632,6 +3638,7 @@ function PlatformTraceWorkbench({
 
   return (
     <section className="platform-workbench" data-analysis-surface="platform_channel_overlay">
+      <EngineeringAwarenessPanel runId={overview.run_id} sessionId={sessionId} surface="platform" />
       <section
         className="tab-decision-broadcast platform-decision-broadcast"
         data-state={platformDecisionState}

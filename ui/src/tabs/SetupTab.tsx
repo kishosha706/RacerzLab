@@ -3,10 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchSetup } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useCompareBasket } from "../store/CompareBasketContext";
+import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPanel";
 import type { RunOverview, SetupSnapshot, TelemetryEvent } from "../types/telemetry";
 
 type SetupTabProps = {
   overview: RunOverview;
+  sessionId?: string | null;
   onToggleMapOverlay?: () => void;
 };
 
@@ -205,7 +207,7 @@ function CornerPanel({ label, corner, setup, glow, relevantKeys }: {
 }
 
 // ── Main ─────────────────────────────────────────────────────────
-export function SetupTab({ overview, onToggleMapOverlay }: SetupTabProps) {
+export function SetupTab({ overview, sessionId = null, onToggleMapOverlay }: SetupTabProps) {
   const setupIdentityMismatch = Boolean(
     overview.setup_snapshot && overview.setup_snapshot.run_id !== overview.run_id,
   );
@@ -540,6 +542,7 @@ export function SetupTab({ overview, onToggleMapOverlay }: SetupTabProps) {
 
   return (
     <section className="garage-board">
+      <EngineeringAwarenessPanel runId={overview.run_id} sessionId={sessionId} surface="setup" />
       {/* 1) Setup Context / Evidence Focus strip */}
       <div className="gr-topbar">
         <div className="gr-topbar-left">

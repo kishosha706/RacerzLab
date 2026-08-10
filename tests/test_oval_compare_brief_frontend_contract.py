@@ -37,7 +37,10 @@ def test_whole_car_compare_is_reachable_inside_the_laps_workflow() -> None:
     assert "Whole-car comparison" in laps
     assert "Open whole-car workbook" in laps
     assert 'data-comparison-readiness={runHistory.length >= 2 ? "ready" : "needs-run"}' in laps
-    assert "<WholeCarCompareTab runs={runHistory} currentRunId={overview.run_id} />" in laps
+    assert (
+        "<WholeCarCompareTab runs={runHistory} currentRunId={overview.run_id} "
+        "sessionId={session?.session_id ?? null} />"
+    ) in laps
     assert "Match car, track, fuel, tire age, weather, and line" in laps
 
 

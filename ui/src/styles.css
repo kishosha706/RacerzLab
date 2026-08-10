@@ -15126,3 +15126,42 @@ button:focus:not(:focus-visible) {
   }
 }
 
+/* P20 whole-car awareness: bounded summaries only; telemetry remains in canonical canvases. */
+.engineering-awareness {
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent, #d8ff42) 25%, var(--border, #30343b));
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(216, 255, 66, 0.055), rgba(13, 17, 22, 0.94) 48%);
+}
+.engineering-awareness--loading,
+.engineering-awareness--blocked { display: flex; gap: 10px; color: var(--text-muted, #a7adb7); }
+.engineering-awareness__header { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; }
+.engineering-awareness__header h3 { margin: 4px 0; font-size: 1rem; }
+.engineering-awareness__header p,
+.engineering-awareness article p { margin: 4px 0 0; color: var(--text-muted, #a7adb7); font-size: .78rem; }
+.engineering-awareness .eyebrow { display: flex; gap: 6px; align-items: center; color: var(--accent, #d8ff42); font-size: .68rem; text-transform: uppercase; letter-spacing: .09em; }
+.engineering-awareness__status { display: grid; grid-template-columns: auto 1fr; gap: 2px 6px; min-width: 190px; }
+.engineering-awareness__status small { grid-column: 2; color: var(--text-muted, #a7adb7); }
+.engineering-awareness__focus { margin-top: 10px; display: inline-flex; gap: 6px; align-items: center; border: 0; background: transparent; color: var(--accent, #d8ff42); cursor: pointer; padding: 4px 0; }
+.engineering-awareness__brief,
+.engineering-awareness__grid,
+.engineering-awareness__systems,
+.engineering-awareness__trust { display: grid; gap: 8px; margin-top: 10px; }
+.engineering-awareness__brief,
+.engineering-awareness__grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.engineering-awareness__systems { grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); }
+.engineering-awareness__trust { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.engineering-awareness article { padding: 9px 10px; border-radius: 8px; background: rgba(255, 255, 255, .035); border-left: 2px solid rgba(216, 255, 66, .4); }
+.engineering-awareness article span { display: block; color: var(--text-muted, #a7adb7); font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; }
+.engineering-awareness article strong { display: block; margin-top: 3px; font-size: .78rem; }
+.engineering-awareness article small { display: block; margin-top: 4px; color: #d9aa79; line-height: 1.35; }
+.engineering-awareness article.is-blocked,
+.awareness-axis--blocked,
+.awareness-axis--unavailable { border-left-color: #c67468; }
+.engineering-awareness article.is-ready,
+.awareness-axis--trusted { border-left-color: #80bd76; }
+@media (max-width: 760px) {
+  .engineering-awareness__header { flex-direction: column; }
+  .engineering-awareness__status { min-width: 0; }
+}

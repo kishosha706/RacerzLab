@@ -1594,7 +1594,7 @@ function CockpitShell() {
   const workspaceContent = useMemo(() => {
     if (!overview) return null;
     const ws = selection.selectedWorkspace;
-    if (ws === "overview") return <OverviewTab overview={overview} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={openMapOverlay} />;
+    if (ws === "overview") return <OverviewTab overview={overview} sessionId={currentSession?.session_id ?? null} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={openMapOverlay} />;
     if (ws === "engineer") {
       return (
         <EngineerTab
@@ -1622,6 +1622,7 @@ function CockpitShell() {
       return (
         <PlatformTab
           overview={overview}
+          sessionId={currentSession?.session_id ?? null}
           trace={currentTrace}
           traceLoadStatus={currentTraceLoadStatus}
           traceLoadError={currentTraceLoadError}
@@ -1638,7 +1639,7 @@ function CockpitShell() {
         />
       );
     }
-    if (ws === "setup_impact") return <SetupTab overview={overview} onToggleMapOverlay={openMapOverlay} />;
+    if (ws === "setup_impact") return <SetupTab overview={overview} sessionId={currentSession?.session_id ?? null} onToggleMapOverlay={openMapOverlay} />;
     if (ws === "dial_in") {
       return (
         <DialInTab
@@ -1655,7 +1656,7 @@ function CockpitShell() {
     }
     if (ws === "channels") {
       // Channels removed from nav; redirect to overview if stale state exists
-      return <OverviewTab overview={overview} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={openMapOverlay} />;
+      return <OverviewTab overview={overview} sessionId={currentSession?.session_id ?? null} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={openMapOverlay} />;
     }
     if (ws === "laps") {
       return (
@@ -1669,7 +1670,7 @@ function CockpitShell() {
         />
       );
     }
-    return <OverviewTab overview={overview} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={openMapOverlay} />;
+    return <OverviewTab overview={overview} sessionId={currentSession?.session_id ?? null} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={openMapOverlay} />;
   }, [currentIntelligenceAuthority, currentIntelligenceAuthorityRecovery, currentIntelligenceAuthorityStatus, currentPlatformEvents, currentPlatformEventsLoadError, currentPlatformEventsLoadStatus, currentSession, currentTrace, currentTraceLoadError, currentTraceLoadStatus, explicitControlledWorkflowId, handleMapOverlayZoomRangeChange, openIntelligenceCitation, openMapOverlay, overview, platformEventVisibilityMode, retryPlatformEvents, retryTrace, selection.selectedLap, selection.selectedLapScope, selection.selectedLapWindowEnd, selection.selectedLapWindowStart, selection.selectedRepresentativeLap, selection.selectedWorkspace, sessionRuns, sessionRunsLoading, sessionSelectionSource]);
 
   if (engineStatus === "starting") {

@@ -2,6 +2,7 @@ import { AlertTriangle, BrainCircuit, CheckCircle2, Clock, Layers, MapPin, Wrenc
 import { useCallback, useMemo, useState } from "react";
 import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
+import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPanel";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { SEVERITY_COLOURS, humanizeEventLabel } from "../constants/ui";
 import { isProxyChannel } from "../utils/channelMeta";
@@ -18,6 +19,7 @@ import type { LapSummary, RunOverview, TelemetryCapabilitiesResponse, TelemetryE
 
 type OverviewTabProps = {
   overview: RunOverview;
+  sessionId?: string | null;
   telemetryCapabilities?: TelemetryCapabilitiesResponse | null;
   onToggleMapOverlay?: () => void;
 };
@@ -116,7 +118,7 @@ function orderedWarnings(warnings: string[]): Array<{ key: string; label: string
     : groups;
 }
 
-export function OverviewTab({ overview, telemetryCapabilities, onToggleMapOverlay }: OverviewTabProps) {
+export function OverviewTab({ overview, sessionId = null, telemetryCapabilities, onToggleMapOverlay }: OverviewTabProps) {
   const lap = bestUsefulLapMatchesRun(overview.best_useful_lap, overview.run_id)
     ? overview.best_useful_lap
     : null;
@@ -469,6 +471,7 @@ export function OverviewTab({ overview, telemetryCapabilities, onToggleMapOverla
   return (
     <div className="tab-grid">
       {decisionBroadcast}
+      <EngineeringAwarenessPanel runId={overview.run_id} sessionId={sessionId} surface="overview" />
 
       <section className="overview-hero">
         <div className="overview-hero-header">

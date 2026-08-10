@@ -4,6 +4,7 @@ import { fetchCompareInsights } from "../api/client";
 import { ComparisonInsightPanel } from "../components/ComparisonInsightPanel";
 import { DeltaTracesView } from "../components/DeltaTracesView";
 import { DidItWorkCard } from "../components/DidItWorkCard";
+import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPanel";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { useCompareBasket, type BasketItem } from "../store/CompareBasketContext";
 import type { RunListItem } from "../types/telemetry";
@@ -20,7 +21,7 @@ const API_BASE =
   import.meta.env.VITE_API_BASE_URL ??
   "http://127.0.0.1:8010";
 
-type CompareTabProps = { runs: RunListItem[]; currentRunId: string };
+type CompareTabProps = { runs: RunListItem[]; currentRunId: string; sessionId?: string | null };
 type SubView =
   | "verdict" | "what-changed" | "whole-car-index" | "target-zone"
   | "platform" | "four-corners" | "tires" | "shocks"
@@ -727,7 +728,7 @@ function EvidenceView({ verdict }: { verdict: DidItWorkVerdict | null }) {
 
 // ── Main Tab ────────────────────────────────────────────────
 
-export function CompareTab({ runs, currentRunId }: CompareTabProps) {
+export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabProps) {
   const { basket } = useCompareBasket();
   const [baselineRunId, setBaselineRunId] = useState(currentRunId);
   const [testRunId, setTestRunId] = useState("");
@@ -1051,6 +1052,7 @@ export function CompareTab({ runs, currentRunId }: CompareTabProps) {
 
   return (
     <section className="compare-workspace">
+      <EngineeringAwarenessPanel runId={currentRunId} sessionId={sessionId} surface="compare" />
       <header className="compare-header">
         <h2>Compare Mode</h2>
         <p className="section-note">Whole-car comparison workbook. Compare baseline vs test run.</p>

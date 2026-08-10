@@ -28,6 +28,7 @@ from racelab_engine.models.engineering_awareness import (
     TemporalRelationship,
 )
 from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.engineering_context import ControlMutationEvent
 from racelab_engine.models.lap_engineering_context import ChannelUpdateSemantic
 from racelab_engine.models.observation_intelligence import (
     MechanismKind,
@@ -36,7 +37,10 @@ from racelab_engine.models.observation_intelligence import (
     ObservationCitation,
     ObservationStatus,
 )
-from racelab_engine.services.engineering_context_service import engineering_channel_role
+from racelab_engine.services.engineering_context_service import (
+    detect_control_mutations,
+    engineering_channel_role,
+)
 
 
 MECHANISM_SIGNATURE_DEFINITIONS = (
@@ -125,6 +129,7 @@ class EngineeringAwarenessEvidenceBuild:
     transitions: tuple[StateTransition, ...]
     episodes: tuple[MechanismEpisode, ...]
     episode_observations: MechanismObservationReport
+    control_mutations: tuple[ControlMutationEvent, ...] = ()
     blocker_reasons: tuple[str, ...] = ()
 
 
@@ -639,7 +644,7 @@ def build_engineering_awareness_evidence(
             ),
         )
         return EngineeringAwarenessEvidenceBuild(
-            (), (), (), empty, empty.blocker_reasons
+            (), (), (), empty, (), empty.blocker_reasons
         )
     frames, blockers = build_engineering_state_frames(
         observations.observations, rows, run_id=run_id, setup_id=setup_id
@@ -661,6 +666,7 @@ def build_engineering_awareness_evidence(
         transitions=transitions,
         episodes=episodes,
         episode_observations=episode_report,
+        control_mutations=detect_control_mutations(rows, run_id=run_id),
         blocker_reasons=blockers,
     )
 

@@ -66,6 +66,9 @@ from racelab_engine.services.engineering_memory_service import (
     list_engineering_narrative,
 )
 from racelab_engine.services.experiment_service import bind_durable_experiment_lifecycle
+from racelab_engine.services.engineering_awareness_service import (
+    EngineeringAwarenessEvidenceBuild,
+)
 from racelab_engine.services.import_service import (
     build_telemetry_capability_payload,
     read_telemetry_manifest,
@@ -172,6 +175,7 @@ class RunIntelligenceBundle:
     narrative_entries: tuple[EngineeringNarrativeEntry, ...]
     calibration: PredictionCalibrationSummary
     driver_profile: DriverPresentationProfile
+    awareness: EngineeringAwarenessEvidenceBuild
 
 
 @dataclass(frozen=True)
@@ -1993,6 +1997,7 @@ def build_run_intelligence(
         narrative_entries=narrative,
         calibration=calibration,
         driver_profile=profile,
+        awareness=awareness_evidence,
     )
 
 

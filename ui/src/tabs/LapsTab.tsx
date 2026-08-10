@@ -24,6 +24,7 @@ import { compareStints, fetchLapWindows, fetchStints } from "../api/client";
 import { makeBasketItem } from "../components/CompareBasket";
 import { TimeDeltaComparison } from "../components/TimeDeltaComparison";
 import { EngineeringSystemsComparison } from "../components/EngineeringSystemsComparison";
+import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPanel";
 import { ValueDisplay } from "../components/ValueDisplay";
 import { useCompareBasket } from "../store/CompareBasketContext";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
@@ -2315,6 +2316,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
 
   return (
     <div className="tab-grid">
+      <EngineeringAwarenessPanel runId={overview.run_id} sessionId={session?.session_id ?? null} surface="laps" />
       <section
         className="tab-decision-broadcast"
         data-state={paceDecisionDataState}
@@ -2496,7 +2498,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
         {wholeCarCompareOpen && runHistory.length >= 2 && (
           <div id="oval-whole-car-workbook" className="oval-whole-car-workbook">
             <React.Suspense fallback={<div className="workspace-placeholder" role="status">Preparing the whole-car comparison...</div>}>
-              <WholeCarCompareTab runs={runHistory} currentRunId={overview.run_id} />
+              <WholeCarCompareTab runs={runHistory} currentRunId={overview.run_id} sessionId={session?.session_id ?? null} />
             </React.Suspense>
           </div>
         )}
