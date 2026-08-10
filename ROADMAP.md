@@ -1267,7 +1267,7 @@ projection, and UI integration are not yet verified.
 - [x] Give all ten existing mechanism families one exact-scope, producer-owned path
   into canonical P19 reasoning while preserving independent blockers and distinct
   same-kind physical windows.
-- [ ] Add material control-context boundaries, requested-versus-applied semantics,
+- [x] Add material control-context boundaries, requested-versus-applied semantics,
   FFB comparability, weight/power/build compatibility, and source-backed vehicle
   engineering profiles without guessing missing geometry.
 - [ ] Add descriptive transient response, workload, chassis, tire, brake, combined
@@ -1304,6 +1304,18 @@ projection, and UI integration are not yet verified.
   identities). Only platform and simulator-integrity evidence qualified in that
   file; every other family remained visibly blocked instead of inheriting another
   producer's success.
+- Slice C: raw/processed controls remain separate; applied brake-bias changes split
+  context; pit requests require independent service confirmation; any material FFB
+  mismatch blocks steering-effort comparison; and weight, power, car, track, tire,
+  repair, or build mismatches preserve observations while blocking causal setup and
+  powertrain attribution. Twelve hostile tests plus 151 surrounding normalization,
+  parity, manifest, and real-fixture checks passed.
+- The Atlanta fixture materialized every actually declared context alias with
+  vectorized/row parity. Its six available FFB configuration fields form a limited
+  fingerprint because `SteeringWheelFFBEnabled` is absent; steering workload
+  comparison therefore remains blocked. The identity-only vehicle profile pins
+  exact car/build provenance while leaving all unproven geometry and conventions
+  missing.
 
 ---
 

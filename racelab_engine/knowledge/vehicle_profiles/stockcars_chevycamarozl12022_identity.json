@@ -1,0 +1,33 @@
+{
+  "profile_id": "stockcars-chevycamarozl12022-identity",
+  "profile_version": 1,
+  "car_path": "stockcars chevycamarozl12022",
+  "car_version_range": {
+    "minimum_inclusive": "2026.01.30.02",
+    "maximum_inclusive": "2026.01.30.02"
+  },
+  "iracing_build_range": {
+    "minimum_inclusive": "2026.02.02.02",
+    "maximum_inclusive": "2026.02.02.02"
+  },
+  "wheelbase_m": null,
+  "front_track_width_m": null,
+  "rear_track_width_m": null,
+  "driven_axle": null,
+  "steering_conversion_model": null,
+  "ride_height_sensor_locations": [],
+  "shock_sign_convention": null,
+  "wheel_speed_semantics": null,
+  "body_axis_convention": null,
+  "damper_diagnostic_bands": [],
+  "supported_setup_controls": [],
+  "source_provenance": [
+    {
+      "source_kind": "ibt_session_yaml",
+      "source_id": "atlanta-next-gen-capability-fixture",
+      "source_sha256": "3e347305740a5ad3d7831bec650727e49494dc28e4e031fd2820f677e7d6bccd",
+      "description": "Identity-only car and build scope from the controlled Atlanta Next Gen IBT fixture; no geometry or engineering constants are asserted."
+    }
+  ],
+  "profile_hash": "b704bd6271f3a370b454690e74a8f9272004ff170134f594c714c886c7d9cb93"
+}
