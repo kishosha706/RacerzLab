@@ -445,3 +445,26 @@ CREATE TABLE IF NOT EXISTS evaluation_artifacts (
 
 CREATE INDEX IF NOT EXISTS idx_evaluation_artifact_dataset
   ON evaluation_artifacts(dataset_id, created_at, evaluation_id);
+
+CREATE TABLE IF NOT EXISTS evidence_campaigns (
+  campaign_id TEXT PRIMARY KEY,
+  campaign_hash TEXT NOT NULL UNIQUE,
+  campaign_kind TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  campaign_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS evidence_campaign_attempts (
+  attempt_id TEXT PRIMARY KEY,
+  attempt_hash TEXT NOT NULL UNIQUE,
+  campaign_id TEXT NOT NULL,
+  recorded_at TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  independence_unit_id TEXT NOT NULL,
+  attempt_json TEXT NOT NULL,
+  FOREIGN KEY(campaign_id) REFERENCES evidence_campaigns(campaign_id)
+    ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_evidence_campaign_attempt
+  ON evidence_campaign_attempts(campaign_id, recorded_at, attempt_id);
