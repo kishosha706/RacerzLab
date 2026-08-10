@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from functools import lru_cache
 import hashlib
+import json
 import re
 from typing import Any
 
 from racelab_engine.analysis.setup_controls import SETUP_CONTROL_SPECS, format_setup_value
 from racelab_engine.knowledge.setup import load_setup_knowledge
+from racelab_engine.io.telemetry_manifest import compatibility_fingerprint
 from racelab_engine.models.intelligence import InternalIntelligenceReport
 from racelab_engine.models.observation_intelligence import MechanismKind
 from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.models.vehicle_systems import (
     BuildApplicability,
     ComponentAwarenessState,
+    ComponentInspectionResponse,
     ComponentControlledHistory,
     ComponentDefinition,
     ComponentInteraction,
@@ -28,10 +32,13 @@ from racelab_engine.models.vehicle_systems import (
     VehicleSystemsNode,
     VehicleSystemsNodeKind,
     VehicleSystemsProjection,
+    VehicleSystemsRuntimeGraph,
+    VehicleSystemsRuntimeIdentity,
 )
+from racelab_engine.services.import_service import read_telemetry_manifest
 
 
-_GRAPH_VERSION = "2026.08.next-gen.1"
+_GRAPH_VERSION = "2026.08.next-gen.2"
 _NEXT_GEN = BuildApplicability(
     car_family="next_gen",
     car_paths=(
@@ -136,28 +143,40 @@ _MECHANISM_COMPONENTS: dict[MechanismKind, tuple[str, ...]] = {
     MechanismKind.DRIVER_EXECUTION: ("steering",),
 }
 
-_COMPONENT_CAUSE_TERMS = {
-    "tires": ("tire", "pressure", "thermal", "slip exposure"),
-    "alignment": ("camber", "caster", "toe", "alignment", "scrub"),
-    "springs": ("spring",),
-    "dampers": ("damper", "shock", "shaft velocity", "settling"),
-    "anti_roll_bars": ("anti-roll", "anti roll", "arb", "roll coupling"),
-    "weight_distribution": ("crossweight", "cross weight", "nose weight", "diagonal"),
-    "platform": ("platform", "ride height", "rake", "clearance", "bottoming"),
-    "brakes": ("brake", "braking", "line pressure"),
-    "differential": ("differential", "diff preload", "rear-wheel coupling"),
-    "final_drive": ("final drive", "rear end ratio", "gearing", "limiter"),
-    "steering": ("steering ratio", "steering rack", "steering workload"),
-    "cooling_configuration": ("cooling", "tape", "temperature margin"),
+_MECHANISM_KEY_COMPONENTS: dict[str, tuple[str, ...]] = {
+    "tire_state": ("tires", "alignment"),
+    "braking": ("brakes", "weight_distribution", "tires"),
+    "corner_balance": ("anti_roll_bars", "springs", "weight_distribution", "alignment"),
+    "cross_weight": ("weight_distribution",),
+    "platform": ("platform", "springs", "dampers", "anti_roll_bars"),
+    "platform_balance": ("platform", "springs", "dampers", "anti_roll_bars"),
+    "platform_risk": ("platform", "springs", "dampers", "anti_roll_bars"),
+    "damping": ("dampers",),
+    "damper": ("dampers",),
+    "shock": ("dampers",),
+    "spring": ("springs",),
+    "geometry": ("alignment", "steering"),
+    "resistance": ("alignment", "tires", "cooling_configuration"),
+    "scrub": ("alignment", "tires"),
+    "traction": ("differential", "tires"),
+    "throttle": ("differential", "final_drive", "tires"),
+    "rotation": ("anti_roll_bars", "springs", "weight_distribution", "alignment", "differential", "tires"),
+    "stability": ("weight_distribution", "brakes", "differential", "tires"),
+    "mechanical_balance": ("anti_roll_bars", "springs", "weight_distribution"),
+    "driver_execution": ("steering",),
 }
 
-
-_AREA_COMPONENT_HINTS = {
-    "pressure": "tires", "tire": "tires", "camber": "alignment", "caster": "alignment", "toe": "alignment",
-    "spring": "springs", "compression": "dampers", "rebound": "dampers", "shock": "dampers",
-    "arb": "anti_roll_bars", "cross_weight": "weight_distribution", "nose_weight": "weight_distribution",
-    "ride_height": "platform", "platform": "platform", "brake": "brakes", "diff": "differential",
-    "final_drive": "final_drive", "steering": "steering", "tape": "cooling_configuration",
+_AREA_COMPONENTS = {
+    **{key: "tires" for key in ("tire_pressure", "pressure_split", "pressure_gain", "tire_temp_spread", "tire_wear")},
+    **{key: "alignment" for key in ("camber", "caster", "toe", "front_toe_response", "rear_toe_stability")},
+    **{key: "springs" for key in ("spring_rate", "spring_perch", "front_spring_support", "rear_spring_support", "spring_split")},
+    **{key: "dampers" for key in ("shock_collar", "ls_compression", "hs_compression", "hs_comp_slope", "ls_rebound", "hs_rebound", "hs_reb_slope", "shock_histogram", "shock_velocity_rms", "shock_deflection_delta")},
+    **{key: "anti_roll_bars" for key in ("front_arb_diameter", "front_arb_arm", "front_arb_preload", "front_arb_attach", "rear_arb_diameter", "rear_arb_arm", "rear_arb_preload", "rear_arb_attach")},
+    **{key: "weight_distribution" for key in ("cross_weight", "nose_weight", "corner_weight", "ballast")},
+    **{key: "platform" for key in ("ride_height", "front_ride_height_platform", "rear_ride_height_platform", "diffuser_platform", "cfs/front_splitter/rub_block_reference", "platform_contact", "front_platform_contact")},
+    **{key: "brakes" for key in ("brake_bias", "front_master_cylinder", "rear_master_cylinder")},
+    "diff_preload": "differential",
+    **{key: "final_drive" for key in ("final_drive", "gear_ratio")},
 }
 
 _CONTROL_PROPERTY = {
@@ -173,23 +192,74 @@ _CONTROL_PROPERTY = {
 
 
 def _component_for_area(area: str) -> str:
-    normalized = area.casefold()
-    for hint, component_id in _AREA_COMPONENT_HINTS.items():
-        if hint in normalized:
-            return component_id
-    return "platform"
+    try:
+        return _AREA_COMPONENTS[area.casefold()]
+    except KeyError as exc:
+        raise ValueError(f"Next Gen setup area lacks an explicit component mapping: {area}") from exc
+
+
+def _version_tuple(value: str) -> tuple[int, ...]:
+    parts = tuple(int(part) for part in re.findall(r"\d+", value))
+    if not parts:
+        raise ValueError(f"Invalid iRacing build version: {value}")
+    return parts
+
+
+def vehicle_systems_runtime_identity(
+    run_id: str,
+    *,
+    manifest: Mapping[str, Any] | None = None,
+) -> VehicleSystemsRuntimeIdentity:
+    payload = dict(manifest) if manifest is not None else read_telemetry_manifest(run_id)
+    identity = payload.get("compatibility_identity")
+    if not isinstance(identity, Mapping):
+        raise ValueError(f"Vehicle Systems requires a verified telemetry manifest for run {run_id}.")
+    if identity.get("missing_required_fields"):
+        raise ValueError(f"Vehicle Systems runtime identity is incomplete for run {run_id}.")
+    car_path = str(identity.get("car_path") or "")
+    build = str(identity.get("iracing_build_version") or "")
+    track_configuration = str(identity.get("track_configuration_name") or "")
+    if car_path.casefold() not in _NEXT_GEN.car_paths:
+        raise ValueError(f"Vehicle Systems graph {_GRAPH_VERSION} is unavailable for car path {car_path}.")
+    if _version_tuple(build) < _version_tuple(_NEXT_GEN.iracing_build_min):
+        raise ValueError(f"Vehicle Systems graph {_GRAPH_VERSION} does not cover iRacing build {build}.")
+    if not any(value in track_configuration.casefold() for value in _NEXT_GEN.track_package_types):
+        raise ValueError(f"Vehicle Systems requires an oval track configuration, got {track_configuration}.")
+    schema_fingerprint = str(payload.get("schema_fingerprint") or "")
+    declared_fingerprint = str(payload.get("compatibility_fingerprint") or "")
+    if compatibility_fingerprint(schema_fingerprint, dict(identity)) != declared_fingerprint:
+        raise ValueError(f"Vehicle Systems compatibility identity failed integrity verification for run {run_id}.")
+    return VehicleSystemsRuntimeIdentity(
+        car_path=car_path,
+        car_version=str(identity.get("car_version") or ""),
+        iracing_build_version=build,
+        track_configuration_name=track_configuration,
+        compatibility_fingerprint=declared_fingerprint,
+    )
 
 
 def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", value.casefold()).strip("_")[:96] or "unknown"
 
 
+@lru_cache(maxsize=1)
 def compile_vehicle_systems_graph() -> VehicleSystemsGraph:
     """Compile accepted Dial-In types into an immutable, typed Next Gen graph."""
     knowledge = load_setup_knowledge()
     accepted_sources = {
         source.source_id for source in knowledge.guide_sources if source.status in {"reviewed", "accepted"}
     }
+    next_gen_area_ids = {
+        area.setup_area.casefold()
+        for area in knowledge.setup_areas
+        if "next_gen" not in area.disabled_for
+        and ("all" in area.applies_to or "next_gen" in area.applies_to)
+    }
+    unmapped_area_ids = sorted(next_gen_area_ids - set(_AREA_COMPONENTS))
+    if unmapped_area_ids:
+        raise ValueError(
+            f"Next Gen setup areas require explicit component mappings: {unmapped_area_ids}"
+        )
     component_by_id = {item.component_id: item for item in _COMPONENTS}
     if any(not set(item.source_ids) <= accepted_sources for item in _COMPONENTS):
         raise ValueError("component definitions require reviewed source provenance")
@@ -260,9 +330,14 @@ def compile_vehicle_systems_graph() -> VehicleSystemsGraph:
         description="For the scoped 2026 Next Gen garage, a spring-rate change automatically maintains configured ride height; platform response still requires validation.",
         applicability=_NEXT_GEN, source_ids=("nascar_nextgen_manual",),
     ))
+    add_edge("component:springs", "component:platform", VehicleSystemsEdgeKind.COMPONENT_COUPLES_WITH_COMPONENT, ("nascar_nextgen_manual",), direction="bidirectional", interaction_type="garage_autocompensated")
 
     # SetupArea and SetupEffect adapters preserve every Next Gen-applicable record as typed identities.
-    next_gen_effects = [effect for effect in knowledge.setup_effects if "next_gen" not in effect.disabled_for and effect.applies_to != ["legacy_oval_generic"]]
+    next_gen_effects = [
+        effect for effect in knowledge.setup_effects
+        if "next_gen" not in effect.disabled_for
+        and ("all" in effect.applies_to or "next_gen" in effect.applies_to)
+    ]
     for effect in next_gen_effects:
         component_id = _component_for_area(effect.setup_area)
         sources = tuple(source for source in effect.source_ids if source in accepted_sources) or component_by_id[component_id].source_ids
@@ -294,6 +369,7 @@ def compile_vehicle_systems_graph() -> VehicleSystemsGraph:
     return VehicleSystemsGraph(graph_version=_GRAPH_VERSION, components=_COMPONENTS, interactions=tuple(interactions), nodes=tuple(nodes.values()), edges=tuple(edges.values()), source_ids=sources)
 
 
+@lru_cache(maxsize=1)
 def _experiment_factors() -> tuple[SetupExperimentFactor, ...]:
     common_preconditions = ("P19 identifies one exact control target and authorizes the controlled test.", "Eligible A/B/A2 laps can hold context and driver line comparable.")
     return (
@@ -312,31 +388,61 @@ def build_component_awareness(
     *,
     setup_snapshot: SetupSnapshot | None = None,
     car_path: str | None = None,
+    runtime_identity: VehicleSystemsRuntimeIdentity | None = None,
 ) -> VehicleSystemsProjection:
     """Project immutable P20 observations and P19 outcomes without recomputation."""
-    if car_path is not None and not any(
-        supported in car_path.casefold() for supported in _NEXT_GEN.car_paths
-    ):
+    scoped_car_path = runtime_identity.car_path if runtime_identity is not None else car_path
+    if scoped_car_path is not None and scoped_car_path.casefold() not in _NEXT_GEN.car_paths:
         raise ValueError(
-            f"Vehicle Systems graph {_GRAPH_VERSION} is unavailable for car path {car_path}."
+            f"Vehicle Systems graph {_GRAPH_VERSION} is unavailable for car path {scoped_car_path}."
         )
+    if runtime_identity is not None and car_path is not None and runtime_identity.car_path != car_path:
+        raise ValueError("Vehicle Systems runtime identity does not match the requested car path.")
     graph = compile_vehicle_systems_graph()
     observations = tuple(
         item for item in (report.mechanism_observations.observations if report.mechanism_observations else ()) if item.qualified
     )
     authority = report.reasoning_snapshot.authority
+    snapshot_payload = (
+        report.reasoning_snapshot.model_dump(mode="json")
+        if hasattr(report.reasoning_snapshot, "model_dump")
+        else vars(report.reasoning_snapshot)
+    )
+    snapshot_hash = hashlib.sha256(
+        json.dumps(snapshot_payload, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
     setup_values: Mapping[str, Any] = setup_snapshot.model_dump() if setup_snapshot is not None else {}
+    control_components = {
+        key: definition.component_id
+        for definition in graph.components
+        for key in definition.setup_keys
+    }
     states: list[ComponentAwarenessState] = []
 
     for definition in graph.components:
         relevant_observations = tuple(
             item for item in observations if definition.component_id in _MECHANISM_COMPONENTS.get(item.mechanism, ())
         )
-        relevant_causes = tuple(
-            cause for cause in report.reasoning_snapshot.causes
-            if any(term in cause.hypothesis.casefold() for term in _COMPONENT_CAUSE_TERMS[definition.component_id])
-            or bool(cause.controlled_outcomes and any(outcome.control_key in definition.setup_keys for outcome in cause.controlled_outcomes))
-        )
+        relevant_causes = []
+        directly_related_cause_ids: set[str] = set()
+        for cause in report.reasoning_snapshot.causes:
+            related_controls = tuple(getattr(cause, "related_control_keys", ()))
+            direct_components = {
+                control_components[key] for key in related_controls if key in control_components
+            }
+            direct_components.update(
+                control_components[outcome.control_key]
+                for outcome in cause.controlled_outcomes
+                if outcome.control_key in control_components
+            )
+            mechanism_components = set(
+                _MECHANISM_KEY_COMPONENTS.get(str(getattr(cause, "mechanism_key", "")).casefold(), ())
+            )
+            if definition.component_id in direct_components | mechanism_components:
+                relevant_causes.append(cause)
+            if definition.component_id in direct_components:
+                directly_related_cause_ids.add(str(getattr(cause, "cause_id", "unknown")))
+        relevant_causes = tuple(relevant_causes)
         histories: list[ComponentControlledHistory] = []
         for cause in report.reasoning_snapshot.causes:
             for outcome in cause.controlled_outcomes:
@@ -344,7 +450,9 @@ def build_component_awareness(
                     continue
                 histories.append(ComponentControlledHistory(
                     workflow_id=outcome.workflow_id,
+                    source_run_id=str(getattr(outcome, "source_run_id", None) or report.run_id),
                     control_key=outcome.control_key or "unknown",
+                    phase=str(getattr(outcome, "phase", None) or "unscoped"),
                     mechanism_state=outcome.outcome,
                     control_response=outcome.control_direction_result or "unavailable",
                     policy_verdict=outcome.verdict,
@@ -361,6 +469,14 @@ def build_component_awareness(
         contradict_ids = tuple(dict.fromkeys(
             citation.citation_id for cause in relevant_causes for citation in cause.contradicting_evidence
         ))
+        supporting_cause_ids = tuple(dict.fromkeys(
+            str(getattr(cause, "cause_id", "unknown"))
+            for cause in relevant_causes if cause.supporting_evidence
+        ))
+        contradicting_cause_ids = tuple(dict.fromkeys(
+            str(getattr(cause, "cause_id", "unknown"))
+            for cause in relevant_causes if cause.contradicting_evidence
+        ))
         policy_blocked = any(history.policy_verdict == "undo" for history in histories)
         p19_authorized = bool(authority.setup_authorized and authority.control_key in definition.setup_keys)
         if policy_blocked:
@@ -369,7 +485,11 @@ def build_component_awareness(
             relevance = ComponentRelevance.TESTED
         elif contradict_ids and not support_ids:
             relevance = ComponentRelevance.CONTRADICTED
-        elif any(cause.status == "likely" for cause in relevant_causes):
+        elif any(
+            cause.status == "likely"
+            and str(getattr(cause, "cause_id", "unknown")) in directly_related_cause_ids
+            for cause in relevant_causes
+        ):
             relevance = ComponentRelevance.SUPPORTED
         elif relevant_observations or relevant_causes:
             relevance = ComponentRelevance.CANDIDATE
@@ -404,7 +524,11 @@ def build_component_awareness(
             relevance=relevance,
             supporting_artifact_ids=support_ids,
             contradicting_artifact_ids=contradict_ids,
+            supporting_cause_ids=supporting_cause_ids,
+            contradicting_cause_ids=contradicting_cause_ids,
             confounders=definition.confounders,
+            unavailable_quantities=definition.observability.unavailable_quantities,
+            measurement_requirements=definition.measurement_requirements,
             coupled_component_ids=definition.coupled_component_ids,
             controlled_history=tuple(histories),
             current_testability="p19_authorized" if p19_authorized else "policy_blocked" if policy_blocked else "measurement_only",
@@ -432,24 +556,106 @@ def build_component_awareness(
         if not report.best_measurement.setup_authorized
         else f"P19 authorized the exact {authority.control_key} controlled factor; preserve its experiment invariants."
     )
+    leading_component_ids = tuple(
+        item.component_id for item in ordered
+        if item.relevance == (leading.relevance if leading is not None else ComponentRelevance.IRRELEVANT)
+    ) if leading is not None else ()
+    strongest_contradiction = next(
+        (
+            citation.summary
+            for cause in report.reasoning_snapshot.causes
+            for citation in cause.contradicting_evidence
+        ),
+        "No qualified contradiction is present in the exact reasoning snapshot.",
+    )
+    runtime_nodes: dict[str, VehicleSystemsNode] = {}
+    runtime_edges: list[VehicleSystemsEdge] = []
+    for observation in observations:
+        observation_id = f"runtime:observation:{observation.artifact_id}"
+        state_id = f"runtime:state:{observation.mechanism.value}"
+        runtime_nodes.setdefault(observation_id, VehicleSystemsNode(
+            node_id=observation_id, kind=VehicleSystemsNodeKind.OBSERVATION,
+            label=str(getattr(observation, "summary", observation.mechanism.value)),
+            source_ids=(observation.artifact_id,), authority="observation_only",
+        ))
+        runtime_nodes.setdefault(state_id, VehicleSystemsNode(
+            node_id=state_id, kind=VehicleSystemsNodeKind.VEHICLE_STATE,
+            label=observation.mechanism.value.replace("_", " ").title(),
+            source_ids=(observation.artifact_id,), authority="observation_only",
+        ))
+        runtime_edges.append(VehicleSystemsEdge(
+            edge_id=f"runtime-edge:{hashlib.sha256(f'{observation_id}|{state_id}'.encode()).hexdigest()[:20]}",
+            source_node_id=observation_id, target_node_id=state_id,
+            kind=VehicleSystemsEdgeKind.OBSERVATION_SUPPORTS_STATE,
+            direction="observed", source_ids=(observation.artifact_id,), authority="observation_only",
+        ))
+    for component_state in states:
+        for history in component_state.controlled_history:
+            control_id = f"runtime:control:{history.control_key}"
+            outcome_id = f"runtime:outcome:{history.workflow_id}:{history.control_key}"
+            runtime_nodes.setdefault(control_id, VehicleSystemsNode(
+                node_id=control_id, kind=VehicleSystemsNodeKind.CONTROL,
+                label=SETUP_CONTROL_SPECS[history.control_key].label,
+                component_id=component_state.component_id, source_ids=(history.workflow_id,),
+                authority="controlled_history",
+            ))
+            runtime_nodes.setdefault(outcome_id, VehicleSystemsNode(
+                node_id=outcome_id, kind=VehicleSystemsNodeKind.OUTCOME,
+                label=f"{history.control_response}; {history.policy_verdict}",
+                component_id=component_state.component_id, source_ids=(history.workflow_id,),
+                authority="controlled_history",
+            ))
+            runtime_edges.append(VehicleSystemsEdge(
+                edge_id=f"runtime-edge:{hashlib.sha256(f'{control_id}|{outcome_id}'.encode()).hexdigest()[:20]}",
+                source_node_id=control_id, target_node_id=outcome_id,
+                kind=VehicleSystemsEdgeKind.CONTROLLED_TEST_OBSERVED_RESPONSE,
+                direction="observed", source_ids=(history.workflow_id,), authority="controlled_history",
+            ))
+            if history.policy_verdict == "undo":
+                policy_id = f"runtime:outcome:policy:{history.workflow_id}:{history.control_key}"
+                runtime_nodes.setdefault(policy_id, VehicleSystemsNode(
+                    node_id=policy_id, kind=VehicleSystemsNodeKind.OUTCOME,
+                    label="Undo preserved after unacceptable countereffect or missed target",
+                    component_id=component_state.component_id, source_ids=(history.workflow_id,),
+                    authority="controlled_history",
+                ))
+                runtime_edges.append(VehicleSystemsEdge(
+                    edge_id=f"runtime-edge:{hashlib.sha256(f'{outcome_id}|{policy_id}'.encode()).hexdigest()[:20]}",
+                    source_node_id=outcome_id, target_node_id=policy_id,
+                    kind=VehicleSystemsEdgeKind.POLICY_REJECTED_DUE_TO_COUNTEREFFECT,
+                    direction="observed", source_ids=(history.workflow_id,), authority="controlled_history",
+                ))
+    runtime_graph = VehicleSystemsRuntimeGraph(
+        reasoning_snapshot_sha256=snapshot_hash,
+        nodes=tuple(runtime_nodes.values()), edges=tuple(runtime_edges),
+    )
     return VehicleSystemsProjection(
         run_id=report.run_id,
         graph_version=graph.graph_version,
+        reasoning_snapshot_sha256=snapshot_hash,
+        runtime_identity=runtime_identity,
+        version_scope_state="verified" if runtime_identity is not None else "unavailable",
         leading_system=leading_label,
+        leading_component_ids=leading_component_ids,
         next_discriminator=next_discriminator,
+        strongest_contradiction=strongest_contradiction,
+        knowledge_debt=tuple(dict.fromkeys(
+            quantity for item in ordered[:3] for quantity in item.unavailable_quantities
+        )),
         component_states=tuple(states),
         experiment_factors=_experiment_factors(),
-        setup_authorized=authority.setup_authorized,
+        runtime_graph=runtime_graph,
+        setup_authorized=any(item.setup_authorized for item in states),
     )
 
 
-def inspect_component(component_id: str, projection: VehicleSystemsProjection | None = None) -> dict[str, Any]:
+def inspect_component(component_id: str, projection: VehicleSystemsProjection | None = None) -> ComponentInspectionResponse:
     graph = compile_vehicle_systems_graph()
     definition = next((item for item in graph.components if item.component_id == component_id), None)
     if definition is None:
         raise ValueError(f"Unknown vehicle-system component: {component_id}")
     state = next((item for item in projection.component_states if item.component_id == component_id), None) if projection else None
-    return {"definition": definition, "state": state, "interactions": tuple(item for item in graph.interactions if component_id in {item.source_component_id, item.target_component_id}), "controls": definition.setup_keys, "authority": "p19_projection_only"}
+    return ComponentInspectionResponse(definition=definition, state=state, interactions=tuple(item for item in graph.interactions if component_id in {item.source_component_id, item.target_component_id}), controls=definition.setup_keys)
 
 
 def trace_control_mechanism(control_key: str) -> tuple[VehicleSystemsEdge, ...]:
@@ -462,4 +668,4 @@ def trace_control_mechanism(control_key: str) -> tuple[VehicleSystemsEdge, ...]:
     return tuple(edge for edge in graph.edges if edge.source_node_id == start or edge.source_node_id in property_ids or edge.source_node_id in state_ids)
 
 
-__all__ = ["build_component_awareness", "compile_vehicle_systems_graph", "inspect_component", "trace_control_mechanism"]
+__all__ = ["build_component_awareness", "compile_vehicle_systems_graph", "inspect_component", "trace_control_mechanism", "vehicle_systems_runtime_identity"]

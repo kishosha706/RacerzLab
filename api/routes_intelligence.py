@@ -29,6 +29,11 @@ from racelab_engine.models.intelligence import (
     GroundedQueryResult,
     InternalIntelligenceReport,
 )
+from racelab_engine.models.vehicle_systems import (
+    ComponentInspectionResponse,
+    ControlMechanismTraceResponse,
+    VehicleSystemsProjection,
+)
 from racelab_engine.services.engineering_memory_service import (
     record_driver_presentation_preference_for_run,
 )
@@ -47,6 +52,7 @@ from racelab_engine.services.vehicle_systems_service import (
     build_component_awareness,
     inspect_component,
     trace_control_mechanism,
+    vehicle_systems_runtime_identity,
 )
 from racelab_engine.storage.repository import RaceLabRepository
 
@@ -205,63 +211,59 @@ def get_run_intelligence(
         raise _http_error(exc) from exc
 
 
-@router.get("/{run_id}/vehicle-systems")
-def get_run_vehicle_systems(run_id: str, session_id: str | None = None) -> dict[str, object]:
+@router.get("/{run_id}/vehicle-systems", response_model=VehicleSystemsProjection)
+def get_run_vehicle_systems(run_id: str, session_id: str | None = None) -> VehicleSystemsProjection:
     """Return component cognition as a read-only projection of P19/P20 truth."""
     try:
         bundle = build_run_intelligence(run_id, session_id=session_id)
         overview = RaceLabRepository().get_overview(run_id)
+        runtime_identity = vehicle_systems_runtime_identity(run_id)
         projection = build_component_awareness(
             bundle.report,
             setup_snapshot=overview.setup_snapshot if overview is not None else None,
             car_path=overview.session.car_path if overview is not None else None,
+            runtime_identity=runtime_identity,
         )
-        return projection.model_dump(mode="json")
+        return projection
     except ValueError as exc:
         raise _http_error(exc) from exc
 
 
-@router.get("/{run_id}/vehicle-systems/components/{component_id}")
+@router.get("/{run_id}/vehicle-systems/components/{component_id}", response_model=ComponentInspectionResponse)
 def get_run_vehicle_component(
     run_id: str,
     component_id: str,
     session_id: str | None = None,
-) -> dict[str, object]:
+) -> ComponentInspectionResponse:
     """Inspect one sourced component, its interactions, and exact-run state."""
     try:
         bundle = build_run_intelligence(run_id, session_id=session_id)
         overview = RaceLabRepository().get_overview(run_id)
+        runtime_identity = vehicle_systems_runtime_identity(run_id)
         projection = build_component_awareness(
             bundle.report,
             setup_snapshot=overview.setup_snapshot if overview is not None else None,
             car_path=overview.session.car_path if overview is not None else None,
+            runtime_identity=runtime_identity,
         )
-        return {
-            key: value.model_dump(mode="json")
-            if hasattr(value, "model_dump")
-            else [item.model_dump(mode="json") for item in value]
-            if isinstance(value, tuple) and value and hasattr(value[0], "model_dump")
-            else value
-            for key, value in inspect_component(component_id, projection).items()
-        }
+        return inspect_component(component_id, projection)
     except ValueError as exc:
         raise _http_error(exc) from exc
 
 
-@router.get("/{run_id}/vehicle-systems/controls/{control_key}/trace")
-def get_vehicle_control_trace(run_id: str, control_key: str) -> dict[str, object]:
+@router.get("/{run_id}/vehicle-systems/controls/{control_key}/trace", response_model=ControlMechanismTraceResponse)
+def get_vehicle_control_trace(run_id: str, control_key: str) -> ControlMechanismTraceResponse:
     """Trace only source-declared expectation edges; never infer a runtime cause."""
     try:
         if RaceLabRepository().get_overview(run_id) is None:
             raise ValueError(f"Run not found: {run_id}")
-        edges = trace_control_mechanism(control_key)
-        return {
-            "run_id": run_id,
-            "control_key": control_key,
-            "authority": "engineering_expectation_only",
-            "setup_authorized": False,
-            "edges": [edge.model_dump(mode="json") for edge in edges],
-        }
+        runtime_identity = vehicle_systems_runtime_identity(run_id)
+        return ControlMechanismTraceResponse(
+            run_id=run_id,
+            control_key=control_key,
+            runtime_identity=runtime_identity,
+            edges=trace_control_mechanism(control_key),
+        )
     except ValueError as exc:
         raise _http_error(exc) from exc
 
@@ -425,6 +427,12 @@ def query_run_intelligence(
         track_region_resolver=track_region_context.locate,
         track_region_catalog=lambda: track_region_context.catalog(run_id),
         vehicle_car_path=overview.session.car_path if overview is not None else None,
+        vehicle_setup_snapshot=overview.setup_snapshot if overview is not None else None,
+        vehicle_runtime_identity_factory=(
+            (lambda: vehicle_systems_runtime_identity(run_id))
+            if overview is not None
+            else None
+        ),
     )
     if request.presentation_mode is not None:
         digest = hashlib.sha256(

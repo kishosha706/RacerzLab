@@ -2288,6 +2288,8 @@ def rank_competing_causes(
                 cause_id=cause.cause_id,
                 label=cause.label,
                 hypothesis=cause.hypothesis,
+                mechanism_key=cause.mechanism_key,
+                related_control_keys=cause.related_control_keys,
                 status=status,
                 ordinal_rank=rank_by_strength[item["strength"]],
                 rank_basis=(
@@ -4670,6 +4672,8 @@ def answer_grounded_query(
     track_region_resolver: Callable[[str, float], Mapping[str, Any] | None] | None = None,
     track_region_catalog: Mapping[str, str] | Callable[[], Mapping[str, str]] | None = None,
     vehicle_car_path: str | None = None,
+    vehicle_setup_snapshot: Any | None = None,
+    vehicle_runtime_identity_factory: Callable[[], Any] | None = None,
 ) -> GroundedQueryResult:
     """Answer supported intent and scope combinations using report evidence only."""
     normalized = _normalize_query(query)
@@ -5158,11 +5162,20 @@ def answer_grounded_query(
         )
 
         assert parsed.component_id is not None
-        component_projection = build_component_awareness(report, car_path=vehicle_car_path)
+        component_projection = build_component_awareness(
+            report,
+            car_path=vehicle_car_path,
+            setup_snapshot=vehicle_setup_snapshot,
+            runtime_identity=(
+                vehicle_runtime_identity_factory()
+                if vehicle_runtime_identity_factory is not None
+                else None
+            ),
+        )
         inspected = inspect_component(parsed.component_id, component_projection)
-        definition = inspected["definition"]
-        component_state = inspected["state"]
-        interactions = inspected["interactions"]
+        definition = inspected.definition
+        component_state = inspected.state
+        interactions = inspected.interactions
         assert component_state is not None
         artifact_ids = set(component_state.supporting_artifact_ids)
         component_citations: list[EvidenceCitation] = []
@@ -5203,6 +5216,11 @@ def answer_grounded_query(
             if component_state.current_response_state == "observed"
             else "Current response: unavailable; no qualified exact-scope observation activates the general definition."
         )
+        settings_text = (
+            f"Captured setting: {'; '.join(component_state.current_settings)}."
+            if component_state.current_settings
+            else "Captured setting: unavailable in this run."
+        )
         history_text = (
             " ".join(
                 f"History: {item.control_key} response {item.control_response}, policy {item.policy_verdict}."
@@ -5219,7 +5237,7 @@ def answer_grounded_query(
             })
         ) or "none declared"
         answer = (
-            f"{definition.label}: {definition.physical_role} {current_evidence} "
+            f"{definition.label}: {definition.physical_role} {settings_text} {current_evidence} "
             f"Interactions: {interaction_labels}. {history_text} "
             f"Current authority: {component_state.current_testability.replace('_', ' ')}. "
             f"Next discriminator: {component_projection.next_discriminator}"

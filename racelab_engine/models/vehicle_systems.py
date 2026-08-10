@@ -73,6 +73,15 @@ class BuildApplicability(VehicleSystemsModel):
     source_version: str = Field(min_length=1)
 
 
+class VehicleSystemsRuntimeIdentity(VehicleSystemsModel):
+    car_path: str = Field(min_length=1)
+    car_version: str = Field(min_length=1)
+    iracing_build_version: str = Field(min_length=1)
+    track_configuration_name: str = Field(min_length=1)
+    compatibility_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source: Literal["verified_telemetry_manifest"] = "verified_telemetry_manifest"
+
+
 class ComponentObservabilityContract(VehicleSystemsModel):
     static_setting_channels: tuple[str, ...] = ()
     live_telemetry_channels: tuple[str, ...] = ()
@@ -173,6 +182,37 @@ class VehicleSystemsEdge(VehicleSystemsModel):
     authority: Literal["engineering_expectation_only", "observation_only", "controlled_history"]
 
 
+_ALLOWED_EDGE_ENDPOINTS = {
+    VehicleSystemsEdgeKind.CONTROL_ADJUSTS_PROPERTY: ({VehicleSystemsNodeKind.CONTROL}, {VehicleSystemsNodeKind.COMPONENT_PROPERTY}),
+    VehicleSystemsEdgeKind.PROPERTY_EXPECTED_TO_INFLUENCE_STATE: ({VehicleSystemsNodeKind.COMPONENT_PROPERTY}, {VehicleSystemsNodeKind.VEHICLE_STATE}),
+    VehicleSystemsEdgeKind.STATE_MAY_PRESENT_AS_SYMPTOM: ({VehicleSystemsNodeKind.VEHICLE_STATE}, {VehicleSystemsNodeKind.SYMPTOM}),
+    VehicleSystemsEdgeKind.STATE_OBSERVABLE_BY: ({VehicleSystemsNodeKind.VEHICLE_STATE}, {VehicleSystemsNodeKind.OBSERVATION}),
+    VehicleSystemsEdgeKind.COMPONENT_COUPLES_WITH_COMPONENT: ({VehicleSystemsNodeKind.COMPONENT}, {VehicleSystemsNodeKind.COMPONENT}),
+    VehicleSystemsEdgeKind.CONTROL_REQUIRES_INVARIANT: ({VehicleSystemsNodeKind.CONTROL}, {VehicleSystemsNodeKind.CONTEXT}),
+    VehicleSystemsEdgeKind.CONTROL_HAS_COUNTEREFFECT: ({VehicleSystemsNodeKind.CONTROL}, {VehicleSystemsNodeKind.OUTCOME}),
+    VehicleSystemsEdgeKind.OBSERVATION_SUPPORTS_STATE: ({VehicleSystemsNodeKind.OBSERVATION}, {VehicleSystemsNodeKind.VEHICLE_STATE}),
+    VehicleSystemsEdgeKind.OBSERVATION_CONTRADICTS_STATE: ({VehicleSystemsNodeKind.OBSERVATION}, {VehicleSystemsNodeKind.VEHICLE_STATE}),
+    VehicleSystemsEdgeKind.CONTROLLED_TEST_OBSERVED_RESPONSE: ({VehicleSystemsNodeKind.CONTROL}, {VehicleSystemsNodeKind.OUTCOME}),
+    VehicleSystemsEdgeKind.POLICY_REJECTED_DUE_TO_COUNTEREFFECT: ({VehicleSystemsNodeKind.OUTCOME}, {VehicleSystemsNodeKind.OUTCOME}),
+}
+
+
+def _validate_typed_edges(
+    nodes: tuple[VehicleSystemsNode, ...],
+    edges: tuple[VehicleSystemsEdge, ...],
+) -> None:
+    node_kinds = {item.node_id: item.kind for item in nodes}
+    for edge in edges:
+        if edge.source_node_id not in node_kinds or edge.target_node_id not in node_kinds:
+            raise ValueError("vehicle-system graph edges cannot be orphaned")
+        source_kinds, target_kinds = _ALLOWED_EDGE_ENDPOINTS[edge.kind]
+        if (
+            node_kinds[edge.source_node_id] not in source_kinds
+            or node_kinds[edge.target_node_id] not in target_kinds
+        ):
+            raise ValueError(f"invalid endpoints for {edge.kind.value}")
+
+
 class VehicleSystemsGraph(VehicleSystemsModel):
     schema_version: Literal["p26.vehicle-systems.v1"] = "p26.vehicle-systems.v1"
     graph_version: str = Field(min_length=1)
@@ -193,26 +233,7 @@ class VehicleSystemsGraph(VehicleSystemsModel):
             raise ValueError("vehicle-system component identities must be unique")
         if len(node_ids) != len(set(node_ids)) or len(edge_ids) != len(set(edge_ids)):
             raise ValueError("vehicle-system graph identities must be unique")
-        node_kinds = {item.node_id: item.kind for item in self.nodes}
-        allowed = {
-            VehicleSystemsEdgeKind.CONTROL_ADJUSTS_PROPERTY: ({VehicleSystemsNodeKind.CONTROL}, {VehicleSystemsNodeKind.COMPONENT_PROPERTY}),
-            VehicleSystemsEdgeKind.PROPERTY_EXPECTED_TO_INFLUENCE_STATE: ({VehicleSystemsNodeKind.COMPONENT_PROPERTY}, {VehicleSystemsNodeKind.VEHICLE_STATE}),
-            VehicleSystemsEdgeKind.STATE_MAY_PRESENT_AS_SYMPTOM: ({VehicleSystemsNodeKind.VEHICLE_STATE}, {VehicleSystemsNodeKind.SYMPTOM}),
-            VehicleSystemsEdgeKind.STATE_OBSERVABLE_BY: ({VehicleSystemsNodeKind.VEHICLE_STATE}, {VehicleSystemsNodeKind.OBSERVATION}),
-            VehicleSystemsEdgeKind.COMPONENT_COUPLES_WITH_COMPONENT: ({VehicleSystemsNodeKind.COMPONENT}, {VehicleSystemsNodeKind.COMPONENT}),
-            VehicleSystemsEdgeKind.CONTROL_REQUIRES_INVARIANT: ({VehicleSystemsNodeKind.CONTROL}, {VehicleSystemsNodeKind.CONTEXT}),
-            VehicleSystemsEdgeKind.CONTROL_HAS_COUNTEREFFECT: ({VehicleSystemsNodeKind.CONTROL}, {VehicleSystemsNodeKind.OUTCOME}),
-            VehicleSystemsEdgeKind.OBSERVATION_SUPPORTS_STATE: ({VehicleSystemsNodeKind.OBSERVATION}, {VehicleSystemsNodeKind.VEHICLE_STATE}),
-            VehicleSystemsEdgeKind.OBSERVATION_CONTRADICTS_STATE: ({VehicleSystemsNodeKind.OBSERVATION}, {VehicleSystemsNodeKind.VEHICLE_STATE}),
-            VehicleSystemsEdgeKind.CONTROLLED_TEST_OBSERVED_RESPONSE: ({VehicleSystemsNodeKind.CONTROL}, {VehicleSystemsNodeKind.OUTCOME}),
-            VehicleSystemsEdgeKind.POLICY_REJECTED_DUE_TO_COUNTEREFFECT: ({VehicleSystemsNodeKind.OUTCOME}, {VehicleSystemsNodeKind.OUTCOME}),
-        }
-        for edge in self.edges:
-            if edge.source_node_id not in node_kinds or edge.target_node_id not in node_kinds:
-                raise ValueError("vehicle-system graph edges cannot be orphaned")
-            source_kinds, target_kinds = allowed[edge.kind]
-            if node_kinds[edge.source_node_id] not in source_kinds or node_kinds[edge.target_node_id] not in target_kinds:
-                raise ValueError(f"invalid endpoints for {edge.kind.value}")
+        _validate_typed_edges(self.nodes, self.edges)
         known_components = set(component_ids)
         if any(
             interaction.source_component_id not in known_components
@@ -252,7 +273,9 @@ class SetupExperimentFactor(VehicleSystemsModel):
 
 class ComponentControlledHistory(VehicleSystemsModel):
     workflow_id: str = Field(min_length=1)
+    source_run_id: str = Field(min_length=1)
     control_key: str = Field(min_length=1)
+    phase: str = Field(min_length=1)
     mechanism_state: str = Field(min_length=1)
     control_response: str = Field(min_length=1)
     policy_verdict: Literal["keep", "undo", "retest", "invalid"]
@@ -274,7 +297,11 @@ class ComponentAwarenessState(VehicleSystemsModel):
     relevance: ComponentRelevance
     supporting_artifact_ids: tuple[str, ...] = ()
     contradicting_artifact_ids: tuple[str, ...] = ()
+    supporting_cause_ids: tuple[str, ...] = ()
+    contradicting_cause_ids: tuple[str, ...] = ()
     confounders: tuple[str, ...] = ()
+    unavailable_quantities: tuple[str, ...] = Field(default=("not declared",), min_length=1)
+    measurement_requirements: tuple[str, ...] = Field(default=("exact evidence required",), min_length=1)
     coupled_component_ids: tuple[str, ...] = ()
     controlled_history: tuple[ComponentControlledHistory, ...] = ()
     current_testability: Literal["measurement_only", "policy_blocked", "p19_authorized"]
@@ -295,34 +322,82 @@ class ComponentAwarenessState(VehicleSystemsModel):
         return self
 
 
+class VehicleSystemsRuntimeGraph(VehicleSystemsModel):
+    schema_version: Literal["p26.runtime-graph.v1"] = "p26.runtime-graph.v1"
+    reasoning_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    nodes: tuple[VehicleSystemsNode, ...] = ()
+    edges: tuple[VehicleSystemsEdge, ...] = ()
+    authority: Literal["observation_and_controlled_history_only"] = (
+        "observation_and_controlled_history_only"
+    )
+    setup_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def runtime_graph_is_closed_and_non_authoritative(self) -> "VehicleSystemsRuntimeGraph":
+        node_ids = [item.node_id for item in self.nodes]
+        edge_ids = [item.edge_id for item in self.edges]
+        if len(node_ids) != len(set(node_ids)) or len(edge_ids) != len(set(edge_ids)):
+            raise ValueError("runtime vehicle-system graph identities must be unique")
+        _validate_typed_edges(self.nodes, self.edges)
+        return self
+
+
 class VehicleSystemsProjection(VehicleSystemsModel):
-    schema_version: Literal["p26.component-awareness.v1"] = "p26.component-awareness.v1"
+    schema_version: Literal["p26.component-awareness.v2"] = "p26.component-awareness.v2"
     run_id: str = Field(min_length=1)
     graph_version: str = Field(min_length=1)
+    reasoning_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    runtime_identity: VehicleSystemsRuntimeIdentity | None = None
+    version_scope_state: Literal["verified", "unavailable"]
     leading_system: str
+    leading_component_ids: tuple[str, ...] = ()
     next_discriminator: str
+    strongest_contradiction: str
+    knowledge_debt: tuple[str, ...] = ()
     component_states: tuple[ComponentAwarenessState, ...] = Field(min_length=1)
     experiment_factors: tuple[SetupExperimentFactor, ...] = Field(min_length=1)
+    runtime_graph: VehicleSystemsRuntimeGraph
     authority: Literal["p19_projection_only"] = "p19_projection_only"
     setup_authorized: bool = False
 
     @model_validator(mode="after")
     def projection_only_mirrors_component_authority(self) -> "VehicleSystemsProjection":
+        if (self.version_scope_state == "verified") != (self.runtime_identity is not None):
+            raise ValueError("verified vehicle-system scope requires exact runtime identity")
         authorized = [state for state in self.component_states if state.setup_authorized]
         if self.setup_authorized != bool(authorized) or len(authorized) > 1:
             raise ValueError("vehicle systems may mirror at most one P19-authorized component")
         return self
 
 
+class ComponentInspectionResponse(VehicleSystemsModel):
+    definition: ComponentDefinition
+    state: ComponentAwarenessState | None = None
+    interactions: tuple[ComponentInteraction, ...] = ()
+    controls: tuple[str, ...] = ()
+    authority: Literal["p19_projection_only"] = "p19_projection_only"
+
+
+class ControlMechanismTraceResponse(VehicleSystemsModel):
+    run_id: str = Field(min_length=1)
+    control_key: str = Field(min_length=1)
+    runtime_identity: VehicleSystemsRuntimeIdentity
+    authority: Literal["engineering_expectation_only"] = "engineering_expectation_only"
+    setup_authorized: Literal[False] = False
+    edges: tuple[VehicleSystemsEdge, ...] = Field(min_length=1)
+
+
 __all__ = [
     "BuildApplicability",
     "ComponentAwarenessState",
+    "ComponentInspectionResponse",
     "ComponentControlledHistory",
     "ComponentDefinition",
     "ComponentInteraction",
     "ComponentObservabilityContract",
     "ComponentObservabilityState",
     "ComponentRelevance",
+    "ControlMechanismTraceResponse",
     "SetupExperimentFactor",
     "VehicleSystemsEdge",
     "VehicleSystemsEdgeKind",
@@ -330,4 +405,6 @@ __all__ = [
     "VehicleSystemsNode",
     "VehicleSystemsNodeKind",
     "VehicleSystemsProjection",
+    "VehicleSystemsRuntimeGraph",
+    "VehicleSystemsRuntimeIdentity",
 ]

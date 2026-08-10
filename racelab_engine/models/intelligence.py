@@ -534,6 +534,8 @@ class RankedCause(IntelligenceModel):
     cause_id: str = Field(min_length=1)
     label: str = Field(min_length=1)
     hypothesis: str = Field(min_length=1)
+    mechanism_key: str = Field(default="unresolved", min_length=1)
+    related_control_keys: tuple[str, ...] = ()
     status: Literal["likely", "possible", "ruled_out", "unresolved"]
     ordinal_rank: int = Field(ge=1)
     rank_basis: str = Field(min_length=1)
@@ -551,6 +553,11 @@ class RankedCause(IntelligenceModel):
 
     @model_validator(mode="after")
     def evidence_identities_are_unambiguous(self) -> RankedCause:
+        if (
+            any(not key for key in self.related_control_keys)
+            or len(self.related_control_keys) != len(set(self.related_control_keys))
+        ):
+            raise ValueError("ranked-cause related control identities must be unique")
         supporting_ids = [
             citation.event_id or citation.citation_id for citation in self.supporting_evidence
         ]

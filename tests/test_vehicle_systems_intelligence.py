@@ -6,28 +6,42 @@ import pytest
 from pydantic import ValidationError
 
 from racelab_engine.analysis.setup_controls import SETUP_CONTROL_SPECS
+from racelab_engine.io.telemetry_manifest import compatibility_fingerprint
 from racelab_engine.models.vehicle_systems import (
     ComponentAwarenessState,
     ComponentObservabilityState,
     ComponentRelevance,
     VehicleSystemsEdgeKind,
+    VehicleSystemsRuntimeIdentity,
 )
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.observation_intelligence import MechanismKind
 from racelab_engine.services.vehicle_systems_service import (
     build_component_awareness,
     compile_vehicle_systems_graph,
+    inspect_component,
     trace_control_mechanism,
+    vehicle_systems_runtime_identity,
 )
 
 
-def _cause(*, outcome: object | None = None) -> SimpleNamespace:
+def _cause(
+    *,
+    outcome: object | None = None,
+    hypothesis: str = "Cross weight may influence center rotation.",
+    mechanism_key: str = "cross_weight",
+    related_control_keys: tuple[str, ...] = ("cross_weight_percent",),
+    status: str = "possible",
+) -> SimpleNamespace:
     return SimpleNamespace(
-        hypothesis="Cross weight may influence center rotation.",
+        cause_id="cause:crossweight",
+        hypothesis=hypothesis,
+        mechanism_key=mechanism_key,
+        related_control_keys=related_control_keys,
         controlled_outcomes=(outcome,) if outcome is not None else (),
         supporting_evidence=(),
         contradicting_evidence=(),
-        status="possible",
+        status=status,
     )
 
 
@@ -62,6 +76,11 @@ def test_graph_compiles_every_supported_control_into_typed_next_gen_components()
     assert all(edge.kind.value != "causes" for edge in graph.edges)
     assert any(item.interaction_type == "garage_autocompensated" for item in graph.interactions)
     assert not any("legacy" in item.applicability.car_family for item in graph.components)
+    assert compile_vehicle_systems_graph() is graph
+    assert any(
+        edge.interaction_type == "garage_autocompensated"
+        for edge in graph.edges
+    )
 
 
 def test_control_trace_stays_in_source_declared_expectation_edges() -> None:
@@ -113,6 +132,12 @@ def test_whole_car_observation_makes_coupled_components_candidates_not_proven_ca
     assert {item.relevance for item in coupled} == {ComponentRelevance.CANDIDATE}
     assert all(ComponentObservabilityState.MECHANISM_SUPPORTED not in item.observability_states for item in coupled)
     assert projection.leading_system == "Platform / suspension component family"
+    assert projection.runtime_graph.nodes
+    assert all(node.component_id is None for node in projection.runtime_graph.nodes)
+    assert {
+        edge.kind for edge in projection.runtime_graph.edges
+    } == {VehicleSystemsEdgeKind.OBSERVATION_SUPPORTS_STATE}
+    assert projection.runtime_graph.reasoning_snapshot_sha256 == projection.reasoning_snapshot_sha256
 
 
 def test_exact_context_undo_blocks_generic_component_prior() -> None:
@@ -132,11 +157,18 @@ def test_exact_context_undo_blocks_generic_component_prior() -> None:
     assert state.controlled_history[0].policy_verdict == "undo"
     assert state.setup_authorized is False
     assert "generic component knowledge cannot reopen it" in state.blocker_reasons[0]
+    assert any(
+        edge.kind is VehicleSystemsEdgeKind.POLICY_REJECTED_DUE_TO_COUNTEREFFECT
+        for edge in projection.runtime_graph.edges
+    )
 
 
 def test_generic_language_cannot_activate_component_relevance_by_word_overlap() -> None:
     unrelated = SimpleNamespace(
+        cause_id="cause:unrelated",
         hypothesis="Traffic and weather context remain unresolved.",
+        mechanism_key="unresolved",
+        related_control_keys=(),
         controlled_outcomes=(),
         supporting_evidence=(),
         contradicting_evidence=(),
@@ -147,12 +179,98 @@ def test_generic_language_cannot_activate_component_relevance_by_word_overlap() 
     assert all(item.relevance is ComponentRelevance.IRRELEVANT for item in projection.component_states)
 
 
+def test_typed_component_identity_is_stable_when_redacted_prose_changes() -> None:
+    first = build_component_awareness(_report(causes=(_cause(
+        hypothesis="Redacted public explanation A.", status="likely",
+    ),)))
+    second = build_component_awareness(_report(causes=(_cause(
+        hypothesis="Completely unrelated wording B.", status="likely",
+    ),)))
+
+    first_state = next(item for item in first.component_states if item.component_id == "weight_distribution")
+    second_state = next(item for item in second.component_states if item.component_id == "weight_distribution")
+    assert first_state.relevance is ComponentRelevance.SUPPORTED
+    assert second_state.relevance is ComponentRelevance.SUPPORTED
+
+
+def test_broad_mechanism_cannot_manufacture_one_supported_component() -> None:
+    projection = build_component_awareness(_report(causes=(_cause(
+        mechanism_key="platform",
+        related_control_keys=(),
+        status="likely",
+    ),)))
+    family = [
+        item for item in projection.component_states
+        if item.component_id in {"platform", "springs", "dampers", "anti_roll_bars"}
+    ]
+    assert {item.relevance for item in family} == {ComponentRelevance.CANDIDATE}
+
+
 def test_next_gen_runtime_projection_rejects_an_unscoped_legacy_car() -> None:
     with pytest.raises(ValueError, match="unavailable for car path"):
         build_component_awareness(
             _report(),
             car_path="stockcars camaro zl1 2018 legacy",
         )
+
+
+def test_runtime_identity_fails_closed_on_car_build_and_track_scope() -> None:
+    base_identity = {
+        "car_path": "stockcars chevycamarozl12022",
+        "car_version": "2026.06.08.02",
+        "iracing_build_version": "2026.06.24.02",
+        "track_configuration_name": "Oval",
+        "missing_required_fields": [],
+    }
+    manifest = {
+        "compatibility_identity": base_identity,
+        "schema_fingerprint": "a" * 64,
+    }
+    manifest["compatibility_fingerprint"] = compatibility_fingerprint(
+        manifest["schema_fingerprint"], base_identity
+    )
+    identity = vehicle_systems_runtime_identity("run-p26", manifest=manifest)
+    assert isinstance(identity, VehicleSystemsRuntimeIdentity)
+    assert identity.source == "verified_telemetry_manifest"
+
+    for replacement, message in (
+        ({"car_path": "stockcars camaro zl1 2018 legacy"}, "car path"),
+        ({"iracing_build_version": "2025.12.01.01"}, "does not cover"),
+        ({"track_configuration_name": "Road Course"}, "oval track"),
+    ):
+        bad_identity = {**base_identity, **replacement}
+        bad = {
+            **manifest,
+            "compatibility_identity": bad_identity,
+            "compatibility_fingerprint": compatibility_fingerprint(
+                manifest["schema_fingerprint"], bad_identity
+            ),
+        }
+        with pytest.raises(ValueError, match=message):
+            vehicle_systems_runtime_identity("run-p26", manifest=bad)
+
+
+def test_component_inspection_is_a_typed_non_authoritative_contract() -> None:
+    projection = build_component_awareness(_report())
+    inspection = inspect_component("springs", projection)
+
+    assert inspection.definition.component_id == "springs"
+    assert inspection.state is not None
+    assert inspection.authority == "p19_projection_only"
+
+
+def test_vehicle_systems_routes_publish_typed_openapi_contracts() -> None:
+    from api.main import app
+
+    paths = app.openapi()["paths"]
+    expected = {
+        "/api/runs/{run_id}/vehicle-systems": "VehicleSystemsProjection",
+        "/api/runs/{run_id}/vehicle-systems/components/{component_id}": "ComponentInspectionResponse",
+        "/api/runs/{run_id}/vehicle-systems/controls/{control_key}/trace": "ControlMechanismTraceResponse",
+    }
+    for path, schema_name in expected.items():
+        schema = paths[path]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        assert schema == {"$ref": f"#/components/schemas/{schema_name}"}
 
 
 def test_component_state_rejects_manufactured_authority_and_mixed_unavailable() -> None:
