@@ -47,6 +47,7 @@ _NEXT_GEN = BuildApplicability(
         "stockcars toyotacamry2022",
     ),
     iracing_build_min="2026.1",
+    iracing_build_max="2026.06.24.02",
     track_package_types=("oval",),
     source_version="reviewed-local-next-gen-manual-digest-v1",
 )
@@ -221,8 +222,14 @@ def vehicle_systems_runtime_identity(
     track_configuration = str(identity.get("track_configuration_name") or "")
     if car_path.casefold() not in _NEXT_GEN.car_paths:
         raise ValueError(f"Vehicle Systems graph {_GRAPH_VERSION} is unavailable for car path {car_path}.")
+    if _NEXT_GEN.iracing_build_min is None or _NEXT_GEN.iracing_build_max is None:
+        raise ValueError("Vehicle Systems graph requires a closed iRacing build range.")
     if _version_tuple(build) < _version_tuple(_NEXT_GEN.iracing_build_min):
         raise ValueError(f"Vehicle Systems graph {_GRAPH_VERSION} does not cover iRacing build {build}.")
+    if _version_tuple(build) > _version_tuple(_NEXT_GEN.iracing_build_max):
+        raise ValueError(
+            f"Vehicle Systems graph {_GRAPH_VERSION} requires review for future iRacing build {build}."
+        )
     if not any(value in track_configuration.casefold() for value in _NEXT_GEN.track_package_types):
         raise ValueError(f"Vehicle Systems requires an oval track configuration, got {track_configuration}.")
     schema_fingerprint = str(payload.get("schema_fingerprint") or "")

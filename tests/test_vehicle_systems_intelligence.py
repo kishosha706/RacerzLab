@@ -236,6 +236,7 @@ def test_runtime_identity_fails_closed_on_car_build_and_track_scope() -> None:
     for replacement, message in (
         ({"car_path": "stockcars camaro zl1 2018 legacy"}, "car path"),
         ({"iracing_build_version": "2025.12.01.01"}, "does not cover"),
+        ({"iracing_build_version": "2026.07.01.01"}, "requires review"),
         ({"track_configuration_name": "Road Course"}, "oval track"),
     ):
         bad_identity = {**base_identity, **replacement}
