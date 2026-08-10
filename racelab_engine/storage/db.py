@@ -216,6 +216,23 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    # P21 content-addressed dataset registry. This is additive for existing
+    # developer databases and never mutates registered dataset payloads.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS evidence_datasets (
+          dataset_id TEXT PRIMARY KEY,
+          dataset_hash TEXT NOT NULL UNIQUE,
+          dataset_kind TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          dataset_json TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_evidence_dataset_kind "
+        "ON evidence_datasets(dataset_kind, created_at, dataset_id)"
+    )
 
 
 def initialize_database(db_path: str | Path | None = None) -> sqlite3.Connection:

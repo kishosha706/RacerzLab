@@ -418,3 +418,16 @@ CREATE TABLE IF NOT EXISTS driver_presentation_observations (
 
 CREATE INDEX IF NOT EXISTS idx_driver_presentation_profile
   ON driver_presentation_observations(profile_id, created_at, observation_id);
+
+-- P21 evidence datasets are content-addressed and immutable.  Evaluation
+-- artifacts refer to the stored hash rather than mutable import filenames.
+CREATE TABLE IF NOT EXISTS evidence_datasets (
+  dataset_id TEXT PRIMARY KEY,
+  dataset_hash TEXT NOT NULL UNIQUE,
+  dataset_kind TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  dataset_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_evidence_dataset_kind
+  ON evidence_datasets(dataset_kind, created_at, dataset_id);
