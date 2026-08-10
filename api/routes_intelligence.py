@@ -14,6 +14,7 @@ from api.intelligence_adapter import (
     to_public_mind_change_criterion,
 )
 from api.intelligence_schemas import (
+    IntelligenceCitationResponse,
     IntelligenceQueryRequest,
     IntelligenceQueryResponse,
     MeasurementAttemptRequest,
@@ -23,17 +24,86 @@ from api.intelligence_schemas import (
 from racelab_engine.analysis.lap_eligibility import lap_is_eligible
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.experiment import MeasurementAttempt
-from racelab_engine.models.intelligence import GroundedQueryResult, InternalIntelligenceReport
+from racelab_engine.models.intelligence import (
+    EvidenceCitation,
+    GroundedQueryResult,
+    InternalIntelligenceReport,
+)
 from racelab_engine.services.engineering_memory_service import (
     record_driver_presentation_preference_for_run,
 )
+from racelab_engine.services.experiment_service import (
+    record_durable_measurement_attempt,
+)
 from racelab_engine.services.intelligence_service import answer_grounded_query
-from racelab_engine.services.experiment_service import record_durable_measurement_attempt
 from racelab_engine.services.run_intelligence_service import build_run_intelligence
+from racelab_engine.services.track_map_service import (
+    build_track_regions,
+    find_best_map_for_run,
+    get_track_map,
+    locate_track_region,
+)
 from racelab_engine.storage.repository import RaceLabRepository
 
-
 router = APIRouter(prefix="/api/runs", tags=["internal-intelligence"])
+
+
+def _citation_track_locations(
+    citations: tuple[EvidenceCitation, ...],
+) -> dict[str, dict[str, object]]:
+    """Resolve citation positions through the same canonical map regions the UI receives."""
+    repository = RaceLabRepository()
+    regions_by_run: dict[str, list[dict[str, object]]] = {}
+    result: dict[str, dict[str, object]] = {}
+    for citation in citations:
+        lap_pct = (
+            citation.lap_pct_peak
+            if citation.lap_pct_peak is not None
+            else citation.lap_pct_start
+        )
+        if lap_pct is None:
+            continue
+        if citation.run_id not in regions_by_run:
+            regions: list[dict[str, object]] = []
+            try:
+                overview = repository.get_overview(citation.run_id)
+                session = getattr(overview, "session", None) if overview is not None else None
+                track_name = (
+                    getattr(session, "track_name", None)
+                    or getattr(session, "track_display_name", None)
+                    or ""
+                )
+                match = find_best_map_for_run(citation.run_id, track_name)
+                track_map = get_track_map(match["map_id"]) if match and match.get("map_id") else None
+                if track_map is not None:
+                    regions = build_track_regions(track_map, match)
+            except (OSError, TypeError, ValueError, KeyError):
+                regions = []
+            regions_by_run[citation.run_id] = regions
+        location = locate_track_region(regions_by_run[citation.run_id], lap_pct)
+        if location is not None:
+            result[citation.citation_id] = location
+    return result
+
+
+def _region_aware_query_answer(
+    result: GroundedQueryResult,
+    citations: list[IntelligenceCitationResponse],
+) -> str:
+    answer = result.answer
+    if (
+        result.intent == "where_is_loss"
+        and answer.startswith("The earliest qualified track location is near")
+        and citations
+        and citations[0].track_region_label is not None
+        and citations[0].lap_pct is not None
+    ):
+        return (
+            f"The earliest qualified track location is {citations[0].track_region_label} "
+            f"near {citations[0].lap_pct:g}% of lap {citations[0].lap_number}; "
+            "open the cited event for the recorded trace."
+        )
+    return answer
 
 
 def _http_error(exc: ValueError) -> HTTPException:
@@ -277,12 +347,27 @@ def query_run_intelligence(
             pass
     scope_run_ids = tuple(bundle.calibration.scope_run_ids)
     scope_run_id_set = set(scope_run_ids)
-    citations = [to_public_intelligence_citation(item) for item in result.citations]
-    if any(citation.run_id not in scope_run_id_set for citation in citations):
+    if any(item.run_id not in scope_run_id_set for item in result.citations):
         raise HTTPException(
             status_code=409,
             detail="Query evidence escaped the exact run/session scope and was withheld.",
         )
+    track_locations = _citation_track_locations(result.citations)
+    citations = []
+    for item in result.citations:
+        citation = to_public_intelligence_citation(item)
+        location = track_locations.get(item.citation_id)
+        if location is not None:
+            citation = IntelligenceCitationResponse.model_validate(
+                {
+                    **citation.model_dump(),
+                    "track_region_id": location["region_id"],
+                    "track_region_label": location["display_label"],
+                    "track_region_phase": location["phase"],
+                    "track_region_confidence": location["confidence"],
+                }
+            )
+        citations.append(citation)
     scoped_navigation = tuple(
         item for item in result.suggested_navigation if item.run_id in scope_run_id_set
     )
@@ -312,6 +397,7 @@ def query_run_intelligence(
             status_code=409,
             detail="Query mind-change criteria did not match the current report scope.",
         )
+    answer = _region_aware_query_answer(result, citations)
     return IntelligenceQueryResponse(
         run_id=run_id,
         session_id=bundle.report.session_id,
@@ -325,10 +411,10 @@ def query_run_intelligence(
             "evidence-qualified briefing. Reopen the controlled test from the current report."
             if action_binding_withheld
             else (
-                result.answer
+                answer
                 + " A historical handoff outside the open run/session scope was withheld."
                 if navigation_withheld
-                else result.answer
+                else answer
             )
         ),
         interpreted_lap_number=result.interpreted_lap_number,

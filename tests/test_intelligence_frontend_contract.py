@@ -43,6 +43,8 @@ def test_intelligence_api_is_run_and_session_scoped_with_presentation_only_mode(
     assert "Presentation preference only" in types
     assert 'presentation_mode: learning ? "learning" : "race"' in engineer
     assert "affects_evidence_eligibility: false" in types
+    assert "track_region_label" in types
+    assert "citation.track_region_label" in engineer
 
 
 def test_intelligence_discards_stale_report_and_question_responses() -> None:

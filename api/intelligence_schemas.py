@@ -4,8 +4,18 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.analysis.setup_controls import SETUP_CONTROL_SPECS
+from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.observation_intelligence import (
+    DriverRepeatabilitySignature,
+    MechanismObservationReport,
+    OpportunitySignatureReport,
+    SameSetupAnomalyReport,
+)
+from racelab_engine.models.session_intelligence import (
+    HypothesisLifecycle,
+    SessionEngineeringLedger,
+)
 from racelab_engine.models.smart_guidance import (
     AttentionItem,
     ControlledTestPreflight,
@@ -13,17 +23,6 @@ from racelab_engine.models.smart_guidance import (
     NextTrustworthyMove,
 )
 from racelab_engine.models.telemetry_health import TelemetryHealthBaselineReport
-from racelab_engine.models.session_intelligence import (
-    HypothesisLifecycle,
-    SessionEngineeringLedger,
-)
-from racelab_engine.models.observation_intelligence import (
-    DriverRepeatabilitySignature,
-    MechanismObservationReport,
-    OpportunitySignatureReport,
-    SameSetupAnomalyReport,
-)
-
 
 WITHHELD_STAGE_B_PREFLIGHT_TITLE = "Controlled workflow needs review"
 WITHHELD_STAGE_B_PREFLIGHT_BLOCKER = (
@@ -71,6 +70,10 @@ class IntelligenceCitationResponse(IntelligenceApiModel):
     source_channels: list[str] = Field(default_factory=list)
     evidence_state: EvidenceState
     valid_for_tuning: bool = False
+    track_region_id: str | None = None
+    track_region_label: str | None = None
+    track_region_phase: Literal["entry", "center", "exit", "straight"] | None = None
+    track_region_confidence: Literal["section_geometry", "centerline_geometry"] | None = None
 
 
 class IntelligenceActionResponse(IntelligenceApiModel):

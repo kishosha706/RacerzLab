@@ -1131,6 +1131,10 @@ new setup authority.
   labels at the corner centers, except Pocono's truthful T1-T3 layout; road and
   roval maps never inherit oval labels, and tri-oval frontstretch bends cannot
   become fictitious Turn 5-7 markers.
+- [x] Give maps and Smart Engineer one vendor-neutral physical-region contract.
+  Every oval turn has a bounded start/end area plus entry, center, and exit;
+  grounded citations carry the same region identity and cannot invent a turn
+  when no qualified physical-position evidence exists.
 
 ### P17 verification evidence
 
@@ -1152,6 +1156,13 @@ new setup authority.
   diff integrity, and a live Atlanta overlay inspection. Turn labels scale with
   the map, sit outward from the racing surface, and use leader lines so they stay
   legible without covering the track.
+- The hardened audit verified 171 bounded turn regions: every turn anchor resolves
+  to the center of its own region, with 155 section-geometry regions and 16
+  centerline-geometry fallbacks. All 82 local canonical caches were migrated to
+  the neutral `track_map_v2` tag, and both cached JSON and public packages contain
+  no vendor naming. Smart Engineer citation-region and UI presentation contracts,
+  all 2,233 tests (2,228 passed, five protected skips), targeted Ruff, TypeScript,
+  the 2,190-module production build, and diff integrity passed.
 
 ---
 
@@ -1808,3 +1819,4 @@ Implementation queue completed in this pass:
 | 2026-08-10 | Polished and re-verified P24 evidence acquisition operations; P23 collection remains at zero | Protocol-bound immutable certificates, lap flight recorders, steering truth audits, bounded history/preview contracts, direct certificate retrieval, typed negative-control discovery, accessible Learning-only campaign gates, source duplicate protection, fact-only checklists, and five collection templates passed 91 focused P21-P24 regressions and the complete 2,225-test collection with six protected skips, changed-file Ruff, TypeScript, the 2,189-module production build, diff integrity, and live Race/Learning smoke; a whole-repo Ruff audit truthfully retains 1,026 inherited findings outside P24, the archive remains inventory, profile truth is incomplete, prospective collection is locked, and P23 remains shadow-only |
 | 2026-08-10 | Verified P25 acquisition pilot; no qualified session earned | A source-owned 63,657-record Next Gen Atlanta re-import proved source/cache/schema ownership, all ten steering signals, contiguous 360 Hz sub-tick reconstruction, exact FFB/73 mm-rev identity, a 33-lap immutable recorder, duplicate-source resistance, and a pre-outcome null run card; all 29 otherwise useful laps were traffic-contaminated, so certificate `p24c-36d0f278b166d6f8bb36` admitted nothing and P23 counts remained zero. Ninety-four focused P21-P25 regressions and all 2,228 collected Python tests passed (2,223 passed, five protected skips), plus changed-file Ruff, TypeScript, the 2,189-module production build, diff integrity, and live Race/Learning smoke; Learning Readiness was reduced from about 6.2 seconds to about 121 ms by reusing the frozen operation context, and P23 remains locked and shadow-only |
 | 2026-08-10 | Corrected and polished conventional turn placement across every oval map | Canonical section and centerline geometry now produces T1-T4 anchors for all standard ovals and truthful T1-T3 for Pocono, while road/roval maps remain untouched and tri-oval frontstretch bends cannot become fake Turn 5-7 labels. Scale-aware outward labels and leader lines remain readable without covering the racing surface. The real 82-map audit verified 43 oval layouts with zero violations; Pocono and Talladega regressions, all 2,232 collected tests (2,227 passed, five protected skips), changed-file Ruff, TypeScript, the 2,190-module production build, diff integrity, and live Atlanta T1-T4 overlay inspection passed |
+| 2026-08-10 | Unified oval map regions with Smart Engineer location awareness | All 171 oval turns now expose bounded entry/center/exit regions backed by section geometry or centerline fallbacks; every anchor resolves to its own region center, public packages and 82 migrated local caches are vendor-neutral, and grounded AI citations carry the same canonical location without gaining setup authority. The 82-map/43-oval audit had zero violations; all 2,233 tests passed (2,228 passed, five protected skips), plus targeted Ruff, TypeScript, the 2,190-module production build, diff integrity, and a real Atlanta package check |

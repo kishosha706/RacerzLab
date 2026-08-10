@@ -7,8 +7,6 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from api.main import app
-from api.routes_intelligence import _query_action_matches_current_report
 from api.intelligence_adapter import (
     _cause,
     _context_match,
@@ -25,6 +23,12 @@ from api.intelligence_schemas import (
     IntelligenceQueryResponse,
     RunIntelligenceResponse,
 )
+from api.main import app
+from api.routes_intelligence import (
+    _citation_track_locations,
+    _query_action_matches_current_report,
+    _region_aware_query_answer,
+)
 from racelab_engine.analysis.crew_chief_packet import (
     KaizenEvidencePacket,
     OpportunityEvidence,
@@ -33,40 +37,44 @@ from racelab_engine.analysis.test_director import (
     ControlledTestCard,
     MeasurementMission,
     TestEvidenceLink,
-    TestStage as ControlledTestStage,
     build_controlled_test,
 )
-from racelab_engine.models.event import TelemetryEvent
-from racelab_engine.models.evidence import EvidenceState
-from racelab_engine.models.lap import LapSummary
+from racelab_engine.analysis.test_director import (
+    TestStage as ControlledTestStage,
+)
+from racelab_engine.models.controlled_workflow import ControlledWorkflow
 from racelab_engine.models.engineering_memory import (
     DriverPresentationProfile,
     EngineeringEvidenceReference,
     EngineeringNarrativeEntry,
     RecurringSymptom,
 )
+from racelab_engine.models.event import TelemetryEvent
+from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.intelligence import (
     ControlledCauseOutcome,
+    EvidenceCitation,
+    GroundedQueryResult,
     MindChangeCriterion,
     NavigationTarget,
     PublicCompetingCause,
     ResponseMemorySummary,
 )
-from racelab_engine.models.controlled_workflow import ControlledWorkflow
+from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
-from racelab_engine.services.intelligence_service import (
-    answer_grounded_query,
-    build_evidence_graph,
-    plan_best_next_measurement,
-    rank_competing_causes,
-)
 from racelab_engine.services.controlled_workflow_service import (
     _workflow_decision_context,
     _workflow_plan_binding_hash,
     revalidate_controlled_test_packet,
     validate_controlled_test_target,
+)
+from racelab_engine.services.intelligence_service import (
+    answer_grounded_query,
+    build_evidence_graph,
+    plan_best_next_measurement,
+    rank_competing_causes,
 )
 from racelab_engine.services.run_intelligence_service import (
     _card_semantic_blockers,
@@ -83,11 +91,85 @@ from racelab_engine.services.session_service import (
     add_run_to_session,
     create_session,
 )
-from racelab_engine.storage.repository import RaceLabRepository
 from racelab_engine.storage.db import initialize_database
-
+from racelab_engine.storage.repository import RaceLabRepository
 
 client = TestClient(app)
+
+
+def test_grounded_query_citations_resolve_canonical_track_regions(monkeypatch) -> None:
+    citation = EvidenceCitation(
+        citation_id="event-location",
+        run_id="smart-run",
+        lap_number=4,
+        lap_pct_peak=17.5,
+        event_id="event-location",
+        workspace="platform",
+        phase="center",
+        channels=("speed_mph",),
+        evidence_state=EvidenceState.MEASURED,
+        valid_for_tuning=True,
+        summary="Qualified loss event.",
+    )
+    regions = [
+        {
+            "region_id": "turn_1",
+            "kind": "turn",
+            "number": 1,
+            "label": "Turn 1",
+            "short_label": "T1",
+            "start_lap_pct": 10.0,
+            "end_lap_pct": 25.0,
+            "anchor_lap_pct": 17.5,
+            "placement_source": "split two-end oval sections",
+            "confidence": "section_geometry",
+        }
+    ]
+    monkeypatch.setattr(
+        "api.routes_intelligence.RaceLabRepository",
+        lambda: SimpleNamespace(
+            get_overview=lambda run_id: SimpleNamespace(
+                session=SimpleNamespace(track_name="Test Oval", track_display_name="Test Oval")
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "api.routes_intelligence.find_best_map_for_run",
+        lambda run_id, track_name: {"map_id": "test-oval"},
+    )
+    monkeypatch.setattr("api.routes_intelligence.get_track_map", lambda map_id: object())
+    monkeypatch.setattr(
+        "api.routes_intelligence.build_track_regions",
+        lambda track_map, match: regions,
+    )
+
+    locations = _citation_track_locations((citation,))
+
+    assert locations["event-location"]["display_label"] == "Turn 1 center"
+    public_citation = IntelligenceCitationResponse(
+        citation_id=citation.citation_id,
+        label=citation.summary,
+        run_id=citation.run_id,
+        lap_number=citation.lap_number,
+        lap_pct=citation.lap_pct_peak,
+        event_id=citation.event_id,
+        workspace="platform_trace",
+        source_channels=list(citation.channels),
+        evidence_state=citation.evidence_state,
+        valid_for_tuning=True,
+        track_region_id="turn_1",
+        track_region_label="Turn 1 center",
+        track_region_phase="center",
+        track_region_confidence="section_geometry",
+    )
+    query = GroundedQueryResult(
+        supported=True,
+        intent="where_is_loss",
+        answer="The earliest qualified track location is near 17.5% of lap 4; open the cited event for the recorded trace.",
+        citations=(citation,),
+        suggested_navigation=(),
+    )
+    assert "Turn 1 center" in _region_aware_query_answer(query, [public_citation])
 
 
 def _seed_untrusted_run(db_path: Path, run_id: str = "smart-run") -> None:

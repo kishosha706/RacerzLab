@@ -155,6 +155,7 @@ const ENGINEER_MISSION_HEADLINES: Record<NonNullable<RunIntelligenceReport["miss
 
 function citationMeta(citation: IntelligenceCitation): string {
   const parts: string[] = [];
+  if (citation.track_region_label) parts.push(citation.track_region_label);
   if (citation.lap_number != null) parts.push(`Lap ${citation.lap_number}`);
   if (citation.lap_pct != null && Number.isFinite(citation.lap_pct)) {
     parts.push(`${citation.lap_pct.toFixed(1)}%`);

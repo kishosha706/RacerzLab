@@ -21,6 +21,10 @@ export type IntelligenceCitation = {
   source_channels: string[];
   evidence_state: EvidenceState;
   valid_for_tuning: boolean;
+  track_region_id?: string | null;
+  track_region_label?: string | null;
+  track_region_phase?: "entry" | "center" | "exit" | "straight" | null;
+  track_region_confidence?: "section_geometry" | "centerline_geometry" | null;
 };
 
 /** A server-suggested evidence handoff. It is navigation-only by construction. */

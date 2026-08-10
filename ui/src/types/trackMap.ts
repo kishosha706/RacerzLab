@@ -45,6 +45,19 @@ export interface TrackMapTurn {
   placement_source: string;
 }
 
+export interface TrackMapRegion {
+  region_id: string;
+  kind: "turn" | "straight" | "corner" | "unknown";
+  number: number | null;
+  label: string;
+  short_label: string;
+  start_lap_pct: number;
+  end_lap_pct: number;
+  anchor_lap_pct: number;
+  placement_source: string;
+  confidence: "section_geometry" | "centerline_geometry";
+}
+
 export interface TrackMapSection {
   section_id: string;
   name: string;
@@ -174,6 +187,7 @@ export interface TrackMapPackage {
   sections: TrackMapSection[];
   markers: TrackMapMarker[];
   turns: TrackMapTurn[];
+  regions: TrackMapRegion[];
   target_zone: TrackMapTargetZone | null;
   warnings: string[];
 }

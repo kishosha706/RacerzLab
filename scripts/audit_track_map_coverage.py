@@ -14,16 +14,18 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from racelab_engine.analysis.track_matching import (  # type: ignore
+from racelab_engine.analysis.track_matching import (  # noqa: E402  # type: ignore
     infer_layout_key,
     match_track_map_for_run,
     rank_track_map_matches,
     suggest_track_map_display_name,
 )
-from racelab_engine.services.track_map_service import (  # type: ignore
+from racelab_engine.services.track_map_service import (  # noqa: E402  # type: ignore
     build_oval_turn_markers,
+    build_track_regions,
     get_track_map,
     is_oval_track_map,
+    locate_track_region,
 )
 
 LOW_POINT_COUNT_THRESHOLD = 100
@@ -181,6 +183,32 @@ def _validate_track_map_object(entry: dict[str, Any], track_map: Any) -> list[st
             for field in ("lap_pct", "x", "y")
         ):
             issues.append("oval turn placement is not finite")
+        else:
+            regions = build_track_regions(track_map, entry)
+            turn_regions = [region for region in regions if region.get("kind") == "turn"]
+            if len(turn_regions) != len(turns):
+                issues.append("oval turn-region count does not match turn anchors")
+            elif any(
+                not 1.0
+                <= (span := (float(region["end_lap_pct"]) - float(region["start_lap_pct"]) + 100.0) % 100.0)
+                <= 35.0
+                or not 0.4
+                <= (
+                    (float(region["anchor_lap_pct"]) - float(region["start_lap_pct"]) + 100.0)
+                    % 100.0
+                )
+                / span
+                <= 0.6
+                for region in turn_regions
+            ):
+                issues.append("oval turn region is not a bounded area centered on its anchor")
+            elif any(
+                (location := locate_track_region(regions, float(turn["lap_pct"]))) is None
+                or location.get("region_id") != turn.get("turn_id")
+                or location.get("phase") != "center"
+                for turn in turns
+            ):
+                issues.append("oval turn anchor does not resolve to its canonical center region")
 
     for snippet in EXPECTED_WARNING_SNIPPETS:
         if not any(snippet in warning for warning in warnings):

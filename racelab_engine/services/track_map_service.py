@@ -6,6 +6,7 @@ import math
 import os
 from copy import deepcopy
 from functools import lru_cache
+from itertools import pairwise
 from pathlib import Path
 from threading import RLock
 from typing import Any
@@ -193,6 +194,7 @@ def _canonical_cache_dict(track_map: TrackMap) -> dict[str, Any]:
     data = track_map.as_dict()
     layout_key = infer_layout_key(Path(track_map.source_file or "").name if track_map.source_file else None)
     if metadata := data.get("metadata"):
+        metadata["format"] = "track_map_v2"
         metadata["display_name"] = suggest_track_map_display_name(
             metadata.get("display_name") or metadata.get("track_name"),
             source_filename=Path(track_map.source_file or "").name if track_map.source_file else None,
@@ -306,6 +308,7 @@ def _sanitize_canonical_cache(entry: dict[str, Any]) -> bool:
     if "sha256" in data and "source_hash" not in data:
         data["source_hash"] = data["sha256"]
     if metadata := data.get("metadata"):
+        metadata["format"] = "track_map_v2"
         metadata["display_name"] = suggest_track_map_display_name(
             metadata.get("display_name") or metadata.get("track_name"),
             source_filename=entry.get("source_filename"),
@@ -469,7 +472,7 @@ def _dict_to_track_map(d: dict[str, Any]) -> TrackMap:
     )
     meta = d["metadata"]
     metadata = TrackMapMetadata(
-        format=meta["format"],
+        format="track_map_v2",
         version=meta.get("version"),
         track_name=meta["track_name"],
         display_name=meta.get("display_name"),
@@ -590,10 +593,27 @@ def _heading_quarter_turn_pcts(track_map: TrackMap) -> list[float]:
         prior_heading = heading
     if len(cumulative) < 4 or abs(rotation) < 1.5 * math.pi:
         return []
-    return [
-        min(cumulative, key=lambda item: abs(item[1] - rotation * fraction))[0]
-        for fraction in (0.125, 0.375, 0.625, 0.875)
-    ]
+    direction = 1.0 if rotation >= 0.0 else -1.0
+    monotonic: list[tuple[float, float]] = []
+    furthest_progress = 0.0
+    for lap_pct, raw_rotation in cumulative:
+        progress = raw_rotation * direction
+        furthest_progress = max(furthest_progress, progress)
+        monotonic.append((lap_pct, furthest_progress))
+    if furthest_progress < 1.5 * math.pi:
+        return []
+
+    anchors: list[float] = []
+    for fraction in (0.125, 0.375, 0.625, 0.875):
+        target = furthest_progress * fraction
+        for (left_pct, left_rotation), (right_pct, right_rotation) in pairwise(monotonic):
+            if left_rotation <= target <= right_rotation and right_rotation > left_rotation:
+                local_fraction = (target - left_rotation) / (right_rotation - left_rotation)
+                anchors.append(_lap_pct_at_fraction(left_pct, right_pct, local_fraction))
+                break
+        else:
+            anchors.append(min(monotonic, key=lambda item: abs(item[1] - target))[0])
+    return anchors
 
 
 def _oval_turn_anchor_pcts(
@@ -699,6 +719,170 @@ def build_oval_turn_markers(
             }
         )
     return turns
+
+
+def _lap_pct_offset(start_pct: float, lap_pct: float) -> float:
+    return (float(lap_pct) - float(start_pct) + 100.0) % 100.0
+
+
+def _lap_pct_in_region(start_pct: float, end_pct: float, lap_pct: float) -> bool:
+    span = _lap_pct_offset(start_pct, end_pct)
+    offset = _lap_pct_offset(start_pct, lap_pct)
+    return offset <= span + 1e-9
+
+
+def _friendly_straight_region_label(section: TrackMapSection) -> str:
+    raw = section.name.strip()
+    lower = raw.casefold()
+    if section.wraps_start_finish or "front" in lower or "str 0" in lower:
+        return "Front Stretch"
+    if "back" in lower or "str 1" in lower:
+        return "Backstretch"
+    midpoint = _section_fraction_pct(section, 0.5)
+    return "Front Stretch" if midpoint >= 75.0 or midpoint < 25.0 else "Backstretch"
+
+
+def _adaptive_turn_region_bounds(
+    lap_pcts: list[float],
+    index: int,
+) -> tuple[float, float]:
+    current = lap_pcts[index]
+    previous = lap_pcts[index - 1]
+    following = lap_pcts[(index + 1) % len(lap_pcts)]
+    previous_gap = _lap_pct_offset(previous, current)
+    following_gap = _lap_pct_offset(current, following)
+    half_width = min(previous_gap, following_gap) * 0.48
+    return ((current - half_width) % 100.0, (current + half_width) % 100.0)
+
+
+def build_track_regions(
+    track_map: TrackMap,
+    match: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Build vendor-neutral physical regions for maps and grounded intelligence."""
+    turns = build_oval_turn_markers(track_map, match)
+    regions: list[dict[str, Any]] = []
+    turn_bounds: dict[int, tuple[float, float, str]] = {}
+    if turns:
+        lap_pcts = [float(turn["lap_pct"]) for turn in turns]
+        for index, _turn in enumerate(turns):
+            start_pct, end_pct = _adaptive_turn_region_bounds(lap_pcts, index)
+            turn_bounds[index] = (start_pct, end_pct, "centerline_geometry")
+
+        placement_source = str(turns[0]["placement_source"])
+        corners = [section for section in track_map.sections if section.section_type == "corner"]
+        if placement_source != "centerline heading quarters":
+            for section in corners:
+                members = [
+                    (index, lap_pct)
+                    for index, lap_pct in enumerate(lap_pcts)
+                    if _lap_pct_in_region(
+                        section.start_lap_pct,
+                        section.end_lap_pct,
+                        lap_pct,
+                    )
+                ]
+                members.sort(key=lambda item: _lap_pct_offset(section.start_lap_pct, item[1]))
+                if not members:
+                    continue
+                boundaries = [float(section.start_lap_pct)]
+                boundaries.extend(
+                    _lap_pct_at_fraction(left_pct, right_pct, 0.5)
+                    for (_, left_pct), (_, right_pct) in pairwise(members)
+                )
+                boundaries.append(float(section.end_lap_pct))
+                for member_index, (turn_index, _lap_pct) in enumerate(members):
+                    turn_bounds[turn_index] = (
+                        boundaries[member_index],
+                        boundaries[member_index + 1],
+                        "section_geometry",
+                    )
+
+        if placement_source == "four-corner oval sections with merged final corner":
+            corners = [section for section in track_map.sections if section.section_type == "corner"]
+            if len(corners) >= 5 and len(turns) >= 4:
+                turn_bounds[3] = (
+                    float(corners[3].start_lap_pct),
+                    float(corners[4].end_lap_pct),
+                    "section_geometry",
+                )
+
+        for index, turn in enumerate(turns):
+            start_pct, end_pct, confidence = turn_bounds[index]
+            regions.append(
+                {
+                    "region_id": turn["turn_id"],
+                    "kind": "turn",
+                    "number": turn["number"],
+                    "label": turn["label"],
+                    "short_label": turn["short_label"],
+                    "start_lap_pct": start_pct,
+                    "end_lap_pct": end_pct,
+                    "anchor_lap_pct": turn["lap_pct"],
+                    "placement_source": turn["placement_source"],
+                    "confidence": confidence,
+                }
+            )
+
+    for section in track_map.sections:
+        if section.section_type == "corner" and turns:
+            continue
+        if section.section_type == "straight":
+            label = _friendly_straight_region_label(section)
+            kind = "straight"
+        else:
+            raw_label = section.name.strip()
+            label = raw_label if raw_label and "motec" not in raw_label.casefold() else "Track Section"
+            kind = section.section_type
+        regions.append(
+            {
+                "region_id": f"section:{section.section_id}",
+                "kind": kind,
+                "number": None,
+                "label": label,
+                "short_label": label,
+                "start_lap_pct": float(section.start_lap_pct),
+                "end_lap_pct": float(section.end_lap_pct),
+                "anchor_lap_pct": _section_fraction_pct(section, 0.5),
+                "placement_source": "source section geometry",
+                "confidence": "section_geometry",
+            }
+        )
+    return regions
+
+
+def locate_track_region(
+    regions: list[dict[str, Any]],
+    lap_pct: float | None,
+) -> dict[str, Any] | None:
+    """Resolve one physical lap position to a canonical region and phase."""
+    if lap_pct is None or not math.isfinite(lap_pct):
+        return None
+    normalized = float(lap_pct) % 100.0
+    ordered = sorted(regions, key=lambda region: 0 if region.get("kind") == "turn" else 1)
+    for region in ordered:
+        start_pct = float(region["start_lap_pct"])
+        end_pct = float(region["end_lap_pct"])
+        if not _lap_pct_in_region(start_pct, end_pct, normalized):
+            continue
+        span = _lap_pct_offset(start_pct, end_pct)
+        fraction = _lap_pct_offset(start_pct, normalized) / span if span > 0.0 else 0.5
+        if region.get("kind") == "turn":
+            phase = "entry" if fraction < 1.0 / 3.0 else "center" if fraction <= 2.0 / 3.0 else "exit"
+            display_label = f"{region['label']} {phase}"
+        else:
+            phase = "straight" if region.get("kind") == "straight" else None
+            display_label = str(region["label"])
+        return {
+            "region_id": region["region_id"],
+            "kind": region["kind"],
+            "label": region["label"],
+            "display_label": display_label,
+            "phase": phase,
+            "lap_pct": normalized,
+            "confidence": region["confidence"],
+        }
+    return None
 
 
 _TARGET_ZONE_ERROR = (
@@ -823,6 +1007,7 @@ def build_track_map_package(
     entries = _load_index()
     match = next((e for e in entries if e.get("map_id") == map_id), None)
     turns = build_oval_turn_markers(track_map, match) if track_map else []
+    regions = build_track_regions(track_map, match) if track_map else []
 
     overlays = build_track_map_overlays(
         map_id,
@@ -842,6 +1027,7 @@ def build_track_map_package(
         "sections": [asdict(s) for s in (track_map.sections if track_map else [])],
         "markers": [asdict(m) for m in (track_map.markers if track_map else [])],
         "turns": turns,
+        "regions": regions,
         "target_zone": {
             "start_pct": target_zone_start_pct,
             "end_pct": target_zone_end_pct,

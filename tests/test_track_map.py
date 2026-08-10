@@ -32,10 +32,12 @@ from racelab_engine.services.track_map_service import (
     build_oval_turn_markers,
     build_track_map_overlays,
     build_track_map_package,
+    build_track_regions,
     cleanup_track_map_storage,
     get_track_map,
     import_mt2_file,
     list_track_maps,
+    locate_track_region,
 )
 
 
@@ -270,6 +272,27 @@ def test_two_end_oval_gets_four_geometry_positioned_turn_markers(
     assert [turn["lap_pct"] for turn in turns] == pytest.approx([17.5, 32.5, 67.5, 82.5])
     assert all(turn["placement_source"] == "split two-end oval sections" for turn in turns)
     assert all(turn["x"] is not None and turn["y"] is not None for turn in turns)
+
+    regions = build_track_regions(
+        track_map,
+        {"layout_key": "oval", "display_name": "Test Oval"},
+    )
+    turn_regions = [region for region in regions if region["kind"] == "turn"]
+    assert [region["region_id"] for region in turn_regions] == [
+        "turn_1",
+        "turn_2",
+        "turn_3",
+        "turn_4",
+    ]
+    assert [region["start_lap_pct"] for region in turn_regions] == pytest.approx(
+        [10.0, 25.0, 60.0, 75.0]
+    )
+    assert [region["end_lap_pct"] for region in turn_regions] == pytest.approx(
+        [25.0, 40.0, 75.0, 90.0]
+    )
+    assert locate_track_region(regions, 12.0)["display_label"] == "Turn 1 entry"
+    assert locate_track_region(regions, 17.5)["display_label"] == "Turn 1 center"
+    assert locate_track_region(regions, 23.0)["display_label"] == "Turn 1 exit"
 
 
 def test_pocono_uses_three_conventional_turns_from_source_sections(
@@ -656,6 +679,9 @@ def test_overlay_and_package_use_canonical_cache(tmp_path: Path, monkeypatch: py
     assert package["sections"]
     assert package["markers"]
     assert [turn["short_label"] for turn in package["turns"]] == ["T1", "T2", "T3", "T4"]
+    assert [region["short_label"] for region in package["regions"] if region["kind"] == "turn"] == [
+        "T1", "T2", "T3", "T4",
+    ]
 
 
 def test_overlay_preserves_start_finish_event_and_uses_bounded_zone_sampling(
@@ -846,12 +872,16 @@ def test_track_map_package_endpoint_returns_sanitized_geometry(
     assert payload["map"]["markers"]
     assert payload["map"]["sections"]
     assert [turn["short_label"] for turn in payload["turns"]] == ["T1", "T2", "T3", "T4"]
+    assert [region["short_label"] for region in payload["regions"] if region["kind"] == "turn"] == [
+        "T1", "T2", "T3", "T4",
+    ]
     assert "source_file" not in payload["map"]
     assert "source_type" not in payload["map"]
     assert "sha256" not in payload["map"]
     assert "file_size_bytes" not in payload["map"]
     assert "format" not in payload["map"]["metadata"]
     assert "point_record" not in payload["map"]["metadata"]
+    assert "motec" not in json.dumps(payload).casefold()
 
 
 def test_track_map_package_endpoint_rejects_zero_width_target_zone(

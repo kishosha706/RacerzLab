@@ -127,6 +127,7 @@ def _public_track_map_package(package: dict[str, Any]) -> dict[str, Any]:
         "sections": package.get("sections", []),
         "markers": package.get("markers", []),
         "turns": package.get("turns", []),
+        "regions": package.get("regions", []),
         "target_zone": package.get("target_zone"),
         "warnings": package.get("warnings", []),
     }
@@ -287,7 +288,7 @@ def run_track_map_package(
         return JSONResponse(content=_public_track_map_package({
             "run_id": run_id, "lap": lap,
             "map": None, "match": match,
-            "overlays": [], "sections": [], "markers": [], "turns": [],
+            "overlays": [], "sections": [], "markers": [], "turns": [], "regions": [],
             "target_zone": None,
             "warnings": ["No track map matched for this run."],
         }))
