@@ -2678,9 +2678,14 @@ td {
   stroke-width: 2px;
   vector-effect: non-scaling-stroke;
 }
+.trackmap-turn-marker line {
+  stroke: rgba(125, 211, 252, 0.82);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
 .trackmap-turn-label {
   fill: #f8fafc;
-  font-size: 11px;
   font-weight: 800;
   font-family: "JetBrains Mono", "Fira Code", monospace;
   paint-order: stroke;
@@ -3446,10 +3451,15 @@ td {
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
+.track-map-overlay-turn-marker line {
+  stroke: rgba(125, 211, 252, 0.86);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
 
 .track-map-overlay-turn-label {
   fill: #f8fafc;
-  font-size: 10px;
   font-weight: 800;
   paint-order: stroke;
   stroke: rgba(2, 6, 12, 0.95);

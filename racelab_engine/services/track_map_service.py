@@ -20,6 +20,7 @@ from racelab_engine.analysis.track_matching import (
 )
 from racelab_engine.io.mt2_reader import (
     TrackMap,
+    TrackMapSection,
     interpolate_at_pct,
     parse_mt2_bytes,
 )
@@ -534,7 +535,7 @@ def _lap_pct_at_fraction(start_pct: float, end_pct: float, fraction: float) -> f
     return (float(start_pct) + span * fraction) % 100.0
 
 
-def _section_fraction_pct(section: Any, fraction: float) -> float:
+def _section_fraction_pct(section: TrackMapSection, fraction: float) -> float:
     return _lap_pct_at_fraction(section.start_lap_pct, section.end_lap_pct, fraction)
 
 

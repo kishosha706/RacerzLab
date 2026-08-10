@@ -12,6 +12,7 @@ import type {
   TrackMapTurn,
 } from "../types/trackMap";
 import { filterPlatformEvents, isClearPlatformDiagnostic } from "../utils/platformEventVisibility";
+import { layoutTrackMapTurnLabel } from "../utils/trackMapTurnLayout";
 
 type TrackMapOverlayProps = {
   open: boolean;
@@ -504,9 +505,21 @@ export function TrackMapOverlay({
   );
   const turnLabels = useMemo(
     () => (pkg?.turns ?? [])
-      .map((turn) => ({ turn, point: nearestPointByLapPct(lapPositionedPoints, turn.lap_pct) }))
-      .filter((item): item is { turn: TrackMapTurn; point: DrawablePoint } => item.point != null),
-    [lapPositionedPoints, pkg?.turns],
+      .map((turn) => {
+        const point = nearestPointByLapPct(lapPositionedPoints, turn.lap_pct);
+        if (!point || !mergedBounds) return null;
+        return {
+          turn,
+          point,
+          layout: layoutTrackMapTurnLabel(point, mergedBounds, {
+            labelOffsetRatio: 0.045,
+            fontSizeRatio: 0.04,
+            markerRadiusRatio: 0.009,
+          }),
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item != null),
+    [lapPositionedPoints, mergedBounds, pkg?.turns],
   );
   const hasDrawableTrack = Boolean(svgViewport && pointPath && drawablePoints.length > 1);
   const hasAnyContext = Boolean(cursorPoint || selectedEventPoint || highlightedPath);
@@ -599,10 +612,19 @@ export function TrackMapOverlay({
                 {section.name}
               </text>
             ))}
-            {showLabels && turnLabels.map(({ turn, point }) => (
+            {showLabels && turnLabels.map(({ turn, point, layout }) => (
               <g key={turn.turn_id} className="track-map-overlay-turn-marker">
-                <circle cx={point.x} cy={point.y} r={4} />
-                <text className="track-map-overlay-turn-label" x={point.x + 7} y={point.y - 7}>
+                <title>{`${turn.label} — ${turn.lap_pct.toFixed(1)}% lap position`}</title>
+                <line x1={point.x} y1={point.y} x2={layout.leaderEndX} y2={layout.leaderEndY} />
+                <circle cx={point.x} cy={point.y} r={layout.markerRadius} />
+                <text
+                  className="track-map-overlay-turn-label"
+                  x={layout.labelX}
+                  y={layout.labelY}
+                  fontSize={layout.fontSize}
+                  textAnchor={layout.textAnchor}
+                  dominantBaseline="middle"
+                >
                   {turn.short_label}
                 </text>
               </g>

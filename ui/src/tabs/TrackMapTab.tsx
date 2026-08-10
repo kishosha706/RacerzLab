@@ -22,6 +22,7 @@ import {
   SEVERITY_RANK, LAYER_DEFS, PRESETS,
   classifyOverlayLayer, severityPasses, detectActivePreset,
 } from "../utils/trackMapFilters";
+import { layoutTrackMapTurnLabel } from "../utils/trackMapTurnLayout";
 
 const DEBUG_LOCATION = false;
 
@@ -348,6 +349,19 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
   const drawableTurns = useMemo<DrawableTurn[]>(
     () => turns.filter((turn): turn is DrawableTurn => isFiniteNumber(turn.x) && isFiniteNumber(turn.y)),
     [turns],
+  );
+  const positionedTurns = useMemo(
+    () => drawableTurns.map((turn) => ({
+      turn,
+      layout: mergedBounds
+        ? layoutTrackMapTurnLabel(turn, mergedBounds, {
+            labelOffsetRatio: 0.026,
+            fontSizeRatio: 0.022,
+            markerRadiusRatio: 0.007,
+          })
+        : null,
+    })),
+    [drawableTurns, mergedBounds],
   );
 
   useEffect(() => {
@@ -1192,11 +1206,19 @@ export function TrackMapTab({ runId, lap, trackName, carName, setupName, targetZ
               );
             })}
             {activeLayers.has("markers") &&
-              drawableTurns.map((turn) => (
+              positionedTurns.map(({ turn, layout }) => layout && (
                 <g key={`${currentMapId}-${turn.turn_id}`} className="trackmap-turn-marker">
                   <title>{turn.label} — {turn.lap_pct.toFixed(1)}% lap position</title>
-                  <circle cx={turn.x} cy={turn.y} r={5} />
-                  <text x={turn.x + 8} y={turn.y - 8} className="trackmap-turn-label">
+                  <line x1={turn.x} y1={turn.y} x2={layout.leaderEndX} y2={layout.leaderEndY} />
+                  <circle cx={turn.x} cy={turn.y} r={layout.markerRadius} />
+                  <text
+                    x={layout.labelX}
+                    y={layout.labelY}
+                    className="trackmap-turn-label"
+                    fontSize={layout.fontSize}
+                    textAnchor={layout.textAnchor}
+                    dominantBaseline="middle"
+                  >
                     {turn.short_label}
                   </text>
                 </g>

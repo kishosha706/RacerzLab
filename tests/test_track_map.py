@@ -272,6 +272,51 @@ def test_two_end_oval_gets_four_geometry_positioned_turn_markers(
     assert all(turn["x"] is not None and turn["y"] is not None for turn in turns)
 
 
+def test_pocono_uses_three_conventional_turns_from_source_sections(
+    synthetic_mt2_bytes: bytes,
+) -> None:
+    track_map = parse_mt2_bytes(synthetic_mt2_bytes)
+    corner = next(section for section in track_map.sections if section.section_type == "corner")
+    track_map.sections = [
+        replace(corner, section_id="turn_1", start_lap_pct=8.0, end_lap_pct=22.0),
+        replace(corner, section_id="turn_2", start_lap_pct=44.0, end_lap_pct=54.0),
+        replace(corner, section_id="turn_3", start_lap_pct=72.0, end_lap_pct=90.0),
+    ]
+
+    turns = build_oval_turn_markers(
+        track_map,
+        {"layout_key": "oval", "display_name": "Pocono Raceway"},
+    )
+
+    assert [turn["short_label"] for turn in turns] == ["T1", "T2", "T3"]
+    assert [turn["lap_pct"] for turn in turns] == pytest.approx([15.0, 49.0, 81.0])
+    assert all(turn["placement_source"] == "three-corner oval sections" for turn in turns)
+
+
+def test_talladega_ignores_trioval_frontstretch_bends(
+    synthetic_mt2_bytes: bytes,
+) -> None:
+    track_map = parse_mt2_bytes(synthetic_mt2_bytes)
+    corner = next(section for section in track_map.sections if section.section_type == "corner")
+    track_map.sections = [
+        replace(corner, section_id="turn_1", start_lap_pct=8.0, end_lap_pct=18.0),
+        replace(corner, section_id="turn_2", start_lap_pct=18.0, end_lap_pct=30.0),
+        replace(corner, section_id="turns_3_4", start_lap_pct=48.0, end_lap_pct=72.0),
+        replace(corner, section_id="trioval_a", start_lap_pct=88.0, end_lap_pct=91.0),
+        replace(corner, section_id="trioval_b", start_lap_pct=94.0, end_lap_pct=96.0),
+        replace(corner, section_id="trioval_c", start_lap_pct=98.0, end_lap_pct=99.0),
+    ]
+
+    turns = build_oval_turn_markers(
+        track_map,
+        {"layout_key": "oval", "display_name": "Talladega Superspeedway"},
+    )
+
+    assert [turn["short_label"] for turn in turns] == ["T1", "T2", "T3", "T4"]
+    assert [turn["lap_pct"] for turn in turns] == pytest.approx([13.0, 24.0, 54.0, 66.0])
+    assert all(turn["placement_source"] == "tri-oval conventional corner sections" for turn in turns)
+
+
 def test_road_layout_never_receives_oval_turn_markers(synthetic_mt2_bytes: bytes) -> None:
     track_map = parse_mt2_bytes(synthetic_mt2_bytes)
 
