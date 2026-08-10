@@ -156,6 +156,44 @@ export type P23FirstActivationAudit = {
   p20_sole_state_projection: true;
 };
 
+export type P23FlightRecorderEntry = {
+  lap_number: number;
+  state: "qualified" | "excluded" | "context_boundary" | "inventory";
+  reasons: string[];
+  applied_control_mutation_ids: string[];
+  requested_control_mutation_ids: string[];
+  nearby_context: "acceptable" | "rejected" | "unknown";
+  sample_continuity: "pass" | "fail" | "unknown";
+  sub_tick_coverage_fraction: number;
+};
+
+export type P23AcquisitionProgress = {
+  historical_sessions: number;
+  required_historical_sessions: 9;
+  null_stints: number;
+  required_null_stints: 10;
+  negative_controls: number;
+  required_negative_controls: 8;
+  covered_subgroups: number;
+  required_subgroups: 9;
+  subgroup_memberships: string[];
+  profile_status: "complete" | "incomplete";
+  prospective_sessions: number;
+  required_prospective_sessions: 10;
+  prospective_status: "locked_until_historical_gate" | "available" | "collecting";
+  rejected_attempts: number;
+  next_best_collection: string;
+  latest_certificate_id: string | null;
+  latest_run_id: string | null;
+  latest_qualification_state: "qualified" | "rejected" | "partial" | "inventory_only" | null;
+  latest_eligible_laps: number;
+  latest_excluded_laps: number;
+  latest_blocker: string | null;
+  latest_flight_recorder: P23FlightRecorderEntry[];
+  activation_status: "no_activation_earned";
+  p23_authority: "shadow_only";
+};
+
 export type LearningReadinessProjection = {
   run_id: string;
   session_id: string | null;
@@ -177,5 +215,6 @@ export type LearningReadinessProjection = {
   learning_ledger: LearningLedgerEntry[];
   capability_review: AdvancedCapabilityReview | null;
   first_activation_audit: P23FirstActivationAudit | null;
+  p23_acquisition: P23AcquisitionProgress | null;
   offline_evaluation_only: true;
 };

@@ -25,7 +25,12 @@ from racelab_engine.evaluation.campaigns import (
     save_campaign,
 )
 from racelab_engine.evaluation.dataset_registry import EvidenceLabModel, canonical_hash
+from racelab_engine.models.engineering_context import SteeringContextFingerprint
 from racelab_engine.services.engineering_context_service import detect_control_mutations
+from racelab_engine.services.engineering_context_service import (
+    build_steering_context_fingerprint,
+    compare_steering_contexts,
+)
 from racelab_engine.services.import_service import read_telemetry_manifest, read_telemetry_rows
 from racelab_engine.services.lap_engineering_context_service import (
     load_lap_engineering_context_report,
@@ -65,6 +70,20 @@ _CONTROL_CHANNELS = (
     "requested_right_tire_change",
     "requested_fuel_fill",
     "requested_fuel_add_kg",
+    "steering_ffb_enabled",
+    "SteeringWheelFFBEnabled",
+    "steering_ffb_max_force_nm",
+    "SteeringWheelMaxForceNm",
+    "steering_ffb_use_linear",
+    "SteeringWheelUseLinear",
+    "steering_ffb_intensity_01",
+    "SteeringWheelPctIntensity",
+    "steering_ffb_smoothing_01",
+    "SteeringWheelPctSmoothing",
+    "steering_ffb_damper_01",
+    "SteeringWheelPctDamper",
+    "steering_ffb_limiter_01",
+    "SteeringWheelLimiter",
 )
 
 
@@ -86,6 +105,12 @@ class CampaignOperationContext(EvidenceLabModel):
     track_id: str = Field(min_length=1)
     iracing_build_version: str = Field(min_length=1)
     setup_fingerprint: str | None = None
+    ffb_fingerprint_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    ffb_fingerprint: SteeringContextFingerprint | None = None
+    steering_conversion_model: str | None = None
     fuel_band: NumericBand | None = None
     track_temperature_band: NumericBand | None = None
     air_temperature_band: NumericBand | None = None
@@ -94,6 +119,18 @@ class CampaignOperationContext(EvidenceLabModel):
     exact_track_required: bool = True
     exact_setup_required: bool = True
     reject_control_mutations: bool = True
+
+    @model_validator(mode="after")
+    def exact_ffb_identity_is_consistent(self) -> CampaignOperationContext:
+        if self.ffb_fingerprint is not None and (
+            self.ffb_fingerprint_sha256 != self.ffb_fingerprint.fingerprint_sha256
+            or self.steering_conversion_model
+            != self.ffb_fingerprint.steering_conversion_model
+        ):
+            raise ValueError("operation FFB identity does not match its frozen context")
+        if self.ffb_fingerprint_sha256 is not None and self.ffb_fingerprint is None:
+            raise ValueError("operation FFB hash requires its complete frozen fingerprint")
+        return self
 
 
 class CampaignOperation(EvidenceLabModel):
@@ -259,8 +296,23 @@ def _setup_fingerprint(overview: Any) -> str | None:
     return (
         None
         if overview.setup_snapshot is None
-        else canonical_hash(overview.setup_snapshot.model_dump(mode="json"))
+        else canonical_hash(
+            overview.setup_snapshot.model_dump(
+                mode="json",
+                exclude={"setup_id", "run_id", "setup_name"},
+            )
+        )
     )
+
+
+def _steering_conversion_model(overview: Any) -> str | None:
+    if overview.setup_snapshot is None:
+        return None
+    value = overview.setup_snapshot.steering_ratio
+    if value is None:
+        value = overview.setup_snapshot.extracted_values.get("steering_ratio")
+    text = str(value).strip() if value is not None else ""
+    return text or None
 
 
 def build_campaign_operation(
@@ -303,6 +355,20 @@ def build_campaign_operation(
         raise ValueError(
             "Campaign cannot start until the reference run has: " + ", ".join(blockers) + "."
         )
+    ffb_fingerprint = None
+    steering_conversion = None
+    if campaign_kind in {"control_workload", "no_change_null"}:
+        steering_conversion = _steering_conversion_model(overview)
+        ffb_rows = read_telemetry_rows(reference_run_id, columns=list(_CONTROL_CHANNELS))
+        ffb_fingerprint = build_steering_context_fingerprint(
+            ffb_rows,
+            steering_conversion_model=steering_conversion,
+        )
+        if ffb_fingerprint.state != "ready":
+            raise ValueError(
+                "P23 steering collection requires a complete stable FFB fingerprint: "
+                + "; ".join(ffb_fingerprint.blocker_reasons)
+            )
     # Geometry validation is an external source-integrity campaign.  It must be
     # startable even when the reference recording cannot supply lap context;
     # the campaign exists precisely to replace missing vehicle constants.
@@ -367,6 +433,11 @@ def build_campaign_operation(
         track_id=track_id,
         iracing_build_version=build_version,
         setup_fingerprint=setup_fingerprint,
+        ffb_fingerprint_sha256=(
+            ffb_fingerprint.fingerprint_sha256 if ffb_fingerprint is not None else None
+        ),
+        ffb_fingerprint=ffb_fingerprint,
+        steering_conversion_model=steering_conversion,
         fuel_band=fuel_band,
         track_temperature_band=track_temperature_band,
         air_temperature_band=air_temperature_band,
@@ -688,6 +759,18 @@ def assess_run_for_operation(
         reasons.append("Setup snapshot does not match the frozen operation setup.")
     control_rows = read_telemetry_rows(run_id, columns=list(_CONTROL_CHANNELS))
     mutations = detect_control_mutations(control_rows, run_id=run_id)
+    if context.ffb_fingerprint is not None:
+        observed_ffb = build_steering_context_fingerprint(
+            control_rows,
+            steering_conversion_model=_steering_conversion_model(overview),
+        )
+        comparability = compare_steering_contexts(context.ffb_fingerprint, observed_ffb)
+        if comparability.state != "comparable":
+            reasons.extend(
+                f"FFB mismatch: {key}" for key in comparability.material_mismatches
+            )
+            if not comparability.material_mismatches:
+                reasons.extend(comparability.blocker_reasons)
     if context.reject_control_mutations and mutations:
         reasons.append("A material or requested control changed inside the recording.")
     accepted: list[int] = []

@@ -12,6 +12,10 @@ from racelab_engine.evaluation.activation_gates import (
     ActivationDecision,
     p22_field_activation_gates,
 )
+from racelab_engine.evaluation.acquisition_operations import (
+    P23AcquisitionProgress,
+    p23_acquisition_progress,
+)
 from racelab_engine.evaluation.campaigns import campaign_progress, initial_campaigns
 from racelab_engine.evaluation.dataset_registry import EvidenceDataset, EvidenceLabModel
 from racelab_engine.evaluation.first_activation import (
@@ -120,6 +124,7 @@ class LearningReadinessProjection(EvidenceLabModel):
     learning_ledger: tuple[LearningLedgerEntry, ...] = ()
     capability_review: AdvancedCapabilityReview | None = None
     first_activation_audit: P23FirstActivationAudit | None = None
+    p23_acquisition: P23AcquisitionProgress | None = None
     offline_evaluation_only: Literal[True] = True
 
 
@@ -531,6 +536,7 @@ def build_learning_readiness_projection(
     )
     scope_key = f"{run_id}:{session_id or 'no-session'}"
     first_activation = build_first_activation_audit(db_path=db_path)
+    p23_collection = p23_acquisition_progress(db_path=db_path)
     ledger = learning_ledger(db_path=db_path) + (
         LearningLedgerEntry(
             ledger_key="p23:first_activation",
@@ -542,6 +548,22 @@ def build_learning_readiness_projection(
             current=first_activation.historical.qualified_real_units,
             required=first_activation.historical.required_real_units,
             evidence_basis="frozen_gate_policy",
+        ),
+        LearningLedgerEntry(
+            ledger_key="p24:p23_evidence_acquisition",
+            section="in_validation",
+            label="P23 evidence acquisition operations",
+            summary=(
+                f"Historical {p23_collection.historical_sessions}/9; null "
+                f"{p23_collection.null_stints}/10; controls "
+                f"{p23_collection.negative_controls}/8; subgroups "
+                f"{p23_collection.covered_subgroups}/9. "
+                f"Profile {p23_collection.profile_status}; prospective "
+                f"{p23_collection.prospective_status.replace('_', ' ')}."
+            ),
+            current=p23_collection.historical_sessions,
+            required=p23_collection.required_historical_sessions,
+            evidence_basis="qualified_real_evidence",
         ),
     )
     return LearningReadinessProjection(
@@ -563,6 +585,7 @@ def build_learning_readiness_projection(
         learning_ledger=ledger,
         capability_review=_capability_review(db_path=db_path),
         first_activation_audit=first_activation,
+        p23_acquisition=p23_collection,
     )
 
 

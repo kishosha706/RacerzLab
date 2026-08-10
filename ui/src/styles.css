@@ -6484,6 +6484,7 @@ td {
 .engineer-readiness-debt li span { color: #7d8a99; font-size: 8px; line-height: 1.35; }
 
 .engineer-learning-operation,
+.engineer-p23-acquisition,
 .engineer-first-activation,
 .engineer-capability-review {
   display: grid;
@@ -6510,9 +6511,11 @@ td {
 }
 
 .engineer-learning-operation h3,
+.engineer-p23-acquisition h3,
 .engineer-first-activation h3,
 .engineer-capability-review h3 { margin: 1px 0 0; color: #e2e8f0; font-size: 12px; text-transform: capitalize; }
 .engineer-learning-operation p,
+.engineer-p23-acquisition p,
 .engineer-first-activation p,
 .engineer-capability-review p { margin: 0; color: #9aabba; font-size: 9px; line-height: 1.45; }
 .engineer-learning-operation small { color: #fbbf24; font-size: 8px; line-height: 1.4; }
@@ -6563,6 +6566,20 @@ td {
 .engineer-first-activation > small { color: #fbbf24; font-size: 8px; }
 .engineer-first-activation > strong { color: #cbd5e1; font-size: 9px; }
 .engineer-first-activation[data-decision="limited_activation_earned"] { border-color: #2f855a; }
+
+.engineer-p23-acquisition { border-left: 2px solid #38bdf8; }
+.engineer-p23-acquisition > small { color: #7dd3fc; font-size: 8px; }
+.engineer-p23-next { display: grid; gap: 3px; padding: 7px; border: 1px solid #233747; background: #0b1720; }
+.engineer-p23-next > span { color: #7dd3fc; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.engineer-p23-certificate { border-top: 1px solid #24313d; padding-top: 6px; }
+.engineer-p23-certificate summary { color: #cbd5e1; cursor: pointer; font-size: 9px; font-weight: 700; }
+.engineer-p23-certificate > div { display: grid; gap: 5px; padding-top: 6px; }
+.engineer-p23-certificate ol { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.engineer-p23-certificate li { display: grid; grid-template-columns: 48px 80px 1fr; gap: 6px; align-items: baseline; color: #91a4b5; font-size: 8px; }
+.engineer-p23-certificate li[data-state="qualified"] span { color: #86efac; }
+.engineer-p23-certificate li[data-state="excluded"] span,
+.engineer-p23-certificate li[data-state="context_boundary"] span { color: #fbbf24; }
+.engineer-p23-certificate li small { color: #788b9d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .engineer-capability-review > strong { color: #fbbf24; font-size: 9px; }
 .engineer-capability-review[data-decision="eligible_for_limited_activation"] { border-color: #2f855a; }

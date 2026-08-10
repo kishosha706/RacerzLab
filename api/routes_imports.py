@@ -245,6 +245,21 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
                     req_id,
                     len(assessments),
                 )
+                from racelab_engine.evaluation.acquisition_operations import (
+                    qualify_p23_operations_for_run,
+                )
+
+                certificates = await run_in_threadpool(
+                    qualify_p23_operations_for_run,
+                    run_id,
+                    assessments=assessments,
+                )
+                if certificates:
+                    _log.info(
+                        "[%s] P24 produced %d immutable qualification certificate(s).",
+                        req_id,
+                        len(certificates),
+                    )
         except Exception as exc:
             _log.warning(
                 "[%s] P22 campaign qualification failed closed without affecting import: %s",

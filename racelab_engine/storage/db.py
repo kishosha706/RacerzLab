@@ -485,6 +485,102 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_p23_activation_audit_decision "
         "ON p23_activation_audits(activation_decision, created_at, audit_id)"
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS p24_steering_truth_audits (
+          audit_id TEXT PRIMARY KEY,
+          audit_hash TEXT NOT NULL UNIQUE,
+          run_id TEXT NOT NULL,
+          source_file_hash TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          state TEXT NOT NULL,
+          audit_json TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_p24_truth_source "
+        "ON p24_steering_truth_audits(source_file_hash, created_at, audit_id)"
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS p24_qualification_certificates (
+          certificate_id TEXT PRIMARY KEY,
+          certificate_hash TEXT NOT NULL UNIQUE,
+          protocol_id TEXT NOT NULL,
+          campaign_id TEXT NOT NULL,
+          operation_id TEXT NOT NULL,
+          run_id TEXT NOT NULL,
+          source_file_hash TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          qualification_state TEXT NOT NULL,
+          certificate_json TEXT NOT NULL,
+          UNIQUE(operation_id, run_id),
+          FOREIGN KEY(protocol_id) REFERENCES p23_validation_protocols(protocol_id)
+            ON DELETE RESTRICT,
+          FOREIGN KEY(campaign_id) REFERENCES evidence_campaigns(campaign_id)
+            ON DELETE RESTRICT,
+          FOREIGN KEY(operation_id) REFERENCES evidence_campaign_operations(operation_id)
+            ON DELETE RESTRICT
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_p24_certificate_progress "
+        "ON p24_qualification_certificates(protocol_id, qualification_state, created_at)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_p24_certificate_source "
+        "ON p24_qualification_certificates(source_file_hash, qualification_state)"
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS p24_negative_control_expectations (
+          expectation_id TEXT PRIMARY KEY,
+          expectation_hash TEXT NOT NULL UNIQUE,
+          operation_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          recipe_id TEXT NOT NULL,
+          expectation_json TEXT NOT NULL,
+          FOREIGN KEY(operation_id) REFERENCES evidence_campaign_operations(operation_id)
+            ON DELETE RESTRICT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS p24_negative_control_results (
+          result_id TEXT PRIMARY KEY,
+          result_hash TEXT NOT NULL UNIQUE,
+          expectation_id TEXT NOT NULL UNIQUE,
+          certificate_id TEXT NOT NULL,
+          observed_at TEXT NOT NULL,
+          passed INTEGER NOT NULL,
+          result_json TEXT NOT NULL,
+          FOREIGN KEY(expectation_id) REFERENCES p24_negative_control_expectations(expectation_id)
+            ON DELETE RESTRICT,
+          FOREIGN KEY(certificate_id) REFERENCES p24_qualification_certificates(certificate_id)
+            ON DELETE RESTRICT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS p24_certificate_admissions (
+          admission_id TEXT PRIMARY KEY,
+          admission_hash TEXT NOT NULL UNIQUE,
+          certificate_id TEXT NOT NULL,
+          dataset_id TEXT NOT NULL UNIQUE,
+          admitted_at TEXT NOT NULL,
+          admission_json TEXT NOT NULL,
+          UNIQUE(certificate_id, dataset_id),
+          FOREIGN KEY(certificate_id) REFERENCES p24_qualification_certificates(certificate_id)
+            ON DELETE RESTRICT,
+          FOREIGN KEY(dataset_id) REFERENCES evidence_datasets(dataset_id)
+            ON DELETE RESTRICT
+        )
+        """
+    )
 
 
 def initialize_database(db_path: str | Path | None = None) -> sqlite3.Connection:

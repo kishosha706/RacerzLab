@@ -443,6 +443,43 @@ function LearningReadinessCard({
           })}
         </div>
       </details>
+      {projection.p23_acquisition && (
+        <section className="engineer-p23-acquisition" data-profile={projection.p23_acquisition.profile_status}>
+          <span className="eyebrow">P23 steering workload campaign</span>
+          <h3>Evidence acquisition operations</h3>
+          <div className="engineer-operation-progress">
+            <span>Historical <strong>{projection.p23_acquisition.historical_sessions} / {projection.p23_acquisition.required_historical_sessions}</strong></span>
+            <span>Null <strong>{projection.p23_acquisition.null_stints} / {projection.p23_acquisition.required_null_stints}</strong></span>
+            <span>Controls <strong>{projection.p23_acquisition.negative_controls} / {projection.p23_acquisition.required_negative_controls}</strong></span>
+            <span>Subgroups <strong>{projection.p23_acquisition.covered_subgroups} / {projection.p23_acquisition.required_subgroups}</strong></span>
+          </div>
+          <p><strong>Steering signal truth:</strong> {projection.p23_acquisition.profile_status}</p>
+          <p><strong>Prospective:</strong> {projection.p23_acquisition.prospective_status.replace(/_/g, " ")}</p>
+          <div className="engineer-p23-next">
+            <span>Next best collection</span>
+            <p>{projection.p23_acquisition.next_best_collection}</p>
+          </div>
+          {projection.p23_acquisition.latest_certificate_id && (
+            <details className="engineer-p23-certificate">
+              <summary>Latest session certificate · {projection.p23_acquisition.latest_qualification_state?.replace(/_/g, " ")}</summary>
+              <div>
+                <p>{projection.p23_acquisition.latest_eligible_laps} eligible · {projection.p23_acquisition.latest_excluded_laps} excluded</p>
+                {projection.p23_acquisition.latest_blocker && <small>{projection.p23_acquisition.latest_blocker}</small>}
+                <ol>
+                  {projection.p23_acquisition.latest_flight_recorder.slice(0, 8).map((entry) => (
+                    <li key={entry.lap_number} data-state={entry.state}>
+                      <strong>Lap {entry.lap_number}</strong>
+                      <span>{entry.state.replace(/_/g, " ")}</span>
+                      {entry.reasons[0] && <small>{entry.reasons[0]}</small>}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </details>
+          )}
+          <small>Certificate-owned admission · unique source session · shadow only</small>
+        </section>
+      )}
       {projection.first_activation_audit && (
         <section
           className="engineer-first-activation"

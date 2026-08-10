@@ -56,6 +56,7 @@ result, and remember only what the evidence supports.
 | P21 - Evidence Lab, Calibration, and Shadow Intelligence | Verified scientific infrastructure; advanced statistical authority remains locked | Immutable datasets, leakage-safe evaluation, collection campaigns, proxy/profile validation, prospective shadow records, and identity-bound activation gates expose exact learning debt without changing P19/P20 authority |
 | P22 - Prospective Field Validation and Learning Operations | Verified operational foundation; real campaigns and advanced authority remain data-locked | Frozen campaign operations, automatic qualification, prospective P19 predictions/outcomes, deterministic collection guidance, and the Learning Ledger survive restart without granting setup or statistical authority |
 | P23 - First Earned Adaptive Capability | No activation earned | Steering-workload protocol is frozen, but no qualified historical, prospective, negative-control, subgroup, or profile evidence exists |
+| P24 - Evidence Acquisition Operations | Verified collection infrastructure; P23 evidence collection ongoing | Protocol-bound certificates, flight recorders, steering truth audits, and certificate-owned admission make real collection auditable without changing authority |
 
 ---
 
@@ -1547,6 +1548,80 @@ qualified population that can pass an activation gate.
 
 ---
 
+## P24 - Evidence Acquisition Operations
+
+Overall status: **Verified collection infrastructure; P23 evidence collection
+ongoing.** P24 makes the frozen P23 campaign executable and auditable. It does
+not activate the steering-workload envelope or add intelligence authority.
+
+- [x] Reuse P21 immutable datasets/leakage gates, P22 operations and acquisition
+  guidance, P20 steering/control context, and the unchanged P23 protocol rather
+  than creating a parallel learning system.
+- [x] Add immutable, content-addressed session qualification certificates that
+  bind source, run/session, car/track/build/profile/setup/FFB identity, exact lap
+  decisions, channel truth, independence, subgroups, blockers, and admission.
+- [x] Make the stored certificate authoritative for dataset construction; later
+  builders consume its facts and cannot reinterpret the telemetry independently.
+- [x] Preserve a lap-level flight recorder with canonical eligibility, traffic,
+  setup/FFB context, clock/sub-tick health, and separate requested/applied
+  control boundaries without bridging incompatible contexts.
+- [x] Expose protocol-bound historical, null, negative-control, profile, and
+  prospective templates plus a fact-only pre-run checklist. Prospective remains
+  hard-locked until historical validation passes.
+- [x] Audit the ten steering/FFB signals for units, signed behavior, count-as-time
+  ordering, effective rate, coverage, corruption, sample continuity, scalar to
+  sub-tick consistency, configuration stability, and steering conversion.
+- [x] Freeze negative-control expectations before outcomes and require both the
+  expected decision and blocker class to match the later immutable result.
+- [x] Prevent renamed/copied/re-imported source telemetry, new run IDs, derived
+  caches, and adjacent laps/windows from increasing session independence.
+- [x] Publish actual P23 acquisition debt, next collection, latest certificate,
+  and flight recorder in Learning Mode only while leaving Race Mode and P19/P20
+  authority unchanged.
+- [ ] Re-import a source-owned Next Gen recording and complete steering signal
+  truth/profile validation.
+- [ ] Collect the 9 historical sessions, 10 null stints, 8 negative controls,
+  and 9 subgroup requirements under the frozen certificate contract.
+- [ ] Begin prospective collection only after the unchanged historical gate
+  passes; no current session counts as prospective.
+
+### P24 scientific counts
+
+- Historical exact-FFB sessions: **0 / 9**
+- Same-setup null stints: **0 / 10**
+- Frozen negative controls: **0 / 8**
+- Required subgroup groups: **0 / 9**
+- Steering/profile truth: **incomplete**
+- Prospective: **locked until historical validation passes**
+- P23 activation: **NO ACTIVATION EARNED; shadow only**
+
+The older Atlanta archive remains inventory because immutable telemetry-cache
+ownership cannot be proven. The pre-run checklist requests re-import and does
+not infer missing steering truth or fabricate progress.
+
+### P24 verification evidence
+
+- Fifty-nine focused P21-P24 regressions passed during implementation. Hostile
+  coverage includes copied/renamed sources, same-run re-import, adjacent-lap
+  inflation, MaxForce/linear/smoothing/damper/steering-conversion mismatch,
+  requested/applied boundary isolation, protocol mutation, certificate-owned
+  admission, frozen negative-control expectations, prospective locking, and
+  P19/P20/P23 authority isolation.
+- Whole-repository Ruff, TypeScript, the 2,189-module production build, and diff
+  integrity passed. The complete Python collection passed: 2,223 tests
+  collected, 2,217 passed, and six protected fixture tests skipped.
+- Live smoke found no browser errors, no P24 content in Race Mode, and exactly
+  one Learning Mode campaign card with truthful zero counts, incomplete profile
+  state, the prospective lock, the next mission, and shadow-only admission.
+- Measured 10-lap background work: 0.045 ms mean flight recorder, 0.239 ms mean
+  certificate build, 20.198 ms admission, and 43.639 ms complete qualification.
+  Warm progress averaged 3.764 ms; full Learning Readiness on saved Atlanta data
+  was 87.976 ms cold and 78.453 ms warm mean.
+- Full architecture, signal contracts, operations, evidence counts, and
+  performance are recorded in `docs/p24_evidence_acquisition_operations.md`.
+
+---
+
 ## Professional analysis surface, without losing the product thesis
 
 - [x] Match essential professional language: time variance, overlays, math
@@ -1643,3 +1718,4 @@ Implementation queue completed in this pass:
 | 2026-08-10 | Verified P21 Evidence Lab, Calibration, and Shadow Intelligence foundation | Immutable evidence registries, frozen split/evaluation identity, hostile leakage detection, seven collection campaigns, bounded proxy/profile validation, prospective shadow records, causal/planner evaluation, thirteen activation gates, and Learning-only readiness passed 2,182 tests with six protected skips, Ruff, TypeScript, a 2,189-module production build, diff integrity, performance checks, and live Race/Learning smoke; the archive contains no qualified controlled population, so P19/P20 remain authoritative and advanced statistical methods remain locked or shadow-only |
 | 2026-08-10 | Verified P22 prospective field-validation operational foundation | Frozen campaign lifecycles, import-time exact qualification, immutable pre-outcome P19 predictions, canonical later outcomes, deterministic collection guidance, cloned field gates, and the Learning Ledger passed the 2,201-test collection with six protected skips, Ruff, TypeScript, a 2,189-module production build, diff integrity, and live Race/Learning smoke; no real evidence campaign or advanced activation is claimed, so P19/P20 remain authoritative |
 | 2026-08-10 | Completed P23 first-earned-capability audit with no activation earned | All 15 P21/P22 candidates were ranked; the deterministic exact-FFB steering-workload envelope was selected and frozen under immutable protocol `p23p-7039505728f07034d6f5`; the empty qualified archive correctly produced no authority envelope. Twenty-six hostile focused regressions and the complete 2,209-test collection passed with six protected skips, plus Ruff, TypeScript, the 2,189-module production build, diff integrity, live Race/Learning smoke, and real-archive latency checks; P19/P20 authority remains unchanged |
+| 2026-08-10 | Verified P24 evidence acquisition operations; P23 collection remains at zero | Protocol-bound immutable certificates, lap flight recorders, steering signal truth audits, frozen negative-control expectations, certificate-owned dataset admission, source-file duplicate protection, fact-only pre-run checklists, and five executable collection templates passed the complete 2,223-test collection with six protected skips, Ruff, TypeScript, a 2,189-module production build, diff integrity, performance checks, and live Race/Learning smoke; the existing archive remains inventory, profile truth is incomplete, prospective collection is locked, and P23 remains shadow-only |

@@ -642,7 +642,15 @@ def build_first_activation_audit(
     db_path: str | Path | None = None,
     created_at: datetime | None = None,
 ) -> P23FirstActivationAudit:
+    # P24 certificates may advance collection counts, but never pass a P23
+    # validation stage on counts alone.  Import locally to avoid making the
+    # frozen protocol depend on the later acquisition module at import time.
+    from racelab_engine.evaluation.acquisition_operations import (
+        p23_acquisition_progress,
+    )
+
     protocol = first_activation_protocol()
+    collection = p23_acquisition_progress(db_path=db_path)
     candidates = capability_activation_matrix(db_path=db_path)
     datasets = list_evidence_datasets(db_path=db_path)
     evaluations = _evaluation_artifacts(db_path)
@@ -682,26 +690,26 @@ def build_first_activation_audit(
         "protocol_id": protocol.protocol_id,
         "protocol_hash": protocol.protocol_hash,
         "historical": _stage(
-            "not_started",
-            0,
+            "blocked" if collection.historical_sessions else "not_started",
+            collection.historical_sessions,
             protocol.dataset_requirements["historical_independent_sessions"],
             "No qualified historical control-workload dataset or exact frozen evaluation artifact exists.",
         ),
         "prospective": _stage(
-            "not_started",
-            0,
+            "blocked" if collection.prospective_sessions else "not_started",
+            collection.prospective_sessions,
             protocol.minimum_prospective_units,
             "Historical validation has not passed, so prospective shadow collection cannot begin.",
         ),
         "negative_controls": _stage(
-            "not_started",
-            0,
+            "blocked" if collection.negative_controls else "not_started",
+            collection.negative_controls,
             len(protocol.negative_control_ids),
             "No real-world negative-control evaluation exists for the selected protocol.",
         ),
         "subgroups": _stage(
-            "not_started",
-            0,
+            "blocked" if collection.covered_subgroups else "not_started",
+            collection.covered_subgroups,
             len(protocol.required_subgroups),
             "No required subgroup has a qualified independent field unit.",
         ),
