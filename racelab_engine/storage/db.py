@@ -281,6 +281,25 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_evidence_campaign_attempt "
         "ON evidence_campaign_attempts(campaign_id, recorded_at, attempt_id)"
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS profile_validation_records (
+          record_id TEXT PRIMARY KEY,
+          record_hash TEXT NOT NULL UNIQUE,
+          profile_id TEXT NOT NULL,
+          profile_hash TEXT NOT NULL,
+          car_path TEXT NOT NULL,
+          field_key TEXT NOT NULL,
+          state TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          record_json TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_profile_validation_field "
+        "ON profile_validation_records(profile_id, field_key, created_at, record_id)"
+    )
 
 
 def initialize_database(db_path: str | Path | None = None) -> sqlite3.Connection:
