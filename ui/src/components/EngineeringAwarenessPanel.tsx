@@ -136,7 +136,7 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
 
       {surface === "laps" && (
         <div className="engineering-awareness__grid">
-          {projection.episodes.length ? projection.episodes.map((episode) => (
+          {projection.episodes.length ? projection.episodes.slice(0, learning ? undefined : 2).map((episode) => (
             <article key={episode.episode_id}>
               <span>Laps {episode.lap_scope.join(", ")} · {episode.phase}</span>
               <strong>{episode.supporting_mechanism_kinds.map(humanize).join(" → ")}</strong>
@@ -165,7 +165,7 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
 
       {surface === "setup" && (
         <div className="engineering-awareness__grid">
-          {projection.setup_leverage_states.length ? projection.setup_leverage_states.map((item) => (
+          {projection.setup_leverage_states.length ? projection.setup_leverage_states.slice(0, learning ? undefined : 3).map((item) => (
             <article key={item.control_key} className={item.states.includes("blocked") ? "is-blocked" : ""}>
               <span>{humanize(item.control_key)}</span>
               <strong>{item.states.map(humanize).join(" · ")}</strong>
@@ -177,7 +177,7 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
 
       {surface === "compare" && (
         <div className="engineering-awareness__grid">
-          {projection.expected_vs_observed.length ? projection.expected_vs_observed.map((item) => (
+          {projection.expected_vs_observed.length ? projection.expected_vs_observed.slice(0, learning ? undefined : 2).map((item) => (
             <article key={item.workflow_id}>
               <span>{item.control_key ? humanize(item.control_key) : "Diagnostic intervention"} · {item.phase}</span>
               <strong>Mechanism {humanize(item.mechanism_state)} · Response {humanize(item.control_response)} · {humanize(item.policy_verdict)}</strong>
@@ -188,7 +188,7 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
       )}
 
       {surface === "engineer" && (
-        <>
+        learning ? <>
           <div className="engineering-awareness__systems">
             {projection.subsystem_states.map((item) => (
               <article key={item.mechanism} className={item.status === "ready" ? "is-ready" : "is-blocked"}>
@@ -204,7 +204,17 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
               <Axis key={key} label={humanize(key)} axis={axis} learning={learning} />
             ))}
           </div>
-        </>
+        </> : <div className="engineering-awareness__brief">
+          <article className="is-blocked">
+            <span>Current blocker</span>
+            <strong>{projection.knowledge_debt[0] ?? "No active blocker"}</strong>
+          </article>
+          <article>
+            <span>Next mission</span>
+            <strong>{projection.current_mission.title}</strong>
+            <p>{projection.current_mission.instruction}</p>
+          </article>
+        </div>
       )}
     </section>
   );

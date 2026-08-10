@@ -228,6 +228,10 @@ def test_frontend_awareness_is_stale_safe_and_uses_existing_surfaces() -> None:
     assert "response.session_id !== requestedSessionId" in panel
     assert "response.request_identity.session_id !== requestedSessionId" in panel
     assert "focusEvidence({" in panel
+    assert 'learning ? <>' in panel
+    assert 'className="engineering-awareness__systems"' in panel
+    assert '<span>Current blocker</span>' in panel
+    assert '<span>Next mission</span>' in panel
     expected = {
         "OverviewTab.tsx": 'surface="overview"',
         "LapsTab.tsx": 'surface="laps"',
