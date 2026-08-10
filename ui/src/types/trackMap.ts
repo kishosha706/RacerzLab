@@ -27,7 +27,7 @@ export interface TrackMapMarker {
   y: number;
   z: number | null;
   heading_rad: number | null;
-  source: "mt2" | "telemetry" | "fallback";
+  source: "mt2";
 }
 
 export interface TrackMapTurn {

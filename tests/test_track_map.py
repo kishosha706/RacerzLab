@@ -33,7 +33,6 @@ from racelab_engine.services.track_map_service import (
     build_track_map_overlays,
     build_track_map_package,
     build_track_regions,
-    cleanup_track_map_storage,
     get_track_map,
     import_mt2_file,
     list_track_maps,
@@ -628,8 +627,8 @@ def test_import_creates_canonical_cache_and_index(tmp_path: Path, monkeypatch: p
 
     assert entry["import_status"] == "indexed"
     assert entry["source_type"] == "mt2"
-    assert entry["source_hash"] == entry["sha256"]
-    assert entry["source_removed"] is True
+    assert "source_hash" not in entry
+    assert "source_removed" not in entry
     assert "local_path" not in entry
     assert source_path.exists()
 
@@ -639,17 +638,17 @@ def test_import_creates_canonical_cache_and_index(tmp_path: Path, monkeypatch: p
     assert cached["source_file"] is None
     assert cached["source_type"] == "mt2"
     assert cached["sha256"] == entry["sha256"]
-    assert cached["source_hash"] == entry["sha256"]
+    assert "source_hash" not in cached
     assert cached["metadata"]["display_name"] == "Talladega"
 
     index_entries = list_track_maps()
     assert len(index_entries) == 1
     assert index_entries[0]["map_id"] == entry["map_id"]
     assert index_entries[0]["display_name"] == "Talladega"
-    assert index_entries[0]["source_hash"] == entry["sha256"]
-    assert index_entries[0]["source_removed"] is True
+    assert "source_hash" not in index_entries[0]
     assert "local_path" not in index_entries[0]
     assert not (data_dir / "imports" / "mt2" / source_path.name).exists()
+    assert not hasattr(track_map_service, "cleanup_track_map_storage")
 
 
 def test_reimport_same_bytes_reports_already_indexed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_mt2_bytes: bytes) -> None:
@@ -665,6 +664,34 @@ def test_reimport_same_bytes_reports_already_indexed(tmp_path: Path, monkeypatch
     assert first_entry["map_id"] == second_entry["map_id"]
     assert second_entry["import_status"] == "already_indexed"
     assert len(list_track_maps()) == 1
+
+
+def test_same_track_layout_refresh_replaces_prior_map_and_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_mt2_bytes: bytes,
+) -> None:
+    monkeypatch.setenv("RACELAB_DATA_DIR", str(tmp_path))
+    source_path = tmp_path / "talladega.mt2"
+    source_path.write_bytes(synthetic_mt2_bytes)
+    first = import_mt2_file(source_path)
+    prior_cache = Path(first["cache_path"])
+    replacement_cache = prior_cache.with_name("talladega-refreshed.json")
+    replacement_cache.write_text("{}", encoding="utf-8")
+    replacement = {
+        **first,
+        "map_id": "talladega-refreshed",
+        "cache_path": str(replacement_cache),
+        "sha256": "f" * 64,
+    }
+    replacement.pop("import_status", None)
+
+    inserted = track_map_service._upsert_index_entry(replacement)
+
+    assert inserted is False
+    assert list_track_maps() == [replacement]
+    assert replacement_cache.exists()
+    assert not prior_cache.exists()
 
 
 def test_overlay_and_package_use_canonical_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_mt2_bytes: bytes) -> None:
@@ -748,53 +775,6 @@ def test_overlay_rejects_invalid_target_zone(
             target_zone_start_pct=start_pct,
             target_zone_end_pct=end_pct,
         )
-
-
-def test_cleanup_removes_retained_staging_and_rewrites_index(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    synthetic_mt2_bytes: bytes,
-) -> None:
-    data_dir = tmp_path / "project-data"
-    source_dir = tmp_path / "original-track-map-files"
-    monkeypatch.setenv("RACELAB_DATA_DIR", str(data_dir))
-    source_dir.mkdir()
-    source_path = source_dir / "legacy.mt2"
-    source_path.write_bytes(synthetic_mt2_bytes)
-
-    entry = import_mt2_file(source_path)
-    legacy_staging_dir = data_dir / "imports" / "mt2"
-    legacy_staging_dir.mkdir(parents=True, exist_ok=True)
-    legacy_staging_path = legacy_staging_dir / source_path.name
-    legacy_staging_path.write_bytes(synthetic_mt2_bytes)
-
-    legacy_index = list_track_maps()
-    legacy_index[0]["local_path"] = str(legacy_staging_path)
-    legacy_index[0].pop("source_removed", None)
-    index_path = data_dir / "track_maps" / "track_map_index.json"
-    index_path.write_text(json.dumps(legacy_index, indent=2), encoding="utf-8")
-
-    result = cleanup_track_map_storage()
-
-    assert result["source_files_removed"] == 1
-    assert result["entries_updated"] == 1
-    assert result["cache_files_updated"] >= 0
-    assert source_path.exists()
-    assert not legacy_staging_path.exists()
-
-    cleaned_entries = list_track_maps()
-    assert cleaned_entries[0]["map_id"] == entry["map_id"]
-    assert cleaned_entries[0]["display_name"] == "Talladega"
-    assert cleaned_entries[0]["source_removed"] is True
-    assert cleaned_entries[0]["source_hash"] == entry["sha256"]
-    assert "talladega" in cleaned_entries[0]["match_aliases"]
-    assert "local_path" not in cleaned_entries[0]
-
-    track_map = get_track_map(entry["map_id"])
-    assert track_map is not None
-    assert track_map.map_id == entry["map_id"]
-    assert track_map.source_file is None
-    assert track_map.metadata.display_name == "Talladega"
 
 
 def test_track_map_list_endpoint_hides_internal_paths(
@@ -1100,12 +1080,13 @@ def test_audit_track_map_coverage_catches_broken_index_entry(
     index_path = tmp_path / "track_maps" / "track_map_index.json"
     index = json.loads(index_path.read_text(encoding="utf-8"))
     index[0]["display_name"] = ""
-    index[0]["source_removed"] = False
+    index[0]["source_removed"] = True
     index_path.write_text(json.dumps(index, indent=2), encoding="utf-8")
 
     report = audit_module.audit_track_map_coverage(tmp_path)
 
     assert report["broken_index_entries"]
+    assert "legacy storage field present" in report["broken_index_entries"][0]["issues"]
     assert any("broken index entries" in violation for violation in report["violations"])
 
 
@@ -1130,7 +1111,7 @@ def test_audit_track_map_coverage_catches_retained_staging_source_path(
     assert any("retained staging source files" in violation for violation in report["violations"])
 
 
-def test_audit_track_map_coverage_reports_duplicate_source_hashes_cleanly(
+def test_audit_track_map_coverage_rejects_duplicate_sha256_identities(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     synthetic_mt2_bytes: bytes,
@@ -1151,8 +1132,11 @@ def test_audit_track_map_coverage_reports_duplicate_source_hashes_cleanly(
 
     report = audit_module.audit_track_map_coverage(tmp_path)
 
-    assert report["duplicate_hashes"][entry["sha256"]] == 2
+    assert report["duplicate_sha256"][entry["sha256"]] == 2
+    assert report["duplicate_cache_paths"]
     assert report["duplicate_count"] == 1
+    assert any("duplicate sha256 identities" in violation for violation in report["violations"])
+    assert any("duplicate canonical cache paths" in violation for violation in report["violations"])
 
 
 def test_audit_track_map_coverage_reports_display_name_suggestions(

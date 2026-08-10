@@ -186,7 +186,7 @@ class TrackMapMarker:
     y: float
     z: float | None = None
     heading_rad: float | None = None
-    source: Literal["mt2", "telemetry", "fallback"] = "mt2"
+    source: Literal["mt2"] = "mt2"
 
 
 @dataclass
@@ -258,7 +258,7 @@ class TrackMapMetadata:
 class TrackMap:
     map_id: str
     source_file: str | None
-    source_type: Literal["mt2", "telemetry", "fallback"]
+    source_type: Literal["mt2"]
     file_size_bytes: int
     sha256: str
     metadata: TrackMapMetadata

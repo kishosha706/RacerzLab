@@ -167,27 +167,67 @@ def _save_index(entries: list[dict[str, Any]]) -> None:
     _invalidate_track_map_file_caches()
 
 
-def _find_index_entry(entries: list[dict[str, Any]], *, map_id: str | None = None, sha256: str | None = None) -> int | None:
-    for i, entry in enumerate(entries):
-        if map_id and entry.get("map_id") == map_id:
-            return i
-        if sha256 and entry.get("sha256") == sha256:
-            return i
-    return None
+def _same_map_identity(existing: dict[str, Any], incoming: dict[str, Any]) -> bool:
+    return bool(
+        existing.get("map_id") == incoming.get("map_id")
+        or existing.get("sha256") == incoming.get("sha256")
+        or (
+            existing.get("track_key") == incoming.get("track_key")
+            and existing.get("layout_key") == incoming.get("layout_key")
+        )
+    )
+
+
+def _remove_superseded_cache(
+    prior_entry: dict[str, Any],
+    replacement_entry: dict[str, Any],
+) -> None:
+    """Remove only an obsolete canonical JSON beside the active map index."""
+    prior_raw = prior_entry.get("cache_path")
+    replacement_raw = replacement_entry.get("cache_path")
+    if not prior_raw or not replacement_raw:
+        return
+    try:
+        prior_path = Path(prior_raw).resolve()
+        replacement_path = Path(replacement_raw).resolve()
+        canonical_dir = _track_maps_dir().resolve()
+    except (OSError, TypeError, ValueError):
+        return
+    if (
+        prior_path == replacement_path
+        or prior_path.parent != canonical_dir
+        or prior_path.suffix.casefold() != ".json"
+        or prior_path.name == "track_map_index.json"
+    ):
+        return
+    try:
+        prior_path.unlink(missing_ok=True)
+    except OSError:
+        return
 
 
 def _upsert_index_entry(entry: dict[str, Any]) -> bool:
     """Insert or update an index entry. Returns True if new (inserted), False if updated."""
     with _TRACK_MAP_STORAGE_LOCK:
         entries = _load_index()
-        existing_index = _find_index_entry(entries, map_id=entry["map_id"], sha256=entry.get("sha256"))
-        if existing_index is not None:
-            entries[existing_index] = entry
+        matched = [existing for existing in entries if _same_map_identity(existing, entry)]
+        if not matched:
+            entries.append(entry)
             _save_index(entries)
-            return False  # updated
-        entries.append(entry)
-        _save_index(entries)
-        return True  # inserted
+            return True
+        updated: list[dict[str, Any]] = []
+        replacement_written = False
+        for existing in entries:
+            if _same_map_identity(existing, entry):
+                if not replacement_written:
+                    updated.append(entry)
+                    replacement_written = True
+                continue
+            updated.append(existing)
+        _save_index(updated)
+        for prior_entry in matched:
+            _remove_superseded_cache(prior_entry, entry)
+        return False
 
 
 def _canonical_cache_dict(track_map: TrackMap) -> dict[str, Any]:
@@ -202,7 +242,6 @@ def _canonical_cache_dict(track_map: TrackMap) -> dict[str, Any]:
             layout_key=layout_key,
         )["suggested_display_name"]
     data["source_file"] = None
-    data["source_hash"] = track_map.sha256
     return data
 
 
@@ -229,7 +268,6 @@ def _canonical_index_entry(
         "source_filename": source_filename,
         "cache_path": str(cache_path),
         "source_type": track_map.source_type,
-        "source_removed": True,
         "status": track_map.status,
         "supported": track_map.supported,
         "partial": track_map.partial,
@@ -240,114 +278,7 @@ def _canonical_index_entry(
         "match_aliases": build_match_aliases(display_name, source_filename, layout_key),
         "warnings": track_map.warnings,
         "sha256": track_map.sha256,
-        "source_hash": track_map.sha256,
         "file_size_bytes": track_map.file_size_bytes,
-    }
-
-
-def _normalize_index_entry(entry: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(entry)
-    source_hash = normalized.get("source_hash") or normalized.get("sha256")
-    if source_hash:
-        normalized["source_hash"] = source_hash
-        normalized["sha256"] = normalized.get("sha256", source_hash)
-    display_cleanup = suggest_track_map_display_name(
-        normalized.get("display_name"),
-        source_filename=normalized.get("source_filename"),
-        map_id=normalized.get("map_id"),
-        layout_key=normalized.get("layout_key"),
-    )
-    if display_cleanup["suggested_display_name"]:
-        normalized["display_name"] = display_cleanup["suggested_display_name"]
-        normalized["match_aliases"] = build_match_aliases(
-            normalized["display_name"],
-            str(normalized.get("source_filename", "")),
-            str(normalized.get("layout_key", "default")),
-        )
-    normalized["source_removed"] = True
-    normalized.pop("local_path", None)
-    return normalized
-
-
-def _retained_source_path(entry: dict[str, Any]) -> Path | None:
-    local_path = entry.get("local_path")
-    if not local_path:
-        return None
-    try:
-        return Path(local_path)
-    except (TypeError, ValueError):
-        return None
-
-
-def _delete_retained_source_file(entry: dict[str, Any]) -> bool:
-    retained_path = _retained_source_path(entry)
-    cache_path_value = entry.get("cache_path")
-    if retained_path is None or not cache_path_value:
-        return False
-    cache_path = Path(cache_path_value)
-    if not cache_path.exists() or not retained_path.exists() or retained_path.suffix.lower() != ".mt2":
-        return False
-    retained_path.unlink()
-    return True
-
-
-def _sanitize_canonical_cache(entry: dict[str, Any]) -> bool:
-    cache_path_value = entry.get("cache_path")
-    if not cache_path_value:
-        return False
-    cache_path = Path(cache_path_value)
-    if not cache_path.exists():
-        return False
-    try:
-        data = json.loads(cache_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return False
-
-    original = json.dumps(data, sort_keys=True)
-    data["source_file"] = None
-    if "sha256" in data and "source_hash" not in data:
-        data["source_hash"] = data["sha256"]
-    if metadata := data.get("metadata"):
-        metadata["format"] = "track_map_v2"
-        metadata["display_name"] = suggest_track_map_display_name(
-            metadata.get("display_name") or metadata.get("track_name"),
-            source_filename=entry.get("source_filename"),
-            map_id=entry.get("map_id"),
-            layout_key=entry.get("layout_key"),
-        )["suggested_display_name"]
-
-    if json.dumps(data, sort_keys=True) == original:
-        return False
-    _atomic_write_text(cache_path, json.dumps(data, indent=2, default=str))
-    _invalidate_track_map_file_caches()
-    return True
-
-
-def cleanup_track_map_storage() -> dict[str, int]:
-    entries = _load_index()
-    if not entries:
-        return {"entries_updated": 0, "source_files_removed": 0, "cache_files_updated": 0}
-
-    normalized_entries: list[dict[str, Any]] = []
-    entries_updated = 0
-    source_files_removed = 0
-    cache_files_updated = 0
-    for entry in entries:
-        if _delete_retained_source_file(entry):
-            source_files_removed += 1
-        if _sanitize_canonical_cache(entry):
-            cache_files_updated += 1
-        normalized = _normalize_index_entry(entry)
-        if normalized != entry:
-            entries_updated += 1
-        normalized_entries.append(normalized)
-
-    if entries_updated or source_files_removed:
-        _save_index(normalized_entries)
-    return {
-        "entries_updated": entries_updated,
-        "source_files_removed": source_files_removed,
-        "cache_files_updated": cache_files_updated,
     }
 
 
@@ -501,9 +432,9 @@ def _dict_to_track_map(d: dict[str, Any]) -> TrackMap:
     return TrackMap(
         map_id=d["map_id"],
         source_file=d.get("source_file"),
-        source_type=d.get("source_type", "mt2"),
+        source_type=d["source_type"],
         file_size_bytes=d.get("file_size_bytes", 0),
-        sha256=d.get("sha256", d.get("source_hash", "")),
+        sha256=d["sha256"],
         metadata=metadata,
         bounds=bounds,
         points=points,

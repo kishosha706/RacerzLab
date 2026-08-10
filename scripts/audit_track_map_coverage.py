@@ -141,12 +141,12 @@ def _validate_index_entry(entry: dict[str, Any], canonical_path: Path) -> list[s
         issues.append("missing layout_key")
     if not canonical_path.exists():
         issues.append("missing canonical JSON")
-    if "local_path" in entry:
-        issues.append("index exposes local_path")
-    if not entry.get("source_removed", False):
-        issues.append("source_removed not true")
-    if not (entry.get("source_hash") or entry.get("sha256")):
-        issues.append("missing source hash")
+    if any(field in entry for field in ("source_hash", "source_removed", "local_path")):
+        issues.append("legacy storage field present")
+    if entry.get("source_type") != "mt2":
+        issues.append("source_type must be mt2")
+    if not entry.get("sha256"):
+        issues.append("missing sha256")
     return issues
 
 
@@ -413,24 +413,31 @@ def audit_track_map_coverage(
     audit["index_entry_count"] = len(index_entries)
     audit["canonical_json_count"] = len(canonical_map_paths)
     audit["unique_map_id_count"] = len({entry.get("map_id") for entry in index_entries if entry.get("map_id")})
-    audit["unique_source_hash_count"] = len({
-        entry.get("source_hash") or entry.get("sha256")
-        for entry in index_entries
-        if entry.get("source_hash") or entry.get("sha256")
+    audit["unique_sha256_count"] = len({
+        entry.get("sha256") for entry in index_entries if entry.get("sha256")
     })
     audit["staging_files"] = staging_files
     audit["staging_source_files"] = staging_source_files
     audit["imports_dir_only_gitkeep"] = staging_files in ([], [".gitkeep"])
 
     hash_counter = Counter(
-        entry.get("source_hash") or entry.get("sha256")
+        entry.get("sha256")
         for entry in index_entries
-        if entry.get("source_hash") or entry.get("sha256")
+        if entry.get("sha256")
     )
-    duplicate_hashes = {
+    duplicate_sha256 = {
         hash_value: count for hash_value, count in hash_counter.items() if hash_value and count > 1
     }
-    audit["duplicate_hashes"] = duplicate_hashes
+    audit["duplicate_sha256"] = duplicate_sha256
+    cache_path_counter = Counter(
+        str(entry.get("cache_path", "")).casefold()
+        for entry in index_entries
+        if entry.get("cache_path")
+    )
+    duplicate_cache_paths = {
+        path: count for path, count in cache_path_counter.items() if count > 1
+    }
+    audit["duplicate_cache_paths"] = duplicate_cache_paths
 
     track_layout_counter = Counter(
         (entry.get("track_key"), entry.get("layout_key"))
@@ -480,6 +487,27 @@ def audit_track_map_coverage(
 
             if cache_payload.get("source_file") not in (None, ""):
                 broken_maps.append({"map_id": entry.get("map_id"), "issues": ["canonical payload exposes source_file"]})
+            if "source_hash" in cache_payload:
+                broken_maps.append(
+                    {
+                        "map_id": entry.get("map_id"),
+                        "issues": ["canonical payload contains legacy source_hash"],
+                    }
+                )
+            if cache_payload.get("source_type") != "mt2":
+                broken_maps.append(
+                    {
+                        "map_id": entry.get("map_id"),
+                        "issues": ["canonical payload source_type is not mt2"],
+                    }
+                )
+            if cache_payload.get("metadata", {}).get("format") != "track_map_v2":
+                broken_maps.append(
+                    {
+                        "map_id": entry.get("map_id"),
+                        "issues": ["canonical payload format is not track_map_v2"],
+                    }
+                )
             if "motec" in json.dumps(cache_payload, sort_keys=True).casefold():
                 broken_maps.append(
                     {
@@ -628,6 +656,10 @@ def audit_track_map_coverage(
         audit["violations"].append(f"missing canonical JSON for {len(missing_canonical_json)} map(s)")
     if unreferenced_json_files:
         audit["violations"].append(f"unreferenced canonical JSON files: {len(unreferenced_json_files)}")
+    if duplicate_sha256:
+        audit["violations"].append(f"duplicate sha256 identities: {len(duplicate_sha256)}")
+    if duplicate_cache_paths:
+        audit["violations"].append(f"duplicate canonical cache paths: {len(duplicate_cache_paths)}")
     if duplicate_track_layouts:
         audit["violations"].append(f"duplicate track/layout entries: {len(duplicate_track_layouts)}")
     if broken_index_entries:
@@ -665,7 +697,7 @@ def _print_human_report(audit: dict[str, Any], show_warnings: bool) -> None:
     print(f"Index entries: {audit.get('index_entry_count', 0)}")
     print(f"Canonical JSON files: {audit.get('canonical_json_count', 0)}")
     print(f"Unique map_id count: {audit.get('unique_map_id_count', 0)}")
-    print(f"Unique source hash count: {audit.get('unique_source_hash_count', 0)}")
+    print(f"Unique SHA-256 count: {audit.get('unique_sha256_count', 0)}")
     print(f"Oval maps with canonical turns: {audit.get('oval_turn_map_count', 0)}")
     print(f"Staging files: {', '.join(audit.get('staging_files', [])) or '(empty)'}")
     print(f"Violations: {len(audit.get('violations', []))}")
