@@ -108,24 +108,16 @@ def test_shock_reader_api_returns_stable_shape(tmp_path: Path, monkeypatch: pyte
         "bin_width_in_s",
         "setup_snapshot_available",
         "corners",
-        "recommendations",
+        "setup_authority",
         "warnings",
     }.issubset(payload)
     assert payload["corners"][0]["corner"] == "LF"
-    assert len(payload["corners"][0]["setting_recommendations"]) == 6
-    assert payload["corners"][0]["setting_recommendations"][0]["display_label"] == "LS Comp"
     assert payload["boundary_in_s"] == 1.5
-    assert payload["slope_actions_available"] is False
     assert "Official iRacing Next Gen guidance" in payload["boundary_basis"]
-    assert len(payload["recommendations"]) <= 1
-    inline = payload["corners"][0]["setting_recommendations"][0]
-    assert inline["direction"] == "needs_more_evidence"
-    assert inline["delta"] is None
-    assert inline["suggested_value"] is None
-    assert inline["target_value_raw"] is None
-    assert inline["legal_option_provenance"] == []
-    assert inline["evidence_state"] == "blocked_by_context"
-    assert payload["evidence_state"] == "blocked_by_context"
+    assert payload["setup_authority"] == "withheld"
+    serialized = json.dumps(payload).casefold()
+    for forbidden in ("recommendations", "suggested_value", "target_value_raw", "action_text", "keep_if", "undo_if"):
+        assert forbidden not in serialized
 
 
 def test_shock_reader_api_returns_recovery_conflict_for_unbound_cache(
@@ -159,11 +151,10 @@ def test_client_query_cannot_inject_a_shock_option_catalog(
         "&legal_option_provenance_by_corner_setting=client-claim"
     )
 
-    assert response.status_code == 200
-    rec = response.json()["corners"][0]["setting_recommendations"][0]
-    assert rec["direction"] == "needs_more_evidence"
-    assert rec["suggested_value"] is None
-    assert rec["legal_option_provenance"] == []
+    assert response.status_code == 422
+    detail = response.json()["detail"].casefold()
+    assert "unsupported shock reader query fields" in detail
+    assert "legal_options_by_corner_setting" in detail
 
 
 def test_shock_reader_api_missing_setup_has_no_numeric_suggestion(
@@ -177,11 +168,13 @@ def test_shock_reader_api_missing_setup_has_no_numeric_suggestion(
     response = client.get("/api/runs/run-1/shock-reader?lap=1")
 
     assert response.status_code == 200
-    rec = response.json()["corners"][0]["setting_recommendations"][0]
-    assert rec["current_value"] is None
-    assert rec["suggested_value"] is None
-    assert rec["delta"] is None
-    assert rec["blocked_reason"] == "setup value missing"
+    payload = response.json()
+    assert payload["setup_snapshot_available"] is False
+    assert all(
+        all(value is None for value in corner["setup_values"].values())
+        for corner in payload["corners"]
+    )
+    assert "suggested_value" not in json.dumps(payload).casefold()
 
 
 def test_shock_reader_api_returns_404_for_unknown_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -193,7 +186,7 @@ def test_shock_reader_api_returns_404_for_unknown_run(tmp_path: Path, monkeypatc
     assert response.status_code == 404
 
 
-def test_shock_reader_api_rejects_wide_or_partial_slope_zone(
+def test_shock_reader_api_rejects_wide_or_partial_observation_zone(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -215,6 +208,7 @@ def test_client_cannot_override_server_selected_shock_boundary(
     _seed_shock_run(tmp_path)
     client = TestClient(app)
 
-    payload = client.get("/api/runs/run-1/shock-reader?lap=1&boundary_in_s=99").json()
+    response = client.get("/api/runs/run-1/shock-reader?lap=1&boundary_in_s=99")
 
-    assert payload["boundary_in_s"] == 1.5
+    assert response.status_code == 422
+    assert "boundary_in_s" in response.json()["detail"]

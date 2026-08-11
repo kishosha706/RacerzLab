@@ -767,7 +767,7 @@ _RIDE_HEIGHT_RAW_KEYS: dict[str, str] = {
     "rr_ride_height_m": "rr_ride_height",
 }
 
-_SLIP_RAW_KEYS: list[str] = ["LFspeed", "RFspeed", "LRspeed", "RRspeed"]
+_SLIP_RAW_KEYS: list[str] = ["lf_speed", "rf_speed", "lr_speed", "rr_speed"]
 _SLIP_TARGETS: list[str] = ["lf_slip_ratio", "rf_slip_ratio", "lr_slip_ratio", "rr_slip_ratio"]
 
 _SHOCK_DEFL_RAW_KEYS: dict[str, str] = {
@@ -820,6 +820,8 @@ _TIRE_ALIAS_MAP: dict[str, str] = {
     "LRwearM": "lr_wear_middle", "RRwearM": "rr_wear_middle",
     "LFwearR": "lf_wear_outer", "RFwearR": "rf_wear_outer",
     "LRwearR": "lr_wear_outer", "RRwearR": "rr_wear_outer",
+    "LFspeed": "lf_speed", "RFspeed": "rf_speed",
+    "LRspeed": "lr_speed", "RRspeed": "rr_speed",
 }
 
 
@@ -1018,8 +1020,8 @@ def _compute_slip_ratios(df: pl.DataFrame) -> pl.DataFrame:
         df = df.with_columns(slip.alias(target))
 
     # driven_wheel_slip_proxy
-    if {"LRspeed", "RRspeed"}.issubset(df.columns):
-        ws_avg = (pl.col("LRspeed") + pl.col("RRspeed")) / 2.0
+    if {"lr_speed", "rr_speed"}.issubset(df.columns):
+        ws_avg = (pl.col("lr_speed") + pl.col("rr_speed")) / 2.0
         slip = (ws_avg - speed_expr) / denom_expr
         slip = slip.clip(-SLIP_RATIO_CLAMP_MAX, SLIP_RATIO_CLAMP_MAX)
         df = df.with_columns(slip.alias("driven_wheel_slip_proxy"))
@@ -1245,19 +1247,20 @@ def _compute_wheel_speed_mismatch(df: pl.DataFrame) -> pl.DataFrame:
     Matches the mismatch section of _compute_slip_ratios in
     calculated_channels.py.
 
-    Raw mismatch is always computed when LFspeed/RFspeed/LRspeed/RRspeed exist.
-    Geometry-corrected mismatch requires yaw_rate and track width columns.
+    Raw mismatch is computed from the exact canonical aliases of the four raw
+    wheel-speed channels. Geometry-corrected mismatch additionally requires
+    yaw rate and track-width geometry.
     """
-    has_front = {"LFspeed", "RFspeed"}.issubset(df.columns)
-    has_rear = {"LRspeed", "RRspeed"}.issubset(df.columns)
+    has_front = {"lf_speed", "rf_speed"}.issubset(df.columns)
+    has_rear = {"lr_speed", "rr_speed"}.issubset(df.columns)
 
     if has_front:
         df = df.with_columns(
-            (pl.col("RFspeed") - pl.col("LFspeed")).alias("front_wheel_speed_mismatch_raw"),
+            (pl.col("rf_speed") - pl.col("lf_speed")).alias("front_wheel_speed_mismatch_raw"),
         )
     if has_rear:
         df = df.with_columns(
-            (pl.col("RRspeed") - pl.col("LRspeed")).alias("rear_wheel_speed_mismatch_raw"),
+            (pl.col("rr_speed") - pl.col("lr_speed")).alias("rear_wheel_speed_mismatch_raw"),
         )
 
     # Geometry-corrected mismatch
@@ -1267,7 +1270,7 @@ def _compute_wheel_speed_mismatch(df: pl.DataFrame) -> pl.DataFrame:
 
     if has_front and has_yaw and has_ftw:
         front_geo = pl.col("yaw_rate") * pl.col("front_track_width_m")
-        front_diff = pl.col("RFspeed") - pl.col("LFspeed")
+        front_diff = pl.col("rf_speed") - pl.col("lf_speed")
         df = df.with_columns(
             (front_diff - front_geo).alias("front_wheel_speed_mismatch_corrected"),
         )
@@ -1277,7 +1280,7 @@ def _compute_wheel_speed_mismatch(df: pl.DataFrame) -> pl.DataFrame:
 
     if has_rear and has_yaw and has_rtw:
         rear_geo = pl.col("yaw_rate") * pl.col("rear_track_width_m")
-        rear_diff = pl.col("RRspeed") - pl.col("LRspeed")
+        rear_diff = pl.col("rr_speed") - pl.col("lr_speed")
         df = df.with_columns(
             (rear_diff - rear_geo).alias("rear_wheel_speed_mismatch_corrected"),
         )

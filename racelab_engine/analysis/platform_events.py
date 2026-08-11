@@ -106,7 +106,6 @@ class PlatformEvent:
 
     channels_used: list[str] = field(default_factory=list)
     evidence: list[str] = field(default_factory=list)
-    recommended_action: str | None = None
 
     is_proxy_based: bool = False
     proxy_warning: str | None = None
@@ -142,7 +141,6 @@ class PlatformEvent:
             "primary_unit": self.primary_unit,
             "channels_used": self.channels_used,
             "evidence": self.evidence,
-            "recommended_action": self.recommended_action,
             "is_proxy_based": self.is_proxy_based,
             "proxy_warning": self.proxy_warning,
             "metadata": self.metadata,
@@ -568,7 +566,6 @@ def detect_min_splitter(rows: list[dict[str, Any]]) -> PlatformEvent | None:
         primary_unit="in",
         channels_used=["cfs_ride_height_in", "cfs_ride_height_mm", "speed_mph", "throttle_pct", "brake_pct"],
         evidence=evidence,
-        recommended_action="Compare target-zone speed and splitter margin before changing multiple setup areas.",
     )
 
 
@@ -632,7 +629,6 @@ def detect_worst_speed_loss(rows: list[dict[str, Any]]) -> PlatformEvent | None:
         primary_unit="mph/1000ft" if rate_1000ft is not None else "mph/s",
         channels_used=["speed_rate_mph_1000ft", "speed_rate_mph_s", "speed_mph", "throttle_pct", "brake_pct"],
         evidence=evidence,
-        recommended_action="Investigate platform, scrub, gearing, wind, or traffic behavior. Compare speed at same track position on next run.",
     )
 
 
@@ -683,7 +679,6 @@ def detect_worst_drag_scrub(rows: list[dict[str, Any]]) -> PlatformEvent | None:
         primary_unit="index",
         channels_used=["drag_scrub_suspicion", "full_throttle_resistance_index", "abs_steering_deg", "abs_lat_accel", "cfs_ride_height_in"],
         evidence=evidence,
-        recommended_action="Compare one controlled platform or line change and watch target-zone speed, steering, and CFS height.",
         is_proxy_based=True,
         proxy_warning=FORCE_PROXY_WARNING,
     )
@@ -730,7 +725,6 @@ def detect_highest_rake(rows: list[dict[str, Any]]) -> PlatformEvent | None:
         primary_unit="in",
         channels_used=["center_rake_fs_in", "rear_avg_rh_in", "cfs_ride_height_in", "side_rake_in"],
         evidence=evidence,
-        recommended_action="Review whether this rake state coincides with speed loss, low CFS height, or platform instability.",
     )
 
 
@@ -778,7 +772,6 @@ def detect_highest_platform_compression(rows: list[dict[str, Any]]) -> PlatformE
         primary_unit="index",
         channels_used=["platform_compression_index", "cfs_risk_score", "drag_scrub_suspicion", "cfs_ride_height_in"],
         evidence=evidence,
-        recommended_action="Check CFS height, shock activity, and speed rate at the same track position.",
         is_proxy_based=True,
         proxy_warning=FORCE_PROXY_WARNING,
     )
@@ -827,7 +820,6 @@ def detect_highest_shock_activity(rows: list[dict[str, Any]]) -> PlatformEvent |
         primary_unit="index",
         channels_used=["shock_activity_index", "lf_shock_velocity_rms", "rf_shock_velocity_rms", "lr_shock_velocity_rms", "rr_shock_velocity_rms"],
         evidence=evidence,
-        recommended_action="Inspect shock velocity traces and compare against CFS/rake stability.",
         is_proxy_based=True,
         proxy_warning=FORCE_PROXY_WARNING,
     )
@@ -903,10 +895,6 @@ def detect_min_rear_ride_height(rows: list[dict[str, Any]]) -> PlatformEvent | N
             "speed_mph", "throttle_pct", "brake_pct",
         ],
         evidence=evidence,
-        recommended_action=(
-            "Rear platform contact risk detected. Inspect rear ride heights, "
-            "spring rates, and shock travel. Compare with rear damper energy and speed loss."
-        ),
         is_proxy_based=True,
         proxy_warning=FORCE_PROXY_WARNING,
         metadata={
@@ -996,11 +984,6 @@ def detect_whole_car_bottoming_risk(rows: list[dict[str, Any]]) -> PlatformEvent
             "platform_balance_label", "platform_balance_explanation",
         ],
         evidence=evidence,
-        recommended_action=(
-            "Both front and rear platform margins are low. Consider raising ride heights "
-            "or reviewing spring rates and packers. Compare speed and platform stability "
-            "at the same track position."
-        ),
         is_proxy_based=True,
         proxy_warning=FORCE_PROXY_WARNING,
         metadata=_balance_evidence(row),
@@ -1048,7 +1031,6 @@ def detect_max_dynamic_pressure(rows: list[dict[str, Any]]) -> PlatformEvent | N
         primary_unit="psf",
         channels_used=["dynamic_pressure_psf", "speed_mph", "air_density", "cfs_ride_height_in"],
         evidence=evidence,
-        recommended_action="Check whether maximum dynamic pressure correlates with CFS collapse or speed loss.",
     )
 
 
@@ -1103,16 +1085,15 @@ def detect_platform_events(
         metadata = {
             **displayed.metadata,
             "lap_eligibility": "eligible" if lap_is_eligible else "blocked",
-            "tuning_action_suppressed": not lap_is_eligible,
+            "observation_withheld": not lap_is_eligible,
         }
         if lap_is_eligible:
             qualified.append(replace(displayed, metadata=metadata))
             continue
-        reason = "Canonical lap eligibility failed; observation retained, tuning action suppressed."
+        reason = "Canonical lap eligibility failed; observation retained, diagnostic guidance suppressed."
         qualified.append(
             replace(
                 displayed,
-                recommended_action=None,
                 reason_for_hidden=displayed.reason_for_hidden,
                 metadata=metadata,
                 evidence=[*displayed.evidence, reason],

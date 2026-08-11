@@ -321,8 +321,8 @@ export function PriorityRail({
               {isMutedPlatformEvent(event, eventVisibilityMode) && (
                 <span className="event-scope-pill">{platformEventScopeLabel(event)}</span>
               )}
-              <span className="priority-recommendation">
-                {event.recommended_action ?? event.reason_for_hidden ?? event.evidence?.[0] ?? "Open this event for detailed evidence."}
+              <span className="priority-evidence-summary">
+                {event.reason_for_hidden ?? event.evidence?.[0] ?? "Open this event for detailed evidence."}
               </span>
               <span className="priority-next">
                 <ArrowRight size={12} /> Open {CATEGORY_LABELS[event.event_type] ?? "Trace"}

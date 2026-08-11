@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from racelab_engine.analysis.lap_windows import (
     _is_lap_valid_for_ranking,
     compute_best_windows,
@@ -7,6 +10,7 @@ from racelab_engine.analysis.lap_windows import (
     compute_lap_windows_response,
 )
 from racelab_engine.models.lap import LapSummary
+from racelab_engine.models.lap_analysis import LapWindowSummary, StintCompareResult, StintSummary
 
 
 def _lap(n: int, t: float = 50.0, useful: bool = True, tags: list[str] | None = None) -> LapSummary:
@@ -55,3 +59,36 @@ def test_missing_lap_numbers_split_windows_and_degradation() -> None:
     assert best_20.is_available is False
     assert best_20.best_window is None
     assert degradation.lap_count == 10
+
+
+@pytest.mark.parametrize("field", ["recommendation", "setup_action", "next_setup_change"])
+def test_lap_window_contract_rejects_injected_setup_authority(field: str) -> None:
+    with pytest.raises(ValidationError):
+        LapWindowSummary.model_validate({
+            "window_id": "window-r-1-3",
+            "run_id": "r",
+            "start_lap": 1,
+            "end_lap": 3,
+            "window_size": 3,
+            field: "Increase right-rear spring by 25 lb/in.",
+        })
+
+
+@pytest.mark.parametrize("field", ["recommendation", "verdict", "setup_action"])
+def test_stint_comparison_contract_rejects_legacy_or_injected_authority(field: str) -> None:
+    baseline = StintSummary(
+        stint_id="baseline",
+        run_id="baseline-run",
+        start_lap=1,
+        end_lap=3,
+        lap_count=3,
+        valid_lap_count=3,
+    )
+    test = baseline.model_copy(update={"stint_id": "test", "run_id": "test-run"})
+
+    with pytest.raises(ValidationError):
+        StintCompareResult.model_validate({
+            "baseline_stint": baseline,
+            "test_stint": test,
+            field: "Keep the test setup.",
+        })

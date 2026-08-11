@@ -8,6 +8,7 @@ from racelab_engine.analysis.proximity_context import (
     ProximityState,
     classify_proximity_time_gap_window,
     classify_proximity_window,
+    proximity_time_gap_exposure_fraction,
 )
 
 
@@ -104,3 +105,14 @@ def test_time_gap_context_requires_valid_speed_for_every_sample() -> None:
 
     assert result.state is ProximityState.CONTEXT_UNKNOWN
     assert result.blocks_relative_resistance is True
+
+
+def test_time_gap_exposure_fraction_is_measured_and_missing_is_not_zero_filled() -> None:
+    rows = [
+        {"CarDistAhead": 60.0, "CarDistBehind": 500_000.0, "speed_mps": 50.0},
+        {"CarDistAhead": 100.0, "CarDistBehind": 500_000.0, "speed_mps": 50.0},
+    ]
+
+    assert proximity_time_gap_exposure_fraction(rows) == 0.5
+    rows[1].pop("CarDistBehind")
+    assert proximity_time_gap_exposure_fraction(rows) is None

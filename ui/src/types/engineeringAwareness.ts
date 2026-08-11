@@ -70,15 +70,6 @@ export type MechanismEpisode = {
   context_blockers: string[];
 };
 
-export type SetupLeverageState = {
-  control_key: string;
-  states: ("relevant" | "needs_measurement" | "prior_keep" | "prior_undo" | "blocked" | "authorized" | "active_test")[];
-  basis: string[];
-  workflow_ids: string[];
-  source_event_ids: string[];
-  authority_source: "p19_reasoning_snapshot";
-};
-
 export type ExpectedVsObservedState = {
   workflow_id: string;
   control_key: string | null;
@@ -86,15 +77,12 @@ export type ExpectedVsObservedState = {
   phase: string;
   mechanism_state: "supported" | "weakened" | "unchanged" | "inconclusive" | "invalid";
   control_response: "matched" | "missed" | "inconclusive" | "unavailable" | "invalid";
-  policy_verdict: "keep" | "undo" | "retest" | "invalid";
-  countereffects: string[];
   mechanism_reason: string;
   control_response_reason: string;
-  policy_reason: string;
 };
 
 export type EngineeringAwarenessProjection = {
-  schema_version: "p20.awareness.v1";
+  schema_version: "p20.awareness.v2";
   run_id: string;
   session_id: string | null;
   reasoning_snapshot_id: string;
@@ -104,8 +92,7 @@ export type EngineeringAwarenessProjection = {
   cache_state: "cold" | "warm";
   build_duration_ms: number;
   profile_hash: string | null;
-  authority_state: "observation" | "measurement" | "controlled_setup" | "blocked";
-  setup_authorized: boolean;
+  authority: "observation_only";
   trust_budget: TrustBudget;
   primary_state: PrimaryEngineeringState | null;
   subsystem_states: SubsystemAwarenessState[];
@@ -113,18 +100,9 @@ export type EngineeringAwarenessProjection = {
   state_drift_status: "ready" | "no_finding" | "blocked" | "unavailable";
   state_drift_findings: unknown[];
   state_drift_blocker_reasons: string[];
-  setup_leverage_states: SetupLeverageState[];
   expected_vs_observed: ExpectedVsObservedState[];
   control_mutations: { mutation_id: string; control_key: string; mutation_kind: string; lap: number; lap_pct: number }[];
   knowledge_debt: string[];
-  current_mission: {
-    kind: "controlled_test" | "measurement_mission" | "discriminator" | "stop_testing" | "blocked";
-    title: string;
-    instruction: string;
-    setup_authorized: boolean;
-    contract_id: string | null;
-    blocker_reasons: string[];
-  };
   artifact_versions: { artifact_key: string; version: string }[];
   raw_trace_included: false;
 };

@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
 from api.schemas import ChannelCatalogItem, ChannelSummaryItem, DialInRequest, RunListItem, TraceResponse
-from racelab_engine.knowledge.setup.dial_in_schema import DialInResponse
+from racelab_engine.knowledge.setup.dial_in_schema import DialInHypothesisResponse
 from racelab_engine.knowledge.setup.dial_in_service import build_dial_in_response
 from racelab_engine.models.session import RunOverview
 from racelab_engine.models.setup import SetupSnapshot
@@ -50,11 +50,11 @@ def get_setup(run_id: str) -> SetupSnapshot:
     return setup
 
 
-@router.post("/{run_id}/dial-in", response_model=DialInResponse, response_model_exclude_none=True)
-def dial_in(run_id: str, request: DialInRequest) -> DialInResponse:
+@router.post("/{run_id}/dial-in", response_model=DialInHypothesisResponse, response_model_exclude_none=True)
+def dial_in(run_id: str, request: DialInRequest) -> DialInHypothesisResponse:
     get_run_or_404(run_id)
     try:
-        return build_dial_in_response(
+        response = build_dial_in_response(
             run_id,
             request.complaint,
             car_family_override=request.car_family,
@@ -71,6 +71,7 @@ def dial_in(run_id: str, request: DialInRequest) -> DialInResponse:
             limit=request.limit,
             include_debug_evidence=request.include_debug_evidence,
         )
+        return DialInHypothesisResponse.from_internal(response)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

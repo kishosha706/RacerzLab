@@ -32,7 +32,6 @@ def test_platform_related_loss_when_speed_and_cfs_worsen() -> None:
     result = classify_target_zone(-0.2, -0.01, 0.0, 0.0, 0.0, "clean")
 
     assert result.label == "Platform-related loss"
-    assert result.recommendation == "Undo or reduce platform change."
 
 
 def test_zone_classifier_uses_labels_not_raw_percent_locations() -> None:

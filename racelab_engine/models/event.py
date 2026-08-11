@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from racelab_engine.models.evidence import EvidenceState
 
 
 class TelemetryEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     event_id: str
     run_id: str
     lap_number: Optional[int] = None
@@ -25,7 +27,6 @@ class TelemetryEvent(BaseModel):
     primary_metric_value: Optional[float] = None
     evidence_json: dict[str, Any] = Field(default_factory=dict)
     related_setup_keys: list[str] = Field(default_factory=list)
-    recommended_actions: list[str] = Field(default_factory=list)
     is_proxy_based: bool = False
     proxy_warning: Optional[str] = None
     evidence_state: EvidenceState = EvidenceState.UNAVAILABLE

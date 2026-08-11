@@ -34,8 +34,6 @@ CREATE TABLE IF NOT EXISTS runs (
   notes TEXT,
   primary_findings_json TEXT,
   warnings_json TEXT,
-  crew_chief_summary TEXT,
-  next_test TEXT,
   session_json TEXT NOT NULL
 );
 
@@ -92,26 +90,7 @@ CREATE TABLE IF NOT EXISTS events (
   primary_metric_value REAL,
   evidence_json TEXT,
   related_setup_keys TEXT,
-  recommended_actions TEXT,
   event_json TEXT NOT NULL,
-  created_at TEXT,
-  FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS recommendations (
-  recommendation_id TEXT PRIMARY KEY,
-  run_id TEXT NOT NULL,
-  priority_rank INTEGER,
-  issue TEXT,
-  cause_bucket TEXT,
-  confidence_score REAL,
-  evidence_strength TEXT,
-  recommendation_text TEXT,
-  success_metric TEXT,
-  required_next_data TEXT,
-  do_not_change_warnings TEXT,
-  evidence_event_ids TEXT,
-  recommendation_json TEXT NOT NULL,
   created_at TEXT,
   FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
 );
@@ -145,12 +124,13 @@ CREATE INDEX IF NOT EXISTS idx_laps_run_useful_time
   ON laps(run_id, is_useful, lap_time, lap_number);
 CREATE INDEX IF NOT EXISTS idx_events_run_id ON events(run_id);
 CREATE INDEX IF NOT EXISTS idx_events_lap_type ON events(run_id, lap_number, event_type);
-CREATE INDEX IF NOT EXISTS idx_recommendations_run_id ON recommendations(run_id);
-CREATE INDEX IF NOT EXISTS idx_recommendations_run_priority
-  ON recommendations(run_id, priority_rank);
 CREATE INDEX IF NOT EXISTS idx_setup_snapshots_run_id ON setup_snapshots(run_id);
 
--- Notebook / Setup Memory tables
+-- Observational Notebook
+--
+-- Notebook is deliberately not setup memory.  It stores comparison context,
+-- evidence, and user notes/tags, but never a setup-policy verdict, setup
+-- change, or next-test plan.  P19 controlled workflows own that authority.
 
 CREATE TABLE IF NOT EXISTS notebook_findings (
   finding_id TEXT PRIMARY KEY,
@@ -166,7 +146,6 @@ CREATE TABLE IF NOT EXISTS notebook_findings (
   test_lap INTEGER,
   target_zone_start_pct REAL DEFAULT 55.0,
   target_zone_end_pct REAL DEFAULT 70.0,
-  verdict TEXT,
   confidence_score REAL DEFAULT 0.0,
   confidence_tier TEXT,
   test_discipline_score REAL DEFAULT 0.0,
@@ -176,34 +155,81 @@ CREATE TABLE IF NOT EXISTS notebook_findings (
   evidence_json TEXT,
   warnings_json TEXT,
   sector_summaries_json TEXT,
-  setup_changes_json TEXT,
   context_changes_json TEXT,
   improved_metrics_json TEXT,
   worsened_metrics_json TEXT,
-  next_step TEXT,
   notes TEXT DEFAULT '',
   tags_json TEXT,
-  status TEXT DEFAULT 'saved'
+  status TEXT NOT NULL DEFAULT 'saved' CHECK (status IN ('saved', 'archived'))
 );
 
-CREATE TABLE IF NOT EXISTS test_plans (
-  test_plan_id TEXT PRIMARY KEY,
+-- Greenfield authority migration for existing local databases.  Rebuilding
+-- physically discards legacy client-attested verdict/setup/next-step columns,
+-- drops the test-plan store, and converts policy-like statuses to plain saved
+-- observations.  Safe observation data survives the rebuild.
+DROP TABLE IF EXISTS test_plans;
+DROP TABLE IF EXISTS notebook_findings_observational_v2;
+CREATE TABLE notebook_findings_observational_v2 (
+  finding_id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  source_finding_id TEXT,
   car_name TEXT,
   track_name TEXT,
   setup_name TEXT,
-  goal TEXT,
-  change_to_try TEXT,
-  do_not_change_json TEXT,
-  success_metric TEXT,
+  baseline_run_id TEXT,
+  test_run_id TEXT,
+  comparison_id TEXT,
+  baseline_lap INTEGER,
+  test_lap INTEGER,
   target_zone_start_pct REAL DEFAULT 55.0,
   target_zone_end_pct REAL DEFAULT 70.0,
-  planned_notes TEXT DEFAULT '',
-  status TEXT DEFAULT 'planned',
-  FOREIGN KEY(source_finding_id) REFERENCES notebook_findings(finding_id) ON DELETE SET NULL
+  confidence_score REAL DEFAULT 0.0,
+  confidence_tier TEXT,
+  test_discipline_score REAL DEFAULT 0.0,
+  target_zone_classification TEXT,
+  summary_headline TEXT,
+  key_takeaways_json TEXT,
+  evidence_json TEXT,
+  warnings_json TEXT,
+  sector_summaries_json TEXT,
+  context_changes_json TEXT,
+  improved_metrics_json TEXT,
+  worsened_metrics_json TEXT,
+  notes TEXT DEFAULT '',
+  tags_json TEXT,
+  status TEXT NOT NULL DEFAULT 'saved' CHECK (status IN ('saved', 'archived'))
 );
+INSERT INTO notebook_findings_observational_v2 (
+  finding_id, created_at, updated_at,
+  car_name, track_name, setup_name,
+  baseline_run_id, test_run_id, comparison_id,
+  baseline_lap, test_lap,
+  target_zone_start_pct, target_zone_end_pct,
+  confidence_score, confidence_tier,
+  test_discipline_score, target_zone_classification,
+  summary_headline,
+  key_takeaways_json, evidence_json, warnings_json,
+  sector_summaries_json, context_changes_json,
+  improved_metrics_json, worsened_metrics_json,
+  notes, tags_json, status
+)
+SELECT
+  finding_id, created_at, updated_at,
+  car_name, track_name, setup_name,
+  baseline_run_id, test_run_id, comparison_id,
+  baseline_lap, test_lap,
+  target_zone_start_pct, target_zone_end_pct,
+  confidence_score, confidence_tier,
+  test_discipline_score, target_zone_classification,
+  summary_headline,
+  key_takeaways_json, evidence_json, warnings_json,
+  sector_summaries_json, context_changes_json,
+  improved_metrics_json, worsened_metrics_json,
+  notes, tags_json,
+  CASE WHEN status = 'archived' THEN 'archived' ELSE 'saved' END
+FROM notebook_findings;
+DROP TABLE notebook_findings;
+ALTER TABLE notebook_findings_observational_v2 RENAME TO notebook_findings;
 
 CREATE TABLE IF NOT EXISTS segments (
   segment_id TEXT PRIMARY KEY,
@@ -240,9 +266,7 @@ CREATE INDEX IF NOT EXISTS idx_segments_run_id ON segments(run_id);
 CREATE INDEX IF NOT EXISTS idx_segments_run_lap ON segments(run_id, lap_number);
 
 CREATE INDEX IF NOT EXISTS idx_findings_car_track ON notebook_findings(car_name, track_name);
-CREATE INDEX IF NOT EXISTS idx_findings_verdict ON notebook_findings(verdict);
 CREATE INDEX IF NOT EXISTS idx_findings_status ON notebook_findings(status);
-CREATE INDEX IF NOT EXISTS idx_test_plans_status ON test_plans(status);
 
 -- Internal setup-response learning. This is deliberately not a user-facing notebook.
 CREATE TABLE IF NOT EXISTS setup_response_observations (

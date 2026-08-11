@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from racelab_engine.knowledge.setup.dial_in_schema import DialInHypothesisResponse
 from racelab_engine.knowledge.setup.dial_in_service import build_dial_in_response
 
 
@@ -19,7 +20,9 @@ def _print_debug_summary(summary: dict) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Query clean driver-facing dial-in guidance from a run context.")
+    parser = argparse.ArgumentParser(
+        description="Query observation-only setup hypotheses from a run context."
+    )
     parser.add_argument("--run-id", required=True, help="Run ID to inspect.")
     parser.add_argument("--complaint", required=True, help="Driver complaint to interpret.")
     parser.add_argument("--car-family", help="Optional car-family override.")
@@ -32,16 +35,18 @@ def main() -> int:
     parser.add_argument("--debug-evidence", action="store_true", help="Include backend evidence detail for development.")
     args = parser.parse_args()
 
-    response = build_dial_in_response(
-        args.run_id,
-        args.complaint,
-        car_family_override=args.car_family,
-        track_family_override=args.track_family,
-        baseline_run_id=args.baseline_run_id,
-        test_run_id=args.test_run_id,
-        package_archetype=args.package_archetype,
-        limit=args.limit,
-        include_debug_evidence=args.debug_evidence,
+    response = DialInHypothesisResponse.from_internal(
+        build_dial_in_response(
+            args.run_id,
+            args.complaint,
+            car_family_override=args.car_family,
+            track_family_override=args.track_family,
+            baseline_run_id=args.baseline_run_id,
+            test_run_id=args.test_run_id,
+            package_archetype=args.package_archetype,
+            limit=args.limit,
+            include_debug_evidence=args.debug_evidence,
+        )
     )
     if args.as_json:
         print(json.dumps(response.model_dump(exclude_none=True), indent=2))
@@ -64,12 +69,13 @@ def main() -> int:
 
     if response.top_swings:
         print()
-        print("First swings I'd consider:")
+        print("Control areas to measure:")
         for index, swing in enumerate(response.top_swings, start=1):
             print(f"{index}. {swing.title}")
-            print(f"   Goal: {swing.effect}")
-            print(f"   The trade-off: {swing.counter_effect}")
-            print(f"   Your next test: {swing.one_change_test}")
+            print(f"   Candidate control area: {swing.candidate_control_label}")
+            print(f"   Mechanism to verify: {swing.mechanism_to_verify}")
+            print(f"   Counter-effect to watch: {swing.counter_effect_to_watch}")
+            print(f"   Measurement needed: {swing.measurement_needed}")
             watch_targets = list(dict.fromkeys([*swing.validate_with_labels, *swing.watch_for_labels]))
             print(f"   What to watch for: {', '.join(watch_targets)}")
             print(f"   Readiness: {swing.readiness_label}")
@@ -77,8 +83,6 @@ def main() -> int:
     if response.next_step:
         print()
         print(f"Next step: {response.next_step}")
-    if response.validation_summary:
-        print(response.validation_summary)
     if response.warnings:
         print()
         print("Warnings:")

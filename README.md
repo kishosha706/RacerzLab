@@ -17,29 +17,29 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **Test Basket** — persistent bottom-right drawer for collecting baseline/test laps, windows, and stints. Baseline/test slots with readiness state (ready/caution/not_valid/reference_mode), cross-session support, validation warnings, Swap/Clear/Review in Laps. Persists to localStorage across app restarts.
 - **All Sessions / Baselines** — browse all imported runs with Add as Baseline/Test actions. Recommended baseline candidates (fastest clean lap, most recent run, best 10-lap EV window).
 - **Platform/Aero Workbench** — stacked telemetry chart workbench (ECharts) with Platform/Rake, Speed/RPM, Drag/Scrub, Tires, Shocks, Grade/Pull subviews. Event markArea annotation bands.
-- **Internal Compare Engine** — baseline vs test analysis services, verdict components, did-it-work logic, and delta trace tooling retained for Laps-owned comparison workflows
-- **Did-It-Work Card** — standalone verdict component with evidence, test discipline score, target-zone/splitter/scrub deltas, warnings, setup changes, and action buttons (Save Finding, Stage Next Test, Create Test, Open Setup, Open Map, Open Evidence)
+- **Internal Compare Engine** — baseline vs test observation services and delta-trace tooling retained for Laps-owned review; policy authority remains in P19
+- **Comparison review** — Laps-owned, observation-only comparison evidence; it cannot publish setup targets or policy decisions
 - **Delta Traces** — per-channel delta traces with target zone highlighting (Speed/Platform, Ride Height, Tire presets)
-- **Insights Engine** — automated interpretation of comparison results with trace annotations, correlations, target zone classification, confidence-weighted verdicts, and sector intelligence
-- **Notebook & Setup Memory** — save findings, edit notes/tags/status, duplicate detection, create test plans, copy Markdown export, view setup memory dashboard with per-car/track summaries
+- **Insights Engine** — automated observation of comparison traces, correlations, target zones, and sector evidence without setup authority
+- **Notebook** — save evidence snapshots and edit notes/tags; notebook records cannot create setup policy, test plans, or setup memory
 - **Setup Focus Mode** — 16 event types mapped to related setup keys; fields highlight/dim on event selection. Explicit/Inferred badges with tooltips. Diff vs Baseline toggle.
-- **Evidence Inspector Source Stack** — structured sections: Where, What, Evidence, Related Setup, Decision with action buttons (Platform, Map, Test)
+- **Evidence Inspector Source Stack** — structured observation sections with evidence navigation to Platform, Setup, and Map
 - **Clickable Evidence Chips** — evidence chips in Overview open Platform/Setup. EvidenceCard clickable with Platform/Map actions.
 - **Comprehensive UX Audit** — full page-by-page review completed (2026-05-28). P0-P3 priority matrix documented in `docs/future_ux_improvements.md`.
-- **Learning/Race Mode** — toggle between short/direct (Race Mode) and verbose/coaching (Learning Mode) via L key or mode badge click. Mode-aware copy in Overview, Crew Chief, and inspector.
+- **Learning/Race Mode** — toggle between short/direct (Race Mode) and verbose/coaching (Learning Mode) via L key or mode badge click. Both modes use the same server authority.
 - **Evidence-gated Engineering Systems** — driver/line, braking, corner rotation, tire state, damper response, aero-platform, relative-resistance, powertrain/gearing, stint-strategy, and simulator-integrity analysis. Missing or incompatible evidence produces an explicit holdback instead of a fabricated answer.
 - **Physical-position Comparison** — future runs are aligned by track position with coverage gaps, phase context, alignment quality, and empirical-noise reporting; sample index is never treated as track position.
-- **Controlled Test Director** — guarded A/B/A2 experiment planning with one setup control, a measurement mission, stop/rollback rules, and noise-aware keep/retest/undo scoring. Production execution remains locked until the server can assemble all required evidence.
+- **P19 Controlled Workflow** — the sole public setup authority. Exact-session P19 reasoning must authorize and bind one adjacent setup target before an A/B/A2 workflow can be persisted; P19 also validates its Keep/Undo/retest result.
 - **Keyboard Shortcuts** — Esc clear, M/P/O/C/N workspace nav, L mode toggle, ←/→ event navigation
-- **Persistent Evidence Inspector** — right-side Crew Chief panel with event selection, evidence cards, setup linkage, and next-action buttons
-- **Local SQLite persistence** — imported runs, laps, events, setup snapshots, recommendations, segments, notebook findings, test plans, and RaceLab sessions stored locally
+- **Persistent Evidence Inspector** — right-side observation inspector with event selection, evidence cards, and setup linkage
+- **Local SQLite persistence** — imported runs, laps, events, setup snapshots, segments, notebook observations, exact P19 workflow history, and RaceLab sessions stored locally
 - **112+ calculated channels** — ride heights, rake, dynamic pressure, tire pressure gain, temp/wear spread, slip ratio, shock velocity/activity/RMS, damper energy, motion g-conversions, platform pitch/roll estimates, kinematic slip angles, dynamic grade, aero load index, drag/scrub suspicion, platform compression, stability scores, rear scrape detection, platform balance classification
 - **Signal smoothing helpers** — Savitzky-Golay 5-point and centered SMA smoothing (opt-in, pure Python, zero-phase)
 - **Vehicle Dynamics Engine** — 6 physics modules: aero coefficients, tire dynamics (slip angles, understeer gradient), vehicle dynamics (weight transfer, brake energy), geometry (pitch/roll with motion ratios), estimate confidence, physics inputs
 - **Vectorized Analysis Pipeline** — default Polars path with parity coverage against row fallback, frame-native overview consumers, and no full-row materialization in the normal import path.
 - **Engine Comparison Script** — `scripts/compare_analysis_engines.py` for validating vector vs row path on real data
 - **Extrema-preserving downsampling** — CFS minimums and event peaks never lost in chart views
-- **1,100+ collected tests** — unit, integration, adversarial, API-contract, frontend-contract, parity, and benchmark coverage
+- **Adversarial regression coverage** — unit, integration, API-contract, frontend-contract, parity, and benchmark checks
 
 ## Proxy Disclaimer
 
@@ -114,14 +114,15 @@ See [TESTING.md](TESTING.md) for full details.
 7. **Open Platform Workbench** — inspect ride heights, rake, dynamic pressure, tire pressure/temp/slip via ECharts
 8. **Open Track Map** — view centerline geometry with platform event markers, heatmaps, section cards, and layer toggles
 9. **Review Stint Intelligence** — compare baseline/test stints inline from Laps
-10. **Review Verdict** — keep/undo/retest with confidence score, evidence, and Did-It-Work card as comparison tools are embedded into Laps
+10. **Review comparison observations** — inspect physical-position evidence in Laps without treating it as a setup verdict
 11. **Explore Delta Traces** — see per-channel deltas by lap position with target zone highlight
 12. **Check Setup Relevance** — highlighted setup fields linked to selected event, Explicit/Inferred badges
-13. **Stage Next Test** — create a draft test plan from the verdict
-14. **Save Finding** — persist the comparison result to the Notebook
-15. **Edit Notes/Tags/Status** — add context, change confirmation status
-16. **Create Test Plan** — define the next controlled test
-17. **Setup Memory** — review the aggregate picture of what has worked
+13. **Ask Engineer** — review the canonical P19 report, competing causes, evidence, and best measurement
+14. **Open Dial-In** — review observational hypotheses; exact direction and target remain hidden unless P19 authorizes them
+15. **Start a controlled workflow** — bind the exact session, run, setup, build, laps, events, and P19 reasoning identity before persistence
+16. **Run A/B/A2** — record three eligible cohorts while changing only the authorized control
+17. **Review P19 outcome** — Keep/Undo/retest policy appears only after P19 validates the controlled result
+18. **Save Notebook observation** — preserve evidence and user notes without creating setup authority
 
 ---
 
@@ -138,8 +139,8 @@ See [TESTING.md](TESTING.md) for full details.
 ```
 GET  /api/health
 POST /api/imports/ibt (multipart upload; JSON {path} is dev/local-only)
-POST /api/imports/track-map (multipart upload)
-POST /api/imports/track-map-folder (JSON {folder_path})
+POST /api/imports/mt2 (multipart upload)
+POST /api/imports/mt2-folder (JSON {folder_path})
 GET  /api/track-maps
 GET  /api/track-maps/{id}
 GET  /api/runs/{id}/track-map-match
@@ -150,8 +151,12 @@ GET  /api/runs/{id}/laps
 GET  /api/runs/{id}/channels
 GET  /api/runs/{id}/trace
 GET  /api/runs/{id}/platform-events
+GET  /api/runs/{id}/platform-events-report
+GET  /api/runs/{id}/telemetry-capabilities
+GET  /api/runs/{id}/shock-reader
 GET  /api/runs/{id}/setup
 GET  /api/runs/{id}/report
+POST /api/runs/{id}/dial-in
 POST /api/compare
 GET  /api/compare/preview
 POST /api/compare/delta-traces
@@ -164,10 +169,12 @@ POST /api/notebook/findings/from-comparison
 GET  /api/notebook/findings
 GET  /api/notebook/findings/{id}
 PATCH /api/notebook/findings/{id}
-POST /api/notebook/findings/{id}/test-plan
-GET  /api/notebook/test-plans
-PATCH /api/notebook/test-plans/{id}
-GET  /api/notebook/setup-memory
+GET  /api/runs/{id}/intelligence?session_id={session_id}
+POST /api/engineering/workflows (requires exact session_id; server binds current P19 authority)
+GET  /api/engineering/workflows
+POST /api/engineering/workflows/{workflow_id}/stages/{stage}
+POST /api/engineering/workflows/{workflow_id}/score
+POST /api/engineering/workflows/{workflow_id}/cancel
 POST /api/sessions (create RaceLab session)
 GET  /api/sessions (list sessions)
 GET  /api/sessions/{id} (get session)
@@ -211,5 +218,5 @@ See `AGENTS.md` for product rules (evidence first, no junk-lap conclusions, prox
 
 Vectorized analysis is the default runtime path; row mode is retained as fallback/debug parity only.
 
-Last verified: 2026-08-03 (1,172 tests collected during the adversarial polish pass; large-fixture timing numbers still require fixture profiler runs).
+Verification evidence is recorded in `ROADMAP.md` and `TESTING.md`; do not infer current authority from historical feature descriptions.
 

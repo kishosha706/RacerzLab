@@ -413,14 +413,14 @@ def test_candidate_score_is_evidence_based_not_list_position() -> None:
 
     source_channels = {"event-1": ("yaw_rate", "steering_deg")}
     first = service._cause_candidate_from_swing(
-        swing, 0, {"cross_weight_percent": ["event-1"]}, source_channels,
+        swing, {"cross_weight_percent": ["event-1"]}, source_channels,
     )
-    ninth = service._cause_candidate_from_swing(
-        swing, 8, {"cross_weight_percent": ["event-1"]}, source_channels,
+    repeated = service._cause_candidate_from_swing(
+        swing, {"cross_weight_percent": ["event-1"]}, source_channels,
     )
 
-    assert first is not None and ninth is not None
-    assert first.score == ninth.score
+    assert first is not None and repeated is not None
+    assert first.score == repeated.score
     assert first.score_components["eligible_event_link"] == 1.0
     assert "not a calibrated probability" in first.score_basis
 
@@ -435,7 +435,7 @@ def test_candidate_without_event_link_cannot_receive_strong_score() -> None:
         evidence_state=EvidenceState.MEASURED, risk_label="Low coupling risk",
     )
 
-    candidate = service._cause_candidate_from_swing(swing, 0, {})
+    candidate = service._cause_candidate_from_swing(swing, {})
 
     assert candidate is not None
     assert candidate.score <= 0.35
@@ -456,7 +456,6 @@ def test_multi_control_swing_cannot_be_truncated_into_one_exact_action() -> None
 
     assert service._cause_candidate_from_swing(
         swing,
-        0,
         {"lf_ride_height_mm": ["event-1"], "rf_ride_height_mm": ["event-1"]},
     ) is None
 

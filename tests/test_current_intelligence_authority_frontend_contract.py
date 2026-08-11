@@ -23,7 +23,11 @@ def test_source_run_authority_projection_fails_closed_across_every_identity() ->
     assert "workflow.stage_run_ids.A !== workflow.source_run_id" in source
     assert "workflow.source_run_id !== sourceRunId" in projection_gate
     assert "report.run_id !== sourceRunId" in report_gate
-    assert "(report.session_id ?? null) !== (sessionId ?? null)" in report_gate
+    assert "!canonicalText(sessionId)" in report_gate
+    assert "report.session_id !== sessionId" in report_gate
+    assert "telemetryHealth?.session_id !== sessionId" in report_gate
+    assert "telemetryHealth.current_run_id !== sourceRunId" in report_gate
+    assert "telemetryHealth.ordered_session_run_ids.includes(sourceRunId)" in report_gate
     assert 'report.status !== "ready"' in report_gate
     assert 'report.decision_status !== "ready"' in report_gate
     assert 'report.data_quality?.status !== "ready"' in report_gate
@@ -179,4 +183,5 @@ def test_dial_in_hides_stage_b_prose_and_blocks_only_the_authorizing_stage() -> 
     assert "!stageBSetupAuthorityWithheld && hints.length > 0" in dial_in
     assert "Baseline only · no setup authority" in dial_in
     assert "Restore only · no setup authority" in dial_in
-    assert "Historical target retained in the auditable certificate · not current setup authority" in dial_in
+    assert "The workflow response itself cannot publish a target or Keep/Undo verdict." in dial_in
+    assert "workflow.quality.verdict" not in dial_in

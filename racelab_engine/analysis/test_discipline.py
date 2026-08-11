@@ -18,7 +18,7 @@ def score_test_discipline(
             label="invalid",
             positive_factors=[],
             negative_factors=["One or both setup snapshots are unavailable; change attribution is unknown."],
-            recommendation="Capture both setup snapshots before drawing a setup conclusion.",
+            measurement_note="Setup snapshot coverage is missing; setup-change attribution is unavailable.",
         )
 
     exact_changes = len(setup_changes)
@@ -76,20 +76,20 @@ def score_test_discipline(
         label = "invalid"
         negative.append("Too many uncontrolled variables for a valid comparison.")
 
-    recommendation = None
+    measurement_note = None
     if label == "reference":
-        recommendation = "Use this comparison to characterize repeatability, not a setup direction."
+        measurement_note = "No setup controls changed; this is a repeatability reference only."
     elif label == "clean":
-        recommendation = "Controlled setup scope. Continue only if lap and context evidence also pass."
+        measurement_note = "One setup scope is isolated; lap and context evidence still bound confidence."
     elif label == "mostly_clean":
-        recommendation = "Comparison is usable, but try to limit to one change per test."
+        measurement_note = "Two controls or groups changed; attribution is partially confounded."
     elif label == "mixed":
-        recommendation = "Retest with fewer setup changes or more controlled conditions."
+        measurement_note = "Multiple controls or groups changed; exact control attribution is unavailable."
     elif label in ("weak", "invalid"):
-        recommendation = "Not reliable for setup conclusions. Repeat the test with one controlled variable."
+        measurement_note = "The comparison is not isolated enough for control attribution."
 
     return TestDisciplineResult(
         score=score, label=label, positive_factors=positive,
-        negative_factors=negative, recommendation=recommendation,
+        negative_factors=negative, measurement_note=measurement_note,
     )
 

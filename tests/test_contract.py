@@ -6,6 +6,7 @@ They do NOT require a running server — they test model serialization directly.
 
 from __future__ import annotations
 
+import pytest
 
 
 from racelab_engine.models.lap import LapSummary
@@ -17,11 +18,12 @@ from racelab_engine.models.lap_analysis import (
     LapWindowsResponse,
 )
 from racelab_engine.models.event import TelemetryEvent
-from racelab_engine.models.notebook import NotebookFinding, TestPlan, SetupMemorySummary
+from racelab_engine.models.notebook import NotebookFinding
 from racelab_engine.models.comparison_insights import (
     ComparisonInsightsResponse,
 )
 from racelab_engine.analysis.comparison import (
+    ComparisonObservation,
     DidItWorkVerdict,
     TireComparison,
     ShockComparison,
@@ -30,7 +32,6 @@ from racelab_engine.analysis.compare_math import (
     aggregate_tire_comparison,
     aggregate_shock_comparison,
 )
-from racelab_engine.models.recommendation import Recommendation
 
 
 # ── Lap model shape tests ──────────────────────────────────────
@@ -186,7 +187,7 @@ class TestTelemetryEventShape:
         assert event.confidence_score == 0.0
         assert event.valid_for_tuning is False
         assert event.related_setup_keys == []
-        assert event.recommended_actions == []
+        assert "measurement_guidance" not in type(event).model_fields
 
     def test_setup_relevance(self):
         event = TelemetryEvent(
@@ -194,11 +195,10 @@ class TestTelemetryEventShape:
             severity="high", confidence_score=0.8,
             valid_for_tuning=True,
             related_setup_keys=["lf_ride_height_mm", "rf_ride_height_mm"],
-            recommended_actions=["Increase front ride height"],
         )
         assert event.valid_for_tuning is True
         assert "lf_ride_height_mm" in event.related_setup_keys
-        assert event.recommended_actions[0] == "Increase front ride height"
+        assert "measurement_guidance" not in event.model_dump()
 
 
 # ── Notebook model shape tests ─────────────────────────────────
@@ -209,97 +209,46 @@ class TestNotebookFindingShape:
 
     def test_required_fields(self):
         nf = NotebookFinding(finding_id="f1")
-        assert nf.verdict is None
         assert nf.confidence_score == 0.0
         assert nf.warnings == []
         assert nf.evidence == []
         assert nf.key_takeaways == []
         assert nf.status == "saved"
 
-    def test_compare_fields(self):
+    def test_observation_fields(self):
         nf = NotebookFinding(
             finding_id="f1",
-            verdict="keep_direction",
             confidence_score=0.85,
             confidence_tier="high",
             test_discipline_score=80.0,
             target_zone_classification="stable_gain",
-            summary_headline="Setup change improved corner exit",
-            key_takeaways=["More rear grip", "Better throttle application"],
+            summary_headline="Corner-exit telemetry changed",
+            key_takeaways=["Rear slip angle decreased", "Throttle trace changed"],
             evidence=["Speed increased by 0.5 mph in target zone"],
             warnings=["Short run — tire falloff not assessed"],
             improved_metrics=["speed_mph"],
             worsened_metrics=["cfs_ride_height_in"],
-            next_step="Test with 10-lap run",
         )
-        assert nf.verdict == "keep_direction"
         assert nf.confidence_tier == "high"
         assert nf.improved_metrics == ["speed_mph"]
         assert nf.worsened_metrics == ["cfs_ride_height_in"]
-        assert nf.next_step == "Test with 10-lap run"
 
     def test_serialization(self):
         nf = NotebookFinding(
             finding_id="f1",
-            verdict="keep_direction",
             confidence_score=0.85,
             warnings=["Short run"],
         )
         d = nf.as_dict()
         assert d["finding_id"] == "f1"
-        assert d["verdict"] == "keep_direction"
         assert d["confidence_score"] == 0.85
         assert d["warnings"] == ["Short run"]
-
-
-class TestTestPlanShape:
-    """Verify TestPlan has all expected fields."""
-
-    def test_required_fields(self):
-        tp = TestPlan(test_plan_id="tp1")
-        assert tp.goal is None
-        assert tp.change_to_try is None
-        assert tp.success_metric is None
-        assert tp.status == "planned"
-
-    def test_full_fields(self):
-        tp = TestPlan(
-            test_plan_id="tp1",
-            source_finding_id="f1",
-            goal="Improve corner exit speed",
-            change_to_try="Increase rear spring rate by 50 N/mm",
-            do_not_change=["Front ride height", "Front anti-roll bar"],
-            success_metric="Speed in target zone increases by 0.3 mph",
-        )
-        assert tp.goal == "Improve corner exit speed"
-        assert "Front ride height" in tp.do_not_change
-        assert tp.success_metric is not None
-
-
-class TestSetupMemorySummaryShape:
-    """Verify SetupMemorySummary has all expected fields."""
-
-    def test_required_fields(self):
-        sm = SetupMemorySummary()
-        assert sm.total_findings == 0
-        assert sm.most_common_issue is None
-        assert sm.best_known_target_zone is None
-        assert sm.recommended_next_test is None
-
-    def test_full_fields(self):
-        sm = SetupMemorySummary(
-            car_name="Car",
-            track_name="Track",
-            total_findings=5,
-            keep_count=3,
-            undo_count=1,
-            retest_count=1,
-            most_common_issue="Understeer in corner entry",
-            best_known_target_zone="55-70%",
-            recommended_next_test="Increase front spring rate",
-        )
-        assert sm.most_common_issue == "Understeer in corner entry"
-        assert sm.recommended_next_test == "Increase front spring rate"
+        assert {
+            "verdict",
+            "setup_changes",
+            "next_step",
+            "recommended_next_test",
+        }.isdisjoint(d)
 
 
 # ── Comparison insights shape tests ────────────────────────────
@@ -405,96 +354,29 @@ class TestEventTypeCoverage:
         assert len(FRONTEND_EVENT_CATEGORIES) >= 8
 
 
-# ── Verdict values coverage test ───────────────────────────────
+# ── Compare observation / P19 policy boundary ──────────────────
 
 
-BACKEND_VERDICT_VALUES: set[str] = {
-    "keep_direction",
-    "undo",
-    "retest",
-    "inconclusive",
-}
-
-FRONTEND_VERDICT_VALUES: set[str] = {
-    "keep_direction",
-    "undo_partially",
-    "undo",
-    "retest",
-    "inconclusive",
-    "reference_mode",
-}
-
-
-class TestVerdictCoverage:
-    """Verify verdict values are consistent between backend and frontend."""
-
-    def test_backend_verdicts_have_frontend_mapping(self):
-        """Every backend verdict should have a frontend label."""
-        for v in BACKEND_VERDICT_VALUES:
-            assert v in FRONTEND_VERDICT_VALUES, f"Backend verdict '{v}' missing from frontend"
-
-    def test_frontend_has_extra_ui_only_verdicts(self):
-        """Frontend may have UI-only verdicts not produced by backend."""
-        extras = FRONTEND_VERDICT_VALUES - BACKEND_VERDICT_VALUES
-        assert "undo_partially" in extras or "reference_mode" in extras
-
-
-# ── DidItWorkVerdict new fields tests ──────────────────────────
-
-
-class TestDidItWorkVerdictShape:
-    """Verify DidItWorkVerdict has success_metric and recommendation fields."""
-
-    def test_success_metric_field(self):
-        """success_metric should be optional and None by default."""
-        v = DidItWorkVerdict(verdict="keep_direction", confidence_score=0.8, headline="Test")
-        assert v.success_metric is None
-
-    def test_success_metric_set(self):
-        """success_metric should serialize when set."""
-        v = DidItWorkVerdict(
-            verdict="keep_direction", confidence_score=0.8, headline="Test",
-            success_metric="Improve speed by 0.3 mph",
+class TestComparisonObservationShape:
+    def test_public_observation_has_no_action_or_policy_fields(self):
+        observation = ComparisonObservation(
+            observation_state="observed_improvement",
+            confidence_score=0.8,
+            headline="Measured speed increased",
         )
-        assert v.success_metric == "Improve speed by 0.3 mph"
 
-    def test_cause_bucket_field(self):
-        """cause_bucket should be optional and None by default."""
-        v = DidItWorkVerdict(verdict="keep_direction", confidence_score=0.8, headline="Test")
-        assert v.cause_bucket is None
+        assert observation.observation_state == "observed_improvement"
+        assert not hasattr(observation, "next_step")
+        assert not hasattr(observation, "recommendation")
 
-    def test_required_next_data_field(self):
-        """required_next_data should be empty list by default."""
-        v = DidItWorkVerdict(verdict="keep_direction", confidence_score=0.8, headline="Test")
-        assert v.required_next_data == []
-
-    def test_do_not_change_warnings_field(self):
-        """do_not_change_warnings should be empty list by default."""
-        v = DidItWorkVerdict(verdict="keep_direction", confidence_score=0.8, headline="Test")
-        assert v.do_not_change_warnings == []
-
-    def test_serialization_includes_new_fields(self):
-        """Verdict dict should include new fields when present."""
-        v = DidItWorkVerdict(
-            verdict="keep_direction", confidence_score=0.8, headline="Test",
-            success_metric="Improve speed",
-            cause_bucket="platform",
-            required_next_data=["Longer run"],
-            do_not_change_warnings=["Keep front ride height"],
-        )
-        d = {
-            "verdict": v.verdict, "confidence_score": v.confidence_score,
-            "headline": v.headline, "evidence": v.evidence,
-            "warnings": v.warnings, "next_step": v.next_step,
-            "success_metric": v.success_metric,
-            "cause_bucket": v.cause_bucket,
-            "required_next_data": v.required_next_data,
-            "do_not_change_warnings": v.do_not_change_warnings,
-        }
-        assert d["success_metric"] == "Improve speed"
-        assert d["cause_bucket"] == "platform"
-        assert d["required_next_data"] == ["Longer run"]
-        assert d["do_not_change_warnings"] == ["Keep front ride height"]
+    def test_removed_next_step_is_rejected_by_internal_policy_result_too(self):
+        with pytest.raises(TypeError):
+            DidItWorkVerdict(  # type: ignore[call-arg]
+                verdict="keep_direction",
+                confidence_score=0.8,
+                headline="Controlled P19 result",
+                next_step="Change another control",
+            )
 
 
 # ── TireComparison tests ──────────────────────────────────────
@@ -535,44 +417,6 @@ class TestShockComparisonShape:
         """aggregate_shock_comparison with empty rows returns no verdict."""
         sc = aggregate_shock_comparison([], [], 55, 70)
         assert sc.shock_verdict is None
-
-
-# ── Recommendation model tests ────────────────────────────────
-
-
-class TestRecommendationShape:
-    """Verify Recommendation has all expected fields."""
-
-    def test_required_fields(self):
-        rec = Recommendation(
-            recommendation_id="r1",
-            run_id="run1",
-            issue="Understeer in corner entry",
-            recommendation_text="Increase front spring rate",
-        )
-        assert rec.cause_bucket == "unknown"
-        assert rec.success_metric is None
-        assert rec.required_next_data == []
-        assert rec.do_not_change_warnings == []
-
-    def test_full_fields(self):
-        rec = Recommendation(
-            recommendation_id="r1",
-            run_id="run1",
-            issue="Understeer",
-            recommendation_text="Increase front spring rate",
-            cause_bucket="platform",
-            success_metric="Reduce understeer by 0.5 deg",
-            required_next_data=["10-lap run"],
-            do_not_change_warnings=["Keep rear ride height"],
-        )
-        assert rec.cause_bucket == "platform"
-        assert rec.success_metric == "Reduce understeer by 0.5 deg"
-        assert "10-lap run" in rec.required_next_data
-        assert "Keep rear ride height" in rec.do_not_change_warnings
-
-
-# ── Setup tech status tests ───────────────────────────────────
 
 
 class TestSetupTechStatus:

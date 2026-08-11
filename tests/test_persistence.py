@@ -31,7 +31,8 @@ def test_sqlite_schema_initializes(tmp_path: Path) -> None:
     }
     connection.close()
 
-    assert {"runs", "laps", "events", "recommendations", "setup_snapshots", "import_files"} <= tables
+    assert {"runs", "laps", "events", "setup_snapshots", "import_files"} <= tables
+    assert "recommendations" not in tables
 
 
 def test_import_service_stores_real_talladega_run(tmp_path: Path, talladega_ibt_path: Path) -> None:
@@ -155,7 +156,7 @@ def test_trace_builder_reads_cache_file(tmp_path: Path, talladega_ibt_path: Path
 # ── same-run guard ────────────────────────────────────────────
 
 def test_compare_same_run_triggers_reference_warning() -> None:
-    """Same run_id + same lap should produce inconclusive verdict with a reference warning."""
+    """Same run_id + same lap should produce an inconclusive reference observation."""
     from api.routes_compare import run_comparison, CompareRequest
     from api.routes_runs import repository
 
@@ -176,8 +177,8 @@ def test_compare_same_run_triggers_reference_warning() -> None:
         ))
     except TelemetryArtifactIdentityError:
         pytest.skip("Persisted telemetry predates immutable artifact identity; re-import is required.")
-    verdict = resp.get("verdict", {})
-    assert verdict.get("verdict") == "inconclusive"
+    observation = resp.get("observation", {})
+    assert observation.get("observation_state") == "inconclusive"
     warnings = resp.get("warnings", [])
     assert any("same" in w.lower() or "reference" in w.lower() for w in warnings), f"got warnings={warnings}"
 

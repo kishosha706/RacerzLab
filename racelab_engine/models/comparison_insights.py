@@ -35,7 +35,6 @@ class TraceAnnotation:
     severity: str
     confidence: float
     related_channels: list[str] = field(default_factory=list)
-    recommendation: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -50,7 +49,6 @@ class TraceAnnotation:
             "severity": self.severity,
             "confidence": self.confidence,
             "related_channels": self.related_channels,
-            "recommendation": self.recommendation,
         }
 
 
@@ -85,7 +83,6 @@ class TargetZoneClassification:
     headline: str
     evidence: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-    recommendation: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -94,28 +91,25 @@ class TargetZoneClassification:
             "headline": self.headline,
             "evidence": self.evidence,
             "warnings": self.warnings,
-            "recommendation": self.recommendation,
         }
 
 
 @dataclass(frozen=True)
-class ConfidenceWeightedVerdict:
-    original_verdict: str
+class ConfidenceWeightedObservation:
+    observation_state: str
     adjusted_confidence: float
     confidence_tier: ConfidenceTier
     penalties: list[str] = field(default_factory=list)
     boosts: list[str] = field(default_factory=list)
-    final_recommendation: str | None = None
     warning: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "original_verdict": self.original_verdict,
+            "observation_state": self.observation_state,
             "adjusted_confidence": self.adjusted_confidence,
             "confidence_tier": self.confidence_tier,
             "penalties": self.penalties,
             "boosts": self.boosts,
-            "final_recommendation": self.final_recommendation,
             "warning": self.warning,
         }
 
@@ -162,7 +156,7 @@ class ComparisonInsightsResponse:
     annotations: list[TraceAnnotation] = field(default_factory=list)
     correlations: list[CorrelationInsight] = field(default_factory=list)
     target_zone_classification: TargetZoneClassification | None = None
-    confidence_weighted_verdict: ConfidenceWeightedVerdict | None = None
+    confidence_weighted_observation: ConfidenceWeightedObservation | None = None
     sectors: list[SectorDeltaSummary] = field(default_factory=list)
     summary_headline: str | None = None
     key_takeaways: list[str] = field(default_factory=list)
@@ -181,7 +175,7 @@ class ComparisonInsightsResponse:
             "annotations": [a.as_dict() for a in self.annotations],
             "correlations": [c.as_dict() for c in self.correlations],
             "target_zone_classification": self.target_zone_classification.as_dict() if self.target_zone_classification else None,
-            "confidence_weighted_verdict": self.confidence_weighted_verdict.as_dict() if self.confidence_weighted_verdict else None,
+            "confidence_weighted_observation": self.confidence_weighted_observation.as_dict() if self.confidence_weighted_observation else None,
             "sectors": [s.as_dict() for s in self.sectors],
             "summary_headline": self.summary_headline,
             "key_takeaways": self.key_takeaways,

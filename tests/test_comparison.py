@@ -18,7 +18,7 @@ from racelab_engine.analysis.comparison import (
     compare_target_zone,
     interpolate_run_to_grid,
 )
-from racelab_engine.analysis.did_it_work import compute_verdict
+from racelab_engine.analysis.did_it_work import compute_observation
 from racelab_engine.analysis.test_discipline import score_test_discipline
 
 
@@ -124,9 +124,9 @@ def test_did_it_work_speed_gain() -> None:
     )
     from racelab_engine.analysis.comparison import TestDisciplineResult
     disc = TestDisciplineResult(score=90, label="clean", positive_factors=[], negative_factors=[])
-    verdict = compute_verdict(zone, disc)
-    assert verdict.verdict == "keep_direction"
-    assert verdict.confidence_score > 0.5
+    observation = compute_observation(zone, disc)
+    assert observation.observation_state == "observed_improvement"
+    assert observation.confidence_score > 0.5
 
 
 def test_did_it_work_speed_loss() -> None:
@@ -140,8 +140,8 @@ def test_did_it_work_speed_loss() -> None:
     )
     from racelab_engine.analysis.comparison import TestDisciplineResult
     disc = TestDisciplineResult(score=90, label="clean", positive_factors=[], negative_factors=[])
-    verdict = compute_verdict(zone, disc)
-    assert verdict.verdict == "undo"
+    observation = compute_observation(zone, disc)
+    assert observation.observation_state == "observed_regression"
 
 
 def test_did_it_work_inconclusive() -> None:
@@ -154,8 +154,8 @@ def test_did_it_work_inconclusive() -> None:
     )
     from racelab_engine.analysis.comparison import TestDisciplineResult
     disc = TestDisciplineResult(score=90, label="clean", positive_factors=[], negative_factors=[])
-    verdict = compute_verdict(zone, disc)
-    assert verdict.verdict == "inconclusive"
+    observation = compute_observation(zone, disc)
+    assert observation.observation_state == "inconclusive"
 
 
 def test_compare_proximity_gate_keeps_lap_but_blocks_setup_attribution() -> None:

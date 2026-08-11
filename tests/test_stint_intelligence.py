@@ -10,7 +10,6 @@ from racelab_engine.analysis.stint_intelligence import build_stint_response, com
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.lap import LapSummary
-from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.services.session_service import add_run_to_session, create_session
 from racelab_engine.storage.repository import RaceLabRepository
@@ -123,7 +122,7 @@ def test_missing_lap_numbers_break_graph_buckets_and_stint_comparison() -> None:
     assert comparison.avg_delta is None
     assert comparison.same_length_avg_delta is None
     assert all(delta.delta is None for delta in comparison.bucket_deltas)
-    assert comparison.verdict == "Stint comparison withheld; select uninterrupted clean windows."
+    assert comparison.observation_summary == "Stint comparison withheld; select uninterrupted clean windows."
     assert any("Uninterrupted stint comparison is unavailable" in warning for warning in comparison.comparison_warnings)
 
 
@@ -173,7 +172,7 @@ def test_legacy_stored_cooldown_is_requalified_before_stint_math(
     assert api_stint["worst_lap_time"] == pytest.approx(15.7)
 
 
-def test_requalified_laps_block_stale_events_recommendations_and_crew_copy(tmp_path: Path) -> None:
+def test_requalified_laps_block_stale_events_and_action_bearing_crew_copy(tmp_path: Path) -> None:
     run_id = "legacy-derived-evidence"
     laps = [
         _lap(number, lap_time, run_id=run_id).model_copy(update={
@@ -192,51 +191,30 @@ def test_requalified_laps_block_stale_events_recommendations_and_crew_copy(tmp_p
         event_id="invalid-lap-event", run_id=run_id, lap_number=4,
         event_type="PLATFORM_LOW", valid_for_tuning=True,
         evidence_state=EvidenceState.MEASURED, source_channels=["speed_mph"],
-        blocker_reasons=[], recommended_actions=["Raise front ride height."],
+        blocker_reasons=[],
     )
     legacy_event = TelemetryEvent(
         event_id="legacy-event", run_id=run_id, lap_number=1,
         event_type="DRAG_SCRUB", valid_for_tuning=True,
-        recommended_actions=["Reduce tape."],
     )
-    recommendations = [
-        Recommendation(
-            recommendation_id="invalid-lap-rec", run_id=run_id, issue="Platform",
-            recommendation_text="Raise front ride height.",
-            evidence_state=EvidenceState.MEASURED, source_channels=["speed_mph"],
-            evidence_event_ids=[invalid_lap_event.event_id], blocker_reasons=[],
-        ),
-        Recommendation(
-            recommendation_id="legacy-rec", run_id=run_id, issue="Scrub",
-            recommendation_text="Reduce tape.", evidence_event_ids=[legacy_event.event_id],
-        ),
-    ]
     repo = RaceLabRepository(tmp_path / "legacy-derived.sqlite")
     repo.save_import(RunOverview(
         run_id=run_id,
         session=SessionSummary(run_id=run_id, track_name="Bristol", car_name="Cup"),
         laps=laps,
         events=[invalid_lap_event, legacy_event],
-        recommendations=recommendations,
         primary_findings=["Run a platform setup change."],
-        crew_chief_summary="Focus the next test on platform behavior.",
-        next_test="Raise front ride height.",
     ))
 
     loaded = repo.get_overview(run_id)
     direct_events = repo.get_events(run_id)
-    direct_recommendations = repo.get_recommendations(run_id)
 
     assert loaded is not None
     assert all(event.valid_for_tuning is False for event in loaded.events)
-    assert all(event.recommended_actions == [] for event in direct_events)
-    assert all(
-        recommendation.recommendation_text == "No setup change is authorized from the available evidence."
-        for recommendation in direct_recommendations
-    )
+    assert all("measurement_guidance" not in event.model_dump() for event in direct_events)
     assert loaded.primary_findings == []
-    assert loaded.crew_chief_summary == "No evidence-qualified setup recommendation is available."
-    assert loaded.next_test is None
+    assert "crew_chief_summary" not in loaded.model_dump()
+    assert "next_test" not in loaded.model_dump()
 
 
 def test_stint_response_returns_curated_primary_rows_and_buckets() -> None:
@@ -440,7 +418,7 @@ def test_compare_result_computes_deltas() -> None:
     assert result.bucket_deltas
     assert result.bucket_deltas[0].label == "L1-5"
     assert result.bucket_deltas[0].delta is not None
-    assert result.verdict
+    assert result.observation_summary
     assert result.same_length_avg_delta is None
     assert result.rolling_delta_by_size["5"] is not None
     assert result.comparison_warnings
@@ -517,3 +495,37 @@ def test_stints_compare_endpoint_returns_delta(tmp_path: Path, monkeypatch: pyte
     payload = response.json()
     assert "avg_delta" in payload
     assert payload["baseline_stint"]["stint_id"] == baseline["stint_id"]
+
+
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        (
+            "/api/stints/compare",
+            {
+                "baseline_run_id": "baseline",
+                "baseline_stint_id": "baseline-stint",
+                "test_run_id": "test",
+                "test_stint_id": "test-stint",
+                "setup_action": "Increase right-rear spring by 25 lb/in.",
+            },
+        ),
+        (
+            "/api/runs/laps/compare-selection",
+            {
+                "baseline_run_id": "baseline",
+                "baseline_lap": 2,
+                "test_run_id": "test",
+                "test_lap": 2,
+                "recommendation": "Keep the test setup.",
+            },
+        ),
+    ],
+)
+def test_lap_and_stint_request_contracts_reject_injected_setup_authority(
+    path: str,
+    payload: dict[str, object],
+) -> None:
+    response = TestClient(app).post(path, json=payload)
+
+    assert response.status_code == 422

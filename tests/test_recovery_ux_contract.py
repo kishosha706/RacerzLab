@@ -106,7 +106,7 @@ def test_missing_setup_snapshot_recovery_copy_is_visible() -> None:
     dial_in = _read("ui/src/tabs/DialInTab.tsx")
 
     assert "Setup snapshot unavailable." in setup
-    assert "Garage-specific recommendations are limited until a setup snapshot is available." in setup
+    assert "Recorded garage context is unavailable until a setup snapshot is captured." in setup
     assert "Import a telemetry file with setup data or attach a setup snapshot if supported." in setup
     assert "Setup snapshot unavailable." in dial_in
     assert "Dial-In will stay conservative" in dial_in

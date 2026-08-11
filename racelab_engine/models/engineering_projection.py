@@ -66,26 +66,6 @@ class SubsystemAwarenessState(ProjectionModel):
         return self
 
 
-class SetupLeverageState(ProjectionModel):
-    control_key: str = Field(min_length=1)
-    states: tuple[
-        Literal[
-            "relevant",
-            "needs_measurement",
-            "prior_keep",
-            "prior_undo",
-            "blocked",
-            "authorized",
-            "active_test",
-        ],
-        ...,
-    ] = Field(min_length=1)
-    basis: tuple[str, ...] = Field(min_length=1)
-    workflow_ids: tuple[str, ...] = ()
-    source_event_ids: tuple[str, ...] = ()
-    authority_source: Literal["p19_reasoning_snapshot"] = "p19_reasoning_snapshot"
-
-
 class ExpectedVsObservedState(ProjectionModel):
     workflow_id: str = Field(min_length=1)
     control_key: str | None = None
@@ -97,26 +77,8 @@ class ExpectedVsObservedState(ProjectionModel):
     control_response: Literal[
         "matched", "missed", "inconclusive", "unavailable", "invalid"
     ]
-    policy_verdict: Literal["keep", "undo", "retest", "invalid"]
-    countereffects: tuple[str, ...] = ()
     mechanism_reason: str = Field(min_length=1)
     control_response_reason: str = Field(min_length=1)
-    policy_reason: str = Field(min_length=1)
-
-
-class AwarenessMissionState(ProjectionModel):
-    kind: Literal[
-        "controlled_test",
-        "measurement_mission",
-        "discriminator",
-        "stop_testing",
-        "blocked",
-    ]
-    title: str = Field(min_length=1)
-    instruction: str = Field(min_length=1)
-    setup_authorized: bool
-    contract_id: str | None = None
-    blocker_reasons: tuple[str, ...] = ()
 
 
 class AwarenessArtifactVersion(ProjectionModel):
@@ -125,7 +87,9 @@ class AwarenessArtifactVersion(ProjectionModel):
 
 
 class EngineeringAwarenessProjection(ProjectionModel):
-    schema_version: Literal["p20.awareness.v1"] = "p20.awareness.v1"
+    """Observation-only P20 projection; P19 policy and actions are never mirrored."""
+
+    schema_version: Literal["p20.awareness.v2"] = "p20.awareness.v2"
     run_id: str = Field(min_length=1)
     session_id: str | None = None
     reasoning_snapshot_id: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -135,8 +99,7 @@ class EngineeringAwarenessProjection(ProjectionModel):
     cache_state: Literal["cold", "warm"]
     build_duration_ms: float = Field(ge=0.0, allow_inf_nan=False)
     profile_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    authority_state: Literal["observation", "measurement", "controlled_setup", "blocked"]
-    setup_authorized: bool
+    authority: Literal["observation_only"] = "observation_only"
     trust_budget: TrustBudget
     primary_state: PrimaryEngineeringState | None = None
     subsystem_states: tuple[SubsystemAwarenessState, ...] = Field(min_length=10, max_length=10)
@@ -144,11 +107,9 @@ class EngineeringAwarenessProjection(ProjectionModel):
     state_drift_status: Literal["ready", "no_finding", "blocked", "unavailable"]
     state_drift_findings: tuple[StateDriftFinding, ...] = ()
     state_drift_blocker_reasons: tuple[str, ...] = ()
-    setup_leverage_states: tuple[SetupLeverageState, ...] = ()
     expected_vs_observed: tuple[ExpectedVsObservedState, ...] = ()
     control_mutations: tuple[ControlMutationEvent, ...] = ()
     knowledge_debt: tuple[str, ...] = ()
-    current_mission: AwarenessMissionState
     artifact_versions: tuple[AwarenessArtifactVersion, ...] = Field(min_length=1)
     raw_trace_included: Literal[False] = False
 
@@ -165,8 +126,6 @@ class EngineeringAwarenessProjection(ProjectionModel):
             or self.request_identity.state_revision != self.state_revision
         ):
             raise ValueError("awareness request identity must bind snapshot and revision")
-        if self.setup_authorized != (self.authority_state == "controlled_setup"):
-            raise ValueError("awareness cannot manufacture setup authority")
         if self.state_drift_status == "ready" and (
             not self.state_drift_findings or self.state_drift_blocker_reasons
         ):
@@ -188,11 +147,9 @@ class EngineeringAwarenessProjection(ProjectionModel):
 
 __all__ = [
     "AwarenessArtifactVersion",
-    "AwarenessMissionState",
     "AwarenessRequestIdentity",
     "EngineeringAwarenessProjection",
     "ExpectedVsObservedState",
     "PrimaryEngineeringState",
-    "SetupLeverageState",
     "SubsystemAwarenessState",
 ]

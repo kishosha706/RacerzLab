@@ -44,6 +44,10 @@ import type { LearningReadinessProjection } from "../types/learningReadiness";
 import { isVehicleSystemComponentId } from "../types/vehicleSystems";
 import { deriveCurrentReportSetupAuthority } from "../utils/currentIntelligenceAuthority";
 import {
+  isIntelligenceQueryResponseBoundToReport,
+  isRunIntelligenceResponse,
+} from "../utils/intelligenceResponseTrust";
+import {
   exactEventIdentitySet,
   intelligenceMoveScope,
   intelligenceWorkspaceTarget,
@@ -763,6 +767,14 @@ export function IntelligencePanel({
 
   const freezePrediction = useCallback(async (operationId: string) => {
     const requestedRunId = runId;
+    if (!sessionId) {
+      setPredictionAction({
+        campaignKind: operationId,
+        status: "error",
+        error: "Save this run in one exact session before freezing a shadow prediction.",
+      });
+      return;
+    }
     setPredictionAction({ campaignKind: operationId, status: "loading", error: null });
     try {
       const prediction = await freezeProspectivePrediction(
@@ -852,7 +864,10 @@ export function IntelligencePanel({
     })
       .then((report) => {
         if (cancelled || sequence !== reportSequence.current) return;
-        if (!scopeMatches(report, runId, sessionId)) {
+        if (
+          !scopeMatches(report, runId, sessionId)
+          || !isRunIntelligenceResponse(report, { runId, sessionId })
+        ) {
           setReportState({
             requestKey: scopeKey,
             status: "error",
@@ -1025,7 +1040,9 @@ export function IntelligencePanel({
           && queryNavigationRunIds.has(scopeRunId)
         ));
       if (
-        !scopeMatches(response, runId, sessionId)
+        report == null
+        || !isIntelligenceQueryResponseBoundToReport(response, report)
+        || !scopeMatches(response, runId, sessionId)
         || !responseRunScopeMatches
         || (response.selected_lap ?? null) !== selectedQueryLap
         || !responseWindowMatchesScope
@@ -1056,6 +1073,7 @@ export function IntelligencePanel({
     learning,
     queryNavigationRunIds,
     questionScopeKey,
+    report,
     runId,
     selectedLapWindowEnd,
     selectedLapWindowStart,
@@ -1165,10 +1183,10 @@ export function IntelligencePanel({
     );
   }
 
-  const actionTitle = action.kind === "controlled_test" && !actionAuthorized ? "No setup action authorized" : action.title;
-  const actionInstruction = action.kind === "controlled_test" && !actionAuthorized
-    ? "The evidence contract did not authorize this proposed setup change. Keep the current setup and collect the requested evidence."
-    : action.instruction;
+  const actionTitle = actionAuthorized ? action.title : "Evidence task only";
+  const actionInstruction = actionAuthorized
+    ? action.instruction
+    : "Use the evidence-linked measurement detail below. No setup change, Keep/Undo, or stop-testing policy is authorized.";
   const queryResponse = queryState.response;
   const queryHasGrounding = Boolean(queryResponse && asArray(queryResponse.citations).length > 0);
   const queryInterpretationMatchesScope = Boolean(
@@ -1680,7 +1698,6 @@ export function IntelligencePanel({
                   <li key={match.memory_id}>
                     <header><strong>{match.label}</strong><span>{match.relevance_label}</span></header>
                     <p>{match.outcome_summary}</p>
-                    <strong className="engineer-memory-verdict">{driverFacingLabel(match.verdict)}</strong>
                     {asArray(match.matching_context).length > 0 && <p><b>Matches:</b> {match.matching_context.join(" · ")}</p>}
                     {asArray(match.mismatches).length > 0 && <p className="engineer-memory-mismatch"><b>Does not match:</b> {match.mismatches.join(" · ")}</p>}
                     <CitationLinks citations={match.citations} onNavigate={onNavigateCitation} label="Context-memory sources" />
@@ -1720,7 +1737,6 @@ export function IntelligencePanel({
                     <div>
                       <header><strong>{entry.label}</strong>{entry.created_at && <time dateTime={entry.created_at}>{narrativeTime(entry.created_at)}</time>}</header>
                       <p>{entry.summary}</p>
-                      {entry.outcome && <p className="engineer-narrative-outcome">{entry.outcome}</p>}
                       <CitationLinks citations={entry.citations} onNavigate={onNavigateCitation} label="Narrative evidence" />
                     </div>
                   </li>

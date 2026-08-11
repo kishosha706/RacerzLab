@@ -124,32 +124,11 @@ export type TelemetryEvent = {
   primary_metric_value?: number | null;
   evidence_json: Record<string, unknown>;
   related_setup_keys: string[];
-  recommended_actions: string[];
   evidence_state: EvidenceState;
   source_channels: string[];
   observed_evidence_flags: string[];
   supporting_event_ids: string[];
   blocker_reasons: string[];
-};
-
-export type Recommendation = {
-  recommendation_id: string;
-  run_id: string;
-  priority_rank: number;
-  issue: string;
-  cause_bucket: string;
-  recommendation_text: string;
-  confidence_score: number;
-  evidence_strength: string;
-  success_metric?: string | null;
-  required_next_data: string[];
-  do_not_change_warnings: string[];
-  evidence_event_ids: string[];
-  evidence_state: EvidenceState;
-  source_channels: string[];
-  blocker_reasons: string[];
-  confidence_limit_reasons: string[];
-  created_at?: string | null;
 };
 
 export type RunOverview = {
@@ -159,11 +138,8 @@ export type RunOverview = {
   laps: LapSummary[];
   events: TelemetryEvent[];
   setup_snapshot?: SetupSnapshot | null;
-  recommendations: Recommendation[];
   primary_findings: string[];
   warnings: string[];
-  crew_chief_summary?: string | null;
-  next_test?: string | null;
 };
 
 export type CanonicalMappingKind =
@@ -207,35 +183,25 @@ export type DialInClarification = {
 export type DialInSwing = {
   id: string;
   title: string;
-  change_this: string;
-  garage_lever: string;
-  control_keys: string[];
-  direction_sign: -1 | 1;
   setup_area: string;
-  change_size_label: string;
-  change_size_explanation: string;
+  candidate_control_label: string;
+  related_control_keys: string[];
   influence_label: string;
-  control_expectation: string;
-  control_guardrail: string;
-  current_value_label?: string | null;
-  proposed_value_label?: string | null;
   strength_label: string;
   risk_label: string;
-  effect: string;
-  counter_effect: string;
-  one_change_test: string;
+  mechanism_to_verify: string;
+  counter_effect_to_watch: string;
   validate_with: string[];
   validate_with_labels?: string[];
   watch_for: string[];
   watch_for_labels?: string[];
-  keep_if: string;
-  undo_if: string;
   readiness_label: string;
-  disabled_reason?: string | null;
+  measurement_needed: string;
   evidence_state: EvidenceState;
   source_channels: string[];
+  observed_evidence_flags: string[];
+  supporting_event_ids: string[];
   blocker_reasons: string[];
-  debug?: Record<string, unknown> | null;
 };
 
 export type HiddenEvidenceSummary = {
@@ -273,7 +239,6 @@ export type DialInResponse = {
   driver_message: string;
   top_swings: DialInSwing[];
   next_step?: string | null;
-  validation_summary?: string | null;
   clarification: DialInClarification;
   hidden_evidence_summary?: HiddenEvidenceSummary | null;
   warnings: string[];
@@ -456,7 +421,7 @@ export type ChannelCatalogItem = {
   dependencies: string[];
   used_by_charts: string[];
   used_by_events: string[];
-  used_by_recommendations: string[];
+  used_by_analyses: string[];
   min?: number | null;
   max?: number | null;
   mean?: number | null;
@@ -556,7 +521,6 @@ export type PlatformEventItem = {
   primary_unit?: string | null;
   channels_used: string[];
   evidence: string[];
-  recommended_action?: string | null;
   is_proxy_based: boolean;
   proxy_warning?: string | null;
   metadata: Record<string, unknown>;

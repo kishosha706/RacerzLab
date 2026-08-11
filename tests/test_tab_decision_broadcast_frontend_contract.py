@@ -17,11 +17,13 @@ def test_overview_broadcast_uses_one_fail_closed_decision_contract_in_both_modes
     assert 'className="tab-decision-facts"' in source
     assert 'className="tab-handoff-actions"' in source
     assert "const decisionContextReady = Boolean(lap && setupAvailable && setupTechReady && dataTrustReady);" in source
-    assert "const actionableRecommendations = decisionContextReady ? evidenceQualifiedRecommendations : [];" in source
+    assert "actionableRecommendations" not in source
+    assert "evidenceQualifiedRecommendations" not in source
     assert "const trustedPrimaryFindings = topEvent && dataTrustReady ? overview.primary_findings : [];" in source
     assert "const broadcastWarning = blockingOverviewWarnings[0] ?? overview.warnings[0] ?? null;" in source
     assert "const topObservedEvent = useMemo" in source
     assert "Evidence only - this signal does not authorize a setup call." in source
+    assert "Only the current P19 report can authorize one controlled setup test." in source
     assert 'l.lap_type === "timed" || l.lap_type === "flying"' in source
     assert source.count("{decisionBroadcast}") == 2
 

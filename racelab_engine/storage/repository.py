@@ -9,7 +9,6 @@ from racelab_engine.io.file_fingerprint import FileFingerprint
 from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.lap import LapSummary
-from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.models.segment import SegmentSummary
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
@@ -106,9 +105,6 @@ _LAP_INTEGRITY_WARNING = (
 _EVENT_INTEGRITY_WARNING = (
     "Evidence integrity: a stored telemetry event was malformed or identity-mismatched and withheld."
 )
-_RECOMMENDATION_INTEGRITY_WARNING = (
-    "Evidence integrity: a stored recommendation was malformed or identity-mismatched and withheld."
-)
 
 
 class StoredEvidenceIntegrityError(ValueError):
@@ -143,21 +139,6 @@ def _event_from_storage_row(
     return event
 
 
-def _recommendation_from_storage_row(
-    row: Any,
-    *,
-    requested_run_id: str | None = None,
-) -> Recommendation:
-    recommendation = Recommendation.model_validate_json(row["recommendation_json"])
-    if (
-        recommendation.recommendation_id != row["recommendation_id"]
-        or recommendation.run_id != row["run_id"]
-        or (requested_run_id is not None and recommendation.run_id != requested_run_id)
-    ):
-        raise ValueError("recommendation identity mismatch")
-    return recommendation
-
-
 def _qualify_events_for_current_laps(
     events: list[TelemetryEvent],
     laps: list[LapSummary],
@@ -170,7 +151,7 @@ def _qualify_events_for_current_laps(
         reasons = list(event.blocker_reasons)
         lap_blocked = event.lap_number is not None and event.lap_number not in eligible_lap_numbers
         if lap_blocked:
-            reasons.append("The linked lap is not eligible for setup conclusions.")
+            reasons.append("The linked lap is not eligible for engineering observations.")
         if event.evidence_state not in _ACTIONABLE_EVIDENCE_STATES:
             reasons.append("The event does not have an actionable evidence state.")
         if not event.source_channels:
@@ -181,70 +162,10 @@ def _qualify_events_for_current_laps(
             continue
         qualified.append(event.model_copy(update={
             "valid_for_tuning": False,
-            "recommended_actions": [],
             "evidence_state": EvidenceState.BLOCKED_BY_CONTEXT if lap_blocked else event.evidence_state,
             "blocker_reasons": list(dict.fromkeys(reasons)),
         }))
     return qualified
-
-
-def _qualify_recommendations_for_current_events(
-    recommendations: list[Recommendation],
-    events: list[TelemetryEvent],
-) -> list[Recommendation]:
-    actionable_event_ids = {event.event_id for event in events if event.valid_for_tuning}
-    qualified: list[Recommendation] = []
-    for recommendation in recommendations:
-        reasons = list(recommendation.blocker_reasons)
-        if recommendation.evidence_state not in _ACTIONABLE_EVIDENCE_STATES:
-            reasons.append("The recommendation does not have an actionable evidence state.")
-        if not recommendation.source_channels:
-            reasons.append("Evidence source channels were not recorded.")
-        if not recommendation.evidence_event_ids:
-            reasons.append("No telemetry event was linked to this recommendation.")
-        elif any(event_id not in actionable_event_ids for event_id in recommendation.evidence_event_ids):
-            reasons.append("A linked telemetry event is not valid on a currently eligible lap.")
-        if not reasons:
-            qualified.append(recommendation)
-            continue
-        qualified.append(recommendation.model_copy(update={
-            "recommendation_text": "No setup change is authorized from the available evidence.",
-            "confidence_score": 0.0,
-            "evidence_strength": "blocked",
-            "success_metric": None,
-            "required_next_data": list(dict.fromkeys([
-                *recommendation.required_next_data,
-                "Collect eligible, provenance-complete telemetry evidence.",
-            ])),
-            "do_not_change_warnings": list(dict.fromkeys([
-                *recommendation.do_not_change_warnings,
-                "Do not make a setup change from this blocked recommendation.",
-            ])),
-            "evidence_state": (
-                recommendation.evidence_state
-                if recommendation.evidence_state == EvidenceState.UNAVAILABLE
-                else EvidenceState.BLOCKED_BY_CONTEXT
-            ),
-            "blocker_reasons": list(dict.fromkeys(reasons)),
-            "confidence_limit_reasons": list(dict.fromkeys([
-                *recommendation.confidence_limit_reasons,
-                *reasons,
-            ])),
-        }))
-    return qualified
-
-
-def _recommendation_is_actionable(
-    recommendation: Recommendation,
-    actionable_event_ids: set[str],
-) -> bool:
-    return (
-        recommendation.evidence_state in _ACTIONABLE_EVIDENCE_STATES
-        and not recommendation.blocker_reasons
-        and bool(recommendation.source_channels)
-        and bool(recommendation.evidence_event_ids)
-        and all(event_id in actionable_event_ids for event_id in recommendation.evidence_event_ids)
-    )
 
 
 _RUN_LIST_SELECT = """
@@ -276,11 +197,12 @@ _RUN_LIST_SELECT = """
         WHERE setup_snapshots.run_id = runs.run_id
       ) AS has_setup_snapshot,
       (
-        SELECT recommendations.issue
-        FROM recommendations
-        WHERE recommendations.run_id = runs.run_id
-        ORDER BY recommendations.priority_rank ASC,
-                 recommendations.recommendation_id ASC
+        SELECT events.event_type
+        FROM events
+        WHERE events.run_id = runs.run_id
+          AND events.valid_for_tuning = 1
+        ORDER BY events.confidence_score DESC,
+                 events.event_id ASC
         LIMIT 1
       ) AS primary_issue
     FROM runs
@@ -499,12 +421,17 @@ class RaceLabRepository:
         if (
             attempt.contract_id != contract.contract_id
             or attempt.contract_sha256 != contract.contract_sha256
+            or attempt.run_id not in contract.session_run_ids
+            or attempt.setup_sha256 != contract.setup_sha256
+            or attempt.compatibility_fingerprint
+            != contract.compatibility_fingerprint
         ):
             raise ValueError("measurement attempt does not bind the supplied mission contract")
         self.save_measurement_mission_contract(contract)
         connection = initialize_database(self.db_path)
         try:
             with connection:
+                connection.execute("BEGIN IMMEDIATE")
                 existing = connection.execute(
                     "SELECT attempt_json FROM measurement_mission_attempts WHERE attempt_id = ?",
                     (attempt.attempt_id,),
@@ -514,6 +441,34 @@ class RaceLabRepository:
                     if stored != attempt:
                         raise ValueError("measurement-attempt identity conflicts with durable history")
                     return
+                prior_rows = connection.execute(
+                    "SELECT attempt_json FROM measurement_mission_attempts "
+                    "WHERE contract_id = ?",
+                    (contract.contract_id,),
+                ).fetchall()
+                attempt_laps = set(attempt.eligible_lap_ids)
+                for prior_row in prior_rows:
+                    try:
+                        prior = MeasurementAttempt.model_validate_json(
+                            prior_row["attempt_json"]
+                        )
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError(
+                            "durable measurement-attempt history is corrupt"
+                        ) from exc
+                    prior_laps = set(prior.eligible_lap_ids)
+                    if attempt_laps and prior_laps and attempt_laps & prior_laps:
+                        raise ValueError(
+                            "measurement attempts require non-overlapping eligible-lap cohorts"
+                        )
+                    if (
+                        not attempt_laps
+                        and not prior_laps
+                        and attempt.run_id == prior.run_id
+                    ):
+                        raise ValueError(
+                            "unscoped measurement attempts require a distinct run identity"
+                        )
                 connection.execute(
                     """
                     INSERT INTO measurement_mission_attempts (
@@ -539,18 +494,58 @@ class RaceLabRepository:
         contract: MeasurementMissionContract,
     ) -> tuple[MeasurementAttempt, ...]:
         """Reload exact-contract attempts and reject any identity or row corruption."""
-        from racelab_engine.models.experiment import MeasurementAttempt
+        from racelab_engine.models.experiment import (
+            MeasurementAttempt,
+            MeasurementMissionContract,
+        )
 
         connection = initialize_database(self.db_path)
         try:
             stored_contract = connection.execute(
-                "SELECT contract_sha256 FROM measurement_mission_contracts WHERE contract_id = ?",
+                "SELECT contract_sha256, contract_json FROM measurement_mission_contracts "
+                "WHERE contract_id = ?",
                 (contract.contract_id,),
             ).fetchone()
             if stored_contract is None:
                 return ()
             if stored_contract["contract_sha256"] != contract.contract_sha256:
                 raise ValueError("durable mission contract hash does not match the current contract")
+            try:
+                stored_contract_model = MeasurementMissionContract.model_validate_json(
+                    stored_contract["contract_json"]
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError("durable mission contract content is corrupt") from exc
+            if (
+                stored_contract_model.contract_id != contract.contract_id
+                or stored_contract_model.contract_sha256 != contract.contract_sha256
+            ):
+                raise ValueError("durable mission contract content does not match storage")
+            historical_contracts = connection.execute(
+                "SELECT contract_id, contract_json FROM measurement_mission_contracts "
+                "WHERE contract_id != ?",
+                (contract.contract_id,),
+            ).fetchall()
+            for historical in historical_contracts:
+                try:
+                    payload = json.loads(historical["contract_json"])
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "durable mission history contains unreadable contract content"
+                    ) from exc
+                if not isinstance(payload, dict):
+                    raise ValueError(
+                        "durable mission history contains malformed contract content"
+                    )
+                same_planning_scope = (
+                    payload.get("candidate_id") == contract.candidate_id
+                    and payload.get("run_id") == contract.run_id
+                    and payload.get("session_id") == contract.session_id
+                )
+                if same_planning_scope and payload.get("schema_version") != contract.schema_version:
+                    raise ValueError(
+                        "durable mission history for this planning scope uses an unsupported contract schema"
+                    )
             rows = connection.execute(
                 """
                 SELECT attempt_id, contract_id, contract_sha256, run_id, completed_at,
@@ -694,7 +689,6 @@ class RaceLabRepository:
         with connection:
             connection.execute("DELETE FROM import_files WHERE run_id = ?", (overview.run_id,))
             connection.execute("DELETE FROM setup_snapshots WHERE run_id = ?", (overview.run_id,))
-            connection.execute("DELETE FROM recommendations WHERE run_id = ?", (overview.run_id,))
             connection.execute("DELETE FROM events WHERE run_id = ?", (overview.run_id,))
             connection.execute("DELETE FROM laps WHERE run_id = ?", (overview.run_id,))
             # Segments are import-owned derived evidence. Clear them in the same
@@ -714,13 +708,14 @@ class RaceLabRepository:
                   session_type, weather_summary, setup_name, setup_passed_tech,
                   setup_modified, telemetry_rate_hz, variable_count, record_count,
                   duration_seconds, air_temp, track_temp, wind_speed, wind_direction,
-                  air_pressure, notes, primary_findings_json, warnings_json,
-                  crew_chief_summary, next_test, session_json
+                  air_pressure, notes, primary_findings_json, warnings_json, session_json
                 ) VALUES (
                   ?, ?, ?, ?, ?,
                   ?, ?, ?, ?, ?,
                   ?,
-                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                  ?, ?, ?
                 )
                 ON CONFLICT(run_id) DO UPDATE SET
                   source_file=excluded.source_file,
@@ -755,8 +750,6 @@ class RaceLabRepository:
                   notes=excluded.notes,
                   primary_findings_json=excluded.primary_findings_json,
                   warnings_json=excluded.warnings_json,
-                  crew_chief_summary=excluded.crew_chief_summary,
-                  next_test=excluded.next_test,
                   session_json=excluded.session_json
                 """,
                 (
@@ -793,8 +786,6 @@ class RaceLabRepository:
                     _json(session.notes),
                     _json(overview.primary_findings),
                     _json(overview.warnings),
-                    overview.crew_chief_summary,
-                    overview.next_test,
                     _model_json(session),
                 ),
             )
@@ -857,9 +848,9 @@ class RaceLabRepository:
                       lap_pct_start, lap_pct_end, lap_pct_peak, distance_m_peak,
                       zone_name, severity, confidence_score, valid_for_tuning,
                       primary_metric_name, primary_metric_value, evidence_json,
-                      related_setup_keys, recommended_actions, event_json, created_at
+                      related_setup_keys, event_json, created_at
                     ) VALUES (
-                      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                     """,
                     (
@@ -880,41 +871,8 @@ class RaceLabRepository:
                         event.primary_metric_value,
                         _json(event.evidence_json),
                         _json(event.related_setup_keys),
-                        _json(event.recommended_actions),
                         _model_json(event),
                         imported_at,
-                    ),
-                )
-
-            for recommendation in overview.recommendations:
-                connection.execute(
-                    """
-                    INSERT INTO recommendations (
-                      recommendation_id, run_id, priority_rank, issue, cause_bucket,
-                      confidence_score, evidence_strength, recommendation_text,
-                      success_metric, required_next_data, do_not_change_warnings,
-                      evidence_event_ids, recommendation_json, created_at
-                    ) VALUES (
-                      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-                    )
-                    """,
-                    (
-                        recommendation.recommendation_id,
-                        recommendation.run_id,
-                        recommendation.priority_rank,
-                        recommendation.issue,
-                        recommendation.cause_bucket,
-                        recommendation.confidence_score,
-                        recommendation.evidence_strength,
-                        recommendation.recommendation_text,
-                        recommendation.success_metric,
-                        _json(recommendation.required_next_data),
-                        _json(recommendation.do_not_change_warnings),
-                        _json(recommendation.evidence_event_ids),
-                        _model_json(recommendation),
-                        recommendation.created_at.isoformat()
-                        if hasattr(recommendation.created_at, "isoformat")
-                        else str(recommendation.created_at),
                     ),
                 )
 
@@ -1241,35 +1199,6 @@ class RaceLabRepository:
             return None
         return snapshot
 
-    def get_recommendations(self, run_id: str) -> list[Recommendation]:
-        connection = initialize_database(self.db_path)
-        try:
-            rows = connection.execute(
-                """
-                SELECT recommendation_id, run_id, recommendation_json
-                FROM recommendations
-                WHERE run_id = ?
-                ORDER BY priority_rank ASC
-                """,
-                (run_id,),
-            ).fetchall()
-        finally:
-            connection.close()
-        try:
-            recommendations = [
-                _recommendation_from_storage_row(row, requested_run_id=run_id)
-                for row in rows
-            ]
-        except (TypeError, ValueError) as exc:
-            raise StoredEvidenceIntegrityError(
-                "Evidence integrity: one or more stored recommendations were malformed or "
-                "identity-mismatched; recommendation conclusions are unavailable."
-            ) from exc
-        return _qualify_recommendations_for_current_events(
-            recommendations,
-            self.get_events(run_id),
-        )
-
     # ── Segments ──────────────────────────────────────────────────
 
     def save_segments(self, run_id: str, segments: list[SegmentSummary]) -> None:
@@ -1388,15 +1317,6 @@ class RaceLabRepository:
                 """,
                 (run_id,),
             ).fetchone()
-            recommendation_rows = connection.execute(
-                """
-                SELECT recommendation_id, run_id, recommendation_json
-                FROM recommendations
-                WHERE run_id = ?
-                ORDER BY priority_rank ASC
-                """,
-                (run_id,),
-            ).fetchall()
         finally:
             connection.close()
         if row is None:
@@ -1441,18 +1361,6 @@ class RaceLabRepository:
                     "Evidence integrity: the stored setup snapshot was malformed or identity-mismatched and withheld."
                 )
 
-        parsed_recommendations: list[Recommendation] = []
-        for item in recommendation_rows:
-            try:
-                parsed_recommendations.append(
-                    _recommendation_from_storage_row(item, requested_run_id=run_id)
-                )
-            except (TypeError, ValueError):
-                integrity_warnings.append(_RECOMMENDATION_INTEGRITY_WARNING)
-        recommendations = _qualify_recommendations_for_current_events(
-            parsed_recommendations,
-            events,
-        )
         primary_findings, primary_findings_valid = _load_string_list(
             row["primary_findings_json"]
         )
@@ -1465,11 +1373,7 @@ class RaceLabRepository:
             integrity_warnings.append(
                 "Evidence integrity: the stored warning collection was malformed and withheld."
             )
-        actionable_event_ids = {event.event_id for event in events if event.valid_for_tuning}
-        has_actionable_recommendation = any(
-            _recommendation_is_actionable(recommendation, actionable_event_ids)
-            for recommendation in recommendations
-        )
+        qualified_event_ids = {event.event_id for event in events if event.valid_for_tuning}
         useful_laps = eligible_laps(laps)
         best_lap = min(useful_laps, key=lambda lap: lap.lap_time or 999999.0) if useful_laps else None
         return RunOverview(
@@ -1479,19 +1383,12 @@ class RaceLabRepository:
             laps=laps,
             events=events,
             setup_snapshot=setup_snapshot,
-            recommendations=recommendations,
             primary_findings=(
                 primary_findings
-                if actionable_event_ids else []
+                if qualified_event_ids else []
             ),
             warnings=list(dict.fromkeys([
                 *stored_warnings,
                 *integrity_warnings,
             ])),
-            crew_chief_summary=(
-                row["crew_chief_summary"]
-                if has_actionable_recommendation
-                else "No evidence-qualified setup recommendation is available."
-            ),
-            next_test=row["next_test"] if has_actionable_recommendation else None,
         )

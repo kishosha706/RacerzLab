@@ -33,22 +33,22 @@ def test_platform_shocks_fetches_reader_without_mounting_panel() -> None:
     assert "fetchShockReader" in source
     assert "<ShockReaderPanel" not in source
     assert 'case "shocks": return renderShocksPanel();' in source
-    assert "DialIn" not in Path("ui/src/components/ShockReaderPanel.tsx").read_text(encoding="utf-8")
+    assert not Path("ui/src/components/ShockReaderPanel.tsx").exists()
 
 
-def test_shock_reader_uses_inline_setup_recommendations() -> None:
-    panel_source = Path("ui/src/components/ShockReaderPanel.tsx").read_text(encoding="utf-8")
+def test_shock_reader_marks_inline_setup_values_as_observation_only() -> None:
     histogram_source = Path("ui/src/components/ShockHistogram.tsx").read_text(encoding="utf-8")
     platform_source = Path("ui/src/tabs/PlatformTab.tsx").read_text(encoding="utf-8")
 
-    assert "shock-reader-recommendation" not in panel_source
-    assert "shock-reader-corner-card" not in panel_source
-    assert "Shock Reader" not in panel_source
-    assert "shock-setup-recommendation-badge" in histogram_source
+    assert not Path("ui/src/components/ShockReaderPanel.tsx").exists()
+    assert "shock-evidence-status-badge" in histogram_source
+    assert "shock-setup-recommendation-badge" not in histogram_source
     assert 'className={`shock-panel setup-${setupSide}`}' in histogram_source
     assert ".shock-panel-body" in Path("ui/src/styles.css").read_text(encoding="utf-8")
     assert ".shock-panel.setup-right .shock-panel-body" in Path("ui/src/styles.css").read_text(encoding="utf-8")
-    assert "recommendationFor(\"LS Comp\")" in platform_source
+    assert "observation only" in histogram_source
+    assert "recommendationFor" not in platform_source
+    assert "setup authority withheld" in platform_source.casefold()
     assert 'setupSide={corner.key === "lf" || corner.key === "lr" ? "left" : "right"}' in platform_source
 
 
@@ -58,7 +58,7 @@ def test_shock_zone_and_multilap_visuals_fail_closed() -> None:
     assert "if (!rawDistance || rawDistance.length !== rawValues.length) return [];" in platform_source
     assert "shockReaderLapWindow" in platform_source
     assert "Representative Lap Display · Decision uses laps" in platform_source
-    assert "shockReaderLapWindow\n          ? null" in platform_source
+    assert "This boundary classifies the observation only" in platform_source
     assert "Full-lap samples were not substituted." in platform_source
 
 
@@ -139,13 +139,12 @@ def test_shock_setup_reader_uses_wide_structured_rows() -> None:
     right_body_block = styles.split(".shock-panel.setup-right .shock-panel-body {", 1)[1].split("}", 1)[0]
     field_block = styles.split(".shock-setup-field {", 1)[1].split("}", 1)[0]
     value_block = styles.split(".shock-setup-field strong {", 1)[1].split("}", 1)[0]
-    badge_block = styles.split(".shock-setup-recommendation-badge {", 1)[1].split("}", 1)[0]
-    add_badge_block = styles.split(".shock-setup-recommendation-badge.add {", 1)[1].split("}", 1)[0]
-    hold_badge_block = styles.split(".shock-setup-recommendation-badge.hold {", 1)[1].split("}", 1)[0]
+    badge_block = styles.split(".shock-evidence-status-badge {", 1)[1].split("}", 1)[0]
+    observation_badge_block = styles.split(".shock-evidence-status-badge.observation-only {", 1)[1].split("}", 1)[0]
 
     row_markup = histogram_source.split('className={`shock-setup-field${field.unavailable ? " unavailable" : ""}`}', 1)[1].split("</div>", 1)[0]
     assert row_markup.index('className="shock-setup-label"') < row_markup.index("<strong>{field.value}</strong>")
-    assert row_markup.index("<strong>{field.value}</strong>") < row_markup.index("shock-setup-recommendation-badge")
+    assert row_markup.index("<strong>{field.value}</strong>") < row_markup.index("shock-evidence-status-badge")
 
     assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in grid_block
     assert "grid-auto-rows: minmax(340px, auto)" in grid_block
@@ -161,8 +160,7 @@ def test_shock_setup_reader_uses_wide_structured_rows() -> None:
     assert "height: 18px" in badge_block
     assert "justify-self: stretch" in badge_block
     assert "text-align: center" in badge_block
-    assert "rgba(34, 211, 238" in add_badge_block
-    assert "rgba(148, 163, 184" in hold_badge_block
+    assert "rgba(245, 158, 11" in observation_badge_block
 
 
 def test_shock_histogram_responsive_layout_protects_chart_size() -> None:

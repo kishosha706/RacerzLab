@@ -13,7 +13,7 @@ from racelab_engine.analysis.evidence_contracts import (
     HardBlocker,
     OperatingCondition,
     RELATIVE_HIGH_SPEED_RESISTANCE_CONTRACT,
-    SETUP_RECOMMENDATION_CONTRACT,
+    RUN_OBSERVATION_CONTRACT,
     evaluate_evidence_contract,
 )
 
@@ -350,50 +350,60 @@ def test_models_reject_unknown_fields_and_are_immutable() -> None:
         evidence.repetitions = 99
 
 
-def _setup_recommendation_input(**updates: object) -> EvidenceEvaluationInput:
-    contract = SETUP_RECOMMENDATION_CONTRACT
+def _run_observation_input(**updates: object) -> EvidenceEvaluationInput:
+    contract = RUN_OBSERVATION_CONTRACT
     values: dict[str, object] = {
         "usable_channels": contract.required_channels | contract.preferred_channels,
         "condition_results": {item.key: True for item in contract.operating_conditions},
         "blocker_results": {item.key: False for item in contract.hard_blockers},
         "repetitions": 3,
-        "requested_outputs": frozenset({"controlled_setup_test"}),
+        "requested_outputs": frozenset({"located_engineering_observation"}),
     }
     values.update(updates)
     return EvidenceEvaluationInput(**values)
 
 
-def test_setup_recommendation_contract_allows_only_a_confirmation_test() -> None:
+def test_run_observation_contract_allows_only_a_non_authorizing_observation() -> None:
     result = evaluate_evidence_contract(
-        SETUP_RECOMMENDATION_CONTRACT,
-        _setup_recommendation_input(),
+        RUN_OBSERVATION_CONTRACT,
+        _run_observation_input(),
     )
 
     assert result.eligible is True
-    assert [item.key for item in result.authorized_outputs] == ["controlled_setup_test"]
-    assert result.authorized_outputs[0].evidence_state is EvidenceState.NEEDS_CONFIRMATION
+    assert [item.key for item in result.authorized_outputs] == ["located_engineering_observation"]
+    assert result.authorized_outputs[0].evidence_state is EvidenceState.OBSERVED_CORRELATION
 
 
 @pytest.mark.parametrize(
     "output_key",
     ["exact_drag_force", "measured_cda", "strong_tire_degradation_claim", "strong_cooling_claim"],
 )
-def test_setup_recommendation_contract_forbids_unsupported_outputs(output_key: str) -> None:
+def test_run_observation_contract_forbids_unsupported_outputs(output_key: str) -> None:
     result = evaluate_evidence_contract(
-        SETUP_RECOMMENDATION_CONTRACT,
-        _setup_recommendation_input(requested_outputs=frozenset({output_key})),
+        RUN_OBSERVATION_CONTRACT,
+        _run_observation_input(requested_outputs=frozenset({output_key})),
     )
 
     assert result.eligible is False
     assert result.denied_outputs == frozenset({output_key})
 
 
-def test_short_run_sensitive_claim_blocks_setup_recommendation() -> None:
-    blockers = {item.key: False for item in SETUP_RECOMMENDATION_CONTRACT.hard_blockers}
+def test_run_observation_contract_cannot_authorize_a_setup_test() -> None:
+    result = evaluate_evidence_contract(
+        RUN_OBSERVATION_CONTRACT,
+        _run_observation_input(requested_outputs=frozenset({"controlled_setup_test"})),
+    )
+
+    assert result.eligible is False
+    assert result.denied_outputs == frozenset({"controlled_setup_test"})
+
+
+def test_short_run_sensitive_claim_blocks_run_observation() -> None:
+    blockers = {item.key: False for item in RUN_OBSERVATION_CONTRACT.hard_blockers}
     blockers["short_run_sensitive_claim"] = True
     result = evaluate_evidence_contract(
-        SETUP_RECOMMENDATION_CONTRACT,
-        _setup_recommendation_input(blocker_results=blockers),
+        RUN_OBSERVATION_CONTRACT,
+        _run_observation_input(blocker_results=blockers),
     )
 
     assert result.eligible is False

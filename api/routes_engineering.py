@@ -1,54 +1,53 @@
 from __future__ import annotations
 
+import re
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from api.intelligence_adapter import to_public_intelligence_report
 from api.schemas import DialInObjective, DialInPriority
-from racelab_engine.analysis.advanced_experimentation import (
-    DesignRun,
-    ExperimentHistorySummary,
-    ExperimentUnlock,
-    Factor,
-    evaluate_experiment_unlock,
-    fractional_factorial_design,
-)
-from racelab_engine.analysis.crew_chief_packet import (
-    KaizenEvidencePacket,
-)
 from racelab_engine.analysis.active_reset_lab import ActiveResetLabResult, analyze_active_reset_lab
+from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.controlled_workflow import ControlledWorkflow
 from racelab_engine.services.controlled_workflow_service import (
+    P19_WORKFLOW_AUTHORITY_BINDING_SCHEMA,
     attach_stage,
-    build_server_kaizen_packet,
     cancel_workflow,
     create_workflow,
-    project_kaizen_packet_for_publication,
+    persist_workflow_candidate,
     project_workflow_for_publication,
     score_workflow,
+    validate_p19_workflow_origin,
+    withhold_workflow_authority,
+    workflow_authority_action_identity,
+)
+from racelab_engine.services.run_intelligence_service import (
+    RunIntelligenceBundle,
+    build_run_intelligence,
 )
 from racelab_engine.services.report_service import ReportService
+from racelab_engine.services.session_service import get_session
 from racelab_engine.storage.repository import RaceLabRepository
-from racelab_engine.services.import_service import read_telemetry_rows
+from racelab_engine.services.import_service import read_telemetry_manifest, read_telemetry_rows
 
 router = APIRouter(prefix="/api/engineering", tags=["engineering"])
 
 
-def _reject_client_asserted_evidence() -> None:
-    raise HTTPException(
-        status_code=409,
-        detail=(
-            "Controlled engineering decisions require server-derived run, lap, setup, event, "
-            "driver, context, and simulator-integrity evidence. Client-asserted evidence is not accepted."
-        ),
-    )
+_P19_BINDING_SCHEMA = P19_WORKFLOW_AUTHORITY_BINDING_SCHEMA
+_P19_AUTHORITY_BLOCKER = (
+    "The controlled workflow is not bound to the current exact-session P19 reasoning "
+    "snapshot. No setup target, Keep/Undo verdict, or stop-testing policy is available."
+)
 
 
-class ServerEvidenceRequest(BaseModel):
+class WorkflowStartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     run_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1, max_length=160)
     complaint: str = Field(min_length=1)
     selected_lap: int | None = Field(default=None, ge=1)
     lap_scope: Literal["run", "single_lap", "lap_window", "track_zone"] | None = None
@@ -63,7 +62,7 @@ class ServerEvidenceRequest(BaseModel):
     priority: DialInPriority = "overall-pace"
 
     @model_validator(mode="after")
-    def validate_lap_selection_scope(self) -> ServerEvidenceRequest:
+    def validate_lap_selection_scope(self) -> WorkflowStartRequest:
         if self.lap_scope is None:
             self.lap_scope = "single_lap" if self.selected_lap is not None else "run"
         if self.lap_scope == "lap_window":
@@ -108,12 +107,6 @@ class ServerEvidenceRequest(BaseModel):
         return self
 
 
-class WorkflowScoreRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    workflow_id: str = Field(min_length=1)
-
-
 class WorkflowStageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -133,54 +126,203 @@ class ActiveResetLabRequest(BaseModel):
     target_end_pct: float = Field(gt=0.0, le=100.0)
 
 
-class ExperimentDesignRequest(BaseModel):
-    history: ExperimentHistorySummary
-    factors: list[Factor]
+def _card_action_identity(workflow: ControlledWorkflow) -> dict[str, object]:
+    return workflow_authority_action_identity(workflow)
 
 
-@router.post("/test-director/plan", response_model=KaizenEvidencePacket)
-def plan_controlled_test(request: ServerEvidenceRequest) -> KaizenEvidencePacket:
-    try:
-        repository = RaceLabRepository()
-        packet = build_server_kaizen_packet(
-            request.run_id,
-            request.complaint,
-            selected_lap=request.selected_lap,
-            selected_zone_start_pct=request.selected_zone_start_pct,
-            selected_zone_end_pct=request.selected_zone_end_pct,
-            selected_zone_label=request.selected_zone_label,
-            selected_phase=request.selected_phase,
-            objective=request.objective,
-            priority=request.priority,
-            repository=repository,
+def _derive_p19_report(
+    workflow: ControlledWorkflow,
+    *,
+    repository: RaceLabRepository,
+    session_id: str,
+    candidate: bool = False,
+) -> tuple[RunIntelligenceBundle, object]:
+    bundle = build_run_intelligence(
+        workflow.source_run_id,
+        session_id=session_id,
+        db_path=repository.db_path,
+        workflow_candidate=workflow if candidate else None,
+    )
+    overview = repository.get_overview(workflow.source_run_id)
+    if overview is None:
+        raise ValueError(f"Run not found: {workflow.source_run_id}")
+    public = to_public_intelligence_report(
+        bundle.report,
+        setup_snapshot=overview.setup_snapshot,
+    )
+    return bundle, public
+
+
+def _require_matching_p19_action(
+    workflow: ControlledWorkflow,
+    bundle: RunIntelligenceBundle,
+    public: object,
+) -> None:
+    expected = _card_action_identity(workflow)
+    action = public.briefing.action
+    authority = bundle.report.reasoning_snapshot.authority
+    observed = {
+        "control_key": action.control_key,
+        "current_value": action.current_value,
+        "proposed_value": action.proposed_value,
+        "instruction": action.instruction,
+        "source_event_ids": list(action.source_event_ids),
+    }
+    if (
+        public.schema_version != "p19.run-intelligence.v1"
+        or public.run_id != workflow.source_run_id
+        or public.status != "ready"
+        or public.decision_status != "ready"
+        or public.setup_id is None
+        or public.setup_snapshot_sha256 is None
+        or action.kind != "controlled_test"
+        or action.setup_authorized is not True
+        or action.blocker_reasons
+        or not authority.setup_authorized
+        or authority.level != "controlled_setup"
+        or authority.control_key != action.control_key
+        or tuple(authority.source_event_ids) != tuple(action.source_event_ids)
+        or observed != expected
+    ):
+        raise ValueError(
+            "The current exact-session P19 report did not authorize this workflow target."
         )
-        return project_kaizen_packet_for_publication(
-            request.run_id,
-            request.complaint,
-            packet,
-            repository=repository,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=404 if "not found" in str(exc).lower() else 409, detail=str(exc)) from exc
 
 
-@router.post("/test-director/score", response_model=ControlledWorkflow)
-def score_controlled_test(request: WorkflowScoreRequest) -> ControlledWorkflow:
+def _binding_for_authorized_candidate(
+    workflow: ControlledWorkflow,
+    *,
+    repository: RaceLabRepository,
+    session_id: str,
+    bundle: RunIntelligenceBundle,
+    public: object,
+) -> dict[str, object]:
+    session = get_session(session_id, db_path=repository.db_path)
+    overview = repository.get_overview(workflow.source_run_id)
+    if session is None or overview is None or workflow.source_run_id not in session.run_ids:
+        raise ValueError("The workflow run is not owned by the exact requested session.")
+    if len(session.run_ids) != len(set(session.run_ids)):
+        raise ValueError("The requested session has ambiguous run membership.")
+    manifest = read_telemetry_manifest(workflow.source_run_id)
+    compatibility_fingerprint = str(manifest.get("compatibility_fingerprint") or "")
+    if re.fullmatch(r"[0-9a-f]{64}", compatibility_fingerprint) is None:
+        raise ValueError("The workflow source build identity is unavailable.")
+    setup = overview.setup_snapshot
+    if setup is None or setup.setup_id != public.setup_id:
+        raise ValueError("The workflow source setup identity is unavailable or changed.")
+    return {
+        "schema_version": _P19_BINDING_SCHEMA,
+        "workflow_id": workflow.workflow_id,
+        "run_id": workflow.source_run_id,
+        "session_id": session_id,
+        "session_run_ids": list(session.run_ids),
+        "setup_id": public.setup_id,
+        "setup_snapshot_sha256": public.setup_snapshot_sha256,
+        "source_file_sha256": overview.session.file_hash,
+        "compatibility_fingerprint": compatibility_fingerprint,
+        "compatibility_identity_sha256": canonical_json_sha256(
+            manifest.get("compatibility_identity") or {}
+        ),
+        "plan_binding_sha256": workflow.reproduction_snapshot.get(
+            "plan_binding_sha256"
+        ),
+        "authority_action_sha256": canonical_json_sha256(
+            _card_action_identity(workflow)
+        ),
+        "eligible_lap_ids": list(bundle.report.data_quality.eligible_lap_ids),
+        "source_event_ids": list(
+            bundle.report.reasoning_snapshot.authority.source_event_ids
+        ),
+        "reasoning_snapshot_sha256": public.reasoning_snapshot_sha256,
+        "bound_at": datetime.now(UTC).isoformat(),
+    }
+
+
+def _validate_origin_binding(
+    workflow: ControlledWorkflow,
+    *,
+    repository: RaceLabRepository,
+) -> dict[str, object]:
     try:
-        return score_workflow(request.workflow_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return validate_p19_workflow_origin(workflow, repository=repository)
+    except (FileNotFoundError, OSError, TypeError, ValueError) as exc:
+        raise ValueError(_P19_AUTHORITY_BLOCKER) from exc
 
 
-@router.post("/crew-chief/packet", response_model=KaizenEvidencePacket)
-def kaizen_packet(request: ServerEvidenceRequest) -> KaizenEvidencePacket:
-    return plan_controlled_test(request)
+def _require_current_p19_authority(
+    workflow: ControlledWorkflow,
+    *,
+    repository: RaceLabRepository,
+) -> tuple[RunIntelligenceBundle, object]:
+    binding = _validate_origin_binding(workflow, repository=repository)
+    bundle, public = _derive_p19_report(
+        workflow,
+        repository=repository,
+        session_id=str(binding["session_id"]),
+    )
+    _require_matching_p19_action(workflow, bundle, public)
+    if (
+        binding.get("eligible_lap_ids")
+        != list(bundle.report.data_quality.eligible_lap_ids)
+        or binding.get("source_event_ids")
+        != list(bundle.report.reasoning_snapshot.authority.source_event_ids)
+    ):
+        raise ValueError(_P19_AUTHORITY_BLOCKER)
+    return bundle, public
+
+
+def _require_scored_p19_outcome(
+    workflow: ControlledWorkflow,
+    *,
+    repository: RaceLabRepository,
+) -> tuple[RunIntelligenceBundle, object]:
+    binding = _validate_origin_binding(workflow, repository=repository)
+    if workflow.status != "scored" or workflow.quality is None:
+        raise ValueError("The workflow has no complete controlled outcome.")
+    bundle, public = _derive_p19_report(
+        workflow,
+        repository=repository,
+        session_id=str(binding["session_id"]),
+    )
+    outcomes = [
+        outcome
+        for outcome in bundle.report.reasoning_snapshot.controlled_outcomes
+        if outcome.workflow_id == workflow.workflow_id
+    ]
+    if (
+        len(outcomes) != 1
+        or outcomes[0].policy.verdict != workflow.quality.verdict
+        or outcomes[0].control_response.control_key
+        != workflow.packet.primary_test.control_key
+    ):
+        raise ValueError(
+            "The current exact-session P19 snapshot did not validate this workflow verdict."
+        )
+    return bundle, public
+
+
+def _project_p19_bound_workflow(
+    workflow: ControlledWorkflow,
+    *,
+    repository: RaceLabRepository,
+) -> ControlledWorkflow:
+    try:
+        if workflow.status == "scored":
+            _require_scored_p19_outcome(workflow, repository=repository)
+        elif workflow.status == "cancelled":
+            raise ValueError(_P19_AUTHORITY_BLOCKER)
+        else:
+            _require_current_p19_authority(workflow, repository=repository)
+    except (FileNotFoundError, OSError, TypeError, ValueError):
+        return withhold_workflow_authority(workflow, _P19_AUTHORITY_BLOCKER)
+    return project_workflow_for_publication(workflow, repository=repository)
 
 
 @router.post("/workflows", response_model=ControlledWorkflow)
-def start_workflow(request: ServerEvidenceRequest) -> ControlledWorkflow:
+def start_workflow(request: WorkflowStartRequest) -> ControlledWorkflow:
     try:
-        return create_workflow(
+        repository = RaceLabRepository()
+        candidate = create_workflow(
             request.run_id,
             request.complaint,
             selected_lap=request.selected_lap,
@@ -194,16 +336,37 @@ def start_workflow(request: ServerEvidenceRequest) -> ControlledWorkflow:
             selected_phase=request.selected_phase,
             objective=request.objective,
             priority=request.priority,
+            repository=repository,
+            persist=False,
         )
+        bundle, public = _derive_p19_report(
+            candidate,
+            repository=repository,
+            session_id=request.session_id,
+            candidate=True,
+        )
+        _require_matching_p19_action(candidate, bundle, public)
+        snapshot = dict(candidate.reproduction_snapshot)
+        snapshot["p19_authority_binding"] = _binding_for_authorized_candidate(
+            candidate,
+            repository=repository,
+            session_id=request.session_id,
+            bundle=bundle,
+            public=public,
+        )
+        candidate = candidate.model_copy(update={"reproduction_snapshot": snapshot})
+        persisted = persist_workflow_candidate(candidate, repository=repository)
+        return project_workflow_for_publication(persisted, repository=repository)
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        status_code = 404 if "not found" in str(exc).casefold() else 409
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
 @router.get("/workflows", response_model=list[ControlledWorkflow])
 def list_workflows(active_only: bool = True) -> list[ControlledWorkflow]:
     repository = RaceLabRepository()
     return [
-        project_workflow_for_publication(workflow, repository=repository)
+        _project_p19_bound_workflow(workflow, repository=repository)
         for workflow in repository.list_controlled_workflows(active_only=active_only)
     ]
 
@@ -214,14 +377,15 @@ def get_workflow(workflow_id: str) -> ControlledWorkflow:
     workflow = repository.get_controlled_workflow(workflow_id)
     if workflow is None:
         raise HTTPException(status_code=404, detail=f"Workflow not found: {workflow_id}")
-    return project_workflow_for_publication(workflow, repository=repository)
+    return _project_p19_bound_workflow(workflow, repository=repository)
 
 
 @router.post("/workflows/{workflow_id}/cancel", response_model=ControlledWorkflow)
 def cancel_controlled_workflow(workflow_id: str) -> ControlledWorkflow:
     try:
-        cancelled = cancel_workflow(workflow_id)
-        return project_workflow_for_publication(cancelled)
+        repository = RaceLabRepository()
+        cancelled = cancel_workflow(workflow_id, repository=repository)
+        return withhold_workflow_authority(cancelled, _P19_AUTHORITY_BLOCKER)
     except ValueError as exc:
         status_code = 404 if "not found" in str(exc).lower() else 409
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
@@ -230,7 +394,15 @@ def cancel_controlled_workflow(workflow_id: str) -> ControlledWorkflow:
 @router.get("/workflows/{workflow_id}/report", response_model=WorkflowReportResponse)
 def get_workflow_report(workflow_id: str) -> WorkflowReportResponse:
     try:
-        markdown = ReportService().generate_workflow_markdown(workflow_id)
+        repository = RaceLabRepository()
+        workflow = repository.get_controlled_workflow(workflow_id)
+        if workflow is None:
+            raise HTTPException(status_code=404, detail=f"Workflow not found: {workflow_id}")
+        if workflow.status == "scored":
+            _require_scored_p19_outcome(workflow, repository=repository)
+        else:
+            _require_current_p19_authority(workflow, repository=repository)
+        markdown = ReportService(repository.db_path).generate_workflow_markdown(workflow_id)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if markdown is None:
@@ -245,7 +417,19 @@ def record_workflow_stage(
     request: WorkflowStageRequest,
 ) -> ControlledWorkflow:
     try:
-        return attach_stage(workflow_id, stage, request.run_id)
+        repository = RaceLabRepository()
+        workflow = repository.get_controlled_workflow(workflow_id)
+        if workflow is None:
+            raise HTTPException(status_code=404, detail=f"Workflow not found: {workflow_id}")
+        _require_current_p19_authority(workflow, repository=repository)
+        updated = attach_stage(
+            workflow_id,
+            stage,
+            request.run_id,
+            repository=repository,
+        )
+        _require_current_p19_authority(updated, repository=repository)
+        return project_workflow_for_publication(updated, repository=repository)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -280,16 +464,33 @@ def active_reset_lab(request: ActiveResetLabRequest) -> ActiveResetLabResult:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/experimentation/unlock", response_model=ExperimentUnlock)
-def experimentation_unlock(history: ExperimentHistorySummary) -> ExperimentUnlock:
-    _reject_client_asserted_evidence()
-    return evaluate_experiment_unlock(history)
-
-
-@router.post("/experimentation/design", response_model=list[DesignRun])
-def experimentation_design(request: ExperimentDesignRequest) -> list[DesignRun]:
-    _reject_client_asserted_evidence()
-    unlock = evaluate_experiment_unlock(request.history)
-    if not unlock.unlocked:
-        raise HTTPException(status_code=409, detail={"blockers": list(unlock.blockers)})
-    return list(fractional_factorial_design(request.factors, unlock))
+@router.post("/workflows/{workflow_id}/score", response_model=ControlledWorkflow)
+def score_controlled_workflow(workflow_id: str) -> ControlledWorkflow:
+    try:
+        repository = RaceLabRepository()
+        workflow = repository.get_controlled_workflow(workflow_id)
+        if workflow is None:
+            raise HTTPException(status_code=404, detail=f"Workflow not found: {workflow_id}")
+        _require_current_p19_authority(workflow, repository=repository)
+        scored = score_workflow(workflow_id, repository=repository)
+        bundle, public = _require_scored_p19_outcome(scored, repository=repository)
+        snapshot = dict(scored.reproduction_snapshot)
+        snapshot["p19_outcome_binding"] = {
+            "schema_version": _P19_BINDING_SCHEMA,
+            "workflow_id": scored.workflow_id,
+            "reasoning_snapshot_sha256": public.reasoning_snapshot_sha256,
+            "policy_verdict": scored.quality.verdict if scored.quality else None,
+            "controlled_outcome_sha256": canonical_json_sha256(
+                next(
+                    outcome
+                    for outcome in bundle.report.reasoning_snapshot.controlled_outcomes
+                    if outcome.workflow_id == scored.workflow_id
+                )
+            ),
+            "bound_at": datetime.now(UTC).isoformat(),
+        }
+        scored = scored.model_copy(update={"reproduction_snapshot": snapshot})
+        repository.save_controlled_workflow(scored)
+        return project_workflow_for_publication(scored, repository=repository)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

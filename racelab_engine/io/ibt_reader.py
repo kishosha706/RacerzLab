@@ -17,11 +17,10 @@ from racelab_engine.analysis.calculated_channels import (
 )
 from racelab_engine.analysis.constants import LOW_BRAKE_PCT, PLATFORM_VALID_MIN_SPEED_MPH, PLATFORM_VALID_THROTTLE_PCT
 from racelab_engine.analysis.drag_scrub import detect_drag_scrub_risk_zones
-from racelab_engine.analysis.dynamic_crew_chief import build_recommendations
 from racelab_engine.analysis.evidence_contracts import (
     EvidenceEvaluationInput,
     EvidenceState,
-    SETUP_RECOMMENDATION_CONTRACT,
+    RUN_OBSERVATION_CONTRACT,
     evaluate_evidence_contract,
 )
 from racelab_engine.analysis.lap_classification import classify_laps
@@ -840,7 +839,6 @@ def _platform_event_to_overview_marker(
             ),
         },
         related_setup_keys=["front_ride_height", "front_springs", "packers", "steering_offset"],
-        recommended_actions=[event.recommended_action] if valid_for_tuning and event.recommended_action else [],
         evidence_state=(
             EvidenceState.CALCULATED
             if valid_for_tuning
@@ -987,13 +985,12 @@ def _qualify_overview_drag_events(
             update={
                 "valid_for_tuning": False,
                 "confidence_score": min(event.confidence_score, 0.35),
-                "recommended_actions": [],
                 "evidence_state": EvidenceState.BLOCKED_BY_CONTEXT,
                 "blocker_reasons": [explanation],
                 "evidence_json": {
                     **event.evidence_json,
                     "proximity_context": proximity.model_dump(mode="json"),
-                    "tuning_action_suppressed": True,
+                    "observation_withheld": True,
                 },
             }
         )
@@ -1044,14 +1041,9 @@ def _build_overview_drag_events(
     )
     promoted = [
         event.model_copy(
-            update={
-                "valid_for_tuning": True,
-                "recommended_actions": [
-                    "Run one controlled platform/scrub test and compare this zone by lap percentage."
-                ],
-            }
+            update={"valid_for_tuning": True}
         )
-        if event.evidence_json.get("detector_action_candidate") is True
+        if event.evidence_json.get("detector_observation_candidate") is True
         else event
         for event in detected
     ]
@@ -1151,28 +1143,25 @@ def _build_overview(
         and event.source_channels
         and set(event.source_channels).issubset(usable_channels)
     ]
-    requested_outputs = frozenset({"controlled_setup_test"})
+    requested_outputs = frozenset({"located_engineering_observation"})
     setup_snapshot_captured = _setup_snapshot_has_recorded_values(setup)
     sample_integrity_observed_clear = (
         False
         if best_lap is not None and {"session_tick", "session_time"}.issubset(usable_channels)
         else None
     )
-    one_change_output_isolated = (
-        False if requested_outputs == frozenset({"controlled_setup_test"}) else None
-    )
     sensitive_claim_requested = any(
-        token in f"{event.event_type} {' '.join(event.recommended_actions)}".lower()
+        token in event.event_type.lower()
         for event in linked_events
-        for token in ("degradation", "tire wear", "cooling", "overheat")
+        for token in ("degradation", "tire_wear", "cooling", "overheat")
     )
     missing_data_substitution_observed = (
         False
-        if linked_events and SETUP_RECOMMENDATION_CONTRACT.required_channels.issubset(usable_channels)
+        if linked_events and RUN_OBSERVATION_CONTRACT.required_channels.issubset(usable_channels)
         else None
     )
-    recommendation_evidence = evaluate_evidence_contract(
-        SETUP_RECOMMENDATION_CONTRACT,
+    observation_evidence = evaluate_evidence_contract(
+        RUN_OBSERVATION_CONTRACT,
         EvidenceEvaluationInput(
             usable_channels=usable_channels,
             condition_results={
@@ -1183,7 +1172,6 @@ def _build_overview(
             blocker_results={
                 "junk_lap_context": best_lap is None,
                 "sample_or_sim_integrity_failure": sample_integrity_observed_clear,
-                "unisolated_setup_change": one_change_output_isolated,
                 "short_run_sensitive_claim": sensitive_claim_requested,
                 "missing_data_substitution": missing_data_substitution_observed,
             },
@@ -1192,15 +1180,15 @@ def _build_overview(
         ),
     )
     confidence_limit_reasons = [
-        limit.message for limit in recommendation_evidence.confidence_limits
+        limit.message for limit in observation_evidence.confidence_limits
     ]
-    if recommendation_evidence.eligible:
+    if observation_evidence.eligible:
         events = [
             event.model_copy(
                 update={
                     "confidence_score": min(
                         event.confidence_score,
-                        recommendation_evidence.confidence_cap,
+                        observation_evidence.confidence_cap,
                     ),
                     "evidence_json": {
                         **event.evidence_json,
@@ -1213,21 +1201,20 @@ def _build_overview(
             for event in events
         ]
     else:
-        recommendation_blockers = [
-            blocker.message for blocker in recommendation_evidence.blockers
+        observation_blockers = [
+            blocker.message for blocker in observation_evidence.blockers
         ]
         events = [
             event.model_copy(
                 update={
                     "valid_for_tuning": False,
-                    "recommended_actions": [],
                     "confidence_score": min(event.confidence_score, 0.35),
                     "evidence_state": EvidenceState.BLOCKED_BY_CONTEXT,
-                    "blocker_reasons": recommendation_blockers,
+                    "blocker_reasons": observation_blockers,
                     "evidence_json": {
                         **event.evidence_json,
-                        "tuning_action_suppressed": True,
-                        "evidence_contract_blockers": recommendation_blockers,
+                        "observation_withheld": True,
+                        "evidence_contract_blockers": observation_blockers,
                     },
                 }
             )
@@ -1235,12 +1222,7 @@ def _build_overview(
             else event
             for event in events
         ]
-    recommendations = build_recommendations(
-        run_id,
-        events,
-        evidence_evaluation=recommendation_evidence,
-    )
-    profile["overview_recommendations_s"] = time.perf_counter() - t0
+    profile["overview_observation_contract_s"] = time.perf_counter() - t0
     invalid_scrapes = [
         event for event in platform_events if event.event_type == "PLATFORM_SCRAPE" and not event.valid_for_tuning
     ]
@@ -1265,27 +1247,12 @@ def _build_overview(
         laps=laps,
         events=events,
         setup_snapshot=setup,
-        recommendations=recommendations,
         primary_findings=_build_primary_findings(
             best_lap,
             [event for event in events if "PLATFORM" in event.event_type],
             [event for event in events if event.event_type == "FULL_THROTTLE_SPEED_LOSS"],
         ),
         warnings=warnings,
-        crew_chief_summary=(
-            "A contract-qualified event supports one controlled platform/scrub test."
-            if recommendations
-            else "An eligible lap is available, but the evidence contract did not authorize a setup test."
-            if best_lap
-            else "No complete useful lap was identified."
-        ),
-        next_test=(
-            "Run one controlled platform/scrub test. Compare speed, minimum splitter, steering angle, and RPM in the same lap-distance zone."
-            if recommendations
-            else recommendation_evidence.needed_measurements[0].instruction
-            if recommendation_evidence.needed_measurements
-            else "Import a complete run with at-speed telemetry before making setup conclusions."
-        ),
     )
     profile["overview_model_build_s"] = time.perf_counter() - t0
     profile["overview_total_s"] = sum(profile.values())

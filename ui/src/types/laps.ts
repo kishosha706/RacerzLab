@@ -56,7 +56,6 @@ export interface LapWindowSummary {
   shock_stress_score: number | null;
   confidence_score: number;
   warnings: string[];
-  recommendation: string | null;
   pace_quality_score?: number | null;
   pace_quality_label?: string | null;
   evidence_confidence_score?: number | null;
@@ -267,8 +266,8 @@ export interface StintCompareResult {
   tire_trend_delta: string;
   platform_trend_delta: string;
   shock_trend_delta: string;
-  verdict: string;
-  summary: string;
+  observation_summary: string;
+  evidence_summary: string;
 }
 
 export interface StintBucketDelta {

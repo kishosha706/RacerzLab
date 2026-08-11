@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 import api.routes_runs as routes_runs
 from api.main import app
 from racelab_engine.models.lap import LapSummary
-from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.storage.db import initialize_database
@@ -47,15 +46,6 @@ def _seed_run(db_path: Path, run_id: str = "read-path-run") -> RaceLabRepository
             run_id=run_id,
             setup_name="Baseline",
         ),
-        recommendations=[
-            Recommendation(
-                recommendation_id=f"{run_id}:recommendation:1",
-                run_id=run_id,
-                priority_rank=1,
-                issue="Test issue",
-                recommendation_text="Collect more evidence.",
-            )
-        ],
     )
     repository = RaceLabRepository(db_path)
     repository.save_import(overview)
@@ -130,7 +120,7 @@ def test_run_list_uses_one_select_instead_of_per_run_queries(
             "best_lap_time_s": 30.25,
             "lap_count": 1,
             "has_setup_snapshot": True,
-            "primary_issue": "Test issue",
+            "primary_issue": None,
         }
     ]
 

@@ -10,8 +10,6 @@ import { buildZoneEvidence } from "../utils/evidenceFocus";
 import {
   bestUsefulLapMatchesRun,
   overviewWarningBlocksDecision,
-  recommendationBlockedReason,
-  recommendationIsActionable,
   setupSnapshotMatchesRun,
   telemetryEventIsActionable,
 } from "../utils/evidenceTrust";
@@ -150,13 +148,6 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
       return (right.confidence_score ?? 0) - (left.confidence_score ?? 0);
     })[0] ?? null;
   }, [overview.events]);
-  const evidenceQualifiedRecommendations = useMemo(
-    () => overview.recommendations.filter((recommendation) => (
-      recommendationIsActionable(recommendation, overview.events)
-    )),
-    [overview.events, overview.recommendations],
-  );
-
   const buildOverviewEvidence = useCallback((event: TelemetryEvent) => {
     const hasLocation = event.lap_pct_peak != null || event.lap_pct_start != null || event.distance_m_peak != null;
     const lapDistFt = event.distance_m_peak != null ? event.distance_m_peak * 3.280839895 : null;
@@ -287,7 +278,7 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
     ? "NO CALL"
     : topEvent
       ? "INVESTIGATE"
-      : "HOLD";
+      : "NO FINDING";
   const priorityPhase = topEvent ? explicitOvalPhase(topEvent) : null;
   const priorityLocation = topEvent ? eventLocationLabel(topEvent) : null;
   const cornerPriorityLabel = topEvent
@@ -306,7 +297,7 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
         ? "Data warning: hold the setup call."
         : topEvent
           ? `${humanizeEventLabel(topEvent.event_type)} needs inspection.`
-          : "No setup issue earned a call.";
+          : "No qualified handling issue was observed.";
   const decisionDetail = !lap
     ? "Complete a clean timed lap before making a setup decision."
     : !setupAvailable
@@ -317,7 +308,7 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
         ? trustBlocker ?? "Resolve the run warnings before using this run for a setup decision."
       : topEvent
           ? `${priorityPhase ? `${priorityPhase} | ` : ""}${priorityLocation}${topEvent.lap_number != null ? ` | Lap ${topEvent.lap_number}` : ""}`
-          : "Hold the current setup or begin one small, controlled test.";
+          : "This overview is observational and does not authorize a setup test.";
   const decisionNext = !lap
     ? "Bank one complete, clean timed lap. Out laps, pit laps, cooldowns, wrecks, and partial laps will stay out of the call."
     : !setupAvailable
@@ -327,10 +318,10 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
         : !dataTrustReady
           ? "Recover the blocked telemetry evidence, then let the run be re-qualified."
           : topEvent
-            ? "Inspect the exact event location, ask Engineer to separate competing causes, then validate at most one setup change in Dial-In."
+            ? "Inspect the exact event location and ask Engineer to separate competing causes. Only the current P19 report can authorize one controlled setup test."
             : longRunLapsNeeded > 0
-              ? `Hold the setup. If long-run pace matters, extend this same-setup clean block by ${longRunLapsNeeded} lap${longRunLapsNeeded === 1 ? "" : "s"} before reviewing falloff.`
-              : "Hold the setup. Review the continuous clean block in Laps; only stage a test when qualified evidence supports one change."
+              ? `For long-run inspection, extend this same-setup clean block by ${longRunLapsNeeded} lap${longRunLapsNeeded === 1 ? "" : "s"} before reviewing falloff.`
+              : "Review the continuous clean block in Laps. This overview does not issue setup-change or Keep/Undo policy."
   const decisionPaceComparison = lap?.lap_time != null
     ? bestToMedianDelta != null && usefulTimedLapTimes.length >= 2
       ? bestToMedianDelta >= 0
@@ -349,15 +340,6 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
     : lap
       ? `${visibleRunLabel} | Best eligible Lap ${lap.lap_number}`
       : `${visibleRunLabel} | No eligible lap`;
-  const actionableRecommendations = decisionContextReady ? evidenceQualifiedRecommendations : [];
-  const firstBlockedRecommendation = overview.recommendations.find((recommendation) => (
-    !recommendationIsActionable(recommendation, overview.events)
-  ));
-  const recommendationNoCallReason = !decisionContextReady
-    ? decisionDetail
-    : firstBlockedRecommendation
-      ? recommendationBlockedReason(firstBlockedRecommendation)
-      : "No evidence-qualified recommendation was produced for this run.";
   const trustedPrimaryFindings = topEvent && dataTrustReady ? overview.primary_findings : [];
   const broadcastWarning = blockingOverviewWarnings[0] ?? overview.warnings[0] ?? null;
 
@@ -382,7 +364,7 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
     >
       <div>
         <span className="eyebrow">
-          {decisionState === "HOLD" ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+          {decisionState === "NO FINDING" ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
           {decisionState}
         </span>
         <h2>{decisionHeadline}</h2>
@@ -607,22 +589,16 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
       </section>
 
       <section className="workspace-section">
-        <h2>Recommendations from Crew Chief</h2>
-        {actionableRecommendations.length > 0 ? (
-          <ol className="findings-list">
-            {actionableRecommendations.map((rec) => (
-              <li key={rec.recommendation_id}>
-                <strong>P{rec.priority_rank}:</strong> {rec.recommendation_text}
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <div className="inspector-crew-block">
-            <span className="eyebrow">No call</span>
-            <p>No recommendation is shown without supporting evidence.</p>
-            <p className="muted">{recommendationNoCallReason}</p>
-          </div>
-        )}
+        <h2>Measurement Mission</h2>
+        <div className="inspector-crew-block">
+          <span className="eyebrow">No setup authority</span>
+          <p>{topEvent
+            ? "Repeat the located behavior on eligible laps with the setup unchanged."
+            : "Collect eligible, setup-bound telemetry before considering a controlled test."}</p>
+          <p className="muted">
+            Import observations cannot authorize a setup change. Dial-In exposes a target only after the controlled P19 workflow revalidates exact run, setup, legal option, evidence, and test history.
+          </p>
+        </div>
       </section>
 
       <section className="workspace-section">

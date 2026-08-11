@@ -26,7 +26,8 @@ def test_compare_leads_with_an_oval_driver_brief() -> None:
         assert label in source
     for detail in ("Where", "Driver", "RF / tires", "Setup delta"):
         assert f">{detail}<" in source
-    assert "does not authorize a new setup change by itself" in source
+    assert "This surface reports observations only" in source
+    assert "setup policy comes from the controlled workflow" in source
 
 
 def test_whole_car_compare_is_reachable_inside_the_laps_workflow() -> None:

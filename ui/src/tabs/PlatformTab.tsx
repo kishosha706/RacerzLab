@@ -2,7 +2,6 @@ import type { EChartsOption, SeriesOption } from "echarts";
 import { Activity, AlertTriangle, BarChart3, BrainCircuit, LocateFixed, MapPin, RotateCcw, ShieldCheck, Wrench, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { EvidenceCard } from "../components/EvidenceCard";
 import { EngineeringMetricCard } from "../components/EngineeringMetricCard";
 import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPanel";
 import { DamperSpectrumSummary } from "../components/DamperSpectrumSummary";
@@ -26,7 +25,6 @@ import type {
   PlatformEventVisibilityMode,
   RunOverview,
   SetupSnapshot,
-  TelemetryEvent,
   TraceChannelPayload,
   TraceResponse,
 } from "../types/telemetry";
@@ -657,16 +655,6 @@ function platformEventPriority(event: PlatformEventItem): number {
   const confidence = String(event.confidence ?? "").toLowerCase();
   const confidenceRank = confidence === "high" ? 3 : confidence === "medium" ? 2 : 1;
   return scopeRank + severityRank + confidenceRank;
-}
-
-function eventDistanceFt(event: TelemetryEvent) {
-  return event.distance_m_peak == null ? null : event.distance_m_peak * 3.280839895;
-}
-
-function isSafeLegacyPlatformEvent(event: TelemetryEvent): boolean {
-  const severity = event.severity.toLowerCase();
-  const label = `${event.event_type} ${event.event_subtype ?? ""}`.toLowerCase();
-  return severity === "safe" || label.includes("safe") || label.includes("normal");
 }
 
 /**
@@ -1663,14 +1651,6 @@ function PlatformTraceWorkbench({
     hoverCursorDistanceFtRef.current = hoverCursorDistanceFt;
   }, [hoverCursorDistanceFt]);
 
-  const legacyEvents = useMemo(
-    () => overview.events.filter((event) => event.event_type.startsWith("PLATFORM")),
-    [overview.events],
-  );
-  const visibleLegacyEvents = useMemo(
-    () => legacyEvents.filter((event) => !isSafeLegacyPlatformEvent(event)),
-    [legacyEvents],
-  );
   const rows = useMemo(() => PRESET_ROWS[preset] ?? PRESET_ROWS["Platform / Rake / Ride Height"], [preset]);
   const balanceReadoutPanelLayout = useMemo(
     () => buildPanelLayout(rows, preset, chartDensity, fallbackRowHeight(preset), 54),
@@ -1741,7 +1721,6 @@ function PlatformTraceWorkbench({
       lapWindow: shockReaderLapWindow,
       zoneStartPct: selection.selectedZoneStartPct,
       zoneEndPct: selection.selectedZoneEndPct,
-      includeDebug: false,
     })
       .then((payload) => {
         if (cancelled) return;
@@ -2638,9 +2617,9 @@ function PlatformTraceWorkbench({
     chartNode.current.style.height = `${totalChartH}px`;
     chartNode.current.style.minHeight = `${totalChartH}px`;
 
+    // Overview TelemetryEvent observations remain Overview-only; Platform uses the structured event contract.
     const eventAnnotations = buildPlatformChartAnnotations({
       platformEvents,
-      legacyEvents,
       mode: platformEventVisibilityMode,
     });
     const polishedEventMarkLines = eventAnnotations.markLines.map((line, index) => {
@@ -2931,7 +2910,6 @@ function PlatformTraceWorkbench({
   }, [
     chartDensity,
     detailTraceActive,
-    legacyEvents,
     platformEventVisibilityMode,
     platformEvents,
     preset,
@@ -3237,18 +3215,13 @@ function PlatformTraceWorkbench({
         shockReader?.zone_end_pct,
       );
       const readerCorner = shockReader?.corners.find((item) => item.corner === corner.label);
-      const recommendationFor = (displayLabel: string) => (
-        shockReaderLapWindow
-          ? null
-          : readerCorner?.setting_recommendations.find((recommendation) => recommendation.display_label === displayLabel) ?? null
-      );
       const setupFields: ShockSetupField[] = [
-        { label: "LS Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "ls_compression")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "ls_compression") == null, recommendation: recommendationFor("LS Comp") },
-        { label: "HS Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_compression")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_compression") == null, recommendation: recommendationFor("HS Comp") },
-        { label: "Comp Slope", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_comp_slope")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_comp_slope") == null, recommendation: recommendationFor("HS-S Comp") },
-        { label: "LS Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "ls_rebound")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "ls_rebound") == null, recommendation: recommendationFor("LS Reb") },
-        { label: "HS Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_rebound")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_rebound") == null, recommendation: recommendationFor("HS Reb") },
-        { label: "Rebound Slope", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_reb_slope")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_reb_slope") == null, recommendation: recommendationFor("HS-S Reb") },
+        { label: "LS Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "ls_compression")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "ls_compression") == null },
+        { label: "HS Comp", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_compression")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_compression") == null },
+        { label: "Comp Slope", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_comp_slope")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_comp_slope") == null },
+        { label: "LS Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "ls_rebound")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "ls_rebound") == null },
+        { label: "HS Reb", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_rebound")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_rebound") == null },
+        { label: "Rebound Slope", value: formatSetupClicks(setupCornerNumber(shockSetupSnapshot, corner.key, "hs_reb_slope")), unavailable: setupCornerNumber(shockSetupSnapshot, corner.key, "hs_reb_slope") == null },
       ];
       return {
         ...corner,
@@ -3344,9 +3317,7 @@ function PlatformTraceWorkbench({
             ? "Required physical-position or platform channels are unavailable for this scope."
             : "No qualified actionable event was returned; this is not a clear-data certificate.";
   const platformBroadcastNext = focusedPlatformEvent
-    ? focusedPlatformEvent.recommended_action?.trim()
-      ? `Diagnostic follow-up: ${focusedPlatformEvent.recommended_action}`
-      : "Lock the exact location and ask Engineer which measurement would separate the leading explanations."
+    ? "Lock the exact location and ask Engineer which measurement would separate the leading explanations."
     : platformEventsLoadStatus === "clear"
       ? "Hold the platform call for this lap and move to another evidence-backed priority."
       : platformEventsLoadStatus === "loading"
@@ -3550,13 +3521,13 @@ function PlatformTraceWorkbench({
         </div>
       )}
 
-      {shockReader?.recommendations[0] && shockReader.recommendations[0].semantic_direction !== "leave_alone" && (
-        <section className="evidence-card" aria-label="Primary shock test">
-          <span className="eyebrow">Primary shock test · one change only</span>
-          <h3>{shockReader.recommendations[0].display_setting} · {shockReader.recommendations[0].corner_scope}</h3>
-          <p>{shockReader.recommendations[0].next_test}</p>
+      {shockReader && (
+        <section className="evidence-card" aria-label="Shock measurement guidance">
+          <span className="eyebrow">Shock observation · setup authority withheld</span>
+          <h3>Use the histogram to locate repeatable damper motion</h3>
+          <p>Repeat the same eligible track region with the setup unchanged.</p>
           {selection.selectedMode === "learning" && (
-            <p className="section-note">{shockReader.recommendations[0].evidence_summary}</p>
+            <p className="section-note">Only the controlled P19 workflow can expose an exact damper target or Keep/Undo decision.</p>
           )}
         </section>
       )}
@@ -3573,9 +3544,7 @@ function PlatformTraceWorkbench({
       <div className="shock-workstation-toolbar" aria-label="Shock histogram range summary">
         <p className="shock-range-note">
           Histograms use a fixed -{sharedShockAxisLimit.toFixed(1)} to +{sharedShockAxisLimit.toFixed(1)} in/s display range. {shockReader
-            ? `${shockReader.boundary_basis} ${shockReader.slope_actions_available
-              ? "Slope actions are available only where repeatability and boundary-stability gates pass."
-              : "Slope actions are withheld because the server has not verified a car-specific curve transition."}`
+            ? `${shockReader.boundary_basis} This boundary classifies the observation only; it does not authorize a click or slope change.`
             : currentShockReaderLoadStatus === "error"
               ? "Server-owned action evidence failed to load; no click direction is available."
               : currentShockReaderLoadStatus === "unavailable"
@@ -3862,9 +3831,6 @@ function PlatformTraceWorkbench({
                 {` · ${platformEventScopeLabel(focusedPlatformEvent)}`}
               </span>
               {focusedPlatformEvent.evidence[0] && <p>{focusedPlatformEvent.evidence[0]}</p>}
-              {focusedPlatformEvent.recommended_action && (
-                <p className="recommended-action"><strong>Diagnostic follow-up:</strong> {focusedPlatformEvent.recommended_action}</p>
-              )}
               <p className="proxy-note">No setup target is authorized by this event. Use Dial-In to verify one legal change before testing.</p>
               {focusedPlatformEvent.is_proxy_based && (
                 <p className="proxy-note">Proxy evidence only. It does not measure aerodynamic force.</p>
@@ -4159,11 +4125,6 @@ function PlatformTraceWorkbench({
                   </ul>
                 </>
               )}
-              {selectedPlatformEvent.recommended_action && (
-                <p className="recommended-action">
-                  <strong>Diagnostic follow-up:</strong> {selectedPlatformEvent.recommended_action}
-                </p>
-              )}
               <p className="proxy-note">No setup target is authorized by this event. Dial-In must verify one legal change.</p>
               {selectedPlatformEvent.reason_for_hidden && (
                 <p className="proxy-note">Hidden by default: {selectedPlatformEvent.reason_for_hidden}</p>
@@ -4190,33 +4151,6 @@ function PlatformTraceWorkbench({
             </div>
           )}
         </div>
-      )}
-
-      {/* ── legacy platform events (only shown when no structured events exist) ── */}
-      {platformEventsLoadStatus === "ready" && platformEvents.length === 0 && visiblePlatformEvents.length === 0 && visibleLegacyEvents.length > 0 && (
-        <>
-          <div className="event-jump-row">
-            {visibleLegacyEvents.map((event) => (
-              <button
-                className="secondary-button"
-                key={event.event_id}
-                onClick={() => {
-                  const targetFt = eventDistanceFt(event);
-                  if (targetFt == null) return;
-                  const idx = nearestIndexByFt(xs, targetFt);
-                  jumpToIndex(idx, event.event_id);
-                }}
-              >
-                <Activity size={16} /> {event.event_subtype ?? event.event_type}
-              </button>
-            ))}
-          </div>
-          <div className="evidence-list">
-            {visibleLegacyEvents.map((event) => (
-              <EvidenceCard event={event} key={event.event_id} onToggleMapOverlay={onToggleMapOverlay} />
-            ))}
-          </div>
-        </>
       )}
     </section>
   );

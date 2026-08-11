@@ -233,7 +233,7 @@ def _setup_extracted_values(car_setup: dict[str, Any], source: dict[str, Any], y
     def _corner(corner: dict[str, Any], tires_corner: dict[str, Any]) -> dict[str, Any]:
         return {
             "ride_height_mm": _float_from_text(corner.get("RideHeight")),
-            "corner_weight_kg": _float_from_text(corner.get("CornerWeight")),
+            "corner_weight_n": _float_from_text(corner.get("CornerWeight")),
             "spring_rate_n_per_mm": _float_from_text(corner.get("SpringRate")),
             "cold_pressure_kpa": _cold(corner, tires_corner),
             "camber_deg": _float_from_text(corner.get("Camber")),

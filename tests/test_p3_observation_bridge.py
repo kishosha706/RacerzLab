@@ -81,7 +81,6 @@ def _report(
                 confidence_score=0.8,
                 source_channels=["lap_dist_pct_100", source_channel],
                 supporting_evidence=["The deterministic producer qualified this evidence."],
-                recommendation="Move a setup control to 52%.",
             )
         ],
         phases=["straight"],
@@ -136,6 +135,7 @@ def test_bridge_calls_each_missing_producer_once_and_preserves_paired_laps(
         "rpm",
         historical_segment_laps=[1, 2, 3],
         active_segment_laps=[1, 2, 3],
+        pace_drift=SimpleNamespace(authority_blocker_reasons=[]),
     )
     producer_mocks = {
         "analyze_braking_efficiency": Mock(return_value=brake),
@@ -249,6 +249,55 @@ def test_bridge_calls_each_missing_producer_once_and_preserves_paired_laps(
     )
     assert resistance.qualified is False
     assert "A/B/A2" in " ".join(resistance.blocker_reasons)
+
+
+def test_traffic_blocked_stint_cannot_become_a_p19_cause(monkeypatch) -> None:
+    blocker_reason = (
+        "Nearby traffic entered the operational time-gap window; retain the pace "
+        "drift as observed correlation only and do not feed it to setup authority."
+    )
+    stint = _report(
+        "stint_tire_strategy",
+        "stint_pace_drift",
+        "rpm",
+        historical_segment_laps=[1, 2, 3],
+        active_segment_laps=[1, 2, 3],
+        pace_drift=SimpleNamespace(authority_blocker_reasons=[blocker_reason]),
+    )
+    monkeypatch.setattr(bridge, "analyze_stint_strategy", Mock(return_value=stint))
+    monkeypatch.setattr(
+        bridge,
+        "_cohort_integrity",
+        lambda *_args, **_kwargs: (True, 1.0, {}),
+    )
+    existing = tuple(
+        mechanism
+        for mechanism in MechanismKind
+        if mechanism is not MechanismKind.STINT_TREND
+    )
+
+    report = bridge.build_p3_mechanism_observations(
+        _rows(),
+        [_lap(1, 50.0), _lap(2, 49.0), _lap(3, 53.0)],
+        run_id="run-a",
+        setup_id="setup-a",
+        telemetry_rate_hz=1.0,
+        preferred_lap_number=2,
+        existing_mechanisms=existing,
+    )
+
+    assert report.status is ObservationStatus.BLOCKED
+    assert len(report.observations) == 1
+    observation = report.observations[0]
+    assert observation.mechanism is MechanismKind.STINT_TREND
+    assert observation.qualified is False
+    assert blocker_reason in observation.blocker_reasons
+    assert {
+        "car_distance_ahead_m",
+        "car_distance_behind_m",
+        "speed_mps",
+    }.issubset(observation.required_channels)
+    assert _observation_hypotheses(report) == ()
 
 
 def test_each_missing_producer_retains_its_own_blocked_state() -> None:

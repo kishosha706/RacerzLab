@@ -21,6 +21,10 @@ def _contract_payload(
     candidate_id: str,
     run_id: str,
     session_id: str | None,
+    session_run_ids: Sequence[str],
+    source_setup_id: str,
+    setup_sha256: str,
+    compatibility_fingerprint: str,
     required_channels: Sequence[str],
     cause_ids: Sequence[str],
     telemetry_health_identity: str,
@@ -54,9 +58,14 @@ def _contract_payload(
     else:
         raise ValueError("only collection plans can become mission contracts")
     return {
+        "schema_version": "p19.measurement-mission.v2",
         "candidate_id": candidate_id,
         "run_id": run_id,
         "session_id": session_id,
+        "session_run_ids": tuple(sorted(set(session_run_ids))),
+        "source_setup_id": source_setup_id,
+        "setup_sha256": setup_sha256,
+        "compatibility_fingerprint": compatibility_fingerprint,
         "purpose": purpose,
         "procedure": procedure,
         "required_channels": tuple(dict.fromkeys(required_channels)),
@@ -79,6 +88,10 @@ def materialize_mission_contract(
     candidate_id: str,
     run_id: str,
     session_id: str | None = None,
+    session_run_ids: Sequence[str],
+    source_setup_id: str,
+    setup_sha256: str,
+    compatibility_fingerprint: str,
     required_channels: Sequence[str] = (),
     cause_ids: Sequence[str] = (),
     telemetry_health_identity: str = "health:unknown",
@@ -90,6 +103,10 @@ def materialize_mission_contract(
         candidate_id=candidate_id,
         run_id=run_id,
         session_id=session_id,
+        session_run_ids=session_run_ids,
+        source_setup_id=source_setup_id,
+        setup_sha256=setup_sha256,
+        compatibility_fingerprint=compatibility_fingerprint,
         required_channels=required_channels,
         cause_ids=cause_ids,
         telemetry_health_identity=telemetry_health_identity,
@@ -112,6 +129,10 @@ def bind_experiment_lifecycle(
     candidate_id: str,
     run_id: str,
     session_id: str | None = None,
+    session_run_ids: Sequence[str],
+    source_setup_id: str,
+    setup_sha256: str,
+    compatibility_fingerprint: str,
     required_channels: Sequence[str] = (),
     cause_ids: Sequence[str] = (),
     telemetry_health_identity: str = "health:unknown",
@@ -125,6 +146,10 @@ def bind_experiment_lifecycle(
         candidate_id=candidate_id,
         run_id=run_id,
         session_id=session_id,
+        session_run_ids=session_run_ids,
+        source_setup_id=source_setup_id,
+        setup_sha256=setup_sha256,
+        compatibility_fingerprint=compatibility_fingerprint,
         required_channels=required_channels,
         cause_ids=cause_ids,
         telemetry_health_identity=telemetry_health_identity,
@@ -150,8 +175,16 @@ def bind_experiment_lifecycle(
         and attempt.contract_sha256 == contract.contract_sha256
     ]
     repeated_low_information = 0
+    counted_run_ids: set[str] = set()
     for attempt in reversed(matching):
-        if attempt.outcome in {"no_signal", "failed_integrity"}:
+        if attempt.outcome_authority != "server_derived":
+            continue
+        if attempt.counts_toward_stop_testing:
+            # Adjacent/disjoint lap cohorts from one run share acquisition context and
+            # therefore contribute at most one independent stop-testing vote.
+            if attempt.run_id in counted_run_ids:
+                continue
+            counted_run_ids.add(attempt.run_id)
             repeated_low_information += 1
         else:
             break
@@ -161,12 +194,12 @@ def bind_experiment_lifecycle(
             title="Stop repeating this measurement contract",
             instruction="Change the measurement design or restore integrity before another attempt.",
             rationale=(
-                "Two consecutive exact-contract attempts produced no usable information; "
+                "Two consecutive exact-contract run acquisitions produced no usable information; "
                 "more unchanged repetition is not currently justified."
             ),
             mission_contract=contract,
             blocker_reasons=(
-                "Repeated no-signal or failed-integrity attempts triggered the stop-testing rule.",
+                "Two independently acquired server-derived no-signal or integrity outcomes triggered the stop-testing rule.",
             ),
         )
     return plan.model_copy(update={"mission_contract": contract})
@@ -179,6 +212,10 @@ def bind_durable_experiment_lifecycle(
     run_id: str,
     repository: RaceLabRepository,
     session_id: str | None = None,
+    session_run_ids: Sequence[str],
+    source_setup_id: str,
+    setup_sha256: str,
+    compatibility_fingerprint: str,
     required_channels: Sequence[str] = (),
     cause_ids: Sequence[str] = (),
     telemetry_health_identity: str = "health:unknown",
@@ -190,6 +227,10 @@ def bind_durable_experiment_lifecycle(
         candidate_id=candidate_id,
         run_id=run_id,
         session_id=session_id,
+        session_run_ids=session_run_ids,
+        source_setup_id=source_setup_id,
+        setup_sha256=setup_sha256,
+        compatibility_fingerprint=compatibility_fingerprint,
         required_channels=required_channels,
         cause_ids=cause_ids,
         telemetry_health_identity=telemetry_health_identity,
@@ -205,6 +246,10 @@ def bind_durable_experiment_lifecycle(
         candidate_id=candidate_id,
         run_id=run_id,
         session_id=session_id,
+        session_run_ids=session_run_ids,
+        source_setup_id=source_setup_id,
+        setup_sha256=setup_sha256,
+        compatibility_fingerprint=compatibility_fingerprint,
         required_channels=required_channels,
         cause_ids=cause_ids,
         telemetry_health_identity=telemetry_health_identity,
@@ -220,6 +265,26 @@ def record_durable_measurement_attempt(
     repository: RaceLabRepository,
 ) -> None:
     """Persist a typed outcome only when it binds the exact immutable contract."""
+    if (
+        attempt.run_id not in contract.session_run_ids
+        or attempt.setup_sha256 != contract.setup_sha256
+        or attempt.compatibility_fingerprint != contract.compatibility_fingerprint
+    ):
+        raise ValueError(
+            "measurement attempt run/setup/build identity does not match its mission contract"
+        )
+    prior_attempts = repository.list_measurement_mission_attempts(contract)
+    attempt_laps = set(attempt.eligible_lap_ids)
+    for prior in prior_attempts:
+        prior_laps = set(prior.eligible_lap_ids)
+        if attempt_laps and prior_laps and attempt_laps & prior_laps:
+            raise ValueError(
+                "measurement attempts require non-overlapping eligible-lap cohorts"
+            )
+        if not attempt_laps and not prior_laps and attempt.run_id == prior.run_id:
+            raise ValueError(
+                "unscoped measurement attempts require a distinct run identity"
+            )
     repository.record_measurement_mission_attempt(contract, attempt)
 
 

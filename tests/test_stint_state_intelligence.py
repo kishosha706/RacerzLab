@@ -45,6 +45,9 @@ def _rows(lap_count: int, *, complete_covariates: bool = True) -> list[dict]:
                 "session_flags": 0,
                 "repair_required": 0.0,
                 "repair_time_s": 0.0,
+                "car_distance_ahead_m": 500_000.0,
+                "car_distance_behind_m": 500_000.0,
+                "speed_mps": 50.0,
             }
             if complete_covariates:
                 row.update({
@@ -98,12 +101,16 @@ def test_stint_state_detects_robust_level_change_without_tire_causality() -> Non
         "driver_throttle",
         "driver_brake",
         "driver_steering",
+        "traffic_exposure",
     }
     assert report.pace_drift.right_censored is True
     assert report.pace_drift.extrapolation_allowed is False
+    assert report.pace_drift.authority_blocker_reasons == []
+    assert report.pace_drift.traffic_contaminated_lap_numbers == []
+    assert report.pace_drift.traffic_context_unknown_lap_numbers == []
     conclusion = _pace_conclusion(report)
     assert conclusion.evidence_state == "observed_correlation"
-    assert conclusion.recommendation is None
+    assert "recommendation" not in conclusion.model_dump()
     assert "does not isolate a tire or setup cause" in " ".join(
         conclusion.contradicting_evidence
     ).lower()
@@ -205,6 +212,24 @@ def test_short_run_and_right_censor_contract_fail_closed() -> None:
     assert "at least 10" in " ".join(short.pace_drift.blocker_reasons).lower()
 
 
+def test_short_traffic_stint_cannot_leak_non_pace_findings_to_setup_authority() -> None:
+    rows = _rows(9)
+    for row in rows:
+        row["car_distance_ahead_m"] = 50.0
+    report = analyze_stint_strategy(
+        rows,
+        _laps([50.0 + lap * 0.03 for lap in range(1, 10)]),
+        sim_integrity_clear=True,
+    )
+
+    assert report.pace_drift is not None
+    assert report.pace_drift.status == "blocked"
+    assert report.pace_drift.traffic_contaminated_lap_numbers == list(range(1, 10))
+    assert "do not feed it to setup authority" in " ".join(
+        report.pace_drift.authority_blocker_reasons
+    ).lower()
+
+
 def test_missing_covariate_channels_are_disclosed_and_never_zero_filled() -> None:
     rows = _rows(12, complete_covariates=False)
     laps = _laps([50.0 + lap * 0.02 for lap in range(1, 13)])
@@ -220,7 +245,10 @@ def test_missing_covariate_channels_are_disclosed_and_never_zero_filled() -> Non
 
     assert report.pace_drift is not None
     assert report.pace_drift.status == "observed"
-    assert [item.key for item in report.pace_drift.covariates] == ["fuel_level"]
+    assert [item.key for item in report.pace_drift.covariates] == [
+        "fuel_level",
+        "traffic_exposure",
+    ]
     assert set(report.pace_drift.missing_covariates) == {
         "tire_distance",
         "tire_temperature",
@@ -232,8 +260,66 @@ def test_missing_covariate_channels_are_disclosed_and_never_zero_filled() -> Non
         "driver_brake",
         "driver_steering",
     }
-    assert report.pace_drift.source_channels == ["fuel_level", "lap_summary.lap_time"]
+    assert report.pace_drift.source_channels == [
+        "car_distance_ahead_m",
+        "car_distance_behind_m",
+        "fuel_level",
+        "lap_summary.lap_time",
+        "speed_mps",
+    ]
     assert _pace_conclusion(report).confidence_score <= 0.55
+
+
+def test_traffic_contamination_retains_observation_but_blocks_setup_authority() -> None:
+    rows = _rows(12)
+    for row in rows:
+        row["car_distance_ahead_m"] = 50.0
+    report = analyze_stint_strategy(
+        rows,
+        _laps([50.0 + lap * 0.04 for lap in range(1, 13)]),
+        sim_integrity_clear=True,
+    )
+
+    assert report.pace_drift is not None
+    assert report.pace_drift.status == "observed"
+    assert report.pace_drift.robust_slope_s_per_lap == pytest.approx(0.04)
+    traffic = next(
+        item for item in report.pace_drift.covariates if item.key == "traffic_exposure"
+    )
+    assert traffic.coverage_pct == 100.0
+    assert traffic.start_value == 1.0
+    assert traffic.end_value == 1.0
+    assert report.pace_drift.traffic_contaminated_lap_numbers == list(range(1, 13))
+    assert report.pace_drift.traffic_context_unknown_lap_numbers == []
+    assert "do not feed it to setup authority" in " ".join(
+        report.pace_drift.authority_blocker_reasons
+    ).lower()
+    conclusion = _pace_conclusion(report)
+    assert conclusion.evidence_state == "observed_correlation"
+    assert conclusion.source_channels
+    assert conclusion.supporting_evidence
+    assert conclusion.blocker_reasons == report.pace_drift.authority_blocker_reasons
+    assert "recommendation" not in conclusion.model_dump()
+
+
+def test_missing_proximity_covariate_is_explicit_and_blocks_setup_authority() -> None:
+    rows = _rows(12)
+    for row in rows:
+        row.pop("car_distance_behind_m")
+    report = analyze_stint_strategy(
+        rows,
+        _laps([50.0 + lap * 0.02 for lap in range(1, 13)]),
+        sim_integrity_clear=True,
+    )
+
+    assert report.pace_drift is not None
+    assert report.pace_drift.status == "observed"
+    assert "traffic_exposure" in report.pace_drift.missing_covariates
+    assert report.pace_drift.traffic_context_unknown_lap_numbers == list(range(1, 13))
+    assert report.pace_drift.authority_blocker_reasons
+    assert "coverage is required" in " ".join(
+        report.pace_drift.authority_blocker_reasons
+    ).lower()
 
 
 def test_failed_parent_contract_never_leaks_an_observed_pace_finding() -> None:

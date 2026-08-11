@@ -702,7 +702,7 @@ def adapt_p3_report_observations(
     repetition_count: int | None = None,
     mechanism_override: MechanismKind | None = None,
 ) -> MechanismObservationReport:
-    """Adapt an existing P3 report without propagating its setup recommendation text."""
+    """Project a strict P3 conclusion contract into observation-only evidence."""
     gate = getattr(report, "gate", None)
     conclusions = tuple(getattr(report, "conclusions", ()) or ())
     eligible = tuple(lap for lap in eligible_laps(laps) if lap.run_id == run_id)

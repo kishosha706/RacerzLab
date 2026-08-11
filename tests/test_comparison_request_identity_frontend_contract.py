@@ -264,7 +264,7 @@ def test_compare_insights_reject_late_or_cross_scope_recommendations() -> None:
     )[0]
     assert "setInsights(null);" in mismatch_block
     assert "Comparison insights scope error" in mismatch_block
-    assert "No insight recommendation is shown." in mismatch_block
+    assert "No insight observation is shown." in mismatch_block
     assert "return;" in mismatch_block
     assert 'role="alert"' in source
 

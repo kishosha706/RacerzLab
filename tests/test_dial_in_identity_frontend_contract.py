@@ -24,8 +24,9 @@ def test_dial_in_commits_only_exact_run_and_workflow_responses() -> None:
         "setWorkflow(nextWorkflow)"
     )
     assert submit.index("dialResult.value.run_id !== requestedRunId") < submit.index(
-        "setResponse(dialResult.status"
+        "setResponse(dialResponse)"
     )
+    assert "const dialResponse = dialResult.status" in submit
     assert "setWorkflowIdentityError(message)" in submit
 
     build = _between(dial_in, "const buildVerifiedWorkflow", "const nextWorkflowStage")
@@ -114,7 +115,7 @@ def test_unique_session_measurement_follows_the_driver_across_run_handoffs() -> 
     )[0]
     assert "?? uniqueActiveWorkflowInScope" in next_workflow
     assert next_workflow.index("?? uniqueActiveWorkflowInScope") < next_workflow.index("?? related[0]")
-    assert "if (!overview || !workflowCatalogReady || activeWorkflow || workflowAuthorityBlocked) return" in dial_in
+    assert "if (!overview || !sessionId || !workflowCatalogReady || activeWorkflow || workflowAuthorityBlocked) return" in dial_in
 
 
 def test_lap_window_handoff_keeps_window_and_representative_lap_distinct() -> None:
@@ -159,7 +160,7 @@ def test_same_run_stale_loose_exit_l7_cannot_replace_tight_center_l5_request() -
         "setWorkflow(nextWorkflow)"
     )
     assert submit.index("normalizeComplaint(dialResult.value.complaint_raw)") < submit.index(
-        "setResponse(dialResult.status"
+        "setResponse(dialResponse)"
     )
     assert "setWorkflowIdentityError(message)" in submit
     assert "setResponseRequestBinding(null)" in submit

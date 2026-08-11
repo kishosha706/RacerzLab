@@ -61,9 +61,9 @@ CitationWorkspace = Literal[
 
 
 class IntelligenceCitationResponse(IntelligenceApiModel):
-    citation_id: str
-    label: str
-    run_id: str
+    citation_id: str = Field(min_length=1, max_length=240)
+    label: str = Field(min_length=1)
+    run_id: str = Field(min_length=1, max_length=160)
     lap_number: int | None = None
     lap_pct: float | None = Field(default=None, ge=0.0, le=100.0)
     event_id: str | None = None
@@ -71,10 +71,48 @@ class IntelligenceCitationResponse(IntelligenceApiModel):
     source_channels: list[str] = Field(default_factory=list)
     evidence_state: EvidenceState
     valid_for_tuning: bool = False
+    phase: Literal["braking", "entry", "center", "exit", "straight"] | None = None
     track_region_id: str | None = None
     track_region_label: str | None = None
     track_region_phase: Literal["entry", "center", "exit", "straight"] | None = None
     track_region_confidence: Literal["section_geometry", "centerline_geometry"] | None = None
+
+    @model_validator(mode="after")
+    def track_region_provenance_is_complete(self) -> IntelligenceCitationResponse:
+        canonical_values = (
+            self.citation_id,
+            self.label,
+            self.run_id,
+            self.event_id,
+            self.track_region_id,
+            self.track_region_label,
+        )
+        if any(
+            value is not None and value.strip() != value for value in canonical_values
+        ):
+            raise ValueError("citation identities and labels must be canonical")
+        if (
+            len(set(self.source_channels)) != len(self.source_channels)
+            or any(
+                not channel or channel.strip() != channel
+                for channel in self.source_channels
+            )
+        ):
+            raise ValueError("citation source channels must be canonical and unique")
+        region_values = (
+            self.track_region_id,
+            self.track_region_label,
+            self.track_region_confidence,
+        )
+        if any(value is not None for value in region_values) and not all(
+            value is not None for value in region_values
+        ):
+            raise ValueError(
+                "citation track-region identity, label, and confidence must be supplied together"
+            )
+        if self.track_region_phase is not None and self.track_region_id is None:
+            raise ValueError("citation track-region phase requires exact region provenance")
+        return self
 
 
 class IntelligenceActionResponse(IntelligenceApiModel):
@@ -154,6 +192,8 @@ class MeasurementAttemptResponse(IntelligenceApiModel):
     contract_id: str
     contract_sha256: str
     outcome: str
+    outcome_authority: Literal["client_attested"] = "client_attested"
+    counts_toward_stop_testing: Literal[False] = False
 
 
 class IntelligenceBriefingResponse(IntelligenceApiModel):
@@ -242,7 +282,6 @@ class IntelligenceContextMatchResponse(IntelligenceApiModel):
     label: str
     relevance_label: str
     outcome_summary: str
-    verdict: str
     matching_context: list[str] = Field(default_factory=list)
     mismatches: list[str] = Field(default_factory=list)
     citations: list[IntelligenceCitationResponse] = Field(default_factory=list)
@@ -270,7 +309,6 @@ class IntelligenceNarrativeEntryResponse(IntelligenceApiModel):
     entry_id: str
     label: str
     summary: str
-    outcome: str | None = None
     created_at: str | None = None
     citations: list[IntelligenceCitationResponse] = Field(default_factory=list)
 
@@ -315,8 +353,14 @@ class IntelligenceDriverProfileResponse(IntelligenceApiModel):
 
 
 class RunIntelligenceResponse(IntelligenceApiModel):
+    schema_version: Literal["p19.run-intelligence.v1"]
     run_id: str
     session_id: str | None = None
+    reasoning_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    setup_id: str | None = Field(default=None, min_length=1, max_length=240)
+    setup_snapshot_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     status: Literal["ready", "unavailable"]
     decision_status: Literal["ready", "measure", "blocked"]
     generated_at: str | None = None
@@ -352,16 +396,39 @@ class RunIntelligenceResponse(IntelligenceApiModel):
 
     @model_validator(mode="after")
     def mind_change_criteria_match_report_scope(self) -> RunIntelligenceResponse:
+        if (self.setup_id is None) != (self.setup_snapshot_sha256 is None):
+            raise ValueError("report setup identity and snapshot hash must be paired")
+        if self.setup_id is not None and self.setup_id.strip() != self.setup_id:
+            raise ValueError("report setup identity must be canonical")
         if self.status != "ready" and self.decision_status == "ready":
             raise ValueError("an unavailable report cannot publish a ready decision")
         action = self.briefing.action
+        if action.setup_authorized and self.setup_id is None:
+            raise ValueError("setup authorization requires an exact setup snapshot identity")
+        if action.setup_authorized and (
+            self.session_id is None
+            or self.telemetry_health is None
+            or self.telemetry_health.session_id != self.session_id
+            or self.telemetry_health.current_run_id != self.run_id
+            or self.run_id not in self.telemetry_health.ordered_session_run_ids
+        ):
+            raise ValueError(
+                "setup authorization requires exact session identity and verified run membership"
+            )
         if self.vehicle_systems is not None:
             if (
                 self.vehicle_systems.run_id != self.run_id
                 or self.vehicle_systems.session_id != self.session_id
+                or self.vehicle_systems.reasoning_snapshot_sha256
+                != self.reasoning_snapshot_sha256
+                or self.vehicle_systems.setup_id != self.setup_id
+                or self.vehicle_systems.setup_snapshot_sha256
+                != self.setup_snapshot_sha256
                 or self.vehicle_systems.setup_authorized != action.setup_authorized
             ):
-                raise ValueError("vehicle-system projection must match report scope and authority")
+                raise ValueError(
+                    "vehicle-system projection must match report scope, snapshots, and authority"
+                )
             authorized_controls = {
                 state.authorized_control_key
                 for state in self.vehicle_systems.component_states
@@ -662,8 +729,14 @@ class IntelligenceNavigationResponse(IntelligenceApiModel):
 
 
 class IntelligenceQueryResponse(IntelligenceApiModel):
+    schema_version: Literal["p19.intelligence-query.v1"]
     run_id: str
     session_id: str | None = None
+    reasoning_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    setup_id: str | None = Field(default=None, min_length=1, max_length=240)
+    setup_snapshot_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     scope_run_ids: list[str] = Field(min_length=1)
     selected_lap: int | None = Field(default=None, ge=1)
     status: Literal["ready", "unavailable"]
@@ -697,6 +770,12 @@ class IntelligenceQueryResponse(IntelligenceApiModel):
     def query_scope_and_authority_require_exact_citations(
         self,
     ) -> IntelligenceQueryResponse:
+        if (self.setup_id is None) != (self.setup_snapshot_sha256 is None):
+            raise ValueError("query setup identity and snapshot hash must be paired")
+        if self.setup_id is not None and self.setup_id.strip() != self.setup_id:
+            raise ValueError("query setup identity must be canonical")
+        if self.action_authorized and self.setup_id is None:
+            raise ValueError("authorized query actions require an exact setup snapshot identity")
         if self.interpreted_component_id is not None and (
             self.interpreted_component_id.strip() != self.interpreted_component_id
         ):
@@ -762,6 +841,9 @@ class IntelligenceQueryResponse(IntelligenceApiModel):
         current_run_citations = [
             citation for citation in self.citations if citation.run_id == self.run_id
         ]
+        citation_ids = [citation.citation_id for citation in self.citations]
+        if len(citation_ids) != len(set(citation_ids)):
+            raise ValueError("query citation identities must be unique")
         historical_citations = [
             citation for citation in self.citations if citation.run_id != self.run_id
         ]
@@ -779,6 +861,25 @@ class IntelligenceQueryResponse(IntelligenceApiModel):
             citation.lap_number != scoped_lap for citation in self.citations
         ):
             raise ValueError("query citations must match the requested run and lap")
+        if self.interpreted_phase is not None and any(
+            citation.phase != self.interpreted_phase
+            for citation in self.citations
+        ):
+            raise ValueError("query citations must match the interpreted phase")
+        if self.interpreted_track_region_id is not None and any(
+            citation.track_region_id != self.interpreted_track_region_id
+            for citation in self.citations
+        ):
+            raise ValueError("query citations must match the interpreted track region")
+        if (
+            self.interpreted_track_region_id is not None
+            and self.interpreted_phase in {"entry", "center", "exit", "straight"}
+            and any(
+                citation.track_region_phase != self.interpreted_phase
+                for citation in self.citations
+            )
+        ):
+            raise ValueError("query track-region citations must match the interpreted phase")
 
         current_run_navigation = [
             target for target in self.suggested_navigation if target.run_id == self.run_id

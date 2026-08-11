@@ -8,7 +8,6 @@ from racelab_engine.models.intelligence import (
     CauseHypothesis,
     ControlledCauseOutcome,
 )
-from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.models.observation_intelligence import (
     ObservationCitation,
     ObservationStatus,
@@ -263,6 +262,45 @@ def test_event_count_cannot_replace_independent_eligible_lap_units() -> None:
     )
 
 
+def test_phase_boundary_jitter_cannot_split_one_physical_event_into_causal_votes() -> None:
+    entry = _event("phase-entry", lap_number=4).model_copy(
+        update={
+            "event_subtype": "entry",
+            "lap_pct_start": 42.0,
+            "lap_pct_end": 45.0,
+        }
+    )
+    center = _event("phase-center", lap_number=5).model_copy(
+        update={
+            "event_subtype": "center",
+            "lap_pct_start": 42.1,
+            "lap_pct_end": 45.1,
+        }
+    )
+    graph = build_evidence_graph(
+        events=(entry, center),
+        laps=(_lap(4), _lap(5)),
+    )
+
+    ranked = rank_competing_causes(
+        (
+            CauseHypothesis(
+                cause_id="same-physical-event",
+                label="Same physical event",
+                hypothesis="The phase label moved while the telemetry window stayed aligned.",
+                supporting_event_ids=("phase-entry", "phase-center"),
+            ),
+        ),
+        graph,
+    )[0]
+
+    assert ranked.status == "possible"
+    assert ranked.supporting_evidence_unit_count == 1
+    assert len(ranked.supporting_clusters) == 1
+    assert ranked.supporting_clusters[0].lap_numbers == (4, 5)
+    assert ranked.supporting_clusters[0].phase is None
+
+
 def test_controlled_contradiction_is_direct_and_conflict_stays_unresolved() -> None:
     graph = build_evidence_graph(events=[], laps=[])
     contradicted = rank_competing_causes(
@@ -366,9 +404,7 @@ def test_lifecycle_outcomes_map_only_from_exact_protocol_contracts(
         direction_result=direction_result,
     )
     hypotheses = _hypotheses(
-        [],
         workflow,
-        {"event-support": _event("event-support")},
         lifecycle=_lifecycle(entry),
         workflows=(workflow,),
         current_run_id="run-1",
@@ -397,9 +433,7 @@ def test_lifecycle_never_transfers_across_source_run_or_unrelated_control() -> N
         source_run_id="other-run",
     )
     skipped = _hypotheses(
-        [],
         workflow,
-        {"event-support": _event("event-support")},
         lifecycle=_lifecycle(foreign),
         workflows=(workflow,),
         current_run_id="run-1",
@@ -425,9 +459,7 @@ def test_lifecycle_never_transfers_across_source_run_or_unrelated_control() -> N
         control_key="rf_front_spring_n_per_mm",
     ).model_copy(update={"workflow_id": "workflow-other-control"})
     separated = _hypotheses(
-        [],
         workflow,
-        {"event-support": _event("event-support")},
         lifecycle=_lifecycle(unrelated_control),
         workflows=(workflow, unrelated_control_workflow),
         current_run_id="run-1",
@@ -448,9 +480,7 @@ def test_duplicate_lifecycle_workflow_identity_becomes_one_invalid_blocker() -> 
     )
     duplicated = _lifecycle(entry).model_copy(update={"entries": (entry, entry)})
     hypotheses = _hypotheses(
-        [],
         workflow,
-        {"event-support": _event("event-support")},
         lifecycle=duplicated,
         workflows=(workflow,),
         current_run_id="run-1",
@@ -489,9 +519,7 @@ def test_countereffect_only_undo_supports_cause_but_blocks_exact_policy() -> Non
         do_not_repeat_hypothesis_fingerprints=(entry.hypothesis_fingerprint,),
     )
     hypotheses = _hypotheses(
-        [],
         workflow,
-        {"event-support": _event("event-support")},
         lifecycle=lifecycle,
         workflows=(workflow,),
         current_run_id="run-1",
@@ -541,9 +569,7 @@ def test_materially_different_lifecycle_policy_cannot_rule_out_current_cause() -
     )
 
     hypotheses = _hypotheses(
-        [],
         current,
-        {"event-support": _event("event-support")},
         lifecycle=lifecycle,
         workflows=(current, old_workflow),
         current_run_id="run-1",
@@ -562,44 +588,18 @@ def test_materially_different_lifecycle_policy_cannot_rule_out_current_cause() -
     assert historical_cause.controlled_outcomes[0].control_direction_result == "missed"
 
 
-def test_exact_workflow_and_recommendation_candidate_merge_without_fuzzy_controls() -> None:
+def test_workflow_candidate_is_single_and_exactly_control_scoped() -> None:
     workflow = _workflow()
-    shared_event = _event("event-support")
-    recommendation = Recommendation(
-        recommendation_id="recommendation-1",
-        run_id="run-1",
-        issue="Platform balance",
-        cause_bucket="platform_balance",
-        recommendation_text="Measure the repeatable platform signal.",
-        evidence_event_ids=["event-support"],
-        evidence_state=EvidenceState.CALCULATED,
-        source_channels=["speed_mph", "cfs_ride_height_in"],
-        blocker_reasons=[],
-    )
-    merged = _hypotheses(
-        [recommendation],
-        workflow,
-        {shared_event.event_id: shared_event},
-    )
-    assert len(merged) == 1
-    assert merged[0].cause_id.startswith("workflow:")
-    assert merged[0].discriminator is not None
-    assert merged[0].discriminator.distinguishes_cause_ids == (merged[0].cause_id,)
+    hypotheses = _hypotheses(workflow)
 
-    other_event = _event(
-        "event-other-control",
-        setup_keys=["rf_front_spring_n_per_mm"],
+    assert len(hypotheses) == 1
+    assert hypotheses[0].cause_id.startswith("workflow:")
+    assert hypotheses[0].related_control_keys == (
+        workflow.packet.primary_test.control_key,
     )
-    separated = _hypotheses(
-        [
-            recommendation.model_copy(
-                update={"evidence_event_ids": [other_event.event_id]}
-            )
-        ],
-        workflow,
-        {other_event.event_id: other_event},
+    assert hypotheses[0].supporting_event_ids == (
+        *workflow.packet.primary_test.evidence_event_ids,
     )
-    assert len(separated) == 2
 
 
 def test_controlled_outcome_queries_are_visible_but_navigation_only() -> None:

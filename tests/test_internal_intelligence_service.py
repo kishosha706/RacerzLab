@@ -52,7 +52,6 @@ from racelab_engine.models.observation_intelligence import (
     SameSetupAnomaly,
     SameSetupAnomalyReport,
 )
-from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.models.session_intelligence import (
     SessionEngineeringLedger,
     SessionEvidenceCitation,
@@ -375,16 +374,6 @@ def test_evidence_graph_links_every_entity_and_fail_closes_junk_laps() -> None:
     junk_lap = _lap(5, useful=False, tags=["COOLDOWN", "NO_SETUP_CONCLUSION"])
     valid_event = _event("event-support")
     junk_event = _event("event-junk", lap_number=5)
-    recommendation = Recommendation(
-        recommendation_id="rec-1",
-        run_id="run-1",
-        issue="Exit platform",
-        recommendation_text="Test one change.",
-        evidence_state=EvidenceState.CALCULATED,
-        source_channels=["speed_mph"],
-        evidence_event_ids=["event-support"],
-        blocker_reasons=[],
-    )
     graph = build_evidence_graph(
         claims=[
             GroundedClaim(
@@ -392,7 +381,6 @@ def test_evidence_graph_links_every_entity_and_fail_closes_junk_laps() -> None:
                 text="Exit recovery repeats.",
                 evidence_state=EvidenceState.CALCULATED,
                 supporting_event_ids=("event-support",),
-                recommendation_ids=("rec-1",),
                 lap_references=(LapReference(run_id="run-1", lap_number=4),),
                 source_channels=("speed_mph",),
                 setup_keys=("cross_weight_percent",),
@@ -406,7 +394,6 @@ def test_evidence_graph_links_every_entity_and_fail_closes_junk_laps() -> None:
             ),
         ],
         events=[valid_event, junk_event],
-        recommendations=[recommendation],
         laps=[
             valid_lap,
             junk_lap,
@@ -442,7 +429,6 @@ def test_evidence_graph_links_every_entity_and_fail_closes_junk_laps() -> None:
         (edge.source_node_id, edge.target_node_id, edge.kind.value)
         for edge in graph.edges
     }
-    assert ("claim:claim-good", "recommendation:rec-1", "supported_by") in edge_kinds
     assert ("claim:claim-good", "channel:speed_mph", "uses_channel") in edge_kinds
     assert ("claim:claim-good", "workflow:workflow-1", "supported_by") in edge_kinds
     assert ("workflow:workflow-1", "setup:cross_weight_percent", "tests_setup") in edge_kinds
@@ -470,31 +456,6 @@ def test_evidence_graph_duplicate_and_dangling_identity_fail_closed() -> None:
     claim = next(node for node in graph.nodes if node.node_id == "claim:claim")
     assert claim.qualified is False
     assert any("missing" in reason for reason in claim.blocker_reasons)
-
-
-def test_recommendation_cannot_borrow_another_run_or_invent_source_channels() -> None:
-    recommendation = Recommendation(
-        recommendation_id="rec-cross-run",
-        run_id="run-a",
-        issue="Claim from the wrong run",
-        recommendation_text="Change something.",
-        evidence_state=EvidenceState.CALCULATED,
-        source_channels=["invented_channel"],
-        evidence_event_ids=["event-b"],
-        blocker_reasons=[],
-    )
-    graph = build_evidence_graph(
-        events=[_event("event-b", run_id="run-b")],
-        recommendations=[recommendation],
-        laps=[_lap(run_id="run-b")],
-    )
-    nodes = {node.node_id: node for node in graph.nodes}
-    assert nodes["recommendation:rec-cross-run"].qualified is False
-    assert nodes["channel:invented_channel"].qualified is False
-    assert any(
-        "different run" in reason
-        for reason in nodes["recommendation:rec-cross-run"].blocker_reasons
-    )
 
 
 def test_exact_setup_value_cannot_borrow_an_unrelated_event() -> None:
@@ -815,7 +776,7 @@ def test_corrupt_blank_identities_become_graph_blockers_instead_of_exceptions() 
     assert any("invalid" in reason for reason in graph.blocker_reasons)
 
 
-def test_malformed_event_and_recommendation_labels_do_not_materialize_blank_nodes() -> None:
+def test_malformed_event_labels_do_not_materialize_blank_nodes() -> None:
     bad_event = _event("bad-event").model_copy(
         update={
             "event_type": " ",
@@ -824,24 +785,12 @@ def test_malformed_event_and_recommendation_labels_do_not_materialize_blank_node
             "related_setup_keys": [""],
         }
     )
-    bad_recommendation = Recommendation(
-        recommendation_id="bad-rec",
-        run_id="run-1",
-        issue=" ",
-        recommendation_text="Unsafe",
-        evidence_state=EvidenceState.CALCULATED,
-        source_channels=[""],
-        evidence_event_ids=["bad-event"],
-        blocker_reasons=[],
-    )
     graph = build_evidence_graph(
         events=[bad_event],
-        recommendations=[bad_recommendation],
         laps=[_lap()],
     )
     nodes = {node.node_id: node for node in graph.nodes}
     assert nodes["event:bad-event"].qualified is False
-    assert nodes["recommendation:bad-rec"].qualified is False
     assert "channel:" not in nodes
     assert "setup:" not in nodes
 
@@ -1284,6 +1233,8 @@ def test_controlled_card_requires_exact_event_to_control_graph_linkage_everywher
     )
     good_report = build_internal_intelligence_report(
         run_id="run-1",
+        session_id="session-1",
+        session_run_ids=("run-1",),
         issue="Good",
         graph=good_graph,
         ranked_causes=good_ranked,
@@ -1914,14 +1865,62 @@ def _authorized_report():
     report = build_internal_intelligence_report(
         run_id="run-1",
         session_id="session-1",
+        session_run_ids=("run-1",),
         issue="Repeatable exit loss",
         graph=graph,
         ranked_causes=ranked,
         best_measurement=plan,
         data_quality=quality,
     )
+    ordered_run_ids = ("run-1",)
+    report = report.model_copy(update={
+        "telemetry_health": TelemetryHealthBaselineReport(
+            status="insufficient_history",
+            session_id="session-1",
+            ordered_session_run_ids=ordered_run_ids,
+            session_scope_sha256=telemetry_health_session_scope_sha256(
+                "session-1", ordered_run_ids
+            ),
+            current_run_id="run-1",
+            blocker_reasons=("The fixture has no prior health cohort.",),
+            recovery=(TelemetryHealthRecovery(
+                action="record_verification_run",
+                run_id="run-1",
+                instruction="Record verification runs for telemetry-health baselines.",
+            ),),
+        )
+    })
     assert report.briefing.action.setup_authorized is True
     return report
+
+
+def test_run_scoped_report_cannot_authorize_a_setup_action() -> None:
+    graph, ranked = _ranked_fixture()
+    plan = plan_best_next_measurement(
+        ranked,
+        controlled_decision=_director(),
+        graph=graph,
+    )
+    quality = assess_data_quality(
+        laps=[_lap()],
+        events=[_event("event-support"), _event("event-support-2")],
+        capability=CapabilityAssessment(status="ready"),
+    )
+
+    report = build_internal_intelligence_report(
+        run_id="run-1",
+        issue="Repeatable exit loss",
+        graph=graph,
+        ranked_causes=ranked,
+        best_measurement=plan,
+        data_quality=quality,
+    )
+
+    assert report.briefing.action.setup_authorized is False
+    assert report.best_measurement.kind == "blocked"
+    assert report.status == "blocked"
+    assert report.briefing.action.control_key is None
+    assert report.briefing.action.proposed_value is None
 
 
 def test_report_hides_a_controlled_target_when_current_data_is_not_ready() -> None:
@@ -2019,6 +2018,8 @@ def test_report_graph_labels_never_expose_unrelated_exact_action_prose() -> None
     )
     report = build_internal_intelligence_report(
         run_id="run-1",
+        session_id="session-1",
+        session_run_ids=("run-1",),
         issue="Set tape to 99%",
         graph=graph,
         ranked_causes=ranked,
@@ -2295,6 +2296,8 @@ def test_loss_and_support_queries_never_promote_contradicting_evidence() -> None
     )
     report = build_internal_intelligence_report(
         run_id="run-1",
+        session_id="session-1",
+        session_run_ids=("run-1",),
         issue="Exit loss",
         graph=graph,
         ranked_causes=ranked,
@@ -2321,6 +2324,8 @@ def test_what_next_requires_exact_run_and_selected_lap_card_citations() -> None:
     )
     report = build_internal_intelligence_report(
         run_id="run-1",
+        session_id="session-1",
+        session_run_ids=("run-1",),
         issue="Exit loss",
         graph=graph,
         ranked_causes=ranked,

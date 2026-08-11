@@ -132,6 +132,7 @@ export function trustedQueryNavigationCitation(
     source_channels: [],
     evidence_state: "needs_confirmation",
     valid_for_tuning: false,
+    phase: null,
   };
 }
 

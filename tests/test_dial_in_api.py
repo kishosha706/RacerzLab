@@ -45,13 +45,31 @@ def test_dial_in_api_returns_clean_response_by_default(tmp_path: Path, monkeypat
     assert payload["run_id"] == "run-1"
     assert payload["interpreted_symptom"] == "loose_exit"
     assert len(payload["top_swings"]) <= 3
-    assert payload["top_swings"][0]["change_this"]
-    assert payload["top_swings"][0]["garage_lever"]
+    assert payload["top_swings"][0]["mechanism_to_verify"]
+    assert payload["top_swings"][0]["candidate_control_label"]
+    assert payload["top_swings"][0]["measurement_needed"]
     assert payload["top_swings"][0]["validate_with_labels"]
     assert payload["top_swings"][0]["watch_for_labels"] is not None
+    assert payload["evidence_strength"]["setup_test_ready"] is False
+    assert "controlled p19 workflow" in payload["next_step"].lower()
     assert "hidden_evidence_summary" not in payload
     assert "evidence_groups" not in payload
     dumped = json.dumps(payload).lower()
+    for forbidden in [
+        "change_this",
+        "proposed_value",
+        "current_value",
+        "direction_sign",
+        "change_size",
+        "keep_if",
+        "undo_if",
+        "one_change_test",
+        "control_expectation",
+        "control_guardrail",
+    ]:
+        assert forbidden not in dumped
+    assert "increasing cross weight" not in dumped
+    assert "stiffer" not in dumped
     assert "ai recommends" not in dumped
     assert "guaranteed" not in dumped
 

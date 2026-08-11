@@ -620,6 +620,9 @@ def test_controlled_workflow_create_and_cancel_hooks_persist_memory(
     workflow = controlled_workflow_service.create_workflow(
         "source-run", "It pushes on entry", repository=repo
     )
+    assert get_prediction_contract(workflow.workflow_id, db_path=db_path) is None
+    repo.save_controlled_workflow(workflow)
+    record_workflow_plan(workflow, db_path=db_path)
     contract = get_prediction_contract(workflow.workflow_id, db_path=db_path)
     assert contract is not None
     assert contract.created_at == workflow.created_at

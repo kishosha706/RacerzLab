@@ -3,11 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.lap import LapSummary
-from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.models.setup import SetupSnapshot
 
 
@@ -44,14 +43,13 @@ class SessionSummary(BaseModel):
 
 
 class RunOverview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     run_id: str
     session: SessionSummary
     best_useful_lap: Optional[LapSummary] = None
     laps: list[LapSummary] = Field(default_factory=list)
     events: list[TelemetryEvent] = Field(default_factory=list)
     setup_snapshot: Optional[SetupSnapshot] = None
-    recommendations: list[Recommendation] = Field(default_factory=list)
     primary_findings: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    crew_chief_summary: Optional[str] = None
-    next_test: Optional[str] = None

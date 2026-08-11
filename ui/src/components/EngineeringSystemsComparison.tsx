@@ -60,7 +60,6 @@ function ConclusionDetails({ conclusion }: { conclusion: EngineeringConclusion }
       {conclusion.supporting_evidence.map((item) => <p className="section-note" key={item}>Evidence: {item}</p>)}
       {conclusion.contradicting_evidence.map((item) => <p className="section-note" key={item}>Counter-evidence: {item}</p>)}
       {conclusion.blocker_reasons.map((item) => <p className="section-note" key={item}>Blocked: {item}</p>)}
-      {conclusion.recommendation && <p className="section-note">Next: {conclusion.recommendation}</p>}
       {conclusion.source_channels.length > 0 && (
         <p className="section-note" title={conclusion.source_channels.join(", ")}>
           Sources: {conclusion.source_channels.join(", ")}

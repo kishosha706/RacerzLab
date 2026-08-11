@@ -1,11 +1,13 @@
 # Setup Evidence Adapter
 
 The setup Evidence Adapter connects a real RacerZLab run to the local setup
-knowledge matcher. It stays backend-only, local, and deterministic.
+knowledge matcher. It stays backend-only, local, deterministic, and
+non-authorizing. It supplies evidence context to P19; it does not publish a
+setup action itself.
 
 ## Purpose
 
-The adapter answers a simple question before ranking setup swings:
+The adapter answers a simple question before ranking internal hypotheses:
 
 For this run, what evidence do we actually have?
 
@@ -16,13 +18,16 @@ flags already understood by `racelab_engine/knowledge/setup/matcher.py`.
 
 Core flow:
 
-`run_id + symptom -> build evidence context -> detect car/track family -> query matcher -> ranked candidates with evidence readiness`
+`run_id + symptom -> build evidence context -> detect car/track family -> query matcher -> ranked hypothesis inputs with evidence readiness -> P19 revalidation`
+
+Evidence readiness is not setup readiness. Only the canonical P19 reasoning and
+controlled-workflow path may add direction, an exact legal target, Keep/Undo,
+or stop-testing policy.
 
 ## Main Files
 
 - `racelab_engine/knowledge/setup/evidence_schema.py`
 - `racelab_engine/knowledge/setup/evidence_adapter.py`
-- `scripts/query_setup_with_run_context.py`
 - `tests/test_setup_evidence_adapter.py`
 
 ## Evidence Models
@@ -137,11 +142,9 @@ When the family remains `unknown`, the matcher only allows effects that apply
 to `all` and disables legacy-only setup areas such as `track_bar`,
 `truck_arm_mount`, `bump_stop`, and `packer`.
 
-CLI override:
-
-```powershell
-python -B scripts/query_setup_with_run_context.py --run-id <RUN_ID> --symptom "loose off" --car-family next_gen
-```
+The public Dial-In request may supply a car-family hint for hypothesis
+filtering. The hint never overrides persisted run identity or P19 applicability
+checks and cannot authorize a setup action.
 
 ## Track Family Detection
 
@@ -160,11 +163,8 @@ Inputs checked:
 - track name
 - layout hint from the track key
 
-CLI override:
-
-```powershell
-python -B scripts/query_setup_with_run_context.py --run-id <RUN_ID> --symptom "loose off" --track-family intermediate_oval
-```
+A public track-family hint affects hypothesis filtering only. Physical track,
+layout, build, and run compatibility remain server-owned authority inputs.
 
 ## Readiness Behavior
 
@@ -183,20 +183,16 @@ Examples:
 - shock changes stay `missing_key_evidence` without `shock_histogram`
 - platform or diffuser calls stay `missing_key_evidence` without the platform
   anchor they require
-- static garage changes can still rank `partially_ready` when setup context is
-  present but secondary telemetry is still thin
+- static garage controls can still rank as `partially_ready` hypotheses when
+  setup context is present but secondary telemetry is still thin; that rank
+  cannot become a public direction or test target
 
-## CLI
+## Current access
 
-```powershell
-python -B scripts/query_setup_with_run_context.py --run-id <RUN_ID> --symptom "loose off" --show-evidence
-python -B scripts/query_setup_with_run_context.py --run-id <RUN_ID> --symptom "rear scrape" --limit 8 --json
-python -B scripts/query_setup_with_run_context.py --run-id <RUN_ID> --symptom "loose off" --baseline-run-id <BASELINE> --test-run-id <TEST>
-```
-
-`--show-evidence` expands each evidence group with present items, missing items,
-and notes so a developer can quickly see why a group is `ready`,
-`partially_ready`, `missing`, or `unavailable`.
+The adapter has no standalone direct-action command. It is consumed by the
+public non-authorizing Dial-In hypothesis route and by the server-owned P19
+workflow assembly. Developers inspect its detailed evidence groups through
+tests or explicit debug/Engineer output.
 
 Example text shape:
 
@@ -215,10 +211,10 @@ Evidence:
 Parsed symptom:
 - loose_exit
 
-Candidate 1: Add a little cross weight
-Strength: 4 / strong balance lever
-Risk: high
-Evidence: partially ready
+Hypothesis 1: Cross weight
+Mechanism: determine whether diagonal support contributes to the selected symptom
+Evidence: measurement required
+Authority: withheld until P19 revalidates an exact controlled mission
 ```
 
 ## Performance Guardrails
@@ -254,7 +250,7 @@ The adapter preserves conservative wording:
 
 ## Dial-In Integration
 
-The Dial-In Query Service and Setup tab panel reuse this evidence context but
+The Dial-In Query Service and Dial-In workspace reuse this evidence context but
 hide internals by default. Normal driver-facing output can say things like:
 
 - `Data profile looks clean. High confidence.`
@@ -266,3 +262,7 @@ hide internals by default. Normal driver-facing output can say things like:
 
 Raw evidence flags, evidence groups, present/missing lists, ranking reasons,
 source IDs, and channel IDs belong in explicit debug/engineer mode only.
+
+Public Dial-In may name the candidate control area and measurement needed, but
+never the direction, increment, current/target value, `Change this`, Keep, or
+Undo text. There is no standalone run-context setup-action command.

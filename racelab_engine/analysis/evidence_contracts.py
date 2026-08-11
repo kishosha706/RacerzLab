@@ -550,9 +550,12 @@ RELATIVE_HIGH_SPEED_RESISTANCE_CONTRACT = AnalysisEvidenceContract(
 )
 
 
-SETUP_RECOMMENDATION_CONTRACT = AnalysisEvidenceContract(
-    key="setup_recommendation",
-    purpose="Authorize one small controlled setup test from an eligible telemetry event.",
+RUN_OBSERVATION_CONTRACT = AnalysisEvidenceContract(
+    key="run_observation",
+    purpose=(
+        "Qualify one located engineering observation for later mechanism reasoning. "
+        "This contract cannot authorize a setup change, Keep/Undo decision, or stop-testing policy."
+    ),
     required_channels=frozenset({"lap_dist_pct", "speed_mph"}),
     preferred_channels=frozenset({"throttle_pct", "brake_pct", "abs_steering_deg", "rpm"}),
     operating_conditions=(
@@ -584,11 +587,6 @@ SETUP_RECOMMENDATION_CONTRACT = AnalysisEvidenceContract(
             measurement_needed="Record continuous telemetry at a credible sample rate.",
         ),
         HardBlocker(
-            key="unisolated_setup_change",
-            description="more than one unrelated setup control changed",
-            measurement_needed="Return to baseline and change one setup control only.",
-        ),
-        HardBlocker(
             key="short_run_sensitive_claim",
             description="a short run is being used for a strong tire-degradation or cooling conclusion",
             measurement_needed="Record a representative longer stint before drawing degradation or cooling conclusions.",
@@ -601,9 +599,12 @@ SETUP_RECOMMENDATION_CONTRACT = AnalysisEvidenceContract(
     ),
     allowed_outputs=(
         AllowedOutput(
-            key="controlled_setup_test",
-            description="One small setup change proposed as a test, not a proven fix.",
-            evidence_state=EvidenceState.NEEDS_CONFIRMATION,
+            key="located_engineering_observation",
+            description=(
+                "A setup-bound, track-position-located observation that may feed later "
+                "mechanism qualification but carries no setup authority."
+            ),
+            evidence_state=EvidenceState.OBSERVED_CORRELATION,
             source_channels=frozenset({"lap_dist_pct", "speed_mph"}),
         ),
     ),
@@ -635,6 +636,6 @@ __all__ = [
     "NeededMeasurement",
     "OperatingCondition",
     "RELATIVE_HIGH_SPEED_RESISTANCE_CONTRACT",
-    "SETUP_RECOMMENDATION_CONTRACT",
+    "RUN_OBSERVATION_CONTRACT",
     "evaluate_evidence_contract",
 ]

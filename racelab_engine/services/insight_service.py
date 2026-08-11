@@ -8,7 +8,7 @@ from racelab_engine.analysis.compare_delta_traces import (
     compute_delta_traces,
 )
 from racelab_engine.analysis.confidence_weighted_verdict import (
-    apply_confidence_weights,
+    apply_observation_confidence,
 )
 from racelab_engine.analysis.correlation_analysis import correlate_delta_channels
 from racelab_engine.analysis.sector_intelligence import compute_sector_deltas
@@ -18,7 +18,7 @@ from racelab_engine.analysis.target_zone_classifier import (
 from racelab_engine.analysis.trace_annotations import annotate_delta_traces
 from racelab_engine.models.comparison_insights import (
     ComparisonInsightsResponse,
-    ConfidenceWeightedVerdict,
+    ConfidenceWeightedObservation,
     CorrelationInsight,
     SectorDeltaSummary,
     TargetZoneClassification,
@@ -29,6 +29,12 @@ from racelab_engine.models.comparison_insights import (
     CorrelationStrength,
     CorrelationDirection,
     GainClass,
+)
+
+
+_NON_AUTHORITY_WARNING = (
+    "Comparison insights are observational; only the controlled P19 workflow may "
+    "authorize setup policy."
 )
 
 
@@ -85,13 +91,12 @@ def build_comparison_insights(
     discipline_label: str = "clean",
     discipline_score: int = 100,
     context_problems: int = 0,
-    verdict_str: str = "inconclusive",
+    observation_state: str = "inconclusive",
     base_confidence: float = 0.5,
     channels: list[str] | None = None,
     causal_attribution_blocked: bool = False,
     causal_block_reason: str | None = None,
     causal_block_reasons: list[str] | None = None,
-    causal_retest_instruction: str | None = None,
 ) -> ComparisonInsightsResponse:
     """Run all insight engines and combine into one response."""
     selected = channels or DEFAULT_DELTA_CHANNELS
@@ -144,7 +149,6 @@ def build_comparison_insights(
             value=a.value,
             severity=a.severity,
             confidence=0.7 if a.severity in ("critical", "high") else 0.5,
-            recommendation=a.evidence,
         )
         for i, a in enumerate(annotation_result.annotations)
     ]
@@ -207,7 +211,6 @@ def build_comparison_insights(
         confidence=tz_class.confidence,
         headline=tz_class.label,
         evidence=tz_class.reasoning,
-        recommendation=tz_class.recommendation,
     )
     if tz_speed is None and not causal_attribution_blocked:
         tz_model = TargetZoneClassification(
@@ -217,7 +220,6 @@ def build_comparison_insights(
             evidence=[
                 "At least 90% paired positional speed coverage is required in the target zone."
             ],
-            recommendation="Record complete laps and repeat before choosing a setup direction.",
         )
         warnings.append("Target-zone speed evidence is incomplete; no gain/loss conclusion was issued.")
     if causal_attribution_blocked:
@@ -231,10 +233,6 @@ def build_comparison_insights(
             confidence=min(tz_class.confidence, 0.3),
             headline="Observed change; setup cause not established",
             evidence=[*tz_class.reasoning, *reasons],
-            recommendation=causal_retest_instruction or (
-                "Keep the measured result as an observation and repeat the same setup "
-                "with matched nearby-car context before accepting a setup direction."
-            ),
         )
         warnings.extend(reason for reason in reasons if reason not in warnings)
         correlations = [
@@ -251,25 +249,23 @@ def build_comparison_insights(
                 description="Observed telemetry only; setup attribution is blocked. "
                 + annotation.description,
                 confidence=min(annotation.confidence, 0.3),
-                recommendation=None,
             )
             for annotation in annotations
         ]
 
-    # ── 5. Confidence-weighted verdict ─────────────────────────
-    cwv = apply_confidence_weights(
-        verdict_str,
+    # ── 5. Confidence-weighted observation ─────────────────────
+    weighted = apply_observation_confidence(
+        observation_state,
         base_confidence,
         discipline_label=discipline_label,
         context_problems=context_problems,
     )
-    cwv_model = ConfidenceWeightedVerdict(
-        original_verdict=cwv.verdict,
-        adjusted_confidence=cwv.adjusted_confidence,
-        confidence_tier=cwv.tier,
-        penalties=cwv.penalties,
-        boosts=cwv.boosts,
-        final_recommendation=cwv.recommendation,
+    weighted_observation = ConfidenceWeightedObservation(
+        observation_state=observation_state,
+        adjusted_confidence=weighted.adjusted_confidence,
+        confidence_tier=weighted.tier,
+        penalties=weighted.penalties,
+        boosts=weighted.boosts,
     )
 
     # ── 6. Sector intelligence ─────────────────────────────────
@@ -310,10 +306,7 @@ def build_comparison_insights(
         if annotation_result.summary:
             key_takeaways.append("Observed telemetry only: " + annotation_result.summary)
         key_takeaways.extend(list(causal_block_reasons or []))
-        key_takeaways.append(
-            causal_retest_instruction
-            or "Repeat under matched conditions before accepting a setup direction."
-        )
+        key_takeaways.append("No setup policy is authorized by this comparison.")
     else:
         if annotation_result.summary:
             key_takeaways.append(annotation_result.summary)
@@ -321,8 +314,7 @@ def build_comparison_insights(
             key_takeaways.append(corr_result.narrative)
         if sector_result.summary:
             key_takeaways.append(sector_result.summary)
-        if cwv.recommendation:
-            key_takeaways.append(cwv.recommendation)
+    warnings.append(_NON_AUTHORITY_WARNING)
 
     return ComparisonInsightsResponse(
         comparison_id=comparison_id,
@@ -335,7 +327,7 @@ def build_comparison_insights(
         annotations=annotations,
         correlations=correlations,
         target_zone_classification=tz_model,
-        confidence_weighted_verdict=cwv_model,
+        confidence_weighted_observation=weighted_observation,
         sectors=sectors,
         summary_headline=summary_headline,
         key_takeaways=key_takeaways,

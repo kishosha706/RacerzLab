@@ -11,8 +11,13 @@ import polars as pl
 import pytest
 
 from api.schemas import ChannelCatalogItem, ChannelSummaryItem
-from racelab_engine.analysis.calculated_channels import CORE_REQUIRED_CHANNELS, _REMAINING_ALIAS_MAP
+from racelab_engine.analysis.calculated_channels import (
+    CORE_REQUIRED_CHANNELS,
+    _REMAINING_ALIAS_MAP,
+    normalize_telemetry_rows,
+)
 from racelab_engine.analysis.channel_registry import canonical_mapping_kind, canonical_name
+from racelab_engine.analysis.stint_strategy import analyze_stint_strategy
 from racelab_engine.analysis.vectorized_channels import (
     _ALIAS_MAP as VECTOR_ALIAS_MAP,
     normalize_telemetry_frame,
@@ -48,6 +53,11 @@ from racelab_engine.services.import_service import (
     write_telemetry_cache,
     write_telemetry_manifest,
 )
+from racelab_engine.models.observation_intelligence import MechanismKind
+from racelab_engine.services.lap_engineering_context_service import (
+    build_lap_engineering_context_report,
+)
+from racelab_engine.services.p3_observation_bridge import p3_observation_columns
 
 
 def test_every_core_channel_reaches_the_production_normalizer() -> None:
@@ -209,6 +219,8 @@ def test_schema_fingerprint_changes_when_declaration_changes() -> None:
 
 def test_canonical_mapping_kinds_are_explicit_and_fail_safe() -> None:
     assert canonical_mapping_kind("Speed") == "exact_alias"
+    assert canonical_mapping_kind("LFspeed") == "exact_alias"
+    assert canonical_mapping_kind("LFtempCL") == "exact_alias"
     assert canonical_mapping_kind("LFshockDefl") == "unit_converted_alias"
     assert canonical_mapping_kind("LFSHshockDefl") == "derived_fallback"
     assert canonical_mapping_kind("speed_mps") == "incompatible_similarly_named_channel"
@@ -496,6 +508,18 @@ def test_real_atlanta_archive_health_has_no_false_faults(tmp_path: Path) -> None
         data_dir=tmp_path / "data",
     ).import_ibt_file(fixture)
     assert result.overview is not None
+    assert result.overview.setup_snapshot is not None
+    assert result.overview.setup_snapshot.extracted_values["lf"]["corner_weight_n"] == 3278.0
+    assert "corner_weight_kg" not in result.overview.setup_snapshot.extracted_values["lf"]
+    laps = {lap.lap_number: lap for lap in result.overview.laps}
+    assert [lap.lap_number for lap in result.overview.laps if lap.is_useful] == list(range(1, 12))
+    assert {"NO_SETUP_CONCLUSION", "OFF_TRACK", "PIT_ROAD"}.issubset(
+        laps[0].classification_tags
+    )
+    assert laps[12].lap_time < min(laps[number].lap_time for number in range(1, 12))
+    assert {"NO_SETUP_CONCLUSION", "PARTIAL", "SHORT_RUN"}.issubset(
+        laps[12].classification_tags
+    )
     frame = result.get_normalized_frame()
     assert frame is not None
     assert frame.height == 26_556
@@ -515,6 +539,46 @@ def test_real_atlanta_archive_health_has_no_false_faults(tmp_path: Path) -> None
         "precipitation",
         "track_wetness",
     }.issubset(frame.columns)
+    excluded = tuple(
+        mechanism
+        for mechanism in MechanismKind
+        if mechanism is not MechanismKind.STINT_TREND
+    )
+    stint_columns = [
+        column
+        for column in p3_observation_columns(excluded)
+        if column in frame.columns
+    ]
+    stint_rows = frame.select(stint_columns).to_dicts()
+    lap_context = build_lap_engineering_context_report(
+        run_id=result.overview.run_id,
+        laps=result.overview.laps,
+        rows=stint_rows,
+    )
+    assert [context.lap_number for context in lap_context.contexts] == list(range(1, 12))
+    assert {
+        context.proximity_state for context in lap_context.contexts
+    } == {"nearby_cars_ahead_and_behind"}
+    assert all(
+        context.nearby_traffic_exposure_fraction is not None
+        and context.nearby_traffic_exposure_fraction > 0.0
+        for context in lap_context.contexts
+    )
+    stint = analyze_stint_strategy(
+        stint_rows,
+        result.overview.laps,
+        sim_integrity_clear=True,
+    )
+    assert stint.pace_drift is not None
+    assert stint.pace_drift.status == "observed"
+    assert stint.pace_drift.traffic_contaminated_lap_numbers == list(range(1, 12))
+    assert stint.pace_drift.traffic_context_unknown_lap_numbers == []
+    assert next(
+        item for item in stint.pace_drift.covariates if item.key == "traffic_exposure"
+    ).coverage_pct == 100.0
+    assert "do not feed it to setup authority" in " ".join(
+        stint.pace_drift.authority_blocker_reasons
+    ).lower()
     manifest = read_telemetry_manifest(result.overview.run_id, tmp_path / "data")
 
     assert manifest["declared_channel_count"] == 277
@@ -530,12 +594,50 @@ def test_real_atlanta_archive_health_has_no_false_faults(tmp_path: Path) -> None
     }
     assert manifest["sample_continuity"]["estimated_dropped_tick_count"] == 0
     assert manifest["sample_continuity"]["timestamp_gap_count"] == 1
+    assert manifest["source_file_sha256"] == (
+        "3e347305740a5ad3d7831bec650727e49494dc28e4e031fd2820f677e7d6bccd"
+    )
     advertised_aliases = {
         channel["canonical_name"]
         for channel in manifest["channels"]
         if channel["canonical_name"] is not None
     }
     assert advertised_aliases.issubset(frame.columns)
+    tire_aliases = {
+        **{
+            f"{corner}speed": f"{corner.lower()}_speed"
+            for corner in ("LF", "RF", "LR", "RR")
+        },
+        **{
+            f"{corner}tempC{band}": f"{corner.lower()}_carcass_temp_{band.lower()}"
+            for corner in ("LF", "RF", "LR", "RR")
+            for band in ("L", "M", "R")
+        },
+    }
+    channels = {channel["raw_name"]: channel for channel in manifest["channels"]}
+    for raw_name, alias in tire_aliases.items():
+        assert channels[raw_name]["canonical_name"] == alias
+        assert channels[raw_name]["canonical_mapping_kind"] == "exact_alias"
+        assert alias in frame.columns
+        assert frame[raw_name].equals(frame[alias])
+    assert all(channels[f"{corner}speed"]["variation"] == "varying" for corner in ("LF", "RF", "LR", "RR"))
+    assert all(
+        channels[f"{corner}tempC{band}"]["variation"] == "constant"
+        for corner in ("LF", "RF", "LR", "RR")
+        for band in ("L", "M", "R")
+    )
+    raw_names = [name for name in channels if name in frame.columns]
+    row_sample = normalize_telemetry_rows(
+        frame.select(raw_names).slice(7_000, 16).to_dicts()
+    )
+    assert advertised_aliases.issubset(row_sample[0])
+    for alias in advertised_aliases:
+        row_value = row_sample[0][alias]
+        vector_value = frame[alias].slice(7_000, 1).to_list()[0]
+        if isinstance(row_value, float):
+            assert row_value == pytest.approx(vector_value)
+        else:
+            assert row_value == vector_value
     shock_channel = next(
         channel for channel in manifest["channels"] if channel["raw_name"] == "LFshockDefl"
     )

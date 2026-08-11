@@ -1,238 +1,157 @@
-# RaceLab Garage — MVP Smoke Test
+# RaceLab Garage - Current Product Smoke Test
 
-Run through this workflow to verify the core product loop works end-to-end.
+Use this workflow to verify the current evidence-to-controlled-test loop. It is
+not a compatibility test for removed screens or fields.
 
-**Prerequisites:** Backend running, one baseline `.ibt` and one test `.ibt` imported.
-**Last verified:** 2026-06-01 (step labels may need minor UI text refresh; treat any mismatch as needs verification, not failure of truth rules).
+Last reviewed: 2026-08-10
 
----
+## Prerequisites
 
-## 1. Launch
-```powershell
-cd racelab-garage
-.\scripts\start_desktop.ps1
-```
-- App window opens titled "RaceLab Garage"
-- Backend health check passes at `http://127.0.0.1:8010/api/health`
+- Start the desktop app with `npm run desktop`.
+- Have one source-owned `.ibt` available. A second compatible run is useful for
+  the Laps comparison workbook.
+- For an authority-path smoke, use a fixture with a valid server-owned P19
+  controlled workflow. An ordinary or traffic-contaminated run should remain
+  measurement-only.
 
-## 2. Startup Screen
-- Verify: Startup screen appears with "New Session" button
-- Verify: "No previous sessions" message shown on first launch
-- Click "New Session"
-- Verify: cockpit shell loads with empty state
+## 1. Launch and session
 
-## 3. Import Baseline Run
-- Click the telemetry import action or use the file selector
-- Select a baseline `.ibt` file
-- Verify: run appears in run list dropdown
-- Verify: overview shows track, car, lap count
-- Verify: run is automatically added to the current RaceLab session
+- Confirm the app opens to the session screen and the backend health check
+  succeeds at `http://127.0.0.1:8010/api/health`.
+- Create a session or open an existing one.
+- Confirm the cockpit shows exactly these primary workspaces: Overview,
+  Engineer, Laps, Platform, Setup, and Dial-In.
+- Toggle Race/Learning mode with the mode badge or `L`. The explanation depth
+  may change; authority must not.
 
-## 4. Import Test Run
-- Import a second `.ibt` (the test/experimental run)
-- Verify: two runs now appear in run selector
-- Verify: both runs show car/track info
+## 2. Import and ownership
 
-## 5. Select Useful Laps
-- Verify: best useful lap is auto-selected for both runs
-- Verify: run context bar shows track, car, lap
+- Import a `.ibt` through the session tools.
+- Confirm the run appears only after persistence and cockpit loading succeed.
+- Confirm car, track/configuration, setup, lap count, and run identity match the
+  imported source.
+- Open telemetry capability detail and confirm declared/cached channel health is
+  explicit. Missing or unhealthy channels must appear as debt, not zero.
+- Re-importing the same source must not erase controlled-workflow history.
 
-## 6. Lap Time Browser
-- Click "Laps" in the toolbar
-- Verify: sidebar opens showing lap list with out/timed/in classification
-- Verify: lap times display as M:SS.sss format
-- Verify: deltas show +0:NNN.NNN / -0:NNN.NNN / BEST
-- Verify: green checkmark for useful laps, red X for invalid
-- Verify: clicking a lap selects it and updates the trace
-- Click "Laps" again to close sidebar
+## 3. Overview
 
-## 7. Import Track Map File
-- Click the track map import action and select a track map file
-- Verify: status shows the imported track map centerline point, marker, and section counts
-- Verify: no crash for unsupported track map file variants (graceful warning)
+- Confirm best-lap and primary findings are based only on currently eligible
+  laps.
+- Confirm invalid, out, cooldown, pit, wreck, reset, and partial laps do not
+  drive a setup call.
+- Confirm Overview events show observations and evidence only. There must be no
+  recommendation list, crew-chief summary, event action, or next-test field.
+- A run with no supported finding must say that no supported finding was
+  returned; it must not imply every system is proven healthy.
 
-## 8. Track Map View
-- Navigate to "Map" in the nav rail
-- Verify: "Loaded Run" identity section shows track name, car name, setup name from .ibt
-- Verify: "Matched Map" section shows the imported map name with confidence badge (green=high, amber=medium)
-- Verify: SVG centerline path renders
-- Verify: markers toggle shows/hides imported map markers
-- Verify: events toggle shows/hides platform event overlays
-- Verify: target zone toggle shows/hides highlighted path segment
-- Verify: warnings displayed for missing GPS/boundaries/banking
+## 4. Engineer
 
-## 6b. Laps Workspace — Stint Map
-- Navigate to "Laps" in the nav rail
-- Verify: Stint Shape section shows colored blocks per lap
-- Verify: mode toggles work (Eng Val, Δ Time, Validity, Falloff)
-- Verify: selected lap highlighted with cyan outline
-- Verify: best window outlined
-- Verify: hover shows lap time and tags
+- Open Engineer and confirm the report belongs to the selected run/session and
+  current lap/window scope.
+- In Race Mode, confirm one concise trustworthy move is shown.
+- In Learning Mode, inspect evidence, competing causes, blockers, citations,
+  vehicle-system context, and measurement debt.
+- Follow a citation and confirm it opens the exact run, lap/phase, and physical
+  region cited.
+- Change run or lap while a report is loading. A late response for the old
+  scope must not render.
 
-## 6c. Laps Workspace — Performance/Trust/Engineering Value
-- Verify: Best 10/20-Lap Avg cards show three badges
-- Verify: Performance badge has tooltip
-- Verify: Trust badge has tooltip
-- Verify: Engineering Value badge has tooltip
-- Verify: relationship label shown (e.g., "Strong clean pace")
+## 5. Laps and comparison workbook
 
-## 6d. Laps Workspace - Stint Intelligence
-- Verify: Laps opens directly to Stint Intelligence without Evidence/Windows/All Sessions/Baselines/Basket sub-tabs
-- Verify: best-window cards are visible above the timing sheet
-- Verify: baseline and test buttons work from stint cards and the selected-stint toolbar
-- Verify: Run History lists imported runs and older runs expand lazily
-- Verify: Add to Test Basket works from a stint card or selected stint
+- Confirm the timing sheet and stint map visibly separate eligible and excluded
+  laps and break continuity across missing/invalid lap numbers.
+- Confirm short or split runs withhold long-run/tire-degradation conclusions.
+- Add compatible baseline/test windows to the comparison basket and open the
+  workbook.
+- Confirm traces align by physical track position, retain gaps, and label proxy
+  channels.
+- Confirm Compare shows measured deltas, setup/context differences, discipline,
+  warnings, and an observation state only. It must not show Keep, Undo, a setup
+  recommendation, or a next setup step.
 
-## 6e. Test Basket
-- Add a stint/window to Test Basket from Laps
-- Verify: Test Basket appears at bottom-right
-- Verify: readiness badge shows (ready/caution/not_valid/reference_mode)
-- Verify: warnings displayed for cross-session/missing-setup
-- Verify: Swap and Clear buttons work
-- Click Review in Laps
-- Verify: Laps opens directly to Stint Intelligence and baseline/test selections remain visible
+## 6. Platform and Shock Reader
 
-## 7. Platform Workbench — Platform/Rake Preset
-- Navigate to "Platform" in the nav rail
-- Select "Platform" preset from the chart dropdown
-- Verify: 5 stacked chart rows render (Throttle/Brake, Center Rake, Side Rake, CFS+LF+RF, LR+RR)
-- Verify: CFS threshold bands visible (scrape/critical/high/watch)
-- Verify: tooltip shows distance, per-channel values, "(proxy)" for proxy channels
+- Open Platform and confirm loading, findings, clear, unavailable, and error are
+  visually distinct.
+- Confirm Platform uses structured platform events. Overview events must not
+  appear as a fallback event set.
+- Inspect a platform event and confirm it shows evidence/blockers without a
+  recommended action.
+- Open shock detail and confirm histograms state the selected lap/window/zone,
+  boundary basis, sample coverage, and current damper context.
+- Confirm Shock Reader shows `setup authority withheld` and no click direction,
+  target, delta, setting action, Keep/Undo, or test-plan text.
 
-## 8. Platform Workbench — Tires Preset
-- Select "Tires" preset from the dropdown
-- Verify: Tire Pressure, Pressure Gain, Temp Spread, Slip Ratio Proxy rows
-- Verify: each row has LF/RF/LR/RR series with corner colors
-- Verify: proxy channels (slip ratio) show dashed lines
+## 7. Setup
 
-## 7. Legacy Compare Engine
-- Standalone Compare is hidden from the nav rail; use Laps and Stint Intelligence for baseline/test review
-- Select baseline and test runs
-- Click "Run Compare" if compare doesn't auto-load
-- Verify: Verdict card shows keep_direction/undo/retest/inconclusive
-- Verify: confidence score and evidence displayed
+- Confirm Current view shows the selected run's captured setup and exact setup
+  identity.
+- Confirm Diff is available only for a distinct, current-scope baseline with a
+  real compatible setup snapshot.
+- Confirm highlighted related controls are context, not an instruction to
+  change them.
+- Confirm unavailable geometry/load quantities stay explicitly unavailable or
+  proxy-labeled.
 
-## 8. Compare — What Changed
-- Click "What Changed" sub-tab
-- Verify: setup changes grouped by category
-- Verify: context changes with warnings
+## 8. Dial-In without earned authority
 
-## 9. Compare — Whole Car Index
-- Click "Index" sub-tab
-- Verify: platform, driver, powertrain, discipline scores
-- Verify: overall whole-car-index (0–100)
+- Enter a complaint and, if needed, select its phase/location.
+- Confirm public Dial-In returns non-authorizing control-area hypotheses,
+  mechanisms to verify, counter-effects, evidence locations, and blockers.
+- Confirm it does not publish direction, increment, current/target setup values,
+  `Change this`, Keep, or Undo language.
+- With insufficient, contaminated, short, mismatched, or unsupported evidence,
+  confirm the result requests measurement or refuses a setup call.
+- A generic complaint such as `loose` must request clarification instead of
+  pretending certainty.
 
-## 10. Compare — Four Corners
-- Click "Four Corners" sub-tab
-- Verify: LF/RF/LR/RR matrix with Ride Height, Shock Defl, Tire Pressure, Wheel Speed, Slip Ratio
-- Verify: short-run confidence warning
+## 9. P19 controlled workflow
 
-## 11. Compare — Tires View
-- Click "Tires" sub-tab
-- Verify: per-corner pressure/wheel-speed/slip-ratio table
-- Verify: corner-mini layout with ride height/shock/tire data
+Run this section only with a server-qualified controlled workflow.
 
-## 12. Compare — Driver View
-- Click "Driver" sub-tab
-- Verify: throttle, brake, steering averages with deltas
+- Confirm the exact proposed control and legal adjacent value appear only in
+  the P19 authority card/workflow.
+- Confirm the mission freezes source run/session, setup hash, reasoning hash,
+  evidence channels, physical scope, warm-up/measured cohorts, guardrails, and
+  rollback.
+- Attach A, B, and restored A2 using server-qualified non-overlapping cohorts.
+- Confirm scoring keeps mechanism response, control response, countereffects,
+  and Keep/Undo policy separate.
+- Confirm an unchanged prior Undo or completed stop-testing contract blocks a
+  repeated policy while an unrelated control remains independently testable.
+- Confirm corrupt, stale, duplicate, overlapping, foreign, or client-attested
+  evidence fails closed.
 
-## 13. Delta Traces
-- Click "Traces" sub-tab
-- Verify: Speed/Platform Delta preset renders stacked traces
-- Verify: target zone highlighted in green band
-- Switch to "Four-Corner Ride Height Delta" preset
-- Switch to "Tire Delta" preset (pressure gain, temp spread, slip ratio)
-- Verify: target zone highlight persists across presets
+## 10. Persistence and recovery
 
-## 14. Save Finding to Notebook
-- In the Compare view, click "Save Finding"
-- Verify: "Saving…" then "Finding saved to Notebook."
-- Verify: button changes to "Save Duplicate" if clicked again (same comparison)
-- Click "Save Duplicate" — verify a second finding is created
+- Close and reopen the app. Confirm the session, run membership, selected
+  context, controlled workflow, immutable attempts, and report history reload
+  without being rebound to another run.
+- Confirm stale setup/reasoning identity disables authority until a fresh
+  server projection is loaded.
+- Confirm a failed import or cache cleanup does not remove the original `.ibt`,
+  run metadata, setup snapshot, observation records, or controlled history.
 
-## 15. Open Notebook
-- Navigate to "Notes" in the nav rail
-- Verify: "Notebook & Setup Memory" header
-- Verify: findings list shows date, car, track, verdict, confidence, headline, status
-- Verify: car/track/verdict/status filter inputs work
-- Click on a finding row
-- Verify: detail view shows verdict, confidence, evidence, takeaways, sector summaries, setup changes
+## Optional Notebook API check
 
-## 16. Edit Notes/Tags/Status
-- In detail view, type notes in the textarea
-- Type tags: "talladega, platform, 55-70"
-- Change status to "Confirmed" via dropdown
-- Click "Save Changes"
-- Verify: "Changes saved." message
-- Verify: status badge updates in findings list
+Notebook is not a primary workspace. If its observation API is exercised,
+confirm only save/list/get/update finding operations exist. Records may contain
+observation evidence, notes, tags, and `saved`/`archived` state. Requests that
+send verdict, setup-change, next-step, test-plan, or setup-memory fields must be
+rejected.
 
-## 17. Copy Markdown
-- Click "Copy Markdown"
-- Verify: "Markdown copied." message
-- Paste into a text editor
-- Verify: markdown includes verdict, confidence, target zone, takeaways, evidence, sectors, setup changes, warnings, next step, notes
+## Result checklist
 
-## 18. Create Test Plan
-- Click "Create Test Plan"
-- Verify: "Test plan created." message
-- Click "Test Plans" nav tab
-- Verify: test plan appears in table with car, track, goal
-
-## 19. Setup Memory
-- Click "Setup Memory" nav tab
-- Enter car and track filters, click Refresh
-- Verify: dashboard cards show total findings, keep/undo/retest/inconclusive counts
-- Verify: most common issue, best known target zone populated
-- Verify: recommended next test from latest needs_retest finding
-
-## 20. Session Persistence
-- Close the app
-- Relaunch with `.\scripts\start_desktop.ps1`
-- Verify: Startup screen shows previous session in the list
-- Verify: session name, track, car, and run count are displayed
-- Click on the previous session
-- Verify: cockpit loads with the last imported run
-
-## 21. Session Management
-- Click "New Session" on the startup screen
-- Verify: fresh empty cockpit loads
-- Go back to startup screen (restart app)
-- Verify: both sessions appear in the list
-- Click the trash icon on a session
-- Verify: "Remove session? Telemetry files stay." confirmation appears
-- Click "Remove"
-- Verify: session is deleted from the list
-- Verify: telemetry data still exists (import another session's run to confirm)
-
-## 22. Notebook Persistence Restart Check
-- Navigate to Notebook
-- Verify: previously saved finding still appears
-- Verify: notes/tags/status changes persisted
-- Verify: test plan persisted
-- Verify: Setup Memory counts are correct after restart
-
----
-
-## Smoke Test Result
-
-| Step | Expected | Actual |
+| Area | Expected | Actual |
 |---|---|---|
-| Launch | App window, health OK | |
-| Import baseline | Run appears | |
-| Import test | Two runs available | |
-| Laps stint map | Colored blocks render | |
-| Performance/Trust/EV badges | Three badges on Best 10/20 cards | |
-| Laps Stint Intelligence | Best-window cards, run history, and basket actions visible | |
-| Test Basket | Drawer appears, readiness shown | |
-| Platform preset | 5 rows render | |
-| Tires preset | 4 rows render | |
-| Compare verdict | Verdict card visible | |
-| Four Corners | 5x4 matrix | |
-| Delta Traces | Stacked with target zone | |
-| Tire Delta | 8 rows with pressure/temp/slip | |
-| Save Finding | Saved to Notebook | |
-| Notebook detail | Verdict, evidence, takeaways | |
-| Edit notes/tags/status | Persisted | |
-| Test Plan | Created | |
-| Setup Memory | Dashboard populated | |
-| Restart persistence | Finding survives | |
+| Import | Source-owned run and complete capability truth | |
+| Overview | Eligible observations; no setup action | |
+| Engineer | Exact-scope trusted report and citations | |
+| Laps/Compare | Position-aligned observations; no policy | |
+| Platform | Structured events; honest unavailable/error states | |
+| Shock Reader | Movement observation; authority withheld | |
+| Setup | Captured values and differences only | |
+| Dial-In | Hypotheses/measurement until P19 earns authority | |
+| P19 workflow | One exact server-authorized test or refusal | |
+| Restart | Identity-bound state reconstructs safely | |

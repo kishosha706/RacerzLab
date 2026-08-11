@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from racelab_engine.models.evidence import EvidenceState
 
 
-CornerScope = Literal["LF", "RF", "LR", "RR", "front", "rear", "all"]
 ShockSetting = Literal[
     "ls_compression",
     "hs_compression",
@@ -18,8 +17,14 @@ ShockSetting = Literal[
     "compression_slope",
     "rebound_slope",
 ]
-SemanticDirection = Literal["add", "subtract", "move_more_linear", "move_more_digressive", "leave_alone"]
-RecommendationClassification = Literal["fine_tune", "balance_swing", "package_swing", "leave_alone"]
+ObservedShockSetting = Literal[
+    "ls_compression",
+    "hs_compression",
+    "hs_compression_slope",
+    "ls_rebound",
+    "hs_rebound",
+    "hs_rebound_slope",
+]
 Pattern = Literal[
     "balanced",
     "low_speed_bump_heavy",
@@ -32,46 +37,11 @@ Pattern = Literal[
     "insufficient_evidence",
 ]
 Confidence = Literal["low", "medium", "high"]
-SettingDirection = Literal["add", "subtract", "hold", "blocked", "needs_more_evidence"]
-SettingMagnitude = Literal["hold", "small", "medium", "big"]
-SettingConfidence = Literal["high", "medium", "low", "needs_more_evidence"]
-
-
-class ShockSettingRecommendation(BaseModel):
-    corner: Literal["LF", "RF", "LR", "RR"]
-    setting: Literal[
-        "ls_compression",
-        "hs_compression",
-        "hs_compression_slope",
-        "ls_rebound",
-        "hs_rebound",
-        "hs_rebound_slope",
-    ]
-    display_label: Literal["LS Comp", "HS Comp", "HS-S Comp", "LS Reb", "HS Reb", "HS-S Reb"]
-    current_value: int | None = None
-    delta: int | None = Field(default=None, ge=-5, le=5)
-    suggested_value: int | None = None
-    target_value_raw: Any = None
-    legal_option_provenance: list[str] = Field(default_factory=list)
-    direction: SettingDirection
-    magnitude: SettingMagnitude
-    confidence: SettingConfidence
-    reason_short: str
-    action_text: str
-    expected_effect: str
-    change_size_explanation: str
-    keep_if: str
-    undo_if: str
-    goal: str
-    tradeoff: str
-    watch_for: list[str]
-    blocked_reason: str | None = None
-    evidence_state: EvidenceState = EvidenceState.NEEDS_CONFIRMATION
-    source_channels: list[str] = Field(default_factory=list)
-    blocker_reasons: list[str] = Field(default_factory=list)
 
 
 class ShockCornerRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     corner: Literal["LF", "RF", "LR", "RR"]
     sample_count: int
     rebound_hi_pct: float
@@ -93,36 +63,12 @@ class ShockCornerRead(BaseModel):
     compression_boundary_stable: bool = False
     rebound_boundary_stable: bool = False
     boundary_sensitivity_patterns: list[str] = Field(default_factory=list)
-    setup_values: dict[str, int | None] = Field(default_factory=dict)
-    setting_recommendations: list[ShockSettingRecommendation] = Field(default_factory=list)
-
-
-class ShockRecommendation(BaseModel):
-    id: str
-    corner_scope: CornerScope
-    setting: ShockSetting
-    display_setting: str
-    semantic_direction: SemanticDirection
-    numeric_step: int | None = Field(default=None, ge=-5, le=5)
-    current_value: int | None = None
-    suggested_value: int | None = None
-    target_value_raw: Any = None
-    legal_option_provenance: list[str] = Field(default_factory=list)
-    blocked_by_limit: bool = False
-    classification: RecommendationClassification
-    goal: str
-    tradeoff: str
-    next_test: str
-    watch_for: list[str]
-    confidence: Confidence
-    evidence_summary: str
-    hidden_debug: dict[str, Any] | None = None
-    evidence_state: EvidenceState = EvidenceState.NEEDS_CONFIRMATION
-    source_channels: list[str] = Field(default_factory=list)
-    blocker_reasons: list[str] = Field(default_factory=list)
+    setup_values: dict[ObservedShockSetting, int | None] = Field(default_factory=dict)
 
 
 class ShockReaderResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     run_id: str
     lap_window: str | None = None
     phase: str | None = None
@@ -130,11 +76,10 @@ class ShockReaderResponse(BaseModel):
     zone_end_pct: float | None = None
     boundary_in_s: float
     boundary_basis: str
-    slope_actions_available: bool = False
     bin_width_in_s: float
     setup_snapshot_available: bool
     corners: list[ShockCornerRead]
-    recommendations: list[ShockRecommendation]
+    setup_authority: Literal["withheld"] = "withheld"
     warnings: list[str]
     evidence_state: EvidenceState = EvidenceState.NEEDS_CONFIRMATION
     source_channels: list[str] = Field(default_factory=list)

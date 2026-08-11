@@ -73,8 +73,10 @@ def test_dial_in_tab_distinguishes_decision_kinds_from_verified_results() -> Non
 
     assert 'label: "Measurement mission"' in dial_in_tab
     assert 'label: "Exploratory test"' in dial_in_tab
-    assert 'label: "Fix recommendation"' in dial_in_tab
-    assert 'workflow.quality.verdict === "keep"' in dial_in_tab
+    assert 'label: "Controlled result"' in dial_in_tab
+    assert "workflow.quality.verdict" not in dial_in_tab
+    assert "The workflow response itself cannot publish a target or Keep/Undo verdict." in dial_in_tab
+    assert "make the server re-derive the exact current-session P19 outcome" in dial_in_tab
     assert "not yet a proven fix" in dial_in_tab
     assert "Mechanism proof" in dial_in_tab
     assert "response.evidence_strength.reason" in dial_in_tab
@@ -94,36 +96,42 @@ def test_dial_in_tab_distinguishes_decision_kinds_from_verified_results() -> Non
     assert "normalizedComplaint === persistedComplaint" in dial_in_tab
 
 
-def test_dial_in_tab_uses_backend_target_labels() -> None:
+def test_dial_in_tab_uses_backend_hypothesis_labels() -> None:
     dial_in_tab = (PROJECT_ROOT / "ui/src/tabs/DialInTab.tsx").read_text(encoding="utf-8")
     telemetry_types = (PROJECT_ROOT / "ui/src/types/telemetry.ts").read_text(encoding="utf-8")
 
     assert "const TARGET_LABELS" not in dial_in_tab
     assert "garageLeverLabel" in dial_in_tab
-    assert "Garage control" in dial_in_tab
+    assert "Candidate control area" in dial_in_tab
     assert "dialin-garage-helper" in dial_in_tab
     assert "validate_with_labels" in dial_in_tab
-    assert "swing.undo_if" in dial_in_tab
+    assert "swing.undo_if" not in dial_in_tab
     assert "validate_with_labels" in telemetry_types
     assert "watch_for_labels" in telemetry_types
 
 
-def test_dial_in_cards_render_exact_change_this_and_garage_lever() -> None:
+def test_dial_in_cards_render_non_authorizing_hypotheses_only() -> None:
     dial_in_tab = (PROJECT_ROOT / "ui/src/tabs/DialInTab.tsx").read_text(encoding="utf-8")
     telemetry_types = (PROJECT_ROOT / "ui/src/types/telemetry.ts").read_text(encoding="utf-8")
     styles = (PROJECT_ROOT / "ui/src/styles.css").read_text(encoding="utf-8")
 
-    assert "change_this: string" in telemetry_types
-    assert "garage_lever: string" in telemetry_types
+    assert "mechanism_to_verify: string" in telemetry_types
+    assert "candidate_control_label: string" in telemetry_types
+    assert "change_this: string" not in telemetry_types
+    assert "garage_lever: string" not in telemetry_types
+    assert "proposed_value_label" not in telemetry_types
+    assert "direction_sign" not in telemetry_types
     assert "dialin-change-this" in dial_in_tab
-    assert "Make this setup change:" in dial_in_tab
-    assert "Target unavailable — do not change:" in dial_in_tab
-    assert "const targetReady = swing.proposed_value_label != null && swing.blocker_reasons.length === 0" in dial_in_tab
-    assert "targetReady && <div><span>Keep it if" in dial_in_tab
-    assert "targetReady && !compact && <div><span>Test plan" in dial_in_tab
+    assert "Hypothesis only:" in dial_in_tab
+    assert "Make this setup change:" not in dial_in_tab
+    assert "targetReady" not in dial_in_tab
+    assert "swing.proposed_value_label" not in dial_in_tab
+    assert "swing.keep_if" not in dial_in_tab
+    assert "swing.undo_if" not in dial_in_tab
     assert "Needed before a setup test" in dial_in_tab
-    assert "{swing.change_this}" in dial_in_tab
-    assert "{swing.garage_lever}" in dial_in_tab
+    assert "{swing.mechanism_to_verify}" in dial_in_tab
+    assert "{swing.candidate_control_label}" in dial_in_tab
+    assert "Only the controlled P19 workflow can expose an exact target" in dial_in_tab
     assert ".dialin-change-this" in styles
     assert ".dialin-garage-note" in styles
 
@@ -154,7 +162,7 @@ def test_resumed_and_fresh_workflows_keep_the_complete_test_protocol() -> None:
     assert 'aria-current={current ? "step" : undefined}' in dial_in_tab
 
 
-def test_dial_in_tab_uses_direct_setup_change_vocabulary() -> None:
+def test_dial_in_tab_separates_hypotheses_from_controlled_setup_authority() -> None:
     dial_in_tab = (PROJECT_ROOT / "ui/src/tabs/DialInTab.tsx").read_text(encoding="utf-8")
 
     assert "verify whether one specific setup test is justified" in dial_in_tab
@@ -162,16 +170,15 @@ def test_dial_in_tab_uses_direct_setup_change_vocabulary() -> None:
     assert "Server-verified Test Director" in dial_in_tab
     assert "Ideas awaiting evidence-gated approval" in dial_in_tab
     assert "Other hypotheses" in dial_in_tab
-    assert "Expected improvement" in dial_in_tab
-    assert "Trade-off" in dial_in_tab
-    assert "Why this size" in dial_in_tab
-    assert "What this control does" in dial_in_tab
-    assert "Related settings to recheck" in dial_in_tab
-    assert "Test plan" in dial_in_tab
-    assert "Evidence signals" in dial_in_tab
-    assert "Keep it if" in dial_in_tab
-    assert "Undo it if" in dial_in_tab
-    assert "swing.change_size_label" in dial_in_tab
+    assert "Mechanism to verify" in dial_in_tab
+    assert "Counter-effect to watch" in dial_in_tab
+    assert "Needed before a setup test" in dial_in_tab
+    assert "Authority boundary" in dial_in_tab
+    assert "swing.control_expectation" not in dial_in_tab
+    assert "swing.control_guardrail" not in dial_in_tab
+    assert "swing.change_size_label" not in dial_in_tab
+    assert "swing.keep_if" not in dial_in_tab
+    assert "swing.undo_if" not in dial_in_tab
 
     for vague_phrase in [
         "Feel polish",
@@ -230,9 +237,13 @@ def test_dial_in_enforces_one_active_controlled_test_with_confirmed_abandon() ->
         "const nextWorkflowStage",
         1,
     )[0]
-    assert "if (!overview || !workflowCatalogReady || activeWorkflow || workflowAuthorityBlocked) return" in submit
+    assert "if (!overview || !sessionId || !workflowCatalogReady || activeWorkflow || workflowAuthorityBlocked) return" in submit
     assert "startControlledWorkflow" in submit
-    assert "if (!overview || !workflowCatalogReady || workflowBusy || activeWorkflow || workflowAuthorityBlocked) return" in build
+    assert "if (!overview || !sessionId || !workflowCatalogReady || workflowBusy || activeWorkflow || workflowAuthorityBlocked) return" in build
+    assert "session_id: sessionId" in submit
+    assert "session_id: sessionId" in build
+    assert "if (workflowResult.status === \"rejected\")" in submit
+    assert "setResponse(dialResponse)" in submit
     assert "startControlledWorkflow" in build
     assert "&& workflowCatalogReady" in dial_in
     assert "&& complaint.trim().length > 0" in dial_in
@@ -279,6 +290,8 @@ def test_dial_in_enforces_one_active_controlled_test_with_confirmed_abandon() ->
     assert "export function cancelControlledWorkflow(workflowId: string)" in client
     assert "/api/engineering/workflows/${encodeURIComponent(workflowId)}/cancel" in client
     assert '{ method: "POST" }' in client
+    assert "/api/engineering/test-director/score" not in client
+    assert "/score`" in client
 
 
 def test_dial_in_workflow_catalog_failure_has_an_in_tab_retry() -> None:

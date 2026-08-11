@@ -258,8 +258,7 @@ export function deriveCurrentReportSetupAuthority(
   sessionId: string | null | undefined,
   workflowRevision: IntelligenceWorkflowRevision,
 ): CurrentReportSetupAuthority | null {
-  if (!report || !canonicalText(sourceRunId)) return null;
-  if (sessionId != null && !canonicalText(sessionId)) return null;
+  if (!report || !canonicalText(sourceRunId) || !canonicalText(sessionId)) return null;
   const hasWorkflowId = workflowRevision.workflowId != null;
   const hasWorkflowUpdatedAt = workflowRevision.workflowUpdatedAt != null;
   if (
@@ -275,9 +274,14 @@ export function deriveCurrentReportSetupAuthority(
   const measurement = report.best_measurement;
   const preflight = report.test_preflight;
   const move = report.next_trustworthy_move;
+  const telemetryHealth = report.telemetry_health;
   if (
     report.run_id !== sourceRunId
-    || (report.session_id ?? null) !== (sessionId ?? null)
+    || report.session_id !== sessionId
+    || telemetryHealth?.session_id !== sessionId
+    || telemetryHealth.current_run_id !== sourceRunId
+    || !canonicalTextList(telemetryHealth.ordered_session_run_ids, true)
+    || !telemetryHealth.ordered_session_run_ids.includes(sourceRunId)
     || report.status !== "ready"
     || report.decision_status !== "ready"
     || report.data_quality?.status !== "ready"
@@ -352,7 +356,7 @@ export function deriveCurrentReportSetupAuthority(
     ) return null;
     return {
       sourceRunId,
-      sessionId: sessionId ?? null,
+      sessionId,
       workflowId: null,
       workflowUpdatedAt: null,
       stage: "fresh",
@@ -387,7 +391,7 @@ export function deriveCurrentReportSetupAuthority(
 
   return {
     sourceRunId,
-    sessionId: sessionId ?? null,
+    sessionId,
     workflowId: workflowRevision.workflowId,
     workflowUpdatedAt: workflowRevision.workflowUpdatedAt,
     stage: "B",

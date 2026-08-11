@@ -30,6 +30,7 @@ from racelab_engine.analysis.setup_diff import (
 )
 from racelab_engine.analysis.setup_controls import canonical_setup_value_key
 from racelab_engine.analysis.test_director import score_test_execution
+from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.controlled_workflow import ControlledWorkflow
 from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.evidence import EvidenceState
@@ -931,10 +932,7 @@ def controlled_hypothesis_fingerprint(
 def setup_snapshot_fingerprint(setup: SetupSnapshot | None) -> str | None:
     if setup is None:
         return None
-    payload = setup.model_dump(mode="json")
-    return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, default=str, separators=(",", ":")).encode()
-    ).hexdigest()
+    return canonical_json_sha256(setup)
 
 
 def _canonical_policy_number(value: int | float) -> str:

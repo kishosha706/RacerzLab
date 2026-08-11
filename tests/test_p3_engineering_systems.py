@@ -26,6 +26,8 @@ from racelab_engine.analysis.powertrain_gearing import analyze_powertrain_gearin
 from racelab_engine.analysis.p3_common import bounded_confidence, lap_pct
 from racelab_engine.analysis.relative_resistance import analyze_relative_resistance_aba
 from racelab_engine.analysis.stint_strategy import analyze_stint_strategy
+from racelab_engine.models.engineering import EngineeringConclusion
+from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.analysis.setup_controls import SETUP_CONTROL_SPECS
 
@@ -43,6 +45,19 @@ def _laps(count: int) -> list[LapSummary]:
         )
         for number in range(1, count + 1)
     ]
+
+
+def test_engineering_conclusion_rejects_deprecated_action_slot() -> None:
+    with pytest.raises(ValueError, match="recommendation"):
+        EngineeringConclusion(
+            key="hostile_non_p19_action",
+            summary="Observation only.",
+            evidence_state=EvidenceState.CALCULATED,
+            confidence_score=0.5,
+            source_channels=["speed_mph"],
+            supporting_evidence=["Recorded speed."],
+            recommendation="Lower a setup value.",
+        )
 
 
 def _one_eligible_two_pit_laps() -> list[LapSummary]:
@@ -130,6 +145,8 @@ def test_braking_engine_separates_bias_and_technique_without_mu_claim() -> None:
     assert "measured friction" not in text
     assert all(item.source_channels for item in report.conclusions)
     assert all(item.contradicting_evidence for item in report.conclusions)
+    assert all("recommendation" not in item.model_dump() for item in report.conclusions)
+    assert "front brake-bias step" not in report.model_dump_json().lower()
 
 
 def test_phase_engine_fails_closed_when_sim_integrity_is_unknown() -> None:
@@ -188,7 +205,7 @@ def _tire_rows(laps: int) -> list[dict]:
     return rows
 
 
-def test_tire_pressure_action_requires_repeated_working_history() -> None:
+def test_tire_pressure_pattern_remains_observational_with_snapshot_only_history() -> None:
     repeated = analyze_tire_state(
         _tire_rows(3), _laps(3), selected_lap=1, sim_integrity_clear=True,
     )
@@ -198,11 +215,52 @@ def test_tire_pressure_action_requires_repeated_working_history() -> None:
 
     assert repeated.gate.eligible is True
     assert all("pressure_driven_heating" in corner.cause_classes for corner in repeated.corners)
-    assert sum(item.recommendation is not None for item in repeated.conclusions) == 1
-    assert all(item.recommendation is None for item in short.conclusions)
+    assert all(corner.carcass_update_semantic == "pit_snapshot" for corner in repeated.corners)
+    assert all(corner.wear_update_semantic == "pit_snapshot" for corner in repeated.corners)
+    assert all("recommendation" not in item.model_dump() for item in repeated.conclusions)
+    assert all("recommendation" not in item.model_dump() for item in short.conclusions)
     assert all(
         any("Center-tread temperature alone" in evidence for evidence in item.contradicting_evidence)
         for item in repeated.conclusions
+    )
+    assert all(
+        any("pit-boundary snapshots" in evidence for evidence in item.contradicting_evidence)
+        for item in repeated.conclusions
+    )
+
+
+def test_varying_surface_and_pressure_cannot_promote_constant_snapshots_or_raw_falloff() -> None:
+    rows = _tire_rows(12)
+    for row in rows:
+        position = float(row["lap_dist_pct"])
+        for corner in ("lf", "rf", "lr", "rr"):
+            row[f"{corner}_pressure"] = 182.0 + 4.0 * position
+            row[f"{corner}_temp_inner"] = 88.0 + 3.0 * position
+            row[f"{corner}_temp_middle"] = 94.0 + 4.0 * position
+            row[f"{corner}_temp_outer"] = 89.0 + 2.0 * position
+    degrading_laps = [
+        lap.model_copy(update={"lap_time": 50.0 + 0.2 * lap.lap_number})
+        for lap in _laps(12)
+    ]
+
+    report = analyze_tire_state(
+        rows,
+        degrading_laps,
+        selected_lap=1,
+        sim_integrity_clear=True,
+    )
+
+    snapshot_only_causes = {
+        "surface_scrub", "carcass_heat", "aging", "saturation", "falloff",
+    }
+    assert report.gate.eligible is True
+    assert all(corner.carcass_average is not None for corner in report.corners)
+    assert all(corner.wear_inner is not None for corner in report.corners)
+    assert all(not (snapshot_only_causes & set(corner.cause_classes)) for corner in report.corners)
+    assert all("recommendation" not in item.model_dump() for item in report.conclusions)
+    assert all(
+        any("traffic, fuel, weather, line" in evidence for evidence in item.contradicting_evidence)
+        for item in report.conclusions
     )
 
 
@@ -239,7 +297,7 @@ def test_damper_engine_requires_measured_regime_occupancy_and_never_claims_force
     assert all(corner.velocity_histogram_pct for corner in report.corners)
     assert all(corner.low_speed_regime_pct > 0 for corner in report.corners)
     assert all(corner.high_speed_regime_pct > 0 for corner in report.corners)
-    assert all(item.recommendation is None for item in report.conclusions)
+    assert all("recommendation" not in item.model_dump() for item in report.conclusions)
     assert report.fingerprint is not None
     assert report.fingerprint.bump_positions_pct
     text = " ".join(
@@ -247,7 +305,8 @@ def test_damper_engine_requires_measured_regime_occupancy_and_never_claims_force
         + [evidence for item in report.conclusions for evidence in item.contradicting_evidence]
     ).lower()
     assert "do not measure damper force" in text
-    assert "not one of racerzlab's supported driver-changeable controls" in text
+    assert "outside this observational producer" in text
+    assert "controlled p19 workflow" in text
 
 
 def test_damper_disjoint_velocity_and_time_returns_unavailable() -> None:
@@ -295,7 +354,7 @@ def test_damper_sparse_pairwise_coverage_on_one_corner_blocks_distribution_math(
     assert report.gate.needed_measurements
 
 
-def test_damper_setting_test_is_suppressed_without_regime_occupancy() -> None:
+def test_damper_regime_observation_records_insufficient_occupancy() -> None:
     rows = _damper_rows()
     for row in rows:
         for corner in ("lf", "rf", "lr", "rr"):
@@ -308,14 +367,14 @@ def test_damper_setting_test_is_suppressed_without_regime_occupancy() -> None:
         setup_snapshot_captured=True,
     )
 
-    assert all(item.recommendation is None for item in report.conclusions)
+    assert all("recommendation" not in item.model_dump() for item in report.conclusions)
     assert all(
         any("less than 10%" in evidence for evidence in item.contradicting_evidence)
         for item in report.conclusions
     )
 
 
-def test_pit_laps_cannot_unlock_repetition_gated_setup_actions() -> None:
+def test_pit_laps_cannot_promote_repetition_gated_observations() -> None:
     hostile_laps = _one_eligible_two_pit_laps()
     brake = analyze_braking_efficiency(
         _brake_rows(), hostile_laps, selected_lap=1, sim_integrity_clear=True,
@@ -332,10 +391,10 @@ def test_pit_laps_cannot_unlock_repetition_gated_setup_actions() -> None:
     )
 
     assert brake.gate.eligible is True
-    assert brake.conclusions[-1].recommendation is None
+    assert "recommendation" not in brake.conclusions[-1].model_dump()
     assert tire.working_history_laps == 1
-    assert all(item.recommendation is None for item in tire.conclusions)
-    assert all(item.recommendation is None for item in damper.conclusions)
+    assert all("recommendation" not in item.model_dump() for item in tire.conclusions)
+    assert all("recommendation" not in item.model_dump() for item in damper.conclusions)
     assert damper.fingerprint is not None
     assert damper.fingerprint.observed_bump_positions_pct
     assert damper.fingerprint.bump_positions_pct == []
@@ -362,7 +421,7 @@ def _power_rows(laps: int) -> list[dict]:
     return rows
 
 
-def test_powertrain_requires_actual_repeatable_pull_rows_before_gearing_action() -> None:
+def test_powertrain_requires_repeatable_pull_rows_for_gearing_discriminator() -> None:
     hostile = analyze_powertrain_gearing(
         _power_rows(1),
         _laps(2),
@@ -379,9 +438,11 @@ def test_powertrain_requires_actual_repeatable_pull_rows_before_gearing_action()
     )
 
     assert hostile.pull_consistency_cv is None
-    assert all(item.recommendation is None for item in hostile.conclusions)
+    assert all("recommendation" not in item.model_dump() for item in hostile.conclusions)
     assert repeated.pull_consistency_cv is not None
-    assert sum(item.recommendation is not None for item in repeated.conclusions) <= 1
+    assert all("recommendation" not in item.model_dump() for item in repeated.conclusions)
+    assert "taller gearing step" not in repeated.model_dump_json().lower()
+    assert "shorter gearing step" not in repeated.model_dump_json().lower()
     text = " ".join(
         evidence for item in repeated.conclusions for evidence in item.contradicting_evidence
     ).lower()
@@ -413,7 +474,7 @@ def test_powertrain_limiter_dwell_uses_only_matched_powered_samples() -> None:
 
     assert report.near_redline_occupancy_pct == 0.0
     assert report.powered_repeatability_established is False
-    assert all(item.recommendation is None for item in report.conclusions)
+    assert all("recommendation" not in item.model_dump() for item in report.conclusions)
 
 
 def test_powertrain_does_not_match_one_unrelated_sample_on_second_lap() -> None:
@@ -437,7 +498,7 @@ def test_powertrain_does_not_match_one_unrelated_sample_on_second_lap() -> None:
 
     assert report.pull_consistency_cv is None
     assert report.powered_repeatability_established is False
-    assert all(item.recommendation is None for item in report.conclusions)
+    assert all("recommendation" not in item.model_dump() for item in report.conclusions)
 
 
 def test_powertrain_api_shaped_rows_detect_and_repeat_phases_without_phase_column() -> None:
@@ -483,7 +544,7 @@ def test_prompt_normal_upshift_near_redline_is_not_limiter_evidence() -> None:
     assert report.near_redline_occupancy_pct is not None
     assert report.near_redline_occupancy_pct > 1.0
     assert report.limiter_evidence_established is False
-    assert all(item.recommendation is None for item in report.conclusions)
+    assert all("recommendation" not in item.model_dump() for item in report.conclusions)
 
 
 def test_powertrain_never_invents_shift_across_excluded_phase_gap() -> None:
@@ -524,7 +585,8 @@ def test_powertrain_context_diagnostics_bound_fuel_mass_and_clear_matched_runs()
 
     diagnostics = report.context_diagnostics
     assert diagnostics is not None
-    assert diagnostics.clear_for_gearing_action is True
+    assert diagnostics.context_comparable_for_observation is True
+    assert "clear_for_gearing_action" not in diagnostics.model_dump()
     assert diagnostics.fuel_context_matched is True
     assert diagnostics.temperature_context_stable is True
     assert diagnostics.gear_context_matched is True
@@ -559,7 +621,7 @@ def test_powertrain_context_blocks_hot_warning_fuel_and_gear_confounds() -> None
 
     diagnostics = report.context_diagnostics
     assert diagnostics is not None
-    assert diagnostics.clear_for_gearing_action is False
+    assert "clear_for_gearing_action" not in diagnostics.model_dump()
     assert diagnostics.temperature_context_stable is False
     assert diagnostics.fuel_context_matched is False
     assert diagnostics.gear_context_matched is False
@@ -567,8 +629,8 @@ def test_powertrain_context_blocks_hot_warning_fuel_and_gear_confounds() -> None
     assert diagnostics.engine_warning_active_fraction_pct is not None
     assert diagnostics.engine_warning_active_fraction_pct > 0.0
     assert diagnostics.blocker_reasons
-    gearing = next(item for item in report.conclusions if item.key == "gearing_test_hypothesis")
-    assert gearing.recommendation is None
+    gearing = next(item for item in report.conclusions if item.key == "gearing_discriminator_observation")
+    assert "recommendation" not in gearing.model_dump()
 
 
 def test_powertrain_context_rejects_sparse_or_implausible_diagnostic_samples() -> None:
@@ -589,12 +651,12 @@ def test_powertrain_context_rejects_sparse_or_implausible_diagnostic_samples() -
 
     diagnostics = report.context_diagnostics
     assert diagnostics is not None
-    assert diagnostics.clear_for_gearing_action is False
+    assert "clear_for_gearing_action" not in diagnostics.model_dump()
     assert all(
         coverage < 90.0
         for coverage in diagnostics.matched_phase_channel_coverage_pct.values()
     )
-    assert report.conclusions[-1].recommendation is None
+    assert "recommendation" not in report.conclusions[-1].model_dump()
 
     invalid = _power_rows(2)
     for row in invalid:
@@ -610,8 +672,8 @@ def test_powertrain_context_rejects_sparse_or_implausible_diagnostic_samples() -
         redline_rpm=7000.0,
     )
     assert invalid_report.context_diagnostics is not None
-    assert invalid_report.context_diagnostics.clear_for_gearing_action is False
-    assert invalid_report.conclusions[-1].recommendation is None
+    assert "clear_for_gearing_action" not in invalid_report.context_diagnostics.model_dump()
+    assert "recommendation" not in invalid_report.conclusions[-1].model_dump()
 
     cooling_fast = _power_rows(2)
     for row in cooling_fast:
@@ -881,7 +943,7 @@ def test_stint_production_pit_window_requires_and_uses_server_race_context() -> 
         item for item in report.conclusions if item.key == "pit_window_recommendation"
     )
     assert conclusion.evidence_state == "calculated"
-    assert conclusion.recommendation == report.pit_window.recommendation
+    assert "recommendation" not in conclusion.model_dump()
     assert "on_pit_road" in conclusion.source_channels
 
     for row in rows:
@@ -1072,6 +1134,7 @@ def test_relative_resistance_requires_clean_context_and_aba_return() -> None:
     assert "not exact aerodynamic drag" in text
     assert "cda" in text
     cause = next(item for item in report.conclusions if item.key == "resistance_cause_hypothesis")
+    assert "recommendation" not in cause.model_dump()
     assert {
         "lf_slip_ratio", "rf_slip_ratio", "lr_slip_ratio", "rr_slip_ratio",
         "lf_brake_line_pressure_bar", "rf_brake_line_pressure_bar",
@@ -1126,7 +1189,7 @@ def test_relative_resistance_withholds_grade_when_measured_shape_disagrees() -> 
     assert "measured_grade_context" not in report.cause_scores
     assert "measured_grade_context" in report.unavailable_cause_buckets
     grade = next(item for item in report.conclusions if item.key == "measured_grade_context")
-    assert grade.recommendation is None
+    assert "recommendation" not in grade.model_dump()
     assert "withheld" in grade.summary.lower()
 
 
@@ -1151,7 +1214,7 @@ def test_relative_resistance_missing_altitude_never_invents_grade_context() -> N
     assert "measured_grade_context" not in report.cause_scores
     grade = next(item for item in report.conclusions if item.key == "measured_grade_context")
     assert grade.evidence_state == "blocked_by_context"
-    assert grade.recommendation is None
+    assert "recommendation" not in grade.model_dump()
 
 
 def test_relative_resistance_constant_alt_or_undeclared_units_cannot_certify_grade() -> None:
@@ -1232,7 +1295,7 @@ def test_relative_resistance_blocks_recorded_weather_tire_and_fuel_mismatch() ->
     assert any("fuel, tire age, and weather" in reason for reason in report.gate.blocker_reasons)
 
 
-def test_relative_resistance_missing_context_cannot_unlock_causal_action() -> None:
+def test_relative_resistance_missing_context_cannot_unlock_causal_attribution() -> None:
     missing = {
         "air_temp", "track_temp", "wind_vel", "wind_dir", "fuel_level",
         "lf_tire_distance_m", "rf_tire_distance_m", "lr_tire_distance_m", "rr_tire_distance_m",
@@ -1253,7 +1316,7 @@ def test_relative_resistance_missing_context_cannot_unlock_causal_action() -> No
 
     assert report.gate.eligible is False
     assert report.windows
-    assert all(item.recommendation is None for item in report.conclusions)
+    assert all("recommendation" not in item.model_dump() for item in report.conclusions)
     assert any("fuel, tire age, and weather" in reason for reason in report.gate.blocker_reasons)
     assert report.gate.needed_measurements
 
@@ -1283,7 +1346,7 @@ def test_relative_resistance_missing_discriminators_withholds_platform_ranking()
     assert "platform_or_aero_related_proxy" not in report.cause_scores
     assert "platform_or_aero_related_proxy" in report.unavailable_cause_buckets
     assert report.cause_scores["unknown_residual"] >= 0.8
-    assert all(item.recommendation is None for item in report.conclusions)
+    assert all("recommendation" not in item.model_dump() for item in report.conclusions)
 
 
 def test_relative_resistance_requires_pointwise_operating_match_not_equal_medians() -> None:
@@ -1326,7 +1389,7 @@ def test_relative_resistance_tiny_delta_stays_observation_not_aba_effect() -> No
     assert report.practical_minimum_mph_s >= 0.02
     assert report.aba_confirmed is False
     assert report.cause_scores == {"unknown_residual": 1.0}
-    assert all(item.recommendation is None for item in report.conclusions)
+    assert all("recommendation" not in item.model_dump() for item in report.conclusions)
 
 
 def test_aba_setup_isolation_rejects_unmapped_raw_change() -> None:
@@ -1530,7 +1593,7 @@ def test_sim_integrity_fails_incomplete_paired_clock_coverage() -> None:
 
 
 @pytest.mark.parametrize("invalid_redline", [math.nan, math.inf, -1.0, 100.0, 50_000.0])
-def test_powertrain_ignores_invalid_redline_and_never_recommends(
+def test_powertrain_ignores_invalid_redline_and_remains_observational(
     invalid_redline: float,
 ) -> None:
     report = analyze_powertrain_gearing(
@@ -1543,7 +1606,7 @@ def test_powertrain_ignores_invalid_redline_and_never_recommends(
 
     assert report.near_redline_occupancy_pct is None
     assert report.gearing_headroom_rpm is None
-    assert report.conclusions[-1].recommendation is None
+    assert "recommendation" not in report.conclusions[-1].model_dump()
     text = " ".join(
         report.conclusions[0].supporting_evidence
         + report.conclusions[-1].contradicting_evidence
@@ -1556,13 +1619,20 @@ def test_powertrain_ignores_invalid_redline_and_never_recommends(
 def test_powertrain_route_rejects_client_redline_before_loading_run(
     client_redline: float,
 ) -> None:
+    from fastapi import Request
+
     from api.routes_p3_engineering import get_powertrain_gearing
 
+    request = Request({
+        "type": "http",
+        "query_string": f"redline_rpm={client_redline}".encode(),
+        "headers": [],
+    })
     with pytest.raises(Exception) as error:
-        get_powertrain_gearing("not-loaded", redline_rpm=client_redline)
+        get_powertrain_gearing("not-loaded", request=request)
 
     assert getattr(error.value, "status_code", None) == 422
-    assert "cannot authorize" in str(getattr(error.value, "detail", ""))
+    assert "redline_rpm" in str(getattr(error.value, "detail", ""))
 
 
 def test_server_setup_redline_requires_one_unambiguous_persisted_value() -> None:
@@ -1570,7 +1640,7 @@ def test_server_setup_redline_requires_one_unambiguous_persisted_value() -> None
 
     setup = {"setup_json": {"Engine": {"RevLimiter": "7,250 rpm"}}}
     assert _server_setup_redline_rpm(setup) is None
-    # Thousands separators are deliberately not guessed: malformed/ambiguous setup text cannot authorize action.
+    # Thousands separators are deliberately not guessed: malformed/ambiguous setup text cannot become context.
     assert _server_setup_redline_rpm({"setup_json": {"Engine": {"RevLimiter": "7250 rpm"}}}) == 7250.0
     assert _server_setup_redline_rpm({
         "setup_json": {"Engine": {"RevLimiter": "7250 rpm", "Redline": "7000 rpm"}},

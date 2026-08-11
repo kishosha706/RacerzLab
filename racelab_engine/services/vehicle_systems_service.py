@@ -10,6 +10,7 @@ from functools import lru_cache
 from typing import Any
 
 from racelab_engine.analysis.setup_controls import SETUP_CONTROL_SPECS
+from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.io.telemetry_manifest import (
     MANIFEST_SCHEMA_VERSION,
     UNIVERSAL_ARCHIVE_VERSION,
@@ -157,12 +158,14 @@ _COMPONENT_SETTING_SPECS: dict[str, tuple[tuple[str, str, str | None, int], ...]
         ("rf_front_spring_n_per_mm", "RF spring rate", "N/mm", 1),
         ("lr_rear_spring_n_per_mm", "LR spring rate", "N/mm", 1),
         ("rr_rear_spring_n_per_mm", "RR spring rate", "N/mm", 1),
+    ) + tuple(
+        (f"{corner}.shock_collar_offset_mm", f"{corner.upper()} shock collar", "mm", 1)
+        for corner in ("lf", "rf", "lr", "rr")
     ),
     "dampers": tuple(
         (f"{corner}.{field}", f"{corner.upper()} {label}", unit, decimals)
         for corner in ("lf", "rf", "lr", "rr")
         for field, label, unit, decimals in (
-            ("shock_collar_offset_mm", "shock collar", "mm", 1),
             ("ls_compression", "LS compression", "clicks", 0),
             ("hs_compression", "HS compression", "clicks", 0),
             ("hs_comp_slope", "HS compression slope", "clicks", 0),
@@ -278,7 +281,8 @@ _AREA_COMPONENTS = {
     **{key: "tires" for key in ("tire_pressure", "pressure_split", "pressure_gain", "tire_temp_spread", "tire_wear")},
     **{key: "alignment" for key in ("camber", "caster", "toe", "front_toe_response", "rear_toe_stability")},
     **{key: "springs" for key in ("spring_rate", "spring_perch", "front_spring_support", "rear_spring_support", "spring_split")},
-    **{key: "dampers" for key in ("shock_collar", "ls_compression", "hs_compression", "hs_comp_slope", "ls_rebound", "hs_rebound", "hs_reb_slope", "shock_histogram", "shock_velocity_rms", "shock_deflection_delta")},
+    "shock_collar": "springs",
+    **{key: "dampers" for key in ("ls_compression", "hs_compression", "hs_comp_slope", "ls_rebound", "hs_rebound", "hs_reb_slope", "shock_histogram", "shock_velocity_rms", "shock_deflection_delta")},
     **{key: "anti_roll_bars" for key in ("front_arb_diameter", "front_arb_arm", "front_arb_preload", "front_arb_attach", "rear_arb_diameter", "rear_arb_arm", "rear_arb_preload", "rear_arb_attach")},
     **{key: "weight_distribution" for key in ("cross_weight", "nose_weight", "corner_weight", "ballast")},
     **{key: "platform" for key in ("ride_height", "front_ride_height_platform", "rear_ride_height_platform", "diffuser_platform", "cfs/front_splitter/rub_block_reference", "platform_contact", "front_platform_contact")},
@@ -305,7 +309,7 @@ _AREA_PROPERTY = {
     "front_toe_response": "toe_response", "rear_toe_stability": "toe_response",
     "spring_rate": "spring_rate", "spring_perch": "vertical_support",
     "front_spring_support": "vertical_support", "rear_spring_support": "vertical_support", "spring_split": "spring_rate",
-    "shock_collar": "compression_resistance", "ls_compression": "compression_resistance",
+    "shock_collar": "vertical_support", "ls_compression": "compression_resistance",
     "hs_compression": "compression_resistance", "hs_comp_slope": "high_speed_slope",
     "ls_rebound": "rebound_resistance", "hs_rebound": "rebound_resistance", "hs_reb_slope": "high_speed_slope",
     "shock_histogram": "compression_resistance", "shock_velocity_rms": "high_speed_slope",
@@ -834,22 +838,9 @@ def build_component_awareness(
         if observation_report is not None and observation.setup_id != observation_report.setup_id:
             raise ValueError("Vehicle Systems P20 observation setup ownership is inconsistent.")
     authority = report.reasoning_snapshot.authority
-    snapshot_payload = (
-        report.reasoning_snapshot.model_dump(mode="json")
-        if hasattr(report.reasoning_snapshot, "model_dump")
-        else vars(report.reasoning_snapshot)
-    )
-    snapshot_hash = hashlib.sha256(
-        json.dumps(snapshot_payload, sort_keys=True, default=str).encode("utf-8")
-    ).hexdigest()
+    snapshot_hash = canonical_json_sha256(report.reasoning_snapshot)
     setup_snapshot_hash = (
-        hashlib.sha256(
-            json.dumps(
-                setup_snapshot.model_dump(mode="json"),
-                sort_keys=True,
-                default=str,
-            ).encode("utf-8")
-        ).hexdigest()
+        canonical_json_sha256(setup_snapshot)
         if setup_snapshot is not None
         else None
     )
@@ -961,16 +952,20 @@ def build_component_awareness(
             str(getattr(cause, "cause_id", "unknown"))
             for cause in relevant_causes if cause.contradicting_evidence
         ))
+        p19_authorized = bool(
+            authority.setup_authorized
+            and authority.control_key in definition.setup_keys
+        )
         blocked_control_keys = tuple(dict.fromkeys(
             history.control_key
             for history in histories
             if history.exact_context and history.policy_verdict == "undo"
+            # P19 already compares the complete material policy identity before
+            # authorizing a test. An older Undo for the same garage control can
+            # remain visible as history, but P26 must not broaden it into a
+            # component-level veto of a newly authorized, different policy.
+            and not (p19_authorized and history.control_key == authority.control_key)
         ))
-        p19_authorized = bool(authority.setup_authorized and authority.control_key in definition.setup_keys)
-        if p19_authorized and authority.control_key in blocked_control_keys:
-            raise ValueError(
-                "P19 authorization conflicts with an exact-context Undo for the same control."
-            )
         testable_control_keys = tuple(
             key for key in definition.setup_keys if key not in blocked_control_keys
         )

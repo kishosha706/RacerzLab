@@ -13,7 +13,6 @@ from pydantic import Field
 
 from racelab_engine.analysis.p3_common import derivative, finite, lap_pct, qualify_phase_engine
 from racelab_engine.analysis.p3_contracts import BRAKING_EFFICIENCY_CONTRACT
-from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.models.engineering import EngineGate, EngineeringConclusion, EngineeringModel
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.lap import LapSummary
@@ -213,17 +212,10 @@ def analyze_braking_efficiency(
     technique_support = bool(pedal_variation is not None and pedal_variation >= 80.0)
     if bias_support and not technique_support:
         cause = "The persistent axle-pressure/lock pattern is more consistent with a brake-balance test than pedal technique alone."
-        recommendation = (
-            "Test one small front brake-bias step, then repeat the same braking phase."
-            if len(eligible_laps(lap_summaries or [])) >= 2
-            else None
-        )
     elif technique_support and not bias_support:
         cause = "Pedal application varied strongly; driver technique can explain the braking response before setup bias is blamed."
-        recommendation = None
     else:
         cause = "Setup-bias and pedal-technique evidence are mixed or incomplete; no brake-bias change is justified yet."
-        recommendation = None
     conclusions.append(EngineeringConclusion(
         key="braking_cause_hypothesis",
         summary=cause,
@@ -237,8 +229,8 @@ def analyze_braking_efficiency(
         contradicting_evidence=[
             "A line-pressure ratio is not the same thing as measured tire-road friction.",
             "ABS or tire state may alter the observed lock sequence.",
+            "This P3 observation cannot authorize a brake-bias change; setup policy belongs to the controlled P19 workflow.",
         ],
-        recommendation=recommendation,
     ))
     return BrakingEfficiencyReport(
         selected_lap=selected_lap,

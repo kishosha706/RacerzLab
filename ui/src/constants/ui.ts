@@ -224,11 +224,6 @@ export function humanizeClassificationTag(tag: string): string {
     INVALID_FOR_PLATFORM_TUNING: "Invalid",
     SHORT_RUN: "Short Run",
     LONG_RUN: "Long Run",
-    GEAR_TEST: "Gear Test",
-    TAPE_TEST: "Tape Test",
-    PLATFORM_TEST: "Platform Test",
-    TIRE_PRESSURE_TEST: "Tire Test",
-    LINE_TEST: "Line Test",
     NO_SETUP_CONCLUSION: "No Setup",
     PARTIAL: "Partial",
   };

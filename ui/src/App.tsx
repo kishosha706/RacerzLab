@@ -1005,7 +1005,7 @@ function CockpitShell() {
     dependencies: channel.dependencies ?? [],
     used_by_charts: channel.used_by_charts ?? [],
     used_by_events: channel.used_by_events ?? [],
-    used_by_recommendations: channel.used_by_recommendations ?? [],
+    used_by_analyses: channel.used_by_analyses ?? [],
     min: channel.min ?? null,
     max: channel.max ?? null,
     mean: channel.mean ?? null,
@@ -1099,7 +1099,6 @@ function CockpitShell() {
         if (seq !== loadSelectedRunSeqRef.current) return false;
         const safeLaps = laps.filter((lap) => lap.run_id === runId);
         const safeEvents = events.filter((event) => event.run_id === runId);
-        const safeRecommendations = base.recommendations.filter((recommendation) => recommendation.run_id === runId);
         const safeBestUsefulLap = bestUsefulLapMatchesRun(baseBestUsefulLap, runId)
           ? baseBestUsefulLap
           : null;
@@ -1111,9 +1110,6 @@ function CockpitShell() {
             : []),
           ...(safeEvents.length !== events.length
             ? ["Event response identity mismatch. Cross-run events were withheld."]
-            : []),
-          ...(safeRecommendations.length !== base.recommendations.length
-            ? ["Recommendation identity mismatch. Cross-run recommendations were withheld."]
             : []),
           ...(baseBestUsefulLap != null && safeBestUsefulLap == null
             ? ["Best-lap identity or eligibility mismatch. The best-lap conclusion was withheld."]
@@ -1132,12 +1128,7 @@ function CockpitShell() {
           laps: safeLaps,
           events: safeEvents,
           setup_snapshot: setupMatchesRun ? setup : null,
-          recommendations: safeRecommendations,
           primary_findings: derivedIdentityMismatch ? [] : base.primary_findings,
-          crew_chief_summary: derivedIdentityMismatch
-            ? "Evidence identity mismatch. No engineering call is available until this run is reloaded."
-            : base.crew_chief_summary,
-          next_test: derivedIdentityMismatch ? null : base.next_test,
           warnings: [...base.warnings, ...nestedIdentityWarnings],
         });
         setChannels(channelCatalog.map((item) => toCatalogShape(item)));
@@ -1653,6 +1644,7 @@ function CockpitShell() {
         <DialInTab
           key={`${overview.run_id}:${explicitControlledWorkflowId ?? "auto"}`}
           overview={overview}
+          sessionId={currentSession?.session_id ?? null}
           workflowScopeRunIds={controlledWorkflowScopeRunIds}
           workflowHandoffKey={currentSession?.session_id ?? null}
           workflowOpenIntentId={explicitControlledWorkflowId}

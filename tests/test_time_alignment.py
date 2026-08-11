@@ -235,6 +235,54 @@ def test_controlled_many_to_one_alignment_recovers_from_local_geometric_shift() 
     assert len(set(aligned)) < len(aligned)  # controlled local reuse, not a forced end gap
 
 
+def test_point_one_percent_cross_session_event_shift_stays_bound_to_physical_location() -> None:
+    grid = [round(index / 10.0, 1) for index in range(1001)]
+
+    def shifted_event_rows(shift_pct: float) -> list[dict[str, float]]:
+        rows: list[dict[str, float]] = []
+        for pct in grid:
+            physical_pct = pct - shift_pct
+            angle = 2.0 * math.pi * physical_pct / 100.0
+            bump = math.exp(-((physical_pct - 40.0) / 0.12) ** 2)
+            brake = 80.0 if 39.8 <= physical_pct <= 40.3 else 0.0
+            rows.append({
+                "lap_dist_pct_100": pct,
+                "lap_dist_ft": pct * 100.0,
+                "session_time": pct * 2.0,
+                "speed_mps": 50.0,
+                "throttle_pct": 0.0 if brake else 100.0,
+                "brake_pct": brake,
+                "steering_deg": 15.0 * bump,
+                "yaw_rate": 0.5 * bump,
+                "lat_accel": 7.0 * bump,
+                "vert_accel": 9.80665 + 5.0 * bump,
+                "lf_shock_defl_in": 0.3 * bump,
+                "lat": 33.0 + 0.001 * math.sin(angle),
+                "lon": -84.0 + 0.001 * math.cos(angle),
+                "alt": 300.0 + 2.0 * math.sin(3.0 * angle),
+            })
+        return rows
+
+    points, _baseline, _test = build_layered_alignment(
+        shifted_event_rows(0.0),
+        shifted_event_rows(0.1),
+        grid,
+    )
+    event = points[grid.index(40.0)]
+
+    assert event.aligned_test_pct == pytest.approx(40.1)
+    assert event.aligned_test_pct != event.lap_pct
+    assert {
+        "gps_geometry",
+        "yaw_curvature",
+        "road_profile",
+        "braking_onset_anchor",
+    }.issubset(event.methods)
+    assert [point.aligned_test_pct for point in points if point.aligned_test_pct is not None] == sorted(
+        point.aligned_test_pct for point in points if point.aligned_test_pct is not None
+    )
+
+
 def test_alignment_never_extrapolates_and_preserves_honest_gaps() -> None:
     result = analyze_time_alignment(
         _lap_rows(),

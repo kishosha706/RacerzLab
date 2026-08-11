@@ -22,6 +22,7 @@ export type IntelligenceCitation = {
   source_channels: string[];
   evidence_state: EvidenceState;
   valid_for_tuning: boolean;
+  phase: "braking" | "entry" | "center" | "exit" | "straight" | null;
   track_region_id?: string | null;
   track_region_label?: string | null;
   track_region_phase?: "entry" | "center" | "exit" | "straight" | null;
@@ -113,7 +114,6 @@ export type IntelligenceContextMatch = {
   label: string;
   relevance_label: string;
   outcome_summary: string;
-  verdict: string;
   matching_context: string[];
   mismatches: string[];
   citations: IntelligenceCitation[];
@@ -131,7 +131,6 @@ export type IntelligenceNarrativeEntry = {
   entry_id: string;
   label: string;
   summary: string;
-  outcome?: string | null;
   created_at?: string | null;
   citations: IntelligenceCitation[];
 };
@@ -603,8 +602,12 @@ export type IntelligenceTelemetryHealthReport = {
 };
 
 export type RunIntelligenceReport = {
+  schema_version: "p19.run-intelligence.v1";
   run_id: string;
   session_id: string | null;
+  reasoning_snapshot_sha256: string;
+  setup_id: string | null;
+  setup_snapshot_sha256: string | null;
   status: IntelligenceStatus;
   decision_status: IntelligenceDecisionStatus;
   generated_at?: string | null;
@@ -647,8 +650,12 @@ export type IntelligenceQueryRequest = {
 };
 
 export type IntelligenceQueryResponse = {
+  schema_version: "p19.intelligence-query.v1";
   run_id: string;
   session_id: string | null;
+  reasoning_snapshot_sha256: string;
+  setup_id: string | null;
+  setup_snapshot_sha256: string | null;
   scope_run_ids: string[];
   selected_lap?: number | null;
   status: IntelligenceStatus;

@@ -32,7 +32,6 @@ def generate_markdown_report(overview: RunOverview) -> str:
     setup = overview.setup_snapshot
     platform_events = [event for event in overview.events if event.event_type.startswith("PLATFORM")]
     drag_events = [event for event in overview.events if event.event_type in {"FULL_THROTTLE_SPEED_LOSS", "STEERING_SCRUB"}]
-    recommendation = overview.recommendations[0] if overview.recommendations else None
 
     lines: list[str] = [
         "# RaceLab Garage Auto Report",
@@ -139,21 +138,24 @@ def generate_markdown_report(overview: RunOverview) -> str:
     lines.extend(
         [
             "",
-            "## Crew Chief Recommendation",
-            recommendation.recommendation_text if recommendation else "No recommendation is available without supporting evidence.",
+            "## Engineering Observation",
+            (
+                "Located telemetry observations are available for mechanism qualification; no setup action is authorized."
+                if any(event.valid_for_tuning for event in overview.events)
+                else "No qualified engineering observation is available."
+            ),
             "",
-            "## Next Test",
-            overview.next_test or (recommendation.success_metric if recommendation else "Import a real telemetry run and identify a useful lap.") or "",
-            "",
-            "## Success Metric",
-            recommendation.success_metric if recommendation and recommendation.success_metric else "Unavailable until a follow-up run is imported.",
+            "## Measurement Mission",
+            (
+                "Repeat the located behavior on eligible laps with the setup unchanged."
+                if any(event.valid_for_tuning for event in overview.events)
+                else "Import a real telemetry run and identify a useful lap."
+            ),
             "",
             "## Warnings",
         ]
     )
     warnings = list(overview.warnings)
-    if recommendation:
-        warnings.extend(recommendation.do_not_change_warnings)
     if warnings:
         lines.extend(f"- {warning}" for warning in warnings)
     else:

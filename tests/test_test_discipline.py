@@ -20,7 +20,7 @@ def test_zero_change_comparison_is_reference_not_causal_test() -> None:
 
     assert result.label == "reference"
     assert result.is_reliable is False
-    assert "repeatability" in (result.recommendation or "")
+    assert "repeatability" in (result.measurement_note or "")
 
 
 def test_multi_change_warning_reduces_score() -> None:

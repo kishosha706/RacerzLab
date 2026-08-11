@@ -258,7 +258,8 @@ class TestParity:
 
     def test_ride_height_conversions_parity(self, small_rows: list[dict]) -> None:
         ref, vec = self._run_both(small_rows)
-        channels = {"cfs_ride_height_mm", "cfs_ride_height_in", "cfsr_height_mm",
+        channels = {"cfs_ride_height_m", "cfs_ride_height_mm", "cfs_ride_height_in", "cfsr_height_mm",
+                     "lf_ride_height_m", "rf_ride_height_m", "lr_ride_height_m", "rr_ride_height_m",
                      "lf_ride_height_mm", "rf_ride_height_mm", "lr_ride_height_mm", "rr_ride_height_mm",
                      "lf_ride_height_in", "rf_ride_height_in", "lr_ride_height_in", "rr_ride_height_in"}
         self._assert_parity(ref, vec, channels)
@@ -267,6 +268,13 @@ class TestParity:
         ref, vec = self._run_both(small_rows)
         channels = {"lf_slip_ratio", "rf_slip_ratio", "lr_slip_ratio", "rr_slip_ratio", "driven_wheel_slip_proxy"}
         self._assert_parity(ref, vec, channels)
+
+    def test_canonical_wheel_speed_alias_parity(self, small_rows: list[dict]) -> None:
+        ref, vec = self._run_both(small_rows)
+        channels = {"lf_speed", "rf_speed", "lr_speed", "rr_speed"}
+
+        self._assert_parity(ref, vec, channels)
+        assert all(channel in vec[0] for channel in channels)
 
     def test_slip_ratio_floor_and_clamp(self) -> None:
         """Verify floor/clamp behaviour at very low speed."""

@@ -2,7 +2,7 @@
 
 The registry prevents charts from becoming decoration: each surface must state
 the decision it supports, its numerical basis, gap behavior, provenance, and
-the action available to the driver.
+the non-authorizing follow-up available to the driver.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ class AnalysisSurfaceContract(BaseModel):
     provenance: tuple[str, ...] = Field(min_length=1)
     confidence_rule: str = Field(min_length=1)
     gap_behavior: str = Field(min_length=1)
-    driver_action: str = Field(min_length=1)
+    driver_follow_up: str = Field(min_length=1)
     proxy_policy: str = Field(min_length=1)
 
 
@@ -37,7 +37,7 @@ ANALYSIS_SURFACE_CONTRACTS: tuple[AnalysisSurfaceContract, ...] = (
         provenance=("run IDs", "eligible lap IDs", "common-position coverage", "alignment method"),
         confidence_rule="Report empirical noise, paired-lap count, and alignment coverage; incomplete coverage cannot become a whole-window total.",
         gap_behavior="Uncovered positions remain gaps and break integrated totals.",
-        driver_action="Open the phase evidence and stage one controlled test or measurement mission.",
+        driver_follow_up="Open the phase evidence and request a current P19 review.",
         proxy_policy="Timing is measured; cause attribution remains evidence-gated.",
     ),
     AnalysisSurfaceContract(
@@ -50,7 +50,7 @@ ANALYSIS_SURFACE_CONTRACTS: tuple[AnalysisSurfaceContract, ...] = (
         provenance=("channel registry", "formula", "dependencies", "run/lap selection"),
         confidence_rule="Calculated channels disclose proxy status and missing dependencies.",
         gap_behavior="Missing samples render as breaks, never zero.",
-        driver_action="Inspect the linked evidence event and relevant setup control.",
+        driver_follow_up="Inspect the linked evidence event and its related setup context.",
         proxy_policy="Aero/load/scrub channels remain relative proxies, never measured forces.",
     ),
     AnalysisSurfaceContract(
@@ -63,7 +63,7 @@ ANALYSIS_SURFACE_CONTRACTS: tuple[AnalysisSurfaceContract, ...] = (
         provenance=("map ID/version", "run ID", "lap ID", "position mapping confidence"),
         confidence_rule="Unknown or mismatched map identity blocks geometric cause attribution.",
         gap_behavior="Unmapped sections stay unknown and are not extrapolated.",
-        driver_action="Select the event/zone and open its telemetry evidence.",
+        driver_follow_up="Select the event/zone and open its telemetry evidence.",
         proxy_policy="Centerline location does not imply measured banking, width, or elevation.",
     ),
     AnalysisSurfaceContract(
@@ -74,9 +74,9 @@ ANALYSIS_SURFACE_CONTRACTS: tuple[AnalysisSurfaceContract, ...] = (
         numerical_basis="Measured shock shaft-velocity samples grouped into declared bins on eligible windows.",
         units=("in/s", "% samples"),
         provenance=("corner channel", "sample rate", "window", "bin edges"),
-        confidence_rule="Regime advice requires adequate coverage and repetition at that corner.",
-        gap_behavior="Missing shaft data suppresses the histogram and recommendation.",
-        driver_action="Use the regime evidence to qualify a supported setup test, or collect the missing shaft data; do not invent a damper-click control.",
+        confidence_rule="Regime classification requires adequate coverage and repetition at that corner.",
+        gap_behavior="Missing shaft data suppresses the histogram and regime classification.",
+        driver_follow_up="Inspect the repeated regime evidence or collect the missing shaft data; setup authority remains with P19.",
         proxy_policy="Shaft velocity is measured; damper force is not inferred without a force curve.",
     ),
     AnalysisSurfaceContract(
@@ -89,7 +89,7 @@ ANALYSIS_SURFACE_CONTRACTS: tuple[AnalysisSurfaceContract, ...] = (
         provenance=("corner channel", "effective sample rate", "window duration", "eligible attempt IDs"),
         confidence_rule="Short, irregular, clipped, or non-repeated windows suppress frequency conclusions.",
         gap_behavior="Gaps split windows; spectra are never bridged across missing samples.",
-        driver_action="Repeat the same zone and confirm the frequency before changing a damper setting.",
+        driver_follow_up="Repeat the same zone and confirm the frequency; any setting decision remains with P19.",
         proxy_policy="Spectral amplitude is descriptive and is not measured damping force.",
     ),
     AnalysisSurfaceContract(
@@ -102,7 +102,7 @@ ANALYSIS_SURFACE_CONTRACTS: tuple[AnalysisSurfaceContract, ...] = (
         provenance=("source runs", "source laps", "event IDs", "source channels"),
         confidence_rule="Every action exposes blockers, uncertainty, and contradictory evidence.",
         gap_behavior="Unavailable components cap or block the decision instead of receiving neutral values.",
-        driver_action="Keep, undo, retest, or execute the measurement mission.",
+        driver_follow_up="Follow the exact P19-controlled outcome or measurement mission.",
         proxy_policy="Metrics retain measured/calculated/proxy identity through the API and UI.",
     ),
     AnalysisSurfaceContract(
@@ -115,7 +115,7 @@ ANALYSIS_SURFACE_CONTRACTS: tuple[AnalysisSurfaceContract, ...] = (
         provenance=("run/lap/setup IDs", "analysis version", "evidence packet IDs", "channel provenance"),
         confidence_rule="Reports include blockers, caveats, contradictions, and version identity.",
         gap_behavior="Missing evidence is printed as unavailable, never omitted or converted to zero.",
-        driver_action="Archive the result or reproduce the controlled test.",
+        driver_follow_up="Archive the result or reproduce the P19-bound controlled test.",
         proxy_policy="Reports use the same proxy labels and prohibited-claim rules as runtime.",
     ),
 )

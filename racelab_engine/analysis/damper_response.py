@@ -316,7 +316,7 @@ def analyze_damper_response(
         target_phases=DAMPER_PHASES,
         sim_integrity_clear=sim_integrity_clear,
         sim_integrity_confidence_cap=sim_integrity_confidence_cap,
-        requested_outputs=frozenset({"damper_response_metrics", "damper_regime_test"}),
+        requested_outputs=frozenset({"damper_response_metrics", "damper_regime_observation"}),
     )
     eligible_numbers = {lap.lap_number for lap in eligible_laps(lap_summaries or [])}
     if not evaluation.eligible:
@@ -426,7 +426,6 @@ def analyze_damper_response(
             len(per_lap_high_occupancy) >= 2
             and max(per_lap_high_occupancy) - min(per_lap_high_occupancy) <= 15.0
         )
-        recommendation = None
         blockers = []
         if not regime_occupied:
             blockers.append("The relevant shaft-velocity regime occupies less than 10% of this phase window.")
@@ -437,7 +436,7 @@ def analyze_damper_response(
         if not setup_snapshot_captured:
             blockers.append("A current corner-specific damper setting is not present in the setup snapshot.")
         blockers.append(
-            "Damper clicks are not one of RacerZLab's supported driver-changeable controls, so this engine provides evidence but no click recommendation."
+            "Damper-setting direction is outside this observational producer and remains with the controlled P19 workflow."
         )
         conclusions.append(EngineeringConclusion(
             key=f"{corner}_damper_response",
@@ -461,7 +460,6 @@ def analyze_damper_response(
                 "Shaft velocity and displacement do not measure damper force.",
                 *blockers,
             ],
-            recommendation=recommendation,
         ))
     fingerprint = _fingerprint(
         [row for row in rows if lap_number(row) in eligible_numbers],

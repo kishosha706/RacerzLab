@@ -83,15 +83,11 @@ export type ProspectivePredictionResponse = {
   prediction_id: string;
   operation_id: string;
   source_run_id: string;
+  session_id: string | null;
   predicted_at: string;
-  reasoning_snapshot_id: string;
-  predicted_mechanism: string;
-  predicted_control_response: string;
-  predicted_countereffects: string[];
-  success_criteria: string[];
-  failure_criteria: string[];
   prospective: true;
   authority: "shadow_only";
+  setup_authorized: false;
 };
 
 export type AcquisitionOption = {

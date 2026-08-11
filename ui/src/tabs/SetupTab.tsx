@@ -31,8 +31,7 @@ type SetupEvidenceFocus = Pick<TelemetryEvent, "event_id" | "event_type" | "rela
   };
 
 // ── Imperial display conversions ─────────────────────────────────
-// iRacing CornerWeight raw values are Newtons, stored under corner_weight_kg
-// key for legacy reasons; convert with N→lb.
+// iRacing CornerWeight raw values are Newtons; convert with N→lb for display.
 const MM_IN   = 1 / 25.4;
 const KPA_PSI = 0.1450377;
 const NMM_LB  = 5.710147;
@@ -166,7 +165,7 @@ function Field({ l, v, u, imp: isImp, relevant = false }: {
 function CornerPanel({ label, corner, setup, glow, relevantKeys }: {
   label: string; corner: string; setup: SetupSnapshot; glow?: boolean; relevantKeys: ReadonlySet<string>;
 }) {
-  const wt     = imp(evCorner(setup, corner, "corner_weight_kg"), N_LB, 0);
+  const wt     = imp(evCorner(setup, corner, "corner_weight_n"), N_LB, 0);
   const rh     = imp(evCorner(setup, corner, "ride_height_mm"), MM_IN, 3);
   const spring = imp(evCorner(setup, corner, "spring_rate_n_per_mm"), NMM_LB, 0);
   const psi    = imp(evCorner(setup, corner, "cold_pressure_kpa"), KPA_PSI, 1);
@@ -192,7 +191,7 @@ function CornerPanel({ label, corner, setup, glow, relevantKeys }: {
         <Field l="Tire PSI" v={psi} u="psi" imp relevant={relevant("cold_pressure_kpa", "pressure")} />
         <Field l="Ride Height" v={rh} u="in" imp relevant={relevant("ride_height_mm", "ride_height")} />
         <Field l="Spring Rate" v={spring} u="lb/in" imp relevant={relevant("spring_rate_n_per_mm", `${frontCorner ? "front" : "rear"}_spring_n_per_mm`, "spring")} />
-        <Field l="Corner Weight" v={wt} u="lb" imp relevant={relevant("corner_weight_kg", "corner_weight")} />
+        <Field l="Corner Weight" v={wt} u="lb" imp relevant={relevant("corner_weight_n", "corner_weight")} />
         <div className="gr-group-head">Dampers</div>
         <Field l="LS Compression" v={lsC} u="clk" relevant={relevant("ls_compression")} />
         <Field l="HS Compression" v={hsC} u="clk" relevant={relevant("hs_compression")} />
@@ -416,7 +415,7 @@ export function SetupTab({
           <div className="gr-empty">
             <Sliders size={40} style={{ opacity: 0.2 }} />
             <p style={{ fontSize: 13, color: "#8d9aaa", marginTop: 8 }}>Setup snapshot unavailable.</p>
-            <p className="section-note">Garage-specific recommendations are limited until a setup snapshot is available.</p>
+            <p className="section-note">Recorded garage context is unavailable until a setup snapshot is captured.</p>
             <p className="section-note">Import a telemetry file with setup data or attach a setup snapshot if supported.</p>
           </div>
         </section>
@@ -828,10 +827,10 @@ export function SetupTab({
             <Field l="Cross Weight" v={setup.cross_weight_percent ?? null} u="%" relevant={relevant("cross_weight_percent")} />
             <Field l="Left Weight" v={
               (() => {
-                const lf = evCorner(setup, "lf", "corner_weight_kg");
-                const lr = evCorner(setup, "lr", "corner_weight_kg");
-                const rf = evCorner(setup, "rf", "corner_weight_kg");
-                const rr = evCorner(setup, "rr", "corner_weight_kg");
+                const lf = evCorner(setup, "lf", "corner_weight_n");
+                const lr = evCorner(setup, "lr", "corner_weight_n");
+                const rf = evCorner(setup, "rf", "corner_weight_n");
+                const rr = evCorner(setup, "rr", "corner_weight_n");
                 if (lf != null && lr != null && rf != null && rr != null) {
                   const t = lf + rf + lr + rr;
                   return t > 0 ? +((lf + lr) / t * 100).toFixed(1) : null;

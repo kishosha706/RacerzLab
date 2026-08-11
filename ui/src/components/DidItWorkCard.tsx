@@ -1,6 +1,5 @@
-import { AlertTriangle, CheckCircle, RotateCcw, Thermometer, XCircle } from "lucide-react";
-import { VERDICT_COLORS } from "../constants/verdict";
-import type { VerdictKind } from "../types/compare";
+import { AlertTriangle, Thermometer, TrendingDown, TrendingUp } from "lucide-react";
+import type { ObservationKind } from "../types/compare";
 
 export interface TireContextProps {
   pressureGainDelta?: number | null;
@@ -12,7 +11,7 @@ export interface TireContextProps {
 }
 
 export interface DidItWorkCardProps {
-  verdict: VerdictKind;
+  observation: ObservationKind;
   headline: string;
   confidenceScore: number;           // 0-1
   testDisciplineScore?: number;      // 0-100
@@ -25,31 +24,28 @@ export interface DidItWorkCardProps {
   eligibleLapCounts?: { baseline: number; test: number } | null;
   evidence: string[];
   warnings: string[];
-  nextStep?: string | null;
-  successMetric?: string | null;
-  causeBucket?: string | null;
-  requiredNextData?: string[];
-  doNotChangeWarnings?: string[];
   setupChanges?: Array<{ label: string; baseline_value: unknown; test_value: unknown }>;
   contextWarnings?: Array<{ label: string; warning: string }>;
   weatherWarning?: string | null;
   tireContext?: TireContextProps | null;
   /** Callbacks */
-  onCreateTestPlan?: () => void;
-  onStageNextTest?: () => void;
-  onOpenSetup?: () => void;
   onOpenEvidence?: () => void;
   onOpenMap?: () => void;
   disabled?: boolean;
 }
 
-const VERDICT_ICONS: Record<VerdictKind, typeof CheckCircle> = {
-  keep_direction: CheckCircle,
-  undo_partially: RotateCcw,
-  undo: XCircle,
-  retest: RotateCcw,
+const OBSERVATION_COLORS: Record<ObservationKind, string> = {
+  observed_improvement: "#22c55e",
+  observed_regression: "#ef4444",
+  needs_confirmation: "#f59e0b",
+  inconclusive: "#8d9aaa",
+};
+
+const OBSERVATION_ICONS: Record<ObservationKind, typeof TrendingUp> = {
+  observed_improvement: TrendingUp,
+  observed_regression: TrendingDown,
+  needs_confirmation: AlertTriangle,
   inconclusive: AlertTriangle,
-  reference_mode: AlertTriangle,
 };
 
 function disciplineColor(score: number): string {
@@ -72,26 +68,25 @@ function tireContextColor(delta: number | null | undefined): string {
 }
 
 export function DidItWorkCard({
-  verdict, headline, confidenceScore, testDisciplineScore,
+  observation, headline, confidenceScore, testDisciplineScore,
   targetZoneDeltaMph, splitterDeltaMm, platformRiskDelta, scrubDelta,
   wholeLapDeltaS, paceNoiseBandS, eligibleLapCounts,
-  evidence, warnings, nextStep, successMetric,
-  causeBucket, requiredNextData, doNotChangeWarnings,
+  evidence, warnings,
   setupChanges, contextWarnings, weatherWarning,
   tireContext,
-  onCreateTestPlan, onStageNextTest, onOpenSetup, onOpenEvidence, onOpenMap,
+  onOpenEvidence, onOpenMap,
   disabled,
 }: DidItWorkCardProps) {
-  const color = VERDICT_COLORS[verdict] ?? "#8d9aaa";
-  const Icon = VERDICT_ICONS[verdict] ?? AlertTriangle;
+  const color = OBSERVATION_COLORS[observation] ?? "#8d9aaa";
+  const Icon = OBSERVATION_ICONS[observation] ?? AlertTriangle;
   const discColor = testDisciplineScore != null ? disciplineColor(testDisciplineScore) : "#8d9aaa";
 
   return (
     <div className="did-it-work-card" style={{ borderColor: color }}>
-      {/* ── Verdict header ── */}
+      {/* ── Observation header ── */}
       <div className="diw-header" style={{ borderColor: color }}>
         <Icon size={20} color={color} />
-        <h3 style={{ color }}>{verdict.replace(/_/g, " ").toUpperCase()}</h3>
+        <h3 style={{ color }}>{observation.replace(/_/g, " ").toUpperCase()}</h3>
         <span className="diw-confidence" style={{ background: `${color}18`, color, borderColor: `${color}30` }}>
           {Math.round(confidenceScore * 100)}% confidence
         </span>
@@ -237,68 +232,14 @@ export function DidItWorkCard({
           {warnings.map((w, i) => <p key={i} className="warning-line"><AlertTriangle size={12} /> {w}</p>)}
           {testDisciplineScore != null && testDisciplineScore < 50 && (
             <p style={{ fontSize: 10, marginTop: 8, color: "#f59e0b", fontStyle: "italic" }}>
-              ℹ Comparison is useful for review, not setup verdict.
+              ℹ Comparison is useful for review, not setup authority.
             </p>
           )}
         </div>
       )}
 
-      {/* ── Next step / Success metric ── */}
-      {nextStep && (
-        <div className="diw-section">
-          <h4>Next Step</h4>
-          <p className="diw-next-step">{nextStep}</p>
-        </div>
-      )}
-      {successMetric && (
-        <div className="diw-section">
-          <h4>Success Metric</h4>
-          <p className="diw-success-metric">{successMetric}</p>
-        </div>
-      )}
-
-      {/* ── Cause bucket ── */}
-      {causeBucket && (
-        <div className="diw-section">
-          <h4>Cause</h4>
-          <p className="diw-evidence-item">{causeBucket}</p>
-        </div>
-      )}
-
-      {/* ── Required next data ── */}
-      {requiredNextData && requiredNextData.length > 0 && (
-        <div className="diw-section">
-          <h4>Required Next Data</h4>
-          {requiredNextData.map((d, i) => <p key={i} className="diw-evidence-item">• {d}</p>)}
-        </div>
-      )}
-
-      {/* ── Do Not Change Yet ── */}
-      {doNotChangeWarnings && doNotChangeWarnings.length > 0 && (
-        <div className="diw-section diw-warnings">
-          <h4><AlertTriangle size={12} /> Do Not Change Yet</h4>
-          {doNotChangeWarnings.map((w, i) => <p key={i} className="warning-line"><AlertTriangle size={12} /> {w}</p>)}
-        </div>
-      )}
-
-      {/* ── Action buttons ── */}
+      {/* ── Evidence navigation only ── */}
       <div className="diw-actions">
-        {onStageNextTest && (
-          <button className="diw-btn diw-btn-primary" onClick={onStageNextTest} disabled={disabled} aria-disabled={disabled}
-            style={{ fontWeight: 600, fontSize: 13 }}>
-            Stage Next Test
-          </button>
-        )}
-        {onCreateTestPlan && (
-          <button className="diw-btn" onClick={onCreateTestPlan} disabled={disabled} aria-disabled={disabled}>
-            Create Next Test
-          </button>
-        )}
-        {onOpenSetup && (
-          <button className="diw-btn" onClick={onOpenSetup} disabled={disabled} aria-disabled={disabled}>
-            Open Setup
-          </button>
-        )}
         {onOpenMap && (
           <button className="diw-btn" onClick={onOpenMap} disabled={disabled} aria-disabled={disabled}>
             Map Overlay

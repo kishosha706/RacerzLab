@@ -1,120 +1,91 @@
-# Test Audit — RaceLab Garage
+# Test Audit - RaceLab Garage
 
-**Date:** 2026-05-26
-**Total tests:** 91 across 16 files
+Reviewed: 2026-08-10
 
----
+This inventory groups current high-value contract coverage. Exact collection
+counts change with the repository and are reported by the release run, not
+frozen in this document.
 
-## Inventory by Protected Contract
+## Telemetry ownership and parity
 
-### .ibt import & local-only behavior (7 tests)
-| File | Test | Protected Behavior | Verdict |
-|---|---|---|---|
-| `test_ibt_header.py` | `test_file_fingerprint_and_invalid_ibt_error` | Invalid .ibt rejection | KEEP |
-| `test_ibt_header.py` | `test_real_ibt_header` | Real header parsing | KEEP |
-| `test_ibt_variables.py` | `test_real_ibt_variable_definitions` | Variable definitions | KEEP |
-| `test_talladega_baseline_acceptance.py` | `test_talladega_baseline_acceptance` | Full import acceptance | KEEP |
-| `test_desktop_local_config.py` | 7 tests | Backend loopback, Tauri local config | KEEP (all unique) |
+| Contract | Primary coverage |
+|---|---|
+| `.ibt` header, variable declarations, source fingerprint | `test_ibt_header.py`, `test_ibt_reader_warnings.py` |
+| Lossless archive and capability manifest | `test_universal_telemetry.py` |
+| Frame-native production path and row parity | `test_vectorized_parity.py`, `test_frame_native_overview_parity.py` |
+| Canonical aliases, units, missing values | `test_calculated_channels.py`, `test_units.py`, `test_session_yaml.py` |
+| Cache/source/schema identity | `test_repository_read_identity.py`, `test_persistence.py` |
 
-### Filename/path sanitization (3 tests)
-| File | Test | Protected Behavior | Verdict |
-|---|---|---|---|
-| `test_persistence.py` | `test_sanitize_filename_strips_path_traversal` | ../ stripped | KEEP |
-| `test_persistence.py` | `test_sanitize_filename_preserves_safe_names` | Safe names preserved | KEEP |
-| `test_persistence.py` | `test_import_endpoint_rejects_non_ibt_multipart` | Non-.ibt = 400 | KEEP |
+Real-fixture tests remain protected and skip only when their explicitly named
+external source is unavailable. A derived cache without its original `.ibt`
+cannot prove reproducibility.
 
-### Telemetry normalization & unit conversions (5 tests)
-| File | Test | Protected Behavior | Verdict |
-|---|---|---|---|
-| `test_telemetry_normalization.py` | `test_real_telemetry_normalization` | Full pipeline | KEEP |
-| `test_telemetry_normalization.py` | `test_missing_channel_behavior` | Missing channel safety | KEEP |
-| `test_telemetry_normalization.py` | `test_calculated_channels_imports_units_constants` | Units import contract | KEEP |
-| `test_units.py` | `test_unit_conversions` | Conversion accuracy | KEEP |
-| `test_session_yaml_real.py` | `test_real_session_yaml_extracts_summary_and_setup` | Session YAML | KEEP |
+## Eligibility and physical alignment
 
-### Ride-height/rake/platform (4 tests)
-| File | Test | Protected Behavior | Verdict |
-|---|---|---|---|
-| `test_telemetry_normalization.py` | `test_calculated_ride_height_channels` | Ride height calc | KEEP |
-| `test_telemetry_normalization.py` | `test_platform_rake_channels` | Rake formulas | KEEP |
-| `test_telemetry_normalization.py` | `test_dynamic_pressure_channels` | Dynamic pressure | KEEP |
-| `test_platform.py` | `test_platform_threshold_classification` | CFS thresholds | KEEP |
-| `test_platform.py` | `test_platform_analyzer_empty_and_valid_event` | Empty data safety | KEEP |
+| Contract | Primary coverage |
+|---|---|
+| Junk/partial/pit/reset lap exclusion | `test_lap_detection.py`, `test_lap_classification.py`, `test_lap_windows.py` |
+| Nearby-car covariate and attribution block | `test_proximity_context.py`, `test_controlled_workflow_service.py` |
+| Position-based alignment and gap truth | `test_time_alignment.py`, `test_comparison.py` |
+| One-change and context discipline | `test_test_discipline.py`, `test_setup_controls.py` |
 
-### Tire/Shock calculations (2 tests)
-| File | Test | Protected Behavior | Verdict |
-|---|---|---|---|
-| `test_telemetry_normalization.py` | `test_new_calculated_channels_exist` | New calc channels | KEEP |
-| `test_platform_workbench_contract.py` | `test_missing_channel_and_geometry_behavior_is_safe` | Missing geometry safe | KEEP |
+## Non-P19 authority denial
 
-### Channel metadata & classification (7 tests)
-| File | Test | Protected Behavior | Verdict |
-|---|---|---|---|
-| `test_telemetry_normalization.py` | `test_channel_metadata_labels` | Labels exist | KEEP |
-| `test_telemetry_normalization.py` | `test_channel_metadata_used_by` | Used_by fields | KEEP |
-| `test_telemetry_normalization.py` | `test_proxy_channels_have_estimate_warning` | Proxy warnings | KEEP |
-| `test_telemetry_normalization.py` | `test_channel_classification_contract` | Proxy/calc/raw | KEEP |
-| `test_telemetry_normalization.py` | `test_dynamic_pressure_index_not_comparable_across_runs` | Cross-run warning | KEEP |
-| `test_telemetry_normalization.py` | `test_channel_catalog_includes_new_channels` | Catalog has new ch | KEEP |
-| `test_telemetry_normalization.py` | `test_channel_catalog_includes_metadata_fields` | Catalog metadata | KEEP |
-| `test_telemetry_normalization.py` | `test_channel_catalog_preset_channels_exist` | Preset channels | KEEP |
+These regressions are mandatory because they prove that observational surfaces
+cannot become a second setup-policy path.
 
-### Trace payload, platform events, compare (14 tests)
-| File | Test | Protected Behavior | Verdict |
-|---|---|---|---|
-| `test_telemetry_normalization.py` | `test_extrema_downsampling_preserves_min_cfs` | Extrema preservation | KEEP |
-| `test_telemetry_normalization.py` | `test_trace_preserves_extrema_with_new_channels` | Trace extrema | KEEP |
-| `test_platform_events.py` | 7 individual detector tests | Event detection | KEEP (distinct) |
-| `test_platform_events.py` | 6 integration tests | Integration | KEEP (distinct) |
+| Surface | Protected behavior |
+|---|---|
+| Import/Overview/events | `test_evidence_contracts.py`, `test_run_intelligence_api.py`, `test_observation_intelligence.py`: no recommendation list, crew summary, next test, or event action fields |
+| Compare | `test_compare_greenfield_contract.py`, `test_comparison.py`, `test_did_it_work.py`: measured observations only; no public Keep/Undo or next step |
+| Platform | `test_platform.py`, `test_platform_chart_visibility.py`, `test_non_p19_authority_frontend_contract.py`: structured events only, no legacy-event/action fallback |
+| Shock Reader | `test_shock_reader.py`, `test_shock_reader_api.py`: setup authority withheld; no click/direction/target/action fields |
+| Dial-In/setup catalog | `test_dial_in_api.py`, `test_dial_in_frontend_contract.py`, `test_dial_in_service.py`, `test_setup_knowledge.py`, `test_setup_evidence_adapter.py`: public hypotheses may name control areas but not direction, increments, targets, or policy; direct-action command surfaces stay absent |
+| Engineering Awareness | `test_engineering_awareness_projection.py`, `test_engineering_awareness_service.py`: `p20.awareness.v2` remains observation-only and carries no P19 mission/leverage/policy fields |
+| Notebook | `test_notebook.py`, `test_notebook_authority_frontend_contract.py`: observation CRUD only; strict rejection of verdict/setup-change/next-step/test-plan/setup-memory fields |
+| UI | `test_non_p19_authority_frontend_contract.py`, `test_navigation_frontend_contract.py`: no reachable stale authority surface |
 
-### Comparison math (12 tests)
-| File | Test | Protected Behavior | Verdict |
-|---|---|---|---|
-| `test_comparison.py` | `test_build_lap_grid` — `test_did_it_work_inconclusive` (12) | Full compare contract | KEEP (all distinct) |
+Removed Crew Chief/Test Director preview endpoints and direct setup-query command
+surfaces have no compatibility exemption. Route/CLI residual scans are part of
+the audit.
 
-### Same-run identity (2 tests — 1 DUPLICATE)
-| File | Test | Protected Behavior | Verdict |
-|---|---|---|---|
-| `test_persistence.py` | `test_compare_same_run_triggers_reference_warning` | Same-run = inconclusive | **KEEP** |
-| `test_telemetry_normalization.py` | `test_same_run_compare_uses_identity_not_speed_delta` | Same-run identity | **DELETE** (duplicate of above) |
+## P19 authority and durable policy
 
-### Whole-car index, delta traces, insights (1 test)
-| File | Test | Protected Behavior | Verdict |
-|---|---|---|---|
-| `test_persistence.py` | `test_compare_different_run_not_blocked` | Zero delta ≠ same run | KEEP |
+| Contract | Primary coverage |
+|---|---|
+| Canonical reasoning and evidence independence | `test_intelligence_reasoning_hardening.py`, `test_internal_intelligence_service.py` |
+| Immutable mission and attempt scope | `test_measurement_attempt_authority.py`, `test_controlled_workflow_service.py` |
+| A/B/A2 stage ownership and scoring | `test_controlled_workflow_service.py`, `test_experiment_service.py` |
+| Setup/reasoning identity and stale-response denial | `test_intelligence_response_identity.py`, `test_intelligence_response_trust_frontend.py` |
+| Durable per-policy Keep/Undo and stop reconstruction | `test_controlled_workflow_service.py`, `test_intelligence_reasoning_hardening.py` |
+| P26 graph/projection authority ceiling | `test_vehicle_systems_intelligence.py` |
 
-### Notebook persistence (13 tests)
-| File | Test | Protected Behavior | Verdict |
-|---|---|---|---|
-| `test_notebook.py` | 13 tests | Full notebook CRUD + contracts | KEEP (all distinct) |
+The historical filenames `test_test_director.py` and
+`test_crew_chief_packet.py` cover internal server-side workflow assembly. They
+do not imply that public preview endpoints exist.
 
-### API route shapes (3 tests)
-| File | Test | Protected Behavior | Verdict |
-|---|---|---|---|
-| `test_persistence.py` | `test_api_runs_and_persisted_overview_after_repository_reopen` | API shape | KEEP |
-| `test_persistence.py` | `test_trace_endpoint_and_lap3_invalid_event` | API shape | KEEP |
-| `test_report_contract.py` | `test_markdown_report_contract` | Report shape | KEEP |
+## Physics and semantic honesty
 
----
+| Contract | Primary coverage |
+|---|---|
+| Proxy/measurement separation | `test_contract.py`, `test_evidence_contracts.py`, `test_drag_scrub.py` |
+| Tire snapshots and short-run gates | `test_p3_engineering_systems.py`, `test_stint_intelligence.py` |
+| Shock/platform observations | `test_platform_shock_channels.py`, `test_shock_reader.py` |
+| Corner-weight and setup semantics | `test_vehicle_systems_intelligence.py`, `test_setup_page_contract.py` |
+| Traffic-contaminated stint denial | `test_stint_state_intelligence.py`, `test_p3_observation_bridge.py` |
 
-## Actions
+## Release gate
 
-### DELETE — 1 true duplicate
-- `test_telemetry_normalization.py::test_same_run_compare_uses_identity_not_speed_delta` → identical behavior already covered by `test_persistence.py::test_compare_same_run_triggers_reference_warning` (which is in the correct module for comparison contracts)
+Run:
 
-### KEEP — 90 distinct tests
-All remaining tests protect unique behaviors, edge cases, or contract boundaries. No other duplicates found.
+```powershell
+python -B -m pytest -p no:cacheprovider -q
+python -m ruff check .
+npm run typecheck:ui
+npm run ui:build
+git diff --check
+```
 
-### MERGE — None recommended
-The 13 platform event detector tests could theoretically be parameterized but each tests different synthetic row construction — parameterization would make them harder to read and debug. Comparison verdict tests similarly use distinct synthetic payload shapes.
-
----
-
-## Final Count
-
-| Metric | Before | After |
-|---|---|---|
-| Total tests | 91 | 90 |
-| Files | 16 | 16 |
-| Contracts preserved | All | All |
-| ENGINEERING_CONTRACTS.md rules | All protected | All protected |
+For release-trust claims, also run the pinned real-fixture audit with exact
+source SHA-256, schema fingerprint, record count, and declared-channel count.
+The release is not proven by synthetic tests alone.

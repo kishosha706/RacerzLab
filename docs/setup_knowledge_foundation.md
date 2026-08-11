@@ -1,25 +1,31 @@
 # Setup Knowledge Foundation
 
 RacerZLab setup knowledge lives under `racelab_engine/knowledge/setup`. It is a
-local deterministic foundation for later Dial-In Assistant, setup guide, quiet
-memory, and crew-chief responses.
+local deterministic foundation for internal candidate generation and the setup
+guide. It is not a public setup-authority surface.
 
 ## Purpose
 
-The knowledge layer turns driver language into structured, car-aware setup test
-candidates:
+The knowledge layer turns driver language into structured, car-aware mechanism
+and control-area hypotheses:
 
 Driver complaint -> vocabulary parser -> canonical symptom -> car capability
-filter -> setup-effect ranking -> evidence readiness -> effect/counter-effect
-explanation -> one-change test plan.
+filter -> internal setup-effect hypothesis ranking -> evidence readiness -> effect/counter-effect
+explanation -> internal candidate -> P19 revalidation.
 
 It does not build a chat UI, call external AI, add API keys, alter telemetry
 math, change imports, or change public API schemas.
 
+Directional effects, exact garage actions, and one-change templates in this
+knowledge package stay internal. Public Dial-In responses strip direction and
+exact values. Only the exact-session canonical P19 report may authorize and bind
+one target into a controlled A/B/A2 workflow or publish Keep/Undo/retest policy.
+
 ## Milestone History
 
-Milestone 1 established the local foundation: schema, loader, validator, matcher,
-seed JSON data, query CLI, docs, and tests.
+Milestone 1 established the local foundation: schema, loader, validator,
+matcher, seed JSON data, docs, and tests. Its historical direct-query command is
+not a current product interface.
 
 Milestone 2 added richer effect/counter-effect detail, phase-aware ranking,
 package archetype context, evidence readiness, expanded vocabulary, Next Gen
@@ -28,8 +34,7 @@ language.
 
 The pre-3B quality pass tightened decision quality before the Evidence Adapter:
 candidate diversity, package dependency wording, phase-specific shock/platform
-language, stricter validator checks, and query examples for common garage
-complaints.
+language and stricter validator checks for common garage complaints.
 
 Milestone 3B adds the Evidence Adapter: a local run-context layer that inspects
 available evidence, detects conservative car/track family hints, and feeds real
@@ -38,8 +43,9 @@ evidence flags into the deterministic matcher.
 The terminology remaster adds race-language vocabulary and display wording for
 phrases such as `won't stay on bottom`, `RF is angry`, `nose is dragging`,
 `won't take a set`, `aero wash`, `power oversteer`, and `curb instability`.
-Normal output keeps software internals hidden and speaks in data-profile,
-signals, goal/trade-off, and one-change-test language.
+Normal public output keeps software internals hidden and speaks in data-profile,
+signals, mechanism, counter-effect, and measurement language until P19 earns a
+controlled test.
 
 ## Schema And Data
 
@@ -71,31 +77,30 @@ The matcher ranks candidates with:
 - avoid/preferred conditions
 - ambiguity and clarification questions
 
-Effect/counter-effect wording is not filler. It tells the future assistant what
-the swing is trying to help, what can get worse, which phase to judge, what
+Effect/counter-effect wording is not filler. It tells the reasoning layer what
+the hypothesis is trying to explain, what can get worse, which phase to judge, what
 evidence should support the call, and what to validate afterward. Strength is
 the lever size: `5` is a major package lever, `4` is a strong balance/platform
 lever, `3` is a medium phase-specific lever, `2` is fine tuning, and `1` is
 driver feel or polish. Risk describes coupling: low is localized, medium is
 phase/system-sensitive, and high can move multiple phases or the full package.
 
-Readiness labels are `ready`, `partially_ready`, and
-`missing_key_evidence`. Missing evidence lowers confidence but does not hide a
-useful candidate.
+Internal readiness labels are `ready`, `partially_ready`, and
+`missing_key_evidence`. They order hypotheses only. `ready` does not mean setup
+authorized, and missing evidence can only increase measurement debt.
 
-Recommendation title discipline matters:
+Internal hypothesis-record discipline matters:
 
-- title = exact garage action
-- change_this = garage lever + direction + side/corner/axle where applicable
+- title/change metadata = source knowledge retained for P19 validation, never
+  copied directly into the public hypothesis projection
 - garage_lever = the setup page lever or supported garage adjustment
-- effect = what that action should help
+- effect = the mechanism the source says the control can influence
 - counter-effect = what it may hurt
-- one-change test = one small garage-side validation step
+- one-change test metadata = a candidate mission template that P19 must rebuild
+  against current telemetry, legal options, history, and exact identity
 
-Avoid vague visible action wording such as `adjust tire pressure`, `supported
-axle`, `tune diff preload`, `front response toe swing`, `platform support`,
-`pressure trend`, `rear toe stability`, or `shock control` when the real lever
-is known.
+Public Dial-In may name the control area and measurement needed, but it must not
+publish the catalog's direction, increment, target, or `Change this` text.
 
 ## Capability Gates
 
@@ -123,8 +128,7 @@ Next Gen ARB model:
 Diameter options are `1.375` and `2.000`. Arm positions are `P1` through `P5`: `P1` is softest/lowest/looser, `P5` is stiffest/tighter. Use a one-P arm move for a smaller tuning swing; use a diameter change only for a bigger package swing.
 Diameter is a big package swing, arm position is a tuning swing, preload is a
 load/detail swing that can mask ride-height or corner-weight problems, and
-attach state is a procedure/diagnostic state rather than a normal race
-recommendation.
+attach state is a procedure/diagnostic state rather than a normal race action.
 
 ## Platform And Shock Notes
 
@@ -150,43 +154,36 @@ depending on the package they live in. The matcher keeps package tags and
 preferred/avoid conditions available so the Evidence Adapter can feed package
 context without adding new setup logic.
 
-## Examples
+## Validation and source inspection
 
 ```powershell
 python -B scripts/validate_setup_knowledge.py
-python -B scripts/query_setup_knowledge.py --car-family next_gen --symptom "loose off"
-python -B scripts/query_setup_knowledge.py --car-family next_gen --symptom "tight center"
-python -B scripts/query_setup_knowledge.py --car-family next_gen --symptom "draggy" --evidence setup_snapshot,platform_trace
-python -B scripts/query_setup_knowledge.py --car-family legacy_oval_generic --symptom "tight center" --show-disabled
-python -B scripts/query_setup_knowledge.py --car-family next_gen --symptom "loose off" --json
+python -B scripts/query_guide_knowledge.py --setup-area ls_rebound --car-family next_gen
 ```
 
-Example text output:
+`query_guide_knowledge.py` is offline source inspection. It does not read a run,
+authorize a setup action, or replace P19.
+
+The public Dial-In shape is deliberately non-directional:
 
 ```text
-Candidate 1: Add cross weight one small step
-Strength: 4 / strong balance lever
-Risk: high
-Change this: Add cross weight one small step.
-Garage lever: Cross weight
-Effect: Can calm entry-to-drive-off balance by adding cross weight diagonal support.
-Counter-effect: May bind the center or add scrub if the car was already loaded too tightly.
-Evidence: missing key evidence
-One-change test: Make this one change only: Add cross weight one small step...
-Validate: exit yaw, center speed, tire trend
-Watch for: exit yaw, RF tire temp, center rotation
+Hypothesis: Cross weight
+Mechanism to verify: Does diagonal support contribute to the selected symptom?
+Counter-effect to watch: protected-phase regression or driver-execution change
+Evidence: measurement required
+Authority: withheld until P19 verifies one exact mission
 ```
 
-Driver-facing setup text should use the full setup term and explain confusing
-relationships compactly. Cross weight is the LR + RF diagonal load
-relationship. Tire pressure split guidance should name the axle, diagonal, or
-tire pair where the matrix supports it, and UI/CLI display should format stable
-internal IDs as readable labels for drivers.
+When P19 authorizes a controlled mission, driver-facing setup text should use
+the full setup term and explain confusing relationships compactly. Cross weight
+is the LR + RF diagonal load relationship. Tire-pressure split guidance should
+name the axle, diagonal, or tire pair where the matrix supports it, and UI
+display should format stable internal IDs as readable labels for drivers.
 
-Front and rear ride-height platform recommendations should name ride height or
-shock collar offsets directly. When the move is through LF/RF or LR/RR collars,
-the helper text should remind the driver that collar changes move ride height,
-spring preload, and corner weight together.
+Internal front/rear ride-height hypothesis records must retain the relevant ride
+height or shock-collar semantics. Public hypotheses remain non-directional.
+When P19 later authorizes a collar mission, it must state that collar changes
+move ride height, spring preload, and corner weight together.
 
 For NASCAR-facing setup copy, use `rear end ratio` instead of `final drive`.
 Diffuser/platform wording must stay on derived geometry proxy, front-feed,

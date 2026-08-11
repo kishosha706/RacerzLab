@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import sqlite3
 from typing import Any, Sequence
 
@@ -30,7 +31,6 @@ from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.intelligence import (
     CalibrationSummary,
     CapabilityAssessment,
-    CauseDiscriminator,
     CauseHypothesis,
     ControlledCauseOutcome,
     GroundedClaim,
@@ -49,7 +49,6 @@ from racelab_engine.models.observation_intelligence import (
     ObservationStatus,
     RunObservationIntelligence,
 )
-from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.models.smart_guidance import (
     MeasurementBlocker,
     MeasurementCandidate,
@@ -58,6 +57,7 @@ from racelab_engine.models.smart_guidance import (
 from racelab_engine.models.telemetry_health import TelemetryHealthBaselineReport
 from racelab_engine.services.controlled_workflow_service import (
     revalidate_controlled_test_packet,
+    validate_p19_workflow_origin,
 )
 from racelab_engine.services.engineering_memory_service import (
     build_prediction_contract,
@@ -93,6 +93,7 @@ from racelab_engine.services.session_intelligence_service import (
     controlled_hypothesis_policy_identity,
     evaluate_durable_hypothesis_repeat,
     evaluate_hypothesis_repeat,
+    setup_policy_fingerprint,
 )
 from racelab_engine.services.session_position_bridge import (
     build_session_position_evidence_result,
@@ -279,19 +280,6 @@ def _apply_persistence_integrity_blockers(
     })
 
 
-def _recommendation_ready(recommendation: Recommendation) -> bool:
-    return (
-        bool(recommendation.issue.strip())
-        and bool(recommendation.recommendation_text.strip())
-        and recommendation.evidence_state in _QUALIFIED_STATES
-        and not recommendation.blocker_reasons
-        and bool(recommendation.source_channels)
-        and all(channel.strip() for channel in recommendation.source_channels)
-        and bool(recommendation.evidence_event_ids)
-        and all(event_id.strip() for event_id in recommendation.evidence_event_ids)
-    )
-
-
 def _humanize(value: str) -> str:
     return " ".join(value.replace("_", " ").replace("-", " ").split()).title()
 
@@ -430,33 +418,10 @@ def _telemetry_health_card_blockers(
 
 
 def _claims(
-    recommendations: list[Recommendation],
     workflow: ControlledWorkflow | None,
     card_blockers: tuple[str, ...] = (),
 ) -> tuple[GroundedClaim, ...]:
     claims: list[GroundedClaim] = []
-    for recommendation in recommendations:
-        ready = _recommendation_ready(recommendation)
-        _, issue_label = _canonical_cause(
-            recommendation.cause_bucket or recommendation.issue
-        )
-        claims.append(GroundedClaim(
-            claim_id=f"recommendation:{recommendation.recommendation_id}",
-            text=(
-                f"Evidence-qualified issue: {issue_label}."
-                if ready
-                else f"{issue_label}: no setup action is authorized."
-            ),
-            evidence_state=(
-                recommendation.evidence_state
-                if ready
-                else EvidenceState.BLOCKED_BY_CONTEXT
-            ),
-            supporting_event_ids=tuple(recommendation.evidence_event_ids),
-            recommendation_ids=(recommendation.recommendation_id,),
-            source_channels=tuple(recommendation.source_channels),
-            blocker_reasons=tuple(recommendation.blocker_reasons),
-        ))
     if workflow is not None:
         card = workflow.packet.primary_test
         card_label = (
@@ -585,9 +550,7 @@ def _lifecycle_reasoning_policy_signature(
 
 
 def _hypotheses(
-    recommendations: list[Recommendation],
     workflow: ControlledWorkflow | None,
-    events_by_id: dict[str, Any],
     card_blockers: tuple[str, ...] = (),
     *,
     lifecycle: HypothesisLifecycle | None = None,
@@ -624,161 +587,6 @@ def _hypotheses(
                 *semantic_blockers,
             ])),
         ))
-    seen_ids = {item.cause_id for item in raw}
-    for index, recommendation in enumerate(recommendations, start=1):
-        supplied_cause = recommendation.cause_bucket.strip() or recommendation.issue.strip()
-        if not supplied_cause:
-            continue
-        cause_key, cause_label = _canonical_cause(supplied_cause)
-        cause_id = f"recommendation:{cause_key}:{index}"
-        if cause_id in seen_ids:
-            continue
-        seen_ids.add(cause_id)
-        ready = _recommendation_ready(recommendation)
-        linked_events = [
-            events_by_id[event_id]
-            for event_id in recommendation.evidence_event_ids
-            if event_id in events_by_id
-        ]
-        related_control_keys = tuple(sorted({
-            setup_key
-            for event in linked_events
-            for setup_key in event.related_setup_keys
-            if setup_key in SETUP_CONTROL_SPECS
-        }))
-        target_phase = next(
-            (
-                str(event.event_subtype or event.event_type)
-                for event in linked_events
-                if event.event_subtype or event.event_type
-            ),
-            "target phase",
-        )
-        required = tuple(recommendation.required_next_data)
-        instruction = (
-            "Repeat the target phase on at least three eligible laps without changing the "
-            "setup. Keep fuel, tires, weather, driving line, and nearby-car context matched."
-            if required
-            else "Repeat the target phase on at least three eligible laps without changing the setup."
-        )
-        candidate_discriminator = CauseDiscriminator(
-            discriminator_id=f"discriminator:{cause_id}",
-            title=f"Test {cause_label}",
-            instruction=instruction,
-            target_phase=target_phase,
-            acceptance_thresholds=(
-                "The producer-owned signal repeats on at least three eligible laps and "
-                "exceeds normal variation.",
-            ),
-            distinguishes_cause_ids=(cause_id,),
-            source_event_ids=tuple(recommendation.evidence_event_ids),
-        )
-        candidate = CauseHypothesis(
-            cause_id=cause_id,
-            label=cause_label,
-            hypothesis=(
-                f"Measure whether {cause_label.casefold()} repeats on eligible laps."
-            ),
-            mechanism_key=cause_key,
-            related_control_keys=related_control_keys,
-            supporting_event_ids=(
-                tuple(dict.fromkeys(recommendation.evidence_event_ids)) if ready else ()
-            ),
-            required_evidence=required,
-            blocker_reasons=tuple(recommendation.blocker_reasons),
-            discriminator=candidate_discriminator,
-        )
-        matching_index = next(
-            (
-                raw_index
-                for raw_index, existing in enumerate(raw)
-                if cause_key != "unresolved"
-                and existing.mechanism_key == cause_key
-                and existing.related_control_keys
-                and candidate.related_control_keys
-                and bool(
-                    set(existing.related_control_keys)
-                    & set(candidate.related_control_keys)
-                )
-            ),
-            None,
-        )
-        if matching_index is None:
-            raw.append(candidate)
-            continue
-
-        existing = raw[matching_index]
-        remapped_discriminator = candidate_discriminator.model_copy(
-            update={
-                "discriminator_id": f"discriminator:{existing.cause_id}",
-                "distinguishes_cause_ids": (existing.cause_id,),
-            }
-        )
-        discriminator_conflict = (
-            "Exact producer-owned discriminator contracts conflict for this cause."
-        )
-        if existing.discriminator is None:
-            merged_discriminator = (
-                None
-                if discriminator_conflict in existing.blocker_reasons
-                else remapped_discriminator
-            )
-        elif (
-            existing.discriminator.instruction == remapped_discriminator.instruction
-            and existing.discriminator.target_phase
-            == remapped_discriminator.target_phase
-            and existing.discriminator.acceptance_thresholds
-            == remapped_discriminator.acceptance_thresholds
-        ):
-            merged_discriminator = existing.discriminator.model_copy(
-                update={
-                    "source_event_ids": tuple(
-                        dict.fromkeys(
-                            (
-                                *existing.discriminator.source_event_ids,
-                                *remapped_discriminator.source_event_ids,
-                            )
-                        )
-                    ),
-                    "distinguishes_cause_ids": (existing.cause_id,),
-                }
-            )
-        else:
-            merged_discriminator = None
-        raw[matching_index] = existing.model_copy(
-            update={
-                "related_control_keys": tuple(
-                    sorted(
-                        set(existing.related_control_keys)
-                        | set(candidate.related_control_keys)
-                    )
-                ),
-                "supporting_event_ids": tuple(
-                    dict.fromkeys(
-                        (*existing.supporting_event_ids, *candidate.supporting_event_ids)
-                    )
-                ),
-                "required_evidence": tuple(
-                    dict.fromkeys((*existing.required_evidence, *candidate.required_evidence))
-                ),
-                "blocker_reasons": tuple(
-                    dict.fromkeys(
-                        (
-                            *existing.blocker_reasons,
-                            *candidate.blocker_reasons,
-                            *(
-                                (discriminator_conflict,)
-                                if existing.discriminator is not None
-                                and merged_discriminator is None
-                                else ()
-                            ),
-                        )
-                    )
-                ),
-                "discriminator": merged_discriminator,
-            }
-        )
-
     workflow_by_id = {item.workflow_id: item for item in workflows}
     current_policy_signature = _workflow_reasoning_policy_signature(workflow)
     if lifecycle is not None and current_run_id is not None:
@@ -1508,6 +1316,7 @@ def build_run_intelligence(
     *,
     session_id: str | None = None,
     db_path: str | Path | None = None,
+    workflow_candidate: ControlledWorkflow | None = None,
 ) -> RunIntelligenceBundle:
     repository = RaceLabRepository(db_path)
     overview = repository.get_overview(run_id)
@@ -1562,6 +1371,49 @@ def build_run_intelligence(
             active_only=False,
         )
     )
+    origin_valid_workflows: list[ControlledWorkflow] = []
+    if resolved_session_id is None:
+        if workflow_rows:
+            workflow_integrity_blockers = tuple(dict.fromkeys((
+                *workflow_integrity_blockers,
+                "Stored controlled workflow policy is unavailable without one exact saved session scope.",
+            )))
+    else:
+        for stored_workflow in workflow_rows:
+            try:
+                validate_p19_workflow_origin(
+                    stored_workflow,
+                    repository=repository,
+                    expected_session_id=resolved_session_id,
+                    expected_session_run_ids=scope_run_ids,
+                )
+            except (AttributeError, FileNotFoundError, OSError, TypeError, ValueError):
+                workflow_integrity_blockers = tuple(dict.fromkeys((
+                    *workflow_integrity_blockers,
+                    "A stored controlled workflow lacks a valid exact-session P19 authority origin and cannot contribute an action or policy verdict.",
+                )))
+            else:
+                origin_valid_workflows.append(stored_workflow)
+    workflow_rows = origin_valid_workflows
+    if workflow_candidate is not None:
+        if (
+            resolved_session_id is None
+            or workflow_candidate.source_run_id != run_id
+            or workflow_candidate.status != "planned"
+            or workflow_candidate.stage_run_ids
+            or workflow_candidate.stage_eligible_lap_numbers
+            or workflow_candidate.execution is not None
+            or workflow_candidate.quality is not None
+            or workflow_candidate.source_run_id not in scope_run_ids
+            or any(
+                item.workflow_id == workflow_candidate.workflow_id
+                for item in workflow_rows
+            )
+        ):
+            raise ValueError(
+                "The proposed workflow candidate does not match the exact current P19 scope."
+            )
+        workflow_rows = [*workflow_rows, workflow_candidate]
     workflows = _related_workflows(workflow_rows, scope_run_ids)
     _require_one_active_workflow_in_explicit_session(
         workflows,
@@ -1645,9 +1497,7 @@ def build_run_intelligence(
         else None
     )
     preliminary_hypotheses = _hypotheses(
-        overview.recommendations,
         workflow,
-        {event.event_id: event for event in overview.events},
         card_blockers,
         lifecycle=lifecycle,
         workflows=workflows,
@@ -1672,12 +1522,9 @@ def build_run_intelligence(
                 *card_blockers,
                 "Exact protocol-valid controlled outcomes conflict for this cause and control; resolve the contradiction before another setup test.",
             )))
-    events_by_id = {event.event_id: event for event in overview.events}
     hypotheses = (
         *_hypotheses(
-            overview.recommendations,
             workflow,
-            events_by_id,
             card_blockers,
             lifecycle=lifecycle,
             workflows=workflows,
@@ -1688,13 +1535,12 @@ def build_run_intelligence(
             observation_intelligence.mechanism_observations
         ),
     )
-    claims = _claims(overview.recommendations, workflow, card_blockers)
+    claims = _claims(workflow, card_blockers)
     graph = build_evidence_graph(
         claims=claims,
         causes=hypotheses,
         observations=observation_intelligence.mechanism_observations.observations,
         events=overview.events,
-        recommendations=overview.recommendations,
         laps=overview.laps,
         setup_values=_setup_values(workflow, card_blockers),
         workflows=workflows,
@@ -1858,12 +1704,33 @@ def build_run_intelligence(
         channel_lineage_by_channel=channel_lineage_by_channel,
     )
     try:
+        mission_setup = overview.setup_snapshot
+        mission_setup_sha256 = setup_policy_fingerprint(mission_setup)
+        mission_manifest = read_telemetry_manifest(run_id)
+        mission_compatibility_fingerprint = str(
+            mission_manifest.get("compatibility_fingerprint") or ""
+        )
+        if (
+            mission_setup is None
+            or mission_setup_sha256 is None
+            or re.fullmatch(
+                r"[0-9a-f]{64}", mission_compatibility_fingerprint
+            )
+            is None
+        ):
+            raise ValueError(
+                "durable missions require exact setup and compatibility identity"
+            )
         plan = bind_durable_experiment_lifecycle(
             plan,
             candidate_id=f"{plan.kind}:{plan.title.casefold().replace(' ', '-')}",
             run_id=run_id,
             repository=repository,
             session_id=resolved_session_id,
+            session_run_ids=scope_run_ids,
+            source_setup_id=mission_setup.setup_id,
+            setup_sha256=mission_setup_sha256,
+            compatibility_fingerprint=mission_compatibility_fingerprint,
             required_channels=tuple(sorted(planning_channel_names)),
             cause_ids=tuple(
                 cause.cause_id for cause in causes if cause.status != "ruled_out"
@@ -1910,21 +1777,9 @@ def build_run_intelligence(
             else "No protocol-valid frozen prediction has a gradable direction in this scope."
         ),
     )
-    ready_recommendation = next(
-        (
-            recommendation
-            for recommendation in overview.recommendations
-            if _recommendation_ready(recommendation)
-        ),
-        None,
-    )
     issue = (
         f"Driver report: {workflow.complaint}"
         if workflow is not None
-        else _canonical_cause(
-            ready_recommendation.cause_bucket or ready_recommendation.issue
-        )[1]
-        if ready_recommendation is not None
         else _humanize(overview.primary_findings[0])
         if overview.primary_findings
         else "No evidence-qualified engineering issue is available."
@@ -1932,6 +1787,7 @@ def build_run_intelligence(
     report = build_internal_intelligence_report(
         run_id=run_id,
         session_id=resolved_session_id,
+        session_run_ids=scope_run_ids,
         response_context_key=response_context_key,
         issue=issue,
         graph=graph,

@@ -42,7 +42,7 @@ class PowertrainContextDiagnostics(EngineeringModel):
     gear_mismatch_laps: list[int] = Field(default_factory=list)
     gear_mismatch_fraction_by_lap: dict[int, float] = Field(default_factory=dict)
     gear_context_matched: bool = False
-    clear_for_gearing_action: bool = False
+    context_comparable_for_observation: bool = False
     blocker_reasons: list[str] = Field(default_factory=list)
 
 
@@ -163,7 +163,7 @@ def analyze_powertrain_gearing(
         any(_valid_context_value(channel, row.get(channel)) is not None for row in rows)
         for channel in diagnostic_contract_channels
     )
-    requested_outputs = {"powertrain_phase_metrics", "gearing_test_hypothesis"}
+    requested_outputs = {"powertrain_phase_metrics", "gearing_discriminator_observation"}
     if diagnostic_contract_ready:
         requested_outputs.add("powertrain_context_diagnostics")
     scoped, phases, evaluation, gate = qualify_phase_engine(
@@ -493,7 +493,7 @@ def analyze_powertrain_gearing(
         gear_mismatch_laps=gear_mismatch_laps,
         gear_mismatch_fraction_by_lap=gear_mismatch_fraction_by_lap,
         gear_context_matched=gear_context_matched,
-        clear_for_gearing_action=diagnostics_clear,
+        context_comparable_for_observation=diagnostics_clear,
         blocker_reasons=diagnostics_blockers,
     )
     sources = [
@@ -543,7 +543,7 @@ def analyze_powertrain_gearing(
         "FuelLevel is a measured volume/load proxy; fuel mass is not calculated without a supported density source.",
         *diagnostics_blockers,
     ]
-    recommendation = None
+    direction_observation = None
     if redline_rpm is None:
         contradictions.append(
             "A finite declared redline/limiter value from 500 to 30,000 RPM is required before a gearing change is proposed."
@@ -555,9 +555,9 @@ def analyze_powertrain_gearing(
         and pull_cv is not None and pull_cv <= 0.05
         and diagnostics_clear
     ):
-        recommendation = (
-            "Test one small taller gearing step; confirm reduced limiter dwell without losing exit acceleration "
-            "or adding an extra shift in the same phase."
+        direction_observation = (
+            "Repeated near-limiter exposure was observed in the matched powered phase; "
+            "this is a gearing discriminator, not a setup direction."
         )
     elif (
         headroom is not None and headroom > redline_rpm * 0.12
@@ -565,9 +565,9 @@ def analyze_powertrain_gearing(
         and pull_cv is not None and pull_cv <= 0.05
         and diagnostics_clear
     ):
-        recommendation = (
-            "Test one small shorter gearing step; confirm improved acceleration without limiter dwell, "
-            "wheelspin, or an extra shift in the same phase."
+        direction_observation = (
+            "Repeated RPM headroom was observed in the matched powered phase; "
+            "this is a gearing discriminator, not a setup direction."
         )
     return PowertrainGearingReport(
         selected_lap=selected_lap,
@@ -597,7 +597,7 @@ def analyze_powertrain_gearing(
                 EngineeringConclusion(
                 key="powertrain_context_diagnostics",
                 summary=(
-                    "Temperature, fuel-load, warning-state, and matched-gear context are clear for a guarded gearing test."
+                    "Temperature, fuel-load, warning-state, and matched-gear context are comparable for this observation."
                     if diagnostics_clear
                     else "Powertrain context has unresolved temperature, fuel-load, warning-state, or gear-mismatch blockers."
                 ),
@@ -618,14 +618,16 @@ def analyze_powertrain_gearing(
                 )
             ),
             EngineeringConclusion(
-                key="gearing_test_hypothesis",
-                summary=("A guarded gearing test is available." if recommendation else "No gearing change is justified by the current evidence."),
+                key="gearing_discriminator_observation",
+                summary=(
+                    direction_observation
+                    or "No repeatable gearing-direction discriminator was established by the current evidence."
+                ),
                 evidence_state=EvidenceState.NEEDS_CONFIRMATION,
-                confidence_score=min(0.7 if recommendation else 0.45, gate.confidence_cap),
+                confidence_score=min(0.7 if direction_observation else 0.45, gate.confidence_cap),
                 source_channels=sources,
                 supporting_evidence=support,
                 contradicting_evidence=contradictions,
-                recommendation=recommendation,
             ),
         ],
     )

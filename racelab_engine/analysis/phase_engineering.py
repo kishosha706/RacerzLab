@@ -517,13 +517,6 @@ def _driver_report(
                 ["Required paired driver-input or racing-line coverage is below 90%."]
                 if changed is None else []
             ),
-            recommendation=(
-                "Repeat with continuous paired driver channels and racing line."
-                if changed is None
-                else "Repeat the same setup state with closer driver inputs and racing line."
-                if changed
-                else None
-            ),
         ),
     ]
     return DriverLineReport(
@@ -1035,7 +1028,6 @@ def analyze_phase_engineering_systems(
                     "source_channels": [],
                     "supporting_evidence": [],
                     "blocker_reasons": [driver_reason],
-                    "recommendation": "Repeat with matched inputs and line before attributing rotation change to setup.",
                 })
                 for conclusion in rotation.conclusions
             ],

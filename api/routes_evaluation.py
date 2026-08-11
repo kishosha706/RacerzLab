@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -37,10 +38,6 @@ from racelab_engine.evaluation.learning_operations import (
     transition_campaign_operation,
 )
 from racelab_engine.evaluation.prospective import (
-    ProspectiveTestOutcome,
-    ProspectiveTestPrediction,
-    append_prospective_outcome,
-    attach_p19_workflow_outcome,
     freeze_p19_controlled_prediction,
     prospective_runtime_code_hash,
     save_prospective_prediction,
@@ -66,11 +63,20 @@ class TransitionCampaignOperationRequest(BaseModel):
 class FreezeProspectivePredictionRequest(BaseModel):
     operation_id: str = Field(min_length=1)
     run_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+
+
+class ProspectivePredictionReceipt(BaseModel):
+    """Non-authoritative receipt for an internally frozen shadow artifact."""
+
+    prediction_id: str = Field(pattern=r"^ptp-[0-9a-f]{20}$")
+    operation_id: str = Field(min_length=1)
+    source_run_id: str = Field(min_length=1)
     session_id: str | None = None
-
-
-class AttachProspectiveOutcomeRequest(BaseModel):
-    workflow_id: str = Field(min_length=1)
+    predicted_at: datetime
+    prospective: Literal[True] = True
+    authority: Literal["shadow_only"] = "shadow_only"
+    setup_authorized: Literal[False] = False
 
 
 class FreezeNegativeControlRequest(BaseModel):
@@ -219,10 +225,10 @@ def transition_operation(
         raise HTTPException(status_code=status, detail=message) from exc
 
 
-@router.post("/prospective-predictions", response_model=ProspectiveTestPrediction)
+@router.post("/prospective-predictions", response_model=ProspectivePredictionReceipt)
 def freeze_prediction(
     payload: FreezeProspectivePredictionRequest,
-) -> ProspectiveTestPrediction:
+) -> ProspectivePredictionReceipt:
     try:
         prediction = freeze_p19_controlled_prediction(
             payload.operation_id,
@@ -231,29 +237,16 @@ def freeze_prediction(
             code_hash=prospective_runtime_code_hash(),
         )
         save_prospective_prediction(prediction)
-        return prediction
+        return ProspectivePredictionReceipt(
+            prediction_id=prediction.prediction_id,
+            operation_id=prediction.operation_id,
+            source_run_id=prediction.source_run_id,
+            session_id=prediction.session_id,
+            predicted_at=prediction.predicted_at,
+        )
     except ValueError as exc:
         message = str(exc)
         status = 404 if "not found" in message.casefold() else 409
         raise HTTPException(status_code=status, detail=message) from exc
-
-
-@router.post(
-    "/prospective-predictions/{prediction_id}/outcome",
-    response_model=ProspectiveTestOutcome,
-)
-def attach_prediction_outcome(
-    prediction_id: str,
-    payload: AttachProspectiveOutcomeRequest,
-) -> ProspectiveTestOutcome:
-    try:
-        outcome = attach_p19_workflow_outcome(prediction_id, payload.workflow_id)
-        append_prospective_outcome(outcome)
-        return outcome
-    except ValueError as exc:
-        message = str(exc)
-        status = 404 if "not found" in message.casefold() else 409
-        raise HTTPException(status_code=status, detail=message) from exc
-
 
 __all__ = ["router"]

@@ -644,7 +644,6 @@ function describeSelection(
         shock_stress_score: null,
         confidence_score: 0,
         warnings: [],
-        recommendation: null,
       },
       representativeLap: selection.selectedRepresentativeLap ?? selection.selectedLap ?? representative?.lapNumber ?? matchingWindow?.start_lap ?? selection.selectedLapWindowStart,
       representativeReason: selection.selectedRepresentativeLap != null
@@ -1263,7 +1262,6 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     shock_stress_score: null,
     confidence_score: stint.evidence_confidence_score ?? 0,
     warnings: stint.warnings,
-    recommendation: stint.stint_label,
     pace_quality_score: stint.pace_quality_score,
     pace_quality_label: null,
     evidence_confidence_score: stint.evidence_confidence_score,
@@ -3262,14 +3260,14 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
               <div className="stint-compare-panel">
                 <div>
                   <span className="eyebrow">Stint Compare</span>
-                  <h3>{stintCompareError ? "Comparison unavailable" : stintCompare?.verdict ?? (stintCompareLoading ? "Comparing selected stints..." : "Comparison pending")}</h3>
+                  <h3>{stintCompareError ? "Comparison unavailable" : stintCompare?.observation_summary ?? (stintCompareLoading ? "Comparing selected stints..." : "Comparison pending")}</h3>
                   {stintCompareError ? (
                     <div className="warning-banner" role="alert">
                       <AlertTriangle size={16} />
                       <span>{stintCompareError} No comparison metrics are shown.</span>
                     </div>
                   ) : (
-                    <p className="section-note">{stintCompare?.summary ?? "Select clean windows with enough laps for stronger deltas."}</p>
+                    <p className="section-note">{stintCompare?.evidence_summary ?? "Select clean windows with enough laps for stronger deltas."}</p>
                   )}
                   <svg className="stint-sparkline" viewBox="0 0 104 52" role="img" aria-label="Selected stint pace bucket preview">
                     {[baselineStint, testStint].map((stint, index) => {

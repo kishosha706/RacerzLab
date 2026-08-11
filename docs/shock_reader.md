@@ -1,6 +1,7 @@
 # Shock Reader
 
-Platform -> Shocks includes a reader for live shock movement signatures and an inline damper worksheet.
+Platform -> Shocks includes a reader for recorded shock-movement signatures and
+the current damper settings captured with the run.
 
 The reader uses normalized shock velocity channels from the parquet cache and computes per-corner histogram zones:
 
@@ -21,28 +22,24 @@ Compression/bump is shock shortening. Rebound is shock extending. Low-speed moti
 - The reader does not change telemetry formulas or import behavior.
 - Missing telemetry stays unavailable and is never treated as zero.
 - Normal UI hides raw evidence internals.
-- Recommendations are shown inline beside `LS Comp`, `HS Comp`, `Comp Slope`,
-  `LS Reb`, `HS Reb`, and `Rebound Slope`.
-- Top-level recommendations remain in the API for compatibility, but the normal UI uses the per-corner setup rows.
-- Only one per-corner row may remain actionable in a test stage. Every competing
-  row is explicitly held until the primary A/B/A2 test is complete.
-- Every authorized shock test uses one adjacent option. The reader never invents
-  a universal numeric range or target value for any car.
-- A slope action is always one adjacent option, described as more linear or more
-  digressive. The garage supplies the legal next option for the current car.
-- If a setup value is missing, the row may still show semantic direction, but it does not show a current-to-target value.
-- Slope recommendations require all of the following: a physical zone no wider
-  than 20% of the lap, at least two eligible laps, at least 64 continuous samples
-  and 0.75 seconds per lap, the same directional signature on both laps,
-  repeated platform contact or packing in that zone, and a conclusion that stays
-  stable when the analytical boundary moves by `+/-25%`.
+- The response contains no setup direction, target, delta, click instruction,
+  Keep/Undo verdict, or test policy. Exact setup authority remains with P19.
+- Current `LS Comp`, `HS Comp`, compression-slope, `LS Reb`, `HS Reb`, and
+  rebound-slope values are recorded context only.
+- A selected observation zone is limited to 20% of the lap so a broad histogram
+  cannot masquerade as a localized finding.
+- A qualified repeated shape needs eligible laps, at least 64 continuous samples,
+  at least 0.75 seconds per lap, the same shape on two laps, and stability when
+  the analytical boundary moves by `+/-25%`.
 - The server owns the high/low boundary. Next Gen uses the approximately
   `1.5 in/s` transition documented by iRacing. Cars without a verified
-  car-specific transition remain descriptive and withhold slope actions.
+  car-specific transition use a descriptive `1.0 in/s` boundary.
 - High activity is not called chatter unless a qualified oscillation analysis
   supports that label.
-- The reader treats histogram signatures as guarded evidence, not proof that a setting is wrong.
-- Pick one change and run clean laps before comparing the same window again.
+- The reader treats histogram signatures as guarded observations, not proof that
+  a setting is wrong or permission to change it.
+- Junk laps remain visible only as blocked context and cannot support causal
+  attribution.
 
 ## Endpoint
 
@@ -55,9 +52,10 @@ Query options:
 - `phase`
 - `zone_start_pct`
 - `zone_end_pct`
-- `include_debug`, default `false`
 
 `boundary_in_s` is response metadata, not a client-controlled decision input.
+The response sets `setup_authority` to `withheld` and rejects deprecated action
+fields through strict current contracts.
 
 ## CLI
 

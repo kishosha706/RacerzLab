@@ -78,16 +78,7 @@ def test_create_never_persists_or_returns_an_exact_do_not_repeat_target(
     _assert_exact_target_withheld(created.packet, card.exact_change)
     assert any("do-not-repeat" in reason for reason in created.packet.blockers)
     stored = repository.get_controlled_workflow(created.workflow_id)
-    assert stored is not None
-    _assert_exact_target_withheld(stored.packet, card.exact_change)
-    assert stored.reproduction_snapshot["plan_binding_sha256"] == service._workflow_plan_binding_hash(
-        stored,
-        stored.packet,
-        service._workflow_decision_context(stored),
-    )
-
-    cancelled = service.cancel_workflow(created.workflow_id, repository=repository)
-    assert cancelled.status == "cancelled"
+    assert stored is None
 
 
 def test_publication_redacts_and_attachment_rejects_a_legacy_exact_repeat(
@@ -111,14 +102,14 @@ def test_publication_redacts_and_attachment_rejects_a_legacy_exact_repeat(
     assert public.status == "planned"
     _assert_exact_target_withheld(public.packet, card.exact_change)
     assert public.reproduction_snapshot == {}
-    with pytest.raises(ValueError, match="do-not-repeat"):
+    with pytest.raises(ValueError, match="P19 authority origin"):
         service.attach_stage(
             candidate.workflow_id,
             "A",
             candidate.source_run_id,
             repository=repository,
         )
-    with pytest.raises(ValueError, match="do-not-repeat"):
+    with pytest.raises(ValueError, match="P19 authority origin"):
         service.validate_workflow_for_authoritative_use(
             candidate,
             repository=repository,
@@ -142,31 +133,11 @@ def test_publication_redacts_and_attachment_rejects_a_legacy_exact_repeat(
     "endpoint",
     ("/api/engineering/test-director/plan", "/api/engineering/crew-chief/packet"),
 )
-def test_engineering_packet_endpoints_withhold_an_exact_do_not_repeat_target(
+def test_legacy_engineering_packet_endpoints_are_removed(
     endpoint: str,
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    repository, failed = _undo_fixture(tmp_path, monkeypatch)
-    card = failed.packet.primary_test
-    assert card is not None
-    monkeypatch.setattr("api.routes_engineering.RaceLabRepository", lambda: repository)
-    monkeypatch.setattr(
-        "api.routes_engineering.build_server_kaizen_packet",
-        lambda *_args, **_kwargs: failed.packet,
-    )
-
-    response = TestClient(app).post(endpoint, json={
-        "run_id": failed.source_run_id,
-        "complaint": failed.complaint,
-    })
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["decision"] == "measure"
-    assert payload["primary_test"] is None
-    assert any("do-not-repeat" in reason for reason in payload["blockers"])
-    assert card.exact_change not in response.text
+    assert endpoint not in app.openapi()["paths"]
+    assert TestClient(app).post(endpoint, json={}).status_code == 404
 
 
 def test_ambiguous_session_scope_fails_closed_without_exposing_the_target(
@@ -183,12 +154,13 @@ def test_ambiguous_session_scope_fails_closed_without_exposing_the_target(
     card = failed.packet.primary_test
     assert card is not None
 
-    packet = service.project_kaizen_packet_for_publication(
-        failed.source_run_id,
-        failed.complaint,
-        failed.packet,
+    candidate = _planned_candidate(failed)
+    authorized, blockers = service.enforce_hypothesis_repeat_policy(
+        candidate,
         repository=repository,
     )
+    assert authorized is None
+    packet = service.withhold_workflow_authority(candidate, *blockers).packet
 
     _assert_exact_target_withheld(packet, card.exact_change)
     assert any("could not be verified" in reason for reason in packet.blockers)
@@ -201,13 +173,13 @@ def test_a_material_policy_change_remains_eligible_for_a_new_controlled_test(
     repository, failed = _undo_fixture(tmp_path, monkeypatch)
     changed = failed.packet.model_copy(update={"canonical_symptom": "tight_center"})
 
-    packet = service.project_kaizen_packet_for_publication(
-        failed.source_run_id,
-        failed.complaint,
-        changed,
+    candidate = _planned_candidate(failed).model_copy(update={"packet": changed})
+    packet, blockers = service.enforce_hypothesis_repeat_policy(
+        candidate,
         repository=repository,
     )
 
+    assert blockers == ()
     assert packet == changed
     assert packet.decision == "test"
     assert packet.primary_test is not None
@@ -241,33 +213,14 @@ def test_central_gate_allows_the_same_control_for_a_different_physical_window(
     "endpoint",
     ("/api/engineering/test-director/plan", "/api/engineering/crew-chief/packet"),
 )
-def test_direct_packet_endpoints_carry_the_selected_physical_window(
+def test_removed_direct_packet_endpoints_cannot_publish_a_physical_window(
     endpoint: str,
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    repository, failed = _undo_fixture(tmp_path, monkeypatch)
-    changed_packet = failed.packet.model_copy(
-        update={
-            "opportunity": failed.packet.opportunity.model_copy(
-                update={"start_pct": 70.0, "end_pct": 80.0},
-            )
-        },
-    )
-
-    def _build_packet(*_args, **kwargs):
-        assert kwargs["selected_zone_start_pct"] == 70.0
-        assert kwargs["selected_zone_end_pct"] == 80.0
-        return changed_packet
-
-    monkeypatch.setattr("api.routes_engineering.RaceLabRepository", lambda: repository)
-    monkeypatch.setattr("api.routes_engineering.build_server_kaizen_packet", _build_packet)
-
     response = TestClient(app).post(
         endpoint,
         json={
-            "run_id": failed.source_run_id,
-            "complaint": failed.complaint,
+            "run_id": "run-legacy-preview",
+            "complaint": "tight on exit",
             "lap_scope": "track_zone",
             "selected_zone_start_pct": 70.0,
             "selected_zone_end_pct": 80.0,
@@ -275,20 +228,12 @@ def test_direct_packet_endpoints_carry_the_selected_physical_window(
         },
     )
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["decision"] == "test"
-    assert payload["opportunity"]["start_pct"] == 70.0
-    assert payload["opportunity"]["end_pct"] == 80.0
+    assert response.status_code == 404
 
 
 @pytest.mark.parametrize(
     "endpoint",
-    (
-        "/api/engineering/test-director/plan",
-        "/api/engineering/crew-chief/packet",
-        "/api/engineering/workflows",
-    ),
+    ("/api/engineering/workflows",),
 )
 def test_track_zone_requests_fail_closed_without_an_exact_physical_window(
     endpoint: str,
@@ -297,6 +242,7 @@ def test_track_zone_requests_fail_closed_without_an_exact_physical_window(
         endpoint,
         json={
             "run_id": "run-with-missing-zone",
+            "session_id": "session-with-missing-zone",
             "complaint": "tight on exit",
             "lap_scope": "track_zone",
         },
@@ -396,7 +342,7 @@ def test_central_gate_blocks_compatibility_and_setup_representation_churn(
     assert any("do-not-repeat" in reason for reason in blockers)
 
 
-def test_scored_undo_certificate_remains_auditable_but_future_repeat_is_blocked(
+def test_legacy_unbound_scored_undo_cannot_publish_or_generate_a_report(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -430,16 +376,16 @@ def test_scored_undo_certificate_remains_auditable_but_future_repeat_is_blocked(
         scored_undo,
         repository=repository,
     )
-    markdown = ReportService(repository.db_path).generate_workflow_markdown(
-        scored_undo.workflow_id,
-    )
+    with pytest.raises(ValueError, match="P19 authority origin"):
+        ReportService(repository.db_path).generate_workflow_markdown(
+            scored_undo.workflow_id,
+        )
 
     assert public_history.status == "scored"
-    assert public_history.packet == scored_undo.packet
-    assert card.exact_change in public_history.model_dump_json()
-    assert markdown is not None
-    assert card.exact_change in markdown
-    assert integrity_checks.count((scored_undo.workflow_id, True)) == 2
+    _assert_exact_target_withheld(public_history.packet, card.exact_change)
+    assert public_history.quality is None
+    assert public_history.reproduction_snapshot == {}
+    assert integrity_checks == []
 
     future = _planned_candidate(scored_undo)
     public_future = service.project_workflow_for_publication(
@@ -447,7 +393,7 @@ def test_scored_undo_certificate_remains_auditable_but_future_repeat_is_blocked(
         repository=repository,
     )
     _assert_exact_target_withheld(public_future.packet, card.exact_change)
-    with pytest.raises(ValueError, match="do-not-repeat"):
+    with pytest.raises(ValueError, match="P19 authority origin"):
         service.validate_workflow_for_authoritative_use(
             future,
             repository=repository,

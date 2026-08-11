@@ -6,6 +6,7 @@ import math
 import hashlib
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import median
@@ -43,6 +44,7 @@ from racelab_engine.analysis.test_director import (
     TestExecution,
     score_test_execution,
 )
+from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.analysis.time_alignment import TimeAlignmentResult, analyze_time_alignment
 from racelab_engine.knowledge.setup.dial_in_service import build_dial_in_response
 from racelab_engine.knowledge.setup.dial_in_controls import expanded_related_setup_keys
@@ -65,7 +67,7 @@ from racelab_engine.services.session_intelligence_service import (
     controlled_hypothesis_policy_identity,
     evaluate_hypothesis_repeat,
 )
-from racelab_engine.services.session_service import list_sessions
+from racelab_engine.services.session_service import get_session, list_sessions
 from racelab_engine.storage.repository import RaceLabRepository
 
 
@@ -123,6 +125,7 @@ _DECISION_CONTEXT_KEYS = frozenset({
     "priority",
 })
 _WORKFLOW_LAP_SCOPES = frozenset({"run", "single_lap", "lap_window", "track_zone"})
+P19_WORKFLOW_AUTHORITY_BINDING_SCHEMA = "p19.controlled-workflow-authority.v1"
 
 def _expanded_related_setup_keys(keys: list[str] | tuple[str, ...]) -> tuple[str, ...]:
     return expanded_related_setup_keys(keys)
@@ -209,18 +212,11 @@ def _is_complete_single_control_option(current_setup: Any, candidate_setup: Any,
 
 def _cause_candidate_from_swing(
     swing: Any,
-    index: int,
     event_ids_by_key: dict[str, list[str]],
     event_source_channels_by_id: dict[str, tuple[str, ...]] | None = None,
     event_mechanism_flags_by_id: dict[str, tuple[str, ...]] | None = None,
 ) -> CauseCandidate | None:
-    """Build an evidence score without treating static rank as probability.
-
-    ``index`` is retained for API compatibility with older callers, but it no
-    longer changes the candidate score.  A lower list position is not physical
-    evidence and must not manufacture confidence.
-    """
-    del index
+    """Build an evidence score without treating static rank as probability."""
     supported_keys = [item for item in swing.control_keys if item in SETUP_CONTROL_SPECS]
     if len(supported_keys) != 1 or len(swing.control_keys) != 1:
         return None
@@ -1074,7 +1070,7 @@ def build_server_kaizen_packet(
         for key in link.related_setup_keys:
             event_ids_by_key.setdefault(key, []).append(link.event_id)
     candidates: list[CauseCandidate] = []
-    for index, swing in enumerate(dial.top_swings):
+    for swing in dial.top_swings:
         swing_event_ids = set(getattr(swing, "supporting_event_ids", ()))
         candidate_event_ids_by_key = {
             key: [event_id for event_id in event_ids if event_id in swing_event_ids]
@@ -1082,7 +1078,6 @@ def build_server_kaizen_packet(
         }
         candidate = _cause_candidate_from_swing(
             swing,
-            index,
             candidate_event_ids_by_key,
             event_source_channels_by_id,
             event_mechanism_flags_by_id,
@@ -1227,6 +1222,119 @@ def _workflow_plan_binding_hash(
     }
     encoded = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def workflow_authority_action_identity(
+    workflow: ControlledWorkflow,
+) -> dict[str, object]:
+    """Return the exact public P19 action identity sealed by a workflow origin."""
+
+    card = workflow.packet.primary_test
+    if workflow.packet.decision != "test" or card is None:
+        raise ValueError("The workflow does not contain one controlled setup action.")
+    return {
+        "control_key": card.control_key,
+        "current_value": format_setup_value(card.control_key, card.current_value),
+        "proposed_value": format_setup_value(
+            card.control_key,
+            card.proposed_value_raw,
+        ),
+        "instruction": card.exact_change,
+        "source_event_ids": list(card.evidence_event_ids),
+    }
+
+
+def validate_p19_workflow_origin(
+    workflow: ControlledWorkflow,
+    *,
+    repository: RaceLabRepository | None = None,
+    expected_session_id: str | None = None,
+    expected_session_run_ids: tuple[str, ...] | None = None,
+) -> dict[str, object]:
+    """Validate the immutable P19 origin before stored workflow policy is consumed.
+
+    Session membership may grow as B and A2 runs are imported, but every run in
+    the frozen creation scope must remain in the same saved session. The caller
+    still re-derives P19 against the complete current session before publishing
+    or mutating the workflow.
+    """
+
+    repo = repository or RaceLabRepository()
+    binding = workflow.reproduction_snapshot.get("p19_authority_binding")
+    if not isinstance(binding, dict):
+        raise ValueError("The workflow has no immutable P19 authority origin.")
+    session_id = binding.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        raise ValueError("The workflow P19 session identity is unavailable.")
+    if expected_session_id is not None and session_id != expected_session_id:
+        raise ValueError("The workflow P19 session identity does not match this request.")
+    session = get_session(session_id, db_path=repo.db_path)
+    overview = repo.get_overview(workflow.source_run_id)
+    if session is None or overview is None or workflow.source_run_id not in session.run_ids:
+        raise ValueError("The workflow P19 run/session identity is unavailable.")
+    current_scope = tuple(session.run_ids)
+    if len(current_scope) != len(set(current_scope)):
+        raise ValueError("The workflow P19 session scope is ambiguous.")
+    if expected_session_run_ids is not None and current_scope != tuple(
+        expected_session_run_ids
+    ):
+        raise ValueError("The workflow P19 session scope changed during this request.")
+    origin_scope = binding.get("session_run_ids")
+    if (
+        not isinstance(origin_scope, list)
+        or not origin_scope
+        or any(not isinstance(run_id, str) or not run_id for run_id in origin_scope)
+        or len(origin_scope) != len(set(origin_scope))
+        or workflow.source_run_id not in origin_scope
+        or any(run_id not in current_scope for run_id in origin_scope)
+    ):
+        raise ValueError("The frozen workflow P19 session scope is invalid.")
+    manifest = read_telemetry_manifest(workflow.source_run_id)
+    setup = overview.setup_snapshot
+    action = workflow_authority_action_identity(workflow)
+    plan_binding = workflow.reproduction_snapshot.get("plan_binding_sha256")
+    expected = {
+        "schema_version": P19_WORKFLOW_AUTHORITY_BINDING_SCHEMA,
+        "workflow_id": workflow.workflow_id,
+        "run_id": workflow.source_run_id,
+        "session_id": session_id,
+        "setup_id": setup.setup_id if setup is not None else None,
+        "setup_snapshot_sha256": (
+            canonical_json_sha256(setup) if setup is not None else None
+        ),
+        "source_file_sha256": overview.session.file_hash,
+        "compatibility_fingerprint": str(
+            manifest.get("compatibility_fingerprint") or ""
+        ),
+        "compatibility_identity_sha256": canonical_json_sha256(
+            manifest.get("compatibility_identity") or {}
+        ),
+        "plan_binding_sha256": plan_binding,
+        "authority_action_sha256": canonical_json_sha256(action),
+        "source_event_ids": action["source_event_ids"],
+    }
+    if any(binding.get(key) != value for key, value in expected.items()):
+        raise ValueError("The immutable workflow P19 authority origin changed.")
+    for key in (
+        "setup_snapshot_sha256",
+        "source_file_sha256",
+        "compatibility_fingerprint",
+        "compatibility_identity_sha256",
+        "plan_binding_sha256",
+        "authority_action_sha256",
+        "reasoning_snapshot_sha256",
+    ):
+        if re.fullmatch(r"[0-9a-f]{64}", str(binding.get(key) or "")) is None:
+            raise ValueError(f"The workflow P19 {key} is unavailable.")
+    eligible_lap_ids = binding.get("eligible_lap_ids")
+    if (
+        not isinstance(eligible_lap_ids, list)
+        or not eligible_lap_ids
+        or any(not isinstance(lap_id, str) or not lap_id for lap_id in eligible_lap_ids)
+        or len(eligible_lap_ids) != len(set(eligible_lap_ids))
+    ):
+        raise ValueError("The workflow P19 eligible-lap identity is unavailable.")
+    return binding
 
 
 def _workflow_packet_authority_signature(packet: KaizenEvidencePacket) -> dict[str, Any]:
@@ -1469,49 +1577,24 @@ def enforce_hypothesis_repeat_policy(
     return packet, ()
 
 
-def project_kaizen_packet_for_publication(
-    run_id: str,
-    complaint: str,
-    packet: KaizenEvidencePacket,
-    *,
-    repository: RaceLabRepository | None = None,
-) -> KaizenEvidencePacket:
-    """Publish a packet only after exact-session semantic repeat-policy review."""
-
-    if packet.decision != "test" or packet.primary_test is None:
-        return packet
-    payload = {
-        "run_id": run_id,
-        "complaint": complaint,
-        "packet": packet.model_dump(mode="json"),
-    }
-    encoded = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
-    now = datetime.now(timezone.utc)
-    probe = ControlledWorkflow(
-        workflow_id=f"repeat_policy_probe_{hashlib.sha256(encoded.encode()).hexdigest()[:20]}",
-        created_at=now,
-        updated_at=now,
-        status="planned",
-        source_run_id=run_id,
-        complaint=complaint,
-        packet=packet,
-    )
-    authorized, blockers = enforce_hypothesis_repeat_policy(
-        probe,
-        repository=repository,
-    )
-    return authorized if authorized is not None else _blocked_workflow_packet(*blockers)
-
-
 def project_workflow_for_publication(
     workflow: ControlledWorkflow,
     *,
     repository: RaceLabRepository | None = None,
 ) -> ControlledWorkflow:
     """Return a fresh authoritative packet or a non-actionable recovery projection."""
+    repo = repository or RaceLabRepository()
+    if isinstance(repo, RaceLabRepository):
+        try:
+            validate_p19_workflow_origin(workflow, repository=repo)
+        except (AttributeError, FileNotFoundError, OSError, TypeError, ValueError):
+            return withhold_workflow_authority(
+                workflow,
+                "The workflow has no valid exact-session P19 authority origin.",
+            )
     packet, blockers = revalidate_controlled_workflow_packet(
         workflow,
-        repository=repository,
+        repository=repo,
     )
     if packet is not None and not blockers:
         fresh = workflow.model_copy(update={"packet": packet})
@@ -1519,7 +1602,7 @@ def project_workflow_for_publication(
             _validate_recorded_stage_bindings(
                 fresh,
                 packet,
-                repository or RaceLabRepository(),
+                repo,
                 require_complete=fresh.status == "scored",
             )
         except (AttributeError, FileNotFoundError, KeyError, OSError, TypeError, ValueError):
@@ -1532,11 +1615,27 @@ def project_workflow_for_publication(
                 return fresh
             packet, repeat_blockers = enforce_hypothesis_repeat_policy(
                 fresh,
-                repository=repository,
+                repository=repo,
             )
             blockers = tuple(dict.fromkeys((*blockers, *repeat_blockers)))
             if packet is not None and not blockers:
                 return fresh.model_copy(update={"packet": packet})
+    return workflow.model_copy(update={
+        "packet": _blocked_workflow_packet(*blockers),
+        "stage_eligible_lap_numbers": {},
+        "execution": None,
+        "reproduction_snapshot": {},
+        "quality": None,
+        "learning_admitted": None,
+    })
+
+
+def withhold_workflow_authority(
+    workflow: ControlledWorkflow,
+    *blockers: str,
+) -> ControlledWorkflow:
+    """Return workflow identity without publishing setup or policy authority."""
+
     return workflow.model_copy(update={
         "packet": _blocked_workflow_packet(*blockers),
         "stage_eligible_lap_numbers": {},
@@ -1618,6 +1717,7 @@ def create_workflow(
     objective: str = "setup-development",
     priority: str | None = None,
     repository: RaceLabRepository | None = None,
+    persist: bool = False,
 ) -> ControlledWorkflow:
     repo = repository or RaceLabRepository()
     (
@@ -1683,15 +1783,44 @@ def create_workflow(
         authorized_packet,
         decision_context,
     )
+    if persist:
+        persist_workflow_candidate(workflow, repository=repo)
+    return workflow
+
+
+def persist_workflow_candidate(
+    workflow: ControlledWorkflow,
+    *,
+    repository: RaceLabRepository | None = None,
+) -> ControlledWorkflow:
+    """Atomically persist one server-built, still-planned workflow candidate."""
+
+    repo = repository or RaceLabRepository()
+    if (
+        workflow.status != "planned"
+        or workflow.stage_run_ids
+        or workflow.stage_eligible_lap_numbers
+        or workflow.execution is not None
+        or workflow.quality is not None
+    ):
+        raise ValueError("Only a pristine server-built planned workflow can be persisted.")
+    try:
+        context = _workflow_decision_context(workflow)
+    except ValueError as exc:
+        raise ValueError(_WORKFLOW_PACKET_BLOCKER) from exc
+    if workflow.reproduction_snapshot.get(
+        "plan_binding_sha256"
+    ) != _workflow_plan_binding_hash(workflow, workflow.packet, context):
+        raise ValueError(_WORKFLOW_PACKET_BLOCKER)
+    if isinstance(repo, RaceLabRepository):
+        validate_p19_workflow_origin(workflow, repository=repo)
+    scoped_run_ids = _workflow_scope_run_ids(repo, (workflow.source_run_id,))
     if isinstance(repo, RaceLabRepository):
         repo.create_controlled_workflow_if_scope_available(workflow, scoped_run_ids)
+        record_workflow_plan(workflow, db_path=repo.db_path)
     else:
-        # Dependency-injected repositories retain the same invariant, while the
-        # production SQLite path closes the concurrent check/insert race above.
         _assert_active_workflow_slot(repo, scoped_run_ids)
         repo.save_controlled_workflow(workflow)
-    if isinstance(repo, RaceLabRepository):
-        record_workflow_plan(workflow, db_path=repo.db_path)
     return workflow
 
 
@@ -1759,8 +1888,7 @@ def _analysis_code_hash(packet: KaizenEvidencePacket) -> str:
 def _setup_snapshot_hash(payload: dict[str, Any] | None) -> str | None:
     if not payload:
         return None
-    encoded = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
-    return hashlib.sha256(encoded.encode()).hexdigest()
+    return canonical_json_sha256(payload)
 
 
 def _stage_binding_hash(
@@ -1971,6 +2099,8 @@ def attach_stage(workflow_id: str, stage: Literal["A", "B", "A2"], run_id: str, 
         raise ValueError(f"Workflow not found: {workflow_id}")
     if workflow.status in {"scored", "cancelled"}:
         raise ValueError(f"A {workflow.status} workflow cannot accept another stage.")
+    if isinstance(repo, RaceLabRepository):
+        validate_p19_workflow_origin(workflow, repository=repo)
     fresh_packet, packet_blockers = revalidate_controlled_workflow_packet(
         workflow,
         repository=repo,
@@ -2335,6 +2465,8 @@ def validate_workflow_for_authoritative_use(
 ) -> ControlledWorkflow:
     """Return a fresh workflow only after all authority-bearing bindings pass."""
     repo = repository or RaceLabRepository()
+    if isinstance(repo, RaceLabRepository):
+        validate_p19_workflow_origin(workflow, repository=repo)
     packet, blockers = revalidate_controlled_workflow_packet(workflow, repository=repo)
     if packet is None or blockers:
         raise ValueError(_WORKFLOW_PACKET_BLOCKER)
@@ -2788,6 +2920,9 @@ def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = N
         "countereffect_baseline_noise_distributions_s": within_baseline_by_phase,
         "recording_chronology": workflow.reproduction_snapshot.get("recording_chronology", {}),
         "decision_context": workflow.reproduction_snapshot.get("decision_context", {}),
+        "p19_authority_binding": workflow.reproduction_snapshot.get(
+            "p19_authority_binding"
+        ),
     }
     updated = workflow.model_copy(update={
         "stage_eligible_lap_numbers": stage_eligible_lap_numbers,
@@ -2826,15 +2961,19 @@ def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = N
 
 
 __all__ = [
+    "P19_WORKFLOW_AUTHORITY_BINDING_SCHEMA",
     "attach_stage",
     "build_server_kaizen_packet",
     "cancel_workflow",
     "create_workflow",
     "enforce_hypothesis_repeat_policy",
-    "project_kaizen_packet_for_publication",
     "project_workflow_for_publication",
+    "persist_workflow_candidate",
     "revalidate_controlled_test_packet",
     "revalidate_controlled_workflow_packet",
     "score_workflow",
+    "validate_p19_workflow_origin",
     "validate_workflow_for_authoritative_use",
+    "workflow_authority_action_identity",
+    "withhold_workflow_authority",
 ]

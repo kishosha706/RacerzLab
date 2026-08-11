@@ -1,6 +1,11 @@
 # RacerZLab Milestone 3A Implementation Prompt  
 ## Use with `racerzlab_master_setup_matrix.md`
 
+> **Archived implementation prompt - non-production.** This records a completed
+> historical milestone and is not an executable current product contract. Old
+> directional query workflows are superseded: public Dial-In is non-directional
+> and P19 is the sole setup, Keep/Undo, and stop-testing authority.
+
 You are working inside RacerZLab. Read `docs/setup_knowledge/racerzlab_master_setup_matrix.md` first. Treat that markdown as the consolidated source of setup knowledge for this milestone. Do not expect setup information from any other source during implementation.
 
 ## Mission
@@ -25,7 +30,6 @@ racelab_engine/knowledge/setup/
   data/*.json
 
 scripts/validate_setup_knowledge.py
-scripts/query_setup_knowledge.py
 tests/test_setup_knowledge.py
 docs/setup_knowledge_foundation.md
 ```
@@ -941,7 +945,6 @@ Run all:
 
 ```bash
 python -B scripts/validate_setup_knowledge.py
-python -B scripts/query_setup_knowledge.py --car-family next_gen --symptom "loose off" --evidence setup_snapshot,platform_trace,shock_histogram
 python -B scripts/query_guide_knowledge.py --setup-area ls_rebound --car-family next_gen
 python -B scripts/query_guide_knowledge.py --topic diffuser --car-family next_gen
 python -B scripts/export_setup_knowledge_digest.py

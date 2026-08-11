@@ -734,6 +734,63 @@ def test_cli_json_returns_stable_keys(tmp_path: Path, monkeypatch: pytest.Monkey
     payload = json.loads(completed.stdout)
     assert {"run_id", "complaint_raw", "confidence_label", "readiness_label", "driver_message", "top_swings", "clarification", "warnings"}.issubset(payload)
     assert payload["top_swings"][0]["validate_with_labels"]
+    assert {
+        "change_this",
+        "direction_sign",
+        "current_value_label",
+        "proposed_value_label",
+        "one_change_test",
+        "keep_if",
+        "undo_if",
+    }.isdisjoint(payload["top_swings"][0])
+    assert "no setup change is authorized" in payload["driver_message"].casefold()
+
+
+def test_cli_text_uses_public_hypothesis_contract(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    data_dir, db_path = _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, channels={"throttle_pct": 100.0, "yaw_rate": 1.2})
+    env = os.environ.copy()
+    env["RACELAB_DATA_DIR"] = str(data_dir)
+    env["RACELAB_DB_PATH"] = str(db_path)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "scripts/query_dial_in.py",
+            "--run-id",
+            "run-1",
+            "--complaint",
+            "loose off",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert "Engineering hypotheses only" in completed.stdout
+    assert "Control areas to measure:" in completed.stdout
+    assert "Next step:" in completed.stdout
+
+
+def test_setup_knowledge_package_does_not_export_internal_action_producers() -> None:
+    import racelab_engine.knowledge.setup as setup_package
+
+    assert {
+        "DialInResponse",
+        "DialInSwing",
+        "build_dial_in_response",
+        "query_setup_for_run_context",
+        "query_setup_knowledge",
+    }.isdisjoint(setup_package.__all__)
+    assert all(not hasattr(setup_package, name) for name in (
+        "DialInResponse",
+        "DialInSwing",
+        "build_dial_in_response",
+        "query_setup_for_run_context",
+        "query_setup_knowledge",
+    ))
 
 
 def test_cli_debug_evidence_includes_backend_factors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

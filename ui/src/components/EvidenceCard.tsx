@@ -87,7 +87,7 @@ export function EvidenceCard({ event, onToggleMapOverlay }: EvidenceCardProps) {
         )}
       </div>
       <p>{actionable
-        ? event.recommended_actions[0] ?? "Inspect the qualified evidence before changing setup."
+        ? "Inspect this qualified location with the setup unchanged."
         : "Evidence only - no setup action is authorized."}</p>
       {!actionable && event.blocker_reasons[0] && <p className="muted">{event.blocker_reasons[0]}</p>}
       <div style={{ display: "flex", gap: 4, marginTop: 6 }}>

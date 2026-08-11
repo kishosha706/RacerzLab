@@ -18,6 +18,11 @@ from racelab_engine.analysis.p3_common import (
     percentile,
 )
 from racelab_engine.analysis.p3_contracts import STINT_STRATEGY_CONTRACT
+from racelab_engine.analysis.proximity_context import (
+    ProximityState,
+    classify_proximity_time_gap_window,
+    proximity_time_gap_exposure_fraction,
+)
 from racelab_engine.analysis.test_director import MeasurementMission
 from racelab_engine.models.engineering import EngineGate, EngineeringConclusion, EngineeringModel
 from racelab_engine.models.evidence import EvidenceState
@@ -45,7 +50,15 @@ StintCovariateKey = Literal[
     "driver_throttle",
     "driver_brake",
     "driver_steering",
+    "traffic_exposure",
 ]
+
+
+STINT_TRAFFIC_CHANNELS: tuple[str, ...] = (
+    "car_distance_ahead_m",
+    "car_distance_behind_m",
+    "speed_mps",
+)
 
 
 class StintCovariateAssociation(EngineeringModel):
@@ -105,6 +118,9 @@ class StintPaceDrift(EngineeringModel):
     extrapolation_allowed: Literal[False] = False
     source_channels: list[str] = Field(default_factory=list)
     blocker_reasons: list[str] = Field(default_factory=list)
+    authority_blocker_reasons: list[str] = Field(default_factory=list)
+    traffic_contaminated_lap_numbers: list[int] = Field(default_factory=list)
+    traffic_context_unknown_lap_numbers: list[int] = Field(default_factory=list)
     caveats: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -149,6 +165,23 @@ class StintPaceDrift(EngineeringModel):
             )
         if self.attribution == "unresolved_observational" and self.repeated_set_evidence_ids:
             raise ValueError("unresolved stint attribution cannot claim repeated-set evidence IDs")
+        scoped_laps = set(self.lap_numbers)
+        traffic_laps = {
+            *self.traffic_contaminated_lap_numbers,
+            *self.traffic_context_unknown_lap_numbers,
+        }
+        if not traffic_laps.issubset(scoped_laps):
+            raise ValueError("traffic context must resolve to the exact stint lap scope")
+        if traffic_laps and not self.authority_blocker_reasons:
+            raise ValueError("traffic-contaminated or unknown stint evidence must block authority")
+        if (
+            self.status == "observed"
+            and not any(item.key == "traffic_exposure" for item in self.covariates)
+            and not self.authority_blocker_reasons
+        ):
+            raise ValueError(
+                "observed stint pace drift requires traffic exposure as a covariate or authority blocker"
+            )
         return self
 
 
@@ -720,6 +753,46 @@ def _driver_covariate(
     return None, ()
 
 
+def _stint_traffic_context(
+    rows_by_lap: dict[int, list[dict[str, Any]]],
+    laps: list[LapSummary],
+) -> tuple[
+    list[tuple[int, float, tuple[str, ...]]],
+    list[int],
+    list[int],
+    list[str],
+]:
+    observations: list[tuple[int, float, tuple[str, ...]]] = []
+    contaminated_laps: list[int] = []
+    unknown_laps: list[int] = []
+    for index, lap in enumerate(laps):
+        lap_rows = rows_by_lap.get(lap.lap_number, [])
+        proximity = classify_proximity_time_gap_window(lap_rows)
+        exposure = proximity_time_gap_exposure_fraction(lap_rows)
+        if exposure is not None:
+            observations.append((index, exposure, STINT_TRAFFIC_CHANNELS))
+        if proximity.state is ProximityState.CONTEXT_UNKNOWN:
+            unknown_laps.append(lap.lap_number)
+        elif proximity.hard_blocker_active:
+            contaminated_laps.append(lap.lap_number)
+
+    authority_blockers: list[str] = []
+    if unknown_laps:
+        authority_blockers.append(
+            "Complete nearby-car distance and player-speed coverage is required before "
+            "stint pace drift can feed setup authority; proximity context is unknown on "
+            f"lap(s) {', '.join(str(number) for number in unknown_laps)}."
+        )
+    if contaminated_laps:
+        authority_blockers.append(
+            "Nearby traffic entered the operational time-gap window on eligible stint "
+            f"lap(s) {', '.join(str(number) for number in contaminated_laps)}; "
+            "retain the pace drift as observed correlation only and do not feed it to "
+            "setup authority."
+        )
+    return observations, contaminated_laps, unknown_laps, authority_blockers
+
+
 def _pace_change_points(
     lap_numbers: list[int],
     lap_times: list[float],
@@ -772,6 +845,12 @@ def _build_stint_pace_drift(
     laps: list[LapSummary],
 ) -> StintPaceDrift:
     lap_numbers = [lap.lap_number for lap in laps]
+    (
+        traffic_observations,
+        traffic_contaminated_laps,
+        traffic_unknown_laps,
+        authority_blockers,
+    ) = _stint_traffic_context(rows_by_lap, laps)
     if len(laps) < 10:
         return StintPaceDrift(
             status="blocked",
@@ -783,6 +862,9 @@ def _build_stint_pace_drift(
             caveats=[
                 "Short runs cannot establish pace drift, tire degradation, or cooling behavior."
             ],
+            authority_blocker_reasons=authority_blockers,
+            traffic_contaminated_lap_numbers=traffic_contaminated_laps,
+            traffic_context_unknown_lap_numbers=traffic_unknown_laps,
         )
 
     lap_times = [float(lap.lap_time) for lap in laps if lap.lap_time is not None]
@@ -795,6 +877,9 @@ def _build_stint_pace_drift(
             evidence_state=EvidenceState.BLOCKED_BY_CONTEXT,
             lap_numbers=lap_numbers,
             blocker_reasons=["A robust lap-level pace slope could not be calculated."],
+            authority_blocker_reasons=authority_blockers,
+            traffic_contaminated_lap_numbers=traffic_contaminated_laps,
+            traffic_context_unknown_lap_numbers=traffic_unknown_laps,
         )
     delta_residuals = [
         right - left - full_slope
@@ -845,9 +930,10 @@ def _build_stint_pace_drift(
         key: [] for key in (
             "fuel_level", "tire_distance", "tire_temperature", "tire_wear_remaining",
             "air_temperature", "track_temperature", "wind_speed",
-            "driver_throttle", "driver_brake", "driver_steering",
+            "driver_throttle", "driver_brake", "driver_steering", "traffic_exposure",
         )
     }
+    series["traffic_exposure"] = traffic_observations
     for index, lap in enumerate(laps):
         lap_rows = rows_by_lap.get(lap.lap_number, [])
         fuel = _complete_fuel_trace(lap_rows)
@@ -918,7 +1004,7 @@ def _build_stint_pace_drift(
     })
     caveats = [
         "Observed pace drift is correlated with recorded stint state; it does not isolate a tire or setup cause.",
-        "Fuel, tire state, weather, and driver execution can move together, so covariate associations are not contribution estimates.",
+        "Fuel, tire state, weather, traffic proximity, and driver execution can move together, so covariate associations are not contribution estimates.",
         "The history is right-censored at the final recorded eligible lap and cannot be extrapolated beyond the observed range.",
         "Any controlled intervention remains separate P4 controlled-test evidence and cannot be inferred by this observational producer.",
     ]
@@ -944,6 +1030,9 @@ def _build_stint_pace_drift(
         attribution="unresolved_observational",
         repeated_comparable_tire_sets=0,
         source_channels=source_channels,
+        authority_blocker_reasons=authority_blockers,
+        traffic_contaminated_lap_numbers=traffic_contaminated_laps,
+        traffic_context_unknown_lap_numbers=traffic_unknown_laps,
         caveats=caveats,
     )
 
@@ -1496,6 +1585,7 @@ def analyze_stint_strategy(
                 ),
             ],
             contradicting_evidence=pace_drift.caveats,
+            blocker_reasons=pace_drift.authority_blocker_reasons,
         )
         if adequate else EngineeringConclusion(
             key="stint_pace_drift",
@@ -1521,6 +1611,7 @@ def analyze_stint_strategy(
                 "A short-run gain must be confirmed against later tire and thermal behavior.",
                 *pace_drift.caveats,
             ],
+            blocker_reasons=pace_drift.authority_blocker_reasons,
         )
         if adequate else EngineeringConclusion(
             key="stint_degradation_hypothesis",
@@ -1623,7 +1714,6 @@ def analyze_stint_strategy(
             ])),
             supporting_evidence=pit_window.basis,
             contradicting_evidence=pit_window.caveats,
-            recommendation=pit_window.recommendation,
         )
         if pit_window.strategy_ready else EngineeringConclusion(
             key="pit_window_recommendation",

@@ -19,7 +19,8 @@ def test_platform_broadcasts_diagnostic_scope_and_withheld_setup_authority() -> 
     assert "This is a diagnostic finding, not an authorized setup target." in platform
     assert "No setup change is authorized from this Platform state." in platform
     assert "No setup target is authorized by this event." in platform
-    assert "Diagnostic follow-up:" in platform
+    assert "const platformBroadcastNext" in platform
+    assert "<strong>What next:</strong> {platformBroadcastNext}" in platform
     assert "<strong>Next action:</strong>" not in platform
     assert "<strong>Recommended:</strong>" not in platform
     assert 'selection.selectedMode === "learning"' in platform

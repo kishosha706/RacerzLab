@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
+from pathlib import Path
 
 import pytest
 
@@ -458,27 +456,8 @@ def test_shock_effect_text_does_not_overstate_histogram_evidence():
             assert "histogram alone confirms" not in text
 
 
-def test_cli_json_works():
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-B",
-            "scripts/query_setup_knowledge.py",
-            "--car-family",
-            "next_gen",
-            "--symptom",
-            "loose off",
-            "--json",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    payload = json.loads(completed.stdout)
-    assert {"parsed_symptom", "parsed_phase", "confidence", "ambiguity", "candidates", "disabled_by_capability", "warnings"}.issubset(payload)
-    assert payload["parsed_symptom"]["canonical_symptom"] == "loose_exit"
-    assert payload["candidates"]
-    assert {"effect_id", "effect", "counter_effect", "one_change_test", "validate_with"}.issubset(payload["candidates"][0])
+def test_direct_setup_knowledge_cli_is_not_a_public_authority_surface():
+    assert not Path("scripts/query_setup_knowledge.py").exists()
 
 
 def test_query_output_includes_one_change_test_language_counter_effect_and_targets():
@@ -489,74 +468,6 @@ def test_query_output_includes_one_change_test_language_counter_effect_and_targe
     assert "exit_yaw" not in first.one_change_test_plan
     assert first.effect.counter_effect
     assert first.effect.validation_targets
-
-
-def test_cli_text_hides_disabled_by_default_and_can_show_disabled():
-    hidden = subprocess.run(
-        [sys.executable, "-B", "scripts/query_setup_knowledge.py", "--car-family", "next_gen", "--symptom", "loose off"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    shown = subprocess.run(
-        [
-            sys.executable,
-            "-B",
-            "scripts/query_setup_knowledge.py",
-            "--car-family",
-            "next_gen",
-            "--symptom",
-            "loose off",
-            "--show-disabled",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    assert "Disabled by car capability for next_gen" not in hidden.stdout
-    assert "Disabled by car capability for next_gen" in shown.stdout
-
-
-def test_cli_text_contains_polished_labels_and_readiness():
-    completed = subprocess.run(
-        [sys.executable, "-B", "scripts/query_setup_knowledge.py", "--car-family", "next_gen", "--symptom", "loose off"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    assert "Candidate 1:" in completed.stdout
-    assert "Effect:" in completed.stdout
-    assert "Counter-effect:" in completed.stdout
-    assert "One-change test:" in completed.stdout
-    assert "Validate:" in completed.stdout
-    assert "Watch for:" in completed.stdout
-    assert "Validate: drive-off, exit yaw" in completed.stdout
-    assert "Validate: drive_off, exit_yaw" not in completed.stdout
-    assert "Evidence: missing key evidence" in completed.stdout
-
-
-def test_cli_text_contains_package_and_preferred_context():
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-B",
-            "scripts/query_setup_knowledge.py",
-            "--car-family",
-            "next_gen",
-            "--symptom",
-            "draggy",
-            "--evidence",
-            "setup_snapshot,platform_trace",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    assert "Package notes:" in completed.stdout
-    assert "Preferred when:" in completed.stdout
-    assert "Use a numerically lower rear end ratio for more straight speed" in completed.stdout
-    assert "Area: rear end ratio" in completed.stdout
-    assert "Taller final drive" not in completed.stdout
 
 
 def test_no_effect_uses_banned_certainty_language():

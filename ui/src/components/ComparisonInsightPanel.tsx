@@ -39,7 +39,7 @@ function formatVal(v: number | null | undefined, digits = 2): string {
 
 export function ComparisonInsightPanel({ insights, onOpenDeltaTraces }: ComparisonInsightPanelProps) {
   const tz = insights.target_zone_classification;
-  const cwv = insights.confidence_weighted_verdict;
+  const weightedObservation = insights.confidence_weighted_observation;
 
   return (
     <div className="compare-subview">
@@ -52,6 +52,9 @@ export function ComparisonInsightPanel({ insights, onOpenDeltaTraces }: Comparis
 
       <p className="proxy-note comparison-insight-proxy-authority" data-value-basis="proxy">
         <ProxyBadge kind="proxy" /> Any drag/scrub language below means telemetry-derived resistance or scrub suspicion, not measured aerodynamic drag force or a drag coefficient.
+      </p>
+      <p className="section-note comparison-insight-authority-boundary">
+        Observational comparison only. Setup actions and policy come only from the controlled workflow.
       </p>
 
       {/* ── Key takeaways ── */}
@@ -80,32 +83,30 @@ export function ComparisonInsightPanel({ insights, onOpenDeltaTraces }: Comparis
               {tz.evidence.map((e, i) => <li key={i}>{e}</li>)}
             </ul>
           )}
-          {tz.recommendation && <p className="insight-recommendation"><strong>Next:</strong> {tz.recommendation}</p>}
         </div>
       )}
 
-      {/* ── Confidence-weighted verdict ── */}
-      {cwv && (
-        <div className="insight-card" style={{ borderLeftColor: TIER_COLORS[cwv.confidence_tier] ?? "#8d9aaa" }}>
+      {/* ── Confidence-weighted observation ── */}
+      {weightedObservation && (
+        <div className="insight-card" style={{ borderLeftColor: TIER_COLORS[weightedObservation.confidence_tier] ?? "#8d9aaa" }}>
           <div className="insight-card-header">
-            <span className="insight-badge" style={{ backgroundColor: TIER_COLORS[cwv.confidence_tier] ?? "#8d9aaa" }}>
-              {cwv.confidence_tier.toUpperCase()} confidence
+            <span className="insight-badge" style={{ backgroundColor: TIER_COLORS[weightedObservation.confidence_tier] ?? "#8d9aaa" }}>
+              {weightedObservation.confidence_tier.toUpperCase()} observation confidence
             </span>
-            <span className="insight-verdict-label">{cwv.original_verdict.replace(/_/g, " ")}</span>
+            <span className="insight-observation-label">{weightedObservation.observation_state.replace(/_/g, " ")}</span>
           </div>
-          {cwv.boosts.length > 0 && (
+          {weightedObservation.boosts.length > 0 && (
             <div className="insight-factors">
               <span className="insight-factors-label">Boosts:</span>
-              {cwv.boosts.map((b, i) => <span key={i} className="insight-factor-positive">+ {b}</span>)}
+              {weightedObservation.boosts.map((b, i) => <span key={i} className="insight-factor-positive">+ {b}</span>)}
             </div>
           )}
-          {cwv.penalties.length > 0 && (
+          {weightedObservation.penalties.length > 0 && (
             <div className="insight-factors">
               <span className="insight-factors-label">Penalties:</span>
-              {cwv.penalties.map((p, i) => <span key={i} className="insight-factor-negative">− {p}</span>)}
+              {weightedObservation.penalties.map((p, i) => <span key={i} className="insight-factor-negative">− {p}</span>)}
             </div>
           )}
-          {cwv.final_recommendation && <p className="insight-recommendation"><strong>Recommendation:</strong> {cwv.final_recommendation}</p>}
         </div>
       )}
 

@@ -14,12 +14,10 @@ from typing import Any
 from racelab_engine.models.engineering_awareness import TrustAxis, TrustBudget, TrustState
 from racelab_engine.models.engineering_projection import (
     AwarenessArtifactVersion,
-    AwarenessMissionState,
     AwarenessRequestIdentity,
     EngineeringAwarenessProjection,
     ExpectedVsObservedState,
     PrimaryEngineeringState,
-    SetupLeverageState,
     SubsystemAwarenessState,
 )
 from racelab_engine.models.evidence import EvidenceState
@@ -32,7 +30,7 @@ from racelab_engine.services.run_intelligence_service import (
 from racelab_engine.storage.db import default_db_path
 
 
-_SCHEMA_VERSION = "p20.awareness.v1"
+_SCHEMA_VERSION = "p20.awareness.v2"
 _CACHE_LIMIT = 8
 _CACHE: OrderedDict[tuple[object, ...], EngineeringAwarenessProjection] = OrderedDict()
 _CACHE_LOCK = RLock()
@@ -211,11 +209,6 @@ def _trust_budget(bundle: RunIntelligenceBundle) -> TrustBudget:
             "No protocol-valid controlled response is attached.",
             ("Complete a canonical A/B/A2 workflow before judging control response.",),
         )
-        policy_axis = _axis(
-            TrustState.UNAVAILABLE,
-            "No controlled policy countereffect verdict is attached.",
-            ("Countereffect risk remains unevaluated without a controlled outcome.",),
-        )
     else:
         invalid = tuple(item for item in outcomes if item.control_response.result == "invalid")
         response_axis = (
@@ -231,20 +224,11 @@ def _trust_budget(bundle: RunIntelligenceBundle) -> TrustBudget:
                 sources=tuple(item.workflow_id for item in outcomes),
             )
         )
-        policy_invalid = tuple(item for item in outcomes if item.policy.verdict == "invalid")
-        policy_axis = (
-            _axis(
-                TrustState.BLOCKED,
-                "At least one policy verdict is invalid.",
-                tuple(item.policy.reason for item in policy_invalid),
-            )
-            if policy_invalid
-            else _axis(
-                TrustState.TRUSTED,
-                "Keep/Undo/retest and countereffects come directly from P19 policy outcomes.",
-                sources=tuple(item.workflow_id for item in outcomes),
-            )
-        )
+    policy_axis = _axis(
+        TrustState.UNAVAILABLE,
+        "Setup policy is intentionally withheld from this observation-only projection.",
+        ("Use the exact P19 controlled workflow for setup-policy decisions.",),
+    )
 
     history_blockers = _unique(
         [
@@ -411,59 +395,10 @@ def _expected_vs_observed(bundle: RunIntelligenceBundle) -> tuple[ExpectedVsObse
             phase=item.control_response.phase,
             mechanism_state=item.mechanism.state,
             control_response=item.control_response.result,
-            policy_verdict=item.policy.verdict,
-            countereffects=item.policy.countereffects,
             mechanism_reason=item.mechanism.reason,
             control_response_reason=item.control_response.reason,
-            policy_reason=item.policy.reason,
         )
         for item in bundle.report.reasoning_snapshot.controlled_outcomes
-    )
-
-
-def _setup_leverage(bundle: RunIntelligenceBundle) -> tuple[SetupLeverageState, ...]:
-    snapshot = bundle.report.reasoning_snapshot
-    plan = snapshot.measurement_plan
-    by_control: dict[str, dict[str, list[str]]] = defaultdict(
-        lambda: {"states": [], "basis": [], "workflows": [], "events": []}
-    )
-    for outcome in snapshot.controlled_outcomes:
-        key = outcome.control_response.control_key
-        if not key:
-            continue
-        row = by_control[key]
-        row["states"].append("relevant")
-        row["states"].append(
-            {"keep": "prior_keep", "undo": "prior_undo"}.get(
-                outcome.policy.verdict, "needs_measurement"
-            )
-        )
-        if outcome.policy.verdict == "invalid":
-            row["states"].append("blocked")
-        row["basis"].extend(
-            [outcome.mechanism.reason, outcome.control_response.reason, outcome.policy.reason]
-        )
-        row["workflows"].append(outcome.workflow_id)
-    authority = snapshot.authority
-    if authority.control_key is not None:
-        row = by_control[authority.control_key]
-        row["states"].extend(("relevant", "authorized"))
-        row["basis"].append(authority.reason)
-        row["events"].extend(authority.source_event_ids)
-    if plan.controlled_test is not None:
-        row = by_control[plan.controlled_test.control_key]
-        row["states"].extend(("relevant", "active_test"))
-        row["basis"].extend((plan.title, plan.rationale))
-        row["events"].extend(plan.controlled_test.evidence_event_ids)
-    return tuple(
-        SetupLeverageState(
-            control_key=control_key,
-            states=_unique(values["states"]),
-            basis=_unique(values["basis"]),
-            workflow_ids=_unique(values["workflows"]),
-            source_event_ids=_unique(values["events"]),
-        )
-        for control_key, values in sorted(by_control.items())
     )
 
 
@@ -524,7 +459,6 @@ def _build_projection(
         debt.append("The leading P19 cause does not resolve to a qualified producer-owned mechanism observation.")
     if len(profile_hashes) > 1:
         debt.append("Multiple vehicle-profile hashes appear inside the awareness frame set.")
-    plan = snapshot.measurement_plan
     projection = EngineeringAwarenessProjection(
         run_id=report.run_id,
         session_id=report.session_id,
@@ -535,8 +469,6 @@ def _build_projection(
         cache_state="cold",
         build_duration_ms=max(0.0, (perf_counter() - started) * 1000.0),
         profile_hash=profile_hash,
-        authority_state=snapshot.authority.level,
-        setup_authorized=snapshot.authority.setup_authorized,
         trust_budget=_trust_budget(bundle),
         primary_state=primary,
         subsystem_states=subsystem_states,
@@ -545,22 +477,9 @@ def _build_projection(
         state_drift_blocker_reasons=(
             "No canonical clean-stint state-drift ledger is attached to the P19 snapshot.",
         ),
-        setup_leverage_states=_setup_leverage(bundle),
         expected_vs_observed=_expected_vs_observed(bundle),
         control_mutations=bundle.awareness.control_mutations,
         knowledge_debt=_unique(debt),
-        current_mission=AwarenessMissionState(
-            kind=plan.kind,
-            title=plan.title,
-            instruction=plan.instruction,
-            setup_authorized=plan.setup_authorized,
-            contract_id=(
-                plan.mission_contract.contract_id
-                if plan.mission_contract is not None
-                else None
-            ),
-            blocker_reasons=plan.blocker_reasons,
-        ),
         artifact_versions=_artifact_versions(bundle),
     )
     return projection

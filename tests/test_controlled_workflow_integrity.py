@@ -642,10 +642,26 @@ def test_report_rejects_a_cherry_picked_or_corrupted_stage_cohort(
 def test_report_api_returns_a_blocked_conflict_instead_of_a_certificate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    workflow = _workflow(status="scored")
+
+    class Repository:
+        db_path = None
+
+        def get_controlled_workflow(self, _workflow_id: str):
+            return workflow
+
     class BlockedReportService:
+        def __init__(self, _db_path=None):
+            pass
+
         def generate_workflow_markdown(self, _workflow_id: str):
             raise ValueError("The scored certificate stage bindings failed integrity validation.")
 
+    monkeypatch.setattr("api.routes_engineering.RaceLabRepository", Repository)
+    monkeypatch.setattr(
+        "api.routes_engineering._require_scored_p19_outcome",
+        lambda *_args, **_kwargs: None,
+    )
     monkeypatch.setattr("api.routes_engineering.ReportService", BlockedReportService)
     response = TestClient(app).get("/api/engineering/workflows/aba-corrupt/report")
 

@@ -30,7 +30,6 @@ export interface DamperConclusion {
   supporting_evidence: string[];
   contradicting_evidence: string[];
   blocker_reasons: string[];
-  recommendation: string | null;
 }
 
 export interface DamperResponseReport {

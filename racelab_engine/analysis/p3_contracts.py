@@ -165,8 +165,8 @@ DAMPER_RESPONSE_CONTRACT = AnalysisEvidenceContract(
             }),
         ),
         AllowedOutput(
-            key="damper_regime_test",
-            description="One guarded damper-setting test tied to measured shaft-velocity regime occupancy.",
+            key="damper_regime_observation",
+            description="Observed shaft-velocity regime occupancy with no damper-setting direction or target.",
             evidence_state=EvidenceState.NEEDS_CONFIRMATION,
             source_channels=frozenset({
                 "lap_dist_pct", "lf_shock_vel_in_s", "rf_shock_vel_in_s",
@@ -219,7 +219,7 @@ SIM_INTEGRITY_CONTRACT = AnalysisEvidenceContract(
 
 POWERTRAIN_GEARING_CONTRACT = AnalysisEvidenceContract(
     key="powertrain_gearing",
-    purpose="Measure repeatable RPM, shift, and acceleration behavior before proposing a gearing test.",
+    purpose="Measure repeatable RPM, shift, and acceleration behavior without proposing a gearing direction.",
     required_channels=frozenset({
         "lap_dist_pct", "session_time", "speed_mph", "rpm", "gear", "throttle_pct", "long_accel",
     }),
@@ -238,8 +238,8 @@ POWERTRAIN_GEARING_CONTRACT = AnalysisEvidenceContract(
             }),
         ),
         AllowedOutput(
-            key="gearing_test_hypothesis",
-            description="A guarded gearing test with expected acceleration, limiter, and shift countereffects.",
+            key="gearing_discriminator_observation",
+            description="An observed limiter/headroom discriminator with no gearing direction or target.",
             evidence_state=EvidenceState.NEEDS_CONFIRMATION,
             source_channels=frozenset({"speed_mph", "rpm", "gear", "throttle_pct", "long_accel"}),
         ),
@@ -282,6 +282,7 @@ STINT_STRATEGY_CONTRACT = AnalysisEvidenceContract(
         "pit_repair_remaining_s", "pit_optional_repair_remaining_s",
         "pending_pit_service_flags", "pending_pit_fuel_add",
         "repair_required", "repair_time_s",
+        "car_distance_ahead_m", "car_distance_behind_m", "speed_mps",
     }),
     operating_conditions=(
         OperatingCondition(

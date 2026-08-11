@@ -40,6 +40,8 @@ class TireCornerState(EngineeringModel):
     wear_inner: float | None = None
     wear_middle: float | None = None
     wear_outer: float | None = None
+    carcass_update_semantic: Literal["pit_snapshot"] = "pit_snapshot"
+    wear_update_semantic: Literal["pit_snapshot"] = "pit_snapshot"
     tire_distance_m: float | None = None
     slip_ratio_rms: float | None = None
     load_context_proxy: float | None = None
@@ -85,14 +87,6 @@ def _repeated_pressure_pattern(
     return repeated
 
 
-def _falloff_supported(laps: list[LapSummary]) -> bool:
-    eligible = eligible_laps(laps)
-    if len(eligible) < 10:
-        return False
-    times = [float(lap.lap_time) for lap in sorted(eligible, key=lambda item: item.lap_number)]
-    return mean(times[-3:]) - mean(times[:3]) >= 0.15
-
-
 def analyze_tire_state(
     rows: list[dict[str, Any]],
     lap_summaries: list[LapSummary] | None,
@@ -129,7 +123,6 @@ def analyze_tire_state(
 
     states: list[TireCornerState] = []
     conclusions: list[EngineeringConclusion] = []
-    falloff = _falloff_supported(lap_summaries or [])
     phase_set = phases & TIRE_PHASES
     for corner_upper in ("LF", "RF", "LR", "RR"):
         corner = corner_upper.lower()
@@ -158,10 +151,6 @@ def analyze_tire_state(
             causes.append("pressure_driven_heating")
         if gradient is not None and abs(gradient) >= 6.0:
             causes.extend(["shoulder_load", "camber_bias"])
-        if surface is not None and carcass is not None and surface - carcass >= 8.0 and (slip_rms or 0.0) >= 0.04:
-            causes.append("surface_scrub")
-        if surface is not None and carcass is not None and carcass >= surface - 2.0:
-            causes.append("carcass_heat")
         if corner_upper.startswith("F") and phase_set & {"brake_application", "threshold_braking", "brake_release"}:
             causes.append("braking_heat")
         if corner_upper.startswith("R") and phase_set & {"initial_throttle", "full_throttle_exit"} and (slip_rms or 0.0) >= 0.03:
@@ -172,10 +161,6 @@ def analyze_tire_state(
             average(scoped, f"{corner}_wear_middle"),
             average(scoped, f"{corner}_wear_outer"),
         ]
-        if distance is not None and all(value is not None for value in wear_values):
-            causes.append("aging")
-        if falloff and surface is not None and carcass is not None:
-            causes.extend(["saturation", "falloff"])
         state = TireCornerState(
             corner=corner_upper,  # type: ignore[arg-type]
             running_pressure=running,
@@ -203,25 +188,44 @@ def analyze_tire_state(
             f"{corner}_wear_outer", f"{corner}_tire_distance_m", f"{corner}_slip_ratio",
             "brake_pct", "throttle_pct", "lap_dist_pct",
         ]
+        if cold is not None:
+            sources.append(f"{corner}_cold_pressure")
+        if carcass is not None:
+            sources.extend([
+                f"{corner}_carcass_temp_l",
+                f"{corner}_carcass_temp_m",
+                f"{corner}_carcass_temp_r",
+            ])
         support = [
             f"Surface profile I/M/O: {inner:.1f}/{middle:.1f}/{outer:.1f}."
             if None not in {inner, middle, outer} else "Complete surface-temperature profile unavailable.",
             f"Running-minus-cold pressure: {pressure_gain:.2f}." if pressure_gain is not None else "Cold-to-running pressure gain unavailable.",
+            f"Carcass average: {carcass:.1f}, retained as a pit-boundary snapshot."
+            if carcass is not None else "Carcass pit-boundary snapshot unavailable.",
+            (
+                f"Wear I/M/O: {wear_values[0]:.4f}/{wear_values[1]:.4f}/{wear_values[2]:.4f}, "
+                "retained as a pit-boundary snapshot."
+            )
+            if all(value is not None for value in wear_values)
+            else "Complete wear pit-boundary snapshot unavailable.",
             f"Thermal/usage classes: {', '.join(state.cause_classes) or 'none established'}.",
         ]
         contradictions = [
             "Center-tread temperature alone is not treated as a pressure command.",
+            (
+                "Carcass temperature and wear channels are pit-boundary snapshots; they cannot "
+                "establish live thermal origin, degradation, or a setup change in this phase."
+            ),
+            (
+                "Uncontrolled first-versus-last lap-time drift is not used as tire falloff evidence; "
+                "traffic, fuel, weather, line, and stint continuity require separate controls."
+            ),
+            "This observational tire-state producer does not authorize a setup change.",
         ]
         if carcass is None:
-            contradictions.append("Carcass temperature is missing, so surface heat cannot establish thermal origin alone.")
+            contradictions.append("The carcass pit-boundary snapshot is missing.")
         if repeated_pressure < 3:
             contradictions.append("Fewer than three eligible laps repeat the pressure/profile pattern.")
-        recommendation = None
-        if "pressure_driven_heating" in causes and repeated_pressure >= 3 and carcass is not None:
-            recommendation = (
-                "Test one small pressure reduction at this corner only; keep it only if pressure gain, "
-                "surface/carcass profile, wear, and phase performance all improve on repeated laps."
-            )
         conclusions.append(EngineeringConclusion(
             key=f"{corner}_tire_state",
             summary=(
@@ -233,24 +237,7 @@ def analyze_tire_state(
             source_channels=sources,
             supporting_evidence=support,
             contradicting_evidence=contradictions,
-            recommendation=recommendation,
         ))
-    actionable = [index for index, conclusion in enumerate(conclusions) if conclusion.recommendation]
-    if len(actionable) > 1:
-        primary = max(
-            actionable,
-            key=lambda index: abs(states[index].middle_vs_shoulders or 0.0),
-        )
-        conclusions = [
-            conclusion if index == primary or not conclusion.recommendation else conclusion.model_copy(update={
-                "recommendation": None,
-                "contradicting_evidence": [
-                    *conclusion.contradicting_evidence,
-                    f"Held back because {states[primary].corner} is the single primary pressure test; change one setup control at a time.",
-                ],
-            })
-            for index, conclusion in enumerate(conclusions)
-        ]
     return TireStateReport(
         selected_lap=selected_lap,
         phases=sorted(phase_set),

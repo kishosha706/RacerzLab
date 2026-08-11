@@ -1,11 +1,9 @@
 import { useMemo } from "react";
-import type { ShockSettingRecommendation } from "../types/shockReader";
 
 export type ShockSetupField = {
   label: string;
   value: string;
   unavailable?: boolean;
-  recommendation?: ShockSettingRecommendation | null;
 };
 
 type ShockHistogramProps = {
@@ -41,56 +39,6 @@ type HistogramModel = {
   bumpLowPct: number;
   bumpHighPct: number;
 };
-
-function recommendationBadgeText(recommendation?: ShockSettingRecommendation | null): string {
-  if (!recommendation) return "action withheld";
-  const isSlope = recommendation.setting === "hs_compression_slope" || recommendation.setting === "hs_rebound_slope";
-  if (isSlope && recommendation.direction === "needs_more_evidence") return "slope withheld";
-  if (isSlope && recommendation.direction === "blocked") return "slope limit";
-  if (isSlope && recommendation.direction === "hold") return "hold curve shape";
-  if (isSlope && (recommendation.direction === "add" || recommendation.direction === "subtract")) {
-    const shape = recommendation.direction === "add" ? "more linear" : "more digressive";
-    if (recommendation.delta != null && recommendation.suggested_value != null) {
-      const sign = recommendation.delta > 0 ? "+" : "";
-      return `${shape} ${sign}${recommendation.delta} → ${recommendation.suggested_value}`;
-    }
-    return shape;
-  }
-  if (recommendation.direction === "blocked") return "limit";
-  if (recommendation.direction === "needs_more_evidence") {
-    if (recommendation.blocked_reason === "setup value missing") return "need setup";
-    if (recommendation.blocked_reason?.includes("legal option")) return "need option";
-    return "need data";
-  }
-  if (recommendation.direction === "hold") return "hold";
-  if (recommendation.delta != null && recommendation.suggested_value != null) {
-    const sign = recommendation.delta > 0 ? "+" : "";
-    return `${sign}${recommendation.delta} -> ${recommendation.suggested_value}`;
-  }
-  if (recommendation.blocked_reason === "setup value missing") return "need setup";
-  return "action withheld";
-}
-
-function recommendationTitle(recommendation?: ShockSettingRecommendation | null, learningMode = false): string {
-  if (!recommendation) return "Action withheld: no qualified shock-reader recommendation is available for this setting.";
-  const bits = [
-    `Action: ${recommendation.action_text}`,
-    `Expected: ${recommendation.expected_effect}`,
-    `Change size: ${recommendation.change_size_explanation}`,
-    `Keep if: ${recommendation.keep_if}`,
-    `Undo if: ${recommendation.undo_if}`,
-  ];
-  if (recommendation.blocked_reason) bits.push(`Action withheld: ${recommendation.blocked_reason}`);
-  if (learningMode) {
-    bits.push(
-      `Why: ${recommendation.reason_short}`,
-      `Goal: ${recommendation.goal}`,
-      `Trade-off: ${recommendation.tradeoff}`,
-      `Watch: ${recommendation.watch_for.join("; ")}`,
-    );
-  }
-  return bits.join("\n");
-}
 
 const CHART_WIDTH = 720;
 const CHART_HEIGHT = 260;
@@ -316,10 +264,10 @@ export function ShockHistogram({
                 <span className="shock-setup-label">{field.label}</span>
                 <strong>{field.value}</strong>
                 <span
-                  className={`shock-setup-recommendation-badge ${field.recommendation?.direction ?? "needs_more_evidence"}`}
-                  title={recommendationTitle(field.recommendation, learningMode)}
+                  className="shock-evidence-status-badge observation-only"
+                  title="Shock Reader is observational. Exact damper targets are available only from the controlled P19 workflow."
                 >
-                  {recommendationBadgeText(field.recommendation)}
+                  observation only
                 </span>
               </div>
             ))}

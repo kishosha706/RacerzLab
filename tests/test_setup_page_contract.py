@@ -58,6 +58,14 @@ def test_setup_page_uses_unambiguous_driver_control_names() -> None:
     assert '? "Steering Pinion"' in setup
 
 
+def test_setup_page_consumes_corner_weight_as_newtons_not_mass() -> None:
+    setup = _read("ui/src/tabs/SetupTab.tsx")
+
+    assert 'evCorner(setup, corner, "corner_weight_n")' in setup
+    assert 'evCorner(setup, "lf", "corner_weight_n")' in setup
+    assert "corner_weight_kg" not in setup
+
+
 def test_setup_page_uses_full_width_garage_layout_and_distinct_system_colours() -> None:
     styles = _read("ui/src/styles.css")
 

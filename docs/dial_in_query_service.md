@@ -6,13 +6,15 @@ Dial-In separates three different questions:
 
 1. Did RacerZLab understand the driver's complaint?
 2. Does the run contain channels capable of measuring the proposed mechanism?
-3. Did eligible telemetry actually observe that mechanism strongly enough to
-   justify one controlled test?
+3. Did eligible telemetry observe enough of that mechanism to make the
+   hypothesis worth measuring under P19?
 
 Channel availability answers only question 2. A candidate reaches
 `observed_mechanism` only when a tuning-valid eligible event supplies source
 channels, provenance, sufficient confidence, and no blocker. Capability-only
-matches remain unverified hypotheses and cannot authorize a verified test.
+matches remain unverified hypotheses. Even observed-mechanism evidence cannot
+bypass the canonical P19 identity, independence, traffic, history, mission,
+legal-option, and workflow gates.
 
 The verified workflow additionally accepts a selected physical track zone,
 phase, objective, and priority. If no repeated opportunity exists inside the
@@ -21,7 +23,7 @@ choosing a different corner.
 
 Candidate evidence scores are ordinal and expose their components. They are not
 probabilities or promised lap-time gains. Qualified exact-context personal
-response models may influence one next-test choice only inside their observed
+response models may influence internal P19 ordering only inside their observed
 input envelope and exact target zone.
 
 The Dial-In Query Service is the backend layer that turns a run-aware setup
@@ -34,7 +36,7 @@ It sits on top of:
 - local setup knowledge
 - source-backed guide digestion
 - the run-aware Evidence Adapter
-- the read-only Setup tab Dial-In panel
+- the Dial-In workspace
 
 Input:
 
@@ -44,8 +46,8 @@ Output:
 
 - interpreted symptom
 - interpreted phase
-- clean top setup swings
-- crew-chief-style next-test language
+- up to three non-directional control-area hypotheses
+- the mechanism/counter-effect to measure
 - compact confidence and data-profile labels
 - clarification when the complaint is too generic
 
@@ -69,12 +71,12 @@ But default responses do not expose:
 - evidence IDs
 - ranking scores
 
-Default output stays short and crew-chief-like. Debug detail is opt-in through
+Default output stays short and driver-oriented. Debug detail is opt-in through
 `include_debug_evidence=True` or `--debug-evidence`.
 
 ## Response Shape
 
-`DialInResponse`
+`DialInHypothesisResponse`
 - `run_id`
 - `complaint_raw`
 - `interpreted_symptom`
@@ -85,26 +87,36 @@ Default output stays short and crew-chief-like. Debug detail is opt-in through
 - `driver_message`
 - `top_swings`
 - `next_step`
-- `validation_summary`
 - `clarification`
 - `hidden_evidence_summary` optional
 - `warnings`
+- `evidence_state`
+- `source_channels`
+- `blocker_reasons`
+- `evidence_strength`
 
-`DialInSwing`
+`DialInHypothesisSwing`
 - `id`
 - `title`
-- `change_this`
-- `garage_lever`
 - `setup_area`
+- `candidate_control_label`
+- `related_control_keys`
+- `influence_label`
 - `strength_label`
 - `risk_label`
-- `effect`
-- `counter_effect`
-- `one_change_test`
+- `mechanism_to_verify`
+- `counter_effect_to_watch`
 - `validate_with`
+- `validate_with_labels`
 - `watch_for`
+- `watch_for_labels`
 - `readiness_label`
-- `debug` optional
+- `measurement_needed`
+- `evidence_state`
+- `source_channels`
+- `observed_evidence_flags`
+- `supporting_event_ids`
+- `blocker_reasons`
 
 ## Clarification Behavior
 
@@ -117,7 +129,7 @@ Example:
 I need to narrow it down. Where is it happening?
 ```
 
-No high-confidence swing list is returned until the phase is clear.
+No hypothesis list is returned until the phase is clear.
 
 ## API and UI
 
@@ -130,50 +142,28 @@ POST /api/runs/{run_id}/dial-in
 The request accepts a driver complaint, optional compare run IDs, optional
 car/track/package overrides, a result limit, and `include_debug_evidence`.
 
-The Setup tab renders the clean response by default:
+The Dial-In tab renders the clean response by default:
 
 - interpreted complaint
 - confidence/data profile
-- setup swings requested by the caller
-- an exact `Change this` garage action for each visible swing
-- goal and trade-off
-- your next test
-- what to watch for
+- non-authorizing setup-area hypotheses requested by the caller
+- the mechanism and counter-effect that still require measurement
+- channels and evidence locations to inspect
+- a typed blocker until the controlled P19 workflow is built
 - compact data profile
 - subtle garage-lever helper text when the title needs extra garage context
 
 Clarification options are shown when the complaint is too broad. Selecting an
 option only refines the complaint text; RacerZLab never edits setup files.
 
-## Specific Swing Language
+## Public Hypothesis Language
 
-Driver-facing Dial-In wording should teach the setup term without pretending to
-know a universal exact value. Write `cross weight` fully instead of shortening
-it to `cross`. Pressure split guidance should name the tire pair or relationship
-where the matrix supports it, such as the LR/RR rear tire pressure split for a
-loose-exit stability swing.
-
-Recommendation titles should name the garage action first. Goal and trade-off
-copy can explain the engineering reason after the lever is clear.
-
-Examples:
-
-- `Big swing: Lower LF/RF front ride height one small step`
-- `Big swing: Raise LR/RR rear ride height one small step`
-- `Balance swing: Lower RF tire pressure one small step`
-- `Fine-tune: Add RF LS compression one click`
-- `Balance swing: Reduce rear toe-in one small step`
-
-Each visible swing must also include a `Change this:` line and a `Garage lever:`
-line. Avoid vague visible actions such as `adjust tire pressure`, `supported
-axle`, `tune diff preload`, `front response toe swing`, `platform support`,
-`pressure trend`, or `shock control`. If the exact garage lever, direction, and
-corner/axle cannot be determined, the swing should not appear as a normal
-recommendation.
-
-When a ride-height recommendation depends on collars, the UI can add a compact
-helper note that shock collar changes ride height, preload, and corner weight
-together.
+The public Dial-In response may name a candidate control area, but it never
+publishes a direction, increment, target, `Change this`, Keep, or Undo text.
+It explains what mechanism must be measured and which counter-effect would
+falsify the hypothesis. Only the immutable P19 workflow may expose one exact
+legal target after run, session, setup, evidence, covariate, and history gates
+all pass.
 
 Internal target IDs such as `exit_yaw`, `rear_tire_trend`, and
 `long_run_falloff` stay stable in JSON, but normal text/UI output formats them
@@ -196,7 +186,7 @@ evidence identifier wording belongs outside normal driver output.
 
 Default Dial-In results:
 
-- return at most 3 swings
+- return at most 3 hypotheses
 - stay diverse by setup area
 - avoid more than one major package-level swing in the default set
 - never show Next Gen-disabled legacy areas
@@ -224,7 +214,8 @@ python -B scripts/query_dial_in.py --run-id <RUN_ID> --complaint "loose" --debug
 
 That mode is for development and inspection, not default driver-facing output.
 
-## Next Step
+## Authority handoff
 
-The natural next step is quiet memory: storing useful driver feedback and
-validated setup tests after the read-only guidance flow has proven stable.
+The only action-bearing handoff is the canonical P19 report/workflow. Notebook
+does not store Dial-In policy or create test plans, and public Dial-In cannot
+learn itself into setup authority.

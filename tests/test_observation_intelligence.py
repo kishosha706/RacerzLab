@@ -7,7 +7,6 @@ from pydantic import ValidationError
 
 from racelab_engine.analysis.observation_intelligence import (
     adapt_event_mechanism_observations,
-    adapt_p3_report_observations,
     build_driver_repeatability_signature,
     build_opportunity_signatures,
     build_same_setup_anomaly_envelopes,
@@ -421,7 +420,6 @@ def test_qualified_event_becomes_typed_observation_without_action_text() -> None
             "evidence": ["Set the brake control to 52% now."],
         },
         related_setup_keys=["front_brake_bias_percent"],
-        recommended_actions=["Move brake bias to 52%."],
     )
 
     report = adapt_event_mechanism_observations(
@@ -489,39 +487,22 @@ def test_unqualified_or_cross_run_events_never_leak_citations() -> None:
     assert "different run" in " ".join(report.blocker_reasons)
 
 
-def test_p3_adapter_discards_the_producers_setup_recommendation() -> None:
-    report = SimpleNamespace(
-        gate=EngineGate(contract_key="braking_efficiency", eligible=True, confidence_cap=0.8),
-        conclusions=[
-            EngineeringConclusion(
-                key="braking_phase_metrics",
-                summary="Position-aligned braking response was calculated.",
-                evidence_state=EvidenceState.CALCULATED,
-                confidence_score=0.8,
-                source_channels=["brake_pct", "long_accel"],
-                supporting_evidence=["Three eligible laps repeated the response."],
-                recommendation="Move front brake bias to 52%.",
-            )
-        ],
-    )
-
-    adapted = adapt_p3_report_observations(
-        report,
-        _laps(),
-        run_id="run-a",
-        setup_id="setup-a",
-        lap_number=2,
-        phase="threshold_braking",
-        lap_pct_start=20.0,
-        lap_pct_end=22.0,
-        lap_pct_peak=21.0,
-        telemetry_sample_count=40,
-    )
-
-    assert adapted.status is ObservationStatus.READY
-    assert "52%" not in str(adapted.model_dump())
-    assert adapted.observations[0].repetition_count == 1
-    assert len({item.lap_number for item in adapted.observations[0].citations}) == 1
+def test_p3_contract_rejects_producer_setup_action_before_adapter() -> None:
+    with pytest.raises(ValidationError, match="recommendation"):
+        _ = SimpleNamespace(
+            gate=EngineGate(contract_key="braking_efficiency", eligible=True, confidence_cap=0.8),
+            conclusions=[
+                EngineeringConclusion(
+                    key="braking_phase_metrics",
+                    summary="Position-aligned braking response was calculated.",
+                    evidence_state=EvidenceState.CALCULATED,
+                    confidence_score=0.8,
+                    source_channels=["brake_pct", "long_accel"],
+                    supporting_evidence=["Three eligible laps repeated the response."],
+                    recommendation="Move front brake bias to 52%.",
+                )
+            ],
+        )
 
 
 def test_models_forbid_setup_targets_and_probabilities() -> None:

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from racelab_engine.services.import_service import build_trace_payload, write_telemetry_cache
 
@@ -861,8 +865,29 @@ def test_chart_annotation_data_comes_only_from_visible_events() -> None:
 
     assert "const visiblePlatformEvents = filterPlatformEvents(platformEvents, mode);" in chart
     assert "visiblePlatformEvents\n    .filter((event) => event.lap_dist_ft != null)" in chart
-    assert "platformEvents.length > 0\n    ? []" in chart
+    assert "TelemetryEvent" not in chart
+    assert "legacyEvents" not in chart
+    assert 'source: "platform";' in chart
     assert "showLineLabels: false" in chart
+
+
+def test_chart_annotation_runtime_rejects_overview_event_fallback() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for the Platform annotation runtime contract test")
+    result = subprocess.run(
+        [
+            node,
+            "--no-warnings",
+            "--experimental-strip-types",
+            str(ROOT / "ui/tests/platformChartAnnotations.runtime.test.mjs"),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_compare_basket_stale_items_are_marked_not_silently_removed() -> None:
@@ -918,14 +943,18 @@ def test_no_visible_events_state_displays_cleanly() -> None:
     assert "No platform diagnostic events for this lap" in platform
 
 
-def test_actionable_mode_does_not_render_safe_legacy_platform_buttons() -> None:
+def test_platform_has_no_overview_event_fallback_surface() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
+    overview = _read("ui/src/tabs/OverviewTab.tsx")
 
-    assert "isSafeLegacyPlatformEvent" in platform
-    assert 'severity === "safe"' in platform
-    assert "visibleLegacyEvents" in platform
-    assert "platformEvents.length === 0 && visiblePlatformEvents.length === 0 && visibleLegacyEvents.length > 0" in platform
-    assert "visibleLegacyEvents.map((event)" in platform
+    assert "legacyEvents" not in platform
+    assert "visibleLegacyEvents" not in platform
+    assert "isSafeLegacyPlatformEvent" not in platform
+    assert "overview.events.filter((event) => event.event_type.startsWith" not in platform
+    assert "EvidenceCard" not in platform
+    assert "recommended_action" not in platform
+    assert "overview.events" in overview
+    assert "<EvidenceCard event={event}" in overview
 
 
 def test_clear_platform_diagnostics_are_grouped_not_visible_events() -> None:

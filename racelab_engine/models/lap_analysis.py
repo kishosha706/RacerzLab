@@ -4,10 +4,16 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class LapQualitySummary(BaseModel):
+class _LapAnalysisModel(BaseModel):
+    """Strict public contract for descriptive lap and stint analysis."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class LapQualitySummary(_LapAnalysisModel):
     """Extended lap summary with quality and risk metrics."""
     run_id: str
     lap_number: int
@@ -38,7 +44,7 @@ class LapQualitySummary(BaseModel):
     session_date: Optional[str] = None
 
 
-class LapWindowSummary(BaseModel):
+class LapWindowSummary(_LapAnalysisModel):
     """Summary of a consecutive lap window."""
     window_id: str
     run_id: str
@@ -65,7 +71,6 @@ class LapWindowSummary(BaseModel):
     shock_stress_score: Optional[float] = None
     confidence_score: float = 0.0
     warnings: list[str] = Field(default_factory=list)
-    recommendation: Optional[str] = None
     pace_quality_score: Optional[float] = None
     pace_quality_label: Optional[str] = None
     evidence_confidence_score: Optional[float] = None
@@ -76,7 +81,7 @@ class LapWindowSummary(BaseModel):
     pace_quality_components: Optional[dict[str, Optional[float]]] = None
 
 
-class LapDegradationSummary(BaseModel):
+class LapDegradationSummary(_LapAnalysisModel):
     """Degradation/falloff analysis for a stint."""
     run_id: str
     lap_count: int
@@ -95,7 +100,7 @@ class LapDegradationSummary(BaseModel):
     coaching_message: Optional[str] = None
 
 
-class LapCompareSelection(BaseModel):
+class LapCompareSelection(_LapAnalysisModel):
     """Validates a lap pair for comparison."""
     baseline_run_id: str
     baseline_lap: int
@@ -106,7 +111,7 @@ class LapCompareSelection(BaseModel):
     reason: Optional[str] = None
 
 
-class FastestLapGroup(BaseModel):
+class FastestLapGroup(_LapAnalysisModel):
     """Group of fastest individual N laps."""
     label: str
     lap_count: int
@@ -126,7 +131,7 @@ class FastestLapGroup(BaseModel):
     pace_quality_components: Optional[dict[str, Optional[float]]] = None
 
 
-class BestWindowGroup(BaseModel):
+class BestWindowGroup(_LapAnalysisModel):
     """Best consecutive N-lap window."""
     label: str
     window_size: int
@@ -136,7 +141,7 @@ class BestWindowGroup(BaseModel):
     warning: Optional[str] = None
 
 
-class LapWindowsResponse(BaseModel):
+class LapWindowsResponse(_LapAnalysisModel):
     """Response for lap windows endpoint."""
     run_id: str
     fastest_groups: list[FastestLapGroup] = Field(default_factory=list)
@@ -147,7 +152,7 @@ class LapWindowsResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-class StintSummary(BaseModel):
+class StintSummary(_LapAnalysisModel):
     """Table-ready summary of a run stint or consecutive lap window."""
     stint_id: str
     run_id: str
@@ -203,7 +208,7 @@ class StintSummary(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-class StintBucket(BaseModel):
+class StintBucket(_LapAnalysisModel):
     """Fixed lap-bucket average for timing-sheet style stint rows."""
     label: str
     start_offset: int
@@ -216,7 +221,7 @@ class StintBucket(BaseModel):
     warning: Optional[str] = None
 
 
-class StintGraphPoint(BaseModel):
+class StintGraphPoint(_LapAnalysisModel):
     """Lap-time point for graphing a selected stint without loading trace data."""
     stint_lap: int
     lap_number: int
@@ -232,7 +237,7 @@ class StintGraphPoint(BaseModel):
     warning: Optional[str] = None
 
 
-class StintRunSummary(BaseModel):
+class StintRunSummary(_LapAnalysisModel):
     """Compact header summary for the selected imported run."""
     run_id: str
     setup_name: Optional[str] = None
@@ -260,7 +265,7 @@ class StintRunSummary(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-class StintResponse(BaseModel):
+class StintResponse(_LapAnalysisModel):
     """Response for imported-data stint intelligence."""
     run_id: str
     stints: list[StintSummary] = Field(default_factory=list)
@@ -272,7 +277,7 @@ class StintResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-class StintCompareRequest(BaseModel):
+class StintCompareRequest(_LapAnalysisModel):
     """Request for comparing two computed stint summaries."""
     baseline_run_id: str
     baseline_stint_id: str
@@ -280,7 +285,7 @@ class StintCompareRequest(BaseModel):
     test_stint_id: str
 
 
-class StintCompareResult(BaseModel):
+class StintCompareResult(_LapAnalysisModel):
     """Delta summary for two selected stints."""
     baseline_stint: StintSummary
     test_stint: StintSummary
@@ -298,11 +303,11 @@ class StintCompareResult(BaseModel):
     tire_trend_delta: str = "limited"
     platform_trend_delta: str = "limited"
     shock_trend_delta: str = "limited"
-    verdict: str = "Data is limited; need more clean laps."
-    summary: str = "Stint comparison is limited by available clean lap data."
+    observation_summary: str = "Data is limited; need more clean laps."
+    evidence_summary: str = "Stint comparison is limited by available clean lap data."
 
 
-class StintBucketDelta(BaseModel):
+class StintBucketDelta(_LapAnalysisModel):
     """Time delta for matching bucket labels between selected stints."""
     label: str
     delta: Optional[float] = None

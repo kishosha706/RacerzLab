@@ -4,7 +4,7 @@ import hashlib
 import math
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from api.routes_runs import repository
 from racelab_engine.analysis.comparison import (
@@ -24,7 +24,7 @@ from racelab_engine.analysis.compare_math import (
     aggregate_tire_comparison, aggregate_shock_comparison,
     compute_whole_car_index,
 )
-from racelab_engine.analysis.did_it_work import compute_verdict
+from racelab_engine.analysis.did_it_work import compute_observation
 from racelab_engine.analysis.setup_diff import (
     diff_context,
     diff_setups,
@@ -54,16 +54,17 @@ from racelab_engine.analysis.proximity_context import (
 )
 from racelab_engine.services.import_service import read_telemetry_manifest, read_telemetry_rows
 from racelab_engine.services.insight_service import build_comparison_insights
-from racelab_engine.services.setup_learning_service import record_setup_response
-from racelab_engine.services.setup_learning_service import build_setup_response_context
-from racelab_engine.knowledge.setup.evidence_adapter import resolve_track_family
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.phase_engineering import EngineeringSystemsResponse
 
 router = APIRouter(prefix="/api/compare", tags=["compare"])
 
 
-class CompareRequest(BaseModel):
+class _StrictCompareRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class CompareRequest(_StrictCompareRequest):
     baseline_run_id: str
     test_run_id: str
     baseline_lap: int | None = None
@@ -82,7 +83,7 @@ class ComparePreviewResponse(BaseModel):
     warnings: list[str]
 
 
-class DeltaTraceRequest(BaseModel):
+class DeltaTraceRequest(_StrictCompareRequest):
     baseline_run_id: str
     test_run_id: str
     baseline_lap: int | None = None
@@ -96,7 +97,7 @@ class DeltaTraceRequest(BaseModel):
     target_zone_end_pct: float = 70.0
 
 
-class TimeAnalysisRequest(BaseModel):
+class TimeAnalysisRequest(_StrictCompareRequest):
     baseline_run_id: str
     test_run_id: str
     baseline_lap: int | None = None
@@ -888,7 +889,6 @@ def run_comparison(req: CompareRequest) -> dict:
         context_changes,
         [*proximity_evidence, *cohort_evidence],
     )
-    proximity_retest_required = proximity_blocks_attribution or cohort_blocks_attribution
 
     # ── Context status ──────────────────────────────────────
     # discipline
@@ -903,9 +903,9 @@ def run_comparison(req: CompareRequest) -> dict:
         setup_data_available=setup_data_available,
     )
 
-    # verdict
+    # observational comparison result
     pace = build_pace_comparison(bl_overview.laps, t_overview.laps, bl_lap, t_lap)
-    verdict = compute_verdict(
+    observation = compute_observation(
         target_zone,
         discipline,
         is_same_run=is_same,
@@ -914,12 +914,6 @@ def run_comparison(req: CompareRequest) -> dict:
         driver_evidence_available=driver.driver_verdict != "unavailable",
         context_blocks_attribution=context_blocks_attribution,
         context_evidence=context_evidence,
-        context_retest_instruction=(
-            "Keep this as an observed result, then repeat the same one-change test under matched "
-            "conditions with no car within 1.5 s ahead or 0.5 s behind."
-            if proximity_retest_required
-            else None
-        ),
     )
 
     # whole car index
@@ -939,89 +933,27 @@ def run_comparison(req: CompareRequest) -> dict:
         )
 
     comparison_id = _make_comparison_id(req.baseline_run_id, req.test_run_id, bl_lap, t_lap)
-    learning_warnings: list[str] = []
-    try:
-        baseline_identity = (
-            read_telemetry_manifest(req.baseline_run_id).get("compatibility_identity") or {}
-        )
-        session_type = str(baseline_identity.get("session_type") or "").lower()
-        objective = (
-            "qualifying"
-            if "qual" in session_type
-            else "long-run"
-            if "race" in session_type
-            else "setup-development"
-        )
-        response_context = build_setup_response_context(
-            compatibility_identity=baseline_identity,
-            rows=bl_rows,
-            baseline_setup=bl_setup.model_dump(mode="json") if bl_setup is not None else None,
-            package_archetype=resolve_track_family(bl_overview),
-            objective=objective,
-        )
-        record_setup_response(
-            comparison_id=comparison_id,
-            car_name=response_context.car_name if response_context is not None else t_overview.session.car_name,
-            track_name=(
-                response_context.track_name
-                if response_context is not None
-                else t_overview.session.track_display_name or t_overview.session.track_name
-            ),
-            baseline_run_id=req.baseline_run_id,
-            test_run_id=req.test_run_id,
-            baseline_lap=bl_lap,
-            test_lap=t_lap,
-            setup_changes=setup_changes,
-            discipline=discipline,
-            target_zone=target_zone,
-            verdict=verdict,
-            pace=pace,
-            driver=driver,
-            context_problem_count=context_problems,
-            response_context=response_context,
-            test_driver_id=str(
-                (read_telemetry_manifest(req.test_run_id).get("compatibility_identity") or {}).get("driver_user_id")
-                or ""
-            ),
-            sim_integrity_clear=integrity_clear,
-            is_same_run=is_same,
-        )
-    except Exception:
-        learning_warnings.append("Internal setup memory could not record this comparison.")
-    # Thread recommendation fields into verdict if available
-    causal_verdict_allowed = (
-        verdict.verdict in {"keep_direction", "undo"}
-        and not context_blocks_attribution
-        and discipline.is_reliable
-        and integrity_clear is True
+    non_authority_warning = (
+        "Comparison is observational; only the controlled P19 workflow may authorize "
+        "a setup action or policy."
     )
-    bl_recommendations = (
-        repo.get_recommendations(req.baseline_run_id)
-        if causal_verdict_allowed and hasattr(repo, "get_recommendations")
-        else []
-    )
-    cause_bucket = bl_recommendations[0].cause_bucket if bl_recommendations else None
-    success_metric = bl_recommendations[0].success_metric if bl_recommendations else None
-    required_next_data = bl_recommendations[0].required_next_data if bl_recommendations else []
-    do_not_change_warnings = bl_recommendations[0].do_not_change_warnings if bl_recommendations else []
-    verdict_evidence_state = (
-        EvidenceState.CONTROLLED_TEST_EFFECT
-        if causal_verdict_allowed
-        else EvidenceState.BLOCKED_BY_CONTEXT
+    observation_evidence_state = (
+        EvidenceState.BLOCKED_BY_CONTEXT
         if context_blocks_attribution
-        else EvidenceState.NEEDS_CONFIRMATION
+        else EvidenceState.OBSERVED_CORRELATION
     )
-    verdict_source_channels = sorted(
+    observation_source_channels = sorted(
         {
             delta.channel
             for delta in target_zone.channel_deltas
             if delta.baseline_avg is not None and delta.test_avg is not None
         }
     )
-    verdict_blockers = list(dict.fromkeys([
+    observation_blockers = list(dict.fromkeys([
         *context_evidence,
         *discipline.negative_factors,
-    ])) if not causal_verdict_allowed else []
+        non_authority_warning,
+    ]))
 
     summary = EnhancedComparisonSummary(
         comparison_id=comparison_id,
@@ -1052,17 +984,16 @@ def run_comparison(req: CompareRequest) -> dict:
         test_discipline={"score": discipline.score, "label": discipline.label,
                          "positive_factors": discipline.positive_factors,
                          "negative_factors": discipline.negative_factors,
-                         "recommendation": discipline.recommendation},
-        verdict={"verdict": verdict.verdict, "confidence_score": min(verdict.confidence_score, integrity_confidence_cap),
-                 "headline": verdict.headline, "evidence": verdict.evidence,
-                 "warnings": verdict.warnings, "next_step": verdict.next_step,
-                 "success_metric": success_metric,
-                 "cause_bucket": cause_bucket,
-                 "required_next_data": required_next_data,
-                 "do_not_change_warnings": do_not_change_warnings,
-                 "evidence_state": verdict_evidence_state.value,
-                 "source_channels": verdict_source_channels,
-                 "blocker_reasons": verdict_blockers},
+                         "measurement_note": discipline.measurement_note},
+        observation={
+                 "observation_state": observation.observation_state,
+                 "confidence_score": min(observation.confidence_score, integrity_confidence_cap),
+                 "headline": observation.headline,
+                 "evidence": observation.evidence,
+                 "warnings": [*observation.warnings, non_authority_warning],
+                 "evidence_state": observation_evidence_state.value,
+                 "source_channels": observation_source_channels,
+                 "blocker_reasons": observation_blockers},
         sim_integrity={
             "baseline": baseline_integrity.model_dump(mode="json"),
             "test": test_integrity.model_dump(mode="json"),
@@ -1074,9 +1005,9 @@ def run_comparison(req: CompareRequest) -> dict:
             (["Same run/lap comparison — reference only. Import a second .ibt to compare."] if is_same else [])
             + list(pace.confidence_notes)
             + integrity_warnings
-            + learning_warnings
+            + [non_authority_warning]
         ),
-        confidence_score=min(verdict.confidence_score, integrity_confidence_cap),
+        confidence_score=min(observation.confidence_score, integrity_confidence_cap),
     )
     return summary.as_dict()
 
@@ -1384,7 +1315,7 @@ def get_engineering_systems(req: TimeAnalysisRequest) -> dict:
     return report.model_dump(mode="json")
 
 
-class InsightsRequest(BaseModel):
+class InsightsRequest(_StrictCompareRequest):
     baseline_run_id: str
     test_run_id: str
     baseline_lap: int | None = None
@@ -1478,7 +1409,6 @@ def get_comparison_insights(req: InsightsRequest) -> dict:
         context_changes,
         [*proximity_evidence, *cohort_evidence],
     )
-    proximity_retest_required = proximity_blocks_attribution or cohort_blocks_attribution
     context_problems = sum(c.is_problem for c in context_changes)
     discipline = score_test_discipline(
         setup_changes,
@@ -1489,12 +1419,12 @@ def get_comparison_insights(req: InsightsRequest) -> dict:
         ),
     )
 
-    # Get base verdict
+    # Get the base observation
     from racelab_engine.analysis.comparison import compare_target_zone
     target_zone = compare_target_zone(bl_rows, t_rows, req.target_zone_start_pct, req.target_zone_end_pct)
-    from racelab_engine.analysis.did_it_work import compute_verdict
+    from racelab_engine.analysis.did_it_work import compute_observation
     pace = build_pace_comparison(bl_overview.laps, t_overview.laps, bl_lap, t_lap)
-    verdict = compute_verdict(
+    observation = compute_observation(
         target_zone,
         discipline,
         pace=pace,
@@ -1502,12 +1432,6 @@ def get_comparison_insights(req: InsightsRequest) -> dict:
         driver_evidence_available=driver.driver_verdict != "unavailable",
         context_blocks_attribution=context_blocks_attribution,
         context_evidence=context_evidence,
-        context_retest_instruction=(
-            "Keep this as an observed result, then repeat the same one-change test under matched "
-            "conditions with no car within 1.5 s ahead or 0.5 s behind."
-            if proximity_retest_required
-            else None
-        ),
     )
 
     comparison_id = _make_comparison_id(req.baseline_run_id, req.test_run_id, bl_lap, t_lap)
@@ -1525,8 +1449,8 @@ def get_comparison_insights(req: InsightsRequest) -> dict:
         discipline_label=discipline.label,
         discipline_score=discipline.score,
         context_problems=context_problems,
-        verdict_str=verdict.verdict,
-        base_confidence=verdict.confidence_score,
+        observation_state=observation.observation_state,
+        base_confidence=observation.confidence_score,
         channels=req.channels,
         causal_attribution_blocked=context_blocks_attribution,
         causal_block_reason=(
@@ -1535,14 +1459,6 @@ def get_comparison_insights(req: InsightsRequest) -> dict:
             else None
         ),
         causal_block_reasons=context_evidence if context_blocks_attribution else None,
-        causal_retest_instruction=(
-            "Repeat the same one-change test under matched conditions with no car within "
-            "1.5 s ahead or 0.5 s behind."
-            if proximity_retest_required
-            else "Repeat the same one-change test with the missing or mismatched context corrected."
-            if context_blocks_attribution
-            else None
-        ),
     )
     return insights.as_dict()
 

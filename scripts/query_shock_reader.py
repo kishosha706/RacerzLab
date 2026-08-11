@@ -25,14 +25,13 @@ def _parse_lap_window(value: str | None) -> tuple[int, int] | None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Query guarded shock histogram recommendations for a run.")
+    parser = argparse.ArgumentParser(description="Query guarded shock histogram observations for a run.")
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--lap", type=int)
     parser.add_argument("--lap-window")
     parser.add_argument("--phase")
     parser.add_argument("--zone-start-pct", type=float)
     parser.add_argument("--zone-end-pct", type=float)
-    parser.add_argument("--include-debug", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -45,7 +44,7 @@ def main() -> int:
     boundary_basis = (
         "Official iRacing Next Gen guidance: approximate 1.5 in/s high-speed transition; sensitivity plus/minus 25%."
         if next_gen
-        else "Descriptive 1.0 in/s boundary only; slope actions withheld without a verified car-specific transition."
+        else "Descriptive 1.0 in/s boundary only; no verified car-specific high-speed transition is available."
     )
     response = build_shock_reader_response(
         args.run_id,
@@ -56,8 +55,6 @@ def main() -> int:
         zone_end_pct=args.zone_end_pct,
         boundary_in_s=1.5 if next_gen else 1.0,
         boundary_basis=boundary_basis,
-        slope_boundary_verified=next_gen,
-        include_debug=args.include_debug,
         setup_snapshot=repo.get_setup_snapshot(args.run_id),
         lap_summaries=overview.laps,
     )
@@ -80,32 +77,8 @@ def main() -> int:
             f"(RHi {corner.rebound_hi_pct:.1f}, RLo {corner.rebound_lo_pct:.1f}, "
             f"BLo {corner.bump_lo_pct:.1f}, BHi {corner.bump_hi_pct:.1f})"
         )
-        for rec in corner.setting_recommendations:
-            if rec.direction in {"hold", "needs_more_evidence"}:
-                badge = "hold" if rec.direction == "hold" else "need data"
-            elif rec.direction == "blocked":
-                badge = "limit"
-            elif rec.delta is not None and rec.suggested_value is not None:
-                badge = f"{rec.delta:+d} -> {rec.suggested_value}"
-            elif rec.blocked_reason == "setup value missing":
-                badge = "need setup"
-            else:
-                badge = rec.direction
-            print(f"  {rec.display_label}: {badge} | {rec.reason_short}")
-    if response.recommendations:
-        print("Compatibility recommendation:")
-        for rec in response.recommendations:
-            value_text = ""
-            if rec.current_value is not None:
-                if rec.suggested_value is not None:
-                    value_text = f" {rec.current_value} -> {rec.suggested_value}"
-                elif rec.blocked_by_limit:
-                    value_text = f" blocked at {rec.current_value}"
-            print(f"- {rec.corner_scope} {rec.display_setting}: {rec.semantic_direction}{value_text}")
-            print(f"  Goal: {rec.goal}")
-            print(f"  Trade-off: {rec.tradeoff}")
-    else:
-        print("No guarded shock recommendation.")
+    print("Setup authority: withheld (P19 controlled workflow required).")
+    print("Measurement: repeat the same eligible track region with the setup unchanged.")
     for warning in response.warnings:
         print(f"Warning: {warning}")
     return 0

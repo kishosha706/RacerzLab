@@ -70,6 +70,22 @@ CarSetup:
     assert setup.steering_ratio == "60 mm/rev"
 
 
+def test_next_gen_corner_weight_preserves_newton_unit_ownership() -> None:
+    setup = extract_setup_snapshot(
+        """
+CarSetup:
+  Chassis:
+    LeftFront:
+      CornerWeight: 3278 N
+""",
+        run_id="next-gen-corner-weight",
+    )
+
+    corner = setup.extracted_values["lf"]
+    assert corner["corner_weight_n"] == 3278.0
+    assert "corner_weight_kg" not in corner
+
+
 def test_discrete_tape_configuration_is_not_discarded_as_non_numeric() -> None:
     setup = extract_setup_snapshot(
         """

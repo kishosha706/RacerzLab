@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { ChannelCatalogItem, PlatformEventItem, PlatformEventVisibilityMode, RunOverview } from "../types/telemetry";
 import { buildWindowEvidence, buildZoneEvidence, hasWindowSelection } from "../utils/evidenceFocus";
-import { bestUsefulLapMatchesRun, recommendationBlockedReason, recommendationIsActionable } from "../utils/evidenceTrust";
+import { bestUsefulLapMatchesRun, telemetryEventIsActionable } from "../utils/evidenceTrust";
 import { filterPlatformEvents, platformEventScopeLabel, platformEventVisibilityModeLabel } from "../utils/platformEventVisibility";
 import { ProxyBadge } from "./ProxyBadge";
 
@@ -230,38 +230,31 @@ function RunInspector({ overview, channels, collapsed, onToggle }: { overview: R
           ))}
         </div>
       )}
-      <CrewChiefSummary overview={overview} />
+      <RunObservationSummary overview={overview} />
     </InspectorShell>
   );
 }
 
-function CrewChiefSummary({ overview }: { overview: RunOverview }) {
+function RunObservationSummary({ overview }: { overview: RunOverview }) {
   const [open, setOpen] = useState(true);
-  const recommendation = overview.recommendations.find((candidate) => (
-    recommendationIsActionable(candidate, overview.events)
-  ));
-  const blockedRecommendation = overview.recommendations.find((candidate) => (
-    !recommendationIsActionable(candidate, overview.events)
-  ));
+  const hasQualifiedObservation = overview.events.some(telemetryEventIsActionable);
   return (
     <details className="crew-chief-inline" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>
-        <ClipboardCheck size={14} /> Crew Chief
+        <ClipboardCheck size={14} /> Engineering observation
       </summary>
-      {recommendation && <p className="crew-summary">{overview.crew_chief_summary}</p>}
-      {recommendation ? (
-        <div className="inspector-crew-block">
-          <span className="eyebrow">Next test</span>
-          <p>{recommendation.recommendation_text}</p>
-          <strong>{recommendation.success_metric}</strong>
-        </div>
-      ) : (
-        <div className="inspector-crew-block">
-          <span className="eyebrow">No call</span>
-          <p>No recommendation is shown without supporting evidence.</p>
-          {blockedRecommendation && <strong>{recommendationBlockedReason(blockedRecommendation)}</strong>}
-        </div>
-      )}
+      <p className="crew-summary">
+        {hasQualifiedObservation
+          ? "Located telemetry observations are available for mechanism qualification; no setup action is authorized."
+          : "No qualified engineering observation is available."}
+      </p>
+      <div className="inspector-crew-block">
+        <span className="eyebrow">Measurement mission</span>
+        <p>{hasQualifiedObservation
+          ? "Repeat the located behavior on eligible laps with the setup unchanged."
+          : "Collect eligible, setup-bound telemetry before considering a controlled test."}</p>
+        <strong>Setup changes are authorized only by the controlled P19 workflow.</strong>
+      </div>
     </details>
   );
 }
@@ -439,12 +432,6 @@ function EventInspector({
         </div>
       </div>
 
-      {event.recommended_action && (
-        <div className="inspector-action">
-          <h4>Recommended</h4>
-          <p>{event.recommended_action}</p>
-        </div>
-      )}
       {event.is_proxy_based && event.proxy_warning && (
         <p className="inspector-proxy-warning">{event.proxy_warning}</p>
       )}

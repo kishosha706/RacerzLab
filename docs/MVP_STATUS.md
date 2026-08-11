@@ -1,6 +1,6 @@
 # RaceLab Garage - MVP Status
 
-Date: 2026-06-01
+Date: 2026-08-10
 
 This status file is a current-state checkpoint, not a historical changelog.
 
@@ -11,7 +11,8 @@ This status file is a current-state checkpoint, not a historical changelog.
 - Normal import path is frame-native and avoids full row materialization.
 - Row analysis path remains available for fallback/debug parity.
 - Draft detection/classification is removed from active runtime and product decisions.
-- Notebook revisit actions use internal SPA workspace navigation (no internal `window.open(...)`).
+- Notebook is an observation API/archive, not a primary workspace. It stores no
+  setup verdict, setup change, next step, test plan, or setup memory.
 - Standalone Compare is hidden from main navigation; compare engine internals remain available for embedded tools.
 - Laps includes inline Test Basket actions (Set Baseline / Set Test / Open Platform) where evidence is sufficient.
 - Proxy/estimate badges are unified through shared badge styling/component usage.
@@ -22,6 +23,9 @@ This status file is a current-state checkpoint, not a historical changelog.
 - No missing telemetry converted to zero.
 - No fake setup diffs.
 - Measured/derived/proxy labeling remains explicit and truthful.
+- P19 is the sole setup-direction, exact-target, Keep/Undo, and stop-testing
+  authority. Overview, Compare, Platform, Shock Reader, public Dial-In, and
+  Notebook remain observation/measurement-only.
 
 ## Needs Verification
 
@@ -44,4 +48,5 @@ The following require fresh code/test profiling verification before being called
 - Historical roadmap/deferred notes should live in future/research docs.
 - Contract docs should mark unresolved claims as "needs verification" instead of hard completion language.
 
-Last verified: 2026-06-01.
+Last contract review: 2026-08-10. Exact regression and build counts belong to
+the release evidence for the tested tree.

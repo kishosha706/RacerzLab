@@ -710,25 +710,25 @@ def compare_stints(baseline: StintSummary, test: StintSummary) -> StintCompareRe
     best_bucket_delta = min((bucket.delta for bucket in bucket_deltas if bucket.delta is not None), default=None)
 
     if not uninterrupted:
-        verdict = "Stint comparison withheld; select uninterrupted clean windows."
+        observation_summary = "Stint comparison withheld; select uninterrupted clean windows."
     elif baseline.valid_lap_count < 5 or test.valid_lap_count < 5:
-        verdict = "Data is limited; need more clean laps."
+        observation_summary = "Data is limited; need more clean laps."
     elif avg_delta is not None and avg_delta < -0.05 and falloff_delta is not None and falloff_delta > 0.15:
-        verdict = "Test stint is faster early but falls off harder."
+        observation_summary = "Test stint is faster early but falls off harder."
     elif avg_delta is not None and avg_delta > 0.05 and falloff_delta is not None and falloff_delta < -0.10:
-        verdict = "Baseline is faster, but test is more stable over the run."
+        observation_summary = "Baseline is faster, but test is more stable over the run."
     elif rolling_20_delta is not None and rolling_20_delta < -0.05 and (falloff_delta is None or abs(falloff_delta) <= 0.20):
-        verdict = "Test keeps better 20-lap pace."
+        observation_summary = "Test shows better 20-lap pace."
     elif rolling_10_delta is not None and rolling_10_delta < -0.05 and (falloff_delta is None or abs(falloff_delta) <= 0.15):
-        verdict = "Test shows better 10-lap pace with similar falloff."
+        observation_summary = "Test shows better 10-lap pace with similar falloff."
     elif consistency_delta is not None and consistency_delta > 5 and (avg_delta is None or avg_delta > -0.05):
-        verdict = "Test is more consistent, but pace gain is not clear."
+        observation_summary = "Test is more consistent, but pace gain is not clear."
     elif avg_delta is not None and avg_delta < -0.05:
-        verdict = "Test stint is faster on average."
+        observation_summary = "Test stint is faster on average."
     elif avg_delta is not None and avg_delta > 0.05:
-        verdict = "Baseline stint is faster on average."
+        observation_summary = "Baseline stint is faster on average."
     else:
-        verdict = "Stints are closely matched with available data."
+        observation_summary = "Stints are closely matched with available data."
 
     summary_parts: list[str] = []
     if avg_delta is not None:
@@ -739,7 +739,7 @@ def compare_stints(baseline: StintSummary, test: StintSummary) -> StintCompareRe
         summary_parts.append(f"Best bucket delta {best_bucket_delta:+.3f}s.")
     if falloff_delta is not None:
         summary_parts.append(f"Falloff delta {falloff_delta:+.3f}s.")
-    summary = (
+    evidence_summary = (
         "Stint comparison is withheld because at least one scope contains a missing or excluded lap."
         if not uninterrupted
         else " ".join(summary_parts)
@@ -764,6 +764,6 @@ def compare_stints(baseline: StintSummary, test: StintSummary) -> StintCompareRe
         tire_trend_delta=_trend_delta(test.tire_trend_label, baseline.tire_trend_label),
         platform_trend_delta=_trend_delta(test.platform_trend_label, baseline.platform_trend_label),
         shock_trend_delta=_trend_delta(test.shock_trend_label, baseline.shock_trend_label),
-        verdict=verdict,
-        summary=summary,
+        observation_summary=observation_summary,
+        evidence_summary=evidence_summary,
     )

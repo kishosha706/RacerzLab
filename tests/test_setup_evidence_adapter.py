@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
 import os
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -430,78 +427,8 @@ def test_platform_effects_show_missing_key_evidence_without_platform_trace(tmp_p
     assert all(item.readiness == "missing_key_evidence" for item in platform_candidates)
 
 
-def test_cli_json_returns_stable_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    data_dir, db_path = _configure_env(monkeypatch, tmp_path)
-    _seed_run(
-        tmp_path,
-        channels={
-            "cfs_ride_height_in": 1.5,
-            "lf_ride_height_in": 2.0,
-            "rf_ride_height_in": 2.1,
-            "lr_ride_height_in": 3.0,
-            "rr_ride_height_in": 2.9,
-            "front_center_rh_in": 1.8,
-            "rear_center_rh_in": 2.5,
-            "throttle_pct": 100.0,
-            "yaw_rate": 1.2,
-        },
-    )
-    env = os.environ.copy()
-    env["RACELAB_DATA_DIR"] = str(data_dir)
-    env["RACELAB_DB_PATH"] = str(db_path)
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-B",
-            "scripts/query_setup_with_run_context.py",
-            "--run-id",
-            "run-1",
-            "--symptom",
-            "loose off",
-            "--json",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    payload = json.loads(completed.stdout)
-    assert {"run_id", "car_family", "track_family", "evidence_flags", "evidence_groups", "parsed_symptom", "candidates", "candidate_readiness"}.issubset(payload)
-
-
-def test_cli_show_evidence_outputs_present_missing_and_notes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    data_dir, db_path = _configure_env(monkeypatch, tmp_path)
-    _seed_run(
-        tmp_path,
-        channels={
-            "front_center_rh_in": 1.8,
-            "rear_center_rh_in": 2.5,
-            "smooth_center_rake_in": 0.6,
-            "diffuser_volume_ft3": 11.5,
-        },
-    )
-    env = os.environ.copy()
-    env["RACELAB_DATA_DIR"] = str(data_dir)
-    env["RACELAB_DB_PATH"] = str(db_path)
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-B",
-            "scripts/query_setup_with_run_context.py",
-            "--run-id",
-            "run-1",
-            "--symptom",
-            "loose off",
-            "--show-evidence",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    assert "evidence_flags:" in completed.stdout
-    assert "present:" in completed.stdout
-    assert "notes:" in completed.stdout
+def test_run_context_setup_cli_is_not_a_public_authority_surface() -> None:
+    assert not Path("scripts/query_setup_with_run_context.py").exists()
 
 
 def test_query_with_run_context_returns_parsed_symptom_and_candidates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

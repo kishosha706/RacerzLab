@@ -1,7 +1,6 @@
 import type {
   EvidenceState,
   LapSummary,
-  Recommendation,
   SetupSnapshot,
   TelemetryEvent,
 } from "../types/telemetry";
@@ -80,27 +79,4 @@ export function telemetryEventIsActionable(event: TelemetryEvent): boolean {
     && ACTIONABLE_EVIDENCE_STATES.has(event.evidence_state)
     && event.blocker_reasons.length === 0
     && event.source_channels.length > 0;
-}
-
-export function recommendationIsActionable(
-  recommendation: Recommendation,
-  events: TelemetryEvent[],
-): boolean {
-  if (
-    !ACTIONABLE_EVIDENCE_STATES.has(recommendation.evidence_state)
-    || recommendation.blocker_reasons.length > 0
-    || recommendation.source_channels.length === 0
-    || recommendation.evidence_event_ids.length === 0
-  ) return false;
-  const actionableEventIds = new Set(
-    events.filter(telemetryEventIsActionable).map((event) => event.event_id),
-  );
-  return recommendation.evidence_event_ids.every((eventId) => actionableEventIds.has(eventId));
-}
-
-export function recommendationBlockedReason(recommendation?: Recommendation | null): string {
-  if (!recommendation) return "No recommendation is available.";
-  return recommendation.blocker_reasons[0]
-    ?? recommendation.confidence_limit_reasons[0]
-    ?? "Supporting telemetry evidence is unavailable or incomplete.";
 }

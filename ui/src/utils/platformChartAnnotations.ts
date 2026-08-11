@@ -1,4 +1,4 @@
-import type { TelemetryEvent, PlatformEventItem, PlatformEventVisibilityMode } from "../types/telemetry";
+import type { PlatformEventItem, PlatformEventVisibilityMode } from "../types/telemetry";
 import { filterPlatformEvents, isMutedPlatformEvent } from "./platformEventVisibility";
 
 export type PlatformChartAnnotation = {
@@ -6,7 +6,7 @@ export type PlatformChartAnnotation = {
   label: string;
   severity: string;
   muted: boolean;
-  source: "platform" | "legacy";
+  source: "platform";
 };
 
 export type PlatformChartAnnotationModel = {
@@ -15,10 +15,6 @@ export type PlatformChartAnnotationModel = {
   markAreas: Array<{ xAxis: number; color: string; opacity: number }>;
   showLineLabels: boolean;
 };
-
-function legacyEventDistanceFt(event: TelemetryEvent): number | null {
-  return event.distance_m_peak == null ? null : event.distance_m_peak * 3.280839895;
-}
 
 export function platformEventAnnotationColor(severity: string): string {
   return severity === "critical"
@@ -30,17 +26,16 @@ export function platformEventAnnotationColor(severity: string): string {
         : "#38bdf8";
 }
 
+/** Build chart markers only from the structured /platform-events contract. */
 export function buildPlatformChartAnnotations({
   platformEvents,
-  legacyEvents,
   mode,
 }: {
   platformEvents: PlatformEventItem[];
-  legacyEvents: TelemetryEvent[];
   mode: PlatformEventVisibilityMode;
 }): PlatformChartAnnotationModel {
   const visiblePlatformEvents = filterPlatformEvents(platformEvents, mode);
-  const structuredAnnotations = visiblePlatformEvents
+  const annotations = visiblePlatformEvents
     .filter((event) => event.lap_dist_ft != null)
     .map((event) => ({
       distFt: event.lap_dist_ft!,
@@ -49,25 +44,6 @@ export function buildPlatformChartAnnotations({
       muted: isMutedPlatformEvent(event, mode),
       source: "platform" as const,
     }));
-
-  const legacyAnnotations: PlatformChartAnnotation[] = platformEvents.length > 0
-    ? []
-    : legacyEvents
-      .reduce<PlatformChartAnnotation[]>((annotations, event) => {
-        const distFt = legacyEventDistanceFt(event);
-        if (distFt != null) {
-          annotations.push({
-            distFt,
-            label: event.event_subtype ?? event.event_type,
-            severity: event.severity,
-            muted: false,
-            source: "legacy" as const,
-          });
-        }
-        return annotations;
-      }, []);
-
-  const annotations = [...structuredAnnotations, ...legacyAnnotations];
 
   return {
     annotations,

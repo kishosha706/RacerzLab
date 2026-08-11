@@ -42,7 +42,6 @@ def test_insights_show_measured_change_but_suppress_causal_setup_classification(
         causal_attribution_blocked=True,
         causal_block_reason="A car behind was observed within 0.50 seconds.",
         causal_block_reasons=["Test lap 2: car behind at 0.48 seconds."],
-        causal_retest_instruction="Repeat with no car within 0.5 seconds behind.",
     )
 
     assert result.target_zone_classification.classification == "inconclusive"
@@ -52,13 +51,14 @@ def test_insights_show_measured_change_but_suppress_causal_setup_classification(
     assert "A car behind was observed within 0.50 seconds." in result.warnings
     assert "Test lap 2: car behind at 0.48 seconds." in result.target_zone_classification.evidence
     assert all("Gained in" not in takeaway for takeaway in result.key_takeaways)
-    assert result.key_takeaways[-1] == "Repeat with no car within 0.5 seconds behind."
+    assert result.key_takeaways[-1] == "No setup policy is authorized by this comparison."
     assert result.correlations
     assert all(
         insight.narrative.startswith("Observed correlation only")
         for insight in result.correlations
     )
-    assert all(annotation.recommendation is None for annotation in result.annotations)
+    assert result.confidence_weighted_observation is not None
+    assert result.confidence_weighted_observation.observation_state == "inconclusive"
     assert all(annotation.description.startswith("Observed telemetry only") for annotation in result.annotations)
     assert all(sector.classification == "observed_only" for sector in result.sectors)
 

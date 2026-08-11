@@ -1,6 +1,12 @@
 # RacerZLab Master Setup Matrix v1  
 ## Oval + NASCAR Next Gen Setup Knowledge Pack
 
+> **Research/source artifact - not a production contract.** Directional rows
+> and response-style examples below are inputs to the internal knowledge
+> catalog only. They must never be shown directly as run-specific advice. The
+> public Dial-In projection is non-directional, and only P19 may authorize one
+> exact legal controlled test, Keep/Undo, or stop-testing state.
+
 > **Purpose:** This document consolidates the oval setup matrices, oval setup flowcharts, iRacing setup process notes, NASCAR Next Gen manual facts, shock tuning guide concepts, and RacerZLab product logic into one implementation-ready knowledge source.  
 >  
 > **Use this as a seed/source note for RacerZLab’s local setup-knowledge system.** It is not a copied setup guide. It is RacerZLab-owned wording, built to become structured rules, effects, counter-effects, evidence requirements, package archetypes, and crew-chief responses.
@@ -55,11 +61,12 @@ Driver complaint
 → car capability gate
 → package/archetype interpretation
 → evidence check
-→ setup-effect ranking
+→ internal setup-effect hypothesis ranking
 → effect/counter-effect explanation
-→ one small swing
+→ canonical P19 identity/history/mission gates
+→ one server-authorized small swing or measurement refusal
 → compare validation
-→ quiet memory
+→ controlled outcome memory
 ```
 
 ## 1.2 The non-negotiable rules
@@ -890,21 +897,26 @@ Next Gen ARB diameter is not exactly 1.375 / 2.000.
 Next Gen ARB arm is not exactly P1–P5.
 ```
 
-## 17.3 Query examples
+## 17.3 Validation and source-inspection examples
 
 ```bash
-python -B scripts/query_setup_knowledge.py --car-family next_gen --symptom "loose off" --evidence setup_snapshot,platform_trace,shock_histogram
-
-python -B scripts/query_setup_knowledge.py --car-family next_gen --symptom "tight center" --track-family intermediate_oval
+python -B scripts/validate_setup_knowledge.py
 
 python -B scripts/query_guide_knowledge.py --setup-area ls_rebound --car-family next_gen
 
 python -B scripts/query_guide_knowledge.py --topic diffuser --car-family next_gen
 ```
 
+The guide queries inspect accepted source records only. They do not consume a
+run or authorize a setup action.
+
 ---
 
-# 18. Crew-Chief Response Style Seeds
+# 18. Historical Response-Style Seeds (Non-Production)
+
+These examples are retained as wording research. Current public responses must
+strip their directions and ordered swing lists unless the canonical P19
+workflow independently earns one exact action.
 
 ## Loose entry
 

@@ -22,7 +22,7 @@ def test_every_surface_answers_a_decision_and_preserves_evidence_gaps() -> None:
     for item in analysis_surface_contracts():
         assert item.decision_question.endswith("?")
         assert item.consumer
-        assert item.driver_action
+        assert item.driver_follow_up
         assert item.provenance
         assert item.units
         assert any(term in item.gap_behavior.casefold() for term in ("gap", "missing", "unavailable", "unmapped"))

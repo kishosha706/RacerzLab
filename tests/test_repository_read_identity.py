@@ -9,7 +9,6 @@ from api.main import app
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.lap import LapSummary
-from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.storage.db import initialize_database
 from racelab_engine.storage.repository import (
@@ -23,7 +22,7 @@ def _seed_evidence_run(
     monkeypatch: pytest.MonkeyPatch,
     *,
     run_id: str = "identity-run",
-) -> tuple[RaceLabRepository, TelemetryEvent, Recommendation]:
+) -> tuple[RaceLabRepository, TelemetryEvent]:
     db_path = tmp_path / "racelab.sqlite"
     monkeypatch.setenv("RACELAB_DB_PATH", str(db_path))
     laps = [
@@ -53,17 +52,6 @@ def _seed_evidence_run(
         evidence_state=EvidenceState.MEASURED,
         source_channels=["speed_mph"],
         blocker_reasons=[],
-        recommended_actions=["Inspect the measured platform event."],
-    )
-    recommendation = Recommendation(
-        recommendation_id=f"{run_id}:recommendation:1",
-        run_id=run_id,
-        issue="Platform",
-        recommendation_text="Inspect the measured platform event.",
-        evidence_event_ids=[event.event_id],
-        evidence_state=EvidenceState.MEASURED,
-        source_channels=["speed_mph"],
-        blocker_reasons=[],
     )
     repository = RaceLabRepository(db_path)
     repository.save_import(
@@ -76,10 +64,9 @@ def _seed_evidence_run(
             ),
             laps=laps,
             events=[event],
-            recommendations=[recommendation],
         )
     )
-    return repository, event, recommendation
+    return repository, event
 
 
 @pytest.mark.parametrize(
@@ -96,7 +83,7 @@ def test_get_laps_rejects_embedded_identity_mismatch_instead_of_ranking_false_be
     identity_field: str,
     identity_value: str | int,
 ) -> None:
-    repository, _event, _recommendation = _seed_evidence_run(tmp_path, monkeypatch)
+    repository, _event = _seed_evidence_run(tmp_path, monkeypatch)
     original = repository.get_laps("identity-run")[-1]
     hostile = original.model_copy(
         update={identity_field: identity_value, "lap_time": 1.0}
@@ -124,7 +111,7 @@ def test_lap_apis_withhold_windows_and_stints_when_any_lap_identity_is_untrusted
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    repository, _event, _recommendation = _seed_evidence_run(tmp_path, monkeypatch)
+    repository, _event = _seed_evidence_run(tmp_path, monkeypatch)
     original = repository.get_laps("identity-run")[-1]
     hostile = original.model_copy(update={
         "run_id": "foreign-run",
@@ -166,7 +153,7 @@ def test_get_events_rejects_embedded_identity_mismatch_before_lap_relabeling(
     identity_field: str,
     identity_value: str | int,
 ) -> None:
-    repository, event, _recommendation = _seed_evidence_run(tmp_path, monkeypatch)
+    repository, event = _seed_evidence_run(tmp_path, monkeypatch)
     hostile = event.model_copy(update={identity_field: identity_value})
     connection = initialize_database(repository.db_path)
     with connection:
@@ -192,51 +179,10 @@ def test_get_events_rejects_embedded_identity_mismatch_before_lap_relabeling(
 
 
 @pytest.mark.parametrize(
-    ("identity_field", "identity_value"),
-    [
-        ("recommendation_id", "foreign-recommendation"),
-        ("run_id", "foreign-run"),
-    ],
-)
-def test_get_recommendations_rejects_embedded_identity_mismatch(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    identity_field: str,
-    identity_value: str,
-) -> None:
-    repository, _event, recommendation = _seed_evidence_run(tmp_path, monkeypatch)
-    hostile = recommendation.model_copy(update={identity_field: identity_value})
-    connection = initialize_database(repository.db_path)
-    with connection:
-        connection.execute(
-            "UPDATE recommendations SET recommendation_json = ? WHERE recommendation_id = ?",
-            (hostile.model_dump_json(), recommendation.recommendation_id),
-        )
-    connection.close()
-
-    with pytest.raises(
-        StoredEvidenceIntegrityError,
-        match="recommendation conclusions are unavailable",
-    ):
-        repository.get_recommendations("identity-run")
-
-    overview = repository.get_overview("identity-run")
-    assert overview is not None
-    assert overview.recommendations == []
-    assert any("stored recommendation" in warning for warning in overview.warnings)
-
-
-@pytest.mark.parametrize(
     ("table_name", "json_column", "reader_name", "error_text"),
     [
         ("laps", "lap_json", "get_laps", "lap-derived metrics are unavailable"),
         ("events", "event_json", "get_events", "event-derived conclusions are unavailable"),
-        (
-            "recommendations",
-            "recommendation_json",
-            "get_recommendations",
-            "recommendation conclusions are unavailable",
-        ),
     ],
 )
 def test_direct_evidence_reads_reject_malformed_selected_rows(
@@ -247,7 +193,7 @@ def test_direct_evidence_reads_reject_malformed_selected_rows(
     reader_name: str,
     error_text: str,
 ) -> None:
-    repository, _event, _recommendation = _seed_evidence_run(tmp_path, monkeypatch)
+    repository, _event = _seed_evidence_run(tmp_path, monkeypatch)
     connection = initialize_database(repository.db_path)
     with connection:
         connection.execute(

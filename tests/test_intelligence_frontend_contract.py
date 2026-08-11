@@ -118,8 +118,9 @@ def test_smart_engineer_setup_action_fails_closed_and_stays_one_change_only() ->
     assert "Open controlled test" in engineer
     assert 'setWorkspace("dial_in", "engineer")' in engineer
     assert "No setup-change control is available from this evidence." in engineer
-    assert "No setup action authorized" in engineer
-    assert "Keep the current setup and collect the requested evidence." in engineer
+    assert 'actionAuthorized ? action.title : "Evidence task only"' in engineer
+    assert "No setup change, Keep/Undo, or stop-testing policy is authorized." in engineer
+    assert "Keep the current setup and collect the requested evidence." not in engineer
     assert 'label="Controlled-test evidence"' in engineer
     assert "best_measurement" in engineer
     assert "Best next measurement" in engineer

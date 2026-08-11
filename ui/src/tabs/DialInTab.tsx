@@ -30,6 +30,7 @@ import type {
 
 type DialInTabProps = {
   overview: RunOverview | null;
+  sessionId: string | null;
   workflowScopeRunIds: readonly string[];
   workflowHandoffKey: string | null;
   workflowOpenIntentId: string | null;
@@ -319,14 +320,10 @@ function workflowDecisionPresentation(workflow: ControlledWorkflow | null): { la
       explanation: "No setup change is approved. Gather the named evidence first.",
     };
   }
-  if (
-    workflow?.status === "scored"
-    && workflow.quality?.controlled_effect_eligible
-    && workflow.quality.verdict === "keep"
-  ) {
+  if (workflow?.status === "scored") {
     return {
-      label: "Fix recommendation",
-      explanation: "A completed controlled test supports keeping this exact change.",
+      label: "Controlled result",
+      explanation: "Open the server-verified certificate to review the current P19 outcome.",
     };
   }
   return {
@@ -418,7 +415,6 @@ function dialInEvidenceHints(response: DialInResponse): string[] {
 
 function SwingCard({ swing, compact = false, learning = false }: { swing: DialInSwing; compact?: boolean; learning?: boolean }) {
   const helper = garageLeverLabel(swing);
-  const targetReady = swing.proposed_value_label != null && swing.blocker_reasons.length === 0;
   return (
     <article className={`dialin-swing-card${compact ? " compact" : ""}`}>
       <header>
@@ -426,28 +422,29 @@ function SwingCard({ swing, compact = false, learning = false }: { swing: DialIn
           <span>{cleanLabel(swing.setup_area, "Setup area")}</span>
           <h3>{swing.title}</h3>
           <p className="dialin-change-this">
-            <span>{targetReady ? "Make this setup change:" : "Target unavailable — do not change:"}</span> {swing.change_this}
+            <span>Hypothesis only:</span> {swing.mechanism_to_verify}
           </p>
-          <p className="dialin-garage-helper">Garage control{(swing.control_keys?.length ?? 0) > 1 ? "s" : ""}: {swing.garage_lever}</p>
-          <p className="dialin-garage-helper"><span>Why this size:</span> {swing.change_size_explanation}</p>
+          <p className="dialin-garage-helper">
+            Candidate control area: {swing.candidate_control_label}
+          </p>
           {helper && <p className="dialin-garage-note">{helper}</p>}
         </div>
         <div className="dialin-card-pills">
-          <span className="dialin-mini-pill">{swing.change_size_label}</span>
           <span className="dialin-mini-pill">{swing.influence_label}</span>
           <span className={`dialin-mini-pill ${dialInTone(swing.risk_label)}`}>{swing.risk_label}</span>
           <span className={`dialin-mini-pill ${dialInTone(swing.readiness_label)}`}>{swing.readiness_label}</span>
         </div>
       </header>
       <div className="dialin-action-grid">
-        <div><span>{targetReady ? "Expected improvement" : "Mechanism to verify"}</span><p>{swing.effect}</p></div>
-        <div><span>Trade-off</span><p>{swing.counter_effect}</p></div>
-        {targetReady && <div><span>Keep it if</span><p>{swing.keep_if}</p></div>}
-        {targetReady && <div><span>Undo it if</span><p>{swing.undo_if}</p></div>}
-        {targetReady && !compact && <div><span>Test plan</span><p>{swing.one_change_test}</p></div>}
-        {!targetReady && <div><span>Needed before a setup test</span><p>{swing.blocker_reasons.join(" ") || swing.disabled_reason}</p></div>}
-        {learning && <div><span>What this control does</span><p>{swing.control_expectation}</p></div>}
-        {learning && <div><span>Related settings to recheck</span><p>{swing.control_guardrail}</p></div>}
+        <div><span>Mechanism to verify</span><p>{swing.mechanism_to_verify}</p></div>
+        <div><span>Counter-effect to watch</span><p>{swing.counter_effect_to_watch}</p></div>
+        <div><span>Needed before a setup test</span><p>{swing.measurement_needed}</p></div>
+        {!compact && (
+          <div>
+            <span>Authority boundary</span>
+            <p>Only the controlled P19 workflow can expose an exact target or make a Keep/Undo decision.</p>
+          </div>
+        )}
         {learning && (
           <div>
             <span>Evidence signals</span>
@@ -624,6 +621,7 @@ function MeasurementMissionPanel({
 
 export function DialInTab({
   overview,
+  sessionId,
   workflowScopeRunIds,
   workflowHandoffKey,
   workflowOpenIntentId,
@@ -1068,7 +1066,7 @@ export function DialInTab({
     && exactSourceRunIntelligenceAuthority != null;
 
   const submitDialIn = useCallback(async () => {
-    if (!overview || !workflowCatalogReady || activeWorkflow || workflowAuthorityBlocked) return;
+    if (!overview || !sessionId || !workflowCatalogReady || activeWorkflow || workflowAuthorityBlocked) return;
     const trimmed = complaint.trim();
     const requestedBinding = currentRequestBinding;
     if (!trimmed || !requestedBinding?.normalized_complaint || loading) return;
@@ -1099,6 +1097,7 @@ export function DialInTab({
         }),
         startControlledWorkflow({
           run_id: overview.run_id,
+          session_id: sessionId,
           complaint: trimmed,
           selected_lap: selectedLapForRequest,
           ...workflowLapContext,
@@ -1110,20 +1109,8 @@ export function DialInTab({
         || workflowRequestSeq !== workflowRequestSeqRef.current
         || currentRunIdRef.current !== requestedRunId
       ) return;
-      if (workflowResult.status === "rejected") throw workflowResult.reason;
-      const nextWorkflow = workflowResult.value;
       if (!requestBindingsMatch(currentRequestBindingRef.current, requestedBinding)) {
         const message = "The Dial-In request context changed before the response returned. Nothing was updated, and setup authority is withheld. Reopen Dial-In before continuing.";
-        setWorkflowIdentityError(message);
-        throw new Error(message);
-      }
-      if (
-        !nextWorkflow.workflow_id
-        || nextWorkflow.workflow_id !== nextWorkflow.workflow_id.trim()
-        || nextWorkflow.source_run_id !== requestedRunId
-        || !workflowMatchesRequest(nextWorkflow, requestedBinding)
-      ) {
-        const message = "The controlled-test response did not match the requested run, complaint, or complete decision context. Nothing was updated, and exact targets are hidden. Reopen Dial-In before continuing.";
         setWorkflowIdentityError(message);
         throw new Error(message);
       }
@@ -1135,10 +1122,31 @@ export function DialInTab({
         setWorkflowIdentityError(message);
         throw new Error(message);
       }
+      const dialResponse = dialResult.status === "fulfilled" ? dialResult.value : null;
+      setResponse(dialResponse);
+      setResponseRequestBinding(dialResponse ? requestedBinding : null);
+      if (workflowResult.status === "rejected") {
+        setWorkflowError(
+          workflowResult.reason instanceof Error
+            ? workflowResult.reason.message
+            : "P19 did not authorize a controlled workflow for this evidence.",
+        );
+        if (dialResult.status === "rejected") throw dialResult.reason;
+        return;
+      }
+      const nextWorkflow = workflowResult.value;
+      if (
+        !nextWorkflow.workflow_id
+        || nextWorkflow.workflow_id !== nextWorkflow.workflow_id.trim()
+        || nextWorkflow.source_run_id !== requestedRunId
+        || !workflowMatchesRequest(nextWorkflow, requestedBinding)
+      ) {
+        const message = "The controlled-test response did not match the requested run, complaint, or complete decision context. Nothing was updated, and exact targets are hidden. Reopen Dial-In before continuing.";
+        setWorkflowIdentityError(message);
+        throw new Error(message);
+      }
       setWorkflow(nextWorkflow);
       setWorkflowError(null);
-      setResponse(dialResult.status === "fulfilled" ? dialResult.value : null);
-      setResponseRequestBinding(dialResult.status === "fulfilled" ? requestedBinding : null);
     } catch (caught) {
       if (requestSeq !== dialRequestSeqRef.current || currentRunIdRef.current !== requestedRunId) return;
       setResponse(null);
@@ -1151,7 +1159,7 @@ export function DialInTab({
         setLoading(false);
       }
     }
-  }, [activeWorkflow, basket.baseline, complaint, currentRequestBinding, decisionContext, loading, overview, selectedLapForRequest, workflowAuthorityBlocked, workflowCatalogReady, workflowLapContext]);
+  }, [activeWorkflow, basket.baseline, complaint, currentRequestBinding, decisionContext, loading, overview, selectedLapForRequest, sessionId, workflowAuthorityBlocked, workflowCatalogReady, workflowLapContext]);
 
   const clearDialIn = useCallback(() => {
     if (workflowBusy || !workflowCatalogReady) return;
@@ -1170,7 +1178,7 @@ export function DialInTab({
   }, [activeWorkflow, workflow, workflowBusy, workflowCatalogReady]);
 
   const buildVerifiedWorkflow = useCallback(async () => {
-    if (!overview || !workflowCatalogReady || workflowBusy || activeWorkflow || workflowAuthorityBlocked) return;
+    if (!overview || !sessionId || !workflowCatalogReady || workflowBusy || activeWorkflow || workflowAuthorityBlocked) return;
     const requestedRunId = overview.run_id;
     const requestedBinding = currentRequestBinding;
     if (!requestedBinding?.normalized_complaint) return;
@@ -1180,6 +1188,7 @@ export function DialInTab({
     try {
       const nextWorkflow = await startControlledWorkflow({
         run_id: overview.run_id,
+        session_id: sessionId,
         complaint: complaint.trim(),
         selected_lap: selectedLapForRequest,
         ...workflowLapContext,
@@ -1208,7 +1217,7 @@ export function DialInTab({
         setWorkflowBusy(false);
       }
     }
-  }, [activeWorkflow, complaint, currentRequestBinding, decisionContext, overview, selectedLapForRequest, workflowAuthorityBlocked, workflowBusy, workflowCatalogReady, workflowLapContext]);
+  }, [activeWorkflow, complaint, currentRequestBinding, decisionContext, overview, selectedLapForRequest, sessionId, workflowAuthorityBlocked, workflowBusy, workflowCatalogReady, workflowLapContext]);
 
   const nextWorkflowStage = activeControlledTest
     ? (["A", "B", "A2"] as const).find((stage) => !workflow.stage_run_ids[stage])
@@ -1403,7 +1412,7 @@ export function DialInTab({
   }, []);
 
   const openTestCertificate = useCallback(async () => {
-    if (!workflow || certificateBusy) return;
+    if (!workflow || workflow.status !== "scored" || workflowAuthorityBlocked || certificateBusy) return;
     const requestedRunId = overview?.run_id ?? null;
     const workflowId = workflow.workflow_id;
     const requestSeq = ++certificateRequestSeqRef.current;
@@ -1437,7 +1446,7 @@ export function DialInTab({
         setCertificateBusy(false);
       }
     }
-  }, [certificateBusy, overview?.run_id, workflow]);
+  }, [certificateBusy, overview?.run_id, workflow, workflowAuthorityBlocked]);
 
   const copyTestCertificate = useCallback(async () => {
     if (!certificateMarkdown) return;
@@ -1467,6 +1476,7 @@ export function DialInTab({
   );
   const decisionPresentation = workflowDecisionPresentation(workflow);
   const canSubmit = Boolean(overview)
+    && sessionId != null
     && workflowCatalogReady
     && currentRequestBinding != null
     && complaint.trim().length > 0
@@ -1944,10 +1954,6 @@ export function DialInTab({
               )}
               {nextWorkflowStage && <button className="secondary-button dialin-workflow-action" type="button" disabled={workflowBusy || !workflowContextMatches || workflowAuthorityBlocked || !currentStageRecordingAllowed} onClick={() => void recordCurrentRun()}>Verify current run as {workflowStageName(nextWorkflowStage)}</button>}
               {workflow.status === "a2_recorded" && <button className="primary-button dialin-workflow-action" type="button" disabled={workflowBusy || !workflowContextMatches || workflowAuthorityBlocked} onClick={() => void scoreVerifiedWorkflow()}>Score verified A/B/A2</button>}
-              {workflow.quality && <p className="dialin-driver-message">{workflow.quality.verdict.toUpperCase()} · {workflow.quality.score.toFixed(0)}/100 · {workflow.quality.supporting_evidence[0] ?? workflow.quality.contradictory_evidence[0]}</p>}
-              {workflow.quality?.controlled_effect_eligible && workflow.learning_admitted === false && (
-                <p className="section-note">The test verdict is valid, but setup memory rejected the observation because its provenance contract was incomplete.</p>
-              )}
             </>
           )}
           {workflowError && <div className="dialin-alert limited" role="alert"><AlertTriangle size={14} /><span>{workflowError}</span></div>}
@@ -2072,15 +2078,6 @@ export function DialInTab({
                     {workflowBusy ? "Scoring all eligible laps" : "Score verified A/B/A2"}
                   </button>
                 )}
-                {workflow.quality && (
-                  <div className={`dialin-alert ${workflow.quality.controlled_effect_eligible ? "" : "limited"}`}>
-                    <strong>{workflow.quality.verdict.toUpperCase()} · {workflow.quality.score.toFixed(0)}/100</strong>
-                    <span>{workflow.quality.supporting_evidence[0] ?? workflow.quality.blockers[0] ?? workflow.quality.contradictory_evidence[0]}</span>
-                  </div>
-                )}
-                {workflow.quality?.controlled_effect_eligible && workflow.learning_admitted === false && (
-                  <p className="section-note">Result scored, but setup memory did not admit it; no learned response is implied.</p>
-                )}
               </>
             )}
           </section>
@@ -2163,31 +2160,17 @@ export function DialInTab({
         </div>
       )}
 
-      {!workflowAuthorityBlocked && workflow?.status === "scored" && workflow.quality && (
+      {!workflowAuthorityBlocked && workflow?.status === "scored" && (
         <section className="dialin-aba-card dialin-test-certificate" aria-label="Controlled test certificate">
           <header>
             <div>
               <span className="eyebrow">Auditable test certificate</span>
-              <h3>{workflow.quality.verdict.toUpperCase()} · {workflow.quality.score.toFixed(0)}/100 evidence strength</h3>
+              <h3>Server verification required</h3>
             </div>
-            <span className={`dialin-mini-pill ${workflow.quality.controlled_effect_eligible ? "complete" : ""}`}>
-              {workflow.learning_admitted === true ? "Memory admitted" : "No learned claim"}
-            </span>
+            <span className="dialin-mini-pill">P19 outcome</span>
           </header>
-          <p><strong>Historical target retained in the auditable certificate · not current setup authority</strong></p>
-          {workflow.execution && (
-            <div className="dialin-certificate-metrics">
-              <div><span>B vs A</span><strong>{workflow.execution.phase_effect_b_vs_a_s?.toFixed(3) ?? "Unavailable"} s</strong></div>
-              <div><span>B vs A2</span><strong>{workflow.execution.phase_effect_b_vs_a2_s?.toFixed(3) ?? "Unavailable"} s</strong></div>
-              <div><span>Noise floor</span><strong>{workflow.execution.empirical_noise_s?.toFixed(3) ?? "Unavailable"} s</strong></div>
-              <div><span>Lap response</span><strong>{workflow.execution.target_effect_distribution_state ?? "Unavailable"}</strong></div>
-              <div><span>Other phases</span><strong>{workflow.execution.countereffect_passed === true ? "Passed" : workflow.execution.countereffect_passed === false ? "Rollback" : "Unavailable"}</strong></div>
-              <div><span>Control safety</span><strong>{workflow.execution.control_guardrails_passed === true ? "Passed" : workflow.execution.control_guardrails_passed === false ? "Rollback" : "Unavailable"}</strong></div>
-            </div>
-          )}
-          <p className="section-note">
-            {workflow.quality.supporting_evidence[0] ?? workflow.quality.blockers[0] ?? workflow.quality.contradictory_evidence[0]}
-          </p>
+          <p><strong>The workflow response itself cannot publish a target or Keep/Undo verdict.</strong></p>
+          <p className="section-note">Open the certificate to make the server re-derive the exact current-session P19 outcome before any result is shown.</p>
           <div className="dialin-certificate-actions">
             {!certificateMarkdown && (
               <button className="secondary-button" type="button" disabled={certificateBusy} onClick={() => void openTestCertificate()}>

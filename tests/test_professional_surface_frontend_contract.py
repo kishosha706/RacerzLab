@@ -39,5 +39,6 @@ def test_dial_in_exposes_downloadable_controlled_test_certificate() -> None:
 
     assert "Open full certificate" in dial_in
     assert "Download Markdown" in dial_in
-    assert "No learned claim" in dial_in
+    assert "The workflow response itself cannot publish a target or Keep/Undo verdict." in dial_in
+    assert "make the server re-derive the exact current-session P19 outcome" in dial_in
     assert "/report`" in client

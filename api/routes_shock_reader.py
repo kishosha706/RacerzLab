@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from api.routes_runs import get_run_or_404, repository
 from racelab_engine.analysis.shock_reader import build_shock_reader_response
@@ -13,13 +13,22 @@ router = APIRouter(prefix="/api/runs", tags=["shock-reader"])
 @router.get("/{run_id}/shock-reader", response_model=ShockReaderResponse)
 def get_shock_reader(
     run_id: str,
+    request: Request,
     lap: int | None = None,
     lap_window: str | None = None,
     phase: str | None = None,
     zone_start_pct: float | None = None,
     zone_end_pct: float | None = None,
-    include_debug: bool = False,
 ) -> ShockReaderResponse:
+    allowed_query_fields = {
+        "lap", "lap_window", "phase", "zone_start_pct", "zone_end_pct",
+    }
+    unexpected = sorted(set(request.query_params) - allowed_query_fields)
+    if unexpected:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported Shock Reader query fields: {', '.join(unexpected)}",
+        )
     overview = get_run_or_404(run_id)
     parsed_window = _parse_lap_window(lap_window)
     if lap is not None and parsed_window is not None:
@@ -29,9 +38,9 @@ def get_shock_reader(
     boundary = 1.5 if next_gen else 1.0
     boundary_basis = (
         "Official iRacing Next Gen guidance: the high-speed adjuster begins at approximately 1.5 in/s; "
-        "the conclusion must also survive a plus/minus 25% sensitivity check."
+        "the regime classification must also survive a plus/minus 25% sensitivity check."
         if next_gen
-        else "Descriptive 1.0 in/s boundary only; a verified car-specific high-speed transition is unavailable, so slope actions are withheld."
+        else "Descriptive 1.0 in/s boundary only; a verified car-specific high-speed transition is unavailable."
     )
     try:
         return build_shock_reader_response(
@@ -43,9 +52,7 @@ def get_shock_reader(
             zone_end_pct=zone_end_pct,
             boundary_in_s=boundary,
             boundary_basis=boundary_basis,
-            slope_boundary_verified=next_gen,
             expected_sample_rate_hz=float(overview.session.telemetry_rate_hz or 60.0),
-            include_debug=include_debug,
             setup_snapshot=setup,
             lap_summaries=overview.laps,
         )

@@ -245,9 +245,49 @@ def classify_proximity_time_gap_window(
     )
 
 
+def proximity_time_gap_exposure_fraction(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    ahead_exclusion_seconds: float = 1.5,
+    behind_exclusion_seconds: float = 0.5,
+) -> float | None:
+    """Return the observed sample fraction inside either proximity window.
+
+    Missing distance or player-speed coverage fails closed instead of being
+    interpreted as zero traffic exposure.  Like the classifier above, this is
+    an operational time-gap screen and not an aerodynamic measurement.
+    """
+
+    thresholds = (ahead_exclusion_seconds, behind_exclusion_seconds)
+    if not all(math.isfinite(value) and value > 0 for value in thresholds):
+        raise ValueError("time-gap thresholds must be finite and greater than zero")
+
+    row_list = list(rows)
+    if not row_list:
+        return None
+    nearby = 0
+    valid = 0
+    for row in row_list:
+        ahead = _distance(row, "car_distance_ahead_m", "CarDistAhead")
+        behind = _distance(row, "car_distance_behind_m", "CarDistBehind")
+        speed = _speed_mps(row)
+        if ahead is None or behind is None or speed is None:
+            continue
+        valid += 1
+        if (
+            ahead / speed <= ahead_exclusion_seconds
+            or behind / speed <= behind_exclusion_seconds
+        ):
+            nearby += 1
+    if valid != len(row_list):
+        return None
+    return nearby / valid
+
+
 __all__ = [
     "ProximityContext",
     "ProximityState",
     "classify_proximity_window",
     "classify_proximity_time_gap_window",
+    "proximity_time_gap_exposure_fraction",
 ]

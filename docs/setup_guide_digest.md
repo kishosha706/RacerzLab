@@ -20,6 +20,10 @@ language, phase-aware setup mappings, package context, and review status. Guide
 content should teach tradeoffs; it should not become copied guide prose, exact
 universal setup values, runtime AI behavior, or telemetry formulas.
 
+Directional source records remain internal hypothesis material. Public Dial-In
+strips directions, increments, and targets; only P19 may turn a record into one
+exact controlled mission or publish Keep/Undo/stop-testing policy.
+
 Next Gen diffuser/front-feed wording remains conservative: front ride-height
 platform helps define diffuser feed, rear ride-height platform helps define
 outlet/expansion and scrape/choke context, and diffuser metrics are derived
@@ -56,6 +60,6 @@ as `needs_review` until verified. They are not accepted rules and should not be
 used as setup logic before verification.
 
 Next step after source digestion is now implemented: the Evidence Adapter
-translates local telemetry, Compare output, setup snapshots, and notebook
-context into existing evidence tags without inventing new setup rules outside
-the reviewed matrix-backed records. See `docs/setup_evidence_adapter.md`.
+translates local telemetry, Compare observations, and setup snapshots into
+existing evidence tags without inventing new setup rules outside the reviewed
+matrix-backed records. See `docs/setup_evidence_adapter.md`.

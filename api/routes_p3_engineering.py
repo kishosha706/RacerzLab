@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from api.routes_runs import get_run_or_404, repository
@@ -174,7 +174,7 @@ _SERVER_REDLINE_KEYS = {
 
 
 def _server_setup_redline_rpm(setup: object | None) -> float | None:
-    """Extract a limiter only from the persisted setup; client values never authorize action."""
+    """Extract observation context only from the persisted setup."""
     if setup is None:
         return None
     payload = setup.model_dump() if hasattr(setup, "model_dump") else setup
@@ -309,13 +309,15 @@ def get_damper_response(run_id: str, lap: int | None = None) -> DamperResponseRe
 @router.get("/{run_id}/powertrain-gearing", response_model=PowertrainGearingReport)
 def get_powertrain_gearing(
     run_id: str,
+    request: Request,
     lap: int | None = None,
-    redline_rpm: float | None = None,
 ) -> PowertrainGearingReport:
-    if redline_rpm is not None:
+    unexpected = sorted(set(request.query_params) - {"lap"})
+    if unexpected:
         raise HTTPException(
             422,
-            "Client redline_rpm cannot authorize a gearing action; capture the limiter in the persisted setup.",
+            f"Unsupported powertrain/gearing query fields: {', '.join(unexpected)}. "
+            "Persisted setup context owns the limiter value.",
         )
     overview, selected = _selected_lap(run_id, lap)
     rows = _rows(run_id, POWERTRAIN_GEARING_CONTRACT, _INTEGRITY_CHANNELS)

@@ -7,6 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 
+from api.intelligence_identity import intelligence_snapshot_identity
 from api.intelligence_adapter import (
     to_public_intelligence_citation,
     to_public_intelligence_navigation,
@@ -29,11 +30,13 @@ from racelab_engine.models.intelligence import (
     GroundedQueryResult,
     InternalIntelligenceReport,
 )
+from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.models.vehicle_systems import (
     ComponentInspectionResponse,
     ControlMechanismTraceResponse,
     VehicleSystemsProjection,
 )
+from racelab_engine.services.import_service import build_telemetry_capability_payload
 from racelab_engine.services.engineering_memory_service import (
     record_driver_presentation_preference_for_run,
 )
@@ -42,6 +45,8 @@ from racelab_engine.services.experiment_service import (
 )
 from racelab_engine.services.intelligence_service import answer_grounded_query
 from racelab_engine.services.run_intelligence_service import build_run_intelligence
+from racelab_engine.services.session_intelligence_service import setup_policy_fingerprint
+from racelab_engine.services.session_service import get_session as get_racelab_session
 from racelab_engine.services.track_map_service import (
     build_track_regions,
     find_best_map_for_run,
@@ -129,6 +134,15 @@ def _citation_track_locations(
     return result
 
 
+def _canonical_public_track_region_id(location: dict[str, object]) -> str | None:
+    region_id = location.get("region_id")
+    if not isinstance(region_id, str) or not region_id:
+        return None
+    if region_id.startswith("straight:"):
+        return region_id.split(":", 1)[1]
+    return region_id
+
+
 def _region_aware_query_answer(
     result: GroundedQueryResult,
     citations: list[IntelligenceCitationResponse],
@@ -159,9 +173,14 @@ def _http_error(exc: ValueError) -> HTTPException:
 def _query_action_matches_current_report(
     result: GroundedQueryResult,
     report: InternalIntelligenceReport,
+    *,
+    setup_snapshot: SetupSnapshot | None = None,
 ) -> bool:
     try:
-        public_report = to_public_intelligence_report(report)
+        public_report = to_public_intelligence_report(
+            report,
+            setup_snapshot=setup_snapshot,
+        )
     except ValueError:
         return False
     action = public_report.briefing.action
@@ -208,12 +227,14 @@ def get_run_intelligence(
             # P26 is a read-only supplement. Its exact-build fail-closed state
             # must not erase the canonical P19 report or create authority.
             vehicle_systems = None
+        overview = RaceLabRepository().get_overview(run_id)
         return to_public_intelligence_report(
             bundle.report,
             narrative_entries=bundle.narrative_entries,
             calibration=bundle.calibration,
             driver_profile=bundle.driver_profile,
             vehicle_systems=vehicle_systems,
+            setup_snapshot=(overview.setup_snapshot if overview is not None else None),
         )
     except ValueError as exc:
         raise _http_error(exc) from exc
@@ -296,7 +317,7 @@ def record_measurement_attempt(
     run_id: str,
     request: MeasurementAttemptRequest,
 ) -> MeasurementAttemptResponse:
-    """Append a cleanly scoped mission outcome without granting setup authority."""
+    """Append a client-attested mission note without granting stop-testing authority."""
     try:
         bundle = build_run_intelligence(run_id, session_id=request.session_id)
     except ValueError as exc:
@@ -322,9 +343,117 @@ def record_measurement_attempt(
             detail="This exact mission is already stopped; redesign it before recording another attempt.",
         )
     attempt_run_id = request.attempt_run_id or run_id
+    if contract.session_id is None:
+        if attempt_run_id != contract.run_id:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "A run-scoped measurement contract cannot accept an attempt from "
+                    "another run. Rebuild the mission in an explicit session scope."
+                ),
+            )
+    else:
+        mission_session = get_racelab_session(contract.session_id)
+        current_session_run_ids = (
+            tuple(sorted(set(mission_session.run_ids)))
+            if mission_session is not None
+            else ()
+        )
+        if (
+            current_session_run_ids != contract.session_run_ids
+            or attempt_run_id not in contract.session_run_ids
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "The attempt run is outside the immutable mission session scope, "
+                    "or that session's run membership changed."
+                ),
+            )
     overview = RaceLabRepository().get_overview(attempt_run_id)
     if overview is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {attempt_run_id}")
+    attempt_setup = overview.setup_snapshot
+    try:
+        attempt_setup_sha256 = setup_policy_fingerprint(attempt_setup)
+    except (TypeError, ValueError):
+        attempt_setup_sha256 = None
+    if (
+        attempt_setup is None
+        or attempt_setup_sha256 is None
+        or attempt_setup_sha256 != contract.setup_sha256
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="The attempt run does not preserve the mission's exact material setup.",
+        )
+    try:
+        capability = build_telemetry_capability_payload(
+            attempt_run_id,
+            expected_source_file_sha256=overview.session.file_hash,
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="The attempt run telemetry ownership could not be verified.",
+        ) from exc
+    if capability.get("compatibility_fingerprint") != contract.compatibility_fingerprint:
+        raise HTTPException(
+            status_code=409,
+            detail="The attempt run car, track, build, or schema identity changed.",
+        )
+    available_channels: set[str] = set()
+    channel_entries = capability.get("channels", ())
+    if not isinstance(channel_entries, list):
+        raise HTTPException(
+            status_code=409,
+            detail="The attempt run channel manifest is malformed.",
+        )
+    for entry in channel_entries:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            valid_record_count = int(entry.get("valid_record_count") or 0)
+        except (TypeError, ValueError):
+            continue
+        if (
+            entry.get("archive_status") != "cached"
+            or entry.get("health_status") in {"blocked", "unavailable"}
+            or valid_record_count < 1
+        ):
+            continue
+        available_channels.update(
+            channel_id
+            for channel_id in (entry.get("name"), entry.get("canonical_name"))
+            if isinstance(channel_id, str) and channel_id
+        )
+    declared_observed_channels = set(request.observed_channels)
+    unavailable_declared_channels = declared_observed_channels - available_channels
+    if unavailable_declared_channels:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "The attempt declares channels that are not usable in its verified archive: "
+                + ", ".join(sorted(unavailable_declared_channels))
+                + "."
+            ),
+        )
+    if request.outcome in {"completed_clean", "no_signal"}:
+        missing_required_channels = set(contract.required_channels) - available_channels
+        undeclared_required_channels = (
+            set(contract.required_channels) - declared_observed_channels
+        )
+        if missing_required_channels or undeclared_required_channels:
+            missing = sorted(missing_required_channels | undeclared_required_channels)
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "A clean or no-signal outcome requires every producer-owned mission "
+                    "channel to be verified and declared: "
+                    + ", ".join(missing)
+                    + "."
+                ),
+            )
     eligible_ids = {
         f"{attempt_run_id}:{lap.lap_number}"
         for lap in overview.laps
@@ -350,6 +479,10 @@ def record_measurement_attempt(
             contract_id=contract.contract_id,
             contract_sha256=contract.contract_sha256,
             run_id=attempt_run_id,
+            setup_id=attempt_setup.setup_id,
+            setup_sha256=attempt_setup_sha256,
+            compatibility_fingerprint=contract.compatibility_fingerprint,
+            outcome_authority="client_attested",
             eligible_lap_ids=supplied_laps,
             outcome=request.outcome,
             observed_channels=tuple(request.observed_channels),
@@ -368,6 +501,8 @@ def record_measurement_attempt(
         contract_id=attempt.contract_id,
         contract_sha256=attempt.contract_sha256,
         outcome=attempt.outcome,
+        outcome_authority="client_attested",
+        counts_toward_stop_testing=False,
     )
 
 
@@ -498,7 +633,7 @@ def query_run_intelligence(
             citation = IntelligenceCitationResponse.model_validate(
                 {
                     **citation.model_dump(),
-                    "track_region_id": location["region_id"],
+                    "track_region_id": _canonical_public_track_region_id(location),
                     "track_region_label": location["display_label"],
                     "track_region_phase": location["phase"],
                     "track_region_confidence": location["confidence"],
@@ -512,6 +647,7 @@ def query_run_intelligence(
     query_action_matches_report = _query_action_matches_current_report(
         result,
         bundle.report,
+        setup_snapshot=(overview.setup_snapshot if overview is not None else None),
     )
     action_binding_withheld = result.action_authorized and not query_action_matches_report
     action_authorized = result.action_authorized and query_action_matches_report
@@ -535,9 +671,18 @@ def query_run_intelligence(
             detail="Query mind-change criteria did not match the current report scope.",
         )
     answer = _region_aware_query_answer(result, citations)
+    snapshot_identity = intelligence_snapshot_identity(
+        bundle.report.reasoning_snapshot,
+        run_id=run_id,
+        setup_snapshot=(overview.setup_snapshot if overview is not None else None),
+    )
     return IntelligenceQueryResponse(
+        schema_version="p19.intelligence-query.v1",
         run_id=run_id,
         session_id=bundle.report.session_id,
+        reasoning_snapshot_sha256=snapshot_identity.reasoning_snapshot_sha256,
+        setup_id=snapshot_identity.setup_id,
+        setup_snapshot_sha256=snapshot_identity.setup_snapshot_sha256,
         scope_run_ids=list(scope_run_ids),
         selected_lap=request.selected_lap,
         status="ready" if result.supported else "unavailable",

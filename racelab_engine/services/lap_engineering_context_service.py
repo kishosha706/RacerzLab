@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from racelab_engine.analysis.lap_eligibility import lap_is_eligible
-from racelab_engine.analysis.proximity_context import classify_proximity_time_gap_window
+from racelab_engine.analysis.proximity_context import (
+    classify_proximity_time_gap_window,
+    proximity_time_gap_exposure_fraction,
+)
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.lap_engineering_context import (
     ChannelSemantic,
@@ -170,24 +173,6 @@ def _corner_context(
     )
 
 
-def _traffic_exposure(rows: Sequence[Mapping[str, Any]]) -> float | None:
-    valid = 0
-    nearby = 0
-    for row in rows:
-        ahead = _number(_row_value(row, ("car_distance_ahead_m", "CarDistAhead")))
-        behind = _number(_row_value(row, ("car_distance_behind_m", "CarDistBehind")))
-        speed = _number(_row_value(row, ("speed_mps", "Speed")))
-        if speed is None:
-            speed_mph = _number(row.get("speed_mph"))
-            speed = speed_mph / 2.23693629 if speed_mph is not None else None
-        if ahead is None or behind is None or speed is None or speed <= 0:
-            continue
-        valid += 1
-        if ahead / speed <= 1.5 or behind / speed <= 0.5:
-            nearby += 1
-    return nearby / valid if valid else None
-
-
 def build_lap_engineering_context_report(
     *,
     run_id: str,
@@ -263,7 +248,9 @@ def build_lap_engineering_context_report(
             tire_compound=compound,
             proximity_state=proximity.state.value,
             proximity_coverage_fraction=proximity.coverage_fraction,
-            nearby_traffic_exposure_fraction=_traffic_exposure(lap_rows),
+            nearby_traffic_exposure_fraction=proximity_time_gap_exposure_fraction(
+                lap_rows
+            ),
             tire_corners=tuple(
                 _corner_context(corner, raw_corner, lap_rows)
                 for corner, raw_corner in (

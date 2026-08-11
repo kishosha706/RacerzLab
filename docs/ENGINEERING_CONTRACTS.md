@@ -1,277 +1,200 @@
-# RaceLab Garage — Engineering Contracts
-
-Last updated: 2026-05-26
-
----
-
-## 0. Track Map File Contract
-
-### Source of truth
-- Track map files use a structured binary source format.
-- They provide centerline geometry (x, y, z, distance, heading) — NOT GPS coordinates.
-- No left/right boundaries, track width, banking, or meaningful altitude variation.
-- All imported track map geometry is relative to an arbitrary local origin, not real-world GPS.
-
-### Import flow
-- Frontend sends track map file bytes via `multipart/form-data` to the track-map import endpoint.
-- Backend parses binary, extracts centerline points + markers + sections, and stores a canonical track map in the local RacerZLab cached map directory.
-- Canonical track maps are indexed in `data/track_maps/track_map_index.json`.
-- Folder import is available through the track-map folder import endpoint for bulk import.
-
-### Track matching
-- Track names are normalized via `normalize_track_key()` (removes suffixes, maps known aliases).
-- Layout inferred via `infer_layout_key()` (oval/road/roval/dirt).
-- Matching scored by track name (60pts) + layout (30pts) + filename bonus (10pts).
-- Scores ≥80 = high confidence, ≥50 = medium, ≥20 = low.
-
-### Overlay alignment
-- All overlay markers align by `lap_pct` / `distance_ft`, never by sample index.
-- Platform events are mapped to canonical track map x/y via `interpolate_at_pct()`.
-- Target zone is rendered as a highlighted path segment.
-- If no track map file is available, fall back to lap-distance event list (no spatial rendering).
+# RaceLab Garage - Engineering Contracts
 
-### Missing data
-- Track map files without markers or sections still render centerline.
-- Unknown/unsupported track map file variants return `status: "unsupported"` with warnings.
-- No GPS → `origin.gps_supported: false`.
-- No boundaries → `has_boundaries: false`.
-- No banking/width → warnings list explains limitations.
-
-### Local-only
-- Repo-local source track map files are not retained after import.
-- Canonical track maps are saved to `data/track_maps/`.
-- No external map tiles, CDN services, or GPS APIs.
-- SVG rendering is local-only — no Mapbox, Google Maps, or OpenStreetMap.
+Last updated: 2026-08-10
 
----
+## 1. One authority model
 
-## 1. Local-Only Rules
+The telemetry pipeline may measure, calculate, classify, compare, and propose a
+measurement. Only the canonical P19 reasoning/workflow path may authorize one
+setup change or publish exact setup values, a direction/increment, Keep/Undo,
+or stop-testing state.
 
-- App runs entirely on the user's machine.
-- Backend bound to `127.0.0.1` only.
-- No cloud sync, auth, analytics, telemetry upload, or external runtime APIs.
-- `.ibt`, `.sto`, track map files, setup snapshots, telemetry, and reports never leave the machine.
-- Imported `.ibt` files are saved locally to `data/imports/ibt/<safe_name>`.
+The path is:
 
----
+`owned telemetry -> eligible evidence -> canonical reasoning snapshot -> immutable mission -> controlled A/B/A2 workflow -> policy result`
 
-## 2. .ibt Import Contract
+P19 keeps mechanism truth, control response, and policy acceptability separate.
+A failed control can be undone without falsely disproving the physical
+mechanism. No other producer or UI component may recreate this decision from
+prose, list order, confidence, or a setup difference.
 
-- Frontend sends actual file bytes via `multipart/form-data` to `POST /api/imports/ibt`.
-- Backend saves to `data/imports/ibt/<sanitized_filename>`.
-- Sanitization: `os.path.basename()`, reject path traversal, re-sub special chars, `.ibt` extension only.
-- Non-`.ibt` files return HTTP 400: "Unsupported file type."
-- Path-based import available at `POST /api/imports/ibt-path` for CLI/dev use only.
+## 2. Local-only operation
 
----
+- The backend binds to `127.0.0.1`.
+- Imported telemetry, setup snapshots, maps, reports, observations, workflows,
+  and evidence history remain local.
+- `.ibt` uploads are streamed, sanitized, restricted to the `.ibt` extension,
+  and retained as local source evidence after a successful import.
+- Path-based import is a local CLI/development operation, not a browser trust
+  shortcut.
 
-## 3. Channel Classification
+## 3. Telemetry ownership and normalization
 
-### Raw channels
-Direct copies from `.ibt` variable definitions. Example: `Speed` → `speed_mps`.
+- Decode and archive every channel declared by the `.ibt` header.
+- Preserve the raw declaration and add canonical aliases without erasing source
+  identity.
+- Production normalization is frame-native. The row engine exists only for
+  fallback/debug parity.
+- A promoted cache must bind the original source hash, cache hash, schema
+  fingerprint, run identity, and compatibility identity.
+- Missing dependencies stay missing; they never become zero.
+- Future comparisons align by physical track position, never sample index.
 
-### Calculated channels
-Derived from raw channels using a well-defined formula. Examples:
-- `speed_mph = speed_mps * 2.23693629`
-- `center_rake_fs_in = rear_avg_rh_in - cfs_ride_height_in`
-- `dynamic_pressure_psf = 0.5 * air_density * speed² * PA_TO_PSF`
-- `lf_pressure_gain = lf_pressure - lf_cold_pressure`
+## 4. Evidence eligibility
 
-### Proxy channels
-Estimates/heuristics based on available telemetry + assumptions. MUST be labeled `is_proxy: true`. Examples:
-- `drag_scrub_suspicion` — heuristic composite score
-- `slip_ratio_proxy` — derived from wheel speed vs vehicle speed
-- `front_aero_proxy_n` — spring-load proxy, NOT direct force measurement
-- `rear_downforce_proxy_n` — relative estimate only
+Out-laps, cooldowns, pit-road laps, wrecks, spins, cautions, slowdowns,
+invalid-speed laps, reset fragments, partial laps, and incomplete coverage are
+not setup evidence. Short runs cannot support strong tire degradation or
+cooling conclusions.
 
-### Classification rules
-| Metric | Classification | Reason |
-|---|---|---|
-| `speed_mph` | Calculated | Direct unit conversion |
-| `dynamic_pressure_psf` | Calculated | Physics formula from measured values |
-| `dynamic_pressure_index` | Calculated, NOT comparable across runs | Lap-relative normalization |
-| `pressure_gain` | Calculated | current − cold, measured sources |
-| `slip_ratio_proxy` | Proxy | Depends on wheel speed accuracy, no true slip |
-| `drag_scrub_suspicion` | Proxy | Heuristic composite scoring |
-| Aero/load/force values | Proxy | No direct force channels in `.ibt` |
+Every evidence-bearing result identifies its source channels, exact scope,
+evidence state, blockers, and confidence limit. Channel presence is capability,
+not proof of a mechanism.
 
----
+Nearby-car context is a covariate and exclusion gate. Missing proximity data or
+traffic inside the configured ahead/behind window blocks setup attribution. The
+runtime does not create draft, tow, side-draft, or clean-air classifications.
 
-## 4. Proxy Wording Rules
+## 5. Measurement and proxy truth
 
-All proxy channels MUST:
-- Include "ESTIMATE", "proxy", or "relative" in description
-- Have `is_proxy: true` in channel metadata
-- Never claim exact downforce, drag, or tire normal force
-- Display as dashed lines in UI charts
-- Show "(proxy)" suffix in tooltips
-- Carry confidence penalties for: missing motion ratios, high-G transients, high shock activity
+Raw channels are direct archived values. Calculated channels are reproducible
+functions of measured values. Proxy channels depend on assumptions or missing
+vehicle constants and must remain structurally marked as proxy.
 
----
+In particular:
 
-## 5. Compare Contract
+- `.ibt` data does not establish exact aerodynamic drag, CdA, downforce, spring
+  force, damper force, wheel load, tire force, torque, or horsepower without the
+  required measured channels and complete constants.
+- Wheel-speed mismatch without verified tire geometry remains a
+  geometry-contaminated proxy.
+- Constant or pit-only carcass/wear values are snapshots, not live degradation
+  trends.
+- Shock histograms describe recorded motion. They do not prove that a damper
+  setting is wrong.
+- No absent channel may be interpolated into a false clear result.
 
-### Same-run/lap
-`baseline_run_id == test_run_id` AND `baseline_lap == test_lap` → verdict `inconclusive`, reference comparison only.
-Do NOT infer same-run from zero speed delta.
+## 6. Observation surfaces
 
-### Lap-percent alignment
-All comparisons align by `lap_dist_pct_100`, never by sample index.
+### Run overview and events
 
-### Invalid laps
-Invalid/junk/slowdown/partial laps are excluded from comparison by default.
+`RunOverview` contains run/session facts, qualified best-lap context, laps,
+observational `TelemetryEvent` records, the setup snapshot, primary findings,
+and warnings. Neither the overview nor an event can contain free-form setup
+actions, a crew-chief summary, or a next test.
 
-### Missing channels
-If requested channel is unavailable, return null/empty, never crash.
+Platform uses the structured `/api/runs/{run_id}/platform-events-report`
+contract. Overview events are never a compatibility fallback for Platform.
 
-### Target zone
-Default 55–70% unless user specifies otherwise.
+### Compare
 
----
-
-## 6. Missing-Data Behavior
-
-- Null/unavailable values display as "—" or "Unavailable".
-- Missing critical channels reduce confidence.
-- Missing optional channels do not block comparison.
-- Empty `setup_changes` or `context_changes` arrays are valid.
-- `tire_comparison` and `shock_comparison` may be `null` — UI handles gracefully.
-
----
-
-## 7. Confidence Tiers
-
-| Tier | Conditions |
-|---|---|
-| High | Clean data, steady-state, motion ratios available, no transients |
-| Medium | Default for most comparisons with adequate data |
-| Low | Missing motion ratios, elevated-G, short runs |
-| Very Low | High-G transients, high shock activity, missing spring rates |
-| Zero | Same-run comparison, invalid data |
-
----
-
-## 8. Notebook Dependency Note
-
-The Notebook should save existing comparison/insight payloads as-is from the API. Do not recompute, reinterpret, or re-derive comparison results. The backend is the single source of truth for math, verdicts, and confidence scores.
-
----
-
-## 9. Key API Contracts
-
-### POST /api/compare
-- Returns `EnhancedComparisonSummary` dict
-- Fields: `whole_car_index`, `platform`, `corner_matrix`, `tire_comparison` (nullable), `shock_comparison` (nullable), `driver_comparison`, `powertrain_comparison`, `verdict`, `setup_changes`, `context_changes`, `test_discipline`, `warnings`, `confidence_score`
-
-### GET /api/compare/delta-traces
-- Returns `DeltaTraceResponse` with per-channel delta arrays
-- `missing_channels` list for unavailable channels
-- Target zone highlighted via `target_zone_start_pct` / `target_zone_end_pct`
-### POST /api/compare/insights
-- Runs all 5 insight engines: trace annotations, correlations, target zone classification, confidence-weighted verdict, sector intelligence
-- Returns `ComparisonInsightsResponse` with `annotations`, `correlations`, `target_zone_classification`, `confidence_weighted_verdict`, `sectors`, `summary_headline`, `key_takeaways`
-
-### POST /api/imports/track-map
-- Multipart file upload for track map files
-- Returns `TrackMapIndexEntry` with points/markers/sections counts
-
-### POST /api/imports/track-map-folder
-- JSON body `{folder_path: string}` — bulk import all track map files from a directory
-- Returns `{imported: number, entries: TrackMapIndexEntry[]}`
-
-### GET /api/track-maps
-- Lists all imported track maps from the canonical track map index
-
-### GET /api/track-maps/{map_id}
-- Returns full `TrackMap` with all points, markers, sections
-
-### GET /api/runs/{run_id}/track-map-match
-- Returns best matching track map for a run based on track name + layout scoring
-
-### GET /api/runs/{run_id}/track-map-package
-- Returns full map + overlays (platform events + target zone) for frontend rendering
-- Supports `lap`, `target_zone_start_pct`, `target_zone_end_pct` query params
-### GET /api/runs/{id}/trace
-- `x` may be array or `x_by_name` object
-- Channels may be arrays or `TraceChannelPayload` objects
-- `downsample` and `preserve_extrema` control sampling
-
-### POST /api/sessions
-- Create a new RaceLab session. Optional `{name: string}` body.
-- Returns `RaceLabSession` with `session_id`, `name`, `created_at`, `updated_at`, `status: "active"`.
-
-### GET /api/sessions
-- List active RaceLab sessions. `?include_archived=true` to include archived.
-- Returns `RaceLabSession[]` ordered by `updated_at DESC`.
-
-### GET /api/sessions/{session_id}
-- Get a single session by ID. Returns 404 if not found.
-
-### PATCH /api/sessions/{session_id}
-- Update session fields: `name`, `track_name`, `car_name`, `last_opened_run_id`, `last_selected_lap`, `last_workspace`, `status`.
-
-### DELETE /api/sessions/{session_id}
-- Delete a session. Does **NOT** delete imported telemetry files. Returns `{deleted: true, session_id}`.
-
-### POST /api/sessions/{session_id}/archive
-- Archive a session (sets `status: "archived"`). Archived sessions hidden from default list.
-
-### POST /api/sessions/{session_id}/runs
-- Add a run to a session. Body: `{run_id: string}`. Duplicate run_ids are silently ignored.
-
-### DELETE /api/sessions/{session_id}/runs/{run_id}
-- Remove a run from a session. Does not delete telemetry data.
-
-### GET /api/sessions/{session_id}/runs/{run_id}/laps
-- Get full lap list for a run within a session context.
-- Returns `RunLapList` with `laps: LapSummaryItem[]`, `best_lap_number`, `useful_lap_numbers`.
-
-### GET /api/sessions/runs/{run_id}/laps
-- Standalone lap list (no session required). Same response shape as session-scoped endpoint.
-
-### Lap list response contract
-- `LapSummaryItem` fields: `lap_id`, `run_id`, `lap_number`, `label`, `lap_type` (out/timed/in/unknown), `lap_time_s`, `lap_time_display` (M:SS.sss), `delta_s`, `delta_display` (+/-/BEST), `is_valid`, `is_useful`, `invalid_reasons`, `sample_count`, `distance_pct_min/max`, `has_telemetry`
-- `lap_type` classification: first non-timed lap before first timed lap = "out", useful laps with lap_time = "timed", laps after last timed lap = "in", fallback = "unknown"
-- `delta_display` shows "BEST" for the fastest useful lap, `+0:NNN.NNN` for slower laps, `-0:NNN.NNN` for faster laps (relative to best)
-
----
-
-## 10. Aero Index & Drag/Scrub Physics Contract
-
-### Aero index usage
-- `dynamic_pressure_lap_index` — for within-lap visualization only. Lap-relative (0–1 scale). NOT comparable across runs.
-- `dynamic_pressure_index` — alias for `dynamic_pressure_lap_index`. Kept for backward compatibility.
-- `aero_load_index` — cross-run comparable aero reference. Ratio of current dynamic pressure to reference pressure at 180 mph sea level. Safe for Notebook comparisons across runs, tracks, weather, and sessions.
-- `aero_load_index_180mph` — alias for `aero_load_index`.
-
-### Drag/scrub physics
-- `drag_scrub_suspicion` MUST use aero-normalized resistance (`decel_mph_s / dynamic_pressure_psf`), not raw deceleration alone.
-- Aero-normalized resistance makes the index speed-independent: a car losing speed at 180 mph under high aero load scores lower than the same deceleration at 100 mph (which is more suspicious).
-- The canonical formula lives in `racelab_engine/analysis/drag_scrub.py:compute_drag_scrub_index()`.
-- All downstream consumers (segments, platform events, compare, notebook) MUST use this single formula.
-
-### Slip ratio safety
-- Denominator floors at `SLIP_RATIO_SPEED_FLOOR_MPS` (1.0 m/s) to prevent division-by-zero near zero speed.
-- Values are clamped to ±`SLIP_RATIO_CLAMP_MAX` (2.0) to keep charts sane during pit lane, caution, starts, stops, and replays.
-
-### Yaw-error scrub proxy
-- `front_scrub_proxy` is a composite: slip mismatch (30%) + steering/lat (25%) + yaw error (45%).
-- Yaw error = `max(0, theoretical_yaw_rate - actual_yaw_rate)` where theoretical comes from track curvature when available.
-- When imported track map curvature data is available, the yaw-error component enables understeer detection.
-- When curvature is unavailable, yaw error defaults to 0 and the proxy falls back to slip + steering components.
-
-### Geometry estimates
-- Platform pitch/roll from ride heights assumes 1:1 motion ratio unless setup motion-ratio data is available.
-- All internal geometry math uses SI (meters, radians). Conversion to inches/degrees happens only for presentation channels.
-- `racelab_engine/analysis/geometry.py` is the single source of truth for pitch/roll calculations.
-
----
-
-## 11. Remaining Risks for Notebook Worker
-
-1. Tire temp/wear data may be unavailable on short runs — Notebook should not save tire conclusions without a confidence caveat.
-2. Aero proxy values are relative — Notebook must not present them as absolute forces.
-3. Comparison payload may have `null` for tire/shock sections — Notebook must handle gracefully.
-4. `dynamic_pressure_lap_index` is lap-relative — not safe for cross-run comparison in Notebook. Use `aero_load_index` instead.
-5. Same-run comparisons are reference-only — Notebook should not treat them as actionable tests.
-6. `drag_scrub_suspicion` is a proxy — do not present as exact drag force measurement.
+Compare reports aligned measured deltas, setup/context differences, test
+discipline, simulator integrity, confidence, and an observation state. Same
+run/lap comparison is reference-only. Compare may show what changed; it cannot
+decide whether to keep or undo that change and cannot recommend a next setup
+step.
+
+`/api/compare/insights` returns annotations, correlations, target-zone
+classification, confidence-weighted observation, sectors, takeaways, warnings,
+and missing-channel debt. Those are observation fields, not policy fields.
+
+### Shock Reader
+
+`GET /api/runs/{run_id}/shock-reader` is observation-only. Current damper
+settings are context. Its response fixes setup authority to `withheld` and
+contains no target, delta, click direction, Keep/Undo, or test-plan field.
+
+### Public Dial-In
+
+`POST /api/runs/{run_id}/dial-in` returns a strict non-authorizing hypothesis
+projection. It may name a candidate control area, mechanism to verify,
+counter-effect to watch, evidence locations, and measurement debt. Direction,
+increment, current/target values, and policy are withheld until P19 earns them.
+
+### Engineering Awareness
+
+The current `p20.awareness.v2` projection is fixed to
+`authority: "observation_only"`. Its expected-versus-observed data may describe
+mechanism and control response, but it carries no current mission, setup
+leverage authorization, policy verdict/reason, or policy countereffect. P20
+cannot proxy P19 authority.
+
+### Notebook
+
+Notebook is an observation archive. A finding may persist comparison identity,
+lap/window scope, confidence context, evidence, takeaways, warnings, user notes,
+tags, and `saved`/`archived` state. It must not recompute evidence and must not
+store or synthesize a setup verdict, setup change, next step, test plan, or
+setup-memory suggestion.
+
+The current Notebook API is limited to save/list/get/update finding operations.
+Deprecated test-plan and setup-memory routes are not part of the product.
+
+## 7. Controlled P19 workflow
+
+An exact setup action is publishable only when the server verifies all relevant
+gates, including:
+
+- exact run/session and source artifact identity;
+- compatible car, track configuration, build, setup, fuel, tire, weather,
+  traffic, driver, and simulator context;
+- one physical setup factor with a sourced adjacent legal option;
+- eligible, physically scoped, independently repeated evidence;
+- an immutable measurement mission and non-overlapping run cohort;
+- complete A/B/A2 procedure, guardrail metrics, rollback, and history checks;
+- no unchanged same-policy Undo or stop-testing blocker.
+
+The workflow routes under `/api/engineering/workflows` own stage attachment,
+scoring, cancellation, reports, and the public authority projection. Client
+payloads cannot attest a verdict or authorize themselves.
+
+## 8. Identity and stale-response rules
+
+API and UI must agree on canonical JSON hashing for setup and reasoning
+identity. Public intelligence and citations bind the exact run, lap/phase/
+physical region, setup hash, and reasoning-snapshot hash. The UI parses
+intelligence responses through the shared runtime trust guard before any Race
+or Learning surface consumes them.
+
+Changing run, session, lap, zone, setup, workflow revision, or response identity
+clears incompatible state. Late or foreign responses cannot render under the
+new scope.
+
+## 9. UI behavior
+
+- Race Mode is short and decision-first.
+- Learning Mode adds definitions, source channels, blockers, related systems,
+  and caveats.
+- Both modes use the same authority decision.
+- Observation views may navigate to evidence or request a measurement; they may
+  not turn a warning, confidence score, setup diff, or candidate rank into an
+  exact setup action.
+
+## 10. Track maps and charts
+
+- Current map import is `/api/imports/mt2`; canonical maps use the current
+  `track_map_v2`/`mt2` contract.
+- Map and trace overlays align by lap percentage/physical distance, never sample
+  index.
+- Missing trace regions render as gaps. No smoothing or null-to-zero operation
+  may create false continuity.
+- Proxy channels remain visibly distinct from measured channels.
+
+## 11. Removed compatibility surfaces
+
+The following are intentionally absent from the current contract and must not
+be restored from old docs, caches, or clients:
+
+- import-time Crew Chief recommendations;
+- Crew Chief or Test Director preview endpoints;
+- `RunOverview.recommendations`, `crew_chief_summary`, or `next_test`;
+- event `recommended_actions`, `recommended_action`, or
+  `measurement_guidance` fields;
+- public Shock Reader setting targets/actions;
+- public Dial-In directional/target fields;
+- public Compare Keep/Undo or next-step fields;
+- Notebook verdict/setup-change/next-step fields;
+- Notebook test plans and setup-memory summaries;
+- channel metadata named `used_by_recommendations`.
+
+Current strict contracts reject obsolete action-bearing input where applicable.

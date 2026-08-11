@@ -7,14 +7,13 @@ ConfidenceTier = Literal["high", "medium", "low"]
 
 
 @dataclass(frozen=True)
-class ConfidenceWeightedVerdict:
-    verdict: str  # keep_direction | undo | retest | inconclusive
+class ConfidenceWeightedObservation:
+    observation_state: str
     base_confidence: float
     adjusted_confidence: float
     tier: ConfidenceTier
     penalties: list[str] = field(default_factory=list)
     boosts: list[str] = field(default_factory=list)
-    recommendation: str | None = None
 
 
 def _compute_tier(confidence: float) -> ConfidenceTier:
@@ -26,8 +25,8 @@ def _compute_tier(confidence: float) -> ConfidenceTier:
         return "low"
 
 
-def apply_confidence_weights(
-    verdict: str,
+def apply_observation_confidence(
+    observation_state: str,
     base_confidence: float,
     *,
     discipline_label: str,
@@ -37,16 +36,15 @@ def apply_confidence_weights(
     setup_groups_changed: int = 0,
     missing_motion_ratios: bool = False,
     is_same_run: bool = False,
-) -> ConfidenceWeightedVerdict:
-    """Adjust verdict confidence based on test quality factors."""
+) -> ConfidenceWeightedObservation:
+    """Adjust observation confidence based on measurement-quality factors."""
     if is_same_run:
-        return ConfidenceWeightedVerdict(
-            verdict="inconclusive",
+        return ConfidenceWeightedObservation(
+            observation_state="inconclusive",
             base_confidence=base_confidence,
             adjusted_confidence=0.0,
             tier="low",
             penalties=["Same run compared — no delta to measure."],
-            recommendation="Import a second run with a controlled change.",
         )
 
     confidence = base_confidence
@@ -101,21 +99,12 @@ def apply_confidence_weights(
     confidence = max(0.0, min(1.0, confidence))
     tier = _compute_tier(confidence)
 
-    # Recommendation
-    if tier == "high":
-        recommendation = f"High confidence ({confidence:.0%}). {verdict.replace('_', ' ').title()}."
-    elif tier == "medium":
-        recommendation = f"Medium confidence ({confidence:.0%}). Review evidence before acting."
-    else:
-        recommendation = f"Low confidence ({confidence:.0%}). Gather more data before concluding."
-
-    return ConfidenceWeightedVerdict(
-        verdict=verdict,
+    return ConfidenceWeightedObservation(
+        observation_state=observation_state,
         base_confidence=base_confidence,
         adjusted_confidence=round(confidence, 2),
         tier=tier,
         penalties=penalties,
         boosts=boosts,
-        recommendation=recommendation,
     )
 

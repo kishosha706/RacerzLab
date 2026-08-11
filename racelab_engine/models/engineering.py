@@ -20,7 +20,6 @@ class EngineeringConclusion(EngineeringModel):
     supporting_evidence: list[str] = Field(default_factory=list)
     contradicting_evidence: list[str] = Field(default_factory=list)
     blocker_reasons: list[str] = Field(default_factory=list)
-    recommendation: str | None = None
 
     @model_validator(mode="after")
     def require_structural_evidence(self) -> EngineeringConclusion:

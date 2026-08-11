@@ -33,6 +33,8 @@ import type {
   LearningReadinessProjection,
   ProspectivePredictionResponse,
 } from "../types/learningReadiness";
+import { isRunIntelligenceResponse } from "../utils/intelligenceResponseTrust";
+import { isDialInHypothesisResponse } from "../utils/dialInResponseTrust";
 
 const API_BASE =
   import.meta.env.VITE_RACELAB_API_BASE_URL ??
@@ -317,12 +319,22 @@ export function fetchRunIntelligence(
   if (options?.sessionId) params.set("session_id", options.sessionId);
   if (options?.refreshKey != null) params.set("refresh", String(options.refreshKey));
   const suffix = params.toString() ? `?${params.toString()}` : "";
-  return requestJson<RunIntelligenceReport>(
+  return requestJson<unknown>(
     `/api/runs/${encodeURIComponent(runId)}/intelligence${suffix}`,
     undefined,
     INTELLIGENCE_TIMEOUT_MS,
     "Run intelligence",
-  );
+  ).then((payload) => {
+    if (!isRunIntelligenceResponse(payload, {
+      runId,
+      sessionId: options?.sessionId ?? null,
+    })) {
+      throw new Error(
+        "Run intelligence failed its exact schema, run, session, setup, or snapshot identity check.",
+      );
+    }
+    return payload;
+  });
 }
 
 export function fetchVehicleSystems(
@@ -414,7 +426,7 @@ export function startEvidenceCampaign(
 export function freezeProspectivePrediction(
   operationId: string,
   runId: string,
-  sessionId?: string | null,
+  sessionId: string,
 ): Promise<ProspectivePredictionResponse> {
   return requestJson<ProspectivePredictionResponse>(
     "/api/evaluation/prospective-predictions",
@@ -423,7 +435,7 @@ export function freezeProspectivePrediction(
       body: JSON.stringify({
         operation_id: operationId,
         run_id: runId,
-        session_id: sessionId ?? null,
+        session_id: sessionId,
       }),
     },
   );
@@ -458,14 +470,20 @@ export function fetchSetup(runId: string): Promise<SetupSnapshot> {
 }
 
 export function analyzeRunDialIn(runId: string, payload: DialInRequest): Promise<DialInResponse> {
-  return requestJson<DialInResponse>(`/api/runs/${encodeURIComponent(runId)}/dial-in`, {
+  return requestJson<unknown>(`/api/runs/${encodeURIComponent(runId)}/dial-in`, {
     method: "POST",
     body: JSON.stringify(payload),
+  }).then((response) => {
+    if (!isDialInHypothesisResponse(response, { runId, complaint: payload.complaint })) {
+      throw new Error("Dial-In returned an invalid or action-bearing hypothesis response.");
+    }
+    return response;
   });
 }
 
 export function startControlledWorkflow(payload: {
   run_id: string;
+  session_id: string;
   complaint: string;
   selected_lap?: number | null;
   lap_scope?: "run" | "single_lap" | "lap_window" | "track_zone" | null;
@@ -491,9 +509,9 @@ export function attachControlledWorkflowStage(
 }
 
 export function scoreControlledWorkflow(workflowId: string): Promise<ControlledWorkflow> {
-  return requestJson<ControlledWorkflow>("/api/engineering/test-director/score", {
+  return requestJson<ControlledWorkflow>(
+    `/api/engineering/workflows/${encodeURIComponent(workflowId)}/score`, {
     method: "POST",
-    body: JSON.stringify({ workflow_id: workflowId }),
   });
 }
 
@@ -771,7 +789,6 @@ export function fetchShockReader(
     phase?: string | null;
     zoneStartPct?: number | null;
     zoneEndPct?: number | null;
-    includeDebug?: boolean;
   },
 ): Promise<ShockReaderResponse> {
   const params = new URLSearchParams();
@@ -780,7 +797,6 @@ export function fetchShockReader(
   if (options?.phase) params.set("phase", options.phase);
   if (options?.zoneStartPct != null) params.set("zone_start_pct", String(options.zoneStartPct));
   if (options?.zoneEndPct != null) params.set("zone_end_pct", String(options.zoneEndPct));
-  if (options?.includeDebug != null) params.set("include_debug", String(options.includeDebug));
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return requestJson<ShockReaderResponse>(`/api/runs/${encodeURIComponent(runId)}/shock-reader${suffix}`);
 }

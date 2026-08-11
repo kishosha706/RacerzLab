@@ -127,31 +127,26 @@ export interface WholeCarIndex {
   overall_label: string | null;
 }
 
-export interface DidItWorkVerdict {
-  verdict: "keep_direction" | "undo" | "retest" | "inconclusive";
+export interface ComparisonObservation {
+  observation_state: "observed_improvement" | "observed_regression" | "needs_confirmation" | "inconclusive";
   confidence_score: number;
   headline: string;
   evidence: string[];
   warnings: string[];
-  next_step: string | null;
-  success_metric?: string | null;
-  cause_bucket?: string | null;
-  required_next_data?: string[];
-  do_not_change_warnings?: string[];
   evidence_state: import("./telemetry").EvidenceState;
   source_channels: string[];
   blocker_reasons: string[];
 }
 
-/** Extended verdict kind used by DidItWorkCard UI (includes frontend-only states). */
-export type VerdictKind = "keep_direction" | "undo_partially" | "undo" | "retest" | "inconclusive" | "reference_mode";
+/** Non-authorizing observation states used by the legacy Compare surface. */
+export type ObservationKind = "observed_improvement" | "observed_regression" | "needs_confirmation" | "inconclusive";
 
 export interface TestDisciplineResult {
   score: number;
   label: string;
   positive_factors: string[];
   negative_factors: string[];
-  recommendation: string | null;
+  measurement_note: string | null;
 }
 
 export interface SetupChange {
@@ -218,7 +213,7 @@ export interface CompareResponse {
   setup_changes: SetupChange[];
   context_changes: ContextChange[];
   test_discipline: TestDisciplineResult | null;
-  verdict: DidItWorkVerdict | null;
+  observation: ComparisonObservation | null;
   sim_integrity?: {
     baseline: Record<string, unknown>;
     test: Record<string, unknown>;
@@ -413,7 +408,6 @@ export interface EngineeringConclusion {
   supporting_evidence: string[];
   contradicting_evidence: string[];
   blocker_reasons: string[];
-  recommendation: string | null;
 }
 
 export interface EngineeringPhaseMetric {
@@ -499,7 +493,6 @@ export interface TraceAnnotation {
   severity: string;
   confidence: number;
   related_channels: string[];
-  recommendation: string | null;
 }
 
 export interface CorrelationInsight {
@@ -519,16 +512,14 @@ export interface TargetZoneClassification {
   headline: string;
   evidence: string[];
   warnings: string[];
-  recommendation: string | null;
 }
 
-export interface ConfidenceWeightedVerdict {
-  original_verdict: string;
+export interface ConfidenceWeightedObservation {
+  observation_state: string;
   adjusted_confidence: number;
   confidence_tier: "high" | "medium" | "low";
   penalties: string[];
   boosts: string[];
-  final_recommendation: string | null;
   warning: string | null;
 }
 
@@ -557,7 +548,7 @@ export interface ComparisonInsightsResponse {
   annotations: TraceAnnotation[];
   correlations: CorrelationInsight[];
   target_zone_classification: TargetZoneClassification | null;
-  confidence_weighted_verdict: ConfidenceWeightedVerdict | null;
+  confidence_weighted_observation: ConfidenceWeightedObservation | null;
   sectors: SectorDeltaSummary[];
   summary_headline: string | null;
   key_takeaways: string[];
@@ -581,7 +572,6 @@ export interface NotebookFinding {
   test_lap: number | null;
   target_zone_start_pct: number;
   target_zone_end_pct: number;
-  verdict: string | null;
   confidence_score: number;
   confidence_tier: string | null;
   test_discipline_score: number;
@@ -591,46 +581,10 @@ export interface NotebookFinding {
   evidence: string[];
   warnings: string[];
   sector_summaries: Record<string, unknown>[];
-  setup_changes: Record<string, unknown>[];
   context_changes: Record<string, unknown>[];
   improved_metrics: string[];
   worsened_metrics: string[];
-  next_step: string | null;
   notes: string;
   tags: string[];
-  status: string;
-}
-
-export interface TestPlan {
-  test_plan_id: string;
-  created_at: string;
-  updated_at: string;
-  source_finding_id: string | null;
-  car_name: string | null;
-  track_name: string | null;
-  setup_name: string | null;
-  goal: string | null;
-  change_to_try: string | null;
-  do_not_change: string[];
-  success_metric: string | null;
-  target_zone_start_pct: number;
-  target_zone_end_pct: number;
-  planned_notes: string;
-  status: string;
-}
-
-export interface SetupMemorySummary {
-  car_name: string | null;
-  track_name: string | null;
-  total_findings: number;
-  keep_count: number;
-  undo_count: number;
-  retest_count: number;
-  inconclusive_count: number;
-  confirmed_count: number;
-  rejected_count: number;
-  most_common_issue: string | null;
-  best_known_target_zone: string | null;
-  latest_finding: Record<string, unknown> | null;
-  recommended_next_test: string | null;
+  status: "saved" | "archived";
 }

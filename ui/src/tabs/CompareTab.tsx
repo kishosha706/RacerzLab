@@ -11,7 +11,7 @@ import type { RunListItem } from "../types/telemetry";
 import type {
   ChannelDeltaStats, CompareResponse, ComparisonInsightsResponse, CornerName, CornerMetric,
   CornerMatrix,
-  ContextChange, DidItWorkVerdict, DriverComparison, PaceComparison, PlatformComparison,
+  ComparisonObservation, ContextChange, DriverComparison, PaceComparison, PlatformComparison,
   PowertrainComparison, ShockComparison, SetupChange, TireComparison,
   WholeCarIndex,
 } from "../types/compare";
@@ -23,20 +23,20 @@ const API_BASE =
 
 type CompareTabProps = { runs: RunListItem[]; currentRunId: string; sessionId?: string | null };
 type SubView =
-  | "verdict" | "what-changed" | "whole-car-index" | "target-zone"
+  | "observation" | "what-changed" | "whole-car-index" | "target-zone"
   | "platform" | "four-corners" | "tires" | "shocks"
   | "driver" | "engine-pull" | "delta-traces" | "evidence" | "insights";
-type SubViewGroup = "verdict" | "platform" | "systems" | "detail";
+type SubViewGroup = "observation" | "platform" | "systems" | "detail";
 
 const SUBVIEW_GROUPS: Record<SubViewGroup, SubView[]> = {
-  verdict: ["verdict", "whole-car-index", "evidence"],
+  observation: ["observation", "whole-car-index", "evidence"],
   platform: ["what-changed", "target-zone", "platform", "four-corners"],
   systems: ["tires", "shocks", "driver", "engine-pull"],
   detail: ["delta-traces", "insights"],
 };
 
 const SUBVIEW_LABELS: Record<SubView, string> = {
-  verdict: "Verdict",
+  observation: "Observation",
   "what-changed": "What Changed",
   "whole-car-index": "Index",
   "target-zone": "Target Zone",
@@ -329,7 +329,7 @@ function OvalComparisonBrief({
         <div>
           <span className="eyebrow">Oval comparison brief</span>
           <h3 id="oval-compare-title">{pace.value}</h3>
-          <p>{data.verdict?.headline ?? "Read the qualified observations before making the next change."}</p>
+          <p>{data.observation?.headline ?? "Read the qualified observations before making the next change."}</p>
         </div>
         <span className="oval-compare-authority">Comparison only</span>
       </header>
@@ -350,38 +350,33 @@ function OvalComparisonBrief({
       </div>
       {learningMode && (
         <p className="oval-compare-coaching">
-          Start with cohort pace, then check where the gain began, whether the inputs matched, and whether the right-front trend stayed acceptable. A comparison can support a keep, undo, or retest decision; it does not authorize a new setup change by itself.
+          Start with cohort pace, then check where the observed difference began, whether the inputs matched, and whether the right-front trend stayed acceptable. This surface reports observations only; setup policy comes from the controlled workflow.
         </p>
       )}
     </section>
   );
 }
 
-function VerdictView({ verdict: v, disc, wci, pace, confidence, targetSpeedDeltaMph, setupChanges, contextChanges, weatherWarning, onStageNextTest, isSelfCompare }: {
-  verdict: DidItWorkVerdict | null; disc: { score: number; label: string } | null;
+function ObservationView({ observation, disc, wci, pace, confidence, targetSpeedDeltaMph, setupChanges, contextChanges, weatherWarning, isSelfCompare }: {
+  observation: ComparisonObservation | null; disc: { score: number; label: string } | null;
   wci: WholeCarIndex | null; pace: PaceComparison | null; confidence: number;
   targetSpeedDeltaMph?: number | null;
   setupChanges: SetupChange[];
   contextChanges: ContextChange[];
   weatherWarning?: string | null;
-  onStageNextTest?: () => void; isSelfCompare?: boolean;
+  isSelfCompare?: boolean;
 }) {
-  if (!v) return <p className="muted">No verdict available.</p>;
+  if (!observation) return <p className="muted">No comparison observation available.</p>;
 
   return (
     <div className="compare-subview">
       <DidItWorkCard
-        verdict={(v.verdict as "keep_direction" | "undo_partially" | "undo" | "retest" | "inconclusive" | "reference_mode") ?? "inconclusive"}
-        headline={v.headline}
+        observation={observation.observation_state ?? "inconclusive"}
+        headline={observation.headline}
         confidenceScore={confidence}
         testDisciplineScore={disc?.score}
-        evidence={v.evidence}
-        warnings={v.warnings}
-        nextStep={v.next_step}
-        successMetric={v.success_metric}
-        causeBucket={v.cause_bucket}
-        requiredNextData={v.required_next_data}
-        doNotChangeWarnings={v.do_not_change_warnings}
+        evidence={observation.evidence}
+        warnings={observation.warnings}
         weatherWarning={weatherWarning}
         wholeLapDeltaS={pace?.cohort_delta_s}
         paceNoiseBandS={pace?.noise_band_s}
@@ -391,7 +386,6 @@ function VerdictView({ verdict: v, disc, wci, pace, confidence, targetSpeedDelta
         contextWarnings={contextChanges
           .filter((change) => change.warning)
           .map((change) => ({ label: change.label, warning: change.warning as string }))}
-        onStageNextTest={isSelfCompare ? undefined : onStageNextTest}
         disabled={isSelfCompare}
       />
       {wci && <div className="wci-strip">{indexStrip(wci)}</div>}
@@ -521,7 +515,7 @@ function TargetZoneView({ data: r, friendlyLabel, onOpenDeltaTraces }: { data: C
           <span>{r.target_zone?.speed_gain_or_loss_label ?? "unavailable"}</span>
         </div>
       )}
-      {r.verdict && <p><strong>{r.verdict.headline}</strong></p>}
+      {r.observation && <p><strong>{r.observation.headline}</strong></p>}
       {r.platform && (
         <table className="compact-table">
           <thead><tr><th>Metric</th><th>Direction</th></tr></thead>
@@ -558,7 +552,7 @@ function PlatformView({ platform, onOpenDeltaTraces }: { platform: PlatformCompa
           {deltaRow("CFS Risk Score", platform.cfs_risk_score, "score")}
         </tbody>
       </table>
-      <p className="platform-verdict">Platform Verdict: {platform.platform_verdict ?? "—"}</p>
+      <p className="platform-observation">Platform Observation: {platform.platform_verdict ?? "—"}</p>
       {onOpenDeltaTraces && (
         <button className="secondary-button" onClick={onOpenDeltaTraces} style={{ marginTop: 8 }}>
           <BarChart3 size={14} /> Open Delta Traces
@@ -631,7 +625,7 @@ function DriverView({ driver }: { driver: DriverComparison | null }) {
         </tbody>
       </table>
       {driver.driver_changed_warning && <p className="warning-line"><AlertTriangle size={12} /> {driver.driver_changed_warning}</p>}
-      <p>Driver Verdict: {driver.driver_verdict ?? "—"}</p>
+      <p>Driver Observation: {driver.driver_verdict ?? "—"}</p>
     </div>
   );
 }
@@ -647,7 +641,7 @@ function EngineView({ pt }: { pt: PowertrainComparison | null }) {
           {deltaRow("Pull Score", pt.pull_score, "mph/1000ft")}
         </tbody>
       </table>
-      {pt.powertrain_verdict && <p>Verdict: {pt.powertrain_verdict}</p>}
+      {pt.powertrain_verdict && <p>Observation: {pt.powertrain_verdict}</p>}
     </div>
   );
 }
@@ -683,7 +677,7 @@ function TiresView({ tire }: { tire: TireComparison | null }) {
         <div className="corner-row">{corners.slice(0, 2).map(c => cornerMini(c as CornerName, tire.corners?.[c as CornerName]))}</div>
         <div className="corner-row">{corners.slice(2).map(c => cornerMini(c as CornerName, tire.corners?.[c as CornerName]))}</div>
       </div>
-      {tire.tire_verdict && <p>Tire Verdict: {tire.tire_verdict}</p>}
+      {tire.tire_verdict && <p>Tire Observation: {tire.tire_verdict}</p>}
     </div>
   );
 }
@@ -706,22 +700,21 @@ function ShocksView({ shock }: { shock: ShockComparison | null }) {
           </tr>
         </tbody>
       </table>
-      {shock.shock_verdict && <p>Shock Verdict: {shock.shock_verdict}</p>}
+      {shock.shock_verdict && <p>Shock Observation: {shock.shock_verdict}</p>}
     </div>
   );
 }
 
-function EvidenceView({ verdict }: { verdict: DidItWorkVerdict | null }) {
-  if (!verdict) return <p className="muted">No evidence available.</p>;
+function EvidenceView({ observation }: { observation: ComparisonObservation | null }) {
+  if (!observation) return <p className="muted">No evidence available.</p>;
   return (
     <div className="compare-subview">
-      {verdict.evidence.length > 0 && (
-        <><h4>Evidence</h4>{verdict.evidence.map((e, i) => <p key={i} className="verdict-evidence">• {e}</p>)}</>
+      {observation.evidence.length > 0 && (
+        <><h4>Evidence</h4>{observation.evidence.map((e, i) => <p key={i} className="observation-evidence">• {e}</p>)}</>
       )}
-      {verdict.warnings.length > 0 && (
-        <><h4>Warnings</h4>{verdict.warnings.map((w, i) => <p key={i} className="warning-line"><AlertTriangle size={12} /> {w}</p>)}</>
+      {observation.warnings.length > 0 && (
+        <><h4>Warnings</h4>{observation.warnings.map((w, i) => <p key={i} className="warning-line"><AlertTriangle size={12} /> {w}</p>)}</>
       )}
-      {verdict.next_step && <p className="verdict-next"><strong>Next:</strong> {verdict.next_step}</p>}
     </div>
   );
 }
@@ -744,9 +737,9 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [result, setResult] = useState<CompareResponse | null>(null);
-  const [subview, setSubview] = useState<SubView>("verdict");
+  const [subview, setSubview] = useState<SubView>("observation");
   const [loading, setLoading] = useState(false);
-  const { selection, setWorkspace } = useTelemetrySelection();
+  const { selection } = useTelemetrySelection();
   const [error, setError] = useState<string | null>(null);
   const [insights, setInsights] = useState<ComparisonInsightsResponse | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -764,7 +757,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
   const compareScopeNote = basket.baseline?.lap_scope === "lap_window" || basket.test?.lap_scope === "lap_window"
     ? "Compare currently uses representative laps and run-level compare math; window metadata is preserved for context."
     : "Compare currently uses lap or run identity without window metadata.";
-  const [subviewGroup, setSubviewGroup] = useState<SubViewGroup>("verdict");
+  const [subviewGroup, setSubviewGroup] = useState<SubViewGroup>("observation");
 
   const otherRuns = runs.filter((r) => r.run_id !== baselineRunId);
   const isSameRun = testRunId === baselineRunId && testRunId !== "";
@@ -806,7 +799,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
         </header>
         <div className="compare-empty">
           <p>Bank one more comparable run.</p>
-          <p className="muted">Keep the same car and track, match fuel, tire age, weather, and line as closely as possible, and change only one setup item if this is a test.</p>
+          <p className="muted">Interpret differences only when car, track, fuel, tire age, weather, line, and recorded setup context are comparable.</p>
         </div>
       </section>
     );
@@ -896,7 +889,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
         return;
       }
       setResult(res);
-      setSubview("verdict");
+      setSubview("observation");
     } catch (e) {
       if (sequence !== comparisonRequestSequenceRef.current) return;
       setError(e instanceof Error ? e.message : "Comparison failed");
@@ -959,7 +952,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
         && Math.abs(nextData.target_zone_end_pct - request.target_zone_end_pct) <= 0.001;
       if (!responseMatchesRequest) {
         setInsights(null);
-        setInsightsError("Comparison insights scope error: the response did not match the selected runs, laps, and target zone. No insight recommendation is shown.");
+        setInsightsError("Comparison insights scope error: the response did not match the selected runs, laps, and target zone. No insight observation is shown.");
         setInsightsLoading(false);
         return;
       }
@@ -989,7 +982,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
   const subviewContent = useMemo(() => {
     if (!result) return null;
     switch (subview) {
-      case "verdict": return (
+      case "observation": return (
         <div className="compare-subview">
           {isSelfCompare && (
             <div className="self-compare-banner">
@@ -997,17 +990,14 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
               <p className="self-compare-text">Baseline and test are the same run/lap, so no setup decision should be made from this comparison.</p>
             </div>
           )}
-          <VerdictView
-            verdict={result.verdict} disc={result.test_discipline}
+          <ObservationView
+            observation={result.observation} disc={result.test_discipline}
             wci={result.whole_car_index} confidence={result.confidence_score}
             pace={result.pace_comparison}
             targetSpeedDeltaMph={result.target_zone?.channel_deltas.find((delta) => delta.channel === "speed_mph")?.delta}
             setupChanges={result.setup_changes}
             contextChanges={result.context_changes}
             weatherWarning={preview?.context_changes?.find(c => c.key === "weather")?.warning ?? null}
-            onStageNextTest={() => {
-              setWorkspace("laps", "compare_verdict");
-            }}
             isSelfCompare={isSelfCompare}
           />
         </div>
@@ -1022,7 +1012,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
       case "driver": return <DriverView driver={result.driver_comparison} />;
       case "engine-pull": return <EngineView pt={result.powertrain_comparison} />;
       case "delta-traces": return <DeltaTracesView baselineRunId={baselineRunId} testRunId={testRunId} startPct={startPct} endPct={endPct} result={result} />;
-      case "evidence": return <EvidenceView verdict={result.verdict} />;
+      case "evidence": return <EvidenceView observation={result.observation} />;
       case "insights": {
         if (scopedInsightsLoading) return <p className="muted">Loading insights…</p>;
         if (scopedInsightsError) return <p className="error-text" role="alert">{scopedInsightsError}</p>;
@@ -1046,7 +1036,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
   useEffect(() => {
     if (SUBVIEW_GROUPS[subviewGroup].includes(subview)) return;
     const nextGroup = (Object.entries(SUBVIEW_GROUPS) as Array<[SubViewGroup, SubView[]]>)
-      .find(([, views]) => views.includes(subview))?.[0] ?? "verdict";
+      .find(([, views]) => views.includes(subview))?.[0] ?? "observation";
     setSubviewGroup(nextGroup);
   }, [subview, subviewGroup]);
 
@@ -1098,7 +1088,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
             {compareDisabledReason}
           </p>
         ) : (
-          <p className="compare-readiness-item ready">Compare is ready. Verdict opens first.</p>
+          <p className="compare-readiness-item ready">Compare is ready. Observation opens first.</p>
         )}
         {showBasketSyncHint && (
           <p className="compare-readiness-item info">
@@ -1210,10 +1200,10 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
             onOpen={setSubview}
           />
           <p className="section-note compare-group-explainer" style={{ marginTop: 0, marginBottom: 8 }}>
-            Grouped navigation: start with Verdict, then drill into Platform, Systems, and Detail.
+            Grouped navigation: start with Observation, then drill into Platform, Systems, and Detail.
           </p>
           <nav className="compare-group-nav" aria-label="Compare subview groups">
-            {(["verdict", "platform", "systems", "detail"] as SubViewGroup[]).map((group) => (
+            {(["observation", "platform", "systems", "detail"] as SubViewGroup[]).map((group) => (
               <button
                 key={group}
                 className={`subnav-item ${subviewGroup === group ? "active" : ""}`}
@@ -1225,7 +1215,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
                   }
                 }}
               >
-                {group === "verdict" ? "Verdict" : group === "platform" ? "Platform" : group === "systems" ? "Systems" : "Detail"}
+                {group === "observation" ? "Observation" : group === "platform" ? "Platform" : group === "systems" ? "Systems" : "Detail"}
               </button>
             ))}
           </nav>

@@ -588,10 +588,6 @@ def analyze_relative_resistance_aba(
                 source_channels=cause_sources,
                 supporting_evidence=support,
                 contradicting_evidence=contradictions,
-                recommendation=(
-                    "Repeat the same one-change A/B/A coastdown window once more before keeping the change."
-                    if confirmed and discriminators_complete else None
-                ),
             ),
             grade_conclusion,
         ],

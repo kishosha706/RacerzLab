@@ -12,6 +12,7 @@ from api.intelligence_adapter import (
     _context_match,
     _driver_profile,
     _reference_citation,
+    to_public_intelligence_citation,
     to_public_intelligence_navigation,
     to_public_intelligence_report,
     to_public_mind_change_criterion,
@@ -25,6 +26,7 @@ from api.intelligence_schemas import (
 )
 from api.main import app
 from api.routes_intelligence import (
+    _canonical_public_track_region_id,
     _citation_track_locations,
     _query_action_matches_current_report,
     _region_aware_query_answer,
@@ -62,7 +64,6 @@ from racelab_engine.models.intelligence import (
     ResponseMemorySummary,
 )
 from racelab_engine.models.lap import LapSummary
-from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.services.controlled_workflow_service import (
@@ -96,6 +97,7 @@ from racelab_engine.storage.db import initialize_database
 from racelab_engine.storage.repository import RaceLabRepository
 
 client = TestClient(app)
+TEST_REASONING_SNAPSHOT_SHA256 = "a" * 64
 
 
 def test_grounded_query_citations_resolve_canonical_track_regions(monkeypatch) -> None:
@@ -148,7 +150,12 @@ def test_grounded_query_citations_resolve_canonical_track_regions(monkeypatch) -
     locations = _citation_track_locations((citation,), context=context)
 
     assert locations["event-location"]["display_label"] == "Turn 1 center"
+    assert _canonical_public_track_region_id(locations["event-location"]) == "turn_1"
+    assert _canonical_public_track_region_id(
+        {"region_id": "straight:front_stretch"}
+    ) == "front_stretch"
     assert context.catalog("smart-run") == {"turn_1": "Turn 1"}
+    assert to_public_intelligence_citation(citation).phase == "center"
     public_citation = IntelligenceCitationResponse(
         citation_id=citation.citation_id,
         label=citation.summary,
@@ -202,21 +209,9 @@ def _seed_untrusted_run(db_path: Path, run_id: str = "smart-run") -> None:
         event_type="PLATFORM_LOW",
         valid_for_tuning=True,
         related_setup_keys=["front_ride_height"],
-        recommended_actions=["Raise front ride height."],
         evidence_state=EvidenceState.UNAVAILABLE,
         source_channels=[],
         blocker_reasons=["Legacy evidence provenance is unavailable."],
-    )
-    recommendation = Recommendation(
-        recommendation_id=f"{run_id}:legacy-rec",
-        run_id=run_id,
-        issue="Platform",
-        cause_bucket="platform",
-        recommendation_text="Raise front ride height.",
-        evidence_event_ids=[event.event_id],
-        evidence_state=EvidenceState.UNAVAILABLE,
-        source_channels=[],
-        blocker_reasons=["Legacy recommendation provenance is unavailable."],
     )
     RaceLabRepository(db_path).save_import(RunOverview(
         run_id=run_id,
@@ -230,7 +225,6 @@ def _seed_untrusted_run(db_path: Path, run_id: str = "smart-run") -> None:
         ),
         laps=laps,
         events=[event],
-        recommendations=[recommendation],
     ))
 
 
@@ -265,6 +259,22 @@ def _controlled_card() -> ControlledTestCard:
         stages=stages,
         evidence_event_ids=("event-platform",),
         do_not_change=("Everything else",),
+    )
+
+
+def _identity_setup(run_id: str = "run-1") -> SetupSnapshot:
+    return SetupSnapshot(
+        setup_id=f"{run_id}:setup",
+        run_id=run_id,
+        setup_name="Exact response identity fixture",
+        cross_weight_percent=50.0,
+    )
+
+
+def _to_public_with_setup(report):
+    return to_public_intelligence_report(
+        report,
+        setup_snapshot=_identity_setup(report.run_id),
     )
 
 
@@ -309,10 +319,6 @@ def test_run_intelligence_withholds_malformed_derived_rows_without_crashing(
             ("smart-run",),
         )
         connection.execute(
-            "UPDATE recommendations SET recommendation_json = '{bad' WHERE run_id = ?",
-            ("smart-run",),
-        )
-        connection.execute(
             """
             INSERT INTO setup_snapshots (
                 setup_id, run_id, setup_name, setup_json, snapshot_json
@@ -327,7 +333,6 @@ def test_run_intelligence_withholds_malformed_derived_rows_without_crashing(
     integrity_warnings = " ".join(overview.warnings).casefold()
     assert "lap summary" in integrity_warnings
     assert "telemetry event" in integrity_warnings
-    assert "recommendation" in integrity_warnings
     assert "setup snapshot" in integrity_warnings
 
     bundle = build_run_intelligence("smart-run", db_path=db_path)
@@ -401,9 +406,6 @@ def test_run_intelligence_binds_derived_payloads_to_stored_run_identity(
         "run_id": "run-B",
     })
     foreign_event = original.events[0].model_copy(update={"run_id": "run-B"})
-    foreign_recommendation = original.recommendations[0].model_copy(
-        update={"run_id": "run-B"}
-    )
     foreign_setup = SetupSnapshot(
         setup_id="run-B:setup",
         run_id="run-B",
@@ -418,10 +420,6 @@ def test_run_intelligence_binds_derived_payloads_to_stored_run_identity(
         connection.execute(
             "UPDATE events SET event_json = ? WHERE run_id = ?",
             (foreign_event.model_dump_json(), "run-A"),
-        )
-        connection.execute(
-            "UPDATE recommendations SET recommendation_json = ? WHERE run_id = ?",
-            (foreign_recommendation.model_dump_json(), "run-A"),
         )
         connection.execute(
             """
@@ -443,13 +441,12 @@ def test_run_intelligence_binds_derived_payloads_to_stored_run_identity(
     assert overview is not None
     assert all(lap.run_id == "run-A" for lap in overview.laps)
     assert overview.events == []
-    assert overview.recommendations == []
     assert overview.setup_snapshot is None
     assert repository.get_setup_snapshot("run-A") is None
     assert len([
         warning for warning in overview.warnings
         if "identity-mismatched" in warning
-    ]) == 4
+    ]) == 3
     bundle = build_run_intelligence("run-A", db_path=db_path)
     assert bundle.report.data_quality.status == "blocked"
     assert bundle.report.briefing.action.setup_authorized is False
@@ -558,9 +555,16 @@ def test_query_action_must_match_the_current_authorized_report_exactly() -> None
         action_source_event_ids=("unrelated-event",),
     )
 
-    assert _query_action_matches_current_report(exact, report) is True
-    assert _query_action_matches_current_report(invented_instruction, report) is False
-    assert _query_action_matches_current_report(borrowed_event, report) is False
+    setup = _identity_setup(report.run_id)
+    assert _query_action_matches_current_report(
+        exact, report, setup_snapshot=setup
+    ) is True
+    assert _query_action_matches_current_report(
+        invented_instruction, report, setup_snapshot=setup
+    ) is False
+    assert _query_action_matches_current_report(
+        borrowed_event, report, setup_snapshot=setup
+    ) is False
 
     blocked_reports = (
         report.model_copy(update={"blocker_reasons": ("Late report blocker.",)}),
@@ -591,7 +595,9 @@ def test_query_action_must_match_the_current_authorized_report_exactly() -> None
         ),
     )
     assert all(
-        _query_action_matches_current_report(exact, blocked) is False
+        _query_action_matches_current_report(
+            exact, blocked, setup_snapshot=setup
+        ) is False
         for blocked in blocked_reports
     )
 
@@ -607,7 +613,9 @@ def test_query_action_must_match_the_current_authorized_report_exactly() -> None
     )
     guidance = build_smart_guidance(report, workflow=workflow)
     active_report = report.model_copy(update={"smart_guidance": guidance})
-    assert _query_action_matches_current_report(exact, active_report) is True
+    assert _query_action_matches_current_report(
+        exact, active_report, setup_snapshot=setup
+    ) is True
     divergent_move = guidance.next_trustworthy_move.model_copy(
         update={"instruction": "Apply a second unrelated setup command."}
     )
@@ -618,7 +626,9 @@ def test_query_action_must_match_the_current_authorized_report_exactly() -> None
             )
         }
     )
-    assert _query_action_matches_current_report(exact, divergent_report) is False
+    assert _query_action_matches_current_report(
+        exact, divergent_report, setup_snapshot=setup
+    ) is False
 
 
 def test_public_cause_board_cites_controlled_support_and_contradiction() -> None:
@@ -680,7 +690,7 @@ def test_public_cause_board_cites_controlled_support_and_contradiction() -> None
 def test_public_report_rejects_unlinked_or_mismatched_setup_authority() -> None:
     from tests.test_internal_intelligence_service import _authorized_report
 
-    public = to_public_intelligence_report(_authorized_report())
+    public = _to_public_with_setup(_authorized_report())
     no_citations = public.model_dump(mode="json")
     for cause in no_citations["competing_causes"]:
         cause["evidence_for"] = []
@@ -741,7 +751,7 @@ def test_public_report_rejects_unlinked_or_mismatched_setup_authority() -> None:
 def test_fresh_public_report_keeps_one_exact_pre_workflow_action() -> None:
     from tests.test_internal_intelligence_service import _authorized_report
 
-    public = to_public_intelligence_report(_authorized_report())
+    public = _to_public_with_setup(_authorized_report())
 
     assert public.briefing.action.setup_authorized is True
     assert public.test_preflight is None
@@ -755,6 +765,19 @@ def test_fresh_public_report_keeps_one_exact_pre_workflow_action() -> None:
         ),
         "Keep Cross Weight at the recorded baseline value.",
     ]
+
+
+def test_public_schema_rejects_setup_authority_without_exact_session_membership() -> None:
+    from tests.test_internal_intelligence_service import _authorized_report
+
+    payload = _to_public_with_setup(_authorized_report()).model_dump(mode="json")
+    payload["session_id"] = None
+
+    with pytest.raises(
+        ValueError,
+        match="exact session identity and verified run membership",
+    ):
+        RunIntelligenceResponse.model_validate(payload)
 
 
 @pytest.mark.parametrize(
@@ -771,7 +794,7 @@ def test_public_schema_rejects_authorized_action_with_any_global_blocker(
 ) -> None:
     from tests.test_internal_intelligence_service import _authorized_report
 
-    payload = to_public_intelligence_report(_authorized_report()).model_dump(mode="json")
+    payload = _to_public_with_setup(_authorized_report()).model_dump(mode="json")
     if nested_field is None:
         payload[field] = ["A hostile late blocker was injected."]
     else:
@@ -784,7 +807,7 @@ def test_public_schema_rejects_authorized_action_with_any_global_blocker(
 def test_public_schema_rejects_appended_second_stage_b_command() -> None:
     from tests.test_internal_intelligence_service import _authorized_report
 
-    payload = to_public_intelligence_report(_authorized_report()).model_dump(mode="json")
+    payload = _to_public_with_setup(_authorized_report()).model_dump(mode="json")
     payload["best_measurement"]["procedure"][1] += " Set tape to 99%."
 
     with pytest.raises(ValueError, match="exact authorized action"):
@@ -794,7 +817,7 @@ def test_public_schema_rejects_appended_second_stage_b_command() -> None:
 def test_public_schema_rejects_self_consistent_wrong_control_label() -> None:
     from tests.test_internal_intelligence_service import _authorized_report
 
-    payload = to_public_intelligence_report(_authorized_report()).model_dump(mode="json")
+    payload = _to_public_with_setup(_authorized_report()).model_dump(mode="json")
     instruction = payload["briefing"]["action"]["instruction"]
     payload["best_measurement"]["controlled_variables"] = [
         "Change only Rear End Ratio."
@@ -832,7 +855,7 @@ def test_adapter_redacts_unauthorized_stage_b_but_preserves_safe_recovery() -> N
         }
     )
 
-    public = to_public_intelligence_report(hostile)
+    public = _to_public_with_setup(hostile)
 
     assert public.briefing.action.setup_authorized is False
     assert public.best_measurement is None
@@ -874,7 +897,7 @@ def test_public_schema_rejects_unauthorized_stage_b_exact_detail(status: str) ->
             "blocker_reasons": ("A late report blocker withdrew setup authority.",),
         }
     )
-    payload = to_public_intelligence_report(hostile).model_dump(mode="json")
+    payload = _to_public_with_setup(hostile).model_dump(mode="json")
     payload["mission_stage"] = "measure" if status == "blocked" else "test"
     payload["test_preflight"] = {
         "workflow_id": workflow.workflow_id,
@@ -937,7 +960,7 @@ def test_run_intelligence_rejects_non_list_session_membership(tmp_path: Path) ->
         )
 
 
-def test_explicit_session_rejects_multiple_active_controlled_workflows(
+def test_explicit_session_withholds_multiple_unbound_active_workflows(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -962,12 +985,13 @@ def test_explicit_session_rejects_multiple_active_controlled_workflows(
         lambda self, run_ids, active_only=False: (active, ()),
     )
 
-    with pytest.raises(ValueError, match="Multiple active controlled workflows"):
-        build_run_intelligence(
-            "run-A",
-            session_id=session.session_id,
-            db_path=db_path,
-        )
+    bundle = build_run_intelligence(
+        "run-A",
+        session_id=session.session_id,
+        db_path=db_path,
+    )
+    assert bundle.report.status == "blocked"
+    assert bundle.report.briefing.action.setup_authorized is False
 
     with pytest.raises(ValueError, match="Multiple active controlled workflows"):
         _require_one_active_workflow_in_explicit_session(
@@ -1016,6 +1040,14 @@ def test_intelligence_api_exposes_only_grounded_intent_fields(
             "question": "What should I do next?",
             "selected_lap": 2,
             "presentation_mode": "learning",
+        },
+    )
+    race_query = client.post(
+        "/api/runs/smart-run/intelligence/query",
+        json={
+            "question": "What should I do next?",
+            "selected_lap": 2,
+            "presentation_mode": "race",
         },
     )
     window_query = client.post(
@@ -1114,6 +1146,10 @@ def test_intelligence_api_exposes_only_grounded_intent_fields(
     assert oversized_refresh.status_code == 422
     report_payload = report.json()
     assert report_payload["run_id"] == "smart-run"
+    assert report_payload["schema_version"] == "p19.run-intelligence.v1"
+    assert len(report_payload["reasoning_snapshot_sha256"]) == 64
+    assert report_payload["setup_id"] is None
+    assert report_payload["setup_snapshot_sha256"] is None
     assert report_payload["decision_status"] == bundle.report.status
     assert isinstance(report_payload["mind_change_criteria"], list)
     assert report_payload["opportunity_signature"]["authority"] == "observation_only"
@@ -1121,7 +1157,27 @@ def test_intelligence_api_exposes_only_grounded_intent_fields(
     assert report_payload["next_trustworthy_move"]["authority"] == "navigation_only"
     assert report_payload["measurement_debt"]["status"] in {"open", "blocked"}
     assert query.status_code == 200
+    assert race_query.status_code == 200
     query_payload = query.json()
+    race_query_payload = race_query.json()
+    assert query_payload["schema_version"] == "p19.intelligence-query.v1"
+    assert query_payload["reasoning_snapshot_sha256"] == report_payload[
+        "reasoning_snapshot_sha256"
+    ]
+    assert query_payload["setup_id"] == report_payload["setup_id"]
+    assert query_payload["setup_snapshot_sha256"] == report_payload[
+        "setup_snapshot_sha256"
+    ]
+    for authority_field in (
+        "reasoning_snapshot_sha256",
+        "setup_id",
+        "setup_snapshot_sha256",
+        "action_authorized",
+        "action_source_event_ids",
+        "evidence_state",
+        "citations",
+    ):
+        assert race_query_payload[authority_field] == query_payload[authority_field]
     assert query_payload["selected_lap"] == 2
     assert query_payload["action_authorized"] is False
     assert query_payload["action_source_event_ids"] == []
@@ -1368,35 +1424,6 @@ def test_public_memory_fallbacks_never_echo_action_like_identifiers() -> None:
     assert profile.recurring_symptoms == []
 
 
-def test_generic_discriminators_do_not_invent_cross_cause_coverage() -> None:
-    recommendations = [
-        Recommendation(
-            recommendation_id=f"rec-{cause}",
-            run_id="smart-run",
-            issue=label,
-            cause_bucket=cause,
-            recommendation_text=f"Measure {label.casefold()}.",
-            evidence_event_ids=[f"event-{cause}"],
-            evidence_state=EvidenceState.MEASURED,
-            source_channels=["Speed"],
-        )
-        for cause, label in (
-            ("platform", "Platform"),
-            ("driver", "Driver execution"),
-            ("tire", "Tire state"),
-        )
-    ]
-
-    hypotheses = _hypotheses(recommendations, None, {})
-
-    assert len(hypotheses) == 3
-    for hypothesis in hypotheses:
-        assert hypothesis.discriminator is not None
-        assert hypothesis.discriminator.distinguishes_cause_ids == (
-            hypothesis.cause_id,
-        )
-
-
 def test_query_response_rejects_missing_authority_and_cross_lap_citations() -> None:
     citation = IntelligenceCitationResponse(
         citation_id="event-1",
@@ -1411,8 +1438,12 @@ def test_query_response_rejects_missing_authority_and_cross_lap_citations() -> N
         valid_for_tuning=True,
     )
     common = {
+        "schema_version": "p19.intelligence-query.v1",
         "run_id": "smart-run",
         "session_id": None,
+        "reasoning_snapshot_sha256": TEST_REASONING_SNAPSHOT_SHA256,
+        "setup_id": "smart-run:setup",
+        "setup_snapshot_sha256": "b" * 64,
         "scope_run_ids": ["smart-run"],
         "selected_lap": 2,
         "interpreted_lap_number": 2,
@@ -1446,8 +1477,12 @@ def test_query_response_accepts_exact_window_and_requires_exact_action_events() 
 
     citations = [citation(4, "event-4"), citation(5, "event-5")]
     common = {
+        "schema_version": "p19.intelligence-query.v1",
         "run_id": "smart-run",
         "session_id": None,
+        "reasoning_snapshot_sha256": TEST_REASONING_SNAPSHOT_SHA256,
+        "setup_id": "smart-run:setup",
+        "setup_snapshot_sha256": "b" * 64,
         "scope_run_ids": ["smart-run"],
         "selected_lap": 4,
         "status": "ready",
@@ -1540,8 +1575,12 @@ def test_query_response_allows_only_non_action_history_from_exact_session_scope(
         valid_for_tuning=False,
     )
     common = {
+        "schema_version": "p19.intelligence-query.v1",
         "run_id": "run-b",
         "session_id": "session-1",
+        "reasoning_snapshot_sha256": TEST_REASONING_SNAPSHOT_SHA256,
+        "setup_id": None,
+        "setup_snapshot_sha256": None,
         "scope_run_ids": ["run-a", "run-b"],
         "status": "ready",
         "question": "What changed?",
@@ -1563,6 +1602,8 @@ def test_query_response_allows_only_non_action_history_from_exact_session_scope(
             **(
                 common
                 | {
+                    "setup_id": "run-b:setup",
+                    "setup_snapshot_sha256": "b" * 64,
                     "action_authorized": True,
                     "action_source_event_ids": ["history-event"],
                 }
@@ -1619,8 +1660,12 @@ def test_mind_change_criteria_are_public_safe_and_exactly_scope_bound() -> None:
     assert "proposed_value" not in public.model_dump()
 
     common = {
+        "schema_version": "p19.intelligence-query.v1",
         "run_id": "smart-run",
         "session_id": "session-1",
+        "reasoning_snapshot_sha256": TEST_REASONING_SNAPSHOT_SHA256,
+        "setup_id": None,
+        "setup_snapshot_sha256": None,
         "scope_run_ids": ["smart-run"],
         "status": "ready",
         "question": "What would change your mind?",
@@ -1642,16 +1687,6 @@ def test_mind_change_criteria_are_public_safe_and_exactly_scope_bound() -> None:
 
 
 def test_evidence_graph_inputs_never_copy_setup_action_prose_or_exact_values() -> None:
-    recommendation = Recommendation(
-        recommendation_id="ready-rec",
-        run_id="smart-run",
-        issue="Platform compression",
-        cause_bucket="platform",
-        recommendation_text="Decrease front ride height from 50.0 to 49.5.",
-        evidence_event_ids=["event-platform"],
-        evidence_state=EvidenceState.MEASURED,
-        source_channels=["CFSRideHeight"],
-    )
     card = _controlled_card()
     workflow = SimpleNamespace(
         workflow_id="workflow-1",
@@ -1667,34 +1702,14 @@ def test_evidence_graph_inputs_never_copy_setup_action_prose_or_exact_values() -
         ),
     )
 
-    claims = _claims([recommendation], workflow)
+    claims = _claims(workflow)
     setup_values = _setup_values(workflow)
     visible_claim_text = " ".join(claim.text for claim in claims)
 
     assert "49.5" not in visible_claim_text
     assert "Decrease front ride height" not in visible_claim_text
-    assert "Platform evidence" in visible_claim_text
+    assert "Controlled workflow is testing Cross Weight" in visible_claim_text
     assert setup_values[0].value_display is None
-
-
-def test_run_orchestration_blocks_blank_recommendation_semantics_without_crashing() -> None:
-    malformed = Recommendation(
-        recommendation_id="blank-rec",
-        run_id="smart-run",
-        issue="   ",
-        cause_bucket="   ",
-        recommendation_text="   ",
-        evidence_event_ids=["event-1"],
-        evidence_state=EvidenceState.MEASURED,
-        source_channels=["Speed"],
-    )
-
-    claims = _claims([malformed], None)
-    hypotheses = _hypotheses([malformed], None, {})
-
-    assert claims[0].text.startswith("Unresolved telemetry evidence")
-    assert claims[0].evidence_state == EvidenceState.BLOCKED_BY_CONTEXT
-    assert hypotheses == ()
 
 
 def test_persisted_card_requires_complete_semantics_and_nonblank_provenance() -> None:
@@ -1799,18 +1814,6 @@ def test_intelligence_refuses_ambiguous_active_workflows() -> None:
 
 
 def test_non_authorized_plans_never_replay_persisted_setup_instructions() -> None:
-    recommendation = Recommendation(
-        recommendation_id="injected-required-data",
-        run_id="smart-run",
-        issue="Platform consistency",
-        cause_bucket="set tape to 99%",
-        recommendation_text="Measure the platform signal.",
-        evidence_event_ids=["event-platform"],
-        evidence_state=EvidenceState.MEASURED,
-        source_channels=["CFSRideHeight"],
-        required_next_data=["Set cross weight from 50.0% to 99.0%."],
-    )
-    hypothesis = _hypotheses([recommendation], None, {})[0]
     persisted_mission = MeasurementMission(
         purpose="Set cross weight from 50.0% to 99.0%.",
         procedure=("Set cross weight from 50.0% to 99.0%.",),
@@ -1832,9 +1835,6 @@ def test_non_authorized_plans_never_replay_persisted_setup_instructions() -> Non
     decision = _controlled_decision(workflow)
     assert decision is not None and decision.mission is not None
     visible = " ".join((
-        hypothesis.label,
-        hypothesis.discriminator.title,
-        hypothesis.discriminator.instruction,
         decision.mission.purpose,
         *decision.mission.procedure,
         *decision.mission.controlled_variables,
@@ -1848,13 +1848,14 @@ def test_non_authorized_plans_never_replay_persisted_setup_instructions() -> Non
     assert "Set Tape" not in visible
 
     workflow_hypothesis = _hypotheses(
-        [],
-        SimpleNamespace(packet=SimpleNamespace(
-            primary_test=_controlled_card(),
-            primary_cause_bucket="set tape to 99%",
-            blockers=(),
-        )),
-        {},
+        SimpleNamespace(
+            workflow_id="workflow-redacted",
+            packet=SimpleNamespace(
+                primary_test=_controlled_card(),
+                primary_cause_bucket="set tape to 99%",
+                blockers=(),
+            ),
+        ),
         ("Stored workflow authority is blocked.",),
     )[0]
     assert "99%" not in workflow_hypothesis.model_dump_json()
@@ -2019,7 +2020,7 @@ def test_active_source_run_card_uses_event_provenance_without_claiming_an_outcom
         ),
     )
     graph = build_evidence_graph(
-        claims=_claims([], workflow),
+        claims=_claims(workflow),
         events=(event,),
         laps=(lap,),
         setup_values=_setup_values(workflow),
@@ -2031,7 +2032,7 @@ def test_active_source_run_card_uses_event_provenance_without_claiming_an_outcom
         ),
     )
     ranked = rank_competing_causes(
-        _hypotheses([], workflow, {event.event_id: event}),
+        _hypotheses(workflow),
         graph,
     )
     plan = plan_best_next_measurement(

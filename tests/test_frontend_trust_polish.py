@@ -18,7 +18,9 @@ def test_overview_race_call_requires_capability_and_warning_health() -> None:
     assert "capability_summary.lossless_archive_complete" in overview
     assert "capability_summary.warning_channels === 0" in overview
     assert "blockingOverviewWarnings.length === 0" in overview
-    assert ': "HOLD"' in overview
+    assert ': "NO FINDING"' in overview
+    assert "This overview is observational and does not authorize a setup test." in overview
+    assert "begin one small, controlled test" not in overview
     assert 'key: "other", label: "Other data-quality warnings"' in overview
 
 
@@ -78,13 +80,13 @@ def test_app_sanitizes_nested_run_payloads_before_any_tab_receives_them() -> Non
 
     assert "laps.filter((lap) => lap.run_id === runId)" in app
     assert "events.filter((event) => event.run_id === runId)" in app
-    assert "base.recommendations.filter((recommendation) => recommendation.run_id === runId)" in app
     assert "bestUsefulLapMatchesRun(baseBestUsefulLap, runId)" in app
     assert "Cross-run lap rows were withheld" in app
     assert "Cross-run events were withheld" in app
-    assert "Cross-run recommendations were withheld" in app
+    assert "base.recommendations" not in app
     assert "primary_findings: derivedIdentityMismatch ? []" in app
-    assert "next_test: derivedIdentityMismatch ? null" in app
+    assert "crew_chief_summary" not in app
+    assert "next_test:" not in app
 
 
 def test_session_context_uses_honest_wind_units() -> None:
@@ -144,21 +146,18 @@ def test_stint_warning_truncation_discloses_and_reveals_hidden_items() -> None:
     assert "currentStintData.warnings.slice(4).map" in laps
 
 
-def test_overview_and_inspector_fail_closed_on_untrusted_actions() -> None:
+def test_overview_and_inspector_keep_import_observations_non_authorizing() -> None:
     trust = _read("ui/src/utils/evidenceTrust.ts")
     overview = _read("ui/src/tabs/OverviewTab.tsx")
     inspector = _read("ui/src/components/EvidenceInspector.tsx")
     card = _read("ui/src/components/EvidenceCard.tsx")
 
     assert "telemetryEventIsActionable" in overview
-    assert "recommendationIsActionable" in overview
-    assert "recommendationIsActionable" in inspector
     assert "event.blocker_reasons.length === 0" in trust
     assert "event.source_channels.length > 0" in trust
-    assert "recommendation.blocker_reasons.length > 0" in trust
-    assert "recommendation.evidence_event_ids.length === 0" in trust
-    assert "No recommendation is shown without supporting evidence." in overview
-    assert "No recommendation is shown without supporting evidence." in inspector
+    assert "recommendationIsActionable" not in trust
+    assert "controlled P19 workflow" in overview
+    assert "Setup changes are authorized only by the controlled P19 workflow." in inspector
     assert "Evidence only - no setup action is authorized." in card
     assert 'role="button"' not in card
     assert "Open Platform" in card

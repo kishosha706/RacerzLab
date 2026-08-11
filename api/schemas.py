@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from racelab_engine.io.ibt_types import ImportStatus
 
@@ -116,7 +116,7 @@ class ChannelCatalogItem(BaseModel):
     dependencies: list[str] = Field(default_factory=list)
     used_by_charts: list[str] = Field(default_factory=list)
     used_by_events: list[str] = Field(default_factory=list)
-    used_by_recommendations: list[str] = Field(default_factory=list)
+    used_by_analyses: list[str] = Field(default_factory=list)
     min: Optional[float] = None
     max: Optional[float] = None
     mean: Optional[float] = None
@@ -192,6 +192,8 @@ class TraceResponse(BaseModel):
 
 
 class PlatformEventItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     event_id: str
     event_type: str
     title: str
@@ -212,7 +214,6 @@ class PlatformEventItem(BaseModel):
     primary_unit: Optional[str] = None
     channels_used: list[str] = Field(default_factory=list)
     evidence: list[str] = Field(default_factory=list)
-    recommended_action: Optional[str] = None
     is_proxy_based: bool = False
     proxy_warning: Optional[str] = None
     metadata: dict[str, Any] = Field(default_factory=dict)

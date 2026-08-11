@@ -13,7 +13,22 @@ from racelab_engine.analysis.constants import (
 
 # ── types ───────────────────────────────────────────────────────
 
-VerdictKind = Literal["keep_direction", "undo", "retest", "inconclusive"]
+VerdictKind = Literal[
+    # Public legacy Compare outputs are observational only.
+    "observed_improvement",
+    "observed_regression",
+    "needs_confirmation",
+    "inconclusive",
+    # P19 may still construct these policy values for controlled durable memory.
+    "keep_direction",
+    "undo",
+]
+ObservationKind = Literal[
+    "observed_improvement",
+    "observed_regression",
+    "needs_confirmation",
+    "inconclusive",
+]
 Significance = Literal["small", "medium", "large", "unknown"]
 SetupGroup = Literal[
     "front_platform", "rear_platform", "tires", "shocks", "springs",
@@ -222,7 +237,7 @@ class EnhancedComparisonSummary:
     setup_changes: list[dict] = field(default_factory=list)
     context_changes: list[dict] = field(default_factory=list)
     test_discipline: dict | None = None
-    verdict: dict | None = None
+    observation: dict | None = None
     sim_integrity: dict | None = None
     warnings: list[str] = field(default_factory=list)
     confidence_score: float = 0.0
@@ -248,7 +263,7 @@ class EnhancedComparisonSummary:
             "setup_changes": self.setup_changes,
             "context_changes": self.context_changes,
             "test_discipline": self.test_discipline,
-            "verdict": self.verdict,
+            "observation": self.observation,
             "sim_integrity": self.sim_integrity,
             "warnings": self.warnings,
             "confidence_score": self.confidence_score,
@@ -297,7 +312,7 @@ class TestDisciplineResult:
     label: str
     positive_factors: list[str] = field(default_factory=list)
     negative_factors: list[str] = field(default_factory=list)
-    recommendation: str | None = None
+    measurement_note: str | None = None
 
     @property
     def is_reliable(self) -> bool:
@@ -313,7 +328,6 @@ class DidItWorkVerdict:
     headline: str
     evidence: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-    next_step: str | None = None
     success_metric: str | None = None
     cause_bucket: str | None = None
     required_next_data: list[str] = field(default_factory=list)
@@ -321,35 +335,14 @@ class DidItWorkVerdict:
 
 
 @dataclass(frozen=True)
-class RunComparisonSummary:
-    comparison_id: str
-    baseline_run_id: str
-    test_run_id: str
-    baseline_lap: int | None
-    test_lap: int | None
-    target_zone: TargetZoneComparison | None = None
-    setup_changes: list[SetupChange] = field(default_factory=list)
-    context_changes: list[ContextChange] = field(default_factory=list)
-    test_discipline: TestDisciplineResult | None = None
-    verdict: DidItWorkVerdict | None = None
-    warnings: list[str] = field(default_factory=list)
-    confidence_score: float = 0.0
+class ComparisonObservation:
+    """Non-authorizing public result for a legacy Compare analysis."""
 
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "comparison_id": self.comparison_id,
-            "baseline_run_id": self.baseline_run_id,
-            "test_run_id": self.test_run_id,
-            "baseline_lap": self.baseline_lap,
-            "test_lap": self.test_lap,
-            "target_zone": _zone_dict(self.target_zone) if self.target_zone else None,
-            "setup_changes": [_setup_change_dict(c) for c in self.setup_changes],
-            "context_changes": [_context_change_dict(c) for c in self.context_changes],
-            "test_discipline": _discipline_dict(self.test_discipline) if self.test_discipline else None,
-            "verdict": _verdict_dict(self.verdict) if self.verdict else None,
-            "warnings": self.warnings,
-            "confidence_score": self.confidence_score,
-        }
+    observation_state: ObservationKind
+    confidence_score: float
+    headline: str
+    evidence: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 def _zone_dict(z: TargetZoneComparison) -> dict[str, Any]:
@@ -386,16 +379,7 @@ def _context_change_dict(c: ContextChange) -> dict[str, Any]:
 
 def _discipline_dict(d: TestDisciplineResult) -> dict[str, Any]:
     return {"score": d.score, "label": d.label, "positive_factors": d.positive_factors,
-            "negative_factors": d.negative_factors, "recommendation": d.recommendation}
-
-
-def _verdict_dict(v: DidItWorkVerdict) -> dict[str, Any]:
-    return {"verdict": v.verdict, "confidence_score": v.confidence_score,
-            "headline": v.headline, "evidence": v.evidence, "warnings": v.warnings,
-            "next_step": v.next_step, "success_metric": v.success_metric,
-            "cause_bucket": v.cause_bucket,
-            "required_next_data": v.required_next_data,
-            "do_not_change_warnings": v.do_not_change_warnings}
+            "negative_factors": d.negative_factors, "measurement_note": d.measurement_note}
 
 
 # ── serializer helpers (used by EnhancedComparisonSummary.as_dict) ──

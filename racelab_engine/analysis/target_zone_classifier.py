@@ -29,7 +29,6 @@ class TargetZoneClassification:
     label: str
     confidence: float  # 0-1
     reasoning: list[str] = field(default_factory=list)
-    recommendation: str | None = None
 
 
 def classify_target_zone(
@@ -77,7 +76,6 @@ def classify_target_zone(
                 f"Speed changed by {speed:+.2f} mph.",
                 f"Missing comparison evidence: {', '.join(missing_context)}.",
             ],
-            recommendation="Repeat with complete platform, steering, and drag/scrub proxy coverage.",
         )
 
     # Gather signals
@@ -99,37 +97,31 @@ def classify_target_zone(
             label = "Stable gain"
             confidence = 0.75 if discipline_ok else 0.55
             reasoning.append(f"Speed +{speed:.2f} mph with stable platform and no drag increase.")
-            recommendation = "Keep direction. This is a clean improvement."
         elif cfs_worse and not drag_higher:
             gain_class = "risky_gain"
             label = "Risky gain"
             confidence = 0.5
             reasoning.append(f"Speed +{speed:.2f} mph but CFS worsened by {min_cfs_delta:.3f} in.")
-            recommendation = "Retest with smaller platform change to confirm tradeoff."
         elif steering_lower:
             gain_class = "driver_input_gain"
             label = "Driver-input gain"
             confidence = 0.55
             reasoning.append(f"Speed +{speed:.2f} mph with reduced steering ({avg_steering_delta:.2f}°).")
-            recommendation = "Confirm driver line is repeatable before concluding setup change."
         elif drag_lower:
             gain_class = "drag_reduction"
             label = "Lower drag/scrub suspicion"
             confidence = 0.6
             reasoning.append(f"Speed +{speed:.2f} mph with drag/scrub delta {avg_drag_delta:.3f}.")
-            recommendation = "Repeat the same one-change test before assigning a cause."
         elif rpm_higher:
             gain_class = "mechanical_balance_improvement"
             label = "Speed gain with higher RPM"
             confidence = 0.5
             reasoning.append(f"Speed +{speed:.2f} mph with RPM +{avg_rpm_delta:.0f}.")
-            recommendation = "Check gearing and exit conditions, then confirm with a controlled repeat."
         else:
             gain_class = "platform_sensitive_gain"
             label = "Platform-sensitive gain"
             confidence = 0.45
             reasoning.append(f"Speed +{speed:.2f} mph but platform context is mixed.")
-            recommendation = "Review platform traces alongside speed delta."
     else:
         # Speed lost
         if cfs_worse:
@@ -137,19 +129,16 @@ def classify_target_zone(
             label = "Platform-related loss"
             confidence = 0.6
             reasoning.append(f"Speed {speed:.2f} mph with CFS worsening {min_cfs_delta:.3f} in.")
-            recommendation = "Undo or reduce platform change."
         elif drag_higher:
             gain_class = "drag_reduction"
             label = "Higher drag/scrub suspicion"
             confidence = 0.55
             reasoning.append(f"Speed {speed:.2f} mph with drag/scrub increase {avg_drag_delta:.3f}.")
-            recommendation = "Check for scrub or platform-induced drag."
         elif steering_higher:
             gain_class = "driver_input_gain"
             label = "Driver-related loss"
             confidence = 0.5
             reasoning.append(f"Speed {speed:.2f} mph with more steering ({avg_steering_delta:.2f}°).")
-            recommendation = "Check if driver line changed between runs."
         else:
             # Speed lost, and no clear platform/drag/driver signal
             if rpm_higher and avg_rpm_delta is not None:
@@ -157,24 +146,20 @@ def classify_target_zone(
                 label = "Speed loss with higher RPM"
                 confidence = 0.4
                 reasoning.append(f"Speed {speed:+.2f} mph lost, but RPM increased (+{avg_rpm_delta:.0f}).")
-                recommendation = "Check gearing or if engine is hitting rev limiter. This suggests a potential mechanical or gearing mismatch."
             elif rpm_lower and avg_rpm_delta is not None:
                 gain_class = "inconclusive"
                 label = "Speed loss with lower RPM"
                 confidence = 0.3
                 reasoning.append(f"Speed {speed:+.2f} mph lost, and RPM also decreased ({avg_rpm_delta:+.0f}).")
-                recommendation = "Review all delta traces for hidden correlations, especially engine/powertrain. This might indicate a general lack of power or efficiency."
             else:
                 gain_class = "inconclusive"
                 label = "Unexplained loss"
                 confidence = 0.35
                 reasoning.append(f"Speed {speed:+.2f} mph without clear platform/drag/driver signal.")
-                recommendation = "Review all delta traces for hidden correlations."
 
     return TargetZoneClassification(
         gain_class=gain_class,
         label=label,
         confidence=confidence,
         reasoning=reasoning,
-        recommendation=recommendation,
     )

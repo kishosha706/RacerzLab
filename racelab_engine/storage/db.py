@@ -86,8 +86,6 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
             "air_pressure": "air_pressure REAL",
             "primary_findings_json": "primary_findings_json TEXT",
             "warnings_json": "warnings_json TEXT",
-            "crew_chief_summary": "crew_chief_summary TEXT",
-            "next_test": "next_test TEXT",
             "session_json": "session_json TEXT",
         }.items():
             _add_column_if_missing(connection, "runs", column_name, ddl)
@@ -111,16 +109,9 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
         for column_name, ddl in {
             "primary_metric_name": "primary_metric_name TEXT",
             "primary_metric_value": "primary_metric_value REAL",
-            "recommended_actions": "recommended_actions TEXT",
             "event_json": "event_json TEXT",
         }.items():
             _add_column_if_missing(connection, "events", column_name, ddl)
-    if "recommendations" in {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
-        for column_name, ddl in {
-            "evidence_event_ids": "evidence_event_ids TEXT",
-            "recommendation_json": "recommendation_json TEXT",
-        }.items():
-            _add_column_if_missing(connection, "recommendations", column_name, ddl)
     if "setup_snapshots" in {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
         _add_column_if_missing(connection, "setup_snapshots", "snapshot_json", "snapshot_json TEXT")
     if "setup_response_observations" in {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}:

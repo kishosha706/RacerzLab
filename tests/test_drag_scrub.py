@@ -139,7 +139,7 @@ def test_persisted_negative_segment_emits_speed_loss_event() -> None:
     assert len(events) == 1
     assert events[0].event_type == "FULL_THROTTLE_SPEED_LOSS"
     assert events[0].valid_for_tuning is False
-    assert events[0].recommended_actions == []
+    assert "measurement_guidance" not in events[0].model_dump()
     assert events[0].evidence_state == "estimated_proxy"
     assert "speed_mph" in events[0].source_channels
 
@@ -207,7 +207,6 @@ def test_selected_lap_proximity_retains_observation_but_suppresses_action() -> N
         event_type="FULL_THROTTLE_SPEED_LOSS",
         confidence_score=0.8,
         valid_for_tuning=True,
-        recommended_actions=["Change the setup."],
     )
     rows = [
         {
@@ -221,6 +220,6 @@ def test_selected_lap_proximity_retains_observation_but_suppresses_action() -> N
 
     assert len(qualified) == 1
     assert qualified[0].valid_for_tuning is False
-    assert qualified[0].recommended_actions == []
-    assert qualified[0].evidence_json["tuning_action_suppressed"] is True
+    assert "measurement_guidance" not in qualified[0].model_dump()
+    assert qualified[0].evidence_json["observation_withheld"] is True
     assert warning is not None

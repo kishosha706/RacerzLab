@@ -260,7 +260,7 @@ def test_every_action_plan_preserves_its_typed_direction_into_workflow_candidate
             validate_with=[],
             blocker_reasons=[],
         )
-        candidate = _cause_candidate_from_swing(swing, 0, {})
+        candidate = _cause_candidate_from_swing(swing, {})
         if len(action.control_keys) != 1:
             assert candidate is None
             continue

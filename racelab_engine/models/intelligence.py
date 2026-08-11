@@ -50,7 +50,6 @@ class EvidenceNodeKind(str, Enum):
     CAUSE = "cause"
     OBSERVATION = "observation"
     EVENT = "event"
-    RECOMMENDATION = "recommendation"
     LAP = "lap"
     CHANNEL = "channel"
     SETUP = "setup"
@@ -63,7 +62,6 @@ class EvidenceEdgeKind(str, Enum):
     OBSERVED_ON = "observed_on"
     USES_CHANNEL = "uses_channel"
     RELATES_TO_SETUP = "relates_to_setup"
-    RECOMMENDS_FROM = "recommends_from"
     PART_OF_WORKFLOW = "part_of_workflow"
     TESTS_SETUP = "tests_setup"
 
@@ -184,7 +182,6 @@ class EvidenceGraph(IntelligenceModel):
                 (EvidenceNodeKind.CAUSE, EvidenceNodeKind.EVENT),
                 (EvidenceNodeKind.CAUSE, EvidenceNodeKind.OBSERVATION),
                 (EvidenceNodeKind.CAUSE, EvidenceNodeKind.WORKFLOW),
-                (EvidenceNodeKind.CLAIM, EvidenceNodeKind.RECOMMENDATION),
                 (EvidenceNodeKind.CLAIM, EvidenceNodeKind.WORKFLOW),
                 (EvidenceNodeKind.WORKFLOW, EvidenceNodeKind.EVENT),
                 (EvidenceNodeKind.SETUP, EvidenceNodeKind.EVENT),
@@ -204,14 +201,10 @@ class EvidenceGraph(IntelligenceModel):
                 (EvidenceNodeKind.EVENT, EvidenceNodeKind.CHANNEL),
                 (EvidenceNodeKind.OBSERVATION, EvidenceNodeKind.CHANNEL),
                 (EvidenceNodeKind.CLAIM, EvidenceNodeKind.CHANNEL),
-                (EvidenceNodeKind.RECOMMENDATION, EvidenceNodeKind.CHANNEL),
             },
             EvidenceEdgeKind.RELATES_TO_SETUP: {
                 (EvidenceNodeKind.EVENT, EvidenceNodeKind.SETUP),
                 (EvidenceNodeKind.CLAIM, EvidenceNodeKind.SETUP),
-            },
-            EvidenceEdgeKind.RECOMMENDS_FROM: {
-                (EvidenceNodeKind.RECOMMENDATION, EvidenceNodeKind.EVENT),
             },
             EvidenceEdgeKind.PART_OF_WORKFLOW: {
                 (EvidenceNodeKind.WORKFLOW, EvidenceNodeKind.LAP),
@@ -314,7 +307,6 @@ class GroundedClaim(IntelligenceModel):
     evidence_state: EvidenceState
     supporting_event_ids: tuple[str, ...] = ()
     contradicting_event_ids: tuple[str, ...] = ()
-    recommendation_ids: tuple[str, ...] = ()
     lap_references: tuple[LapReference, ...] = ()
     source_channels: tuple[str, ...] = ()
     setup_keys: tuple[str, ...] = ()

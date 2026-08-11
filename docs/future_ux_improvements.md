@@ -4,6 +4,11 @@ This file tracks UX improvements that are intentionally deferred or require
 architectural changes beyond a single polish pass. Based on the comprehensive
 UX audit (2026-05-28), items are organized by priority.
 
+Authority guardrail (reviewed 2026-08-10): deferred UX may improve navigation,
+explanation, and evidence visibility, but it must not add setup direction,
+exact targets, Keep/Undo, stop-testing, or persistent policy outside the
+canonical P19 workflow.
+
 ---
 
 ## P0: Must Fix Before Calling App Stable
@@ -52,10 +57,11 @@ TelemetrySelectionContext and updating the RunContextBar component.
 
 **Status:** Basic zero-event state exists ("No critical events detected").
 
-**Recommendation:** Refine to be more engaging: "Clean Run Detected!" or
-"Platform Stable!" with specific next steps like "Explore Laps for pace
-quality," "Open Compare to validate setup," or "Check Raw Channels for
-subtle trends."
+**Recommendation:** Refine the empty state without turning absence of a finding
+into a health certificate. Prefer "No supported platform finding in this
+scope" and distinguish that from unavailable/error states. Offer evidence-only
+handoffs such as reviewing Laps or inspecting the Platform trace; never imply
+that Compare can validate a setup policy.
 
 **Implementation risk:** Low. Primarily copy and minor UI adjustments.
 
@@ -86,15 +92,16 @@ map) that plots lap time or a degradation index over lap number.
 **Implementation risk:** Medium. Requires a new ECharts instance and data
 aggregation.
 
-### Clearer Warning Grouping in Compare
+### Clearer Evidence-Debt Grouping in Compare
 
 **Page/Component:** CompareTab.tsx, DidItWorkCard.tsx
 
 **Status:** Warnings are present but could be visually grouped or prioritized.
 
-**Recommendation:** Implement a dedicated "Warnings Summary" section that
-groups warnings by category (e.g., "Context Warnings," "Discipline Warnings")
-with clear icons/colors to indicate severity.
+**Recommendation:** Implement a dedicated evidence-debt summary that groups
+context, eligibility, discipline, integrity, and missing-channel blockers.
+Compare remains observation-only and must not render Keep/Undo or a recommended
+next setup step.
 
 **Implementation risk:** Low. Primarily UI/CSS work.
 
@@ -173,15 +180,17 @@ their impact on car behavior and relation to the selected telemetry event.
 
 **Implementation risk:** Medium. Requires populating tooltip content.
 
-### Notebook Finding Card Redesign
+### Observation Notebook Card Redesign
 
 **Page/Component:** NotebookTab.tsx
 
-**Status:** Finding cards are functional but not visually rich.
+**Status:** The observation component exists but is not a primary workspace.
 
-**Recommendation:** Redesign finding cards to summarize key deltas, verdict,
-and confidence at a glance. Add color-coded borders based on verdict
-(Keep/Undo/Retest).
+**Recommendation:** If the observation archive is exposed again, summarize
+scope, key measured deltas, evidence type, confidence context, and saved/archive
+state. Do not restore verdict colors, setup changes, next steps, test plans, or
+setup-memory suggestions; those would create a second policy surface outside
+P19.
 
 **Implementation risk:** Medium.
 
@@ -218,7 +227,7 @@ restore on re-open, clear when run changes.
 - `track-map.css` — TrackMapTab, SVG map, overlays, clusters
 - `platform.css` — PlatformTab, ECharts, cursor panel, engineering panels
 - `laps.css` — LapsTab, stint map, lap table, window cards
-- `compare.css` — CompareTab, DidItWorkCard, verdict, discipline
+- `compare.css` — CompareTab, DidItWorkCard, observation, discipline
 - `motion.css` — All animation keyframes and reduced-motion rules
 - `base.css` — Variables, typography, layout, nav, buttons, tables
 
@@ -241,8 +250,9 @@ circular chunk dependency; the threshold was not raised or hidden.
   mark-line, and mark-area behavior in the packaged desktop app.
 - Profile whether the ECharts canvas renderer or registered toolbox/annotation
   components dominate the remaining bundle before removing any feature.
-- Keep TrackMap, Compare, Raw Channels, and Notebook as candidates where a
-  measured initial-load benefit justifies the added boundary.
+- Keep TrackMap, Compare, and Raw Channels as candidates where a measured
+  initial-load benefit justifies the added boundary. Notebook is not a current
+  primary workspace.
 
 ### Ghost Lap / Baseline Overlay
 
@@ -313,12 +323,12 @@ users accustomed to iRacing's imperial defaults. Must be opt-in.
 1. Degradation trend chart in LapsTab
 2. Interactive event clustering on TrackMapTab
 3. Direct "Open Setup with Focus" button in EvidenceInspector
-4. Redesigned Notebook finding cards
+4. Observation archive cards, only if that non-authorizing surface is restored
 5. Cross-session search/filter in LapsTab
 6. Consolidated warnings in EvidenceInspector and CompareTab
 
 ### Phase 3: Laps/Compare Improvements & Setup Depth (P2/P3)
-1. Enhanced Setup Memory with active suggestions
+1. Read-only P19 controlled-outcome history, with no independent suggestions
 2. Detailed tooltips for highlighted setup fields
 3. RawChannelsTab filters and metadata drawer
 4. Chart zoom persistence

@@ -178,7 +178,7 @@ def test_overview_platform_event_rejects_implausible_peak_context() -> None:
 
         assert len(events) == 1
         assert events[0].valid_for_tuning is False, (channel, value)
-        assert events[0].recommended_actions == [], (channel, value)
+        assert "measurement_guidance" not in events[0].model_dump(), (channel, value)
 
 
 def test_overview_platform_event_cannot_bypass_canonical_pit_lap_gate() -> None:
@@ -223,10 +223,10 @@ def test_overview_allows_sustained_negative_scrape_on_eligible_lap() -> None:
     assert events[0].valid_for_tuning is True
     assert events[0].lap_pct_start < events[0].lap_pct_peak < events[0].lap_pct_end
     assert events[0].evidence_json["has_sustained_risk"] is True
-    assert events[0].recommended_actions
+    assert "measurement_guidance" not in events[0].model_dump()
 
 
-def test_overview_internal_one_frame_low_has_no_tuning_action() -> None:
+def test_overview_internal_one_frame_low_has_no_action_field() -> None:
     rows = [
         _row(lap_dist_pct=0.0, lap_dist_ft=0.0, cfsr_height_mm=15.0, session_time=0.0),
         _row(lap_dist_pct=0.50, lap_dist_ft=2000.0, cfsr_height_mm=9.0, session_time=20.0),
@@ -238,7 +238,7 @@ def test_overview_internal_one_frame_low_has_no_tuning_action() -> None:
     assert len(events) == 1
     assert events[0].evidence_json["display_scope"] == "internal"
     assert events[0].valid_for_tuning is False
-    assert events[0].recommended_actions == []
+    assert "measurement_guidance" not in events[0].model_dump()
 
 
 def test_overview_platform_event_conversion_handles_multiple_laps() -> None:

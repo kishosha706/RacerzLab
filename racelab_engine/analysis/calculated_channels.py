@@ -560,7 +560,7 @@ EVENT_LABELS = [
     "MAX_DYNAMIC_PRESSURE",
 ]
 
-RECOMMENDATION_LABELS = [
+ANALYSIS_USE_LABELS = [
     PLATFORM_SCRUB_TEST,
     RIDE_HEIGHT_REVIEW,
     LINE_STEERING_REVIEW,
@@ -580,7 +580,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["LapDist"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, SPEED_RPM_PULL, DRAG_SCRUB, AERO_PLATFORM, SHOCKS, TIRES, ENGINE],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
     "lap_dist_pct_100": {
         "label": "Lap %",
@@ -589,7 +589,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["LapDistPct"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, SPEED_RPM_PULL, DRAG_SCRUB],
         "used_by_events": ["PLATFORM_LOW", "PLATFORM_SCRAPE", "FULL_THROTTLE_SPEED_LOSS", "STEERING_SCRUB", "DYNAMIC_PRESSURE_PEAK", "HIGH_CENTER_RAKE"],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
 
     # ── speed ──
@@ -600,7 +600,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["Speed"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, SPEED_RPM_PULL, DRAG_SCRUB, AERO_PLATFORM, TIRES, ENGINE],
         "used_by_events": ["PLATFORM_LOW", "PLATFORM_SCRAPE", "FULL_THROTTLE_SPEED_LOSS", "DYNAMIC_PRESSURE_PEAK", "RPM_FLATTENING"],
-        "used_by_recommendations": [PLATFORM_SCRUB_TEST, GEARING_COMPARISON, LINE_STEERING_REVIEW],
+        "used_by_analyses": [PLATFORM_SCRUB_TEST, GEARING_COMPARISON, LINE_STEERING_REVIEW],
     },
     "speed_rate_mph_s": {
         "label": "Speed Rate",
@@ -609,7 +609,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["speed_mph", "SessionTime"],
         "used_by_charts": [SPEED_RPM_PULL, DRAG_SCRUB],
         "used_by_events": ["FULL_THROTTLE_SPEED_LOSS"],
-        "used_by_recommendations": [PLATFORM_SCRUB_TEST, LINE_STEERING_REVIEW],
+        "used_by_analyses": [PLATFORM_SCRUB_TEST, LINE_STEERING_REVIEW],
     },
     "speed_rate_mph_1000ft": {
         "label": "Speed Rate / 1000 ft",
@@ -618,7 +618,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["speed_mph", "lap_dist_ft"],
         "used_by_charts": [SPEED_RPM_PULL, DRAG_SCRUB],
         "used_by_events": ["FULL_THROTTLE_SPEED_LOSS"],
-        "used_by_recommendations": [PLATFORM_SCRUB_TEST, LINE_STEERING_REVIEW],
+        "used_by_analyses": [PLATFORM_SCRUB_TEST, LINE_STEERING_REVIEW],
     },
 
     # ── ride heights ──
@@ -629,7 +629,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["CFSRrideHeight"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM, DRAG_SCRUB],
         "used_by_events": ["PLATFORM_LOW", "PLATFORM_SCRAPE"],
-        "used_by_recommendations": [PLATFORM_SCRUB_TEST, RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [PLATFORM_SCRUB_TEST, RIDE_HEIGHT_REVIEW],
     },
     "cfs_ride_height_mm": {
         "label": "CFS Ride Height (mm)",
@@ -638,7 +638,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["CFSRrideHeight"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
         "used_by_events": ["PLATFORM_LOW", "PLATFORM_SCRAPE"],
-        "used_by_recommendations": [PLATFORM_SCRUB_TEST, RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [PLATFORM_SCRUB_TEST, RIDE_HEIGHT_REVIEW],
     },
     "lf_ride_height_in": {
         "label": "LF Ride Height",
@@ -646,7 +646,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["LFrideHeight"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": ["PLATFORM_LOW"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "rf_ride_height_in": {
         "label": "RF Ride Height",
@@ -654,7 +654,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RFrideHeight"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": ["PLATFORM_LOW"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "lr_ride_height_in": {
         "label": "LR Ride Height",
@@ -662,7 +662,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["LRrideHeight"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "rr_ride_height_in": {
         "label": "RR Ride Height",
@@ -670,7 +670,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RRrideHeight"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
 
     # ── platform / rake ──
@@ -681,7 +681,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_ride_height_in", "rr_ride_height_in", "cfs_ride_height_in"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": ["HIGH_CENTER_RAKE", "PLATFORM_LOW"],
-        "used_by_recommendations": [PLATFORM_SCRUB_TEST, RIDE_HEIGHT_REVIEW, AERO_PLATFORM_CHECK],
+        "used_by_analyses": [PLATFORM_SCRUB_TEST, RIDE_HEIGHT_REVIEW, AERO_PLATFORM_CHECK],
     },
     "side_rake_in": {
         "label": "Side Rake",
@@ -690,7 +690,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_ride_height_in", "rf_ride_height_in", "lr_ride_height_in", "rr_ride_height_in"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "front_split_in": {
         "label": "Front Split",
@@ -698,7 +698,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rf_ride_height_in", "lf_ride_height_in"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "rear_split_in": {
         "label": "Rear Split",
@@ -706,7 +706,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rr_ride_height_in", "lr_ride_height_in"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
 
     # ── dynamic pressure ──
@@ -717,7 +717,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["AirDensity", "Speed"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM, DRAG_SCRUB],
         "used_by_events": ["DYNAMIC_PRESSURE_PEAK", "MAX_DYNAMIC_PRESSURE"],
-        "used_by_recommendations": [AERO_PLATFORM_CHECK, RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [AERO_PLATFORM_CHECK, RIDE_HEIGHT_REVIEW],
     },
     "dynamic_pressure_lap_index": {
         "label": "Dynamic Pressure Lap Index",
@@ -726,7 +726,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["dynamic_pressure_psf"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": ["DYNAMIC_PRESSURE_PEAK"],
-        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+        "used_by_analyses": [AERO_PLATFORM_CHECK],
         "comparable_across_runs": False,
     },
     "dynamic_pressure_index": {
@@ -736,7 +736,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["dynamic_pressure_psf"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": ["DYNAMIC_PRESSURE_PEAK"],
-        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+        "used_by_analyses": [AERO_PLATFORM_CHECK],
         "comparable_across_runs": False,
     },
     "aero_load_index": {
@@ -746,7 +746,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["dynamic_pressure_pa"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+        "used_by_analyses": [AERO_PLATFORM_CHECK],
         "comparable_across_runs": True,
     },
     "aero_load_index_180mph": {
@@ -756,7 +756,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["dynamic_pressure_pa"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+        "used_by_analyses": [AERO_PLATFORM_CHECK],
         "comparable_across_runs": True,
     },
 
@@ -768,7 +768,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["cfs_ride_height_mm"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": ["PLATFORM_LOW", "PLATFORM_SCRAPE"],
-        "used_by_recommendations": [PLATFORM_SCRUB_TEST, RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [PLATFORM_SCRUB_TEST, RIDE_HEIGHT_REVIEW],
     },
     "drag_scrub_suspicion": {
         "label": "Drag/Scrub Suspicion",
@@ -777,7 +777,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["full_throttle_resistance_index", "cfs_risk_score", "abs_steering_deg", "yaw_rate"],
         "used_by_charts": [DRAG_SCRUB],
         "used_by_events": ["FULL_THROTTLE_SPEED_LOSS", "STEERING_SCRUB"],
-        "used_by_recommendations": [PLATFORM_SCRUB_TEST, LINE_STEERING_REVIEW],
+        "used_by_analyses": [PLATFORM_SCRUB_TEST, LINE_STEERING_REVIEW],
     },
     "platform_compression_index": {
         "label": "Platform Compression Index",
@@ -786,7 +786,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["cfs_risk_score", "platform_stability_score", "drag_scrub_suspicion"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": ["PLATFORM_COMPRESSION"],
-        "used_by_recommendations": [PLATFORM_SCRUB_TEST],
+        "used_by_analyses": [PLATFORM_SCRUB_TEST],
     },
 
     # ── force proxies ──
@@ -797,7 +797,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_spring_rate", "rr_spring_rate", "lr_ride_height_mm", "rr_ride_height_mm"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [AERO_PLATFORM_CHECK, RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [AERO_PLATFORM_CHECK, RIDE_HEIGHT_REVIEW],
     },
     "rear_platform_proxy_n": {
         "label": "Rear Platform Proxy",
@@ -805,7 +805,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_spring_rate", "rr_spring_rate", "lr_ride_height_mm", "rr_ride_height_mm"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+        "used_by_analyses": [AERO_PLATFORM_CHECK],
     },
     "aero_balance_front_pct": {
         "label": "Aero Balance Front %",
@@ -814,7 +814,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["front_aero_proxy_n", "rear_aero_proxy_n"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+        "used_by_analyses": [AERO_PLATFORM_CHECK],
     },
 
     # ── shock / damper ──
@@ -825,7 +825,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_shock_vel_in_s", "rf_shock_vel_in_s", "lr_shock_vel_in_s", "rr_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "shock_activity_index": {
         "label": "Shock Activity Index",
@@ -833,7 +833,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_shock_vel_in_s", "rf_shock_vel_in_s", "lr_shock_vel_in_s", "rr_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
 
     # ── tire / wheel ──
@@ -844,7 +844,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["LRspeed", "RRspeed", "Speed"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["TIRE_SCRUB"],
-        "used_by_recommendations": [GEARING_COMPARISON],
+        "used_by_analyses": [GEARING_COMPARISON],
     },
 
     # ── tire derived (pressure gain, temp spread, wear spread) ──
@@ -855,7 +855,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_pressure", "lf_cold_pressure"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LONG_RUN_TIRE_REVIEW],
+        "used_by_analyses": [LONG_RUN_TIRE_REVIEW],
     },
     "rf_pressure_gain": {
         "label": "RF Pressure Gain",
@@ -864,7 +864,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rf_pressure", "rf_cold_pressure"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LONG_RUN_TIRE_REVIEW],
+        "used_by_analyses": [LONG_RUN_TIRE_REVIEW],
     },
     "lr_pressure_gain": {
         "label": "LR Pressure Gain",
@@ -873,7 +873,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_pressure", "lr_cold_pressure"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LONG_RUN_TIRE_REVIEW],
+        "used_by_analyses": [LONG_RUN_TIRE_REVIEW],
     },
     "rr_pressure_gain": {
         "label": "RR Pressure Gain",
@@ -882,7 +882,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rr_pressure", "rr_cold_pressure"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LONG_RUN_TIRE_REVIEW],
+        "used_by_analyses": [LONG_RUN_TIRE_REVIEW],
     },
     "lf_temp_spread": {
         "label": "LF Temp Spread",
@@ -891,7 +891,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_temp_inner", "lf_temp_middle", "lf_temp_outer"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rf_temp_spread": {
         "label": "RF Temp Spread",
@@ -900,7 +900,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rf_temp_inner", "rf_temp_middle", "rf_temp_outer"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "lr_temp_spread": {
         "label": "LR Temp Spread",
@@ -909,7 +909,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_temp_inner", "lr_temp_middle", "lr_temp_outer"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rr_temp_spread": {
         "label": "RR Temp Spread",
@@ -918,7 +918,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rr_temp_inner", "rr_temp_middle", "rr_temp_outer"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "lf_wear_spread": {
         "label": "LF Wear Spread",
@@ -927,7 +927,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_wear_inner", "lf_wear_middle", "lf_wear_outer"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rf_wear_spread": {
         "label": "RF Wear Spread",
@@ -936,7 +936,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rf_wear_inner", "rf_wear_middle", "rf_wear_outer"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "lr_wear_spread": {
         "label": "LR Wear Spread",
@@ -945,7 +945,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_wear_inner", "lr_wear_middle", "lr_wear_outer"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rr_wear_spread": {
         "label": "RR Wear Spread",
@@ -954,7 +954,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rr_wear_inner", "rr_wear_middle", "rr_wear_outer"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
 
     # ── inputs ──
@@ -964,7 +964,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["Throttle"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, SPEED_RPM_PULL, DRAG_SCRUB, ENGINE],
         "used_by_events": ["FULL_THROTTLE_SPEED_LOSS", "RPM_FLATTENING"],
-        "used_by_recommendations": [PLATFORM_SCRUB_TEST, LINE_STEERING_REVIEW],
+        "used_by_analyses": [PLATFORM_SCRUB_TEST, LINE_STEERING_REVIEW],
     },
     "brake_pct": {
         "label": "Brake",
@@ -972,7 +972,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["Brake"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, SPEED_RPM_PULL, DRAG_SCRUB],
         "used_by_events": ["FULL_THROTTLE_SPEED_LOSS"],
-        "used_by_recommendations": [PLATFORM_SCRUB_TEST, LINE_STEERING_REVIEW],
+        "used_by_analyses": [PLATFORM_SCRUB_TEST, LINE_STEERING_REVIEW],
     },
     "steering_deg": {
         "label": "Steering Angle",
@@ -980,7 +980,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["SteeringWheelAngle"],
         "used_by_charts": [DRAG_SCRUB],
         "used_by_events": ["STEERING_SCRUB"],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "abs_steering_deg": {
         "label": "|Steering Angle|",
@@ -989,7 +989,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["steering_deg"],
         "used_by_charts": [DRAG_SCRUB],
         "used_by_events": ["STEERING_SCRUB"],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rpm": {
         "label": "RPM",
@@ -997,7 +997,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RPM"],
         "used_by_charts": [SPEED_RPM_PULL, ENGINE],
         "used_by_events": ["RPM_FLATTENING"],
-        "used_by_recommendations": [GEARING_COMPARISON],
+        "used_by_analyses": [GEARING_COMPARISON],
     },
     "gear": {
         "label": "Gear",
@@ -1005,7 +1005,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["Gear"],
         "used_by_charts": [SPEED_RPM_PULL],
         "used_by_events": [],
-        "used_by_recommendations": [GEARING_COMPARISON],
+        "used_by_analyses": [GEARING_COMPARISON],
     },
 
     # ── lat/long accel ──
@@ -1015,7 +1015,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["LatAccel"],
         "used_by_charts": [DRAG_SCRUB],
         "used_by_events": ["STEERING_SCRUB"],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "abs_lat_accel": {
         "label": "|Lateral Accel|",
@@ -1023,7 +1023,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["LatAccel"],
         "used_by_charts": [DRAG_SCRUB],
         "used_by_events": ["STEERING_SCRUB"],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
 
     # ── platform angles ──
@@ -1034,7 +1034,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["front_avg_rh_in", "rear_avg_rh_in", "wheelbase_m"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "platform_roll_deg_from_rh": {
         "label": "Platform Roll (from RH)",
@@ -1043,7 +1043,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["left_avg_rh_in", "right_avg_rh_in", "front_track_width_m"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
 
     # ── dynamic pressure raw ──
@@ -1054,7 +1054,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["AirDensity", "Speed"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
 
     # ── slip ratios ──
@@ -1064,7 +1064,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["LFspeed", "speed_mps"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["TIRE_SCRUB"],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rf_slip_ratio": {
         "label": "RF Slip Ratio",
@@ -1072,7 +1072,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RFspeed", "speed_mps"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["TIRE_SCRUB"],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "lr_slip_ratio": {
         "label": "LR Slip Ratio",
@@ -1080,7 +1080,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["LRspeed", "speed_mps"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["TIRE_SCRUB"],
-        "used_by_recommendations": [GEARING_COMPARISON],
+        "used_by_analyses": [GEARING_COMPARISON],
     },
     "rr_slip_ratio": {
         "label": "RR Slip Ratio",
@@ -1088,7 +1088,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RRspeed", "speed_mps"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["TIRE_SCRUB"],
-        "used_by_recommendations": [GEARING_COMPARISON],
+        "used_by_analyses": [GEARING_COMPARISON],
     },
 
     # ── wheel speed mismatch ──
@@ -1098,7 +1098,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RFspeed", "LFspeed"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["STEERING_SCRUB"],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rear_wheel_speed_mismatch": {
         "label": "Rear Wheel Speed Mismatch",
@@ -1106,7 +1106,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RRspeed", "LRspeed"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["TIRE_SCRUB"],
-        "used_by_recommendations": [GEARING_COMPARISON],
+        "used_by_analyses": [GEARING_COMPARISON],
     },
 
     # ── ride height mm variants ──
@@ -1116,7 +1116,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["LFrideHeight"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
         "used_by_events": ["PLATFORM_LOW"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "rf_ride_height_mm": {
         "label": "RF Ride Height (mm)",
@@ -1124,7 +1124,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RFrideHeight"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
         "used_by_events": ["PLATFORM_LOW"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "lr_ride_height_mm": {
         "label": "LR Ride Height (mm)",
@@ -1132,7 +1132,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["LRrideHeight"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "rr_ride_height_mm": {
         "label": "RR Ride Height (mm)",
@@ -1140,7 +1140,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RRrideHeight"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
 
     # ── ride height averages ──
@@ -1150,7 +1150,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_ride_height_in", "rf_ride_height_in"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "rear_avg_rh_in": {
         "label": "Rear Avg RH",
@@ -1158,7 +1158,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_ride_height_in", "rr_ride_height_in"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "left_avg_rh_in": {
         "label": "Left Avg RH",
@@ -1166,7 +1166,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_ride_height_in", "lr_ride_height_in"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "right_avg_rh_in": {
         "label": "Right Avg RH",
@@ -1174,7 +1174,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rf_ride_height_in", "rr_ride_height_in"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
 
     # ── shock mm variants ──
@@ -1184,7 +1184,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["LFSHshockDefl"],
         "used_by_charts": [SHOCKS],
         "used_by_events": [],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "rf_shock_defl_in": {
         "label": "RF Shock Deflection",
@@ -1192,7 +1192,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RFSHshockDefl"],
         "used_by_charts": [SHOCKS],
         "used_by_events": [],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "lr_shock_defl_in": {
         "label": "LR Shock Deflection",
@@ -1200,7 +1200,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["LRSHshockDefl"],
         "used_by_charts": [SHOCKS],
         "used_by_events": [],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "rr_shock_defl_in": {
         "label": "RR Shock Deflection",
@@ -1208,7 +1208,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RRSHshockDefl"],
         "used_by_charts": [SHOCKS],
         "used_by_events": [],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "lf_shock_vel_in_s": {
         "label": "LF Shock Velocity",
@@ -1216,7 +1216,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["LFSHshockVel"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "rf_shock_vel_in_s": {
         "label": "RF Shock Velocity",
@@ -1224,7 +1224,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RFSHshockVel"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "lr_shock_vel_in_s": {
         "label": "LR Shock Velocity",
@@ -1232,7 +1232,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["LRSHshockVel"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "rr_shock_vel_in_s": {
         "label": "RR Shock Velocity",
@@ -1240,7 +1240,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RRSHshockVel"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
 
     # ── stability scores ──
@@ -1250,7 +1250,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["cfs_ride_height_in", "session_time"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": ["PLATFORM_COMPRESSION"],
-        "used_by_recommendations": [PLATFORM_SCRUB_TEST],
+        "used_by_analyses": [PLATFORM_SCRUB_TEST],
     },
     "rake_stability_score": {
         "label": "Rake Stability",
@@ -1258,7 +1258,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["center_rake_fs_in", "session_time"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "platform_risk_score": {
         "label": "Platform Risk Score",
@@ -1266,7 +1266,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["cfs_ride_height_mm"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": ["PLATFORM_LOW"],
-        "used_by_recommendations": [PLATFORM_SCRUB_TEST],
+        "used_by_analyses": [PLATFORM_SCRUB_TEST],
     },
 
     # ── scrub proxies ──
@@ -1276,7 +1276,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_slip_ratio", "rf_slip_ratio", "abs_steering_deg", "abs_lat_accel", "yaw_rate", "radius_m"],
         "used_by_charts": [DRAG_SCRUB],
         "used_by_events": ["STEERING_SCRUB"],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rear_scrub_proxy": {
         "label": "Rear Scrub Proxy",
@@ -1284,7 +1284,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_slip_ratio", "rr_slip_ratio"],
         "used_by_charts": [DRAG_SCRUB],
         "used_by_events": ["TIRE_SCRUB"],
-        "used_by_recommendations": [GEARING_COMPARISON],
+        "used_by_analyses": [GEARING_COMPARISON],
     },
     "yaw_error_proxy": {
         "label": "Yaw Error Proxy",
@@ -1293,7 +1293,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["speed_mps", "radius_m", "yaw_rate"],
         "used_by_charts": [],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
     "full_throttle_resistance_index": {
         "label": "Full-Throttle Resistance",
@@ -1301,7 +1301,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["speed_mph", "throttle_pct", "brake_pct", "speed_rate_mph_s", "dynamic_pressure_psf"],
         "used_by_charts": [DRAG_SCRUB],
         "used_by_events": ["FULL_THROTTLE_SPEED_LOSS"],
-        "used_by_recommendations": [PLATFORM_SCRUB_TEST],
+        "used_by_analyses": [PLATFORM_SCRUB_TEST],
     },
     "damper_energy_proxy": {
         "label": "Damper Energy Proxy",
@@ -1309,7 +1309,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_shock_vel_in_s", "rf_shock_vel_in_s", "lr_shock_vel_in_s", "rr_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "damper_work_proxy": {
         "label": "Damper Work Proxy",
@@ -1317,7 +1317,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_shock_vel_in_s", "rf_shock_vel_in_s", "lr_shock_vel_in_s", "rr_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": [],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
 
     # ── force proxies ──
@@ -1327,7 +1327,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_ride_height_mm", "rf_ride_height_mm"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+        "used_by_analyses": [AERO_PLATFORM_CHECK],
     },
     "rear_load_proxy_n": {
         "label": "Rear Load Proxy",
@@ -1335,7 +1335,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_ride_height_mm", "rr_ride_height_mm"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+        "used_by_analyses": [AERO_PLATFORM_CHECK],
     },
     "front_aero_proxy_n": {
         "label": "Front Aero Proxy",
@@ -1343,7 +1343,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["front_load_proxy_n"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+        "used_by_analyses": [AERO_PLATFORM_CHECK],
     },
     "rear_aero_proxy_n": {
         "label": "Rear Aero Proxy",
@@ -1351,7 +1351,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rear_load_proxy_n"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+        "used_by_analyses": [AERO_PLATFORM_CHECK],
     },
     "rear_diffuser_proxy_n": {
         "label": "Rear Diffuser Proxy",
@@ -1359,7 +1359,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rear_load_proxy_n"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [AERO_PLATFORM_CHECK],
+        "used_by_analyses": [AERO_PLATFORM_CHECK],
     },
 
     # ── speed_fps ──
@@ -1370,7 +1370,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["Speed"],
         "used_by_charts": [SPEED_RPM_PULL],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
 
     # ── cfsr_height_mm (alias) ──
@@ -1381,7 +1381,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["CFSRrideHeight"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
         "used_by_events": ["PLATFORM_LOW", "PLATFORM_SCRAPE"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
 
     # ── slip angles ──
@@ -1392,7 +1392,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["velocity_z", "velocity_x", "yaw_rate", "steering_rad", "front_axle_to_cg_m"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["STEERING_SCRUB"],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rear_slip_angle_deg": {
         "label": "Rear Slip Angle",
@@ -1401,7 +1401,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["velocity_z", "velocity_x", "yaw_rate", "rear_axle_to_cg_m"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["TIRE_SCRUB"],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "slip_angle_balance_deg": {
         "label": "Slip Angle Balance",
@@ -1410,7 +1410,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["front_slip_angle_deg", "rear_slip_angle_deg"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["STEERING_SCRUB"],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
 
     # ── dynamic grade ──
@@ -1421,7 +1421,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["speed_mps", "SessionTime"],
         "used_by_charts": [SPEED_RPM_PULL],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
     "dynamic_grade_deg": {
         "label": "Dynamic Grade",
@@ -1430,7 +1430,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["long_accel", "speed_rate_mps2"],
         "used_by_charts": [SPEED_RPM_PULL],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
     "dynamic_grade_rad": {
         "label": "Dynamic Grade (rad)",
@@ -1439,7 +1439,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["long_accel", "speed_rate_mps2"],
         "used_by_charts": [],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
     "grade_corrected_long_accel_mps2": {
         "label": "Grade-Corrected Long Accel",
@@ -1448,7 +1448,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["long_accel", "speed_rate_mps2"],
         "used_by_charts": [SPEED_RPM_PULL],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
     "grade_force_proxy_n": {
         "label": "Grade Force Proxy",
@@ -1457,7 +1457,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["mass_kg", "long_accel", "speed_rate_mps2"],
         "used_by_charts": [SPEED_RPM_PULL],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
     "grade_context_label": {
         "label": "Grade Context",
@@ -1466,7 +1466,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["dynamic_grade_deg"],
         "used_by_charts": [],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
     "grade_corrected_speed_loss_mph_s": {
         "label": "Grade-Corrected Speed Loss",
@@ -1475,7 +1475,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["speed_rate_mph_s", "dynamic_grade_rad"],
         "used_by_charts": [SPEED_RPM_PULL, DRAG_SCRUB],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
 
     # ── Ackermann steering ──
@@ -1486,7 +1486,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["wheelbase_m", "curvature_1_per_m"],
         "used_by_charts": [],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
     "ackermann_steering_error_deg": {
         "label": "Ackermann Steering Error",
@@ -1495,7 +1495,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["steering_deg", "ackermann_steering_expected_deg"],
         "used_by_charts": [],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
     "ackermann_scrub_proxy": {
         "label": "Ackermann Scrub Proxy",
@@ -1504,7 +1504,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["ackermann_steering_error_deg"],
         "used_by_charts": [],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
 
     # ── front/rear platform roll ──
@@ -1515,7 +1515,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_ride_height_mm", "rf_ride_height_mm", "front_track_width_m"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "rear_platform_roll_deg_from_rh": {
         "label": "Rear Platform Roll (from RH)",
@@ -1524,7 +1524,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_ride_height_mm", "rr_ride_height_mm", "rear_track_width_m"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "platform_roll_balance_deg": {
         "label": "Platform Roll Balance",
@@ -1533,7 +1533,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["front_platform_roll_deg_from_rh", "rear_platform_roll_deg_from_rh"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
 
     # ── camber heat spread proxy ──
@@ -1544,7 +1544,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_carcass_temp_l", "lf_carcass_temp_r"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rf_camber_temp_bias_c": {
         "label": "RF Camber Temp Bias",
@@ -1553,7 +1553,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rf_carcass_temp_l", "rf_carcass_temp_r"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "lr_camber_temp_bias_c": {
         "label": "LR Camber Temp Bias",
@@ -1562,7 +1562,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_carcass_temp_l", "lr_carcass_temp_r"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rr_camber_temp_bias_c": {
         "label": "RR Camber Temp Bias",
@@ -1571,7 +1571,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rr_carcass_temp_l", "rr_carcass_temp_r"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "lf_camber_bias_label": {
         "label": "LF Camber Bias Label",
@@ -1580,7 +1580,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_camber_temp_bias_c"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rf_camber_bias_label": {
         "label": "RF Camber Bias Label",
@@ -1589,7 +1589,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rf_camber_temp_bias_c"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "lr_camber_bias_label": {
         "label": "LR Camber Bias Label",
@@ -1598,7 +1598,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_camber_temp_bias_c"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rr_camber_bias_label": {
         "label": "RR Camber Bias Label",
@@ -1607,7 +1607,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rr_camber_temp_bias_c"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
 
     # ── track GPS projection ──
@@ -1617,7 +1617,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["Lat", "Lon"],
         "used_by_charts": [],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
     "track_y_m": {
         "label": "Track Y (m)",
@@ -1625,7 +1625,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["Lat", "Lon"],
         "used_by_charts": [],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
     "track_x_ft": {
         "label": "Track X (ft)",
@@ -1633,7 +1633,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["track_x_m"],
         "used_by_charts": [],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
     "track_y_ft": {
         "label": "Track Y (ft)",
@@ -1641,7 +1641,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["track_y_m"],
         "used_by_charts": [],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
 
     # ── g-values ──
@@ -1652,7 +1652,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lat_accel"],
         "used_by_charts": [DRAG_SCRUB],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
     "long_accel_g": {
         "label": "Longitudinal Accel (g)",
@@ -1661,7 +1661,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["long_accel"],
         "used_by_charts": [SPEED_RPM_PULL],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
     "vert_accel_g": {
         "label": "Vertical Accel (g)",
@@ -1670,7 +1670,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["vert_accel"],
         "used_by_charts": [],
         "used_by_events": [],
-        "used_by_recommendations": [],
+        "used_by_analyses": [],
     },
 
     # ── wheel speed mismatch raw/corrected ──
@@ -1681,7 +1681,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RFspeed", "LFspeed"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["STEERING_SCRUB"],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rear_wheel_speed_mismatch_raw": {
         "label": "Rear Wheel Speed Mismatch (raw)",
@@ -1690,7 +1690,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RRspeed", "LRspeed"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["TIRE_SCRUB"],
-        "used_by_recommendations": [GEARING_COMPARISON],
+        "used_by_analyses": [GEARING_COMPARISON],
     },
     "front_wheel_speed_mismatch_corrected": {
         "label": "Front Wheel Speed Mismatch (corrected)",
@@ -1699,7 +1699,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RFspeed", "LFspeed", "yaw_rate", "front_track_width_m"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["STEERING_SCRUB"],
-        "used_by_recommendations": [LINE_STEERING_REVIEW],
+        "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rear_wheel_speed_mismatch_corrected": {
         "label": "Rear Wheel Speed Mismatch (corrected)",
@@ -1708,7 +1708,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["RRspeed", "LRspeed", "yaw_rate", "rear_track_width_m"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["TIRE_SCRUB"],
-        "used_by_recommendations": [GEARING_COMPARISON],
+        "used_by_analyses": [GEARING_COMPARISON],
     },
 
     # ── per-corner shock rolling aggregates ──
@@ -1719,7 +1719,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "rf_shock_velocity_rms": {
         "label": "RF Shock Velocity RMS",
@@ -1728,7 +1728,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rf_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "lr_shock_velocity_rms": {
         "label": "LR Shock Velocity RMS",
@@ -1737,7 +1737,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "rr_shock_velocity_rms": {
         "label": "RR Shock Velocity RMS",
@@ -1746,7 +1746,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rr_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "lf_shock_activity_index": {
         "label": "LF Shock Activity Index",
@@ -1755,7 +1755,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "rf_shock_activity_index": {
         "label": "RF Shock Activity Index",
@@ -1764,7 +1764,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rf_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "lr_shock_activity_index": {
         "label": "LR Shock Activity Index",
@@ -1773,7 +1773,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "rr_shock_activity_index": {
         "label": "RR Shock Activity Index",
@@ -1782,7 +1782,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rr_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "lf_damper_energy_proxy": {
         "label": "LF Damper Energy Proxy",
@@ -1791,7 +1791,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lf_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "rf_damper_energy_proxy": {
         "label": "RF Damper Energy Proxy",
@@ -1800,7 +1800,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rf_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "lr_damper_energy_proxy": {
         "label": "LR Damper Energy Proxy",
@@ -1809,7 +1809,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
     "rr_damper_energy_proxy": {
         "label": "RR Damper Energy Proxy",
@@ -1818,7 +1818,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rr_shock_vel_in_s"],
         "used_by_charts": [SHOCKS],
         "used_by_events": ["SHOCK_ACTIVITY"],
-        "used_by_recommendations": [SHOCK_STABILITY_REVIEW],
+        "used_by_analyses": [SHOCK_STABILITY_REVIEW],
     },
 
     # ── rear scrape channels ──
@@ -1829,7 +1829,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_ride_height_mm", "rr_ride_height_mm"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "rear_min_ride_height_in": {
         "label": "Rear Min Ride Height (in)",
@@ -1838,7 +1838,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rear_min_ride_height_mm"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "rear_scrape_margin_mm": {
         "label": "Rear Scrape Margin",
@@ -1847,7 +1847,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rear_min_ride_height_mm"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "rear_scrape_risk_score": {
         "label": "Rear Scrape Risk",
@@ -1856,7 +1856,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rear_min_ride_height_mm"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "rear_platform_contact_risk": {
         "label": "Rear Platform Contact Risk",
@@ -1865,7 +1865,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rear_scrape_risk_score"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "rear_scrape_side": {
         "label": "Rear Scrape Side",
@@ -1874,7 +1874,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["lr_ride_height_mm", "rr_ride_height_mm"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
         "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
 
     # ── platform balance channels ──
@@ -1885,7 +1885,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["cfs_risk_score"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": ["PLATFORM_LOW", "PLATFORM_SCRAPE", "WHOLE_CAR_BOTTOMING_RISK"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "rear_platform_risk_score": {
         "label": "Rear Platform Risk",
@@ -1894,7 +1894,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rear_scrape_risk_score"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE", "WHOLE_CAR_BOTTOMING_RISK"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "whole_car_bottoming_risk": {
         "label": "Whole-Car Bottoming Risk",
@@ -1903,7 +1903,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["front_platform_risk_score", "rear_platform_risk_score"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": ["WHOLE_CAR_BOTTOMING_RISK"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "platform_balance_label": {
         "label": "Platform Balance",
@@ -1912,7 +1912,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["cfs_risk_score", "rear_scrape_risk_score"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": ["PLATFORM_LOW", "PLATFORM_SCRAPE", "REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE", "WHOLE_CAR_BOTTOMING_RISK"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "platform_balance_explanation": {
         "label": "Platform Balance Explanation",
@@ -1921,7 +1921,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["platform_balance_label"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": ["PLATFORM_LOW", "PLATFORM_SCRAPE", "REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE", "WHOLE_CAR_BOTTOMING_RISK"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "rear_scrape_side_label": {
         "label": "Rear Scrape Side Label",
@@ -1930,7 +1930,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rear_scrape_side"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT],
         "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
-        "used_by_recommendations": [RIDE_HEIGHT_REVIEW],
+        "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     # ── diffuser geometry (Roger's diffuser geometry math) ──
     "front_center_rh_in": {
@@ -2056,7 +2056,7 @@ def channel_metadata(name: str) -> ChannelMetadata:
         "dependencies": meta.get("dependencies", []),
         "used_by_charts": meta.get("used_by_charts", []),
         "used_by_events": meta.get("used_by_events", []),
-        "used_by_recommendations": meta.get("used_by_recommendations", []),
+        "used_by_analyses": meta.get("used_by_analyses", []),
         "comparable_across_runs": meta.get("comparable_across_runs", True),
     }
 
@@ -2395,6 +2395,7 @@ def _convert_ride_heights(item: dict[str, Any]) -> None:
             value_m = _number(item.get("cfs_ride_height_m"))
         if value_m is None:
             continue
+        _set_number(item, f"{prefix}_m", value_m)
         _set_number(item, f"{prefix}_mm", value_m * 1000.0)
         _set_number(item, f"{prefix}_in", value_m * M_TO_IN)
 

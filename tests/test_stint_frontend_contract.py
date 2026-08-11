@@ -161,6 +161,22 @@ def test_laps_tab_renders_stint_intelligence_directly() -> None:
     assert "primary_stints" in types
 
 
+def test_lap_window_ui_contract_has_no_setup_recommendation_slot() -> None:
+    source = (ROOT / "ui" / "src" / "tabs" / "LapsTab.tsx").read_text(encoding="utf-8")
+    types = (ROOT / "ui" / "src" / "types" / "laps.ts").read_text(encoding="utf-8")
+    window_contract = types.split("export interface LapWindowSummary", 1)[1].split("\n}", 1)[0]
+    comparison_contract = types.split("export interface StintCompareResult", 1)[1].split("\n}", 1)[0]
+
+    assert "recommendation" not in window_contract
+    assert "observation_summary: string;" in comparison_contract
+    assert "evidence_summary: string;" in comparison_contract
+    assert "verdict:" not in comparison_contract
+    assert "recommendation:" not in source
+    assert "stintCompare?.observation_summary" in source
+    assert "stintCompare?.evidence_summary" in source
+    assert "stintCompare?.verdict" not in source
+
+
 def test_laps_best_time_ignores_artificially_fast_junk_laps() -> None:
     source = (ROOT / "ui" / "src" / "tabs" / "LapsTab.tsx").read_text(encoding="utf-8")
     qualification = source.split("const usefulLaps = useMemo", 1)[1].split("const fastestUsableLap", 1)[0]

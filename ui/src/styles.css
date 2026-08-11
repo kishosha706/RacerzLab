@@ -2459,7 +2459,6 @@ td {
   margin: 4px 0 2px;
 }
 
-.recommended-action { color: var(--cyan); font-size: 0.72rem; }
 .proxy-note { color: var(--amber); font-size: 0.66rem; font-style: italic; }
 .channels-used { color: var(--muted); font-size: 0.63rem; margin-top: 4px; }
 .event-scope-pill {
@@ -3918,7 +3917,7 @@ td {
   color: #909090;
 }
 
-.shock-setup-recommendation-badge {
+.shock-evidence-status-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3939,30 +3938,7 @@ td {
   white-space: nowrap;
 }
 
-.shock-setup-recommendation-badge.add {
-  border-color: rgba(34, 211, 238, 0.58);
-  color: #cffafe;
-  background: rgba(8, 85, 116, 0.7);
-}
-
-.shock-setup-recommendation-badge.subtract {
-  border-color: rgba(96, 165, 250, 0.58);
-  color: #dbeafe;
-  background: rgba(30, 64, 175, 0.7);
-}
-
-.shock-setup-recommendation-badge.hold {
-  border-color: rgba(148, 163, 184, 0.35);
-  color: #cbd5e1;
-}
-
-.shock-setup-recommendation-badge.blocked {
-  border-color: rgba(248, 113, 113, 0.58);
-  color: #fecaca;
-  background: rgba(127, 29, 29, 0.7);
-}
-
-.shock-setup-recommendation-badge.needs_more_evidence {
+.shock-evidence-status-badge.observation-only {
   border-color: rgba(245, 158, 11, 0.42);
   color: #fde68a;
   background: rgba(120, 53, 15, 0.62);
@@ -4283,7 +4259,7 @@ td {
   }
 
   .shock-setup-label,
-  .shock-setup-recommendation-badge {
+  .shock-evidence-status-badge {
     font-size: 8px;
   }
 
@@ -4291,7 +4267,7 @@ td {
     font-size: 8.5px;
   }
 
-  .shock-setup-recommendation-badge {
+  .shock-evidence-status-badge {
     min-width: 64px;
     height: 17px;
   }
@@ -4974,7 +4950,7 @@ td {
   font-size: 9px;
 }
 
-.priority-recommendation {
+.priority-evidence-summary {
   display: -webkit-box;
   overflow: hidden;
   color: #8799aa;
@@ -6858,7 +6834,6 @@ td {
 .engineer-narrative li p { margin: 5px 0 0; color: #a8b5c3; font-size: 10px; line-height: 1.45; }
 .engineer-cause-evidence { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-top: 7px; }
 .engineer-memory li > header > span { margin-left: auto; color: #60a5fa; font-size: 9px; font-weight: 800; }
-.engineer-memory-verdict { display: block; margin-top: 6px; color: #dbeafe; font-size: 10px; }
 .engineer-memory-mismatch { color: #fbbf24 !important; }
 
 .engineer-calibration > p,
@@ -6911,7 +6886,6 @@ td {
 
 .engineer-narrative > ol > li:last-child > span::after { display: none; }
 .engineer-narrative time { margin-left: auto; color: #64748b; font-size: 9px; }
-.engineer-narrative-outcome { color: #93c5fd !important; font-weight: 700; }
 .engineer-driver-profile strong { display: block; margin-top: 8px; color: #fbbf24; font-size: 10px; }
 
 .engineer-state {
@@ -7753,34 +7727,6 @@ td {
   }
 
   .shell-next-move-scope { display: none; }
-}
-
-/* ── Crew Chief Brief ───────────────────────────────────────── */
-.crew-chief-brief {
-  background: var(--panel);
-  border: 1px solid var(--cyan);
-  border-radius: 4px;
-  padding: 12px;
-  animation: glowIn 0.3s ease-out;
-}
-.crew-chief-brief h2 {
-  margin: 0 0 4px;
-  font-size: 12px;
-  color: var(--cyan);
-}
-.crew-chief-text {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text);
-  margin: 0;
-}
-
-/* ── Next Test Note ─────────────────────────────────────────── */
-.next-test-note {
-  font-size: 12px;
-  color: var(--cyan);
-  margin: 8px 0 0;
-  font-style: italic;
 }
 
 /* ── Warnings List ──────────────────────────────────────────── */

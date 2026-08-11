@@ -74,7 +74,8 @@ def test_overview_drag_uses_frame_native_path_without_changing_evidence(talladeg
         assert frame_event.event_id == row_event.event_id
         assert frame_event.event_type == row_event.event_type
         assert frame_event.valid_for_tuning == row_event.valid_for_tuning
-        assert frame_event.recommended_actions == row_event.recommended_actions
+        assert "measurement_guidance" not in frame_event.model_dump()
+        assert "measurement_guidance" not in row_event.model_dump()
         assert frame_event.evidence_state == row_event.evidence_state
         assert frame_event.confidence_score == pytest.approx(row_event.confidence_score)
         assert frame_event.primary_metric_value == pytest.approx(row_event.primary_metric_value)

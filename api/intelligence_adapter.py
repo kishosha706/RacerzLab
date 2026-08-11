@@ -4,6 +4,7 @@ import hashlib
 from datetime import UTC, datetime
 from typing import Any
 
+from api.intelligence_identity import intelligence_snapshot_identity
 from api.intelligence_schemas import (
     WITHHELD_STAGE_B_MOVE_INSTRUCTION,
     WITHHELD_STAGE_B_MOVE_REASON,
@@ -50,6 +51,7 @@ from racelab_engine.models.smart_guidance import (
     NextTrustworthyMove,
     PreflightCheck,
 )
+from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.models.vehicle_systems import VehicleSystemsProjection
 
 _WORKSPACE_MAP = {
@@ -77,6 +79,7 @@ def _citation(item: EvidenceCitation) -> IntelligenceCitationResponse:
         source_channels=list(item.channels),
         evidence_state=item.evidence_state,
         valid_for_tuning=item.valid_for_tuning,
+        phase=item.phase,
     )
 
 
@@ -154,6 +157,19 @@ def _setup_authority_blockers(report: InternalIntelligenceReport) -> tuple[str, 
         reasons.append("The current report decision is not ready for a setup action.")
     if report.data_quality.status != "ready":
         reasons.append("The current run data quality is not ready for a setup action.")
+    if action.setup_authorized:
+        health = report.telemetry_health
+        if report.session_id is None:
+            reasons.append("Setup authority requires an exact saved session identity.")
+        elif (
+            health is None
+            or health.session_id != report.session_id
+            or health.current_run_id != report.run_id
+            or report.run_id not in health.ordered_session_run_ids
+        ):
+            reasons.append(
+                "Setup authority requires verified session membership for the current run."
+            )
     return tuple(dict.fromkeys(reason for reason in reasons if reason))
 
 
@@ -409,7 +425,6 @@ def _context_match(
         label=f"{direction.title()} {item.control_key.replace('_', ' ')}",
         relevance_label=item.status.replace("_", " ").title(),
         outcome_summary=outcome,
-        verdict=("contradictory" if item.status == "contradictory_history" else item.status),
         matching_context=list(getattr(item, "matching_context", ())),
         mismatches=list(getattr(item, "mismatches", item.blocker_reasons)),
         citations=linked,
@@ -533,11 +548,6 @@ def _narrative(
             entry_id=entry.entry_id,
             label=entry.entry_type.replace("_", " ").title(),
             summary=safe_summaries[entry.entry_type],
-            outcome=(
-                str(entry.metadata["verdict"])
-                if entry.metadata.get("verdict") in {"keep", "undo", "retest", "invalid"}
-                else None
-            ),
             created_at=entry.created_at.isoformat(),
             citations=[
                 _reference_citation(entry, reference, citations)
@@ -556,7 +566,6 @@ def _graph(
         EvidenceNodeKind.CLAIM: "claim",
         EvidenceNodeKind.WORKFLOW: "test",
         EvidenceNodeKind.EVENT: "evidence",
-        EvidenceNodeKind.RECOMMENDATION: "evidence",
         EvidenceNodeKind.LAP: "evidence",
         EvidenceNodeKind.CHANNEL: "evidence",
         EvidenceNodeKind.SETUP: "evidence",
@@ -635,7 +644,13 @@ def to_public_intelligence_report(
     calibration: Any | None = None,
     driver_profile: DriverPresentationProfile | None = None,
     vehicle_systems: VehicleSystemsProjection | None = None,
+    setup_snapshot: SetupSnapshot | None = None,
 ) -> RunIntelligenceResponse:
+    snapshot_identity = intelligence_snapshot_identity(
+        report.reasoning_snapshot,
+        run_id=report.run_id,
+        setup_snapshot=setup_snapshot,
+    )
     citations = _citation_lookup(report)
     quality = report.data_quality
     guidance = report.smart_guidance
@@ -666,8 +681,12 @@ def to_public_intelligence_report(
         "blocked": "This run cannot support a trustworthy engineering conclusion yet.",
     }[quality.status]
     return RunIntelligenceResponse(
+        schema_version="p19.run-intelligence.v1",
         run_id=report.run_id,
         session_id=report.session_id,
+        reasoning_snapshot_sha256=snapshot_identity.reasoning_snapshot_sha256,
+        setup_id=snapshot_identity.setup_id,
+        setup_snapshot_sha256=snapshot_identity.setup_snapshot_sha256,
         status="ready",
         decision_status=report.status,
         generated_at=datetime.now(UTC).isoformat(),

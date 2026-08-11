@@ -2,8 +2,8 @@
 
 The P3 analyzers remain the owners of channel qualification and engineering
 conclusions.  This module invokes each applicable producer once from one
-verified telemetry read, removes recommendation authority through the shared
-adapter, and attaches exact run/lap/position citations.  Paired driver and
+verified telemetry read, projects qualified conclusions into observation-only
+claims, and attaches exact run/lap/position citations.  Paired driver and
 rotation evidence cites both same-setup laps used by the position alignment.
 """
 
@@ -43,7 +43,10 @@ from racelab_engine.analysis.sim_integrity import (
     build_sim_integrity_certificate,
     comparison_integrity_gate,
 )
-from racelab_engine.analysis.stint_strategy import analyze_stint_strategy
+from racelab_engine.analysis.stint_strategy import (
+    STINT_TRAFFIC_CHANNELS,
+    analyze_stint_strategy,
+)
 from racelab_engine.analysis.time_alignment import TimeAlignmentResult, analyze_time_alignment
 from racelab_engine.analysis.tire_state_energy import analyze_tire_state
 from racelab_engine.models.evidence import EvidenceState
@@ -196,6 +199,13 @@ def p3_observation_columns(
 
 def _ordered_unique(values: Iterable[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(value for value in values if value))
+
+
+def _stint_authority_blockers(report: Any) -> tuple[str, ...]:
+    pace_drift = getattr(report, "pace_drift", None)
+    return _ordered_unique(
+        getattr(pace_drift, "authority_blocker_reasons", ()) or ()
+    )
 
 
 def _group_rows(rows: Sequence[Mapping[str, Any]]) -> dict[int, list[dict[str, Any]]]:
@@ -1223,26 +1233,50 @@ def build_p3_mechanism_observations(
                 if producer_laps
                 else selected.lap_number
             )
-            adapted_stint = _adapt_report(
-                stint_report,
-                laps,
-                normalized_rows,
-                run_id=run_id,
-                setup_id=setup_id,
-                lap_number_value=anchor_lap,
-                mechanism=MechanismKind.STINT_TREND,
-                label="Stint trend",
-                required_channels=STINT_STRATEGY_CONTRACT.required_channels,
-                phase_label="continuous_stint",
-                repetition_count=max(1, len(producer_laps)),
-            )
-            reports.append(
-                _add_stint_citations(
-                    adapted_stint,
-                    lap_numbers=producer_laps,
-                    grouped_rows=grouped,
+            authority_blockers = _stint_authority_blockers(stint_report)
+            if authority_blockers:
+                blocker = _blocked_observation(
+                    run_id=run_id,
+                    setup_id=setup_id,
+                    mechanism=MechanismKind.STINT_TREND,
+                    label="Stint trend",
+                    blockers=authority_blockers,
+                    required_channels=(
+                        *STINT_STRATEGY_CONTRACT.required_channels,
+                        *STINT_TRAFFIC_CHANNELS,
+                    ),
+                    lap_number_value=anchor_lap,
                 )
-            )
+                reports.append(
+                    MechanismObservationReport(
+                        status=ObservationStatus.BLOCKED,
+                        run_id=run_id,
+                        setup_id=setup_id,
+                        observations=(blocker,),
+                        blocker_reasons=blocker.blocker_reasons,
+                    )
+                )
+            else:
+                adapted_stint = _adapt_report(
+                    stint_report,
+                    laps,
+                    normalized_rows,
+                    run_id=run_id,
+                    setup_id=setup_id,
+                    lap_number_value=anchor_lap,
+                    mechanism=MechanismKind.STINT_TREND,
+                    label="Stint trend",
+                    required_channels=STINT_STRATEGY_CONTRACT.required_channels,
+                    phase_label="continuous_stint",
+                    repetition_count=max(1, len(producer_laps)),
+                )
+                reports.append(
+                    _add_stint_citations(
+                        adapted_stint,
+                        lap_numbers=producer_laps,
+                        grouped_rows=grouped,
+                    )
+                )
         except _PRODUCER_ERRORS as exc:
             blocker = _blocked_observation(
                 run_id=run_id,

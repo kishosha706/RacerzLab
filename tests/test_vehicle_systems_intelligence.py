@@ -17,6 +17,7 @@ from racelab_engine.io.telemetry_manifest import (
 from racelab_engine.knowledge.setup import load_setup_knowledge
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.observation_intelligence import MechanismKind
+from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.models.vehicle_systems import (
     ComponentAwarenessState,
     ComponentObservabilityState,
@@ -59,7 +60,7 @@ EXPECTED_NEXT_GEN_AREA_BINDINGS = {
     "front_spring_support": ("springs", "vertical_support"),
     "rear_spring_support": ("springs", "vertical_support"),
     "spring_split": ("springs", "spring_rate"),
-    "shock_collar": ("dampers", "compression_resistance"),
+    "shock_collar": ("springs", "vertical_support"),
     "ls_compression": ("dampers", "compression_resistance"),
     "hs_compression": ("dampers", "compression_resistance"),
     "hs_comp_slope": ("dampers", "high_speed_slope"),
@@ -412,6 +413,25 @@ def test_graph_preserves_all_50_areas_and_explicit_effect_property_bindings() ->
     assert directions["control:effect:adjust_front_arb_preload_small"] is None
 
 
+def test_shock_collar_is_spring_support_not_damper_compression_resistance() -> None:
+    snapshot = SetupSnapshot(
+        setup_id=SETUP_ID,
+        run_id=RUN_ID,
+        extracted_values={
+            corner: {"shock_collar_offset_mm": 12.0 + index}
+            for index, corner in enumerate(("lf", "rf", "lr", "rr"))
+        },
+    )
+    projection = _project(_report(), setup_snapshot=snapshot)
+    states = {state.component_id: state for state in projection.component_states}
+
+    assert "LF shock collar: 12.0 mm" in states["springs"].current_settings
+    assert not any(
+        "shock collar" in setting.casefold()
+        for setting in states["dampers"].current_settings
+    )
+
+
 def test_graph_source_registry_and_content_hash_cover_the_exact_graph() -> None:
     graph = compile_vehicle_systems_graph()
     graph_items = (*graph.components, *graph.interactions, *graph.nodes, *graph.edges)
@@ -494,6 +514,16 @@ def test_whole_car_observation_makes_coupled_components_candidates_not_proven_ca
         VehicleSystemsEdgeKind.OBSERVATION_SUPPORTS_STATE
     }
     assert projection.runtime_graph.reasoning_snapshot_sha256 == projection.reasoning_snapshot_sha256
+    requirements = {
+        definition.component_id: definition.measurement_requirements[0]
+        for definition in compile_vehicle_systems_graph().components
+    }
+    assert all(
+        item.next_discriminator == requirements[item.component_id]
+        and item.next_discriminator
+        != "Measure the exact center window before changing setup."
+        for item in coupled
+    )
 
 
 def test_foreign_p20_observation_is_rejected_instead_of_relabelled() -> None:
@@ -648,6 +678,32 @@ def test_per_control_undo_leaves_unrelated_component_control_testable() -> None:
         edge.kind is VehicleSystemsEdgeKind.POLICY_REJECTED_DUE_TO_COUNTEREFFECT
         for edge in projection.runtime_graph.edges
     )
+
+
+def test_p26_cannot_veto_p19_same_control_authority_for_a_changed_policy() -> None:
+    prior_undo = _controlled_outcome(
+        workflow_id="workflow-old-window-undo",
+        verdict="undo",
+        countereffects=("Old-window exit instability increased.",),
+    )
+    projection = _project(
+        _report(
+            authority_control="cross_weight_percent",
+            causes=(_cause(outcome=prior_undo),),
+        )
+    )
+    state = next(
+        item
+        for item in projection.component_states
+        if item.component_id == "weight_distribution"
+    )
+
+    assert state.controlled_history[0].policy_verdict == "undo"
+    assert state.blocked_control_keys == ()
+    assert "cross_weight_percent" in state.testable_control_keys
+    assert state.authorized_control_key == "cross_weight_percent"
+    assert state.current_testability == "p19_authorized"
+    assert state.setup_authorized is True
 
 
 def test_invalid_history_is_not_exact_context_and_creates_no_runtime_response_edge() -> None:
@@ -898,7 +954,8 @@ def test_real_next_gen_ibt_manifest_and_setup_snapshot_project_exactly() -> None
     assert "RF cold pressure: 324.0 kPa" in states["tires"].current_settings
     assert len(states["alignment"].current_settings) == 10
     assert "RF camber: -4.5 deg" in states["alignment"].current_settings
-    assert len(states["dampers"].current_settings) == 28
+    assert len(states["springs"].current_settings) == 8
+    assert len(states["dampers"].current_settings) == 24
     assert len(states["anti_roll_bars"].current_settings) == 8
     assert "Front ARB arm: P5" in states["anti_roll_bars"].current_settings
     assert "Front master cylinder: 23.7 mm" in states["brakes"].current_settings

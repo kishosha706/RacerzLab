@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, BrainCircuit, CheckCircle2, FlaskConical, ShieldCheck } from "lucide-react";
+import { Activity, AlertTriangle, BrainCircuit, CheckCircle2, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchEngineeringAwareness } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
@@ -115,8 +115,8 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
           </p>
         </div>
         <div className="engineering-awareness__status">
-          {projection.setup_authorized ? <FlaskConical size={16} /> : <ShieldCheck size={16} />}
-          <strong>{projection.setup_authorized ? "Controlled test authorized" : "Observation only"}</strong>
+          <ShieldCheck size={16} />
+          <strong>Observation only</strong>
           <small>{blockedCount} of 10 systems need evidence</small>
         </div>
       </header>
@@ -129,7 +129,7 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
 
       {surface === "overview" && (
         <div className="engineering-awareness__brief">
-          <article><span>Next mission</span><strong>{projection.current_mission.title}</strong><p>{projection.current_mission.instruction}</p></article>
+          <article><span>Evidence boundary</span><strong>P20 reports measured state only</strong><p>Use the controlled P19 workflow for setup policy and test actions.</p></article>
           {projection.knowledge_debt[0] && <article className="is-blocked"><span>Knowledge debt</span><p>{projection.knowledge_debt[0]}</p></article>}
         </div>
       )}
@@ -165,13 +165,13 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
 
       {surface === "setup" && (
         <div className="engineering-awareness__grid">
-          {projection.setup_leverage_states.length ? projection.setup_leverage_states.slice(0, learning ? undefined : 3).map((item) => (
-            <article key={item.control_key} className={item.states.includes("blocked") ? "is-blocked" : ""}>
+          {projection.control_mutations.length ? projection.control_mutations.slice(0, learning ? undefined : 3).map((item) => (
+            <article key={item.mutation_id}>
               <span>{humanize(item.control_key)}</span>
-              <strong>{item.states.map(humanize).join(" · ")}</strong>
-              {learning && <p>{item.basis[0]}</p>}
+              <strong>Observed {humanize(item.mutation_kind)}</strong>
+              <p>Lap {item.lap} · {item.lap_pct.toFixed(1)}%</p>
             </article>
-          )) : <article className="is-blocked"><p>No setup control has P19 evidence relevance. The awareness layer will not invent one.</p></article>}
+          )) : <article className="is-blocked"><p>No setup-control mutation was observed in this run.</p></article>}
         </div>
       )}
 
@@ -180,8 +180,8 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
           {projection.expected_vs_observed.length ? projection.expected_vs_observed.slice(0, learning ? undefined : 2).map((item) => (
             <article key={item.workflow_id}>
               <span>{item.control_key ? humanize(item.control_key) : "Diagnostic intervention"} · {item.phase}</span>
-              <strong>Mechanism {humanize(item.mechanism_state)} · Response {humanize(item.control_response)} · {humanize(item.policy_verdict)}</strong>
-              {learning && <p>{item.mechanism_reason} {item.control_response_reason} {item.policy_reason}</p>}
+              <strong>Mechanism {humanize(item.mechanism_state)} · Response {humanize(item.control_response)}</strong>
+              {learning && <p>{item.mechanism_reason} {item.control_response_reason}</p>}
             </article>
           )) : <article className="is-blocked"><p>No completed controlled workflow is attached to this exact P19 snapshot.</p></article>}
         </div>
@@ -210,9 +210,9 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
             <strong>{projection.knowledge_debt[0] ?? "No active blocker"}</strong>
           </article>
           <article>
-            <span>Next mission</span>
-            <strong>{projection.current_mission.title}</strong>
-            <p>{projection.current_mission.instruction}</p>
+            <span>Evidence boundary</span>
+            <strong>Observation only</strong>
+            <p>Use the controlled P19 workflow for setup policy and test actions.</p>
           </article>
         </div>
       )}

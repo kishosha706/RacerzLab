@@ -81,7 +81,6 @@ from racelab_engine.models.observation_intelligence import (
     MechanismObservation,
     ObservationCitation,
 )
-from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.models.smart_guidance import (
     MeasurementBlocker,
     MeasurementCandidate,
@@ -339,7 +338,6 @@ def build_evidence_graph(
     causes: Sequence[CauseHypothesis] = (),
     observations: Sequence[MechanismObservation] = (),
     events: Sequence[TelemetryEvent] = (),
-    recommendations: Sequence[Recommendation] = (),
     laps: Sequence[LapSummary] = (),
     setup_values: Sequence[SetupEvidenceValue] = (),
     workflows: Sequence[ControlledWorkflow] = (),
@@ -620,111 +618,6 @@ def build_evidence_graph(
                 qualified=qualified,
             )
 
-    recommendation_qualified: dict[str, bool] = {}
-    seen_recommendation_ids: set[str] = set()
-    for recommendation in recommendations:
-        if (
-            not recommendation.recommendation_id.strip()
-            or recommendation.recommendation_id != recommendation.recommendation_id.strip()
-            or not recommendation.run_id.strip()
-            or recommendation.run_id != recommendation.run_id.strip()
-        ):
-            graph_blockers.append("A recommendation has an invalid recommendation or run identity.")
-            continue
-        node_id = f"recommendation:{recommendation.recommendation_id}"
-        if recommendation.recommendation_id in seen_recommendation_ids:
-            reason = f"Duplicate recommendation identity: {recommendation.recommendation_id}."
-            graph_blockers.append(reason)
-            recommendation_qualified[recommendation.recommendation_id] = False
-            if node_id in nodes:
-                nodes[node_id] = nodes[node_id].model_copy(
-                    update={
-                        "evidence_state": EvidenceState.BLOCKED_BY_CONTEXT,
-                        "qualified": False,
-                        "blocker_reasons": (reason,),
-                    }
-                )
-            continue
-        seen_recommendation_ids.add(recommendation.recommendation_id)
-        linked_events = [
-            events_by_id[event_id]
-            for event_id in recommendation.evidence_event_ids
-            if event_id in events_by_id
-        ]
-        linked = [event_qualified.get(event_id) for event_id in recommendation.evidence_event_ids]
-        blockers = list(recommendation.blocker_reasons)
-        if not recommendation.issue.strip():
-            blockers.append("The recommendation has no stable issue label.")
-        if recommendation.evidence_state not in _QUALIFIED_STATES:
-            blockers.append("The recommendation does not have a qualified evidence state.")
-        if not recommendation.source_channels:
-            blockers.append("The recommendation has no recorded source channels.")
-        elif any(
-            not channel.strip() or channel != channel.strip()
-            for channel in recommendation.source_channels
-        ):
-            blockers.append(
-                "The recommendation contains an empty or non-canonical source-channel identity."
-            )
-        if not linked:
-            blockers.append("The recommendation is not linked to telemetry events.")
-        elif not all(value is True for value in linked):
-            blockers.append("A linked event is unavailable or not qualified on an eligible lap.")
-        if linked_events and any(event.run_id != recommendation.run_id for event in linked_events):
-            blockers.append("A linked event belongs to a different run than the recommendation.")
-        linked_channels = {
-            channel for event in linked_events for channel in event.source_channels
-        }
-        unsupported_channels = set(recommendation.source_channels) - linked_channels
-        if unsupported_channels:
-            blockers.append(
-                "Recommendation source channels are not supplied by its linked events: "
-                + ", ".join(sorted(unsupported_channels))
-                + "."
-            )
-        normalized = _unique_text(blockers)
-        qualified = not normalized
-        recommendation_qualified[recommendation.recommendation_id] = qualified
-        add_node(
-            EvidenceNode(
-                node_id=node_id,
-                entity_id=recommendation.recommendation_id,
-                kind=EvidenceNodeKind.RECOMMENDATION,
-                label=recommendation.issue.strip()
-                or f"Unlabeled recommendation {recommendation.recommendation_id}",
-                evidence_state=recommendation.evidence_state,
-                qualified=qualified,
-                blocker_reasons=normalized,
-            )
-        )
-        for event_id in dict.fromkeys(recommendation.evidence_event_ids):
-            target = f"event:{event_id}"
-            if target not in nodes:
-                graph_blockers.append(
-                    f"Recommendation {recommendation.recommendation_id} references missing event "
-                    f"{event_id}."
-                )
-                continue
-            add_edge(
-                node_id,
-                target,
-                EvidenceEdgeKind.RECOMMENDS_FROM,
-                qualified=qualified and nodes[target].qualified,
-            )
-        for channel in dict.fromkeys(recommendation.source_channels):
-            if not channel.strip() or channel != channel.strip():
-                graph_blockers.append(
-                    f"Recommendation {recommendation.recommendation_id} has a malformed channel identity."
-                )
-                continue
-            referenced_channels[channel] = referenced_channels.get(channel, False) or qualified
-            add_edge(
-                node_id,
-                f"channel:{channel}",
-                EvidenceEdgeKind.USES_CHANNEL,
-                qualified=qualified,
-            )
-
     workflow_qualified: dict[str, bool] = {}
     seen_workflow_ids: set[str] = set()
     for workflow in workflows:
@@ -990,20 +883,14 @@ def build_evidence_graph(
         # inherit trust from an unrelated generic event-to-control association.
         referenced_setups[value.setup_key] = qualified
 
-    # Recompute referenced-node trust after duplicate identities and workflow /
-    # recommendation qualification are known. A poisoned event must not leave a
+    # Recompute referenced-node trust after duplicate identities and workflow
+    # qualification are known. A poisoned event must not leave a
     # qualified channel or setup node behind through an earlier optimistic OR.
     qualified_event_channels = {
         channel
         for event_id, event in events_by_id.items()
         if event_qualified.get(event_id) is True
         for channel in event.source_channels
-    }
-    qualified_recommendation_channels = {
-        channel
-        for recommendation in recommendations
-        if recommendation_qualified.get(recommendation.recommendation_id) is True
-        for channel in recommendation.source_channels
     }
     qualified_observation_channels = {
         channel
@@ -1015,7 +902,6 @@ def build_evidence_graph(
     for channel in referenced_channels:
         referenced_channels[channel] = channel in (
             qualified_event_channels
-            | qualified_recommendation_channels
             | qualified_observation_channels
         )
     qualified_event_setups = {
@@ -1111,18 +997,6 @@ def build_evidence_graph(
                 blockers.append(f"Contradicting event {event_id} is unavailable.")
             else:
                 blockers.append(f"Contradicting event {event_id} is not qualified.")
-        for recommendation_id in claim.recommendation_ids:
-            anchors += 1
-            if recommendation_qualified.get(recommendation_id) is not True:
-                blockers.append(f"Recommendation {recommendation_id} is unavailable or unqualified.")
-            else:
-                provenance_anchors += 1
-                recommendation = next(
-                    item
-                    for item in recommendations
-                    if item.recommendation_id == recommendation_id
-                )
-                supported_channels.update(recommendation.source_channels)
         for reference in claim.lap_references:
             anchors += 1
             lap = laps_by_key.get((reference.run_id, reference.lap_number))
@@ -1163,10 +1037,10 @@ def build_evidence_graph(
                     f"Exact setup value {setup_key} lacks its own qualified provenance."
                 )
         if anchors == 0:
-            blockers.append("The claim has no qualified event, recommendation, lap, or workflow anchor.")
+            blockers.append("The claim has no qualified event, lap, or workflow anchor.")
         if provenance_anchors == 0:
             blockers.append(
-                "The claim has no qualified provenance-bearing event, recommendation, or workflow."
+                "The claim has no qualified provenance-bearing event or workflow."
             )
         normalized = _unique_text(blockers)
         qualified = not normalized
@@ -1181,15 +1055,6 @@ def build_evidence_graph(
                 blocker_reasons=normalized,
             )
         )
-        for recommendation_id in claim.recommendation_ids:
-            target = f"recommendation:{recommendation_id}"
-            if target in nodes:
-                add_edge(
-                    node_id,
-                    target,
-                    EvidenceEdgeKind.SUPPORTED_BY,
-                    qualified=qualified and nodes[target].qualified,
-                )
         for reference in claim.lap_references:
             target = f"lap:{reference.run_id}:{reference.lap_number}"
             if target in nodes:
@@ -1778,7 +1643,6 @@ def _public_evidence_graph(graph: EvidenceGraph) -> EvidenceGraph:
     safe_labels = {
         EvidenceNodeKind.CLAIM: "Evidence claim",
         EvidenceNodeKind.EVENT: "Telemetry event",
-        EvidenceNodeKind.RECOMMENDATION: "Evidence recommendation",
         EvidenceNodeKind.LAP: "Lap evidence",
         EvidenceNodeKind.CHANNEL: "Telemetry channel",
         EvidenceNodeKind.SETUP: "Setup evidence",
@@ -2006,13 +1870,16 @@ def _evidence_independence_clusters(
     non-overlapping physical windows in the same run remain separate.
     """
 
-    grouped: dict[tuple[str, str | None], list[EvidenceCitation]] = {}
+    # Physical scope is authoritative for correlation. Producer phase labels can
+    # legitimately move at an entry/center/exit boundary while the underlying
+    # telemetry window still describes the same event. Partitioning by phase
+    # before checking overlap would turn that label jitter into an extra causal
+    # vote.
+    grouped: dict[str, list[EvidenceCitation]] = {}
     for citation in citations:
-        grouped.setdefault((citation.run_id, citation.phase), []).append(citation)
+        grouped.setdefault(citation.run_id, []).append(citation)
     result: list[EvidenceIndependenceCluster] = []
-    for (run_id, phase), scoped in sorted(
-        grouped.items(), key=lambda item: (item[0][0], item[0][1] or "")
-    ):
+    for run_id, scoped in sorted(grouped.items()):
         ordered = sorted(
             scoped,
             key=lambda citation: (
@@ -2062,6 +1929,12 @@ def _evidence_independence_clusters(
                         end if current_end is None else max(current_end, end)
                     )
         for partition in partitions:
+            phases = {
+                citation.phase
+                for citation in partition
+                if citation.phase is not None
+            }
+            phase = next(iter(phases)) if len(phases) == 1 else None
             starts = [
                 value
                 for citation in partition
@@ -3793,6 +3666,7 @@ def build_internal_intelligence_report(
     *,
     run_id: str,
     session_id: str | None = None,
+    session_run_ids: Sequence[str] = (),
     response_context_key: str | None = None,
     issue: str,
     graph: EvidenceGraph,
@@ -4012,11 +3886,22 @@ def build_internal_intelligence_report(
     )
     effective_measurement = best_measurement
     if best_measurement.kind == "controlled_test":
+        frozen_session_run_ids = tuple(session_run_ids)
+        session_scope_is_exact = bool(
+            session_id is not None
+            and session_id.strip() == session_id
+            and session_id
+            and frozen_session_run_ids
+            and len(set(frozen_session_run_ids)) == len(frozen_session_run_ids)
+            and all(run.strip() == run and run for run in frozen_session_run_ids)
+            and run_id in frozen_session_run_ids
+        )
         proposed_card = best_measurement.controlled_test
         qualified_current_events = qualified_report_event_ids
         qualified_control_links = _qualified_event_setup_links(graph)
         card_is_current = bool(
-            not ranking_input_blockers
+            session_scope_is_exact
+            and not ranking_input_blockers
             and not best_measurement.blocker_reasons
             and not any(
                 cause.controlled_conflict
@@ -4049,6 +3934,10 @@ def build_internal_intelligence_report(
             if not card_is_current:
                 reasons.append(
                     "The controlled-test card is not linked to qualified current-run events."
+                )
+            if not session_scope_is_exact:
+                reasons.append(
+                    "Setup authority requires an exact saved session whose frozen run membership includes this run."
                 )
             reasons.extend(data_quality.issues)
             effective_measurement = InformationPlan(
