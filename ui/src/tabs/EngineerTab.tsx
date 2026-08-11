@@ -41,6 +41,7 @@ import type {
 } from "../types/intelligence";
 import type { EvidenceState } from "../types/telemetry";
 import type { LearningReadinessProjection } from "../types/learningReadiness";
+import { isVehicleSystemComponentId } from "../types/vehicleSystems";
 import { deriveCurrentReportSetupAuthority } from "../utils/currentIntelligenceAuthority";
 import {
   exactEventIdentitySet,
@@ -1029,6 +1030,8 @@ export function IntelligencePanel({
         || (response.selected_lap ?? null) !== selectedQueryLap
         || !responseWindowMatchesScope
         || response.question.trim() !== nextQuestion
+        || (response.interpreted_component_id != null
+          && !isVehicleSystemComponentId(response.interpreted_component_id))
       ) {
         setQueryState({
           requestKey,
@@ -1319,8 +1322,6 @@ export function IntelligencePanel({
       data-mode={learning ? "learning" : "race"}
       data-decision-status={decisionStatus}
     >
-      <EngineeringAwarenessPanel runId={runId} sessionId={sessionId} surface="engineer" />
-      <VehicleSystemsPanel runId={runId} sessionId={sessionId} learning={learning} surface="engineer" />
       <header className="engineer-workspace-header">
         <div>
           <span className="eyebrow"><BrainCircuit size={13} aria-hidden="true" /> Smart Engineer</span>
@@ -1378,6 +1379,16 @@ export function IntelligencePanel({
           </button>
         </div>
       </section>
+
+      <EngineeringAwarenessPanel runId={runId} sessionId={sessionId} surface="engineer" />
+      <VehicleSystemsPanel
+        runId={runId}
+        sessionId={sessionId}
+        learning={learning}
+        surface="engineer"
+        refreshKey={`${workflowId ?? "no-workflow"}:${workflowUpdatedAt ?? "no-revision"}`}
+        initialProjection={report.vehicle_systems}
+      />
 
       <section className="engineer-briefing" aria-labelledby="engineer-briefing-heading">
         <header>
@@ -1517,10 +1528,11 @@ export function IntelligencePanel({
                 </span>
               </header>
               {!queryResponse.action_authorized && (queryResponse.interpreted_lap_number != null
-                || queryResponse.interpreted_window_start_lap != null
-                || queryResponse.interpreted_phase
-                || queryResponse.interpreted_control_key
-                || queryResponse.interpreted_track_region_label
+                 || queryResponse.interpreted_window_start_lap != null
+                 || queryResponse.interpreted_phase
+                 || queryResponse.interpreted_control_key
+                 || queryResponse.interpreted_component_id
+                 || queryResponse.interpreted_track_region_label
                 || queryResponse.clarification_required) && (
                 <div className="engineer-query-interpretation" aria-label="Server-interpreted question context">
                   <span>{queryResponse.clarification_required ? "Clarification needed" : "Interpreted context"}</span>
@@ -1528,9 +1540,10 @@ export function IntelligencePanel({
                   {queryResponse.interpreted_window_start_lap != null && queryResponse.interpreted_window_end_lap != null && (
                     <strong>Window L{queryResponse.interpreted_window_start_lap}\u2013L{queryResponse.interpreted_window_end_lap}</strong>
                   )}
-                  {queryResponse.interpreted_phase && <strong>{driverFacingLabel(queryResponse.interpreted_phase)}</strong>}
-                  {queryResponse.interpreted_control_key && <strong>{driverFacingLabel(queryResponse.interpreted_control_key)}</strong>}
-                  {queryResponse.interpreted_track_region_label && <strong>{queryResponse.interpreted_track_region_label}</strong>}
+                   {queryResponse.interpreted_phase && <strong>{driverFacingLabel(queryResponse.interpreted_phase)}</strong>}
+                   {queryResponse.interpreted_control_key && <strong>{driverFacingLabel(queryResponse.interpreted_control_key)}</strong>}
+                   {queryResponse.interpreted_component_id && <strong>{driverFacingLabel(queryResponse.interpreted_component_id)} system</strong>}
+                   {queryResponse.interpreted_track_region_label && <strong>{queryResponse.interpreted_track_region_label}</strong>}
                   <small>The answer remains bound to the selected run and question scope.</small>
                 </div>
               )}

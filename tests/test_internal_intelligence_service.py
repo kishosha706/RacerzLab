@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -68,6 +69,7 @@ from racelab_engine.models.telemetry_health import (
     TelemetryHealthRecovery,
     telemetry_health_session_scope_sha256,
 )
+from racelab_engine.models.vehicle_systems import VehicleSystemsRuntimeIdentity
 from racelab_engine.services.intelligence_service import (
     answer_grounded_query,
     assess_data_quality,
@@ -78,10 +80,10 @@ from racelab_engine.services.intelligence_service import (
     rank_competing_causes,
     summarize_response_memory,
 )
-from racelab_engine.services.setup_learning_service import SetupResponseContext
 from racelab_engine.services.run_intelligence_service import (
     _observation_measurement_candidates,
 )
+from racelab_engine.services.setup_learning_service import SetupResponseContext
 from racelab_engine.services.smart_guidance_service import (
     build_controlled_test_preflight,
     build_smart_guidance,
@@ -236,7 +238,7 @@ def _workflow() -> ControlledWorkflow:
         race_mode_summary="Test one change.",
         learning_mode_explanation="A controlled test separates the mechanism.",
     )
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     execution = TestExecution(
         eligible_laps_a=3,
         eligible_laps_b=3,
@@ -3730,12 +3732,132 @@ def test_natural_language_lap_scope_must_resolve_inside_the_run() -> None:
     assert result.citations == ()
 
 
+def _vehicle_runtime_identity(run_id: str = "run-1") -> VehicleSystemsRuntimeIdentity:
+    return VehicleSystemsRuntimeIdentity(
+        run_id=run_id,
+        car_path="stockcars chevycamarozl12022",
+        car_version="2026.06.08.02",
+        iracing_build_version="2026.06.24.02",
+        track_configuration_name="Atlanta Oval",
+        source_file_sha256="1" * 64,
+        telemetry_cache_sha256="2" * 64,
+        schema_fingerprint="3" * 64,
+        compatibility_fingerprint="4" * 64,
+        available_telemetry_channels=("speed_mph",),
+    )
+
+
 def test_component_question_uses_typed_vehicle_systems_without_setup_authority() -> None:
-    result = answer_grounded_query("What is the RF spring doing?", _report())
+    result = answer_grounded_query(
+        "What is the RF spring doing?",
+        _report(),
+        vehicle_runtime_identity_factory=_vehicle_runtime_identity,
+    )
 
     assert result.supported is True
     assert result.intent == "component_awareness"
+    assert result.interpreted_component_id == "springs"
     assert "Springs:" in result.answer
-    assert "Current response: unavailable" in result.answer
+    assert "Evidence in full qualified run: unavailable" in result.answer
     assert "Current authority: measurement only" in result.answer
+    assert "does not create setup authority" in result.answer
     assert result.action_authorized is False
+
+
+def test_component_question_is_decision_first_in_race_mode() -> None:
+    result = answer_grounded_query(
+        "What is the RF spring doing?",
+        _report(),
+        vehicle_runtime_identity_factory=_vehicle_runtime_identity,
+        presentation_mode="race",
+    )
+
+    assert result.supported is True
+    assert result.answer.startswith("Springs:")
+    assert "Next:" in result.answer
+    assert "Read-only; P19 decides setup." in result.answer
+    assert "General interactions:" not in result.answer
+    assert result.action_authorized is False
+
+
+def test_component_history_citations_and_prose_share_exact_phase_and_lap_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entry_history = SimpleNamespace(
+        workflow_id="workflow-entry",
+        source_run_id="run-1",
+        control_key="rf_front_spring_n_per_mm",
+        phase="entry",
+        control_response="matched",
+        policy_verdict="keep",
+        exact_context=True,
+        eligible_lap_ids=(),
+    )
+    exit_history = SimpleNamespace(
+        workflow_id="workflow-exit",
+        source_run_id="run-1",
+        control_key="rf_front_spring_n_per_mm",
+        phase="exit",
+        control_response="missed",
+        policy_verdict="undo",
+        exact_context=True,
+        eligible_lap_ids=(),
+    )
+    component_state = SimpleNamespace(
+        supporting_artifact_ids=(),
+        supporting_cause_ids=(),
+        contradicting_cause_ids=(),
+        controlled_history=(entry_history, exit_history),
+        current_settings=(),
+        current_testability="measurement_only",
+        blocker_reasons=(),
+        next_discriminator="Measure the current run before changing setup.",
+    )
+    definition = SimpleNamespace(
+        label="Springs",
+        physical_role="Supports the chassis platform.",
+        observability=SimpleNamespace(
+            unavailable_quantities=("absolute spring force",),
+        ),
+    )
+    projection = SimpleNamespace(
+        next_discriminator="Measure the current run before changing setup.",
+    )
+    inspection = SimpleNamespace(
+        definition=definition,
+        state=component_state,
+        interactions=(),
+    )
+    monkeypatch.setattr(
+        "racelab_engine.services.vehicle_systems_service.build_component_awareness",
+        lambda *args, **kwargs: projection,
+    )
+    monkeypatch.setattr(
+        "racelab_engine.services.vehicle_systems_service.inspect_component",
+        lambda *args, **kwargs: inspection,
+    )
+
+    phase_result = answer_grounded_query(
+        "What is the RF spring doing in entry?",
+        _report(),
+        vehicle_runtime_identity_factory=_vehicle_runtime_identity,
+    )
+    lap_result = answer_grounded_query(
+        "What is the RF spring doing on lap 4 in entry?",
+        _report(),
+        vehicle_runtime_identity_factory=_vehicle_runtime_identity,
+    )
+
+    assert phase_result.interpreted_component_id == "springs"
+    assert phase_result.interpreted_phase == "entry"
+    assert [citation.run_id for citation in phase_result.citations] == ["run-1"]
+    assert [citation.phase for citation in phase_result.citations] == ["entry"]
+    assert "History from run-1: rf_front_spring_n_per_mm response matched" in phase_result.answer
+    assert "response missed" not in phase_result.answer
+    assert lap_result.interpreted_lap_number == 4
+    assert lap_result.citations == ()
+    assert "Evidence in lap 4, entry: unavailable" in lap_result.answer
+    assert "controlled results have no lap identity" in lap_result.answer
+    assert "History from run-1" not in lap_result.answer
+    assert phase_result.action_authorized is False
+    assert lap_result.action_authorized is False

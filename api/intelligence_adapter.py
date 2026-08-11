@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from api.intelligence_schemas import (
+    WITHHELD_STAGE_B_MOVE_INSTRUCTION,
+    WITHHELD_STAGE_B_MOVE_REASON,
+    WITHHELD_STAGE_B_MOVE_TITLE,
+    WITHHELD_STAGE_B_PREFLIGHT_BLOCKER,
+    WITHHELD_STAGE_B_PREFLIGHT_CHECK_DETAIL,
+    WITHHELD_STAGE_B_PREFLIGHT_CHECK_LABEL,
+    WITHHELD_STAGE_B_PREFLIGHT_TITLE,
     IntelligenceActionResponse,
     IntelligenceBriefingResponse,
     IntelligenceCalibrationResponse,
@@ -18,17 +25,11 @@ from api.intelligence_schemas import (
     IntelligenceGraphNodeResponse,
     IntelligenceMeasurementResponse,
     IntelligenceMindChangeCriterionResponse,
-    IntelligenceNavigationResponse,
     IntelligenceNarrativeEntryResponse,
+    IntelligenceNavigationResponse,
     RunIntelligenceResponse,
-    WITHHELD_STAGE_B_MOVE_INSTRUCTION,
-    WITHHELD_STAGE_B_MOVE_REASON,
-    WITHHELD_STAGE_B_MOVE_TITLE,
-    WITHHELD_STAGE_B_PREFLIGHT_BLOCKER,
-    WITHHELD_STAGE_B_PREFLIGHT_CHECK_DETAIL,
-    WITHHELD_STAGE_B_PREFLIGHT_CHECK_LABEL,
-    WITHHELD_STAGE_B_PREFLIGHT_TITLE,
 )
+from racelab_engine.knowledge.setup.loader import load_setup_knowledge
 from racelab_engine.models.engineering_memory import (
     DriverPresentationProfile,
     EngineeringNarrativeEntry,
@@ -44,13 +45,12 @@ from racelab_engine.models.intelligence import (
     NavigationTarget,
     ResponseMemorySummary,
 )
-from racelab_engine.knowledge.setup.loader import load_setup_knowledge
 from racelab_engine.models.smart_guidance import (
     ControlledTestPreflight,
     NextTrustworthyMove,
     PreflightCheck,
 )
-
+from racelab_engine.models.vehicle_systems import VehicleSystemsProjection
 
 _WORKSPACE_MAP = {
     "overview": "overview",
@@ -255,7 +255,7 @@ def _cause(item: Any) -> IntelligenceCauseResponse:
         if outcome.outcome not in {"supported", "contradicted"}:
             continue
         digest = hashlib.sha256(
-            f"{item.cause_id}|{outcome.workflow_id}|{outcome.outcome}".encode("utf-8")
+            f"{item.cause_id}|{outcome.workflow_id}|{outcome.outcome}".encode()
         ).hexdigest()[:20]
         controlled_citation = IntelligenceCitationResponse(
             citation_id=f"controlled-outcome:{digest}",
@@ -490,7 +490,7 @@ def _reference_citation(
         else "unavailable"
     )
     reference_digest = hashlib.sha256(
-        f"{reference.kind}:{reference.reference_id}".encode("utf-8")
+        f"{reference.kind}:{reference.reference_id}".encode()
     ).hexdigest()[:16]
     return IntelligenceCitationResponse(
         citation_id=f"narrative:{entry.entry_id}:{reference.kind}:{reference_digest}",
@@ -634,6 +634,7 @@ def to_public_intelligence_report(
     narrative_entries: tuple[EngineeringNarrativeEntry, ...] | list[EngineeringNarrativeEntry] = (),
     calibration: Any | None = None,
     driver_profile: DriverPresentationProfile | None = None,
+    vehicle_systems: VehicleSystemsProjection | None = None,
 ) -> RunIntelligenceResponse:
     citations = _citation_lookup(report)
     quality = report.data_quality
@@ -669,7 +670,7 @@ def to_public_intelligence_report(
         session_id=report.session_id,
         status="ready",
         decision_status=report.status,
-        generated_at=datetime.now(timezone.utc).isoformat(),
+        generated_at=datetime.now(UTC).isoformat(),
         briefing=IntelligenceBriefingResponse(
             issue=report.briefing.issue,
             action=public_action,
@@ -717,12 +718,13 @@ def to_public_intelligence_report(
         anomalies=report.anomalies,
         driver_focus=report.driver_focus,
         telemetry_health=report.telemetry_health,
+        vehicle_systems=vehicle_systems,
     )
 
 
 __all__ = [
     "to_public_intelligence_citation",
     "to_public_intelligence_navigation",
-    "to_public_mind_change_criterion",
     "to_public_intelligence_report",
+    "to_public_mind_change_criterion",
 ]

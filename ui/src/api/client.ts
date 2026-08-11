@@ -22,7 +22,11 @@ import type {
   IntelligenceQueryResponse,
   RunIntelligenceReport,
 } from "../types/intelligence";
-import type { VehicleSystemsProjection } from "../types/vehicleSystems";
+import type {
+  ComponentInspectionResponse,
+  ControlMechanismTraceResponse,
+  VehicleSystemsProjection,
+} from "../types/vehicleSystems";
 import type { EngineeringAwarenessProjection } from "../types/engineeringAwareness";
 import type {
   CampaignOperationStartResponse,
@@ -37,6 +41,9 @@ const API_BASE =
 
 /** Default timeout for normal API requests (10 seconds). */
 const REQUEST_TIMEOUT_MS = 10_000;
+
+/** Full intelligence assembly can exceed 30 seconds on a real Next Gen run. */
+const INTELLIGENCE_TIMEOUT_MS = 60_000;
 
 /** Timeout for telemetry import requests (3 minutes — large .ibt files take time). */
 const IMPORT_TIMEOUT_MS = 180_000;
@@ -312,18 +319,55 @@ export function fetchRunIntelligence(
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return requestJson<RunIntelligenceReport>(
     `/api/runs/${encodeURIComponent(runId)}/intelligence${suffix}`,
+    undefined,
+    INTELLIGENCE_TIMEOUT_MS,
+    "Run intelligence",
   );
 }
 
 export function fetchVehicleSystems(
   runId: string,
-  options?: { sessionId?: string | null },
+  options?: { sessionId?: string | null; refreshKey?: string | number },
 ): Promise<VehicleSystemsProjection> {
   const params = new URLSearchParams();
   if (options?.sessionId) params.set("session_id", options.sessionId);
+  if (options?.refreshKey != null) params.set("refresh", String(options.refreshKey));
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return requestJson<VehicleSystemsProjection>(
     `/api/runs/${encodeURIComponent(runId)}/vehicle-systems${suffix}`,
+    undefined,
+    INTELLIGENCE_TIMEOUT_MS,
+    "Vehicle systems",
+  );
+}
+
+export function fetchVehicleSystemComponent(
+  runId: string,
+  componentId: string,
+  options?: { sessionId?: string | null; refreshKey?: string | number },
+): Promise<ComponentInspectionResponse> {
+  const params = new URLSearchParams();
+  if (options?.sessionId) params.set("session_id", options.sessionId);
+  if (options?.refreshKey != null) params.set("refresh", String(options.refreshKey));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestJson<ComponentInspectionResponse>(
+    `/api/runs/${encodeURIComponent(runId)}/vehicle-systems/components/${encodeURIComponent(componentId)}${suffix}`,
+    undefined,
+    INTELLIGENCE_TIMEOUT_MS,
+    "Vehicle-system component",
+  );
+}
+
+export function fetchVehicleSystemControlTrace(
+  runId: string,
+  controlKey: string,
+  options?: { refreshKey?: string | number },
+): Promise<ControlMechanismTraceResponse> {
+  const params = new URLSearchParams();
+  if (options?.refreshKey != null) params.set("refresh", String(options.refreshKey));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestJson<ControlMechanismTraceResponse>(
+    `/api/runs/${encodeURIComponent(runId)}/vehicle-systems/controls/${encodeURIComponent(controlKey)}/trace${suffix}`,
   );
 }
 
@@ -392,6 +436,8 @@ export function queryRunIntelligence(
   return requestJson<IntelligenceQueryResponse>(
     `/api/runs/${encodeURIComponent(runId)}/intelligence/query`,
     { method: "POST", body: JSON.stringify(payload) },
+    INTELLIGENCE_TIMEOUT_MS,
+    "Engineer question",
   );
 }
 

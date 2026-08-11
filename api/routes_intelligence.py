@@ -50,6 +50,7 @@ from racelab_engine.services.track_map_service import (
 )
 from racelab_engine.services.vehicle_systems_service import (
     build_component_awareness,
+    compile_vehicle_systems_graph,
     inspect_component,
     trace_control_mechanism,
     vehicle_systems_runtime_identity,
@@ -201,30 +202,45 @@ def get_run_intelligence(
     del refresh
     try:
         bundle = build_run_intelligence(run_id, session_id=session_id)
+        try:
+            vehicle_systems = _vehicle_systems_projection(bundle.report)
+        except ValueError:
+            # P26 is a read-only supplement. Its exact-build fail-closed state
+            # must not erase the canonical P19 report or create authority.
+            vehicle_systems = None
         return to_public_intelligence_report(
             bundle.report,
             narrative_entries=bundle.narrative_entries,
             calibration=bundle.calibration,
             driver_profile=bundle.driver_profile,
+            vehicle_systems=vehicle_systems,
         )
     except ValueError as exc:
         raise _http_error(exc) from exc
 
 
+def _vehicle_systems_projection(
+    report: InternalIntelligenceReport,
+) -> VehicleSystemsProjection:
+    overview = RaceLabRepository().get_overview(report.run_id)
+    return build_component_awareness(
+        report,
+        setup_snapshot=overview.setup_snapshot if overview is not None else None,
+        runtime_identity=vehicle_systems_runtime_identity(report.run_id),
+    )
+
+
 @router.get("/{run_id}/vehicle-systems", response_model=VehicleSystemsProjection)
-def get_run_vehicle_systems(run_id: str, session_id: str | None = None) -> VehicleSystemsProjection:
+def get_run_vehicle_systems(
+    run_id: str,
+    session_id: str | None = None,
+    refresh: Annotated[str | None, Query(max_length=1024)] = None,
+) -> VehicleSystemsProjection:
     """Return component cognition as a read-only projection of P19/P20 truth."""
+    del refresh
     try:
         bundle = build_run_intelligence(run_id, session_id=session_id)
-        overview = RaceLabRepository().get_overview(run_id)
-        runtime_identity = vehicle_systems_runtime_identity(run_id)
-        projection = build_component_awareness(
-            bundle.report,
-            setup_snapshot=overview.setup_snapshot if overview is not None else None,
-            car_path=overview.session.car_path if overview is not None else None,
-            runtime_identity=runtime_identity,
-        )
-        return projection
+        return _vehicle_systems_projection(bundle.report)
     except ValueError as exc:
         raise _http_error(exc) from exc
 
@@ -234,19 +250,13 @@ def get_run_vehicle_component(
     run_id: str,
     component_id: str,
     session_id: str | None = None,
+    refresh: Annotated[str | None, Query(max_length=1024)] = None,
 ) -> ComponentInspectionResponse:
     """Inspect one sourced component, its interactions, and exact-run state."""
+    del refresh
     try:
         bundle = build_run_intelligence(run_id, session_id=session_id)
-        overview = RaceLabRepository().get_overview(run_id)
-        runtime_identity = vehicle_systems_runtime_identity(run_id)
-        projection = build_component_awareness(
-            bundle.report,
-            setup_snapshot=overview.setup_snapshot if overview is not None else None,
-            car_path=overview.session.car_path if overview is not None else None,
-            runtime_identity=runtime_identity,
-        )
-        return inspect_component(component_id, projection)
+        return inspect_component(component_id, _vehicle_systems_projection(bundle.report))
     except ValueError as exc:
         raise _http_error(exc) from exc
 
@@ -258,11 +268,21 @@ def get_vehicle_control_trace(run_id: str, control_key: str) -> ControlMechanism
         if RaceLabRepository().get_overview(run_id) is None:
             raise ValueError(f"Run not found: {run_id}")
         runtime_identity = vehicle_systems_runtime_identity(run_id)
+        graph = compile_vehicle_systems_graph()
+        edges = trace_control_mechanism(control_key)
+        trace_node_ids = {
+            node_id
+            for edge in edges
+            for node_id in (edge.source_node_id, edge.target_node_id)
+        }
         return ControlMechanismTraceResponse(
             run_id=run_id,
             control_key=control_key,
+            graph_version=graph.graph_version,
+            graph_content_sha256=graph.content_sha256,
             runtime_identity=runtime_identity,
-            edges=trace_control_mechanism(control_key),
+            nodes=tuple(node for node in graph.nodes if node.node_id in trace_node_ids),
+            edges=edges,
         )
     except ValueError as exc:
         raise _http_error(exc) from exc
@@ -415,25 +435,31 @@ def query_run_intelligence(
         )
     selected_window = request.selected_window_start_lap is not None
     track_region_context = _TrackRegionContext()
-    result = answer_grounded_query(
-        request.question,
-        bundle.report,
-        selected_lap_number=None if selected_window else request.selected_lap,
-        selected_window_start_lap=request.selected_window_start_lap,
-        selected_window_end_lap=request.selected_window_end_lap,
-        selected_window_representative_lap=(
-            request.selected_window_representative_lap
-        ),
-        track_region_resolver=track_region_context.locate,
-        track_region_catalog=lambda: track_region_context.catalog(run_id),
-        vehicle_car_path=overview.session.car_path if overview is not None else None,
-        vehicle_setup_snapshot=overview.setup_snapshot if overview is not None else None,
-        vehicle_runtime_identity_factory=(
-            (lambda: vehicle_systems_runtime_identity(run_id))
-            if overview is not None
-            else None
-        ),
-    )
+    try:
+        result = answer_grounded_query(
+            request.question,
+            bundle.report,
+            selected_lap_number=None if selected_window else request.selected_lap,
+            selected_window_start_lap=request.selected_window_start_lap,
+            selected_window_end_lap=request.selected_window_end_lap,
+            selected_window_representative_lap=(
+                request.selected_window_representative_lap
+            ),
+            track_region_resolver=track_region_context.locate,
+            track_region_catalog=lambda: track_region_context.catalog(run_id),
+            vehicle_setup_snapshot=(
+                overview.setup_snapshot if overview is not None else None
+            ),
+            vehicle_runtime_identity_factory=(
+                (lambda: vehicle_systems_runtime_identity(run_id))
+                if overview is not None
+                else None
+            ),
+            vehicle_history_scope_run_ids=tuple(bundle.calibration.scope_run_ids),
+            presentation_mode=request.presentation_mode or "learning",
+        )
+    except ValueError as exc:
+        raise _http_error(exc) from exc
     if request.presentation_mode is not None:
         digest = hashlib.sha256(
             (
@@ -444,7 +470,7 @@ def query_run_intelligence(
                 f"{request.selected_window_representative_lap or ''}|"
                 f"{request.presentation_mode}|"
                 f"{' '.join(request.question.casefold().split())}"
-            ).encode("utf-8")
+            ).encode()
         ).hexdigest()[:24]
         try:
             record_driver_presentation_preference_for_run(
@@ -536,6 +562,7 @@ def query_run_intelligence(
         ),
         interpreted_phase=result.interpreted_phase,
         interpreted_control_key=result.interpreted_control_key,
+        interpreted_component_id=result.interpreted_component_id,
         interpreted_track_region_id=getattr(result, "interpreted_track_region_id", None),
         interpreted_track_region_label=getattr(result, "interpreted_track_region_label", None),
         clarification_required=result.clarification_required,
@@ -562,8 +589,10 @@ def query_run_intelligence(
             ),
             *(
                 (
-                    "The query action did not exactly match the current controlled-test "
-                    "instruction and source evidence.",
+                    (
+                        "The query action did not exactly match the current controlled-test "
+                        "instruction and source evidence."
+                    ),
                 )
                 if action_binding_withheld
                 else ()

@@ -1,4 +1,5 @@
 import type { EvidenceState } from "./telemetry";
+import type { VehicleSystemComponentId, VehicleSystemsProjection } from "./vehicleSystems";
 import type { Workspace } from "../store/types";
 
 export type IntelligenceStatus = "ready" | "unavailable";
@@ -630,6 +631,7 @@ export type RunIntelligenceReport = {
   measurement_debt?: IntelligenceMeasurementDebt | null;
   attention_items?: IntelligenceAttentionItem[];
   telemetry_health?: IntelligenceTelemetryHealthReport | null;
+  vehicle_systems?: VehicleSystemsProjection | null;
   mission_stage?: "qualify" | "diagnose" | "measure" | "test" | "compare" | "decide" | "certified" | null;
 };
 
@@ -659,6 +661,7 @@ export type IntelligenceQueryResponse = {
   interpreted_window_representative_lap?: number | null;
   interpreted_phase?: "braking" | "entry" | "center" | "exit" | "straight" | null;
   interpreted_control_key?: string | null;
+  interpreted_component_id?: VehicleSystemComponentId | null;
   interpreted_track_region_id?: string | null;
   interpreted_track_region_label?: string | null;
   clarification_required?: boolean;

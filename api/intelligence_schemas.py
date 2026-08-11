@@ -23,6 +23,7 @@ from racelab_engine.models.smart_guidance import (
     NextTrustworthyMove,
 )
 from racelab_engine.models.telemetry_health import TelemetryHealthBaselineReport
+from racelab_engine.models.vehicle_systems import VehicleSystemsProjection
 
 WITHHELD_STAGE_B_PREFLIGHT_TITLE = "Controlled workflow needs review"
 WITHHELD_STAGE_B_PREFLIGHT_BLOCKER = (
@@ -347,12 +348,27 @@ class RunIntelligenceResponse(IntelligenceApiModel):
     anomalies: SameSetupAnomalyReport | None = None
     driver_focus: DriverRepeatabilitySignature | None = None
     telemetry_health: TelemetryHealthBaselineReport | None = None
+    vehicle_systems: VehicleSystemsProjection | None = None
 
     @model_validator(mode="after")
     def mind_change_criteria_match_report_scope(self) -> RunIntelligenceResponse:
         if self.status != "ready" and self.decision_status == "ready":
             raise ValueError("an unavailable report cannot publish a ready decision")
         action = self.briefing.action
+        if self.vehicle_systems is not None:
+            if (
+                self.vehicle_systems.run_id != self.run_id
+                or self.vehicle_systems.session_id != self.session_id
+                or self.vehicle_systems.setup_authorized != action.setup_authorized
+            ):
+                raise ValueError("vehicle-system projection must match report scope and authority")
+            authorized_controls = {
+                state.authorized_control_key
+                for state in self.vehicle_systems.component_states
+                if state.setup_authorized
+            }
+            if action.setup_authorized and authorized_controls != {action.control_key}:
+                raise ValueError("vehicle-system projection must mirror the exact P19 control")
         action_event_ids = set(action.source_event_ids)
         qualified_states = {
             EvidenceState.MEASURED,
@@ -488,8 +504,10 @@ class RunIntelligenceResponse(IntelligenceApiModel):
                 )
         move = self.next_trustworthy_move
         preflight = self.test_preflight
-        if move is not None and move.authority == "setup_authorized":
-            if (
+        if (
+            move is not None
+            and move.authority == "setup_authorized"
+            and (
                 not action.setup_authorized
                 or move.run_id != self.run_id
                 or move.instruction != action.instruction
@@ -499,10 +517,11 @@ class RunIntelligenceResponse(IntelligenceApiModel):
                 or preflight is None
                 or preflight.status != "ready"
                 or preflight.workflow_id != move.workflow_id
-            ):
-                raise ValueError(
-                    "setup-authorized guidance must match the exact current action and workflow"
-                )
+            )
+        ):
+            raise ValueError(
+                "setup-authorized guidance must match the exact current action and workflow"
+            )
         workflow_bound = bool(
             preflight is not None
             or (
@@ -657,6 +676,9 @@ class IntelligenceQueryResponse(IntelligenceApiModel):
     interpreted_window_representative_lap: int | None = Field(default=None, ge=1)
     interpreted_phase: Literal["braking", "entry", "center", "exit", "straight"] | None = None
     interpreted_control_key: str | None = None
+    interpreted_component_id: str | None = Field(
+        default=None, min_length=1, max_length=120
+    )
     interpreted_track_region_id: str | None = None
     interpreted_track_region_label: str | None = None
     clarification_required: bool = False
@@ -675,6 +697,10 @@ class IntelligenceQueryResponse(IntelligenceApiModel):
     def query_scope_and_authority_require_exact_citations(
         self,
     ) -> IntelligenceQueryResponse:
+        if self.interpreted_component_id is not None and (
+            self.interpreted_component_id.strip() != self.interpreted_component_id
+        ):
+            raise ValueError("interpreted component identity must be canonical")
         if (self.interpreted_track_region_id is None) != (
             self.interpreted_track_region_label is None
         ):
@@ -853,11 +879,11 @@ class IntelligenceQueryResponse(IntelligenceApiModel):
 
 
 __all__ = [
+    "IntelligenceMindChangeCriterionResponse",
+    "IntelligenceNavigationResponse",
     "IntelligenceQueryRequest",
     "IntelligenceQueryResponse",
     "MeasurementAttemptRequest",
     "MeasurementAttemptResponse",
-    "IntelligenceNavigationResponse",
-    "IntelligenceMindChangeCriterionResponse",
     "RunIntelligenceResponse",
 ]

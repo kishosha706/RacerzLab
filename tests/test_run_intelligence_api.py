@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,10 +25,10 @@ from api.intelligence_schemas import (
 )
 from api.main import app
 from api.routes_intelligence import (
-    _TrackRegionContext,
     _citation_track_locations,
     _query_action_matches_current_report,
     _region_aware_query_answer,
+    _TrackRegionContext,
 )
 from racelab_engine.analysis.crew_chief_packet import (
     KaizenEvidencePacket,
@@ -1068,6 +1068,7 @@ def test_intelligence_api_exposes_only_grounded_intent_fields(
             interpreted_window_representative_lap=None,
             interpreted_phase=None,
             interpreted_control_key=None,
+            interpreted_component_id=None,
             clarification_required=False,
             action_authorized=False,
             action_source_event_ids=(),
@@ -1095,6 +1096,7 @@ def test_intelligence_api_exposes_only_grounded_intent_fields(
             interpreted_window_representative_lap=None,
             interpreted_phase=None,
             interpreted_control_key=None,
+            interpreted_component_id=None,
             clarification_required=False,
             action_authorized=False,
             action_source_event_ids=(),
@@ -1148,6 +1150,77 @@ def test_intelligence_api_exposes_only_grounded_intent_fields(
     outside_payload = outside_navigation_query.json()
     assert outside_payload["suggested_navigation"] == []
     assert "outside the open run/session scope was withheld" in outside_payload["answer"]
+
+
+def test_query_api_projects_interpreted_component_identity_without_setup_authority(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "racelab.sqlite"
+    _seed_untrusted_run(db_path)
+    bundle = build_run_intelligence("smart-run", db_path=db_path)
+    monkeypatch.setattr(
+        "api.routes_intelligence.build_run_intelligence",
+        lambda run_id, session_id=None: bundle,
+    )
+    monkeypatch.setattr(
+        RaceLabRepository,
+        "get_overview",
+        lambda self, run_id: None,
+    )
+    monkeypatch.setattr(
+        "api.routes_intelligence.answer_grounded_query",
+        lambda *args, **kwargs: GroundedQueryResult(
+            supported=True,
+            intent="component_awareness",
+            answer="Springs are measurement-only in this scope.",
+            citations=(),
+            suggested_navigation=(),
+            interpreted_component_id="springs",
+        ),
+    )
+
+    response = client.post(
+        "/api/runs/smart-run/intelligence/query",
+        json={"question": "What is the RF spring doing?"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["interpreted_component_id"] == "springs"
+    assert payload["action_authorized"] is False
+
+
+def test_query_api_maps_post_build_grounding_failure_to_conflict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "racelab.sqlite"
+    _seed_untrusted_run(db_path)
+    bundle = build_run_intelligence("smart-run", db_path=db_path)
+    monkeypatch.setattr(
+        "api.routes_intelligence.build_run_intelligence",
+        lambda run_id, session_id=None: bundle,
+    )
+    monkeypatch.setattr(
+        RaceLabRepository,
+        "get_overview",
+        lambda self, run_id: None,
+    )
+    monkeypatch.setattr(
+        "api.routes_intelligence.answer_grounded_query",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            ValueError("Component awareness requires verified telemetry artifact identity.")
+        ),
+    )
+
+    response = client.post(
+        "/api/runs/smart-run/intelligence/query",
+        json={"question": "What is the RF spring doing?"},
+    )
+
+    assert response.status_code == 409
+    assert "verified telemetry artifact identity" in response.json()["detail"]
 
 
 def test_text_only_lap_window_query_fails_closed_without_response_validation_error(
@@ -1238,7 +1311,7 @@ def test_historical_event_reference_cannot_bind_a_current_run_id_collision() -> 
     )
     entry = EngineeringNarrativeEntry(
         entry_id="old-narrative",
-        created_at=datetime(2026, 8, 8, tzinfo=timezone.utc),
+        created_at=datetime(2026, 8, 8, tzinfo=UTC),
         scope_id="old-scope",
         entry_type="outcome",
         text="Old controlled outcome.",
@@ -1263,7 +1336,7 @@ def test_historical_event_reference_cannot_bind_a_current_run_id_collision() -> 
 def test_public_memory_fallbacks_never_echo_action_like_identifiers() -> None:
     entry = EngineeringNarrativeEntry(
         entry_id="narrative-safe-fallback",
-        created_at=datetime(2026, 8, 8, tzinfo=timezone.utc),
+        created_at=datetime(2026, 8, 8, tzinfo=UTC),
         scope_id="scope",
         entry_type="outcome",
         text="Stored outcome.",
@@ -1829,7 +1902,7 @@ def test_mutated_protocol_is_rejected_against_rebuilt_server_evidence(
         "racelab_engine.services.controlled_workflow_service.build_server_kaizen_packet",
         lambda *args, **kwargs: rebuilt_packet,
     )
-    now = datetime(2026, 8, 4, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 4, tzinfo=UTC)
     workflow = ControlledWorkflow(
         workflow_id="workflow-mutated-protocol",
         created_at=now,

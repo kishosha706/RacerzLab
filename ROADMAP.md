@@ -1749,8 +1749,9 @@ that graph; it does not create another setup-authority path.
 - [x] Assemble exact-run `ComponentAwarenessState` from P20 producer artifacts
   and P19 causes/outcomes without rereading telemetry. Generic whole-car
   observations create coupled component candidates, not proven component
-  causes; exact-context Undo policy blocks a generic prior from reopening the
-  rejected control.
+  causes; every qualified P20 observation retains its own lap/phase/window
+  scope, and exact-context Undo blocks only the rejected control while leaving
+  unrelated component controls testable.
 - [x] Expose read-only run, component-inspection, and control-trace endpoints;
   ground component questions such as “What is the RF spring doing?” through the
   same scoped Engineer query path while keeping controlled-history questions
@@ -1759,9 +1760,10 @@ that graph; it does not create another setup-authority path.
   workspaces. Race Mode shows the leading family and next discriminator;
   Learning Mode adds agreement, evidence counts, settings, interactions,
   controlled history, policy blockers, and the P19 authority boundary.
-- [x] Bind public projections and control traces to a verified telemetry-manifest
-  compatibility fingerprint, exact Next Gen car/version, current iRacing build,
-  and oval configuration; mismatched, incomplete, stale, or corrupt scope fails closed.
+- [x] Bind public projections and control traces to one persisted, verified
+  telemetry artifact with exact run/source/cache/schema ownership, compatibility
+  fingerprint, Next Gen car/version, reviewed iRacing build, and `Oval`
+  configuration; mismatched, incomplete, stale, foreign, or corrupt scope fails closed.
 - [x] Preserve typed mechanism and related-control identities through ranked-cause
   redaction. Component relevance no longer depends on matching words in prose, and
   broad whole-car mechanisms remain candidate families rather than isolated causes.
@@ -1769,30 +1771,40 @@ that graph; it does not create another setup-authority path.
   Runtime edges distinguish observed state, controlled response, and policy rejection,
   remain non-authoritative, and cannot point generic observations directly at components.
 - [x] Cache immutable knowledge compilation, require explicit mappings for all 50
-  Next Gen setup areas, type all three API responses, and make the UI reject schema,
-  identity, hash, or authority mismatches.
+  Next Gen setup areas, type all three API responses, embed the root projection in
+  the canonical intelligence response, and make the UI reject schema, identity,
+  scope, hash, applicability, or authority mismatches.
 
 ### P26 verification evidence
 
-- The compiled graph contains 12 component definitions, 24 build-scoped
-  interactions, 360 typed nodes, 666 typed edges, all 15 production setup
-  controls, and zero untyped `causes` edges.
+- The current-only `p26.vehicle-systems.v3` graph contains 12 component
+  definitions, 24 build-scoped interactions, 609 typed nodes, 843 typed edges,
+  50 engineering-area nodes, 101 control nodes, seven registered source
+  identities, a deterministic knowledge-content hash, and zero untyped `causes`
+  edges, duplicate identities, orphan edges, or cross-owned ordinary edges.
 - The real local Next Gen Atlanta run
   `stockcars-chevycamarozl12022-atlanta-2022-oval-2-37e380eb` completed the full
-  P19/P20 build and exact-identity P26 projection. Its platform observation produced four
-  candidate components—springs, dampers, anti-roll bars, and platform—with
-  current observations but no isolated mechanism claim and no setup authority.
-  Its runtime projection contained 28 closed nodes and 26 observation/history
-  edges, preserved captured spring/platform values, and matched the reasoning hash.
+  P19/P20 build and exact-identity P26 projection. The persisted artifact verified
+  exact run, source, cache, schema, car, reviewed build, and oval ownership; setup
+  capture covered tires, alignment, springs, four-corner dampers, anti-roll bars,
+  brake master cylinders, differential, platform, final drive, steering, and
+  cooling without manufacturing component causality or setup authority.
 - Hostile regressions prove manufactured component authority is rejected,
   unavailable state cannot be mixed with usable observability, one exact P19
-  control authorizes at most one component projection, a prior Undo blocks the
-  generic component prior, prose changes cannot alter typed relevance, broad mechanisms
-  stay unresolved, manifest/build mismatches fail closed, runtime edges remain closed,
-  history-query precedence remains intact, and experiment factors cannot authorize setup.
-- The complete 2,255-test collection passed: 2,250 passed and five protected skips. Changed-file
-  Ruff, TypeScript, the 2,191-module production build, OpenAPI route inspection,
-  bytecode compilation, and diff integrity passed.
+  control authorizes at most one component projection, Undo is per-control,
+  foreign or multi-scope P20 evidence cannot be relabeled, invalid history cannot
+  become exact context, prose changes cannot alter typed relevance, broad
+  mechanisms stay unresolved, runtime edges remain closed, and driver-execution
+  evidence cannot become a physical steering-component diagnosis.
+- The public contract is current-only: projection v4, runtime graph v3, and static
+  graph v3. Engineer consumes the projection already embedded in the canonical
+  intelligence response; Setup refreshes on workflow revision and exact setup
+  identity. Deep client guards reject malformed nested state, null/non-null scope
+  mismatches, stale hashes, unsupported applicability, and authority leaks.
+- The complete 2,268-test collection passed: 2,263 passed and five protected
+  skips. Changed-file Ruff, TypeScript, the 2,192-module production build,
+  executable client trust-boundary tests, OpenAPI route inspection, the real Next
+  Gen artifact regression, and diff integrity passed.
 
 ---
 
@@ -1900,3 +1912,4 @@ Implementation queue completed in this pass:
 | 2026-08-10 | Enforced one greenfield canonical map registry | The mapbase contains exactly 82 index entries, 82 JSON files, 82 map IDs, 82 SHA-256 identities, and zero duplicate track/layout keys, cache paths, or orphan files. Same-byte imports remain idempotent; a changed file with the same canonical track/layout now replaces its prior entry and safely removes only the superseded cache. Track maps now accept only current `track_map_v2`/`mt2` records with one `sha256`; the migration cleanup API, retained-source handling, legacy source variants, and redundant `source_hash`/`source_removed` fields were removed. The zero-violation real-map audit, focused map tests, changed-file Ruff, TypeScript, diff integrity, and the complete 2,238-test collection passed (2,233 passed, five protected skips) |
 | 2026-08-10 | Verified P26 Vehicle Systems Intelligence foundation | A source-backed, immutable Next Gen component graph now separates physical parts, garage controls, properties, whole-car states, observations, symptoms, outcomes, context, interactions, unavailable quantities, and one-physical-factor experiments. Runtime awareness projects only P20 observations and P19 controlled history/authority; the real Atlanta run correctly produced an unresolved platform/suspension candidate family rather than four false component causes. Grounded component questions and compact Race/Learning Setup/Engineer surfaces preserve prior Undo and exact authority. The complete 2,250-test collection passed (2,245 passed, five protected skips), plus changed-file Ruff, TypeScript, the 2,191-module production build, OpenAPI inspection, bytecode compilation, real Next Gen projection, and diff integrity |
 | 2026-08-10 | Adversarially hardened P26 end to end | Replaced prose word matching with typed cause/control identities; bound public projections to verified compatibility fingerprints and exact Next Gen car/build/oval scope; added snapshot hashes and a closed non-authoritative runtime evidence/history graph; made all Next Gen setup-area mappings explicit; cached graph compilation; typed API contracts; and made the UI reject identity, schema, hash, and authority mismatches. The real Atlanta fixture retained four candidate component families, captured settings, 28 runtime nodes, 26 runtime edges, and zero setup authority. The complete 2,255-test collection passed (2,250 passed, five protected skips), plus Ruff, TypeScript, production build, OpenAPI inspection, bytecode compilation, and diff integrity |
+| 2026-08-10 | Closed the P26 greenfield dot-to-dot contract | Removed the remaining split-version assumptions and made one current contract span verified telemetry ownership, exact Next Gen applicability, all 50 engineering areas, explicit area-to-property semantics, independently scoped P20 observations, exact P19 history and per-control Undo, grounded component questions, canonical report embedding, workflow-aware refresh, and deep client trust-boundary validation. The current graph compiles 609 nodes and 843 edges with deterministic content identity; the real Atlanta artifact verified full setup capture without causal or setup-authority overclaim. The complete 2,268-test collection passed (2,263 passed, five protected skips), plus changed-file Ruff, TypeScript, the 2,192-module production build, executable runtime guards, OpenAPI inspection, and diff integrity |

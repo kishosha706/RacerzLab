@@ -10,6 +10,8 @@ import type { RunOverview, SetupSnapshot, TelemetryEvent } from "../types/teleme
 type SetupTabProps = {
   overview: RunOverview;
   sessionId?: string | null;
+  workflowId?: string | null;
+  workflowUpdatedAt?: string | null;
   onToggleMapOverlay?: () => void;
 };
 
@@ -208,7 +210,13 @@ function CornerPanel({ label, corner, setup, glow, relevantKeys }: {
 }
 
 // ── Main ─────────────────────────────────────────────────────────
-export function SetupTab({ overview, sessionId = null, onToggleMapOverlay }: SetupTabProps) {
+export function SetupTab({
+  overview,
+  sessionId = null,
+  workflowId = null,
+  workflowUpdatedAt = null,
+  onToggleMapOverlay,
+}: SetupTabProps) {
   const setupIdentityMismatch = Boolean(
     overview.setup_snapshot && overview.setup_snapshot.run_id !== overview.run_id,
   );
@@ -544,8 +552,6 @@ export function SetupTab({ overview, sessionId = null, onToggleMapOverlay }: Set
 
   return (
     <section className="garage-board">
-      <EngineeringAwarenessPanel runId={overview.run_id} sessionId={sessionId} surface="setup" />
-      <VehicleSystemsPanel runId={overview.run_id} sessionId={sessionId} learning={learning} surface="setup" />
       {/* 1) Setup Context / Evidence Focus strip */}
       <div className="gr-topbar">
         <div className="gr-topbar-left">
@@ -645,6 +651,16 @@ export function SetupTab({ overview, sessionId = null, onToggleMapOverlay }: Set
           )}
         </div>
       </section>
+
+      <EngineeringAwarenessPanel runId={overview.run_id} sessionId={sessionId} surface="setup" />
+      <VehicleSystemsPanel
+        runId={overview.run_id}
+        sessionId={sessionId}
+        learning={learning}
+        surface="setup"
+        refreshKey={`${workflowId ?? "no-workflow"}:${workflowUpdatedAt ?? "no-revision"}`}
+        expectedSetupId={setup.setup_id}
+      />
 
       <section
         className="workspace-section setup-driver-snapshot"

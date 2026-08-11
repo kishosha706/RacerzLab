@@ -14,13 +14,16 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from racelab_engine.analysis.lap_eligibility import lap_ineligibility_reasons, lap_is_eligible
 from racelab_engine.analysis.calculated_channels import (
     CALCULATED_CHANNEL_UNITS,
     CORE_REQUIRED_CHANNELS,
     HIGH_VALUE_RAW_CHANNELS,
+)
+from racelab_engine.analysis.lap_eligibility import (
+    lap_ineligibility_reasons,
+    lap_is_eligible,
 )
 from racelab_engine.analysis.setup_controls import (
     SETUP_CONTROL_SPECS,
@@ -44,8 +47,8 @@ from racelab_engine.models.intelligence import (
     CapabilityAssessment,
     CauseDiscriminator,
     CauseHypothesis,
-    ControlResponseOutcome,
     ControlledOutcomeAssessment,
+    ControlResponseOutcome,
     DataQualityAssessment,
     EvidenceCitation,
     EvidenceEdge,
@@ -64,14 +67,21 @@ from racelab_engine.models.intelligence import (
     MechanismClaimOutcome,
     MindChangeCriterion,
     NavigationTarget,
-    PublicCompetingCause,
     PolicyAcceptabilityOutcome,
+    PublicCompetingCause,
     RankedCause,
     ReasoningAuthorityEnvelope,
     ReasoningSnapshot,
     ResponseMemorySummary,
     SetupEvidenceValue,
 )
+from racelab_engine.models.lap import LapSummary
+from racelab_engine.models.lap_engineering_context import LapEngineeringContextReport
+from racelab_engine.models.observation_intelligence import (
+    MechanismObservation,
+    ObservationCitation,
+)
+from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.models.smart_guidance import (
     MeasurementBlocker,
     MeasurementCandidate,
@@ -80,18 +90,10 @@ from racelab_engine.models.smart_guidance import (
     MeasurementSelectionAudit,
     measurement_priority_rank,
 )
-from racelab_engine.models.observation_intelligence import (
-    MechanismObservation,
-    ObservationCitation,
-)
-from racelab_engine.models.lap import LapSummary
-from racelab_engine.models.lap_engineering_context import LapEngineeringContextReport
-from racelab_engine.models.recommendation import Recommendation
 from racelab_engine.services.setup_learning_service import (
     SetupResponseContext,
     get_setup_response_graph,
 )
-
 
 _QUALIFIED_STATES = frozenset(
     {
@@ -948,7 +950,7 @@ def build_evidence_graph(
                 repository_authority_verified = (
                     setup_authority_verifier(value) is True
                 )
-            except Exception:  # pragma: no cover - injected boundary must fail closed
+            except Exception:  # noqa: BLE001  # pragma: no cover - fail-closed injected boundary
                 repository_authority_verified = False
         repository_authority_resolved = bool(
             value.authorization_basis == "repository_revalidated_legal_option"
@@ -3125,8 +3127,10 @@ def summarize_response_memory(
             direction_sign=direction,
             qualified_observation_count=0,
             mismatches=(
-                f"Response graph context {graph_context_key or 'missing'} does not match "
-                f"current context {context_key}.",
+                (
+                    f"Response graph context {graph_context_key or 'missing'} does not match "
+                    f"current context {context_key}."
+                ),
             ),
             blocker_reasons=("Do not transfer controlled effects across context keys.",),
         )
@@ -4442,9 +4446,11 @@ def _query_intent(normalized: str) -> str | None:
     rules = (
         (
             "what_evidence",
-            r"^(?:(?:turn|corner|t)\s*[1-9]\d*|front\s*stretch|frontstretch|"
-            r"back\s*stretch|backstretch|connector\s*[1-9]\d*)"
-            r"(?:\s+(?:entry|center|centre|exit))?$",
+            (
+                r"^(?:(?:turn|corner|t)\s*[1-9]\d*|front\s*stretch|frontstretch|"
+                r"back\s*stretch|backstretch|connector\s*[1-9]\d*)"
+                r"(?:\s+(?:entry|center|centre|exit))?$"
+            ),
         ),
         ("what_changed", r"\b(what changed|improved|regressed|different since)\b"),
         ("how_repeatable", r"\b(repeatable|repeatability)\b.*\b(loss|opportunity|window)\b"),
@@ -4460,12 +4466,14 @@ def _query_intent(normalized: str) -> str | None:
         ),
         (
             "component_awareness",
-            r"\b(tire|pressure|camber|caster|toe|spring|damper|shock|arb|anti roll|"
-            r"crossweight|cross weight|ride height|platform|brake|differential|diff|"
-            r"final drive|rear end ratio|steering|cooling|tape)\b.*"
-            r"\b(doing|role|function|involved|component|interact|observable|know)\b|"
-            r"\b(what|how|why)\b.*\b(tire|spring|damper|shock|arb|anti roll|crossweight|"
-            r"cross weight|ride height|brake|differential|diff|final drive|steering)\b",
+            (
+                r"\b(tire|pressure|camber|caster|toe|spring|damper|shock|arb|anti roll|"
+                r"crossweight|cross weight|ride height|platform|brake|differential|diff|"
+                r"final drive|rear end ratio|steering|cooling|tape)\b.*"
+                r"\b(doing|role|function|involved|component|interact|observable|know)\b|"
+                r"\b(what|how|why)\b.*\b(tire|spring|damper|shock|arb|anti roll|crossweight|"
+                r"cross weight|ride height|brake|differential|diff|final drive|steering)\b"
+            ),
         ),
         ("how_reliable", r"\b(reliable|reliability|track record|calibrat)"),
         ("what_would_change_mind", r"\b(change (your|the) mind|disprove|contradict)\b"),
@@ -4473,8 +4481,11 @@ def _query_intent(normalized: str) -> str | None:
         ("where_is_loss", r"\b(where|location|part of (the )?lap)\b.*\b(loss|slow|time)\b"),
         (
             "what_evidence",
-            r"\b(what happened|show me|inspect)\b.*"
-            r"(?:\b(turn|corner|stretch|frontstretch|backstretch|connector)\b|\bt\s*[1-9]\d*\b)",
+            (
+                r"\b(what happened|show me|inspect)\b.*"
+                r"(?:\b(turn|corner|stretch|frontstretch|backstretch|connector)\b|"
+                r"\bt\s*[1-9]\d*\b)"
+            ),
         ),
         ("what_evidence", r"\b(evidence|support|proof|citation)\b"),
         ("why_this_call", r"\bwhy\b.*\b(call|recommend|decision|cause|think)\b"),
@@ -4671,9 +4682,10 @@ def answer_grounded_query(
     selected_window_representative_lap: int | None = None,
     track_region_resolver: Callable[[str, float], Mapping[str, Any] | None] | None = None,
     track_region_catalog: Mapping[str, str] | Callable[[], Mapping[str, str]] | None = None,
-    vehicle_car_path: str | None = None,
     vehicle_setup_snapshot: Any | None = None,
     vehicle_runtime_identity_factory: Callable[[], Any] | None = None,
+    vehicle_history_scope_run_ids: Sequence[str] | None = None,
+    presentation_mode: Literal["race", "learning"] = "learning",
 ) -> GroundedQueryResult:
     """Answer supported intent and scope combinations using report evidence only."""
     normalized = _normalize_query(query)
@@ -4883,6 +4895,7 @@ def answer_grounded_query(
             ),
             interpreted_phase=parsed.phase,
             interpreted_control_key=parsed.control_key,
+            interpreted_component_id=parsed.component_id,
             interpreted_track_region_id=parsed.track_region_id,
             interpreted_track_region_label=parsed.track_region_label,
             clarification_required=clarification is not None,
@@ -5162,15 +5175,14 @@ def answer_grounded_query(
         )
 
         assert parsed.component_id is not None
+        if vehicle_runtime_identity_factory is None:
+            raise ValueError(
+                "Component awareness requires verified telemetry artifact identity."
+            )
         component_projection = build_component_awareness(
             report,
-            car_path=vehicle_car_path,
             setup_snapshot=vehicle_setup_snapshot,
-            runtime_identity=(
-                vehicle_runtime_identity_factory()
-                if vehicle_runtime_identity_factory is not None
-                else None
-            ),
+            runtime_identity=vehicle_runtime_identity_factory(),
         )
         inspected = inspect_component(parsed.component_id, component_projection)
         definition = inspected.definition
@@ -5179,6 +5191,9 @@ def answer_grounded_query(
         assert component_state is not None
         artifact_ids = set(component_state.supporting_artifact_ids)
         component_citations: list[EvidenceCitation] = []
+        scoped_observation_ids: set[str] = set()
+        scoped_supporting_citation_ids: set[str] = set()
+        scoped_contradicting_citation_ids: set[str] = set()
         for observation in (
             report.mechanism_observations.observations
             if report.mechanism_observations is not None
@@ -5195,53 +5210,165 @@ def answer_grounded_query(
                 )
                 if in_query_scope(citation):
                     component_citations.append(citation)
+                    scoped_observation_ids.add(observation.artifact_id)
+        relevant_cause_ids = {
+            *component_state.supporting_cause_ids,
+            *component_state.contradicting_cause_ids,
+        }
+        for cause in report.reasoning_snapshot.causes:
+            if cause.cause_id not in relevant_cause_ids:
+                continue
+            for citation in cause.supporting_evidence:
+                if in_query_scope(citation):
+                    component_citations.append(citation)
+                    scoped_supporting_citation_ids.add(citation.citation_id)
+            for citation in cause.contradicting_evidence:
+                if in_query_scope(citation):
+                    component_citations.append(citation)
+                    scoped_contradicting_citation_ids.add(citation.citation_id)
+        scoped_histories: list[Any] = []
+        allowed_history_runs = set(vehicle_history_scope_run_ids or (report.run_id,))
         for history in component_state.controlled_history:
-            component_citations.append(EvidenceCitation(
+            if not history.exact_context or history.source_run_id not in allowed_history_runs:
+                continue
+            history_phase = _typed_phase(history.phase)
+            eligible_laps: set[tuple[str, int]] = set()
+            for lap_id in history.eligible_lap_ids:
+                history_run_id, separator, lap_text = lap_id.rpartition(":")
+                if separator and lap_text.isdigit():
+                    eligible_laps.add((history_run_id, int(lap_text)))
+            citation_lap: int | None = None
+            if (
+                history.source_run_id != report.run_id
+                and (
+                    effective_lap_number is not None
+                    or effective_window_start_lap is not None
+                )
+            ):
+                continue
+            if effective_lap_number is not None:
+                if (report.run_id, effective_lap_number) not in eligible_laps:
+                    continue
+                citation_lap = effective_lap_number
+            elif (
+                effective_window_start_lap is not None
+                and effective_window_end_lap is not None
+            ):
+                matching_laps = sorted(
+                    lap_number
+                    for history_run_id, lap_number in eligible_laps
+                    if history_run_id == report.run_id
+                    and effective_window_start_lap <= lap_number <= effective_window_end_lap
+                )
+                if not matching_laps:
+                    continue
+                citation_lap = (
+                    selected_window_representative_lap
+                    if selected_window_representative_lap in matching_laps
+                    else matching_laps[0]
+                )
+            if parsed.phase is not None and history_phase != parsed.phase:
+                continue
+            if parsed.control_key is not None and history.control_key != parsed.control_key:
+                continue
+            history_citation = EvidenceCitation(
                 citation_id=f"component-history:{history.workflow_id}:{history.control_key}",
-                run_id=report.run_id,
+                run_id=history.source_run_id,
                 workspace="dial_in",
                 channels=(),
                 evidence_state=EvidenceState.CONTROLLED_TEST_EFFECT,
                 valid_for_tuning=False,
+                lap_number=citation_lap,
                 summary=(
                     f"Exact controlled response was {history.control_response}; "
                     f"policy verdict {history.policy_verdict}."
                 ),
-            ))
+                phase=history_phase,
+            )
+            component_citations.append(history_citation)
+            scoped_histories.append(history)
         citations = tuple(dict.fromkeys(component_citations))
+        scope_parts: list[str] = []
+        if (
+            effective_window_start_lap is not None
+            and effective_window_end_lap is not None
+        ):
+            scope_parts.append(
+                f"laps {effective_window_start_lap}-{effective_window_end_lap}"
+            )
+        elif effective_lap_number is not None:
+            scope_parts.append(f"lap {effective_lap_number}")
+        if parsed.phase is not None:
+            scope_parts.append(parsed.phase)
+        scope_label = ", ".join(scope_parts) or "full qualified run"
+        scoped_evidence_count = (
+            len(scoped_observation_ids)
+            + len(scoped_supporting_citation_ids)
+            + len(scoped_contradicting_citation_ids)
+        )
         current_evidence = (
-            f"Current response: {component_state.relevance.value.replace('_', ' ')} from "
-            f"{len(component_state.supporting_artifact_ids)} supporting and "
-            f"{len(component_state.contradicting_artifact_ids)} contradicting artifacts."
-            if component_state.current_response_state == "observed"
-            else "Current response: unavailable; no qualified exact-scope observation activates the general definition."
+            f"Evidence in {scope_label}: {len(scoped_observation_ids)} qualified observation "
+            f"artifact{'s' if len(scoped_observation_ids) != 1 else ''}, "
+            f"{len(scoped_supporting_citation_ids)} supporting reasoning citation"
+            f"{'s' if len(scoped_supporting_citation_ids) != 1 else ''}, and "
+            f"{len(scoped_contradicting_citation_ids)} contradiction"
+            f"{'s' if len(scoped_contradicting_citation_ids) != 1 else ''}."
+            if scoped_evidence_count
+            else (
+                f"Evidence in {scope_label}: unavailable; no qualified evidence matches "
+                "this exact query scope."
+            )
         )
         settings_text = (
-            f"Captured setting: {'; '.join(component_state.current_settings)}."
+            f"Run setup snapshot: {'; '.join(component_state.current_settings)}."
             if component_state.current_settings
-            else "Captured setting: unavailable in this run."
+            else "Run setup snapshot: unavailable."
         )
         history_text = (
             " ".join(
-                f"History: {item.control_key} response {item.control_response}, policy {item.policy_verdict}."
-                for item in component_state.controlled_history
+                f"History from {item.source_run_id}: {item.control_key} response "
+                f"{item.control_response}, policy {item.policy_verdict}."
+                for item in scoped_histories
             )
-            or "History: no exact-context controlled component result is available."
+            or (
+                "History: controlled results have no lap identity, so none are admitted "
+                "to this lap scope."
+                if effective_lap_number is not None
+                or effective_window_start_lap is not None
+                else "History: no exact-context controlled result matches this query scope."
+            )
         )
-        interaction_labels = ", ".join(
-            sorted({
+        interaction_summaries: list[str] = []
+        for item in interactions:
+            coupled_component_id = (
                 item.target_component_id
                 if item.source_component_id == parsed.component_id
                 else item.source_component_id
-                for item in interactions
-            })
-        ) or "none declared"
-        answer = (
-            f"{definition.label}: {definition.physical_role} {settings_text} {current_evidence} "
-            f"Interactions: {interaction_labels}. {history_text} "
-            f"Current authority: {component_state.current_testability.replace('_', ' ')}. "
-            f"Next discriminator: {component_projection.next_discriminator}"
+            )
+            interaction_summaries.append(
+                f"{item.interaction_type.replace('_', ' ')} with "
+                f"{coupled_component_id}: {item.description}"
+            )
+        interaction_text = (
+            " ".join(interaction_summaries)
+            or "No interaction contract is declared."
         )
+        unavailable_text = ", ".join(definition.observability.unavailable_quantities)
+        if presentation_mode == "race":
+            answer = (
+                f"{definition.label}: {component_state.relevance.value.replace('_', ' ')}. "
+                f"Next: {component_state.next_discriminator} "
+                "Read-only; P19 decides setup."
+            )
+        else:
+            answer = (
+                f"{definition.label}: {definition.physical_role} {settings_text} {current_evidence} "
+                f"General interactions: {interaction_text} {history_text} "
+                f"Not directly measured: {unavailable_text}. "
+                f"Current authority: {component_state.current_testability.replace('_', ' ')}. "
+                "This component answer does not create setup authority. "
+                f"Component discriminator: {component_state.next_discriminator}"
+            )
         blockers = tuple(component_state.blocker_reasons)
     elif intent == "how_repeatable":
         opportunity = report.opportunity_signature
@@ -5274,14 +5401,14 @@ def answer_grounded_query(
             ):
                 scoped_signatures.append((signature, scoped_citations))
         if scoped_signatures:
-            strongest, citations = sorted(
+            strongest, citations = min(
                 scoped_signatures,
                 key=lambda item: (
                     -item[0].median_opportunity_s,
                     -item[0].repetition_count,
                     item[0].signature_id,
                 ),
-            )[0]
+            )
             answer = (
                 f"The strongest same-setup opportunity repeats on {strongest.repetition_count} "
                 f"of {strongest.eligible_lap_count} eligible laps near "
@@ -5294,8 +5421,10 @@ def answer_grounded_query(
             answer = "No sustained same-setup opportunity signature is qualified in this scope."
             blockers = (
                 (
-                    "Every citation behind an aggregate repeatability claim must belong to "
-                    "the requested lap scope.",
+                    (
+                        "Every citation behind an aggregate repeatability claim must belong to "
+                        "the requested lap scope."
+                    ),
                 )
                 if signatures
                 else tuple(opportunity.blocker_reasons)
@@ -5334,8 +5463,10 @@ def answer_grounded_query(
                 answer = "No driver-input coaching focus is fully grounded in this lap scope."
                 citations = ()
                 blockers = (
-                    "Every citation behind aggregate driver coaching must belong to the "
-                    "requested lap scope.",
+                    (
+                        "Every citation behind aggregate driver coaching must belong to the "
+                        "requested lap scope."
+                    ),
                 )
         else:
             answer = "No driver-input coaching focus is qualified in this scope."
@@ -5375,10 +5506,10 @@ def answer_grounded_query(
             ):
                 scoped_anomalies.append((anomaly, scoped_citations))
         if scoped_anomalies:
-            anomaly, citations = sorted(
+            anomaly, citations = min(
                 scoped_anomalies,
                 key=lambda item: (-item[0].aligned_bin_count, item[0].anomaly_id),
-            )[0]
+            )
             answer = (
                 f"A sustained {anomaly.channel} cluster is {anomaly.direction.replace('_', ' ')} "
                 f"its same-setup robust envelope on lap {anomaly.lap_number} near "
@@ -5430,7 +5561,7 @@ def answer_grounded_query(
             ):
                 scoped_observations.append((observation, scoped_citations))
         if scoped_observations:
-            strongest, citations = sorted(
+            strongest, citations = min(
                 scoped_observations,
                 key=lambda item: (
                     -len(item[0].supporting_evidence),
@@ -5438,7 +5569,7 @@ def answer_grounded_query(
                     -item[0].repetition_count,
                     item[0].observation_id,
                 ),
-            )[0]
+            )
             answer = (
                 f"The strongest typed observation is {strongest.mechanism.value.replace('_', ' ')}: "
                 f"{strongest.summary} It has {len(strongest.supporting_evidence)} supporting and "
@@ -5449,8 +5580,10 @@ def answer_grounded_query(
             answer = "No typed mechanism observation is qualified in this scope."
             blockers = (
                 (
-                    "Every citation behind an aggregate mechanism observation must belong "
-                    "to the requested evidence scope.",
+                    (
+                        "Every citation behind an aggregate mechanism observation must belong "
+                        "to the requested evidence scope."
+                    ),
                 )
                 if qualified
                 else tuple(mechanism_report.blocker_reasons)
@@ -5811,8 +5944,10 @@ def answer_grounded_query(
         ):
             query_context_matches = ()
             query_context_blockers = (
-                "Exact-context response memory has no lap-window or driving-phase provenance; "
-                "remove that scope or inspect a current-run telemetry answer.",
+                (
+                    "Exact-context response memory has no lap-window or driving-phase provenance; "
+                    "remove that scope or inspect a current-run telemetry answer."
+                ),
             )
         matches = sorted(
             (
@@ -6144,6 +6279,7 @@ def answer_grounded_query(
         ),
         interpreted_phase=parsed.phase,
         interpreted_control_key=parsed.control_key,
+        interpreted_component_id=parsed.component_id,
         interpreted_track_region_id=parsed.track_region_id,
         interpreted_track_region_label=parsed.track_region_label,
         action_authorized=action_authorized,

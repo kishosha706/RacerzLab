@@ -1639,7 +1639,15 @@ function CockpitShell() {
         />
       );
     }
-    if (ws === "setup_impact") return <SetupTab overview={overview} sessionId={currentSession?.session_id ?? null} onToggleMapOverlay={openMapOverlay} />;
+    if (ws === "setup_impact") return (
+      <SetupTab
+        overview={overview}
+        sessionId={currentSession?.session_id ?? null}
+        workflowId={currentGuidanceWorkflow?.workflow_id ?? null}
+        workflowUpdatedAt={currentGuidanceWorkflowUpdatedAt}
+        onToggleMapOverlay={openMapOverlay}
+      />
+    );
     if (ws === "dial_in") {
       return (
         <DialInTab
@@ -1671,7 +1679,7 @@ function CockpitShell() {
       );
     }
     return <OverviewTab overview={overview} sessionId={currentSession?.session_id ?? null} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={openMapOverlay} />;
-  }, [currentIntelligenceAuthority, currentIntelligenceAuthorityRecovery, currentIntelligenceAuthorityStatus, currentPlatformEvents, currentPlatformEventsLoadError, currentPlatformEventsLoadStatus, currentSession, currentTrace, currentTraceLoadError, currentTraceLoadStatus, explicitControlledWorkflowId, handleMapOverlayZoomRangeChange, openIntelligenceCitation, openMapOverlay, overview, platformEventVisibilityMode, retryPlatformEvents, retryTrace, selection.selectedLap, selection.selectedLapScope, selection.selectedLapWindowEnd, selection.selectedLapWindowStart, selection.selectedRepresentativeLap, selection.selectedWorkspace, sessionRuns, sessionRunsLoading, sessionSelectionSource]);
+  }, [currentGuidanceWorkflow?.workflow_id, currentGuidanceWorkflowUpdatedAt, currentIntelligenceAuthority, currentIntelligenceAuthorityRecovery, currentIntelligenceAuthorityStatus, currentPlatformEvents, currentPlatformEventsLoadError, currentPlatformEventsLoadStatus, currentSession, currentTrace, currentTraceLoadError, currentTraceLoadStatus, explicitControlledWorkflowId, handleMapOverlayZoomRangeChange, openIntelligenceCitation, openMapOverlay, overview, platformEventVisibilityMode, retryPlatformEvents, retryTrace, selection.selectedLap, selection.selectedLapScope, selection.selectedLapWindowEnd, selection.selectedLapWindowStart, selection.selectedRepresentativeLap, selection.selectedWorkspace, sessionRuns, sessionRunsLoading, sessionSelectionSource]);
 
   if (engineStatus === "starting") {
     return (

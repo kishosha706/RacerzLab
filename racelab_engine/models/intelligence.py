@@ -14,22 +14,21 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from racelab_engine.analysis.test_director import ControlledTestCard, MeasurementMission
 from racelab_engine.models.engineering_awareness import MechanismEpisode
 from racelab_engine.models.evidence import EvidenceState
-from racelab_engine.models.lap_engineering_context import LapEngineeringContextReport
 from racelab_engine.models.experiment import MeasurementMissionContract
-from racelab_engine.models.smart_guidance import MeasurementPriority, SmartGuidance
-from racelab_engine.models.telemetry_health import TelemetryHealthBaselineReport
-from racelab_engine.models.session_intelligence import (
-    ComparabilityDebt,
-    HypothesisLifecycle,
-    SessionEngineeringLedger,
-)
+from racelab_engine.models.lap_engineering_context import LapEngineeringContextReport
 from racelab_engine.models.observation_intelligence import (
     DriverRepeatabilitySignature,
     MechanismObservationReport,
     OpportunitySignatureReport,
     SameSetupAnomalyReport,
 )
-
+from racelab_engine.models.session_intelligence import (
+    ComparabilityDebt,
+    HypothesisLifecycle,
+    SessionEngineeringLedger,
+)
+from racelab_engine.models.smart_guidance import MeasurementPriority, SmartGuidance
+from racelab_engine.models.telemetry_health import TelemetryHealthBaselineReport
 
 _QUALIFIED_EVIDENCE_STATES = frozenset(
     {
@@ -718,8 +717,9 @@ class ResponseMemorySummary(IntelligenceModel):
 
     @model_validator(mode="after")
     def exact_matches_require_history(self) -> ResponseMemorySummary:
-        if self.status == "exact_context_match":
-            if (
+        if (
+            self.status == "exact_context_match"
+            and (
                 not self.context_key
                 or self.qualified_observation_count == 0
                 or not self.verdicts
@@ -727,10 +727,11 @@ class ResponseMemorySummary(IntelligenceModel):
                 or len(self.source_observation_ids) != self.qualified_observation_count
                 or len(self.source_run_ids) != self.qualified_observation_count * 3
                 or len(self.evidence_event_ids) < self.qualified_observation_count
-            ):
-                raise ValueError(
-                    "an exact-context match requires complete context, history, and provenance"
-                )
+            )
+        ):
+            raise ValueError(
+                "an exact-context match requires complete context, history, and provenance"
+            )
         if self.counterfactual_range is not None and self.status != "exact_context_match":
             raise ValueError("counterfactual ranges require an exact-context match")
         for values, label in (
@@ -1126,6 +1127,7 @@ class GroundedQueryResult(IntelligenceModel):
     interpreted_window_representative_lap: int | None = Field(default=None, ge=1)
     interpreted_phase: Literal["braking", "entry", "center", "exit", "straight"] | None = None
     interpreted_control_key: str | None = None
+    interpreted_component_id: str | None = None
     interpreted_track_region_id: str | None = None
     interpreted_track_region_label: str | None = None
     clarification_required: bool = False
@@ -1135,6 +1137,15 @@ class GroundedQueryResult(IntelligenceModel):
 
     @model_validator(mode="after")
     def authorized_query_actions_require_grounding(self) -> GroundedQueryResult:
+        if self.interpreted_component_id is not None and (
+            not self.interpreted_component_id
+            or self.interpreted_component_id.strip() != self.interpreted_component_id
+        ):
+            raise ValueError("interpreted component identity must be canonical")
+        if self.intent == "component_awareness" and self.interpreted_component_id is None:
+            raise ValueError(
+                "component-awareness answers require an interpreted component identity"
+            )
         if (self.interpreted_track_region_id is None) != (
             self.interpreted_track_region_label is None
         ):
@@ -1216,11 +1227,11 @@ __all__ = [
     "IntelligenceBriefing",
     "InternalIntelligenceReport",
     "LapReference",
-    "MindChangeCriterion",
     "MechanismClaimOutcome",
+    "MindChangeCriterion",
     "NavigationTarget",
-    "PublicCompetingCause",
     "PolicyAcceptabilityOutcome",
+    "PublicCompetingCause",
     "RankedCause",
     "ReasoningAuthorityEnvelope",
     "ReasoningSnapshot",
