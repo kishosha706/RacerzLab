@@ -839,6 +839,13 @@ def _observation_hypotheses(
                 "repeatable under matched fuel, tire, weather, line, and traffic context."
             ),
             mechanism_key=mechanism_key,
+            mechanism_keys=tuple(
+                item.value
+                for item in (
+                    getattr(observation, "mechanism_kinds", ())
+                    or (observation.mechanism,)
+                )
+            ),
             supporting_observation_ids=observation_ids,
             contradiction_notes=tuple(observation.contradicting_evidence),
             required_evidence=tuple(observation.required_channels),

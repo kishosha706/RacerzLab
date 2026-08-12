@@ -198,3 +198,20 @@ be restored from old docs, caches, or clients:
 - channel metadata named `used_by_recommendations`.
 
 Current strict contracts reject obsolete action-bearing input where applicable.
+
+## 12. P27-P30 Crew Chief executive
+
+The current Crew Chief is not the removed import-time recommendation producer.
+It is a revision-bound deterministic executive over the canonical P19 private
+snapshot and its P20/P26 projections. It may select an approved inspection,
+record contextual driver input, monitor eligible-lap mission progress, and
+explain the current terminal move. Exact setup values or a controlled-test
+instruction appear only as an equality-checked projection of the same current
+P19 action and workflow revision.
+
+Driver input is `complaint_prior_only`; response-atlas records are
+`controlled_history_only`; effectiveness records are operational counts. None
+may mutate P19 truth or policy. The optional language adapter is disabled
+shadow-only, and P30 adaptive experimentation remains data-locked with
+authority `none`. See `docs/crew_chief_operating_system.md` for the exact API,
+persistence, Success Contract, Run Sentinel, and UI contracts.

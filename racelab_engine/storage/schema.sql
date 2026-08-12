@@ -743,3 +743,92 @@ CREATE TABLE IF NOT EXISTS p25_null_session_run_cards (
   FOREIGN KEY(operation_id) REFERENCES evidence_campaign_operations(operation_id)
     ON DELETE RESTRICT
 );
+
+-- P27-P29 Crew Chief state is event sourced.  Workspace projections are
+-- reproducible from these immutable inputs and their exact authority hashes.
+CREATE TABLE IF NOT EXISTS crew_chief_investigations (
+  investigation_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  workspace_revision TEXT NOT NULL,
+  status TEXT NOT NULL,
+  opened_at TEXT NOT NULL,
+  investigation_json TEXT NOT NULL,
+  FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crew_chief_investigation_scope
+  ON crew_chief_investigations(run_id, session_id, opened_at, investigation_id);
+
+CREATE TABLE IF NOT EXISTS crew_chief_events (
+  event_id TEXT PRIMARY KEY,
+  investigation_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  workspace_revision TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  event_hash TEXT NOT NULL UNIQUE,
+  event_type TEXT NOT NULL,
+  event_json TEXT NOT NULL,
+  UNIQUE(investigation_id, sequence),
+  FOREIGN KEY(investigation_id) REFERENCES crew_chief_investigations(investigation_id)
+    ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crew_chief_event_fold
+  ON crew_chief_events(investigation_id, sequence, event_id);
+
+CREATE TABLE IF NOT EXISTS engineering_objectives (
+  objective_id TEXT PRIMARY KEY,
+  investigation_id TEXT NOT NULL UNIQUE,
+  workspace_revision TEXT NOT NULL,
+  selected_at TEXT NOT NULL,
+  objective_json TEXT NOT NULL,
+  FOREIGN KEY(investigation_id) REFERENCES crew_chief_investigations(investigation_id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS crew_chief_success_contracts (
+  contract_id TEXT PRIMARY KEY,
+  investigation_id TEXT NOT NULL UNIQUE,
+  workspace_revision TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  contract_json TEXT NOT NULL,
+  FOREIGN KEY(investigation_id) REFERENCES crew_chief_investigations(investigation_id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS component_response_records (
+  record_id TEXT PRIMARY KEY,
+  source_workflow_id TEXT NOT NULL UNIQUE,
+  source_run_id TEXT NOT NULL,
+  context_identity TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  record_json TEXT NOT NULL,
+  FOREIGN KEY(source_run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_component_response_context
+  ON component_response_records(context_identity, created_at, record_id);
+
+CREATE TABLE IF NOT EXISTS crew_chief_driver_memory (
+  record_id TEXT PRIMARY KEY,
+  investigation_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  recorded_at TEXT NOT NULL,
+  record_json TEXT NOT NULL,
+  FOREIGN KEY(investigation_id) REFERENCES crew_chief_investigations(investigation_id)
+    ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_crew_chief_driver_memory_scope
+  ON crew_chief_driver_memory(session_id, recorded_at, record_id);
+
+CREATE TABLE IF NOT EXISTS crew_chief_effectiveness_records (
+  record_id TEXT PRIMARY KEY,
+  investigation_id TEXT NOT NULL UNIQUE,
+  workspace_revision TEXT NOT NULL,
+  recorded_at TEXT NOT NULL,
+  record_json TEXT NOT NULL,
+  FOREIGN KEY(investigation_id) REFERENCES crew_chief_investigations(investigation_id)
+    ON DELETE CASCADE
+);

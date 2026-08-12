@@ -30,6 +30,7 @@ import {
 } from "../components/SmartIntelligenceCards";
 import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPanel";
 import { VehicleSystemsPanel } from "../components/VehicleSystemsPanel";
+import { CrewChiefCommandDeck } from "../components/CrewChiefCommandDeck";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { LapScope } from "../store/types";
 import type {
@@ -1355,6 +1356,41 @@ export function IntelligencePanel({
           {briefing.confidence_label && <span>{briefing.confidence_label}</span>}
         </div>
       </header>
+
+      {sessionId && (
+        <CrewChiefCommandDeck
+          runId={runId}
+          sessionId={sessionId}
+          report={report}
+          learning={learning}
+          onFocusEvidence={(entry) => {
+            const lap = entry.lap_numbers[0] ?? null;
+            const hasWindow = entry.lap_pct_start != null && entry.lap_pct_end != null;
+            focusEvidence({
+              runId,
+              lapNumber: lap,
+              lapScope: lap == null ? "run" : "single_lap",
+              lapWindowStart: null,
+              lapWindowEnd: null,
+              representativeLap: null,
+              eventId: entry.artifact_id,
+              sampleIndex: null,
+              lapDistFt: null,
+              lapPct: hasWindow ? (entry.lap_pct_start! + entry.lap_pct_end!) / 2 : null,
+              zoneId: null,
+              zoneLabel: entry.phase,
+              zoneStartPct: entry.lap_pct_start,
+              zoneEndPct: entry.lap_pct_end,
+              channelId: entry.source_channels[0] ?? null,
+              system: entry.component_ids[0] ?? null,
+              selectionSource: "engineer",
+              lockState: hasWindow ? "locked" : "none",
+              trustTier: "navigation_only",
+              valueBasis: lap == null ? "run_level" : "full_lap",
+            }, "platform_trace");
+          }}
+        />
+      )}
 
       <section
         className="tab-decision-broadcast"

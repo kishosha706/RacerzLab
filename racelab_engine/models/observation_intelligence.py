@@ -196,6 +196,7 @@ class MechanismObservation(ObservationModel):
     source_setup_ids: tuple[str, ...]
     sample_coverage: float = Field(ge=0.0, le=1.0, allow_inf_nan=False)
     mechanism: MechanismKind
+    mechanism_kinds: tuple[MechanismKind, ...] = ()
     run_id: str = Field(min_length=1)
     setup_id: str | None
     lap_number: int | None = Field(default=None, ge=0)
@@ -221,6 +222,15 @@ class MechanismObservation(ObservationModel):
 
     @model_validator(mode="after")
     def qualified_observations_are_fully_cited(self) -> MechanismObservation:
+        if not self.mechanism_kinds:
+            object.__setattr__(self, "mechanism_kinds", (self.mechanism,))
+        if (
+            self.mechanism not in self.mechanism_kinds
+            or len(self.mechanism_kinds) != len(set(self.mechanism_kinds))
+        ):
+            raise ValueError(
+                "mechanism observation identities must be unique and include the primary mechanism"
+            )
         for values, label in ((self.source_run_ids, "source run"),):
             if any(not value for value in values) or len(values) != len(set(values)):
                 raise ValueError(f"{label} identities must be non-empty and unique")

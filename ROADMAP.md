@@ -59,6 +59,10 @@ result, and remember only what the evidence supports.
 | P24 - Evidence Acquisition Operations | Verified collection infrastructure; P23 evidence collection ongoing | Protocol-bound certificates, flight recorders, steering truth audits, and certificate-owned admission make real collection auditable without changing authority |
 | P25 - First Qualified Evidence Campaign | Verified acquisition pilot; no qualified session earned because traffic contamination blocked every eligible lap | One source-owned Next Gen re-import proved immutable ownership, ten-signal/sub-tick/FFB truth, certificate-owned rejection, duplicate resistance, and a frozen future null-session card without changing P23 authority |
 | P26 - Vehicle Systems Intelligence and Crew-Chief Component Graph | Verified deterministic Next Gen foundation | Source-backed component contracts, typed interactions, explicit observability debt, one-physical-factor experiments, P19/P20 runtime projection, grounded component tools, and compact Setup/Engineer surfaces enrich reasoning without creating setup authority |
+| P27 - Autonomous Crew Chief Executive | Verified deterministic production foundation | One immutable, revision-bound executive schedules existing evidence inspections and mirrors only exact current P19 terminal authority |
+| P28 - Trackside Mission Control | Verified deterministic production foundation | A hard Success Contract and junk/context-aware Run Sentinel govern mission progress without creating policy authority |
+| P29 - Component Response Atlas and Driver Intelligence | Verified guarded production foundation | Exact-context controlled history and complaint/context-only driver memory persist separately with operational effectiveness counts |
+| P30 - Adaptive Experimentation Research | Infrastructure seam verified; activation DATA-LOCKED | Production remains one-factor P19 A/B/A2 until P21/P22 held-out and prospective activation gates truly pass |
 
 ---
 
@@ -1808,6 +1812,66 @@ that graph; it does not create another setup-authority path.
 
 ---
 
+## P27 - Autonomous Crew Chief Executive
+
+- [x] Reuse the rich private P19 `ReasoningSnapshot` rather than unsanitizing a
+  public response or adding a duplicate cause ranker.
+- [x] Preserve every typed mechanism membership on a physical P20 episode while
+  retaining one artifact/independence identity.
+- [x] Freeze run, session, selected scope, P19, P20, P26, setup, runtime,
+  workflow, objective, investigation, and event-history identity in one workspace revision.
+- [x] Persist immutable investigation origins and ordered, content-hashed typed
+  events; reject stale writes and corrupt/reordered replay.
+- [x] Provide a bounded approved-tool registry, deterministic subgoal planner,
+  critic, one contextual driver question, atomic root projection, and exact P19-only terminal decision.
+- [x] Upgrade the existing Engineer Race/Learning workspace without adding a tab
+  or selection context; route evidence through canonical `focusEvidence`.
+
+## P28 - Trackside Mission Control
+
+- [x] Build hard Success Contracts exclusively from the current P19 measurement
+  plan or controlled card, including repetition, independence, invariants,
+  acceptance, rejection, retest, stop, and rollback semantics.
+- [x] Monitor exact P19 measurement/A/B/A2 progress with a Run Sentinel that
+  accepts only canonical eligible, context-clean laps and retains every rejection reason.
+- [x] Keep missing coverage unknown/blocked, preserve setup isolation, and never
+  let the sentinel create Keep/Undo or stop-testing authority.
+
+## P29 - Component Response Atlas and Driver Intelligence
+
+- [x] Persist exact-context P26 controlled history as immutable component
+  response records with separate mechanism, control-response, policy, context,
+  setup, build, objective, phase, and evidence identities.
+- [x] Persist driver complaint/answer memory separately as
+  `complaint_prior_only`; it scopes inspection but cannot mutate P19 cause truth.
+- [x] Record deterministic operational effectiveness counts without fake
+  probability, causal uplift, or optimization claims.
+- [x] Produce a revision-cached proactive brief and expose Atlas/driver-memory
+  references in the atomic Engineer command deck.
+
+## P30 - Adaptive Experimentation Research
+
+- [x] Expose a typed `data_locked`/authority-`none` infrastructure boundary and
+  keep the optional generative executive disabled `shadow_only`.
+- [ ] Activate hybrid observers, active experiment selection, interaction DOE,
+  causal time-series methods, or Bayesian optimization only after the existing
+  P21/P22 held-out and prospective activation gates genuinely pass.
+- [ ] Grant no advanced method setup authority; current production remains one
+  P19-authorized factor under exact-context A/B/A2.
+
+### P27-P30 verification evidence
+
+- Focused Crew Chief, authority, P19/P20/P26, API, persistence, restart, UI, and
+  hostile-response contracts pass, including stale revision, event corruption,
+  extra-field injection, forged target, foreign session, and exact P19 mirror cases.
+- The persisted Next Gen Atlanta workspace builds from one canonical bundle with
+  exact P19/P20/P26/setup/runtime identities and no raw trace or second planner.
+- TypeScript, production UI build, OpenAPI inspection, changed-file Ruff,
+  bytecode compilation, full Python regression, and diff integrity are required
+  for the release entry below.
+
+---
+
 ## Professional analysis surface, without losing the product thesis
 
 - [x] Match essential professional language: time variance, overlays, math
@@ -1913,3 +1977,4 @@ Implementation queue completed in this pass:
 | 2026-08-10 | Verified P26 Vehicle Systems Intelligence foundation | A source-backed, immutable Next Gen component graph now separates physical parts, garage controls, properties, whole-car states, observations, symptoms, outcomes, context, interactions, unavailable quantities, and one-physical-factor experiments. Runtime awareness projects only P20 observations and P19 controlled history/authority; the real Atlanta run correctly produced an unresolved platform/suspension candidate family rather than four false component causes. Grounded component questions and compact Race/Learning Setup/Engineer surfaces preserve prior Undo and exact authority. The complete 2,250-test collection passed (2,245 passed, five protected skips), plus changed-file Ruff, TypeScript, the 2,191-module production build, OpenAPI inspection, bytecode compilation, real Next Gen projection, and diff integrity |
 | 2026-08-10 | Adversarially hardened P26 end to end | Replaced prose word matching with typed cause/control identities; bound public projections to verified compatibility fingerprints and exact Next Gen car/build/oval scope; added snapshot hashes and a closed non-authoritative runtime evidence/history graph; made all Next Gen setup-area mappings explicit; cached graph compilation; typed API contracts; and made the UI reject identity, schema, hash, and authority mismatches. The real Atlanta fixture retained four candidate component families, captured settings, 28 runtime nodes, 26 runtime edges, and zero setup authority. The complete 2,255-test collection passed (2,250 passed, five protected skips), plus Ruff, TypeScript, production build, OpenAPI inspection, bytecode compilation, and diff integrity |
 | 2026-08-10 | Closed the P26 greenfield dot-to-dot contract | Removed the remaining split-version assumptions and made one current contract span verified telemetry ownership, exact Next Gen applicability, all 50 engineering areas, explicit area-to-property semantics, independently scoped P20 observations, exact P19 history and per-control Undo, grounded component questions, canonical report embedding, workflow-aware refresh, and deep client trust-boundary validation. The current graph compiles 609 nodes and 843 edges with deterministic content identity; the real Atlanta artifact verified full setup capture without causal or setup-authority overclaim. The complete 2,268-test collection passed (2,263 passed, five protected skips), plus changed-file Ruff, TypeScript, the 2,192-module production build, executable runtime guards, OpenAPI inspection, and diff integrity |
+| 2026-08-12 | Verified P27-P30 deterministic autonomous Crew Chief operating system | One revision-bound private P19/P20/P26 workspace now owns event-sourced investigations, eight bounded inspections, deterministic critic and driver dialogue, hard Success Contracts, a junk/context-aware Run Sentinel, exact-context component response records, complaint-only driver memory, and an existing-Engineer Race/Learning command deck. Exact setup authority remains an equality-checked P19 projection; the optional generative boundary is disabled and P30 remains data-locked. The complete no-bytecode 2,300-test collection passed (2,295 passed, five protected skips), plus 154 focused authority/Crew Chief/P19-P20-P26 tests, whole-repo Ruff, TypeScript, the 2,196-module production build, bytecode compilation, seven-route OpenAPI inspection, executable synthetic and real-Atlanta UI trust guards, the unchanged 609-node/843-edge P26 graph, and diff integrity. |

@@ -270,6 +270,9 @@ def delete_session(session_id: str, db_path: str | Path | None = None) -> bool:
     """Delete a RaceLab session. Does NOT delete imported telemetry files."""
     conn = initialize_database(db_path)
     _ensure_schema(conn)
+    conn.execute(
+        "DELETE FROM crew_chief_investigations WHERE session_id = ?", (session_id,)
+    )
     cursor = conn.execute("DELETE FROM racelab_sessions WHERE session_id = ?", (session_id,))
     deleted = cursor.rowcount > 0
     conn.commit()

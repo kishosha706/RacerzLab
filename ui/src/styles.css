@@ -15436,3 +15436,28 @@ button:focus:not(:focus-visible) {
   .engineering-awareness__header { flex-direction: column; }
   .engineering-awareness__status { min-width: 0; }
 }
+.crew-chief-deck {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel) 92%, var(--accent));
+}
+.crew-chief-deck > header { display: flex; justify-content: space-between; gap: 1rem; align-items: start; }
+.crew-chief-deck h2, .crew-chief-deck h3, .crew-chief-deck p { margin: 0; }
+.crew-chief-authority { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; text-transform: uppercase; }
+.crew-chief-race-brief { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.55rem; }
+.crew-chief-race-brief p, .crew-chief-learning section, .crew-chief-exact-test { padding: 0.7rem; border: 1px solid var(--border); border-radius: 8px; }
+.crew-chief-race-brief b { display: block; color: var(--accent); font-size: 0.7rem; letter-spacing: 0.08em; }
+.crew-chief-exact-test { display: grid; gap: 0.25rem; border-color: var(--accent); }
+.crew-chief-open { display: grid; grid-template-columns: minmax(10rem, 0.5fr) minmax(16rem, 1fr) auto; gap: 0.6rem; align-items: end; }
+.crew-chief-open label { display: grid; gap: 0.3rem; }
+.crew-chief-learning { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
+.crew-chief-learning ul { margin: 0.45rem 0 0; padding-left: 1rem; }
+.crew-chief-learning li { margin-bottom: 0.25rem; }
+.crew-chief-question > div { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.6rem; }
+.crew-chief-inline-error, .crew-chief-error { color: var(--danger); }
+@media (max-width: 900px) {
+  .crew-chief-race-brief, .crew-chief-learning, .crew-chief-open { grid-template-columns: 1fr; }
+}

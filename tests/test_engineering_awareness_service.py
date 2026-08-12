@@ -100,6 +100,23 @@ def _rows() -> list[dict[str, float | int | str]]:
     return rows
 
 
+def test_one_artifact_preserves_multiple_mechanism_identities() -> None:
+    observation = _observation(MechanismKind.CORNER_ROTATION).model_copy(
+        update={
+            "mechanism_kinds": (
+                MechanismKind.CORNER_ROTATION,
+                MechanismKind.PLATFORM_RESPONSE,
+            )
+        }
+    )
+    validated = MechanismObservation.model_validate(observation.model_dump())
+    assert validated.mechanism is MechanismKind.CORNER_ROTATION
+    assert validated.mechanism_kinds == (
+        MechanismKind.CORNER_ROTATION,
+        MechanismKind.PLATFORM_RESPONSE,
+    )
+
+
 def _report() -> MechanismObservationReport:
     return MechanismObservationReport(
         status=ObservationStatus.READY,

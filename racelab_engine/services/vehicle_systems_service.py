@@ -862,12 +862,16 @@ def build_component_awareness(
             for outcome in cause.controlled_outcomes
             if outcome.control_key in control_components
         )
-        mechanism_components = set(
-            _MECHANISM_KEY_COMPONENTS.get(
-                str(getattr(cause, "mechanism_key", "")).casefold(),
-                (),
+        mechanism_components = {
+            component_id
+            for mechanism_key in (
+                getattr(cause, "mechanism_keys", ())
+                or (str(getattr(cause, "mechanism_key", "")),)
             )
-        )
+            for component_id in _MECHANISM_KEY_COMPONENTS.get(
+                str(mechanism_key).casefold(), ()
+            )
+        }
         cause_component_ids[cause_id] = frozenset(direct_components | mechanism_components)
         directly_related_cause_ids[cause_id] = frozenset(direct_components)
 
@@ -876,7 +880,14 @@ def build_component_awareness(
 
     for definition in graph.components:
         relevant_observations = tuple(
-            item for item in observations if definition.component_id in _MECHANISM_COMPONENTS.get(item.mechanism, ())
+            item
+            for item in observations
+            if any(
+                definition.component_id in _MECHANISM_COMPONENTS.get(mechanism, ())
+                for mechanism in (
+                    getattr(item, "mechanism_kinds", ()) or (item.mechanism,)
+                )
+            )
         )
         relevant_causes = tuple(
             cause

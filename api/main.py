@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.routes_compare import router as compare_router
+from api.routes_crew_chief import router as crew_chief_router
 from api.routes_analysis_contracts import router as analysis_contracts_router
 from api.routes_events import router as events_router
 from api.routes_engineering import router as engineering_router
@@ -65,6 +66,7 @@ def health() -> HealthResponse:
 
 
 app.include_router(compare_router)
+app.include_router(crew_chief_router)
 app.include_router(analysis_contracts_router)
 app.include_router(imports_router)
 app.include_router(runs_router)

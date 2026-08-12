@@ -2164,6 +2164,7 @@ def rank_competing_causes(
                 label=cause.label,
                 hypothesis=cause.hypothesis,
                 mechanism_key=cause.mechanism_key,
+                mechanism_keys=cause.mechanism_keys,
                 related_control_keys=cause.related_control_keys,
                 status=status,
                 ordinal_rank=rank_by_strength[item["strength"]],

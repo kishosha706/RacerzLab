@@ -462,6 +462,7 @@ class CauseHypothesis(IntelligenceModel):
     label: str = Field(min_length=1)
     hypothesis: str = Field(min_length=1)
     mechanism_key: str = Field(default="unresolved", min_length=1)
+    mechanism_keys: tuple[str, ...] = ()
     related_control_keys: tuple[str, ...] = ()
     supporting_event_ids: tuple[str, ...] = ()
     contradicting_event_ids: tuple[str, ...] = ()
@@ -475,6 +476,14 @@ class CauseHypothesis(IntelligenceModel):
 
     @model_validator(mode="after")
     def hypothesis_evidence_is_unambiguous(self) -> CauseHypothesis:
+        if not self.mechanism_keys:
+            object.__setattr__(self, "mechanism_keys", (self.mechanism_key,))
+        if (
+            self.mechanism_key not in self.mechanism_keys
+            or any(not value for value in self.mechanism_keys)
+            or len(self.mechanism_keys) != len(set(self.mechanism_keys))
+        ):
+            raise ValueError("cause mechanism identities must be unique")
         for values, label in (
             (self.related_control_keys, "related control"),
             (self.supporting_event_ids, "supporting event"),
@@ -526,6 +535,7 @@ class RankedCause(IntelligenceModel):
     label: str = Field(min_length=1)
     hypothesis: str = Field(min_length=1)
     mechanism_key: str = Field(default="unresolved", min_length=1)
+    mechanism_keys: tuple[str, ...] = ()
     related_control_keys: tuple[str, ...] = ()
     status: Literal["likely", "possible", "ruled_out", "unresolved"]
     ordinal_rank: int = Field(ge=1)
@@ -544,6 +554,14 @@ class RankedCause(IntelligenceModel):
 
     @model_validator(mode="after")
     def evidence_identities_are_unambiguous(self) -> RankedCause:
+        if not self.mechanism_keys:
+            object.__setattr__(self, "mechanism_keys", (self.mechanism_key,))
+        if (
+            self.mechanism_key not in self.mechanism_keys
+            or any(not value for value in self.mechanism_keys)
+            or len(self.mechanism_keys) != len(set(self.mechanism_keys))
+        ):
+            raise ValueError("ranked-cause mechanism identities must be unique")
         if (
             any(not key for key in self.related_control_keys)
             or len(self.related_control_keys) != len(set(self.related_control_keys))

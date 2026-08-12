@@ -271,7 +271,10 @@ def _subsystem_states(bundle: RunIntelligenceBundle) -> tuple[SubsystemAwareness
     observations = report.observations if report is not None else ()
     by_mechanism: dict[MechanismKind, list[Any]] = defaultdict(list)
     for observation in observations:
-        by_mechanism[observation.mechanism].append(observation)
+        for mechanism in (
+            getattr(observation, "mechanism_kinds", ()) or (observation.mechanism,)
+        ):
+            by_mechanism[mechanism].append(observation)
     states: list[SubsystemAwarenessState] = []
     for mechanism in MechanismKind:
         if mechanism is MechanismKind.UNCLASSIFIED:
@@ -485,6 +488,13 @@ def _build_projection(
     return projection
 
 
+def project_engineering_awareness(
+    bundle: RunIntelligenceBundle,
+) -> EngineeringAwarenessProjection:
+    """Project P20 from an already-built canonical intelligence bundle."""
+    return _build_projection(bundle, started=perf_counter())
+
+
 def build_engineering_awareness_projection(
     run_id: str,
     *,
@@ -521,4 +531,5 @@ def build_engineering_awareness_projection(
 __all__ = [
     "build_engineering_awareness_projection",
     "clear_engineering_awareness_cache",
+    "project_engineering_awareness",
 ]
