@@ -40,6 +40,9 @@ def test_engineer_uses_one_atomic_command_deck_without_a_new_top_level_tab() -> 
         "Mission ribbon" in deck and "Run sentinel" in deck and "Response atlas" in deck
     )
     assert '"crew_chief"' not in app
+    assert "workspaceSequence.current" in deck
+    assert "sequence === workspaceSequence.current" in deck
+    assert "runId: entry.run_id" in engineer
 
 
 def test_client_parses_crew_chief_as_unknown_through_exact_report_guard() -> None:

@@ -1822,6 +1822,10 @@ that graph; it does not create another setup-authority path.
   workflow, objective, investigation, and event-history identity in one workspace revision.
 - [x] Persist immutable investigation origins and ordered, content-hashed typed
   events; reject stale writes and corrupt/reordered replay.
+- [x] Freeze an accepted producer-authority fingerprint separately from the
+  evolving event revision; changed P19/P20/P26/setup/runtime/workflow truth is
+  read-only until an exact explicit rebase, and event count/head integrity makes
+  silent tail deletion visible.
 - [x] Provide a bounded approved-tool registry, deterministic subgoal planner,
   critic, one contextual driver question, atomic root projection, and exact P19-only terminal decision.
 - [x] Upgrade the existing Engineer Race/Learning workspace without adding a tab
@@ -1834,6 +1838,8 @@ that graph; it does not create another setup-authority path.
   acceptance, rejection, retest, stop, and rollback semantics.
 - [x] Monitor exact P19 measurement/A/B/A2 progress with a Run Sentinel that
   accepts only canonical eligible, context-clean laps and retains every rejection reason.
+- [x] Bind Sentinel progress to the canonical workflow preflight stage and
+  persisted stage-run ownership so a B run cannot advance A2 restoration.
 - [x] Keep missing coverage unknown/blocked, preserve setup isolation, and never
   let the sentinel create Keep/Undo or stop-testing authority.
 
@@ -1848,6 +1854,9 @@ that graph; it does not create another setup-authority path.
   probability, causal uplift, or optimization claims.
 - [x] Produce a revision-cached proactive brief and expose Atlas/driver-memory
   references in the atomic Engineer command deck.
+- [x] Namespace workspace caches by repository identity, recheck immutable
+  telemetry/lap inventory for warm context reads, and fail closed on unreadable
+  active or exact-history workflows.
 
 ## P30 - Adaptive Experimentation Research
 
@@ -1869,6 +1878,15 @@ that graph; it does not create another setup-authority path.
 - TypeScript, production UI build, OpenAPI inspection, changed-file Ruff,
   bytecode compilation, full Python regression, and diff integrity are required
   for the release entry below.
+- The continuous adversarial hardening pass closed 12 material findings: one P0,
+  three P1, six P2, and two P3. The final tree passed 2,316 collected Python
+  tests (2,311 passed, five protected environment/artifact skips), 159 focused
+  hostile/authority/P19/P20/P26/context tests with zero skips, whole-repo Ruff,
+  TypeScript, a 2,196-module production build, bytecode compilation, seven-route
+  OpenAPI inspection, the real Atlanta workspace regression, the unchanged
+  609-node/843-edge/50-area P26 graph, and diff integrity. Real Atlanta warm
+  Crew Chief assembly improved from 3,317.595 ms to 148.147 ms while retaining
+  immutable artifact rechecks.
 
 ---
 
@@ -1978,3 +1996,4 @@ Implementation queue completed in this pass:
 | 2026-08-10 | Adversarially hardened P26 end to end | Replaced prose word matching with typed cause/control identities; bound public projections to verified compatibility fingerprints and exact Next Gen car/build/oval scope; added snapshot hashes and a closed non-authoritative runtime evidence/history graph; made all Next Gen setup-area mappings explicit; cached graph compilation; typed API contracts; and made the UI reject identity, schema, hash, and authority mismatches. The real Atlanta fixture retained four candidate component families, captured settings, 28 runtime nodes, 26 runtime edges, and zero setup authority. The complete 2,255-test collection passed (2,250 passed, five protected skips), plus Ruff, TypeScript, production build, OpenAPI inspection, bytecode compilation, and diff integrity |
 | 2026-08-10 | Closed the P26 greenfield dot-to-dot contract | Removed the remaining split-version assumptions and made one current contract span verified telemetry ownership, exact Next Gen applicability, all 50 engineering areas, explicit area-to-property semantics, independently scoped P20 observations, exact P19 history and per-control Undo, grounded component questions, canonical report embedding, workflow-aware refresh, and deep client trust-boundary validation. The current graph compiles 609 nodes and 843 edges with deterministic content identity; the real Atlanta artifact verified full setup capture without causal or setup-authority overclaim. The complete 2,268-test collection passed (2,263 passed, five protected skips), plus changed-file Ruff, TypeScript, the 2,192-module production build, executable runtime guards, OpenAPI inspection, and diff integrity |
 | 2026-08-12 | Verified P27-P30 deterministic autonomous Crew Chief operating system | One revision-bound private P19/P20/P26 workspace now owns event-sourced investigations, eight bounded inspections, deterministic critic and driver dialogue, hard Success Contracts, a junk/context-aware Run Sentinel, exact-context component response records, complaint-only driver memory, and an existing-Engineer Race/Learning command deck. Exact setup authority remains an equality-checked P19 projection; the optional generative boundary is disabled and P30 remains data-locked. The complete no-bytecode 2,300-test collection passed (2,295 passed, five protected skips), plus 154 focused authority/Crew Chief/P19-P20-P26 tests, whole-repo Ruff, TypeScript, the 2,196-module production build, bytecode compilation, seven-route OpenAPI inspection, executable synthetic and real-Atlanta UI trust guards, the unchanged 609-node/843-edge P26 graph, and diff integrity. |
+| 2026-08-12 | Completed continuous adversarial Crew Chief audit and repair | Twelve material findings were closed across stale authority, driver-dialogue sequencing, A/B/A2 stage ownership, event-tail and redundant-row tamper detection, repository-scoped caching, evidence deduplication, workflow fail-closed behavior, late UI responses, nested response trust, and API bounds. The final 2,316-test collection passed (2,311 passed, five protected environment/artifact skips), plus 159 focused tests with zero skips, whole-repo Ruff, TypeScript, the 2,196-module production build, bytecode compilation, seven-route OpenAPI inspection, real Atlanta execution, the unchanged 609-node/843-edge/50-area P26 graph, and diff integrity. Immutable warm caching reduced real Atlanta Crew Chief assembly from 3,317.595 ms to 148.147 ms; P19/P20/P26/Crew Chief authority ceilings and all data locks remain unchanged. |

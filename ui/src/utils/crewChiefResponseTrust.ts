@@ -7,41 +7,60 @@ const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const strings = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === "string" && item.length > 0);
+const uniqueStrings = (value: unknown): value is string[] =>
+  strings(value) && new Set(value).size === value.length;
 const nullableString = (value: unknown): value is string | null =>
   value === null || typeof value === "string";
 const finiteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
+const integerNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value);
 const safeText = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0 && !hasSetupAuthorityDirective(value);
 const safeTexts = (value: unknown): value is string[] =>
   strings(value) && value.every((item) => !hasSetupAuthorityDirective(item));
 
-function validEvidenceEntry(value: unknown, sessionId: string): boolean {
+function validEvidenceEntry(
+  value: unknown,
+  sessionId: string,
+  scopeRunIds: ReadonlySet<string>,
+): boolean {
   if (!record(value)) return false;
-  return typeof value.artifact_id === "string"
-    && typeof value.producer_id === "string"
-    && typeof value.run_id === "string"
+  const lapNumbers = value.lap_numbers;
+  const start = value.lap_pct_start;
+  const end = value.lap_pct_end;
+  return typeof value.artifact_id === "string" && value.artifact_id.length > 0
+    && typeof value.producer_id === "string" && value.producer_id.length > 0
+    && typeof value.run_id === "string" && scopeRunIds.has(value.run_id)
     && value.session_id === sessionId
-    && typeof value.setup_id === "string"
-    && Array.isArray(value.lap_numbers)
-    && value.lap_numbers.every((lap) => Number.isInteger(lap) && lap >= 0)
-    && (value.lap_pct_start === null || finiteNumber(value.lap_pct_start))
-    && (value.lap_pct_end === null || finiteNumber(value.lap_pct_end))
+    && typeof value.setup_id === "string" && value.setup_id.length > 0
+    && Array.isArray(lapNumbers)
+    && lapNumbers.every((lap) => Number.isInteger(lap) && lap >= 0)
+    && new Set(lapNumbers).size === lapNumbers.length
+    && ((start === null && end === null)
+      || (finiteNumber(start) && finiteNumber(end)
+        && start >= 0 && end <= 100 && start <= end))
     && nullableString(value.phase)
-    && strings(value.mechanism_ids)
-    && strings(value.component_ids)
-    && strings(value.control_keys)
-    && strings(value.source_channels)
+    && uniqueStrings(value.mechanism_ids)
+    && uniqueStrings(value.component_ids)
+    && uniqueStrings(value.control_keys)
+    && uniqueStrings(value.source_channels)
     && typeof value.evidence_state === "string"
     && ["support", "contradiction", "neutral"].includes(String(value.polarity))
     && safeTexts(value.blocker_reasons)
+    && new Set(value.blocker_reasons).size === value.blocker_reasons.length
     && ["observation_only", "context_only", "measurement_only", "p19_projection_only"]
       .includes(String(value.authority_ceiling));
 }
 
 export function isCrewChiefWorkspaceResponse(
   value: unknown,
-  scope: { runId: string; sessionId: string; report: RunIntelligenceReport },
+  scope: {
+    runId: string;
+    sessionId: string;
+    report: RunIntelligenceReport;
+    scopeRunIds?: readonly string[];
+  },
 ): value is CrewChiefWorkspace {
   if (!record(value) || value.schema_version !== "p27.crew-chief-workspace.v1") return false;
   if (
@@ -55,8 +74,11 @@ export function isCrewChiefWorkspaceResponse(
   ) return false;
   const identity = value.identity;
   const decision = value.terminal_decision;
+  const scopeRunIds = new Set(scope.scopeRunIds ?? [scope.runId]);
   if (
-    identity.run_id !== scope.runId
+    scopeRunIds.size === 0
+    || !scopeRunIds.has(scope.runId)
+    || identity.run_id !== scope.runId
     || identity.session_id !== scope.sessionId
     || identity.reasoning_snapshot_sha256 !== scope.report.reasoning_snapshot_sha256
     || identity.setup_id !== scope.report.setup_id
@@ -85,7 +107,9 @@ export function isCrewChiefWorkspaceResponse(
     || typeof value.evidence_index.index_hash !== "string"
     || !hash.test(value.evidence_index.index_hash)
     || !Array.isArray(value.evidence_index.entries)
-    || !value.evidence_index.entries.every((entry) => validEvidenceEntry(entry, scope.sessionId))
+    || !value.evidence_index.entries.every((entry) => (
+      validEvidenceEntry(entry, scope.sessionId, scopeRunIds)
+    ))
   ) return false;
   if (
     typeof decision.kind !== "string"
@@ -97,6 +121,19 @@ export function isCrewChiefWorkspaceResponse(
   const success = value.success_contract;
   const sentinel = value.run_sentinel;
   const critique = value.critique;
+  let acceptedOrdinal = 0;
+  const sentinelLapsAreCanonical = Array.isArray(sentinel.laps)
+    && sentinel.laps.every((lap) => {
+      if (!record(lap)
+        || !integerNumber(lap.lap_number)
+        || !["accepted", "rejected"].includes(String(lap.status))
+        || !safeTexts(lap.reasons)) return false;
+      if (lap.status === "accepted") {
+        acceptedOrdinal += 1;
+        return lap.reasons.length === 0 && lap.accepted_ordinal === acceptedOrdinal;
+      }
+      return lap.reasons.length > 0 && lap.accepted_ordinal === null;
+    });
   if (
     success.workspace_revision !== identity.workspace_revision
     || !safeText(success.target_scope)
@@ -106,15 +143,19 @@ export function isCrewChiefWorkspaceResponse(
     || !safeText(sentinel.need)
     || !safeText(sentinel.success)
     || !safeTexts(sentinel.stop)
-    || !Number.isInteger(sentinel.required_laps)
-    || !Number.isInteger(sentinel.accepted_laps)
-    || !Array.isArray(sentinel.laps)
-    || !sentinel.laps.every((lap) => record(lap)
-      && Number.isInteger(lap.lap_number)
-      && ["accepted", "rejected"].includes(String(lap.status))
-      && safeTexts(lap.reasons))
+    || !integerNumber(sentinel.required_laps)
+    || sentinel.required_laps < 1
+    || !integerNumber(sentinel.accepted_laps)
+    || sentinel.accepted_laps !== acceptedOrdinal
+    || sentinel.complete !== (acceptedOrdinal >= sentinel.required_laps)
+    || !["measurement", "A", "B", "A2", "complete"].includes(String(sentinel.stage))
+    || sentinel.complete !== (sentinel.stage === "complete")
+    || !sentinelLapsAreCanonical
     || typeof critique.passed !== "boolean"
+    || !["pass", "blocked", "reinvestigate", "ask_driver"].includes(String(critique.outcome))
+    || critique.passed !== (critique.outcome === "pass")
     || !safeTexts(critique.findings)
+    || (!critique.passed && critique.findings.length === 0)
     || !(critique.strongest_contradiction === null || safeText(critique.strongest_contradiction))
     || !safeTexts(value.blocker_reasons)
     || !safeTexts(value.post_run_brief)

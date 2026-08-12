@@ -56,11 +56,12 @@ from racelab_engine.storage.crew_chief_repository import (
     CrewChiefRepository,
     crew_chief_event_hash,
 )
+from racelab_engine.storage.db import default_db_path
 from racelab_engine.storage.repository import RaceLabRepository
 
 
 _CACHE_LOCK = RLock()
-_CACHE: dict[str, CrewChiefWorkspace] = {}
+_CACHE: dict[tuple[str, str], CrewChiefWorkspace] = {}
 _TOOLS = (
     CrewChiefToolDefinition(
         tool_id="inspect_data_quality",
@@ -219,6 +220,72 @@ def _workspace_identity(
     )
 
 
+def _authority_revision(identity: CrewChiefWorkspaceIdentity) -> str:
+    """Hash only the producer-owned reality an investigation may act from."""
+
+    return canonical_json_sha256(
+        identity.model_dump(
+            mode="json",
+            exclude={"objective_id", "investigation_id", "workspace_revision"},
+        )
+    )
+
+
+def _workspace_cache_key(
+    identity: CrewChiefWorkspaceIdentity, db_path: str | Path | None
+) -> tuple[str, str]:
+    database = Path(db_path) if db_path is not None else default_db_path()
+    resolved = database.resolve()
+    try:
+        stat = resolved.stat()
+        database_identity = f"{resolved}|{stat.st_dev}|{stat.st_ino}"
+    except OSError:
+        database_identity = str(resolved)
+    return database_identity, identity.workspace_revision
+
+
+def _accepted_authority_revision(
+    investigation: CrewChiefInvestigation,
+    events: tuple[CrewChiefEvent, ...],
+) -> str:
+    for event in reversed(events):
+        if (
+            event.event_type == "workspace_rebased"
+            and event.payload.new_authority_revision is not None
+        ):
+            return event.payload.new_authority_revision
+    return _authority_revision(investigation.workspace_identity)
+
+
+def _accepted_workspace_revision(
+    investigation: CrewChiefInvestigation,
+    events: tuple[CrewChiefEvent, ...],
+) -> str:
+    for event in reversed(events):
+        if (
+            event.event_type == "workspace_rebased"
+            and event.payload.new_workspace_revision is not None
+        ):
+            return event.payload.new_workspace_revision
+    return investigation.workspace_identity.workspace_revision
+
+
+def _authority_stale_reasons(
+    investigation: CrewChiefInvestigation | None,
+    events: tuple[CrewChiefEvent, ...],
+    identity: CrewChiefWorkspaceIdentity,
+) -> tuple[str, ...]:
+    if investigation is None:
+        return ()
+    if _accepted_authority_revision(investigation, events) == _authority_revision(
+        identity
+    ):
+        return ()
+    return (
+        "Crew Chief authority identity changed; explicitly rebase this investigation before it can continue or act.",
+    )
+
+
 def _component_map(p26: object) -> tuple[dict[str, tuple[str, ...]], dict[str, object]]:
     by_cause: dict[str, list[str]] = {}
     states: dict[str, object] = {}
@@ -247,6 +314,18 @@ def _evidence_index(
         ):
             artifact_id = citation.event_id or citation.citation_id
             current = entries.get(artifact_id)
+            if current is not None and (
+                current.producer_id != "p19.reasoning_snapshot"
+                or current.run_id != citation.run_id
+                or current.session_id != identity.session_id
+                or current.setup_id != identity.setup_id
+                or current.lap_pct_start != citation.lap_pct_start
+                or current.lap_pct_end != citation.lap_pct_end
+                or current.phase != citation.phase
+            ):
+                raise ValueError(
+                    "one Crew Chief evidence artifact cannot silently span conflicting physical scopes"
+                )
             existing_mechanisms = (
                 tuple(item.value for item in current.mechanism_ids)
                 if current
@@ -258,33 +337,68 @@ def _evidence_index(
             merged_components = _unique(
                 [*(current.component_ids if current else ()), *component_ids]
             )
+            merged_laps = _unique(
+                str(value)
+                for value in (
+                    *(current.lap_numbers if current else ()),
+                    *(() if citation.lap_number is None else (citation.lap_number,)),
+                )
+            )
+            merged_blockers = _unique(
+                [
+                    *(current.blocker_reasons if current else ()),
+                    *(
+                        ()
+                        if citation.valid_for_tuning
+                        else ("not qualified for tuning",)
+                    ),
+                ]
+            )
+            evidence_state = citation.evidence_state
+            if current is not None and current.evidence_state != evidence_state:
+                evidence_state = EvidenceState.BLOCKED_BY_CONTEXT
+                merged_blockers = _unique(
+                    [*merged_blockers, "conflicting evidence-state references"]
+                )
             entries[artifact_id] = EngineeringEvidenceIndexEntry(
                 artifact_id=artifact_id,
                 producer_id="p19.reasoning_snapshot",
                 run_id=citation.run_id,
                 session_id=identity.session_id,
                 setup_id=identity.setup_id,
-                lap_numbers=(
-                    () if citation.lap_number is None else (citation.lap_number,)
-                ),
+                lap_numbers=tuple(int(value) for value in merged_laps),
                 lap_pct_start=citation.lap_pct_start,
                 lap_pct_end=citation.lap_pct_end,
                 phase=citation.phase,
                 mechanism_ids=_mechanisms(merged_mechanisms),
                 component_ids=merged_components,
-                control_keys=cause.related_control_keys,
+                control_keys=_unique(
+                    [
+                        *(current.control_keys if current else ()),
+                        *cause.related_control_keys,
+                    ]
+                ),
                 objective=objective,
-                source_channels=citation.channels,
-                evidence_state=citation.evidence_state,
+                source_channels=_unique(
+                    [
+                        *(current.source_channels if current else ()),
+                        *citation.channels,
+                    ]
+                ),
+                evidence_state=evidence_state,
                 polarity=polarity
                 if current is None or current.polarity == polarity
                 else "neutral",
-                blocker_reasons=()
-                if citation.valid_for_tuning
-                else ("not qualified for tuning",),
-                authority_ceiling="measurement_only"
-                if citation.valid_for_tuning
-                else "observation_only",
+                blocker_reasons=merged_blockers,
+                authority_ceiling=(
+                    "measurement_only"
+                    if not merged_blockers
+                    and (
+                        current is None
+                        or current.authority_ceiling == "measurement_only"
+                    )
+                    else "observation_only"
+                ),
             )
     for episode in report.reasoning_snapshot.mechanism_episodes:
         artifact_id = episode.episode_id
@@ -364,7 +478,7 @@ def fold_investigation(
         elif event.event_type == "objective_selected" and payload.objective:
             objective = payload.objective
         elif event.event_type == "workspace_rebased":
-            stale_reason = payload.message
+            stale_reason = None
         elif event.event_type == "investigation_abandoned":
             status = "abandoned"
     hypotheses = tuple(
@@ -438,6 +552,7 @@ def _driver_question(
     if (
         investigation is None
         or folded is None
+        or folded.status != "open"
         or folded.pending_driver_question_id is None
     ):
         return None
@@ -538,7 +653,9 @@ def _success_contract(
     )
 
 
-def _sentinel(bundle: RunIntelligenceBundle, overview: object) -> RunSentinelState:
+def _sentinel(
+    bundle: RunIntelligenceBundle, overview: object, workflow: object | None = None
+) -> RunSentinelState:
     report = bundle.report
     plan = report.best_measurement
     mission = plan.measurement_mission
@@ -566,19 +683,44 @@ def _sentinel(bundle: RunIntelligenceBundle, overview: object) -> RunSentinelSta
         if card
         else "Stop on integrity failure.",
     )
-    if identity := _active_workflow_identity(bundle)[0]:
-        del identity
+    preflight = (
+        report.smart_guidance.test_preflight if report.smart_guidance else None
+    )
+    if _active_workflow_identity(bundle)[0] is not None:
         move = (
             report.smart_guidance.next_trustworthy_move
             if report.smart_guidance
             else None
         )
-        stage = "B" if move and move.kind == "controlled_test" else "A"
-        if card:
+        stage = (
+            preflight.stage
+            if preflight is not None
+            else "B"
+            if move and move.kind == "controlled_test"
+            else "A"
+        )
+        if card and stage in {"A", "B", "A2"}:
             selected = next(
                 (item for item in card.stages if item.stage == stage), card.stages[0]
             )
             required = selected.required_flying_laps
+    mission_scope_reasons: list[str] = []
+    if preflight is not None:
+        mission_scope_reasons.extend(preflight.blocker_reasons)
+    recorded_stage = next(
+        (
+            recorded
+            for recorded, recorded_run_id in getattr(
+                workflow, "stage_run_ids", {}
+            ).items()
+            if recorded_run_id == report.run_id
+        ),
+        None,
+    )
+    if stage in {"A", "B", "A2"} and recorded_stage not in {None, stage}:
+        mission_scope_reasons.append(
+            f"current run is already bound to Stage {recorded_stage}; Stage {stage} requires a new exact run"
+        )
     eligible = set(report.data_quality.eligible_lap_ids)
     context_by_lap = {
         item.lap_number: item
@@ -587,7 +729,7 @@ def _sentinel(bundle: RunIntelligenceBundle, overview: object) -> RunSentinelSta
     decisions: list[RunSentinelLap] = []
     accepted = 0
     for lap in sorted(overview.laps, key=lambda item: item.lap_number):
-        reasons: list[str] = []
+        reasons: list[str] = list(mission_scope_reasons)
         if lap.lap_id not in eligible:
             reasons.extend(lap.classification_tags or ["not in P19 eligible-lap set"])
         context = context_by_lap.get(lap.lap_number)
@@ -627,16 +769,25 @@ def _sentinel(bundle: RunIntelligenceBundle, overview: object) -> RunSentinelSta
         complete=complete,
         stage="complete" if complete else stage,
         laps=tuple(decisions),
-        blocker_reasons=_unique([*plan.blocker_reasons, *report.data_quality.issues]),
+        blocker_reasons=_unique(
+            [
+                *mission_scope_reasons,
+                *plan.blocker_reasons,
+                *report.data_quality.issues,
+            ]
+        ),
     )
 
 
 def _critique(
-    bundle: RunIntelligenceBundle, identity: CrewChiefWorkspaceIdentity
+    bundle: RunIntelligenceBundle,
+    identity: CrewChiefWorkspaceIdentity,
+    *,
+    stale_reasons: tuple[str, ...] = (),
 ) -> CrewChiefCritique:
     report = bundle.report
     action = report.briefing.action
-    findings: list[str] = []
+    findings: list[str] = list(stale_reasons)
     strongest_contradiction = next(
         (
             citation.summary
@@ -760,11 +911,15 @@ def _persist_response_atlas(
                 workflow = workflow_repository.get_controlled_workflow(
                     history.workflow_id
                 )
-            except (KeyError, TypeError, ValueError):
-                workflow = None
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError(
+                    "exact controlled history references an unreadable workflow"
+                ) from exc
             card = workflow.packet.primary_test if workflow is not None else None
             if card is None or card.control_key != history.control_key:
-                continue
+                raise ValueError(
+                    "exact controlled history does not match its immutable workflow card"
+                )
             context = {
                 "car_path": runtime.car_path,
                 "car_version": runtime.car_version,
@@ -820,7 +975,8 @@ def build_crew_chief_workspace(
     if session is None or run_id not in session.run_ids:
         raise ValueError("Crew Chief requires exact saved-session membership.")
     bundle = build_run_intelligence(run_id, session_id=session_id, db_path=db_path)
-    overview = RaceLabRepository(db_path).get_overview(run_id)
+    storage_repository = RaceLabRepository(db_path)
+    overview = storage_repository.get_overview(run_id)
     if overview is None or overview.setup_snapshot is None:
         raise ValueError("Crew Chief requires an imported run and captured setup.")
     p20 = project_engineering_awareness(bundle)
@@ -831,6 +987,17 @@ def build_crew_chief_workspace(
         runtime_identity=runtime,
     )
     repository = CrewChiefRepository(db_path)
+    active_workflow_id, _ = _active_workflow_identity(bundle)
+    try:
+        active_workflow = (
+            storage_repository.get_controlled_workflow(active_workflow_id)
+            if active_workflow_id
+            else None
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Crew Chief active workflow integrity could not be verified.") from exc
+    if active_workflow_id is not None and active_workflow is None:
+        raise ValueError("Crew Chief active workflow identity is missing.")
     investigation = (
         repository.get_investigation(investigation_id)
         if investigation_id
@@ -844,10 +1011,15 @@ def build_crew_chief_workspace(
     events = (
         repository.list_events(investigation.investigation_id) if investigation else ()
     )
-    if investigation is not None:
-        objective = fold_investigation(
+    folded = (
+        fold_investigation(
             investigation, events, bundle.report.reasoning_snapshot.causes
-        ).objective
+        )
+        if investigation
+        else None
+    )
+    if folded is not None:
+        objective = folded.objective
     identity = _workspace_identity(
         bundle,
         session_id=session_id,
@@ -858,27 +1030,30 @@ def build_crew_chief_workspace(
         p20=p20,
         p26=p26,
     )
+    stale_reasons = _authority_stale_reasons(investigation, events, identity)
+    if folded is not None and stale_reasons:
+        folded = folded.model_copy(
+            update={"status": "stale", "stale_reason": stale_reasons[0]}
+        )
+    cache_key = _workspace_cache_key(identity, db_path)
     with _CACHE_LOCK:
-        cached = _CACHE.get(identity.workspace_revision)
+        cached = _CACHE.get(cache_key)
         if cached is not None:
             return cached.model_copy(
                 update={"cache_state": "warm", "generated_at": _now()}
             )
-    folded = (
-        fold_investigation(
-            investigation, events, bundle.report.reasoning_snapshot.causes
-        )
-        if investigation
-        else None
-    )
     question = _driver_question(
         identity, investigation, folded, bundle.report.reasoning_snapshot.causes
     )
-    critique = _critique(bundle, identity)
+    critique = _critique(bundle, identity, stale_reasons=stale_reasons)
     contract = _success_contract(bundle, identity, objective)
-    response_ids = _persist_response_atlas(repository, objective, identity, p26)
+    response_ids = (
+        ()
+        if stale_reasons
+        else _persist_response_atlas(repository, objective, identity, p26)
+    )
     driver_memory_ids: tuple[str, ...] = ()
-    if investigation is not None:
+    if investigation is not None and not stale_reasons:
         answer_events = tuple(
             event for event in events if event.event_type == "driver_answer_recorded"
         )
@@ -938,7 +1113,7 @@ def build_crew_chief_workspace(
         critique=critique,
         pending_driver_question=question,
         success_contract=contract,
-        run_sentinel=_sentinel(bundle, overview),
+        run_sentinel=_sentinel(bundle, overview, active_workflow),
         terminal_decision=decision,
         response_history_ids=response_ids,
         driver_memory_ids=driver_memory_ids,
@@ -956,10 +1131,15 @@ def build_crew_chief_workspace(
             f"Next move: {decision.title}",
         ),
         blocker_reasons=_unique(
-            [*bundle.report.blocker_reasons, *p20.knowledge_debt, *p26.knowledge_debt]
+            [
+                *stale_reasons,
+                *bundle.report.blocker_reasons,
+                *p20.knowledge_debt,
+                *p26.knowledge_debt,
+            ]
         ),
     )
-    if investigation:
+    if investigation and not stale_reasons:
         repository.save_success_contract(investigation.investigation_id, contract)
         repository.save_effectiveness(
             CrewChiefEffectivenessRecord(
@@ -996,7 +1176,7 @@ def build_crew_chief_workspace(
             )
         )
     with _CACHE_LOCK:
-        _CACHE[identity.workspace_revision] = workspace
+        _CACHE[cache_key] = workspace
         if len(_CACHE) > 24:
             _CACHE.pop(next(iter(_CACHE)))
     return workspace
@@ -1048,7 +1228,7 @@ def open_investigation(
     if (
         current.investigation
         and current.folded_state
-        and current.folded_state.status == "open"
+        and current.folded_state.status in {"open", "stale"}
     ):
         raise ValueError(
             "An open Crew Chief investigation already exists for this scope."
@@ -1115,6 +1295,10 @@ def continue_investigation(
         )
     if current.folded_state is None or current.folded_state.status != "open":
         raise ValueError("Crew Chief investigation is not open.")
+    if current.folded_state.pending_driver_question_id is not None:
+        raise ValueError(
+            "A Crew Chief driver question is pending; record its contextual answer before continuing."
+        )
     repository = CrewChiefRepository(db_path)
     sequence = current.folded_state.last_sequence + 1
     if current.current_subgoal is not None:
@@ -1199,7 +1383,12 @@ def record_driver_answer(
             "Crew Chief workspace revision is stale; rebase before continuing."
         )
     question = current.pending_driver_question
-    if question is None or answer not in question.answer_options:
+    if (
+        current.folded_state is None
+        or current.folded_state.status != "open"
+        or question is None
+        or answer not in question.answer_options
+    ):
         raise ValueError("Driver answer must match the pending contextual question.")
     sequence = current.folded_state.last_sequence + 1
     CrewChiefRepository(db_path).append_event(
@@ -1326,10 +1515,25 @@ def rebase_investigation(
         investigation_id=investigation_id,
         db_path=db_path,
     )
-    if current.folded_state is None or current.folded_state.status != "open":
-        raise ValueError("Crew Chief investigation is not open.")
-    if current.identity.workspace_revision == stale_workspace_revision:
-        return current
+    if current.folded_state is None or current.folded_state.status not in {
+        "open",
+        "stale",
+    }:
+        raise ValueError("Crew Chief investigation cannot be rebased in its current state.")
+    if current.folded_state.status == "open":
+        if current.identity.workspace_revision == stale_workspace_revision:
+            return current
+        raise ValueError("Crew Chief rebase revision is stale.")
+    events = CrewChiefRepository(db_path).list_events(investigation_id)
+    accepted_workspace = _accepted_workspace_revision(
+        current.investigation, events
+    )
+    if stale_workspace_revision != accepted_workspace:
+        raise ValueError("Crew Chief rebase revision is stale.")
+    accepted_authority = _accepted_authority_revision(
+        current.investigation, events
+    )
+    current_authority = _authority_revision(current.identity)
     sequence = current.folded_state.last_sequence + 1
     CrewChiefRepository(db_path).append_event(
         _event(
@@ -1341,6 +1545,8 @@ def rebase_investigation(
                 message="Workspace rebased to current P19/P20/P26 identities.",
                 previous_workspace_revision=stale_workspace_revision,
                 new_workspace_revision=current.identity.workspace_revision,
+                previous_authority_revision=accepted_authority,
+                new_authority_revision=current_authority,
             ),
         )
     )

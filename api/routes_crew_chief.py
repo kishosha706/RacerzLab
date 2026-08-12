@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Path as ApiPath, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from racelab_engine.models.crew_chief import (
@@ -68,7 +68,7 @@ def _http_error(exc: ValueError) -> HTTPException:
 
 @router.get("/{run_id}/crew-chief-workspace", response_model=CrewChiefWorkspace)
 def get_crew_chief_workspace(
-    run_id: str,
+    run_id: Annotated[str, ApiPath(min_length=1, max_length=160)],
     session_id: Annotated[str, Query(min_length=1, max_length=160)],
     objective: EngineeringObjective = EngineeringObjective.RACE_LONG_RUN,
     investigation_id: Annotated[str | None, Query(min_length=1, max_length=160)] = None,
@@ -89,7 +89,8 @@ def get_crew_chief_workspace(
     response_model=CrewChiefWorkspace,
 )
 def create_crew_chief_investigation(
-    run_id: str, request: OpenInvestigationRequest
+    run_id: Annotated[str, ApiPath(min_length=1, max_length=160)],
+    request: OpenInvestigationRequest,
 ) -> CrewChiefWorkspace:
     try:
         return open_investigation(
@@ -109,7 +110,9 @@ def create_crew_chief_investigation(
     response_model=CrewChiefWorkspace,
 )
 def continue_crew_chief_investigation(
-    run_id: str, investigation_id: str, request: RevisionRequest
+    run_id: Annotated[str, ApiPath(min_length=1, max_length=160)],
+    investigation_id: Annotated[str, ApiPath(min_length=1, max_length=160)],
+    request: RevisionRequest,
 ) -> CrewChiefWorkspace:
     try:
         return continue_investigation(
@@ -127,7 +130,9 @@ def continue_crew_chief_investigation(
     response_model=CrewChiefWorkspace,
 )
 def answer_crew_chief_question(
-    run_id: str, investigation_id: str, request: DriverAnswerRequest
+    run_id: Annotated[str, ApiPath(min_length=1, max_length=160)],
+    investigation_id: Annotated[str, ApiPath(min_length=1, max_length=160)],
+    request: DriverAnswerRequest,
 ) -> CrewChiefWorkspace:
     try:
         return record_driver_answer(
@@ -146,7 +151,9 @@ def answer_crew_chief_question(
     response_model=CrewChiefWorkspace,
 )
 def change_crew_chief_objective(
-    run_id: str, investigation_id: str, request: ObjectiveRequest
+    run_id: Annotated[str, ApiPath(min_length=1, max_length=160)],
+    investigation_id: Annotated[str, ApiPath(min_length=1, max_length=160)],
+    request: ObjectiveRequest,
 ) -> CrewChiefWorkspace:
     try:
         return select_objective(
@@ -165,7 +172,9 @@ def change_crew_chief_objective(
     response_model=CrewChiefWorkspace,
 )
 def abandon_crew_chief_investigation(
-    run_id: str, investigation_id: str, request: AbandonRequest
+    run_id: Annotated[str, ApiPath(min_length=1, max_length=160)],
+    investigation_id: Annotated[str, ApiPath(min_length=1, max_length=160)],
+    request: AbandonRequest,
 ) -> CrewChiefWorkspace:
     try:
         return abandon_investigation(
@@ -184,7 +193,9 @@ def abandon_crew_chief_investigation(
     response_model=CrewChiefWorkspace,
 )
 def rebase_crew_chief_investigation(
-    run_id: str, investigation_id: str, request: RebaseRequest
+    run_id: Annotated[str, ApiPath(min_length=1, max_length=160)],
+    investigation_id: Annotated[str, ApiPath(min_length=1, max_length=160)],
+    request: RebaseRequest,
 ) -> CrewChiefWorkspace:
     try:
         return rebase_investigation(

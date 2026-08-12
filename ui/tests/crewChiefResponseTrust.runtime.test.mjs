@@ -24,9 +24,10 @@ const workspace = {
   },
   run_sentinel: {
     mission: "Collect evidence", need: "Three eligible laps", success: "Repeatable evidence",
-    stop: ["Stop on integrity failure."], required_laps: 3, accepted_laps: 0, laps: [],
+    stop: ["Stop on integrity failure."], required_laps: 3, accepted_laps: 0,
+    complete: false, stage: "measurement", laps: [],
   },
-  critique: { passed: true, findings: [], strongest_contradiction: null },
+  critique: { outcome: "pass", passed: true, findings: [], strongest_contradiction: null },
   adaptive_research: { state: "data_locked", authority: "none", activation_gate: "Held-out evidence is required." },
   current_subgoal: null, pending_driver_question: null, investigation: null, folded_state: null,
   blocker_reasons: [], post_run_brief: ["P19 status: ready."], response_history_ids: [], driver_memory_ids: [],
@@ -55,6 +56,23 @@ assert.equal(isCrewChiefWorkspaceResponse(malformedNested, scope), false);
 const smuggledBrief = structuredClone(workspace);
 smuggledBrief.post_run_brief = ["Set lf.ls_rebound to 4 clicks."];
 assert.equal(isCrewChiefWorkspaceResponse(smuggledBrief, scope), false);
+const foreignEvidence = structuredClone(workspace);
+foreignEvidence.evidence_index.entries = [{
+  artifact_id: "event-2", producer_id: "p19.reasoning_snapshot", run_id: "run-2",
+  session_id: "session-1", setup_id: "setup-1", lap_numbers: [4],
+  lap_pct_start: 20, lap_pct_end: 30, phase: "center", mechanism_ids: [],
+  component_ids: [], control_keys: [], source_channels: ["YawRate"],
+  evidence_state: "measured", polarity: "support", blocker_reasons: [],
+  authority_ceiling: "measurement_only",
+}];
+assert.equal(isCrewChiefWorkspaceResponse(foreignEvidence, scope), false);
+assert.equal(isCrewChiefWorkspaceResponse(
+  foreignEvidence, { ...scope, scopeRunIds: ["run-1", "run-2"] },
+), true);
+foreignEvidence.evidence_index.entries[0].lap_pct_start = 40;
+assert.equal(isCrewChiefWorkspaceResponse(
+  foreignEvidence, { ...scope, scopeRunIds: ["run-1", "run-2"] },
+), false);
 
 const controlledReport = structuredClone(report);
 controlledReport.briefing.action = {

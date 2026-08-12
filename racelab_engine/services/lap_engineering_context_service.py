@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -11,6 +12,7 @@ from racelab_engine.analysis.proximity_context import (
     classify_proximity_time_gap_window,
     proximity_time_gap_exposure_fraction,
 )
+from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.lap_engineering_context import (
     ChannelSemantic,
@@ -20,7 +22,13 @@ from racelab_engine.models.lap_engineering_context import (
     TireCornerEngineeringContext,
     WheelSpeedMismatchContext,
 )
-from racelab_engine.services.import_service import read_telemetry_rows
+from racelab_engine.services.import_service import (
+    assert_telemetry_cache_identity,
+    default_data_dir,
+    read_telemetry_manifest,
+    read_telemetry_rows,
+)
+from racelab_engine.storage.db import default_db_path
 from racelab_engine.storage.repository import RaceLabRepository
 
 
@@ -191,12 +199,14 @@ def build_lap_engineering_context_report(
             blocker_reasons=("No canonical eligible flying lap is available for context.",),
         )
     contexts: list[LapEngineeringContext] = []
+    rows_by_lap: dict[int, list[Mapping[str, Any]]] = {}
+    for row in rows:
+        lap_number = _number(_row_value(row, ("lap", "lap_number")))
+        if lap_number is None or not lap_number.is_integer():
+            continue
+        rows_by_lap.setdefault(int(lap_number), []).append(row)
     for lap in eligible:
-        lap_rows = [
-            row
-            for row in rows
-            if _number(_row_value(row, ("lap", "lap_number"))) == lap.lap_number
-        ]
+        lap_rows = rows_by_lap.get(lap.lap_number, [])
         if not lap_rows:
             continue
         lap_rows.sort(key=lambda row: _number(row.get("session_time")) or 0.0)
@@ -284,19 +294,61 @@ def build_lap_engineering_context_report(
     )
 
 
+@lru_cache(maxsize=16)
+def _load_cached_lap_engineering_context_report(
+    run_id: str,
+    database_path: str,
+    data_path: str,
+    source_file_sha256: str,
+    telemetry_cache_sha256: str,
+    lap_inventory_sha256: str,
+) -> LapEngineeringContextReport:
+    del source_file_sha256, telemetry_cache_sha256, lap_inventory_sha256
+    overview = RaceLabRepository(database_path).get_overview(run_id)
+    if overview is None:
+        raise ValueError(f"Run not found: {run_id}")
+    rows = read_telemetry_rows(
+        run_id, data_dir=data_path, columns=list(_CONTEXT_CHANNELS)
+    )
+    return build_lap_engineering_context_report(
+        run_id=run_id,
+        laps=overview.laps,
+        rows=rows,
+    )
+
+
 def load_lap_engineering_context_report(
     run_id: str,
     *,
     db_path: str | Path | None = None,
 ) -> LapEngineeringContextReport:
-    overview = RaceLabRepository(db_path).get_overview(run_id)
+    data_path = default_data_dir().resolve()
+    manifest = read_telemetry_manifest(run_id, data_path)
+    source_file_sha256 = str(manifest.get("source_file_sha256") or "")
+    telemetry_cache_sha256 = str(manifest.get("telemetry_cache_sha256") or "")
+    if not source_file_sha256 or not telemetry_cache_sha256:
+        raise ValueError(
+            "Lap engineering context requires immutable source and cache identities."
+        )
+    assert_telemetry_cache_identity(run_id, data_path)
+    database_path = (
+        Path(db_path).resolve()
+        if db_path is not None
+        else default_db_path().resolve()
+    )
+    overview = RaceLabRepository(database_path).get_overview(run_id)
     if overview is None:
         raise ValueError(f"Run not found: {run_id}")
-    rows = read_telemetry_rows(run_id, columns=list(_CONTEXT_CHANNELS))
-    return build_lap_engineering_context_report(
-        run_id=run_id,
-        laps=overview.laps,
-        rows=rows,
+    lap_inventory_sha256 = canonical_json_sha256(
+        [lap.model_dump(mode="json") for lap in overview.laps]
+    )
+    return _load_cached_lap_engineering_context_report(
+        run_id,
+        str(database_path),
+        str(data_path),
+        source_file_sha256,
+        telemetry_cache_sha256,
+        lap_inventory_sha256,
     )
 
 

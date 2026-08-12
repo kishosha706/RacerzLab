@@ -670,6 +670,10 @@ export function IntelligencePanel({
       return new Set<string>();
     }
   }, [runId, sessionRunScopeKey]);
+  const crewChiefScopeRunIds = useMemo(
+    () => [...queryNavigationRunIds],
+    [queryNavigationRunIds],
+  );
   const scopeKey = JSON.stringify({
     session_id: sessionId,
     run_id: runId,
@@ -1362,12 +1366,13 @@ export function IntelligencePanel({
           runId={runId}
           sessionId={sessionId}
           report={report}
+          scopeRunIds={crewChiefScopeRunIds}
           learning={learning}
           onFocusEvidence={(entry) => {
             const lap = entry.lap_numbers[0] ?? null;
             const hasWindow = entry.lap_pct_start != null && entry.lap_pct_end != null;
             focusEvidence({
-              runId,
+              runId: entry.run_id,
               lapNumber: lap,
               lapScope: lap == null ? "run" : "single_lap",
               lapWindowStart: null,

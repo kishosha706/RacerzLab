@@ -7,6 +7,7 @@ from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.lap_engineering_context import ChannelUpdateSemantic
 from racelab_engine.services.lap_engineering_context_service import (
     build_lap_engineering_context_report,
+    load_lap_engineering_context_report,
 )
 
 
@@ -102,3 +103,63 @@ def test_vectorized_next_gen_carcass_aliases_match_row_engine_contract() -> None
     assert frame["rr_carcass_temp_l"][0] == 73.0
     assert frame["rr_carcass_temp_m"][0] == 74.0
     assert frame["rr_carcass_temp_r"][0] == 75.0
+
+
+def test_lap_context_groups_rows_in_one_pass(monkeypatch) -> None:
+    del monkeypatch
+    lap_reads = 0
+
+    class CountingRow(dict[str, float | int]):
+        def get(self, key: str, default: object = None) -> object:
+            nonlocal lap_reads
+            if key == "lap":
+                lap_reads += 1
+            return super().get(key, default)
+
+    rows = [
+        CountingRow(lap=lap_number, session_time=float(index))
+        for lap_number in range(1, 21)
+        for index in range(3)
+    ]
+    laps = [_lap(number) for number in range(1, 21)]
+    report = build_lap_engineering_context_report(
+        run_id="run-1", laps=laps, rows=rows
+    )
+    assert len(report.contexts) == 20
+    assert lap_reads == len(rows)
+
+
+def test_cached_lap_context_rechecks_artifact_identity(monkeypatch, tmp_path) -> None:
+    checks = 0
+    overview = type("Overview", (), {"laps": (_lap(1),)})()
+
+    def check_identity(*args: object, **kwargs: object) -> None:
+        nonlocal checks
+        checks += 1
+
+    monkeypatch.setattr(
+        "racelab_engine.services.lap_engineering_context_service.default_data_dir",
+        lambda: tmp_path,
+    )
+    monkeypatch.setattr(
+        "racelab_engine.services.lap_engineering_context_service.read_telemetry_manifest",
+        lambda *args, **kwargs: {
+            "source_file_sha256": "a" * 64,
+            "telemetry_cache_sha256": "b" * 64,
+        },
+    )
+    monkeypatch.setattr(
+        "racelab_engine.services.lap_engineering_context_service.assert_telemetry_cache_identity",
+        check_identity,
+    )
+    monkeypatch.setattr(
+        "racelab_engine.services.lap_engineering_context_service.RaceLabRepository.get_overview",
+        lambda self, run_id: overview,
+    )
+    monkeypatch.setattr(
+        "racelab_engine.services.lap_engineering_context_service._load_cached_lap_engineering_context_report",
+        lambda *args: "cached-report",
+    )
+    assert load_lap_engineering_context_report("run-1", db_path=tmp_path / "db.sqlite") == "cached-report"
+    assert load_lap_engineering_context_report("run-1", db_path=tmp_path / "db.sqlite") == "cached-report"
+    assert checks == 2

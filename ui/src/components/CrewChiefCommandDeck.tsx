@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BrainCircuit, CheckCircle2, CircleHelp, Play, ShieldCheck } from "lucide-react";
 
 import {
@@ -14,6 +14,7 @@ type Props = {
   runId: string;
   sessionId: string;
   report: RunIntelligenceReport;
+  scopeRunIds: readonly string[];
   learning: boolean;
   onFocusEvidence: (entry: CrewChiefEvidenceEntry) => void;
 };
@@ -28,34 +29,44 @@ const objectives: Array<[EngineeringObjective, string]> = [
   ["fuel_strategy", "Fuel strategy"],
 ];
 
-export function CrewChiefCommandDeck({ runId, sessionId, report, learning, onFocusEvidence }: Props) {
+export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, learning, onFocusEvidence }: Props) {
   const [workspace, setWorkspace] = useState<CrewChiefWorkspace | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [driverReport, setDriverReport] = useState("");
   const [objective, setObjective] = useState<EngineeringObjective>("race_long_run");
+  const workspaceSequence = useRef(0);
 
   useEffect(() => {
-    let cancelled = false;
+    const sequence = ++workspaceSequence.current;
     setWorkspace(null);
     setError(null);
-    void fetchCrewChiefWorkspace(runId, sessionId, report, { objective })
-      .then((value) => { if (!cancelled) setWorkspace(value); })
+    setBusy(false);
+    void fetchCrewChiefWorkspace(runId, sessionId, report, { objective, scopeRunIds })
+      .then((value) => { if (sequence === workspaceSequence.current) setWorkspace(value); })
       .catch((caught: unknown) => {
-        if (!cancelled) setError(caught instanceof Error ? caught.message : "Crew Chief unavailable.");
+        if (sequence === workspaceSequence.current) {
+          setError(caught instanceof Error ? caught.message : "Crew Chief unavailable.");
+        }
       });
-    return () => { cancelled = true; };
-  }, [objective, report, runId, sessionId]);
+    return () => {
+      if (sequence === workspaceSequence.current) workspaceSequence.current += 1;
+    };
+  }, [objective, report, runId, scopeRunIds, sessionId]);
 
   const runMutation = async (operation: () => Promise<CrewChiefWorkspace>) => {
+    const sequence = ++workspaceSequence.current;
     setBusy(true);
     setError(null);
     try {
-      setWorkspace(await operation());
+      const value = await operation();
+      if (sequence === workspaceSequence.current) setWorkspace(value);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Crew Chief operation failed.");
+      if (sequence === workspaceSequence.current) {
+        setError(caught instanceof Error ? caught.message : "Crew Chief operation failed.");
+      }
     } finally {
-      setBusy(false);
+      if (sequence === workspaceSequence.current) setBusy(false);
     }
   };
 
@@ -115,7 +126,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, learning, onFoc
           <button
             type="button"
             disabled={busy || driverReport.trim().length === 0}
-            onClick={() => { void runMutation(() => openCrewChiefInvestigation(runId, sessionId, report, {
+            onClick={() => { void runMutation(() => openCrewChiefInvestigation(runId, sessionId, report, scopeRunIds, {
               driver_report: driverReport,
               expected_workspace_revision: revision,
               objective,
@@ -132,7 +143,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, learning, onFoc
               key={answer}
               disabled={busy}
               onClick={() => { void runMutation(() => answerCrewChiefQuestion(
-                runId, sessionId, investigationId!, revision, answer, report,
+                runId, sessionId, investigationId!, revision, answer, report, scopeRunIds,
               )); }}
             >{answer}</button>
           ))}</div>
@@ -142,7 +153,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, learning, onFoc
           type="button"
           disabled={busy}
           onClick={() => { void runMutation(() => continueCrewChiefInvestigation(
-            runId, sessionId, investigationId!, revision, report,
+            runId, sessionId, investigationId!, revision, report, scopeRunIds,
           )); }}
         ><Play size={14} /> {workspace.current_subgoal ? "Run next inspection" : "Emit bounded decision"}</button>
       ) : null}

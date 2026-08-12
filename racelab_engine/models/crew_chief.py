@@ -109,6 +109,12 @@ class CrewChiefEventPayload(CrewChiefModel):
         default=None, pattern=r"^[0-9a-f]{64}$"
     )
     new_workspace_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    previous_authority_revision: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    new_authority_revision: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     findings: tuple[str, ...] = ()
 
     @model_validator(mode="after")
@@ -123,6 +129,22 @@ class CrewChiefEventPayload(CrewChiefModel):
                 raise ValueError(
                     f"Crew Chief {label} values must be non-empty and unique"
                 )
+        for previous, current, label in (
+            (
+                self.previous_workspace_revision,
+                self.new_workspace_revision,
+                "workspace",
+            ),
+            (
+                self.previous_authority_revision,
+                self.new_authority_revision,
+                "authority",
+            ),
+        ):
+            if (previous is None) != (current is None):
+                raise ValueError(
+                    f"Crew Chief {label} revisions must be present together"
+                )
         return self
 
 
@@ -135,6 +157,33 @@ class CrewChiefEvent(CrewChiefModel):
     created_at: datetime
     event_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     payload: CrewChiefEventPayload
+
+    @model_validator(mode="after")
+    def event_type_matches_payload(self) -> CrewChiefEvent:
+        payload = self.payload
+        if self.event_type in {"tool_invoked", "tool_result_attached"}:
+            if payload.tool_id is None:
+                raise ValueError("Crew Chief tool events require one tool identity")
+        elif payload.tool_id is not None:
+            raise ValueError("Crew Chief tool identity is exclusive to tool events")
+        if self.event_type == "driver_question_asked":
+            if payload.question_id is None or payload.answer is not None:
+                raise ValueError("driver-question events require one unanswered question")
+        elif self.event_type == "driver_answer_recorded":
+            if payload.question_id is None or payload.answer is None:
+                raise ValueError("driver-answer events require the exact question and answer")
+        elif payload.question_id is not None or payload.answer is not None:
+            raise ValueError("driver dialogue fields are exclusive to driver events")
+        if (self.event_type == "decision_emitted") != (
+            payload.decision_kind is not None
+        ):
+            raise ValueError("decision identity is exclusive and required for decision events")
+        if (self.event_type == "objective_selected") != (payload.objective is not None):
+            raise ValueError("objective identity is exclusive and required for objective events")
+        has_rebase = payload.previous_workspace_revision is not None
+        if (self.event_type == "workspace_rebased") != has_rebase:
+            raise ValueError("workspace revisions are exclusive and required for rebase events")
+        return self
 
 
 class HypothesisInspectionState(CrewChiefModel):
@@ -334,6 +383,8 @@ class RunSentinelState(CrewChiefModel):
             raise ValueError("sentinel accepted count must match exact lap decisions")
         if self.complete != (self.accepted_laps >= self.required_laps):
             raise ValueError("sentinel completion must match required accepted laps")
+        if self.complete != (self.stage == "complete"):
+            raise ValueError("sentinel complete stage must match completion state")
         return self
 
 

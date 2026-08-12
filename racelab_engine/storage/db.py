@@ -79,6 +79,8 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
           workspace_revision TEXT NOT NULL,
           status TEXT NOT NULL,
           opened_at TEXT NOT NULL,
+          event_count INTEGER NOT NULL DEFAULT 0,
+          event_head_hash TEXT,
           investigation_json TEXT NOT NULL,
           FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
         );
@@ -150,6 +152,50 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
         );
         """
     )
+    if "crew_chief_investigations" in {
+        row["name"]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }:
+        investigation_columns = _column_names(
+            connection, "crew_chief_investigations"
+        )
+        needs_stream_head_backfill = (
+            "event_count" not in investigation_columns
+            or "event_head_hash" not in investigation_columns
+        )
+        _add_column_if_missing(
+            connection,
+            "crew_chief_investigations",
+            "event_count",
+            "event_count INTEGER NOT NULL DEFAULT 0",
+        )
+        _add_column_if_missing(
+            connection,
+            "crew_chief_investigations",
+            "event_head_hash",
+            "event_head_hash TEXT",
+        )
+        if needs_stream_head_backfill:
+            connection.execute(
+                """
+                UPDATE crew_chief_investigations
+                SET event_count = (
+                      SELECT COUNT(*) FROM crew_chief_events
+                      WHERE crew_chief_events.investigation_id = crew_chief_investigations.investigation_id
+                    ),
+                    event_head_hash = (
+                      SELECT event_hash FROM crew_chief_events
+                      WHERE crew_chief_events.investigation_id = crew_chief_investigations.investigation_id
+                      ORDER BY sequence DESC LIMIT 1
+                    )
+                WHERE EXISTS (
+                    SELECT 1 FROM crew_chief_events
+                    WHERE crew_chief_events.investigation_id = crew_chief_investigations.investigation_id
+                  )
+                """
+            )
     if "runs" in {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
         for column_name, ddl in {
             "analysis_engine_version": "analysis_engine_version TEXT DEFAULT '1.0.0'",

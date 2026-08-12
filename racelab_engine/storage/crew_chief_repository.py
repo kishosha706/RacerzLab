@@ -94,6 +94,8 @@ class CrewChiefRepository:
             or investigation.workspace_identity.session_id != row["session_id"]
             or investigation.workspace_identity.workspace_revision
             != row["workspace_revision"]
+            or investigation.status != row["status"]
+            or investigation.opened_at.isoformat() != row["opened_at"]
         ):
             raise CrewChiefIntegrityError("investigation row identity is corrupt")
         return investigation
@@ -134,9 +136,12 @@ class CrewChiefRepository:
                 connection.commit()
                 return
             row = connection.execute(
-                "SELECT COALESCE(MAX(sequence), 0) AS last_sequence "
+                "SELECT COALESCE(MAX(sequence), 0) AS last_sequence, "
+                "(SELECT event_hash FROM crew_chief_events AS latest "
+                " WHERE latest.investigation_id = ? "
+                " ORDER BY sequence DESC LIMIT 1) AS last_event_hash "
                 "FROM crew_chief_events WHERE investigation_id = ?",
-                (event.investigation_id,),
+                (event.investigation_id, event.investigation_id),
             ).fetchone()
             expected = int(row["last_sequence"]) + 1
             if event.sequence != expected:
@@ -161,6 +166,30 @@ class CrewChiefRepository:
                     encoded,
                 ),
             )
+            previous_hash = row["last_event_hash"]
+            updated = connection.execute(
+                """
+                UPDATE crew_chief_investigations
+                SET event_count = ?, event_head_hash = ?
+                WHERE investigation_id = ? AND event_count = ?
+                  AND (
+                    (? IS NULL AND event_head_hash IS NULL)
+                    OR event_head_hash = ?
+                  )
+                """,
+                (
+                    event.sequence,
+                    event.event_hash,
+                    event.investigation_id,
+                    event.sequence - 1,
+                    previous_hash,
+                    previous_hash,
+                ),
+            )
+            if updated.rowcount != 1:
+                raise CrewChiefIntegrityError(
+                    "Crew Chief event stream head does not match append history"
+                )
             connection.commit()
         except Exception:
             connection.rollback()
@@ -176,8 +205,19 @@ class CrewChiefRepository:
                 "ORDER BY sequence, event_id",
                 (investigation_id,),
             ).fetchall()
+            stream = connection.execute(
+                "SELECT event_count, event_head_hash "
+                "FROM crew_chief_investigations WHERE investigation_id = ?",
+                (investigation_id,),
+            ).fetchone()
         finally:
             connection.close()
+        if stream is None:
+            if rows:
+                raise CrewChiefIntegrityError(
+                    "Crew Chief event stream has no owning investigation"
+                )
+            return ()
         events: list[CrewChiefEvent] = []
         for expected, row in enumerate(rows, start=1):
             event = CrewChiefEvent.model_validate_json(row["event_json"])
@@ -186,10 +226,19 @@ class CrewChiefRepository:
                 or event.event_id != row["event_id"]
                 or event.sequence != expected
                 or event.event_hash != row["event_hash"]
+                or event.workspace_revision != row["workspace_revision"]
+                or event.created_at.isoformat() != row["created_at"]
+                or event.event_type != row["event_type"]
                 or crew_chief_event_hash(event) != event.event_hash
             ):
                 raise CrewChiefIntegrityError("Crew Chief event history is corrupt")
             events.append(event)
+        expected_head = events[-1].event_hash if events else None
+        if (
+            int(stream["event_count"]) != len(events)
+            or stream["event_head_hash"] != expected_head
+        ):
+            raise CrewChiefIntegrityError("Crew Chief event stream head is corrupt")
         return tuple(events)
 
     def save_objective(
@@ -259,6 +308,7 @@ class CrewChiefRepository:
     def save_response_record(self, record: ComponentResponseRecord) -> None:
         connection = initialize_database(self.db_path)
         try:
+            connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
                 "SELECT record_json FROM component_response_records "
                 "WHERE source_workflow_id = ?",
@@ -284,6 +334,9 @@ class CrewChiefRepository:
                 ),
             )
             connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
         finally:
             connection.close()
 
@@ -293,19 +346,31 @@ class CrewChiefRepository:
         connection = initialize_database(self.db_path)
         try:
             rows = connection.execute(
-                "SELECT record_json FROM component_response_records "
+                "SELECT * FROM component_response_records "
                 "WHERE context_identity = ? ORDER BY created_at, record_id",
                 (context_identity,),
             ).fetchall()
         finally:
             connection.close()
-        return tuple(
-            ComponentResponseRecord.model_validate_json(row[0]) for row in rows
-        )
+        records: list[ComponentResponseRecord] = []
+        for row in rows:
+            record = ComponentResponseRecord.model_validate_json(row["record_json"])
+            if (
+                record.record_id != row["record_id"]
+                or record.source_workflow_id != row["source_workflow_id"]
+                or record.source_run_ids[-1] != row["source_run_id"]
+                or record.context_identity != row["context_identity"]
+            ):
+                raise CrewChiefIntegrityError(
+                    "component response history row identity is corrupt"
+                )
+            records.append(record)
+        return tuple(records)
 
     def save_driver_memory(self, record: DriverKnowledgeRecord) -> None:
         connection = initialize_database(self.db_path)
         try:
+            connection.execute("BEGIN IMMEDIATE")
             encoded = record.model_dump_json()
             existing = connection.execute(
                 "SELECT record_json FROM crew_chief_driver_memory WHERE record_id = ?",
@@ -328,6 +393,9 @@ class CrewChiefRepository:
                 ),
             )
             connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
         finally:
             connection.close()
 
@@ -335,13 +403,26 @@ class CrewChiefRepository:
         connection = initialize_database(self.db_path)
         try:
             rows = connection.execute(
-                "SELECT record_json FROM crew_chief_driver_memory "
+                "SELECT * FROM crew_chief_driver_memory "
                 "WHERE session_id = ? ORDER BY recorded_at, record_id",
                 (session_id,),
             ).fetchall()
         finally:
             connection.close()
-        return tuple(DriverKnowledgeRecord.model_validate_json(row[0]) for row in rows)
+        records: list[DriverKnowledgeRecord] = []
+        for row in rows:
+            record = DriverKnowledgeRecord.model_validate_json(row["record_json"])
+            if (
+                record.record_id != row["record_id"]
+                or record.investigation_id != row["investigation_id"]
+                or record.session_id != row["session_id"]
+                or record.recorded_at.isoformat() != row["recorded_at"]
+            ):
+                raise CrewChiefIntegrityError(
+                    "Crew Chief driver-memory row identity is corrupt"
+                )
+            records.append(record)
+        return tuple(records)
 
     def save_effectiveness(self, record: CrewChiefEffectivenessRecord) -> None:
         connection = initialize_database(self.db_path)

@@ -344,8 +344,11 @@ function trustedCrewChiefResponse(
   runId: string,
   sessionId: string,
   report: RunIntelligenceReport,
+  scopeRunIds?: readonly string[],
 ): CrewChiefWorkspace {
-  if (!isCrewChiefWorkspaceResponse(payload, { runId, sessionId, report })) {
+  if (!isCrewChiefWorkspaceResponse(payload, {
+    runId, sessionId, report, scopeRunIds,
+  })) {
     throw new Error("Crew Chief failed its exact P19/P20/P26 workspace authority check.");
   }
   return payload;
@@ -355,7 +358,11 @@ export function fetchCrewChiefWorkspace(
   runId: string,
   sessionId: string,
   report: RunIntelligenceReport,
-  options?: { investigationId?: string | null; objective?: EngineeringObjective },
+  options?: {
+    investigationId?: string | null;
+    objective?: EngineeringObjective;
+    scopeRunIds?: readonly string[];
+  },
 ): Promise<CrewChiefWorkspace> {
   const params = new URLSearchParams({ session_id: sessionId });
   if (options?.investigationId) params.set("investigation_id", options.investigationId);
@@ -365,13 +372,16 @@ export function fetchCrewChiefWorkspace(
     undefined,
     INTELLIGENCE_TIMEOUT_MS,
     "Crew Chief workspace",
-  ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report));
+  ).then((payload) => trustedCrewChiefResponse(
+    payload, runId, sessionId, report, options?.scopeRunIds,
+  ));
 }
 
 export function openCrewChiefInvestigation(
   runId: string,
   sessionId: string,
   report: RunIntelligenceReport,
+  scopeRunIds: readonly string[],
   body: { driver_report: string; expected_workspace_revision: string; objective: EngineeringObjective },
 ): Promise<CrewChiefWorkspace> {
   return requestJson<unknown>(
@@ -379,7 +389,7 @@ export function openCrewChiefInvestigation(
     { method: "POST", body: JSON.stringify({ session_id: sessionId, ...body }) },
     INTELLIGENCE_TIMEOUT_MS,
     "Open Crew Chief investigation",
-  ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report));
+  ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report, scopeRunIds));
 }
 
 export function continueCrewChiefInvestigation(
@@ -388,13 +398,14 @@ export function continueCrewChiefInvestigation(
   investigationId: string,
   expectedWorkspaceRevision: string,
   report: RunIntelligenceReport,
+  scopeRunIds: readonly string[],
 ): Promise<CrewChiefWorkspace> {
   return requestJson<unknown>(
     `/api/runs/${encodeURIComponent(runId)}/crew-chief-investigations/${encodeURIComponent(investigationId)}/continue`,
     { method: "POST", body: JSON.stringify({ session_id: sessionId, expected_workspace_revision: expectedWorkspaceRevision }) },
     INTELLIGENCE_TIMEOUT_MS,
     "Continue Crew Chief investigation",
-  ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report));
+  ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report, scopeRunIds));
 }
 
 export function answerCrewChiefQuestion(
@@ -404,13 +415,14 @@ export function answerCrewChiefQuestion(
   expectedWorkspaceRevision: string,
   answer: string,
   report: RunIntelligenceReport,
+  scopeRunIds: readonly string[],
 ): Promise<CrewChiefWorkspace> {
   return requestJson<unknown>(
     `/api/runs/${encodeURIComponent(runId)}/crew-chief-investigations/${encodeURIComponent(investigationId)}/driver-answer`,
     { method: "POST", body: JSON.stringify({ session_id: sessionId, expected_workspace_revision: expectedWorkspaceRevision, answer }) },
     INTELLIGENCE_TIMEOUT_MS,
     "Crew Chief driver answer",
-  ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report));
+  ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report, scopeRunIds));
 }
 
 export function fetchVehicleSystems(
