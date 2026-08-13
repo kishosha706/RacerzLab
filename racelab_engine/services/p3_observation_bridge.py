@@ -665,7 +665,10 @@ def _rebind_p3_observation_rows(
                 row
                 for row in grouped_rows.get(citation.lap_number, [])
                 if (position := lap_pct(row)) is not None
-                and citation.lap_pct_start <= position <= citation.lap_pct_end
+                and any(
+                    segment.start_pct <= position <= segment.end_pct
+                    for segment in citation.physical_segments
+                )
             ]
             coobserved = [
                 row
@@ -699,6 +702,30 @@ def _rebind_p3_observation_rows(
                 continue
             citation_payload = citation.model_dump()
             citation_payload["telemetry_sample_count"] = len(coobserved)
+            rebound_segments = []
+            for segment in citation.physical_segments:
+                segment_count = sum(
+                    1
+                    for row in coobserved
+                    if (position := lap_pct(row)) is not None
+                    and segment.start_pct <= position <= segment.end_pct
+                )
+                if segment_count:
+                    rebound_segments.append({
+                        "start_pct": segment.start_pct,
+                        "end_pct": segment.end_pct,
+                        "sample_count": segment_count,
+                    })
+            if not any(
+                segment["start_pct"] <= citation.lap_pct_peak <= segment["end_pct"]
+                for segment in rebound_segments
+            ):
+                blockers.append(
+                    f"{observation.mechanism.value.replace('_', ' ').title()} lap "
+                    f"{citation.lap_number} has no co-observed samples in the peak segment."
+                )
+                continue
+            citation_payload["physical_segments"] = rebound_segments
             citations.append(ObservationCitation.model_validate(citation_payload))
             citation_coverages.append(coverage)
         if blockers or len(citations) != len(observation.citations):

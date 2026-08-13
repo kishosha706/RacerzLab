@@ -12,8 +12,12 @@ from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.observation_intelligence import (
+    MechanismObservation,
+    MechanismObservationReport,
     MechanismKind,
+    ObservationCitation,
     ObservationStatus,
+    PhysicalSegment,
     ProducerArtifactScope,
 )
 from racelab_engine.models.session import RunOverview, SessionSummary
@@ -44,6 +48,71 @@ def test_disjoint_phase_islands_remain_explicit_physical_segments() -> None:
     ]
     assert window.end_pct - window.start_pct < 1.0
     assert sum(item.sample_count for item in window.physical_segments) == window.sample_count
+
+
+def test_p3_rebinding_never_counts_rows_between_disjoint_segments() -> None:
+    citation = ObservationCitation(
+        run_id="run-a",
+        lap_number=1,
+        setup_id="setup-a",
+        lap_pct_start=10.0,
+        lap_pct_end=60.2,
+        lap_pct_peak=10.0,
+        phase="braking",
+        evidence_state=EvidenceState.CALCULATED,
+        source_channels=("brake_pct", "yaw_rate"),
+        telemetry_sample_count=4,
+        physical_segments=(
+            PhysicalSegment(start_pct=10.0, end_pct=10.2, sample_count=2),
+            PhysicalSegment(start_pct=60.0, end_pct=60.2, sample_count=2),
+        ),
+    )
+    observation = MechanismObservation(
+        observation_id="braking-disjoint",
+        producer_id="braking-test",
+        artifact_id="braking-artifact",
+        source_run_ids=("run-a",),
+        source_setup_ids=("setup-a",),
+        sample_coverage=1.0,
+        mechanism=MechanismKind.BRAKING_RESPONSE,
+        run_id="run-a",
+        setup_id="setup-a",
+        lap_number=1,
+        phase="braking",
+        lap_pct_start=10.0,
+        lap_pct_end=60.2,
+        lap_pct_peak=10.0,
+        summary="Disjoint braking response.",
+        evidence_state=EvidenceState.CALCULATED,
+        qualified=True,
+        source_channels=("brake_pct", "yaw_rate"),
+        required_channels=("brake_pct", "yaw_rate"),
+        supporting_evidence=("Both islands have co-observed inputs.",),
+        telemetry_sample_count=4,
+        repetition_count=1,
+        citations=(citation,),
+    )
+    report = MechanismObservationReport(
+        status=ObservationStatus.READY,
+        run_id="run-a",
+        setup_id="setup-a",
+        observations=(observation,),
+    )
+    rows = [
+        {
+            "lap": 1,
+            "lap_dist_pct_100": pct,
+            "brake_pct": 50.0,
+            "yaw_rate": 0.2,
+        }
+        for pct in (10.0, 10.2, 20.0, 30.0, 40.0, 50.0, 60.0, 60.2)
+    ]
+
+    rebound = bridge._rebind_p3_observation_rows(report, {1: rows})
+
+    rebound_citation = rebound.observations[0].citations[0]
+    assert rebound_citation.telemetry_sample_count == 4
+    assert [segment.sample_count for segment in rebound_citation.physical_segments] == [2, 2]
 
 
 def _lap(number: int, lap_time: float) -> LapSummary:

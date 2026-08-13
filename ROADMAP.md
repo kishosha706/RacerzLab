@@ -1940,20 +1940,26 @@ that graph; it does not create another setup-authority path.
   action, and collapsed whole-lap chart surface. It now drives the shipped flow,
   imports protected Atlanta telemetry, opens Platform, expands charts, captures a
   screenshot, and rejects unexpected browser/transport failures.
+- The expanded packaged Crew/restart smoke found P3 rebinding counting uncited
+  rows between disjoint physical islands while retaining segment-only counts. That
+  mismatch raised a fresh-import validation 409. Rebinding now filters and recounts
+  exact segments; a hostile gap regression and the previously failed run pass.
 
 ### P31 release validation
 
-- Python: 2,337 collected; 2,332 passed, five skipped, zero failed. The explicit
+- Python: 2,338 collected; 2,333 passed, five skipped, zero failed. The explicit
   slow selection collected 26 (25 passed, one skipped); the integration marker is
-  nonempty and its restart/tamper test passed; 186 focused P19/P20/P26/Crew tests
+  nonempty and its restart/tamper test passed; 187 focused P19/P20/P26/Crew tests
   passed with zero failures.
 - Frontend: three behavioral Vitest/React Testing Library tests, five executable
   runtime-trust files, TypeScript, and the 2,197-module production build passed.
 - Product/runtime: OpenAPI 3.1 exposed 86 paths/94 operations with no duplicate
   operation IDs; the protected Atlanta regressions passed; PyInstaller produced
-  the Windows sidecar and the built-UI browser smoke imported Atlanta with no
-  console errors or unexpected failed requests.
-- Performance: Atlanta canonical intelligence measured 20.370 s cold and 9.674 ms
+  the Windows sidecar. Built-UI browser smoke imported Atlanta, opened intelligence
+  and Crew, restarted both processes, and reopened the exact persisted run with no
+  console errors or unexpected failures. Its older unreviewed car build correctly
+  kept P26/Crew authority withheld rather than bypassing applicability.
+- Performance: Atlanta canonical intelligence measured 13.195 s cold and 5.488 ms
   warm, with one build, one cache entry, and exact object reuse. The warm target
   passed; the 2.0 s cold target remains open. A scoped catalog over 10,000 corrupt
   unrelated histories deserialized one relevant row and passed in 0.22 s.
@@ -2087,4 +2093,4 @@ Implementation queue completed in this pass:
 | 2026-08-10 | Closed the P26 greenfield dot-to-dot contract | Removed the remaining split-version assumptions and made one current contract span verified telemetry ownership, exact Next Gen applicability, all 50 engineering areas, explicit area-to-property semantics, independently scoped P20 observations, exact P19 history and per-control Undo, grounded component questions, canonical report embedding, workflow-aware refresh, and deep client trust-boundary validation. The current graph compiles 609 nodes and 843 edges with deterministic content identity; the real Atlanta artifact verified full setup capture without causal or setup-authority overclaim. The complete 2,268-test collection passed (2,263 passed, five protected skips), plus changed-file Ruff, TypeScript, the 2,192-module production build, executable runtime guards, OpenAPI inspection, and diff integrity |
 | 2026-08-12 | Verified P27-P30 deterministic autonomous Crew Chief operating system | One revision-bound private P19/P20/P26 workspace now owns event-sourced investigations, eight bounded inspections, deterministic critic and driver dialogue, hard Success Contracts, a junk/context-aware Run Sentinel, exact-context component response records, complaint-only driver memory, and an existing-Engineer Race/Learning command deck. Exact setup authority remains an equality-checked P19 projection; the optional generative boundary is disabled and P30 remains data-locked. The complete no-bytecode 2,300-test collection passed (2,295 passed, five protected skips), plus 154 focused authority/Crew Chief/P19-P20-P26 tests, whole-repo Ruff, TypeScript, the 2,196-module production build, bytecode compilation, seven-route OpenAPI inspection, executable synthetic and real-Atlanta UI trust guards, the unchanged 609-node/843-edge P26 graph, and diff integrity. |
 | 2026-08-12 | Completed continuous adversarial Crew Chief audit and repair | Twelve material findings were closed across stale authority, driver-dialogue sequencing, A/B/A2 stage ownership, event-tail and redundant-row tamper detection, repository-scoped caching, evidence deduplication, workflow fail-closed behavior, late UI responses, nested response trust, and API bounds. The final 2,316-test collection passed (2,311 passed, five protected environment/artifact skips), plus 159 focused tests with zero skips, whole-repo Ruff, TypeScript, the 2,196-module production build, bytecode compilation, seven-route OpenAPI inspection, real Atlanta execution, the unchanged 609-node/843-edge/50-area P26 graph, and diff integrity. Immutable warm caching reduced real Atlanta Crew Chief assembly from 3,317.595 ms to 148.147 ms; P19/P20/P26/Crew Chief authority ceilings and all data locks remain unchanged. |
-| 2026-08-13 | Completed P31 Truthful Crew Loop hardening | Telemetry truth, controlled-experiment identity, segmented evidence, transactional focus, exact Compare provenance, P19-mirrored Crew missions, deterministic investigation, quantity-level P26 observability, shared single-flight intelligence, scoped workflow polling, strict UI trust, and measurement-only research infrastructure passed all 2,337 collected Python tests (2,332 passed, five skipped), 186 focused authority tests, Ruff, TypeScript, three behavioral UI tests, five runtime trust suites, the 2,197-module build, OpenAPI inspection, protected Atlanta regressions, Windows sidecar packaging, and built-UI Atlanta browser smoke. Warm Atlanta intelligence is 9.674 ms with one build; the measured 20.370 s cold path remains explicit vectorization debt. P19/P20/P26/Crew authority ceilings and P30/statistical/physics locks remain unchanged. |
+| 2026-08-13 | Completed P31 Truthful Crew Loop hardening | Telemetry truth, controlled-experiment identity, segmented evidence, transactional focus, exact Compare provenance, P19-mirrored Crew missions, deterministic investigation, quantity-level P26 observability, shared single-flight intelligence, scoped workflow polling, strict UI trust, and measurement-only research infrastructure passed all 2,338 collected Python tests (2,333 passed, five skipped), 187 focused authority tests, Ruff, TypeScript, three behavioral UI tests, five runtime trust suites, the 2,197-module build, OpenAPI inspection, protected Atlanta regressions, Windows sidecar packaging, and built-UI Atlanta import/Crew/process-restart smoke. Warm Atlanta intelligence is 5.488 ms with one build; the measured 13.195 s cold path remains explicit vectorization debt. P19/P20/P26/Crew authority ceilings and P30/statistical/physics locks remain unchanged. |
