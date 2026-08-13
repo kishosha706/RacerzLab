@@ -32,8 +32,26 @@ function validEvidenceEntry(
   return typeof value.artifact_id === "string" && value.artifact_id.length > 0
     && typeof value.producer_id === "string" && value.producer_id.length > 0
     && typeof value.run_id === "string" && scopeRunIds.has(value.run_id)
+    && value.run_id === value.source_run_id
     && value.session_id === sessionId
-    && typeof value.setup_id === "string" && value.setup_id.length > 0
+    && value.workspace_session_id === sessionId
+    && typeof value.workspace_run_id === "string"
+    && scopeRunIds.has(String(value.workspace_run_id))
+    && typeof value.workspace_setup_id === "string"
+    && value.workspace_setup_id.length > 0
+    && nullableString(value.setup_id)
+    && nullableString(value.source_session_id)
+    && nullableString(value.source_setup_id)
+    && value.setup_id === value.source_setup_id
+    && (value.source_setup_sha256 === null
+      || (typeof value.source_setup_sha256 === "string" && hash.test(value.source_setup_sha256)))
+    && (value.source_build_context_sha256 === null
+      || (typeof value.source_build_context_sha256 === "string" && hash.test(value.source_build_context_sha256)))
+    && typeof value.source_provenance_available === "boolean"
+    && value.source_provenance_available === Boolean(
+      value.source_session_id && value.source_setup_id
+      && value.source_setup_sha256 && value.source_build_context_sha256,
+    )
     && Array.isArray(lapNumbers)
     && lapNumbers.every((lap) => Number.isInteger(lap) && lap >= 0)
     && new Set(lapNumbers).size === lapNumbers.length
@@ -48,6 +66,8 @@ function validEvidenceEntry(
     && typeof value.evidence_state === "string"
     && ["support", "contradiction", "neutral"].includes(String(value.polarity))
     && safeTexts(value.blocker_reasons)
+    && (value.source_provenance_available
+      || value.blocker_reasons.includes("source identity unavailable"))
     && new Set(value.blocker_reasons).size === value.blocker_reasons.length
     && ["observation_only", "context_only", "measurement_only", "p19_projection_only"]
       .includes(String(value.authority_ceiling));
@@ -67,11 +87,26 @@ export function isCrewChiefWorkspaceResponse(
     !record(value.identity)
     || !record(value.terminal_decision)
     || !record(value.evidence_index)
-    || !record(value.success_contract)
     || !record(value.run_sentinel)
     || !record(value.critique)
     || !record(value.adaptive_research)
   ) return false;
+  const missionContract = value.p19_mission_contract;
+  if (!(missionContract === null || (
+    record(missionContract)
+    && missionContract.schema_version === "p19.measurement-mission.v2"
+    && typeof missionContract.contract_id === "string"
+    && typeof missionContract.contract_sha256 === "string"
+    && hash.test(missionContract.contract_sha256)
+    && missionContract.run_id === scope.runId
+    && missionContract.source_setup_id === scope.report.setup_id
+    && missionContract.setup_sha256 === scope.report.setup_snapshot_sha256
+    && integerNumber(missionContract.required_laps)
+    && missionContract.required_laps >= 1
+    && safeTexts(missionContract.acceptance_thresholds)
+    && safeTexts(missionContract.integrity_stop_rules)
+    && safeText(missionContract.purpose)
+  ))) return false;
   const identity = value.identity;
   const decision = value.terminal_decision;
   const scopeRunIds = new Set(scope.scopeRunIds ?? [scope.runId]);
@@ -120,6 +155,8 @@ export function isCrewChiefWorkspaceResponse(
   ) return false;
   const success = value.success_contract;
   const sentinel = value.run_sentinel;
+  if (["blocked", "stop_testing"].includes(String(sentinel.p19_plan_kind))
+    && (success !== null || sentinel.required_laps !== null || sentinel.collection_complete)) return false;
   const critique = value.critique;
   let acceptedOrdinal = 0;
   const sentinelLapsAreCanonical = Array.isArray(sentinel.laps)
@@ -135,21 +172,30 @@ export function isCrewChiefWorkspaceResponse(
       return lap.reasons.length > 0 && lap.accepted_ordinal === null;
     });
   if (
-    success.workspace_revision !== identity.workspace_revision
-    || !safeText(success.target_scope)
-    || !safeText(success.acceptance_rule)
-    || !safeText(success.independence_unit)
+    !(success === null || (record(success)
+      && success.workspace_revision === identity.workspace_revision
+      && safeText(success.target_scope)
+      && safeText(success.acceptance_rule)
+      && safeText(success.independence_unit)))
+    || !["collecting", "blocked_by_p19", "stopped_by_p19", "awaiting_p19_score", "collection_complete"]
+      .includes(String(sentinel.mission_state))
+    || !["controlled_test", "measurement_mission", "discriminator", "stop_testing", "blocked"]
+      .includes(String(sentinel.p19_plan_kind))
     || !safeText(sentinel.mission)
     || !safeText(sentinel.need)
     || !safeText(sentinel.success)
     || !safeTexts(sentinel.stop)
-    || !integerNumber(sentinel.required_laps)
-    || sentinel.required_laps < 1
+    || !(sentinel.required_laps === null
+      || (integerNumber(sentinel.required_laps) && sentinel.required_laps >= 1))
     || !integerNumber(sentinel.accepted_laps)
     || sentinel.accepted_laps !== acceptedOrdinal
-    || sentinel.complete !== (acceptedOrdinal >= sentinel.required_laps)
-    || !["measurement", "A", "B", "A2", "complete"].includes(String(sentinel.stage))
-    || sentinel.complete !== (sentinel.stage === "complete")
+    || typeof sentinel.collection_complete !== "boolean"
+    || sentinel.collection_complete !== (
+      sentinel.required_laps !== null
+      && acceptedOrdinal >= sentinel.required_laps
+      && !["blocked_by_p19", "stopped_by_p19", "awaiting_p19_score"].includes(String(sentinel.mission_state))
+    )
+    || !["measurement", "A", "B", "A2", "blocked", "stopped", "awaiting_score"].includes(String(sentinel.stage))
     || !sentinelLapsAreCanonical
     || typeof critique.passed !== "boolean"
     || !["pass", "blocked", "reinvestigate", "ask_driver"].includes(String(critique.outcome))
@@ -187,6 +233,8 @@ export function isCrewChiefWorkspaceResponse(
     !record(value.folded_state)
     || value.folded_state.investigation_id !== identity.investigation_id
     || !["open", "complete", "stale", "abandoned"].includes(String(value.folded_state.status))
+    || typeof value.folded_state.accepted_workspace_revision !== "string"
+    || !hash.test(value.folded_state.accepted_workspace_revision)
   )) return false;
   const action = scope.report.briefing.action;
   if (decision.kind === "controlled_test") {

@@ -18,14 +18,16 @@ const workspace = {
     vehicle_runtime_identity_hash: h("9"), investigation_id: null,
   },
   evidence_index: { workspace_revision: h("c"), index_hash: h("8"), entries: [] },
+  p19_mission_contract: null,
   success_contract: {
     workspace_revision: h("c"), target_scope: "braking entry", acceptance_rule: "Repeat the metric.",
     independence_unit: "eligible lap",
   },
   run_sentinel: {
+    mission_state: "collecting", p19_plan_kind: "measurement_mission",
     mission: "Collect evidence", need: "Three eligible laps", success: "Repeatable evidence",
     stop: ["Stop on integrity failure."], required_laps: 3, accepted_laps: 0,
-    complete: false, stage: "measurement", laps: [],
+    collection_complete: false, stage: "measurement", laps: [],
   },
   critique: { outcome: "pass", passed: true, findings: [], strongest_contradiction: null },
   adaptive_research: { state: "data_locked", authority: "none", activation_gate: "Held-out evidence is required." },
@@ -60,6 +62,10 @@ const foreignEvidence = structuredClone(workspace);
 foreignEvidence.evidence_index.entries = [{
   artifact_id: "event-2", producer_id: "p19.reasoning_snapshot", run_id: "run-2",
   session_id: "session-1", setup_id: "setup-1", lap_numbers: [4],
+  workspace_run_id: "run-1", workspace_session_id: "session-1", workspace_setup_id: "setup-1",
+  source_run_id: "run-2", source_session_id: "session-1", source_setup_id: "setup-1",
+  source_setup_sha256: h("7"), source_build_context_sha256: h("6"),
+  source_provenance_available: true,
   lap_pct_start: 20, lap_pct_end: 30, phase: "center", mechanism_ids: [],
   component_ids: [], control_keys: [], source_channels: ["YawRate"],
   evidence_state: "measured", polarity: "support", blocker_reasons: [],

@@ -12163,54 +12163,6 @@ button:focus:not(:focus-visible) {
   background: rgba(56, 189, 248, 0.08);
 }
 
-.field-compare-panel {
-  display: grid;
-  gap: 8px;
-  margin-top: 14px;
-  border: 1px solid #1f2937;
-  border-radius: 6px;
-  background: rgba(13, 17, 23, 0.72);
-}
-
-.field-compare-header {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  width: 100%;
-  padding: 10px;
-  border: 0;
-  color: #cbd5e1;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-
-.field-compare-header span {
-  display: grid;
-  gap: 3px;
-}
-
-.field-compare-header small {
-  color: #8d9aaa;
-  font-size: 12px;
-}
-
-.field-compare-body {
-  display: grid;
-  gap: 10px;
-  padding: 10px;
-  border-top: 1px solid #1f2937;
-}
-
-.field-compare-table-wrap {
-  display: none;
-}
-
-.field-compare-table {
-  min-width: 1500px;
-}
-
 .stint-summary-drawer {
   position: sticky;
   bottom: 12px;

@@ -36,6 +36,18 @@ class HardBlocker(ContractModel):
     require_observed_clearance: bool = True
 
 
+class OutputDependencyContract(ContractModel):
+    """Co-observation needed to calculate one multi-channel output."""
+
+    required_channels: frozenset[str] = Field(min_length=1)
+    minimum_pairwise_coverage: float = Field(default=0.7, gt=0.0, le=1.0)
+    minimum_coobserved_samples: int = Field(default=3, ge=1)
+    maximum_gap_s: float | None = Field(default=None, gt=0.0)
+    contiguous_episode_required: bool = True
+    physical_position_required: bool = True
+    missing_output: str = "unavailable"
+
+
 class AllowedOutput(ContractModel):
     """An output a contract may authorize, including its evidence identity."""
 
@@ -43,6 +55,7 @@ class AllowedOutput(ContractModel):
     description: str = Field(min_length=1)
     evidence_state: EvidenceState
     source_channels: frozenset[str] = Field(min_length=1)
+    dependency_contract: OutputDependencyContract | None = None
 
     @model_validator(mode="after")
     def require_usable_evidence_state(self) -> AllowedOutput:

@@ -87,10 +87,9 @@ def test_laps_tab_renders_stint_intelligence_directly() -> None:
     assert "Load older session from startup to view previous runs." in source
     assert "Select a stint row to graph, compare, or export." in source
     assert "fetchRunList" not in source
-    assert "Field Compare" in source
-    assert "Other-driver stint data is not available yet." in source
-    assert "Delta to My Best Equivalent" in source
-    assert "showFieldCompare" in source
+    assert "Field Compare" not in source
+    assert "Other-driver stint data is not available yet." not in source
+    assert "showFieldCompare" not in source
     assert "expandedRunIds" in source
     assert "historyStintData" in source
     assert "loadHistoryRunStints" in source

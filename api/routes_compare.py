@@ -55,6 +55,7 @@ from racelab_engine.analysis.proximity_context import (
 from racelab_engine.services.import_service import read_telemetry_manifest, read_telemetry_rows
 from racelab_engine.services.insight_service import build_comparison_insights
 from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.phase_engineering import EngineeringSystemsResponse
 
 router = APIRouter(prefix="/api/compare", tags=["compare"])
@@ -81,6 +82,7 @@ class ComparePreviewResponse(BaseModel):
     setup_changes: list[dict]
     context_changes: list[dict]
     warnings: list[str]
+    compare_identity: dict
 
 
 class DeltaTraceRequest(_StrictCompareRequest):
@@ -107,9 +109,36 @@ class TimeAnalysisRequest(_StrictCompareRequest):
     step_pct: float = 0.1
 
 
-def _make_comparison_id(baseline: str, test: str, bl_lap: int | None, t_lap: int | None) -> str:
-    identity = f"{baseline}|{test}|{bl_lap}|{t_lap}".encode("utf-8")
+def _make_comparison_id(identity_payload: dict) -> str:
+    identity = canonical_json_sha256(identity_payload).encode("utf-8")
     return f"cmp_{hashlib.sha256(identity).hexdigest()[:20]}"
+
+
+def _compare_run_identity(run_id: str, repo) -> dict:
+    manifest = read_telemetry_manifest(run_id)
+    setup = repo.get_setup_snapshot(run_id)
+    return {
+        "run_id": run_id,
+        "source_file_sha256": manifest.get("source_file_sha256"),
+        "telemetry_cache_sha256": manifest.get("telemetry_cache_sha256"),
+        "compatibility_fingerprint": manifest.get("compatibility_fingerprint"),
+        "build_identity": manifest.get("compatibility_identity"),
+        "setup_id": setup.setup_id if setup is not None else None,
+        "setup_sha256": canonical_json_sha256(setup) if setup is not None else None,
+    }
+
+
+def _compare_identity(req: CompareRequest, repo, baseline_lap: int | None, test_lap: int | None) -> dict:
+    payload = {
+        "schema_version": "p31.compare-identity.v1",
+        "baseline": _compare_run_identity(req.baseline_run_id, repo),
+        "test": _compare_run_identity(req.test_run_id, repo),
+        "baseline_lap": baseline_lap,
+        "test_lap": test_lap,
+        "target_zone_start_pct": req.target_zone_start_pct,
+        "target_zone_end_pct": req.target_zone_end_pct,
+    }
+    return {**payload, "identity_sha256": canonical_json_sha256(payload)}
 
 
 _COMPARE_READ_CHANNELS = list(dict.fromkeys([
@@ -932,7 +961,8 @@ def run_comparison(req: CompareRequest) -> dict:
             speed_delta_mph=target_speed_delta,
         )
 
-    comparison_id = _make_comparison_id(req.baseline_run_id, req.test_run_id, bl_lap, t_lap)
+    compare_identity = _compare_identity(req, repo, bl_lap, t_lap)
+    comparison_id = _make_comparison_id(compare_identity)
     non_authority_warning = (
         "Comparison is observational; only the controlled P19 workflow may authorize "
         "a setup action or policy."
@@ -1009,7 +1039,7 @@ def run_comparison(req: CompareRequest) -> dict:
         ),
         confidence_score=min(observation.confidence_score, integrity_confidence_cap),
     )
-    return summary.as_dict()
+    return {**summary.as_dict(), "compare_identity": compare_identity}
 
 
 @router.get("/preview")
@@ -1047,6 +1077,12 @@ def compare_preview(baseline_run_id: str, test_run_id: str) -> ComparePreviewRes
                           "test_value": c.test_value, "warning": c.warning,
                           "is_problem": c.is_problem} for c in context_changes],
         warnings=warnings,
+        compare_identity=_compare_identity(
+            CompareRequest(baseline_run_id=baseline_run_id, test_run_id=test_run_id),
+            repo,
+            bl.best_useful_lap.lap_number if bl.best_useful_lap else None,
+            t.best_useful_lap.lap_number if t.best_useful_lap else None,
+        ),
     )
 
 
@@ -1461,4 +1497,3 @@ def get_comparison_insights(req: InsightsRequest) -> dict:
         causal_block_reasons=context_evidence if context_blocks_attribution else None,
     )
     return insights.as_dict()
-

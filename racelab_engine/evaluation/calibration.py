@@ -69,6 +69,108 @@ class CoverageEvaluation(EvidenceLabModel):
     authority: Literal["shadow_only"] = "shadow_only"
 
 
+class CalibrationStabilityObservation(EvidenceLabModel):
+    """One eligible-lap independence unit for future calibration research."""
+
+    unit_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    lap_number: int = Field(ge=0)
+    effect_sign: Literal[-1, 0, 1]
+    bootstrap_block_signs: tuple[Literal[-1, 0, 1], ...]
+    context_id: str = Field(min_length=1)
+    context_drifted: bool
+    countereffect_occurred: bool
+    partition: Literal["train", "calibration", "evaluation", "prospective"]
+    synthetic: bool = False
+
+
+class CalibrationStabilityEvaluation(EvidenceLabModel):
+    independent_eligible_laps: int = Field(ge=0)
+    independent_sessions: int = Field(ge=0)
+    held_out_laps: int = Field(ge=0)
+    repeated_session_sign_consistency: float | None = Field(default=None, ge=0.0, le=1.0)
+    block_bootstrap_stability: float | None = Field(default=None, ge=0.0, le=1.0)
+    context_drift_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    countereffect_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    state: Literal["collecting", "eligible_for_shadow_evaluation"]
+    blockers: tuple[str, ...]
+    confidence_activation_allowed: Literal[False] = False
+    authority: Literal["measurement_only"] = "measurement_only"
+
+
+def evaluate_calibration_stability(
+    observations: tuple[CalibrationStabilityObservation, ...],
+    *,
+    minimum_independent_laps: int = 6,
+    minimum_independent_sessions: int = 2,
+) -> CalibrationStabilityEvaluation:
+    """Measure independence/stability facts without calibrating public confidence."""
+
+    blockers: list[str] = []
+    unit_ids = [item.unit_id for item in observations]
+    lap_units = [(item.session_id, item.lap_number) for item in observations]
+    if len(unit_ids) != len(set(unit_ids)) or len(lap_units) != len(set(lap_units)):
+        blockers.append("Calibration evidence duplicates an eligible-lap independence unit.")
+    held_out = [
+        item for item in observations if item.partition in {"evaluation", "prospective"}
+    ]
+    sessions = {item.session_id for item in observations}
+    if len(set(lap_units)) < minimum_independent_laps:
+        blockers.append(
+            f"At least {minimum_independent_laps} independent eligible laps are required; sample count is not an independence unit."
+        )
+    if len(sessions) < minimum_independent_sessions:
+        blockers.append(
+            f"At least {minimum_independent_sessions} independent sessions are required for sign consistency."
+        )
+    if not held_out:
+        blockers.append("No held-out evaluation or prospective eligible laps are available.")
+    if any(item.synthetic for item in observations):
+        blockers.append("Synthetic observations cannot unlock calibration readiness.")
+
+    nonzero = [item.effect_sign for item in observations if item.effect_sign]
+    majority_sign = (1 if sum(nonzero) >= 0 else -1) if nonzero else None
+    session_signs: list[int] = []
+    for session_id in sorted(sessions):
+        signs = [
+            item.effect_sign for item in observations
+            if item.session_id == session_id and item.effect_sign
+        ]
+        if signs:
+            session_signs.append(1 if sum(signs) >= 0 else -1)
+    sign_consistency = (
+        None if majority_sign is None or not session_signs
+        else sum(sign == majority_sign for sign in session_signs) / len(session_signs)
+    )
+    bootstrap_signs = [
+        sign for item in observations for sign in item.bootstrap_block_signs if sign
+    ]
+    bootstrap_stability = (
+        None if majority_sign is None or not bootstrap_signs
+        else sum(sign == majority_sign for sign in bootstrap_signs) / len(bootstrap_signs)
+    )
+    if sign_consistency is None or sign_consistency < 0.7:
+        blockers.append("Repeated-session sign consistency has not reached the shadow-evaluation gate.")
+    if bootstrap_stability is None or bootstrap_stability < 0.7:
+        blockers.append("Block-bootstrap sign stability has not reached the shadow-evaluation gate.")
+    count = len(observations)
+    return CalibrationStabilityEvaluation(
+        independent_eligible_laps=len(set(lap_units)),
+        independent_sessions=len(sessions),
+        held_out_laps=len(held_out),
+        repeated_session_sign_consistency=sign_consistency,
+        block_bootstrap_stability=bootstrap_stability,
+        context_drift_rate=(
+            None if not count else sum(item.context_drifted for item in observations) / count
+        ),
+        countereffect_rate=(
+            None if not count else sum(item.countereffect_occurred for item in observations) / count
+        ),
+        state="collecting" if blockers else "eligible_for_shadow_evaluation",
+        blockers=tuple(blockers),
+    )
+
+
 def evaluate_probability_calibration(
     observations: tuple[CalibrationObservation, ...],
     *,
@@ -216,11 +318,14 @@ def _reliability_bins(
 
 
 __all__ = [
+    "CalibrationStabilityEvaluation",
+    "CalibrationStabilityObservation",
     "CalibrationObservation",
     "CoverageEvaluation",
     "IntervalObservation",
     "ProbabilityCalibrationEvaluation",
     "ReliabilityBin",
     "evaluate_interval_coverage",
+    "evaluate_calibration_stability",
     "evaluate_probability_calibration",
 ]

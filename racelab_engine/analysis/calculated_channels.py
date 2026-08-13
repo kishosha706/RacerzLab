@@ -11,6 +11,7 @@ from racelab_engine.analysis.constants import (
     REFERENCE_DYNAMIC_PRESSURE_PA,
 )
 from racelab_engine.analysis.drag_scrub import compute_drag_scrub_index, aero_normalized_resistance
+from racelab_engine.analysis.tire_semantics import TIRE_CORNERS, semantic_source
 from racelab_engine.analysis.ride_height_calibration import (
     apply_next_gen_lr_ride_height_offset_to_row,
 )
@@ -1274,6 +1275,12 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "label": "Front Scrub Proxy",
         "description": "ESTIMATE — front scrub/scrub index from slip mismatch, steering, yaw error, and curvature.",
         "dependencies": ["lf_slip_ratio", "rf_slip_ratio", "abs_steering_deg", "abs_lat_accel", "yaw_rate", "radius_m"],
+        "dependency_contract": {
+            "required_channels": ["lf_slip_ratio", "rf_slip_ratio", "abs_steering_deg", "abs_lat_accel", "yaw_rate", "radius_m", "speed_mps"],
+            "minimum_pairwise_coverage_pct": 100.0,
+            "maximum_gap_samples": 0,
+            "missing_output": "unavailable",
+        },
         "used_by_charts": [DRAG_SCRUB],
         "used_by_events": ["STEERING_SCRUB"],
         "used_by_analyses": [LINE_STEERING_REVIEW],
@@ -1282,6 +1289,12 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "label": "Rear Scrub Proxy",
         "description": "ESTIMATE — rear scrub index from rear slip mismatch.",
         "dependencies": ["lr_slip_ratio", "rr_slip_ratio"],
+        "dependency_contract": {
+            "required_channels": ["lr_slip_ratio", "rr_slip_ratio"],
+            "minimum_pairwise_coverage_pct": 100.0,
+            "maximum_gap_samples": 0,
+            "missing_output": "unavailable",
+        },
         "used_by_charts": [DRAG_SCRUB],
         "used_by_events": ["TIRE_SCRUB"],
         "used_by_analyses": [GEARING_COMPARISON],
@@ -1291,6 +1304,12 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "description": "ESTIMATE — yaw error from curvature vs actual yaw rate. max(0, theoretical_yaw - actual_yaw). Positive = understeer. Used internally by front_scrub_proxy.",
         "formula": "max(0, speed_mps / radius_m - abs(yaw_rate))",
         "dependencies": ["speed_mps", "radius_m", "yaw_rate"],
+        "dependency_contract": {
+            "required_channels": ["speed_mps", "radius_m", "yaw_rate"],
+            "minimum_pairwise_coverage_pct": 100.0,
+            "maximum_gap_samples": 0,
+            "missing_output": "unavailable",
+        },
         "used_by_charts": [],
         "used_by_events": [],
         "used_by_analyses": [],
@@ -2303,17 +2322,17 @@ _TIRE_COLD_PRESSURE_KEYS: dict[str, str] = {
     "LFcoldPressure": "lf_cold_pressure", "RFcoldPressure": "rf_cold_pressure",
     "LRcoldPressure": "lr_cold_pressure", "RRcoldPressure": "rr_cold_pressure",
 }
-_TIRE_TEMP_INNER_KEYS: dict[str, str] = {
-    "LFtempL": "lf_temp_inner", "RFtempL": "rf_temp_inner",
-    "LRtempL": "lr_temp_inner", "RRtempL": "rr_temp_inner",
+_TIRE_TEMP_LEFT_KEYS: dict[str, str] = {
+    "LFtempL": "lf_temp_left", "RFtempL": "rf_temp_left",
+    "LRtempL": "lr_temp_left", "RRtempL": "rr_temp_left",
 }
 _TIRE_TEMP_MIDDLE_KEYS: dict[str, str] = {
     "LFtempM": "lf_temp_middle", "RFtempM": "rf_temp_middle",
     "LRtempM": "lr_temp_middle", "RRtempM": "rr_temp_middle",
 }
-_TIRE_TEMP_OUTER_KEYS: dict[str, str] = {
-    "LFtempR": "lf_temp_outer", "RFtempR": "rf_temp_outer",
-    "LRtempR": "lr_temp_outer", "RRtempR": "rr_temp_outer",
+_TIRE_TEMP_RIGHT_KEYS: dict[str, str] = {
+    "LFtempR": "lf_temp_right", "RFtempR": "rf_temp_right",
+    "LRtempR": "lr_temp_right", "RRtempR": "rr_temp_right",
 }
 _TIRE_CARCASS_TEMP_KEYS: dict[str, str] = {
     "LFtempCL": "lf_carcass_temp_l", "RFtempCL": "rf_carcass_temp_l",
@@ -2324,12 +2343,12 @@ _TIRE_CARCASS_TEMP_KEYS: dict[str, str] = {
     "LRtempCR": "lr_carcass_temp_r", "RRtempCR": "rr_carcass_temp_r",
 }
 _TIRE_WEAR_KEYS: dict[str, str] = {
-    "LFwearL": "lf_wear_inner", "RFwearL": "rf_wear_inner",
-    "LRwearL": "lr_wear_inner", "RRwearL": "rr_wear_inner",
+    "LFwearL": "lf_wear_left", "RFwearL": "rf_wear_left",
+    "LRwearL": "lr_wear_left", "RRwearL": "rr_wear_left",
     "LFwearM": "lf_wear_middle", "RFwearM": "rf_wear_middle",
     "LRwearM": "lr_wear_middle", "RRwearM": "rr_wear_middle",
-    "LFwearR": "lf_wear_outer", "RFwearR": "rf_wear_outer",
-    "LRwearR": "lr_wear_outer", "RRwearR": "rr_wear_outer",
+    "LFwearR": "lf_wear_right", "RFwearR": "rf_wear_right",
+    "LRwearR": "lr_wear_right", "RRwearR": "rr_wear_right",
 }
 _WHEEL_SPEED_KEYS: dict[str, str] = {
     "LFspeed": "lf_speed", "RFspeed": "rf_speed",
@@ -2365,6 +2384,8 @@ def _convert_distances(item: dict[str, Any]) -> None:
 
 def _convert_speed(item: dict[str, Any]) -> None:
     speed_mps = _number(item.get("speed_mps"))
+    if speed_mps is None:
+        speed_mps = _number(item.get("Speed"))
     if speed_mps is not None:
         _set_number(item, "speed_mph", speed_mps * MPS_TO_MPH)
         _set_number(item, "speed_fps", speed_mps * M_TO_FT)
@@ -2508,11 +2529,11 @@ def _convert_tires(item: dict[str, Any]) -> None:
         _copy_alias(item, raw_key, norm_key)
     for raw_key, norm_key in _TIRE_COLD_PRESSURE_KEYS.items():
         _copy_alias(item, raw_key, norm_key)
-    for raw_key, norm_key in _TIRE_TEMP_INNER_KEYS.items():
+    for raw_key, norm_key in _TIRE_TEMP_LEFT_KEYS.items():
         _copy_alias(item, raw_key, norm_key)
     for raw_key, norm_key in _TIRE_TEMP_MIDDLE_KEYS.items():
         _copy_alias(item, raw_key, norm_key)
-    for raw_key, norm_key in _TIRE_TEMP_OUTER_KEYS.items():
+    for raw_key, norm_key in _TIRE_TEMP_RIGHT_KEYS.items():
         _copy_alias(item, raw_key, norm_key)
     for raw_key, norm_key in _TIRE_CARCASS_TEMP_KEYS.items():
         _copy_alias(item, raw_key, norm_key)
@@ -2520,6 +2541,13 @@ def _convert_tires(item: dict[str, Any]) -> None:
         _copy_alias(item, raw_key, norm_key)
     for raw_key, norm_key in _WHEEL_SPEED_KEYS.items():
         _copy_alias(item, raw_key, norm_key)
+    for corner in TIRE_CORNERS:
+        for family in ("temp", "wear"):
+            for position in ("inner", "outer"):
+                source = f"{corner}_{family}_{semantic_source(corner, position)}"
+                target = f"{corner}_{family}_{position}"
+                if target not in item and source in item:
+                    item[target] = item[source]
 
 
 def _compute_tire_derived(item: dict[str, Any]) -> None:
@@ -2679,11 +2707,13 @@ def _compute_risk_scores(item: dict[str, Any]) -> None:
 
 def _compute_slip_ratios(item: dict[str, Any]) -> None:
     speed_mps = _number(item.get("speed_mps"))
-    denom = max(abs(speed_mps or 0.0), SLIP_RATIO_SPEED_FLOOR_MPS)
+    if speed_mps is None:
+        speed_mps = _number(item.get("Speed"))
+    denom = max(abs(speed_mps), SLIP_RATIO_SPEED_FLOOR_MPS) if speed_mps is not None else None
     for raw_key, target in _SLIP_RATIO_KEYS.items():
         wheel_speed = _number(item.get(raw_key))
-        if wheel_speed is not None:
-            slip = (wheel_speed - speed_mps) / denom if speed_mps is not None else 0.0
+        if wheel_speed is not None and speed_mps is not None and denom is not None:
+            slip = (wheel_speed - speed_mps) / denom
             slip = max(-SLIP_RATIO_CLAMP_MAX, min(SLIP_RATIO_CLAMP_MAX, slip))
             _set_number(item, target, slip)
 
@@ -2725,17 +2755,17 @@ def _compute_scrub_proxies(item: dict[str, Any]) -> None:
     rf_slip = _number(item.get("rf_slip_ratio"))
     lr_slip = _number(item.get("lr_slip_ratio"))
     rr_slip = _number(item.get("rr_slip_ratio"))
-    steering = _number(item.get("abs_steering_deg")) or 0.0
-    lat_accel = _number(item.get("abs_lat_accel")) or 0.0
-    speed_mps = _number(item.get("speed_mps")) or 0.0
-    yaw_rate = abs(_number(item.get("yaw_rate")) or 0.0)
+    steering = _number(item.get("abs_steering_deg"))
+    lat_accel = _number(item.get("abs_lat_accel"))
+    speed_mps = _number(item.get("speed_mps"))
+    raw_yaw_rate = _number(item.get("yaw_rate"))
     radius = _number(item.get("radius_m"))
 
     # Yaw error: actual yaw rate vs theoretical from curvature
-    yaw_error_proxy = 0.0
-    if radius is not None and radius > 0 and speed_mps > 1.0:
+    yaw_error_proxy = None
+    if radius is not None and radius > 0 and speed_mps is not None and speed_mps > 1.0 and raw_yaw_rate is not None:
         yaw_theoretical = speed_mps / radius
-        yaw_error_proxy = max(0.0, yaw_theoretical - yaw_rate)
+        yaw_error_proxy = max(0.0, yaw_theoretical - abs(raw_yaw_rate))
     item["yaw_error_proxy"] = yaw_error_proxy
 
     # Deferred understeer-gradient integration:
@@ -2743,11 +2773,11 @@ def _compute_scrub_proxies(item: dict[str, Any]) -> None:
     # once runtime vehicle mass and geometry inputs are available. Until then,
     # this steering/yaw/slip blend stays the guarded fallback so scrub detection
     # does not silently depend on missing setup metadata.
-    if lf_slip is not None and rf_slip is not None:
+    if None not in {lf_slip, rf_slip, steering, lat_accel, yaw_error_proxy}:
         YAW_ERROR_CRITICAL = 0.15  # rad/s threshold for understeer
-        slip_delta = abs(rf_slip - lf_slip)
-        steering_lat = (steering / 90.0) * lat_accel
-        yaw_component = min(1.0, yaw_error_proxy / YAW_ERROR_CRITICAL)
+        slip_delta = abs(float(rf_slip) - float(lf_slip))
+        steering_lat = (float(steering) / 90.0) * float(lat_accel)
+        yaw_component = min(1.0, float(yaw_error_proxy) / YAW_ERROR_CRITICAL)
         scrub = slip_delta * 0.30 + steering_lat * 0.25 + yaw_component * 0.45
         _set_number(item, "front_scrub_proxy", scrub)
     if lr_slip is not None and rr_slip is not None:
@@ -3154,8 +3184,8 @@ def _compute_camber_bias(item: dict[str, Any]) -> None:
     """Compute camber temp bias channels from carcass temps."""
     CAMBER_BIAS_THRESHOLD_C = 15.0
     for c in ["lf", "rf", "lr", "rr"]:
-        inner = _number(item.get(f"{c}_carcass_temp_l"))
-        outer = _number(item.get(f"{c}_carcass_temp_r"))
+        inner = _number(item.get(f"{c}_carcass_temp_{semantic_source(c, 'inner')[0]}"))
+        outer = _number(item.get(f"{c}_carcass_temp_{semantic_source(c, 'outer')[0]}"))
         if inner is not None and outer is not None:
             bias = inner - outer
             _set_number(item, f"{c}_camber_temp_bias_c", bias)

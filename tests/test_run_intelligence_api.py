@@ -372,6 +372,10 @@ def test_run_intelligence_scopes_fail_closed_workflow_reads(tmp_path: Path) -> N
                     "controlled-workflow-aba2-v2",
                 ),
             )
+            connection.execute(
+                "INSERT INTO controlled_workflow_run_index(workflow_id, run_id, role) VALUES (?, ?, 'source')",
+                (workflow_id, source_run_id),
+            )
     connection.close()
 
     repository = RaceLabRepository(db_path)

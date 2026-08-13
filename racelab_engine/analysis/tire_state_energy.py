@@ -7,8 +7,9 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from racelab_engine.analysis.p3_common import average, lap_number, qualify_phase_engine, values
+from racelab_engine.analysis.p3_common import average, finite, lap_number, qualify_phase_engine, values
 from racelab_engine.analysis.p3_contracts import TIRE_STATE_CONTRACT
+from racelab_engine.analysis.tire_semantics import TIRE_CORNERS
 from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.models.engineering import EngineGate, EngineeringConclusion, EngineeringModel
 from racelab_engine.models.evidence import EvidenceState
@@ -46,6 +47,8 @@ class TireCornerState(EngineeringModel):
     slip_ratio_rms: float | None = None
     load_context_proxy: float | None = None
     cause_classes: list[TireCause] = Field(default_factory=list)
+    surface_profile_coobserved_coverage_pct: float = 0.0
+    surface_profile_unavailable_reason: str | None = None
 
 
 class TireStateReport(EngineeringModel):
@@ -66,6 +69,20 @@ def _rms(items: list[float]) -> float | None:
     return (sum(item * item for item in items) / len(items)) ** 0.5 if items else None
 
 
+def _coobserved_averages(
+    rows: list[dict[str, Any]], channels: tuple[str, ...], *, minimum_coverage: float = 0.7,
+) -> tuple[list[float | None], float]:
+    paired = [
+        [finite(row.get(channel)) for channel in channels]
+        for row in rows
+    ]
+    complete = [items for items in paired if all(value is not None for value in items)]
+    coverage = len(complete) / len(rows) if rows else 0.0
+    if len(complete) < 3 or coverage < minimum_coverage:
+        return [None for _ in channels], coverage
+    return [mean(float(items[index]) for items in complete) for index in range(len(channels))], coverage
+
+
 def _repeated_pressure_pattern(
     rows: list[dict[str, Any]],
     eligible_numbers: set[int],
@@ -74,11 +91,11 @@ def _repeated_pressure_pattern(
     repeated = 0
     for number in eligible_numbers:
         lap_rows = [row for row in rows if lap_number(row) == number]
-        inner = average(lap_rows, f"{corner}_temp_inner")
-        middle = average(lap_rows, f"{corner}_temp_middle")
-        outer = average(lap_rows, f"{corner}_temp_outer")
-        running = average(lap_rows, f"{corner}_pressure")
-        cold = average(lap_rows, f"{corner}_cold_pressure")
+        profile, _coverage = _coobserved_averages(lap_rows, (
+            f"{corner}_temp_inner", f"{corner}_temp_middle", f"{corner}_temp_outer",
+            f"{corner}_pressure", f"{corner}_cold_pressure",
+        ))
+        inner, middle, outer, running, cold = profile
         if None in {inner, middle, outer, running, cold}:
             continue
         shoulders = (float(inner) + float(outer)) / 2.0
@@ -126,9 +143,10 @@ def analyze_tire_state(
     phase_set = phases & TIRE_PHASES
     for corner_upper in ("LF", "RF", "LR", "RR"):
         corner = corner_upper.lower()
-        inner = average(scoped, f"{corner}_temp_inner")
-        middle = average(scoped, f"{corner}_temp_middle")
-        outer = average(scoped, f"{corner}_temp_outer")
+        profile, profile_coverage = _coobserved_averages(scoped, (
+            f"{corner}_temp_inner", f"{corner}_temp_middle", f"{corner}_temp_outer",
+        ))
+        inner, middle, outer = profile
         surface = _avg_optional([inner, middle, outer])
         carcass = _avg_optional([
             average(scoped, f"{corner}_carcass_temp_l"),
@@ -151,9 +169,10 @@ def analyze_tire_state(
             causes.append("pressure_driven_heating")
         if gradient is not None and abs(gradient) >= 6.0:
             causes.extend(["shoulder_load", "camber_bias"])
-        if corner_upper.startswith("F") and phase_set & {"brake_application", "threshold_braking", "brake_release"}:
+        semantics = TIRE_CORNERS[corner]
+        if semantics.axle == "front" and phase_set & {"brake_application", "threshold_braking", "brake_release"}:
             causes.append("braking_heat")
-        if corner_upper.startswith("R") and phase_set & {"initial_throttle", "full_throttle_exit"} and (slip_rms or 0.0) >= 0.03:
+        if semantics.axle == "rear" and phase_set & {"initial_throttle", "full_throttle_exit"} and slip_rms is not None and slip_rms >= 0.03:
             causes.append("traction_heat")
         distance = average(scoped, f"{corner}_tire_distance_m")
         wear_values = [
@@ -180,6 +199,11 @@ def analyze_tire_state(
             slip_ratio_rms=slip_rms,
             load_context_proxy=average(scoped, "vert_accel_g"),
             cause_classes=list(dict.fromkeys(causes)),
+            surface_profile_coobserved_coverage_pct=profile_coverage * 100.0,
+            surface_profile_unavailable_reason=(
+                None if inner is not None
+                else "Surface temperatures were not co-observed for at least 70% of this physical phase."
+            ),
         )
         states.append(state)
         sources = [

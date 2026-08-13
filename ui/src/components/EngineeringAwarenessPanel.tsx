@@ -76,12 +76,14 @@ export function EngineeringAwarenessPanel({ runId, sessionId = null, surface }: 
       zoneStartPct: primary.lap_pct_start,
       zoneEndPct: primary.lap_pct_end,
       channelId: primary.source_channels[0] ?? null,
+      producerId: "p20.engineering-awareness",
+      artifactId: primary.state_id,
       system: primary.mechanism,
       selectionSource: "engineer",
       lockState: "locked",
       trustTier: primary.evidence_state,
       valueBasis: "selected_window",
-    });
+    }, "platform_trace");
   }, [focusEvidence, projection, runId]);
 
   const blockedCount = useMemo(

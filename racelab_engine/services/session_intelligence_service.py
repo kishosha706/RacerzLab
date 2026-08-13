@@ -1536,6 +1536,11 @@ def _stage_binding_hash(workflow: ControlledWorkflow) -> str:
         "stage_eligible_lap_numbers": workflow.stage_eligible_lap_numbers,
         "recording_chronology": workflow.reproduction_snapshot.get("recording_chronology", {}),
     }
+    if workflow.analysis_version == "controlled-workflow-aba2-v2":
+        payload["stage_experiment_contexts"] = {
+            stage: context.model_dump(mode="json")
+            for stage, context in workflow.stage_experiment_contexts.items()
+        }
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, default=str, separators=(",", ":")).encode()
     ).hexdigest()

@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from concurrent.futures import Future
 from pathlib import Path
+import json
 import re
 import sqlite3
+from threading import RLock
 from typing import Any, Sequence
 
+from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.analysis.calculated_channels import CHANNEL_METADATA
 from racelab_engine.analysis.channel_registry import canonical_name
@@ -83,6 +87,7 @@ from racelab_engine.services.intelligence_service import (
     summarize_stored_response_memory,
 )
 from racelab_engine.services.lap_engineering_context_service import (
+    build_lap_engineering_context_report,
     load_lap_engineering_context_report,
 )
 from racelab_engine.services.observation_intelligence_service import (
@@ -110,6 +115,7 @@ from racelab_engine.services.telemetry_health_service import (
     build_telemetry_health_baseline,
 )
 from racelab_engine.storage.repository import RaceLabRepository
+from racelab_engine.storage.db import default_db_path, initialize_database
 
 _QUALIFIED_STATES = frozenset({
     EvidenceState.MEASURED,
@@ -177,6 +183,122 @@ class RunIntelligenceBundle:
     calibration: PredictionCalibrationSummary
     driver_profile: DriverPresentationProfile
     awareness: EngineeringAwarenessEvidenceBuild
+
+
+_SNAPSHOT_LOCK = RLock()
+_SNAPSHOT_CACHE: dict[str, RunIntelligenceBundle] = {}
+_SNAPSHOT_INFLIGHT: dict[str, Future[RunIntelligenceBundle]] = {}
+_SNAPSHOT_SCHEMA_VERSION = "p31.shared-intelligence.v1"
+_SNAPSHOT_BUILD_COUNT = 0
+
+
+def _semantic_repository_revision(
+    database: Path,
+    run_id: str,
+    session_id: str | None,
+) -> str:
+    """Hash only truth inputs; derived memory writes must not bust the snapshot."""
+
+    connection = initialize_database(database)
+    try:
+        session_row = None
+        if session_id is not None and connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='racelab_sessions'"
+        ).fetchone():
+            session_row = connection.execute(
+                "SELECT session_id, updated_at, run_ids_json FROM racelab_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        run_scope = [run_id]
+        if session_row is not None:
+            try:
+                stored = json.loads(session_row["run_ids_json"] or "[]")
+            except (TypeError, ValueError):
+                stored = []
+            if isinstance(stored, list):
+                run_scope.extend(item for item in stored if isinstance(item, str) and item)
+        scope = tuple(dict.fromkeys(run_scope))
+        placeholders = ",".join("?" for _ in scope)
+        truth = {
+            "session": dict(session_row) if session_row is not None else None,
+            "runs": [
+                tuple(row) for row in connection.execute(
+                    f"SELECT run_id, file_hash, imported_at, analysis_engine_version, "
+                    f"lap_eligibility_version, analysis_config_hash, analyzed_at, session_json "
+                    f"FROM runs WHERE run_id IN ({placeholders}) ORDER BY run_id",
+                    scope,
+                ).fetchall()
+            ],
+            "laps": [
+                tuple(row) for row in connection.execute(
+                    f"SELECT lap_id, run_id, lap_json FROM laps "
+                    f"WHERE run_id IN ({placeholders}) ORDER BY run_id, lap_number, lap_id",
+                    scope,
+                ).fetchall()
+            ],
+            "events": [
+                tuple(row) for row in connection.execute(
+                    f"SELECT event_id, run_id, event_json FROM events "
+                    f"WHERE run_id IN ({placeholders}) ORDER BY run_id, event_id",
+                    scope,
+                ).fetchall()
+            ],
+            "setups": [
+                tuple(row) for row in connection.execute(
+                    f"SELECT setup_id, run_id, snapshot_json FROM setup_snapshots "
+                    f"WHERE run_id IN ({placeholders}) ORDER BY run_id, setup_id",
+                    scope,
+                ).fetchall()
+            ],
+            "workflows": [
+                tuple(row) for row in connection.execute(
+                    f"SELECT DISTINCT workflow.workflow_id, workflow.updated_at, workflow.status, "
+                    f"workflow.packet_json, workflow.stage_run_ids_json, "
+                    f"workflow.stage_eligible_lap_numbers_json, workflow.stage_experiment_contexts_json, "
+                    f"workflow.execution_json, workflow.reproduction_snapshot_json, workflow.quality_json "
+                    f"FROM controlled_test_workflows AS workflow "
+                    f"JOIN controlled_workflow_run_index AS binding "
+                    f"ON binding.workflow_id = workflow.workflow_id "
+                    f"WHERE binding.run_id IN ({placeholders}) ORDER BY workflow.workflow_id",
+                    scope,
+                ).fetchall()
+            ],
+        }
+    finally:
+        connection.close()
+    return canonical_json_sha256(truth)
+
+
+def _snapshot_key(
+    run_id: str,
+    session_id: str | None,
+    db_path: str | Path | None,
+    workflow_candidate: ControlledWorkflow | None,
+) -> str:
+    repository = RaceLabRepository(db_path)
+    database = Path(repository.db_path or default_db_path()).resolve()
+    try:
+        manifest = read_telemetry_manifest(run_id)
+    except (OSError, TypeError, ValueError):
+        manifest = {}
+    payload = {
+        "schema": _SNAPSHOT_SCHEMA_VERSION,
+        "run_id": run_id,
+        "session_id": session_id,
+        "database": str(database),
+        "database_semantic_revision": _semantic_repository_revision(
+            database, run_id, session_id
+        ),
+        "source_file_sha256": manifest.get("source_file_sha256"),
+        "telemetry_cache_sha256": manifest.get("telemetry_cache_sha256"),
+        "manifest_schema_version": manifest.get("manifest_schema_version"),
+        "compatibility_fingerprint": manifest.get("compatibility_fingerprint"),
+        "workflow_candidate": (
+            canonical_json_sha256(workflow_candidate)
+            if workflow_candidate is not None else None
+        ),
+    }
+    return canonical_json_sha256(payload)
 
 
 @dataclass(frozen=True)
@@ -1318,7 +1440,7 @@ def _observation_measurement_candidates(
     )
 
 
-def build_run_intelligence(
+def _build_run_intelligence_uncached(
     run_id: str,
     *,
     session_id: str | None = None,
@@ -1571,7 +1693,14 @@ def build_run_intelligence(
         capability=capability,
     )
     try:
-        lap_context = load_lap_engineering_context_report(run_id, db_path=db_path)
+        if observation_build.telemetry_rows:
+            lap_context = build_lap_engineering_context_report(
+                run_id=run_id,
+                laps=overview.laps,
+                rows=observation_build.telemetry_rows,
+            )
+        else:
+            lap_context = load_lap_engineering_context_report(run_id, db_path=db_path)
     except (FileNotFoundError, OSError, RuntimeError, TypeError, ValueError):
         lap_context = LapEngineeringContextReport(
             run_id=run_id,
@@ -1864,4 +1993,70 @@ def build_run_intelligence(
     )
 
 
-__all__ = ["RunIntelligenceBundle", "build_run_intelligence"]
+def build_run_intelligence(
+    run_id: str,
+    *,
+    session_id: str | None = None,
+    db_path: str | Path | None = None,
+    workflow_candidate: ControlledWorkflow | None = None,
+) -> RunIntelligenceBundle:
+    """Return one immutable, single-flight bundle per exact semantic identity."""
+    key = _snapshot_key(run_id, session_id, db_path, workflow_candidate)
+    with _SNAPSHOT_LOCK:
+        cached = _SNAPSHOT_CACHE.get(key)
+        if cached is not None:
+            return cached
+        future = _SNAPSHOT_INFLIGHT.get(key)
+        owner = future is None
+        if future is None:
+            future = Future()
+            _SNAPSHOT_INFLIGHT[key] = future
+    if not owner:
+        return future.result()
+    global _SNAPSHOT_BUILD_COUNT
+    try:
+        with _SNAPSHOT_LOCK:
+            _SNAPSHOT_BUILD_COUNT += 1
+        bundle = _build_run_intelligence_uncached(
+            run_id,
+            session_id=session_id,
+            db_path=db_path,
+            workflow_candidate=workflow_candidate,
+        )
+    except BaseException as exc:
+        with _SNAPSHOT_LOCK:
+            _SNAPSHOT_INFLIGHT.pop(key, None)
+            future.set_exception(exc)
+        raise
+    with _SNAPSHOT_LOCK:
+        _SNAPSHOT_CACHE[key] = bundle
+        _SNAPSHOT_INFLIGHT.pop(key, None)
+        future.set_result(bundle)
+        while len(_SNAPSHOT_CACHE) > 16:
+            _SNAPSHOT_CACHE.pop(next(iter(_SNAPSHOT_CACHE)))
+    return bundle
+
+
+def run_intelligence_snapshot_stats() -> dict[str, int]:
+    with _SNAPSHOT_LOCK:
+        return {
+            "build_count": _SNAPSHOT_BUILD_COUNT,
+            "cache_entries": len(_SNAPSHOT_CACHE),
+            "inflight": len(_SNAPSHOT_INFLIGHT),
+        }
+
+
+def clear_run_intelligence_snapshot_cache() -> None:
+    global _SNAPSHOT_BUILD_COUNT
+    with _SNAPSHOT_LOCK:
+        _SNAPSHOT_CACHE.clear()
+        _SNAPSHOT_INFLIGHT.clear()
+        _SNAPSHOT_BUILD_COUNT = 0
+
+
+__all__ = [
+    "RunIntelligenceBundle",
+    "build_run_intelligence",
+    "clear_run_intelligence_snapshot_cache",
+    "run_intelligence_snapshot_stats",
+]

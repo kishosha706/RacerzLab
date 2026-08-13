@@ -57,6 +57,7 @@ from racelab_engine.models.observation_intelligence import (
     MechanismObservationReport,
     ObservationCitation,
     ObservationStatus,
+    PhysicalSegment,
 )
 
 
@@ -167,6 +168,7 @@ class _ObservationWindow:
     end_pct: float
     peak_pct: float
     sample_count: int
+    physical_segments: tuple[PhysicalSegment, ...] = ()
 
 
 def p3_observation_columns(
@@ -275,13 +277,33 @@ def _window_for_phases(
     positioned = [(row, pct) for row, pct in positioned if pct is not None]
     if not positioned:
         return None
-    positions = [float(pct) for _row, pct in positioned]
-    start_pct = min(positions)
-    end_pct = max(positions)
+    positions = sorted(float(pct) for _row, pct in positioned)
+    positive_steps = [right - left for left, right in zip(positions, positions[1:]) if right > left]
+    normal_step = median(positive_steps) if positive_steps else 0.0
+    gap_threshold = max(0.75, normal_step * 3.0)
+    groups: list[list[float]] = [[positions[0]]]
+    for position in positions[1:]:
+        if position - groups[-1][-1] > gap_threshold:
+            groups.append([position])
+        else:
+            groups[-1].append(position)
+    segments = tuple(
+        PhysicalSegment(start_pct=group[0], end_pct=group[-1], sample_count=len(group))
+        for group in groups
+    )
+    primary_group = next(
+        (
+            group for group in groups
+            if peak_override is not None and group[0] <= peak_override <= group[-1]
+        ),
+        max(groups, key=lambda group: (len(group), -group[0])),
+    )
+    start_pct = primary_group[0]
+    end_pct = primary_group[-1]
     peak_pct = (
         float(peak_override)
         if peak_override is not None and start_pct <= peak_override <= end_pct
-        else float(median(positions))
+        else float(median(primary_group))
     )
     return _ObservationWindow(
         phase=phase_label,
@@ -289,6 +311,7 @@ def _window_for_phases(
         end_pct=end_pct,
         peak_pct=peak_pct,
         sample_count=len(positioned),
+        physical_segments=segments,
     )
 
 
@@ -388,6 +411,7 @@ def _adapt_report(
         telemetry_sample_count=window.sample_count,
         repetition_count=max(1, repetition_count),
         mechanism_override=mechanism,
+        physical_segments=window.physical_segments,
     )
     if adapted.observations:
         return adapted
@@ -743,7 +767,10 @@ def revalidate_event_mechanism_observations(
                 for row in rows
                 if lap_number(dict(row)) == citation.lap_number
                 and (position := lap_pct(dict(row))) is not None
-                and citation.lap_pct_start <= position <= citation.lap_pct_end
+                and any(
+                    segment.start_pct <= position <= segment.end_pct
+                    for segment in citation.physical_segments
+                )
             ]
             coobserved = [
                 row
@@ -761,6 +788,27 @@ def revalidate_event_mechanism_observations(
                 continue
             payload = citation.model_dump()
             payload["telemetry_sample_count"] = len(coobserved)
+            rebound_segments = []
+            for segment in citation.physical_segments:
+                segment_count = sum(
+                    1
+                    for row in coobserved
+                    if (position := lap_pct(dict(row))) is not None
+                    and segment.start_pct <= position <= segment.end_pct
+                )
+                if segment_count:
+                    rebound_segments.append({
+                        "start_pct": segment.start_pct,
+                        "end_pct": segment.end_pct,
+                        "sample_count": segment_count,
+                    })
+            if not any(
+                segment["start_pct"] <= citation.lap_pct_peak <= segment["end_pct"]
+                for segment in rebound_segments
+            ):
+                missing_channels.update(citation.source_channels)
+                continue
+            payload["physical_segments"] = rebound_segments
             citations.append(ObservationCitation.model_validate(payload))
             citation_coverages.append(
                 len(coobserved) / len(window_rows) if window_rows else 0.0
@@ -1008,6 +1056,7 @@ def build_p3_mechanism_observations(
     run_id: str,
     setup_id: str | None,
     telemetry_rate_hz: float | None,
+    redline_rpm: float | None = None,
     preferred_lap_number: int | None = None,
     existing_mechanisms: Iterable[MechanismKind] = (),
 ) -> MechanismObservationReport:
@@ -1144,7 +1193,7 @@ def build_p3_mechanism_observations(
                     selected_lap=selected.lap_number,
                     sim_integrity_clear=cohort_clear,
                     sim_integrity_confidence_cap=cohort_cap,
-                    redline_rpm=None,
+                    redline_rpm=redline_rpm,
                 )
             else:
                 producer_report = analyzer(

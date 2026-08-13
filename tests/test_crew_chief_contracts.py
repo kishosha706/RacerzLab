@@ -147,6 +147,7 @@ def test_controlled_decision_requires_complete_p19_workflow_projection() -> None
         )
 
 
+@pytest.mark.integration
 def test_event_store_survives_restart_and_rejects_tampering(tmp_path) -> None:
     db_path = str(tmp_path / "crew-chief.sqlite")
     _seed_run(db_path)
@@ -407,6 +408,7 @@ def test_run_sentinel_rejects_missing_context_instead_of_treating_it_clean() -> 
         stop_rule="Stop on contamination.",
     )
     plan = SimpleNamespace(
+        kind="measurement_mission",
         measurement_mission=mission,
         controlled_test=None,
         title="Measure center response",
@@ -441,6 +443,7 @@ def test_run_sentinel_uses_exact_a2_stage_and_rejects_reusing_stage_b_run() -> N
         ),
     )
     plan = SimpleNamespace(
+        kind="controlled_test",
         measurement_mission=None,
         controlled_test=card,
         title="Restore baseline",

@@ -48,6 +48,20 @@ class MechanismKind(str, Enum):
     UNCLASSIFIED = "unclassified"
 
 
+class PhysicalSegment(ObservationModel):
+    """One contiguous non-wrapping part of an exact circular track scope."""
+
+    start_pct: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
+    end_pct: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
+    sample_count: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def segment_is_ordered(self) -> PhysicalSegment:
+        if self.end_pct < self.start_pct:
+            raise ValueError("physical segments must be non-wrapping and ordered")
+        return self
+
+
 class ObservationCitation(ObservationModel):
     run_id: str = Field(min_length=1)
     lap_number: int = Field(ge=0)
@@ -60,6 +74,7 @@ class ObservationCitation(ObservationModel):
     source_channels: tuple[str, ...] = Field(min_length=1)
     event_id: str | None = None
     telemetry_sample_count: int = Field(ge=1)
+    physical_segments: tuple[PhysicalSegment, ...] = ()
 
     @model_validator(mode="after")
     def citation_is_exact_and_usable(self) -> ObservationCitation:
@@ -72,6 +87,21 @@ class ObservationCitation(ObservationModel):
             raise ValueError("citation source channels must be non-empty and unique")
         if self.evidence_state not in _OBSERVATION_EVIDENCE_STATES:
             raise ValueError("observation citations require usable evidence")
+        if not self.physical_segments:
+            object.__setattr__(self, "physical_segments", (
+                PhysicalSegment(
+                    start_pct=self.lap_pct_start,
+                    end_pct=self.lap_pct_end,
+                    sample_count=self.telemetry_sample_count,
+                ),
+            ))
+        if sum(segment.sample_count for segment in self.physical_segments) != self.telemetry_sample_count:
+            raise ValueError("physical-segment sample counts must equal citation coverage")
+        if not any(
+            segment.start_pct <= self.lap_pct_peak <= segment.end_pct
+            for segment in self.physical_segments
+        ):
+            raise ValueError("citation peak must lie inside one cited physical segment")
         return self
 
 
@@ -505,6 +535,7 @@ __all__ = [
     "MechanismObservationReport",
     "ObservationCitation",
     "ObservationStatus",
+    "PhysicalSegment",
     "ProducerArtifactScope",
     "OpportunitySignature",
     "OpportunitySignatureReport",

@@ -218,7 +218,7 @@ def get_run_intelligence(
     session_id: str | None = None,
     refresh: Annotated[str | None, Query(max_length=1024)] = None,
 ) -> RunIntelligenceResponse:
-    del refresh
+    del refresh  # Compatibility-only; never participates in semantic identity.
     try:
         bundle = build_run_intelligence(run_id, session_id=session_id)
         try:

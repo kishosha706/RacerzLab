@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from racelab_engine.io.telemetry_manifest import compatibility_fingerprint
+from racelab_engine.io.telemetry_manifest import MANIFEST_SCHEMA_VERSION, compatibility_fingerprint
 from racelab_engine.analysis.test_director import (
     ControlledTestCard,
     TestStage as ControlledTestStage,
@@ -149,7 +149,7 @@ def _save_run(
     schema_hash = _hash("critical-schema")
     effective_channels = channels or [_channel(name) for name in RAW_CHANNELS]
     manifest: dict[str, object] = {
-        "manifest_schema_version": 4,
+        "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
         "universal_archive_version": 1,
         "run_id": run_id,
         "source_file_sha256": source_hash,

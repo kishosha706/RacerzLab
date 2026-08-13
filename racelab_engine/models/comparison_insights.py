@@ -33,7 +33,7 @@ class TraceAnnotation:
     channel: str | None
     value: float | None
     severity: str
-    confidence: float
+    confidence: float | None
     related_channels: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
@@ -60,7 +60,8 @@ class CorrelationInsight:
     strength: CorrelationStrength
     direction: CorrelationDirection
     narrative: str
-    confidence: float
+    confidence: float | None
+    paired_coverage: float
     warning: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
@@ -72,6 +73,7 @@ class CorrelationInsight:
             "direction": self.direction,
             "narrative": self.narrative,
             "confidence": self.confidence,
+            "paired_coverage": self.paired_coverage,
             "warning": self.warning,
         }
 
@@ -79,7 +81,8 @@ class CorrelationInsight:
 @dataclass(frozen=True)
 class TargetZoneClassification:
     classification: GainClass
-    confidence: float
+    confidence: float | None
+    evaluation_state: Literal["finding", "evaluated_clear", "unavailable"]
     headline: str
     evidence: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -88,6 +91,7 @@ class TargetZoneClassification:
         return {
             "classification": self.classification,
             "confidence": self.confidence,
+            "evaluation_state": self.evaluation_state,
             "headline": self.headline,
             "evidence": self.evidence,
             "warnings": self.warnings,
@@ -162,6 +166,7 @@ class ComparisonInsightsResponse:
     key_takeaways: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     missing_channels: list[str] = field(default_factory=list)
+    engine_states: dict[str, Literal["finding", "evaluated_clear", "unavailable"]] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -181,4 +186,5 @@ class ComparisonInsightsResponse:
             "key_takeaways": self.key_takeaways,
             "warnings": self.warnings,
             "missing_channels": self.missing_channels,
+            "engine_states": self.engine_states,
         }

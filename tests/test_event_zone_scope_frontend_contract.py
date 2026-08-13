@@ -25,7 +25,7 @@ def test_null_position_event_clears_an_old_zone_before_dial_in() -> None:
 
     focus_reducer = reducer.split('case "FOCUS_EVIDENCE":', 1)[1].split("default:", 1)[0]
     for field in ("zoneId", "zoneLabel", "zoneStartPct", "zoneEndPct"):
-        assert f"ev.{field} !== undefined ? ev.{field}" in focus_reducer
+            assert f"ev.{field} ?? null" in focus_reducer
 
     decision_context = dial.split("const decisionContext = useMemo", 1)[1].split(
         "const currentRequestBinding",

@@ -11,7 +11,8 @@
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
@@ -27,6 +28,10 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
     "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0"
+    "@types/react-dom": "^18.3.0",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "jsdom": "^26.1.0",
+    "vitest": "^3.2.4"
   }
 }

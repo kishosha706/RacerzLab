@@ -27,7 +27,9 @@ import type {
   ControlMechanismTraceResponse,
   VehicleSystemsProjection,
 } from "../types/vehicleSystems";
+import { isVehicleSystemsProjection } from "../types/vehicleSystems";
 import type { EngineeringAwarenessProjection } from "../types/engineeringAwareness";
+import { isEngineeringAwarenessProjection } from "../types/engineeringAwareness";
 import type { CrewChiefWorkspace, EngineeringObjective } from "../types/crewChief";
 import type {
   CampaignOperationStartResponse,
@@ -115,11 +117,16 @@ function invalidateApiCache(pathPrefix?: string): void {
  */
 async function fetchWithTimeout(url: string, init: RequestInit, ms: number = REQUEST_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
+  const externalSignal = init.signal;
+  const abortFromCaller = () => controller.abort();
+  if (externalSignal?.aborted) controller.abort();
+  else externalSignal?.addEventListener("abort", abortFromCaller, { once: true });
   const timer = setTimeout(() => controller.abort(), ms);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timer);
+    externalSignal?.removeEventListener("abort", abortFromCaller);
   }
 }
 
@@ -319,7 +326,6 @@ export function fetchRunIntelligence(
 ): Promise<RunIntelligenceReport> {
   const params = new URLSearchParams();
   if (options?.sessionId) params.set("session_id", options.sessionId);
-  if (options?.refreshKey != null) params.set("refresh", String(options.refreshKey));
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return requestJson<unknown>(
     `/api/runs/${encodeURIComponent(runId)}/intelligence${suffix}`,
@@ -425,6 +431,53 @@ export function answerCrewChiefQuestion(
   ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report, scopeRunIds));
 }
 
+function mutateCrewChiefInvestigation(
+  runId: string,
+  sessionId: string,
+  investigationId: string,
+  action: "objective" | "abandon" | "rebase",
+  body: Record<string, unknown>,
+  report: RunIntelligenceReport,
+  scopeRunIds: readonly string[],
+): Promise<CrewChiefWorkspace> {
+  return requestJson<unknown>(
+    `/api/runs/${encodeURIComponent(runId)}/crew-chief-investigations/${encodeURIComponent(investigationId)}/${action}`,
+    { method: "POST", body: JSON.stringify({ session_id: sessionId, ...body }) },
+    INTELLIGENCE_TIMEOUT_MS,
+    `Crew Chief ${action}`,
+  ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report, scopeRunIds));
+}
+
+export function updateCrewChiefObjective(
+  runId: string, sessionId: string, investigationId: string,
+  expectedWorkspaceRevision: string, objective: EngineeringObjective,
+  report: RunIntelligenceReport, scopeRunIds: readonly string[],
+): Promise<CrewChiefWorkspace> {
+  return mutateCrewChiefInvestigation(runId, sessionId, investigationId, "objective", {
+    expected_workspace_revision: expectedWorkspaceRevision, objective,
+  }, report, scopeRunIds);
+}
+
+export function abandonCrewChiefInvestigation(
+  runId: string, sessionId: string, investigationId: string,
+  expectedWorkspaceRevision: string, reason: string,
+  report: RunIntelligenceReport, scopeRunIds: readonly string[],
+): Promise<CrewChiefWorkspace> {
+  return mutateCrewChiefInvestigation(runId, sessionId, investigationId, "abandon", {
+    expected_workspace_revision: expectedWorkspaceRevision, reason,
+  }, report, scopeRunIds);
+}
+
+export function rebaseCrewChiefInvestigation(
+  runId: string, sessionId: string, investigationId: string,
+  staleWorkspaceRevision: string, report: RunIntelligenceReport,
+  scopeRunIds: readonly string[],
+): Promise<CrewChiefWorkspace> {
+  return mutateCrewChiefInvestigation(runId, sessionId, investigationId, "rebase", {
+    stale_workspace_revision: staleWorkspaceRevision,
+  }, report, scopeRunIds);
+}
+
 export function fetchVehicleSystems(
   runId: string,
   options?: { sessionId?: string | null; refreshKey?: string | number },
@@ -433,12 +486,18 @@ export function fetchVehicleSystems(
   if (options?.sessionId) params.set("session_id", options.sessionId);
   if (options?.refreshKey != null) params.set("refresh", String(options.refreshKey));
   const suffix = params.toString() ? `?${params.toString()}` : "";
-  return requestJson<VehicleSystemsProjection>(
+  return requestJson<unknown>(
     `/api/runs/${encodeURIComponent(runId)}/vehicle-systems${suffix}`,
     undefined,
     INTELLIGENCE_TIMEOUT_MS,
     "Vehicle systems",
-  );
+  ).then((payload) => {
+    if (!isVehicleSystemsProjection(payload, {
+      runId,
+      sessionId: options?.sessionId ?? null,
+    })) throw new Error("Vehicle systems failed complete runtime identity and authority validation.");
+    return payload;
+  });
 }
 
 export function fetchVehicleSystemComponent(
@@ -479,9 +538,14 @@ export function fetchEngineeringAwareness(
   if (options?.sessionId) params.set("session_id", options.sessionId);
   if (options?.refresh) params.set("refresh", "true");
   const suffix = params.toString() ? `?${params.toString()}` : "";
-  return requestJson<EngineeringAwarenessProjection>(
+  return requestJson<unknown>(
     `/api/runs/${encodeURIComponent(runId)}/engineering-awareness${suffix}`,
-  );
+  ).then((payload) => {
+    if (!isEngineeringAwarenessProjection(payload, {
+      runId, sessionId: options?.sessionId ?? null,
+    })) throw new Error("Engineering awareness failed complete P20 runtime validation.");
+    return payload;
+  });
 }
 
 export function fetchLearningReadiness(
@@ -611,12 +675,37 @@ export function cancelControlledWorkflow(workflowId: string): Promise<Controlled
 }
 
 export function fetchControlledWorkflows(
+  sessionId: string,
+  runId: string,
   activeOnly = false,
-  options?: { refreshKey?: string | number },
 ): Promise<ControlledWorkflow[]> {
-  const params = new URLSearchParams({ active_only: activeOnly ? "true" : "false" });
-  if (options?.refreshKey != null) params.set("refresh", String(options.refreshKey));
+  const params = new URLSearchParams({
+    session_id: sessionId,
+    run_id: runId,
+    active_only: activeOnly ? "true" : "false",
+  });
   return requestJson<ControlledWorkflow[]>(`/api/engineering/workflows?${params.toString()}`);
+}
+
+export type ControlledWorkflowCatalogItem = Pick<
+  ControlledWorkflow,
+  "workflow_id" | "status" | "source_run_id" | "stage_run_ids" | "updated_at"
+> & { revision_sha256: string };
+
+export function fetchControlledWorkflowCatalog(
+  sessionId: string,
+  runId: string,
+): Promise<ControlledWorkflowCatalogItem[]> {
+  const params = new URLSearchParams({ session_id: sessionId, run_id: runId });
+  return requestJson<ControlledWorkflowCatalogItem[]>(
+    `/api/engineering/workflows/catalog?${params.toString()}`,
+  );
+}
+
+export function fetchControlledWorkflow(workflowId: string): Promise<ControlledWorkflow> {
+  return requestJson<ControlledWorkflow>(
+    `/api/engineering/workflows/${encodeURIComponent(workflowId)}`,
+  );
 }
 
 export function fetchControlledWorkflowReport(workflowId: string): Promise<{ workflow_id: string; markdown: string }> {
@@ -690,6 +779,7 @@ export function fetchPlatformEvents(
 }
 
 import type {
+  CompareResponse,
   ComparisonInsightsResponse,
   DeltaTraceRequest,
   DeltaTraceResponse,
@@ -703,6 +793,72 @@ export function fetchCompareDeltaTraces(request: DeltaTraceRequest): Promise<Del
   return requestJson<DeltaTraceResponse>("/api/compare/delta-traces", {
     method: "POST",
     body: JSON.stringify(request),
+  });
+}
+
+type ComparePreview = {
+  baseline_laps: number[];
+  test_laps: number[];
+  suggested_baseline_lap: number | null;
+  suggested_test_lap: number | null;
+  setup_changes: import("../types/compare").SetupChange[];
+  context_changes: Array<{ key: string; label: string; warning: string | null; is_problem: boolean }>;
+  warnings: string[];
+  compare_identity: import("../types/compare").CompareIdentity;
+};
+
+const sha256Pattern = /^[0-9a-f]{64}$/;
+function compareIdentityMatches(
+  payload: unknown,
+  request: { baseline_run_id: string; test_run_id: string; baseline_lap?: number | null; test_lap?: number | null; target_zone_start_pct?: number; target_zone_end_pct?: number },
+): payload is CompareResponse {
+  if (typeof payload !== "object" || payload === null) return false;
+  const response = payload as Partial<CompareResponse>;
+  const identity = response.compare_identity;
+  if (!identity || identity.schema_version !== "p31.compare-identity.v1") return false;
+  const runs = [identity.baseline, identity.test];
+  return response.baseline_run_id === request.baseline_run_id
+    && response.test_run_id === request.test_run_id
+    && identity.baseline.run_id === request.baseline_run_id
+    && identity.test.run_id === request.test_run_id
+    && (request.baseline_lap == null || response.baseline_lap === request.baseline_lap)
+    && (request.test_lap == null || response.test_lap === request.test_lap)
+    && (request.target_zone_start_pct == null || identity.target_zone_start_pct === request.target_zone_start_pct)
+    && (request.target_zone_end_pct == null || identity.target_zone_end_pct === request.target_zone_end_pct)
+    && sha256Pattern.test(identity.identity_sha256)
+    && runs.every((run) => sha256Pattern.test(run.source_file_sha256)
+      && sha256Pattern.test(run.telemetry_cache_sha256)
+      && sha256Pattern.test(run.compatibility_fingerprint)
+      && ((run.setup_id === null && run.setup_sha256 === null)
+        || (typeof run.setup_id === "string" && run.setup_id.length > 0
+          && typeof run.setup_sha256 === "string" && sha256Pattern.test(run.setup_sha256))));
+}
+
+export function fetchComparePreview(
+  baselineRunId: string, testRunId: string, signal?: AbortSignal,
+): Promise<ComparePreview> {
+  const params = new URLSearchParams({ baseline_run_id: baselineRunId, test_run_id: testRunId });
+  return requestJson<ComparePreview>(`/api/compare/preview?${params}`, { signal }).then((payload) => {
+    const identity = payload.compare_identity;
+    if (!identity || identity.baseline.run_id !== baselineRunId || identity.test.run_id !== testRunId
+      || !sha256Pattern.test(identity.identity_sha256)) {
+      throw new Error("Compare preview failed exact source identity validation.");
+    }
+    return payload;
+  });
+}
+
+export function runCompare(
+  request: { baseline_run_id: string; test_run_id: string; baseline_lap?: number | null; test_lap?: number | null; target_zone_start_pct: number; target_zone_end_pct: number },
+  signal?: AbortSignal,
+): Promise<CompareResponse> {
+  return requestJson<unknown>("/api/compare", {
+    method: "POST", body: JSON.stringify(request), signal,
+  }, INTELLIGENCE_TIMEOUT_MS, "Compare").then((payload) => {
+    if (!compareIdentityMatches(payload, request)) {
+      throw new Error("Compare result failed exact source, setup, lap, or physical-zone identity validation.");
+    }
+    return payload;
   });
 }
 

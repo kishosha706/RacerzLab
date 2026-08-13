@@ -34,6 +34,7 @@ class SectorDelta:
 class SectorIntelligenceResult:
     sectors: list[SectorDelta] = field(default_factory=list)
     summary: str | None = None
+    evaluation_state: str = "unavailable"
 
 
 def compute_sector_deltas(
@@ -116,6 +117,21 @@ def compute_sector_deltas(
         parts.append(f"Lost in {len(lost)} sector(s): {', '.join(s.sector_name for s in lost)}")
     if risky:
         parts.append(f"Platform risk worsened in {len(risky)} sector(s): {', '.join(s.sector_name for s in risky)}")
-    summary = " | ".join(parts) if parts else "No significant sector-level changes."
+    has_evidence = any(
+        any(value is not None for value in (
+            sector.avg_speed_delta, sector.min_cfs_delta,
+            sector.avg_steering_delta, sector.avg_drag_delta, sector.avg_rpm_delta,
+        ))
+        for sector in sectors
+    )
+    if parts:
+        summary = " | ".join(parts)
+        state = "finding"
+    elif has_evidence:
+        summary = "Evaluated sectors remained below their channel-specific thresholds."
+        state = "evaluated_clear"
+    else:
+        summary = "Insufficient paired evidence to evaluate sector changes."
+        state = "unavailable"
 
-    return SectorIntelligenceResult(sectors=sectors, summary=summary)
+    return SectorIntelligenceResult(sectors=sectors, summary=summary, evaluation_state=state)

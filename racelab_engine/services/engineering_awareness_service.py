@@ -353,71 +353,105 @@ def build_engineering_state_frames(
 def build_state_transitions(
     frames: Sequence[EngineeringStateFrame],
 ) -> tuple[StateTransition, ...]:
-    """Build temporal-only edges between backend frames sharing exact context."""
-    grouped: dict[tuple[str, str, str], list[EngineeringStateFrame]] = defaultdict(list)
+    """Build temporal edges from exact context or strong physical overlap."""
+    grouped: dict[tuple[str, str], list[EngineeringStateFrame]] = defaultdict(list)
     for frame in frames:
-        grouped[(frame.run_id, frame.setup_id, frame.context_id)].append(frame)
+        grouped[(frame.run_id, frame.setup_id)].append(frame)
     transitions: list[StateTransition] = []
     for group in grouped.values():
-        ordered = sorted(
-            group,
-            key=lambda frame: (
-                frame.lap_number,
-                frame.session_time_start,
-                frame.frame_id,
-            ),
-        )
-        for previous, current in zip(ordered, ordered[1:]):
-            if current.lap_number == previous.lap_number:
-                relationship = (
-                    TemporalRelationship.CO_OCCURS_WITH
-                    if current.session_time_start <= previous.session_time_end
-                    else TemporalRelationship.PRECEDES
+        parent = {frame.frame_id: frame.frame_id for frame in group}
+
+        def find(frame_id: str) -> str:
+            while parent[frame_id] != frame_id:
+                parent[frame_id] = parent[parent[frame_id]]
+                frame_id = parent[frame_id]
+            return frame_id
+
+        def union(left: str, right: str) -> None:
+            left_root, right_root = find(left), find(right)
+            if left_root != right_root:
+                parent[right_root] = left_root
+
+        for index, left in enumerate(group):
+            for right in group[index + 1:]:
+                same_context = left.context_id == right.context_id
+                intersection = max(
+                    0.0,
+                    min(left.lap_pct_end, right.lap_pct_end)
+                    - max(left.lap_pct_start, right.lap_pct_start),
                 )
-            else:
-                relationship = TemporalRelationship.PERSISTS_INTO
-            onset = previous.session_time_start
-            peak = max(onset, current.session_time_start)
-            supporting = tuple(
-                dict.fromkeys(
-                    (*previous.supporting_evidence, *current.supporting_evidence)
+                narrower = min(
+                    left.lap_pct_end - left.lap_pct_start,
+                    right.lap_pct_end - right.lap_pct_start,
                 )
-            )
-            artifacts = tuple(
-                dict.fromkeys(
-                    (*previous.source_artifact_ids, *current.source_artifact_ids)
+                strong_overlap = (
+                    left.lap_number == right.lap_number
+                    and narrower > 0
+                    and intersection / narrower >= 0.6
                 )
-            )
-            channels = tuple(
-                dict.fromkeys((*previous.source_channels, *current.source_channels))
-            )
-            transitions.append(
-                StateTransition(
-                    transition_id=_hash(
-                        "state-transition",
-                        previous.frame_id,
-                        current.frame_id,
-                        relationship.value,
-                    ),
-                    run_id=previous.run_id,
-                    setup_id=previous.setup_id,
-                    context_id=previous.context_id,
-                    from_frame_id=previous.frame_id,
-                    to_frame_id=current.frame_id,
-                    relationship=relationship,
-                    onset_time=onset,
-                    peak_time=peak,
-                    onset_lap_pct=previous.lap_pct_peak,
-                    peak_lap_pct=max(previous.lap_pct_peak, current.lap_pct_peak),
-                    observed_lag_ms=max(
-                        0.0, (peak - previous.session_time_end) * 1000.0
-                    ),
-                    source_artifact_ids=artifacts,
-                    source_channels=channels,
-                    evidence_state=EvidenceState.OBSERVED_CORRELATION,
-                    supporting_evidence=supporting,
+                if same_context or strong_overlap:
+                    union(left.frame_id, right.frame_id)
+        components: dict[str, list[EngineeringStateFrame]] = defaultdict(list)
+        for frame in group:
+            components[find(frame.frame_id)].append(frame)
+        for component in components.values():
+            if len(component) < 2:
+                continue
+            ordered = sorted(component, key=lambda frame: (
+                frame.lap_number, frame.session_time_start, frame.frame_id,
+            ))
+            context_id = _hash("overlap-context", *(frame.context_id for frame in ordered))
+            for previous, current in zip(ordered, ordered[1:]):
+                if current.lap_number == previous.lap_number:
+                    relationship = (
+                        TemporalRelationship.CO_OCCURS_WITH
+                        if current.session_time_start <= previous.session_time_end
+                        else TemporalRelationship.PRECEDES
+                    )
+                else:
+                    relationship = TemporalRelationship.PERSISTS_INTO
+                onset = previous.session_time_start
+                peak = max(onset, current.session_time_start)
+                supporting = tuple(
+                    dict.fromkeys(
+                        (*previous.supporting_evidence, *current.supporting_evidence)
+                    )
                 )
-            )
+                artifacts = tuple(
+                    dict.fromkeys(
+                        (*previous.source_artifact_ids, *current.source_artifact_ids)
+                    )
+                )
+                channels = tuple(
+                    dict.fromkeys((*previous.source_channels, *current.source_channels))
+                )
+                transitions.append(
+                    StateTransition(
+                        transition_id=_hash(
+                            "state-transition",
+                            previous.frame_id,
+                            current.frame_id,
+                            relationship.value,
+                        ),
+                        run_id=previous.run_id,
+                        setup_id=previous.setup_id,
+                        context_id=context_id,
+                        from_frame_id=previous.frame_id,
+                        to_frame_id=current.frame_id,
+                        relationship=relationship,
+                        onset_time=onset,
+                        peak_time=peak,
+                        onset_lap_pct=previous.lap_pct_peak,
+                        peak_lap_pct=max(previous.lap_pct_peak, current.lap_pct_peak),
+                        observed_lag_ms=max(
+                            0.0, (peak - previous.session_time_end) * 1000.0
+                        ),
+                        source_artifact_ids=artifacts,
+                        source_channels=channels,
+                        evidence_state=EvidenceState.OBSERVED_CORRELATION,
+                        supporting_evidence=supporting,
+                    )
+                )
     return tuple(sorted(transitions, key=lambda item: item.transition_id))
 
 
@@ -446,11 +480,14 @@ def build_mechanism_episodes(
     frames: Sequence[EngineeringStateFrame],
     transitions: Sequence[StateTransition],
 ) -> tuple[MechanismEpisode, ...]:
-    by_context: dict[tuple[str, str, str], list[EngineeringStateFrame]] = defaultdict(
-        list
-    )
-    for frame in frames:
-        by_context[(frame.run_id, frame.setup_id, frame.context_id)].append(frame)
+    frames_by_id = {frame.frame_id: frame for frame in frames}
+    by_context: dict[tuple[str, str, str], list[EngineeringStateFrame]] = defaultdict(list)
+    for transition in transitions:
+        key = (transition.run_id, transition.setup_id, transition.context_id)
+        for frame_id in (transition.from_frame_id, transition.to_frame_id):
+            frame = frames_by_id.get(frame_id)
+            if frame is not None and frame not in by_context[key]:
+                by_context[key].append(frame)
     episodes: list[MechanismEpisode] = []
     for (run_id, setup_id, context_id), group in by_context.items():
         if len(group) < 2:
@@ -502,6 +539,10 @@ def build_mechanism_episodes(
                 artifact for frame in ordered for artifact in frame.source_artifact_ids
             )
         )
+        intersection_start = max(frame.lap_pct_start for frame in ordered)
+        intersection_end = min(frame.lap_pct_end for frame in ordered)
+        if intersection_start > intersection_end:
+            continue
         episodes.append(
             MechanismEpisode(
                 episode_id=_hash(
@@ -516,9 +557,12 @@ def build_mechanism_episodes(
                 context_id=context_id,
                 lap_scope=lap_scope,
                 phase=ordered[0].phase,
-                lap_pct_start=min(frame.lap_pct_start for frame in ordered),
-                lap_pct_end=max(frame.lap_pct_end for frame in ordered),
-                lap_pct_peak=float(median(frame.lap_pct_peak for frame in ordered)),
+                lap_pct_start=intersection_start,
+                lap_pct_end=intersection_end,
+                lap_pct_peak=min(
+                    intersection_end,
+                    max(intersection_start, float(median(frame.lap_pct_peak for frame in ordered))),
+                ),
                 state_frame_ids=tuple(frame.frame_id for frame in ordered),
                 transition_ids=tuple(
                     transition.transition_id for transition in related

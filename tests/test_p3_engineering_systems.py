@@ -134,6 +134,7 @@ def test_braking_engine_separates_bias_and_technique_without_mu_claim() -> None:
     assert report.gate.eligible is True
     assert report.metrics is not None
     assert report.metrics.incipient_lock_corner == "LF"
+    assert report.metrics.lock_evidence_tier == "abs_corroborated"
     assert report.metrics.effective_front_ratio is not None
     assert report.metrics.abs_active_duration_s is not None
     assert report.metrics.efficiency_proxy_unit == "m/s^2 per bar"
@@ -147,6 +148,54 @@ def test_braking_engine_separates_bias_and_technique_without_mu_claim() -> None:
     assert all(item.contradicting_evidence for item in report.conclusions)
     assert all("recommendation" not in item.model_dump() for item in report.conclusions)
     assert "front brake-bias step" not in report.model_dump_json().lower()
+
+
+def test_abs_false_with_constant_cut_does_not_create_abs_or_bias_evidence() -> None:
+    rows = _brake_rows()
+    for row in rows:
+        row["brake_abs_active"] = False
+        row["brake_abs_cut_01"] = 1.0
+
+    report = analyze_braking_efficiency(rows, _laps(3), selected_lap=1, sim_integrity_clear=True)
+
+    assert report.metrics is not None
+    assert report.metrics.abs_active_duration_s == 0.0
+    assert report.metrics.incipient_lock_corner is None
+    assert report.metrics.lock_evidence_tier == "raw_wheel_speed_proxy"
+    assert "mixed or incomplete" in report.conclusions[-1].summary
+
+
+def test_non_overlapping_pressure_and_deceleration_withholds_efficiency() -> None:
+    rows = _brake_rows()
+    for index, row in enumerate(rows):
+        if index < len(rows) // 2:
+            row["long_accel"] = None
+        else:
+            for channel in (
+                "lf_brake_line_pressure_bar", "rf_brake_line_pressure_bar",
+                "lr_brake_line_pressure_bar", "rr_brake_line_pressure_bar",
+            ):
+                row[channel] = None
+
+    report = analyze_braking_efficiency(rows, _laps(3), selected_lap=1, sim_integrity_clear=True)
+
+    assert report.metrics is not None
+    assert report.metrics.matched_deceleration_efficiency_proxy is None
+
+
+def test_non_overlapping_tire_shoulders_withhold_profile_relationship() -> None:
+    rows = _tire_rows(1)
+    for index, row in enumerate(rows):
+        row["lf_temp_inner"] = 90.0 if index < len(rows) // 2 else None
+        row["lf_temp_middle"] = None if index < len(rows) // 2 else 100.0
+
+    report = analyze_tire_state(rows, _laps(3), selected_lap=1, sim_integrity_clear=True)
+    lf = next(state for state in report.corners if state.corner == "LF")
+
+    assert lf.surface_inner is None
+    assert lf.surface_middle is None
+    assert lf.inner_outer_gradient is None
+    assert lf.surface_profile_unavailable_reason is not None
 
 
 def test_phase_engine_fails_closed_when_sim_integrity_is_unknown() -> None:
@@ -1550,6 +1599,24 @@ def test_sim_integrity_normalizes_percent_communication_quality() -> None:
     assert poor.is_clear_for_analysis is False
     assert good_quality.observed == pytest.approx(0.95)
     assert good_quality.status == "pass"
+    assert good_quality.raw_observed == pytest.approx(95.0)
+    assert good_quality.normalization_provenance == "percent_0_to_100"
+
+
+@pytest.mark.parametrize("value", [1.0004, 1.0069])
+def test_sim_integrity_accepts_only_narrow_unity_jitter(value: float) -> None:
+    rows = _integrity_rows()
+    for row in rows:
+        row["channel_quality"] = value
+
+    certificate = build_sim_integrity_certificate(rows, expected_sample_rate_hz=60.0)
+    quality = next(check for check in certificate.checks if check.key == "communication_quality")
+
+    assert quality.status == "pass"
+    assert quality.observed == pytest.approx(1.0)
+    assert quality.raw_observed == pytest.approx(value)
+    assert quality.normalization_provenance == "ratio_unity_jitter_clamped_1pct"
+    assert certificate.is_clear_for_analysis is True
 
 
 @pytest.mark.parametrize(
@@ -1578,6 +1645,10 @@ def test_sim_integrity_rejects_impossible_system_values(
 
     assert check.status == "fail"
     assert certificate.is_clear_for_analysis is False
+    if channel == "channel_quality":
+        assert check.raw_observed == pytest.approx(value)
+        assert check.observed is None
+        assert check.normalization_provenance == "invalid_or_ambiguous"
 
 
 def test_sim_integrity_fails_incomplete_paired_clock_coverage() -> None:

@@ -640,12 +640,20 @@ def test_live_observability_requires_one_complete_current_manifest_channel_group
         item for item in partial.component_states if item.component_id == "springs"
     )
 
-    assert ComponentObservabilityState.LIVE_RESPONSE_OBSERVABLE in complete_springs.observability_states
+    assert ComponentObservabilityState.LIVE_RESPONSE_OBSERVABLE not in complete_springs.observability_states
+    assert any(
+        certificate.state == "screenable"
+        for certificate in complete_springs.quantity_observability
+    )
     assert complete_springs.available_live_channel_ids == complete_group
     assert complete_springs.live_response_blocker_reasons == ()
     assert complete_springs.current_response_state == "not_observed"
     assert ComponentObservabilityState.LIVE_RESPONSE_OBSERVABLE not in partial_springs.observability_states
-    assert partial_springs.available_live_channel_ids == ()
+    assert partial_springs.available_live_channel_ids == complete_group[:-1]
+    assert all(
+        certificate.state == "unavailable"
+        for certificate in partial_springs.quantity_observability
+    )
     assert partial_springs.live_response_blocker_reasons
     assert partial_springs.current_response_state == "unavailable"
 

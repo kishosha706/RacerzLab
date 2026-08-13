@@ -75,7 +75,7 @@ def test_controlled_workflow_shell_uses_exact_scope_and_withholds_ambiguous_cata
     assert "const isActiveWorkflow" in effect
     assert 'workflow.status !== "scored"' in effect
     assert 'workflow.status !== "cancelled"' in effect
-    assert "touchesRuns(uniqueScopedActiveWorkflow, currentRun)" in effect
+    assert "touchesRuns(uniqueScopedActiveCatalog, currentRun)" in effect
     assert "racerzlab:controlled-workflow-handoff:${requestedSessionId}" in effect
     assert "uniqueScopedActiveWorkflow?.workflow_id === workflowId" in effect
     assert "touchesRuns(workflow, explicitScope)" in effect
@@ -83,7 +83,8 @@ def test_controlled_workflow_shell_uses_exact_scope_and_withholds_ambiguous_cata
     assert "if (scopedActiveWorkflows.length > 1)" in effect
     assert "setActiveControlledWorkflowAmbiguous(true)" in effect
     assert "setActiveControlledWorkflow(handedOff ?? uniqueScopedActiveWorkflow)" in effect
-    assert "fetchControlledWorkflows(false, {" in effect
+    assert "fetchControlledWorkflowCatalog(" in effect
+    assert "fetchControlledWorkflow(item.workflow_id)" in effect
     assert 'selection.selectedWorkspace === "dial_in"' not in effect
     assert "setActiveControlledWorkflow(null)" in effect.split("catch", 1)[1]
 

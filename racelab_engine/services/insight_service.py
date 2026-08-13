@@ -7,9 +7,6 @@ from racelab_engine.analysis.compare_delta_traces import (
     DEFAULT_DELTA_CHANNELS,
     compute_delta_traces,
 )
-from racelab_engine.analysis.confidence_weighted_verdict import (
-    apply_observation_confidence,
-)
 from racelab_engine.analysis.correlation_analysis import correlate_delta_channels
 from racelab_engine.analysis.sector_intelligence import compute_sector_deltas
 from racelab_engine.analysis.target_zone_classifier import (
@@ -18,7 +15,6 @@ from racelab_engine.analysis.target_zone_classifier import (
 from racelab_engine.analysis.trace_annotations import annotate_delta_traces
 from racelab_engine.models.comparison_insights import (
     ComparisonInsightsResponse,
-    ConfidenceWeightedObservation,
     CorrelationInsight,
     SectorDeltaSummary,
     TargetZoneClassification,
@@ -148,7 +144,7 @@ def build_comparison_insights(
             channel=a.channel,
             value=a.value,
             severity=a.severity,
-            confidence=0.7 if a.severity in ("critical", "high") else 0.5,
+            confidence=None,
         )
         for i, a in enumerate(annotation_result.annotations)
     ]
@@ -163,10 +159,8 @@ def build_comparison_insights(
             strength=_strength_label(p.pearson_r),
             direction=_direction_label(p.pearson_r),
             narrative=p.interpretation or "",
-            confidence=min(
-                0.85,
-                p.paired_coverage * (0.4 + 0.4 * abs(p.pearson_r or 0.0)),
-            ),
+            confidence=None,
+            paired_coverage=p.paired_coverage,
             warning="Exploratory association only; it does not establish setup causality.",
         )
         for p in corr_result.pairs
@@ -208,14 +202,20 @@ def build_comparison_insights(
     tz_class = classify_tz(tz_speed, tz_cfs_min, tz_steer, tz_drag, tz_rpm, discipline_label)
     tz_model = TargetZoneClassification(
         classification=_gain_class(tz_class.gain_class),
-        confidence=tz_class.confidence,
+        confidence=None,
+        evaluation_state=(
+            "unavailable" if tz_speed is None
+            else "evaluated_clear" if _gain_class(tz_class.gain_class) == "inconclusive"
+            else "finding"
+        ),
         headline=tz_class.label,
         evidence=tz_class.reasoning,
     )
     if tz_speed is None and not causal_attribution_blocked:
         tz_model = TargetZoneClassification(
             classification="inconclusive",
-            confidence=0.0,
+            confidence=None,
+            evaluation_state="unavailable",
             headline="Insufficient paired speed evidence",
             evidence=[
                 "At least 90% paired positional speed coverage is required in the target zone."
@@ -230,7 +230,8 @@ def build_comparison_insights(
             reasons.append("External context prevents causal setup attribution.")
         tz_model = TargetZoneClassification(
             classification="inconclusive",
-            confidence=min(tz_class.confidence, 0.3),
+            confidence=None,
+            evaluation_state="finding" if tz_speed is not None else "unavailable",
             headline="Observed change; setup cause not established",
             evidence=[*tz_class.reasoning, *reasons],
         )
@@ -248,25 +249,13 @@ def build_comparison_insights(
                 annotation,
                 description="Observed telemetry only; setup attribution is blocked. "
                 + annotation.description,
-                confidence=min(annotation.confidence, 0.3),
+                confidence=None,
             )
             for annotation in annotations
         ]
 
     # ── 5. Confidence-weighted observation ─────────────────────
-    weighted = apply_observation_confidence(
-        observation_state,
-        base_confidence,
-        discipline_label=discipline_label,
-        context_problems=context_problems,
-    )
-    weighted_observation = ConfidenceWeightedObservation(
-        observation_state=observation_state,
-        adjusted_confidence=weighted.adjusted_confidence,
-        confidence_tier=weighted.tier,
-        penalties=weighted.penalties,
-        boosts=weighted.boosts,
-    )
+    weighted_observation = None
 
     # ── 6. Sector intelligence ─────────────────────────────────
     sector_result = compute_sector_deltas(baseline_rows, test_rows, channels=selected)
@@ -300,7 +289,11 @@ def build_comparison_insights(
     if causal_attribution_blocked:
         summary_headline = "Observed change; setup cause not established"
     else:
-        summary_headline = tz_model.headline if tz_model.confidence > 0.3 else "Inconclusive — review data coverage"
+        summary_headline = (
+            tz_model.headline
+            if tz_model.evaluation_state != "unavailable"
+            else "Unavailable — insufficient paired evidence"
+        )
     key_takeaways: list[str] = []
     if causal_attribution_blocked:
         if annotation_result.summary:
@@ -333,4 +326,15 @@ def build_comparison_insights(
         key_takeaways=key_takeaways,
         warnings=warnings,
         missing_channels=missing,
+        engine_states={
+            "delta_traces": (
+                "unavailable" if len(set(missing)) == len(set(selected))
+                else "finding" if annotation_result.evaluation_state == "finding"
+                else "evaluated_clear"
+            ),
+            "annotations": annotation_result.evaluation_state,
+            "correlations": "finding" if correlations else "unavailable",
+            "target_zone": tz_model.evaluation_state,
+            "sectors": sector_result.evaluation_state,
+        },
     )

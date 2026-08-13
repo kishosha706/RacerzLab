@@ -10,8 +10,91 @@ from racelab_engine.io.ibt_types import IBTHeader, IBTVariableDefinition
 from racelab_engine.io.session_yaml import parse_session_yaml
 
 
-MANIFEST_SCHEMA_VERSION = 4
+MANIFEST_SCHEMA_VERSION = 5
 UNIVERSAL_ARCHIVE_VERSION = 1
+
+# These raw fields are collection candidates, not admitted runtime physics.
+# The manifest records what the simulator declared and what the archive observed
+# so a future held-out fixture can validate semantics without silently mapping a
+# convenient column today.
+_MEASUREMENT_CANDIDATE_FAMILIES: dict[str, tuple[str, ...]] = {
+    "transport_integrity": ("ChanClockSkew", "ChanPartnerQuality"),
+    "vehicle_condition": (
+        "PlayerCarMyIncidentCount", "PlayerCarTeamIncidentCount", "PlayerCarDriverIncidentCount",
+        "TowTime", "PitRepairLeft", "PitOptRepairLeft", "FastRepairUsed",
+    ),
+    "planned_tire_service": (
+        "PitSvLFP", "PitSvRFP", "PitSvLRP", "PitSvRRP",
+        "LFTiresAvailable", "RFTiresAvailable", "LRTiresAvailable", "RRTiresAvailable",
+    ),
+    "weather_context": (
+        "WeatherDeclaredWet", "Precipitation", "TrackWetness", "SessionTimeOfDay",
+        "SolarAltitude", "SolarAzimuth",
+    ),
+    "delta_validity": (
+        "LapDeltaToSessionBestLap_OK", "LapDeltaToSessionOptimalLap_OK",
+        "LapDeltaToBestLap_OK", "LapDeltaToOptimalLap_OK",
+    ),
+}
+
+
+def _measurement_candidate_contracts(
+    channels: list[dict[str, Any]],
+    compatibility: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Describe measurement debt without admitting a channel to runtime use."""
+
+    by_name = {str(channel.get("raw_name")): channel for channel in channels}
+    build_identity = {
+        key: compatibility.get(key)
+        for key in ("iracing_build_version", "iracing_build_type", "iracing_build_target")
+    }
+    result: list[dict[str, Any]] = []
+    for family, names in _MEASUREMENT_CANDIDATE_FAMILIES.items():
+        for name in names:
+            channel = by_name.get(name)
+            if channel is None:
+                result.append({
+                    "raw_name": name,
+                    "family": family,
+                    "state": "not_declared",
+                    "runtime_mapping_admitted": False,
+                    "raw_semantics": None,
+                    "declared_unit": None,
+                    "valid_record_count": 0,
+                    "missing_fraction": 1.0,
+                    "variation": "unavailable",
+                    "raw_provenance": "ibt_variable_definition",
+                    "build_applicability": build_identity,
+                    "blockers": ["The source file did not declare this candidate channel."],
+                })
+                continue
+            blockers: list[str] = []
+            if not str(channel.get("description") or "").strip():
+                blockers.append("The simulator supplied no channel semantics.")
+            if not str(channel.get("unit") or "").strip():
+                blockers.append("The simulator supplied no unit contract.")
+            if channel.get("archive_status") != "cached":
+                blockers.append("Raw samples were not archived.")
+            if channel.get("health_status") != "healthy":
+                blockers.append("Raw samples did not pass manifest health checks.")
+            result.append({
+                "raw_name": name,
+                "family": family,
+                "state": "source_contract_observed" if not blockers else "data_locked",
+                "runtime_mapping_admitted": False,
+                "raw_semantics": channel.get("description"),
+                "declared_unit": channel.get("unit"),
+                "valid_record_count": channel.get("valid_record_count", 0),
+                "missing_fraction": channel.get("missing_fraction", 1.0),
+                "variation": channel.get("variation", "unavailable"),
+                "raw_provenance": "ibt_variable_definition+lossless_raw_archive",
+                "build_applicability": build_identity,
+                "blockers": blockers or [
+                    "Semantics still require a known-behavior held-out fixture before runtime mapping."
+                ],
+            })
+    return result
 
 
 def assess_cache_compatibility(
@@ -862,6 +945,7 @@ def build_telemetry_manifest(
         },
         "channels": channels,
         "capabilities": _capabilities(declared),
+        "measurement_candidate_contracts": _measurement_candidate_contracts(channels, identity),
     }
     manifest["cache_compatibility"] = assess_cache_compatibility(manifest, cache_present=True)
     manifest["capability_summary"] = compact_capability_summary(manifest)

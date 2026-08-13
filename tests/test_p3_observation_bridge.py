@@ -24,6 +24,28 @@ from racelab_engine.services.run_intelligence_service import _observation_hypoth
 from racelab_engine.services.import_service import TelemetryArtifactIdentityError
 
 
+def test_disjoint_phase_islands_remain_explicit_physical_segments() -> None:
+    rows = [
+        {
+            "lap": 1,
+            "lap_dist_pct_100": pct,
+            "engineering_phase": "braking" if pct in {10.0, 10.2, 60.0, 60.2} else "straight",
+        }
+        for pct in (10.0, 10.2, 30.0, 60.0, 60.2)
+    ]
+
+    window = bridge._window_for_phases(
+        rows, lap_number_value=1, phases=("braking",), phase_label="braking",
+    )
+
+    assert window is not None
+    assert [(item.start_pct, item.end_pct) for item in window.physical_segments] == [
+        (10.0, 10.2), (60.0, 60.2),
+    ]
+    assert window.end_pct - window.start_pct < 1.0
+    assert sum(item.sample_count for item in window.physical_segments) == window.sample_count
+
+
 def _lap(number: int, lap_time: float) -> LapSummary:
     return LapSummary(
         lap_id=f"run-a:{number}",

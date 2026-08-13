@@ -80,6 +80,32 @@ npm run check
 python -B -m pytest -p no:cacheprovider -q
 ```
 
+P31 also requires the behavioral and truth-boundary gates:
+
+```powershell
+cd ui
+npm test
+npx tsc --noEmit
+npm run build
+cd ..
+
+python -B -m pytest -q `
+  tests/test_run_intelligence_snapshot.py `
+  tests/test_controlled_workflow_service.py `
+  tests/test_p19_release_proofs.py `
+  tests/test_p3_engineering_systems.py `
+  tests/test_p3_observation_bridge.py `
+  tests/test_engineering_awareness_service.py `
+  tests/test_vehicle_systems_intelligence.py `
+  tests/test_crew_chief_contracts.py `
+  tests/test_compare_math.py
+```
+
+The protected Atlanta source is re-imported when manifest schema changes. A
+stale cache is a failed truth gate, not permission to lower the schema version.
+Workflow catalog performance is tested with 10,000 unrelated histories and the
+semantic snapshot is tested with concurrent equivalent requests.
+
 The synthetic and contract suite runs without a private telemetry file. Tests that require a real Talladega `.ibt` fixture skip when the fixture is unavailable. For full fixture validation, set:
 ```
 C:\Users\Soulj\Documents\iRacing\telemetry\stockcars camarozl12018_talladega 2026-05-07 15-05-45.ibt
@@ -131,6 +157,6 @@ Benchmark tests in `TestBenchmark` skip gracefully if `pytest-benchmark` is not 
 - Service/API integration -> add `@pytest.mark.integration`
 - See `pyproject.toml` for registered markers
 
-Last reviewed: 2026-08-10. Exact suite totals belong in the release/audit
+Last reviewed: 2026-08-13. Exact suite totals belong in the release/audit
 evidence for the commit being tested; category counts intentionally remain
 non-fixed here.

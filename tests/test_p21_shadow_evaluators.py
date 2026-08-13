@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from racelab_engine.evaluation.calibration import (
     CalibrationObservation,
+    CalibrationStabilityObservation,
     IntervalObservation,
+    evaluate_calibration_stability,
     evaluate_interval_coverage,
     evaluate_probability_calibration,
 )
@@ -256,3 +258,50 @@ def test_negative_transfer_in_any_subgroup_keeps_transfer_locked():
     assert evaluation.negative_transfer_subgroups == (
         "different_driver_different_track",
     )
+
+
+def test_dense_samples_from_one_lap_cannot_unlock_calibration() -> None:
+    observation = CalibrationStabilityObservation(
+        unit_id="session-1:lap-4",
+        session_id="session-1",
+        lap_number=4,
+        effect_sign=1,
+        bootstrap_block_signs=(1, 1, 1, 1, 1),
+        context_id="context-a",
+        context_drifted=False,
+        countereffect_occurred=False,
+        partition="evaluation",
+    )
+    evaluation = evaluate_calibration_stability((observation,))
+    assert evaluation.state == "collecting"
+    assert evaluation.independent_eligible_laps == 1
+    assert evaluation.independent_sessions == 1
+    assert evaluation.confidence_activation_allowed is False
+    assert any("sample count is not an independence unit" in item for item in evaluation.blockers)
+
+
+def test_calibration_stability_records_held_out_context_and_countereffects() -> None:
+    observations = tuple(
+        CalibrationStabilityObservation(
+            unit_id=f"session-{session}:lap-{lap}",
+            session_id=f"session-{session}",
+            lap_number=lap,
+            effect_sign=1,
+            bootstrap_block_signs=(1, 1, 1),
+            context_id=f"context-{session}",
+            context_drifted=session == 2 and lap == 3,
+            countereffect_occurred=session == 2 and lap == 2,
+            partition="evaluation" if session == 2 else "calibration",
+        )
+        for session in (1, 2)
+        for lap in (1, 2, 3)
+    )
+    evaluation = evaluate_calibration_stability(observations)
+    assert evaluation.state == "eligible_for_shadow_evaluation"
+    assert evaluation.independent_eligible_laps == 6
+    assert evaluation.independent_sessions == 2
+    assert evaluation.held_out_laps == 3
+    assert evaluation.block_bootstrap_stability == 1.0
+    assert evaluation.context_drift_rate == 1 / 6
+    assert evaluation.countereffect_rate == 1 / 6
+    assert evaluation.confidence_activation_allowed is False

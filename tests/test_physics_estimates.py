@@ -878,8 +878,8 @@ def test_camber_bias_inner_hotter() -> None:
     from racelab_engine.analysis.calculated_channels import _compute_camber_bias
     row: dict = {"lf_carcass_temp_l": 120.0, "lf_carcass_temp_r": 90.0}
     _compute_camber_bias(row)
-    assert row.get("lf_camber_temp_bias_c") == 30.0
-    assert row.get("lf_camber_bias_label") == "high_inside"
+    assert row.get("lf_camber_temp_bias_c") == -30.0
+    assert row.get("lf_camber_bias_label") == "high_outside"
 
 
 def test_camber_bias_outer_hotter() -> None:
@@ -887,8 +887,8 @@ def test_camber_bias_outer_hotter() -> None:
     from racelab_engine.analysis.calculated_channels import _compute_camber_bias
     row: dict = {"lf_carcass_temp_l": 80.0, "lf_carcass_temp_r": 110.0}
     _compute_camber_bias(row)
-    assert row.get("lf_camber_temp_bias_c") == -30.0
-    assert row.get("lf_camber_bias_label") == "high_outside"
+    assert row.get("lf_camber_temp_bias_c") == 30.0
+    assert row.get("lf_camber_bias_label") == "high_inside"
 
 
 def test_camber_bias_even() -> None:

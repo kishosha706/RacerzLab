@@ -35,6 +35,7 @@ from racelab_engine.models.session_intelligence import (
     RacingLineContextMatch,
 )
 from racelab_engine.models.setup import SetupSnapshot
+from racelab_engine.io.telemetry_manifest import MANIFEST_SCHEMA_VERSION
 from racelab_engine.services.engineering_memory_service import (
     build_prediction_contract,
     build_prediction_grade,
@@ -332,7 +333,7 @@ def _write_artifacts(
     cache_hash = hashlib.sha256(cache.read_bytes()).hexdigest()
     effective_identity = {**IDENTITY, **(identity or {})}
     manifest = {
-        "manifest_schema_version": 4,
+        "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
         "universal_archive_version": 1,
         "run_id": run_id,
         "source_file_sha256": source_hash,

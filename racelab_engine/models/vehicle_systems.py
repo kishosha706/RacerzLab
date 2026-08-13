@@ -386,6 +386,42 @@ class ComponentControlledHistory(VehicleSystemsModel):
         return self
 
 
+class QuantityObservabilityCertificate(VehicleSystemsModel):
+    quantity_id: str = Field(min_length=1)
+    required_channels: tuple[str, ...] = Field(min_length=1)
+    available_channels: tuple[str, ...] = ()
+    missing_channels: tuple[str, ...] = ()
+    health_basis: Literal["qualified_producer", "manifest_presence_only", "missing"]
+    minimum_coobserved_coverage: float = Field(ge=0.0, le=1.0, allow_inf_nan=False)
+    coobserved_coverage: float | None = Field(default=None, ge=0.0, le=1.0, allow_inf_nan=False)
+    state: Literal["observed", "screenable", "unavailable"]
+    producer_artifact_ids: tuple[str, ...] = ()
+    supported_derived_outputs: tuple[str, ...] = ()
+    blocker_reasons: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def quantity_truth_is_consistent(self) -> QuantityObservabilityCertificate:
+        required = set(self.required_channels)
+        if set(self.available_channels) | set(self.missing_channels) != required:
+            raise ValueError("quantity certificate must partition every required channel")
+        if set(self.available_channels) & set(self.missing_channels):
+            raise ValueError("quantity certificate channel partitions cannot overlap")
+        if self.state == "observed" and (
+            self.health_basis != "qualified_producer"
+            or self.coobserved_coverage is None
+            or self.coobserved_coverage < self.minimum_coobserved_coverage
+            or not self.producer_artifact_ids
+        ):
+            raise ValueError("observed quantities require qualified co-observed producer evidence")
+        if self.state == "screenable" and (
+            self.missing_channels or self.health_basis != "manifest_presence_only"
+        ):
+            raise ValueError("screenable quantities require manifest presence without qualified evidence")
+        if self.state == "unavailable" and not self.blocker_reasons:
+            raise ValueError("unavailable quantities require exact blockers")
+        return self
+
+
 class ComponentObservationScope(VehicleSystemsModel):
     artifact_id: str = Field(min_length=1)
     observation_id: str = Field(min_length=1)
@@ -406,8 +442,11 @@ class ComponentAwarenessState(VehicleSystemsModel):
     run_id: str = Field(min_length=1)
     observation_scopes: tuple[ComponentObservationScope, ...] = ()
     current_settings: tuple[str, ...] = ()
+    present_setting_keys: tuple[str, ...] = ()
+    missing_setting_keys: tuple[str, ...] = ()
     current_setting_provenance: tuple[str, ...] = ()
     observability_states: tuple[ComponentObservabilityState, ...] = Field(min_length=1)
+    quantity_observability: tuple[QuantityObservabilityCertificate, ...] = ()
     current_response_state: Literal["observed", "not_observed", "unavailable"]
     relevance: ComponentRelevance
     supporting_artifact_ids: tuple[str, ...] = ()
@@ -495,10 +534,16 @@ class ComponentAwarenessState(VehicleSystemsModel):
         ):
             raise ValueError("controlled policy observability must match usable history")
         live_observable = ComponentObservabilityState.LIVE_RESPONSE_OBSERVABLE in self.observability_states
-        if live_observable != bool(self.available_live_channel_ids):
-            raise ValueError("live observability must be backed by current manifest channels")
-        if live_observable == bool(self.live_response_blocker_reasons):
-            raise ValueError("live-response blockers must be present exactly when channels are unavailable")
+        if self.quantity_observability:
+            if live_observable != any(item.state == "observed" for item in self.quantity_observability):
+                raise ValueError("live observability requires a qualified quantity certificate")
+            certificate_channels = {
+                channel for item in self.quantity_observability for channel in item.available_channels
+            }
+            if certificate_channels != set(self.available_live_channel_ids):
+                raise ValueError("available live channels must match quantity certificates")
+        elif live_observable != bool(self.available_live_channel_ids):
+            raise ValueError("legacy live observability must be backed by current manifest channels")
         if set(self.blocked_control_keys) & set(self.testable_control_keys):
             raise ValueError("one control cannot be both blocked and testable")
         if self.authorized_control_key is not None:
@@ -655,6 +700,7 @@ __all__ = [
     "ComponentObservabilityContract",
     "ComponentObservabilityState",
     "ComponentObservationScope",
+    "QuantityObservabilityCertificate",
     "ComponentRelevance",
     "ControlMechanismTraceResponse",
     "SetupExperimentFactor",

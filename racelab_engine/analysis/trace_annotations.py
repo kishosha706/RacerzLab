@@ -32,6 +32,7 @@ class TraceAnnotation:
 class AnnotationResult:
     annotations: list[TraceAnnotation] = field(default_factory=list)
     summary: str | None = None
+    evaluation_state: Literal["finding", "evaluated_clear", "unavailable"] = "unavailable"
 
 
 def _find_extreme(
@@ -47,10 +48,23 @@ def _find_extreme(
 ) -> TraceAnnotation | None:
     """Find the single most extreme value in a delta trace and annotate it."""
     magnitude = abs(threshold)
+    qualifying = [
+        bool(v is not None and (v >= magnitude if find_max else v <= -magnitude))
+        for v in values
+    ]
+    sustained_indices: set[int] = set()
+    start: int | None = None
+    for index, is_qualifying in enumerate([*qualifying, False]):
+        if is_qualifying and start is None:
+            start = index
+        elif not is_qualifying and start is not None:
+            if index - start >= 3:
+                sustained_indices.update(range(start, index))
+            start = None
     candidates = [
-        (i, v)
-        for i, v in enumerate(values)
-        if v is not None and (v >= magnitude if find_max else v <= -magnitude)
+        (index, value)
+        for index, value in enumerate(values)
+        if index in sustained_indices and value is not None
     ]
     if not candidates:
         return None
@@ -63,8 +77,16 @@ def _find_extreme(
     pct = xs_pct[idx] if idx < len(xs_pct) else 0.0
     ft = xs_ft[idx] if idx < len(xs_ft) else None
 
-    abs_val = abs(val)
-    severity: str = "critical" if abs_val > 1.0 else "high" if abs_val > 0.5 else "watch" if abs_val > 0.1 else "info"
+    # Severity is relative to this channel's unit-specific detection threshold;
+    # raw mph, rpm, degrees, inches, percentages and proxy indices are never
+    # compared against one dimensionless cutoff.
+    threshold_multiple = abs(val) / magnitude if magnitude > 0 else 1.0
+    severity: str = (
+        "critical" if threshold_multiple >= 8.0
+        else "high" if threshold_multiple >= 4.0
+        else "watch" if threshold_multiple >= 2.0
+        else "info"
+    )
 
     return TraceAnnotation(
         kind=kind,
@@ -127,11 +149,20 @@ def annotate_delta_traces(
             annotations.append(lift)
 
     # Build summary
+    evaluated_channels = sum(
+        any(value is not None for value in channel.get("delta_values", ()))
+        for channel in delta_channels.values()
+    )
     if annotations:
         summary = f"{len(annotations)} events detected: " + ", ".join(
             f"{a.symbol} {a.label}" for a in annotations[:5]
         )
+        state = "finding"
+    elif evaluated_channels:
+        summary = "Evaluated channels remained below their unit-specific duration/position thresholds."
+        state = "evaluated_clear"
     else:
-        summary = "No significant delta events detected."
+        summary = "Insufficient paired evidence to evaluate delta events."
+        state = "unavailable"
 
-    return AnnotationResult(annotations=annotations, summary=summary)
+    return AnnotationResult(annotations=annotations, summary=summary, evaluation_state=state)

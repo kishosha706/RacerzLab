@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import sqlite3
 from pathlib import Path
 from threading import RLock
@@ -150,8 +151,40 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
           FOREIGN KEY(investigation_id) REFERENCES crew_chief_investigations(investigation_id)
             ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS controlled_workflow_run_index (
+          workflow_id TEXT NOT NULL,
+          run_id TEXT NOT NULL,
+          role TEXT NOT NULL,
+          PRIMARY KEY(workflow_id, run_id, role),
+          FOREIGN KEY(workflow_id) REFERENCES controlled_test_workflows(workflow_id)
+            ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_controlled_workflow_run_lookup
+          ON controlled_workflow_run_index(run_id, workflow_id);
         """
     )
+    if connection.execute(
+        "SELECT COUNT(*) AS count FROM controlled_workflow_run_index"
+    ).fetchone()["count"] == 0:
+        rows = connection.execute(
+            "SELECT workflow_id, source_run_id, stage_run_ids_json FROM controlled_test_workflows"
+        ).fetchall()
+        for row in rows:
+            bindings = [(row["source_run_id"], "source")]
+            try:
+                stage_bindings = json.loads(row["stage_run_ids_json"] or "{}")
+            except (TypeError, ValueError):
+                stage_bindings = {}
+            if isinstance(stage_bindings, dict):
+                bindings.extend(
+                    (run_id, str(stage))
+                    for stage, run_id in stage_bindings.items()
+                    if isinstance(run_id, str) and run_id
+                )
+            connection.executemany(
+                "INSERT OR IGNORE INTO controlled_workflow_run_index(workflow_id, run_id, role) VALUES (?, ?, ?)",
+                ((row["workflow_id"], run_id, role) for run_id, role in bindings),
+            )
     if "crew_chief_investigations" in {
         row["name"]
         for row in connection.execute(
@@ -267,6 +300,12 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
             "controlled_test_workflows",
             "stage_eligible_lap_numbers_json",
             "stage_eligible_lap_numbers_json TEXT NOT NULL DEFAULT '{}'",
+        )
+        _add_column_if_missing(
+            connection,
+            "controlled_test_workflows",
+            "stage_experiment_contexts_json",
+            "stage_experiment_contexts_json TEXT NOT NULL DEFAULT '{}'",
         )
         _add_column_if_missing(
             connection,

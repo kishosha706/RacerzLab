@@ -346,6 +346,7 @@ CREATE TABLE IF NOT EXISTS controlled_test_workflows (
   packet_json TEXT NOT NULL,
   stage_run_ids_json TEXT NOT NULL DEFAULT '{}',
   stage_eligible_lap_numbers_json TEXT NOT NULL DEFAULT '{}',
+  stage_experiment_contexts_json TEXT NOT NULL DEFAULT '{}',
   analysis_version TEXT NOT NULL DEFAULT 'controlled-workflow-aba2-v1',
   execution_json TEXT,
   reproduction_snapshot_json TEXT NOT NULL DEFAULT '{}',
@@ -356,6 +357,16 @@ CREATE TABLE IF NOT EXISTS controlled_test_workflows (
 
 CREATE INDEX IF NOT EXISTS idx_controlled_workflow_status
   ON controlled_test_workflows(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS controlled_workflow_run_index (
+  workflow_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  PRIMARY KEY(workflow_id, run_id, role),
+  FOREIGN KEY(workflow_id) REFERENCES controlled_test_workflows(workflow_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_controlled_workflow_run_lookup
+  ON controlled_workflow_run_index(run_id, workflow_id);
 
 -- Append-only internal engineering memory. These records intentionally avoid
 -- run foreign keys: re-import may replace import-owned evidence rows, but it

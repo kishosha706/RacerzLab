@@ -65,7 +65,7 @@ def test_multiple_active_workflows_block_selection_and_exact_authority() -> None
     dial_in = _dial_in()
     catalog = _between(
         dial_in,
-        "void fetchControlledWorkflows(false).then",
+        "void fetchControlledWorkflows(sessionId, overview.run_id, false).then",
         "useEffect(() => {\n    try {\n      window.sessionStorage.setItem",
     )
 
@@ -103,7 +103,7 @@ def test_unique_session_measurement_follows_the_driver_across_run_handoffs() -> 
     dial_in = _dial_in()
     catalog = _between(
         dial_in,
-        "void fetchControlledWorkflows(false).then",
+        "void fetchControlledWorkflows(sessionId, overview.run_id, false).then",
         "useEffect(() => {\n    try {\n      window.sessionStorage.setItem",
     )
 

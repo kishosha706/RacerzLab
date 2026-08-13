@@ -223,6 +223,28 @@ export interface CompareResponse {
   } | null;
   warnings: string[];
   confidence_score: number;
+  compare_identity: CompareIdentity;
+}
+
+export interface CompareRunIdentity {
+  run_id: string;
+  source_file_sha256: string;
+  telemetry_cache_sha256: string;
+  compatibility_fingerprint: string;
+  build_identity: Record<string, unknown>;
+  setup_id: string | null;
+  setup_sha256: string | null;
+}
+
+export interface CompareIdentity {
+  schema_version: "p31.compare-identity.v1";
+  baseline: CompareRunIdentity;
+  test: CompareRunIdentity;
+  baseline_lap: number | null;
+  test_lap: number | null;
+  target_zone_start_pct: number;
+  target_zone_end_pct: number;
+  identity_sha256: string;
 }
 
 // -- Delta Trace types --------------------------------------
@@ -554,6 +576,7 @@ export interface ComparisonInsightsResponse {
   key_takeaways: string[];
   warnings: string[];
   missing_channels: string[];
+  engine_states: Record<string, "finding" | "evaluated_clear" | "unavailable">;
 }
 
 // -- Notebook types -----------------------------------------

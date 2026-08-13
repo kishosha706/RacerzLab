@@ -4,7 +4,8 @@ import {
   addRunToSession,
   fetchChannelSummary,
   fetchChannelsFull,
-  fetchControlledWorkflows,
+  fetchControlledWorkflow,
+  fetchControlledWorkflowCatalog,
   fetchEvents,
   fetchHealth,
   fetchRunIntelligence,
@@ -323,7 +324,6 @@ function CockpitShell() {
   const sessionRunsRequestSeqRef = useRef(0);
   const importOpenIntentRef = useRef(0);
   const controlledWorkflowRequestSeqRef = useRef(0);
-  const controlledWorkflowPollSeqRef = useRef(0);
   const intelligenceShellRequestSeqRef = useRef(0);
   const intelligenceAuthorityRequestSeqRef = useRef(0);
 
@@ -756,22 +756,25 @@ function CockpitShell() {
     }
     setControlledWorkflowCatalogState({ requestKey: requestedWorkflowKey, status: "checking", error: null });
 
-    const touchesRuns = (workflow: ControlledWorkflow, runIds: ReadonlySet<string>) => (
+    const touchesRuns = (
+      workflow: Pick<ControlledWorkflow, "source_run_id" | "stage_run_ids">,
+      runIds: ReadonlySet<string>,
+    ) => (
       runIds.has(workflow.source_run_id)
       || Object.values(workflow.stage_run_ids).some((runId) => runId != null && runIds.has(runId))
     );
-    const isActiveWorkflow = (workflow: ControlledWorkflow) => (
+    const isActiveWorkflow = (workflow: Pick<ControlledWorkflow, "status">) => (
       workflow.status !== "scored"
       && workflow.status !== "cancelled"
     );
 
+    const detailsByRevision = new Map<string, ControlledWorkflow>();
     const refreshWorkflow = async () => {
       const currentRefresh = ++refreshSeq;
       try {
-        const pollRevision = ++controlledWorkflowPollSeqRef.current;
-        const workflows = await fetchControlledWorkflows(false, {
-          refreshKey: `${requestedSessionId}:${requestedRunId}:${pollRevision}`,
-        });
+        const workflows = await fetchControlledWorkflowCatalog(
+          requestedSessionId, requestedRunId,
+        );
         if (
           cancelled
           || requestSeq !== controlledWorkflowRequestSeqRef.current
@@ -792,14 +795,45 @@ function CockpitShell() {
         }
 
         setActiveControlledWorkflowAmbiguous(false);
-        const uniqueScopedActiveWorkflow = scopedActiveWorkflows[0] ?? null;
+        const uniqueScopedActiveCatalog = scopedActiveWorkflows[0] ?? null;
         const currentRun = new Set([requestedRunId]);
-        const directlyRelated = uniqueScopedActiveWorkflow && touchesRuns(uniqueScopedActiveWorkflow, currentRun)
-          ? uniqueScopedActiveWorkflow
+        const directlyRelatedCatalog = uniqueScopedActiveCatalog && touchesRuns(uniqueScopedActiveCatalog, currentRun)
+          ? uniqueScopedActiveCatalog
           : null;
-        const scoredRelated = workflows.find((workflow) => (
+        const scoredRelatedCatalog = workflows.find((workflow) => (
           workflow.status === "scored" && touchesRuns(workflow, currentRun)
         )) ?? null;
+        const detailTargets = [directlyRelatedCatalog, scoredRelatedCatalog, uniqueScopedActiveCatalog]
+          .filter((item): item is NonNullable<typeof item> => item != null)
+          .filter((item, index, values) => (
+            values.findIndex((candidate) => candidate.workflow_id === item.workflow_id) === index
+          ));
+        const detailEntries = await Promise.all(detailTargets.map(async (item) => {
+          const revisionKey = `${item.workflow_id}:${item.revision_sha256}`;
+          const cached = detailsByRevision.get(revisionKey);
+          if (cached) return [item.workflow_id, cached] as const;
+          const detail = await fetchControlledWorkflow(item.workflow_id);
+          if (detail.workflow_id !== item.workflow_id || detail.updated_at !== item.updated_at) {
+            throw new Error("Controlled-workflow detail changed while its catalog revision was loading.");
+          }
+          detailsByRevision.set(revisionKey, detail);
+          return [item.workflow_id, detail] as const;
+        }));
+        if (
+          cancelled
+          || requestSeq !== controlledWorkflowRequestSeqRef.current
+          || currentRefresh !== refreshSeq
+        ) return;
+        const details = new Map(detailEntries);
+        const directlyRelated = directlyRelatedCatalog
+          ? details.get(directlyRelatedCatalog.workflow_id) ?? null
+          : null;
+        const scoredRelated = scoredRelatedCatalog
+          ? details.get(scoredRelatedCatalog.workflow_id) ?? null
+          : null;
+        const uniqueScopedActiveWorkflow = uniqueScopedActiveCatalog
+          ? details.get(uniqueScopedActiveCatalog.workflow_id) ?? null
+          : null;
         setGuidanceControlledWorkflow(directlyRelated ?? scoredRelated);
         if (directlyRelated) {
           setActiveControlledWorkflowRequestKey(requestedWorkflowKey);
@@ -842,10 +876,15 @@ function CockpitShell() {
     };
 
     void refreshWorkflow();
-    const refreshTimer = window.setInterval(() => { void refreshWorkflow(); }, 4_000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshWorkflow();
+    };
+    const refreshTimer = window.setInterval(refreshWhenVisible, 10_000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       cancelled = true;
       if (refreshTimer != null) window.clearInterval(refreshTimer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [
     controlledWorkflowScopeKey,
@@ -1811,7 +1850,11 @@ function CockpitShell() {
           }}
         />
       )}
-      {currentIntelligenceShellMove && intelligenceShellScope && (
+      {currentIntelligenceShellMove
+        && intelligenceShellScope
+        && selection.selectedWorkspace !== "engineer"
+        && currentControlledWorkflow?.packet.decision !== "test"
+        && (
         <aside
           className="shell-next-trustworthy-move"
           data-authority={currentIntelligenceShellMove.authority}

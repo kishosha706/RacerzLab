@@ -57,8 +57,7 @@ def test_insights_show_measured_change_but_suppress_causal_setup_classification(
         insight.narrative.startswith("Observed correlation only")
         for insight in result.correlations
     )
-    assert result.confidence_weighted_observation is not None
-    assert result.confidence_weighted_observation.observation_state == "inconclusive"
+    assert result.confidence_weighted_observation is None
     assert all(annotation.description.startswith("Observed telemetry only") for annotation in result.annotations)
     assert all(sector.classification == "observed_only" for sector in result.sectors)
 

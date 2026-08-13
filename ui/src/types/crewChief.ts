@@ -19,7 +19,16 @@ export type CrewChiefWorkspaceIdentity = {
   p26_graph_version: string;
   p26_knowledge_graph_sha256: string;
   p26_reasoning_snapshot_sha256: string;
-  setup_id: string;
+  setup_id: string | null;
+  workspace_run_id: string;
+  workspace_session_id: string;
+  workspace_setup_id: string;
+  source_run_id: string;
+  source_session_id: string | null;
+  source_setup_id: string | null;
+  source_setup_sha256: string | null;
+  source_build_context_sha256: string | null;
+  source_provenance_available: boolean;
   setup_snapshot_sha256: string;
   vehicle_runtime_identity_hash: string;
   active_workflow_id: string | null;
@@ -88,6 +97,7 @@ export type CrewChiefWorkspace = {
     pending_driver_question_id: string | null;
     driver_answers: string[];
     last_decision_kind: string | null;
+    accepted_workspace_revision: string;
   };
   evidence_index: {
     workspace_revision: string;
@@ -115,7 +125,7 @@ export type CrewChiefWorkspace = {
     reason: string;
     authority: "context_only";
   };
-  success_contract: {
+  success_contract: null | {
     contract_id: string;
     workspace_revision: string;
     objective: EngineeringObjective;
@@ -128,17 +138,32 @@ export type CrewChiefWorkspace = {
     stop_rule: string;
     rollback_rule: string;
   };
+  p19_mission_contract: null | {
+    schema_version: "p19.measurement-mission.v2";
+    contract_id: string;
+    contract_sha256: string;
+    run_id: string;
+    session_id: string | null;
+    source_setup_id: string;
+    setup_sha256: string;
+    required_laps: number;
+    acceptance_thresholds: string[];
+    integrity_stop_rules: string[];
+    purpose: string;
+  };
   run_sentinel: {
+    mission_state: "collecting" | "blocked_by_p19" | "stopped_by_p19" | "awaiting_p19_score" | "collection_complete";
+    p19_plan_kind: "controlled_test" | "measurement_mission" | "discriminator" | "stop_testing" | "blocked";
     mission: string;
     need: string;
     hold_constant: string[];
     watch: string[];
     success: string;
     stop: string[];
-    required_laps: number;
+    required_laps: number | null;
     accepted_laps: number;
-    complete: boolean;
-    stage: "measurement" | "A" | "B" | "A2" | "complete";
+    collection_complete: boolean;
+    stage: "measurement" | "A" | "B" | "A2" | "blocked" | "stopped" | "awaiting_score";
     laps: Array<{ lap_number: number; status: "accepted" | "rejected"; reasons: string[]; accepted_ordinal: number | null }>;
     blocker_reasons: string[];
   };

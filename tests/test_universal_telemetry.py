@@ -208,6 +208,31 @@ def test_manifest_reports_schema_health_unknown_channels_and_subtick_rate() -> N
     assert channels["SteeringWheelTorque_ST"]["variation"] == "varying"
 
 
+def test_measurement_candidates_preserve_raw_contract_without_runtime_admission() -> None:
+    definition = IBTVariableDefinition(
+        name="ChanClockSkew",
+        description="Partner clock skew",
+        unit="s",
+        data_type_id=4,
+        offset=0,
+    )
+    manifest = build_telemetry_manifest(
+        IBTHeader(version=2, telemetry_rate_hz=60, record_length=4, record_count=3),
+        [definition],
+        pl.DataFrame({"ChanClockSkew": [-0.01, 0.0, 0.02]}),
+    )
+    candidate = next(
+        item for item in manifest["measurement_candidate_contracts"]
+        if item["raw_name"] == "ChanClockSkew"
+    )
+    assert candidate["state"] == "source_contract_observed"
+    assert candidate["raw_semantics"] == "Partner clock skew"
+    assert candidate["declared_unit"] == "s"
+    assert candidate["valid_record_count"] == 3
+    assert candidate["runtime_mapping_admitted"] is False
+    assert "held-out fixture" in candidate["blockers"][0]
+
+
 def test_schema_fingerprint_changes_when_declaration_changes() -> None:
     header = IBTHeader(version=2, telemetry_rate_hz=60, record_length=32)
     original = _definitions()

@@ -106,3 +106,69 @@ export type EngineeringAwarenessProjection = {
   artifact_versions: { artifact_key: string; version: string }[];
   raw_trace_included: false;
 };
+
+const P20_HASH = /^[0-9a-f]{64}$/;
+const P20_MECHANISMS = new Set<MechanismKind>([
+  "driver_execution", "braking_response", "corner_rotation", "tire_state",
+  "damper_response", "platform_response", "resistance_scrub_like",
+  "powertrain_response", "stint_trend", "sim_integrity",
+]);
+const p20Record = (value: unknown): value is Record<string, unknown> => (
+  typeof value === "object" && value !== null && !Array.isArray(value)
+);
+const p20Strings = (value: unknown): value is string[] => (
+  Array.isArray(value) && value.every((item) => typeof item === "string" && item.length > 0)
+);
+const p20Finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+
+export function isEngineeringAwarenessProjection(
+  value: unknown,
+  expectation: { runId: string; sessionId: string | null },
+): value is EngineeringAwarenessProjection {
+  if (!p20Record(value) || !p20Record(value.request_identity) || !p20Record(value.trust_budget)) return false;
+  if (value.schema_version !== "p20.awareness.v2"
+    || value.run_id !== expectation.runId || value.session_id !== expectation.sessionId
+    || value.authority !== "observation_only" || value.raw_trace_included !== false
+    || typeof value.state_revision !== "string" || !P20_HASH.test(value.state_revision)
+    || typeof value.reasoning_snapshot_id !== "string" || !P20_HASH.test(value.reasoning_snapshot_id)
+    || value.request_identity.run_id !== expectation.runId
+    || value.request_identity.session_id !== expectation.sessionId
+    || value.request_identity.state_revision !== value.state_revision
+    || value.request_identity.reasoning_snapshot_id !== value.reasoning_snapshot_id
+    || !p20Finite(value.build_duration_ms) || value.build_duration_ms < 0
+    || !(value.profile_hash === null || (typeof value.profile_hash === "string" && P20_HASH.test(value.profile_hash)))) return false;
+  const trustAxes = [
+    "data_health", "alignment_quality", "context_comparability", "driver_repeatability",
+    "mechanism_separation", "controlled_response_validity", "policy_countereffect_risk", "history_completeness",
+  ];
+  const trustBudget = value.trust_budget as Record<string, unknown>;
+  if (!trustAxes.every((axis) => {
+    const item = trustBudget[axis];
+    return p20Record(item) && ["trusted", "limited", "blocked", "unavailable"].includes(String(item.state))
+      && typeof item.basis === "string" && item.basis.length > 0
+      && p20Strings(item.blockers) && p20Strings(item.source_artifact_ids);
+  })) return false;
+  if (!Array.isArray(value.subsystem_states) || !value.subsystem_states.every((item) => (
+    p20Record(item) && P20_MECHANISMS.has(item.mechanism as MechanismKind)
+    && ["ready", "blocked", "no_finding", "unavailable"].includes(String(item.status))
+    && item.authority === "observation_only" && p20Strings(item.source_artifact_ids)
+    && p20Strings(item.source_channels) && p20Strings(item.blocker_reasons)
+  ))) return false;
+  if (!Array.isArray(value.episodes) || !value.episodes.every((episode) => (
+    p20Record(episode) && episode.run_id === expectation.runId
+    && typeof episode.setup_id === "string" && typeof episode.episode_id === "string"
+    && p20Finite(episode.lap_pct_start) && p20Finite(episode.lap_pct_end)
+    && episode.lap_pct_start >= 0 && episode.lap_pct_end <= 100
+    && Array.isArray(episode.lap_scope) && episode.lap_scope.every(Number.isInteger)
+    && Array.isArray(episode.supporting_mechanism_kinds)
+    && episode.supporting_mechanism_kinds.every((kind) => P20_MECHANISMS.has(kind as MechanismKind))
+    && p20Strings(episode.state_frame_ids) && p20Strings(episode.transition_ids)
+  ))) return false;
+  return p20Strings(value.knowledge_debt)
+    && p20Strings(value.state_drift_blocker_reasons)
+    && Array.isArray(value.expected_vs_observed)
+    && Array.isArray(value.control_mutations)
+    && value.control_mutations.every((mutation) => p20Record(mutation)
+      && p20Finite(mutation.lap) && p20Finite(mutation.lap_pct))
+    && Array.isArray(value.artifact_versions);
+}

@@ -34,6 +34,63 @@ from racelab_engine.analysis.units import M_TO_IN
 SEED = 42
 
 
+def test_tire_physical_handedness_and_row_vector_parity() -> None:
+    raw = {
+        "LFtempL": 11.0, "LFtempM": 12.0, "LFtempR": 13.0,
+        "RFtempL": 21.0, "RFtempM": 22.0, "RFtempR": 23.0,
+        "LRtempL": 31.0, "LRtempM": 32.0, "LRtempR": 33.0,
+        "RRtempL": 41.0, "RRtempM": 42.0, "RRtempR": 43.0,
+        "LFwearL": .91, "LFwearM": .92, "LFwearR": .93,
+        "RFwearL": .81, "RFwearM": .82, "RFwearR": .83,
+        "LRwearL": .71, "LRwearM": .72, "LRwearR": .73,
+        "RRwearL": .61, "RRwearM": .62, "RRwearR": .63,
+        "LFtempCL": 50.0, "LFtempCR": 70.0,
+        "RFtempCL": 80.0, "RFtempCR": 60.0,
+        "LRtempCL": 40.0, "LRtempCR": 55.0,
+        "RRtempCL": 75.0, "RRtempCR": 65.0,
+    }
+
+    row = normalize_telemetry_rows([raw])[0]
+    vector = frame_to_rows(normalize_telemetry_frame(pl.DataFrame([raw])))[0]
+
+    for corner, inner, outer in (
+        ("lf", 13.0, 11.0), ("rf", 21.0, 23.0),
+        ("lr", 33.0, 31.0), ("rr", 41.0, 43.0),
+    ):
+        assert row[f"{corner}_temp_inner"] == inner
+        assert row[f"{corner}_temp_outer"] == outer
+        assert vector[f"{corner}_temp_inner"] == inner
+        assert vector[f"{corner}_temp_outer"] == outer
+    assert row["lf_wear_inner"] == vector["lf_wear_inner"] == pytest.approx(.93)
+    assert row["rf_wear_inner"] == vector["rf_wear_inner"] == pytest.approx(.81)
+    assert row["lf_camber_temp_bias_c"] == vector["lf_camber_temp_bias_c"] == pytest.approx(20.0)
+    assert row["rf_camber_temp_bias_c"] == vector["rf_camber_temp_bias_c"] == pytest.approx(20.0)
+    assert row["lr_camber_temp_bias_c"] == vector["lr_camber_temp_bias_c"] == pytest.approx(15.0)
+    assert row["rr_camber_temp_bias_c"] == vector["rr_camber_temp_bias_c"] == pytest.approx(10.0)
+
+
+@pytest.mark.parametrize("missing", ["radius_m", "yaw_rate", "speed_mps", "abs_steering_deg", "abs_lat_accel"])
+def test_missing_scrub_dependency_is_unavailable_in_both_engines(missing: str) -> None:
+    raw = {
+        "speed_mps": 40.0,
+        "LFspeed": 39.0,
+        "RFspeed": 41.0,
+        "yaw_rate": .2,
+        "radius_m": 200.0,
+        "abs_steering_deg": 5.0,
+        "abs_lat_accel": 1.0,
+    }
+    raw.pop(missing)
+
+    row = normalize_telemetry_rows([raw])[0]
+    vector = frame_to_rows(normalize_telemetry_frame(pl.DataFrame([raw])))[0]
+
+    assert row.get("yaw_error_proxy") is None or missing in {"abs_steering_deg", "abs_lat_accel"}
+    assert vector.get("yaw_error_proxy") is None or missing in {"abs_steering_deg", "abs_lat_accel"}
+    assert row.get("front_scrub_proxy") is None
+    assert vector.get("front_scrub_proxy") is None
+
+
 def _synthetic_row(
     speed_mps: float = 50.0,
     lap_dist_m: float = 500.0,

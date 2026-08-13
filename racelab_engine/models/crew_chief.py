@@ -13,6 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.experiment import MeasurementMissionContract
 from racelab_engine.models.observation_intelligence import MechanismKind
 
 
@@ -208,6 +209,7 @@ class FoldedInvestigationState(CrewChiefModel):
     hypotheses: tuple[HypothesisInspectionState, ...] = ()
     last_decision_kind: str | None = None
     stale_reason: str | None = None
+    accepted_workspace_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class EngineeringEvidenceIndexEntry(CrewChiefModel):
@@ -215,7 +217,16 @@ class EngineeringEvidenceIndexEntry(CrewChiefModel):
     producer_id: str = Field(min_length=1)
     run_id: str = Field(min_length=1)
     session_id: str = Field(min_length=1)
-    setup_id: str = Field(min_length=1)
+    setup_id: str | None = Field(default=None, min_length=1)
+    workspace_run_id: str = Field(min_length=1)
+    workspace_session_id: str = Field(min_length=1)
+    workspace_setup_id: str = Field(min_length=1)
+    source_run_id: str = Field(min_length=1)
+    source_session_id: str | None = Field(default=None, min_length=1)
+    source_setup_id: str | None = Field(default=None, min_length=1)
+    source_setup_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    source_build_context_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    source_provenance_available: bool
     lap_numbers: tuple[int, ...] = ()
     lap_pct_start: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
     lap_pct_end: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
@@ -238,6 +249,18 @@ class EngineeringEvidenceIndexEntry(CrewChiefModel):
             raise ValueError("evidence index windows require both bounds")
         if self.lap_pct_start is not None and self.lap_pct_start > self.lap_pct_end:
             raise ValueError("evidence index window bounds are reversed")
+        if self.run_id != self.source_run_id or self.setup_id != self.source_setup_id:
+            raise ValueError("legacy evidence scope must equal explicit source scope")
+        complete = all((
+            self.source_session_id,
+            self.source_setup_id,
+            self.source_setup_sha256,
+            self.source_build_context_sha256,
+        ))
+        if self.source_provenance_available != bool(complete):
+            raise ValueError("source provenance availability must match exact source identity")
+        if not complete and "source identity unavailable" not in self.blocker_reasons:
+            raise ValueError("incomplete source identity must block exact-context interpretation")
         return self
 
 
@@ -364,16 +387,30 @@ class RunSentinelLap(CrewChiefModel):
 
 
 class RunSentinelState(CrewChiefModel):
+    mission_state: Literal[
+        "collecting",
+        "blocked_by_p19",
+        "stopped_by_p19",
+        "awaiting_p19_score",
+        "collection_complete",
+    ]
+    p19_plan_kind: Literal[
+        "controlled_test",
+        "measurement_mission",
+        "discriminator",
+        "stop_testing",
+        "blocked",
+    ]
     mission: str = Field(min_length=1)
     need: str = Field(min_length=1)
     hold_constant: tuple[str, ...] = Field(min_length=1)
     watch: tuple[str, ...] = Field(min_length=1)
     success: str = Field(min_length=1)
     stop: tuple[str, ...] = Field(min_length=1)
-    required_laps: int = Field(ge=1)
+    required_laps: int | None = Field(default=None, ge=1)
     accepted_laps: int = Field(ge=0)
-    complete: bool
-    stage: Literal["measurement", "A", "B", "A2", "complete"]
+    collection_complete: bool
+    stage: Literal["measurement", "A", "B", "A2", "blocked", "stopped", "awaiting_score"]
     laps: tuple[RunSentinelLap, ...] = ()
     blocker_reasons: tuple[str, ...] = ()
 
@@ -381,10 +418,23 @@ class RunSentinelState(CrewChiefModel):
     def progress_matches_laps(self) -> RunSentinelState:
         if self.accepted_laps != sum(item.status == "accepted" for item in self.laps):
             raise ValueError("sentinel accepted count must match exact lap decisions")
-        if self.complete != (self.accepted_laps >= self.required_laps):
-            raise ValueError("sentinel completion must match required accepted laps")
-        if self.complete != (self.stage == "complete"):
-            raise ValueError("sentinel complete stage must match completion state")
+        expected_complete = (
+            self.required_laps is not None
+            and self.accepted_laps >= self.required_laps
+            and self.mission_state not in {
+                "blocked_by_p19", "stopped_by_p19", "awaiting_p19_score"
+            }
+        )
+        if self.collection_complete != expected_complete:
+            raise ValueError("sentinel collection completion must match accepted evidence")
+        if self.mission_state == "collection_complete" and not self.collection_complete:
+            raise ValueError("collection-complete state requires a complete collection")
+        if self.mission_state == "blocked_by_p19" and self.stage != "blocked":
+            raise ValueError("blocked P19 state requires a blocked sentinel")
+        if self.mission_state == "stopped_by_p19" and self.stage != "stopped":
+            raise ValueError("stopped P19 state requires a stopped sentinel")
+        if self.mission_state == "awaiting_p19_score" and self.stage != "awaiting_score":
+            raise ValueError("awaiting-score state requires its exact sentinel stage")
         return self
 
 
@@ -479,6 +529,17 @@ class CrewChiefEffectivenessRecord(CrewChiefModel):
     investigation_id: str = Field(min_length=1)
     workspace_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     recorded_at: datetime
+    opened_at: datetime
+    resolved_at: datetime
+    elapsed_seconds: float = Field(ge=0.0, allow_inf_nan=False)
+    interaction_count: int = Field(ge=0)
+    questions_asked: int = Field(ge=0)
+    questions_answered: int = Field(ge=0)
+    inspections_performed: int = Field(ge=0)
+    collection_complete: bool
+    linked_workflow_ids: tuple[str, ...] = ()
+    scored_workflow_ids: tuple[str, ...] = ()
+    resolution: Literal["decision_emitted", "abandoned"]
     measurement_missions_completed: int = Field(ge=0)
     controlled_tests_completed: int = Field(ge=0)
     rejected_laps: int = Field(ge=0)
@@ -526,7 +587,8 @@ class CrewChiefWorkspace(CrewChiefModel):
     latest_tool_result: CrewChiefToolResult | None = None
     critique: CrewChiefCritique
     pending_driver_question: DriverDiagnosticQuestion | None = None
-    success_contract: SuccessContract
+    success_contract: SuccessContract | None = None
+    p19_mission_contract: MeasurementMissionContract | None = None
     run_sentinel: RunSentinelState
     terminal_decision: CrewChiefTerminalDecision
     response_history_ids: tuple[str, ...] = ()

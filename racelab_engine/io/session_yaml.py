@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import re
+import hashlib
 from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
-from racelab_engine.models.session import SessionSummary
+from racelab_engine.models.session import SessionSummary, ShiftLightRpmThresholds
 from racelab_engine.models.setup import SetupSnapshot
 
 
@@ -175,6 +176,24 @@ def extract_session_summary(
     g = _gather_session_data(data)
     w, dr, _de, si, cs, we = g["weekend"], g["driver"], g["driver_entry"], g["session_info"], g["current_session"], g["weather"]
 
+    shift_values = tuple(
+        _float_from_text(_first(dr, key) or _first(g["driver_entry"], key))
+        for key in (
+            "DriverCarSLFirstRPM", "DriverCarSLShiftRPM",
+            "DriverCarSLLastRPM", "DriverCarSLBlinkRPM",
+        )
+    )
+    shift_thresholds = (
+        ShiftLightRpmThresholds(
+            first_rpm=shift_values[0],
+            shift_rpm=shift_values[1],
+            last_rpm=shift_values[2],
+            blink_rpm=shift_values[3],
+            source_yaml_sha256=hashlib.sha256(yaml_text.encode("utf-8")).hexdigest(),
+        )
+        if all(value is not None for value in shift_values)
+        else None
+    )
     return SessionSummary(
         run_id=run_id,
         sim_date_time=_string_or_none(_first(w, "WeekendStartTime", "SessionStartTime", "Date")),
@@ -197,6 +216,7 @@ def extract_session_summary(
         ),
         setup_passed_tech=bool(_first(dr, "DriverSetupPassedTech")) if _first(dr, "DriverSetupPassedTech") is not None else None,
         setup_modified=bool(_first(dr, "DriverSetupIsModified")) if _first(dr, "DriverSetupIsModified") is not None else None,
+        shift_light_rpm_thresholds=shift_thresholds,
         notes=["Extracted from provided iRacing session YAML text"],
     )
 

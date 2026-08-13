@@ -753,7 +753,6 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
   const [baselineStintId, setBaselineStintId] = useState<string | null>(null);
   const [testStintId, setTestStintId] = useState<string | null>(null);
   const [selectedStintId, setSelectedStintId] = useState<string | null>(null);
-  const [showFieldCompare, setShowFieldCompare] = useState(false);
   const [showAdvancedControls, setShowAdvancedControls] = useState(false);
   const [showEngineeringStintColumns, setShowEngineeringStintColumns] = useState(false);
   const [wholeCarCompareOpen, setWholeCarCompareOpen] = useState(false);
@@ -3534,43 +3533,6 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
               })}
             </div>
 
-            <div className="field-compare-panel">
-              <button
-                type="button"
-                className="field-compare-header"
-                onClick={() => setShowFieldCompare((open) => !open)}
-                aria-expanded={showFieldCompare}
-              >
-                {showFieldCompare ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                <span>
-                  <strong>Field Compare</strong>
-                  <small>Compare other drivers' best stint averages against your best equivalent stint.</small>
-                </span>
-              </button>
-              {showFieldCompare && (
-                <div className="field-compare-body">
-                  <div className="stint-empty-state">
-                    <h3>Other-driver stint data is not available yet.</h3>
-                    <p className="muted">Live iRSDK / imported shared stint data will unlock field comparison later.</p>
-                  </div>
-                  <div className="stint-table-wrap field-compare-table-wrap" aria-hidden="true">
-                    <table className="compact-table stint-table field-compare-table">
-                      <thead>
-                        <tr>
-                          <th>Driver</th>
-                          <th>Stint</th>
-                          <th># Laps</th>
-                          <th>Fastest Lap</th>
-                          {stintAverageColumns.map((column) => <th key={column.size}>{column.label}</th>)}
-                          <th>Delta to My Best Equivalent</th>
-                          <th>Notes</th>
-                        </tr>
-                      </thead>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
             </>
           )}
           {summaryDrawerStint && (

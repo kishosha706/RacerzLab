@@ -85,6 +85,7 @@ _OBSERVATION_COLUMNS = [
 class ObservationAwarenessBuild:
     observations: RunObservationIntelligence
     awareness: EngineeringAwarenessEvidenceBuild
+    telemetry_rows: tuple[dict[str, Any], ...] = ()
 
 
 def _blocked_bundle(run_id: str, reason: str) -> RunObservationIntelligence:
@@ -148,6 +149,7 @@ def _blocked_build(run_id: str, reason: str) -> ObservationAwarenessBuild:
             episode_observations=episode_report,
             blocker_reasons=(reason,),
         ),
+        telemetry_rows=(),
     )
 
 
@@ -210,8 +212,16 @@ def _build_observation_intelligence_with_awareness(
         if observation.qualified
         for channel in observation.source_channels
     )
+    # The intelligence shell also builds per-lap engineering context.  Include
+    # that builder's canonical inputs in this single artifact read so the cold
+    # path does not materialize the same telemetry cache a second time.
+    from racelab_engine.services.lap_engineering_context_service import (
+        _CONTEXT_CHANNELS,
+    )
+
     requested_columns = list(dict.fromkeys([
         *_OBSERVATION_COLUMNS,
+        *_CONTEXT_CHANNELS,
         *anomaly_channels,
         *event_source_channels,
         *p3_observation_columns(),
@@ -269,6 +279,11 @@ def _build_observation_intelligence_with_awareness(
             run_id=run_id,
             setup_id=setup_id,
             telemetry_rate_hz=overview.session.telemetry_rate_hz,
+            redline_rpm=(
+                overview.session.shift_light_rpm_thresholds.blink_rpm
+                if overview.session.shift_light_rpm_thresholds is not None
+                else None
+            ),
             preferred_lap_number=(
                 overview.best_useful_lap.lap_number
                 if overview.best_useful_lap is not None
@@ -332,6 +347,7 @@ def _build_observation_intelligence_with_awareness(
             blocker_reasons=aggregate_blockers,
         ),
         awareness=awareness,
+        telemetry_rows=tuple(scoped_rows),
     )
 
 

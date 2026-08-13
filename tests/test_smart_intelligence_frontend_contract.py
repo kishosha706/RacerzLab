@@ -151,8 +151,10 @@ def test_shell_next_move_refreshes_on_exact_controlled_workflow_revision() -> No
         "const requestSeq = ++intelligenceShellRequestSeqRef.current",
         1,
     )[0]
-    assert "fetchControlledWorkflows(false, {" in workflow_effect
-    assert "refreshKey: `${requestedSessionId}:${requestedRunId}:${pollRevision}`" in workflow_effect
+    assert "fetchControlledWorkflowCatalog(" in workflow_effect
+    assert "fetchControlledWorkflow(item.workflow_id)" in workflow_effect
+    assert "detailsByRevision" in workflow_effect
+    assert "revision_sha256" in workflow_effect
     assert "const refreshTimer = window.setInterval" in workflow_effect
     assert 'selection.selectedWorkspace === "dial_in"' not in workflow_effect
 

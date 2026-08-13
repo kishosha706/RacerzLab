@@ -10,7 +10,7 @@ from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.segment import SegmentSummary
-from racelab_engine.models.session import RunOverview, SessionSummary
+from racelab_engine.models.session import RunOverview, SessionSummary, ShiftLightRpmThresholds
 from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.analysis.lap_detection import apply_relative_pace_filter
 from racelab_engine.analysis.lap_eligibility import eligible_laps
@@ -57,6 +57,18 @@ def _load_string_list(value: str | None) -> tuple[list[str], bool]:
 def _session_from_run_row(row: Any) -> SessionSummary:
     """Build session context from the normalized run columns, not mutable JSON."""
     notes, notes_valid = _load_string_list(row["notes"])
+    try:
+        session_payload = _load_json(row["session_json"], {})
+        threshold_payload = (
+            session_payload.get("shift_light_rpm_thresholds")
+            if isinstance(session_payload, dict) else None
+        )
+        shift_thresholds = (
+            ShiftLightRpmThresholds.model_validate(threshold_payload)
+            if threshold_payload is not None else None
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("stored shift-light threshold provenance is invalid") from exc
     return SessionSummary(
         run_id=row["run_id"],
         source_file=row["source_file"] or None,
@@ -86,6 +98,7 @@ def _session_from_run_row(row: Any) -> SessionSummary:
         setup_modified=(
             None if row["setup_modified"] is None else bool(row["setup_modified"])
         ),
+        shift_light_rpm_thresholds=shift_thresholds,
         notes=notes if notes_valid else [],
     )
 
@@ -225,15 +238,17 @@ class RaceLabRepository:
                 INSERT INTO controlled_test_workflows (
                   workflow_id, created_at, updated_at, status, source_run_id,
                   complaint, packet_json, stage_run_ids_json, stage_eligible_lap_numbers_json,
+                  stage_experiment_contexts_json,
                   analysis_version, execution_json, reproduction_snapshot_json,
                   quality_json, learning_admitted
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(workflow_id) DO UPDATE SET
                   updated_at=excluded.updated_at,
                   status=excluded.status,
                   packet_json=excluded.packet_json,
                   stage_run_ids_json=excluded.stage_run_ids_json,
                   stage_eligible_lap_numbers_json=excluded.stage_eligible_lap_numbers_json,
+                  stage_experiment_contexts_json=excluded.stage_experiment_contexts_json,
                   analysis_version=excluded.analysis_version,
                   execution_json=excluded.execution_json,
                   reproduction_snapshot_json=excluded.reproduction_snapshot_json,
@@ -250,6 +265,10 @@ class RaceLabRepository:
                     workflow.packet.model_dump_json(),
                     _json(workflow.stage_run_ids),
                     _json(workflow.stage_eligible_lap_numbers),
+                    _json({
+                        stage: context.model_dump(mode="json")
+                        for stage, context in workflow.stage_experiment_contexts.items()
+                    }),
                     workflow.analysis_version,
                     workflow.execution.model_dump_json() if workflow.execution else None,
                     _json(workflow.reproduction_snapshot),
@@ -257,6 +276,19 @@ class RaceLabRepository:
                     None if workflow.learning_admitted is None else int(workflow.learning_admitted),
                 ),
             )
+        connection.execute(
+            "DELETE FROM controlled_workflow_run_index WHERE workflow_id = ?",
+            (workflow.workflow_id,),
+        )
+        bindings = [(workflow.workflow_id, workflow.source_run_id, "source")]
+        bindings.extend(
+            (workflow.workflow_id, run_id, stage)
+            for stage, run_id in workflow.stage_run_ids.items()
+        )
+        connection.executemany(
+            "INSERT INTO controlled_workflow_run_index(workflow_id, run_id, role) VALUES (?, ?, ?)",
+            bindings,
+        )
 
     def save_controlled_workflow(self, workflow: ControlledWorkflow) -> None:
         connection = initialize_database(self.db_path)
@@ -282,38 +314,21 @@ class RaceLabRepository:
         connection = initialize_database(self.db_path)
         try:
             connection.execute("BEGIN IMMEDIATE")
+            placeholders = ",".join("?" for _ in scope)
             rows = connection.execute(
-                "SELECT workflow_id, source_run_id, stage_run_ids_json "
-                "FROM controlled_test_workflows "
-                "WHERE status NOT IN ('scored', 'cancelled')"
+                f"SELECT DISTINCT workflow.workflow_id "
+                "FROM controlled_test_workflows AS workflow "
+                "JOIN controlled_workflow_run_index AS binding "
+                "ON binding.workflow_id = workflow.workflow_id "
+                f"WHERE binding.run_id IN ({placeholders}) "
+                "AND workflow.status NOT IN ('scored', 'cancelled')",
+                tuple(scope),
             ).fetchall()
             for row in rows:
-                try:
-                    stage_run_ids = _load_json(row["stage_run_ids_json"], {})
-                    if (
-                        not isinstance(stage_run_ids, dict)
-                        or any(
-                            key not in {"A", "B", "A2"}
-                            or not isinstance(value, str)
-                            or not value.strip()
-                            for key, value in stage_run_ids.items()
-                        )
-                    ):
-                        raise ValueError("invalid stage bindings")
-                except (TypeError, ValueError) as exc:
-                    raise ValueError(
-                        "An active controlled-workflow slot has malformed run bindings; "
-                        "cancel or repair that workflow before starting another."
-                    ) from exc
-                occupied = {
-                    row["source_run_id"],
-                    *stage_run_ids.values(),
-                }
-                if scope & occupied:
-                    raise ValueError(
-                        "Finish or explicitly abandon the active controlled workflow "
-                        f"{row['workflow_id']} before starting another workflow in this session."
-                    )
+                raise ValueError(
+                    "Finish or explicitly abandon the active controlled workflow "
+                    f"{row['workflow_id']} before starting another workflow in this session."
+                )
             self._write_controlled_workflow(connection, workflow)
             connection.commit()
         except Exception:
@@ -334,36 +349,21 @@ class RaceLabRepository:
         connection = initialize_database(self.db_path)
         try:
             connection.execute("BEGIN IMMEDIATE")
+            placeholders = ",".join("?" for _ in scope)
             rows = connection.execute(
-                "SELECT workflow_id, source_run_id, stage_run_ids_json "
-                "FROM controlled_test_workflows "
-                "WHERE status NOT IN ('scored', 'cancelled') AND workflow_id <> ?",
-                (workflow.workflow_id,),
+                f"SELECT DISTINCT active.workflow_id "
+                "FROM controlled_test_workflows AS active "
+                "JOIN controlled_workflow_run_index AS binding "
+                "ON binding.workflow_id = active.workflow_id "
+                f"WHERE binding.run_id IN ({placeholders}) "
+                "AND active.status NOT IN ('scored', 'cancelled') AND active.workflow_id <> ?",
+                (*tuple(scope), workflow.workflow_id),
             ).fetchall()
             for row in rows:
-                try:
-                    stage_run_ids = _load_json(row["stage_run_ids_json"], {})
-                    if (
-                        not isinstance(stage_run_ids, dict)
-                        or any(
-                            key not in {"A", "B", "A2"}
-                            or not isinstance(value, str)
-                            or not value.strip()
-                            for key, value in stage_run_ids.items()
-                        )
-                    ):
-                        raise ValueError("invalid stage bindings")
-                except (TypeError, ValueError) as exc:
-                    raise ValueError(
-                        "An active controlled-workflow slot has malformed run bindings; "
-                        "cancel or repair that workflow before continuing."
-                    ) from exc
-                occupied = {row["source_run_id"], *stage_run_ids.values()}
-                if scope & occupied:
-                    raise ValueError(
-                        "Finish or explicitly abandon the active controlled workflow "
-                        f"{row['workflow_id']} before continuing another workflow in this session."
-                    )
+                raise ValueError(
+                    "Finish or explicitly abandon the active controlled workflow "
+                    f"{row['workflow_id']} before continuing another workflow in this session."
+                )
             self._write_controlled_workflow(connection, workflow)
             connection.commit()
         except Exception:
@@ -583,6 +583,66 @@ class RaceLabRepository:
         connection.close()
         return [self._controlled_workflow_from_row(row) for row in rows]
 
+    def list_controlled_workflow_catalog_for_run_scope(
+        self,
+        run_ids: tuple[str, ...],
+        *,
+        scored_run_ids: tuple[str, ...] | None = None,
+    ) -> tuple[list[ControlledWorkflow], tuple[str, ...]]:
+        """Return active scoped workflows plus one latest scoped scored record.
+
+        The normalized run index keeps this read proportional to the requested
+        session scope, not total historical workflow count. Relevant malformed
+        rows remain explicit blockers; unrelated rows are never deserialized.
+        """
+        scope = tuple(dict.fromkeys(run_id for run_id in run_ids if run_id))
+        if not scope:
+            return [], ("Controlled-workflow catalog requires an exact run scope.",)
+        placeholders = ",".join("?" for _ in scope)
+        scored_scope = tuple(dict.fromkeys(
+            run_id for run_id in (scored_run_ids or scope) if run_id
+        ))
+        scored_placeholders = ",".join("?" for _ in scored_scope)
+        connection = initialize_database(self.db_path)
+        try:
+            active_rows = connection.execute(
+                f"""
+                SELECT DISTINCT workflow.*
+                FROM controlled_test_workflows AS workflow
+                JOIN controlled_workflow_run_index AS binding
+                  ON binding.workflow_id = workflow.workflow_id
+                WHERE binding.run_id IN ({scored_placeholders})
+                  AND workflow.status NOT IN ('scored', 'cancelled')
+                ORDER BY workflow.updated_at DESC, workflow.workflow_id
+                """,
+                scored_scope,
+            ).fetchall()
+            scored_rows = connection.execute(
+                f"""
+                SELECT DISTINCT workflow.*
+                FROM controlled_test_workflows AS workflow
+                JOIN controlled_workflow_run_index AS binding
+                  ON binding.workflow_id = workflow.workflow_id
+                WHERE binding.run_id IN ({placeholders})
+                  AND workflow.status = 'scored'
+                ORDER BY workflow.updated_at DESC, workflow.workflow_id
+                LIMIT 1
+                """,
+                scope,
+            ).fetchall()
+        finally:
+            connection.close()
+        workflows: list[ControlledWorkflow] = []
+        blockers: list[str] = []
+        for row in (*active_rows, *scored_rows):
+            try:
+                workflows.append(self._controlled_workflow_from_row(row))
+            except (KeyError, TypeError, ValueError):
+                blockers.append(
+                    "A controlled-workflow record in the requested session failed integrity validation."
+                )
+        return workflows, tuple(dict.fromkeys(blockers))
+
     def list_controlled_workflows_for_run_scope(
         self,
         run_ids: tuple[str, ...],
@@ -596,34 +656,26 @@ class RaceLabRepository:
         are withheld and reported as integrity blockers, while unrelated corrupt rows
         cannot take down the current report.
         """
-        scope = {run_id for run_id in run_ids if run_id}
+        scope = tuple(dict.fromkeys(run_id for run_id in run_ids if run_id))
+        if not scope:
+            return [], ()
+        placeholders = ",".join("?" for _ in scope)
         connection = initialize_database(self.db_path)
-        sql = "SELECT * FROM controlled_test_workflows"
+        sql = (
+            "SELECT DISTINCT workflow.* FROM controlled_test_workflows AS workflow "
+            "JOIN controlled_workflow_run_index AS binding "
+            "ON binding.workflow_id = workflow.workflow_id "
+            f"WHERE binding.run_id IN ({placeholders})"
+        )
         if active_only:
-            sql += " WHERE status NOT IN ('scored', 'cancelled')"
-        sql += " ORDER BY updated_at DESC"
-        rows = connection.execute(sql).fetchall()
+            sql += " AND workflow.status NOT IN ('scored', 'cancelled')"
+        sql += " ORDER BY workflow.updated_at DESC"
+        rows = connection.execute(sql, scope).fetchall()
         connection.close()
 
         workflows: list[ControlledWorkflow] = []
         blockers: list[str] = []
         for row in rows:
-            source_related = row["source_run_id"] in scope
-            try:
-                stage_run_ids = _load_json(row["stage_run_ids_json"], {})
-                if not isinstance(stage_run_ids, dict):
-                    raise ValueError("stage run identities must be an object")
-                stage_related = bool(scope & {
-                    value for value in stage_run_ids.values() if isinstance(value, str)
-                })
-            except (TypeError, ValueError):
-                if source_related:
-                    blockers.append(
-                        "A controlled-workflow record in this scope has malformed stage identities."
-                    )
-                continue
-            if not source_related and not stage_related:
-                continue
             try:
                 workflow = self._controlled_workflow_from_row(row)
                 if (
@@ -657,6 +709,7 @@ class RaceLabRepository:
             packet=KaizenEvidencePacket.model_validate_json(row["packet_json"]),
             stage_run_ids=_load_json(row["stage_run_ids_json"], {}),
             stage_eligible_lap_numbers=_load_json(row["stage_eligible_lap_numbers_json"], {}),
+            stage_experiment_contexts=_load_json(row["stage_experiment_contexts_json"], {}),
             analysis_version=row["analysis_version"],
             execution=(
                 TestExecution.model_validate_json(row["execution_json"])
@@ -1198,6 +1251,33 @@ class RaceLabRepository:
         except (TypeError, ValueError):
             return None
         return snapshot
+
+    def get_setup_snapshots(self, run_ids: tuple[str, ...]) -> dict[str, SetupSnapshot]:
+        """Batch exact setup provenance for evidence projection."""
+
+        scope = tuple(dict.fromkeys(run_id for run_id in run_ids if run_id))
+        if not scope:
+            return {}
+        placeholders = ",".join("?" for _ in scope)
+        connection = initialize_database(self.db_path)
+        try:
+            rows = connection.execute(
+                f"SELECT setup_id, run_id, snapshot_json FROM setup_snapshots "
+                f"WHERE run_id IN ({placeholders})",
+                scope,
+            ).fetchall()
+        finally:
+            connection.close()
+        snapshots: dict[str, SetupSnapshot] = {}
+        for row in rows:
+            try:
+                snapshot = SetupSnapshot.model_validate_json(row["snapshot_json"])
+                if snapshot.setup_id != row["setup_id"] or snapshot.run_id != row["run_id"]:
+                    raise ValueError("setup snapshot identity mismatch")
+            except (TypeError, ValueError):
+                continue
+            snapshots[snapshot.run_id] = snapshot
+        return snapshots
 
     # ── Segments ──────────────────────────────────────────────────
 

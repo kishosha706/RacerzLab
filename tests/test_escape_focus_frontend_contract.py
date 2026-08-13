@@ -35,7 +35,6 @@ def test_escape_reducer_rebuilds_from_scope_and_cannot_retain_hostile_focus() ->
         "selectedEventId",
         "selectedSampleIndex",
         "selectedLapDistFt",
-        "selectedLapDistM",
         "selectedLapPct",
         "selectedChannel",
         "selectedSetupKey",

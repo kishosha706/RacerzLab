@@ -22,6 +22,8 @@ class IntegrityCheck(EngineeringModel):
     key: str
     status: IntegrityStatus
     observed: float | int | str | None = None
+    raw_observed: float | int | str | None = None
+    normalization_provenance: str | None = None
     threshold: str
     explanation: str
     source_channels: list[str] = Field(default_factory=list)
@@ -55,15 +57,24 @@ def _percent_scale(value: float | None) -> float | None:
     return value * 100.0 if 0.0 <= value <= 1.5 else value
 
 
-def _ratio_scale(value: float | None) -> float | None:
-    """Normalize a telemetry ratio that may be declared as either 0..1 or 0..100."""
+def _ratio_scale(value: float | None) -> tuple[float | None, str]:
+    """Normalize a ratio without guessing across the ambiguous 1..2 range.
+
+    ChanQuality is documented in both ratio and percent representations in real
+    captures.  Ratio-valued captures also exhibit small floating-point jitter
+    above unity.  Only that measured jitter band is tolerated; other values
+    between the two representations remain invalid rather than being silently
+    interpreted as percent.
+    """
     if value is None:
-        return None
+        return None, "missing"
     if 0.0 <= value <= 1.0:
-        return value
-    if value <= 100.0:
-        return value / 100.0
-    return -1.0
+        return value, "ratio_0_to_1"
+    if value <= 1.01:
+        return 1.0, "ratio_unity_jitter_clamped_1pct"
+    if 2.0 <= value <= 100.0:
+        return value / 100.0, "percent_0_to_100"
+    return None, "invalid_or_ambiguous"
 
 
 def _first_finite(row: dict[str, Any], *names: str) -> tuple[str | None, float | None]:
@@ -228,11 +239,15 @@ def build_sim_integrity_certificate(
         source_channels=[latency_name] if latency_name else [],
     ))
     quality_name, quality = _channel(rows, "channel_quality", "ChanQuality")
-    quality_p05 = _ratio_scale(percentile(quality, 0.05))
+    raw_quality_p05 = percentile(quality, 0.05)
+    quality_p05, quality_normalization = _ratio_scale(raw_quality_p05)
+    quality_invalid = raw_quality_p05 is not None and quality_p05 is None
     checks.append(IntegrityCheck(
         key="communication_quality",
-        status="fail" if quality_p05 is not None and quality_p05 < 0.7 else "warning" if quality_p05 is not None and quality_p05 < 0.9 else "pass" if quality_p05 is not None else "unknown",
+        status="fail" if quality_invalid or (quality_p05 is not None and quality_p05 < 0.7) else "warning" if quality_p05 is not None and quality_p05 < 0.9 else "pass" if quality_p05 is not None else "unknown",
         observed=quality_p05,
+        raw_observed=raw_quality_p05,
+        normalization_provenance=quality_normalization,
         threshold="values must normalize to 0-1; 5th percentile >= 0.90",
         explanation="Channel quality is normalized from ratio or percent units and supports timing confidence.",
         source_channels=[quality_name] if quality_name else [],
@@ -247,9 +262,6 @@ def build_sim_integrity_certificate(
     unknown_system = [
         check for check in checks if check.key in system_keys and check.status == "unknown"
     ]
-    usable_channels = {
-        channel for row in rows for channel, value in row.items() if finite(value) is not None
-    }
     alias_sets = {
         "session_tick": ("session_tick", "SessionTick"),
         "session_time": ("session_time", "SessionTime"),
@@ -263,8 +275,21 @@ def build_sim_integrity_certificate(
         "channel_average_latency_s": ("channel_average_latency_s", "ChanAvgLatency"),
         "channel_quality": ("channel_quality", "ChanQuality"),
     }
+    # This contract can only consume the declared integrity channel families.
+    # Scanning every value in a wide telemetry row made the certificate cost
+    # proportional to unrelated car channels and repeated that work per lap.
+    usable_channels: set[str] = set()
     for canonical, aliases in alias_sets.items():
-        if any(alias in usable_channels for alias in aliases):
+        present_alias = next(
+            (
+                alias
+                for alias in aliases
+                if any(finite(row.get(alias)) is not None for row in rows)
+            ),
+            None,
+        )
+        if present_alias is not None:
+            usable_channels.add(present_alias)
             usable_channels.add(canonical)
     evaluation = evaluate_evidence_contract(
         SIM_INTEGRITY_CONTRACT,

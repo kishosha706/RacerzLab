@@ -757,7 +757,8 @@ export function DialInTab({
     const requestSeq = ++workflowRequestSeqRef.current;
     setWorkflowCatalogReady(false);
     setWorkflowError(null);
-    void fetchControlledWorkflows(false).then((items) => {
+    if (!sessionId) return undefined;
+    void fetchControlledWorkflows(sessionId, overview.run_id, false).then((items) => {
       if (cancelled || requestSeq !== workflowRequestSeqRef.current) return;
       setWorkflowCatalogReady(true);
       const isActive = (item: ControlledWorkflow) =>

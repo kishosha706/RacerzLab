@@ -31,6 +31,7 @@ from racelab_engine.models.vehicle_systems import (
     ComponentObservabilityState,
     ComponentObservationScope,
     ComponentRelevance,
+    QuantityObservabilityCertificate,
     SetupExperimentFactor,
     VehicleSystemsEdge,
     VehicleSystemsEdgeKind,
@@ -224,6 +225,17 @@ _COMPONENT_LIVE_CHANNEL_GROUPS: dict[str, tuple[tuple[str, ...], ...]] = {
     "final_drive": (("rpm", "gear", "speed_mps", "throttle_01"),),
     "steering": (("steering_rad", "steering_wheel_torque_nm", "yaw_rate"),),
     "cooling_configuration": (("water_temp", "oil_temp", "speed_mps"),),
+}
+
+_QUANTITY_NAMES: dict[str, tuple[str, ...]] = {
+    "tires": ("hot_pressure_envelope", "surface_temperature_profile"),
+    "brakes": ("pedal_yaw_screen", "hydraulic_line_pressure_distribution"),
+}
+_QUANTITY_CHANNEL_OVERRIDES: dict[tuple[str, str], tuple[str, ...]] = {
+    ("brakes", "hydraulic_line_pressure_distribution"): (
+        "brake_01", "lf_brake_line_pressure_bar", "rf_brake_line_pressure_bar",
+        "lr_brake_line_pressure_bar", "rr_brake_line_pressure_bar",
+    ),
 }
 
 _COMPONENTS = tuple(
@@ -805,6 +817,68 @@ def _captured_component_settings(
     return tuple(settings)
 
 
+def _quantity_requirements(component_id: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    groups = _COMPONENT_LIVE_CHANNEL_GROUPS[component_id]
+    names = _QUANTITY_NAMES.get(
+        component_id,
+        tuple(f"live_response_{index + 1}" for index in range(len(groups))),
+    )
+    pairs = list(zip(names, groups, strict=False))
+    if component_id == "brakes":
+        pairs.append((
+            "hydraulic_line_pressure_distribution",
+            _QUANTITY_CHANNEL_OVERRIDES[(component_id, "hydraulic_line_pressure_distribution")],
+        ))
+    return tuple(pairs)
+
+
+def _quantity_certificates(
+    component_id: str,
+    available_channels: set[str],
+    observations: tuple[object, ...],
+) -> tuple[QuantityObservabilityCertificate, ...]:
+    certificates: list[QuantityObservabilityCertificate] = []
+    for quantity_id, required in _quantity_requirements(component_id):
+        available = tuple(channel for channel in required if channel in available_channels)
+        missing = tuple(channel for channel in required if channel not in available_channels)
+        qualified = tuple(
+            observation for observation in observations
+            if bool(getattr(observation, "qualified", False))
+            and not tuple(getattr(observation, "blocker_reasons", ()))
+            and set(required) <= set(getattr(observation, "source_channels", ()))
+        )
+        coverage = max(
+            (float(getattr(item, "sample_coverage", 0.0)) for item in qualified),
+            default=None,
+        )
+        if coverage is not None and coverage >= 0.7:
+            state = "observed"
+            basis = "qualified_producer"
+            blockers: tuple[str, ...] = ()
+        elif not missing:
+            state = "screenable"
+            basis = "manifest_presence_only"
+            blockers = ()
+        else:
+            state = "unavailable"
+            basis = "missing"
+            blockers = ("Missing required channels: " + ", ".join(missing) + ".",)
+        certificates.append(QuantityObservabilityCertificate(
+            quantity_id=quantity_id,
+            required_channels=required,
+            available_channels=available,
+            missing_channels=missing,
+            health_basis=basis,
+            minimum_coobserved_coverage=0.7,
+            coobserved_coverage=coverage,
+            state=state,
+            producer_artifact_ids=tuple(item.artifact_id for item in qualified),
+            supported_derived_outputs=tuple(item.observation_id for item in qualified),
+            blocker_reasons=blockers,
+        ))
+    return tuple(certificates)
+
+
 def build_component_awareness(
     report: InternalIntelligenceReport,
     *,
@@ -946,6 +1020,12 @@ def build_component_awareness(
                 unique_histories[history_key] = history
         histories = tuple(histories_by_key.values())
         settings = _captured_component_settings(definition.component_id, setup_snapshot)
+        setting_keys = tuple(path for path, _label, _unit, _decimals in _COMPONENT_SETTING_SPECS[definition.component_id])
+        present_setting_keys = tuple(
+            key for key in setting_keys
+            if setup_snapshot is not None and _captured_setup_value(setup_snapshot, key) is not None
+        )
+        missing_setting_keys = tuple(key for key in setting_keys if key not in present_setting_keys)
         supporting_artifact_ids = tuple(dict.fromkeys(
             item.artifact_id for item in relevant_observations
         ))
@@ -1014,18 +1094,16 @@ def build_component_awareness(
             relevance = ComponentRelevance.IRRELEVANT
 
         observability: list[ComponentObservabilityState] = [ComponentObservabilityState.DEFINITION_KNOWN]
-        if settings:
+        if settings and not missing_setting_keys:
             observability.append(ComponentObservabilityState.SETUP_CAPTURED)
         available_channel_set = set(runtime_identity.available_telemetry_channels)
-        satisfied_live_groups = tuple(
-            group
-            for group in _COMPONENT_LIVE_CHANNEL_GROUPS[definition.component_id]
-            if set(group) <= available_channel_set
+        quantity_certificates = _quantity_certificates(
+            definition.component_id, available_channel_set, relevant_observations
         )
         available_live_channels = tuple(dict.fromkeys(
-            channel for group in satisfied_live_groups for channel in group
+            channel for certificate in quantity_certificates for channel in certificate.available_channels
         ))
-        if available_live_channels:
+        if any(item.state == "observed" for item in quantity_certificates):
             observability.append(ComponentObservabilityState.LIVE_RESPONSE_OBSERVABLE)
         if relevant_observations:
             observability.append(ComponentObservabilityState.CURRENT_RESPONSE_OBSERVED)
@@ -1064,15 +1142,18 @@ def build_component_awareness(
                 for observation in relevant_observations
             ),
             current_settings=settings,
+            present_setting_keys=present_setting_keys,
+            missing_setting_keys=missing_setting_keys,
             current_setting_provenance=(
                 (f"setup_snapshot:{setup_snapshot.setup_id}:{setup_snapshot_hash}",)
                 if settings and setup_snapshot is not None and setup_snapshot_hash is not None
                 else ()
             ),
             observability_states=tuple(observability),
+            quantity_observability=quantity_certificates,
             current_response_state=(
                 "observed" if relevant_observations
-                else "not_observed" if available_live_channels
+                else "not_observed" if any(item.state == "screenable" for item in quantity_certificates)
                 else "unavailable"
             ),
             relevance=relevance,
@@ -1096,9 +1177,11 @@ def build_component_awareness(
             testable_control_keys=testable_control_keys,
             authorized_control_key=authority.control_key if p19_authorized else None,
             available_live_channel_ids=available_live_channels,
-            live_response_blocker_reasons=() if available_live_channels else (
-                "The verified telemetry manifest lacks every declared live-response channel group for this component.",
-            ),
+            live_response_blocker_reasons=tuple(dict.fromkeys(
+                blocker
+                for certificate in quantity_certificates
+                for blocker in certificate.blocker_reasons
+            )),
             next_discriminator=component_discriminator,
             current_testability="p19_authorized" if p19_authorized else "policy_blocked" if policy_blocked else "measurement_only",
             authority_state="p19_authorized" if p19_authorized else "controlled_history" if usable_histories else "observation_only" if supporting_artifact_ids or supporting_citation_ids or contradicting_citation_ids else "knowledge_only",

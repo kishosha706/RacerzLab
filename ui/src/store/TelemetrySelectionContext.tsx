@@ -61,7 +61,7 @@ type SelectionAction =
   /** Focus full evidence context — sets all relevant fields in one transaction. */
   | { type: "FOCUS_EVIDENCE"; evidence: Partial<EvidenceContext>; workspace?: Workspace };
 
-function selectionReducer(state: TelemetrySelection, action: SelectionAction): TelemetrySelection {
+export function selectionReducer(state: TelemetrySelection, action: SelectionAction): TelemetrySelection {
   switch (action.type) {
     case "SELECT_RUN":
       return {
@@ -156,7 +156,6 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
         selectedEventId: null,
         selectedSampleIndex: null,
         selectedLapDistFt: null,
-        selectedLapDistM: null,
         selectedLapPct: null,
         selectedChannel: null,
         selectedSetupKey: null,
@@ -218,13 +217,15 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
       };
     case "FOCUS_EVIDENCE": {
       const ev = action.evidence;
-      const nextLapScope = ev.lapScope !== undefined ? ev.lapScope : state.selectedLapScope;
+      // Evidence focus is a replace transaction. Omitted evidence-grain fields
+      // clear instead of inheriting an event/sample from a different reality.
+      const nextLapScope = ev.lapScope ?? (ev.lapNumber != null ? "single_lap" : ev.runId != null ? "run" : "unknown");
       const nextRepresentativeLap = ev.representativeLap !== undefined
         ? ev.representativeLap
         : nextLapScope === "lap_window"
           ? ev.lapNumber !== undefined
             ? ev.lapNumber
-            : state.selectedRepresentativeLap
+            : null
           : null;
       return {
         ...state,
@@ -238,18 +239,24 @@ function selectionReducer(state: TelemetrySelection, action: SelectionAction): T
           ? ev.lapWindowEnd !== undefined ? ev.lapWindowEnd : state.selectedLapWindowEnd
           : null,
         selectedRepresentativeLap: nextRepresentativeLap,
-        selectedEventId: ev.eventId !== undefined ? ev.eventId : state.selectedEventId,
-        selectedSampleIndex: ev.sampleIndex !== undefined ? ev.sampleIndex : state.selectedSampleIndex,
-        selectedLapDistFt: ev.lapDistFt !== undefined ? ev.lapDistFt : state.selectedLapDistFt,
-        selectedLapPct: ev.lapPct !== undefined ? ev.lapPct : state.selectedLapPct,
-        selectedZoneId: ev.zoneId !== undefined ? ev.zoneId : state.selectedZoneId,
-        selectedZoneLabel: ev.zoneLabel !== undefined ? ev.zoneLabel : state.selectedZoneLabel,
-        selectedZoneStartPct: ev.zoneStartPct !== undefined ? ev.zoneStartPct : state.selectedZoneStartPct,
-        selectedZoneEndPct: ev.zoneEndPct !== undefined ? ev.zoneEndPct : state.selectedZoneEndPct,
-        selectedChannel: ev.channelId !== undefined ? ev.channelId : state.selectedChannel,
-        selectedValueBasis: ev.valueBasis !== undefined ? ev.valueBasis : state.selectedValueBasis,
-        selectedLockState: ev.lockState !== undefined ? ev.lockState : state.selectedLockState,
-        selectedTrustTier: ev.trustTier !== undefined ? ev.trustTier : state.selectedTrustTier,
+        selectedEventId: ev.eventId ?? null,
+        selectedProducerId: ev.producerId ?? null,
+        selectedArtifactId: ev.artifactId ?? null,
+        selectedSystem: ev.system ?? null,
+        selectedCompareRole: ev.compareRole ?? null,
+        selectedSourceRunId: ev.sourceRunId ?? ev.runId ?? null,
+        selectedSourceSetupId: ev.sourceSetupId ?? null,
+        selectedSampleIndex: ev.sampleIndex ?? null,
+        selectedLapDistFt: ev.lapDistFt ?? null,
+        selectedLapPct: ev.lapPct ?? null,
+        selectedZoneId: ev.zoneId ?? null,
+        selectedZoneLabel: ev.zoneLabel ?? null,
+        selectedZoneStartPct: ev.zoneStartPct ?? null,
+        selectedZoneEndPct: ev.zoneEndPct ?? null,
+        selectedChannel: ev.channelId ?? null,
+        selectedValueBasis: ev.valueBasis ?? "unavailable",
+        selectedLockState: ev.lockState ?? "none",
+        selectedTrustTier: ev.trustTier ?? null,
         selectionSource: ev.selectionSource !== undefined ? ev.selectionSource : state.selectionSource,
         selectedWorkspace: action.workspace !== undefined ? normalizeWorkspace(action.workspace) : state.selectedWorkspace,
         hoverLapPct: null,

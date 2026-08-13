@@ -53,7 +53,12 @@ from racelab_engine.knowledge.setup.evidence_adapter import (
     event_matches_zone,
     event_mechanism_flags,
 )
-from racelab_engine.models.controlled_workflow import ControlledWorkflow
+from racelab_engine.models.controlled_workflow import (
+    AppliedControlCertificate,
+    ControlledWorkflow,
+    StageExperimentContext,
+    VehicleConditionEpoch,
+)
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.services.engineering_memory_service import (
     record_workflow_cancellation,
@@ -80,6 +85,16 @@ _WORKFLOW_COLUMNS = [
     "yaw_rate", "lat_accel", "long_accel", "vert_accel", "vert_accel_g",
     "lat", "lon", "alt", "on_pit_road", "enter_exit_reset_state",
     "fuel_level", "air_temp", "track_temp", "wind_vel",
+    "wind_dir", "precipitation", "track_wetness", "skies", "relative_humidity",
+    "lf_pressure", "rf_pressure", "lr_pressure", "rr_pressure",
+    "lf_temp_left", "lf_temp_middle", "lf_temp_right",
+    "rf_temp_left", "rf_temp_middle", "rf_temp_right",
+    "lr_temp_left", "lr_temp_middle", "lr_temp_right",
+    "rr_temp_left", "rr_temp_middle", "rr_temp_right",
+    "player_incident_count", "player_driver_incident_count", "player_team_incident_count",
+    "player_tow_service_time_s", "player_pit_service_status",
+    "pit_repair_remaining_s", "pit_optional_repair_remaining_s", "pending_pit_service_flags",
+    "applied_brake_bias",
     "player_tire_compound", "tire_compound",
     "tire_sets_used", "left_tire_sets_used", "right_tire_sets_used",
     "car_distance_ahead_m", "car_distance_behind_m",
@@ -525,6 +540,122 @@ def _driver_similarity(reference: list[dict[str, Any]], candidate: list[dict[str
     return round(min(scores), 3)
 
 
+_INCIDENT_CHANNELS = (
+    "player_incident_count", "player_driver_incident_count", "player_team_incident_count",
+)
+_CONDITION_BOUNDARY_CHANNELS = (
+    "player_tow_service_time_s", "player_pit_service_status", "pit_repair_remaining_s",
+    "pit_optional_repair_remaining_s", "pending_pit_service_flags",
+)
+
+
+def _vehicle_condition_epoch(rows: list[dict[str, Any]]) -> VehicleConditionEpoch:
+    observed = tuple(sorted({
+        channel for channel in (*_INCIDENT_CHANNELS, *_CONDITION_BOUNDARY_CHANNELS)
+        if any(_finite(row.get(channel)) is not None for row in rows)
+    }))
+    reasons: list[str] = []
+    baselines: dict[str, float] = {}
+    if not all(channel in observed for channel in _INCIDENT_CHANNELS):
+        reasons.append("All authoritative incident counters require healthy cohort coverage.")
+    for channel in _INCIDENT_CHANNELS:
+        values = [_finite(row.get(channel)) for row in rows]
+        finite_values = [value for value in values if value is not None]
+        if len(finite_values) != len(rows) or not finite_values:
+            continue
+        baselines[channel] = finite_values[0]
+        if finite_values[0] != 0:
+            reasons.append(f"{channel} was already elevated when the recording began; prior condition is unknown.")
+        if max(finite_values) != min(finite_values):
+            reasons.append(f"{channel} crossed a vehicle-condition boundary inside the cohort.")
+    boundary_observed = False
+    for channel in _CONDITION_BOUNDARY_CHANNELS:
+        values = [_finite(row.get(channel)) for row in rows]
+        finite_values = [value for value in values if value is not None]
+        if not finite_values:
+            continue
+        if max(finite_values) != min(finite_values) or any(value > 0 for value in finite_values):
+            boundary_observed = True
+            reasons.append(f"{channel} indicates tow, repair, or pit-service condition uncertainty.")
+    status: Literal["known_clear", "unknown", "boundary_observed"]
+    if boundary_observed or any("crossed" in reason for reason in reasons):
+        status = "boundary_observed"
+    elif reasons:
+        status = "unknown"
+    else:
+        status = "known_clear"
+    identity = canonical_json_sha256({
+        "schema": "p31.vehicle-condition-epoch.v1",
+        "status": status,
+        "incident_baseline": baselines,
+        "observed_channels": observed,
+    })
+    return VehicleConditionEpoch(
+        status=status,
+        identity_sha256=identity,
+        observed_channels=observed,
+        incident_baseline=baselines,
+        blocker_reasons=tuple(reasons),
+    )
+
+
+def _applied_control_certificate(
+    rows: list[dict[str, Any]], *, control_key: str, expected_value: Any,
+) -> AppliedControlCertificate:
+    if control_key != "front_brake_bias_percent":
+        return AppliedControlCertificate(status="not_applicable", control_key=control_key)
+    expected = _finite(expected_value)
+    values = [_finite(row.get("applied_brake_bias")) for row in rows]
+    observed = [value for value in values if value is not None]
+    coverage = len(observed) / len(rows) if rows else 0.0
+    if expected is None or coverage < 0.95:
+        return AppliedControlCertificate(
+            status="missing", control_key=control_key, expected_value=expected,
+            coverage_fraction=coverage, source_channel="applied_brake_bias",
+            blocker_reasons=("Applied brake-bias coverage must be at least 95% for this experiment.",),
+        )
+    spread = max(observed) - min(observed)
+    center = median(observed)
+    if spread > 0.05:
+        return AppliedControlCertificate(
+            status="mutated", control_key=control_key, expected_value=expected,
+            observed_value=center, coverage_fraction=coverage, observed_range=spread,
+            source_channel="applied_brake_bias",
+            blocker_reasons=("Applied brake bias changed inside the controlled cohort.",),
+        )
+    if not math.isclose(center, expected, abs_tol=0.05):
+        return AppliedControlCertificate(
+            status="setup_mismatch", control_key=control_key, expected_value=expected,
+            observed_value=center, coverage_fraction=coverage, observed_range=spread,
+            source_channel="applied_brake_bias",
+            blocker_reasons=("Applied brake bias does not match the immutable planned garage value.",),
+        )
+    return AppliedControlCertificate(
+        status="stable", control_key=control_key, expected_value=expected,
+        observed_value=center, coverage_fraction=coverage, observed_range=spread,
+        source_channel="applied_brake_bias",
+    )
+
+
+def _stage_experiment_context(
+    rows: list[dict[str, Any]], *, control_key: str, expected_value: Any,
+) -> StageExperimentContext:
+    return StageExperimentContext(
+        vehicle_condition=_vehicle_condition_epoch(rows),
+        applied_control=_applied_control_certificate(
+            rows, control_key=control_key, expected_value=expected_value,
+        ),
+    )
+
+
+def _experiment_context_blocker(context: StageExperimentContext) -> str | None:
+    if context.vehicle_condition.status != "known_clear":
+        return " ".join(context.vehicle_condition.blocker_reasons) or "Vehicle condition is unknown."
+    if context.applied_control.status not in {"not_applicable", "stable"}:
+        return " ".join(context.applied_control.blocker_reasons) or "Applied control state is unverified."
+    return None
+
+
 def _context_score(
     lap_sets: list[list[dict[str, Any]]], *, allow_stint_progression: bool = False,
 ) -> float:
@@ -556,13 +687,55 @@ def _context_score(
         tire_set_counts.append(median(values))
     if any(right < left or right - left > 1.0 for left, right in zip(tire_set_counts, tire_set_counts[1:])):
         return 0.0
-    tolerances = {"air_temp": 5.0, "track_temp": 5.0, "wind_vel": 5.0}
+    tolerances = {
+        "air_temp": 5.0, "track_temp": 5.0, "wind_vel": 5.0,
+        "relative_humidity": 10.0, "precipitation": 0.01,
+    }
     scores: list[float] = []
     for channel, tolerance in tolerances.items():
         centers = [median(values) for rows in lap_sets if (values := [_finite(r.get(channel)) for r in rows if _finite(r.get(channel)) is not None])]
         if len(centers) != len(lap_sets):
             return 0.0
         scores.append(max(0.0, 1.0 - (max(centers) - min(centers)) / tolerance))
+    wind_directions: list[float] = []
+    for rows in lap_sets:
+        values = [_finite(row.get("wind_dir")) for row in rows]
+        finite_values = [value for value in values if value is not None]
+        if len(finite_values) < 0.9 * len(rows) or not finite_values:
+            return 0.0
+        sin_center = median([math.sin(value) for value in finite_values])
+        cos_center = median([math.cos(value) for value in finite_values])
+        wind_directions.append(math.atan2(sin_center, cos_center))
+    angular_span = max(
+        abs(math.atan2(math.sin(left - right), math.cos(left - right)))
+        for left in wind_directions for right in wind_directions
+    )
+    scores.append(max(0.0, 1.0 - angular_span / math.radians(30.0)))
+    for channel in ("track_wetness", "skies"):
+        centers = []
+        for rows in lap_sets:
+            values = [_finite(row.get(channel)) for row in rows]
+            finite_values = [value for value in values if value is not None]
+            if len(finite_values) < 0.9 * len(rows) or not finite_values:
+                return 0.0
+            centers.append(median(finite_values))
+        if max(centers) != min(centers):
+            return 0.0
+        scores.append(1.0)
+    for corner in ("lf", "rf", "lr", "rr"):
+        for channel, relative_tolerance, absolute_floor in (
+            (f"{corner}_pressure", 0.05, 1.0),
+            (f"{corner}_temp_middle", 0.08, 5.0),
+        ):
+            centers = []
+            for rows in lap_sets:
+                values = [_finite(row.get(channel)) for row in rows]
+                finite_values = [value for value in values if value is not None]
+                if len(finite_values) < 0.7 * len(rows) or not finite_values:
+                    return 0.0
+                centers.append(median(finite_values))
+            tolerance = max(abs(median(centers)) * relative_tolerance, absolute_floor)
+            scores.append(max(0.0, 1.0 - (max(centers) - min(centers)) / tolerance))
     fuel_centers = [
         median(values)
         for rows in lap_sets
@@ -614,6 +787,9 @@ def _continuous_stage_cohort(
         for row in rows
     ):
         return False, "The stage cohort crosses a pit or reset boundary."
+    condition = _vehicle_condition_epoch([row for rows in rows_by_lap for row in rows])
+    if condition.status != "known_clear":
+        return False, " ".join(condition.blocker_reasons) or "Vehicle condition is unknown."
     compounds = {
         str(row.get("player_tire_compound") or row.get("tire_compound"))
         for rows in rows_by_lap
@@ -1769,6 +1945,7 @@ def create_workflow(
     workflow = ControlledWorkflow(
         workflow_id=f"aba_{uuid4().hex[:20]}", created_at=now, updated_at=now,
         status="planned", source_run_id=run_id, complaint=complaint, packet=packet,
+        analysis_version="controlled-workflow-aba2-v2",
         reproduction_snapshot={"decision_context": decision_context},
     )
     authorized_packet, repeat_blockers = enforce_hypothesis_repeat_policy(
@@ -1895,11 +2072,16 @@ def _stage_binding_hash(
     stage_run_ids: dict[str, str],
     stage_eligible_lap_numbers: dict[str, tuple[int, ...]],
     chronology: dict[str, Any],
+    stage_experiment_contexts: dict[str, StageExperimentContext] | None = None,
 ) -> str:
     payload = {
         "stage_run_ids": stage_run_ids,
         "stage_eligible_lap_numbers": stage_eligible_lap_numbers,
         "recording_chronology": chronology,
+        "stage_experiment_contexts": {
+            stage: context.model_dump(mode="json")
+            for stage, context in (stage_experiment_contexts or {}).items()
+        },
     }
     encoded = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(encoded.encode()).hexdigest()
@@ -2211,14 +2393,20 @@ def attach_stage(workflow_id: str, stage: Literal["A", "B", "A2"], run_id: str, 
     if len(changes) != allowed or (stage == "B" and changes[0].setup_key != card.control_key):
         raise ValueError("The requested stage contains an unrelated setup change.")
     cohort_laps = [lap.lap_number for lap in ordered_eligible[:required_total]]
-    cohort_ok, cohort_reason = _continuous_stage_cohort(
-        cohort_laps,
-        _lap_rows(run_id, cohort_laps),
-    )
+    cohort_rows_by_lap = _lap_rows(run_id, cohort_laps)
+    cohort_ok, cohort_reason = _continuous_stage_cohort(cohort_laps, cohort_rows_by_lap)
     if not cohort_ok:
         raise ValueError(cohort_reason or "The stage cohort is not continuous.")
+    cohort_rows = [row for number in cohort_laps for row in cohort_rows_by_lap.get(number, [])]
+    expected_applied = planned if stage == "B" else baseline
+    experiment_context = _stage_experiment_context(
+        cohort_rows, control_key=card.control_key, expected_value=expected_applied,
+    )
+    if cohort_rows and (context_reason := _experiment_context_blocker(experiment_context)):
+        raise ValueError(context_reason)
     stage_ids = {**workflow.stage_run_ids, stage: run_id}
     stage_cohorts = {**workflow.stage_eligible_lap_numbers, stage: measured_laps}
+    stage_contexts = {**workflow.stage_experiment_contexts, stage: experiment_context}
     status = {"A": "a_recorded", "B": "b_recorded", "A2": "a2_recorded"}[stage]
     reproduction_snapshot = dict(workflow.reproduction_snapshot)
     chronology = dict(reproduction_snapshot.get("recording_chronology") or {})
@@ -2234,11 +2422,13 @@ def attach_stage(workflow_id: str, stage: Literal["A", "B", "A2"], run_id: str, 
         stage_ids,
         stage_cohorts,
         chronology,
+        stage_contexts,
     )
     updated = workflow.model_copy(update={
         "packet": fresh_packet,
         "stage_run_ids": stage_ids,
         "stage_eligible_lap_numbers": stage_cohorts,
+        "stage_experiment_contexts": stage_contexts,
         "status": status,
         "reproduction_snapshot": reproduction_snapshot,
         "updated_at": datetime.now(timezone.utc),
@@ -2327,6 +2517,7 @@ def _validate_recorded_stage_bindings(
         "source": _recording_provenance(source_overview, source_manifest),
     }
     expected_reproduction_stages: dict[str, dict[str, Any]] = {}
+    expected_stage_contexts: dict[str, StageExperimentContext] = {}
 
     baseline_setup = source_setup
     for stage in stage_order[:stage_count]:
@@ -2375,10 +2566,8 @@ def _validate_recorded_stage_bindings(
                 "cherry-picked eligible laps are rejected."
             )
         cohort_laps = [lap.lap_number for lap in ordered_eligible[:required_total]]
-        cohort_ok, cohort_reason = _continuous_stage_cohort(
-            cohort_laps,
-            _lap_rows(run_id, cohort_laps),
-        )
+        cohort_rows_by_lap = _lap_rows(run_id, cohort_laps)
+        cohort_ok, cohort_reason = _continuous_stage_cohort(cohort_laps, cohort_rows_by_lap)
         if not cohort_ok:
             raise ValueError(
                 cohort_reason
@@ -2404,6 +2593,11 @@ def _validate_recorded_stage_bindings(
             expected_value,
         ):
             raise ValueError(f"Stage {stage} setup value does not match the immutable test card.")
+        cohort_rows = [row for number in cohort_laps for row in cohort_rows_by_lap.get(number, [])]
+        expected_context = _stage_experiment_context(
+            cohort_rows, control_key=card.control_key, expected_value=expected_value,
+        )
+        expected_stage_contexts[stage] = expected_context
 
         setup_payload = setup.model_dump(mode="json") if hasattr(setup, "model_dump") else setup
         expected_reproduction_stages[stage] = {
@@ -2415,10 +2609,17 @@ def _validate_recorded_stage_bindings(
             "setup_fingerprint": _setup_snapshot_hash(setup_payload),
             "setup_values": setup_payload,
             "eligible_lap_numbers": list(expected_measured),
+            "experiment_context": expected_context.model_dump(mode="json"),
         }
 
         previous_overview = overview
         previous_manifest = manifest
+
+    for stage, expected_context in expected_stage_contexts.items():
+        if context_reason := _experiment_context_blocker(expected_context):
+            raise ValueError(f"Stage {stage} experiment context is invalid: {context_reason}")
+        if workflow.stage_experiment_contexts.get(stage) != expected_context:
+            raise ValueError(f"Stage {stage} vehicle-condition or applied-control binding changed.")
 
     if set(chronology) != set(expected_chronology) or chronology != expected_chronology:
         raise ValueError("Stored recording chronology does not exactly match the bound source and stage runs.")
@@ -2426,6 +2627,7 @@ def _validate_recorded_stage_bindings(
         workflow.stage_run_ids,
         workflow.stage_eligible_lap_numbers,
         chronology,
+        workflow.stage_experiment_contexts,
     )
     if stored_binding != expected_binding:
         raise ValueError("Stored stage run, cohort, or chronology bindings failed integrity validation.")
@@ -2886,6 +3088,14 @@ def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = N
     for stage in ("A", "B", "A2"):
         manifest = read_telemetry_manifest(workflow.stage_run_ids[stage])
         setup_payload = setups[stage].model_dump(mode="json") if setups[stage] is not None else None
+        stored_context = workflow.stage_experiment_contexts.get(stage)
+        if stored_context is None:
+            expected_value = _planned_numeric_value(card) if stage == "B" else card.current_value
+            stored_context = _stage_experiment_context(
+                [row for lap in lap_rows[stage] for row in lap],
+                control_key=card.control_key,
+                expected_value=expected_value,
+            )
         reproduction_stages[stage] = {
             "run_id": workflow.stage_run_ids[stage],
             "source_file_sha256": overviews[stage].session.file_hash,
@@ -2895,6 +3105,7 @@ def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = N
             "setup_fingerprint": _setup_snapshot_hash(setup_payload),
             "setup_values": setup_payload,
             "eligible_lap_numbers": list(stage_eligible_lap_numbers[stage]),
+            "experiment_context": stored_context.model_dump(mode="json"),
         }
     reproduction_snapshot = {
         "analysis_version": workflow.analysis_version,
@@ -2908,6 +3119,7 @@ def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = N
             workflow.stage_run_ids,
             stage_eligible_lap_numbers,
             workflow.reproduction_snapshot.get("recording_chronology", {}),
+            workflow.stage_experiment_contexts,
         ),
         "stages": reproduction_stages,
         "target_effect_distributions_s": {

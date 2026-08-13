@@ -213,13 +213,30 @@ export type ComponentObservationScope = {
   lap_pct_end: number;
 };
 
+export type QuantityObservabilityCertificate = {
+  quantity_id: string;
+  required_channels: string[];
+  available_channels: string[];
+  missing_channels: string[];
+  health_basis: "qualified_producer" | "manifest_presence_only" | "missing";
+  minimum_coobserved_coverage: number;
+  coobserved_coverage: number | null;
+  state: "observed" | "screenable" | "unavailable";
+  producer_artifact_ids: string[];
+  supported_derived_outputs: string[];
+  blocker_reasons: string[];
+};
+
 export type ComponentAwarenessState = {
   component_id: string;
   run_id: string;
   observation_scopes: ComponentObservationScope[];
   current_settings: string[];
+  present_setting_keys: string[];
+  missing_setting_keys: string[];
   current_setting_provenance: string[];
   observability_states: ComponentObservabilityState[];
+  quantity_observability: QuantityObservabilityCertificate[];
   current_response_state: "observed" | "not_observed" | "unavailable";
   relevance: ComponentRelevance;
   supporting_artifact_ids: string[];
@@ -625,17 +642,52 @@ export function isComponentAwarenessState(
   const testableControls = value.testable_control_keys;
   const liveChannels = value.available_live_channel_ids;
   const liveBlockers = value.live_response_blocker_reasons;
+  const quantityCertificates = value.quantity_observability;
+  const presentSettings = value.present_setting_keys;
+  const missingSettings = value.missing_setting_keys;
   if (
     !isCanonicalString(value.component_id)
     || value.run_id !== runId
     || !Array.isArray(scopes)
     || !scopes.every(isObservationScope)
     || !isStringArray(value.current_settings)
+    || !isStringArray(value.present_setting_keys, 0, true)
+    || !isStringArray(value.missing_setting_keys, 0, true)
+    || (isStringArray(presentSettings, 0, true) && isStringArray(missingSettings, 0, true)
+      && presentSettings.some((key) => missingSettings.includes(key)))
     || !isStringArray(value.current_setting_provenance)
     || !Array.isArray(observability)
     || observability.length === 0
     || !observability.every((item) => isEnumValue(item, observabilityStates))
     || new Set(observability).size !== observability.length
+    || !Array.isArray(quantityCertificates)
+    || quantityCertificates.length === 0
+    || !quantityCertificates.every((certificate) => {
+      if (!isRecord(certificate)
+        || !isCanonicalString(certificate.quantity_id)
+        || !isStringArray(certificate.required_channels, 1, true)
+        || !isStringArray(certificate.available_channels, 0, true)
+        || !isStringArray(certificate.missing_channels, 0, true)
+        || !["qualified_producer", "manifest_presence_only", "missing"].includes(String(certificate.health_basis))
+        || !isNullableNumber(certificate.minimum_coobserved_coverage, 0, 1)
+        || certificate.minimum_coobserved_coverage === null
+        || !isNullableNumber(certificate.coobserved_coverage, 0, 1)
+        || !["observed", "screenable", "unavailable"].includes(String(certificate.state))
+        || !isStringArray(certificate.producer_artifact_ids, 0, true)
+        || !isStringArray(certificate.supported_derived_outputs, 0, true)
+        || !isStringArray(certificate.blocker_reasons)) return false;
+      const required = certificate.required_channels as string[];
+      const available = certificate.available_channels as string[];
+      const missing = certificate.missing_channels as string[];
+      return sameStringSet([...available, ...missing], required)
+        && !available.some((channel) => missing.includes(channel))
+        && (certificate.state !== "observed" || (
+          certificate.health_basis === "qualified_producer"
+          && typeof certificate.coobserved_coverage === "number"
+          && certificate.coobserved_coverage >= Number(certificate.minimum_coobserved_coverage)
+          && certificate.producer_artifact_ids.length > 0
+        ));
+    })
     || !isEnumValue(value.current_response_state, responseStates)
     || !isEnumValue(value.relevance, relevanceStates)
     || !isStringArray(observedArtifacts, 0, true)
@@ -697,8 +749,11 @@ export function isComponentAwarenessState(
     || (state.current_settings.length > 0 && state.current_setting_provenance.length === 0)
     || responseKnown !== state.observability_states.includes("controlled_response_known")
     || policyKnown !== state.observability_states.includes("exact_context_policy_known")
-    || liveObservable !== (state.available_live_channel_ids.length > 0)
-    || liveObservable === (state.live_response_blocker_reasons.length > 0)
+    || liveObservable !== state.quantity_observability.some((item) => item.state === "observed")
+    || !sameStringSet(
+      Array.from(new Set(state.quantity_observability.flatMap((item) => item.available_channels))),
+      state.available_live_channel_ids,
+    )
     || !sameStringSet(undoControls, state.blocked_control_keys)
     || state.blocked_control_keys.some((control) => state.testable_control_keys.includes(control))
     || (state.current_testability === "policy_blocked") !== policyBlocked

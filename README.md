@@ -31,6 +31,7 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **Physical-position Comparison** — future runs are aligned by track position with coverage gaps, phase context, alignment quality, and empirical-noise reporting; sample index is never treated as track position.
 - **P19 Controlled Workflow** — the sole public setup authority. Exact-session P19 reasoning must authorize and bind one adjacent setup target before an A/B/A2 workflow can be persisted; P19 also validates its Keep/Undo/retest result.
 - **P27-P29 Deterministic Crew Chief** — one revision-bound Engineer command deck schedules typed inspections, runs the lap sentinel, remembers exact controlled component response, and mirrors only the current P19 terminal authority; optional generative and P30 adaptive paths remain disabled/data-locked.
+- **P31 Truthful Crew Loop** — integrity-normalized and co-observed telemetry, exact vehicle/control/context experiment identity, segmented physical evidence, quantity-level component observability, deterministic Crew investigation, strict UI response trust, and a shared single-flight intelligence snapshot. P19 remains the only setup and Keep/Undo/retest authority.
 - **Keyboard Shortcuts** — Esc clear, M/P/O/C/N workspace nav, L mode toggle, ←/→ event navigation
 - **Persistent Evidence Inspector** — right-side observation inspector with event selection, evidence cards, and setup linkage
 - **Local SQLite persistence** — imported runs, laps, events, setup snapshots, segments, notebook observations, exact P19 workflow history, and RaceLab sessions stored locally
@@ -220,4 +221,3 @@ See `AGENTS.md` for product rules (evidence first, no junk-lap conclusions, prox
 Vectorized analysis is the default runtime path; row mode is retained as fallback/debug parity only.
 
 Verification evidence is recorded in `ROADMAP.md` and `TESTING.md`; do not infer current authority from historical feature descriptions.
-

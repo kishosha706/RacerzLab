@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.lap import LapSummary
@@ -12,6 +12,21 @@ from racelab_engine.models.setup import SetupSnapshot
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class ShiftLightRpmThresholds(BaseModel):
+    first_rpm: float = Field(gt=0, allow_inf_nan=False)
+    shift_rpm: float = Field(gt=0, allow_inf_nan=False)
+    last_rpm: float = Field(gt=0, allow_inf_nan=False)
+    blink_rpm: float = Field(gt=0, allow_inf_nan=False)
+    source_yaml_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source: Literal["iracing_session_yaml"] = "iracing_session_yaml"
+
+    @model_validator(mode="after")
+    def thresholds_are_ordered(self) -> ShiftLightRpmThresholds:
+        if not self.first_rpm <= self.shift_rpm <= self.last_rpm <= self.blink_rpm:
+            raise ValueError("shift-light RPM thresholds must be ordered")
+        return self
 
 
 class SessionSummary(BaseModel):
@@ -39,6 +54,7 @@ class SessionSummary(BaseModel):
     setup_name: Optional[str] = None
     setup_passed_tech: Optional[bool] = None
     setup_modified: Optional[bool] = None
+    shift_light_rpm_thresholds: ShiftLightRpmThresholds | None = None
     notes: list[str] = Field(default_factory=list)
 
 

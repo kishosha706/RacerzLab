@@ -7,7 +7,7 @@ labels a friction coefficient or exact brake force.
 from __future__ import annotations
 
 from statistics import mean, pstdev
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -35,6 +35,9 @@ class BrakingPhaseMetrics(EngineeringModel):
     rear_left_right_balance: float | None = None
     incipient_lock_lap_pct: float | None = None
     incipient_lock_corner: str | None = None
+    lock_evidence_tier: Literal[
+        "abs_corroborated", "geometry_corrected_deceleration_mismatch", "raw_wheel_speed_proxy"
+    ] | None = None
     abs_active_duration_s: float | None = None
     matched_deceleration_efficiency_proxy: float | None = None
     efficiency_proxy_unit: str = "m/s^2 per bar"
@@ -65,14 +68,31 @@ def _pressure_totals(rows: list[dict[str, Any]]) -> list[tuple[float, float, flo
     return totals
 
 
-def _lock_timing(rows: list[dict[str, Any]]) -> tuple[float | None, str | None]:
+def _authoritative_abs(row: dict[str, Any]) -> bool | None:
+    value = row.get("brake_abs_active")
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    numeric = finite(value)
+    return bool(numeric) if numeric is not None else None
+
+
+def _lock_timing(
+    rows: list[dict[str, Any]],
+) -> tuple[float | None, str | None, Literal["abs_corroborated", "raw_wheel_speed_proxy"] | None]:
+    first_proxy_pct: float | None = None
     for row in rows:
         explicit = [finite(row.get(f"{corner}_slip_ratio")) for corner in ("lf", "rf", "lr", "rr")]
         if all(value is not None for value in explicit):
             candidates = [(corner.upper(), float(value)) for corner, value in zip(("lf", "rf", "lr", "rr"), explicit) if value is not None]
             corner, value = min(candidates, key=lambda item: item[1])
             if value <= -0.08:
-                return lap_pct(row), corner
+                if _authoritative_abs(row) is True:
+                    return lap_pct(row), corner, "abs_corroborated"
+                if first_proxy_pct is None:
+                    first_proxy_pct = lap_pct(row)
+                continue
         wheels = [finite(row.get(channel)) for channel in WHEEL_CHANNELS]
         if any(value is None for value in wheels):
             continue
@@ -84,12 +104,17 @@ def _lock_timing(rows: list[dict[str, Any]]) -> tuple[float | None, str | None]:
             key=lambda item: item[1],
         )
         if (slowest - reference) / reference <= -0.08:
-            return lap_pct(row), corner
-    return None, None
+            if first_proxy_pct is None:
+                first_proxy_pct = lap_pct(row)
+    if first_proxy_pct is not None:
+        return first_proxy_pct, None, "raw_wheel_speed_proxy"
+    return None, None, None
 
 
 def _abs_duration(rows: list[dict[str, Any]]) -> float | None:
-    if not any("brake_abs_active" in row or "brake_abs_cut_01" in row for row in rows):
+    # BrakeABScutPct semantics are not calibrated.  A constant non-zero value
+    # cannot override a covered authoritative BrakeABSactive=False signal.
+    if not any(_authoritative_abs(row) is not None for row in rows):
         return None
     duration = 0.0
     observed_interval = False
@@ -97,11 +122,30 @@ def _abs_duration(rows: list[dict[str, Any]]) -> float | None:
         t0, t1 = finite(left.get("session_time")), finite(right.get("session_time"))
         if t0 is None or t1 is None or t1 <= t0:
             continue
-        active = bool(left.get("brake_abs_active")) or (finite(left.get("brake_abs_cut_01")) or 0.0) > 0
+        active = _authoritative_abs(left)
+        if active is None:
+            continue
         observed_interval = True
         if active:
             duration += t1 - t0
     return duration if observed_interval else None
+
+
+def _coobserved_pressure_deceleration(
+    rows: list[dict[str, Any]],
+) -> tuple[list[tuple[float, float]], float]:
+    paired: list[tuple[float, float]] = []
+    candidate_count = 0
+    for row in rows:
+        pressure_values = [finite(row.get(channel)) for channel in PRESSURE_CHANNELS]
+        decel = finite(row.get("long_accel"))
+        if any(value is not None for value in pressure_values) or decel is not None:
+            candidate_count += 1
+        if decel is None or decel >= 0 or any(value is None for value in pressure_values):
+            continue
+        paired.append((sum(float(value) for value in pressure_values if value is not None), -decel))
+    coverage = len(paired) / candidate_count if candidate_count else 0.0
+    return paired, coverage
 
 
 def analyze_braking_efficiency(
@@ -137,17 +181,18 @@ def analyze_braking_efficiency(
         )
 
     totals = _pressure_totals(scoped)
-    total_pressure = [total for _front, _rear, total in totals]
     times = [finite(row.get("session_time")) for row in scoped]
     pressure_rows = [
         (time, sum(float(value) for channel in PRESSURE_CHANNELS if (value := finite(row.get(channel))) is not None))
         for row, time in zip(scoped, times)
         if time is not None and all(finite(row.get(channel)) is not None for channel in PRESSURE_CHANNELS)
     ]
-    pressure_rates = derivative(
-        [item[1] for item in pressure_rows],
-        [float(item[0]) for item in pressure_rows],
-    )
+    pressure_rates = [
+        (right_pressure - left_pressure) / (right_time - left_time)
+        for (left_time, left_pressure), (right_time, right_pressure)
+        in zip(pressure_rows, pressure_rows[1:])
+        if 0 < right_time - left_time <= 0.25
+    ]
     buildup = _mean_or_none([value for value in pressure_rates if value > 0])
     release = _mean_or_none([value for value in pressure_rates if value < 0])
     front_ratios = [front / total for front, _rear, total in totals]
@@ -159,10 +204,10 @@ def analyze_braking_efficiency(
             front_lr.append((lf - rf) / (lf + rf))
         if lr is not None and rr is not None and lr + rr > 0:
             rear_lr.append((lr - rr) / (lr + rr))
-    decel = [-value for row in scoped if (value := finite(row.get("long_accel"))) is not None and value < 0]
-    avg_pressure = _mean_or_none(total_pressure)
-    efficiency = (_mean_or_none(decel) / avg_pressure) if decel and avg_pressure and avg_pressure > 0 else None
-    lock_pct, lock_corner = _lock_timing(scoped)
+    paired_efficiency, paired_coverage = _coobserved_pressure_deceleration(scoped)
+    efficiency_samples = [decel / pressure for pressure, decel in paired_efficiency if pressure > 0]
+    efficiency = _mean_or_none(efficiency_samples) if len(efficiency_samples) >= 3 and paired_coverage >= 0.7 else None
+    lock_pct, lock_corner, lock_tier = _lock_timing(scoped)
     metrics = BrakingPhaseMetrics(
         sample_count=len(scoped),
         pressure_buildup_bar_s=buildup,
@@ -172,6 +217,7 @@ def analyze_braking_efficiency(
         rear_left_right_balance=_mean_or_none(rear_lr),
         incipient_lock_lap_pct=lock_pct,
         incipient_lock_corner=lock_corner,
+        lock_evidence_tier=lock_tier,
         abs_active_duration_s=_abs_duration(scoped),
         matched_deceleration_efficiency_proxy=efficiency,
     )
@@ -207,7 +253,7 @@ def analyze_braking_efficiency(
         metrics.effective_front_ratio is not None
         and ratio_variation is not None
         and ratio_variation <= 0.03
-        and (lock_corner is not None or (metrics.abs_active_duration_s or 0.0) > 0)
+        and (lock_tier == "abs_corroborated" or (metrics.abs_active_duration_s or 0.0) > 0)
     )
     technique_support = bool(pedal_variation is not None and pedal_variation >= 80.0)
     if bias_support and not technique_support:

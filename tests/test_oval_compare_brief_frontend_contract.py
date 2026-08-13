@@ -73,8 +73,13 @@ def test_compare_result_is_bound_to_the_selected_runs_laps_and_zone() -> None:
     ):
         assert expression in source
     assert "No comparison metrics are shown" in source
-    assert "JSON.parse(raw)" in source
-    assert 'typeof parsed.detail === "string"' in source
+    basket = _read("ui/src/store/CompareBasketContext.tsx")
+    assert "JSON.parse(saved)" in basket
+    assert "parsePersistedCompareBasket" in basket
+    client = _read("ui/src/api/client.ts")
+    assert "requestJson<unknown>" in client
+    assert "Compare result failed exact source" in client
+    assert "AbortController" in source
     assert 'className="warning-banner compare-error-recovery" role="alert"' in source
 
 

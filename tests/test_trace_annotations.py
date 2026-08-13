@@ -26,13 +26,13 @@ def test_positive_only_traces_do_not_emit_fake_negative_events() -> None:
 def test_negative_events_require_crossing_their_negative_threshold() -> None:
     result = annotate_delta_traces(
         {
-            "speed_mph": {"delta_values": [-0.01, -0.06]},
-            "cfs_ride_height_in": {"delta_values": [-0.0005, -0.002]},
-            "rpm": {"delta_values": [-20.0, -80.0]},
-            "throttle_pct": {"delta_values": [-1.0, -3.0]},
+            "speed_mph": {"delta_values": [-0.06, -0.06, -0.06]},
+            "cfs_ride_height_in": {"delta_values": [-0.002, -0.002, -0.002]},
+            "rpm": {"delta_values": [-80.0, -80.0, -80.0]},
+            "throttle_pct": {"delta_values": [-3.0, -3.0, -3.0]},
         },
-        [0.0, 100.0],
-        [0.0, 1_000.0],
+        [0.0, 50.0, 100.0],
+        [0.0, 500.0, 1_000.0],
     )
 
     assert {annotation.kind for annotation in result.annotations} == {

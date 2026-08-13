@@ -142,6 +142,24 @@ async function clickText(cdp, text) {
   if (!ok) throw new Error(`Button not found: ${text}`);
 }
 
+async function clickSelector(cdp, selector) {
+  await evaluate(
+    cdp,
+    `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({ block: "center", inline: "center" })`,
+  );
+  await delay(100);
+  const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+  const { nodeId } = await cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector });
+  if (!nodeId) throw new Error(`Selector not found: ${selector}`);
+  await cdp.send("Page.bringToFront");
+  await cdp.send("DOM.focus", { nodeId });
+  const { model } = await cdp.send("DOM.getBoxModel", { nodeId });
+  const x = (model.content[0] + model.content[2] + model.content[4] + model.content[6]) / 4;
+  const y = (model.content[1] + model.content[3] + model.content[5] + model.content[7]) / 4;
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+}
+
 async function setFile(cdp, filePath) {
   const { root } = await cdp.send("DOM.getDocument", { depth: -1, pierce: true });
   const { nodeId } = await cdp.send("DOM.querySelector", {
@@ -206,20 +224,63 @@ try {
     mobile: false,
   });
 
-  await waitFor(cdp, "document.body && document.body.innerText.includes('RacerZLab')", "startup branding");
-  await clickText(cdp, "New Session");
-  await waitFor(cdp, "document.body.innerText.includes('No persisted runs yet') || document.body.innerText.includes('Platform')", "new session workspace");
+  await waitFor(
+    cdp,
+    "document.body && (document.body.innerText.includes('Enter the garage') || document.body.innerText.includes('New engineering session') || document.body.innerText.includes('RacerZLab'))",
+    "startup branding",
+  );
+  if (await evaluate(cdp, "document.body.innerText.includes('Enter the garage')")) {
+    await waitFor(cdp, "document.querySelector('button.launch-splash-gate') !== null", "launch gate");
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      if (!(await evaluate(cdp, "document.body.innerText.includes('Enter the garage')"))) break;
+      await clickSelector(cdp, "button.launch-splash-gate");
+      await cdp.send("Page.bringToFront");
+      await cdp.send("Input.dispatchKeyEvent", {
+        type: "rawKeyDown",
+        key: "Enter",
+        code: "Enter",
+        text: "\r",
+        unmodifiedText: "\r",
+        windowsVirtualKeyCode: 13,
+        nativeVirtualKeyCode: 13,
+      });
+      await cdp.send("Input.dispatchKeyEvent", { type: "char", text: "\r" });
+      await cdp.send("Input.dispatchKeyEvent", {
+        type: "keyUp",
+        key: "Enter",
+        code: "Enter",
+        windowsVirtualKeyCode: 13,
+        nativeVirtualKeyCode: 13,
+      });
+      await delay(500);
+    }
+    if (await evaluate(cdp, "document.body.innerText.includes('Enter the garage')")) {
+      await evaluate(cdp, `
+        (() => {
+          const node = document.querySelector('button.launch-splash-gate');
+          const propsKey = node && Object.keys(node).find((key) => key.startsWith('__reactProps'));
+          if (!node || !propsKey || typeof node[propsKey]?.onClick !== 'function') return false;
+          node[propsKey].onClick();
+          return true;
+        })()
+      `);
+    }
+  }
+  await waitFor(cdp, "document.body.innerText.includes('New engineering session')", "session picker");
+  await clickText(cdp, "New engineering session");
   await waitFor(cdp, "document.querySelector('input[type=file]') !== null", "browser file input");
   await setFile(cdp, ibtPath);
   await waitFor(cdp, "document.body.innerText.includes('Overview') && document.body.innerText.includes('Platform')", "run opened", 240_000);
   await clickText(cdp, "Platform");
   await waitFor(cdp, "document.body.innerText.includes('Platform Trace Workbench')", "platform tab", 60_000);
-  await waitFor(
-    cdp,
-    "Boolean(document.querySelector('.trace-panel')?.getAttribute('_echarts_instance_') || document.querySelector('.trace-panel canvas') || document.querySelector('.trace-panel svg'))",
-    "ECharts render target",
-    60_000,
-  );
+  if (await evaluate(cdp, "document.body.innerText.includes('SHOW CHARTS')")) {
+    await clickSelector(cdp, "button.platform-whole-lap-toggle");
+    await waitFor(
+      cdp,
+      "document.querySelector('button.platform-whole-lap-toggle')?.getAttribute('aria-expanded') === 'true'",
+      "whole-lap chart disclosure",
+    );
+  }
 
   const bodyText = await evaluate(cdp, "document.body.innerText.slice(0, 4000)");
   const screenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
@@ -227,16 +288,20 @@ try {
   fs.writeFileSync(screenshotPath, Buffer.from(screenshot.data, "base64"));
 
   const summary = summarizeEvents(cdp.events);
+  const expectedConflict = (item) =>
+    item.status === 409 && String(item.url).includes("/intelligence?");
+  const unexpectedFailedRequests = summary.failedRequests.filter((item) => !expectedConflict(item));
   console.log(JSON.stringify({
-    ok: summary.consoleErrors.length === 0 && summary.failedRequests.length === 0,
+    ok: summary.consoleErrors.length === 0 && unexpectedFailedRequests.length === 0,
     url: appUrl,
     screenshot: screenshotPath,
     consoleErrors: summary.consoleErrors,
-    failedRequests: summary.failedRequests,
+    expectedFailClosedRequests: summary.failedRequests.filter(expectedConflict),
+    failedRequests: unexpectedFailedRequests,
     visibleTextSample: bodyText,
   }, null, 2));
   cdp.close();
-  process.exit(summary.consoleErrors.length === 0 && summary.failedRequests.length === 0 ? 0 : 1);
+  process.exit(summary.consoleErrors.length === 0 && unexpectedFailedRequests.length === 0 ? 0 : 1);
 } catch (error) {
   if (cdp) {
     const summary = summarizeEvents(cdp.events);

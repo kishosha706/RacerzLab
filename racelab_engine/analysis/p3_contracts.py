@@ -7,6 +7,7 @@ from racelab_engine.analysis.evidence_contracts import (
     AnalysisEvidenceContract,
     HardBlocker,
     OperatingCondition,
+    OutputDependencyContract,
 )
 from racelab_engine.models.evidence import EvidenceState
 
@@ -74,6 +75,16 @@ BRAKING_EFFICIENCY_CONTRACT = AnalysisEvidenceContract(
                 "lr_brake_line_pressure_bar", "rr_brake_line_pressure_bar",
                 "lf_speed", "rf_speed", "lr_speed", "rr_speed", "long_accel",
             }),
+            dependency_contract=OutputDependencyContract(
+                required_channels=frozenset({
+                    "session_time", "lap_dist_pct", "long_accel",
+                    "lf_brake_line_pressure_bar", "rf_brake_line_pressure_bar",
+                    "lr_brake_line_pressure_bar", "rr_brake_line_pressure_bar",
+                }),
+                minimum_pairwise_coverage=0.7,
+                minimum_coobserved_samples=3,
+                maximum_gap_s=0.25,
+            ),
         ),
         AllowedOutput(
             key="braking_cause_hypothesis",
@@ -126,6 +137,18 @@ TIRE_STATE_CONTRACT = AnalysisEvidenceContract(
                 "lr_temp_inner", "lr_temp_middle", "lr_temp_outer",
                 "rr_temp_inner", "rr_temp_middle", "rr_temp_outer",
             }),
+            dependency_contract=OutputDependencyContract(
+                required_channels=frozenset({
+                    "lap_dist_pct", "lf_pressure", "rf_pressure", "lr_pressure", "rr_pressure",
+                    "lf_temp_inner", "lf_temp_middle", "lf_temp_outer",
+                    "rf_temp_inner", "rf_temp_middle", "rf_temp_outer",
+                    "lr_temp_inner", "lr_temp_middle", "lr_temp_outer",
+                    "rr_temp_inner", "rr_temp_middle", "rr_temp_outer",
+                }),
+                minimum_pairwise_coverage=0.7,
+                minimum_coobserved_samples=3,
+                maximum_gap_s=0.25,
+            ),
         ),
         AllowedOutput(
             key="tire_energy_cause_hypothesis",

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import math
 from pathlib import Path
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
@@ -66,6 +68,86 @@ def _overview(run_id: str, timestamp: str) -> RunOverview:
             )
             for number in range(1, 6)
         ],
+    )
+
+
+def test_scoped_workflow_catalog_is_bounded_with_ten_thousand_unrelated_histories(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "catalog.sqlite"
+    repository = RaceLabRepository(db_path)
+    repository.initialize()
+    now = datetime.now(timezone.utc).isoformat()
+    columns = (
+        "workflow_id,created_at,updated_at,status,source_run_id,complaint,packet_json,"
+        "stage_run_ids_json,stage_eligible_lap_numbers_json,stage_experiment_contexts_json,"
+        "analysis_version,reproduction_snapshot_json"
+    )
+    valid_packet = _packet().model_dump_json()
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            f"INSERT INTO controlled_test_workflows ({columns}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "current-workflow", now, now, "planned", "current-run", "tight entry",
+                valid_packet, "{}", "{}", "{}", "controlled-workflow-aba2-v1", "{}",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO controlled_workflow_run_index(workflow_id,run_id,role) VALUES (?,?,?)",
+            ("current-workflow", "current-run", "source"),
+        )
+        unrelated = [
+            (
+                f"history-{index}", now, now, "scored", f"unrelated-{index}", "history",
+                "{corrupt", "{}", "{}", "{}", "controlled-workflow-aba2-v1", "{}",
+            )
+            for index in range(10_000)
+        ]
+        connection.executemany(
+            f"INSERT INTO controlled_test_workflows ({columns}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            unrelated,
+        )
+        connection.executemany(
+            "INSERT INTO controlled_workflow_run_index(workflow_id,run_id,role) VALUES (?,?,?)",
+            ((f"history-{index}", f"unrelated-{index}", "source") for index in range(10_000)),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    calls = 0
+    original = repository._controlled_workflow_from_row
+
+    def counted(row):
+        nonlocal calls
+        calls += 1
+        return original(row)
+
+    monkeypatch.setattr(repository, "_controlled_workflow_from_row", counted)
+    workflows, blockers = repository.list_controlled_workflow_catalog_for_run_scope(
+        ("current-run",)
+    )
+    assert [workflow.workflow_id for workflow in workflows] == ["current-workflow"]
+    assert blockers == ()
+    assert calls == 1
+
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            "UPDATE controlled_test_workflows SET packet_json = '{corrupt' WHERE workflow_id = ?",
+            ("current-workflow",),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    workflows, blockers = repository.list_controlled_workflow_catalog_for_run_scope(
+        ("current-run",)
+    )
+    assert workflows == []
+    assert blockers == (
+        "A controlled-workflow record in the requested session failed integrity validation.",
     )
 
 
@@ -351,6 +433,12 @@ def test_context_matching_allows_normal_progression_but_compares_stage_ordinals(
         return [{
             "player_tire_compound": "dry", "tire_sets_used": 1,
             "fuel_level": fuel, "air_temp": 25.0, "track_temp": 30.0, "wind_vel": 1.0,
+            "wind_dir": 0.0, "relative_humidity": 40.0, "precipitation": 0.0,
+            "track_wetness": 0.0, "skies": 1.0,
+            "lf_pressure": 180.0, "rf_pressure": 180.0,
+            "lr_pressure": 175.0, "rr_pressure": 175.0,
+            "lf_temp_middle": 90.0, "rf_temp_middle": 90.0,
+            "lr_temp_middle": 85.0, "rr_temp_middle": 85.0,
             "lf_tire_distance_m": tire_distance, "rf_tire_distance_m": tire_distance,
             "lr_tire_distance_m": tire_distance, "rr_tire_distance_m": tire_distance,
             "car_distance_ahead_m": 500000.0, "car_distance_behind_m": 500000.0,
@@ -378,6 +466,12 @@ def test_context_matching_blocks_nearby_or_unknown_proximity(
         return [{
             "player_tire_compound": "dry", "tire_sets_used": 1,
             "fuel_level": 50.0, "air_temp": 25.0, "track_temp": 30.0, "wind_vel": 1.0,
+            "wind_dir": 0.0, "relative_humidity": 40.0, "precipitation": 0.0,
+            "track_wetness": 0.0, "skies": 1.0,
+            "lf_pressure": 180.0, "rf_pressure": 180.0,
+            "lr_pressure": 175.0, "rr_pressure": 175.0,
+            "lf_temp_middle": 90.0, "rf_temp_middle": 90.0,
+            "lr_temp_middle": 85.0, "rr_temp_middle": 85.0,
             "lf_tire_distance_m": 1000.0, "rf_tire_distance_m": 1000.0,
             "lr_tire_distance_m": 1000.0, "rr_tire_distance_m": 1000.0,
             "speed_mps": 50.0,
@@ -387,6 +481,62 @@ def test_context_matching_blocks_nearby_or_unknown_proximity(
     far = {"car_distance_ahead_m": 500000.0, "car_distance_behind_m": 500000.0}
 
     assert service._context_score([lap(far), lap(b_context), lap(far)]) == 0.0
+
+
+def test_vehicle_condition_epoch_rejects_preexisting_and_transitioned_incidents() -> None:
+    clear = [
+        {
+            "player_incident_count": 0, "player_driver_incident_count": 0,
+            "player_team_incident_count": 0,
+        }
+        for _ in range(10)
+    ]
+    assert service._vehicle_condition_epoch(clear).status == "known_clear"
+
+    preexisting = [{**row, "player_incident_count": 1} for row in clear]
+    assert service._vehicle_condition_epoch(preexisting).status == "unknown"
+
+    transitioned = [dict(row) for row in clear]
+    transitioned[-1]["player_incident_count"] = 2
+    assert service._vehicle_condition_epoch(transitioned).status == "boundary_observed"
+
+
+def test_applied_brake_bias_mutation_and_missing_coverage_fail_closed() -> None:
+    stable = [{"applied_brake_bias": 54.0} for _ in range(100)]
+    assert service._applied_control_certificate(
+        stable, control_key="front_brake_bias_percent", expected_value=54.0,
+    ).status == "stable"
+
+    mutated = [dict(row) for row in stable]
+    mutated[50]["applied_brake_bias"] = 55.0
+    assert service._applied_control_certificate(
+        mutated, control_key="front_brake_bias_percent", expected_value=54.0,
+    ).status == "mutated"
+
+    missing = stable[:90] + [{} for _ in range(10)]
+    assert service._applied_control_certificate(
+        missing, control_key="front_brake_bias_percent", expected_value=54.0,
+    ).status == "missing"
+
+
+def test_context_score_rejects_tire_weather_and_wind_mismatch() -> None:
+    base = {
+        "player_tire_compound": "dry", "tire_sets_used": 1, "fuel_level": 50.0,
+        "air_temp": 25.0, "track_temp": 30.0, "wind_vel": 2.0, "wind_dir": 0.0,
+        "relative_humidity": 40.0, "precipitation": 0.0, "track_wetness": 0.0, "skies": 1.0,
+        "lf_tire_distance_m": 1000.0, "rf_tire_distance_m": 1000.0,
+        "lr_tire_distance_m": 1000.0, "rr_tire_distance_m": 1000.0,
+        "lf_pressure": 180.0, "rf_pressure": 180.0, "lr_pressure": 175.0, "rr_pressure": 175.0,
+        "lf_temp_middle": 90.0, "rf_temp_middle": 90.0,
+        "lr_temp_middle": 85.0, "rr_temp_middle": 85.0,
+        "car_distance_ahead_m": 500000.0, "car_distance_behind_m": 500000.0,
+        "speed_mps": 50.0,
+    }
+    clean = [[dict(base)] for _ in range(3)]
+    assert service._context_score(clean) == 1.0
+    for key, value in (("wind_dir", math.pi), ("track_wetness", 1.0), ("lf_pressure", 210.0)):
+        changed = [[dict(base)], [{**base, key: value}], [dict(base)]]
+        assert service._context_score(changed) == 0.0
 
 
 def test_every_dial_in_plan_preserves_structured_direction_without_parsing_prose() -> None:

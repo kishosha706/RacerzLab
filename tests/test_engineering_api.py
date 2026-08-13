@@ -1,14 +1,54 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 
 from api.routes_p3_engineering import _has_corner_damper_setting
 
 from api.main import app
+from api import routes_engineering
+from racelab_engine.models.controlled_workflow import ControlledWorkflow
+from test_controlled_workflow_service import _packet
 
 
 client = TestClient(app)
+
+
+def test_lightweight_workflow_catalog_never_builds_intelligence(monkeypatch) -> None:
+    workflow = ControlledWorkflow(
+        workflow_id="catalog-workflow",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        status="planned",
+        source_run_id="run-a",
+        complaint="tight entry",
+        packet=_packet(),
+    )
+
+    class Repository:
+        def list_controlled_workflow_catalog_for_run_scope(self, *_args, **_kwargs):
+            return [workflow], ()
+
+    monkeypatch.setattr(routes_engineering, "RaceLabRepository", Repository)
+    monkeypatch.setattr(
+        routes_engineering,
+        "get_session",
+        lambda *_args, **_kwargs: SimpleNamespace(run_ids=("run-a",)),
+    )
+    monkeypatch.setattr(
+        routes_engineering,
+        "build_run_intelligence",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("catalog reads must not build intelligence")
+        ),
+    )
+    first = routes_engineering.list_workflow_catalog("session-a", "run-a")
+    second = routes_engineering.list_workflow_catalog("session-a", "run-a")
+    assert first == second
+    assert first[0].workflow_id == "catalog-workflow"
 
 
 def test_damper_setup_provenance_requires_an_actual_corner_setting() -> None:

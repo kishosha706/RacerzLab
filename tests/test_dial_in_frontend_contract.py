@@ -50,8 +50,8 @@ def test_dial_in_tab_sends_explicit_decision_context_to_both_server_paths() -> N
 def test_dial_in_resumes_only_current_run_or_explicit_session_workflows() -> None:
     dial_in_tab = (PROJECT_ROOT / "ui/src/tabs/DialInTab.tsx").read_text(encoding="utf-8")
     resume_effect = dial_in_tab[
-        dial_in_tab.index("void fetchControlledWorkflows(false).then"):
-        dial_in_tab.index("}).catch", dial_in_tab.index("void fetchControlledWorkflows(false).then"))
+        dial_in_tab.index("void fetchControlledWorkflows(sessionId, overview.run_id, false).then"):
+        dial_in_tab.index("}).catch", dial_in_tab.index("void fetchControlledWorkflows(sessionId, overview.run_id, false).then"))
     ]
 
     assert "touchesRun(item, currentRun)" in resume_effect

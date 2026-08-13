@@ -1,6 +1,6 @@
 import { AlertTriangle, BarChart3, MapPin, ShoppingCart } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchCompareInsights } from "../api/client";
+import { fetchCompareInsights, fetchComparePreview, runCompare } from "../api/client";
 import { ComparisonInsightPanel } from "../components/ComparisonInsightPanel";
 import { DeltaTracesView } from "../components/DeltaTracesView";
 import { DidItWorkCard } from "../components/DidItWorkCard";
@@ -15,11 +15,6 @@ import type {
   PowertrainComparison, ShockComparison, SetupChange, TireComparison,
   WholeCarIndex,
 } from "../types/compare";
-
-const API_BASE =
-  import.meta.env.VITE_RACELAB_API_BASE_URL ??
-  import.meta.env.VITE_API_BASE_URL ??
-  "http://127.0.0.1:8010";
 
 type CompareTabProps = { runs: RunListItem[]; currentRunId: string; sessionId?: string | null };
 type SubView =
@@ -57,22 +52,6 @@ type PreviewData = {
   setup_changes: SetupChange[]; context_changes: Array<{ key: string; label: string; warning: string | null; is_problem: boolean }>;
   warnings: string[];
 };
-
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { headers: { "Content-Type": "application/json" }, ...init });
-  if (!res.ok) {
-    const raw = await res.text();
-    let message = raw;
-    try {
-      const parsed = JSON.parse(raw) as { detail?: unknown };
-      if (typeof parsed.detail === "string" && parsed.detail.trim()) message = parsed.detail.trim();
-    } catch {
-      // Keep a plain-text backend recovery message intact.
-    }
-    throw new Error(message || `Request failed (${res.status})`);
-  }
-  return res.json();
-}
 
 // ── utilities ───────────────────────────────────────────────
 
@@ -748,6 +727,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
   const [activeZoneLabel, setActiveZoneLabel] = useState<string | null>(null);
   const lastSyncedZoneKeyRef = useRef<string | null>(null);
   const comparisonRequestSequenceRef = useRef(0);
+  const comparisonAbortRef = useRef<AbortController | null>(null);
   const insightsRequestSequenceRef = useRef(0);
   const basketBaselineLap = basket.baseline?.representative_lap ?? basket.baseline?.lap_number ?? null;
   const basketTestLap = basket.test?.representative_lap ?? basket.test?.lap_number ?? null;
@@ -806,6 +786,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
   }
 
   useEffect(() => {
+    comparisonAbortRef.current?.abort();
     comparisonRequestSequenceRef.current += 1;
     insightsRequestSequenceRef.current += 1;
     setResult(null);
@@ -819,12 +800,12 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
 
   useEffect(() => {
     if (!testRunId || testRunId === baselineRunId) return;
-    let cancelled = false;
+    const controller = new AbortController();
     setPreviewLoading(true);
-    req<PreviewData>(`/api/compare/preview?baseline_run_id=${encodeURIComponent(baselineRunId)}&test_run_id=${encodeURIComponent(testRunId)}`)
-      .then(p => { if (!cancelled) { setPreview(p); setPreviewLoading(false); } })
-      .catch(() => { if (!cancelled) { setPreview(null); setPreviewLoading(false); } });
-    return () => { cancelled = true; };
+    fetchComparePreview(baselineRunId, testRunId, controller.signal)
+      .then(p => { if (!controller.signal.aborted) { setPreview(p); setPreviewLoading(false); } })
+      .catch(() => { if (!controller.signal.aborted) { setPreview(null); setPreviewLoading(false); } });
+    return () => { controller.abort(); };
   }, [baselineRunId, testRunId]);
 
   useEffect(() => {
@@ -868,15 +849,15 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
       target_zone_end_pct: endPct,
     };
     const sequence = ++comparisonRequestSequenceRef.current;
+    comparisonAbortRef.current?.abort();
+    const controller = new AbortController();
+    comparisonAbortRef.current = controller;
     setLoading(true);
     setError(null);
     setResult(null);
     setInsights(null);
     try {
-      const res = await req<CompareResponse>("/api/compare", {
-        method: "POST",
-        body: JSON.stringify(request),
-      });
+      const res = await runCompare(request, controller.signal);
       if (sequence !== comparisonRequestSequenceRef.current) return;
       const responseMatchesRequest = res.baseline_run_id === request.baseline_run_id
         && res.test_run_id === request.test_run_id

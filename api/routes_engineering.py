@@ -126,6 +126,17 @@ class ActiveResetLabRequest(BaseModel):
     target_end_pct: float = Field(gt=0.0, le=100.0)
 
 
+class ControlledWorkflowCatalogItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workflow_id: str = Field(min_length=1)
+    status: str = Field(min_length=1)
+    source_run_id: str = Field(min_length=1)
+    stage_run_ids: dict[str, str]
+    updated_at: datetime
+    revision_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 def _card_action_identity(workflow: ControlledWorkflow) -> dict[str, object]:
     return workflow_authority_action_identity(workflow)
 
@@ -363,11 +374,64 @@ def start_workflow(request: WorkflowStartRequest) -> ControlledWorkflow:
 
 
 @router.get("/workflows", response_model=list[ControlledWorkflow])
-def list_workflows(active_only: bool = True) -> list[ControlledWorkflow]:
+def list_workflows(
+    session_id: str,
+    run_id: str,
+    active_only: bool = False,
+) -> list[ControlledWorkflow]:
     repository = RaceLabRepository()
+    session = get_session(session_id)
+    if session is None or run_id not in session.run_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="Controlled-workflow catalog requires exact current session/run membership.",
+        )
+    workflows, blockers = repository.list_controlled_workflow_catalog_for_run_scope(
+        tuple(session.run_ids)
+    )
+    if blockers:
+        raise HTTPException(status_code=409, detail=" ".join(blockers))
+    if active_only:
+        workflows = [
+            workflow for workflow in workflows
+            if workflow.status not in {"scored", "cancelled"}
+        ]
     return [
         _project_p19_bound_workflow(workflow, repository=repository)
-        for workflow in repository.list_controlled_workflows(active_only=active_only)
+        for workflow in workflows
+    ]
+
+
+@router.get("/workflows/catalog", response_model=list[ControlledWorkflowCatalogItem])
+def list_workflow_catalog(
+    session_id: str,
+    run_id: str,
+) -> list[ControlledWorkflowCatalogItem]:
+    """Return bounded identity metadata without rebuilding P19 intelligence."""
+
+    repository = RaceLabRepository()
+    session = get_session(session_id)
+    if session is None or run_id not in session.run_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="Controlled-workflow catalog requires exact current session/run membership.",
+        )
+    workflows, blockers = repository.list_controlled_workflow_catalog_for_run_scope(
+        tuple(session.run_ids),
+        scored_run_ids=(run_id,),
+    )
+    if blockers:
+        raise HTTPException(status_code=409, detail=" ".join(blockers))
+    return [
+        ControlledWorkflowCatalogItem(
+            workflow_id=workflow.workflow_id,
+            status=workflow.status,
+            source_run_id=workflow.source_run_id,
+            stage_run_ids=workflow.stage_run_ids,
+            updated_at=workflow.updated_at,
+            revision_sha256=canonical_json_sha256(workflow),
+        )
+        for workflow in workflows
     ]
 
 

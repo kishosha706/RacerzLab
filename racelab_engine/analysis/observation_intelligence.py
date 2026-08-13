@@ -29,6 +29,7 @@ from racelab_engine.models.observation_intelligence import (
     MechanismObservationReport,
     ObservationCitation,
     ObservationStatus,
+    PhysicalSegment,
     ProducerArtifactScope,
     OpportunitySignature,
     OpportunitySignatureReport,
@@ -701,6 +702,7 @@ def adapt_p3_report_observations(
     telemetry_sample_count: int,
     repetition_count: int | None = None,
     mechanism_override: MechanismKind | None = None,
+    physical_segments: tuple[PhysicalSegment, ...] | None = None,
 ) -> MechanismObservationReport:
     """Project a strict P3 conclusion contract into observation-only evidence."""
     gate = getattr(report, "gate", None)
@@ -794,6 +796,7 @@ def adapt_p3_report_observations(
             evidence_state=conclusion.evidence_state,
             source_channels=_ordered_unique(conclusion.source_channels),
             telemetry_sample_count=telemetry_sample_count,
+            physical_segments=physical_segments or (),
         )
         observations.append(
             MechanismObservation(

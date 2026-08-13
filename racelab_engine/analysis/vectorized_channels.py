@@ -51,6 +51,7 @@ from racelab_engine.analysis.ride_height_calibration import (
     NEXT_GEN_CAR_PATHS,
     normalize_car_path,
 )
+from racelab_engine.analysis.tire_semantics import TIRE_CORNERS, semantic_source
 from racelab_engine.analysis.units import (
     EARTH_RADIUS_M,
     M_TO_FT,
@@ -576,6 +577,7 @@ def calculate_core_channels_frame(
     _stage("compute_compression_index", _compute_compression_index)
     _stage("compute_shock_rolling_aggregates", _compute_shock_rolling_aggregates)
     _stage("compute_tire_derived", _compute_tire_derived)
+    _stage("compute_camber_bias", _compute_camber_bias)
     _stage("compute_scrub_proxies", _compute_scrub_proxies)
     _stage("compute_dynamic_pressure_lap_index", _compute_dynamic_pressure_lap_index)
     _stage("compute_dynamic_grade", _compute_dynamic_grade)
@@ -802,24 +804,24 @@ _TIRE_ALIAS_MAP: dict[str, str] = {
     "LRpressure": "lr_pressure", "RRpressure": "rr_pressure",
     "LFcoldPressure": "lf_cold_pressure", "RFcoldPressure": "rf_cold_pressure",
     "LRcoldPressure": "lr_cold_pressure", "RRcoldPressure": "rr_cold_pressure",
-    "LFtempL": "lf_temp_inner", "RFtempL": "rf_temp_inner",
-    "LRtempL": "lr_temp_inner", "RRtempL": "rr_temp_inner",
+    "LFtempL": "lf_temp_left", "RFtempL": "rf_temp_left",
+    "LRtempL": "lr_temp_left", "RRtempL": "rr_temp_left",
     "LFtempM": "lf_temp_middle", "RFtempM": "rf_temp_middle",
     "LRtempM": "lr_temp_middle", "RRtempM": "rr_temp_middle",
-    "LFtempR": "lf_temp_outer", "RFtempR": "rf_temp_outer",
-    "LRtempR": "lr_temp_outer", "RRtempR": "rr_temp_outer",
+    "LFtempR": "lf_temp_right", "RFtempR": "rf_temp_right",
+    "LRtempR": "lr_temp_right", "RRtempR": "rr_temp_right",
     "LFtempCL": "lf_carcass_temp_l", "RFtempCL": "rf_carcass_temp_l",
     "LRtempCL": "lr_carcass_temp_l", "RRtempCL": "rr_carcass_temp_l",
     "LFtempCM": "lf_carcass_temp_m", "RFtempCM": "rf_carcass_temp_m",
     "LRtempCM": "lr_carcass_temp_m", "RRtempCM": "rr_carcass_temp_m",
     "LFtempCR": "lf_carcass_temp_r", "RFtempCR": "rf_carcass_temp_r",
     "LRtempCR": "lr_carcass_temp_r", "RRtempCR": "rr_carcass_temp_r",
-    "LFwearL": "lf_wear_inner", "RFwearL": "rf_wear_inner",
-    "LRwearL": "lr_wear_inner", "RRwearL": "rr_wear_inner",
+    "LFwearL": "lf_wear_left", "RFwearL": "rf_wear_left",
+    "LRwearL": "lr_wear_left", "RRwearL": "rr_wear_left",
     "LFwearM": "lf_wear_middle", "RFwearM": "rf_wear_middle",
     "LRwearM": "lr_wear_middle", "RRwearM": "rr_wear_middle",
-    "LFwearR": "lf_wear_outer", "RFwearR": "rf_wear_outer",
-    "LRwearR": "lr_wear_outer", "RRwearR": "rr_wear_outer",
+    "LFwearR": "lf_wear_right", "RFwearR": "rf_wear_right",
+    "LRwearR": "lr_wear_right", "RRwearR": "rr_wear_right",
     "LFspeed": "lf_speed", "RFspeed": "rf_speed",
     "LRspeed": "lr_speed", "RRspeed": "rr_speed",
 }
@@ -837,7 +839,15 @@ def _apply_aliases(df: pl.DataFrame) -> pl.DataFrame:
         if raw in df.columns and norm not in df.columns
     }:
         df = df.rename(renames)
-    return df
+    semantic_exprs: list[pl.Expr] = []
+    for corner in TIRE_CORNERS:
+        for family in ("temp", "wear"):
+            for position in ("inner", "outer"):
+                source = f"{corner}_{family}_{semantic_source(corner, position)}"
+                target = f"{corner}_{family}_{position}"
+                if source in df.columns and target not in df.columns:
+                    semantic_exprs.append(pl.col(source).alias(target))
+    return df.with_columns(semantic_exprs) if semantic_exprs else df
 
 
 def _convert_distances(df: pl.DataFrame) -> pl.DataFrame:
@@ -1632,6 +1642,27 @@ def _compute_tire_derived(df: pl.DataFrame) -> pl.DataFrame:
     return df
 
 
+def _compute_camber_bias(df: pl.DataFrame) -> pl.DataFrame:
+    """Vectorized physical inboard-minus-outboard carcass temperature proxy."""
+    for corner in TIRE_CORNERS:
+        inner = f"{corner}_carcass_temp_{semantic_source(corner, 'inner')[0]}"
+        outer = f"{corner}_carcass_temp_{semantic_source(corner, 'outer')[0]}"
+        if inner not in df.columns or outer not in df.columns:
+            continue
+        bias = pl.col(inner) - pl.col(outer)
+        label = (
+            pl.when(bias.abs() < 15.0).then(pl.lit("even"))
+            .when(bias > 0).then(pl.lit("high_inside"))
+            .otherwise(pl.lit("high_outside"))
+        )
+        complete = pl.col(inner).is_not_null() & pl.col(outer).is_not_null()
+        df = df.with_columns(
+            pl.when(complete).then(bias).otherwise(None).alias(f"{corner}_camber_temp_bias_c"),
+            pl.when(complete).then(label).otherwise(None).alias(f"{corner}_camber_bias_label"),
+        )
+    return df
+
+
 # ── Final sweep: scrub proxies ───────────────────────────────────
 
 def _compute_scrub_proxies(df: pl.DataFrame) -> pl.DataFrame:
@@ -1650,10 +1681,11 @@ def _compute_scrub_proxies(df: pl.DataFrame) -> pl.DataFrame:
         radius = pl.col("radius_m")
         yaw_theoretical = speed / radius
         yaw_error = (yaw_theoretical - yaw_rate).clip(lower_bound=0.0)
-        yaw_error = pl.when((radius > 0) & (speed > 1.0)).then(yaw_error).otherwise(0.0)
+        complete = radius.is_not_null() & speed.is_not_null() & yaw_rate.is_not_null()
+        yaw_error = pl.when(complete & (radius > 0) & (speed > 1.0)).then(yaw_error).otherwise(None)
         df = df.with_columns(yaw_error.alias("yaw_error_proxy"))
     else:
-        df = df.with_columns(pl.lit(0.0, dtype=pl.Float64).alias("yaw_error_proxy"))
+        df = df.with_columns(pl.lit(None, dtype=pl.Float64).alias("yaw_error_proxy"))
 
     # front_scrub_proxy
     has_front_scrub = {"lf_slip_ratio", "rf_slip_ratio",
@@ -1663,13 +1695,14 @@ def _compute_scrub_proxies(df: pl.DataFrame) -> pl.DataFrame:
         lf_slip = pl.col("lf_slip_ratio")
         rf_slip = pl.col("rf_slip_ratio")
         slip_delta = (rf_slip - lf_slip).abs()
-        steering = pl.col("abs_steering_deg").fill_null(0.0)
-        lat_accel = pl.col("abs_lat_accel").fill_null(0.0)
+        steering = pl.col("abs_steering_deg")
+        lat_accel = pl.col("abs_lat_accel")
         steering_lat = (steering / 90.0) * lat_accel
-        yaw_error = pl.col("yaw_error_proxy").fill_null(0.0)
+        yaw_error = pl.col("yaw_error_proxy")
         yaw_component = (yaw_error / 0.15).clip(0.0, 1.0)
         scrub = slip_delta * 0.30 + steering_lat * 0.25 + yaw_component * 0.45
-        scrub = pl.when(lf_slip.is_not_null() & rf_slip.is_not_null()).then(scrub).otherwise(None)
+        complete = lf_slip.is_not_null() & rf_slip.is_not_null() & steering.is_not_null() & lat_accel.is_not_null() & yaw_error.is_not_null()
+        scrub = pl.when(complete).then(scrub).otherwise(None)
         df = df.with_columns(scrub.alias("front_scrub_proxy"))
 
     # rear_scrub_proxy

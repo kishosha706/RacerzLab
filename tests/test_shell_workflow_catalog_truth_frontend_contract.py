@@ -41,7 +41,9 @@ def test_shell_workflow_catalog_transitions_fail_closed_and_ignore_stale_results
     ready = 'setControlledWorkflowCatalogState({ requestKey: requestedWorkflowKey, status: "ready", error: null })'
     assert checking in effect
     assert ready in effect
-    assert effect.index(checking) < effect.index("fetchControlledWorkflows(false, {") < effect.index(ready)
+    assert effect.index(checking) < effect.index("fetchControlledWorkflowCatalog(") < effect.index(ready)
+    assert "fetchControlledWorkflow(item.workflow_id)" in effect
+    assert "detailsByRevision" in effect
 
     ready_prefix = effect[: effect.index(ready)]
     for stale_guard in (
@@ -83,4 +85,3 @@ def test_dial_in_shell_broadcast_never_infers_availability_during_catalog_check_
     ribbon = app.split("<RunContextBar", 1)[1].split("{currentIntelligenceShellMove", 1)[0]
     assert 'currentControlledWorkflow?.packet.decision === "test"' in ribbon
     assert "activeControlledWorkflow?.packet.decision" not in ribbon
-

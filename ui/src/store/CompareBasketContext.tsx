@@ -56,14 +56,55 @@ type BasketAction =
   | { type: "VALIDATE_AVAILABLE_RUNS"; runIds: string[]; scopeLabel: string };
 
 const STORAGE_KEY = "racelab_compare_basket";
+const BASKET_SCHEMA_VERSION = "p31.compare-basket.v1";
+
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isFinite(value));
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isBasketItem(value: unknown): value is BasketItem {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.id === "string" && item.id.length > 0
+    && typeof item.run_id === "string" && item.run_id.length > 0
+    && isNullableNumber(item.lap_number)
+    && typeof item.label === "string" && item.label.length > 0
+    && isNullableString(item.car) && isNullableString(item.track)
+    && isNullableString(item.setup_label) && isNullableNumber(item.lap_time)
+    && Array.isArray(item.classification_tags)
+    && item.classification_tags.every((tag) => typeof tag === "string")
+    && isNullableNumber(item.engineering_value)
+    && isNullableString(item.date) && isNullableString(item.session_name)
+    && typeof item.has_setup_snapshot === "boolean"
+    && (item.lap_scope == null || ["single_lap", "lap_window", "run", "track_zone", "unknown"].includes(String(item.lap_scope)))
+    && (item.lap_window_start == null || isNullableNumber(item.lap_window_start))
+    && (item.lap_window_end == null || isNullableNumber(item.lap_window_end))
+    && (item.representative_lap == null || isNullableNumber(item.representative_lap));
+}
+
+export function parsePersistedCompareBasket(value: unknown): CompareBasketState | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const envelope = value as Record<string, unknown>;
+  if (envelope.schema_version !== BASKET_SCHEMA_VERSION
+    || typeof envelope.basket !== "object" || envelope.basket === null || Array.isArray(envelope.basket)) return null;
+  const state = envelope.basket as Record<string, unknown>;
+  if (!(state.baseline === null || isBasketItem(state.baseline))
+    || !(state.test === null || isBasketItem(state.test))
+    || !Array.isArray(state.queue) || !state.queue.every(isBasketItem)) return null;
+  return { baseline: state.baseline, test: state.test, queue: state.queue };
+}
 
 function loadPersistedState(): CompareBasketState {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      const parsed = JSON.parse(saved) as CompareBasketState;
+      const parsed = parsePersistedCompareBasket(JSON.parse(saved));
       // Validate shape — if malformed, return empty
-      if (parsed && typeof parsed === "object" && "baseline" in parsed && "test" in parsed) {
+      if (parsed) {
         return parsed;
       }
     }
@@ -159,7 +200,7 @@ export function CompareBasketProvider({ children }: { children: ReactNode }) {
   // Persist to localStorage on every change
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(basket));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ schema_version: BASKET_SCHEMA_VERSION, basket }));
     } catch { /* ignore quota errors */ }
   }, [basket]);
 
@@ -256,5 +297,3 @@ export function useCompareBasket() {
   if (!ctx) throw new Error("useCompareBasket must be used within CompareBasketProvider");
   return ctx;
 }
-
-

@@ -4,12 +4,7 @@
  * - ``"race"``      — Short, direct, decision-first. Minimal explanation.
  * - ``"learning"``  — Verbose, coaching style. Explains *why*.
  */
-export type SelectionMode =
-  | "race"
-  | "compare"
-  | "build_test"
-  | "long_run"
-  | "learning";
+export type SelectionMode = "race" | "learning";
 
 export type Workspace =
   | "overview"
@@ -71,6 +66,8 @@ export interface EvidenceContext {
   /** For lap_window scope: representative lap used to anchor lap-level tabs. */
   representativeLap?: number | null;
   eventId: string | null;
+  producerId?: string | null;
+  artifactId?: string | null;
   sampleIndex: number | null;
   lapDistFt: number | null;
   lapPct: number | null;
@@ -84,6 +81,8 @@ export interface EvidenceContext {
   lockState: LockState;
   trustTier: string | null;
   compareRole: CompareRole;
+  sourceRunId?: string | null;
+  sourceSetupId?: string | null;
   valueBasis: ValueBasis;
 }
 
@@ -102,7 +101,6 @@ export type TelemetrySelection = {
   selectedRepresentativeLap?: number | null;
   selectedSampleIndex?: number | null;
   selectedLapDistFt?: number | null;
-  selectedLapDistM?: number | null;
   selectedLapPct?: number | null;
   /** What data basis the current selection reflects. */
   selectedValueBasis?: ValueBasis;
@@ -112,6 +110,12 @@ export type TelemetrySelection = {
   selectedTrustTier?: string | null;
 
   selectedEventId?: string | null;
+  selectedProducerId?: string | null;
+  selectedArtifactId?: string | null;
+  selectedSystem?: string | null;
+  selectedCompareRole?: CompareRole;
+  selectedSourceRunId?: string | null;
+  selectedSourceSetupId?: string | null;
   selectedChannel?: string | null;
   selectedSetupKey?: string | null;
   selectedZoneId?: string | null;

@@ -66,6 +66,7 @@ def _workflow() -> ControlledWorkflow:
         source_run_id="source-run",
         complaint="Won't rotate on entry",
         packet=packet,
+        analysis_version="controlled-workflow-aba2-v2",
         stage_run_ids={"A": "run-a", "B": "run-b", "A2": "run-a2"},
         stage_eligible_lap_numbers={"A": (2, 3, 4), "B": (2, 3, 4), "A2": (2, 3, 4)},
         execution=Execution(

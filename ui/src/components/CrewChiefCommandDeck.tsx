@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { BrainCircuit, CheckCircle2, CircleHelp, Play, ShieldCheck } from "lucide-react";
+import { BrainCircuit, CheckCircle2, CircleHelp, Play, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
 
 import {
   answerCrewChiefQuestion,
+  abandonCrewChiefInvestigation,
   continueCrewChiefInvestigation,
   fetchCrewChiefWorkspace,
   openCrewChiefInvestigation,
+  rebaseCrewChiefInvestigation,
+  updateCrewChiefObjective,
 } from "../api/client";
 import type { CrewChiefEvidenceEntry, CrewChiefWorkspace, EngineeringObjective } from "../types/crewChief";
 import type { RunIntelligenceReport } from "../types/intelligence";
@@ -80,6 +83,11 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
   const decision = workspace.terminal_decision;
   const investigationId = workspace.identity.investigation_id;
   const revision = workspace.identity.workspace_revision;
+  const status = workspace.folded_state?.status;
+  const targetScope = workspace.success_contract?.target_scope
+    ?? workspace.p19_mission_contract?.purpose
+    ?? workspace.run_sentinel.need;
+  const canStartFollowUp = status === "complete" || status === "abandoned";
   return (
     <section
       className="crew-chief-deck"
@@ -98,7 +106,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
 
       <div className="crew-chief-race-brief" aria-label="Race-mode command brief">
         <p><b>WHAT</b> {decision.instruction}</p>
-        <p><b>WHERE</b> {workspace.success_contract.target_scope}</p>
+        <p><b>WHERE</b> {targetScope}</p>
         <p><b>WHY IT MATTERS</b> {workspace.current_subgoal?.why_this_tool ?? workspace.post_run_brief[0]}</p>
         <p><b>KNOW</b> {workspace.evidence_index.entries.length} exact artifacts · {workspace.run_sentinel.accepted_laps} accepted laps</p>
         <p><b>UNCERTAIN</b> {workspace.critique.strongest_contradiction ?? workspace.blocker_reasons[0] ?? "No stronger contradiction is attached."}</p>
@@ -113,7 +121,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
         </div>
       )}
 
-      {!workspace.investigation ? (
+      {(!workspace.investigation || canStartFollowUp) ? (
         <div className="crew-chief-open">
           <label>Engineering objective
             <select value={objective} onChange={(event) => setObjective(event.target.value as EngineeringObjective)}>
@@ -131,7 +139,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
               expected_workspace_revision: revision,
               objective,
             })); }}
-          ><Play size={14} /> Open investigation</button>
+          ><Play size={14} /> {canStartFollowUp ? "Start follow-up investigation" : "Open investigation"}</button>
         </div>
       ) : workspace.pending_driver_question ? (
         <div className="crew-chief-question">
@@ -149,20 +157,50 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
           ))}</div>
         </div>
       ) : workspace.folded_state?.status === "open" ? (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => { void runMutation(() => continueCrewChiefInvestigation(
-            runId, sessionId, investigationId!, revision, report, scopeRunIds,
-          )); }}
-        ><Play size={14} /> {workspace.current_subgoal ? "Run next inspection" : "Emit bounded decision"}</button>
+        <div className="crew-chief-lifecycle">
+          <label>Investigation objective
+            <select
+              value={workspace.folded_state.objective}
+              disabled={busy}
+              onChange={(event) => { const next = event.target.value as EngineeringObjective; setObjective(next); void runMutation(() => updateCrewChiefObjective(
+                runId, sessionId, investigationId!, revision, next, report, scopeRunIds,
+              )); }}
+            >{objectives.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
+          </label>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => { void runMutation(() => continueCrewChiefInvestigation(
+              runId, sessionId, investigationId!, revision, report, scopeRunIds,
+            )); }}
+          ><Play size={14} /> {workspace.current_subgoal ? "Run next inspection" : "Emit bounded decision"}</button>
+          <button type="button" disabled={busy} onClick={() => { void runMutation(() => abandonCrewChiefInvestigation(
+            runId, sessionId, investigationId!, revision, "Abandoned explicitly by driver.", report, scopeRunIds,
+          )); }}><XCircle size={14} /> Abandon</button>
+        </div>
       ) : null}
+
+      {status === "stale" && investigationId && (
+        <button type="button" disabled={busy} onClick={() => { void runMutation(() => rebaseCrewChiefInvestigation(
+          runId, sessionId, investigationId, workspace.folded_state!.accepted_workspace_revision, report, scopeRunIds,
+        )); }}><RefreshCw size={14} /> Rebase explicitly to current P19/P20/P26 state</button>
+      )}
+      {error && workspace && (
+        <button type="button" disabled={busy} onClick={() => { void runMutation(() => fetchCrewChiefWorkspace(
+          runId, sessionId, report, { objective, scopeRunIds, investigationId },
+        )); }}><RefreshCw size={14} /> Retry current investigation</button>
+      )}
 
       {learning && (
         <div className="crew-chief-learning">
           <section><h3>Mission ribbon</h3><p>{workspace.run_sentinel.mission}</p><small>Stage {workspace.run_sentinel.stage} · {workspace.run_sentinel.accepted_laps}/{workspace.run_sentinel.required_laps} accepted</small></section>
           <section><h3>Critic</h3><p>{workspace.critique.passed ? "Authority and identity checks passed." : workspace.critique.findings.join(" ")}</p></section>
-          <section><h3>Success contract</h3><p>{workspace.success_contract.acceptance_rule}</p><small>{workspace.success_contract.independence_unit}</small></section>
+          <section><h3>P19 collection contract</h3>{workspace.p19_mission_contract
+            ? <><p>{workspace.p19_mission_contract.acceptance_thresholds.join("; ")}</p><small>{workspace.p19_mission_contract.contract_id}</small></>
+            : workspace.success_contract
+              ? <><p>{workspace.success_contract.acceptance_rule}</p><small>{workspace.success_contract.independence_unit}</small></>
+              : <p>{workspace.run_sentinel.blocker_reasons.join(" ") || "P19 published no collection contract."}</p>}
+          </section>
           <section><h3>Run sentinel</h3><p>{workspace.run_sentinel.need}</p><ul>{workspace.run_sentinel.laps.slice(-6).map((lap) => <li key={lap.lap_number}><CheckCircle2 size={12} /> Lap {lap.lap_number}: {lap.status}{lap.reasons.length ? ` — ${lap.reasons.join(", ")}` : ""}</li>)}</ul></section>
           <section><h3>Evidence index</h3><ul>{workspace.evidence_index.entries.slice(0, 8).map((item) => <li key={item.artifact_id}><button type="button" onClick={() => onFocusEvidence(item)}><b>{item.producer_id}</b> {item.artifact_id} · {item.mechanism_ids.join(", ") || "unclassified"}</button></li>)}</ul></section>
           <section><h3>Response atlas</h3><p>{workspace.response_history_ids.length} exact-context controlled response records attached.</p></section>

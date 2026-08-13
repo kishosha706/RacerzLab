@@ -63,6 +63,7 @@ result, and remember only what the evidence supports.
 | P28 - Trackside Mission Control | Verified deterministic production foundation | A hard Success Contract and junk/context-aware Run Sentinel govern mission progress without creating policy authority |
 | P29 - Component Response Atlas and Driver Intelligence | Verified guarded production foundation | Exact-context controlled history and complaint/context-only driver memory persist separately with operational effectiveness counts |
 | P30 - Adaptive Experimentation Research | Infrastructure seam verified; activation DATA-LOCKED | Production remains one-factor P19 A/B/A2 until P21/P22 held-out and prospective activation gates truly pass |
+| P31 - Truthful Crew Loop | Implemented; release validation recorded below | Telemetry, experiment, evidence, Crew, Compare, P26, caching, and UI trust share exact identity while every authority lock remains intact |
 
 ---
 
@@ -1868,6 +1869,95 @@ that graph; it does not create another setup-authority path.
 - [ ] Grant no advanced method setup authority; current production remains one
   P19-authorized factor under exact-context A/B/A2.
 
+## P31 - Truthful Crew Loop
+
+- [x] Normalize simulator-integrity ratios with raw/provenance retention and a
+  narrow unity-jitter contract; ambiguous ratio/percentage values fail closed.
+- [x] Make missing scrub dependencies unavailable rather than zero, correct
+  physical tire handedness/axles in row and vector engines, and add output-level
+  co-observation contracts for braking and tire conclusions.
+- [x] Treat authoritative ABS state separately from data-locked cut fields and
+  tier wheel-lock evidence so an uncorrected wheel-speed proxy cannot prove a corner.
+- [x] Bind new P19 workflows to immutable vehicle-condition and applied-control
+  certificates plus tire, fuel, weather, wind, wetness, traffic, and execution context;
+  legacy v1 records remain readable but cannot acquire v2 truth retroactively.
+- [x] Represent evidence as explicit physical segment sets, preserve disjoint
+  islands through revalidation, and cluster P20 mechanisms by meaningful overlap
+  without multiplying causal independence.
+- [x] Make `focusEvidence` a replace transaction with producer/artifact/system,
+  Compare role, and source-run/setup identity; remove dead distance state and the
+  empty Field Compare surface.
+- [x] Bind Compare requests, responses, and persisted baskets to versioned source,
+  cache, build, setup, lap, and physical-zone identity through shared cancellation,
+  timeout, and runtime validation.
+- [x] Make Crew mission states exact P19 projections, expose retry/rebase/abandon/
+  objective/follow-up lifecycle actions, remove GET-time response/history writes,
+  and select distinct evidence for each deterministic investigation tool.
+- [x] Replace broad P26 live observability with quantity-specific certificates
+  that separate screenable channel presence from qualified producer observation.
+- [x] Give every Compare engine an explicit finding/evaluated-clear/unavailable
+  state and unit-specific sustained-event thresholds; remove ungrounded public
+  pseudo-confidence from the combined observation.
+- [x] Add one semantic single-flight intelligence snapshot and indexed workflow
+  scope, plus a lightweight visibility-aware catalog. Unchanged checks build no
+  intelligence and unrelated corrupt history is never parsed.
+- [x] Add strict nested P20/P26/Crew client decoders and behavioral React state
+  tests while preserving the single Race-mode WHAT/WHERE/WHY/UNCERTAIN/NEXT surface.
+- [x] Add measurement-only Crew effectiveness facts, source-owned shift-light RPM
+  thresholds, raw candidate-channel contracts, and lap/session-based calibration
+  stability evaluation. These facts do not unlock adaptive confidence or authority.
+- [x] Keep P19 sole setup/Keep/Undo/retest authority, P20 observational, P26
+  relevance/observability only, P30 disabled, and unavailable exact physics locked.
+
+### P31 cache, persistence, and truth migrations
+
+- Telemetry manifest schema is v5; protected `.ibt` files must be re-imported.
+- New controlled workflows use `controlled-workflow-aba2-v2` stage condition and
+  control identity. Historic v1 hashes remain verifiable without invented context.
+- SQLite adds `stage_experiment_contexts_json` and the indexed
+  `controlled_workflow_run_index`; additive migration backfills existing bindings.
+- Shared intelligence snapshot identity hashes the exact relevant repository
+  rows plus source, cache, schema, compatibility, run/session, setup, workflow,
+  event, and candidate truth. Operational database writes do not churn it.
+
+### P31 adversarial improvement ledger
+
+- Real segmented Atlanta revalidation found stale child-segment sample counts;
+  revalidation now recomputes segment membership and counts from co-observed rows.
+- Schema migration initially invalidated synthetic v4 manifests and legacy scored
+  workflow hashes; fixtures now consume the current manifest constant and explicit
+  workflow-version compatibility prevents historical relabeling.
+- Catalog optimization initially covered polling only; all cold intelligence,
+  exclusivity, and creation paths now use the same normalized run index.
+- Ten-thousand-history, concurrent single-flight, malformed relevant/unrelated
+  workflow, transactional evidence focus, and strict nested-response regressions
+  guard the new boundaries.
+- Cold-path profiling exposed a second telemetry materialization and full-width
+  per-lap integrity scans. The canonical observation read now supplies lap context
+  and integrity scans only declared channel families. Warm Atlanta construction is
+  below 10 ms; remaining cold work is truth-preserving P3/context aggregation debt.
+- The packaged browser smoke had drifted behind the launch gate, renamed session
+  action, and collapsed whole-lap chart surface. It now drives the shipped flow,
+  imports protected Atlanta telemetry, opens Platform, expands charts, captures a
+  screenshot, and rejects unexpected browser/transport failures.
+
+### P31 release validation
+
+- Python: 2,337 collected; 2,332 passed, five skipped, zero failed. The explicit
+  slow selection collected 26 (25 passed, one skipped); the integration marker is
+  nonempty and its restart/tamper test passed; 186 focused P19/P20/P26/Crew tests
+  passed with zero failures.
+- Frontend: three behavioral Vitest/React Testing Library tests, five executable
+  runtime-trust files, TypeScript, and the 2,197-module production build passed.
+- Product/runtime: OpenAPI 3.1 exposed 86 paths/94 operations with no duplicate
+  operation IDs; the protected Atlanta regressions passed; PyInstaller produced
+  the Windows sidecar and the built-UI browser smoke imported Atlanta with no
+  console errors or unexpected failed requests.
+- Performance: Atlanta canonical intelligence measured 20.370 s cold and 9.674 ms
+  warm, with one build, one cache entry, and exact object reuse. The warm target
+  passed; the 2.0 s cold target remains open. A scoped catalog over 10,000 corrupt
+  unrelated histories deserialized one relevant row and passed in 0.22 s.
+
 ### P27-P30 verification evidence
 
 - Focused Crew Chief, authority, P19/P20/P26, API, persistence, restart, UI, and
@@ -1997,3 +2087,4 @@ Implementation queue completed in this pass:
 | 2026-08-10 | Closed the P26 greenfield dot-to-dot contract | Removed the remaining split-version assumptions and made one current contract span verified telemetry ownership, exact Next Gen applicability, all 50 engineering areas, explicit area-to-property semantics, independently scoped P20 observations, exact P19 history and per-control Undo, grounded component questions, canonical report embedding, workflow-aware refresh, and deep client trust-boundary validation. The current graph compiles 609 nodes and 843 edges with deterministic content identity; the real Atlanta artifact verified full setup capture without causal or setup-authority overclaim. The complete 2,268-test collection passed (2,263 passed, five protected skips), plus changed-file Ruff, TypeScript, the 2,192-module production build, executable runtime guards, OpenAPI inspection, and diff integrity |
 | 2026-08-12 | Verified P27-P30 deterministic autonomous Crew Chief operating system | One revision-bound private P19/P20/P26 workspace now owns event-sourced investigations, eight bounded inspections, deterministic critic and driver dialogue, hard Success Contracts, a junk/context-aware Run Sentinel, exact-context component response records, complaint-only driver memory, and an existing-Engineer Race/Learning command deck. Exact setup authority remains an equality-checked P19 projection; the optional generative boundary is disabled and P30 remains data-locked. The complete no-bytecode 2,300-test collection passed (2,295 passed, five protected skips), plus 154 focused authority/Crew Chief/P19-P20-P26 tests, whole-repo Ruff, TypeScript, the 2,196-module production build, bytecode compilation, seven-route OpenAPI inspection, executable synthetic and real-Atlanta UI trust guards, the unchanged 609-node/843-edge P26 graph, and diff integrity. |
 | 2026-08-12 | Completed continuous adversarial Crew Chief audit and repair | Twelve material findings were closed across stale authority, driver-dialogue sequencing, A/B/A2 stage ownership, event-tail and redundant-row tamper detection, repository-scoped caching, evidence deduplication, workflow fail-closed behavior, late UI responses, nested response trust, and API bounds. The final 2,316-test collection passed (2,311 passed, five protected environment/artifact skips), plus 159 focused tests with zero skips, whole-repo Ruff, TypeScript, the 2,196-module production build, bytecode compilation, seven-route OpenAPI inspection, real Atlanta execution, the unchanged 609-node/843-edge/50-area P26 graph, and diff integrity. Immutable warm caching reduced real Atlanta Crew Chief assembly from 3,317.595 ms to 148.147 ms; P19/P20/P26/Crew Chief authority ceilings and all data locks remain unchanged. |
+| 2026-08-13 | Completed P31 Truthful Crew Loop hardening | Telemetry truth, controlled-experiment identity, segmented evidence, transactional focus, exact Compare provenance, P19-mirrored Crew missions, deterministic investigation, quantity-level P26 observability, shared single-flight intelligence, scoped workflow polling, strict UI trust, and measurement-only research infrastructure passed all 2,337 collected Python tests (2,332 passed, five skipped), 186 focused authority tests, Ruff, TypeScript, three behavioral UI tests, five runtime trust suites, the 2,197-module build, OpenAPI inspection, protected Atlanta regressions, Windows sidecar packaging, and built-UI Atlanta browser smoke. Warm Atlanta intelligence is 9.674 ms with one build; the measured 20.370 s cold path remains explicit vectorization debt. P19/P20/P26/Crew authority ceilings and P30/statistical/physics locks remain unchanged. |

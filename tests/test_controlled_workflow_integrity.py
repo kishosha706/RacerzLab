@@ -118,6 +118,9 @@ class _WorkflowRepo:
         assert active_only is True
         return [self.workflow, *self.others]
 
+    def list_controlled_workflow_catalog_for_run_scope(self, *_args, **_kwargs):
+        return [self.workflow, *self.others], ()
+
 
 def test_public_get_and_list_withhold_a_swapped_or_mutated_packet(
     monkeypatch: pytest.MonkeyPatch,
@@ -134,11 +137,15 @@ def test_public_get_and_list_withhold_a_swapped_or_mutated_packet(
     repository = _WorkflowRepo(workflow)
     monkeypatch.setattr(service, "build_server_kaizen_packet", lambda *_args, **_kwargs: canonical)
     monkeypatch.setattr("api.routes_engineering.RaceLabRepository", lambda: repository)
+    monkeypatch.setattr(
+        "api.routes_engineering.get_session",
+        lambda *_args, **_kwargs: SimpleNamespace(run_ids=("source",)),
+    )
 
     client = TestClient(app)
     responses = (
         client.get(f"/api/engineering/workflows/{workflow.workflow_id}"),
-        client.get("/api/engineering/workflows?active_only=true"),
+        client.get("/api/engineering/workflows?active_only=true&session_id=session-1&run_id=source"),
     )
 
     assert all(response.status_code == 200 for response in responses)
