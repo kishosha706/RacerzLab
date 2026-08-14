@@ -19,10 +19,17 @@ from racelab_engine.services.controlled_workflow_service import (
     create_workflow,
     persist_workflow_candidate,
     project_workflow_for_publication,
+    record_scored_workflow_side_effects,
     score_workflow,
     validate_p19_workflow_origin,
     withhold_workflow_authority,
     workflow_authority_action_identity,
+    workflow_scope_run_ids,
+)
+from racelab_engine.services.engineering_learning_service import (
+    build_controlled_workflow_experience,
+    build_p19_reasoning_memory,
+    clear_learning_cache,
 )
 from racelab_engine.services.run_intelligence_service import (
     RunIntelligenceBundle,
@@ -286,6 +293,7 @@ def _require_scored_p19_outcome(
     workflow: ControlledWorkflow,
     *,
     repository: RaceLabRepository,
+    transient_candidate: bool = False,
 ) -> tuple[RunIntelligenceBundle, object]:
     binding = _validate_origin_binding(workflow, repository=repository)
     if workflow.status != "scored" or workflow.quality is None:
@@ -294,6 +302,7 @@ def _require_scored_p19_outcome(
         workflow,
         repository=repository,
         session_id=str(binding["session_id"]),
+        candidate=transient_candidate,
     )
     outcomes = [
         outcome
@@ -536,25 +545,46 @@ def score_controlled_workflow(workflow_id: str) -> ControlledWorkflow:
         if workflow is None:
             raise HTTPException(status_code=404, detail=f"Workflow not found: {workflow_id}")
         _require_current_p19_authority(workflow, repository=repository)
-        scored = score_workflow(workflow_id, repository=repository)
-        bundle, public = _require_scored_p19_outcome(scored, repository=repository)
+        scored = score_workflow(
+            workflow_id,
+            repository=repository,
+            persist=False,
+        )
+        bundle, public = _require_scored_p19_outcome(
+            scored,
+            repository=repository,
+            transient_candidate=True,
+        )
+        controlled_outcome = next(
+            outcome
+            for outcome in bundle.report.reasoning_snapshot.controlled_outcomes
+            if outcome.workflow_id == scored.workflow_id
+        )
         snapshot = dict(scored.reproduction_snapshot)
         snapshot["p19_outcome_binding"] = {
             "schema_version": _P19_BINDING_SCHEMA,
             "workflow_id": scored.workflow_id,
             "reasoning_snapshot_sha256": public.reasoning_snapshot_sha256,
             "policy_verdict": scored.quality.verdict if scored.quality else None,
-            "controlled_outcome_sha256": canonical_json_sha256(
-                next(
-                    outcome
-                    for outcome in bundle.report.reasoning_snapshot.controlled_outcomes
-                    if outcome.workflow_id == scored.workflow_id
-                )
-            ),
+            "controlled_outcome_sha256": canonical_json_sha256(controlled_outcome),
             "bound_at": datetime.now(UTC).isoformat(),
         }
         scored = scored.model_copy(update={"reproduction_snapshot": snapshot})
-        repository.save_controlled_workflow(scored)
+        closing_reasoning = build_p19_reasoning_memory(bundle.report)
+        experience = build_controlled_workflow_experience(
+            scored,
+            controlled_outcome=controlled_outcome,
+            closing_reasoning=closing_reasoning,
+            p19_reasoning_snapshot_sha256=public.reasoning_snapshot_sha256,
+            repository=repository,
+        )
+        scored = repository.save_scored_workflow_with_experience_if_scope_exclusive(
+            scored,
+            workflow_scope_run_ids(scored, repository=repository),
+            experience,
+        )
+        clear_learning_cache()
+        record_scored_workflow_side_effects(scored, repository=repository)
         return project_workflow_for_publication(scored, repository=repository)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

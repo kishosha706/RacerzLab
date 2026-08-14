@@ -15431,8 +15431,26 @@ button:focus:not(:focus-visible) {
 .crew-chief-learning { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
 .crew-chief-learning ul { margin: 0.45rem 0 0; padding-left: 1rem; }
 .crew-chief-learning li { margin-bottom: 0.25rem; }
+.crew-chief-learning .engineering-memory {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.7rem;
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
+  background: color-mix(in srgb, var(--panel) 96%, var(--accent));
+}
+.engineering-memory > header { display: flex; justify-content: space-between; gap: 0.8rem; align-items: start; }
+.engineering-memory h4 { margin: 0 0 0.35rem; font-size: 0.76rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.engineering-memory-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
+.engineering-memory-grid article { min-width: 0; padding: 0.65rem; border: 1px solid var(--border); border-radius: 7px; }
+.engineering-memory-grid article > div + div { margin-top: 0.45rem; padding-top: 0.45rem; border-top: 1px solid var(--border); }
+.engineering-memory-grid small { display: block; margin-top: 0.3rem; color: var(--text-muted); line-height: 1.35; }
+.engineering-memory-badges { display: flex; flex-wrap: wrap; justify-content: end; gap: 0.35rem; }
+.engineering-memory-badges span { padding: 0.25rem 0.45rem; border: 1px solid var(--border); border-radius: 999px; font-size: 0.68rem; text-transform: uppercase; }
+.engineering-memory-evidence { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.35rem; }
+.engineering-memory-evidence button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; }
 .crew-chief-question > div { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.6rem; }
 .crew-chief-inline-error, .crew-chief-error { color: var(--danger); }
 @media (max-width: 900px) {
   .crew-chief-race-brief, .crew-chief-learning, .crew-chief-open { grid-template-columns: 1fr; }
+  .engineering-memory-grid { grid-template-columns: 1fr; }
 }

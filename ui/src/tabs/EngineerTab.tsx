@@ -4,7 +4,6 @@ import {
   BrainCircuit,
   CheckCircle2,
   CircleHelp,
-  Database,
   FlaskConical,
   Gauge,
   History,
@@ -42,6 +41,8 @@ import type {
 } from "../types/intelligence";
 import type { EvidenceState } from "../types/telemetry";
 import type { LearningReadinessProjection } from "../types/learningReadiness";
+import type { CrewChiefEvidenceEntry } from "../types/crewChief";
+import type { LearningEvidenceReference } from "../types/engineeringLearning";
 import { isVehicleSystemComponentId } from "../types/vehicleSystems";
 import { deriveCurrentReportSetupAuthority } from "../utils/currentIntelligenceAuthority";
 import {
@@ -69,6 +70,7 @@ type EngineerTabProps = {
   workflowId: string | null;
   workflowUpdatedAt: string | null;
   onNavigateCitation: (citation: IntelligenceCitation) => void | Promise<void>;
+  onNavigateCrewEvidence: (entry: CrewChiefEvidenceEntry | LearningEvidenceReference) => void | Promise<void>;
 };
 
 type ReportLoadState = {
@@ -652,6 +654,7 @@ export function IntelligencePanel({
   workflowId,
   workflowUpdatedAt,
   onNavigateCitation,
+  onNavigateCrewEvidence,
 }: EngineerTabProps) {
   const { selection, focusEvidence, setWorkspace } = useTelemetrySelection();
   const learning = selection.selectedMode === "learning";
@@ -1368,36 +1371,7 @@ export function IntelligencePanel({
           report={report}
           scopeRunIds={crewChiefScopeRunIds}
           learning={learning}
-          onFocusEvidence={(entry) => {
-            const lap = entry.lap_numbers[0] ?? null;
-            const hasWindow = entry.lap_pct_start != null && entry.lap_pct_end != null;
-            focusEvidence({
-              runId: entry.run_id,
-              lapNumber: lap,
-              lapScope: lap == null ? "run" : "single_lap",
-              lapWindowStart: null,
-              lapWindowEnd: null,
-              representativeLap: null,
-              eventId: null,
-              producerId: entry.producer_id,
-              artifactId: entry.artifact_id,
-              sampleIndex: null,
-              lapDistFt: null,
-              lapPct: hasWindow ? (entry.lap_pct_start! + entry.lap_pct_end!) / 2 : null,
-              zoneId: null,
-              zoneLabel: entry.phase,
-              zoneStartPct: entry.lap_pct_start,
-              zoneEndPct: entry.lap_pct_end,
-              channelId: entry.source_channels[0] ?? null,
-              system: entry.component_ids[0] ?? null,
-              sourceRunId: entry.run_id,
-              sourceSetupId: entry.setup_id,
-              selectionSource: "engineer",
-              lockState: hasWindow ? "locked" : "none",
-              trustTier: "navigation_only",
-              valueBasis: lap == null ? "run_level" : "full_lap",
-            }, "platform_trace");
-          }}
+          onFocusEvidence={(entry) => { void onNavigateCrewEvidence(entry); }}
         />
       )}
 
@@ -1730,26 +1704,6 @@ export function IntelligencePanel({
                 ))}
               </ol>
             ) : <p className="engineer-empty-detail">No evidence-qualified causes were ranked.</p>}
-          </section>
-
-          <section className="engineer-learning-card engineer-memory" aria-labelledby="engineer-memory-heading">
-            <header>
-              <Database size={16} aria-hidden="true" />
-              <div><span className="eyebrow">Context memory</span><h2 id="engineer-memory-heading">Worked here before</h2></div>
-            </header>
-            {asArray(report.context_matches).length > 0 ? (
-              <ul>
-                {report.context_matches.map((match) => (
-                  <li key={match.memory_id}>
-                    <header><strong>{match.label}</strong><span>{match.relevance_label}</span></header>
-                    <p>{match.outcome_summary}</p>
-                    {asArray(match.matching_context).length > 0 && <p><b>Matches:</b> {match.matching_context.join(" · ")}</p>}
-                    {asArray(match.mismatches).length > 0 && <p className="engineer-memory-mismatch"><b>Does not match:</b> {match.mismatches.join(" · ")}</p>}
-                    <CitationLinks citations={match.citations} onNavigate={onNavigateCitation} label="Context-memory sources" />
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="engineer-empty-detail">No controlled result matches this exact context closely enough to transfer.</p>}
           </section>
 
           <section className="engineer-learning-card engineer-calibration" aria-labelledby="engineer-calibration-heading">

@@ -99,7 +99,7 @@ def test_run_context_opens_only_runs_attached_to_the_current_session() -> None:
     assert "loadSelectedRunSeqRef.current" in app
     assert "sessionSelectionSeqRef.current" in app
     assert "sessionRunsRequestSeqRef.current" in app
-    assert "if (!isLatestSelection()) return;" in app
+    assert "if (!isLatestSelection()) return false;" in app
 
     assert "runs: _runs" not in context
     assert "availableRuns.length > 0" in context

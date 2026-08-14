@@ -62,6 +62,9 @@ def _restart_fixture(tmp_path: Path, *, valid: bool):
         update={
             "execution": execution,
             "quality": score_test_execution(execution),
+            # P26 history is owned by the final exact workflow/P19 outcome,
+            # not by the auxiliary setup-response observation store.
+            "learning_admitted": None,
         }
     )
     repository.save_controlled_workflow(workflow)
@@ -120,6 +123,7 @@ def test_restart_preserves_exact_origin_phase_effect_and_downstream_carry(
     restarted = RaceLabRepository(db_path)
     loaded = restarted.get_controlled_workflow(workflow.workflow_id)
     assert loaded is not None and loaded.execution is not None
+    assert loaded.learning_admitted is None
     assert loaded.execution.time_origin_phase == "initial_throttle"
     assert loaded.execution.time_origin_pct == pytest.approx(63.4)
     assert loaded.execution.downstream_carry_effect_s == pytest.approx(-0.027)

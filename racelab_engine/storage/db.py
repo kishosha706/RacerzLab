@@ -161,6 +161,69 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_controlled_workflow_run_lookup
           ON controlled_workflow_run_index(run_id, workflow_id);
+        CREATE TABLE IF NOT EXISTS engineering_experience_stream_head (
+          stream_id TEXT PRIMARY KEY,
+          schema_version TEXT NOT NULL,
+          record_count INTEGER NOT NULL,
+          head_sha256 TEXT
+        );
+        INSERT OR IGNORE INTO engineering_experience_stream_head (
+          stream_id, schema_version, record_count, head_sha256
+        ) VALUES ('p33.engineering-experience.v1', 'p33.engineering-experience.v1', 0, NULL);
+        CREATE TABLE IF NOT EXISTS engineering_experiences (
+          sequence INTEGER PRIMARY KEY,
+          experience_id TEXT NOT NULL UNIQUE,
+          experience_sha256 TEXT NOT NULL UNIQUE,
+          source_identity_sha256 TEXT NOT NULL UNIQUE,
+          previous_entry_sha256 TEXT,
+          entry_sha256 TEXT NOT NULL UNIQUE,
+          source_kind TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          context_sha256 TEXT NOT NULL,
+          run_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          driver_id TEXT,
+          car_path TEXT NOT NULL,
+          car_version TEXT NOT NULL,
+          iracing_build TEXT NOT NULL,
+          track TEXT NOT NULL,
+          track_configuration TEXT NOT NULL,
+          package_type TEXT NOT NULL,
+          setup_family TEXT,
+          setup_snapshot_sha256 TEXT NOT NULL,
+          objective TEXT NOT NULL,
+          phase TEXT NOT NULL,
+          physical_region TEXT NOT NULL,
+          problem_sha256 TEXT NOT NULL,
+          source_investigation_id TEXT,
+          source_workflow_id TEXT,
+          record_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_engineering_experience_exact_context
+          ON engineering_experiences(context_sha256, objective, phase, created_at DESC, experience_id);
+        CREATE INDEX IF NOT EXISTS idx_engineering_experience_problem
+          ON engineering_experiences(problem_sha256, car_path, car_version, iracing_build, created_at DESC, experience_id);
+        CREATE INDEX IF NOT EXISTS idx_engineering_experience_vehicle_track
+          ON engineering_experiences(car_path, car_version, iracing_build, track, track_configuration, phase, created_at DESC, experience_id);
+        CREATE INDEX IF NOT EXISTS idx_engineering_experience_driver
+          ON engineering_experiences(driver_id, car_path, car_version, iracing_build, phase, created_at DESC, experience_id)
+          WHERE driver_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_engineering_experience_investigation
+          ON engineering_experiences(source_investigation_id, experience_id)
+          WHERE source_investigation_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_engineering_experience_workflow
+          ON engineering_experiences(source_workflow_id, experience_id)
+          WHERE source_workflow_id IS NOT NULL;
+        CREATE TRIGGER IF NOT EXISTS engineering_experiences_no_update
+        BEFORE UPDATE ON engineering_experiences
+        BEGIN
+          SELECT RAISE(ABORT, 'engineering experiences are append-only');
+        END;
+        CREATE TRIGGER IF NOT EXISTS engineering_experiences_no_delete
+        BEFORE DELETE ON engineering_experiences
+        BEGIN
+          SELECT RAISE(ABORT, 'engineering experiences are append-only');
+        END;
         """
     )
     if connection.execute(
@@ -330,6 +393,30 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
             "controlled_test_workflows",
             "learning_admitted",
             "learning_admitted INTEGER",
+        )
+        _add_column_if_missing(
+            connection,
+            "controlled_test_workflows",
+            "learning_capture_state",
+            "learning_capture_state TEXT NOT NULL DEFAULT 'not_applicable'",
+        )
+        _add_column_if_missing(
+            connection,
+            "controlled_test_workflows",
+            "learning_capture_experience_id",
+            "learning_capture_experience_id TEXT",
+        )
+        _add_column_if_missing(
+            connection,
+            "controlled_test_workflows",
+            "learning_capture_experience_sha256",
+            "learning_capture_experience_sha256 TEXT",
+        )
+        _add_column_if_missing(
+            connection,
+            "controlled_test_workflows",
+            "learning_capture_blocker_reason",
+            "learning_capture_blocker_reason TEXT",
         )
     # P19 append-only mission history tables are created here as well as in the
     # base schema so existing local databases gain durable measurement memory.

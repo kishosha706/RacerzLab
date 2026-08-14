@@ -2,11 +2,21 @@ import type { CrewChiefEvidenceEntry, CrewChiefWorkspace } from "../types/crewCh
 import type { RunIntelligenceReport } from "../types/intelligence";
 import type { PerformanceIntelligenceProjection } from "../types/performanceIntelligence";
 import { hasSetupAuthorityDirective } from "./setupAuthorityLanguage.js";
+import {
+  canonicalEngineeringLearningSha256,
+  isCrewChiefLearningPrior,
+  isP19ReasoningMemory,
+  isProblemFingerprint,
+} from "./engineeringLearningTrust.js";
 import { isPerformanceIntelligenceProjection } from "./performanceIntelligenceTrust.js";
 
 const hash = /^[0-9a-f]{64}$/;
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+const exactKeys = (value: unknown, keys: readonly string[]): value is Record<string, unknown> =>
+  record(value)
+  && Object.keys(value).length === keys.length
+  && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
 const strings = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === "string" && item.length > 0);
 const uniqueStrings = (value: unknown): value is string[] =>
@@ -25,6 +35,19 @@ const evidenceStates = new Set([
   "measured", "calculated", "estimated_proxy", "observed_correlation",
   "controlled_test_effect", "unavailable", "blocked_by_context", "needs_confirmation",
 ]);
+const engineeringObjectives = new Set([
+  "qualifying_peak", "race_long_run", "tire_conservation", "driver_confidence",
+  "traffic_robustness", "superspeedway_stability", "fuel_strategy",
+]);
+const workspaceIdentityKeys = [
+  "run_id", "session_id", "selected_scope_hash", "reasoning_snapshot_sha256",
+  "p20_state_revision", "p20_profile_hash", "p26_graph_version",
+  "p26_knowledge_graph_sha256", "p26_reasoning_snapshot_sha256",
+  "p32_projection_sha256", "learning_history_revision", "learning_projection_sha256",
+  "setup_id", "setup_snapshot_sha256", "vehicle_runtime_identity_hash",
+  "active_workflow_id", "active_workflow_revision", "objective_id",
+  "investigation_id", "workspace_revision",
+] as const;
 const performanceProducers = new Map<string, string>([
   ["p32.lap_time_opportunity", "lap_time_opportunity"],
   ["p32.time_loss_origin", "time_loss_origin"],
@@ -72,6 +95,78 @@ function uniqueChannels(states: Array<Record<string, unknown> | null>): string[]
 const mappedMechanisms = (values: string[]): string[] => [
   ...new Set(values.map((item) => crewMechanisms.has(item) ? item : "unclassified")),
 ];
+
+export async function hasCanonicalMeasurementMissionDigest(
+  value: unknown,
+): Promise<boolean> {
+  if (value === null) return true;
+  if (!record(value) || !record(value.resource_snapshot)
+    || typeof value.contract_sha256 !== "string"
+    || typeof value.contract_id !== "string") return false;
+  const payload: Record<string, unknown> = { ...value };
+  delete payload.contract_id;
+  delete payload.contract_sha256;
+  delete payload.created_at;
+  const resourceSnapshot = { ...value.resource_snapshot };
+  delete resourceSnapshot.captured_at;
+  payload.resource_snapshot = resourceSnapshot;
+  try {
+    const digest = await canonicalEngineeringLearningSha256(payload);
+    return value.contract_sha256 === digest
+      && value.contract_id === `mission:${digest.slice(0, 20)}`;
+  } catch {
+    return false;
+  }
+}
+
+function validWorkspaceIdentityShape(value: unknown): value is Record<string, unknown> {
+  if (!exactKeys(value, workspaceIdentityKeys)) return false;
+  return typeof value.run_id === "string" && value.run_id.length > 0
+    && typeof value.session_id === "string" && value.session_id.length > 0
+    && typeof value.selected_scope_hash === "string" && hash.test(value.selected_scope_hash)
+    && typeof value.reasoning_snapshot_sha256 === "string" && hash.test(value.reasoning_snapshot_sha256)
+    && typeof value.p20_state_revision === "string" && hash.test(value.p20_state_revision)
+    && (value.p20_profile_hash === null
+      || (typeof value.p20_profile_hash === "string" && hash.test(value.p20_profile_hash)))
+    && typeof value.p26_graph_version === "string" && value.p26_graph_version.length > 0
+    && typeof value.p26_knowledge_graph_sha256 === "string" && hash.test(value.p26_knowledge_graph_sha256)
+    && typeof value.p26_reasoning_snapshot_sha256 === "string" && hash.test(value.p26_reasoning_snapshot_sha256)
+    && typeof value.p32_projection_sha256 === "string" && hash.test(value.p32_projection_sha256)
+    && typeof value.learning_history_revision === "string" && hash.test(value.learning_history_revision)
+    && typeof value.learning_projection_sha256 === "string" && hash.test(value.learning_projection_sha256)
+    && typeof value.setup_id === "string" && value.setup_id.length > 0
+    && typeof value.setup_snapshot_sha256 === "string" && hash.test(value.setup_snapshot_sha256)
+    && typeof value.vehicle_runtime_identity_hash === "string" && hash.test(value.vehicle_runtime_identity_hash)
+    && nullableString(value.active_workflow_id)
+    && nullableString(value.active_workflow_revision)
+    && ((value.active_workflow_id === null) === (value.active_workflow_revision === null))
+    && typeof value.objective_id === "string" && engineeringObjectives.has(value.objective_id)
+    && nullableString(value.investigation_id)
+    && typeof value.workspace_revision === "string" && hash.test(value.workspace_revision);
+}
+
+function validInvestigation(value: unknown): value is Record<string, unknown> {
+  if (!exactKeys(value, [
+    "investigation_id", "workspace_identity", "origin", "objective",
+    "raw_driver_report", "canonical_problem", "opening_reasoning", "opening_problem",
+    "opened_at", "status",
+  ]) || !validWorkspaceIdentityShape(value.workspace_identity)
+    || !isP19ReasoningMemory(value.opening_reasoning)
+    || !isProblemFingerprint(value.opening_problem)) return false;
+  const openingIdentity = value.workspace_identity;
+  const openingReasoning = value.opening_reasoning;
+  const openingProblem = value.opening_problem;
+  return typeof value.investigation_id === "string" && value.investigation_id.length > 0
+    && ["post_import", "driver_report", "manual_review"].includes(String(value.origin))
+    && typeof value.objective === "string" && engineeringObjectives.has(value.objective)
+    && typeof value.raw_driver_report === "string" && value.raw_driver_report.length > 0
+    && typeof value.canonical_problem === "string" && value.canonical_problem.length > 0
+    && typeof value.opened_at === "string" && Number.isFinite(Date.parse(value.opened_at))
+    && ["open", "complete", "stale", "abandoned"].includes(String(value.status))
+    && value.objective === openingIdentity.objective_id
+    && openingProblem.objective === value.objective
+    && openingReasoning.reasoning_snapshot_sha256 === openingIdentity.reasoning_snapshot_sha256;
+}
 
 function validTypedArtifactEnvelope(value: Record<string, unknown>): boolean {
   const expectedType = performanceProducers.get(String(value.producer_id));
@@ -358,22 +453,33 @@ export function typedArtifactMatchesProjection(
 
 export function validEvidenceEntry(
   value: unknown,
+  runId: string,
   sessionId: string,
   scopeRunIds: ReadonlySet<string>,
   objectiveId: string,
 ): boolean {
-  if (!record(value)) return false;
+  if (!exactKeys(value, [
+    "artifact_id", "producer_id", "run_id", "session_id", "setup_id",
+    "workspace_run_id", "workspace_session_id", "workspace_setup_id",
+    "source_run_id", "source_session_id", "source_setup_id", "source_setup_sha256",
+    "source_build_context_sha256", "source_provenance_available", "lap_numbers",
+    "lap_pct_start", "lap_pct_end", "phase", "mechanism_ids", "component_ids",
+    "control_keys", "objective", "source_channels", "evidence_state", "polarity",
+    "blocker_reasons", "typed_artifact", "authority_ceiling",
+  ])) return false;
+  const p33Producer = typeof value.producer_id === "string" && value.producer_id.startsWith("p33.");
+  const learningEvidence = value.producer_id === "p33.engineering_experience";
+  if (p33Producer && !learningEvidence) return false;
   const lapNumbers = value.lap_numbers;
   const start = value.lap_pct_start;
   const end = value.lap_pct_end;
   return typeof value.artifact_id === "string" && value.artifact_id.length > 0
     && typeof value.producer_id === "string" && value.producer_id.length > 0
-    && typeof value.run_id === "string" && scopeRunIds.has(value.run_id)
+    && typeof value.run_id === "string" && (learningEvidence || scopeRunIds.has(value.run_id))
     && value.run_id === value.source_run_id
-    && value.session_id === sessionId
+    && (learningEvidence ? value.session_id === value.source_session_id : value.session_id === sessionId)
     && value.workspace_session_id === sessionId
-    && typeof value.workspace_run_id === "string"
-    && scopeRunIds.has(String(value.workspace_run_id))
+    && value.workspace_run_id === runId
     && typeof value.workspace_setup_id === "string"
     && value.workspace_setup_id.length > 0
     && nullableString(value.setup_id)
@@ -406,10 +512,20 @@ export function validEvidenceEntry(
     && safeTexts(value.blocker_reasons)
     && (value.source_provenance_available
       || value.blocker_reasons.includes("source identity unavailable"))
+    && (!learningEvidence || value.source_provenance_available === true)
+    && (!learningEvidence || (
+      /^p33ref_[0-9a-f]{24}$/.test(String(value.artifact_id))
+      && value.mechanism_ids.length === 0
+      && value.component_ids.length === 0
+      && value.control_keys.length === 0
+      && value.blocker_reasons.length === 0
+    ))
     && new Set(value.blocker_reasons).size === value.blocker_reasons.length
     && validTypedArtifactEnvelope(value)
-    && ["observation_only", "context_only", "measurement_only", "p19_projection_only"]
-      .includes(String(value.authority_ceiling));
+    && (learningEvidence
+      ? value.authority_ceiling === "attention_only"
+      : ["observation_only", "context_only", "measurement_only", "p19_projection_only"]
+        .includes(String(value.authority_ceiling)));
 }
 
 export function isCrewChiefWorkspaceResponse(
@@ -422,7 +538,7 @@ export function isCrewChiefWorkspaceResponse(
     objectiveId: string;
   },
 ): value is CrewChiefWorkspace {
-  if (!record(value) || value.schema_version !== "p32.crew-chief-workspace.v2") return false;
+  if (!record(value) || value.schema_version !== "p33.crew-chief-workspace.v1") return false;
   if (
     !record(value.identity)
     || !record(value.terminal_decision)
@@ -430,17 +546,23 @@ export function isCrewChiefWorkspaceResponse(
     || !record(value.run_sentinel)
     || !record(value.critique)
     || !record(value.adaptive_research)
+    || !record(value.learning_prior)
   ) return false;
   const missionContract = value.p19_mission_contract;
+  const reportAction = scope.report.briefing.action;
   if (!(missionContract === null || (
     record(missionContract)
     && missionContract.schema_version === "p19.measurement-mission.v2"
     && typeof missionContract.contract_id === "string"
+    && missionContract.contract_id === reportAction.mission_contract_id
     && typeof missionContract.contract_sha256 === "string"
     && hash.test(missionContract.contract_sha256)
+    && missionContract.contract_sha256 === reportAction.mission_contract_sha256
     && missionContract.run_id === scope.runId
+    && missionContract.session_id === scope.sessionId
     && missionContract.source_setup_id === scope.report.setup_id
-    && missionContract.setup_sha256 === scope.report.setup_snapshot_sha256
+    && typeof missionContract.setup_sha256 === "string"
+    && hash.test(missionContract.setup_sha256)
     && integerNumber(missionContract.required_laps)
     && missionContract.required_laps >= 1
     && safeTexts(missionContract.acceptance_thresholds)
@@ -451,7 +573,8 @@ export function isCrewChiefWorkspaceResponse(
   const decision = value.terminal_decision;
   const scopeRunIds = new Set(scope.scopeRunIds ?? [scope.runId]);
   if (
-    scopeRunIds.size === 0
+    !validWorkspaceIdentityShape(identity)
+    || scopeRunIds.size === 0
     || !scopeRunIds.has(scope.runId)
     || identity.run_id !== scope.runId
     || identity.session_id !== scope.sessionId
@@ -475,6 +598,10 @@ export function isCrewChiefWorkspaceResponse(
     || identity.p26_reasoning_snapshot_sha256 !== scope.report.reasoning_snapshot_sha256
     || typeof identity.p32_projection_sha256 !== "string"
     || !hash.test(identity.p32_projection_sha256)
+    || typeof identity.learning_history_revision !== "string"
+    || !hash.test(identity.learning_history_revision)
+    || typeof identity.learning_projection_sha256 !== "string"
+    || !hash.test(identity.learning_projection_sha256)
     || typeof identity.vehicle_runtime_identity_hash !== "string"
     || !hash.test(identity.vehicle_runtime_identity_hash)
     || !nullableString(identity.active_workflow_id)
@@ -486,10 +613,50 @@ export function isCrewChiefWorkspaceResponse(
     || !hash.test(value.evidence_index.index_hash)
     || !Array.isArray(value.evidence_index.entries)
     || !value.evidence_index.entries.every((entry) => (
-      validEvidenceEntry(entry, scope.sessionId, scopeRunIds, scope.objectiveId)
+      validEvidenceEntry(entry, scope.runId, scope.sessionId, scopeRunIds, scope.objectiveId)
     ))
   ) return false;
   const trustedEntries = value.evidence_index.entries as CrewChiefEvidenceEntry[];
+  if (!isCrewChiefLearningPrior(value.learning_prior, {
+    runId: scope.runId,
+    sessionId: scope.sessionId,
+    objectiveId: scope.objectiveId,
+    selectedScopeHash: String(identity.selected_scope_hash),
+    p19Hash: String(identity.reasoning_snapshot_sha256),
+    p32Hash: String(identity.p32_projection_sha256),
+    historyRevision: String(identity.learning_history_revision),
+    projectionHash: String(identity.learning_projection_sha256),
+  })) return false;
+  const trustedLearning = value.learning_prior;
+  const learningEntries = trustedEntries.filter((entry) => entry.producer_id === "p33.engineering_experience");
+  const availableReferences = trustedLearning.evidence_references.filter((item) => item.state === "available");
+  const learningEntryById = new Map(learningEntries.map((entry) => [entry.artifact_id, entry]));
+  if (learningEntries.length !== availableReferences.length
+    || availableReferences.some((reference) => {
+      const entry = learningEntryById.get(reference.reference_id);
+      const source = reference.provenance;
+      return !entry
+        || entry.run_id !== source.run_id
+        || entry.session_id !== source.session_id
+        || entry.setup_id !== source.setup_id
+        || entry.workspace_run_id !== scope.runId
+        || entry.workspace_session_id !== scope.sessionId
+        || entry.workspace_setup_id !== identity.setup_id
+        || entry.source_run_id !== source.run_id
+        || entry.source_session_id !== source.session_id
+        || entry.source_setup_id !== source.setup_id
+        || entry.source_setup_sha256 !== source.setup_snapshot_sha256
+        || entry.source_build_context_sha256 !== source.build_context_sha256
+        || !sameJson(entry.lap_numbers, source.lap_numbers)
+        || entry.lap_pct_start !== source.lap_pct_start
+        || entry.lap_pct_end !== source.lap_pct_end
+        || entry.phase !== source.phase
+        || !sameJson(entry.source_channels, source.source_channels)
+        || entry.evidence_state !== source.evidence_state
+        || entry.polarity !== source.polarity
+        || entry.authority_ceiling !== "attention_only"
+        || entry.typed_artifact !== null;
+    })) return false;
   const p32Evidence = new Map<string, CrewChiefEvidenceEntry>(
     trustedEntries
       .filter((entry) => entry.producer_id === "p32.lap_time_opportunity"
@@ -598,10 +765,8 @@ export function isCrewChiefWorkspaceResponse(
     || !safeTexts(value.pending_driver_question.answer_options)
   )) return false;
   if (value.investigation !== null && (
-    !record(value.investigation)
+    !validInvestigation(value.investigation)
     || value.investigation.investigation_id !== identity.investigation_id
-    || typeof value.investigation.raw_driver_report !== "string"
-    || typeof value.investigation.canonical_problem !== "string"
   )) return false;
   if (value.folded_state !== null && (
     !record(value.folded_state)

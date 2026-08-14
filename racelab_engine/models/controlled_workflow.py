@@ -63,6 +63,18 @@ class ControlledWorkflow(BaseModel):
     reproduction_snapshot: dict[str, Any] = Field(default_factory=dict)
     quality: TestQualityResult | None = None
     learning_admitted: bool | None = None
+    learning_capture_state: Literal["not_applicable", "captured", "blocked"] = (
+        "not_applicable"
+    )
+    learning_capture_experience_id: str | None = Field(
+        default=None, pattern=r"^p33x_[0-9a-f]{24}$"
+    )
+    learning_capture_experience_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    learning_capture_blocker_reason: str | None = Field(
+        default=None, min_length=1, max_length=240
+    )
 
     @model_validator(mode="after")
     def invalid_or_incomplete_tests_withhold_performance_memory(
@@ -102,6 +114,44 @@ class ControlledWorkflow(BaseModel):
                     "time_origin_pct": None,
                     "downstream_carry_effect_s": None,
                 }
+            )
+        has_experience_identity = (
+            self.learning_capture_experience_id is not None
+            and self.learning_capture_experience_sha256 is not None
+        )
+        if (
+            (self.learning_capture_experience_id is None)
+            != (self.learning_capture_experience_sha256 is None)
+        ):
+            raise ValueError(
+                "P33 learning-capture experience identity must be complete"
+            )
+        if self.learning_capture_state == "not_applicable" and (
+            has_experience_identity or self.learning_capture_blocker_reason is not None
+        ):
+            raise ValueError(
+                "non-attempted P33 learning capture cannot claim an experience or blocker"
+            )
+        if self.learning_capture_state == "captured" and (
+            not has_experience_identity
+            or self.learning_capture_blocker_reason is not None
+        ):
+            raise ValueError(
+                "captured P33 learning requires its exact experience and no blocker"
+            )
+        if self.learning_capture_state == "blocked" and (
+            not has_experience_identity
+            or self.learning_capture_blocker_reason is None
+        ):
+            raise ValueError(
+                "blocked P33 learning requires its attempted experience and safe blocker"
+            )
+        if (
+            self.status != "scored"
+            and self.learning_capture_state != "not_applicable"
+        ):
+            raise ValueError(
+                "P33 workflow learning capture is exclusive to final scored truth"
             )
         return self
 

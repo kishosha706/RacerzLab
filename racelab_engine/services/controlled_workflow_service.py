@@ -1840,6 +1840,19 @@ def _workflow_scope_run_ids(
     return tuple(sorted(scope))
 
 
+def workflow_scope_run_ids(
+    workflow: ControlledWorkflow,
+    *,
+    repository: RaceLabRepository,
+) -> tuple[str, ...]:
+    """Return the exact saved-session scope occupied by one workflow."""
+
+    return _workflow_scope_run_ids(
+        repository,
+        {workflow.source_run_id, *workflow.stage_run_ids.values()},
+    )
+
+
 def _active_workflow_conflict(
     repository: Any,
     scope_run_ids: tuple[str, ...],
@@ -2690,7 +2703,12 @@ def validate_workflow_for_authoritative_use(
     return fresh
 
 
-def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = None) -> ControlledWorkflow:
+def score_workflow(
+    workflow_id: str,
+    *,
+    repository: RaceLabRepository | None = None,
+    persist: bool = True,
+) -> ControlledWorkflow:
     repo = repository or RaceLabRepository()
     workflow = repo.get_controlled_workflow(workflow_id)
     if workflow is None or set(workflow.stage_run_ids) != {"A", "B", "A2"}:
@@ -3004,7 +3022,13 @@ def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = N
         )
     observed_effect = median([*target_effects["AB"], *target_effects["A2B"]])
     learning_admitted: bool | None = None
-    if result.controlled_effect_eligible and result.verdict in {"keep", "undo"}:
+    # Transient scoring is used by the API to derive the final P19 outcome
+    # binding before one atomic workflow/P33 commit.  It must be a pure
+    # computation: legacy setup-response admission may write SQLite and is
+    # therefore retained only for callers that explicitly request persistence.
+    # P19/P26 controlled history is reconstructed from the final workflow's
+    # exact controlled outcome, not from this auxiliary observation table.
+    if persist and result.controlled_effect_eligible and result.verdict in {"keep", "undo"}:
         from racelab_engine.analysis.comparison import (
             DidItWorkVerdict,
             DriverComparison,
@@ -3178,31 +3202,54 @@ def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = N
         "status": "scored",
         "updated_at": datetime.now(timezone.utc),
     })
-    if isinstance(repo, RaceLabRepository):
-        repo.save_controlled_workflow_if_scope_exclusive(updated, scope)
-    else:
-        repo.save_controlled_workflow(updated)
-    if isinstance(repo, RaceLabRepository):
-        record_workflow_outcome(updated, db_path=repo.db_path)
-        try:
-            from racelab_engine.evaluation.prospective import (
-                attach_matching_outcome_after_score,
-            )
-
-            attach_matching_outcome_after_score(
-                updated.workflow_id,
-                updated.source_run_id,
-                db_path=repo.db_path,
-            )
-        except Exception as exc:
-            # P22 shadow grading cannot weaken or roll back the canonical P19
-            # score. The frozen prediction remains visibly unscored for recovery.
-            _log.warning(
-                "Prospective outcome attachment failed closed for workflow %s: %s",
-                updated.workflow_id,
-                exc,
-            )
+    if persist:
+        if isinstance(repo, RaceLabRepository):
+            repo.save_controlled_workflow_if_scope_exclusive(updated, scope)
+        else:
+            repo.save_controlled_workflow(updated)
+        record_scored_workflow_side_effects(updated, repository=repo)
     return updated
+
+
+def record_scored_workflow_side_effects(
+    workflow: ControlledWorkflow,
+    *,
+    repository: RaceLabRepository,
+) -> None:
+    """Persist non-authoritative presentation/evaluation facts after score commit."""
+
+    if not isinstance(repository, RaceLabRepository):
+        return
+    if workflow.status != "scored" or workflow.quality is None:
+        raise ValueError("Only a fully scored workflow may emit outcome side effects.")
+    try:
+        record_workflow_outcome(workflow, db_path=repository.db_path)
+    except Exception as exc:
+        # Presentation memory is downstream of the canonical score/P33 commit.
+        # It may be repaired independently and cannot roll back or mask truth.
+        _log.warning(
+            "Engineering presentation-memory attachment failed for workflow %s: %s",
+            workflow.workflow_id,
+            exc,
+        )
+    try:
+        from racelab_engine.evaluation.prospective import (
+            attach_matching_outcome_after_score,
+        )
+
+        attach_matching_outcome_after_score(
+            workflow.workflow_id,
+            workflow.source_run_id,
+            db_path=repository.db_path,
+        )
+    except Exception as exc:
+        # P22 shadow grading cannot weaken or roll back the canonical P19
+        # score. The frozen prediction remains visibly unscored for recovery.
+        _log.warning(
+            "Prospective outcome attachment failed closed for workflow %s: %s",
+            workflow.workflow_id,
+            exc,
+        )
 
 
 __all__ = [
@@ -3213,6 +3260,7 @@ __all__ = [
     "create_workflow",
     "enforce_hypothesis_repeat_policy",
     "project_workflow_for_publication",
+    "record_scored_workflow_side_effects",
     "persist_workflow_candidate",
     "revalidate_controlled_test_packet",
     "revalidate_controlled_workflow_packet",
@@ -3220,5 +3268,6 @@ __all__ = [
     "validate_p19_workflow_origin",
     "validate_workflow_for_authoritative_use",
     "workflow_authority_action_identity",
+    "workflow_scope_run_ids",
     "withhold_workflow_authority",
 ]

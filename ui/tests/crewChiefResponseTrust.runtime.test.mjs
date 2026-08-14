@@ -1,8 +1,60 @@
 import assert from "node:assert/strict";
-import { isCrewChiefWorkspaceResponse } from "../src/utils/crewChiefResponseTrust.ts";
+import {
+  hasCanonicalMeasurementMissionDigest,
+  isCrewChiefWorkspaceResponse,
+} from "../src/utils/crewChiefResponseTrust.ts";
 import { isPerformanceIntelligenceProjection } from "../src/utils/performanceIntelligenceTrust.js";
+import { canonicalJsonSha256 } from "../src/utils/canonicalJsonSha256.ts";
+import {
+  canonicalEngineeringLearningSha256,
+  hasCanonicalEngineeringLearningDigests,
+} from "../src/utils/engineeringLearningTrust.js";
 
 const h = (value) => value.repeat(64);
+const counts = (observationCount = 0) => ({
+  observation_count: observationCount,
+  independent_episode_count: observationCount,
+  independent_workflow_count: 0,
+  distinct_session_count: observationCount,
+  distinct_context_count: observationCount,
+});
+const emptyLearningPrior = {
+  schema_version: "p33.engineering-learning.v1",
+  projection_sha256: h("2"), history_revision: h("1"),
+  run_id: "run-1", session_id: "session-1", objective_id: "race_long_run",
+  selected_scope_hash: h("f"), p19_reasoning_snapshot_sha256: h("a"),
+  p32_projection_sha256: h("7"), current_context_sha256: h("3"),
+  current_problem_sha256: h("4"), state: "insufficient_history",
+  recurrence: {
+    recurrence_id: "recurrence-new", classification: "new_problem",
+    problem_sha256s: [h("4")], experience_ids: [], investigation_ids: [],
+    statement: "No qualified recurrence is available.", useful_discriminator: null,
+    prior_dead_end: null, strongest_contradiction: "No qualified prior experience.",
+    transfer: null, counts: counts(), strength: "insufficient",
+    authority: "attention_only", setup_authorized: false,
+  },
+  useful_prior_investigations: [], known_dead_ends: [], driver_tendencies: [],
+  car_response_history: [], mind_change_history: [], recommended_attention_order: [],
+  context_transfers: [], evidence_references: [], context_transfer_level: "blocked", strength: "insufficient",
+  counts: counts(),
+  ledger: {
+    investigations_opened: 0, investigations_resolved: 0, no_call_outcomes: 0,
+    driver_focus_outcomes: 0, measurement_missions: 0, controlled_tests: 0,
+    keep_outcomes: 0, undo_outcomes: 0, retest_outcomes: 0,
+    average_tool_steps_before_resolution: null, laps_consumed_before_resolution: 0,
+    questions_asked: 0, repeated_dead_end_tools: [], successful_discriminators: [],
+    recurring_problem_count: 0, recurrence_resolved_faster_count: 0,
+    claims_lap_time_improvement: false,
+  },
+  post_run_brief: {
+    state: "insufficient_history", what_we_learned: [], what_changed_our_mind: [],
+    what_did_not_work: [], next_attention: [],
+    blocker_reasons: ["No qualified engineering history is available."],
+    authority: "attention_only", setup_authorized: false,
+  },
+  blocker_reasons: ["No qualified engineering history is available."],
+  authority: "attention_only", setup_authorized: false, p19_rank_modified: false,
+};
 const report = {
   reasoning_snapshot_sha256: h("a"), setup_id: "setup-1", setup_snapshot_sha256: h("b"),
   briefing: { action: { kind: "measurement_mission", title: "Measure", instruction: "Collect three eligible laps.", setup_authorized: false, control_key: null, current_value: null, proposed_value: null, source_event_ids: [] } },
@@ -81,7 +133,7 @@ const performance = {
   },
 };
 const workspace = {
-  schema_version: "p32.crew-chief-workspace.v2",
+  schema_version: "p33.crew-chief-workspace.v1",
   identity: {
     run_id: "run-1", session_id: "session-1", reasoning_snapshot_sha256: h("a"),
     setup_id: "setup-1", setup_snapshot_sha256: h("b"), workspace_revision: h("c"),
@@ -89,11 +141,13 @@ const workspace = {
     p20_state_revision: h("d"), p26_knowledge_graph_sha256: h("e"),
     p26_reasoning_snapshot_sha256: h("a"), active_workflow_id: null, active_workflow_revision: null,
     p32_projection_sha256: h("7"), objective_id: "race_long_run",
+    learning_history_revision: h("1"), learning_projection_sha256: h("2"),
     vehicle_runtime_identity_hash: h("9"), investigation_id: null,
   },
   evidence_index: { workspace_revision: h("c"), index_hash: h("8"), entries: [] },
   p19_mission_contract: null,
   performance_intelligence: performance,
+  learning_prior: emptyLearningPrior,
   success_contract: {
     workspace_revision: h("c"), target_scope: "braking entry", acceptance_rule: "Repeat the metric.",
     independence_unit: "eligible lap",
@@ -116,6 +170,96 @@ const workspace = {
 };
 const scope = { runId: "run-1", sessionId: "session-1", report, objectiveId: "race_long_run" };
 assert.equal(isCrewChiefWorkspaceResponse(workspace, scope), true);
+const withInvestigation = structuredClone(workspace);
+withInvestigation.identity.investigation_id = "investigation-1";
+withInvestigation.investigation = {
+  investigation_id: "investigation-1",
+  workspace_identity: structuredClone(workspace.identity),
+  origin: "driver_report",
+  objective: "race_long_run",
+  raw_driver_report: "The balance changed in the center.",
+  canonical_problem: "balance changed in the center",
+  opening_reasoning: {
+    reasoning_snapshot_sha256: h("a"), causes: [], measurement_plan_kind: "measurement_only",
+    discriminator_ids: [], authority_level: "measurement", setup_authorized: false,
+  },
+  opening_problem: {
+    problem_sha256: h("3"), physical_episode_id: "episode-1",
+    performance_opportunity_id: "opportunity-1", phase: "center",
+    physical_region: "T1-T2", time_origin_class: "local_loss",
+    carry_behavior: "no_measured_carry", driver_demand_state: "matched_inputs",
+    vehicle_response_state: "changed_response", p20_mechanism_families: ["platform"],
+    p26_component_families: ["rf_tire"], traffic_context_state: "clear",
+    tire_stint_state: "short_run", objective: "race_long_run",
+    source_artifact_ids: ["artifact-opening"],
+  },
+  opened_at: "2026-08-14T12:00:00Z",
+  status: "open",
+};
+assert.equal(isCrewChiefWorkspaceResponse(withInvestigation, scope), true);
+for (const [label, mutate] of [
+  ["missing opening problem", (value) => { delete value.investigation.opening_problem; }],
+  ["unknown investigation field", (value) => { value.investigation.hidden_setup_call = "52%"; }],
+  ["unknown opening reasoning field", (value) => { value.investigation.opening_reasoning.confidence = 1; }],
+  ["missing opening identity field", (value) => { delete value.investigation.workspace_identity.p32_projection_sha256; }],
+  ["opening reasoning identity mismatch", (value) => { value.investigation.opening_reasoning.reasoning_snapshot_sha256 = h("0"); }],
+  ["opening problem objective mismatch", (value) => { value.investigation.opening_problem.objective = "qualifying_peak"; }],
+]) {
+  const hostile = structuredClone(withInvestigation);
+  mutate(hostile);
+  assert.equal(isCrewChiefWorkspaceResponse(hostile, scope), false, label);
+}
+const missionBody = {
+  schema_version: "p19.measurement-mission.v2",
+  candidate_id: "measurement-mission-1",
+  run_id: "run-1",
+  session_id: "session-1",
+  session_run_ids: ["run-1"],
+  source_setup_id: "setup-1",
+  setup_sha256: h("d"),
+  compatibility_fingerprint: h("e"),
+  purpose: "Acquire the missing evidence discriminator.",
+  procedure: ["Record the declared channels."],
+  required_channels: ["speed_mph"],
+  controlled_variables: ["setup"],
+  required_laps: 3,
+  acceptance_thresholds: ["Three eligible laps."],
+  integrity_stop_rules: ["Discard an invalid lap."],
+  source_event_ids: [],
+  cause_ids: [],
+  telemetry_health_identity: h("6"),
+  resource_snapshot: {
+    remaining_laps: null, remaining_time_s: null, fuel_laps_available: null,
+    tire_sets_available: null, source: "unknown",
+  },
+};
+const missionDigest = await canonicalJsonSha256(missionBody, {
+  pythonFloatKeys: new Set(["remaining_time_s", "fuel_laps_available"]),
+});
+const missionContract = {
+  ...missionBody,
+  contract_id: `mission:${missionDigest.slice(0, 20)}`,
+  contract_sha256: missionDigest,
+  created_at: "2026-08-14T12:00:00Z",
+  resource_snapshot: {
+    ...missionBody.resource_snapshot,
+    captured_at: "2026-08-14T12:00:00Z",
+  },
+};
+const withMission = structuredClone(workspace);
+withMission.p19_mission_contract = missionContract;
+const missionScope = structuredClone(scope);
+missionScope.report.briefing.action.mission_contract_id = missionContract.contract_id;
+missionScope.report.briefing.action.mission_contract_sha256 = missionContract.contract_sha256;
+assert.equal(isCrewChiefWorkspaceResponse(withMission, missionScope), true);
+assert.equal(await hasCanonicalMeasurementMissionDigest(missionContract), true);
+const staleMission = structuredClone(withMission);
+staleMission.p19_mission_contract.setup_sha256 = h("0");
+assert.equal(isCrewChiefWorkspaceResponse(staleMission, missionScope), true);
+assert.equal(
+  await hasCanonicalMeasurementMissionDigest(staleMission.p19_mission_contract),
+  false,
+);
 for (const instruction of ["Set cross_weight_percent to 52.0.", "Keep.", "Stop the test."]) {
   const hostile = structuredClone(workspace);
   hostile.terminal_decision.instruction = instruction;
@@ -183,6 +327,343 @@ const rejectMutation = (label, mutate) => {
   mutate(hostile);
   assert.equal(isCrewChiefWorkspaceResponse(hostile, scope), false, label);
 };
+rejectMutation("P33 exact keys reject a missing section", (value) => { delete value.learning_prior.evidence_references; });
+rejectMutation("P33 exact keys reject an extra nested field", (value) => { value.learning_prior.recurrence.setup_call = "hidden"; });
+rejectMutation("P33 history revision binds workspace identity", (value) => { value.learning_prior.history_revision = h("0"); });
+rejectMutation("P33 projection digest binds workspace identity", (value) => { value.learning_prior.projection_sha256 = h("0"); });
+rejectMutation("P33 cannot authorize setup", (value) => { value.learning_prior.setup_authorized = true; });
+rejectMutation("P33 cannot modify P19 cause rank", (value) => { value.learning_prior.p19_rank_modified = true; });
+rejectMutation("P33 recurrence cannot smuggle a setup directive", (value) => {
+  value.learning_prior.recurrence.statement = "Set cross weight to 52.0.";
+});
+rejectMutation("P33 recurrence cannot claim component causality", (value) => {
+  value.learning_prior.recurrence.statement = "Shocks produced the loss.";
+});
+rejectMutation("P33 recurrence cannot hide causality behind time wording", (value) => {
+  value.learning_prior.recurrence.statement = "Shocks caused the time loss.";
+});
+for (const statement of [
+  "The shocks drove the loss.",
+  "The loss came from the dampers.",
+  "This explains the handling problem.",
+  "The instability was attributable to cross weight.",
+]) {
+  rejectMutation(`P33 causal bypass is forbidden: ${statement}`, (value) => {
+    value.learning_prior.recurrence.statement = statement;
+  });
+}
+const boundedNegativeKnowledge = structuredClone(workspace);
+boundedNegativeKnowledge.learning_prior.recurrence.statement = "Shock inspection produced no discriminating evidence and did not cause the observed loss.";
+assert.equal(
+  isCrewChiefWorkspaceResponse(boundedNegativeKnowledge, scope),
+  true,
+  "negative knowledge and explicit causal negation remain representable",
+);
+rejectMutation("P33 post-run brief cannot smuggle setup authority", (value) => {
+  value.learning_prior.post_run_brief.blocker_reasons = ["Increase rear spring by 25 lb/in."];
+  value.learning_prior.blocker_reasons = ["Increase rear spring by 25 lb/in."];
+});
+rejectMutation("P33 ledger cannot claim lap-time improvement", (value) => {
+  value.learning_prior.ledger.claims_lap_time_improvement = true;
+});
+rejectMutation("available P33 memory requires a qualified item", (value) => {
+  value.learning_prior.state = "available";
+});
+
+const historicalMemory = structuredClone(workspace);
+const experienceId = `p33x_${"a".repeat(24)}`;
+const secondExperienceId = `p33x_${"d".repeat(24)}`;
+const referenceId = `p33ref_${"b".repeat(24)}`;
+Object.assign(historicalMemory.learning_prior, {
+  state: "available",
+  recurrence: {
+    recurrence_id: "recurrence-1", classification: "possible_recurrence",
+    problem_sha256s: [h("4")], experience_ids: [experienceId], investigation_ids: [],
+    statement: "A similar qualified driver pattern was observed once.", useful_discriminator: null,
+    prior_dead_end: null, strongest_contradiction: "Only one independent episode is available.",
+    transfer: null, counts: counts(1), strength: "single_case",
+    authority: "attention_only", setup_authorized: false,
+  },
+  driver_tendencies: [{
+    fingerprint_id: "driver-fingerprint-1", driver_id: "driver-1", transfer_level: "compatible",
+    state: "repeatable_tendency", tendencies: [{
+      contribution_id: "driver-contribution-1", metric: "brake_release_timing_consistency",
+      tendency: "repeatable_tendency", statement: "Brake release timing repeated in the qualified source window.",
+      physical_episode_ids: [], source_artifact_ids: ["historical-artifact-1"], source_lap_count: 1,
+      authority: "driver_context_only", setup_authorized: false,
+    }], counts: counts(2), source_experience_ids: [experienceId, secondExperienceId], contradictions: [],
+    authority: "driver_context_only", setup_authorized: false,
+  }],
+  evidence_references: [{
+    reference_id: referenceId, experience_id: experienceId,
+    provenance: {
+      provenance_sha256: h("5"), artifact_id: "historical-artifact-1",
+      producer_id: "p20.physical_episode", run_id: "run-history", session_id: "session-history",
+      setup_id: "setup-history", setup_snapshot_sha256: h("6"), build_context_sha256: h("8"),
+      lap_numbers: [7], lap_pct_start: 22, lap_pct_end: 31, phase: "entry",
+      source_channels: ["speed_mph", "brake_pct"], evidence_state: "measured", polarity: "support",
+    },
+    state: "available", blocker_reasons: [], authority: "attention_only", setup_authorized: false,
+  }],
+  context_transfer_level: "compatible", strength: "single_case", counts: counts(1),
+  post_run_brief: {
+    state: "available", what_we_learned: ["Brake release timing repeated in one qualified source window."],
+    what_changed_our_mind: [], what_did_not_work: [], next_attention: [], blocker_reasons: [],
+    authority: "attention_only", setup_authorized: false,
+  },
+  blocker_reasons: [],
+});
+historicalMemory.evidence_index.entries = [{
+  artifact_id: referenceId, producer_id: "p33.engineering_experience",
+  run_id: "run-history", session_id: "session-history", setup_id: "setup-history",
+  workspace_run_id: "run-1", workspace_session_id: "session-1", workspace_setup_id: "setup-1",
+  source_run_id: "run-history", source_session_id: "session-history", source_setup_id: "setup-history",
+  source_setup_sha256: h("6"), source_build_context_sha256: h("8"), source_provenance_available: true,
+  lap_numbers: [7], lap_pct_start: 22, lap_pct_end: 31, phase: "entry",
+  mechanism_ids: [], component_ids: [], control_keys: [], objective: "race_long_run",
+  source_channels: ["speed_mph", "brake_pct"], evidence_state: "measured", polarity: "support",
+  blocker_reasons: [], typed_artifact: null, authority_ceiling: "attention_only",
+}];
+const reasoning = (digest) => ({
+  reasoning_snapshot_sha256: digest, causes: [], measurement_plan_kind: "measurement_mission",
+  discriminator_ids: [], authority_level: "measurement", setup_authorized: false,
+});
+historicalMemory.learning_prior.useful_prior_investigations = [{
+  outcome_id: "outcome-1", experience_id: experienceId, transfer_level: "compatible",
+  outcome: {
+    investigation_id: "investigation-1", started_at: "2026-08-14T10:00:00Z",
+    completed_at: "2026-08-14T10:05:00Z", initial_cause_ids: [], tools_inspected: ["inspect_time_origin"],
+    driver_question_ids: [], driver_answers: [], requested_measurement_ids: ["inspect_time_origin"],
+    completed_measurement_ids: ["inspect_time_origin"], strongest_contradiction: "One source window remained unmatched.",
+    eliminated_cause_ids: [], unresolved_cause_ids: [], terminal_decision: "no_call", workflow_ids: [],
+    elapsed_seconds: 300, laps_consumed: 1, tool_steps_consumed: 1, driver_questions_consumed: 0,
+    successful_discriminator_ids: ["inspect_time_origin"], source_artifact_ids: [],
+    historical_retrieval_used: true, historical_match_confirmed: true,
+  },
+  counts: counts(1), useful: true, explanation: "The prior inspection reached a bounded no-call quickly.",
+  authority: "attention_only",
+}];
+historicalMemory.learning_prior.known_dead_ends = [{
+  experience_ids: [experienceId, secondExperienceId], transfer_level: "compatible",
+  fact: {
+    dead_end_id: "dead-end-1", kind: "repeated_no_finding_tool", tool_id: "inspect_component",
+    component_family: null, control: null, statement: "This inspection produced no discriminator in the saved context.",
+    source_artifact_ids: [], source_workflow_ids: [], current_evidence_may_override: true,
+    authority: "attention_only",
+  },
+  counts: counts(2), may_deprioritize_within_band: true, may_veto_current_evidence: false,
+}];
+historicalMemory.learning_prior.car_response_history = [{
+  fingerprint_id: "car-fingerprint-1", transfer_level: "compatible",
+  response: {
+    response_id: "response-1", component: "platform", control: "cross_weight_percent", direction: "increase",
+    magnitude_class: "small", expected_vehicle_response: "More center rotation was expected.",
+    observed_vehicle_response: "The response remained inconclusive.", p32_time_origin: "center",
+    phase_time_effect_s: null, carry_effect_s: null, recovery_surrender: "unavailable", countereffects: [],
+    p19_mechanism_assessment: "inconclusive", control_response_assessment: "inconclusive",
+    policy_verdict: "retest", source_workflow_id: "workflow-history", source_response_record_id: null,
+    source_artifact_ids: [], setup_authorized: false,
+  },
+  counts: { ...counts(2), independent_workflow_count: 2 },
+  source_experience_ids: [experienceId, secondExperienceId],
+  source_workflow_ids: ["workflow-history", "workflow-history-2"],
+  contradictions: [], statement: "The controlled response remained inconclusive in the saved context.",
+  authority: "controlled_history_only", setup_authorized: false,
+}];
+historicalMemory.learning_prior.mind_change_history = [{
+  experience_id: experienceId, transfer_level: "compatible",
+  fact: {
+    mind_change_id: "mind-change-1", before_reasoning: reasoning(h("a")), after_reasoning: reasoning(h("b")),
+    new_artifact_ids: ["mind-artifact-1"], new_evidence_states: ["measured"],
+    causes_promoted: [], causes_demoted: ["cause-1"], causes_ruled_out: [],
+    measurement_discriminator_id: "inspect_time_origin", evidence_discriminated: true,
+    driver_question_involved: false, controlled_evidence_involved: false, context_gate_involved: true,
+  },
+  statement: "A measured contradiction changed the saved P19 ordering.", authority: "attention_only",
+}];
+historicalMemory.learning_prior.recommended_attention_order = [{
+  tool_id: "inspect_time_origin", safety_band: "observation", learned_rank_within_band: 1,
+  baseline_rank_within_band: 2, reason: "This inspection was useful in two compatible saved contexts.",
+  transfer_level: "compatible", source_experience_ids: [experienceId, secondExperienceId], investigation_count: 2,
+  session_count: 1, independent_workflow_count: 0, authority: "attention_only",
+}];
+historicalMemory.learning_prior.context_transfers = [{
+  experience_id: experienceId, level: "compatible", matching_dimensions: ["car", "track"],
+  mismatched_dimensions: [], drift_reasons: [], blocker_reasons: [],
+}];
+assert.equal(isCrewChiefWorkspaceResponse(historicalMemory, scope), true, "cross-session P33 evidence keeps exact source provenance");
+const repeatedEvidenceState = structuredClone(historicalMemory);
+repeatedEvidenceState.learning_prior.mind_change_history[0].fact.new_artifact_ids.push("mind-artifact-2");
+repeatedEvidenceState.learning_prior.mind_change_history[0].fact.new_evidence_states.push("measured");
+assert.equal(
+  isCrewChiefWorkspaceResponse(repeatedEvidenceState, scope),
+  true,
+  "multiple exact artifacts may share one P33 evidence state",
+);
+const unpairedEvidenceState = structuredClone(repeatedEvidenceState);
+unpairedEvidenceState.learning_prior.mind_change_history[0].fact.new_evidence_states.pop();
+assert.equal(
+  isCrewChiefWorkspaceResponse(unpairedEvidenceState, scope),
+  false,
+  "P33 mind-change states pair one-for-one with artifacts",
+);
+const tiedP19Ranks = structuredClone(historicalMemory);
+const tiedCauses = [
+  { cause_id: "cause-tied-1", status: "possible", ordinal_rank: 2, mechanism_family: "platform" },
+  { cause_id: "cause-tied-2", status: "possible", ordinal_rank: 2, mechanism_family: "platform" },
+];
+tiedP19Ranks.learning_prior.mind_change_history[0].fact.before_reasoning.causes = tiedCauses;
+tiedP19Ranks.learning_prior.mind_change_history[0].fact.after_reasoning.causes = tiedCauses;
+assert.equal(
+  isCrewChiefWorkspaceResponse(tiedP19Ranks, scope),
+  true,
+  "P33 preserves canonical tied P19 ordinal ranks",
+);
+const duplicateP19Cause = structuredClone(tiedP19Ranks);
+duplicateP19Cause.learning_prior.mind_change_history[0].fact.after_reasoning.causes[1].cause_id = "cause-tied-1";
+assert.equal(
+  isCrewChiefWorkspaceResponse(duplicateP19Cause, scope),
+  false,
+  "P33 tied ranks do not permit duplicate cause identity",
+);
+
+const bindCanonicalLearningDigests = async (prior) => {
+  for (const reference of prior.evidence_references) {
+    const provenance = { ...reference.provenance };
+    delete provenance.provenance_sha256;
+    reference.provenance.provenance_sha256 = await canonicalEngineeringLearningSha256(provenance);
+    const digest = await canonicalJsonSha256({
+      experience_id: reference.experience_id,
+      provenance_sha256: reference.provenance.provenance_sha256,
+    });
+    reference.reference_id = `p33ref_${digest.slice(0, 24)}`;
+  }
+  const projection = { ...prior };
+  delete projection.projection_sha256;
+  prior.projection_sha256 = await canonicalEngineeringLearningSha256(projection);
+};
+const digestBoundHistory = structuredClone(historicalMemory);
+await bindCanonicalLearningDigests(digestBoundHistory.learning_prior);
+assert.equal(
+  await hasCanonicalEngineeringLearningDigests(digestBoundHistory.learning_prior),
+  true,
+  "canonical P33 prior/provenance/reference identities",
+);
+const staleProjectionDigest = structuredClone(digestBoundHistory.learning_prior);
+staleProjectionDigest.post_run_brief.what_we_learned[0] = "A different safe historical observation.";
+assert.equal(
+  await hasCanonicalEngineeringLearningDigests(staleProjectionDigest),
+  false,
+  "P33 content cannot retain a stale copied projection hash",
+);
+const forgedProvenanceDigest = structuredClone(digestBoundHistory.learning_prior);
+forgedProvenanceDigest.evidence_references[0].provenance.source_channels = ["speed_mph"];
+forgedProvenanceDigest.evidence_references[0].provenance.provenance_sha256 = h("9");
+const forgedProjectionBody = { ...forgedProvenanceDigest };
+delete forgedProjectionBody.projection_sha256;
+forgedProvenanceDigest.projection_sha256 = await canonicalEngineeringLearningSha256(forgedProjectionBody);
+assert.equal(
+  await hasCanonicalEngineeringLearningDigests(forgedProvenanceDigest),
+  false,
+  "P33 provenance rejects an attacker-supplied digest even when the parent digest is recomputed",
+);
+const detachedReferenceDigest = structuredClone(digestBoundHistory.learning_prior);
+const detachedReference = detachedReferenceDigest.evidence_references[0];
+detachedReference.experience_id = `p33x_${"c".repeat(24)}`;
+const detachedReferenceHash = await canonicalJsonSha256({
+  experience_id: detachedReference.experience_id,
+  provenance_sha256: detachedReference.provenance.provenance_sha256,
+});
+detachedReference.reference_id = `p33ref_${detachedReferenceHash.slice(0, 24)}`;
+const detachedReferenceBody = { ...detachedReferenceDigest };
+delete detachedReferenceBody.projection_sha256;
+detachedReferenceDigest.projection_sha256 = await canonicalEngineeringLearningSha256(detachedReferenceBody);
+const detachedReferenceWorkspace = structuredClone(historicalMemory);
+detachedReferenceWorkspace.learning_prior = detachedReferenceDigest;
+detachedReferenceWorkspace.identity.learning_projection_sha256 = detachedReferenceDigest.projection_sha256;
+detachedReferenceWorkspace.evidence_index.entries[0].artifact_id = detachedReference.reference_id;
+assert.equal(
+  isCrewChiefWorkspaceResponse(detachedReferenceWorkspace, scope),
+  false,
+  "a correctly re-identified reference still cannot detach from surfaced experience",
+);
+for (const [label, mutate] of [
+  ["P33 investigation chronology", (value) => { value.learning_prior.useful_prior_investigations[0].outcome.completed_at = "2026-08-14T09:00:00Z"; }],
+  ["P33 investigation operation counts", (value) => { value.learning_prior.useful_prior_investigations[0].outcome.tool_steps_consumed = 2; }],
+  ["P33 completed measurements require a durable request", (value) => {
+    value.learning_prior.useful_prior_investigations[0].outcome.requested_measurement_ids = ["another-measurement"];
+  }],
+  ["P33 successful discriminators require a completed measurement", (value) => {
+    value.learning_prior.useful_prior_investigations[0].outcome.completed_measurement_ids = [];
+  }],
+  ["P33 successful discriminators require the inspected tool result", (value) => {
+    value.learning_prior.useful_prior_investigations[0].outcome.tools_inspected = ["inspect_track_demand"];
+  }],
+  ["P33 non-discriminating mind changes cannot retain a discriminator", (value) => {
+    value.learning_prior.mind_change_history[0].fact.evidence_discriminated = false;
+  }],
+  ["P33 mind changes bind the successful discriminator from the same experience", (value) => {
+    value.learning_prior.mind_change_history[0].fact.measurement_discriminator_id = "inspect_track_demand";
+  }],
+  ["P33 mind changes require their same-experience investigation outcome", (value) => {
+    value.learning_prior.mind_change_history[0].experience_id = secondExperienceId;
+  }],
+  ["P33 dead ends cannot veto current evidence", (value) => { value.learning_prior.known_dead_ends[0].may_veto_current_evidence = true; }],
+  ["P33 undo history requires a countereffect", (value) => { value.learning_prior.car_response_history[0].response.policy_verdict = "undo"; }],
+  ["P33 car history cannot smuggle an exact setup value", (value) => {
+    value.learning_prior.car_response_history[0].response.observed_vehicle_response = "Set cross weight to 52%.";
+  }],
+  ["P33 car history requires a categorical magnitude", (value) => {
+    value.learning_prior.car_response_history[0].response.magnitude_class = "0.5%";
+  }],
+  ["P33 mind changes require a changed snapshot", (value) => {
+    value.learning_prior.mind_change_history[0].fact.after_reasoning.reasoning_snapshot_sha256 = h("a");
+  }],
+  ["P33 attention cannot cross a weak transfer gate", (value) => { value.learning_prior.context_transfer_level = "weak"; }],
+  ["P33 exact transfer cannot carry drift", (value) => {
+    value.learning_prior.context_transfers[0].level = "exact";
+    value.learning_prior.context_transfers[0].drift_reasons = ["weather drift"];
+  }],
+  ["P33 repeatable driver history needs two independent units", (value) => {
+    value.learning_prior.driver_tendencies[0].counts = counts(1);
+  }],
+  ["P33 driver contributions match the parent fingerprint state", (value) => {
+    value.learning_prior.driver_tendencies[0].tendencies[0].tendency = "context_dependent_tendency";
+  }],
+  ["P33 car response counts bind exact workflow IDs", (value) => {
+    value.learning_prior.car_response_history[0].counts.independent_workflow_count = 1;
+  }],
+  ["P33 dead ends cannot deprioritize across weak transfer", (value) => {
+    value.learning_prior.known_dead_ends[0].transfer_level = "weak";
+  }],
+  ["P33 dead ends need two independent units to deprioritize", (value) => {
+    value.learning_prior.known_dead_ends[0].counts = counts(1);
+  }],
+  ["P33 learned attention needs two investigations", (value) => {
+    value.learning_prior.recommended_attention_order[0].investigation_count = 1;
+  }],
+  ["P33 learned attention needs two source experiences", (value) => {
+    value.learning_prior.recommended_attention_order[0].source_experience_ids = [experienceId];
+  }],
+  ["P33 evidence references require surfaced experience", (value) => {
+    value.learning_prior.evidence_references[0].experience_id = `p33x_${"c".repeat(24)}`;
+  }],
+]) {
+  const hostile = structuredClone(historicalMemory);
+  mutate(hostile);
+  assert.equal(isCrewChiefWorkspaceResponse(hostile, scope), false, label);
+}
+const detachedHistory = structuredClone(historicalMemory);
+detachedHistory.evidence_index.entries[0].source_setup_sha256 = h("9");
+assert.equal(isCrewChiefWorkspaceResponse(detachedHistory, scope), false, "P33 navigation target cannot drift from provenance");
+const smuggledHistoricalComponent = structuredClone(historicalMemory);
+smuggledHistoricalComponent.evidence_index.entries[0].component_ids = ["shocks"];
+assert.equal(isCrewChiefWorkspaceResponse(smuggledHistoricalComponent, scope), false, "P33 navigation target cannot smuggle component focus");
+const unavailableHistory = structuredClone(historicalMemory);
+unavailableHistory.learning_prior.evidence_references[0].state = "unavailable";
+unavailableHistory.learning_prior.evidence_references[0].blocker_reasons = ["Saved source session is unavailable."];
+unavailableHistory.evidence_index.entries = [];
+assert.equal(isCrewChiefWorkspaceResponse(unavailableHistory, scope), true, "unavailable P33 source has an explicit blocker and no focus target");
 rejectMutation("request objective is bound", (value) => { value.identity.objective_id = "qualifying_peak"; });
 rejectMutation("track fractions are finite", (value) => { value.performance_intelligence.track_demand.braking_fraction = Number.NaN; });
 rejectMutation("track fractions stay bounded", (value) => { value.performance_intelligence.track_demand.traffic_exposure_fraction = 1.1; });

@@ -64,6 +64,9 @@ result, and remember only what the evidence supports.
 | P29 - Component Response Atlas and Driver Intelligence | Verified guarded production foundation | Exact-context controlled history and complaint/context-only driver memory persist separately with operational effectiveness counts |
 | P30 - Adaptive Experimentation Research | Infrastructure seam verified; activation DATA-LOCKED | Production remains one-factor P19 A/B/A2 until P21/P22 held-out and prospective activation gates truly pass |
 | P31 - Truthful Crew Loop | Implemented; release validation recorded below | Telemetry, experiment, evidence, Crew, Compare, P26, caching, and UI trust share exact identity while every authority lock remains intact |
+| P32 - Lap-Time Mechanics and Speed Intelligence | Verified after P32.1 truth closure | Qualified driver demand, vehicle response, measured elapsed time, origin/carry, track demand, P20/P26 context, and exact P19 next move form one non-causal performance projection |
+| P32.1 - Performance Truth Closure | Verified | Traffic and context lead attribution, signed gain/loss truth survives, controlled memory restarts exactly, and every rendered performance claim fails closed |
+| P33 - Engineering Learning Flywheel | Verified deterministic attention-only foundation; adaptive authority remains locked | Immutable qualified experience improves recurrence retrieval and investigation order while current evidence and P19 retain all truth and setup authority |
 
 ---
 
@@ -2091,6 +2094,76 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   development `short_run`, and ends in `no_call`.
 - Whole-repo Ruff, bytecode compilation, and diff integrity passed.
 
+## P33 - Engineering Learning Flywheel
+
+- [x] Persist one immutable, append-only `EngineeringExperienceRecord` ledger
+  with a transactionally bound stream head, deterministic content identity,
+  source hashes, typed context/problem/P19 facts, and references to canonical
+  investigation, A/B/A2, P26, and P32 artifacts instead of copied telemetry.
+- [x] Reconstruct recurrence deterministically across sessions while separating
+  exact, compatible, weak, and blocked transfer; car/build, track configuration,
+  setup context, objective, tire/weather, traffic, and driver-execution drift can
+  only reduce historical relevance.
+- [x] Project contextual driver fingerprints from independent qualified episodes
+  and exact car-response fingerprints from existing controlled P19/P26/P32
+  history without turning either into mechanical diagnosis or setup advice.
+- [x] Preserve investigation order, exact successful discriminators, questions,
+  measurements, terminal outcomes, elapsed/lap/tool costs, and true no-finding
+  paths as typed effectiveness and negative knowledge.
+- [x] Record mind change only when the newly cited artifact has exact source
+  provenance and the before/after P19 snapshots truly differ; retrieval alone
+  cannot become confirmation, discrimination, causation, or faster resolution.
+- [x] Count independent physical episodes, controlled workflows, sessions, and
+  contexts rather than references or dense samples; one source cannot teach
+  recurrence or learned priority by being cited repeatedly.
+- [x] Embed one bounded `CrewChiefLearningPrior` in the existing workspace with
+  `attention_only` authority. Current qualified evidence remains pinned first;
+  exact history outranks compatible history; learning may reorder only live tools
+  inside an unchanged safety band and must explain `WHY THIS IS EARLIER`.
+- [x] Keep terminal learning capture healthy and atomic while containing corrupt
+  history: P19 workflow scores and Crew terminal truth still commit with an exact
+  durable blocked-capture identity, no experience is invented, restart preserves
+  the state, and the P33 prior visibly blocks all learned reorder.
+- [x] Extend Engineer Race/Learning mode with concise recurrence memory and a
+  typed Engineering Memory surface; historical evidence navigation verifies the
+  exact source session, run, setup, build, artifact, and digest before changing
+  selection. No new top-level tab or arbitrary learning mutation route exists.
+- [x] Keep retrieval bounded to indexed context branches with fixed limits and no
+  telemetry reads. A 10,001-record ledger returned a warm page in `34.303 ms`, a
+  cold projection in `53.024 ms`, and a cached projection in `7.197 ms`.
+- [x] Keep Bayesian optimization, DOE setup authority, formal causal learning,
+  neural/generative setup engineering, learned probabilities, and autonomous
+  multi-control experimentation locked behind their existing evidence gates.
+
+### P33 release validation - VERIFIED 2026-08-14
+
+- Python: 2,514 collected; 2,509 passed and five protected tests skipped. The
+  dedicated P33 model/repository/service/lifecycle files contain 82 hostile and
+  scenario tests; the integrated P33/authority/P19/P26/P32/Crew/API/client slice
+  passed 336 checks. The post-fix full collection was rerun from zero failures.
+- Adversarial closure permanently covers reference inflation, tied P19 ranks,
+  exact-before-compatible priority, ordered request/result identity, genuine
+  discriminator credit across normal workspace-revision advancement, rebase
+  invalidation, dead-end containment, driver/build/objective drift, Undo axis
+  separation, exact mind-change provenance, cross-session navigation, append-only
+  tamper/deletion, restart identity, bounded retrieval, and corrupt-ledger
+  authority containment.
+- Frontend: all six executable runtime trust suites, nine Vitest behavior/unit
+  tests, TypeScript, and the 2,201-module production build passed. The client
+  mirrors the complete learning, provenance, investigation, and workflow-capture
+  contracts and independently recomputes their canonical digests.
+- API/packaging: OpenAPI 3.1 generated 94 operations across 86 paths and 325
+  schemas with zero duplicate operation IDs. P33 remains inside the existing Crew
+  workspace, GET stayed read-only, the Windows sidecar packaged successfully, and
+  its exact executable returned `status=ok` before clean shutdown.
+- Real telemetry: persisted Atlanta and EchoPark workspaces passed the complete
+  backend-to-client trust boundary. Atlanta preserved the observed `+0.136447 s`
+  loss, blocked attribution at `100% / 100%` traffic, published zero component
+  claims and zero setup authority, measured disturbance at `0.0613`, ended in
+  `no_call`, and exposed P33 as `attention_only`, insufficient-history, with no
+  learned reorder and no P19-rank change.
+- Whole-repo Ruff, bytecode compilation, and diff integrity passed.
+
 ---
 
 ## Professional analysis surface, without losing the product thesis
@@ -2203,3 +2276,4 @@ Implementation queue completed in this pass:
 | 2026-08-13 | Completed P31 Truthful Crew Loop hardening | Telemetry truth, controlled-experiment identity, segmented evidence, transactional focus, exact Compare provenance, P19-mirrored Crew missions, deterministic investigation, quantity-level P26 observability, shared single-flight intelligence, scoped workflow polling, strict UI trust, and measurement-only research infrastructure passed all 2,338 collected Python tests (2,333 passed, five skipped), 187 focused authority tests, Ruff, TypeScript, three behavioral UI tests, five runtime trust suites, the 2,197-module build, OpenAPI inspection, protected Atlanta regressions, Windows sidecar packaging, and built-UI Atlanta import/Crew/process-restart smoke. Warm Atlanta intelligence is 5.488 ms with one build; the measured 13.195 s cold path remains explicit vectorization debt. P19/P20/P26/Crew authority ceilings and P30/statistical/physics locks remain unchanged. |
 | 2026-08-13 | Verified P32 Lap-Time Mechanics and Speed Intelligence | A run-owned empirical performance model now connects qualified driver demand, vehicle response, measured elapsed time, origin/carry, corner chains, track demand, P20 mechanisms, P26 relevance, controlled history, and the exact P19 next move. All 2,361 Python tests passed subject to five protected skips, plus 20 P32 hostile tests, three UI contracts, whole-repo Ruff, bytecode compilation, TypeScript, three behavioral UI tests, five runtime trust suites, the 2,198-module production build, diff integrity, and persisted Atlanta execution. Atlanta produced four measured opportunities, one corner chain, three non-causal component links, full reciprocal-speed coverage, exact P19/P20/P26/P32 identity, zero setup authority, and a data-locked optimizer. |
 | 2026-08-13 | Closed P32.1 Performance Truth Closure after reopening P32 | Traffic and unknown context now lead and block attribution without hiding the signed observation; canonical compatibility/proximity gates, complete demand coverage, local disturbance, opportunity-relative carry, exact adjacency/repeatability, P26-independent core intelligence, nine typed Crew tools, restart-safe exact history, and deep client trust prevent a convincing but unsupported speed story. The full collection finished with 2,400 passed and five protected skips, plus the 94-test integrated release slice, 54 hostile truth tests, Ruff, bytecode compilation, TypeScript, five UI behavior tests, the hostile runtime suite, the 2,198-module build, diff integrity, and a real public Atlanta backend-to-client guard. Atlanta exposes `+0.136447 s` observed, blocks attribution at 100% source/reference traffic, publishes zero component/setup authority, measures disturbance at `0.0613`, withholds limiter zones, and remains `no_call`. |
+| 2026-08-14 | Verified P33 Engineering Learning Flywheel | One immutable qualified-experience ledger now projects recurrence, contextual driver and car fingerprints, diagnostic effectiveness, exact mind changes, dead ends, transfer/drift, and transparent attention-only Crew memory without modifying current P19 truth or setup authority. The complete 2,514-test collection passed with 2,509 successes and five protected skips, plus 82 dedicated P33 tests, a 336-test integrated authority slice, six runtime trust suites, nine UI tests, Ruff, bytecode compilation, TypeScript, the 2,201-module build, OpenAPI inspection, packaged-sidecar health, persisted Atlanta/EchoPark client guards, and bounded 10,001-record retrieval at 34.303 ms warm / 53.024 ms cold projection / 7.197 ms cached. Corrupt history now records a visible blocked capture without vetoing P19 or Crew terminal truth; ordered request/completion evidence and normal event-hash revision advancement cannot fabricate or erase discriminator credit; all adaptive, causal, probabilistic, generative, and multi-control authority remains locked. |

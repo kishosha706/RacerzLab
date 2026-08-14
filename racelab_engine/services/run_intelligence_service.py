@@ -1539,24 +1539,71 @@ def _build_run_intelligence_uncached(
                 origin_valid_workflows.append(stored_workflow)
     workflow_rows = origin_valid_workflows
     if workflow_candidate is not None:
+        candidate_is_planned = (
+            workflow_candidate.status == "planned"
+            and not workflow_candidate.stage_run_ids
+            and not workflow_candidate.stage_eligible_lap_numbers
+            and workflow_candidate.execution is None
+            and workflow_candidate.quality is None
+            and all(
+                item.workflow_id != workflow_candidate.workflow_id
+                for item in workflow_rows
+            )
+        )
+        persisted_candidate = next(
+            (
+                item
+                for item in workflow_rows
+                if item.workflow_id == workflow_candidate.workflow_id
+            ),
+            None,
+        )
+        candidate_is_scored_transition = (
+            workflow_candidate.status == "scored"
+            and workflow_candidate.execution is not None
+            and workflow_candidate.quality is not None
+            and set(workflow_candidate.stage_run_ids) == {"A", "B", "A2"}
+            and set(workflow_candidate.stage_eligible_lap_numbers) == {"A", "B", "A2"}
+            and persisted_candidate is not None
+            and persisted_candidate.status == "a2_recorded"
+            and workflow_candidate.created_at == persisted_candidate.created_at
+            and workflow_candidate.source_run_id == persisted_candidate.source_run_id
+            and workflow_candidate.complaint == persisted_candidate.complaint
+            and workflow_candidate.packet == persisted_candidate.packet
+            and workflow_candidate.stage_run_ids == persisted_candidate.stage_run_ids
+            and workflow_candidate.stage_experiment_contexts
+            == persisted_candidate.stage_experiment_contexts
+            and workflow_candidate.analysis_version == persisted_candidate.analysis_version
+        )
         if (
             resolved_session_id is None
             or workflow_candidate.source_run_id != run_id
-            or workflow_candidate.status != "planned"
-            or workflow_candidate.stage_run_ids
-            or workflow_candidate.stage_eligible_lap_numbers
-            or workflow_candidate.execution is not None
-            or workflow_candidate.quality is not None
             or workflow_candidate.source_run_id not in scope_run_ids
-            or any(
-                item.workflow_id == workflow_candidate.workflow_id
-                for item in workflow_rows
-            )
+            or not (candidate_is_planned or candidate_is_scored_transition)
         ):
             raise ValueError(
                 "The proposed workflow candidate does not match the exact current P19 scope."
             )
-        workflow_rows = [*workflow_rows, workflow_candidate]
+        if candidate_is_scored_transition:
+            try:
+                validate_p19_workflow_origin(
+                    workflow_candidate,
+                    repository=repository,
+                    expected_session_id=resolved_session_id,
+                    expected_session_run_ids=scope_run_ids,
+                )
+            except (AttributeError, FileNotFoundError, OSError, TypeError, ValueError) as exc:
+                raise ValueError(
+                    "The scored workflow candidate lacks its exact current P19 origin."
+                ) from exc
+            workflow_rows = [
+                workflow_candidate
+                if item.workflow_id == workflow_candidate.workflow_id
+                else item
+                for item in workflow_rows
+            ]
+        else:
+            workflow_rows = [*workflow_rows, workflow_candidate]
     workflows = _related_workflows(workflow_rows, scope_run_ids)
     _require_one_active_workflow_in_explicit_session(
         workflows,

@@ -49,6 +49,8 @@ export type IntelligenceAction = {
   proposed_value?: string | null;
   evidence_state: EvidenceState;
   source_event_ids: string[];
+  mission_contract_id?: string | null;
+  mission_contract_sha256?: string | null;
   blocker_reasons: string[];
 };
 

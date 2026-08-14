@@ -1,7 +1,8 @@
-"""Typed, non-authoritative contracts for the P27-P29 Crew Chief executive.
+"""Typed, non-authoritative contracts for the P27-P33 Crew Chief executive.
 
 The executive may decide what to inspect, ask, or measure.  Exact setup and
-policy authority remains structurally owned by the canonical P19 snapshot.
+policy authority remains structurally owned by the canonical P19 snapshot;
+P33 history may influence attention order only.
 """
 
 from __future__ import annotations
@@ -14,6 +15,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.engineering_learning import (
+    CrewChiefLearningPrior,
+    P19ReasoningMemory,
+    ProblemFingerprint,
+)
 from racelab_engine.models.experiment import MeasurementMissionContract
 from racelab_engine.models.observation_intelligence import MechanismKind
 from racelab_engine.models.performance_intelligence import (
@@ -108,9 +114,7 @@ class CrewChiefPathEfficiencyArtifact(CrewChiefModel):
 
 
 class CrewChiefDriverVehicleSeparationArtifact(CrewChiefModel):
-    artifact_type: Literal["driver_vehicle_separation"] = (
-        "driver_vehicle_separation"
-    )
+    artifact_type: Literal["driver_vehicle_separation"] = "driver_vehicle_separation"
     chain_id: str = Field(min_length=1)
     track_region: str = Field(min_length=1)
     start_pct: float = Field(ge=0, le=100, allow_inf_nan=False)
@@ -130,9 +134,7 @@ class CrewChiefTrackDemandArtifact(CrewChiefModel):
 
 
 class CrewChiefComponentPerformanceLinkArtifact(CrewChiefModel):
-    artifact_type: Literal["component_performance_link"] = (
-        "component_performance_link"
-    )
+    artifact_type: Literal["component_performance_link"] = "component_performance_link"
     influence: ComponentPerformanceInfluence
 
 
@@ -183,6 +185,8 @@ class CrewChiefWorkspaceIdentity(CrewChiefModel):
     p26_knowledge_graph_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     p26_reasoning_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     p32_projection_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    learning_history_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    learning_projection_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     setup_id: str = Field(min_length=1)
     setup_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     vehicle_runtime_identity_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -206,8 +210,23 @@ class CrewChiefInvestigation(CrewChiefModel):
     objective: EngineeringObjective
     raw_driver_report: str = Field(min_length=1)
     canonical_problem: str = Field(min_length=1)
+    opening_reasoning: P19ReasoningMemory
+    opening_problem: ProblemFingerprint
     opened_at: datetime
     status: Literal["open", "complete", "stale", "abandoned"] = "open"
+
+    @model_validator(mode="after")
+    def opening_truth_matches_workspace(self) -> CrewChiefInvestigation:
+        if (
+            self.objective != self.workspace_identity.objective_id
+            or self.opening_problem.objective != self.objective.value
+            or self.opening_reasoning.reasoning_snapshot_sha256
+            != self.workspace_identity.reasoning_snapshot_sha256
+        ):
+            raise ValueError(
+                "Crew Chief opening reasoning/problem must match the immutable workspace truth"
+            )
+        return self
 
 
 CrewChiefEventType = Literal[
@@ -233,6 +252,9 @@ class CrewChiefEventPayload(CrewChiefModel):
     cause_ids: tuple[str, ...] = ()
     component_ids: tuple[str, ...] = ()
     artifact_ids: tuple[str, ...] = ()
+    workflow_ids: tuple[str, ...] = ()
+    requested_measurement_ids: tuple[str, ...] = ()
+    completed_measurement_ids: tuple[str, ...] = ()
     tool_id: str | None = None
     question_id: str | None = None
     answer: str | None = None
@@ -245,8 +267,18 @@ class CrewChiefEventPayload(CrewChiefModel):
     previous_authority_revision: str | None = Field(
         default=None, pattern=r"^[0-9a-f]{64}$"
     )
-    new_authority_revision: str | None = Field(
+    new_authority_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    learning_capture_state: Literal["not_applicable", "captured", "blocked"] = (
+        "not_applicable"
+    )
+    learning_capture_experience_id: str | None = Field(
+        default=None, pattern=r"^p33x_[0-9a-f]{24}$"
+    )
+    learning_capture_experience_sha256: str | None = Field(
         default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    learning_capture_blocker_reason: str | None = Field(
+        default=None, min_length=1, max_length=240
     )
     findings: tuple[str, ...] = ()
 
@@ -256,6 +288,9 @@ class CrewChiefEventPayload(CrewChiefModel):
             (self.cause_ids, "cause"),
             (self.component_ids, "component"),
             (self.artifact_ids, "artifact"),
+            (self.workflow_ids, "workflow"),
+            (self.requested_measurement_ids, "requested measurement"),
+            (self.completed_measurement_ids, "completed measurement"),
             (self.findings, "finding"),
         ):
             if any(not value for value in values) or len(values) != len(set(values)):
@@ -278,6 +313,35 @@ class CrewChiefEventPayload(CrewChiefModel):
                 raise ValueError(
                     f"Crew Chief {label} revisions must be present together"
                 )
+        has_experience_identity = (
+            self.learning_capture_experience_id is not None
+            and self.learning_capture_experience_sha256 is not None
+        )
+        if (self.learning_capture_experience_id is None) != (
+            self.learning_capture_experience_sha256 is None
+        ):
+            raise ValueError(
+                "Crew Chief P33 capture experience identity must be complete"
+            )
+        if self.learning_capture_state == "not_applicable" and (
+            has_experience_identity or self.learning_capture_blocker_reason is not None
+        ):
+            raise ValueError(
+                "non-attempted Crew Chief P33 capture cannot claim experience truth"
+            )
+        if self.learning_capture_state == "captured" and (
+            not has_experience_identity
+            or self.learning_capture_blocker_reason is not None
+        ):
+            raise ValueError(
+                "captured Crew Chief P33 memory requires its exact experience"
+            )
+        if self.learning_capture_state == "blocked" and (
+            not has_experience_identity or self.learning_capture_blocker_reason is None
+        ):
+            raise ValueError(
+                "blocked Crew Chief P33 memory requires its attempted experience and blocker"
+            )
         return self
 
 
@@ -299,23 +363,82 @@ class CrewChiefEvent(CrewChiefModel):
                 raise ValueError("Crew Chief tool events require one tool identity")
         elif payload.tool_id is not None:
             raise ValueError("Crew Chief tool identity is exclusive to tool events")
+        if self.event_type == "tool_invoked":
+            if (
+                payload.requested_measurement_ids != (payload.tool_id,)
+                or payload.completed_measurement_ids
+            ):
+                raise ValueError(
+                    "Crew Chief tool invocation must request its exact tool measurement"
+                )
+        elif self.event_type == "tool_result_attached":
+            if (
+                payload.requested_measurement_ids
+                or payload.completed_measurement_ids != (payload.tool_id,)
+            ):
+                raise ValueError(
+                    "Crew Chief tool result must complete its exact tool measurement"
+                )
+        elif payload.completed_measurement_ids:
+            raise ValueError(
+                "completed measurement identities are exclusive to tool results"
+            )
         if self.event_type == "driver_question_asked":
             if payload.question_id is None or payload.answer is not None:
-                raise ValueError("driver-question events require one unanswered question")
+                raise ValueError(
+                    "driver-question events require one unanswered question"
+                )
         elif self.event_type == "driver_answer_recorded":
             if payload.question_id is None or payload.answer is None:
-                raise ValueError("driver-answer events require the exact question and answer")
+                raise ValueError(
+                    "driver-answer events require the exact question and answer"
+                )
         elif payload.question_id is not None or payload.answer is not None:
             raise ValueError("driver dialogue fields are exclusive to driver events")
         if (self.event_type == "decision_emitted") != (
             payload.decision_kind is not None
         ):
-            raise ValueError("decision identity is exclusive and required for decision events")
+            raise ValueError(
+                "decision identity is exclusive and required for decision events"
+            )
+        if payload.decision_kind == "measurement_mission":
+            if len(payload.requested_measurement_ids) != 1:
+                raise ValueError(
+                    "measurement-mission decisions require the exact P19 mission contract"
+                )
+        elif self.event_type != "tool_invoked" and payload.requested_measurement_ids:
+            raise ValueError(
+                "measurement requests are exclusive to tool invocation or P19 missions"
+            )
+        if self.event_type != "decision_emitted" and payload.workflow_ids:
+            raise ValueError(
+                "workflow identities are exclusive to terminal decision events"
+            )
+        if payload.decision_kind == "controlled_test":
+            if len(payload.workflow_ids) != 1:
+                raise ValueError(
+                    "controlled-test decisions require the exact workflow identity"
+                )
+        elif payload.workflow_ids:
+            raise ValueError(
+                "non-controlled Crew Chief decisions cannot claim workflow authority"
+            )
         if (self.event_type == "objective_selected") != (payload.objective is not None):
-            raise ValueError("objective identity is exclusive and required for objective events")
+            raise ValueError(
+                "objective identity is exclusive and required for objective events"
+            )
+        if (
+            self.event_type not in {"decision_emitted", "investigation_abandoned"}
+            and payload.learning_capture_state != "not_applicable"
+        ):
+            raise ValueError(
+                "P33 learning capture metadata is exclusive to terminal Crew events"
+            )
         has_rebase = payload.previous_workspace_revision is not None
         if (self.event_type == "workspace_rebased") != has_rebase:
-            raise ValueError("workspace revisions are exclusive and required for rebase events")
+            raise ValueError(
+                "workspace revisions are exclusive and required for rebase events"
+            )
         return self
 
 
@@ -357,7 +480,9 @@ class EngineeringEvidenceIndexEntry(CrewChiefModel):
     source_session_id: str | None = Field(default=None, min_length=1)
     source_setup_id: str | None = Field(default=None, min_length=1)
     source_setup_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    source_build_context_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    source_build_context_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     source_provenance_available: bool
     lap_numbers: tuple[int, ...] = ()
     lap_pct_start: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
@@ -373,7 +498,11 @@ class EngineeringEvidenceIndexEntry(CrewChiefModel):
     blocker_reasons: tuple[str, ...] = ()
     typed_artifact: CrewChiefPerformanceArtifact | None = None
     authority_ceiling: Literal[
-        "observation_only", "context_only", "measurement_only", "p19_projection_only"
+        "observation_only",
+        "context_only",
+        "measurement_only",
+        "p19_projection_only",
+        "attention_only",
     ]
 
     @model_validator(mode="after")
@@ -384,16 +513,22 @@ class EngineeringEvidenceIndexEntry(CrewChiefModel):
             raise ValueError("evidence index window bounds are reversed")
         if self.run_id != self.source_run_id or self.setup_id != self.source_setup_id:
             raise ValueError("legacy evidence scope must equal explicit source scope")
-        complete = all((
-            self.source_session_id,
-            self.source_setup_id,
-            self.source_setup_sha256,
-            self.source_build_context_sha256,
-        ))
+        complete = all(
+            (
+                self.source_session_id,
+                self.source_setup_id,
+                self.source_setup_sha256,
+                self.source_build_context_sha256,
+            )
+        )
         if self.source_provenance_available != bool(complete):
-            raise ValueError("source provenance availability must match exact source identity")
+            raise ValueError(
+                "source provenance availability must match exact source identity"
+            )
         if not complete and "source identity unavailable" not in self.blocker_reasons:
-            raise ValueError("incomplete source identity must block exact-context interpretation")
+            raise ValueError(
+                "incomplete source identity must block exact-context interpretation"
+            )
         performance_types: dict[str, PerformanceArtifactType] = {
             "p32.lap_time_opportunity": "lap_time_opportunity",
             "p32.time_loss_origin": "time_loss_origin",
@@ -411,7 +546,9 @@ class EngineeringEvidenceIndexEntry(CrewChiefModel):
                 raise ValueError("only P32 evidence may carry a performance artifact")
             return self
         if self.typed_artifact is None:
-            raise ValueError("P32 evidence requires the typed artifact it claims to inspect")
+            raise ValueError(
+                "P32 evidence requires the typed artifact it claims to inspect"
+            )
         actual_type = self.typed_artifact.artifact_type
         if actual_type == "unavailable":
             if (
@@ -423,8 +560,13 @@ class EngineeringEvidenceIndexEntry(CrewChiefModel):
                     "unavailable P32 artifacts must match their claim, state, and blockers"
                 )
             return self
-        if actual_type != expected_type or self.evidence_state == EvidenceState.UNAVAILABLE:
-            raise ValueError("P32 producer, typed artifact, and evidence state disagree")
+        if (
+            actual_type != expected_type
+            or self.evidence_state == EvidenceState.UNAVAILABLE
+        ):
+            raise ValueError(
+                "P32 producer, typed artifact, and evidence state disagree"
+            )
         artifact_start: float | None = None
         artifact_end: float | None = None
         artifact_id: str | None = None
@@ -454,15 +596,11 @@ class EngineeringEvidenceIndexEntry(CrewChiefModel):
                 f"{self.typed_artifact.chain_id}:path:"
                 f"{self.typed_artifact.phase_state.phase}"
             )
-        elif isinstance(
-            self.typed_artifact, CrewChiefDriverVehicleSeparationArtifact
-        ):
+        elif isinstance(self.typed_artifact, CrewChiefDriverVehicleSeparationArtifact):
             artifact_start = self.typed_artifact.start_pct
             artifact_end = self.typed_artifact.end_pct
             artifact_id = self.typed_artifact.separation.separation_id
-        elif isinstance(
-            self.typed_artifact, CrewChiefComponentPerformanceLinkArtifact
-        ):
+        elif isinstance(self.typed_artifact, CrewChiefComponentPerformanceLinkArtifact):
             artifact_id = self.typed_artifact.influence.influence_id
         elif isinstance(self.typed_artifact, CrewChiefTrackDemandArtifact):
             artifact_id = (
@@ -474,16 +612,14 @@ class EngineeringEvidenceIndexEntry(CrewChiefModel):
                 f"p32-objective:"
                 f"{canonical_json_sha256(self.typed_artifact.envelope)[:20]}"
             )
-        if (
-            artifact_start is not None
-            and (
-                self.lap_pct_start != artifact_start
-                or self.lap_pct_end != artifact_end
-            )
+        if artifact_start is not None and (
+            self.lap_pct_start != artifact_start or self.lap_pct_end != artifact_end
         ):
             raise ValueError("P32 evidence window must equal its typed artifact window")
         if artifact_id is not None and self.artifact_id != artifact_id:
-            raise ValueError("P32 evidence identity must equal its typed artifact identity")
+            raise ValueError(
+                "P32 evidence identity must equal its typed artifact identity"
+            )
         return self
 
 
@@ -633,7 +769,9 @@ class RunSentinelState(CrewChiefModel):
     required_laps: int | None = Field(default=None, ge=1)
     accepted_laps: int = Field(ge=0)
     collection_complete: bool
-    stage: Literal["measurement", "A", "B", "A2", "blocked", "stopped", "awaiting_score"]
+    stage: Literal[
+        "measurement", "A", "B", "A2", "blocked", "stopped", "awaiting_score"
+    ]
     laps: tuple[RunSentinelLap, ...] = ()
     blocker_reasons: tuple[str, ...] = ()
 
@@ -644,19 +782,23 @@ class RunSentinelState(CrewChiefModel):
         expected_complete = (
             self.required_laps is not None
             and self.accepted_laps >= self.required_laps
-            and self.mission_state not in {
-                "blocked_by_p19", "stopped_by_p19", "awaiting_p19_score"
-            }
+            and self.mission_state
+            not in {"blocked_by_p19", "stopped_by_p19", "awaiting_p19_score"}
         )
         if self.collection_complete != expected_complete:
-            raise ValueError("sentinel collection completion must match accepted evidence")
+            raise ValueError(
+                "sentinel collection completion must match accepted evidence"
+            )
         if self.mission_state == "collection_complete" and not self.collection_complete:
             raise ValueError("collection-complete state requires a complete collection")
         if self.mission_state == "blocked_by_p19" and self.stage != "blocked":
             raise ValueError("blocked P19 state requires a blocked sentinel")
         if self.mission_state == "stopped_by_p19" and self.stage != "stopped":
             raise ValueError("stopped P19 state requires a stopped sentinel")
-        if self.mission_state == "awaiting_p19_score" and self.stage != "awaiting_score":
+        if (
+            self.mission_state == "awaiting_p19_score"
+            and self.stage != "awaiting_score"
+        ):
             raise ValueError("awaiting-score state requires its exact sentinel stage")
         return self
 
@@ -702,11 +844,15 @@ class CrewChiefTerminalDecision(CrewChiefModel):
                 "non-controlled Crew Chief decisions cannot expose setup values"
             )
         elif self.authority == "p19_projection_only":
-            raise ValueError("P19 projection authority is exclusive to controlled tests")
+            raise ValueError(
+                "P19 projection authority is exclusive to controlled tests"
+            )
         if (self.workflow_id is None) != (self.workflow_revision is None):
             raise ValueError("terminal workflow identity requires its revision")
         if self.kind != "controlled_test" and self.workflow_id is not None:
-            raise ValueError("non-controlled decisions cannot expose workflow authority")
+            raise ValueError(
+                "non-controlled decisions cannot expose workflow authority"
+            )
         if len(self.source_event_ids) != len(set(self.source_event_ids)):
             raise ValueError("terminal evidence identities must be unique")
         return self
@@ -796,8 +942,8 @@ class AdaptiveResearchBoundary(CrewChiefModel):
 
 
 class CrewChiefWorkspace(CrewChiefModel):
-    schema_version: Literal["p32.crew-chief-workspace.v2"] = (
-        "p32.crew-chief-workspace.v2"
+    schema_version: Literal["p33.crew-chief-workspace.v1"] = (
+        "p33.crew-chief-workspace.v1"
     )
     identity: CrewChiefWorkspaceIdentity
     generated_at: datetime
@@ -813,6 +959,7 @@ class CrewChiefWorkspace(CrewChiefModel):
     success_contract: SuccessContract | None = None
     p19_mission_contract: MeasurementMissionContract | None = None
     performance_intelligence: PerformanceIntelligenceProjection
+    learning_prior: CrewChiefLearningPrior
     run_sentinel: RunSentinelState
     terminal_decision: CrewChiefTerminalDecision
     response_history_ids: tuple[str, ...] = ()
@@ -834,15 +981,77 @@ class CrewChiefWorkspace(CrewChiefModel):
         if self.evidence_index.workspace_revision != self.identity.workspace_revision:
             raise ValueError("evidence index must match the workspace revision")
         if (
-            self.performance_intelligence.projection_sha256 != self.identity.p32_projection_sha256
+            self.performance_intelligence.projection_sha256
+            != self.identity.p32_projection_sha256
             or self.performance_intelligence.run_id != self.identity.run_id
             or self.performance_intelligence.session_id != self.identity.session_id
-            or self.performance_intelligence.objective_id != self.identity.objective_id.value
-            or self.performance_intelligence.p19_reasoning_snapshot_sha256 != self.identity.reasoning_snapshot_sha256
-            or self.performance_intelligence.p20_state_revision != self.identity.p20_state_revision
-            or self.performance_intelligence.p26_knowledge_graph_sha256 != self.identity.p26_knowledge_graph_sha256
+            or self.performance_intelligence.objective_id
+            != self.identity.objective_id.value
+            or self.performance_intelligence.p19_reasoning_snapshot_sha256
+            != self.identity.reasoning_snapshot_sha256
+            or self.performance_intelligence.p20_state_revision
+            != self.identity.p20_state_revision
+            or self.performance_intelligence.p26_knowledge_graph_sha256
+            != self.identity.p26_knowledge_graph_sha256
         ):
-            raise ValueError("P32 projection must match the atomic Crew Chief workspace")
+            raise ValueError(
+                "P32 projection must match the atomic Crew Chief workspace"
+            )
+        prior = self.learning_prior
+        if (
+            prior.run_id != self.identity.run_id
+            or prior.session_id != self.identity.session_id
+            or prior.objective_id != self.identity.objective_id.value
+            or prior.selected_scope_hash != self.identity.selected_scope_hash
+            or prior.p19_reasoning_snapshot_sha256
+            != self.identity.reasoning_snapshot_sha256
+            or prior.p32_projection_sha256 != self.identity.p32_projection_sha256
+            or prior.history_revision != self.identity.learning_history_revision
+            or prior.projection_sha256 != self.identity.learning_projection_sha256
+            or prior.authority != "attention_only"
+            or prior.setup_authorized
+            or prior.p19_rank_modified
+        ):
+            raise ValueError("P33 prior must match the atomic attention-only workspace")
+        learning_references = {
+            item.reference_id: item
+            for item in prior.evidence_references
+            if item.state == "available"
+        }
+        indexed_learning = {
+            item.artifact_id: item
+            for item in self.evidence_index.entries
+            if item.producer_id == "p33.engineering_experience"
+        }
+        if set(learning_references) != set(indexed_learning):
+            raise ValueError(
+                "available P33 history must equal its canonical evidence-index targets"
+            )
+        for reference_id, reference in learning_references.items():
+            source = reference.provenance
+            entry = indexed_learning[reference_id]
+            if (
+                entry.run_id != source.run_id
+                or entry.session_id != source.session_id
+                or entry.setup_id != source.setup_id
+                or entry.source_run_id != source.run_id
+                or entry.source_session_id != source.session_id
+                or entry.source_setup_id != source.setup_id
+                or entry.source_setup_sha256 != source.setup_snapshot_sha256
+                or entry.source_build_context_sha256 != source.build_context_sha256
+                or entry.lap_numbers != source.lap_numbers
+                or entry.lap_pct_start != source.lap_pct_start
+                or entry.lap_pct_end != source.lap_pct_end
+                or entry.phase != source.phase
+                or entry.source_channels != source.source_channels
+                or entry.evidence_state != source.evidence_state
+                or entry.polarity != source.polarity
+                or entry.authority_ceiling != "attention_only"
+                or entry.typed_artifact is not None
+            ):
+                raise ValueError(
+                    "P33 evidence navigation must preserve exact source provenance"
+                )
         for item in (
             self.latest_tool_result,
             self.pending_driver_question,

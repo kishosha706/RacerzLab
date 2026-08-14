@@ -343,17 +343,21 @@ export type TestQualityResult = {
   controlled_effect_eligible: boolean;
 };
 
+export type LearningCaptureState = "not_applicable" | "captured" | "blocked";
+
 export type ControlledWorkflow = {
   workflow_id: string;
-  updated_at?: string;
+  created_at: string;
+  updated_at: string;
   status: "planned" | "a_recorded" | "b_recorded" | "a2_recorded" | "scored" | "cancelled";
   source_run_id: string;
   complaint: string;
   packet: KaizenEvidencePacket;
   stage_run_ids: Partial<Record<"A" | "B" | "A2", string>>;
-  stage_eligible_lap_numbers?: Partial<Record<"A" | "B" | "A2", number[]>>;
-  analysis_version?: string;
-  execution?: {
+  stage_eligible_lap_numbers: Partial<Record<"A" | "B" | "A2", number[]>>;
+  stage_experiment_contexts: Partial<Record<"A" | "B" | "A2", Record<string, unknown>>>;
+  analysis_version: string;
+  execution: {
     phase_effect_b_vs_a_s?: number | null;
     phase_effect_b_vs_a2_s?: number | null;
     empirical_noise_s?: number | null;
@@ -366,9 +370,13 @@ export type ControlledWorkflow = {
     control_guardrails_passed?: boolean | null;
     control_guardrail_metrics?: Record<string, number>;
   } | null;
-  reproduction_snapshot?: Record<string, unknown>;
-  quality?: TestQualityResult | null;
-  learning_admitted?: boolean | null;
+  reproduction_snapshot: Record<string, unknown>;
+  quality: TestQualityResult | null;
+  learning_admitted: boolean | null;
+  learning_capture_state: LearningCaptureState;
+  learning_capture_experience_id: string | null;
+  learning_capture_experience_sha256: string | null;
+  learning_capture_blocker_reason: string | null;
 };
 
 export type TelemetryCursor = {

@@ -6,6 +6,11 @@ import type {
   PerformanceIntelligenceProjection,
   PerformancePhaseState,
 } from "./performanceIntelligence";
+import type {
+  CrewChiefLearningPrior,
+  P19ReasoningMemory,
+  ProblemFingerprint,
+} from "./engineeringLearning";
 
 export type EngineeringObjective =
   | "qualifying_peak"
@@ -79,16 +84,9 @@ export type CrewChiefWorkspaceIdentity = {
   p26_knowledge_graph_sha256: string;
   p26_reasoning_snapshot_sha256: string;
   p32_projection_sha256: string;
-  setup_id: string | null;
-  workspace_run_id: string;
-  workspace_session_id: string;
-  workspace_setup_id: string;
-  source_run_id: string;
-  source_session_id: string | null;
-  source_setup_id: string | null;
-  source_setup_sha256: string | null;
-  source_build_context_sha256: string | null;
-  source_provenance_available: boolean;
+  learning_history_revision: string;
+  learning_projection_sha256: string;
+  setup_id: string;
   setup_snapshot_sha256: string;
   vehicle_runtime_identity_hash: string;
   active_workflow_id: string | null;
@@ -126,7 +124,7 @@ export type CrewChiefEvidenceEntry = {
   polarity: "support" | "contradiction" | "neutral";
   blocker_reasons: string[];
   typed_artifact: CrewChiefPerformanceArtifact | null;
-  authority_ceiling: "observation_only" | "context_only" | "measurement_only" | "p19_projection_only";
+  authority_ceiling: "observation_only" | "context_only" | "measurement_only" | "p19_projection_only" | "attention_only";
 };
 
 export type CrewChiefTerminalDecision = {
@@ -143,20 +141,25 @@ export type CrewChiefTerminalDecision = {
   blocker_reasons: string[];
 };
 
+export type CrewChiefInvestigation = {
+  investigation_id: string;
+  workspace_identity: CrewChiefWorkspaceIdentity;
+  origin: "post_import" | "driver_report" | "manual_review";
+  objective: EngineeringObjective;
+  raw_driver_report: string;
+  canonical_problem: string;
+  opening_reasoning: P19ReasoningMemory;
+  opening_problem: ProblemFingerprint;
+  opened_at: string;
+  status: "open" | "complete" | "stale" | "abandoned";
+};
+
 export type CrewChiefWorkspace = {
-  schema_version: "p32.crew-chief-workspace.v2";
+  schema_version: "p33.crew-chief-workspace.v1";
   identity: CrewChiefWorkspaceIdentity;
   generated_at: string;
   cache_state: "cold" | "warm";
-  investigation: null | {
-    investigation_id: string;
-    origin: "post_import" | "driver_report" | "manual_review";
-    objective: EngineeringObjective;
-    raw_driver_report: string;
-    canonical_problem: string;
-    opened_at: string;
-    status: "open" | "complete" | "stale" | "abandoned";
-  };
+  investigation: CrewChiefInvestigation | null;
   folded_state: null | {
     investigation_id: string;
     status: "open" | "complete" | "stale" | "abandoned";
@@ -222,6 +225,7 @@ export type CrewChiefWorkspace = {
     purpose: string;
   };
   performance_intelligence: PerformanceIntelligenceProjection;
+  learning_prior: CrewChiefLearningPrior;
   run_sentinel: {
     mission_state: "collecting" | "blocked_by_p19" | "stopped_by_p19" | "awaiting_p19_score" | "collection_complete";
     p19_plan_kind: "controlled_test" | "measurement_mission" | "discriminator" | "stop_testing" | "blocked";

@@ -18,7 +18,7 @@ def test_speed_story_is_one_race_mode_brief_and_learning_exposes_full_chain() ->
         "DRIVER",
         "CAR",
         "SYSTEMS",
-        "HISTORY",
+        "MEMORY",
         "STRONGEST CONTRADICTION",
         "NEXT · P19",
     ):
@@ -31,7 +31,7 @@ def test_speed_story_is_one_race_mode_brief_and_learning_exposes_full_chain() ->
         "Comparison context",
         "P20 / P26 performance bridge",
         "Objective envelope",
-        "Performance history",
+        "ENGINEERING MEMORY",
     ):
         assert learning_surface in deck
     assert "onFocusEvidence(evidence)" in deck
@@ -66,7 +66,7 @@ def test_client_requires_atomic_p32_identity_and_rejects_authority_smuggling() -
     assert "isPerformanceIntelligenceProjection" in crew_trust
     assert "objectiveId: scope.objectiveId" in crew_trust
     assert "opportunityEvidence: p32Evidence" in crew_trust
-    assert 'value.schema_version !== "p32.crew-chief-workspace.v2"' in crew_trust
+    assert 'value.schema_version !== "p33.crew-chief-workspace.v1"' in crew_trust
 
 
 def test_crew_planner_begins_with_measured_time_before_component_relevance() -> None:

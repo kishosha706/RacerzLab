@@ -54,6 +54,9 @@ import type {
 } from "./types/telemetry";
 import type { RaceLabSession, SessionSelectionSource } from "./types/session";
 import type { IntelligenceCitation, IntelligenceCitationWorkspace, IntelligenceNextTrustworthyMove } from "./types/intelligence";
+import type { CrewChiefEvidenceEntry } from "./types/crewChief";
+import type { LearningEvidenceReference } from "./types/engineeringLearning";
+import { canonicalJsonSha256 } from "./utils/canonicalJsonSha256";
 import {
   intelligenceMoveScope,
   intelligenceWorkspaceTarget,
@@ -1269,7 +1272,11 @@ function CockpitShell() {
     }
   }, []);
 
-  const handleSessionSelected = useCallback(async (sid: string, source: SessionSelectionSource) => {
+  const handleSessionSelected = useCallback(async (
+    sid: string,
+    source: SessionSelectionSource,
+    exactRunId?: string,
+  ): Promise<boolean> => {
     const selectionSeq = ++sessionSelectionSeqRef.current;
     sessionRunsRequestSeqRef.current += 1;
     loadSelectedRunSeqRef.current += 1;
@@ -1286,32 +1293,158 @@ function CockpitShell() {
     setSessionOpenError(null);
     try {
       const session = await fetchSession(sid);
-      if (!isLatestSelection()) return;
+      if (!isLatestSelection()) return false;
       if (!sessionPayloadMatchesRequest(session, sid)) {
         throw new Error("The session response did not match the session that was selected.");
+      }
+      if (exactRunId && !session.run_ids.includes(exactRunId)) {
+        throw new Error("The requested historical evidence run is not attached to its recorded session.");
       }
       setCurrentSession(session);
       const [recentRuns] = await Promise.all([
         fetchRunList().catch(() => []),
         refreshSessionRuns(sid, session.run_ids),
       ]);
-      if (!isLatestSelection()) return;
+      if (!isLatestSelection()) return false;
       setRuns(recentRuns);
       if (session.run_ids.length > 0) {
         void loadOverviewTab();
         void loadEventTimeline();
-        await loadSelectedRun(session.run_ids[session.run_ids.length - 1], "session_open");
+        const loaded = await loadSelectedRun(
+          exactRunId ?? session.run_ids[session.run_ids.length - 1],
+          "session_open",
+        );
+        return loaded && isLatestSelection();
       } else {
         if (isLatestSelection()) setLoading(false);
+        return exactRunId == null;
       }
     } catch (caught) {
-      if (!isLatestSelection()) return;
+      if (!isLatestSelection()) return false;
       setCurrentSession(null);
       setSessionRuns([]);
       setSessionOpenError(caught instanceof Error ? caught.message : "The session could not be opened.");
       setLoading(false);
+      return false;
     }
   }, [clearCurrentRunState, loadSelectedRun, refreshSessionRuns]);
+
+  const openCrewChiefEvidence = useCallback(async (target: CrewChiefEvidenceEntry | LearningEvidenceReference) => {
+    const learningReference = "provenance" in target ? target : null;
+    if (!("provenance" in target) && target.producer_id === "p33.engineering_experience") {
+      setError("Historical evidence must be opened from its typed Engineering Memory source reference.");
+      return;
+    }
+    if (learningReference?.state === "unavailable") {
+      setError(learningReference.blocker_reasons.join(" ") || "That historical telemetry source is unavailable.");
+      return;
+    }
+    const provenance = learningReference?.provenance ?? null;
+    const sourceRunId = provenance?.run_id ?? (target as CrewChiefEvidenceEntry).source_run_id;
+    const sourceSessionId = provenance?.session_id ?? (target as CrewChiefEvidenceEntry).source_session_id;
+    const sourceSetupId = provenance?.setup_id ?? (target as CrewChiefEvidenceEntry).source_setup_id;
+    const sourceSetupHash = provenance?.setup_snapshot_sha256 ?? (target as CrewChiefEvidenceEntry).source_setup_sha256;
+    const sourceBuildHash = provenance?.build_context_sha256 ?? (target as CrewChiefEvidenceEntry).source_build_context_sha256;
+    const sourceProvenanceAvailable = provenance !== null || (target as CrewChiefEvidenceEntry).source_provenance_available;
+    if (
+      !sourceSessionId
+      || !sourceProvenanceAvailable
+      || !sourceSetupId
+      || !sourceSetupHash
+      || !sourceBuildHash
+    ) {
+      setError("That Crew Chief evidence source has incomplete provenance, so the current run was left unchanged.");
+      return;
+    }
+    const sameSession = currentSession?.session_id === sourceSessionId;
+    if (sameSession) {
+      if (!attachedSessionRunIds.has(sourceRunId)) {
+        setError("That Crew Chief evidence source is not attached to its saved session, so the current run was left unchanged.");
+        return;
+      }
+    } else {
+      try {
+        const sourceSession = await fetchSession(sourceSessionId);
+        if (
+          !sessionPayloadMatchesRequest(sourceSession, sourceSessionId)
+          || !sourceSession.run_ids.includes(sourceRunId)
+        ) {
+          setError("That Crew Chief evidence source does not belong to its recorded session, so the current run was left unchanged.");
+          return;
+        }
+      } catch {
+        setError("The recorded Crew Chief evidence session could not be verified, so the current run was left unchanged.");
+        return;
+      }
+    }
+    try {
+      const sourceReport = await fetchRunIntelligence(sourceRunId, { sessionId: sourceSessionId });
+      const runtimeIdentity = sourceReport.vehicle_systems?.runtime_identity;
+      const runtimeHash = runtimeIdentity ? await canonicalJsonSha256(runtimeIdentity) : null;
+      if (
+        sourceReport.run_id !== sourceRunId
+        || sourceReport.session_id !== sourceSessionId
+        || sourceReport.setup_id !== sourceSetupId
+        || sourceReport.setup_snapshot_sha256 !== sourceSetupHash
+        || runtimeHash === null
+        || runtimeHash !== sourceBuildHash
+      ) {
+        setError("That historical telemetry source no longer matches its saved setup and build identity, so the current run was left unchanged.");
+        return;
+      }
+    } catch {
+      setError("The recorded Crew Chief evidence identity could not be verified, so the current run was left unchanged.");
+      return;
+    }
+    if (sameSession) {
+      if (overview?.run_id !== sourceRunId) {
+        const loaded = await loadSelectedRun(sourceRunId);
+        if (!loaded) return;
+      }
+    } else {
+      const loaded = await handleSessionSelected(sourceSessionId, "existing", sourceRunId);
+      if (!loaded) return;
+    }
+    const lapNumbers = provenance ? provenance.lap_numbers : (target as CrewChiefEvidenceEntry).lap_numbers;
+    const lapPctStart = provenance ? provenance.lap_pct_start : (target as CrewChiefEvidenceEntry).lap_pct_start;
+    const lapPctEnd = provenance ? provenance.lap_pct_end : (target as CrewChiefEvidenceEntry).lap_pct_end;
+    const phase = provenance ? provenance.phase : (target as CrewChiefEvidenceEntry).phase;
+    const sourceChannels = provenance ? provenance.source_channels : (target as CrewChiefEvidenceEntry).source_channels;
+    const producerId = provenance ? provenance.producer_id : (target as CrewChiefEvidenceEntry).producer_id;
+    const artifactId = provenance ? provenance.artifact_id : (target as CrewChiefEvidenceEntry).artifact_id;
+    const componentId = provenance ? null : (target as CrewChiefEvidenceEntry).component_ids[0] ?? null;
+    const lap = lapNumbers[0] ?? null;
+    const hasWindow = lapPctStart != null && lapPctEnd != null;
+    const midpoint = hasWindow ? (lapPctStart + lapPctEnd) / 2 : null;
+    setError(null);
+    dispatch({ type: "SELECT_SETUP_KEY", setupKey: null });
+    focusEvidence({
+      runId: sourceRunId,
+      lapNumber: lap,
+      lapScope: hasWindow ? "track_zone" : lap == null ? "run" : "single_lap",
+      lapWindowStart: null,
+      lapWindowEnd: null,
+      representativeLap: null,
+      eventId: null,
+      producerId,
+      artifactId,
+      sampleIndex: null,
+      lapDistFt: null,
+      lapPct: midpoint,
+      zoneId: hasWindow ? `crew:${producerId}:${artifactId}` : null,
+      zoneLabel: phase,
+      zoneStartPct: lapPctStart,
+      zoneEndPct: lapPctEnd,
+      channelId: sourceChannels[0] ?? null,
+      system: componentId,
+      sourceRunId,
+      sourceSetupId,
+      selectionSource: "engineer",
+      lockState: hasWindow ? "locked" : "none",
+      trustTier: "navigation_only",
+      valueBasis: hasWindow ? "selected_window" : lap == null ? "run_level" : "full_lap",
+    }, "platform_trace");
+  }, [attachedSessionRunIds, currentSession?.session_id, dispatch, focusEvidence, handleSessionSelected, loadSelectedRun, overview?.run_id]);
 
   // ── import ──────────────────────────────────────────────────
   const [importStage, setImportStage] = useState<string | null>(null);
@@ -1640,6 +1773,7 @@ function CockpitShell() {
           workflowId={currentGuidanceWorkflow?.workflow_id ?? null}
           workflowUpdatedAt={currentGuidanceWorkflowUpdatedAt}
           onNavigateCitation={openIntelligenceCitation}
+          onNavigateCrewEvidence={openCrewChiefEvidence}
         />
       );
     }
@@ -1710,7 +1844,7 @@ function CockpitShell() {
       );
     }
     return <OverviewTab overview={overview} sessionId={currentSession?.session_id ?? null} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={openMapOverlay} />;
-  }, [currentGuidanceWorkflow?.workflow_id, currentGuidanceWorkflowUpdatedAt, currentIntelligenceAuthority, currentIntelligenceAuthorityRecovery, currentIntelligenceAuthorityStatus, currentPlatformEvents, currentPlatformEventsLoadError, currentPlatformEventsLoadStatus, currentSession, currentTrace, currentTraceLoadError, currentTraceLoadStatus, explicitControlledWorkflowId, handleMapOverlayZoomRangeChange, openIntelligenceCitation, openMapOverlay, overview, platformEventVisibilityMode, retryPlatformEvents, retryTrace, selection.selectedLap, selection.selectedLapScope, selection.selectedLapWindowEnd, selection.selectedLapWindowStart, selection.selectedRepresentativeLap, selection.selectedWorkspace, sessionRuns, sessionRunsLoading, sessionSelectionSource]);
+  }, [currentGuidanceWorkflow?.workflow_id, currentGuidanceWorkflowUpdatedAt, currentIntelligenceAuthority, currentIntelligenceAuthorityRecovery, currentIntelligenceAuthorityStatus, currentPlatformEvents, currentPlatformEventsLoadError, currentPlatformEventsLoadStatus, currentSession, currentTrace, currentTraceLoadError, currentTraceLoadStatus, explicitControlledWorkflowId, handleMapOverlayZoomRangeChange, openCrewChiefEvidence, openIntelligenceCitation, openMapOverlay, overview, platformEventVisibilityMode, retryPlatformEvents, retryTrace, selection.selectedLap, selection.selectedLapScope, selection.selectedLapWindowEnd, selection.selectedLapWindowStart, selection.selectedRepresentativeLap, selection.selectedWorkspace, sessionRuns, sessionRunsLoading, sessionSelectionSource]);
 
   if (engineStatus === "starting") {
     return (

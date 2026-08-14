@@ -139,7 +139,8 @@ def test_learning_mode_exposes_explanations_without_weakening_evidence() -> None
     assert "Supports" in engineer
     assert "Contradicts" in engineer
     assert "Best next measurement" in engineer
-    assert "Worked here before" in engineer
+    assert "Worked here before" not in engineer
+    assert "CrewChiefCommandDeck" in engineer
     assert "Calibration record" in engineer
     assert "protocol-valid gradable direction outcomes" in engineer
     assert "Session narrative" in engineer

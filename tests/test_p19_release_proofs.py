@@ -425,6 +425,29 @@ def test_full_aba2_keep_survives_restart_with_durable_memory(
     )
     assert stage_a2.status == "a2_recorded"
 
+    connection = initialize_database(db_path)
+    try:
+        setup_memory_before = connection.execute(
+            "SELECT COUNT(*) FROM setup_response_observations"
+        ).fetchone()[0]
+    finally:
+        connection.close()
+    transient = workflow_service.score_workflow(
+        planned.workflow_id,
+        repository=repository,
+        persist=False,
+    )
+    assert transient.status == "scored"
+    unchanged = repository.get_controlled_workflow(planned.workflow_id)
+    assert unchanged is not None and unchanged.status == "a2_recorded"
+    connection = initialize_database(db_path)
+    try:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM setup_response_observations"
+        ).fetchone()[0] == setup_memory_before
+    finally:
+        connection.close()
+
     scored = workflow_service.score_workflow(
         planned.workflow_id,
         repository=repository,

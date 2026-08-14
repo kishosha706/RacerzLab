@@ -38,7 +38,12 @@ import type {
 } from "../types/learningReadiness";
 import { isRunIntelligenceResponse } from "../utils/intelligenceResponseTrust";
 import { isDialInHypothesisResponse } from "../utils/dialInResponseTrust";
-import { isCrewChiefWorkspaceResponse } from "../utils/crewChiefResponseTrust";
+import { isControlledWorkflowResponse } from "../utils/controlledWorkflowTrust";
+import {
+  hasCanonicalMeasurementMissionDigest,
+  isCrewChiefWorkspaceResponse,
+} from "../utils/crewChiefResponseTrust";
+import { hasCanonicalEngineeringLearningDigests } from "../utils/engineeringLearningTrust.js";
 
 const API_BASE =
   import.meta.env.VITE_RACELAB_API_BASE_URL ??
@@ -345,18 +350,24 @@ export function fetchRunIntelligence(
   });
 }
 
-function trustedCrewChiefResponse(
+async function trustedCrewChiefResponse(
   payload: unknown,
   runId: string,
   sessionId: string,
   report: RunIntelligenceReport,
   objectiveId: EngineeringObjective,
   scopeRunIds?: readonly string[],
-): CrewChiefWorkspace {
+): Promise<CrewChiefWorkspace> {
   if (!isCrewChiefWorkspaceResponse(payload, {
     runId, sessionId, report, objectiveId, scopeRunIds,
   })) {
-    throw new Error("Crew Chief failed its exact P19/P20/P26 workspace authority check.");
+    throw new Error("Crew Chief failed its exact P19/P20/P26/P32/P33 workspace authority check.");
+  }
+  if (!await hasCanonicalEngineeringLearningDigests(payload.learning_prior)) {
+    throw new Error("Crew Chief failed its canonical P33 learning identity check.");
+  }
+  if (!await hasCanonicalMeasurementMissionDigest(payload.p19_mission_contract)) {
+    throw new Error("Crew Chief failed its canonical P19 measurement-mission identity check.");
   }
   return payload;
 }
@@ -650,10 +661,17 @@ export function startControlledWorkflow(payload: {
   window_end_lap?: number | null;
   representative_lap?: number | null;
 } & DialInDecisionContext): Promise<ControlledWorkflow> {
-  return requestJson<ControlledWorkflow>("/api/engineering/workflows", {
+  return requestJson<unknown>("/api/engineering/workflows", {
     method: "POST",
     body: JSON.stringify(payload),
-  });
+  }).then((response) => trustedControlledWorkflow(response));
+}
+
+function trustedControlledWorkflow(payload: unknown): ControlledWorkflow {
+  if (!isControlledWorkflowResponse(payload)) {
+    throw new Error("Controlled workflow failed its exact lifecycle and P33 capture-containment check.");
+  }
+  return payload;
 }
 
 export function attachControlledWorkflowStage(
@@ -661,24 +679,24 @@ export function attachControlledWorkflowStage(
   stage: "A" | "B" | "A2",
   runId: string,
 ): Promise<ControlledWorkflow> {
-  return requestJson<ControlledWorkflow>(
+  return requestJson<unknown>(
     `/api/engineering/workflows/${encodeURIComponent(workflowId)}/stages/${stage}`,
     { method: "POST", body: JSON.stringify({ run_id: runId }) },
-  );
+  ).then((response) => trustedControlledWorkflow(response));
 }
 
 export function scoreControlledWorkflow(workflowId: string): Promise<ControlledWorkflow> {
-  return requestJson<ControlledWorkflow>(
+  return requestJson<unknown>(
     `/api/engineering/workflows/${encodeURIComponent(workflowId)}/score`, {
     method: "POST",
-  });
+  }).then((response) => trustedControlledWorkflow(response));
 }
 
 export function cancelControlledWorkflow(workflowId: string): Promise<ControlledWorkflow> {
-  return requestJson<ControlledWorkflow>(
+  return requestJson<unknown>(
     `/api/engineering/workflows/${encodeURIComponent(workflowId)}/cancel`,
     { method: "POST" },
-  );
+  ).then((response) => trustedControlledWorkflow(response));
 }
 
 export function fetchControlledWorkflows(
@@ -691,7 +709,12 @@ export function fetchControlledWorkflows(
     run_id: runId,
     active_only: activeOnly ? "true" : "false",
   });
-  return requestJson<ControlledWorkflow[]>(`/api/engineering/workflows?${params.toString()}`);
+  return requestJson<unknown>(`/api/engineering/workflows?${params.toString()}`).then((response) => {
+    if (!Array.isArray(response) || !response.every(isControlledWorkflowResponse)) {
+      throw new Error("Controlled-workflow catalog failed its exact lifecycle and P33 capture-containment check.");
+    }
+    return response;
+  });
 }
 
 export type ControlledWorkflowCatalogItem = Pick<
@@ -710,9 +733,9 @@ export function fetchControlledWorkflowCatalog(
 }
 
 export function fetchControlledWorkflow(workflowId: string): Promise<ControlledWorkflow> {
-  return requestJson<ControlledWorkflow>(
+  return requestJson<unknown>(
     `/api/engineering/workflows/${encodeURIComponent(workflowId)}`,
-  );
+  ).then((response) => trustedControlledWorkflow(response));
 }
 
 export function fetchControlledWorkflowReport(workflowId: string): Promise<{ workflow_id: string; markdown: string }> {

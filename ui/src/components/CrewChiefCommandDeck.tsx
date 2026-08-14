@@ -11,6 +11,7 @@ import {
   updateCrewChiefObjective,
 } from "../api/client";
 import type { CrewChiefEvidenceEntry, CrewChiefWorkspace, EngineeringObjective } from "../types/crewChief";
+import type { LearningEvidenceReference } from "../types/engineeringLearning";
 import type { RunIntelligenceReport } from "../types/intelligence";
 
 type Props = {
@@ -19,7 +20,7 @@ type Props = {
   report: RunIntelligenceReport;
   scopeRunIds: readonly string[];
   learning: boolean;
-  onFocusEvidence: (entry: CrewChiefEvidenceEntry) => void;
+  onFocusEvidence: (entry: CrewChiefEvidenceEntry | LearningEvidenceReference) => void;
 };
 
 const objectives: Array<[EngineeringObjective, string]> = [
@@ -81,7 +82,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
     return <section className="crew-chief-deck crew-chief-loading" aria-busy="true" aria-live="polite">
       <span className="eyebrow"><BrainCircuit size={13} aria-hidden="true" /> Crew Chief</span>
       <b>{busy ? "Binding current evidence" : "Crew Chief is waiting"}</b>
-      <p>Checking the exact P19, P20, P26, and P32 identities before showing a decision.</p>
+      <p>Checking the exact P19, P20, P26, P32, and P33 identities before showing a decision.</p>
     </section>;
   }
 
@@ -90,6 +91,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
   const revision = workspace.identity.workspace_revision;
   const status = workspace.folded_state?.status;
   const performance = workspace.performance_intelligence;
+  const memory = workspace.learning_prior;
   const story = performance.speed_story;
   const activeObjective = workspace.folded_state?.objective ?? objective;
   const opportunityEvidence = new Map(
@@ -97,6 +99,28 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
       .filter((item) => item.producer_id === "p32.lap_time_opportunity")
       .map((item) => [item.artifact_id, item]),
   );
+  const memoryLine = memory.state === "available"
+    ? memory.post_run_brief.what_we_learned[0]
+      ?? memory.post_run_brief.next_attention[0]
+      ?? memory.recurrence.statement
+    : memory.blocker_reasons[0]
+      ?? memory.post_run_brief.blocker_reasons[0]
+      ?? "No qualified engineering history is available for this context.";
+  const evidenceLinks = (experienceIds: readonly string[]) => experienceIds.length ? (
+    <div className="engineering-memory-evidence" aria-label="Historical telemetry evidence">
+      {(() => {
+        const references = memory.evidence_references.filter((item) => experienceIds.includes(item.experience_id));
+        if (!references.length) return <small>Historical source navigation was not published for this memory.</small>;
+        return references.map((reference) => reference.state === "available"
+          ? <button
+            type="button"
+            key={reference.reference_id}
+            onClick={() => onFocusEvidence(reference)}
+          >Open telemetry · {reference.provenance.artifact_id}</button>
+          : <small key={reference.reference_id}>{reference.blocker_reasons.join(" ")}</small>);
+      })()}
+    </div>
+  ) : null;
   const canStartFollowUp = status === "complete" || status === "abandoned";
   return (
     <section
@@ -121,11 +145,11 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
         <p><b>WHERE IT STARTS</b> {story.where_it_starts}</p>
         <p><b>WHAT CARRIES</b> {story.what_carries}</p>
         <p className="speed-story-contradiction"><b>STRONGEST CONTRADICTION</b> {story.strongest_contradiction}</p>
+        {!learning && <p className="speed-story-memory"><b>MEMORY</b> {memoryLine}</p>}
         {learning && <>
           <p><b>DRIVER</b> {story.driver}</p>
           <p><b>CAR</b> {story.car}</p>
           <p><b>SYSTEMS</b> {story.systems}</p>
-          <p><b>HISTORY</b> {story.history}</p>
           <p><b>KNOW</b> {workspace.evidence_index.entries.length} exact artifacts · {workspace.run_sentinel.accepted_laps} accepted laps</p>
         </>}
       </div>
@@ -214,6 +238,132 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
 
       {learning && (
         <div className="crew-chief-learning">
+          <section className="engineering-memory" aria-label="Engineering Memory">
+            <header>
+              <div><span className="eyebrow">ENGINEERING MEMORY</span><h3>{memory.recurrence.classification.replace(/_/g, " ")}</h3></div>
+              <div className="engineering-memory-badges">
+                <span>{memory.strength.replace(/_/g, " ")}</span>
+                <span>{memory.context_transfer_level.replace(/_/g, " ")} transfer</span>
+              </div>
+            </header>
+
+            <div className="engineering-memory-grid">
+              <article>
+                <h4>Recurrence</h4>
+                <p>{memory.recurrence.statement}</p>
+                <small>{memory.recurrence.counts.independent_episode_count} independent episodes · {memory.recurrence.counts.distinct_session_count} sessions</small>
+                {memory.recurrence.useful_discriminator && <small>Useful discriminator: {memory.recurrence.useful_discriminator}</small>}
+                {memory.recurrence.prior_dead_end && <small>Prior dead end: {memory.recurrence.prior_dead_end}</small>}
+                {memory.recurrence.strongest_contradiction && <small>Contradiction: {memory.recurrence.strongest_contradiction}</small>}
+              </article>
+
+              <article>
+                <h4>Context transfer</h4>
+                <p>{memory.context_transfer_level.replace(/_/g, " ")}</p>
+                {memory.context_transfers.length ? memory.context_transfers.slice(0, 4).map((item) => (
+                  <small key={item.experience_id}>{item.level.replace(/_/g, " ")} · matches {item.matching_dimensions.join(", ") || "none"}{item.mismatched_dimensions.length ? ` · mismatches ${item.mismatched_dimensions.join(", ")}` : ""}{item.drift_reasons.length ? ` · drift ${item.drift_reasons.join("; ")}` : ""}{item.blocker_reasons.length ? ` · blocked ${item.blocker_reasons.join("; ")}` : ""}</small>
+                )) : <small>No prior context cleared transfer.</small>}
+              </article>
+
+              <article>
+                <h4>Driver fingerprint</h4>
+                {memory.driver_tendencies.length ? memory.driver_tendencies.map((item) => (
+                  <div key={item.fingerprint_id}>
+                    <p>{item.state.replace(/_/g, " ")}</p>
+                    {item.tendencies.map((tendency) => <div key={tendency.contribution_id}>
+                      <small><b>{tendency.metric.replace(/_/g, " ")}</b> · {tendency.statement}</small>
+                    </div>)}
+                    {item.contradictions.map((contradiction) => <small key={contradiction}>Contradiction: {contradiction}</small>)}
+                    {evidenceLinks(item.source_experience_ids)}
+                  </div>
+                )) : <p>No qualified driver tendency.</p>}
+              </article>
+
+              <article>
+                <h4>Car response</h4>
+                {memory.car_response_history.length ? memory.car_response_history.map((item) => (
+                  <div key={item.fingerprint_id}>
+                    <p>{item.statement}</p>
+                    <small>{item.response.component} · historical {item.response.policy_verdict} · {item.response.p19_mechanism_assessment}</small>
+                    {item.response.countereffects.map((countereffect) => <small key={countereffect}>Countereffect: {countereffect}</small>)}
+                    {item.contradictions.map((contradiction) => <small key={contradiction}>Contradiction: {contradiction}</small>)}
+                    {evidenceLinks(item.source_experience_ids)}
+                  </div>
+                )) : <p>No controlled car-response history cleared this context.</p>}
+              </article>
+
+              <article>
+                <h4>Investigation effectiveness</h4>
+                {memory.useful_prior_investigations.length ? memory.useful_prior_investigations.map((item) => (
+                  <div key={item.outcome_id}>
+                    <p>{item.explanation}</p>
+                    <small>{item.outcome.terminal_decision.replace(/_/g, " ")} · {item.outcome.tool_steps_consumed} tool steps · {item.outcome.laps_consumed} laps</small>
+                    {item.outcome.strongest_contradiction && <small>Contradiction: {item.outcome.strongest_contradiction}</small>}
+                    {item.outcome.successful_discriminator_ids.length > 0 && <small>Useful discriminators: {item.outcome.successful_discriminator_ids.join(", ")}</small>}
+                    {evidenceLinks([item.experience_id])}
+                  </div>
+                )) : <p>No prior investigation is qualified as useful here.</p>}
+              </article>
+
+              <article>
+                <h4>Mind changes</h4>
+                {memory.mind_change_history.length ? memory.mind_change_history.map((item) => (
+                  <div key={item.fact.mind_change_id}>
+                    <p>{item.statement}</p>
+                    <small>{item.fact.causes_promoted.length} promoted · {item.fact.causes_demoted.length} demoted · {item.fact.causes_ruled_out.length} ruled out</small>
+                    <small>{item.fact.evidence_discriminated ? "Evidence discriminated" : "No evidence discriminator"} · {item.fact.driver_question_involved ? "driver answer involved" : "no driver answer"} · {item.fact.controlled_evidence_involved ? "controlled evidence" : "observational evidence"}</small>
+                    {evidenceLinks([item.experience_id])}
+                  </div>
+                )) : <p>No qualified P19 mind change is retained.</p>}
+              </article>
+
+              <article>
+                <h4>Dead ends</h4>
+                {memory.known_dead_ends.length ? memory.known_dead_ends.map((item) => (
+                  <div key={item.fact.dead_end_id}>
+                    <p>{item.fact.statement}</p>
+                    <small>{item.fact.kind.replace(/_/g, " ")} · current evidence may override</small>
+                    {evidenceLinks(item.experience_ids)}
+                  </div>
+                )) : <p>No qualified dead end is retained.</p>}
+              </article>
+
+              <article>
+                <h4>Attention</h4>
+                {memory.recommended_attention_order.length ? <ol>{memory.recommended_attention_order.map((item) => (
+                  <li key={item.tool_id}><b>{item.learned_rank_within_band}. {item.tool_id}</b><small>{item.reason}</small></li>
+                ))}</ol> : <p>Baseline safety order remains unchanged.</p>}
+                <small>Attention only · P19 cause rank unchanged.</small>
+              </article>
+
+              <article>
+                <h4>Learning ledger</h4>
+                <p>{memory.ledger.investigations_resolved}/{memory.ledger.investigations_opened} investigations resolved · {memory.ledger.controlled_tests} controlled tests</p>
+                <small>{memory.ledger.measurement_missions} measurement missions · {memory.ledger.questions_asked} driver questions · {memory.ledger.laps_consumed_before_resolution} laps consumed</small>
+                <small>Keep {memory.ledger.keep_outcomes} · Undo {memory.ledger.undo_outcomes} · Retest {memory.ledger.retest_outcomes} · No-call {memory.ledger.no_call_outcomes}</small>
+                <small>{memory.ledger.recurring_problem_count} recurring problems · {memory.ledger.recurrence_resolved_faster_count} resolved faster · {memory.ledger.driver_focus_outcomes} driver-focus outcomes</small>
+                {memory.ledger.average_tool_steps_before_resolution != null && <small>Average {memory.ledger.average_tool_steps_before_resolution.toFixed(1)} tool steps before resolution.</small>}
+                {memory.ledger.repeated_dead_end_tools.length > 0 && <small>Repeated dead-end tools: {memory.ledger.repeated_dead_end_tools.join(", ")}</small>}
+                {memory.ledger.successful_discriminators.length > 0 && <small>Successful discriminators: {memory.ledger.successful_discriminators.join(", ")}</small>}
+              </article>
+
+              <article>
+                <h4>Post-run brief</h4>
+                {memory.post_run_brief.what_we_learned.map((item) => <p key={`learned:${item}`}><b>Learned</b> {item}</p>)}
+                {memory.post_run_brief.what_changed_our_mind.map((item) => <p key={`changed:${item}`}><b>Changed our mind</b> {item}</p>)}
+                {memory.post_run_brief.what_did_not_work.map((item) => <p key={`dead:${item}`}><b>Did not work</b> {item}</p>)}
+                {memory.post_run_brief.next_attention.map((item) => <p key={`next:${item}`}><b>Next attention</b> {item}</p>)}
+                {memory.post_run_brief.blocker_reasons.map((item) => <small key={`brief-blocker:${item}`}>{item}</small>)}
+              </article>
+
+              <article>
+                <h4>Blockers / strength</h4>
+                <p>{memory.strength.replace(/_/g, " ")} · {memory.counts.observation_count} qualified observations</p>
+                {memory.blocker_reasons.length ? memory.blocker_reasons.map((item) => <small key={item}>{item}</small>) : <small>No learning projection blocker.</small>}
+                <small>Authority: attention only · setup not authorized · P19 rank not modified.</small>
+              </article>
+            </div>
+          </section>
           <section className="performance-ribbon">
             <h3>Time-loss ribbon</h3>
             {performance.opportunity_map.opportunities.length ? (
@@ -263,7 +413,6 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
             ))}</ul> : <p>No component relevance is attached to the measured time scope.</p>}
           </section>
           <section><h3>Objective envelope</h3><p>Primary: {performance.objective_envelope.primary_outcomes.join(", ")}</p><small>Protected: {performance.objective_envelope.protected_outcomes.join(", ")}. Objective changes policy, not measured physics.</small></section>
-          <section><h3>Performance history</h3><p>{performance.response_records.length} controlled performance records attached.</p>{performance.response_records.slice(0, 3).map((item) => <small key={item.record_id}>{item.control} · {item.phase_effect} · {item.policy_verdict}</small>)}</section>
           <section><h3>Strongest contradiction</h3><p>{performance.explanation_chain.strongest_contradiction}</p><small>Generic component relevance cannot authorize setup. P19 next: {performance.explanation_chain.p19_next_move}</small></section>
           <section><h3>Mission ribbon</h3><p>{workspace.run_sentinel.mission}</p><small>Stage {workspace.run_sentinel.stage} · {workspace.run_sentinel.accepted_laps}/{workspace.run_sentinel.required_laps} accepted</small></section>
           <section><h3>Critic</h3><p>{workspace.critique.passed ? "Authority and identity checks passed." : workspace.critique.findings.join(" ")}</p></section>
@@ -274,9 +423,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
               : <p>{workspace.run_sentinel.blocker_reasons.join(" ") || "P19 published no collection contract."}</p>}
           </section>
           <section><h3>Run sentinel</h3><p>{workspace.run_sentinel.need}</p>{workspace.run_sentinel.laps.length ? <ul>{workspace.run_sentinel.laps.slice(-6).map((lap) => <li key={lap.lap_number}><CheckCircle2 size={12} /> Lap {lap.lap_number}: {lap.status}{lap.reasons.length ? ` — ${lap.reasons.join(", ")}` : ""}</li>)}</ul> : <small>No laps have been assessed for this mission yet.</small>}</section>
-          <section><h3>Evidence index</h3>{workspace.evidence_index.entries.length ? <ul>{workspace.evidence_index.entries.slice(0, 8).map((item) => <li key={item.artifact_id}><button type="button" onClick={() => onFocusEvidence(item)}><b>{item.producer_id}</b> {item.artifact_id} · {item.mechanism_ids.join(", ") || "unclassified"}</button></li>)}</ul> : <p>No exact artifacts are available for the selected scope.</p>}</section>
-          <section><h3>Response atlas</h3><p>{workspace.response_history_ids.length} exact-context controlled response records attached.</p></section>
-          <section><h3>Driver intelligence</h3><p>{workspace.driver_memory_ids.length} complaint/context records retained as non-authoritative priors.</p></section>
+          <section><h3>Evidence index</h3>{workspace.evidence_index.entries.some((item) => item.producer_id !== "p33.engineering_experience") ? <ul>{workspace.evidence_index.entries.filter((item) => item.producer_id !== "p33.engineering_experience").slice(0, 8).map((item) => <li key={item.artifact_id}><button type="button" onClick={() => onFocusEvidence(item)}><b>{item.producer_id}</b> {item.artifact_id} · {item.mechanism_ids.join(", ") || "unclassified"}</button></li>)}</ul> : <p>No current-scope artifacts are available. Historical P33 sources remain inside Engineering Memory.</p>}</section>
           <section><h3>Research boundary</h3><p>Adaptive experimentation: {workspace.adaptive_research.state.replace(/_/g, " ")}.</p><small>{workspace.adaptive_research.activation_gate}</small></section>
         </div>
       )}

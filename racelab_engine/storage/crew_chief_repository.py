@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.crew_chief import (
@@ -15,12 +16,32 @@ from racelab_engine.models.crew_chief import (
     EngineeringObjective,
     SuccessContract,
 )
+from racelab_engine.models.engineering_learning import EngineeringExperienceRecord
 from racelab_engine.storage.db import initialize_database
+from racelab_engine.storage.engineering_learning_repository import (
+    LEARNING_CAPTURE_INTEGRITY_BLOCKER,
+    EngineeringLearningIntegrityError,
+    EngineeringLearningRepository,
+)
 
 
 def crew_chief_event_hash(event: CrewChiefEvent) -> str:
     payload = event.model_dump(mode="json", exclude={"event_hash"})
     return canonical_json_sha256(payload)
+
+
+def _event_capture_source(event: CrewChiefEvent) -> dict[str, Any]:
+    payload = event.model_dump(mode="json", exclude={"event_hash"})
+    event_payload = payload["payload"]
+    event_payload.update(
+        {
+            "learning_capture_state": "not_applicable",
+            "learning_capture_experience_id": None,
+            "learning_capture_experience_sha256": None,
+            "learning_capture_blocker_reason": None,
+        }
+    )
+    return payload
 
 
 def _now() -> str:
@@ -117,9 +138,144 @@ class CrewChiefRepository:
             connection.close()
         return self.get_investigation(row["investigation_id"]) if row else None
 
-    def append_event(self, event: CrewChiefEvent) -> None:
+    @staticmethod
+    def _append_event(connection: Any, event: CrewChiefEvent) -> None:
         if crew_chief_event_hash(event) != event.event_hash:
             raise CrewChiefIntegrityError("Crew Chief event hash mismatch")
+        existing = connection.execute(
+            "SELECT event_json FROM crew_chief_events WHERE event_id = ?",
+            (event.event_id,),
+        ).fetchone()
+        encoded = event.model_dump_json()
+        if existing is not None:
+            if existing["event_json"] != encoded:
+                raise CrewChiefIntegrityError("event identity already owns other data")
+            return
+        row = connection.execute(
+            "SELECT COALESCE(MAX(sequence), 0) AS last_sequence, "
+            "(SELECT event_hash FROM crew_chief_events AS latest "
+            " WHERE latest.investigation_id = ? "
+            " ORDER BY sequence DESC LIMIT 1) AS last_event_hash "
+            "FROM crew_chief_events WHERE investigation_id = ?",
+            (event.investigation_id, event.investigation_id),
+        ).fetchone()
+        expected = int(row["last_sequence"]) + 1
+        if event.sequence != expected:
+            raise CrewChiefIntegrityError(
+                f"event sequence {event.sequence} does not follow {expected - 1}"
+            )
+        connection.execute(
+            """
+            INSERT INTO crew_chief_events (
+              event_id, investigation_id, sequence, workspace_revision,
+              created_at, event_hash, event_type, event_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event.event_id,
+                event.investigation_id,
+                event.sequence,
+                event.workspace_revision,
+                event.created_at.isoformat(),
+                event.event_hash,
+                event.event_type,
+                encoded,
+            ),
+        )
+        previous_hash = row["last_event_hash"]
+        updated = connection.execute(
+            """
+            UPDATE crew_chief_investigations
+            SET event_count = ?, event_head_hash = ?
+            WHERE investigation_id = ? AND event_count = ?
+              AND (
+                (? IS NULL AND event_head_hash IS NULL)
+                OR event_head_hash = ?
+              )
+            """,
+            (
+                event.sequence,
+                event.event_hash,
+                event.investigation_id,
+                event.sequence - 1,
+                previous_hash,
+                previous_hash,
+            ),
+        )
+        if updated.rowcount != 1:
+            raise CrewChiefIntegrityError(
+                "Crew Chief event stream head does not match append history"
+            )
+
+    def append_event(self, event: CrewChiefEvent) -> None:
+        if event.event_type in {"decision_emitted", "investigation_abandoned"}:
+            raise ValueError(
+                "Terminal Crew events require the atomic P33 learning-capture path."
+            )
+        connection = initialize_database(self.db_path)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            self._append_event(connection, event)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def append_events(self, events: tuple[CrewChiefEvent, ...]) -> None:
+        """Commit one ordered non-terminal event unit without partial history."""
+
+        if not events:
+            raise ValueError("Crew Chief event unit cannot be empty.")
+        if any(
+            event.event_type in {"decision_emitted", "investigation_abandoned"}
+            for event in events
+        ):
+            raise ValueError(
+                "Terminal Crew events require the atomic P33 learning-capture path."
+            )
+        connection = initialize_database(self.db_path)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            for event in events:
+                self._append_event(connection, event)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def append_terminal_event_and_experience(
+        self,
+        event: CrewChiefEvent,
+        experience: EngineeringExperienceRecord,
+    ) -> CrewChiefEvent:
+        """Commit one terminal Crew event and its P33 fact as one truth unit."""
+
+        if event.event_type not in {"decision_emitted", "investigation_abandoned"}:
+            raise ValueError("P33 terminal append requires a terminal Crew event.")
+        if (
+            experience.source_kind != "resolved_investigation"
+            or experience.source_investigation_id != event.investigation_id
+            or event.event_id not in experience.source_event_ids
+            or experience.investigation_outcome is None
+        ):
+            raise ValueError(
+                "P33 investigation experience must bind the exact terminal Crew event."
+            )
+        captured = self._event_with_learning_capture(
+            event,
+            experience,
+            state="captured",
+        )
+        blocked = self._event_with_learning_capture(
+            event,
+            experience,
+            state="blocked",
+            blocker_reason=LEARNING_CAPTURE_INTEGRITY_BLOCKER,
+        )
         connection = initialize_database(self.db_path)
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -127,75 +283,83 @@ class CrewChiefRepository:
                 "SELECT event_json FROM crew_chief_events WHERE event_id = ?",
                 (event.event_id,),
             ).fetchone()
-            encoded = event.model_dump_json()
             if existing is not None:
-                if existing["event_json"] != encoded:
-                    raise CrewChiefIntegrityError(
-                        "event identity already owns other data"
+                persisted = CrewChiefEvent.model_validate_json(existing["event_json"])
+                if persisted.payload.learning_capture_state in {"captured", "blocked"}:
+                    self._assert_same_learning_capture_attempt(
+                        persisted,
+                        event,
+                        experience,
                     )
-                connection.commit()
-                return
-            row = connection.execute(
-                "SELECT COALESCE(MAX(sequence), 0) AS last_sequence, "
-                "(SELECT event_hash FROM crew_chief_events AS latest "
-                " WHERE latest.investigation_id = ? "
-                " ORDER BY sequence DESC LIMIT 1) AS last_event_hash "
-                "FROM crew_chief_events WHERE investigation_id = ?",
-                (event.investigation_id, event.investigation_id),
-            ).fetchone()
-            expected = int(row["last_sequence"]) + 1
-            if event.sequence != expected:
-                raise CrewChiefIntegrityError(
-                    f"event sequence {event.sequence} does not follow {expected - 1}"
-                )
-            connection.execute(
-                """
-                INSERT INTO crew_chief_events (
-                  event_id, investigation_id, sequence, workspace_revision,
-                  created_at, event_hash, event_type, event_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    event.event_id,
-                    event.investigation_id,
-                    event.sequence,
-                    event.workspace_revision,
-                    event.created_at.isoformat(),
-                    event.event_hash,
-                    event.event_type,
-                    encoded,
-                ),
+                    connection.rollback()
+                    return persisted
+            EngineeringLearningRepository(self.db_path).stream_state(
+                connection=connection,
+                validate_chain=True,
             )
-            previous_hash = row["last_event_hash"]
-            updated = connection.execute(
-                """
-                UPDATE crew_chief_investigations
-                SET event_count = ?, event_head_hash = ?
-                WHERE investigation_id = ? AND event_count = ?
-                  AND (
-                    (? IS NULL AND event_head_hash IS NULL)
-                    OR event_head_hash = ?
-                  )
-                """,
-                (
-                    event.sequence,
-                    event.event_hash,
-                    event.investigation_id,
-                    event.sequence - 1,
-                    previous_hash,
-                    previous_hash,
-                ),
+            self._append_event(connection, captured)
+            EngineeringLearningRepository.append_experience_in_transaction(
+                connection,
+                experience,
             )
-            if updated.rowcount != 1:
-                raise CrewChiefIntegrityError(
-                    "Crew Chief event stream head does not match append history"
-                )
             connection.commit()
+            return captured
+        except EngineeringLearningIntegrityError:
+            connection.rollback()
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                self._append_event(connection, blocked)
+                connection.commit()
+                return blocked
+            except Exception:
+                connection.rollback()
+                raise
         except Exception:
             connection.rollback()
             raise
         finally:
             connection.close()
+
+    @staticmethod
+    def _event_with_learning_capture(
+        event: CrewChiefEvent,
+        experience: EngineeringExperienceRecord,
+        *,
+        state: str,
+        blocker_reason: str | None = None,
+    ) -> CrewChiefEvent:
+        payload = event.payload.model_copy(
+            update={
+                "learning_capture_state": state,
+                "learning_capture_experience_id": experience.experience_id,
+                "learning_capture_experience_sha256": experience.experience_sha256,
+                "learning_capture_blocker_reason": blocker_reason,
+            }
+        )
+        draft = event.model_copy(update={"payload": payload, "event_hash": "0" * 64})
+        return CrewChiefEvent.model_validate(
+            {
+                **draft.model_dump(mode="python"),
+                "event_hash": crew_chief_event_hash(draft),
+            }
+        )
+
+    @staticmethod
+    def _assert_same_learning_capture_attempt(
+        persisted: CrewChiefEvent,
+        requested: CrewChiefEvent,
+        experience: EngineeringExperienceRecord,
+    ) -> None:
+        if (
+            _event_capture_source(persisted) != _event_capture_source(requested)
+            or persisted.payload.learning_capture_experience_id
+            != experience.experience_id
+            or persisted.payload.learning_capture_experience_sha256
+            != experience.experience_sha256
+        ):
+            raise ValueError(
+                "A finalized Crew learning-capture source cannot be rebound."
+            )
 
     def list_events(self, investigation_id: str) -> tuple[CrewChiefEvent, ...]:
         connection = initialize_database(self.db_path)
