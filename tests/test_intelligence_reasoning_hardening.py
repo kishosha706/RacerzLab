@@ -493,6 +493,10 @@ def test_duplicate_lifecycle_workflow_identity_becomes_one_invalid_blocker() -> 
     )
     assert controlled.outcome == "invalid"
     assert "more than once" in controlled.blocker_reasons[0]
+    assert controlled.actual_effect_s is None
+    assert controlled.time_origin_phase is None
+    assert controlled.time_origin_pct is None
+    assert controlled.downstream_carry_effect_s is None
 
 
 def test_countereffect_only_undo_supports_cause_but_blocks_exact_policy() -> None:

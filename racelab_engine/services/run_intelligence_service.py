@@ -856,6 +856,20 @@ def _hypotheses(
                 ),
                 metric=entry.target_effect.metric.strip() or "unresolved_metric",
                 phase=entry.target_effect.phase.strip() or "unresolved_phase",
+                actual_effect_s=(
+                    None if safe_blockers else entry.target_effect.actual_effect_s
+                ),
+                time_origin_phase=(
+                    None if safe_blockers else entry.target_effect.time_origin_phase
+                ),
+                time_origin_pct=(
+                    None if safe_blockers else entry.target_effect.time_origin_pct
+                ),
+                downstream_carry_effect_s=(
+                    None
+                    if safe_blockers
+                    else entry.target_effect.downstream_carry_effect_s
+                ),
                 control_key=control_key,
                 countereffects=tuple(
                     dict.fromkeys(

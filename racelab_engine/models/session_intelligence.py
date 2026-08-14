@@ -498,6 +498,9 @@ class HypothesisTargetEffect(SessionIntelligenceModel):
     expected_direction: Literal["decrease", "increase"] | None = None
     expected_range_s: tuple[FiniteFloat, FiniteFloat] | None = None
     actual_effect_s: FiniteFloat | None = None
+    time_origin_phase: str | None = None
+    time_origin_pct: FiniteFloat | None = Field(default=None, ge=0.0, le=100.0)
+    downstream_carry_effect_s: FiniteFloat | None = None
     actual_direction: Literal["decrease", "increase", "inconclusive", "unavailable"]
     direction_result: Literal["matched", "missed", "inconclusive", "unavailable"]
     range_result: Literal["inside", "outside", "inconclusive", "unavailable"]
@@ -506,6 +509,17 @@ class HypothesisTargetEffect(SessionIntelligenceModel):
     def range_is_ordered(self) -> HypothesisTargetEffect:
         if self.expected_range_s is not None and self.expected_range_s[0] > self.expected_range_s[1]:
             raise ValueError("expected target-effect ranges must be ordered")
+        if (self.time_origin_phase is None) != (self.time_origin_pct is None):
+            raise ValueError("controlled time-origin phase and position must be paired")
+        if self.actual_effect_s is None and any(
+            value is not None
+            for value in (
+                self.time_origin_phase,
+                self.time_origin_pct,
+                self.downstream_carry_effect_s,
+            )
+        ):
+            raise ValueError("ungraded target effects cannot publish performance memory")
         return self
 
 

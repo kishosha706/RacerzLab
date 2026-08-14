@@ -233,6 +233,15 @@ class RaceLabRepository:
 
     @staticmethod
     def _write_controlled_workflow(connection: Any, workflow: ControlledWorkflow) -> None:
+        from racelab_engine.models.controlled_workflow import (
+            ControlledWorkflow as ControlledWorkflowModel,
+        )
+
+        # Revalidate even when callers used Pydantic's non-validating ``model_copy``.
+        # Invalid/incomplete tests must never persist controlled performance memory.
+        workflow = ControlledWorkflowModel.model_validate(
+            workflow.model_dump(mode="python")
+        )
         connection.execute(
                 """
                 INSERT INTO controlled_test_workflows (

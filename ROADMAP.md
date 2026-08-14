@@ -1984,6 +1984,113 @@ that graph; it does not create another setup-authority path.
   Crew Chief assembly improved from 3,317.595 ms to 148.147 ms while retaining
   immutable artifact rechecks.
 
+## P32 - Lap-Time Mechanics and Speed Intelligence
+
+- [x] Add a versioned, source-backed registry of 12 performance principles,
+  17 typed performance mechanisms, outcomes, and objective envelopes. Objective
+  selection changes policy protection, never measured physics or setup authority.
+- [x] Build one repository-scoped, run-owned narrow performance basis from
+  qualified laps and canonical context; preserve position alignment, source
+  channels, path/time bases, coverage, blockers, and exact setup identities.
+- [x] Reuse canonical reciprocal-speed time alignment for a deterministic
+  `LapTimeOpportunityMap` with local/carried/amplified/recovered/surrendered
+  origin semantics, persistence, carry, repeatability, and theoretical-not-
+  guaranteed opportunity.
+- [x] Build connected `CornerPerformanceChain` projections across approach,
+  braking, entry, center, exit, and following-straight carry without treating a
+  single minimum-speed sample as the whole center phase.
+- [x] Add typed driver-demand/vehicle-response separation with explicit line,
+  traffic, mixed-change, and unresolved states; contaminated evidence cannot
+  become setup attribution.
+- [x] Derive a qualified-telemetry `TrackDemandProfile` and connect measured time
+  consequences to P20 mechanisms and P26 component relevance without creating a
+  component-cause edge or new setup authority.
+- [x] Add a branched `PerformanceExplanationChain`, mandatory strongest
+  contradiction, nine bounded Crew Chief performance inspections, and planner
+  order beginning with measured time consequence before component relevance.
+- [x] Extend exact-context A/B/A2 memory with time origin, phase effect, downstream
+  carry, countereffects, repeated response, and the unchanged P19 policy verdict.
+- [x] Add the concise Race-mode Speed Story and Learning-mode time ribbon, corner
+  chain, driver/car, track-demand, P20/P26, objective, contradiction, history, and
+  canonical `focusEvidence` surfaces behind an atomic P32 client trust boundary.
+- [x] Keep the empirical layer observation-only: no fake minimum-lap-time model,
+  no exact tire/aero force, no generic `causes` edge, no optimal setup, no
+  guaranteed theoretical pace, and every setup action remains an exact P19 mirror.
+
+### P32 release validation - VERIFIED AFTER P32.1 2026-08-13
+
+The original green suite did not exercise several public-builder behaviors and
+therefore overstated release closure. A real Atlanta audit showed a fully
+traffic-contaminated comparison narrated as a `0.136 s` attributable cost, while
+vertical disturbance exposure read `99.44%` from the normal gravity baseline.
+P32 was reopened rather than accepting that false green. P32.1 now closes those
+truth gaps with public-builder, restart, client-boundary, and real-telemetry proof.
+
+- Python: 2,361 collected; 2,356 passed, five protected skips, zero failures.
+  Twenty backend P32 hostile tests and three frontend P32 contracts cover the
+  requested local-speed, braking/carry, path, traffic, repeatability, missing-data,
+  cross-start/finish, component/history, contradiction, authority, and forbidden-
+  claim boundaries. Whole-repo Ruff and bytecode compilation passed.
+- Frontend: TypeScript, all three behavioral UI tests, all five executable runtime
+  trust suites, and the 2,198-module production build passed.
+- Real telemetry: the persisted Next Gen Atlanta workspace produced schema
+  `p32.performance-intelligence.v1`, all 12 principles and 17 mechanisms, four
+  measured opportunities, one connected corner chain, three non-causal component
+  links, full reciprocal-speed coverage, four Crew evidence artifacts, exact
+  P19/P20/P26/P32 identity binding, zero setup authority, a data-locked optimizer,
+  and a `no_call` Crew decision.
+
+## P32.1 - Performance Truth Closure
+
+- [x] Make Traffic/context contamination lead the Speed Story: preserve the
+  observed signed difference, block attribution, name the strongest confounder,
+  and request a clean comparable pass.
+- [x] Preserve gain/loss sign semantics everywhere; a negative elapsed-time
+  effect is a gain and cannot be narrated as time that the driver lost.
+- [x] Reuse the canonical full run-compatibility identity and fail closed on
+  car, track, build, session, or configuration mismatch.
+- [x] Require complete co-observed driver-demand evidence before calling inputs
+  matched, and compare racing line by physical position rather than path length alone.
+- [x] Remove the normal vertical-gravity baseline from disturbance exposure;
+  distinguish real limiter evidence from ordinary shifts and derive tire-state
+  development from qualified run length.
+- [x] Require exact phase/physical-scope repeatability, contiguous carry until
+  first recovery, adjacent following-straight attribution, and bounded circular
+  start/finish continuity.
+- [x] Preserve measured P32 time/origin/carry when P26 is unavailable while
+  withholding only component attribution and all setup authority.
+- [x] Make all nine P32 Crew inspections reachable and attach the typed artifact
+  each tool claims to inspect.
+- [x] Deeply mirror every rendered P32 contract at the client boundary, including
+  forbidden causal/optimization prose, finite bounds, authority pairing, request
+  objective, exact P19 next move, and opportunity/evidence identity.
+- [x] Put `NEXT · P19` first in compact Race Mode and retain the full performance
+  chain, explicit unavailable states, and canonical focus behavior in Learning Mode.
+- [x] Preserve controlled-test time origin, phase effect, and downstream carry
+  across persistence/restart; invalid or incomplete tests must publish none.
+- [x] Replace constructor-only hostile checks with public-builder telemetry tests
+  and pass the traffic-contaminated Atlanta acceptance contract before re-closing.
+
+### P32.1 release validation
+
+- Python: 2,405 collected; 2,400 passed and five protected tests skipped. The focused
+  94-test P32/Crew/client release slice and 54 hostile performance-truth tests
+  passed, including canonical traffic, sparse demand, signed gain/loss, compatibility,
+  opportunity-relative carry, exact adjacency/repeatability, P26 unavailability,
+  typed Crew artifacts, restart memory, and ordinary-read versus integrity failure.
+- Frontend: TypeScript, the executable hostile runtime trust suite, all five UI
+  behavior tests, and the 2,198-module production build passed. The client deeply
+  binds every typed Crew artifact to the canonical P32 projection and rejects
+  causal prose, blocked component candidates, invalid history, and identity drift.
+- Real telemetry: the persisted Next Gen Atlanta public workspace passed the full
+  backend-to-client guard with four measured opportunities and 19 typed P32 Crew
+  entries. It reports the observed `+0.136447 s` loss, blocks attribution because
+  source/reference traffic exposure is `100%`, names traffic as the strongest
+  contradiction, publishes zero component influence and zero setup authority,
+  measures disturbance exposure at `0.0613`, withholds limiter zones, labels tire
+  development `short_run`, and ends in `no_call`.
+- Whole-repo Ruff, bytecode compilation, and diff integrity passed.
+
 ---
 
 ## Professional analysis surface, without losing the product thesis
@@ -2094,3 +2201,5 @@ Implementation queue completed in this pass:
 | 2026-08-12 | Verified P27-P30 deterministic autonomous Crew Chief operating system | One revision-bound private P19/P20/P26 workspace now owns event-sourced investigations, eight bounded inspections, deterministic critic and driver dialogue, hard Success Contracts, a junk/context-aware Run Sentinel, exact-context component response records, complaint-only driver memory, and an existing-Engineer Race/Learning command deck. Exact setup authority remains an equality-checked P19 projection; the optional generative boundary is disabled and P30 remains data-locked. The complete no-bytecode 2,300-test collection passed (2,295 passed, five protected skips), plus 154 focused authority/Crew Chief/P19-P20-P26 tests, whole-repo Ruff, TypeScript, the 2,196-module production build, bytecode compilation, seven-route OpenAPI inspection, executable synthetic and real-Atlanta UI trust guards, the unchanged 609-node/843-edge P26 graph, and diff integrity. |
 | 2026-08-12 | Completed continuous adversarial Crew Chief audit and repair | Twelve material findings were closed across stale authority, driver-dialogue sequencing, A/B/A2 stage ownership, event-tail and redundant-row tamper detection, repository-scoped caching, evidence deduplication, workflow fail-closed behavior, late UI responses, nested response trust, and API bounds. The final 2,316-test collection passed (2,311 passed, five protected environment/artifact skips), plus 159 focused tests with zero skips, whole-repo Ruff, TypeScript, the 2,196-module production build, bytecode compilation, seven-route OpenAPI inspection, real Atlanta execution, the unchanged 609-node/843-edge/50-area P26 graph, and diff integrity. Immutable warm caching reduced real Atlanta Crew Chief assembly from 3,317.595 ms to 148.147 ms; P19/P20/P26/Crew Chief authority ceilings and all data locks remain unchanged. |
 | 2026-08-13 | Completed P31 Truthful Crew Loop hardening | Telemetry truth, controlled-experiment identity, segmented evidence, transactional focus, exact Compare provenance, P19-mirrored Crew missions, deterministic investigation, quantity-level P26 observability, shared single-flight intelligence, scoped workflow polling, strict UI trust, and measurement-only research infrastructure passed all 2,338 collected Python tests (2,333 passed, five skipped), 187 focused authority tests, Ruff, TypeScript, three behavioral UI tests, five runtime trust suites, the 2,197-module build, OpenAPI inspection, protected Atlanta regressions, Windows sidecar packaging, and built-UI Atlanta import/Crew/process-restart smoke. Warm Atlanta intelligence is 5.488 ms with one build; the measured 13.195 s cold path remains explicit vectorization debt. P19/P20/P26/Crew authority ceilings and P30/statistical/physics locks remain unchanged. |
+| 2026-08-13 | Verified P32 Lap-Time Mechanics and Speed Intelligence | A run-owned empirical performance model now connects qualified driver demand, vehicle response, measured elapsed time, origin/carry, corner chains, track demand, P20 mechanisms, P26 relevance, controlled history, and the exact P19 next move. All 2,361 Python tests passed subject to five protected skips, plus 20 P32 hostile tests, three UI contracts, whole-repo Ruff, bytecode compilation, TypeScript, three behavioral UI tests, five runtime trust suites, the 2,198-module production build, diff integrity, and persisted Atlanta execution. Atlanta produced four measured opportunities, one corner chain, three non-causal component links, full reciprocal-speed coverage, exact P19/P20/P26/P32 identity, zero setup authority, and a data-locked optimizer. |
+| 2026-08-13 | Closed P32.1 Performance Truth Closure after reopening P32 | Traffic and unknown context now lead and block attribution without hiding the signed observation; canonical compatibility/proximity gates, complete demand coverage, local disturbance, opportunity-relative carry, exact adjacency/repeatability, P26-independent core intelligence, nine typed Crew tools, restart-safe exact history, and deep client trust prevent a convincing but unsupported speed story. The full collection finished with 2,400 passed and five protected skips, plus the 94-test integrated release slice, 54 hostile truth tests, Ruff, bytecode compilation, TypeScript, five UI behavior tests, the hostile runtime suite, the 2,198-module build, diff integrity, and a real public Atlanta backend-to-client guard. Atlanta exposes `+0.136447 s` observed, blocks attribution at 100% source/reference traffic, publishes zero component/setup authority, measures disturbance at `0.0613`, withholds limiter zones, and remains `no_call`. |

@@ -1,4 +1,11 @@
 import type { EvidenceState } from "./telemetry";
+import type {
+  CornerPerformanceChain,
+  DriverVehicleSeparation,
+  LapTimeOpportunity,
+  PerformanceIntelligenceProjection,
+  PerformancePhaseState,
+} from "./performanceIntelligence";
 
 export type EngineeringObjective =
   | "qualifying_peak"
@@ -8,6 +15,58 @@ export type EngineeringObjective =
   | "traffic_robustness"
   | "superspeedway_stability"
   | "fuel_strategy";
+
+export type CrewChiefPerformanceArtifactType =
+  | "lap_time_opportunity"
+  | "time_loss_origin"
+  | "corner_performance_chain"
+  | "exit_carry"
+  | "path_efficiency"
+  | "driver_vehicle_separation"
+  | "track_demand"
+  | "component_performance_link"
+  | "objective_envelope";
+
+export type CrewChiefPerformanceArtifact =
+  | { artifact_type: "lap_time_opportunity"; opportunity: LapTimeOpportunity }
+  | { artifact_type: "time_loss_origin"; opportunity: LapTimeOpportunity }
+  | {
+    artifact_type: "corner_performance_chain";
+    start_pct: number;
+    end_pct: number;
+    chain: CornerPerformanceChain;
+  }
+  | { artifact_type: "exit_carry"; opportunity: LapTimeOpportunity }
+  | {
+    artifact_type: "path_efficiency";
+    chain_id: string;
+    phase_state: PerformancePhaseState;
+  }
+  | {
+    artifact_type: "driver_vehicle_separation";
+    chain_id: string;
+    track_region: string;
+    start_pct: number;
+    end_pct: number;
+    separation: DriverVehicleSeparation;
+  }
+  | {
+    artifact_type: "track_demand";
+    profile: PerformanceIntelligenceProjection["track_demand"];
+  }
+  | {
+    artifact_type: "component_performance_link";
+    influence: PerformanceIntelligenceProjection["component_influences"][number];
+  }
+  | {
+    artifact_type: "objective_envelope";
+    envelope: PerformanceIntelligenceProjection["objective_envelope"];
+  }
+  | {
+    artifact_type: "unavailable";
+    claimed_artifact_type: CrewChiefPerformanceArtifactType;
+    blocker_reasons: string[];
+  };
 
 export type CrewChiefWorkspaceIdentity = {
   run_id: string;
@@ -19,6 +78,7 @@ export type CrewChiefWorkspaceIdentity = {
   p26_graph_version: string;
   p26_knowledge_graph_sha256: string;
   p26_reasoning_snapshot_sha256: string;
+  p32_projection_sha256: string;
   setup_id: string | null;
   workspace_run_id: string;
   workspace_session_id: string;
@@ -43,7 +103,16 @@ export type CrewChiefEvidenceEntry = {
   producer_id: string;
   run_id: string;
   session_id: string;
-  setup_id: string;
+  setup_id: string | null;
+  workspace_run_id: string;
+  workspace_session_id: string;
+  workspace_setup_id: string;
+  source_run_id: string;
+  source_session_id: string | null;
+  source_setup_id: string | null;
+  source_setup_sha256: string | null;
+  source_build_context_sha256: string | null;
+  source_provenance_available: boolean;
   lap_numbers: number[];
   lap_pct_start: number | null;
   lap_pct_end: number | null;
@@ -56,6 +125,7 @@ export type CrewChiefEvidenceEntry = {
   evidence_state: EvidenceState;
   polarity: "support" | "contradiction" | "neutral";
   blocker_reasons: string[];
+  typed_artifact: CrewChiefPerformanceArtifact | null;
   authority_ceiling: "observation_only" | "context_only" | "measurement_only" | "p19_projection_only";
 };
 
@@ -74,7 +144,7 @@ export type CrewChiefTerminalDecision = {
 };
 
 export type CrewChiefWorkspace = {
-  schema_version: "p27.crew-chief-workspace.v1";
+  schema_version: "p32.crew-chief-workspace.v2";
   identity: CrewChiefWorkspaceIdentity;
   generated_at: string;
   cache_state: "cold" | "warm";
@@ -151,6 +221,7 @@ export type CrewChiefWorkspace = {
     integrity_stop_rules: string[];
     purpose: string;
   };
+  performance_intelligence: PerformanceIntelligenceProjection;
   run_sentinel: {
     mission_state: "collecting" | "blocked_by_p19" | "stopped_by_p19" | "awaiting_p19_score" | "collection_complete";
     p19_plan_kind: "controlled_test" | "measurement_mission" | "discriminator" | "stop_testing" | "blocked";

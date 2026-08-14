@@ -15402,6 +15402,29 @@ button:focus:not(:focus-visible) {
 .crew-chief-race-brief { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.55rem; }
 .crew-chief-race-brief p, .crew-chief-learning section, .crew-chief-exact-test { padding: 0.7rem; border: 1px solid var(--border); border-radius: 8px; }
 .crew-chief-race-brief b { display: block; color: var(--accent); font-size: 0.7rem; letter-spacing: 0.08em; }
+.speed-story p { min-height: 4.25rem; }
+.speed-story .speed-story-next {
+  grid-column: 1 / -1;
+  min-height: 0;
+  padding: 0.9rem 1rem;
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--border));
+  background: color-mix(in srgb, var(--panel) 74%, var(--accent));
+  font-size: 1rem;
+  line-height: 1.45;
+}
+.speed-story .speed-story-next b { margin-bottom: 0.25rem; font-size: 0.78rem; }
+.speed-story .speed-story-contradiction { border-color: color-mix(in srgb, var(--danger) 52%, var(--border)); }
+.crew-chief-deck[data-mode="race"] .crew-chief-race-brief { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.crew-chief-deck[data-mode="race"] .speed-story p:not(.speed-story-next) { min-height: 0; }
+.crew-chief-loading { min-height: 8rem; align-content: center; }
+.crew-chief-loading > b { color: var(--text); }
+.crew-chief-loading > p { max-width: 52rem; color: var(--text-muted); }
+.performance-ribbon { grid-column: 1 / -1; }
+.performance-ribbon ol { display: grid; gap: 0.4rem; margin: 0.5rem 0 0; padding: 0; list-style: none; }
+.performance-ribbon button { display: grid; width: 100%; grid-template-columns: minmax(10rem, 0.6fr) minmax(14rem, 1fr); gap: 0.7rem; text-align: left; }
+.performance-ribbon button span, .performance-chain small, .crew-chief-learning section > small { display: block; color: var(--text-muted); }
+.performance-chain { display: grid; gap: 0.25rem; padding-block: 0.5rem; border-bottom: 1px solid var(--border); }
+.performance-chain:last-child { border-bottom: 0; }
 .crew-chief-exact-test { display: grid; gap: 0.25rem; border-color: var(--accent); }
 .crew-chief-open { display: grid; grid-template-columns: minmax(10rem, 0.5fr) minmax(16rem, 1fr) auto; gap: 0.6rem; align-items: end; }
 .crew-chief-open label { display: grid; gap: 0.3rem; }

@@ -3,10 +3,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from racelab_engine.analysis.crew_chief_packet import KaizenEvidencePacket
-from racelab_engine.analysis.test_director import TestExecution, TestQualityResult
+from racelab_engine.analysis.test_director import (
+    TestExecution,
+    TestQualityResult,
+    score_test_execution,
+)
 
 
 class VehicleConditionEpoch(BaseModel):
@@ -59,6 +63,47 @@ class ControlledWorkflow(BaseModel):
     reproduction_snapshot: dict[str, Any] = Field(default_factory=dict)
     quality: TestQualityResult | None = None
     learning_admitted: bool | None = None
+
+    @model_validator(mode="after")
+    def invalid_or_incomplete_tests_withhold_performance_memory(
+        self,
+    ) -> ControlledWorkflow:
+        execution = self.execution
+        quality = self.quality
+        stages = ("A", "B", "A2")
+        stage_run_ids = tuple(self.stage_run_ids.get(stage) for stage in stages)
+        stage_laps = tuple(self.stage_eligible_lap_numbers.get(stage, ()) for stage in stages)
+        complete_scope = (
+            self.status == "scored"
+            and execution is not None
+            and quality is not None
+            and quality.protocol_valid
+            and quality.verdict != "invalid"
+            and score_test_execution(execution) == quality
+            and all(stage_run_ids)
+            and len(set(stage_run_ids)) == 3
+            and all(
+                len(laps) >= 3
+                and len(laps) == len(set(laps))
+                for laps in stage_laps
+            )
+        )
+        if execution is not None and not complete_scope and any(
+            value is not None
+            for value in (
+                execution.time_origin_phase,
+                execution.time_origin_pct,
+                execution.downstream_carry_effect_s,
+            )
+        ):
+            self.execution = execution.model_copy(
+                update={
+                    "time_origin_phase": None,
+                    "time_origin_pct": None,
+                    "downstream_carry_effect_s": None,
+                }
+            )
+        return self
 
 
 __all__ = [

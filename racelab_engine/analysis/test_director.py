@@ -122,6 +122,9 @@ class TestExecution(DirectorModel):
     sim_integrity_score: float | None = Field(default=None, ge=0.0, le=1.0)
     phase_effect_b_vs_a_s: float | None = Field(default=None, allow_inf_nan=False)
     phase_effect_b_vs_a2_s: float | None = Field(default=None, allow_inf_nan=False)
+    time_origin_phase: str | None = None
+    time_origin_pct: float | None = Field(default=None, ge=0.0, le=100.0)
+    downstream_carry_effect_s: float | None = Field(default=None, allow_inf_nan=False)
     empirical_noise_s: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     empirical_noise_observations: int = Field(default=0, ge=0)
     minimum_alignment_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -131,6 +134,25 @@ class TestExecution(DirectorModel):
     countereffect_passed: bool | None = None
     control_guardrails_passed: bool | None = None
     control_guardrail_metrics: dict[str, float] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def performance_memory_scope_is_complete(self) -> TestExecution:
+        if (self.time_origin_phase is None) != (self.time_origin_pct is None):
+            raise ValueError(
+                "controlled performance memory requires paired time-origin phase and position"
+            )
+        if (
+            self.time_origin_phase is not None
+            or self.downstream_carry_effect_s is not None
+        ) and (
+            min(self.eligible_laps_a, self.eligible_laps_b, self.eligible_laps_a2) < 3
+            or self.phase_effect_b_vs_a_s is None
+            or self.phase_effect_b_vs_a2_s is None
+        ):
+            raise ValueError(
+                "controlled performance memory requires complete repeated A/B/A2 phase effects"
+            )
+        return self
 
 
 class TestQualityResult(DirectorModel):

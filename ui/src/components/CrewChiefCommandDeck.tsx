@@ -44,14 +44,15 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
     const sequence = ++workspaceSequence.current;
     setWorkspace(null);
     setError(null);
-    setBusy(false);
+    setBusy(true);
     void fetchCrewChiefWorkspace(runId, sessionId, report, { objective, scopeRunIds })
       .then((value) => { if (sequence === workspaceSequence.current) setWorkspace(value); })
       .catch((caught: unknown) => {
         if (sequence === workspaceSequence.current) {
           setError(caught instanceof Error ? caught.message : "Crew Chief unavailable.");
         }
-      });
+      })
+      .finally(() => { if (sequence === workspaceSequence.current) setBusy(false); });
     return () => {
       if (sequence === workspaceSequence.current) workspaceSequence.current += 1;
     };
@@ -77,16 +78,25 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
     return <section className="crew-chief-deck crew-chief-error" role="alert"><b>Crew Chief withheld</b><p>{error}</p></section>;
   }
   if (!workspace) {
-    return <section className="crew-chief-deck" aria-busy="true"><span className="eyebrow">Crew Chief</span><p>Binding the current P19, P20, and P26 workspace…</p></section>;
+    return <section className="crew-chief-deck crew-chief-loading" aria-busy="true" aria-live="polite">
+      <span className="eyebrow"><BrainCircuit size={13} aria-hidden="true" /> Crew Chief</span>
+      <b>{busy ? "Binding current evidence" : "Crew Chief is waiting"}</b>
+      <p>Checking the exact P19, P20, P26, and P32 identities before showing a decision.</p>
+    </section>;
   }
 
   const decision = workspace.terminal_decision;
   const investigationId = workspace.identity.investigation_id;
   const revision = workspace.identity.workspace_revision;
   const status = workspace.folded_state?.status;
-  const targetScope = workspace.success_contract?.target_scope
-    ?? workspace.p19_mission_contract?.purpose
-    ?? workspace.run_sentinel.need;
+  const performance = workspace.performance_intelligence;
+  const story = performance.speed_story;
+  const activeObjective = workspace.folded_state?.objective ?? objective;
+  const opportunityEvidence = new Map(
+    workspace.evidence_index.entries
+      .filter((item) => item.producer_id === "p32.lap_time_opportunity")
+      .map((item) => [item.artifact_id, item]),
+  );
   const canStartFollowUp = status === "complete" || status === "abandoned";
   return (
     <section
@@ -104,13 +114,20 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
         <span className="crew-chief-authority"><ShieldCheck size={14} /> {decision.authority.replace(/_/g, " ")}</span>
       </header>
 
-      <div className="crew-chief-race-brief" aria-label="Race-mode command brief">
-        <p><b>WHAT</b> {decision.instruction}</p>
-        <p><b>WHERE</b> {targetScope}</p>
-        <p><b>WHY IT MATTERS</b> {workspace.current_subgoal?.why_this_tool ?? workspace.post_run_brief[0]}</p>
-        <p><b>KNOW</b> {workspace.evidence_index.entries.length} exact artifacts · {workspace.run_sentinel.accepted_laps} accepted laps</p>
-        <p><b>UNCERTAIN</b> {workspace.critique.strongest_contradiction ?? workspace.blocker_reasons[0] ?? "No stronger contradiction is attached."}</p>
-        <p><b>NEXT</b> {workspace.current_subgoal?.title ?? decision.title}</p>
+      <div className="crew-chief-race-brief speed-story" aria-label="Measured Speed Story">
+        <p className="speed-story-next"><b>NEXT · P19</b> {story.next}</p>
+        <p><b>OBSERVED · {story.observed_direction.toUpperCase()}</b> {story.what_costs_time}</p>
+        <p><b>ATTRIBUTION</b> {story.attribution}</p>
+        <p><b>WHERE IT STARTS</b> {story.where_it_starts}</p>
+        <p><b>WHAT CARRIES</b> {story.what_carries}</p>
+        <p className="speed-story-contradiction"><b>STRONGEST CONTRADICTION</b> {story.strongest_contradiction}</p>
+        {learning && <>
+          <p><b>DRIVER</b> {story.driver}</p>
+          <p><b>CAR</b> {story.car}</p>
+          <p><b>SYSTEMS</b> {story.systems}</p>
+          <p><b>HISTORY</b> {story.history}</p>
+          <p><b>KNOW</b> {workspace.evidence_index.entries.length} exact artifacts · {workspace.run_sentinel.accepted_laps} accepted laps</p>
+        </>}
       </div>
 
       {decision.kind === "controlled_test" && (
@@ -152,6 +169,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
               disabled={busy}
               onClick={() => { void runMutation(() => answerCrewChiefQuestion(
                 runId, sessionId, investigationId!, revision, answer, report, scopeRunIds,
+                activeObjective,
               )); }}
             >{answer}</button>
           ))}</div>
@@ -172,10 +190,12 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
             disabled={busy}
             onClick={() => { void runMutation(() => continueCrewChiefInvestigation(
               runId, sessionId, investigationId!, revision, report, scopeRunIds,
+              activeObjective,
             )); }}
           ><Play size={14} /> {workspace.current_subgoal ? "Run next inspection" : "Emit bounded decision"}</button>
           <button type="button" disabled={busy} onClick={() => { void runMutation(() => abandonCrewChiefInvestigation(
             runId, sessionId, investigationId!, revision, "Abandoned explicitly by driver.", report, scopeRunIds,
+            activeObjective,
           )); }}><XCircle size={14} /> Abandon</button>
         </div>
       ) : null}
@@ -183,7 +203,8 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
       {status === "stale" && investigationId && (
         <button type="button" disabled={busy} onClick={() => { void runMutation(() => rebaseCrewChiefInvestigation(
           runId, sessionId, investigationId, workspace.folded_state!.accepted_workspace_revision, report, scopeRunIds,
-        )); }}><RefreshCw size={14} /> Rebase explicitly to current P19/P20/P26 state</button>
+          activeObjective,
+        )); }}><RefreshCw size={14} /> Rebase explicitly to current P19/P20/P26/P32 state</button>
       )}
       {error && workspace && (
         <button type="button" disabled={busy} onClick={() => { void runMutation(() => fetchCrewChiefWorkspace(
@@ -193,6 +214,57 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
 
       {learning && (
         <div className="crew-chief-learning">
+          <section className="performance-ribbon">
+            <h3>Time-loss ribbon</h3>
+            {performance.opportunity_map.opportunities.length ? (
+              <ol>{performance.opportunity_map.opportunities.map((item) => {
+                const evidence = opportunityEvidence.get(item.opportunity_id);
+                return <li key={item.opportunity_id}>
+                  <button type="button" disabled={!evidence} onClick={() => { if (evidence) onFocusEvidence(evidence); }}>
+                    <b>{item.track_region} · {item.phase.replace(/_/g, " ")}</b>
+                    <span>{item.local_delta_s == null ? "time unavailable" : `${item.local_delta_s >= 0 ? "+" : ""}${item.local_delta_s.toFixed(3)} s`} · {item.origin_kind.replace(/_/g, " ")} · {item.repeatability.replace(/_/g, " ")}</span>
+                  </button>
+                </li>;
+              })}</ol>
+            ) : <p>{performance.opportunity_map.context_blockers.join(" ") || "No measured opportunity cleared the current time floor."}</p>}
+          </section>
+          <section>
+            <h3>Corner performance chain</h3>
+            {performance.corner_chains.length ? performance.corner_chains.slice(0, 3).map((chain) => (
+              <div className="performance-chain" key={chain.chain_id}>
+                <b>{chain.track_region}</b>
+                <p>{[chain.braking_state, chain.entry_state, chain.center_state, chain.exit_state, chain.carry_state].map((state) => (
+                  state ? `${state.phase} ${state.elapsed_delta_s == null ? "—" : `${state.elapsed_delta_s >= 0 ? "+" : ""}${state.elapsed_delta_s.toFixed(3)} s`}` : null
+                )).filter(Boolean).join(" → ")}</p>
+                <small>{chain.contradictions[0]}</small>
+              </div>
+            )) : <p>No qualified connected corner chain is available.</p>}
+          </section>
+          <section>
+            <h3>Driver / car separation</h3>
+            {performance.corner_chains.some((chain) => chain.driver_vehicle_separation.length) ? performance.corner_chains.flatMap((chain) => chain.driver_vehicle_separation).slice(0, 6).map((item) => (
+              <p key={item.separation_id}><b>{item.phase}</b> {item.result.replace(/_/g, " ")}<small>{item.blockers[0] ?? item.contradictions[0] ?? item.support[0]}</small></p>
+            )) : <p>Driver-versus-car separation is unavailable for this qualified scope.</p>}
+          </section>
+          <section>
+            <h3>Measured track demand</h3>
+            <p>{performance.track_demand.full_throttle_fraction == null ? "Full-throttle fraction unavailable" : `${(performance.track_demand.full_throttle_fraction * 100).toFixed(1)}% full throttle`} · {performance.track_demand.braking_fraction == null ? "braking unavailable" : `${(performance.track_demand.braking_fraction * 100).toFixed(1)}% braking`} · {performance.track_demand.cornering_fraction == null ? "cornering unavailable" : `${(performance.track_demand.cornering_fraction * 100).toFixed(1)}% cornering`}</p>
+            <small>Traffic exposure {performance.track_demand.traffic_exposure_fraction == null ? "unavailable" : `${(performance.track_demand.traffic_exposure_fraction * 100).toFixed(1)}%`}</small>
+          </section>
+          <section>
+            <h3>Comparison context</h3>
+            <p>{story.comparison_window}</p>
+            <small>Source: {story.source_context} · Reference: {story.reference_context}</small>
+          </section>
+          <section>
+            <h3>P20 / P26 performance bridge</h3>
+            {performance.component_influences.length ? <ul>{performance.component_influences.map((item) => (
+              <li key={item.influence_id}><b>{item.component_id.replace(/_/g, " ")}</b> · {item.runtime_support_state.replace(/_/g, " ")}<small>{item.performance_mechanism_ids.join(", ")}</small></li>
+            ))}</ul> : <p>No component relevance is attached to the measured time scope.</p>}
+          </section>
+          <section><h3>Objective envelope</h3><p>Primary: {performance.objective_envelope.primary_outcomes.join(", ")}</p><small>Protected: {performance.objective_envelope.protected_outcomes.join(", ")}. Objective changes policy, not measured physics.</small></section>
+          <section><h3>Performance history</h3><p>{performance.response_records.length} controlled performance records attached.</p>{performance.response_records.slice(0, 3).map((item) => <small key={item.record_id}>{item.control} · {item.phase_effect} · {item.policy_verdict}</small>)}</section>
+          <section><h3>Strongest contradiction</h3><p>{performance.explanation_chain.strongest_contradiction}</p><small>Generic component relevance cannot authorize setup. P19 next: {performance.explanation_chain.p19_next_move}</small></section>
           <section><h3>Mission ribbon</h3><p>{workspace.run_sentinel.mission}</p><small>Stage {workspace.run_sentinel.stage} · {workspace.run_sentinel.accepted_laps}/{workspace.run_sentinel.required_laps} accepted</small></section>
           <section><h3>Critic</h3><p>{workspace.critique.passed ? "Authority and identity checks passed." : workspace.critique.findings.join(" ")}</p></section>
           <section><h3>P19 collection contract</h3>{workspace.p19_mission_contract
@@ -201,8 +273,8 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
               ? <><p>{workspace.success_contract.acceptance_rule}</p><small>{workspace.success_contract.independence_unit}</small></>
               : <p>{workspace.run_sentinel.blocker_reasons.join(" ") || "P19 published no collection contract."}</p>}
           </section>
-          <section><h3>Run sentinel</h3><p>{workspace.run_sentinel.need}</p><ul>{workspace.run_sentinel.laps.slice(-6).map((lap) => <li key={lap.lap_number}><CheckCircle2 size={12} /> Lap {lap.lap_number}: {lap.status}{lap.reasons.length ? ` — ${lap.reasons.join(", ")}` : ""}</li>)}</ul></section>
-          <section><h3>Evidence index</h3><ul>{workspace.evidence_index.entries.slice(0, 8).map((item) => <li key={item.artifact_id}><button type="button" onClick={() => onFocusEvidence(item)}><b>{item.producer_id}</b> {item.artifact_id} · {item.mechanism_ids.join(", ") || "unclassified"}</button></li>)}</ul></section>
+          <section><h3>Run sentinel</h3><p>{workspace.run_sentinel.need}</p>{workspace.run_sentinel.laps.length ? <ul>{workspace.run_sentinel.laps.slice(-6).map((lap) => <li key={lap.lap_number}><CheckCircle2 size={12} /> Lap {lap.lap_number}: {lap.status}{lap.reasons.length ? ` — ${lap.reasons.join(", ")}` : ""}</li>)}</ul> : <small>No laps have been assessed for this mission yet.</small>}</section>
+          <section><h3>Evidence index</h3>{workspace.evidence_index.entries.length ? <ul>{workspace.evidence_index.entries.slice(0, 8).map((item) => <li key={item.artifact_id}><button type="button" onClick={() => onFocusEvidence(item)}><b>{item.producer_id}</b> {item.artifact_id} · {item.mechanism_ids.join(", ") || "unclassified"}</button></li>)}</ul> : <p>No exact artifacts are available for the selected scope.</p>}</section>
           <section><h3>Response atlas</h3><p>{workspace.response_history_ids.length} exact-context controlled response records attached.</p></section>
           <section><h3>Driver intelligence</h3><p>{workspace.driver_memory_ids.length} complaint/context records retained as non-authoritative priors.</p></section>
           <section><h3>Research boundary</h3><p>Adaptive experimentation: {workspace.adaptive_research.state.replace(/_/g, " ")}.</p><small>{workspace.adaptive_research.activation_gate}</small></section>

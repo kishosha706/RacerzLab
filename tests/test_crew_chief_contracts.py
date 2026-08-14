@@ -53,6 +53,7 @@ def _identity() -> CrewChiefWorkspaceIdentity:
         p26_graph_version="p26.graph.v1:555555555555",
         p26_knowledge_graph_sha256="5" * 64,
         p26_reasoning_snapshot_sha256="2" * 64,
+        p32_projection_sha256="9" * 64,
         setup_id="setup-1",
         setup_snapshot_sha256="6" * 64,
         vehicle_runtime_identity_hash="7" * 64,
@@ -685,12 +686,31 @@ def test_real_next_gen_atlanta_workspace_preserves_authority_boundary() -> None:
     if RaceLabRepository().get_overview(run_id) is None:
         pytest.skip("Persisted real Next Gen Atlanta fixture is unavailable")
     workspace = build_crew_chief_workspace(run_id, session_id=session_id)
+    performance = workspace.performance_intelligence
+    story = performance.speed_story
     assert workspace.identity.reasoning_snapshot_sha256 == (
         workspace.identity.p26_reasoning_snapshot_sha256
     )
     assert workspace.identity.setup_id
     assert workspace.generative_boundary.enabled is False
     assert workspace.adaptive_research.state == "data_locked"
+    assert story.observed_difference_s is not None
+    assert story.observed_difference_s > 0.0
+    assert story.observed_direction == "loss"
+    assert story.attribution_state == "blocked_by_traffic"
+    assert "traffic" in story.strongest_contradiction.casefold()
+    assert "100.0%" in story.strongest_contradiction
+    assert "withheld" in story.systems.casefold()
+    assert performance.component_influences == ()
+    assert all(
+        opportunity.component_candidates == ()
+        for opportunity in performance.opportunity_map.opportunities
+    )
+    assert performance.setup_authorized is False
+    assert performance.track_demand.traffic_exposure_fraction == pytest.approx(1.0)
+    assert performance.track_demand.disturbance_exposure_fraction is not None
+    assert performance.track_demand.disturbance_exposure_fraction < 0.25
+    assert performance.track_demand.limiter_zones == ()
     if workspace.terminal_decision.kind != "controlled_test":
         assert workspace.terminal_decision.control_key is None
         assert workspace.terminal_decision.proposed_value is None

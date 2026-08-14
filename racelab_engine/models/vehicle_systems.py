@@ -361,6 +361,10 @@ class ComponentControlledHistory(VehicleSystemsModel):
     control_key: str = Field(min_length=1)
     metric: str = Field(min_length=1)
     phase: str = Field(min_length=1)
+    actual_effect_s: float | None = Field(default=None, allow_inf_nan=False)
+    time_origin_phase: str | None = None
+    time_origin_pct: float | None = Field(default=None, ge=0.0, le=100.0)
+    downstream_carry_effect_s: float | None = Field(default=None, allow_inf_nan=False)
     mechanism_state: str = Field(min_length=1)
     control_response: str = Field(min_length=1)
     policy_verdict: Literal["keep", "undo", "retest", "invalid"]
@@ -383,6 +387,29 @@ class ComponentControlledHistory(VehicleSystemsModel):
             or self.phase == "unscoped"
         ):
             raise ValueError("exact controlled history requires complete persisted experiment scope")
+        if (self.time_origin_phase is None) != (self.time_origin_pct is None):
+            raise ValueError("controlled component history requires paired time origin")
+        if (not self.exact_context or self.policy_verdict == "invalid") and any(
+            value is not None
+            for value in (
+                self.actual_effect_s,
+                self.time_origin_phase,
+                self.time_origin_pct,
+                self.downstream_carry_effect_s,
+            )
+        ):
+            raise ValueError(
+                "non-exact or invalid controlled history cannot publish performance memory"
+            )
+        if self.actual_effect_s is None and any(
+            value is not None
+            for value in (
+                self.time_origin_phase,
+                self.time_origin_pct,
+                self.downstream_carry_effect_s,
+            )
+        ):
+            raise ValueError("component origin/carry requires a measured phase effect")
         return self
 
 

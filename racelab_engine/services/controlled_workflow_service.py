@@ -2948,6 +2948,28 @@ def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = N
     )
     target_distribution_state = _target_effect_distribution_state(target_effects, noise)
     unrelated = [change.setup_key for change in diff_setups(setups["A"], setups["B"]) if change.setup_key != card.control_key]
+    origin_threshold = max(0.02, noise or 0.05)
+    time_origins: list[tuple[float, str]] = []
+    carry_effects: list[float] = []
+    for results in comparison_results.values():
+        for aligned in results:
+            cumulative = getattr(aligned, "cumulative_delta_s", ())
+            origin_index = next((
+                index for index, value in enumerate(cumulative)
+                if value is not None and abs(value) > origin_threshold
+            ), None)
+            if origin_index is not None:
+                phases = getattr(aligned, "phase_by_position", ())
+                grid = getattr(aligned, "grid_pct", ())
+                if origin_index < len(phases) and origin_index < len(grid):
+                    phase = phases[origin_index]
+                    if phase is not None:
+                        time_origins.append((grid[origin_index], phase))
+            carry = getattr(aligned, "phase_attribution", {}).get("following_straight_carry_delta_s")
+            if carry is not None:
+                carry_effects.append(carry)
+    time_origins.sort(key=lambda item: (item[0], item[1]))
+    representative_origin = time_origins[(len(time_origins) - 1) // 2] if time_origins else None
     execution = TestExecution(
         eligible_laps_a=lap_counts["A"], eligible_laps_b=lap_counts["B"], eligible_laps_a2=lap_counts["A2"],
         unrelated_setup_changes=len(unrelated), unrelated_changed_controls=tuple(unrelated),
@@ -2958,6 +2980,9 @@ def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = N
         context_match_score=context, driver_match_score=driver, sim_integrity_score=integrity,
         phase_effect_b_vs_a_s=median(target_effects["AB"]),
         phase_effect_b_vs_a2_s=median(target_effects["A2B"]),
+        time_origin_phase=representative_origin[1] if representative_origin else None,
+        time_origin_pct=representative_origin[0] if representative_origin else None,
+        downstream_carry_effect_s=median(carry_effects) if carry_effects else None,
         empirical_noise_s=noise,
         empirical_noise_observations=len(within_baseline),
         minimum_alignment_confidence=min(alignment_confidences, default=None),
@@ -2969,6 +2994,14 @@ def score_workflow(workflow_id: str, *, repository: RaceLabRepository | None = N
         control_guardrail_metrics=control_guardrail_metrics,
     )
     result = score_test_execution(execution)
+    if not result.protocol_valid or result.verdict == "invalid":
+        execution = execution.model_copy(
+            update={
+                "time_origin_phase": None,
+                "time_origin_pct": None,
+                "downstream_carry_effect_s": None,
+            }
+        )
     observed_effect = median([*target_effects["AB"], *target_effects["A2B"]])
     learning_admitted: bool | None = None
     if result.controlled_effect_eligible and result.verdict in {"keep", "undo"}:

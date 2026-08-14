@@ -411,6 +411,10 @@ class ControlledCauseOutcome(IntelligenceModel):
     eligible_lap_ids: tuple[str, ...] = ()
     metric: str = Field(min_length=1)
     phase: str = Field(min_length=1)
+    actual_effect_s: float | None = Field(default=None, allow_inf_nan=False)
+    time_origin_phase: str | None = None
+    time_origin_pct: float | None = Field(default=None, ge=0.0, le=100.0)
+    downstream_carry_effect_s: float | None = Field(default=None, allow_inf_nan=False)
     control_key: str | None = None
     countereffects: tuple[str, ...] = ()
     blocker_reasons: tuple[str, ...] = ()
@@ -454,6 +458,27 @@ class ControlledCauseOutcome(IntelligenceModel):
             raise ValueError("usable controlled outcomes require an explicit control response")
         if self.outcome == "invalid" and self.control_direction_result not in {None, "invalid"}:
             raise ValueError("invalid controlled outcomes cannot publish a usable response")
+        if (self.time_origin_phase is None) != (self.time_origin_pct is None):
+            raise ValueError("controlled outcomes require paired time-origin phase and position")
+        if self.outcome == "invalid" and any(
+            value is not None
+            for value in (
+                self.actual_effect_s,
+                self.time_origin_phase,
+                self.time_origin_pct,
+                self.downstream_carry_effect_s,
+            )
+        ):
+            raise ValueError("invalid controlled outcomes cannot publish performance memory")
+        if self.actual_effect_s is None and any(
+            value is not None
+            for value in (
+                self.time_origin_phase,
+                self.time_origin_pct,
+                self.downstream_carry_effect_s,
+            )
+        ):
+            raise ValueError("controlled origin/carry requires a measured phase effect")
         return self
 
 

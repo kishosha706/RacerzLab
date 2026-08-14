@@ -6,6 +6,7 @@ recomputes P19 setup or policy authority and never analyzes raw telemetry.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
@@ -13,14 +14,25 @@ from typing import Iterable, Literal
 
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.crew_chief import (
+    CrewChiefComponentPerformanceLinkArtifact,
+    CrewChiefCornerPerformanceChainArtifact,
     CrewChiefCritique,
+    CrewChiefDriverVehicleSeparationArtifact,
     CrewChiefEffectivenessRecord,
     CrewChiefEvent,
     CrewChiefEventPayload,
+    CrewChiefExitCarryArtifact,
     CrewChiefInvestigation,
+    CrewChiefLapTimeOpportunityArtifact,
+    CrewChiefObjectiveEnvelopeArtifact,
+    CrewChiefPathEfficiencyArtifact,
+    CrewChiefPerformanceArtifact,
     CrewChiefTerminalDecision,
+    CrewChiefTimeLossOriginArtifact,
     CrewChiefToolDefinition,
     CrewChiefToolResult,
+    CrewChiefTrackDemandArtifact,
+    CrewChiefUnavailablePerformanceArtifact,
     CrewChiefWorkspace,
     CrewChiefWorkspaceIdentity,
     DriverDiagnosticQuestion,
@@ -42,6 +54,7 @@ from racelab_engine.models.observation_intelligence import MechanismKind
 from racelab_engine.services.engineering_projection_service import (
     project_engineering_awareness,
 )
+from racelab_engine.services.performance_intelligence_service import build_performance_intelligence
 from racelab_engine.services.run_intelligence_service import (
     RunIntelligenceBundle,
     build_run_intelligence,
@@ -62,6 +75,45 @@ from racelab_engine.storage.repository import RaceLabRepository
 
 _CACHE_LOCK = RLock()
 _CACHE: dict[tuple[str, str], CrewChiefWorkspace] = {}
+
+
+@dataclass(frozen=True)
+class _UnavailableP26:
+    """Private fail-closed P26 view for unsupported graph applicability only.
+
+    P32 still owns measured time/origin/carry when the reviewed component graph
+    does not cover a car/build/track.  This sentinel carries exact setup and
+    identity hashes, but intentionally exposes no component state or authority.
+    """
+
+    setup_id: str
+    setup_snapshot_sha256: str
+    graph_version: str
+    knowledge_graph_sha256: str
+    reasoning_snapshot_sha256: str
+    runtime_identity: dict[str, str]
+    unavailable_reason: str
+    component_states: tuple[object, ...] = ()
+    leading_component_ids: tuple[str, ...] = ()
+    experiment_factors: tuple[object, ...] = ()
+    setup_authorized: bool = False
+
+    @property
+    def strongest_contradiction(self) -> str:
+        return self.unavailable_reason
+
+    @property
+    def knowledge_debt(self) -> tuple[str, ...]:
+        return (self.unavailable_reason,)
+
+
+_OPTIONAL_P26_FAILURE_MARKERS = (
+    "is unavailable for car path",
+    "requires review for car version",
+    "requires review for future iracing build",
+    "does not cover iracing build",
+    "requires an oval track configuration",
+)
 _TOOLS = (
     CrewChiefToolDefinition(
         tool_id="inspect_data_quality",
@@ -127,6 +179,51 @@ _TOOLS = (
         authority_ceiling="measurement_only",
         required_sources=("p19",),
     ),
+    CrewChiefToolDefinition(
+        tool_id="inspect_lap_time_opportunity", allowed_scope="run",
+        input_schema="P32 LapTimeOpportunityMap", output_artifact_type="measured time opportunity",
+        authority_ceiling="observation_only", required_sources=("p32", "time_alignment"),
+    ),
+    CrewChiefToolDefinition(
+        tool_id="inspect_time_loss_origin", allowed_scope="run",
+        input_schema="P32 time-origin vocabulary", output_artifact_type="origin and carry classification",
+        authority_ceiling="observation_only", required_sources=("p32", "time_alignment"),
+    ),
+    CrewChiefToolDefinition(
+        tool_id="inspect_corner_performance_chain", allowed_scope="run",
+        input_schema="P32 CornerPerformanceChain", output_artifact_type="connected corner performance chain",
+        authority_ceiling="observation_only", required_sources=("p32",),
+    ),
+    CrewChiefToolDefinition(
+        tool_id="inspect_exit_carry", allowed_scope="run",
+        input_schema="P32 downstream time persistence", output_artifact_type="exit and following-straight carry",
+        authority_ceiling="observation_only", required_sources=("p32",),
+    ),
+    CrewChiefToolDefinition(
+        tool_id="inspect_path_efficiency", allowed_scope="run",
+        input_schema="P32 measured path and elapsed time", output_artifact_type="path/time comparison",
+        authority_ceiling="observation_only", required_sources=("p32",),
+    ),
+    CrewChiefToolDefinition(
+        tool_id="inspect_driver_vehicle_separation", allowed_scope="run",
+        input_schema="P32 DriverVehicleSeparation", output_artifact_type="demand and response distinction",
+        authority_ceiling="context_only", required_sources=("p32", "p19"),
+    ),
+    CrewChiefToolDefinition(
+        tool_id="inspect_track_demand", allowed_scope="run",
+        input_schema="P32 TrackDemandProfile", output_artifact_type="measured track demand",
+        authority_ceiling="observation_only", required_sources=("p32",),
+    ),
+    CrewChiefToolDefinition(
+        tool_id="inspect_component_performance_link", allowed_scope="component",
+        input_schema="P32 non-causal P20/P26 performance bridge", output_artifact_type="component mechanical relevance",
+        authority_ceiling="observation_only", required_sources=("p32", "p20", "p26"),
+    ),
+    CrewChiefToolDefinition(
+        tool_id="inspect_objective_tradeoff", allowed_scope="session",
+        input_schema="P32 PerformanceObjectiveEnvelope", output_artifact_type="primary and protected outcomes",
+        authority_ceiling="context_only", required_sources=("p32", "p19"),
+    ),
 )
 
 
@@ -136,6 +233,15 @@ def _now() -> datetime:
 
 def _unique(values: Iterable[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(value for value in values if value))
+
+
+def _is_optional_p26_applicability_failure(error: ValueError) -> bool:
+    message = str(error).casefold()
+    return any(marker in message for marker in _OPTIONAL_P26_FAILURE_MARKERS)
+
+
+def _enum_text(value: object) -> str:
+    return str(getattr(value, "value", value))
 
 
 def _mechanisms(values: Iterable[str]) -> tuple[MechanismKind, ...]:
@@ -173,6 +279,7 @@ def _workspace_identity(
     event_hashes: tuple[str, ...],
     p20: object,
     p26: object,
+    p32: object,
 ) -> CrewChiefWorkspaceIdentity:
     report = bundle.report
     setup_id = getattr(p26, "setup_id", None)
@@ -190,6 +297,7 @@ def _workspace_identity(
         "p26_graph": getattr(p26, "graph_version"),
         "p26_graph_hash": getattr(p26, "knowledge_graph_sha256"),
         "p26_reasoning": getattr(p26, "reasoning_snapshot_sha256"),
+        "p32_projection": getattr(p32, "projection_sha256"),
         "setup_id": setup_id,
         "setup_hash": setup_hash,
         "runtime": canonical_json_sha256(getattr(p26, "runtime_identity")),
@@ -209,6 +317,7 @@ def _workspace_identity(
         p26_graph_version=base["p26_graph"],
         p26_knowledge_graph_sha256=base["p26_graph_hash"],
         p26_reasoning_snapshot_sha256=base["p26_reasoning"],
+        p32_projection_sha256=base["p32_projection"],
         setup_id=setup_id,
         setup_snapshot_sha256=setup_hash,
         vehicle_runtime_identity_hash=base["runtime"],
@@ -301,6 +410,7 @@ def _evidence_index(
     identity: CrewChiefWorkspaceIdentity,
     objective: EngineeringObjective,
     p26: object,
+    p32: object | None = None,
     repository: RaceLabRepository | None = None,
 ) -> EngineeringEvidenceIndex:
     report = bundle.report
@@ -478,6 +588,399 @@ def _evidence_index(
                 authority_ceiling="observation_only",
             ),
         )
+    p26_unavailable_reason = getattr(p26, "unavailable_reason", None)
+    if p26_unavailable_reason:
+        artifact_id = (
+            "p26.component-state:unavailable:"
+            f"{canonical_json_sha256([identity.run_id, p26_unavailable_reason])[:16]}"
+        )
+        entries[artifact_id] = EngineeringEvidenceIndexEntry(
+            artifact_id=artifact_id,
+            producer_id="p26.component_state_unavailable",
+            run_id=identity.run_id,
+            session_id=identity.session_id,
+            setup_id=identity.setup_id,
+            workspace_run_id=identity.run_id,
+            workspace_session_id=identity.session_id,
+            workspace_setup_id=identity.setup_id,
+            source_run_id=identity.run_id,
+            source_session_id=identity.session_id,
+            source_setup_id=identity.setup_id,
+            source_setup_sha256=identity.setup_snapshot_sha256,
+            source_build_context_sha256=identity.vehicle_runtime_identity_hash,
+            source_provenance_available=True,
+            objective=objective,
+            evidence_state=EvidenceState.UNAVAILABLE,
+            polarity="neutral",
+            blocker_reasons=(p26_unavailable_reason,),
+            authority_ceiling="observation_only",
+        )
+    p32_producers = {
+        "p32.lap_time_opportunity",
+        "p32.time_loss_origin",
+        "p32.corner_performance_chain",
+        "p32.exit_carry",
+        "p32.path_efficiency",
+        "p32.driver_vehicle_separation",
+        "p32.track_demand",
+        "p32.component_performance_link",
+        "p32.objective_envelope",
+    }
+    if p32 is not None:
+        basis = getattr(p32, "basis")
+        source_laps = tuple(getattr(basis, "source_lap_numbers", ()))
+        basis_blockers = tuple(getattr(basis, "context_blockers", ()))
+
+        def add_p32_entry(
+            *,
+            artifact_id: str,
+            producer_id: str,
+            phase: str,
+            start_pct: float = 0.0,
+            end_pct: float = 100.0,
+            state: EvidenceState = EvidenceState.CALCULATED,
+            source_channels: tuple[str, ...] = (),
+            mechanisms: tuple[str, ...] = (),
+            components: tuple[str, ...] = (),
+            blockers: tuple[str, ...] = (),
+            authority: Literal["observation_only", "context_only"] = "observation_only",
+            typed_artifact: CrewChiefPerformanceArtifact,
+        ) -> None:
+            entries[artifact_id] = EngineeringEvidenceIndexEntry(
+                artifact_id=artifact_id,
+                producer_id=producer_id,
+                run_id=identity.run_id,
+                session_id=identity.session_id,
+                setup_id=identity.setup_id,
+                workspace_run_id=identity.run_id,
+                workspace_session_id=identity.session_id,
+                workspace_setup_id=identity.setup_id,
+                source_run_id=identity.run_id,
+                source_session_id=identity.session_id,
+                source_setup_id=identity.setup_id,
+                source_setup_sha256=identity.setup_snapshot_sha256,
+                source_build_context_sha256=identity.vehicle_runtime_identity_hash,
+                source_provenance_available=True,
+                lap_numbers=source_laps,
+                lap_pct_start=start_pct,
+                lap_pct_end=end_pct,
+                phase=phase,
+                mechanism_ids=_mechanisms(mechanisms),
+                component_ids=_unique(components),
+                objective=objective,
+                source_channels=_unique(source_channels),
+                evidence_state=state,
+                polarity="neutral",
+                blocker_reasons=_unique(blockers),
+                typed_artifact=typed_artifact,
+                authority_ceiling=authority,
+            )
+
+        opportunities = tuple(
+            getattr(getattr(p32, "opportunity_map"), "opportunities", ())
+        )
+        for opportunity in opportunities:
+            context_state = _enum_text(opportunity.context_state)
+            qualified_context = context_state in {"qualified", "qualified_pair"}
+            opportunity_blockers = _unique(
+                (
+                    *basis_blockers,
+                    *(opportunity.contradictions if not qualified_context else ()),
+                )
+            )
+            opportunity_state = (
+                EvidenceState.OBSERVED_CORRELATION
+                if qualified_context
+                else EvidenceState.BLOCKED_BY_CONTEXT
+            )
+            add_p32_entry(
+                artifact_id=opportunity.opportunity_id,
+                producer_id="p32.lap_time_opportunity",
+                phase=opportunity.phase,
+                start_pct=opportunity.start_pct,
+                end_pct=opportunity.end_pct,
+                state=opportunity_state,
+                source_channels=opportunity.source_channels,
+                mechanisms=opportunity.mechanism_candidates,
+                components=opportunity.component_candidates,
+                blockers=opportunity_blockers,
+                typed_artifact=CrewChiefLapTimeOpportunityArtifact(
+                    opportunity=opportunity
+                ),
+            )
+            origin_available = _enum_text(opportunity.origin_kind) != "unavailable"
+            add_p32_entry(
+                artifact_id=f"{opportunity.opportunity_id}:time-origin",
+                producer_id="p32.time_loss_origin",
+                phase=opportunity.phase,
+                start_pct=opportunity.start_pct,
+                end_pct=opportunity.end_pct,
+                state=(
+                    opportunity_state
+                    if origin_available
+                    else EvidenceState.UNAVAILABLE
+                ),
+                source_channels=opportunity.source_channels,
+                mechanisms=opportunity.mechanism_candidates,
+                components=opportunity.component_candidates,
+                blockers=_unique(
+                    (
+                        *opportunity_blockers,
+                        *(("Time origin is unavailable for this window.",) if not origin_available else ()),
+                    )
+                ),
+                typed_artifact=(
+                    CrewChiefTimeLossOriginArtifact(opportunity=opportunity)
+                    if origin_available
+                    else CrewChiefUnavailablePerformanceArtifact(
+                        claimed_artifact_type="time_loss_origin",
+                        blocker_reasons=_unique(
+                            (*opportunity_blockers, "Time origin is unavailable for this window.")
+                        ),
+                    )
+                ),
+            )
+            if opportunity.following_phase_effect_s is not None:
+                add_p32_entry(
+                    artifact_id=f"{opportunity.opportunity_id}:exit-carry",
+                    producer_id="p32.exit_carry",
+                    phase="following_straight_carry",
+                    start_pct=opportunity.following_phase_start_pct,
+                    end_pct=opportunity.following_phase_end_pct,
+                    state=opportunity_state,
+                    source_channels=opportunity.source_channels,
+                    mechanisms=opportunity.mechanism_candidates,
+                    components=opportunity.component_candidates,
+                    blockers=opportunity_blockers,
+                    typed_artifact=CrewChiefExitCarryArtifact(
+                        opportunity=opportunity
+                    ),
+                )
+
+        chains = tuple(getattr(p32, "corner_chains", ()))
+        for chain in chains:
+            phase_states = tuple(
+                state
+                for state in (
+                    chain.approach_state,
+                    chain.braking_state,
+                    chain.entry_state,
+                    chain.center_state,
+                    chain.exit_state,
+                    chain.carry_state,
+                )
+                if state is not None
+            )
+            chain_start = min((state.start_pct for state in phase_states), default=0.0)
+            chain_end = max((state.end_pct for state in phase_states), default=100.0)
+            if chain_start > chain_end:
+                chain_start, chain_end = 0.0, 100.0
+            chain_channels = _unique(
+                channel for state in phase_states for channel in state.source_channels
+            )
+            chain_has_time = bool(
+                phase_states
+                or chain.local_time_effect_s is not None
+                or chain.downstream_time_effect_s is not None
+            )
+            chain_blockers = _unique(
+                (
+                    *basis_blockers,
+                    *(("No measured corner-chain state is available.",) if not chain_has_time else ()),
+                )
+            )
+            add_p32_entry(
+                artifact_id=chain.chain_id,
+                producer_id="p32.corner_performance_chain",
+                phase="corner_chain",
+                start_pct=chain_start,
+                end_pct=chain_end,
+                state=(
+                    EvidenceState.CALCULATED
+                    if chain_has_time and not basis_blockers
+                    else EvidenceState.BLOCKED_BY_CONTEXT
+                    if chain_has_time
+                    else EvidenceState.UNAVAILABLE
+                ),
+                source_channels=chain_channels,
+                blockers=chain_blockers,
+                typed_artifact=(
+                    CrewChiefCornerPerformanceChainArtifact(
+                        start_pct=chain_start,
+                        end_pct=chain_end,
+                        chain=chain,
+                    )
+                    if chain_has_time
+                    else CrewChiefUnavailablePerformanceArtifact(
+                        claimed_artifact_type="corner_performance_chain",
+                        blocker_reasons=chain_blockers,
+                    )
+                ),
+            )
+            for phase_state in phase_states:
+                if phase_state.path_delta_m is None:
+                    continue
+                add_p32_entry(
+                    artifact_id=f"{chain.chain_id}:path:{phase_state.phase}",
+                    producer_id="p32.path_efficiency",
+                    phase=phase_state.phase,
+                    start_pct=phase_state.start_pct,
+                    end_pct=phase_state.end_pct,
+                    state=(
+                        EvidenceState.CALCULATED
+                        if not basis_blockers
+                        else EvidenceState.BLOCKED_BY_CONTEXT
+                    ),
+                    source_channels=phase_state.source_channels,
+                    blockers=basis_blockers,
+                    typed_artifact=CrewChiefPathEfficiencyArtifact(
+                        chain_id=chain.chain_id,
+                        phase_state=phase_state,
+                    ),
+                )
+            for separation in chain.driver_vehicle_separation:
+                separation_state = _enum_text(separation.result)
+                separation_blocked = separation_state in {
+                    "context_contaminated",
+                    "unresolved",
+                }
+                add_p32_entry(
+                    artifact_id=separation.separation_id,
+                    producer_id="p32.driver_vehicle_separation",
+                    phase=separation.phase,
+                    start_pct=chain_start,
+                    end_pct=chain_end,
+                    state=(
+                        EvidenceState.BLOCKED_BY_CONTEXT
+                        if separation_blocked
+                        else EvidenceState.OBSERVED_CORRELATION
+                    ),
+                    source_channels=chain_channels,
+                    blockers=_unique(
+                        (
+                            *basis_blockers,
+                            *separation.blockers,
+                            *(separation.contradictions if separation_blocked else ()),
+                        )
+                    ),
+                    authority="context_only",
+                    typed_artifact=CrewChiefDriverVehicleSeparationArtifact(
+                        chain_id=chain.chain_id,
+                        track_region=chain.track_region,
+                        start_pct=chain_start,
+                        end_pct=chain_end,
+                        separation=separation,
+                    ),
+                )
+
+        track_demand = getattr(p32, "track_demand")
+        track_metrics = (
+            track_demand.full_throttle_fraction,
+            track_demand.braking_fraction,
+            track_demand.cornering_fraction,
+            track_demand.speed_min_mph,
+            track_demand.speed_max_mph,
+            track_demand.disturbance_exposure_fraction,
+            track_demand.traffic_exposure_fraction,
+        )
+        track_available = any(value is not None for value in track_metrics)
+        add_p32_entry(
+            artifact_id=f"p32-track-demand:{canonical_json_sha256(track_demand)[:20]}",
+            producer_id="p32.track_demand",
+            phase="whole_run",
+            state=(
+                EvidenceState.CALCULATED
+                if track_available
+                else EvidenceState.UNAVAILABLE
+            ),
+            source_channels=track_demand.source_channels,
+            blockers=_unique(
+                (
+                    *track_demand.blockers,
+                    *(("Measured track demand is unavailable.",) if not track_available else ()),
+                )
+            ),
+            typed_artifact=(
+                CrewChiefTrackDemandArtifact(profile=track_demand)
+                if track_available
+                else CrewChiefUnavailablePerformanceArtifact(
+                    claimed_artifact_type="track_demand",
+                    blocker_reasons=_unique(
+                        (*track_demand.blockers, "Measured track demand is unavailable.")
+                    ),
+                )
+            ),
+        )
+
+        for influence in getattr(p32, "component_influences", ()):
+            support_state = _enum_text(influence.runtime_support_state)
+            evidence_state = {
+                "controlled_response_observed": EvidenceState.CONTROLLED_TEST_EFFECT,
+                "response_supported": EvidenceState.OBSERVED_CORRELATION,
+            }.get(support_state, EvidenceState.NEEDS_CONFIRMATION)
+            add_p32_entry(
+                artifact_id=influence.influence_id,
+                producer_id="p32.component_performance_link",
+                phase="component_performance_link",
+                state=evidence_state,
+                source_channels=influence.measurable_through,
+                mechanisms=influence.performance_mechanism_ids,
+                components=(influence.component_id,),
+                blockers=(),
+                typed_artifact=CrewChiefComponentPerformanceLinkArtifact(
+                    influence=influence
+                ),
+            )
+
+        envelope = getattr(p32, "objective_envelope")
+        add_p32_entry(
+            artifact_id=f"p32-objective:{canonical_json_sha256(envelope)[:20]}",
+            producer_id="p32.objective_envelope",
+            phase="whole_run",
+            state=EvidenceState.CALCULATED,
+            authority="context_only",
+            typed_artifact=CrewChiefObjectiveEnvelopeArtifact(envelope=envelope),
+        )
+
+        present_producers = {
+            entry.producer_id for entry in entries.values() if entry.producer_id in p32_producers
+        }
+        unavailable_reasons = {
+            "p32.lap_time_opportunity": "No measured lap-time opportunity is available in this exact comparison.",
+            "p32.time_loss_origin": "No qualified time-loss origin is available in this exact comparison.",
+            "p32.corner_performance_chain": "No qualified corner performance chain is available.",
+            "p32.exit_carry": "No qualified exit or following-straight carry effect is available.",
+            "p32.path_efficiency": "No measured path/time comparison is available.",
+            "p32.driver_vehicle_separation": "Driver-demand versus vehicle-response separation is unresolved.",
+            "p32.track_demand": "Measured track demand is unavailable.",
+            "p32.component_performance_link": getattr(
+                p26,
+                "unavailable_reason",
+                "No non-causal P20/P26 component-performance link is available.",
+            ),
+            "p32.objective_envelope": "The P32 objective envelope is unavailable.",
+        }
+        for producer_id in sorted(p32_producers - present_producers):
+            reason = unavailable_reasons[producer_id]
+            add_p32_entry(
+                artifact_id=f"{producer_id}:unavailable:{canonical_json_sha256([identity.run_id, reason])[:16]}",
+                producer_id=producer_id,
+                phase="unavailable",
+                state=EvidenceState.UNAVAILABLE,
+                blockers=_unique((*basis_blockers, reason)),
+                authority=(
+                    "context_only"
+                    if producer_id in {
+                        "p32.driver_vehicle_separation",
+                        "p32.objective_envelope",
+                    }
+                    else "observation_only"
+                ),
+                typed_artifact=CrewChiefUnavailablePerformanceArtifact(
+                    claimed_artifact_type=producer_id.removeprefix("p32."),
+                    blocker_reasons=_unique((*basis_blockers, reason)),
+                ),
+            )
     ordered = tuple(entries[key] for key in sorted(entries))
     return EngineeringEvidenceIndex(
         workspace_revision=identity.workspace_revision,
@@ -566,12 +1069,11 @@ def _subgoal(
     bundle: RunIntelligenceBundle,
     folded: FoldedInvestigationState | None,
     p26: object,
+    p32: object,
 ) -> InvestigationSubgoal | None:
     if folded is None or folded.status != "open":
         return None
     causes = bundle.report.reasoning_snapshot.causes
-    if not causes:
-        return None
     completed = set(folded.completed_tool_ids)
     unresolved = tuple(
         cause for cause in causes
@@ -602,6 +1104,13 @@ def _subgoal(
     }.issubset(completed):
         return None
     answer = folded.driver_answers[-1] if folded.driver_answers else None
+    priorities.append("inspect_lap_time_opportunity")
+    priorities.append("inspect_time_loss_origin")
+    priorities.append("inspect_corner_performance_chain")
+    priorities.append("inspect_exit_carry")
+    priorities.append("inspect_path_efficiency")
+    priorities.append("inspect_driver_vehicle_separation")
+    priorities.append("inspect_track_demand")
     if answer is not None and answer != "not repeatable":
         priorities.append("inspect_driver_execution")
     if any(cause.contradicting_evidence for cause in unresolved):
@@ -615,10 +1124,12 @@ def _subgoal(
         priorities.append("inspect_component_state")
     if bundle.report.reasoning_snapshot.mechanism_episodes:
         priorities.append("inspect_mechanism_episodes")
+    priorities.append("inspect_component_performance_link")
     if p26.leading_component_ids:
         priorities.append("inspect_component_state")
     if has_history:
         priorities.append("inspect_controlled_history")
+    priorities.append("inspect_objective_tradeoff")
     priorities.append("inspect_measurement_debt")
     tool = next((item for item in priorities if item not in completed), None)
     if tool is None:
@@ -692,8 +1203,19 @@ def _select_tool_entries(
         if workspace.folded_state and workspace.folded_state.driver_answers
         else None
     )
+    answer_phase = {
+        "braking/entry": ("brak", "entry", "turn"),
+        "center": ("center", "apex", "corner"),
+        "exit/power": ("exit", "throttle", "power"),
+    }.get(answer or "", ())
     if tool_id == "inspect_data_quality":
-        selected = tuple(item for item in entries if item.blocker_reasons)
+        selected = tuple(
+            item
+            for item in entries
+            if item.blocker_reasons
+            and not item.producer_id.startswith("p32.")
+            and item.producer_id != "p26.component_state_unavailable"
+        )
     elif tool_id == "inspect_lap_context":
         selected = tuple(
             item for item in entries
@@ -701,16 +1223,51 @@ def _select_tool_entries(
             and (item.blocker_reasons or item.evidence_state == EvidenceState.BLOCKED_BY_CONTEXT)
         )
     elif tool_id == "inspect_driver_execution":
-        phase = {
-            "braking/entry": ("brak", "entry", "turn"),
-            "center": ("center", "apex", "corner"),
-            "exit/power": ("exit", "throttle", "power"),
-        }.get(answer or "", ())
         selected = tuple(
             item for item in entries
             if item.producer_id == "p19.reasoning_snapshot"
-            and (not phase or any(token in (item.phase or "").casefold() for token in phase))
+            and (
+                not answer_phase
+                or any(token in (item.phase or "").casefold() for token in answer_phase)
+            )
         )
+    elif tool_id in {
+        "inspect_lap_time_opportunity",
+        "inspect_time_loss_origin",
+        "inspect_corner_performance_chain",
+        "inspect_exit_carry",
+        "inspect_path_efficiency",
+        "inspect_driver_vehicle_separation",
+        "inspect_track_demand",
+        "inspect_component_performance_link",
+        "inspect_objective_tradeoff",
+    }:
+        producer_by_tool = {
+            "inspect_lap_time_opportunity": "p32.lap_time_opportunity",
+            "inspect_time_loss_origin": "p32.time_loss_origin",
+            "inspect_corner_performance_chain": "p32.corner_performance_chain",
+            "inspect_exit_carry": "p32.exit_carry",
+            "inspect_path_efficiency": "p32.path_efficiency",
+            "inspect_driver_vehicle_separation": "p32.driver_vehicle_separation",
+            "inspect_track_demand": "p32.track_demand",
+            "inspect_component_performance_link": "p32.component_performance_link",
+            "inspect_objective_tradeoff": "p32.objective_envelope",
+        }
+        producer_entries = tuple(
+            item for item in entries if item.producer_id == producer_by_tool[tool_id]
+        )
+        if tool_id == "inspect_driver_vehicle_separation" and answer_phase:
+            scoped = tuple(
+                item
+                for item in producer_entries
+                if any(
+                    token in (item.phase or "").casefold() for token in answer_phase
+                )
+                or item.evidence_state == EvidenceState.UNAVAILABLE
+            )
+            selected = scoped or producer_entries
+        else:
+            selected = producer_entries
     elif tool_id == "inspect_p19_causes":
         selected = tuple(
             item for item in entries
@@ -720,7 +1277,16 @@ def _select_tool_entries(
     elif tool_id == "inspect_mechanism_episodes":
         selected = tuple(item for item in entries if item.producer_id == "p20.mechanism_episode")
     elif tool_id == "inspect_component_state":
-        selected = tuple(item for item in entries if item.component_ids)
+        unavailable = tuple(
+            item
+            for item in entries
+            if item.producer_id == "p26.component_state_unavailable"
+        )
+        selected = unavailable or tuple(
+            item
+            for item in entries
+            if item.component_ids and not item.producer_id.startswith("p32.")
+        )
     elif tool_id == "inspect_controlled_history":
         selected = tuple(item for item in entries if item.control_keys)
     else:
@@ -1117,12 +1683,23 @@ def build_crew_chief_workspace(
     if overview is None or overview.setup_snapshot is None:
         raise ValueError("Crew Chief requires an imported run and captured setup.")
     p20 = project_engineering_awareness(bundle)
-    runtime = vehicle_systems_runtime_identity(run_id)
-    p26 = build_component_awareness(
-        bundle.report,
-        setup_snapshot=overview.setup_snapshot,
-        runtime_identity=runtime,
-    )
+    p26: object | None
+    p26_unavailable_reason: str | None = None
+    try:
+        runtime = vehicle_systems_runtime_identity(run_id)
+        p26 = build_component_awareness(
+            bundle.report,
+            setup_snapshot=overview.setup_snapshot,
+            runtime_identity=runtime,
+        )
+    except ValueError as exc:
+        if not _is_optional_p26_applicability_failure(exc):
+            raise
+        p26 = None
+        p26_unavailable_reason = (
+            "P26 component attribution is unavailable for this exact vehicle/build/track: "
+            f"{exc}"
+        )
     repository = CrewChiefRepository(db_path)
     active_workflow_id, _ = _active_workflow_identity(bundle)
     try:
@@ -1157,6 +1734,35 @@ def build_crew_chief_workspace(
     )
     if folded is not None:
         objective = folded.objective
+    p32 = build_performance_intelligence(
+        run_id,
+        session_id=session_id,
+        scope_run_ids=tuple(session.run_ids),
+        objective=objective,
+        bundle=bundle,
+        p20=p20,
+        p26=p26,
+        overview=overview,
+        repository=storage_repository,
+    )
+    if p26 is None:
+        reason = p26_unavailable_reason or "P26 component attribution is unavailable."
+        p26_hash = p32.p26_knowledge_graph_sha256
+        p26 = _UnavailableP26(
+            setup_id=overview.setup_snapshot.setup_id,
+            setup_snapshot_sha256=canonical_json_sha256(overview.setup_snapshot),
+            graph_version=f"p26.unavailable:{p26_hash[:12]}",
+            knowledge_graph_sha256=p26_hash,
+            reasoning_snapshot_sha256=canonical_json_sha256(
+                bundle.report.reasoning_snapshot
+            ),
+            runtime_identity={
+                "run_id": run_id,
+                "state": "unavailable",
+                "reason": reason,
+            },
+            unavailable_reason=reason,
+        )
     identity = _workspace_identity(
         bundle,
         session_id=session_id,
@@ -1166,6 +1772,7 @@ def build_crew_chief_workspace(
         event_hashes=tuple(event.event_hash for event in events),
         p20=p20,
         p26=p26,
+        p32=p32,
     )
     stale_reasons = _authority_stale_reasons(investigation, events, identity)
     if folded is not None and stale_reasons:
@@ -1193,8 +1800,10 @@ def build_crew_chief_workspace(
     driver_memory_ids = tuple(
         item.record_id for item in repository.list_driver_memory(session_id)
     )
-    evidence_index = _evidence_index(bundle, identity, objective, p26, storage_repository)
-    subgoal = _subgoal(bundle, folded, p26)
+    evidence_index = _evidence_index(
+        bundle, identity, objective, p26, p32, storage_repository
+    )
+    subgoal = _subgoal(bundle, folded, p26, p32)
     latest_result = None
     if folded and folded.completed_tool_ids:
         latest = folded.completed_tool_ids[-1]
@@ -1210,10 +1819,21 @@ def build_crew_chief_workspace(
         artifact_ids = latest_event.payload.artifact_ids if latest_event else ()
         cause_ids = latest_event.payload.cause_ids if latest_event else ()
         component_ids = latest_event.payload.component_ids if latest_event else ()
+        result_entries = tuple(
+            item for item in evidence_index.entries if item.artifact_id in artifact_ids
+        )
+        result_blockers = _unique(
+            blocker for item in result_entries for blocker in item.blocker_reasons
+        )
+        result_blocked = bool(result_entries) and all(
+            item.evidence_state
+            in {EvidenceState.UNAVAILABLE, EvidenceState.BLOCKED_BY_CONTEXT}
+            for item in result_entries
+        )
         latest_result = CrewChiefToolResult(
             tool_id=latest,
             workspace_revision=identity.workspace_revision,
-            status="complete" if artifact_ids else "no_finding",
+            status="blocked" if result_blocked else "complete" if artifact_ids else "no_finding",
             summary=(
                 latest_event.payload.findings[0]
                 if latest_event and latest_event.payload.findings
@@ -1222,6 +1842,7 @@ def build_crew_chief_workspace(
             artifact_ids=artifact_ids,
             cause_ids=cause_ids,
             component_ids=component_ids,
+            blocker_reasons=result_blockers if result_blocked else (),
             authority_ceiling=definition.authority_ceiling,
         )
     decision = _decision(bundle, identity, critique, question)
@@ -1238,6 +1859,7 @@ def build_crew_chief_workspace(
         pending_driver_question=question,
         success_contract=contract,
         p19_mission_contract=bundle.report.best_measurement.mission_contract,
+        performance_intelligence=p32,
         run_sentinel=_sentinel(bundle, overview, active_workflow),
         terminal_decision=decision,
         response_history_ids=response_ids,
@@ -1252,6 +1874,7 @@ def build_crew_chief_workspace(
         p26_component_ids=tuple(state.component_id for state in p26.component_states),
         post_run_brief=(
             f"P19 status: {bundle.report.status}.",
+            f"Speed Story: {p32.speed_story.what_costs_time}",
             f"{len(evidence_index.entries)} evidence artifacts indexed without raw traces.",
             f"Next move: {decision.title}",
         ),
@@ -1261,6 +1884,7 @@ def build_crew_chief_workspace(
                 *bundle.report.blocker_reasons,
                 *p20.knowledge_debt,
                 *p26.knowledge_debt,
+                *p32.blockers,
             ]
         ),
     )

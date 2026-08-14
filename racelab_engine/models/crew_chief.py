@@ -8,13 +8,24 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.experiment import MeasurementMissionContract
 from racelab_engine.models.observation_intelligence import MechanismKind
+from racelab_engine.models.performance_intelligence import (
+    ComponentPerformanceInfluence,
+    CornerPerformanceChain,
+    DriverVehicleSeparation,
+    LapTimeOpportunity,
+    PerformanceIntelligenceProjection,
+    PerformanceObjectiveEnvelope,
+    PerformancePhaseState,
+    TrackDemandProfile,
+)
 
 
 class CrewChiefModel(BaseModel):
@@ -29,6 +40,126 @@ class EngineeringObjective(str, Enum):
     TRAFFIC_ROBUSTNESS = "traffic_robustness"
     SUPERSPEEDWAY_STABILITY = "superspeedway_stability"
     FUEL_STRATEGY = "fuel_strategy"
+
+
+PerformanceArtifactType = Literal[
+    "lap_time_opportunity",
+    "time_loss_origin",
+    "corner_performance_chain",
+    "exit_carry",
+    "path_efficiency",
+    "driver_vehicle_separation",
+    "track_demand",
+    "component_performance_link",
+    "objective_envelope",
+]
+
+
+class CrewChiefLapTimeOpportunityArtifact(CrewChiefModel):
+    artifact_type: Literal["lap_time_opportunity"] = "lap_time_opportunity"
+    opportunity: LapTimeOpportunity
+
+
+class CrewChiefTimeLossOriginArtifact(CrewChiefModel):
+    artifact_type: Literal["time_loss_origin"] = "time_loss_origin"
+    opportunity: LapTimeOpportunity
+
+
+class CrewChiefCornerPerformanceChainArtifact(CrewChiefModel):
+    artifact_type: Literal["corner_performance_chain"] = "corner_performance_chain"
+    start_pct: float = Field(ge=0, le=100, allow_inf_nan=False)
+    end_pct: float = Field(ge=0, le=100, allow_inf_nan=False)
+    chain: CornerPerformanceChain
+
+    @model_validator(mode="after")
+    def physical_window_is_ordered(self) -> CrewChiefCornerPerformanceChainArtifact:
+        if self.end_pct < self.start_pct:
+            raise ValueError("corner-chain artifact physical window is reversed")
+        return self
+
+
+class CrewChiefExitCarryArtifact(CrewChiefModel):
+    artifact_type: Literal["exit_carry"] = "exit_carry"
+    opportunity: LapTimeOpportunity
+
+    @model_validator(mode="after")
+    def exact_following_scope_is_materialized(self) -> CrewChiefExitCarryArtifact:
+        if (
+            self.opportunity.following_phase_effect_s is None
+            or self.opportunity.following_phase_start_pct is None
+            or self.opportunity.following_phase_end_pct is None
+        ):
+            raise ValueError(
+                "exit-carry artifacts require a measured effect and exact following-phase window"
+            )
+        return self
+
+
+class CrewChiefPathEfficiencyArtifact(CrewChiefModel):
+    artifact_type: Literal["path_efficiency"] = "path_efficiency"
+    chain_id: str = Field(min_length=1)
+    phase_state: PerformancePhaseState
+
+    @model_validator(mode="after")
+    def measured_path_is_materialized(self) -> CrewChiefPathEfficiencyArtifact:
+        if self.phase_state.path_delta_m is None:
+            raise ValueError("path-efficiency artifacts require a measured path delta")
+        return self
+
+
+class CrewChiefDriverVehicleSeparationArtifact(CrewChiefModel):
+    artifact_type: Literal["driver_vehicle_separation"] = (
+        "driver_vehicle_separation"
+    )
+    chain_id: str = Field(min_length=1)
+    track_region: str = Field(min_length=1)
+    start_pct: float = Field(ge=0, le=100, allow_inf_nan=False)
+    end_pct: float = Field(ge=0, le=100, allow_inf_nan=False)
+    separation: DriverVehicleSeparation
+
+    @model_validator(mode="after")
+    def physical_window_is_ordered(self) -> CrewChiefDriverVehicleSeparationArtifact:
+        if self.end_pct < self.start_pct:
+            raise ValueError("driver/vehicle artifact physical window is reversed")
+        return self
+
+
+class CrewChiefTrackDemandArtifact(CrewChiefModel):
+    artifact_type: Literal["track_demand"] = "track_demand"
+    profile: TrackDemandProfile
+
+
+class CrewChiefComponentPerformanceLinkArtifact(CrewChiefModel):
+    artifact_type: Literal["component_performance_link"] = (
+        "component_performance_link"
+    )
+    influence: ComponentPerformanceInfluence
+
+
+class CrewChiefObjectiveEnvelopeArtifact(CrewChiefModel):
+    artifact_type: Literal["objective_envelope"] = "objective_envelope"
+    envelope: PerformanceObjectiveEnvelope
+
+
+class CrewChiefUnavailablePerformanceArtifact(CrewChiefModel):
+    artifact_type: Literal["unavailable"] = "unavailable"
+    claimed_artifact_type: PerformanceArtifactType
+    blocker_reasons: tuple[str, ...] = Field(min_length=1)
+
+
+CrewChiefPerformanceArtifact = Annotated[
+    CrewChiefLapTimeOpportunityArtifact
+    | CrewChiefTimeLossOriginArtifact
+    | CrewChiefCornerPerformanceChainArtifact
+    | CrewChiefExitCarryArtifact
+    | CrewChiefPathEfficiencyArtifact
+    | CrewChiefDriverVehicleSeparationArtifact
+    | CrewChiefTrackDemandArtifact
+    | CrewChiefComponentPerformanceLinkArtifact
+    | CrewChiefObjectiveEnvelopeArtifact
+    | CrewChiefUnavailablePerformanceArtifact,
+    Field(discriminator="artifact_type"),
+]
 
 
 class InvestigationProgress(str, Enum):
@@ -51,6 +182,7 @@ class CrewChiefWorkspaceIdentity(CrewChiefModel):
     p26_graph_version: str = Field(min_length=1)
     p26_knowledge_graph_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     p26_reasoning_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    p32_projection_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     setup_id: str = Field(min_length=1)
     setup_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     vehicle_runtime_identity_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -239,6 +371,7 @@ class EngineeringEvidenceIndexEntry(CrewChiefModel):
     evidence_state: EvidenceState
     polarity: Literal["support", "contradiction", "neutral"]
     blocker_reasons: tuple[str, ...] = ()
+    typed_artifact: CrewChiefPerformanceArtifact | None = None
     authority_ceiling: Literal[
         "observation_only", "context_only", "measurement_only", "p19_projection_only"
     ]
@@ -261,6 +394,96 @@ class EngineeringEvidenceIndexEntry(CrewChiefModel):
             raise ValueError("source provenance availability must match exact source identity")
         if not complete and "source identity unavailable" not in self.blocker_reasons:
             raise ValueError("incomplete source identity must block exact-context interpretation")
+        performance_types: dict[str, PerformanceArtifactType] = {
+            "p32.lap_time_opportunity": "lap_time_opportunity",
+            "p32.time_loss_origin": "time_loss_origin",
+            "p32.corner_performance_chain": "corner_performance_chain",
+            "p32.exit_carry": "exit_carry",
+            "p32.path_efficiency": "path_efficiency",
+            "p32.driver_vehicle_separation": "driver_vehicle_separation",
+            "p32.track_demand": "track_demand",
+            "p32.component_performance_link": "component_performance_link",
+            "p32.objective_envelope": "objective_envelope",
+        }
+        expected_type = performance_types.get(self.producer_id)
+        if expected_type is None:
+            if self.typed_artifact is not None:
+                raise ValueError("only P32 evidence may carry a performance artifact")
+            return self
+        if self.typed_artifact is None:
+            raise ValueError("P32 evidence requires the typed artifact it claims to inspect")
+        actual_type = self.typed_artifact.artifact_type
+        if actual_type == "unavailable":
+            if (
+                self.typed_artifact.claimed_artifact_type != expected_type
+                or self.evidence_state != EvidenceState.UNAVAILABLE
+                or not self.blocker_reasons
+            ):
+                raise ValueError(
+                    "unavailable P32 artifacts must match their claim, state, and blockers"
+                )
+            return self
+        if actual_type != expected_type or self.evidence_state == EvidenceState.UNAVAILABLE:
+            raise ValueError("P32 producer, typed artifact, and evidence state disagree")
+        artifact_start: float | None = None
+        artifact_end: float | None = None
+        artifact_id: str | None = None
+        if isinstance(self.typed_artifact, CrewChiefLapTimeOpportunityArtifact):
+            opportunity = self.typed_artifact.opportunity
+            artifact_start = opportunity.start_pct
+            artifact_end = opportunity.end_pct
+            artifact_id = opportunity.opportunity_id
+        elif isinstance(self.typed_artifact, CrewChiefTimeLossOriginArtifact):
+            opportunity = self.typed_artifact.opportunity
+            artifact_start = opportunity.start_pct
+            artifact_end = opportunity.end_pct
+            artifact_id = f"{opportunity.opportunity_id}:time-origin"
+        elif isinstance(self.typed_artifact, CrewChiefExitCarryArtifact):
+            opportunity = self.typed_artifact.opportunity
+            artifact_start = opportunity.following_phase_start_pct
+            artifact_end = opportunity.following_phase_end_pct
+            artifact_id = f"{opportunity.opportunity_id}:exit-carry"
+        elif isinstance(self.typed_artifact, CrewChiefCornerPerformanceChainArtifact):
+            artifact_start = self.typed_artifact.start_pct
+            artifact_end = self.typed_artifact.end_pct
+            artifact_id = self.typed_artifact.chain.chain_id
+        elif isinstance(self.typed_artifact, CrewChiefPathEfficiencyArtifact):
+            artifact_start = self.typed_artifact.phase_state.start_pct
+            artifact_end = self.typed_artifact.phase_state.end_pct
+            artifact_id = (
+                f"{self.typed_artifact.chain_id}:path:"
+                f"{self.typed_artifact.phase_state.phase}"
+            )
+        elif isinstance(
+            self.typed_artifact, CrewChiefDriverVehicleSeparationArtifact
+        ):
+            artifact_start = self.typed_artifact.start_pct
+            artifact_end = self.typed_artifact.end_pct
+            artifact_id = self.typed_artifact.separation.separation_id
+        elif isinstance(
+            self.typed_artifact, CrewChiefComponentPerformanceLinkArtifact
+        ):
+            artifact_id = self.typed_artifact.influence.influence_id
+        elif isinstance(self.typed_artifact, CrewChiefTrackDemandArtifact):
+            artifact_id = (
+                f"p32-track-demand:"
+                f"{canonical_json_sha256(self.typed_artifact.profile)[:20]}"
+            )
+        elif isinstance(self.typed_artifact, CrewChiefObjectiveEnvelopeArtifact):
+            artifact_id = (
+                f"p32-objective:"
+                f"{canonical_json_sha256(self.typed_artifact.envelope)[:20]}"
+            )
+        if (
+            artifact_start is not None
+            and (
+                self.lap_pct_start != artifact_start
+                or self.lap_pct_end != artifact_end
+            )
+        ):
+            raise ValueError("P32 evidence window must equal its typed artifact window")
+        if artifact_id is not None and self.artifact_id != artifact_id:
+            raise ValueError("P32 evidence identity must equal its typed artifact identity")
         return self
 
 
@@ -573,8 +796,8 @@ class AdaptiveResearchBoundary(CrewChiefModel):
 
 
 class CrewChiefWorkspace(CrewChiefModel):
-    schema_version: Literal["p27.crew-chief-workspace.v1"] = (
-        "p27.crew-chief-workspace.v1"
+    schema_version: Literal["p32.crew-chief-workspace.v2"] = (
+        "p32.crew-chief-workspace.v2"
     )
     identity: CrewChiefWorkspaceIdentity
     generated_at: datetime
@@ -589,6 +812,7 @@ class CrewChiefWorkspace(CrewChiefModel):
     pending_driver_question: DriverDiagnosticQuestion | None = None
     success_contract: SuccessContract | None = None
     p19_mission_contract: MeasurementMissionContract | None = None
+    performance_intelligence: PerformanceIntelligenceProjection
     run_sentinel: RunSentinelState
     terminal_decision: CrewChiefTerminalDecision
     response_history_ids: tuple[str, ...] = ()
@@ -609,6 +833,16 @@ class CrewChiefWorkspace(CrewChiefModel):
     def projection_scope_is_atomic(self) -> CrewChiefWorkspace:
         if self.evidence_index.workspace_revision != self.identity.workspace_revision:
             raise ValueError("evidence index must match the workspace revision")
+        if (
+            self.performance_intelligence.projection_sha256 != self.identity.p32_projection_sha256
+            or self.performance_intelligence.run_id != self.identity.run_id
+            or self.performance_intelligence.session_id != self.identity.session_id
+            or self.performance_intelligence.objective_id != self.identity.objective_id.value
+            or self.performance_intelligence.p19_reasoning_snapshot_sha256 != self.identity.reasoning_snapshot_sha256
+            or self.performance_intelligence.p20_state_revision != self.identity.p20_state_revision
+            or self.performance_intelligence.p26_knowledge_graph_sha256 != self.identity.p26_knowledge_graph_sha256
+        ):
+            raise ValueError("P32 projection must match the atomic Crew Chief workspace")
         for item in (
             self.latest_tool_result,
             self.pending_driver_question,
