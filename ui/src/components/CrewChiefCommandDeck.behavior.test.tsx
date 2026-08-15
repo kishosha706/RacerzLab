@@ -98,6 +98,58 @@ const workspace = () => ({
       },
     }],
   },
+  investigation_improvement: {
+    schema_version: "p34.investigation-improvement-projection.v1",
+    projection_sha256: "projection-hash",
+    run_id: "run-1",
+    session_id: "session-1",
+    workspace_revision: "revision-1",
+    state: "unavailable",
+    production_policy: "deterministic_baseline",
+    memory_policy_state: "shadow_only",
+    current_pair: null,
+    current_context: null,
+    current_pair_status: null,
+    latest_completed_pair: null,
+    latest_completed_comparison: null,
+    latest_outcome_status: null,
+    decisions_differ: false,
+    difference_explanation: "The deterministic baseline remains production; no frozen pair is available.",
+    memory_evidence_record_ids: [],
+    context_transfer_class: "none",
+    readiness: {
+      production_policy: "deterministic_baseline",
+      memory_policy_state: "shadow_only",
+      activation_decision: "no_activation_earned",
+      evaluation_decision: "no_activation_earned",
+      effective_activation_decision_id: null,
+      effective_activation_decision_sha256: null,
+      qualified_historical_investigations: 0,
+      qualified_prospective_investigations: 0,
+      observable_comparisons: 0,
+      unobservable_comparisons: 0,
+      historical_deficit: 20,
+      prospective_deficit: 12,
+      exact_recurrence_deficit: 5,
+      compatible_recurrence_deficit: 5,
+      context_deficit: 3,
+      problem_family_deficit: 4,
+      objective_deficit: 2,
+      safety_gate_passed: false,
+      negative_controls_passed: false,
+      subgroup_gate_passed: false,
+      blockers: ["Limited attention has not earned activation."],
+      remaining_collection_missions: [
+        "Collect qualified independent investigations.",
+        "Cover another compatible context subgroup.",
+      ],
+      authority_ceiling: "attention_only",
+      setup_authorized: false,
+    },
+    safety_blockers: ["No frozen pre-outcome pair exists."],
+    p19_authority_unchanged: true,
+    setup_authorized: false,
+  },
   run_sentinel: {
     mission_state: "collecting", p19_plan_kind: "measurement_mission",
     context_cleared_laps: 0, mission_accepted_lap_ids: [], measurement_attempt_ids: [],
@@ -159,6 +211,206 @@ describe("CrewChiefCommandDeck boundary states", () => {
     expect(within(disclosure as HTMLElement).getByText("Origin and carry")).toBeTruthy();
     expect(within(disclosure as HTMLElement).getByText("WHERE IT STARTS")).toBeTruthy();
     expect(within(disclosure as HTMLElement).getByText("WHAT CARRIES")).toBeTruthy();
+    expect(screen.queryByLabelText("Investigation Improvement, read only")).toBeNull();
+  });
+
+  it("shows unavailable Investigation Improvement only in Learning Mode without activation controls", async () => {
+    const value = workspace() as any;
+    value.investigation_improvement.readiness.observable_comparisons = 1;
+    value.investigation_improvement.readiness.safety_gate_passed = true;
+    api.fetchCrewChiefWorkspace.mockResolvedValue(value);
+    render(<CrewChiefCommandDeck {...props} learning />);
+
+    const improvement = await screen.findByLabelText("Investigation Improvement, read only");
+    expect(within(improvement).getByText("Paired evaluation unavailable")).toBeTruthy();
+    expect(within(improvement).getByText(/No current frozen pair is available. No current investigation benefit is inferred/)).toBeTruthy();
+    expect(within(improvement).getByText(/not evidence that it saves time, laps, or investigation steps/)).toBeTruthy();
+    expect(within(improvement).getByText("coverage incomplete")).toBeTruthy();
+    expect(within(improvement).getByText("Negative controls")).toBeTruthy();
+    expect(within(improvement).getByText("Subgroups")).toBeTruthy();
+    expect(within(improvement).getByText("Historical investigations:")).toBeTruthy();
+    expect(within(improvement).getAllByText(/Cover another compatible context subgroup/)).toHaveLength(2);
+    expect(within(improvement).queryByText(/safety passed/i)).toBeNull();
+    expect(within(improvement).queryByRole("button")).toBeNull();
+    expect(within(improvement).queryByText(/activate/i)).toBeNull();
+  });
+
+  it("labels a differing pending shadow as unobservable rather than an improvement", async () => {
+    const value = workspace() as any;
+    const decision = (actionId: string, selectedOrdinal: number, memoryIds: string[] = []) => ({
+      decision_kind: "inspect_tool",
+      action_id: actionId,
+      priority_tier: "measurement_debt",
+      safe_reorder_group: "measurement",
+      baseline_ordinal: selectedOrdinal,
+      selected_ordinal: selectedOrdinal,
+      reason: "Frozen pre-outcome attention choice.",
+      mandatory_check_ids: ["identity"],
+      source_memory_record_ids: memoryIds,
+      setup_authorized: false,
+      terminal_policy_authorized: false,
+    });
+    value.investigation_improvement.state = "available";
+    value.investigation_improvement.decisions_differ = true;
+    value.investigation_improvement.difference_explanation = "The frozen shadow selected a different bounded inspection.";
+    value.investigation_improvement.context_transfer_class = "exact";
+    value.investigation_improvement.memory_evidence_record_ids = ["p33x_444444444444444444444444"];
+    value.learning_prior.evidence_references[0].experience_id = "p33x_444444444444444444444444";
+    value.investigation_improvement.current_pair_status = "pending";
+    value.investigation_improvement.current_pair = {
+      production_decision: decision("inspect_exit_carry", 1),
+      baseline_decision: decision("inspect_exit_carry", 1),
+      memory_decision: decision("inspect_path_efficiency", 2, ["p33x_444444444444444444444444"]),
+    };
+    api.fetchCrewChiefWorkspace.mockResolvedValue(value);
+
+    render(<CrewChiefCommandDeck {...props} learning />);
+
+    const improvement = await screen.findByLabelText("Investigation Improvement, read only");
+    expect(within(improvement).getByText("inspect exit carry")).toBeTruthy();
+    expect(within(improvement).getByText("inspect path efficiency")).toBeTruthy();
+    expect(within(improvement).getByText("Different executable action")).toBeTruthy();
+    expect(within(improvement).getByText("Transfer / exact")).toBeTruthy();
+    expect(within(improvement).getByText("p33x_444444444444444444444444")).toBeTruthy();
+    fireEvent.click(within(improvement).getByLabelText(/Open P33 source/));
+    expect(props.onFocusEvidence).toHaveBeenCalledWith(value.learning_prior.evidence_references[0]);
+    expect(within(improvement).getByText(/not evidence that it saves time, laps, or investigation steps/)).toBeTruthy();
+    expect(within(improvement).queryByText(/saved 2 laps/i)).toBeNull();
+  });
+
+  it("keeps a latest completed comparison separate when there is no current pair", async () => {
+    const value = workspace() as any;
+    value.investigation_improvement.state = "available";
+    value.investigation_improvement.latest_outcome_status = "counterfactual_unobservable";
+    value.investigation_improvement.difference_explanation = "The latest completed evaluation was withheld from activation evidence.";
+    const completedDecision = {
+      decision_kind: "inspect_tool",
+      action_id: "inspect_exit_carry",
+      priority_tier: "measurement_debt",
+      safe_reorder_group: "measurement",
+      baseline_ordinal: 1,
+      selected_ordinal: 1,
+      reason: "Frozen before the outcome.",
+      mandatory_check_ids: ["identity"],
+      source_memory_record_ids: [],
+      setup_authorized: false,
+      terminal_policy_authorized: false,
+    };
+    value.investigation_improvement.latest_completed_pair = {
+      baseline_decision: completedDecision,
+      memory_decision: completedDecision,
+      memory_records_consulted: [],
+      context_transfer_class: "none",
+    };
+    value.investigation_improvement.latest_completed_comparison = {
+      comparison_id: "p34cmp_555555555555555555555555",
+      observability: "counterfactual_unobservable",
+      qualified: false,
+      blockers: ["The shadow action was not directly executed."],
+    };
+    api.fetchCrewChiefWorkspace.mockResolvedValue(value);
+
+    render(<CrewChiefCommandDeck {...props} learning />);
+
+    const improvement = await screen.findByLabelText("Investigation Improvement, read only");
+    expect(within(improvement).getByText("Latest completed paired evaluation")).toBeTruthy();
+    expect(within(improvement).getByText("Latest completed comparison")).toBeTruthy();
+    expect(within(improvement).getByText("counterfactual unobservable")).toBeTruthy();
+    expect(within(improvement).getByText(/No current frozen pair is available/)).toBeTruthy();
+    expect(within(improvement).getByText(/no time, lap, or investigation-step saving is inferred/i)).toBeTruthy();
+    expect(within(improvement).queryByText("Current frozen pair")).toBeNull();
+  });
+
+  it("renders only a qualified observed one-position discriminator advance", async () => {
+    const value = workspace() as any;
+    const decision = {
+      decision_kind: "inspect_tool", action_id: "inspect_exit_carry",
+      priority_tier: "driver_car_confounders", safe_reorder_group: "performance_measurement",
+      baseline_ordinal: 4, selected_ordinal: 4,
+      reason: "Frozen before the outcome.", mandatory_check_ids: ["workspace_identity"],
+      source_memory_record_ids: [], setup_authorized: false, terminal_policy_authorized: false,
+    };
+    value.investigation_improvement.state = "available";
+    value.investigation_improvement.latest_completed_pair = {
+      baseline_decision: decision, memory_decision: decision,
+      memory_records_consulted: [], context_transfer_class: "none",
+    };
+    value.investigation_improvement.latest_completed_comparison = {
+      observability: "counterfactual_observable", qualified: true, blockers: [],
+      bounded_reorder_observed: true, bounded_discriminator_step_advance: 1,
+      bounded_discriminator_step_delay: 0, bounded_dead_end_promoted: false,
+    };
+    value.investigation_improvement.latest_outcome_status = "counterfactual_observable";
+    api.fetchCrewChiefWorkspace.mockResolvedValue(value);
+
+    render(<CrewChiefCommandDeck {...props} learning />);
+
+    const improvement = await screen.findByLabelText("Investigation Improvement, read only");
+    expect(within(improvement).getByText("Qualified observed discriminator timing")).toBeTruthy();
+    expect(within(improvement).getByText(/one useful discriminator position earlier/)).toBeTruthy();
+    expect(within(improvement).queryByText(/seconds? saved|laps? saved|faster lap/i)).toBeNull();
+  });
+
+  it("labels earned limited attention without exposing an activation control", async () => {
+    const value = workspace() as any;
+    const decision = {
+      decision_kind: "inspect_tool",
+      action_id: "inspect_exit_carry",
+      priority_tier: "measurement_debt",
+      safe_reorder_group: "measurement",
+      baseline_ordinal: 1,
+      selected_ordinal: 1,
+      reason: "Frozen pre-outcome attention choice.",
+      mandatory_check_ids: ["identity"],
+      source_memory_record_ids: [],
+      setup_authorized: false,
+      terminal_policy_authorized: false,
+    };
+    value.investigation_improvement = {
+      ...value.investigation_improvement,
+      state: "available",
+      production_policy: "limited_attention",
+      memory_policy_state: "limited_attention",
+      current_pair: {
+        production_decision: decision,
+        baseline_decision: decision,
+        memory_decision: decision,
+      },
+      current_pair_status: "pending",
+      difference_explanation: "The earned policy retained the same executable inspection.",
+      readiness: {
+        ...value.investigation_improvement.readiness,
+        production_policy: "limited_attention",
+        memory_policy_state: "limited_attention",
+        activation_decision: "limited_attention_earned",
+        evaluation_decision: "limited_attention_earned",
+        effective_activation_decision_id: `p34act_${"a".repeat(24)}`,
+        effective_activation_decision_sha256: "a".repeat(64),
+        historical_deficit: 0,
+        prospective_deficit: 0,
+        exact_recurrence_deficit: 0,
+        compatible_recurrence_deficit: 0,
+        context_deficit: 0,
+        problem_family_deficit: 0,
+        objective_deficit: 0,
+        safety_gate_passed: true,
+        negative_controls_passed: true,
+        subgroup_gate_passed: true,
+        blockers: [],
+        remaining_collection_missions: [],
+      },
+      safety_blockers: [],
+    };
+    api.fetchCrewChiefWorkspace.mockResolvedValue(value);
+
+    render(<CrewChiefCommandDeck {...props} learning />);
+
+    const improvement = await screen.findByLabelText("Investigation Improvement, read only");
+    expect(within(improvement).getAllByText("limited attention").length).toBeGreaterThan(0);
+    expect(within(improvement).getByText("Active production policy")).toBeTruthy();
+    expect(within(improvement).getByText("BASELINE NEXT")).toBeTruthy();
+    expect(within(improvement).getByText("MEMORY NEXT / limited attention")).toBeTruthy();
+    expect(within(improvement).queryByRole("button")).toBeNull();
   });
 
   it("renders the compact full P33 projection and navigates only an available typed source", async () => {

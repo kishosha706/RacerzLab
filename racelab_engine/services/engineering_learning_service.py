@@ -691,6 +691,7 @@ def _transfer_assessment(
             "objective",
             "phase",
             "physical_region",
+            "speed_load_band",
         )
     ):
         # A material execution-state change is concept drift for driver
@@ -1549,9 +1550,11 @@ def _build_blocked_prior(
     p19_reasoning_snapshot_sha256: str,
     p32_projection_sha256: str,
     history_revision: str,
-    blocker: str,
+    blocker: str | tuple[str, ...],
 ) -> CrewChiefLearningPrior:
-    blockers = (blocker,)
+    blockers = (blocker,) if isinstance(blocker, str) else blocker
+    if not blockers:
+        raise ValueError("A blocked P33 prior requires exact blocker evidence")
     return CrewChiefLearningPrior.build(
         history_revision=history_revision,
         run_id=current.context.run_id,
@@ -1563,7 +1566,7 @@ def _build_blocked_prior(
         current_context_sha256=current.context.context_sha256,
         current_problem_sha256=current.problem.problem_sha256,
         state="blocked",
-        recurrence=_new_recurrence(current, blocker=blocker),
+        recurrence=_new_recurrence(current, blocker=" ".join(blockers)),
         context_transfer_level="blocked",
         strength="insufficient",
         counts=_counts(()),
@@ -1633,6 +1636,19 @@ def build_crew_chief_learning_prior(
             p32_projection_sha256=p32_projection_sha256,
             history_revision=state.history_revision,
             blocker=f"Engineering learning history is blocked: {exc}",
+        )
+    if query.blockers:
+        # A corrupt row selected by the exact relevant-history query is
+        # relevant negative evidence, not absence of history. Preserve the
+        # repository-authored blocker strings byte-for-byte so P34 can bind
+        # and independently reconstruct the corrupt-history control.
+        return _build_blocked_prior(
+            current,
+            scope_run_ids=scope_run_ids,
+            p19_reasoning_snapshot_sha256=p19_reasoning_snapshot_sha256,
+            p32_projection_sha256=p32_projection_sha256,
+            history_revision=state.history_revision,
+            blocker=query.blockers,
         )
     records = query.records
     transfers = {

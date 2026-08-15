@@ -58,6 +58,17 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
     return _connect(_database_path(db_path), configure_journal=True)
 
 
+def connect_read_only(db_path: str | Path | None = None) -> sqlite3.Connection:
+    """Open an existing database without permitting a read path to mutate it."""
+
+    path = _database_path(db_path).resolve()
+    connection = sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute("PRAGMA query_only = ON")
+    return connection
+
+
 def _column_names(connection: sqlite3.Connection, table_name: str) -> set[str]:
     return {row["name"] for row in connection.execute(f"PRAGMA table_info({table_name})")}
 
@@ -223,6 +234,199 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
         BEFORE DELETE ON engineering_experiences
         BEGIN
           SELECT RAISE(ABORT, 'engineering experiences are append-only');
+        END;
+        CREATE TABLE IF NOT EXISTS p34_authoritative_source_revision (
+          singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+          revision INTEGER NOT NULL CHECK(revision >= 0)
+        );
+        INSERT OR IGNORE INTO p34_authoritative_source_revision (
+          singleton_id, revision
+        ) VALUES (1, 0);
+        CREATE TABLE IF NOT EXISTS investigation_adaptation_stream_head (
+          stream_id TEXT PRIMARY KEY,
+          schema_version TEXT NOT NULL,
+          record_count INTEGER NOT NULL,
+          head_sha256 TEXT
+        );
+        INSERT OR IGNORE INTO investigation_adaptation_stream_head (
+          stream_id, schema_version, record_count, head_sha256
+        ) VALUES (
+          'p34.investigation-adaptation.v1',
+          'p34.investigation-adaptation.v1',
+          0,
+          NULL
+        );
+        CREATE TABLE IF NOT EXISTS investigation_adaptation_records (
+          sequence INTEGER PRIMARY KEY,
+          record_id TEXT NOT NULL UNIQUE,
+          record_sha256 TEXT NOT NULL UNIQUE,
+          record_kind TEXT NOT NULL,
+          previous_entry_sha256 TEXT,
+          entry_sha256 TEXT NOT NULL UNIQUE,
+          recorded_at TEXT NOT NULL,
+          investigation_id TEXT,
+          workspace_revision TEXT,
+          step_number INTEGER,
+          policy_id TEXT,
+          protocol_id TEXT,
+          record_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_investigation_adaptation_kind_time
+          ON investigation_adaptation_records(
+            record_kind, recorded_at DESC, record_id
+          );
+        CREATE INDEX IF NOT EXISTS idx_investigation_adaptation_investigation
+          ON investigation_adaptation_records(
+            investigation_id, workspace_revision, step_number,
+            record_kind, sequence DESC
+          ) WHERE investigation_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_investigation_adaptation_protocol
+          ON investigation_adaptation_records(
+            protocol_id, record_kind, sequence DESC
+          ) WHERE protocol_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_investigation_adaptation_workflow_certificate
+          ON investigation_adaptation_records(
+            protocol_id,
+            record_kind,
+            json_extract(record_json, '$.created_workflow_ids[0]'),
+            sequence
+          ) WHERE record_kind = 'outcome_certificate';
+        CREATE INDEX IF NOT EXISTS idx_investigation_adaptation_followup_parent
+          ON investigation_adaptation_records(
+            protocol_id,
+            record_kind,
+            investigation_id,
+            json_extract(record_json, '$.certificate_id'),
+            json_extract(record_json, '$.certificate_sha256'),
+            json_extract(record_json, '$.source_workflow_id')
+          ) WHERE record_kind = 'outcome_followup';
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_investigation_adaptation_pair_source
+          ON investigation_adaptation_records(
+            investigation_id, workspace_revision, step_number
+          ) WHERE record_kind = 'paired_decision';
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_investigation_adaptation_outcome_source
+          ON investigation_adaptation_records(investigation_id)
+          WHERE record_kind = 'outcome_certificate';
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_investigation_adaptation_comparison_source
+          ON investigation_adaptation_records(investigation_id)
+          WHERE record_kind = 'paired_comparison';
+        CREATE TRIGGER IF NOT EXISTS investigation_adaptation_records_no_update
+        BEFORE UPDATE ON investigation_adaptation_records
+        BEGIN
+          SELECT RAISE(ABORT, 'investigation adaptation records are append-only');
+        END;
+        CREATE TRIGGER IF NOT EXISTS investigation_adaptation_records_no_delete
+        BEFORE DELETE ON investigation_adaptation_records
+        BEGIN
+          SELECT RAISE(ABORT, 'investigation adaptation records are append-only');
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_p34_insert
+        AFTER INSERT ON investigation_adaptation_records
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_p34_update
+        AFTER UPDATE ON investigation_adaptation_records
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_p34_delete
+        AFTER DELETE ON investigation_adaptation_records
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_crew_investigation_insert
+        AFTER INSERT ON crew_chief_investigations
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_crew_investigation_update
+        AFTER UPDATE ON crew_chief_investigations
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_crew_investigation_delete
+        AFTER DELETE ON crew_chief_investigations
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_crew_event_insert
+        AFTER INSERT ON crew_chief_events
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_crew_event_update
+        AFTER UPDATE ON crew_chief_events
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_crew_event_delete
+        AFTER DELETE ON crew_chief_events
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_p33_insert
+        AFTER INSERT ON engineering_experiences
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_p33_update
+        AFTER UPDATE ON engineering_experiences
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_p33_delete
+        AFTER DELETE ON engineering_experiences
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_workflow_insert
+        AFTER INSERT ON controlled_test_workflows
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_workflow_update
+        AFTER UPDATE ON controlled_test_workflows
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_workflow_delete
+        AFTER DELETE ON controlled_test_workflows
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_run_insert
+        AFTER INSERT ON runs
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_run_update
+        AFTER UPDATE ON runs
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
+        END;
+        CREATE TRIGGER IF NOT EXISTS p34_source_revision_run_delete
+        AFTER DELETE ON runs
+        BEGIN
+          UPDATE p34_authoritative_source_revision SET revision = revision + 1
+          WHERE singleton_id = 1;
         END;
         """
     )

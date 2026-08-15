@@ -3211,6 +3211,84 @@ def score_workflow(
     return updated
 
 
+def recover_p34_scored_workflow_followups(
+    repository: RaceLabRepository,
+    *,
+    workflows: tuple[ControlledWorkflow, ...] | None = None,
+) -> None:
+    """Recover idempotent P34 followups only on an explicit mutation path."""
+
+    if not isinstance(repository, RaceLabRepository):
+        return
+    from racelab_engine.services.investigation_adaptation_service import (
+        capture_p34_controlled_workflow_followup,
+        pending_p34_scored_workflow_ids,
+    )
+    from racelab_engine.storage.investigation_adaptation_repository import (
+        InvestigationAdaptationRepository,
+    )
+
+    adaptation = InvestigationAdaptationRepository(repository.db_path)
+    def capture_candidate(candidate: ControlledWorkflow) -> bool:
+        if candidate.status != "scored" or candidate.quality is None:
+            _log.warning(
+                "P34 scored-workflow recovery debt remains for unscored workflow %s",
+                candidate.workflow_id,
+            )
+            return False
+        try:
+            capture_p34_controlled_workflow_followup(
+                adaptation,
+                workflow=candidate,
+            )
+            return True
+        except Exception as exc:
+            # The P19 score is already authoritative. One corrupt/unrelated P34
+            # parent cannot block recovery for the remaining scored workflows.
+            _log.warning(
+                "Investigation-adaptation follow-up failed closed for workflow %s: %s",
+                candidate.workflow_id,
+                exc,
+            )
+            return False
+
+    if workflows is not None:
+        for candidate in workflows:
+            capture_candidate(candidate)
+        return
+
+    try:
+        pending_ids = pending_p34_scored_workflow_ids(
+            adaptation,
+            limit=512,
+        )
+    except Exception as exc:
+        _log.warning("P34 scored-workflow recovery inventory failed closed: %s", exc)
+        return
+    for workflow_id in pending_ids:
+        try:
+            candidate = repository.get_controlled_workflow(workflow_id)
+        except Exception as exc:
+            _log.warning(
+                "P34 scored-workflow recovery lookup failed for workflow %s: %s",
+                workflow_id,
+                exc,
+            )
+            continue
+        if candidate is None:
+            _log.warning(
+                "P34 scored-workflow recovery debt has no workflow %s",
+                workflow_id,
+            )
+            continue
+        capture_candidate(candidate)
+    if len(pending_ids) == 512:
+        _log.warning(
+            "P34 scored-workflow recovery processed its bounded 512-item page; "
+            "remaining durable debt will resume on the next mutation"
+        )
+
+
 def record_scored_workflow_side_effects(
     workflow: ControlledWorkflow,
     *,
@@ -3250,6 +3328,7 @@ def record_scored_workflow_side_effects(
             workflow.workflow_id,
             exc,
         )
+    recover_p34_scored_workflow_followups(repository)
 
 
 __all__ = [
@@ -3261,6 +3340,7 @@ __all__ = [
     "enforce_hypothesis_repeat_policy",
     "project_workflow_for_publication",
     "record_scored_workflow_side_effects",
+    "recover_p34_scored_workflow_followups",
     "persist_workflow_candidate",
     "revalidate_controlled_test_packet",
     "revalidate_controlled_workflow_packet",

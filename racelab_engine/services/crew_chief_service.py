@@ -6,10 +6,12 @@ recomputes P19 setup or policy authority and never analyzes raw telemetry.
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import RLock
+from types import SimpleNamespace
 from typing import Iterable, Literal
 
 from racelab_engine.identity import canonical_json_sha256
@@ -43,6 +45,8 @@ from racelab_engine.models.crew_chief import (
     HypothesisInspectionState,
     InvestigationProgress,
     InvestigationSubgoal,
+    p34_qualified_current_artifact_cohort,
+    p34_qualified_current_artifact_ids,
     RunSentinelLap,
     RunSentinelState,
     SuccessContract,
@@ -51,8 +55,24 @@ from racelab_engine.models.crew_chief import (
 from racelab_engine.models.controlled_workflow import ControlledWorkflow
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.experiment import MeasurementAttempt
+from racelab_engine.models.investigation_adaptation import (
+    DiscriminatorOutcome,
+    InvestigationAdaptationContext,
+    InvestigationDecision,
+    InvestigationImprovementProjection,
+    InvestigationImprovementReadiness,
+    InvestigationOutcomeCertificate,
+    NegativeControlConditionEvidence,
+    PairedInvestigationComparison,
+    PairedInvestigationDecision,
+    P34_PHYSICAL_SCOPE_MISMATCH_DIMENSIONS,
+    P19CauseState,
+    canonical_context_subgroups,
+    investigation_adaptation_source_snapshot_sha256,
+)
 from racelab_engine.models.engineering_learning import (
     CrewChiefLearningPrior,
+    EngineeringExperienceRecord,
     EngineeringSourceProvenance,
     PostRunLearningBrief,
 )
@@ -75,6 +95,26 @@ from racelab_engine.services.run_intelligence_service import (
     build_run_intelligence,
 )
 from racelab_engine.services.import_service import read_telemetry_manifest
+from racelab_engine.services.investigation_adaptation_service import (
+    assess_p34_repository_readiness,
+    baseline_investigation_policy,
+    build_discriminator_outcome_from_crew_events,
+    build_investigation_outcome_certificate,
+    build_investigation_improvement_projection,
+    build_paired_investigation_comparison,
+    build_paired_investigation_decision,
+    classify_p34_problem_family,
+    classify_p34_problem_orientation,
+    classify_p34_track_class,
+    limited_attention_investigation_policy,
+    memory_shadow_investigation_policy,
+    p34_activation_protocol,
+    persist_p34_foundation,
+    recover_unreviewed_p34_terminal_capture,
+    restore_effective_activation_on_mutation,
+    review_p34_after_terminal_capture,
+    resolve_effective_activation_decision,
+)
 from racelab_engine.services.lap_engineering_context_service import (
     mission_lap_context_is_clear,
 )
@@ -87,12 +127,19 @@ from racelab_engine.storage.crew_chief_repository import (
     CrewChiefRepository,
     crew_chief_event_hash,
 )
-from racelab_engine.storage.db import default_db_path
+from racelab_engine.storage.db import default_db_path, initialize_database
+from racelab_engine.storage.engineering_learning_repository import (
+    EngineeringLearningRepository,
+)
+from racelab_engine.storage.investigation_adaptation_repository import (
+    InvestigationAdaptationIntegrityError,
+    InvestigationAdaptationRepository,
+)
 from racelab_engine.storage.repository import RaceLabRepository
 
 
 _CACHE_LOCK = RLock()
-_CACHE: dict[tuple[str, str], CrewChiefWorkspace] = {}
+_CACHE: dict[tuple[str, ...], CrewChiefWorkspace] = {}
 
 
 @dataclass(frozen=True)
@@ -291,7 +338,31 @@ _TOOL_SAFETY_BANDS: dict[str, str] = {
     "inspect_measurement_debt": "measurement_debt",
 }
 
-
+_P34_PRIORITY_TIER_BY_SAFETY_BAND: dict[str, str] = {
+    "integrity": "identity_integrity",
+    "context": "context_qualification",
+    "performance_measurement": "driver_car_confounders",
+    "driver": "driver_car_confounders",
+    "contradiction": "strongest_contradiction",
+    "mechanism_separation": "unresolved_p19_mechanisms",
+    "component_separation": "component_family_separation",
+    "history": "exact_history",
+    "measurement_debt": "measurement_debt",
+}
+_P34_SAFE_REORDER_GROUP_BY_SAFETY_BAND: dict[str, str] = {
+    "performance_measurement": "performance_measurement",
+}
+_P34_MANDATORY_CHECK_IDS = (
+    "workspace_identity",
+    "data_integrity",
+    "telemetry_health",
+    "context_comparability",
+    "traffic_contamination",
+    "vehicle_condition_epoch",
+    "applied_control_state",
+    "strongest_contradiction",
+    "driver_car_separation",
+)
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -346,6 +417,7 @@ def _workspace_identity(
     p26: object,
     p32: object,
     learning_prior: CrewChiefLearningPrior,
+    learning_ledger_head_sha256: str | None,
     run_sentinel: RunSentinelState,
 ) -> CrewChiefWorkspaceIdentity:
     report = bundle.report
@@ -367,6 +439,7 @@ def _workspace_identity(
         "p32_projection": getattr(p32, "projection_sha256"),
         "run_sentinel": canonical_json_sha256(run_sentinel),
         "learning_history": learning_prior.history_revision,
+        "learning_head": learning_ledger_head_sha256,
         "learning_projection": learning_prior.projection_sha256,
         "setup_id": setup_id,
         "setup_hash": setup_hash,
@@ -390,6 +463,7 @@ def _workspace_identity(
         p32_projection_sha256=base["p32_projection"],
         run_sentinel_sha256=base["run_sentinel"],
         learning_history_revision=base["learning_history"],
+        learning_ledger_head_sha256=base["learning_head"],
         learning_projection_sha256=base["learning_projection"],
         setup_id=setup_id,
         setup_snapshot_sha256=setup_hash,
@@ -405,19 +479,7 @@ def _workspace_identity(
 def _authority_revision(identity: CrewChiefWorkspaceIdentity) -> str:
     """Hash only the producer-owned reality an investigation may act from."""
 
-    return canonical_json_sha256(
-        identity.model_dump(
-            mode="json",
-            exclude={
-                "objective_id",
-                "investigation_id",
-                "workspace_revision",
-                "learning_history_revision",
-                "learning_projection_sha256",
-                "run_sentinel_sha256",
-            },
-        )
-    )
+    return identity.authority_revision
 
 
 def _learning_capture_blockers(
@@ -483,6 +545,253 @@ def _workspace_cache_key(
     except OSError:
         database_identity = str(resolved)
     return database_identity, identity.workspace_revision
+
+
+def _p34_locked_readiness(
+    *blockers: str,
+) -> InvestigationImprovementReadiness:
+    reasons = _unique(
+        blockers
+        or (
+            "No frozen pre-outcome P34 pair exists for this Crew revision.",
+            "Limited attention has not earned the preregistered activation gate.",
+        )
+    )
+    return InvestigationImprovementReadiness(
+        production_policy="deterministic_baseline",
+        memory_policy_state="shadow_only",
+        activation_decision="no_activation_earned",
+        evaluation_decision="no_activation_earned",
+        effective_activation_decision_id=None,
+        effective_activation_decision_sha256=None,
+        qualified_historical_investigations=0,
+        qualified_prospective_investigations=0,
+        observable_comparisons=0,
+        unobservable_comparisons=0,
+        historical_deficit=20,
+        prospective_deficit=12,
+        exact_recurrence_deficit=5,
+        compatible_recurrence_deficit=5,
+        context_deficit=3,
+        problem_family_deficit=4,
+        objective_deficit=2,
+        safety_gate_passed=False,
+        negative_controls_passed=False,
+        subgroup_gate_passed=False,
+        blockers=reasons,
+        remaining_collection_missions=(
+            "Collect qualified independent investigations under the frozen protocol.",
+            "Complete prospective recurrence and negative-control evidence.",
+        ),
+    )
+
+
+def _p34_unavailable_projection(
+    identity: CrewChiefWorkspaceIdentity,
+    *blockers: str,
+) -> InvestigationImprovementProjection:
+    readiness = _p34_locked_readiness(*blockers)
+    reasons = readiness.blockers
+    return InvestigationImprovementProjection.build(
+        run_id=identity.run_id,
+        session_id=identity.session_id,
+        workspace_revision=identity.workspace_revision,
+        state="unavailable",
+        production_policy="deterministic_baseline",
+        memory_policy_state="shadow_only",
+        current_pair=None,
+        current_context=None,
+        current_pair_status=None,
+        latest_completed_pair=None,
+        latest_completed_comparison=None,
+        latest_outcome_status=None,
+        decisions_differ=False,
+        difference_explanation=(
+            "The deterministic baseline remains production; no executable memory "
+            "difference is claimed without a frozen pair."
+        ),
+        context_transfer_class="none",
+        readiness=readiness,
+        safety_blockers=reasons,
+    )
+
+
+def _p34_current_baseline_readiness(
+    readiness: InvestigationImprovementReadiness,
+    *blockers: str,
+) -> InvestigationImprovementReadiness:
+    """Overlay a current-revision rollback without rewriting earned history."""
+
+    reasons = _unique(
+        (*readiness.blockers, *blockers)
+        or (
+            "The current Crew revision did not qualify limited attention; "
+            "the deterministic baseline remains production.",
+        )
+    )
+    missions = _unique(
+        (
+            *readiness.remaining_collection_missions,
+            "Resolve the current-revision blocker before limited attention is reconsidered.",
+        )
+    )
+    return InvestigationImprovementReadiness.model_validate(
+        {
+            **readiness.model_dump(mode="python"),
+            "production_policy": "deterministic_baseline",
+            "memory_policy_state": "shadow_only",
+            "activation_decision": "no_activation_earned",
+            "effective_activation_decision_id": None,
+            "effective_activation_decision_sha256": None,
+            "blockers": reasons,
+            "remaining_collection_missions": missions,
+        }
+    )
+
+
+def _p34_projection_for_identity(
+    identity: CrewChiefWorkspaceIdentity,
+    *,
+    investigation_open: bool,
+    current_learning: CurrentLearningInputs,
+    learning_prior: CrewChiefLearningPrior,
+    folded: FoldedInvestigationState | None,
+    baseline_subgoal: InvestigationSubgoal | None,
+    evidence_index: EngineeringEvidenceIndex,
+    terminal_decision: CrewChiefTerminalDecision,
+    p19_cause_ids: tuple[str, ...],
+    p19_contradiction_artifact_ids: tuple[str, ...],
+    blocker_reasons: tuple[str, ...],
+    db_path: str | Path | None,
+) -> InvestigationImprovementProjection:
+    repository = InvestigationAdaptationRepository(db_path)
+    pair: PairedInvestigationDecision | None = None
+    latest_completed_pair: PairedInvestigationDecision | None = None
+    latest_comparison: PairedInvestigationComparison | None = None
+    pair_blockers: tuple[str, ...] = ()
+    current_context: InvestigationAdaptationContext | None = None
+    if identity.investigation_id is not None and investigation_open:
+        try:
+            pair = repository.latest_pair(
+                identity.investigation_id,
+                identity.workspace_revision,
+            )
+        except (InvestigationAdaptationIntegrityError, sqlite3.Error, OSError) as exc:
+            pair_blockers = (f"P34 current pair is unavailable: {exc}",)
+    if identity.investigation_id is not None and not investigation_open:
+        try:
+            comparison_result = repository.query_records(
+                record_kinds=("paired_comparison",),
+                investigation_id=identity.investigation_id,
+                limit=1,
+            )
+            if comparison_result.blockers:
+                raise InvestigationAdaptationIntegrityError(
+                    comparison_result.blockers[0]
+                )
+            latest_comparison = next(
+                (
+                    item
+                    for item in comparison_result.records
+                    if isinstance(item, PairedInvestigationComparison)
+                ),
+                None,
+            )
+            if latest_comparison is not None:
+                latest_completed_pair = repository.get_paired_decision(
+                    latest_comparison.pair_sha256
+                )
+                if latest_completed_pair is None or (
+                    latest_completed_pair.pair_id != latest_comparison.pair_id
+                    or latest_completed_pair.investigation_id
+                    != identity.investigation_id
+                ):
+                    raise InvestigationAdaptationIntegrityError(
+                        "P34 completed comparison is missing its exact parent pair"
+                    )
+        except (InvestigationAdaptationIntegrityError, sqlite3.Error, OSError) as exc:
+            pair_blockers = (
+                f"P34 completed comparison is unavailable: {exc}",
+            )
+    try:
+        readiness = assess_p34_repository_readiness(repository)
+    except (
+        InvestigationAdaptationIntegrityError,
+        sqlite3.Error,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        readiness = _p34_locked_readiness(
+            f"P34 readiness is blocked by adaptation-ledger integrity: {exc}"
+        )
+    if pair is not None and pair.activation_state == "limited_attention":
+        activation = resolve_effective_activation_decision(repository)
+        if (
+            activation is None
+            or activation.decision_id != pair.activation_decision_id
+            or activation.decision_sha256 != pair.activation_decision_sha256
+        ):
+            pair = None
+            pair_blockers = (
+                "P34 limited attention no longer matches a current earned activation; baseline fallback is active.",
+            )
+    if pair is not None:
+        try:
+            if folded is None or folded.status != "open":
+                raise ValueError("P34 current context requires an open Crew revision")
+            current_context = _p34_adaptation_context_for_pair(
+                pair,
+                identity=identity,
+                current_learning=current_learning,
+                learning_prior=learning_prior,
+                folded=folded,
+                baseline_subgoal=baseline_subgoal,
+                evidence_index=evidence_index,
+                terminal_decision=terminal_decision,
+                p19_cause_ids=p19_cause_ids,
+                p19_contradiction_artifact_ids=(
+                    p19_contradiction_artifact_ids
+                ),
+                blocker_reasons=blocker_reasons,
+            )
+        except (AttributeError, TypeError, ValueError) as exc:
+            pair = None
+            current_context = None
+            pair_blockers = _unique(
+                (
+                    *pair_blockers,
+                    f"P34 current context is unavailable: {exc}",
+                )
+            )
+    if investigation_open and (
+        pair is None or pair.activation_state == "shadow_only"
+    ) and readiness.memory_policy_state == "limited_attention":
+        fallback_reason = (
+            pair_blockers[0]
+            if pair_blockers
+            else (
+                "The current P33 transfer is blocked, weak, stale, or drifted; "
+                "the earned policy remains historical and the deterministic "
+                "baseline controls this revision."
+            )
+        )
+        pair_blockers = _unique((*pair_blockers, fallback_reason))
+        readiness = _p34_current_baseline_readiness(
+            readiness,
+            fallback_reason,
+        )
+    return build_investigation_improvement_projection(
+        run_id=identity.run_id,
+        session_id=identity.session_id,
+        workspace_revision=identity.workspace_revision,
+        readiness=readiness,
+        current_pair=pair,
+        current_context=current_context,
+        latest_completed_pair=latest_completed_pair,
+        latest_completed_comparison=latest_comparison,
+        safety_blockers=pair_blockers,
+    )
 
 
 def _accepted_authority_revision(
@@ -1220,6 +1529,8 @@ def fold_investigation(
     inspected_causes: set[str] = set()
     stale_reason: str | None = None
     pending_tool_measurement: tuple[str, str] | None = None
+    seen_prediction_pair_ids: set[str] = set()
+    seen_prediction_pair_sha256s: set[str] = set()
     for expected, event in enumerate(events, start=1):
         if (
             event.sequence != expected
@@ -1227,6 +1538,24 @@ def fold_investigation(
         ):
             raise ValueError("Crew Chief event fold encountered non-canonical history")
         payload = event.payload
+        if payload.adaptation_prediction_pair_id is not None:
+            prediction_sha256 = payload.adaptation_prediction_pair_sha256
+            prediction_source_sha256 = (
+                payload.adaptation_prediction_source_snapshot_sha256
+            )
+            if prediction_sha256 is None or prediction_source_sha256 is None:
+                raise ValueError(
+                    "Crew Chief event fold encountered an incomplete P34 prediction pair"
+                )
+            if (
+                payload.adaptation_prediction_pair_id in seen_prediction_pair_ids
+                or prediction_sha256 in seen_prediction_pair_sha256s
+            ):
+                raise ValueError(
+                    "Crew Chief event fold encountered a reused P34 prediction pair"
+                )
+            seen_prediction_pair_ids.add(payload.adaptation_prediction_pair_id)
+            seen_prediction_pair_sha256s.add(prediction_sha256)
         if pending_tool_measurement is not None and not (
             event.event_type == "tool_result_attached"
             and payload.tool_id == pending_tool_measurement[0]
@@ -1311,6 +1640,13 @@ def _subgoal(
     p32: object,
     learning_prior: CrewChiefLearningPrior | None = None,
 ) -> InvestigationSubgoal | None:
+    """Return the deterministic production subgoal.
+
+    P34 deliberately keeps P33 out of this decision. ``learning_prior`` remains
+    in the signature for source compatibility, while the paired memory decision
+    is built separately by :func:`_memory_shadow_subgoal`.
+    """
+
     if folded is None or folded.status != "open":
         return None
     causes = bundle.report.reasoning_snapshot.causes
@@ -1383,54 +1719,7 @@ def _subgoal(
     priorities.append("inspect_measurement_debt")
     baseline = tuple(dict.fromkeys(priorities))
     live = tuple(item for item in baseline if item not in completed)
-    attention_by_tool = {
-        item.tool_id: item
-        for item in (
-            learning_prior.recommended_attention_order
-            if learning_prior is not None
-            else ()
-        )
-        if item.tool_id in live
-        and item.safety_band == _TOOL_SAFETY_BANDS.get(item.tool_id)
-        and item.transfer_level in {"exact", "compatible"}
-    }
-    band_order = tuple(dict.fromkeys(_TOOL_SAFETY_BANDS[item] for item in live))
-    refined: list[str] = []
-    for band in band_order:
-        band_tools = [item for item in live if _TOOL_SAFETY_BANDS[item] == band]
-        baseline_rank = {
-            item: index
-            for index, item in enumerate(
-                (
-                    candidate
-                    for candidate in baseline
-                    if _TOOL_SAFETY_BANDS[candidate] == band
-                ),
-                start=1,
-            )
-        }
-
-        def learned_order(tool_id: str) -> tuple[int, int, int, str]:
-            attention = attention_by_tool.get(tool_id)
-            if (
-                attention is None
-                or attention.baseline_rank_within_band != baseline_rank[tool_id]
-            ):
-                return (
-                    baseline_rank[tool_id],
-                    1,
-                    baseline_rank[tool_id],
-                    tool_id,
-                )
-            return (
-                attention.learned_rank_within_band,
-                0,
-                baseline_rank[tool_id],
-                tool_id,
-            )
-
-        refined.extend(sorted(band_tools, key=learned_order))
-    tool = refined[0] if refined else None
+    tool = live[0] if live else None
     if tool is None:
         return None
     contradiction_first = sorted(
@@ -1441,45 +1730,12 @@ def _subgoal(
     answer_scope = (
         f" Driver context scopes this inspection to {answer}." if answer else ""
     )
-    learned_attention = attention_by_tool.get(tool) if tool is not None else None
-    baseline_band_rank = (
-        next(
-            index
-            for index, candidate in enumerate(
-                (
-                    item
-                    for item in baseline
-                    if _TOOL_SAFETY_BANDS[item] == _TOOL_SAFETY_BANDS[tool]
-                ),
-                start=1,
-            )
-            if candidate == tool
-        )
-        if tool is not None
-        else None
-    )
-    learning_explanation = (
-        (
-            "WHY THIS IS EARLIER — "
-            f"{learned_attention.reason} "
-            f"{learned_attention.investigation_count} prior investigations across "
-            f"{learned_attention.session_count} sessions and "
-            f"{learned_attention.independent_workflow_count} independent workflows "
-            f"matched at {learned_attention.transfer_level} transfer. "
-            "P19 cause order and setup authority are unchanged."
-        )
-        if learned_attention is not None
-        and learned_attention.baseline_rank_within_band == baseline_band_rank
-        and learned_attention.learned_rank_within_band < baseline_band_rank
-        else None
-    )
     return InvestigationSubgoal(
         subgoal_id=f"ccs_{canonical_json_sha256([folded.investigation_id, tool])[:20]}",
         title=f"Inspect {tool.replace('_', ' ')}",
         selected_tool=tool,
         why_this_tool=(
-            learning_explanation
-            or "It is the next bounded inspection under the integrity/context/driver/"
+            "It is the next bounded inspection under the integrity/context/driver/"
             "contradiction/component/history priority contract without creating setup authority."
             + answer_scope
         ),
@@ -1492,6 +1748,1047 @@ def _subgoal(
         stop_condition="Stop after the canonical artifact and its blockers are attached.",
         priority_rank=len(completed) + 1,
     )
+
+
+def _memory_record_times(
+    learning_prior: CrewChiefLearningPrior,
+) -> dict[str, datetime]:
+    """Resolve when each attention-producing investigation became available."""
+
+    return {
+        item.experience_id: item.outcome.completed_at
+        for item in learning_prior.useful_prior_investigations
+    }
+
+
+def _qualified_memory_attention(
+    learning_prior: CrewChiefLearningPrior | None,
+    *,
+    completed_tool_ids: tuple[str, ...],
+    decision_frozen_at: datetime,
+) -> tuple[object, ...]:
+    if learning_prior is None:
+        return ()
+    try:
+        if (
+            learning_prior.state != "available"
+            or learning_prior.context_transfer_level not in {"exact", "compatible"}
+            or any(
+                item.state == "changed_behavior"
+                for item in learning_prior.driver_tendencies
+            )
+        ):
+            return ()
+        completed = set(completed_tool_ids)
+        record_times = _memory_record_times(learning_prior)
+        transfer_by_experience = {
+            item.experience_id: item for item in learning_prior.context_transfers
+        }
+        qualified = []
+        for attention in learning_prior.recommended_attention_order:
+            source_ids = tuple(attention.source_experience_ids)
+            transfers = tuple(
+                transfer_by_experience.get(experience_id)
+                for experience_id in source_ids
+            )
+            if (
+                attention.tool_id in completed
+                or attention.safety_band
+                != _TOOL_SAFETY_BANDS.get(attention.tool_id)
+                or attention.transfer_level not in {"exact", "compatible"}
+                or not source_ids
+                or any(experience_id not in record_times for experience_id in source_ids)
+                or any(
+                    record_times[experience_id] >= decision_frozen_at
+                    for experience_id in source_ids
+                )
+                or any(
+                    transfer is None
+                    or transfer.level not in {"exact", "compatible"}
+                    or transfer.drift_reasons
+                    or transfer.blocker_reasons
+                    for transfer in transfers
+                )
+            ):
+                continue
+            qualified.append(attention)
+        return tuple(qualified)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return ()
+
+
+def _memory_shadow_from_baseline(
+    baseline: InvestigationSubgoal | None,
+    folded: FoldedInvestigationState | None,
+    learning_prior: CrewChiefLearningPrior | None,
+    *,
+    decision_frozen_at: datetime,
+    qualified_current_evidence_tool_ids: tuple[str, ...] = (),
+) -> tuple[
+    InvestigationSubgoal | None,
+    tuple[str, ...],
+    Literal["none", "exact", "compatible", "weak", "blocked"],
+]:
+    """Return shadow choice, exact consulted P33 IDs, and transfer class."""
+
+    if baseline is None or folded is None:
+        return baseline, (), "none"
+    qualified = _qualified_memory_attention(
+        learning_prior,
+        completed_tool_ids=folded.completed_tool_ids,
+        decision_frozen_at=decision_frozen_at,
+    )
+    if not qualified or learning_prior is None:
+        return baseline, (), "none"
+    baseline_band = _TOOL_SAFETY_BANDS[baseline.selected_tool]
+    if baseline_band not in _P34_SAFE_REORDER_GROUP_BY_SAFETY_BAND:
+        return baseline, (), "none"
+    band_tools = tuple(
+        tool_id
+        for tool_id, safety_band in _TOOL_SAFETY_BANDS.items()
+        if safety_band == baseline_band
+        and tool_id not in set(folded.completed_tool_ids)
+    )
+    if not band_tools or band_tools[0] != baseline.selected_tool:
+        return baseline, (), "none"
+    global_band_rank = {
+        tool_id: index
+        for index, tool_id in enumerate(
+            (
+                tool_id
+                for tool_id, safety_band in _TOOL_SAFETY_BANDS.items()
+                if safety_band == baseline_band
+            ),
+            start=1,
+        )
+    }
+    eligible = tuple(
+        item
+        for item in qualified
+        if item.tool_id in band_tools
+        and global_band_rank.get(item.tool_id)
+        == item.baseline_rank_within_band
+    )
+    if not eligible:
+        return baseline, (), "none"
+    attention = min(
+        eligible,
+        key=lambda item: (
+            item.learned_rank_within_band,
+            item.baseline_rank_within_band,
+            item.tool_id,
+        ),
+    )
+    position = band_tools.index(attention.tool_id)
+    source_ids = tuple(attention.source_experience_ids)
+    transfer_class = attention.transfer_level
+    if position == 0:
+        return baseline, source_ids, transfer_class
+    if baseline.selected_tool in qualified_current_evidence_tool_ids:
+        # Newly qualified evidence that is already linked to a current P19
+        # ambiguity outranks historical attention. A prior dead end can never
+        # delay the current discriminator that may change the live reasoning.
+        return baseline, (), "blocked"
+    if baseline.selected_tool == "inspect_driver_vehicle_separation":
+        # This check is a frozen prerequisite, not an interchangeable
+        # performance-measurement preference. Memory cannot put a vehicle-only
+        # reading ahead of unresolved driver-versus-car separation.
+        return baseline, (), "blocked"
+    if (
+        position != 1
+        or attention.learned_rank_within_band
+        >= attention.baseline_rank_within_band
+    ):
+        return baseline, (), "none"
+    tool = attention.tool_id
+    shadow = baseline.model_copy(
+        update={
+            "subgoal_id": f"ccs_{canonical_json_sha256([folded.investigation_id, tool])[:20]}",
+            "title": f"Inspect {tool.replace('_', ' ')}",
+            "selected_tool": tool,
+            "why_this_tool": (
+                "Qualified P33 history moved this inspection one "
+                f"position earlier inside the {attention.safety_band} tier. "
+                f"{attention.reason} P19 cause order, terminal action, and setup "
+                "authority remain the deterministic baseline."
+            ),
+        }
+    )
+    return shadow, source_ids, transfer_class
+
+
+def _memory_shadow_subgoal(
+    bundle: RunIntelligenceBundle,
+    folded: FoldedInvestigationState | None,
+    p26: object,
+    p32: object,
+    learning_prior: CrewChiefLearningPrior | None,
+    *,
+    decision_frozen_at: datetime,
+) -> InvestigationSubgoal | None:
+    """Build one deterministic, bounded, shadow-only memory decision.
+
+    Memory may move at most one qualified inspection by one position inside the
+    same immutable safety tier. Missing, corrupt, weak, future, drifted, or
+    blocked history falls back to the production baseline exactly.
+    """
+
+    baseline = _subgoal(bundle, folded, p26, p32)
+    shadow, _, _ = _memory_shadow_from_baseline(
+        baseline,
+        folded,
+        learning_prior,
+        decision_frozen_at=decision_frozen_at,
+    )
+    return shadow
+
+
+def _p34_tool_ordinal(tool_id: str) -> int:
+    safety_band = _TOOL_SAFETY_BANDS[tool_id]
+    return next(
+        index
+        for index, (candidate, candidate_band) in enumerate(
+            (
+                item
+                for item in _TOOL_SAFETY_BANDS.items()
+                if item[1] == safety_band
+            ),
+            start=1,
+        )
+        if candidate == tool_id and candidate_band == safety_band
+    )
+
+
+def _p34_inspection_decision(
+    subgoal: InvestigationSubgoal,
+    *,
+    source_memory_record_ids: tuple[str, ...] = (),
+    moved_one_position: bool = False,
+) -> InvestigationDecision:
+    tool_id = subgoal.selected_tool
+    safety_band = _TOOL_SAFETY_BANDS[tool_id]
+    safe_group = _P34_SAFE_REORDER_GROUP_BY_SAFETY_BAND.get(safety_band)
+    baseline_ordinal = _p34_tool_ordinal(tool_id) if safe_group is not None else 1
+    return InvestigationDecision(
+        decision_kind="inspect_tool",
+        action_id=tool_id,
+        priority_tier=_P34_PRIORITY_TIER_BY_SAFETY_BAND[safety_band],
+        safe_reorder_group=safe_group,
+        baseline_ordinal=baseline_ordinal,
+        selected_ordinal=(
+            baseline_ordinal - 1 if moved_one_position else baseline_ordinal
+        ),
+        reason=subgoal.why_this_tool,
+        mandatory_check_ids=_P34_MANDATORY_CHECK_IDS,
+        source_memory_record_ids=source_memory_record_ids,
+    )
+
+
+def _p34_non_tool_decision(workspace: CrewChiefWorkspace) -> InvestigationDecision:
+    folded = workspace.folded_state
+    if folded is None:
+        raise ValueError("P34 decisions require an open Crew investigation.")
+    if (
+        folded.pending_driver_question_id is not None
+        or not folded.driver_answers
+    ):
+        question_id = folded.pending_driver_question_id or (
+            "ccq_"
+            + canonical_json_sha256(
+                [folded.investigation_id, folded.last_sequence + 1]
+            )[:20]
+        )
+        return InvestigationDecision(
+            decision_kind="ask_driver",
+            action_id=question_id,
+            priority_tier="driver_car_confounders",
+            baseline_ordinal=1,
+            selected_ordinal=1,
+            reason=(
+                "The deterministic planner requires one contextual driver answer "
+                "after integrity and context qualification."
+            ),
+            mandatory_check_ids=_P34_MANDATORY_CHECK_IDS,
+        )
+    terminal = workspace.terminal_decision
+    return InvestigationDecision(
+        decision_kind=("no_call" if terminal.kind == "no_call" else "observe_only"),
+        action_id=(
+            f"terminal:{terminal.kind}:"
+            f"{canonical_json_sha256([terminal.kind, terminal.instruction])[:24]}"
+        ),
+        priority_tier="terminal",
+        baseline_ordinal=1,
+        selected_ordinal=1,
+        reason=(
+            "P34 records the exact Crew/P19 terminal boundary without changing it."
+        ),
+        mandatory_check_ids=_P34_MANDATORY_CHECK_IDS,
+    )
+
+
+def _p34_qualified_current_evidence_tool_ids(
+    workspace: CrewChiefWorkspace,
+) -> tuple[str, ...]:
+    """Return the exact live baseline tools pinned by qualified P19 evidence."""
+
+    baseline_subgoal = workspace.current_subgoal
+    if baseline_subgoal is None:
+        return ()
+    relevant_hypotheses = tuple(
+        item
+        for item in (workspace.folded_state.hypotheses if workspace.folded_state else ())
+        if item.cause_id in baseline_subgoal.distinguishes_cause_ids
+    )
+    current_cause_artifact_ids = {
+        artifact_id
+        for item in relevant_hypotheses
+        for artifact_id in (
+            *item.support_artifact_ids,
+            *item.contradiction_artifact_ids,
+        )
+    }
+    current_entries = _select_tool_entries(
+        workspace,
+        baseline_subgoal.selected_tool,
+        baseline_subgoal.distinguishes_cause_ids,
+    )
+    identity = getattr(workspace, "identity", None)
+    qualified_current_artifact_ids = (
+        set(
+            p34_qualified_current_artifact_ids(
+                identity,
+                workspace.evidence_index,
+            )
+        )
+        if identity is not None
+        else set()
+    )
+    return (
+        (baseline_subgoal.selected_tool,)
+        if current_cause_artifact_ids
+        and any(
+            item.artifact_id in current_cause_artifact_ids
+            and item.artifact_id in qualified_current_artifact_ids
+            for item in current_entries
+        )
+        else ()
+    )
+
+
+def _p34_decisions_for_workspace(
+    workspace: CrewChiefWorkspace,
+    *,
+    decision_frozen_at: datetime,
+) -> tuple[
+    InvestigationDecision,
+    InvestigationDecision,
+    Literal["none", "exact", "compatible", "weak", "blocked"],
+]:
+    baseline_subgoal = workspace.current_subgoal
+    if baseline_subgoal is None:
+        baseline = _p34_non_tool_decision(workspace)
+        return baseline, baseline, "none"
+    qualified_current_evidence_tool_ids = (
+        _p34_qualified_current_evidence_tool_ids(workspace)
+    )
+    shadow_subgoal, memory_ids, transfer_class = _memory_shadow_from_baseline(
+        baseline_subgoal,
+        workspace.folded_state,
+        workspace.learning_prior,
+        decision_frozen_at=decision_frozen_at,
+        qualified_current_evidence_tool_ids=qualified_current_evidence_tool_ids,
+    )
+    baseline = _p34_inspection_decision(baseline_subgoal)
+    if shadow_subgoal is None:
+        return baseline, baseline, "none"
+    memory = _p34_inspection_decision(
+        shadow_subgoal,
+        source_memory_record_ids=memory_ids,
+        moved_one_position=(
+            shadow_subgoal.selected_tool != baseline_subgoal.selected_tool
+        ),
+    )
+    return baseline, memory, transfer_class
+
+
+def _p34_current_truth_sha256(workspace: CrewChiefWorkspace) -> str:
+    return canonical_json_sha256(
+        {
+            "identity": workspace.identity,
+            "evidence_index_sha256": workspace.evidence_index.index_hash,
+            "terminal_decision": workspace.terminal_decision,
+            "p19_cause_ids": workspace.p19_cause_ids,
+            "p19_cause_states": tuple(
+                (item.cause_id, item.p19_state)
+                for item in (
+                    workspace.folded_state.hypotheses
+                    if workspace.folded_state is not None
+                    else ()
+                )
+            ),
+            "p19_contradiction_artifact_ids": (
+                workspace.p19_contradiction_artifact_ids
+            ),
+        }
+    )
+
+
+def _p34_source_snapshot_sha256(
+    workspace: CrewChiefWorkspace,
+    *,
+    workspace_revision: str | None = None,
+) -> str:
+    """Hash producer-owned source revisions independently of a P34 pair."""
+
+    identity = workspace.identity
+    return investigation_adaptation_source_snapshot_sha256(
+        run_id=identity.run_id,
+        session_id=identity.session_id,
+        workspace_revision=workspace_revision or identity.workspace_revision,
+        authority_revision=identity.authority_revision,
+        current_truth_sha256=_p34_current_truth_sha256(workspace),
+        p19_snapshot_sha256=identity.reasoning_snapshot_sha256,
+        p20_projection_sha256=identity.p20_state_revision,
+        p26_projection_sha256=identity.p26_knowledge_graph_sha256,
+        p32_projection_sha256=identity.p32_projection_sha256,
+    )
+
+
+def _p34_restart_context(
+    workspace: CrewChiefWorkspace,
+    current: CurrentLearningInputs,
+    baseline: InvestigationDecision,
+    memory: InvestigationDecision,
+    transfer_class: Literal["none", "exact", "compatible", "weak", "blocked"],
+    *,
+    decision_frozen_at: datetime,
+) -> tuple[
+    Literal[
+        "braking",
+        "entry",
+        "center",
+        "exit",
+        "straight",
+        "long_run",
+        "mixed",
+        "unresolved",
+    ],
+    Literal["driver", "vehicle", "combined", "unresolved"],
+    Literal[
+        "short_track", "intermediate", "superspeedway", "road_course", "unknown"
+    ],
+    tuple[str, ...],
+    Literal["same_build", "reviewed_compatible_build", "future_unreviewed_build"],
+    Literal["stable", "material_drift", "unknown"],
+    Literal["none", "exact", "compatible", "weak", "blocked"],
+    InvestigationDecision,
+    tuple[str, ...],
+    Literal[
+        "no_relevant_history",
+        "incompatible_history",
+        "corrupt_history",
+        "generic_component_knowledge_only",
+        "same_words_different_physical_scope",
+        "material_driver_drift",
+        "future_memory_record",
+    ]
+    | None,
+]:
+    """Freeze restart-safe subgroup/drift truth before the paired decision."""
+
+    source_ids = set(memory.source_memory_record_ids)
+    all_transfers = tuple(workspace.learning_prior.context_transfers)
+    transfers = tuple(
+        item
+        for item in all_transfers
+        if item.experience_id in source_ids
+    )
+    future_memory_record_ids = tuple(
+        item.experience_id
+        for item in getattr(
+            workspace.learning_prior, "useful_prior_investigations", ()
+        )
+        if item.outcome.completed_at >= decision_frozen_at
+    )
+    if future_memory_record_ids:
+        transfer_class = "blocked"
+        memory = baseline
+    elif not source_ids:
+        transfer_levels = {item.level for item in all_transfers}
+        if getattr(workspace.learning_prior, "state", None) == "blocked":
+            transfer_class = "blocked"
+        elif "blocked" in transfer_levels:
+            transfer_class = "blocked"
+        elif "weak" in transfer_levels:
+            transfer_class = "weak"
+    future_build = any(
+        "future" in reason.casefold() and "build" in reason.casefold()
+        for reason in workspace.blocker_reasons
+    )
+    if future_build:
+        build_state: Literal[
+            "same_build", "reviewed_compatible_build", "future_unreviewed_build"
+        ] = "future_unreviewed_build"
+    elif (transfers or all_transfers) and any(
+        "iRacing_build" in item.mismatched_dimensions
+        for item in (transfers or all_transfers)
+    ):
+        # A P33 transfer mismatch is not a typed build-compatibility review.
+        # Without an exact server-owned review artifact, the build remains
+        # unreviewed and cannot control production attention.
+        build_state = "future_unreviewed_build"
+    else:
+        build_state = "same_build"
+    if any(
+        item.state == "changed_behavior"
+        for item in workspace.learning_prior.driver_tendencies
+    ):
+        driver_state: Literal["stable", "material_drift", "unknown"] = (
+            "material_drift"
+        )
+    elif (transfers or all_transfers) and all(
+        not item.drift_reasons
+        and "driver_execution_state" in item.matching_dimensions
+        and "driver_execution_state" not in item.mismatched_dimensions
+        for item in (transfers or all_transfers)
+    ):
+        driver_state = "stable"
+    else:
+        driver_state = "unknown"
+    decisions_differ = baseline.executable_identity != memory.executable_identity
+    if (
+        build_state == "future_unreviewed_build"
+        or driver_state == "material_drift"
+        or driver_state == "unknown" and decisions_differ
+    ):
+        transfer_class = "blocked"
+        memory = baseline
+    problem_family = classify_p34_problem_family(
+        phase=current.problem.phase,
+        objective=current.context.objective,
+        driver_demand_state=current.problem.driver_demand_state,
+        vehicle_response_state=current.problem.vehicle_response_state,
+    )
+    problem_orientation = classify_p34_problem_orientation(
+        driver_demand_state=current.problem.driver_demand_state,
+        vehicle_response_state=current.problem.vehicle_response_state,
+    )
+    track_class = classify_p34_track_class(
+        track=current.context.track,
+        track_configuration=current.context.track_configuration,
+        package_type=current.context.package_type,
+    )
+    subgroups = canonical_context_subgroups(
+        context_transfer_class=transfer_class,
+        problem_orientation=problem_orientation,
+        problem_family=problem_family,
+        objective=current.context.objective,
+        track_class=track_class,
+        driver_drift_state=driver_state,
+        build_review_state=build_state,
+    )
+    prior = workspace.learning_prior
+    blocked_transfer = any(item.level == "blocked" for item in all_transfers)
+    weak_transfer = any(item.level == "weak" for item in all_transfers)
+    physical_scope_mismatches = {
+        dimension
+        for item in all_transfers
+        if item.level == "weak"
+        for dimension in item.mismatched_dimensions
+        if dimension in P34_PHYSICAL_SCOPE_MISMATCH_DIMENSIONS
+    }
+    recurrence_class = getattr(getattr(prior, "recurrence", None), "classification", None)
+    negative_control = (
+        "future_memory_record"
+        if future_memory_record_ids
+        else "material_driver_drift"
+        if driver_state == "material_drift"
+        else "corrupt_history"
+        if getattr(prior, "state", None) == "blocked"
+        else "incompatible_history"
+        if blocked_transfer
+        and build_state != "future_unreviewed_build"
+        and driver_state == "stable"
+        else "generic_component_knowledge_only"
+        if weak_transfer
+        and problem_orientation == "vehicle"
+        and bool(getattr(prior, "car_response_history", ()))
+        and not getattr(prior, "useful_prior_investigations", ())
+        and not physical_scope_mismatches
+        else "same_words_different_physical_scope"
+        if weak_transfer
+        and bool(physical_scope_mismatches)
+        and recurrence_class in {
+            "possible_recurrence",
+            "strong_recurrence",
+            "exact_context_recurrence",
+        }
+        else "no_relevant_history"
+        if transfer_class == "none"
+        and not getattr(prior, "useful_prior_investigations", ())
+        and not all_transfers
+        else None
+    )
+    return (
+        problem_family,
+        problem_orientation,
+        track_class,
+        subgroups,
+        build_state,
+        driver_state,
+        transfer_class,
+        memory,
+        future_memory_record_ids,
+        negative_control,
+    )
+
+
+def _p34_negative_control_evidence(
+    workspace: CrewChiefWorkspace,
+    *,
+    condition: Literal[
+        "no_relevant_history",
+        "incompatible_history",
+        "corrupt_history",
+        "generic_component_knowledge_only",
+        "same_words_different_physical_scope",
+        "material_driver_drift",
+        "future_memory_record",
+    ]
+    | None,
+    driver_drift_state: Literal["stable", "material_drift", "unknown"],
+    future_memory_record_ids: tuple[str, ...],
+) -> NegativeControlConditionEvidence | None:
+    """Bind a control label to the exact pre-outcome P33 facts that prove it."""
+
+    if condition is None:
+        return None
+    prior = workspace.learning_prior
+    transfers = tuple(prior.context_transfers)
+    component_experience_ids = _unique(
+        experience_id
+        for item in prior.car_response_history
+        for experience_id in item.source_experience_ids
+    )
+    physical_mismatches = _unique(
+        dimension
+        for item in transfers
+        if item.level == "weak"
+        for dimension in item.mismatched_dimensions
+        if dimension in P34_PHYSICAL_SCOPE_MISMATCH_DIMENSIONS
+    )
+    return NegativeControlConditionEvidence(
+        condition=condition,
+        p33_projection_sha256=prior.projection_sha256,
+        p33_state=prior.state,
+        context_transfer_record_ids=tuple(item.experience_id for item in transfers),
+        context_transfer_levels=tuple(item.level for item in transfers),
+        useful_prior_experience_ids=tuple(
+            item.experience_id for item in prior.useful_prior_investigations
+        ),
+        component_history_experience_ids=component_experience_ids,
+        physical_scope_mismatch_dimensions=physical_mismatches,
+        recurrence_class=prior.recurrence.classification,
+        corruption_blocker_sha256s=(
+            tuple(canonical_json_sha256(item) for item in prior.blocker_reasons)
+            if prior.state == "blocked"
+            else ()
+        ),
+        future_memory_record_ids=future_memory_record_ids,
+        future_memory_record_completed_ats=tuple(
+            item.outcome.completed_at
+            for experience_id in future_memory_record_ids
+            for item in prior.useful_prior_investigations
+            if item.experience_id == experience_id
+        ),
+        driver_drift_state=driver_drift_state,
+    )
+
+
+def _p34_live_eligible_tool_ids(
+    baseline: InvestigationDecision,
+    memory: InvestigationDecision,
+    *,
+    completed_tool_ids: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Return only the inspect actions the two frozen planners could execute now."""
+
+    if baseline.decision_kind != "inspect_tool":
+        return ()
+    eligible = [baseline.action_id]
+    if baseline.safe_reorder_group == "performance_measurement":
+        completed = set(completed_tool_ids)
+        live_group = tuple(
+            tool_id
+            for tool_id, safety_band in _TOOL_SAFETY_BANDS.items()
+            if safety_band == "performance_measurement" and tool_id not in completed
+        )
+        if baseline.action_id not in live_group:
+            raise ValueError("P34 baseline action is not live at decision freeze")
+        position = live_group.index(baseline.action_id)
+        if position + 1 < len(live_group):
+            eligible.append(live_group[position + 1])
+    if memory.decision_kind == "inspect_tool" and memory.action_id not in eligible:
+        raise ValueError("P34 memory decision escaped the live one-slot cohort")
+    return tuple(eligible)
+
+
+def _p34_adaptation_context_for_pair(
+    pair: PairedInvestigationDecision,
+    *,
+    identity: CrewChiefWorkspaceIdentity,
+    current_learning: CurrentLearningInputs,
+    learning_prior: CrewChiefLearningPrior,
+    folded: FoldedInvestigationState,
+    baseline_subgoal: InvestigationSubgoal | None,
+    evidence_index: EngineeringEvidenceIndex,
+    terminal_decision: CrewChiefTerminalDecision,
+    p19_cause_ids: tuple[str, ...],
+    p19_contradiction_artifact_ids: tuple[str, ...],
+    blocker_reasons: tuple[str, ...],
+) -> InvestigationAdaptationContext:
+    """Rebuild public P34 context only from current Crew/P33 producer truth."""
+
+    draft = SimpleNamespace(
+        identity=identity,
+        folded_state=folded,
+        current_subgoal=baseline_subgoal,
+        learning_prior=learning_prior,
+        evidence_index=evidence_index,
+        terminal_decision=terminal_decision,
+        p19_cause_ids=p19_cause_ids,
+        p19_contradiction_artifact_ids=p19_contradiction_artifact_ids,
+        blocker_reasons=blocker_reasons,
+    )
+    baseline, memory, transfer_class = _p34_decisions_for_workspace(
+        draft,
+        decision_frozen_at=pair.decision_frozen_at,
+    )
+    (
+        problem_family,
+        problem_orientation,
+        track_class,
+        context_subgroups,
+        build_review_state,
+        driver_drift_state,
+        transfer_class,
+        _bounded_memory,
+        future_memory_record_ids,
+        negative_control_condition,
+    ) = _p34_restart_context(
+        draft,
+        current_learning,
+        baseline,
+        memory,
+        transfer_class,
+        decision_frozen_at=pair.decision_frozen_at,
+    )
+    negative_control_evidence = _p34_negative_control_evidence(
+        draft,
+        condition=negative_control_condition,
+        driver_drift_state=driver_drift_state,
+        future_memory_record_ids=future_memory_record_ids,
+    )
+    (
+        qualified_artifact_ids,
+        qualified_artifact_states,
+        qualified_artifact_provenance_sha256s,
+    ) = p34_qualified_current_artifact_cohort(identity, evidence_index)
+    current_evidence_pinned_tool_ids = tuple(
+        tool_id
+        for tool_id in _p34_qualified_current_evidence_tool_ids(draft)
+        if tool_id in pair.eligible_tool_ids
+    )
+    return InvestigationAdaptationContext.build(
+        run_id=identity.run_id,
+        session_id=identity.session_id,
+        workspace_revision=identity.workspace_revision,
+        current_truth_sha256=_p34_current_truth_sha256(draft),
+        p19_snapshot_sha256=identity.reasoning_snapshot_sha256,
+        p20_projection_sha256=identity.p20_state_revision,
+        p26_projection_sha256=identity.p26_knowledge_graph_sha256,
+        p32_projection_sha256=identity.p32_projection_sha256,
+        p33_projection_sha256=learning_prior.projection_sha256,
+        p33_context_sha256=current_learning.context.context_sha256,
+        p33_problem_sha256=current_learning.problem.problem_sha256,
+        qualified_available_artifact_ids=qualified_artifact_ids,
+        qualified_available_artifact_evidence_states=qualified_artifact_states,
+        qualified_available_artifact_provenance_sha256s=(
+            qualified_artifact_provenance_sha256s
+        ),
+        current_evidence_pinned_tool_ids=current_evidence_pinned_tool_ids,
+        track=current_learning.context.track,
+        track_configuration=current_learning.context.track_configuration,
+        package_type=current_learning.context.package_type,
+        iracing_build=current_learning.context.iracing_build,
+        problem_family=problem_family,
+        problem_orientation=problem_orientation,
+        track_class=track_class,
+        phase=current_learning.problem.phase,
+        current_objective=identity.objective_id.value,
+        build_review_state=build_review_state,
+        driver_drift_state=driver_drift_state,
+        context_subgroup_keys=context_subgroups,
+        negative_control_condition=negative_control_condition,
+        negative_control_evidence_sha256=(
+            canonical_json_sha256(
+                negative_control_evidence.model_dump(mode="json")
+            )
+            if negative_control_evidence is not None
+            else None
+        ),
+    )
+
+
+def _freeze_p34_pair_for_workspace(
+    workspace: CrewChiefWorkspace,
+    *,
+    db_path: str | Path | None,
+) -> PairedInvestigationDecision | None:
+    if isinstance(workspace, CrewChiefWorkspace):
+        try:
+            # ``model_copy`` deliberately skips Pydantic validation. Rebuild
+            # the complete public contract at the mutation boundary so a warm
+            # or patched cache object cannot retain stale P33/P34 digests while
+            # omitting learned attention or negative-control evidence.
+            workspace = CrewChiefWorkspace.model_validate(
+                workspace.model_dump(mode="json")
+            )
+        except (TypeError, ValueError):
+            return None
+    folded = getattr(workspace, "folded_state", None)
+    investigation = getattr(workspace, "investigation", None)
+    if (
+        investigation is None
+        or folded is None
+        or folded.status != "open"
+    ):
+        return None
+    repository = InvestigationAdaptationRepository(db_path)
+    try:
+        from racelab_engine.services.controlled_workflow_service import (
+            recover_p34_scored_workflow_followups,
+        )
+
+        recover_p34_scored_workflow_followups(RaceLabRepository(db_path))
+        recover_unreviewed_p34_terminal_capture(repository)
+        # Preserve the policy/action already visible from the preceding GET.
+        # A cold process may verify durable activation on this mutation, but
+        # that newly restored authority starts only on the next Crew revision;
+        # it cannot silently change NEXT A into executed action B.
+        effective_before_restore = resolve_effective_activation_decision(repository)
+        restore_effective_activation_on_mutation(repository)
+        existing = repository.latest_pair(
+            investigation.investigation_id,
+            workspace.identity.workspace_revision,
+        )
+        if existing is not None:
+            if existing.activation_state == "shadow_only":
+                return existing
+            effective = effective_before_restore
+            if (
+                effective is not None
+                and effective.state == "limited_attention"
+                and effective.decision_id == existing.activation_decision_id
+                and effective.decision_sha256
+                == existing.activation_decision_sha256
+            ):
+                return existing
+            # An immutable active pair may outlive the activation that allowed
+            # it to control this revision. Never replay that stale authority;
+            # returning None makes the caller execute the Crew baseline.
+            return None
+        decision_frozen_at = _now()
+        baseline_decision, memory_decision, transfer_class = (
+            _p34_decisions_for_workspace(
+                workspace,
+                decision_frozen_at=decision_frozen_at,
+            )
+        )
+        current_learning = _learning_inputs_for_workspace(
+            workspace,
+            db_path=db_path,
+        )
+        if (
+            current_learning.context.context_sha256
+            != workspace.learning_prior.current_context_sha256
+            or current_learning.problem.problem_sha256
+            != workspace.learning_prior.current_problem_sha256
+        ):
+            raise ValueError("P33 context changed before P34 decision freeze")
+        try:
+            p33_state = EngineeringLearningRepository(db_path).stream_state()
+            p33_head = p33_state.head_sha256
+            if p33_state.history_revision != workspace.identity.learning_history_revision:
+                raise ValueError("P33 history changed before P34 decision freeze")
+        except (sqlite3.Error, OSError, TypeError, ValueError):
+            memory_decision = baseline_decision
+            transfer_class = "blocked"
+            p33_head = None
+        (
+            problem_family,
+            problem_orientation,
+            track_class,
+            _context_subgroups,
+            build_review_state,
+            driver_drift_state,
+            transfer_class,
+            memory_decision,
+            future_memory_record_ids,
+            negative_control_condition,
+        ) = _p34_restart_context(
+            workspace,
+            current_learning,
+            baseline_decision,
+            memory_decision,
+            transfer_class,
+            decision_frozen_at=decision_frozen_at,
+        )
+        activation = effective_before_restore
+        if transfer_class not in {"exact", "compatible"}:
+            activation = None
+        baseline_policy = baseline_investigation_policy()
+        shadow_policy = memory_shadow_investigation_policy()
+        limited_policy = limited_attention_investigation_policy()
+        memory_policy = limited_policy if activation is not None else shadow_policy
+        contradictions = workspace.p19_contradiction_artifact_ids
+        eligible_tool_ids = _p34_live_eligible_tool_ids(
+            baseline_decision,
+            memory_decision,
+            completed_tool_ids=folded.completed_tool_ids,
+        )
+        current_evidence_pinned_tool_ids = tuple(
+            tool_id
+            for tool_id in _p34_qualified_current_evidence_tool_ids(workspace)
+            if tool_id in eligible_tool_ids
+        )
+        negative_control_evidence = _p34_negative_control_evidence(
+            workspace,
+            condition=negative_control_condition,
+            driver_drift_state=driver_drift_state,
+            future_memory_record_ids=future_memory_record_ids,
+        )
+        (
+            qualified_artifact_ids,
+            qualified_artifact_states,
+            qualified_artifact_provenance_sha256s,
+        ) = p34_qualified_current_artifact_cohort(
+            workspace.identity,
+            workspace.evidence_index,
+        )
+        pair = build_paired_investigation_decision(
+            baseline_policy=baseline_policy,
+            memory_policy=memory_policy,
+            investigation_id=investigation.investigation_id,
+            investigation_opened_at=investigation.opened_at,
+            run_id=workspace.identity.run_id,
+            session_id=workspace.identity.session_id,
+            workspace_revision=workspace.identity.workspace_revision,
+            authority_revision=workspace.identity.authority_revision,
+            step_number=folded.last_sequence,
+            baseline_decision=baseline_decision,
+            memory_decision=memory_decision,
+            available_tool_ids=tuple(item.tool_id for item in workspace.available_tools),
+            eligible_tool_ids=eligible_tool_ids,
+            completed_tool_ids=folded.completed_tool_ids,
+            available_artifact_ids=tuple(
+                item.artifact_id for item in workspace.evidence_index.entries
+            ),
+            qualified_available_artifact_ids=qualified_artifact_ids,
+            qualified_available_artifact_evidence_states=qualified_artifact_states,
+            qualified_available_artifact_provenance_sha256s=(
+                qualified_artifact_provenance_sha256s
+            ),
+            current_evidence_pinned_tool_ids=current_evidence_pinned_tool_ids,
+            current_truth_sha256=_p34_current_truth_sha256(workspace),
+            p19_snapshot_sha256=workspace.identity.reasoning_snapshot_sha256,
+            current_p19_cause_ids=workspace.p19_cause_ids,
+            current_p19_cause_states=tuple(
+                P19CauseState(cause_id=item.cause_id, state=item.status)
+                for item in current_learning.reasoning.causes
+            ),
+            current_contradiction_ids=contradictions,
+            strongest_contradiction_id=(contradictions[0] if contradictions else None),
+            current_objective=workspace.identity.objective_id.value,
+            p33_projection_sha256=workspace.learning_prior.projection_sha256,
+            p33_history_revision=workspace.identity.learning_history_revision,
+            p33_ledger_head_sha256=p33_head,
+            p33_context_sha256=current_learning.context.context_sha256,
+            p33_problem_sha256=current_learning.problem.problem_sha256,
+            track=current_learning.context.track,
+            track_configuration=current_learning.context.track_configuration,
+            package_type=current_learning.context.package_type,
+            iracing_build=current_learning.context.iracing_build,
+            problem_family=problem_family,
+            problem_orientation=problem_orientation,
+            track_class=track_class,
+            phase=current_learning.problem.phase,
+            build_review_state=build_review_state,
+            driver_drift_state=driver_drift_state,
+            decision_frozen_at=decision_frozen_at,
+            context_transfer_class=transfer_class,
+            negative_control_condition=negative_control_condition,
+            negative_control_evidence=negative_control_evidence,
+            future_memory_record_ids=future_memory_record_ids,
+            p20_projection_sha256=workspace.identity.p20_state_revision,
+            p26_projection_sha256=workspace.identity.p26_knowledge_graph_sha256,
+            p32_projection_sha256=workspace.identity.p32_projection_sha256,
+            activation_decision=activation,
+        )
+        connection = initialize_database(db_path)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            persist_p34_foundation(repository, connection=connection)
+            repository.append_paired_decision_in_transaction(connection, pair)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        with _CACHE_LOCK:
+            _CACHE.clear()
+        return pair
+    except (
+        InvestigationAdaptationIntegrityError,
+        sqlite3.Error,
+        AttributeError,
+        OSError,
+        TypeError,
+        ValueError,
+    ):
+        # P34 is attention-only. Missing/corrupt adaptation truth cannot veto
+        # the deterministic Crew/P19 production path.
+        return None
+
+
+def _production_subgoal_from_pair(
+    baseline_subgoal: InvestigationSubgoal | None,
+    folded: FoldedInvestigationState | None,
+    learning_prior: CrewChiefLearningPrior | None,
+    pair: PairedInvestigationDecision | None,
+) -> InvestigationSubgoal | None:
+    if (
+        baseline_subgoal is None
+        or pair is None
+        or pair.production_decision.decision_kind != "inspect_tool"
+        or pair.production_decision.action_id == baseline_subgoal.selected_tool
+    ):
+        return baseline_subgoal
+    shadow, _, _ = _memory_shadow_from_baseline(
+        baseline_subgoal,
+        folded,
+        learning_prior,
+        decision_frozen_at=pair.decision_frozen_at,
+    )
+    if (
+        shadow is not None
+        and shadow.selected_tool == pair.production_decision.action_id
+        and pair.activation_state == "limited_attention"
+    ):
+        return shadow
+    return baseline_subgoal
 
 
 def _driver_question(
@@ -2246,6 +3543,15 @@ def build_crew_chief_workspace(
         learning_prior,
         _learning_capture_blockers(tuple(capture_workflows), events),
     )
+    try:
+        learning_state = EngineeringLearningRepository(db_path).stream_state()
+        learning_ledger_head_sha256 = (
+            learning_state.head_sha256
+            if learning_state.history_revision == learning_prior.history_revision
+            else None
+        )
+    except (sqlite3.Error, OSError, TypeError, ValueError):
+        learning_ledger_head_sha256 = None
     measurement_attempts: tuple[MeasurementAttempt, ...] = ()
     measurement_history_blockers: tuple[str, ...] = ()
     mission_contract = bundle.report.best_measurement.mission_contract
@@ -2276,6 +3582,7 @@ def build_crew_chief_workspace(
         p26=p26,
         p32=p32,
         learning_prior=learning_prior,
+        learning_ledger_head_sha256=learning_ledger_head_sha256,
         run_sentinel=run_sentinel,
     )
     stale_reasons = _authority_stale_reasons(investigation, events, identity)
@@ -2283,7 +3590,15 @@ def build_crew_chief_workspace(
         folded = folded.model_copy(
             update={"status": "stale", "stale_reason": stale_reasons[0]}
         )
-    cache_key = _workspace_cache_key(identity, db_path)
+    try:
+        p34_ledger_revision = InvestigationAdaptationRepository(
+            db_path
+        ).stream_state().ledger_revision
+    except (InvestigationAdaptationIntegrityError, sqlite3.Error, OSError) as exc:
+        p34_ledger_revision = canonical_json_sha256(
+            {"state": "blocked", "reason": str(exc)}
+        )
+    cache_key = (*_workspace_cache_key(identity, db_path), p34_ledger_revision)
     with _CACHE_LOCK:
         cached = _CACHE.get(cache_key)
         if cached is not None:
@@ -2313,7 +3628,28 @@ def build_crew_chief_workspace(
         storage_repository,
         learning_prior,
     )
-    subgoal = _subgoal(bundle, folded, p26, p32, learning_prior)
+    p19_cause_ids = tuple(
+        cause.cause_id for cause in bundle.report.reasoning_snapshot.causes
+    )
+    p19_contradiction_artifact_ids = _unique(
+        citation.event_id or citation.citation_id
+        for cause in sorted(
+            bundle.report.reasoning_snapshot.causes,
+            key=lambda item: item.ordinal_rank,
+        )
+        for citation in cause.contradicting_evidence
+    )
+    workspace_blocker_reasons = _unique(
+        [
+            *stale_reasons,
+            *bundle.report.blocker_reasons,
+            *p20.knowledge_debt,
+            *p26.knowledge_debt,
+            *p32.blockers,
+            *learning_prior.blocker_reasons,
+        ]
+    )
+    baseline_subgoal = _subgoal(bundle, folded, p26, p32, learning_prior)
     latest_result = None
     if folded and folded.completed_tool_ids:
         latest = folded.completed_tool_ids[-1]
@@ -2361,6 +3697,26 @@ def build_crew_chief_workspace(
             authority_ceiling=definition.authority_ceiling,
         )
     decision = _decision(bundle, identity, critique, question)
+    investigation_improvement = _p34_projection_for_identity(
+        identity,
+        investigation_open=folded is not None and folded.status == "open",
+        current_learning=current_learning,
+        learning_prior=learning_prior,
+        folded=folded,
+        baseline_subgoal=baseline_subgoal,
+        evidence_index=evidence_index,
+        terminal_decision=decision,
+        p19_cause_ids=p19_cause_ids,
+        p19_contradiction_artifact_ids=p19_contradiction_artifact_ids,
+        blocker_reasons=workspace_blocker_reasons,
+        db_path=db_path,
+    )
+    subgoal = _production_subgoal_from_pair(
+        baseline_subgoal,
+        folded,
+        learning_prior,
+        investigation_improvement.current_pair,
+    )
     workspace = CrewChiefWorkspace(
         identity=identity,
         generated_at=_now(),
@@ -2376,13 +3732,13 @@ def build_crew_chief_workspace(
         p19_mission_contract=bundle.report.best_measurement.mission_contract,
         performance_intelligence=p32,
         learning_prior=learning_prior,
+        investigation_improvement=investigation_improvement,
         run_sentinel=run_sentinel,
         terminal_decision=decision,
         response_history_ids=response_ids,
         driver_memory_ids=driver_memory_ids,
-        p19_cause_ids=tuple(
-            cause.cause_id for cause in bundle.report.reasoning_snapshot.causes
-        ),
+        p19_cause_ids=p19_cause_ids,
+        p19_contradiction_artifact_ids=p19_contradiction_artifact_ids,
         p20_episode_ids=tuple(
             item.episode_id
             for item in bundle.report.reasoning_snapshot.mechanism_episodes
@@ -2394,16 +3750,7 @@ def build_crew_chief_workspace(
             f"{len(evidence_index.entries)} evidence artifacts indexed without raw traces.",
             f"Next move: {decision.title}",
         ),
-        blocker_reasons=_unique(
-            [
-                *stale_reasons,
-                *bundle.report.blocker_reasons,
-                *p20.knowledge_debt,
-                *p26.knowledge_debt,
-                *p32.blockers,
-                *learning_prior.blocker_reasons,
-            ]
-        ),
+        blocker_reasons=workspace_blocker_reasons,
     )
     with _CACHE_LOCK:
         _CACHE[cache_key] = workspace
@@ -2418,8 +3765,30 @@ def _event(
     workspace_revision: str,
     event_type: str,
     payload: CrewChiefEventPayload,
+    *,
+    prediction_pair: PairedInvestigationDecision | None = None,
+    prediction_source_snapshot_sha256: str | None = None,
 ) -> CrewChiefEvent:
+    if prediction_pair is not None:
+        if prediction_source_snapshot_sha256 is None:
+            raise ValueError(
+                "P34 executable prediction requires its producer-owned source snapshot"
+            )
+        payload = payload.model_copy(
+            update={
+                "adaptation_prediction_pair_id": prediction_pair.pair_id,
+                "adaptation_prediction_pair_sha256": prediction_pair.pair_sha256,
+                "adaptation_prediction_source_snapshot_sha256": (
+                    prediction_source_snapshot_sha256
+                ),
+            }
+        )
     created_at = _now()
+    if (
+        prediction_pair is not None
+        and created_at <= prediction_pair.decision_frozen_at
+    ):
+        created_at = prediction_pair.decision_frozen_at + timedelta(microseconds=1)
     event_id = f"cce_{canonical_json_sha256([investigation_id, sequence, event_type, payload])[:24]}"
     unhashed = {
         "event_id": event_id,
@@ -2520,6 +3889,386 @@ def _with_event_source_provenance(
     )
 
 
+def _freeze_next_p34_pair_and_refresh(
+    workspace: CrewChiefWorkspace,
+    *,
+    db_path: str | Path | None,
+) -> CrewChiefWorkspace:
+    if (
+        workspace.folded_state is not None
+        and workspace.folded_state.pending_driver_question_id is not None
+    ):
+        # Asking was the executable planner decision. The answer is its
+        # outcome, so freezing here would backfill a second ask-driver pair
+        # after the question was already exposed.
+        return workspace
+    if _freeze_p34_pair_for_workspace(workspace, db_path=db_path) is None:
+        return workspace
+    return build_crew_chief_workspace(
+        workspace.identity.run_id,
+        session_id=workspace.identity.session_id,
+        objective=workspace.identity.objective_id,
+        investigation_id=workspace.identity.investigation_id,
+        db_path=db_path,
+    )
+
+
+def _canonical_p34_outcome_pair(
+    investigation_id: str,
+    *,
+    db_path: str | Path | None,
+) -> PairedInvestigationDecision | None:
+    """Select the preregistered investigation-level pair without outcome access.
+
+    Persistence sequence is authoritative.  Prefer the earliest inspect-tool
+    revision where executable baseline and memory choices differ, then the
+    earliest inspect-tool revision, then the earliest eligible non-tool pair.
+    Later results can never replace this selection.
+    """
+
+    pairs = _ordered_p34_investigation_pairs(
+        investigation_id,
+        db_path=db_path,
+    )
+    if not pairs:
+        return None
+    return _select_canonical_p34_pair(pairs)
+
+
+def _select_canonical_p34_pair(
+    pairs: tuple[PairedInvestigationDecision, ...],
+) -> PairedInvestigationDecision:
+    persistence_order = {pair.pair_id: index for index, pair in enumerate(pairs)}
+
+    def category(pair: PairedInvestigationDecision) -> int:
+        both_tools = (
+            pair.baseline_decision.decision_kind == "inspect_tool"
+            and pair.memory_decision.decision_kind == "inspect_tool"
+        )
+        if both_tools and (
+            pair.baseline_decision.executable_identity
+            != pair.memory_decision.executable_identity
+        ):
+            return 0
+        return 1 if both_tools else 2
+
+    return min(
+        pairs,
+        key=lambda pair: (
+            category(pair),
+            pair.step_number,
+            persistence_order[pair.pair_id],
+            pair.pair_id,
+        ),
+    )
+
+
+def _ordered_p34_investigation_pairs(
+    investigation_id: str,
+    *,
+    db_path: str | Path | None,
+) -> tuple[PairedInvestigationDecision, ...]:
+    repository = InvestigationAdaptationRepository(db_path)
+    try:
+        result = repository.query_records(
+            record_kinds=("paired_decision",),
+            investigation_id=investigation_id,
+            limit=10_000,
+        )
+        if result.blockers:
+            raise InvestigationAdaptationIntegrityError(result.blockers[0])
+        return tuple(
+            reversed(
+                tuple(
+                    item
+                    for item in result.records
+                    if isinstance(item, PairedInvestigationDecision)
+                )
+            )
+        )
+    except (
+        InvestigationAdaptationIntegrityError,
+        sqlite3.Error,
+        AttributeError,
+        OSError,
+        TypeError,
+        ValueError,
+    ):
+        return ()
+
+
+def _build_p34_outcome_certificate(
+    workspace: CrewChiefWorkspace,
+    *,
+    investigation: CrewChiefInvestigation,
+    terminal_events: tuple[CrewChiefEvent, ...],
+    terminal_event: CrewChiefEvent,
+    experience: EngineeringExperienceRecord,
+    pair: PairedInvestigationDecision | None,
+) -> InvestigationOutcomeCertificate | None:
+    if pair is None:
+        return None
+    fact = experience.investigation_outcome
+    if fact is None:
+        return None
+    requests = tuple(
+        event
+        for event in terminal_events
+        if event.event_type == "tool_invoked" and event.payload.tool_id is not None
+    )
+    results = tuple(
+        event
+        for event in terminal_events
+        if event.event_type == "tool_result_attached"
+        and event.payload.tool_id is not None
+    )
+    result_artifact_ids = {
+        artifact_id for event in results for artifact_id in event.payload.artifact_ids
+    }
+    qualified_current_ids = set(
+        p34_qualified_current_artifact_ids(
+            getattr(workspace, "identity", investigation.workspace_identity),
+            workspace.evidence_index,
+        )
+    )
+    qualified_entries = tuple(
+        item
+        for item in workspace.evidence_index.entries
+        if item.artifact_id in result_artifact_ids
+        and item.artifact_id in qualified_current_ids
+    )
+    qualified_artifact_ids = tuple(item.artifact_id for item in qualified_entries)
+    strongest = pair.strongest_contradiction_id
+    blockers: list[str] = []
+    if pair.investigation_id != investigation.investigation_id:
+        blockers.append(
+            "The terminal outcome does not match its frozen pre-outcome P34 pair."
+        )
+    if workspace.learning_prior.state == "blocked":
+        blockers.append("P33 provenance was blocked at terminal certification.")
+    if pair.decision_frozen_at >= terminal_event.created_at:
+        blockers.append("The P34 decision was not frozen before terminal exposure.")
+    terminal_kind = (
+        "abandoned"
+        if terminal_event.event_type == "investigation_abandoned"
+        else workspace.terminal_decision.kind
+    )
+    p19_outcome = (
+        "no_call"
+        if terminal_kind == "no_call"
+        else "blocked"
+        if terminal_kind in {"observe_only", "blocked", "stale"}
+        and not workspace.critique.passed
+        else None
+    )
+    dead_end_tool_ids = _unique(
+        dead_end.tool_id
+        for dead_end in experience.dead_ends
+        if dead_end.tool_id is not None
+        and dead_end.tool_id in {event.payload.tool_id for event in results}
+    )
+    qualified_result_tools = {
+        event.payload.tool_id
+        for event in results
+        if event.payload.tool_id is not None
+        and set(event.payload.artifact_ids).intersection(qualified_artifact_ids)
+    }
+    completed_checks = [
+        "workspace_identity",
+        "vehicle_condition_epoch",
+        "applied_control_state",
+    ]
+    if "inspect_data_quality" in qualified_result_tools:
+        completed_checks.extend(("data_integrity", "telemetry_health"))
+    if "inspect_lap_context" in qualified_result_tools:
+        completed_checks.extend(("context_comparability", "traffic_contamination"))
+    if strongest is None or strongest in qualified_artifact_ids:
+        completed_checks.append("strongest_contradiction")
+    if "inspect_driver_vehicle_separation" in qualified_result_tools:
+        completed_checks.append("driver_car_separation")
+    return build_investigation_outcome_certificate(
+        pair,
+        starting_workspace_revision=(
+            investigation.workspace_identity.workspace_revision
+        ),
+        ending_workspace_revision=terminal_event.workspace_revision,
+        final_p19_snapshot_sha256=(
+            experience.closing_reasoning.reasoning_snapshot_sha256
+        ),
+        terminal_crew_decision=terminal_kind,
+        tool_request_event_ids=tuple(event.event_id for event in requests),
+        tool_result_event_ids=tuple(event.event_id for event in results),
+        tools_actually_requested=tuple(event.payload.tool_id for event in requests),
+        tool_results_received=tuple(event.payload.tool_id for event in results),
+        qualified_artifact_ids=qualified_artifact_ids,
+        qualified_artifact_evidence_states=tuple(
+            item.evidence_state.value for item in qualified_entries
+        ),
+        driver_question_ids=tuple(
+            event.payload.question_id
+            for event in terminal_events
+            if event.event_type == "driver_question_asked"
+            and event.payload.question_id is not None
+        ),
+        driver_answer_event_ids=tuple(
+            event.event_id
+            for event in terminal_events
+            if event.event_type == "driver_answer_recorded"
+        ),
+        consumption_metrics_state="unavailable",
+        lap_ids_consumed=None,
+        measurement_mission_ids=None,
+        consumption_metric_blockers=(
+            "Post-open lap and completed measurement-mission consumption lineage is unavailable.",
+        ),
+        elapsed_wall_seconds=fact.elapsed_seconds,
+        investigation_steps=terminal_event.sequence,
+        useful_discriminator_id=(
+            fact.successful_discriminator_ids[0]
+            if fact.successful_discriminator_ids
+            else None
+        ),
+        dead_end_tool_ids=dead_end_tool_ids,
+        causes_separated=fact.eliminated_cause_ids,
+        causes_left_unresolved=fact.unresolved_cause_ids,
+        final_p19_cause_states=tuple(
+            P19CauseState(cause_id=item.cause_id, state=item.status)
+            for item in experience.closing_reasoning.causes
+        ),
+        strongest_contradiction_id=strongest,
+        strongest_contradiction_handled=(
+            strongest is not None and strongest in qualified_artifact_ids
+        ),
+        completed_mandatory_check_ids=_unique(completed_checks),
+        created_workflow_ids=fact.workflow_ids,
+        workflow_created=bool(fact.workflow_ids),
+        workflow_scored=False,
+        p19_outcome=p19_outcome,
+        outcome_validity="blocked" if blockers else "qualified",
+        prospective=investigation.opened_at > p34_activation_protocol().prospective_boundary,
+        synthetic=False,
+        blockers=tuple(blockers),
+        certified_at=terminal_event.created_at,
+    )
+
+
+def _build_p34_discriminator_outcome(
+    pairs: tuple[PairedInvestigationDecision, ...],
+    certificate: InvestigationOutcomeCertificate | None,
+    *,
+    terminal_events: tuple[CrewChiefEvent, ...],
+    evaluated_at: datetime,
+) -> DiscriminatorOutcome | None:
+    """Build one exact preregistered A->B observation, or withhold it.
+
+    The canonical pair predicts the memory inspection before any result is
+    visible.  A later source pair must then bind the exact workspace immediately
+    before Crew actually requests that inspection.  Ambiguous or rebased event
+    lineage is deliberately unobservable rather than inferred.
+    """
+
+    if not pairs or certificate is None or certificate.useful_discriminator_id is None:
+        return None
+    prediction_pair = _select_canonical_p34_pair(pairs)
+    tool_id = certificate.useful_discriminator_id
+    if (
+        prediction_pair.baseline_decision.executable_identity
+        == prediction_pair.memory_decision.executable_identity
+        or prediction_pair.memory_decision.decision_kind != "inspect_tool"
+        or prediction_pair.memory_decision.action_id != tool_id
+    ):
+        return None
+    requests = tuple(
+        event
+        for event in terminal_events
+        if event.event_type == "tool_invoked" and event.payload.tool_id == tool_id
+    )
+    results = tuple(
+        event
+        for event in terminal_events
+        if event.event_type == "tool_result_attached"
+        and event.payload.tool_id == tool_id
+    )
+    if len(requests) != 1 or len(results) != 1:
+        return None
+    request = requests[0]
+    result = results[0]
+    source_pairs = tuple(
+        pair
+        for pair in pairs
+        if pair.pair_id == request.payload.adaptation_prediction_pair_id
+        and pair.pair_sha256
+        == request.payload.adaptation_prediction_pair_sha256
+        and pair.workspace_revision == request.workspace_revision
+        and pair.step_number + 1 == request.sequence
+        and pair.decision_frozen_at < request.created_at
+        and pair.baseline_decision.decision_kind == "inspect_tool"
+        and pair.baseline_decision.action_id == tool_id
+    )
+    if len(source_pairs) != 1:
+        return None
+    try:
+        return build_discriminator_outcome_from_crew_events(
+            prediction_pair=prediction_pair,
+            source_pair=source_pairs[0],
+            certificate=certificate,
+            request_event=request,
+            result_event=result,
+            investigation_events=terminal_events,
+            transition_sequence=max(event.sequence for event in terminal_events),
+            evaluated_at=evaluated_at,
+        )
+    except (TypeError, ValueError):
+        # P34 credit is optional attention-only evidence.  Missing or ambiguous
+        # lineage cannot veto terminal Crew/P33 truth and is never inferred.
+        return None
+
+
+def _build_p34_completed_comparison(
+    pairs: tuple[PairedInvestigationDecision, ...],
+    certificate: InvestigationOutcomeCertificate | None,
+    *,
+    discriminator_outcome: DiscriminatorOutcome | None = None,
+    compared_at: datetime,
+) -> PairedInvestigationComparison | None:
+    if not pairs or certificate is None:
+        return None
+    try:
+        return build_paired_investigation_comparison(
+            investigation_pairs=pairs,
+            certificate=certificate,
+            discriminator_outcome=discriminator_outcome,
+            compared_at=compared_at,
+        )
+    except (TypeError, ValueError):
+        # P34 remains attention-only; an invalid comparison cannot veto the
+        # authoritative Crew terminal event or P33 experience capture.
+        return None
+
+
+def _review_p34_terminal_capture(
+    captured_event: CrewChiefEvent,
+    *,
+    db_path: str | Path | None,
+) -> None:
+    """Review activation only after authoritative terminal truth has committed."""
+
+    if captured_event.payload.adaptation_capture_state != "captured":
+        return
+    try:
+        review_p34_after_terminal_capture(
+            InvestigationAdaptationRepository(db_path),
+            captured_at=captured_event.created_at,
+        )
+    except Exception:
+        # The Crew/P33/P34 outcome transaction is already authoritative.  A
+        # review failure is attention-only and must never turn that success
+        # into an apparent terminal-mutation failure.
+        return
+    with _CACHE_LOCK:
+        _CACHE.clear()
+
+
 def open_investigation(
     run_id: str,
     *,
@@ -2582,12 +4331,13 @@ def open_investigation(
             CrewChiefEventPayload(message=f"Driver report normalized: {normalized}"),
         )
     )
-    return build_crew_chief_workspace(
+    updated = build_crew_chief_workspace(
         run_id,
         session_id=session_id,
         investigation_id=investigation_id,
         db_path=db_path,
     )
+    return _freeze_next_p34_pair_and_refresh(updated, db_path=db_path)
 
 
 def continue_investigation(
@@ -2614,10 +4364,17 @@ def continue_investigation(
         raise ValueError(
             "A Crew Chief driver question is pending; record its contextual answer before continuing."
         )
+    frozen_pair = _freeze_p34_pair_for_workspace(current, db_path=db_path)
     repository = CrewChiefRepository(db_path)
     sequence = current.folded_state.last_sequence + 1
-    if current.current_subgoal is not None:
-        subgoal = current.current_subgoal
+    production_subgoal = _production_subgoal_from_pair(
+        current.current_subgoal,
+        current.folded_state,
+        getattr(current, "learning_prior", None),
+        frozen_pair,
+    )
+    if production_subgoal is not None:
+        subgoal = production_subgoal
         selected = _select_tool_entries(
             current, subgoal.selected_tool, subgoal.distinguishes_cause_ids
         )
@@ -2634,6 +4391,12 @@ def continue_investigation(
                 tool_id=subgoal.selected_tool,
                 cause_ids=subgoal.distinguishes_cause_ids,
                 requested_measurement_ids=(subgoal.selected_tool,),
+            ),
+            prediction_pair=frozen_pair,
+            prediction_source_snapshot_sha256=(
+                _p34_source_snapshot_sha256(current)
+                if frozen_pair is not None
+                else None
             ),
         )
         result = _event(
@@ -2678,6 +4441,12 @@ def continue_investigation(
                     question_id=question_id,
                     cause_ids=current.p19_cause_ids[:2],
                 ),
+                prediction_pair=frozen_pair,
+                prediction_source_snapshot_sha256=(
+                    _p34_source_snapshot_sha256(current)
+                    if frozen_pair is not None
+                    else None
+                ),
             )
         )
     else:
@@ -2710,6 +4479,12 @@ def continue_investigation(
                     else ()
                 ),
             ),
+            prediction_pair=frozen_pair,
+            prediction_source_snapshot_sha256=(
+                _p34_source_snapshot_sha256(current)
+                if frozen_pair is not None
+                else None
+            ),
         )
         investigation = current.investigation
         if investigation is None:
@@ -2730,10 +4505,41 @@ def continue_investigation(
             terminal_decision=current.terminal_decision,
             p32_projection_sha256=current.performance_intelligence.projection_sha256,
         )
-        repository.append_terminal_event_and_experience(
+        outcome_pairs = _ordered_p34_investigation_pairs(
+            investigation_id,
+            db_path=db_path,
+        )
+        outcome_pair = (
+            _select_canonical_p34_pair(outcome_pairs) if outcome_pairs else None
+        )
+        outcome_certificate = _build_p34_outcome_certificate(
+            current,
+            investigation=investigation,
+            terminal_events=terminal_events,
+            terminal_event=terminal_event,
+            experience=experience,
+            pair=outcome_pair,
+        )
+        discriminator_outcome = _build_p34_discriminator_outcome(
+            outcome_pairs,
+            outcome_certificate,
+            terminal_events=terminal_events,
+            evaluated_at=terminal_event.created_at,
+        )
+        outcome_comparison = _build_p34_completed_comparison(
+            outcome_pairs,
+            outcome_certificate,
+            discriminator_outcome=discriminator_outcome,
+            compared_at=terminal_event.created_at,
+        )
+        captured_event = repository.append_terminal_event_and_experience(
             terminal_event,
             experience,
+            outcome_certificate=outcome_certificate,
+            outcome_comparison=outcome_comparison,
+            discriminator_outcome=discriminator_outcome,
         )
+        _review_p34_terminal_capture(captured_event, db_path=db_path)
         clear_learning_cache()
     updated = build_crew_chief_workspace(
         run_id,
@@ -2741,7 +4547,7 @@ def continue_investigation(
         investigation_id=investigation_id,
         db_path=db_path,
     )
-    return updated
+    return _freeze_next_p34_pair_and_refresh(updated, db_path=db_path)
 
 
 def record_driver_answer(
@@ -2809,12 +4615,13 @@ def record_driver_answer(
             recorded_at=answer_event.created_at,
         )
     )
-    return build_crew_chief_workspace(
+    updated = build_crew_chief_workspace(
         run_id,
         session_id=session_id,
         investigation_id=investigation_id,
         db_path=db_path,
     )
+    return _freeze_next_p34_pair_and_refresh(updated, db_path=db_path)
 
 
 def abandon_investigation(
@@ -2868,7 +4675,39 @@ def abandon_investigation(
         terminal_decision=None,
         p32_projection_sha256=current.performance_intelligence.projection_sha256,
     )
-    repository.append_terminal_event_and_experience(terminal_event, experience)
+    outcome_pairs = _ordered_p34_investigation_pairs(
+        investigation_id,
+        db_path=db_path,
+    )
+    outcome_pair = _select_canonical_p34_pair(outcome_pairs) if outcome_pairs else None
+    outcome_certificate = _build_p34_outcome_certificate(
+        current,
+        investigation=investigation,
+        terminal_events=terminal_events,
+        terminal_event=terminal_event,
+        experience=experience,
+        pair=outcome_pair,
+    )
+    discriminator_outcome = _build_p34_discriminator_outcome(
+        outcome_pairs,
+        outcome_certificate,
+        terminal_events=terminal_events,
+        evaluated_at=terminal_event.created_at,
+    )
+    outcome_comparison = _build_p34_completed_comparison(
+        outcome_pairs,
+        outcome_certificate,
+        discriminator_outcome=discriminator_outcome,
+        compared_at=terminal_event.created_at,
+    )
+    captured_event = repository.append_terminal_event_and_experience(
+        terminal_event,
+        experience,
+        outcome_certificate=outcome_certificate,
+        outcome_comparison=outcome_comparison,
+        discriminator_outcome=discriminator_outcome,
+    )
+    _review_p34_terminal_capture(captured_event, db_path=db_path)
     clear_learning_cache()
     return build_crew_chief_workspace(
         run_id,
@@ -2921,7 +4760,7 @@ def select_objective(
     repository.save_objective(
         investigation_id, updated.identity.workspace_revision, objective
     )
-    return updated
+    return _freeze_next_p34_pair_and_refresh(updated, db_path=db_path)
 
 
 def rebase_investigation(
@@ -2947,7 +4786,7 @@ def rebase_investigation(
         )
     if current.folded_state.status == "open":
         if current.identity.workspace_revision == stale_workspace_revision:
-            return current
+            return _freeze_next_p34_pair_and_refresh(current, db_path=db_path)
         raise ValueError("Crew Chief rebase revision is stale.")
     events = CrewChiefRepository(db_path).list_events(investigation_id)
     accepted_workspace = _accepted_workspace_revision(current.investigation, events)
@@ -2968,15 +4807,22 @@ def rebase_investigation(
                 new_workspace_revision=current.identity.workspace_revision,
                 previous_authority_revision=accepted_authority,
                 new_authority_revision=current_authority,
+                adaptation_rebase_source_snapshot_sha256=(
+                    _p34_source_snapshot_sha256(
+                        current,
+                        workspace_revision=current.identity.workspace_revision,
+                    )
+                ),
             ),
         )
     )
-    return build_crew_chief_workspace(
+    updated = build_crew_chief_workspace(
         run_id,
         session_id=session_id,
         investigation_id=investigation_id,
         db_path=db_path,
     )
+    return _freeze_next_p34_pair_and_refresh(updated, db_path=db_path)
 
 
 __all__ = [

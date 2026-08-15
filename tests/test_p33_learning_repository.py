@@ -483,6 +483,21 @@ def test_corrupt_relevant_payload_is_contained_without_hiding_valid_history(
     assert result.records == (valid,)
     assert len(result.blockers) == 1
     assert corrupt.experience_id in result.blockers[0]
+    clear_learning_cache()
+    current = _current(1)
+    prior = build_crew_chief_learning_prior(
+        current,
+        scope_run_ids=(current.context.run_id,),
+        p19_reasoning_snapshot_sha256=(
+            current.reasoning.reasoning_snapshot_sha256
+        ),
+        p32_projection_sha256="f" * 64,
+        repository=repository,
+    )
+    assert prior.state == "blocked"
+    assert prior.context_transfer_level == "blocked"
+    assert prior.blocker_reasons == result.blockers
+    assert prior.recommended_attention_order == ()
     with pytest.raises(EngineeringLearningIntegrityError, match="payload is corrupt"):
         repository.stream_state(validate_chain=True)
 

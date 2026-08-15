@@ -45,6 +45,7 @@ import {
   isCrewChiefWorkspaceResponse,
 } from "../utils/crewChiefResponseTrust";
 import { hasCanonicalEngineeringLearningDigests } from "../utils/engineeringLearningTrust.js";
+import { hasCanonicalInvestigationImprovementDigests } from "../utils/investigationImprovementTrust";
 
 const API_BASE =
   import.meta.env.VITE_RACELAB_API_BASE_URL ??
@@ -362,10 +363,16 @@ async function trustedCrewChiefResponse(
   if (!isCrewChiefWorkspaceResponse(payload, {
     runId, sessionId, report, objectiveId, scopeRunIds,
   })) {
-    throw new Error("Crew Chief failed its exact P19/P20/P26/P32/P33 workspace authority check.");
+    throw new Error("Crew Chief failed its exact P19/P20/P26/P32/P33/P34 workspace authority check.");
   }
   if (!await hasCanonicalEngineeringLearningDigests(payload.learning_prior)) {
     throw new Error("Crew Chief failed its canonical P33 learning identity check.");
+  }
+  if (!await hasCanonicalInvestigationImprovementDigests(
+    payload.investigation_improvement,
+    payload,
+  )) {
+    throw new Error("Crew Chief failed its canonical P34 investigation-improvement identity check.");
   }
   if (!await hasCanonicalMeasurementMissionDigest(payload.p19_mission_contract)) {
     throw new Error("Crew Chief failed its canonical P19 measurement-mission identity check.");

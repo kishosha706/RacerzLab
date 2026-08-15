@@ -11,6 +11,7 @@ import type {
   P19ReasoningMemory,
   ProblemFingerprint,
 } from "./engineeringLearning";
+import type { InvestigationImprovementProjection } from "./investigationImprovement";
 
 export type EngineeringObjective =
   | "qualifying_peak"
@@ -86,6 +87,7 @@ export type CrewChiefWorkspaceIdentity = {
   p32_projection_sha256: string;
   run_sentinel_sha256: string;
   learning_history_revision: string;
+  learning_ledger_head_sha256: string | null;
   learning_projection_sha256: string;
   setup_id: string;
   setup_snapshot_sha256: string;
@@ -142,6 +144,15 @@ export type CrewChiefTerminalDecision = {
   blocker_reasons: string[];
 };
 
+export type CrewChiefToolDefinition = {
+  tool_id: string;
+  allowed_scope: "run" | "session" | "component" | "workflow";
+  input_schema: string;
+  output_artifact_type: string;
+  authority_ceiling: "observation_only" | "context_only" | "measurement_only";
+  required_sources: string[];
+};
+
 export type CrewChiefInvestigation = {
   investigation_id: string;
   workspace_identity: CrewChiefWorkspaceIdentity;
@@ -156,7 +167,7 @@ export type CrewChiefInvestigation = {
 };
 
 export type CrewChiefWorkspace = {
-  schema_version: "p33.crew-chief-workspace.v2";
+  schema_version: "p34.crew-chief-workspace.v1";
   identity: CrewChiefWorkspaceIdentity;
   generated_at: string;
   cache_state: "cold" | "warm";
@@ -167,10 +178,27 @@ export type CrewChiefWorkspace = {
     event_count: number;
     last_sequence: number;
     objective: EngineeringObjective;
+    current_subgoal: string | null;
     completed_tool_ids: string[];
     pending_driver_question_id: string | null;
     driver_answers: string[];
+    hypotheses: Array<{
+      cause_id: string;
+      p19_state: "likely" | "possible" | "ruled_out" | "unresolved";
+      progress:
+        | "uninspected"
+        | "inspection_pending"
+        | "inspected"
+        | "needs_driver_answer"
+        | "needs_measurement"
+        | "complete"
+        | "stale";
+      component_ids: string[];
+      support_artifact_ids: string[];
+      contradiction_artifact_ids: string[];
+    }>;
     last_decision_kind: string | null;
+    stale_reason: string | null;
     accepted_workspace_revision: string;
   };
   evidence_index: {
@@ -178,11 +206,15 @@ export type CrewChiefWorkspace = {
     entries: CrewChiefEvidenceEntry[];
     index_hash: string;
   };
+  available_tools: CrewChiefToolDefinition[];
   current_subgoal: null | {
     subgoal_id: string;
     title: string;
     selected_tool: string;
     why_this_tool: string;
+    distinguishes_cause_ids: string[];
+    required_evidence: string[];
+    stop_condition: string;
     priority_rank: number;
   };
   critique: {
@@ -227,6 +259,7 @@ export type CrewChiefWorkspace = {
   };
   performance_intelligence: PerformanceIntelligenceProjection;
   learning_prior: CrewChiefLearningPrior;
+  investigation_improvement: InvestigationImprovementProjection;
   run_sentinel: {
     mission_state: "collecting" | "blocked_by_p19" | "stopped_by_p19" | "awaiting_p19_score" | "collection_complete";
     p19_plan_kind: "controlled_test" | "measurement_mission" | "discriminator" | "stop_testing" | "blocked";
@@ -256,6 +289,7 @@ export type CrewChiefWorkspace = {
   response_history_ids: string[];
   driver_memory_ids: string[];
   p19_cause_ids: string[];
+  p19_contradiction_artifact_ids: string[];
   p20_episode_ids: string[];
   p26_component_ids: string[];
   post_run_brief: string[];

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -9,6 +10,16 @@ import pytest
 
 from api.routes_intelligence import get_run_intelligence
 from racelab_engine.identity import canonical_json_sha256
+from racelab_engine.models.investigation_adaptation import (
+    InvestigationAdaptationContext,
+    InvestigationDecision,
+    InvestigationImprovementProjection,
+    InvestigationImprovementReadiness,
+    NegativeControlConditionEvidence,
+    P19CauseState,
+    PairedInvestigationComparison,
+    PairedInvestigationDecision,
+)
 from racelab_engine.services.crew_chief_service import build_crew_chief_workspace
 from racelab_engine.services.session_service import get_session
 from racelab_engine.storage.repository import RaceLabRepository
@@ -85,11 +96,16 @@ def test_real_atlanta_public_workspace_passes_the_client_trust_boundary(
         "'./ui/src/utils/crewChiefResponseTrust.ts';"
         "import {hasCanonicalEngineeringLearningDigests} from "
         "'./ui/src/utils/engineeringLearningTrust.js';"
+        "import {hasCanonicalInvestigationImprovementDigests} from "
+        "'./ui/src/utils/investigationImprovementTrust.ts';"
         "const value=JSON.parse(fs.readFileSync(0,'utf8'));"
         "if(!isCrewChiefWorkspaceResponse(value.workspace,value.scope))"
         "throw new Error('real Atlanta public workspace was rejected');"
         "if(!await hasCanonicalEngineeringLearningDigests(value.workspace.learning_prior))"
         "throw new Error('real Atlanta P33 digests were rejected');"
+        "if(!await hasCanonicalInvestigationImprovementDigests("
+        "value.workspace.investigation_improvement,value.workspace))"
+        "throw new Error('real Atlanta P34 digests were rejected');"
         "if(!await hasCanonicalMeasurementMissionDigest(value.workspace.p19_mission_contract))"
         "throw new Error('real Atlanta P19 mission digest was rejected');"
         "if(!await hasCanonicalRunSentinelDigest(value.workspace.run_sentinel,value.workspace.identity.run_sentinel_sha256))"
@@ -154,10 +170,12 @@ def test_client_parses_crew_chief_as_unknown_through_exact_report_guard() -> Non
     assert "learning_history_revision" in guard
     assert "learning_projection_sha256" in guard
     assert "isCrewChiefLearningPrior" in guard
-    assert 'value.schema_version !== "p33.crew-chief-workspace.v2"' in guard
+    assert 'value.schema_version !== "p34.crew-chief-workspace.v1"' in guard
     assert "hasSetupAuthorityDirective" in guard
     assert "hasCanonicalEngineeringLearningDigests" in client
     assert "await hasCanonicalEngineeringLearningDigests(payload.learning_prior)" in client
+    assert "hasCanonicalInvestigationImprovementDigests" in client
+    assert "payload.investigation_improvement" in client
     assert "hasCanonicalMeasurementMissionDigest" in client
     assert "await hasCanonicalMeasurementMissionDigest(payload.p19_mission_contract)" in client
     assert "hasCanonicalRunSentinelDigest" in client
@@ -262,6 +280,133 @@ def test_p33_learning_projection_has_one_exact_deep_client_mirror() -> None:
     ).read_text(encoding="utf-8")
 
 
+def test_p34_investigation_improvement_is_deep_read_only_and_learning_only() -> None:
+    types = (ROOT / "ui/src/types/investigationImprovement.ts").read_text(
+        encoding="utf-8"
+    )
+    trust = (
+        ROOT / "ui/src/utils/investigationImprovementTrust.ts"
+    ).read_text(encoding="utf-8")
+    deck = (ROOT / "ui/src/components/CrewChiefCommandDeck.tsx").read_text(
+        encoding="utf-8"
+    )
+    client = (ROOT / "ui/src/api/client.ts").read_text(encoding="utf-8")
+    for field in (
+        "current_pair",
+        "current_context",
+        "current_pair_status",
+        "latest_completed_pair",
+        "latest_completed_comparison",
+        "latest_outcome_status",
+        "production_policy",
+        "memory_policy_state",
+        "activation_protocol_sha256",
+        "investigation_opened_at",
+        "p33_context_sha256",
+        "p33_projection_sha256",
+        "p33_problem_sha256",
+        "problem_orientation",
+        "track_class",
+        "context_subgroup_keys",
+        "build_review_state",
+        "driver_drift_state",
+        "negative_control_condition",
+        "negative_control_evidence",
+        "future_memory_record_ids",
+        "qualified_available_artifact_provenance_sha256s",
+        "current_evidence_pinned_tool_ids",
+        "memory_evidence_record_ids",
+        "remaining_collection_missions",
+        "evaluation_decision",
+        "effective_activation_decision_sha256",
+        "negative_controls_passed",
+        "subgroup_gate_passed",
+        "p19_authority_unchanged",
+        "setup_authorized",
+    ):
+        assert field in types
+        assert field in trust
+    assert "exactKeys" in trust
+    assert "executableIdentity" in trust
+    assert "UNOBSERVED_BENEFIT" in trust
+    assert "Date.parse(pair.decision_frozen_at) <= Date.parse(scope.generatedAt)" in trust
+    assert "sameList(pair.available_tool_ids, scope.availableToolIds)" in trust
+    assert "validContentIdentity" in trust
+    assert "qualifiedCurrentEntries" in trust
+    assert "expectedCurrentEvidencePin" in trust
+    assert "currentFutureMemoryCohort" in trust
+    for frozen_identity in (
+        "p34pol_48190cf9a560de6fae1bb655",
+        "48190cf9a560de6fae1bb655fe365b41478038825653743b2a391d62ea788709",
+        "p34pol_de720756ba383ec92910e64e",
+        "de720756ba383ec92910e64e6360685d9d0f900adb4e5f9156db4488b3e55198",
+        "p34pol_d9e85250e6c0f43d3eadb5c7",
+        "d9e85250e6c0f43d3eadb5c7aad06fd257e23956d3fb0bcba5b586b17b7a0795",
+        "p34proto_487dd9698e01a7f77d493d01",
+        "487dd9698e01a7f77d493d011e4f0ec0246ba0ed7efdaea17ef164cbc7a8fd61",
+        "2026-08-15T08:12:46Z",
+    ):
+        assert frozen_identity in trust
+    assert "delete body[idKey]" in trust
+    assert "delete body[digestKey]" in trust
+    assert "delete projectionBody.projection_sha256" in trust
+    assert "hasCanonicalInvestigationImprovementDigests" in client
+    assert "fetchInvestigationImprovement" not in client
+
+    card = deck.split("function InvestigationImprovementCard", 1)[1].split(
+        "export function CrewChiefCommandDeck", 1
+    )[0]
+    learning = deck.split("{learning && (", 1)[1]
+    assert "<InvestigationImprovementCard" in learning
+    assert "not evidence that it saves time, laps, or investigation steps" in card
+    assert "P19 authority unchanged" in card
+    memory_links = deck.split("function InvestigationMemoryRecords", 1)[1].split(
+        "function InvestigationImprovementCard", 1
+    )[0]
+    assert "openLabel" in memory_links
+    assert 'openLabel="Open source"' in card
+    assert "<InvestigationMemoryRecords" in card
+    assert '<details className="investigation-improvement-audit">' in card
+    assert "remaining_collection_missions.slice(0, 3)" in card
+    assert "qualifiedDiscriminatorAdvance" in card
+    assert "qualified prospective trial" in card
+    assert "activateInvestigation" not in card
+    assert "setMemoryPolicy" not in card
+
+
+def test_p34_runtime_exact_key_lists_cannot_drift_from_backend_models() -> None:
+    trust = (
+        ROOT / "ui/src/utils/investigationImprovementTrust.ts"
+    ).read_text(encoding="utf-8")
+
+    def exact_key_list(name: str) -> list[str]:
+        match = re.search(
+            rf"const {name} = \[(.*?)\] as const;",
+            trust,
+            flags=re.DOTALL,
+        )
+        assert match is not None, f"missing runtime exact-key list: {name}"
+        return re.findall(r'"([a-z0-9_]+)"', match.group(1))
+
+    for key_list, model in (
+        ("decisionKeys", InvestigationDecision),
+        ("p19CauseStateKeys", P19CauseState),
+        ("negativeControlEvidenceKeys", NegativeControlConditionEvidence),
+        ("pairKeys", PairedInvestigationDecision),
+        ("comparisonKeys", PairedInvestigationComparison),
+        ("readinessKeys", InvestigationImprovementReadiness),
+        ("contextKeys", InvestigationAdaptationContext),
+        ("projectionKeys", InvestigationImprovementProjection),
+    ):
+        mirrored = exact_key_list(key_list)
+        backend = list(model.model_fields)
+        assert len(mirrored) == len(set(mirrored))
+        assert set(mirrored) == set(backend), (
+            f"{key_list} drifted: missing={set(backend) - set(mirrored)}, "
+            f"extra={set(mirrored) - set(backend)}"
+        )
+
+
 def test_crew_investigation_opening_truth_has_an_exact_deep_client_mirror() -> None:
     types = (ROOT / "ui/src/types/crewChief.ts").read_text(encoding="utf-8")
     trust = (ROOT / "ui/src/utils/crewChiefResponseTrust.ts").read_text(
@@ -339,6 +484,43 @@ def test_p33_client_digest_matches_python_float_serialization() -> None:
         "import {canonicalEngineeringLearningSha256} from "
         "'./ui/src/utils/engineeringLearningTrust.js';"
         "console.log(await canonicalEngineeringLearningSha256("
+        "JSON.parse(fs.readFileSync(0,'utf8'))));"
+    )
+    result = subprocess.run(
+        [
+            node,
+            "--no-warnings",
+            "--experimental-strip-types",
+            "--input-type=module",
+            "-e",
+            script,
+        ],
+        cwd=ROOT,
+        input=json.dumps(value),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == canonical_json_sha256(value)
+
+
+def test_p34_client_digest_matches_python_comparison_float_serialization() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for the canonical P34 digest test")
+    value = {
+        "latest_completed_comparison": {
+            "baseline_elapsed_seconds": 120.0,
+            "memory_elapsed_seconds": 1e-6,
+            "baseline_tool_steps": 2,
+        }
+    }
+    script = (
+        "import fs from 'node:fs';"
+        "import {canonicalInvestigationImprovementSha256} from "
+        "'./ui/src/utils/investigationImprovementTrust.ts';"
+        "console.log(await canonicalInvestigationImprovementSha256("
         "JSON.parse(fs.readFileSync(0,'utf8'))));"
     )
     result = subprocess.run(

@@ -68,6 +68,7 @@ result, and remember only what the evidence supports.
 | P32.1 - Performance Truth Closure | Verified | Traffic and context lead attribution, signed gain/loss truth survives, controlled memory restarts exactly, and every rendered performance claim fails closed |
 | P33 - Engineering Learning Flywheel | Verified deterministic attention-only foundation; adaptive authority remains locked | Immutable qualified experience improves recurrence retrieval and investigation order while current evidence and P19 retain all truth and setup authority |
 | P33.1 - Driver-Facing Truth and Interface Sharpening | Verified | Race Mode stays decision-first, mission progress distinguishes screening from contract acceptance, and narrow layouts preserve a usable evidence-first workspace |
+| P34 - Earned Investigation Adaptation | Verified shadow evaluation infrastructure; no attention activation earned | Frozen baseline-versus-memory pairs test bounded investigation order on identical pre-outcome truth while P19 remains sole authority and production remains deterministic baseline |
 
 ---
 
@@ -2210,6 +2211,100 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   Escape, stayed dismissed across mode changes, and left the Race workspace usable.
 - Changed-file Ruff, backend bytecode compilation, and diff integrity passed.
 
+## P34 - Earned Investigation Adaptation
+
+- [x] Freeze immutable, content-addressed deterministic-baseline,
+  memory-informed-shadow, and one-position limited-attention policy contracts.
+  The baseline preserves every mandatory identity, integrity, context,
+  driver-versus-car, contradiction, and current-evidence pin ahead of memory.
+- [x] Persist baseline and shadow decisions on the same exact pre-outcome Crew
+  workspace, P19/P20/P26/P32 snapshot, P33 ledger boundary, tool cohort,
+  qualified artifact cohort, objective, and driver-answer state. Production uses
+  baseline until a server-owned activation artifact passes the frozen protocol.
+- [x] Preserve append-only paired decisions, investigation outcome certificates,
+  source-pair discriminator outcomes, counterfactual classifications, outcome
+  followups, negative transfers, negative controls, evaluations, and activation
+  decisions with exact parent hashes, restart reconstruction, and bounded reads.
+- [x] Keep counterfactual credit honest. Unperformed or unqualified shadow work is
+  `counterfactual_unobservable`; v1 can certify only a directly supported
+  one-position discriminator advance and cannot infer whole-path tool, time, lap,
+  question, mission, or dead-end savings.
+- [x] Freeze the activation protocol, prospective boundary, independence unit,
+  exclusions, seven negative controls, subgroup/drift gates, safety thresholds,
+  efficiency thresholds, one-position ceiling, and automatic rollback rules
+  before admitting any real outcome.
+- [x] Contain corrupt unrelated P33/P34 history while failing closed on relevant
+  corruption; verify source-owned P33 relevance and complete control cohorts;
+  block future memory, material driver drift, incompatible/unreviewed builds,
+  stale receipts, post-rebase v1 credit, and forged evaluations or activations.
+- [x] Integrate one read-only `INVESTIGATION IMPROVEMENT` card in Learning Mode.
+  Race Mode renders no P34 surface, the client exposes no activation control, and
+  the exact runtime mirror rejects drift across policy, protocol, P19-P33,
+  qualified evidence, frozen pair, comparison, readiness, and projection truth.
+- [x] Keep normal Crew reads bounded and write-free. Foundation plus pair creation
+  is atomic; terminal Crew/P33 truth survives a blocked P34 savepoint; workflow
+  followup recovery drains deterministic 512-item pages without one corrupt row
+  starving later valid work.
+- [ ] Earn `limited_attention` from qualified real investigations. **DATA LOCKED:**
+  the current archive has zero qualified historical investigations, zero genuinely
+  prospective investigations, zero observable policy comparisons, and none of
+  the required recurrence, context, problem-family, objective, subgroup, or
+  negative-control population. Production therefore remains
+  `deterministic_baseline`; memory remains `shadow_only` and `attention_only`.
+
+### P34 frozen protocol
+
+- Boundary: `2026-08-15T08:12:46Z`; real prospective investigations must open
+  strictly after this instant. Historical replay and synthetic mechanics cannot
+  satisfy the activation gate.
+- Baseline: `p34pol_48190cf9a560de6fae1bb655` / SHA-256
+  `48190cf9a560de6fae1bb655fe365b41478038825653743b2a391d62ea788709`.
+- Memory shadow: `p34pol_de720756ba383ec92910e64e` / SHA-256
+  `de720756ba383ec92910e64e6360685d9d0f900adb4e5f9156db4488b3e55198`.
+- Limited ceiling: `p34pol_d9e85250e6c0f43d3eadb5c7` / SHA-256
+  `d9e85250e6c0f43d3eadb5c7aad06fd257e23956d3fb0bcba5b586b17b7a0795`.
+- Activation protocol: `p34proto_487dd9698e01a7f77d493d01` /
+  SHA-256 `487dd9698e01a7f77d493d011e4f0ec0246ba0ed7efdaea17ef164cbc7a8fd61`.
+
+### P34 release validation - VERIFIED 2026-08-15
+
+- Scientific result: **NO ATTENTION ACTIVATION EARNED.** Zero real historical,
+  prospective, observable, or unobservable qualified comparisons were admitted;
+  all efficiency and quality results remain descriptive/unavailable, no negative
+  transfer is invented, every safety/authority ceiling remains intact, and exact
+  remaining collection missions are published in Learning Mode.
+- Hostile proof covers all seven frozen negative controls; all physical-scope,
+  objective, driver/build drift, current-evidence, future-memory, receipt,
+  post-rebase, cache/WAL, corruption, restart, recovery, synthetic-independence,
+  counterfactual, discriminator, subgroup, activation-forgery, rollback, and
+  displayed-versus-executed action boundaries. P19 rank/state/action, setup
+  authority, mission truth, and Keep/Undo/Retest are byte-invariant under memory.
+- Performance: 10,000 independent investigations with multi-revision rows remain
+  bounded and reread no telemetry; 10,001 fails closed. Measured cold evaluation
+  was 67.7 ms and the complete cold projection 80.7 ms; warm paired decision was
+  0.851 ms, activation resolution 11.008 ms, and readiness projection 27.669 ms.
+- Python: 2,620 collected; 2,611 passed with nine protected skips. The dedicated
+  P34 suite contains 54 paired-policy, persistence, scenario, scale, and hostile
+  tests; the integrated P19-P34/Crew/API/client slice passed 370 of 374 checks
+  with four protected fixture skips. The complete repository, Ruff,
+  changed-backend bytecode compilation, and diff integrity passed.
+- Frontend: 84 hostile runtime assertions, 17 Vitest behavior/unit tests,
+  TypeScript, and the 2,202-module production build passed. Live 1280 x 720
+  EchoPark inspection showed zero P34 DOM in Race Mode and a read-only Learning
+  card that says deterministic baseline, shadow only, no activation earned, no
+  setup authority, and no inferred savings.
+- API/packaging: OpenAPI 3.1 exposes 94 operations across 86 paths and 333 schemas
+  with zero duplicate operation IDs and the same seven Crew endpoints. The
+  Windows sidecar packaged to 83,741,667 bytes, SHA-256
+  `0583551298D12B7A0292CAED316376B2F1FA6666D2D86F101B24CEFE700F5245`,
+  returned the exact healthy response, and shut down with no residual process or
+  listener.
+- Real telemetry: cleaned, isolated Atlanta preserved `+0.136447 s` observed
+  loss, `blocked_by_traffic`, `100% / 100%` traffic, zero component claims, zero
+  setup authority, `0.0613` disturbance, no limiter zones, and `no_call`. P33
+  remains `attention_only`; P34 reports deterministic baseline, shadow only, no
+  activation, no effective activation artifact, and exact acquisition deficits.
+
 ---
 
 ## Professional analysis surface, without losing the product thesis
@@ -2324,3 +2419,4 @@ Implementation queue completed in this pass:
 | 2026-08-13 | Closed P32.1 Performance Truth Closure after reopening P32 | Traffic and unknown context now lead and block attribution without hiding the signed observation; canonical compatibility/proximity gates, complete demand coverage, local disturbance, opportunity-relative carry, exact adjacency/repeatability, P26-independent core intelligence, nine typed Crew tools, restart-safe exact history, and deep client trust prevent a convincing but unsupported speed story. The full collection finished with 2,400 passed and five protected skips, plus the 94-test integrated release slice, 54 hostile truth tests, Ruff, bytecode compilation, TypeScript, five UI behavior tests, the hostile runtime suite, the 2,198-module build, diff integrity, and a real public Atlanta backend-to-client guard. Atlanta exposes `+0.136447 s` observed, blocks attribution at 100% source/reference traffic, publishes zero component/setup authority, measures disturbance at `0.0613`, withholds limiter zones, and remains `no_call`. |
 | 2026-08-14 | Verified P33 Engineering Learning Flywheel | One immutable qualified-experience ledger now projects recurrence, contextual driver and car fingerprints, diagnostic effectiveness, exact mind changes, dead ends, transfer/drift, and transparent attention-only Crew memory without modifying current P19 truth or setup authority. The complete 2,514-test collection passed with 2,509 successes and five protected skips, plus 82 dedicated P33 tests, a 336-test integrated authority slice, six runtime trust suites, nine UI tests, Ruff, bytecode compilation, TypeScript, the 2,201-module build, OpenAPI inspection, packaged-sidecar health, persisted Atlanta/EchoPark client guards, and bounded 10,001-record retrieval at 34.303 ms warm / 53.024 ms cold projection / 7.197 ms cached. Corrupt history now records a visible blocked capture without vetoing P19 or Crew terminal truth; ordered request/completion evidence and normal event-hash revision advancement cannot fabricate or erase discriminator credit; all adaptive, causal, probabilistic, generative, and multi-control authority remains locked. |
 | 2026-08-14 | Sharpened the P33.1 driver-facing truth and interface | Race Mode now leads with one P19 next move and a compact signed Speed Story; supporting analysis is deliberate, Learning Mode avoids empty-memory sprawl, evidence links use lap/window/state labels, and the Run Sentinel distinguishes context screening from server-verified acquisition under a canonical client-verified digest while keeping the client-attested outcome non-authoritative. Contract acceptance now fails closed on typed P19 proximity or traffic exposure, warning/partial required channels, and missing or spatially gapped physical-position coverage. The full 2,527-test Python collection passed with five protected skips, plus 12 Vitest tests, six runtime trust suites, Ruff, bytecode compilation, TypeScript, the 2,201-module build, OpenAPI inspection, persisted Atlanta/EchoPark client guards, and live desktop plus 390 x 844 EchoPark inspection. The narrow unresolved Priority Rail is dismissible by button or Escape, stays dismissed across mode changes, and retains an accessible evidence-attention trigger without weakening the mandatory desktop rail or any P19/setup authority boundary. |
+| 2026-08-15 | Verified P34 earned-investigation shadow evaluation; no attention activation earned | Three immutable planner policies and one preregistered protocol now freeze baseline-versus-memory decisions on identical pre-outcome Crew/P19-P33 truth, persist outcome/counterfactual/discriminator/control/transfer evidence, evaluate independent investigations and complete negative controls, and permit at most one same-tier attention move only after a server-owned gate. The empty real archive truthfully leaves production deterministic and memory shadow-only with exact collection deficits. All 2,620 Python tests passed subject to nine protected skips, plus 54 dedicated P34 tests, 84 runtime hostiles, 17 UI tests, Ruff, bytecode compilation, TypeScript, the 2,202-module build, 10,000-investigation bounded/zero-telemetry performance, OpenAPI, packaged health, real Atlanta truth, live Race/Learning containment, and an independent backend adversarial CLEAR. |

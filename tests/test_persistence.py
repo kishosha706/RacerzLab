@@ -224,14 +224,27 @@ def test_sanitize_filename_preserves_safe_names() -> None:
     assert "stockcars" in result
 
 
-def test_import_endpoint_rejects_non_ibt_multipart(tmp_path: Path) -> None:
-    import os
+def test_import_endpoint_rejects_non_ibt_multipart(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     from api.main import app
     from fastapi.testclient import TestClient
+
     db_path = tmp_path / "racelab.sqlite"
-    os.environ["RACELAB_DB_PATH"] = str(db_path)
+    monkeypatch.setenv("RACELAB_DB_PATH", str(db_path))
     client = TestClient(app)
-    resp = client.post("/api/imports/ibt", files={"file": ("bad.txt", b"hello", "text/plain")})
+    resp = client.post(
+        "/api/imports/ibt",
+        files={"file": ("bad.txt", b"hello", "text/plain")},
+    )
     assert resp.status_code == 400
-    assert any(word in resp.text.lower() for word in ["unsupported", "select an .ibt", "missing file", "invalid filename"])
-    os.environ.pop("RACELAB_DB_PATH", None)
+    assert any(
+        word in resp.text.lower()
+        for word in [
+            "unsupported",
+            "select an .ibt",
+            "missing file",
+            "invalid filename",
+        ]
+    )

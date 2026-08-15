@@ -10,6 +10,10 @@ import {
   canonicalEngineeringLearningSha256,
   hasCanonicalEngineeringLearningDigests,
 } from "../src/utils/engineeringLearningTrust.js";
+import {
+  canonicalInvestigationImprovementSha256,
+  hasCanonicalInvestigationImprovementDigests,
+} from "../src/utils/investigationImprovementTrust.ts";
 
 const h = (value) => value.repeat(64);
 const counts = (observationCount = 0) => ({
@@ -136,8 +140,52 @@ const performance = {
     authority: "observation_and_p19_projection",
   },
 };
+const improvementBody = {
+  schema_version: "p34.investigation-improvement-projection.v1",
+  run_id: "run-1", session_id: "session-1", workspace_revision: h("c"),
+  state: "unavailable", production_policy: "deterministic_baseline",
+  memory_policy_state: "shadow_only", current_pair: null, current_context: null,
+  current_pair_status: null,
+  latest_completed_pair: null, latest_completed_comparison: null,
+  latest_outcome_status: null, decisions_differ: false,
+  difference_explanation: "The deterministic baseline remains production; no frozen pair is available.",
+  memory_evidence_record_ids: [], context_transfer_class: "none",
+  readiness: {
+    production_policy: "deterministic_baseline", memory_policy_state: "shadow_only",
+    activation_decision: "no_activation_earned", evaluation_decision: "no_activation_earned",
+    effective_activation_decision_id: null, effective_activation_decision_sha256: null,
+    qualified_historical_investigations: 0,
+    qualified_prospective_investigations: 0, observable_comparisons: 0,
+    unobservable_comparisons: 0, historical_deficit: 20, prospective_deficit: 12,
+    exact_recurrence_deficit: 5, compatible_recurrence_deficit: 5, context_deficit: 3,
+    problem_family_deficit: 4, objective_deficit: 2, safety_gate_passed: false,
+    negative_controls_passed: false, subgroup_gate_passed: false,
+    blockers: ["Limited attention has not earned the frozen gates."],
+    remaining_collection_missions: ["Collect qualified independent investigations."],
+    authority_ceiling: "attention_only", setup_authorized: false,
+  },
+  safety_blockers: ["No frozen pre-outcome P34 pair exists for this Crew revision."],
+  p19_authority_unchanged: true, setup_authorized: false,
+};
+const investigationImprovement = {
+  ...improvementBody,
+  projection_sha256: await canonicalInvestigationImprovementSha256(improvementBody),
+};
+const availableTools = [
+  {
+    tool_id: "inspect_exit_carry", allowed_scope: "run", input_schema: "current run",
+    output_artifact_type: "exit_carry", authority_ceiling: "measurement_only",
+    required_sources: ["p32"],
+  },
+  {
+    tool_id: "inspect_path_efficiency", allowed_scope: "run", input_schema: "current run",
+    output_artifact_type: "path_efficiency", authority_ceiling: "measurement_only",
+    required_sources: ["p32"],
+  },
+];
 const workspace = {
-  schema_version: "p33.crew-chief-workspace.v2",
+  schema_version: "p34.crew-chief-workspace.v1",
+  generated_at: "2026-08-15T09:05:00Z",
   identity: {
     run_id: "run-1", session_id: "session-1", reasoning_snapshot_sha256: h("a"),
     setup_id: "setup-1", setup_snapshot_sha256: h("b"), workspace_revision: h("c"),
@@ -145,13 +193,16 @@ const workspace = {
     p20_state_revision: h("d"), p26_knowledge_graph_sha256: h("e"),
     p26_reasoning_snapshot_sha256: h("a"), active_workflow_id: null, active_workflow_revision: null,
     p32_projection_sha256: h("7"), run_sentinel_sha256: h("6"), objective_id: "race_long_run",
-    learning_history_revision: h("1"), learning_projection_sha256: h("2"),
+    learning_history_revision: h("1"), learning_ledger_head_sha256: null,
+    learning_projection_sha256: h("2"),
     vehicle_runtime_identity_hash: h("9"), investigation_id: null,
   },
   evidence_index: { workspace_revision: h("c"), index_hash: h("8"), entries: [] },
+  available_tools: availableTools,
   p19_mission_contract: null,
   performance_intelligence: performance,
   learning_prior: emptyLearningPrior,
+  investigation_improvement: investigationImprovement,
   success_contract: {
     workspace_revision: h("c"), target_scope: "braking entry", acceptance_rule: "Repeat the metric.",
     independence_unit: "eligible lap",
@@ -168,6 +219,8 @@ const workspace = {
   adaptive_research: { state: "data_locked", authority: "none", activation_gate: "Held-out evidence is required." },
   current_subgoal: null, pending_driver_question: null, investigation: null, folded_state: null,
   blocker_reasons: [], post_run_brief: ["P19 status: ready."], response_history_ids: [], driver_memory_ids: [],
+  p19_cause_ids: [],
+  p19_contradiction_artifact_ids: [],
   terminal_decision: {
     kind: "measurement_mission", title: "Measure", instruction: "Collect three eligible laps.",
     authority: "measurement_only", control_key: null, current_value: null, proposed_value: null,
@@ -177,6 +230,13 @@ const workspace = {
 workspace.identity.run_sentinel_sha256 = await canonicalEngineeringLearningSha256(workspace.run_sentinel);
 const scope = { runId: "run-1", sessionId: "session-1", report, objectiveId: "race_long_run" };
 assert.equal(isCrewChiefWorkspaceResponse(workspace, scope), true);
+assert.equal(
+  await hasCanonicalInvestigationImprovementDigests(
+    workspace.investigation_improvement,
+    workspace,
+  ),
+  true,
+);
 assert.equal(
   await hasCanonicalRunSentinelDigest(workspace.run_sentinel, workspace.identity.run_sentinel_sha256),
   true,
@@ -215,8 +275,23 @@ withInvestigation.investigation = {
     tire_stint_state: "short_run", objective: "race_long_run",
     source_artifact_ids: ["artifact-opening"],
   },
-  opened_at: "2026-08-14T12:00:00Z",
+  opened_at: "2026-08-15T09:00:00Z",
   status: "open",
+};
+withInvestigation.folded_state = {
+  investigation_id: "investigation-1", status: "open", event_count: 0,
+  last_sequence: 0, objective: "race_long_run", completed_tool_ids: [],
+  pending_driver_question_id: null, driver_answers: ["center changed"],
+  hypotheses: [],
+  last_decision_kind: null, accepted_workspace_revision: h("c"),
+};
+withInvestigation.current_subgoal = {
+  subgoal_id: "subgoal-1", title: "Inspect exit carry",
+  selected_tool: "inspect_exit_carry",
+  why_this_tool: "This bounded measurement addresses the next evidence gap.",
+  distinguishes_cause_ids: [], required_evidence: ["qualified elapsed time"],
+  stop_condition: "Stop when the bounded inspection resolves.",
+  priority_rank: 1,
 };
 assert.equal(isCrewChiefWorkspaceResponse(withInvestigation, scope), true);
 for (const [label, mutate] of [
@@ -231,6 +306,481 @@ for (const [label, mutate] of [
   mutate(hostile);
   assert.equal(isCrewChiefWorkspaceResponse(hostile, scope), false, label);
 }
+
+const memoryRecordId = `p33x_${"4".repeat(24)}`;
+const baselineP34Decision = {
+  decision_kind: "inspect_tool", action_id: "inspect_exit_carry",
+  priority_tier: "driver_car_confounders", safe_reorder_group: "performance_measurement",
+  baseline_ordinal: 4, selected_ordinal: 4,
+  reason: "Deterministic evidence order selected this inspection.",
+  mandatory_check_ids: [
+    "workspace_identity", "data_integrity", "telemetry_health",
+    "context_comparability", "traffic_contamination", "vehicle_condition_epoch",
+    "applied_control_state", "strongest_contradiction", "driver_car_separation",
+  ],
+  source_memory_record_ids: [], setup_authorized: false, terminal_policy_authorized: false,
+};
+const memoryP34Decision = {
+  ...baselineP34Decision,
+  reason: "No qualified memory changed the executable inspection.",
+};
+const authorityIdentity = structuredClone(withInvestigation.identity);
+for (const key of [
+  "objective_id", "investigation_id", "workspace_revision", "learning_history_revision",
+  "learning_ledger_head_sha256", "learning_projection_sha256", "run_sentinel_sha256",
+]) delete authorityIdentity[key];
+const currentP34Truth = await canonicalJsonSha256({
+  identity: withInvestigation.identity,
+  evidence_index_sha256: withInvestigation.evidence_index.index_hash,
+  terminal_decision: withInvestigation.terminal_decision,
+  p19_cause_ids: withInvestigation.p19_cause_ids,
+  p19_cause_states: [],
+  p19_contradiction_artifact_ids: withInvestigation.p19_contradiction_artifact_ids,
+});
+const noRelevantHistoryProof = {
+  condition: "no_relevant_history", p33_projection_sha256: h("2"),
+  p33_state: "insufficient_history", context_transfer_record_ids: [],
+  context_transfer_levels: [], useful_prior_experience_ids: [],
+  component_history_experience_ids: [], physical_scope_mismatch_dimensions: [],
+  recurrence_class: "new_problem", corruption_blocker_sha256s: [],
+  future_memory_record_ids: [], future_memory_record_completed_ats: [],
+  driver_drift_state: "unknown",
+};
+const p34PairBody = {
+  schema_version: "p34.paired-investigation-decision.v1",
+  investigation_id: "investigation-1", investigation_opened_at: "2026-08-15T09:00:00Z",
+  run_id: "run-1", session_id: "session-1",
+  workspace_revision: h("c"), authority_revision: await canonicalJsonSha256(authorityIdentity),
+  step_number: 0, baseline_policy_id: "p34pol_48190cf9a560de6fae1bb655",
+  baseline_policy_sha256: "48190cf9a560de6fae1bb655fe365b41478038825653743b2a391d62ea788709",
+  memory_policy_id: "p34pol_de720756ba383ec92910e64e",
+  memory_policy_sha256: "de720756ba383ec92910e64e6360685d9d0f900adb4e5f9156db4488b3e55198",
+  activation_protocol_id: "p34proto_487dd9698e01a7f77d493d01",
+  activation_protocol_sha256: "487dd9698e01a7f77d493d011e4f0ec0246ba0ed7efdaea17ef164cbc7a8fd61",
+  activation_state: "shadow_only",
+  activation_decision_id: null, activation_decision_sha256: null,
+  production_policy_kind: "deterministic_baseline",
+  baseline_decision: baselineP34Decision, memory_decision: memoryP34Decision,
+  production_decision: baselineP34Decision,
+  available_tool_ids: availableTools.map((tool) => tool.tool_id),
+  eligible_tool_ids: availableTools.map((tool) => tool.tool_id), completed_tool_ids: [],
+  available_artifact_ids: [], qualified_available_artifact_ids: [],
+  qualified_available_artifact_evidence_states: [],
+  qualified_available_artifact_provenance_sha256s: [], current_evidence_pinned_tool_ids: [],
+  current_truth_sha256: currentP34Truth, p19_snapshot_sha256: h("a"),
+  p20_projection_sha256: h("d"), p26_projection_sha256: h("e"), p32_projection_sha256: h("7"),
+  current_p19_cause_ids: [], current_p19_cause_states: [],
+  current_contradiction_ids: [], strongest_contradiction_id: null,
+  current_objective: "race_long_run", p33_projection_sha256: h("2"),
+  p33_history_revision: h("1"), p33_ledger_head_sha256: null, p33_context_sha256: h("3"),
+  p33_problem_sha256: h("4"), track: "Atlanta Motor Speedway",
+  track_configuration: "Oval", package_type: "stockcar", iracing_build: "2026.08",
+  problem_family: "center", problem_orientation: "vehicle", track_class: "intermediate",
+  phase: "center", context_subgroup_keys: [
+    "weak_history", "vehicle_response", "center", "race_long_run_objective",
+    "intermediate", "driver_state_unknown", "same_build",
+  ],
+  build_review_state: "same_build", driver_drift_state: "unknown",
+  negative_control_condition: "no_relevant_history",
+  negative_control_evidence: noRelevantHistoryProof, future_memory_record_ids: [],
+  memory_records_consulted: [],
+  context_transfer_class: "none", decision_frozen_at: "2026-08-15T09:04:00Z",
+  outcome_exposed: false, p19_rank_unchanged: true, p19_authority_unchanged: true,
+  p19_terminal_action_unchanged: true, setup_authorized: false,
+};
+const p34PairDigest = await canonicalInvestigationImprovementSha256(p34PairBody);
+const p34Pair = {
+  ...p34PairBody,
+  pair_id: `p34pair_${p34PairDigest.slice(0, 24)}`,
+  pair_sha256: p34PairDigest,
+};
+const p34ContextBody = {
+  schema_version: "p34.investigation-adaptation-context.v1",
+  run_id: p34Pair.run_id, session_id: p34Pair.session_id,
+  workspace_revision: p34Pair.workspace_revision,
+  current_truth_sha256: p34Pair.current_truth_sha256,
+  p19_snapshot_sha256: p34Pair.p19_snapshot_sha256,
+  p20_projection_sha256: p34Pair.p20_projection_sha256,
+  p26_projection_sha256: p34Pair.p26_projection_sha256,
+  p32_projection_sha256: p34Pair.p32_projection_sha256,
+  p33_projection_sha256: p34Pair.p33_projection_sha256,
+  p33_context_sha256: p34Pair.p33_context_sha256,
+  p33_problem_sha256: p34Pair.p33_problem_sha256,
+  qualified_available_artifact_ids: [], qualified_available_artifact_evidence_states: [],
+  qualified_available_artifact_provenance_sha256s: [], current_evidence_pinned_tool_ids: [],
+  track: p34Pair.track, track_configuration: p34Pair.track_configuration,
+  package_type: p34Pair.package_type, iracing_build: p34Pair.iracing_build,
+  problem_family: p34Pair.problem_family, problem_orientation: p34Pair.problem_orientation,
+  track_class: p34Pair.track_class, phase: p34Pair.phase,
+  current_objective: p34Pair.current_objective, build_review_state: p34Pair.build_review_state,
+  driver_drift_state: p34Pair.driver_drift_state,
+  context_subgroup_keys: p34Pair.context_subgroup_keys,
+  negative_control_condition: p34Pair.negative_control_condition,
+  negative_control_evidence_sha256: await canonicalInvestigationImprovementSha256(noRelevantHistoryProof),
+};
+const p34Context = {
+  ...p34ContextBody,
+  context_binding_sha256: await canonicalInvestigationImprovementSha256(p34ContextBody),
+};
+const availableImprovementBody = {
+  ...improvementBody,
+  state: "available", current_pair: p34Pair, current_context: p34Context,
+  current_pair_status: "pending",
+  decisions_differ: false,
+  difference_explanation: "The baseline and shadow retain the same executable action.",
+  memory_evidence_record_ids: [], context_transfer_class: "none",
+  safety_blockers: ["Limited attention has not earned the frozen gates."],
+};
+const availableImprovement = {
+  ...availableImprovementBody,
+  projection_sha256: await canonicalInvestigationImprovementSha256(availableImprovementBody),
+};
+const withP34Pair = structuredClone(withInvestigation);
+withP34Pair.investigation_improvement = availableImprovement;
+assert.equal(
+  isCrewChiefWorkspaceResponse(withP34Pair, scope),
+  true,
+  "P34 provenance-only differences must not become executable differences",
+);
+assert.equal(
+  await hasCanonicalInvestigationImprovementDigests(
+    withP34Pair.investigation_improvement,
+    withP34Pair,
+  ),
+  true,
+);
+
+const forgedP34ProjectionDigest = structuredClone(withP34Pair);
+forgedP34ProjectionDigest.investigation_improvement.difference_explanation = "Safe wording changed after hashing.";
+assert.equal(
+  await hasCanonicalInvestigationImprovementDigests(
+    forgedP34ProjectionDigest.investigation_improvement,
+    forgedP34ProjectionDigest,
+  ),
+  false,
+  "P34 projection content must remain bound to its digest",
+);
+const forgedP34PairDigest = structuredClone(withP34Pair);
+forgedP34PairDigest.investigation_improvement.current_pair.memory_decision.reason = "Safe pair wording changed after freeze.";
+assert.equal(
+  await hasCanonicalInvestigationImprovementDigests(
+    forgedP34PairDigest.investigation_improvement,
+    forgedP34PairDigest,
+  ),
+  false,
+  "P34 pair content must remain bound to its digest",
+);
+for (const [label, mutate] of [
+  ["unobserved saved laps", (value) => { value.investigation_improvement.difference_explanation = "The shadow saved 2 laps."; }],
+  ["unobserved percent improvement", (value) => { value.investigation_improvement.difference_explanation = "The shadow delivered a 20% improvement."; }],
+  ["unobserved success claim", (value) => { value.investigation_improvement.difference_explanation = "The memory policy was successful."; }],
+  ["future-frozen decision", (value) => { value.investigation_improvement.current_pair.decision_frozen_at = "2026-08-15T09:06:00Z"; }],
+  ["decision before investigation", (value) => { value.investigation_improvement.current_pair.investigation_opened_at = "2026-08-15T09:04:30Z"; }],
+  ["foreign available tool", (value) => { value.investigation_improvement.current_pair.available_tool_ids.push("inspect_secret_setup"); }],
+  ["foreign eligible tool", (value) => { value.investigation_improvement.current_pair.eligible_tool_ids.push("inspect_secret_setup"); }],
+  ["stale completed tool", (value) => { value.investigation_improvement.current_pair.completed_tool_ids.push("inspect_exit_carry"); }],
+  ["foreign current artifact", (value) => { value.investigation_improvement.current_pair.available_artifact_ids.push("artifact-foreign"); }],
+  ["fabricated qualified artifact", (value) => {
+    value.investigation_improvement.current_pair.available_artifact_ids.push("artifact-fabricated");
+    value.investigation_improvement.current_pair.qualified_available_artifact_ids.push("artifact-fabricated");
+    value.investigation_improvement.current_pair.qualified_available_artifact_evidence_states.push("measured");
+    value.investigation_improvement.current_pair.qualified_available_artifact_provenance_sha256s.push(h("f"));
+  }],
+  ["unsupported current evidence pin", (value) => { value.investigation_improvement.current_pair.current_evidence_pinned_tool_ids.push("inspect_exit_carry"); }],
+  ["stale P19 cause state", (value) => {
+    value.investigation_improvement.current_pair.current_p19_cause_ids.push("cause-stale");
+    value.investigation_improvement.current_pair.current_p19_cause_states.push({ cause_id: "cause-stale", state: "likely" });
+  }],
+  ["foreign P33 projection", (value) => { value.investigation_improvement.current_pair.p33_projection_sha256 = h("9"); }],
+  ["foreign P33 context", (value) => { value.investigation_improvement.current_pair.p33_context_sha256 = h("9"); }],
+  ["malformed workspace revision", (value) => { value.investigation_improvement.current_pair.workspace_revision = "revision-1"; }],
+  ["invented subgroup", (value) => { value.investigation_improvement.current_pair.context_subgroup_keys.push("winning_cases"); }],
+  ["contradictory negative control", (value) => { value.investigation_improvement.current_pair.negative_control_condition = "material_driver_drift"; }],
+  ["future memory without proof", (value) => { value.investigation_improvement.current_pair.future_memory_record_ids.push(memoryRecordId); }],
+  ["provenance-only executable claim", (value) => { value.investigation_improvement.decisions_differ = true; }],
+]) {
+  const hostile = structuredClone(withP34Pair);
+  mutate(hostile);
+  assert.equal(isCrewChiefWorkspaceResponse(hostile, scope), false, label);
+}
+
+async function rehashP34Projection(value) {
+  for (const key of ["current_pair", "latest_completed_pair"]) {
+    const pair = value.investigation_improvement[key];
+    if (pair === null) continue;
+    const body = structuredClone(pair);
+    delete body.pair_id;
+    delete body.pair_sha256;
+    const digest = await canonicalInvestigationImprovementSha256(body);
+    pair.pair_id = `p34pair_${digest.slice(0, 24)}`;
+    pair.pair_sha256 = digest;
+  }
+  if (value.investigation_improvement.current_context !== null) {
+    const contextBody = structuredClone(value.investigation_improvement.current_context);
+    delete contextBody.context_binding_sha256;
+    value.investigation_improvement.current_context.context_binding_sha256 =
+      await canonicalInvestigationImprovementSha256(contextBody);
+  }
+  const comparison = value.investigation_improvement.latest_completed_comparison;
+  if (comparison !== null) {
+    const body = structuredClone(comparison);
+    delete body.comparison_id;
+    delete body.comparison_sha256;
+    const digest = await canonicalInvestigationImprovementSha256(body);
+    comparison.comparison_id = `p34cmp_${digest.slice(0, 24)}`;
+    comparison.comparison_sha256 = digest;
+  }
+  const projectionBody = structuredClone(value.investigation_improvement);
+  delete projectionBody.projection_sha256;
+  value.investigation_improvement.projection_sha256 = await canonicalInvestigationImprovementSha256(projectionBody);
+}
+
+const rehashedReasonBenefit = structuredClone(withP34Pair);
+rehashedReasonBenefit.investigation_improvement.current_pair.memory_decision.reason =
+  "The unobserved memory path saved 2 investigation steps.";
+await rehashP34Projection(rehashedReasonBenefit);
+assert.equal(
+  isCrewChiefWorkspaceResponse(rehashedReasonBenefit, scope),
+  false,
+  "a digest-valid frozen decision reason cannot claim unobserved benefit",
+);
+
+const rehashedCausalReason = structuredClone(withP34Pair);
+rehashedCausalReason.investigation_improvement.current_pair.memory_decision.reason =
+  "Shocks caused the time loss.";
+await rehashP34Projection(rehashedCausalReason);
+assert.equal(
+  isCrewChiefWorkspaceResponse(rehashedCausalReason, scope),
+  false,
+  "a digest-valid P34 reason cannot claim component causality",
+);
+
+const forgedCurrentTruth = structuredClone(withP34Pair);
+forgedCurrentTruth.investigation_improvement.current_pair.current_truth_sha256 = h("9");
+forgedCurrentTruth.investigation_improvement.current_context.current_truth_sha256 = h("9");
+await rehashP34Projection(forgedCurrentTruth);
+assert.equal(isCrewChiefWorkspaceResponse(forgedCurrentTruth, scope), true);
+assert.equal(
+  await hasCanonicalInvestigationImprovementDigests(
+    forgedCurrentTruth.investigation_improvement,
+    forgedCurrentTruth,
+  ),
+  false,
+  "a rehashed pair cannot replace the exact current Crew truth digest",
+);
+
+const forgedAuthority = structuredClone(withP34Pair);
+forgedAuthority.investigation_improvement.current_pair.authority_revision = h("9");
+await rehashP34Projection(forgedAuthority);
+assert.equal(isCrewChiefWorkspaceResponse(forgedAuthority, scope), true);
+assert.equal(
+  await hasCanonicalInvestigationImprovementDigests(
+    forgedAuthority.investigation_improvement,
+    forgedAuthority,
+  ),
+  false,
+  "a rehashed pair cannot replace the producer-owned authority revision",
+);
+
+const forgedProductionBinding = structuredClone(withP34Pair);
+forgedProductionBinding.current_subgoal.selected_tool = "inspect_path_efficiency";
+assert.equal(isCrewChiefWorkspaceResponse(forgedProductionBinding, scope), true);
+assert.equal(
+  await hasCanonicalInvestigationImprovementDigests(
+    forgedProductionBinding.investigation_improvement,
+    forgedProductionBinding,
+  ),
+  false,
+  "the frozen production action must equal the public current Crew action",
+);
+
+const historicalPairBody = {
+  ...structuredClone(p34PairBody),
+  investigation_id: "historical-investigation", run_id: "historical-run",
+  session_id: "historical-session", workspace_revision: h("5"),
+  investigation_opened_at: "2026-08-15T08:20:00Z",
+  authority_revision: h("6"), current_truth_sha256: h("7"),
+  available_tool_ids: [...p34PairBody.available_tool_ids, "inspect_track_demand"],
+  available_artifact_ids: ["historical-artifact"],
+  decision_frozen_at: "2026-08-15T08:30:00Z",
+};
+const historicalPairDigest = await canonicalInvestigationImprovementSha256(historicalPairBody);
+const historicalPair = {
+  ...historicalPairBody,
+  pair_id: `p34pair_${historicalPairDigest.slice(0, 24)}`,
+  pair_sha256: historicalPairDigest,
+};
+const historicalComparisonBody = {
+  schema_version: "p34.paired-investigation-comparison.v1",
+  investigation_id: historicalPair.investigation_id,
+  pair_id: historicalPair.pair_id, pair_sha256: historicalPair.pair_sha256,
+  activation_protocol_id: historicalPair.activation_protocol_id,
+  activation_protocol_sha256: historicalPair.activation_protocol_sha256,
+  certificate_id: `p34out_${"5".repeat(24)}`, certificate_sha256: h("5"),
+  discriminator_outcome_id: null, discriminator_outcome_sha256: null,
+  outcome_followup_id: null, outcome_followup_sha256: null,
+  counterfactual_source_certificate_id: null,
+  counterfactual_source_certificate_sha256: null,
+  independently_observed_artifact_ids: [],
+  decision_frozen_at: historicalPair.decision_frozen_at,
+  observability: "counterfactual_unobservable", context_identity_sha256: h("3"),
+  problem_family: "center", objective: "race_long_run",
+  context_transfer_class: historicalPair.context_transfer_class,
+  subgroup_keys: historicalPair.context_subgroup_keys,
+  baseline_tool_steps: 2, memory_path_metrics_observed: false,
+  bounded_reorder_observed: false, bounded_discriminator_step_advance: 0,
+  bounded_discriminator_step_delay: 0, bounded_dead_end_promoted: false,
+  memory_tool_steps: null, baseline_elapsed_seconds: 120,
+  memory_elapsed_seconds: null, baseline_consumption_metrics_observed: true,
+  memory_consumption_metrics_observed: false, baseline_laps: 3, memory_laps: null,
+  baseline_questions: 1, memory_questions: null,
+  baseline_dead_ends: 0, memory_dead_ends: null,
+  baseline_measurement_missions: 1, memory_measurement_missions: null,
+  baseline_repeated_no_findings: 0, memory_repeated_no_findings: null,
+  baseline_useful_discriminator_step: 2, memory_useful_discriminator_step: null,
+  baseline_unresolved_or_abandoned: false, memory_unresolved_or_abandoned: null,
+  useful_discriminator_hit: true, strongest_contradiction_handled: true,
+  recurrence_match_correct: null, context_transfer_correct: null,
+  driver_car_separation_correct: null, eventual_p19_resolution: true,
+  no_call_stable: true, authority_violations: 0, p19_action_mismatches: 0,
+  stale_workspace_actions: 0, mandatory_check_violations: 0,
+  hidden_contradiction_failures: 0, incompatible_history_transfers: 0,
+  driver_memory_mechanical_diagnoses: 0, memory_only_terminal_actions: 0,
+  prospective: true, synthetic: false, qualified: false,
+  blockers: ["The historical memory path was not directly observed."],
+  compared_at: "2026-08-15T08:40:00Z", setup_authorized: false,
+};
+const historicalComparisonDigest = await canonicalInvestigationImprovementSha256(historicalComparisonBody);
+const historicalComparison = {
+  ...historicalComparisonBody,
+  comparison_id: `p34cmp_${historicalComparisonDigest.slice(0, 24)}`,
+  comparison_sha256: historicalComparisonDigest,
+};
+const historicalProjectionBody = {
+  ...structuredClone(improvementBody), state: "available",
+  latest_completed_pair: historicalPair,
+  latest_completed_comparison: historicalComparison,
+  latest_outcome_status: historicalComparison.observability,
+  memory_evidence_record_ids: [], context_transfer_class: "none",
+  difference_explanation: "The historical pair retained the same executable action; no benefit is inferred.",
+};
+const historicalProjection = {
+  ...historicalProjectionBody,
+  projection_sha256: await canonicalInvestigationImprovementSha256(historicalProjectionBody),
+};
+const withHistoricalP34 = structuredClone(workspace);
+withHistoricalP34.investigation_improvement = historicalProjection;
+assert.equal(
+  isCrewChiefWorkspaceResponse(withHistoricalP34, scope),
+  true,
+  "a completed historical pair is not falsely rebound to current workspace tools or scope",
+);
+assert.equal(
+  await hasCanonicalInvestigationImprovementDigests(
+    withHistoricalP34.investigation_improvement,
+    withHistoricalP34,
+  ),
+  true,
+  "historical pair and comparison identities remain independently content-addressed",
+);
+
+const completedPairSwappedCurrent = structuredClone(withHistoricalP34);
+completedPairSwappedCurrent.investigation_improvement.current_pair =
+  structuredClone(completedPairSwappedCurrent.investigation_improvement.latest_completed_pair);
+completedPairSwappedCurrent.investigation_improvement.current_pair_status = "pending";
+completedPairSwappedCurrent.investigation_improvement.latest_completed_pair = null;
+completedPairSwappedCurrent.investigation_improvement.latest_completed_comparison = null;
+completedPairSwappedCurrent.investigation_improvement.latest_outcome_status = null;
+await rehashP34Projection(completedPairSwappedCurrent);
+assert.equal(
+  isCrewChiefWorkspaceResponse(completedPairSwappedCurrent, scope),
+  false,
+  "a completed historical pair cannot be swapped into the current-workspace slot",
+);
+
+const futureHistoricalFreeze = structuredClone(withHistoricalP34);
+futureHistoricalFreeze.investigation_improvement.latest_completed_pair.decision_frozen_at =
+  "2026-08-16T12:06:00Z";
+futureHistoricalFreeze.investigation_improvement.latest_completed_comparison.decision_frozen_at =
+  "2026-08-16T12:06:00Z";
+futureHistoricalFreeze.investigation_improvement.latest_completed_comparison.compared_at =
+  "2026-08-16T12:07:00Z";
+await rehashP34Projection(futureHistoricalFreeze);
+futureHistoricalFreeze.investigation_improvement.latest_completed_comparison.pair_id =
+  futureHistoricalFreeze.investigation_improvement.latest_completed_pair.pair_id;
+futureHistoricalFreeze.investigation_improvement.latest_completed_comparison.pair_sha256 =
+  futureHistoricalFreeze.investigation_improvement.latest_completed_pair.pair_sha256;
+await rehashP34Projection(futureHistoricalFreeze);
+assert.equal(
+  isCrewChiefWorkspaceResponse(futureHistoricalFreeze, scope),
+  true,
+  "a historical frozen decision is not falsely rebound to current workspace time",
+);
+assert.equal(
+  await hasCanonicalInvestigationImprovementDigests(
+    futureHistoricalFreeze.investigation_improvement,
+    futureHistoricalFreeze,
+  ),
+  true,
+  "a content-addressed historical chain remains standalone across runs and times",
+);
+
+const futureHistoricalComparison = structuredClone(withHistoricalP34);
+futureHistoricalComparison.investigation_improvement.latest_completed_comparison.compared_at =
+  "2026-08-17T12:06:00Z";
+await rehashP34Projection(futureHistoricalComparison);
+assert.equal(
+  isCrewChiefWorkspaceResponse(futureHistoricalComparison, scope),
+  true,
+  "a historical comparison is not rebound to current workspace time",
+);
+
+const forgedHistoricalParent = structuredClone(withHistoricalP34);
+forgedHistoricalParent.investigation_improvement.latest_completed_comparison.pair_id = `p34pair_${"0".repeat(24)}`;
+await rehashP34Projection(forgedHistoricalParent);
+assert.equal(
+  isCrewChiefWorkspaceResponse(forgedHistoricalParent, scope),
+  false,
+  "a completed comparison must bind its exact historical parent pair",
+);
+const fabricatedHistoricalOutcome = structuredClone(withHistoricalP34);
+fabricatedHistoricalOutcome.investigation_improvement.latest_completed_comparison.memory_tool_steps = 1;
+await rehashP34Projection(fabricatedHistoricalOutcome);
+assert.equal(
+  isCrewChiefWorkspaceResponse(fabricatedHistoricalOutcome, scope),
+  false,
+  "an unobservable comparison cannot fabricate memory-path efficiency",
+);
+const fabricatedHistoricalCorrectness = structuredClone(withHistoricalP34);
+fabricatedHistoricalCorrectness.investigation_improvement.latest_completed_comparison.context_transfer_correct = true;
+await rehashP34Projection(fabricatedHistoricalCorrectness);
+assert.equal(
+  isCrewChiefWorkspaceResponse(fabricatedHistoricalCorrectness, scope),
+  false,
+  "an unobservable comparison cannot claim learned-path correctness",
+);
+const fabricatedHistoricalBenefit = structuredClone(withHistoricalP34);
+fabricatedHistoricalBenefit.investigation_improvement.latest_completed_comparison.blockers = [
+  "The unobserved memory path saved 2 investigation steps.",
+];
+await rehashP34Projection(fabricatedHistoricalBenefit);
+assert.equal(
+  isCrewChiefWorkspaceResponse(fabricatedHistoricalBenefit, scope),
+  false,
+  "unobservable comparison prose cannot claim time, lap, step, or success benefits",
+);
+const fabricatedInvalidSuccess = structuredClone(withHistoricalP34);
+fabricatedInvalidSuccess.investigation_improvement.latest_completed_comparison.observability = "invalid";
+fabricatedInvalidSuccess.investigation_improvement.latest_outcome_status = "invalid";
+fabricatedInvalidSuccess.investigation_improvement.latest_completed_comparison.blockers = [
+  "The memory policy was successful.",
+];
+await rehashP34Projection(fabricatedInvalidSuccess);
+assert.equal(
+  isCrewChiefWorkspaceResponse(fabricatedInvalidSuccess, scope),
+  false,
+  "invalid comparison prose cannot claim success",
+);
 const missionBody = {
   schema_version: "p19.measurement-mission.v2",
   candidate_id: "measurement-mission-1",

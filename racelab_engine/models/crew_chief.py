@@ -9,12 +9,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.investigation_adaptation import (
+    InvestigationImprovementProjection,
+)
 from racelab_engine.models.engineering_learning import (
     CrewChiefLearningPrior,
     P19ReasoningMemory,
@@ -59,6 +62,16 @@ PerformanceArtifactType = Literal[
     "component_performance_link",
     "objective_envelope",
 ]
+
+_P34_PERFORMANCE_MEASUREMENT_ORDER = (
+    "inspect_lap_time_opportunity",
+    "inspect_time_loss_origin",
+    "inspect_corner_performance_chain",
+    "inspect_exit_carry",
+    "inspect_path_efficiency",
+    "inspect_driver_vehicle_separation",
+    "inspect_track_demand",
+)
 
 
 class CrewChiefLapTimeOpportunityArtifact(CrewChiefModel):
@@ -187,6 +200,9 @@ class CrewChiefWorkspaceIdentity(CrewChiefModel):
     p32_projection_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     run_sentinel_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     learning_history_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    learning_ledger_head_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     learning_projection_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     setup_id: str = Field(min_length=1)
     setup_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -202,6 +218,25 @@ class CrewChiefWorkspaceIdentity(CrewChiefModel):
         if (self.active_workflow_id is None) != (self.active_workflow_revision is None):
             raise ValueError("workflow identity and revision must be present together")
         return self
+
+    @property
+    def authority_revision(self) -> str:
+        """Producer-owned truth hash; attention and presentation are excluded."""
+
+        return canonical_json_sha256(
+            self.model_dump(
+                mode="json",
+                exclude={
+                    "objective_id",
+                    "investigation_id",
+                    "workspace_revision",
+                    "learning_history_revision",
+                    "learning_ledger_head_sha256",
+                    "learning_projection_sha256",
+                    "run_sentinel_sha256",
+                },
+            )
+        )
 
 
 class CrewChiefInvestigation(CrewChiefModel):
@@ -269,6 +304,18 @@ class CrewChiefEventPayload(CrewChiefModel):
         default=None, pattern=r"^[0-9a-f]{64}$"
     )
     new_authority_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    adaptation_prediction_pair_id: str | None = Field(
+        default=None, pattern=r"^p34pair_[0-9a-f]{24}$"
+    )
+    adaptation_prediction_pair_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    adaptation_prediction_source_snapshot_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    adaptation_rebase_source_snapshot_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     learning_capture_state: Literal["not_applicable", "captured", "blocked"] = (
         "not_applicable"
     )
@@ -279,6 +326,18 @@ class CrewChiefEventPayload(CrewChiefModel):
         default=None, pattern=r"^[0-9a-f]{64}$"
     )
     learning_capture_blocker_reason: str | None = Field(
+        default=None, min_length=1, max_length=240
+    )
+    adaptation_capture_state: Literal["not_applicable", "captured", "blocked"] = (
+        "not_applicable"
+    )
+    adaptation_capture_certificate_id: str | None = Field(
+        default=None, pattern=r"^p34out_[0-9a-f]{24}$"
+    )
+    adaptation_capture_certificate_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    adaptation_capture_blocker_reason: str | None = Field(
         default=None, min_length=1, max_length=240
     )
     findings: tuple[str, ...] = ()
@@ -314,6 +373,17 @@ class CrewChiefEventPayload(CrewChiefModel):
                 raise ValueError(
                     f"Crew Chief {label} revisions must be present together"
                 )
+        prediction_identity = (
+            self.adaptation_prediction_pair_id,
+            self.adaptation_prediction_pair_sha256,
+            self.adaptation_prediction_source_snapshot_sha256,
+        )
+        if any(item is None for item in prediction_identity) and any(
+            item is not None for item in prediction_identity
+        ):
+            raise ValueError(
+                "Crew Chief P34 prediction-pair identity and source snapshot must be complete"
+            )
         has_experience_identity = (
             self.learning_capture_experience_id is not None
             and self.learning_capture_experience_sha256 is not None
@@ -342,6 +412,37 @@ class CrewChiefEventPayload(CrewChiefModel):
         ):
             raise ValueError(
                 "blocked Crew Chief P33 memory requires its attempted experience and blocker"
+            )
+        has_certificate_identity = (
+            self.adaptation_capture_certificate_id is not None
+            and self.adaptation_capture_certificate_sha256 is not None
+        )
+        if (self.adaptation_capture_certificate_id is None) != (
+            self.adaptation_capture_certificate_sha256 is None
+        ):
+            raise ValueError(
+                "Crew Chief P34 capture certificate identity must be complete"
+            )
+        if self.adaptation_capture_state == "not_applicable" and (
+            has_certificate_identity
+            or self.adaptation_capture_blocker_reason is not None
+        ):
+            raise ValueError(
+                "non-attempted Crew Chief P34 capture cannot claim adaptation truth"
+            )
+        if self.adaptation_capture_state == "captured" and (
+            not has_certificate_identity
+            or self.adaptation_capture_blocker_reason is not None
+        ):
+            raise ValueError(
+                "captured Crew Chief P34 outcome requires its exact certificate"
+            )
+        if self.adaptation_capture_state == "blocked" and (
+            not has_certificate_identity
+            or self.adaptation_capture_blocker_reason is None
+        ):
+            raise ValueError(
+                "blocked Crew Chief P34 outcome requires its attempted certificate and blocker"
             )
         return self
 
@@ -429,11 +530,28 @@ class CrewChiefEvent(CrewChiefModel):
                 "objective identity is exclusive and required for objective events"
             )
         if (
-            self.event_type not in {"decision_emitted", "investigation_abandoned"}
-            and payload.learning_capture_state != "not_applicable"
+            payload.adaptation_prediction_pair_id is not None
+            and self.event_type
+            not in {"tool_invoked", "driver_question_asked", "decision_emitted"}
         ):
             raise ValueError(
-                "P33 learning capture metadata is exclusive to terminal Crew events"
+                "P34 prediction-pair receipts are exclusive to executable Crew events"
+            )
+        if (self.event_type == "workspace_rebased") != (
+            payload.adaptation_rebase_source_snapshot_sha256 is not None
+        ):
+            raise ValueError(
+                "P34 rebase source snapshots are exclusive and required for rebase events"
+            )
+        if (
+            self.event_type not in {"decision_emitted", "investigation_abandoned"}
+            and (
+                payload.learning_capture_state != "not_applicable"
+                or payload.adaptation_capture_state != "not_applicable"
+            )
+        ):
+            raise ValueError(
+                "P33/P34 capture metadata is exclusive to terminal Crew events"
             )
         has_rebase = payload.previous_workspace_revision is not None
         if (self.event_type == "workspace_rebased") != has_rebase:
@@ -635,6 +753,81 @@ class EngineeringEvidenceIndex(CrewChiefModel):
         if len(ids) != len(set(ids)):
             raise ValueError("evidence index artifact identities must be unique")
         return self
+
+
+P34QualifiedArtifactEvidenceState = Literal[
+    "measured",
+    "calculated",
+    "controlled_test_effect",
+]
+
+
+def _p34_qualified_current_artifact_entries(
+    identity: CrewChiefWorkspaceIdentity,
+    evidence_index: EngineeringEvidenceIndex,
+) -> tuple[EngineeringEvidenceIndexEntry, ...]:
+    """Select blocker-free exact-provenance evidence from the current workspace."""
+
+    qualified_states = {
+        EvidenceState.MEASURED,
+        EvidenceState.CALCULATED,
+        EvidenceState.CONTROLLED_TEST_EFFECT,
+    }
+    return tuple(
+        item
+        for item in evidence_index.entries
+        if item.evidence_state in qualified_states
+        and not item.blocker_reasons
+        and item.source_provenance_available
+        and item.run_id == identity.run_id
+        and item.session_id == identity.session_id
+        and item.setup_id == identity.setup_id
+        and item.workspace_run_id == identity.run_id
+        and item.workspace_session_id == identity.session_id
+        and item.workspace_setup_id == identity.setup_id
+        and item.source_run_id == identity.run_id
+        and item.source_session_id == identity.session_id
+        and item.source_setup_id == identity.setup_id
+        and item.source_setup_sha256 == identity.setup_snapshot_sha256
+        and item.source_build_context_sha256
+        == identity.vehicle_runtime_identity_hash
+    )
+
+
+def p34_qualified_current_artifact_cohort(
+    identity: CrewChiefWorkspaceIdentity,
+    evidence_index: EngineeringEvidenceIndex,
+) -> tuple[
+    tuple[str, ...],
+    tuple[P34QualifiedArtifactEvidenceState, ...],
+    tuple[str, ...],
+]:
+    """Return the aligned, preregistered P34 evidence cohort and provenance."""
+
+    entries = _p34_qualified_current_artifact_entries(identity, evidence_index)
+    return (
+        tuple(item.artifact_id for item in entries),
+        tuple(
+            cast(P34QualifiedArtifactEvidenceState, item.evidence_state.value)
+            for item in entries
+        ),
+        tuple(
+            canonical_json_sha256(item.model_dump(mode="json"))
+            for item in entries
+        ),
+    )
+
+
+def p34_qualified_current_artifact_ids(
+    identity: CrewChiefWorkspaceIdentity,
+    evidence_index: EngineeringEvidenceIndex,
+) -> tuple[str, ...]:
+    """Return only blocker-free, exact-provenance current measured evidence IDs."""
+
+    return tuple(
+        item.artifact_id
+        for item in _p34_qualified_current_artifact_entries(identity, evidence_index)
+    )
 
 
 class CrewChiefToolDefinition(CrewChiefModel):
@@ -988,8 +1181,8 @@ class AdaptiveResearchBoundary(CrewChiefModel):
 
 
 class CrewChiefWorkspace(CrewChiefModel):
-    schema_version: Literal["p33.crew-chief-workspace.v2"] = (
-        "p33.crew-chief-workspace.v2"
+    schema_version: Literal["p34.crew-chief-workspace.v1"] = (
+        "p34.crew-chief-workspace.v1"
     )
     identity: CrewChiefWorkspaceIdentity
     generated_at: datetime
@@ -1006,11 +1199,13 @@ class CrewChiefWorkspace(CrewChiefModel):
     p19_mission_contract: MeasurementMissionContract | None = None
     performance_intelligence: PerformanceIntelligenceProjection
     learning_prior: CrewChiefLearningPrior
+    investigation_improvement: InvestigationImprovementProjection
     run_sentinel: RunSentinelState
     terminal_decision: CrewChiefTerminalDecision
     response_history_ids: tuple[str, ...] = ()
     driver_memory_ids: tuple[str, ...] = ()
     p19_cause_ids: tuple[str, ...] = ()
+    p19_contradiction_artifact_ids: tuple[str, ...] = ()
     p20_episode_ids: tuple[str, ...] = ()
     p26_component_ids: tuple[str, ...] = ()
     post_run_brief: tuple[str, ...] = Field(min_length=1)
@@ -1061,6 +1256,151 @@ class CrewChiefWorkspace(CrewChiefModel):
             or prior.p19_rank_modified
         ):
             raise ValueError("P33 prior must match the atomic attention-only workspace")
+        improvement = self.investigation_improvement
+        if (
+            improvement.run_id != self.identity.run_id
+            or improvement.session_id != self.identity.session_id
+            or improvement.workspace_revision != self.identity.workspace_revision
+        ):
+            raise ValueError(
+                "P34 investigation improvement must match the atomic baseline workspace"
+            )
+        pair = improvement.current_pair
+        if pair is not None and (
+            pair.investigation_id != self.identity.investigation_id
+            or pair.authority_revision != self.identity.authority_revision
+            or pair.p19_snapshot_sha256
+            != self.identity.reasoning_snapshot_sha256
+            or pair.p20_projection_sha256 != self.identity.p20_state_revision
+            or pair.p26_projection_sha256
+            != self.identity.p26_knowledge_graph_sha256
+            or pair.p32_projection_sha256 != self.identity.p32_projection_sha256
+            or pair.p33_history_revision
+            != self.identity.learning_history_revision
+            or pair.p33_ledger_head_sha256
+            != self.identity.learning_ledger_head_sha256
+            or pair.p33_context_sha256 != prior.current_context_sha256
+            or pair.p33_problem_sha256 != prior.current_problem_sha256
+        ):
+            raise ValueError(
+                "P34 paired decision must bind the exact pre-outcome Crew truth"
+            )
+        if pair is not None:
+            if self.folded_state is None or self.folded_state.status != "open":
+                raise ValueError("P34 pairs are exclusive to open Crew revisions")
+            tool_ids = tuple(item.tool_id for item in self.available_tools)
+            baseline_decision = pair.baseline_decision
+            eligible_tool_ids: tuple[str, ...] = ()
+            if baseline_decision.decision_kind == "inspect_tool":
+                live = tuple(
+                    tool_id
+                    for tool_id in _P34_PERFORMANCE_MEASUREMENT_ORDER
+                    if tool_id not in set(self.folded_state.completed_tool_ids)
+                )
+                eligible = [baseline_decision.action_id]
+                if (
+                    baseline_decision.safe_reorder_group
+                    == "performance_measurement"
+                    and baseline_decision.action_id in live
+                ):
+                    position = live.index(baseline_decision.action_id)
+                    if position + 1 < len(live):
+                        eligible.append(live[position + 1])
+                eligible_tool_ids = tuple(eligible)
+            artifact_ids = tuple(item.artifact_id for item in self.evidence_index.entries)
+            (
+                qualified_artifact_ids,
+                qualified_artifact_states,
+                qualified_artifact_provenance_sha256s,
+            ) = p34_qualified_current_artifact_cohort(
+                self.identity,
+                self.evidence_index,
+            )
+            contradiction_ids = self.p19_contradiction_artifact_ids
+            if (
+                len(contradiction_ids) != len(set(contradiction_ids))
+                or not set(contradiction_ids).issubset(artifact_ids)
+            ):
+                raise ValueError("ranked P19 contradiction identities must be unique")
+            current_truth_sha256 = canonical_json_sha256(
+                {
+                    "identity": self.identity,
+                    "evidence_index_sha256": self.evidence_index.index_hash,
+                    "terminal_decision": self.terminal_decision,
+                    "p19_cause_ids": self.p19_cause_ids,
+                    "p19_cause_states": tuple(
+                        (item.cause_id, item.p19_state)
+                        for item in self.folded_state.hypotheses
+                    ),
+                    "p19_contradiction_artifact_ids": (
+                        self.p19_contradiction_artifact_ids
+                    ),
+                }
+            )
+            if (
+                pair.step_number != self.folded_state.last_sequence
+                or pair.available_tool_ids != tool_ids
+                or pair.eligible_tool_ids != eligible_tool_ids
+                or pair.completed_tool_ids != self.folded_state.completed_tool_ids
+                or pair.available_artifact_ids != artifact_ids
+                or pair.qualified_available_artifact_ids != qualified_artifact_ids
+                or pair.qualified_available_artifact_evidence_states
+                != qualified_artifact_states
+                or pair.qualified_available_artifact_provenance_sha256s
+                != qualified_artifact_provenance_sha256s
+                or pair.current_truth_sha256 != current_truth_sha256
+                or pair.current_p19_cause_ids != self.p19_cause_ids
+                or tuple(
+                    (item.cause_id, item.state)
+                    for item in pair.current_p19_cause_states
+                )
+                != tuple(
+                    (item.cause_id, item.p19_state)
+                    for item in self.folded_state.hypotheses
+                )
+                or pair.current_contradiction_ids != contradiction_ids
+                or pair.strongest_contradiction_id
+                != (contradiction_ids[0] if contradiction_ids else None)
+                or pair.current_objective != self.identity.objective_id.value
+            ):
+                raise ValueError("P34 pair does not equal the current Crew evidence")
+            production = pair.production_decision
+            if self.current_subgoal is not None:
+                expected_kind = "inspect_tool"
+                expected_action = self.current_subgoal.selected_tool
+            elif (
+                self.folded_state.pending_driver_question_id is not None
+                or not self.folded_state.driver_answers
+            ):
+                expected_kind = "ask_driver"
+                expected_action = (
+                    self.folded_state.pending_driver_question_id
+                    or "ccq_"
+                    + canonical_json_sha256(
+                        [
+                            self.folded_state.investigation_id,
+                            self.folded_state.last_sequence + 1,
+                        ]
+                    )[:20]
+                )
+            else:
+                expected_kind = (
+                    "no_call"
+                    if self.terminal_decision.kind == "no_call"
+                    else "observe_only"
+                )
+                expected_action = (
+                    f"terminal:{self.terminal_decision.kind}:"
+                    f"{canonical_json_sha256([self.terminal_decision.kind, self.terminal_decision.instruction])[:24]}"
+                )
+            if (
+                production.decision_kind != expected_kind
+                or production.action_id != expected_action
+                or production.decision_kind == "surface_prior"
+            ):
+                raise ValueError(
+                    "Crew production action must equal the exact active P34 decision"
+                )
         learning_references = {
             item.reference_id: item
             for item in prior.evidence_references

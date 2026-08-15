@@ -16,6 +16,7 @@ from racelab_engine.models.crew_chief import (
 )
 from racelab_engine.models.engineering_learning import (
     CarResponseFact,
+    CrewChiefLearningPrior,
     DeadEndFact,
     DriverFingerprintContribution,
     EngineeringExperienceContext,
@@ -51,6 +52,7 @@ def _context(
     run_id: str | None = None,
     session_id: str | None = None,
     driver_execution_state: str = "matched_inputs",
+    speed_load_band: str = "high_speed_loaded",
 ) -> EngineeringExperienceContext:
     return EngineeringExperienceContext.build(
         run_id=run_id or f"run-{index}",
@@ -68,7 +70,7 @@ def _context(
         physical_scope_sha256="b" * 64,
         phase="center",
         physical_region="T1-T2",
-        speed_load_band="high_speed_loaded",
+        speed_load_band=speed_load_band,
         fuel_state="short_run",
         tire_state="short_run",
         weather_state="recorded",
@@ -514,6 +516,13 @@ def test_public_projection_surfaces_recurrence_driver_car_process_and_dead_ends(
     assert tuple(item.tool_id for item in prior.recommended_attention_order) == (
         "inspect_track_demand",
     )
+    stale_warm_prior = prior.model_copy(
+        update={"recommended_attention_order": ()}
+    )
+    with pytest.raises(ValidationError, match="projection identity is corrupt"):
+        CrewChiefLearningPrior.model_validate(
+            stale_warm_prior.model_dump(mode="json")
+        )
     assert all(
         item.authority == "attention_only" for item in prior.recommended_attention_order
     )
@@ -1334,6 +1343,7 @@ def test_intervening_workspace_rebase_blocks_prior_tool_success_credit() -> None
                 new_workspace_revision="9" * 64,
                 previous_authority_revision="a" * 64,
                 new_authority_revision="b" * 64,
+                adaptation_rebase_source_snapshot_sha256="d" * 64,
             ),
             workspace_revision="9" * 64,
         ),
@@ -1832,7 +1842,28 @@ def test_build_and_objective_drift_downgrade_without_leaking_authority(
     assert objective_shift.p19_rank_modified is False
 
 
-def test_relevant_corruption_is_contained_and_stream_head_corruption_blocks(
+def test_speed_load_mismatch_is_weak_physical_scope_history(tmp_path) -> None:
+    db_path = tmp_path / "learning-speed-load.sqlite"
+    repository = EngineeringLearningRepository(db_path)
+    problem = _problem(99)
+    repository.append_experience(_investigation_experience(1, problem=problem))
+
+    shifted_context = _context(99, speed_load_band="low_speed_loaded")
+    shifted = _prior(
+        _current(context=shifted_context, problem=problem),
+        repository,
+        db_path,
+    )
+
+    assert shifted.context_transfer_level == "weak"
+    assert shifted.recommended_attention_order == ()
+    assert len(shifted.context_transfers) == 1
+    assert shifted.context_transfers[0].mismatched_dimensions == (
+        "speed_load_band",
+    )
+
+
+def test_relevant_corruption_blocks_memory_and_stream_head_corruption_blocks(
     tmp_path,
 ) -> None:
     db_path = tmp_path / "learning.sqlite"
@@ -1861,8 +1892,9 @@ def test_relevant_corruption_is_contained_and_stream_head_corruption_blocks(
         connection.close()
 
     contained = _prior(_current(problem=problem), repository, db_path)
-    assert contained.state == "available"
-    assert len(contained.useful_prior_investigations) == 1
+    assert contained.state == "blocked"
+    assert contained.useful_prior_investigations == ()
+    assert contained.recommended_attention_order == ()
     assert any(corrupt.experience_id in item for item in contained.blocker_reasons)
     assert any(weak_corrupt.experience_id in item for item in contained.blocker_reasons)
 

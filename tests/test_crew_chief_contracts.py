@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from api.main import app
 from api.routes_crew_chief import OpenInvestigationRequest, RevisionRequest
+from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.crew_chief import (
     ComponentResponseRecord,
     CrewChiefEventPayload,
@@ -29,12 +30,28 @@ from racelab_engine.models.engineering_learning import (
     ProblemFingerprint,
 )
 from racelab_engine.models.intelligence import EvidenceCitation
+from racelab_engine.models.investigation_adaptation import (
+    InvestigationDecision,
+    InvestigationImprovementReadiness,
+    P19CauseState,
+)
+from racelab_engine.services import crew_chief_service
 from racelab_engine.services.crew_chief_service import (
     _authority_revision,
     _authority_stale_reasons,
+    _canonical_p34_outcome_pair,
     _accepted_workspace_revision,
     _evidence_index,
     _event,
+    _freeze_p34_pair_for_workspace,
+    _memory_shadow_from_baseline,
+    _memory_shadow_subgoal,
+    _p34_decisions_for_workspace,
+    _p34_live_eligible_tool_ids,
+    _p34_negative_control_evidence,
+    _p34_projection_for_identity,
+    _p34_restart_context,
+    _production_subgoal_from_pair,
     _sentinel,
     _subgoal,
     _workspace_cache_key,
@@ -42,6 +59,13 @@ from racelab_engine.services.crew_chief_service import (
     continue_investigation,
     fold_investigation,
     rebase_investigation,
+)
+from racelab_engine.services.investigation_adaptation_service import (
+    baseline_investigation_policy,
+    build_p34_negative_control_result,
+    build_paired_investigation_decision,
+    memory_shadow_investigation_policy,
+    p34_activation_protocol,
 )
 from racelab_engine.services.session_service import create_session, delete_session
 from racelab_engine.storage.crew_chief_repository import (
@@ -52,6 +76,9 @@ from racelab_engine.storage import db as storage_db
 from racelab_engine.storage.db import initialize_database
 from racelab_engine.storage.engineering_learning_repository import (
     EngineeringLearningRepository,
+)
+from racelab_engine.storage.investigation_adaptation_repository import (
+    InvestigationAdaptationRepository,
 )
 
 
@@ -297,6 +324,26 @@ def test_terminal_event_requires_exact_controlled_workflow_identity() -> None:
     assert event.payload.workflow_ids == ("workflow-1",)
 
 
+def test_p34_prediction_pair_event_identity_is_complete_and_executable_only() -> None:
+    with pytest.raises(ValidationError, match="prediction-pair identity.*complete"):
+        CrewChiefEventPayload(
+            message="Incomplete P34 prediction receipt.",
+            adaptation_prediction_pair_id="p34pair_" + "a" * 24,
+        )
+    with pytest.raises(ValidationError, match="exclusive to executable Crew events"):
+        _event(
+            "investigation-1",
+            1,
+            "8" * 64,
+            "objective_selected",
+            CrewChiefEventPayload(
+                message="Objective changed.",
+                objective=EngineeringObjective.RACE_LONG_RUN,
+                adaptation_prediction_pair_id="p34pair_" + "a" * 24,
+                adaptation_prediction_pair_sha256="b" * 64,
+                adaptation_prediction_source_snapshot_sha256="c" * 64,
+            ),
+        )
 @pytest.mark.parametrize(
     "field",
     ("requested_measurement_ids", "completed_measurement_ids"),
@@ -461,6 +508,7 @@ def test_terminal_event_and_learning_experience_roll_back_together(
 
 def test_terminal_lifecycle_uses_only_the_atomic_event_and_experience_path(
     monkeypatch,
+    tmp_path,
 ) -> None:
     identity = _identity()
     investigation = _investigation()
@@ -511,9 +559,12 @@ def test_terminal_lifecycle_uses_only_the_atomic_event_and_experience_path(
         def save_effectiveness(self, *_args, **_kwargs) -> None:
             pytest.fail("the dormant effectiveness store must not receive P33 writes")
 
-        def append_terminal_event_and_experience(self, event, record) -> None:
+        def append_terminal_event_and_experience(
+            self, event, record, **_capture
+        ):
             captured["event"] = event
             captured["experience"] = record
+            return event
 
     def build_experience(**kwargs):
         captured["builder"] = kwargs
@@ -550,6 +601,7 @@ def test_terminal_lifecycle_uses_only_the_atomic_event_and_experience_path(
         investigation.investigation_id,
         session_id=identity.session_id,
         expected_workspace_revision=identity.workspace_revision,
+        db_path=tmp_path / "terminal-atomic.sqlite",
     )
 
     terminal_event = captured["event"]
@@ -570,6 +622,7 @@ def test_terminal_lifecycle_uses_only_the_atomic_event_and_experience_path(
 
 def test_continue_emits_one_atomic_tool_request_and_completion_pair(
     monkeypatch,
+    tmp_path,
 ) -> None:
     identity = _identity()
     subgoal = SimpleNamespace(
@@ -618,6 +671,7 @@ def test_continue_emits_one_atomic_tool_request_and_completion_pair(
         "investigation-1",
         session_id=identity.session_id,
         expected_workspace_revision=identity.workspace_revision,
+        db_path=tmp_path / "tool-pair.sqlite",
     )
 
     invocation, tool_result = captured["events"]
@@ -634,6 +688,7 @@ def test_continue_emits_one_atomic_tool_request_and_completion_pair(
 
 def test_terminal_measurement_decision_requests_the_exact_p19_contract(
     monkeypatch,
+    tmp_path,
 ) -> None:
     identity = _identity()
     investigation = _investigation()
@@ -667,9 +722,12 @@ def test_terminal_measurement_decision_requests_the_exact_p19_contract(
         def list_events(self, _investigation_id: str):
             return ()
 
-        def append_terminal_event_and_experience(self, event, experience) -> None:
+        def append_terminal_event_and_experience(
+            self, event, experience, **_capture
+        ):
             captured["event"] = event
             captured["experience"] = experience
+            return event
 
     monkeypatch.setattr(
         "racelab_engine.services.crew_chief_service.build_crew_chief_workspace",
@@ -701,6 +759,7 @@ def test_terminal_measurement_decision_requests_the_exact_p19_contract(
         investigation.investigation_id,
         session_id=identity.session_id,
         expected_workspace_revision=identity.workspace_revision,
+        db_path=tmp_path / "terminal-measurement.sqlite",
     )
 
     terminal = captured["event"]
@@ -1563,6 +1622,7 @@ def test_investigation_authority_change_requires_explicit_rebase() -> None:
                 investigation.workspace_identity
             ),
             new_authority_revision=_authority_revision(changed),
+            adaptation_rebase_source_snapshot_sha256="d" * 64,
         ),
     )
     assert _authority_stale_reasons(investigation, (rebase,), changed) == ()
@@ -1572,6 +1632,31 @@ def test_investigation_authority_change_requires_explicit_rebase() -> None:
     assert _accepted_workspace_revision(investigation, (rebase,)) == (
         changed.workspace_revision
     )
+
+
+@pytest.mark.parametrize(
+    ("identity_field", "replacement"),
+    [
+        ("setup_snapshot_sha256", "d" * 64),
+        ("vehicle_runtime_identity_hash", "e" * 64),
+    ],
+)
+def test_applied_control_and_vehicle_epoch_are_authority_gated(
+    identity_field: str,
+    replacement: str,
+) -> None:
+    investigation = _investigation()
+    changed = _identity().model_copy(
+        update={
+            identity_field: replacement,
+            "workspace_revision": "f" * 64,
+        }
+    )
+
+    assert _authority_revision(changed) != _authority_revision(
+        investigation.workspace_identity
+    )
+    assert _authority_stale_reasons(investigation, (), changed)
 
 
 def test_learning_revision_refreshes_workspace_without_staling_p19_authority() -> None:
@@ -1623,6 +1708,8 @@ def _planner_fixture():
             SimpleNamespace(
                 cause_id="cause-1",
                 progress="inspection_pending",
+                support_artifact_ids=(),
+                contradiction_artifact_ids=(),
             ),
         ),
     )
@@ -1630,64 +1717,1112 @@ def _planner_fixture():
     return bundle, folded, p26
 
 
-def test_learning_prior_can_reorder_only_within_the_existing_safety_band() -> None:
-    bundle, folded, p26 = _planner_fixture()
-    prior = SimpleNamespace(
+def _shadow_prior(
+    *,
+    tool_id: str = "inspect_track_demand",
+    safety_band: str = "performance_measurement",
+    baseline_rank: int = 7,
+    completed_at: datetime | None = None,
+    driver_state: str = "repeatable_tendency",
+) -> SimpleNamespace:
+    completed_at = completed_at or datetime(2026, 8, 1, tzinfo=UTC)
+    experience_ids = ("p33x_" + "a" * 24, "p33x_" + "b" * 24)
+    return SimpleNamespace(
+        state="available",
+        context_transfer_level="exact",
+        driver_tendencies=(SimpleNamespace(state=driver_state),),
+        useful_prior_investigations=tuple(
+            SimpleNamespace(
+                experience_id=experience_id,
+                outcome=SimpleNamespace(completed_at=completed_at),
+            )
+            for experience_id in experience_ids
+        ),
+        context_transfers=tuple(
+            SimpleNamespace(
+                experience_id=experience_id,
+                level="exact",
+                drift_reasons=(),
+                blocker_reasons=(),
+            )
+            for experience_id in experience_ids
+        ),
         recommended_attention_order=(
             SimpleNamespace(
-                tool_id="inspect_track_demand",
-                safety_band="performance_measurement",
-                baseline_rank_within_band=7,
+                tool_id=tool_id,
+                safety_band=safety_band,
+                baseline_rank_within_band=baseline_rank,
                 learned_rank_within_band=1,
                 reason="This inspection resolved matching prior cases sooner.",
                 transfer_level="exact",
-                investigation_count=3,
-                session_count=2,
-                independent_workflow_count=0,
+                source_experience_ids=experience_ids,
             ),
-            SimpleNamespace(
-                tool_id="inspect_p19_causes",
-                safety_band="contradiction",
-                baseline_rank_within_band=1,
-                learned_rank_within_band=1,
-                reason="Contradiction review was previously useful.",
-                transfer_level="exact",
-                investigation_count=4,
-                session_count=3,
-                independent_workflow_count=1,
-            ),
-        )
+        ),
     )
 
-    subgoal = _subgoal(bundle, folded, p26, SimpleNamespace(), prior)
 
-    assert subgoal.selected_tool == "inspect_track_demand"
-    assert "WHY THIS IS EARLIER" in subgoal.why_this_tool
-    assert "P19 cause order and setup authority are unchanged" in subgoal.why_this_tool
+def test_learning_prior_is_shadow_only_and_can_move_one_same_tier_position() -> None:
+    bundle, folded, p26 = _planner_fixture()
+    prior = _shadow_prior(
+        tool_id="inspect_time_loss_origin",
+        baseline_rank=2,
+    )
+    production = _subgoal(bundle, folded, p26, SimpleNamespace(), prior)
+    shadow = _memory_shadow_subgoal(
+        bundle,
+        folded,
+        p26,
+        SimpleNamespace(),
+        prior,
+        decision_frozen_at=datetime(2026, 8, 14, tzinfo=UTC),
+    )
+
+    assert production.selected_tool == "inspect_lap_time_opportunity"
+    assert shadow.selected_tool == "inspect_time_loss_origin"
+    assert "SHADOW ONLY" not in shadow.why_this_tool
+    assert "Qualified P33 history" in shadow.why_this_tool
+    assert shadow.priority_rank == production.priority_rank
+
+
+def test_p34_live_eligibility_excludes_completed_and_prerequisite_blocked_catalog_tools() -> None:
+    bundle, folded, p26 = _planner_fixture()
+    prior = _shadow_prior(
+        tool_id="inspect_time_loss_origin",
+        baseline_rank=2,
+    )
+    baseline_subgoal = _subgoal(bundle, folded, p26, SimpleNamespace(), prior)
+    workspace = SimpleNamespace(
+        current_subgoal=baseline_subgoal,
+        folded_state=folded,
+        learning_prior=prior,
+        evidence_index=SimpleNamespace(entries=()),
+    )
+    baseline, memory, _ = _p34_decisions_for_workspace(
+        workspace,
+        decision_frozen_at=datetime(2026, 8, 14, tzinfo=UTC),
+    )
+
+    eligible = _p34_live_eligible_tool_ids(
+        baseline,
+        memory,
+        completed_tool_ids=folded.completed_tool_ids,
+    )
+
+    assert eligible == (
+        "inspect_lap_time_opportunity",
+        "inspect_time_loss_origin",
+    )
+    assert not set(eligible).intersection(folded.completed_tool_ids)
+    assert "inspect_data_quality" not in eligible
+    assert "inspect_lap_context" not in eligible
+    assert "inspect_component_state" not in eligible
+
+
+def test_p34_memory_can_change_only_inspection_order_not_p19_or_setup_authority() -> None:
+    bundle, folded, p26 = _planner_fixture()
+    frozen_at = datetime(2026, 8, 14, tzinfo=UTC)
+    favorable = _shadow_prior(
+        tool_id="inspect_time_loss_origin",
+        baseline_rank=2,
+        completed_at=frozen_at - timedelta(days=1),
+    )
+    hostile = _shadow_prior(
+        tool_id="inspect_time_loss_origin",
+        baseline_rank=2,
+        completed_at=frozen_at,
+    )
+    baseline_subgoal = _subgoal(bundle, folded, p26, SimpleNamespace(), favorable)
+    workspace_truth = {
+        "reasoning_snapshot_sha256": "2" * 64,
+        "cause_order_and_states": tuple(
+            (item.cause_id, item.status, item.ordinal_rank)
+            for item in bundle.report.reasoning_snapshot.causes
+        ),
+        "p19_action": "measurement_mission",
+        "p19_mission_id": "p19-mission-immutable",
+        "terminal_decision": ("no_call", "Acquire another clean comparison."),
+        "setup_authorized": False,
+    }
+    truth_before = canonical_json_sha256(workspace_truth)
+    favorable_workspace = SimpleNamespace(
+        current_subgoal=baseline_subgoal,
+        folded_state=folded,
+        learning_prior=favorable,
+        evidence_index=SimpleNamespace(entries=()),
+    )
+    baseline_decision, memory_decision, transfer = _p34_decisions_for_workspace(
+        favorable_workspace,
+        decision_frozen_at=frozen_at,
+    )
+    assert transfer == "exact"
+    assert memory_decision.action_id == "inspect_time_loss_origin"
+    active_pair = SimpleNamespace(
+        production_decision=memory_decision,
+        activation_state="limited_attention",
+        decision_frozen_at=frozen_at,
+    )
+
+    active_subgoal = _production_subgoal_from_pair(
+        baseline_subgoal,
+        folded,
+        favorable,
+        active_pair,
+    )
+    hostile_pair = SimpleNamespace(
+        production_decision=baseline_decision,
+        activation_state="shadow_only",
+        decision_frozen_at=frozen_at,
+    )
+    hostile_subgoal = _production_subgoal_from_pair(
+        baseline_subgoal,
+        folded,
+        hostile,
+        hostile_pair,
+    )
+
+    assert baseline_subgoal.selected_tool == "inspect_lap_time_opportunity"
+    assert active_subgoal.selected_tool == "inspect_time_loss_origin"
+    assert hostile_subgoal == baseline_subgoal
+    assert canonical_json_sha256(workspace_truth) == truth_before
+    assert workspace_truth["cause_order_and_states"] == (
+        ("cause-1", "possible", 1),
+    )
+    assert workspace_truth["p19_action"] == "measurement_mission"
+    assert workspace_truth["p19_mission_id"] == "p19-mission-immutable"
+    assert workspace_truth["terminal_decision"] == (
+        "no_call",
+        "Acquire another clean comparison.",
+    )
+    assert workspace_truth["setup_authorized"] is False
+
+
+def test_memory_cannot_move_track_demand_ahead_of_driver_car_separation() -> None:
+    bundle, folded, p26 = _planner_fixture()
+    folded.completed_tool_ids = (
+        *folded.completed_tool_ids,
+        "inspect_lap_time_opportunity",
+        "inspect_time_loss_origin",
+        "inspect_corner_performance_chain",
+        "inspect_exit_carry",
+        "inspect_path_efficiency",
+    )
+    prior = _shadow_prior(
+        tool_id="inspect_track_demand",
+        baseline_rank=7,
+    )
+
+    production = _subgoal(bundle, folded, p26, SimpleNamespace(), prior)
+    shadow, source_ids, transfer_class = _memory_shadow_from_baseline(
+        production,
+        folded,
+        prior,
+        decision_frozen_at=datetime(2026, 8, 14, tzinfo=UTC),
+    )
+
+    assert production.selected_tool == "inspect_driver_vehicle_separation"
+    assert shadow == production
+    assert source_ids == ()
+    assert transfer_class == "blocked"
+
+
+def test_new_qualified_current_evidence_cannot_be_delayed_by_prior_attention() -> None:
+    bundle, folded, p26 = _planner_fixture()
+    folded.hypotheses = (
+        SimpleNamespace(
+            cause_id="cause-1",
+            progress="inspection_pending",
+            support_artifact_ids=("current-discriminator-a",),
+            contradiction_artifact_ids=(),
+        ),
+    )
+    prior = _shadow_prior(
+        tool_id="inspect_time_loss_origin",
+        baseline_rank=2,
+    )
+    production = _subgoal(bundle, folded, p26, SimpleNamespace(), prior)
+    assert production.selected_tool == "inspect_lap_time_opportunity"
+    identity = _identity()
+    exact_entry = SimpleNamespace(
+        artifact_id="current-discriminator-a",
+        producer_id="p32.lap_time_opportunity",
+        evidence_state=EvidenceState.CALCULATED,
+        blocker_reasons=(),
+        source_provenance_available=True,
+        run_id=identity.run_id,
+        session_id=identity.session_id,
+        setup_id=identity.setup_id,
+        workspace_run_id=identity.run_id,
+        workspace_session_id=identity.session_id,
+        workspace_setup_id=identity.setup_id,
+        source_run_id=identity.run_id,
+        source_session_id=identity.session_id,
+        source_setup_id=identity.setup_id,
+        source_setup_sha256=identity.setup_snapshot_sha256,
+        source_build_context_sha256=identity.vehicle_runtime_identity_hash,
+    )
+    workspace = SimpleNamespace(
+        identity=identity,
+        current_subgoal=production,
+        folded_state=folded,
+        learning_prior=prior,
+        evidence_index=SimpleNamespace(entries=(exact_entry,)),
+    )
+
+    baseline, memory, transfer_class = _p34_decisions_for_workspace(
+        workspace,
+        decision_frozen_at=datetime(2026, 8, 14, tzinfo=UTC),
+    )
+
+    assert baseline.action_id == "inspect_lap_time_opportunity"
+    assert memory == baseline
+    assert memory.source_memory_record_ids == ()
+    assert transfer_class == "blocked"
+
+
+def test_wrong_provenance_current_artifact_cannot_pin_baseline_attention() -> None:
+    bundle, folded, p26 = _planner_fixture()
+    folded.hypotheses = (
+        SimpleNamespace(
+            cause_id="cause-1",
+            progress="inspection_pending",
+            support_artifact_ids=("stale-discriminator-a",),
+            contradiction_artifact_ids=(),
+        ),
+    )
+    prior = _shadow_prior(
+        tool_id="inspect_time_loss_origin",
+        baseline_rank=2,
+    )
+    production = _subgoal(bundle, folded, p26, SimpleNamespace(), prior)
+    identity = _identity()
+    workspace = SimpleNamespace(
+        identity=identity,
+        current_subgoal=production,
+        folded_state=folded,
+        learning_prior=prior,
+        evidence_index=SimpleNamespace(
+            entries=(
+                SimpleNamespace(
+                    artifact_id="stale-discriminator-a",
+                    producer_id="p32.lap_time_opportunity",
+                    evidence_state=EvidenceState.CALCULATED,
+                    blocker_reasons=(),
+                    source_provenance_available=True,
+                    run_id=identity.run_id,
+                    session_id=identity.session_id,
+                    setup_id=identity.setup_id,
+                    workspace_run_id=identity.run_id,
+                    workspace_session_id=identity.session_id,
+                    workspace_setup_id=identity.setup_id,
+                    source_run_id=identity.run_id,
+                    source_session_id=identity.session_id,
+                    source_setup_id=identity.setup_id,
+                    source_setup_sha256=identity.setup_snapshot_sha256,
+                    source_build_context_sha256="f" * 64,
+                ),
+            )
+        ),
+    )
+
+    baseline, memory, transfer_class = _p34_decisions_for_workspace(
+        workspace,
+        decision_frozen_at=datetime(2026, 8, 14, tzinfo=UTC),
+    )
+
+    assert baseline.action_id == "inspect_lap_time_opportunity"
+    assert memory.action_id == "inspect_time_loss_origin"
+    assert memory.source_memory_record_ids
+    assert transfer_class == "exact"
+
+
+def test_same_action_memory_retains_directly_observable_provenance() -> None:
+    bundle, folded, p26 = _planner_fixture()
+    prior = _shadow_prior(
+        tool_id="inspect_lap_time_opportunity",
+        baseline_rank=1,
+    )
+    production = _subgoal(bundle, folded, p26, SimpleNamespace(), prior)
+    shadow, source_ids, transfer_class = _memory_shadow_from_baseline(
+        production,
+        folded,
+        prior,
+        decision_frozen_at=datetime(2026, 8, 14, tzinfo=UTC),
+    )
+
+    assert shadow == production
+    assert source_ids == ("p33x_" + "a" * 24, "p33x_" + "b" * 24)
+    assert transfer_class == "exact"
 
 
 def test_learning_prior_cannot_relabel_a_tool_into_an_earlier_safety_band() -> None:
     bundle, folded, p26 = _planner_fixture()
-    prior = SimpleNamespace(
-        recommended_attention_order=(
-            SimpleNamespace(
-                tool_id="inspect_p19_causes",
-                safety_band="performance_measurement",
-                baseline_rank_within_band=1,
-                learned_rank_within_band=1,
-                reason="Hostile cross-band promotion.",
-                transfer_level="exact",
-                investigation_count=9,
-                session_count=9,
-                independent_workflow_count=9,
-            ),
-        )
+    prior = _shadow_prior(
+        tool_id="inspect_p19_causes",
+        safety_band="performance_measurement",
     )
 
-    subgoal = _subgoal(bundle, folded, p26, SimpleNamespace(), prior)
+    production = _subgoal(bundle, folded, p26, SimpleNamespace(), prior)
+    shadow = _memory_shadow_subgoal(
+        bundle,
+        folded,
+        p26,
+        SimpleNamespace(),
+        prior,
+        decision_frozen_at=datetime(2026, 8, 14, tzinfo=UTC),
+    )
 
-    assert subgoal.selected_tool == "inspect_lap_time_opportunity"
-    assert "WHY THIS IS EARLIER" not in subgoal.why_this_tool
+    assert shadow == production
+
+
+@pytest.mark.parametrize(
+    ("completed_at", "driver_state"),
+    [
+        (datetime(2026, 8, 15, tzinfo=UTC), "repeatable_tendency"),
+        (datetime(2026, 8, 14, tzinfo=UTC), "repeatable_tendency"),
+        (datetime(2026, 8, 1, tzinfo=UTC), "changed_behavior"),
+    ],
+)
+def test_future_or_driver_drift_memory_falls_back_exactly_to_baseline(
+    completed_at: datetime,
+    driver_state: str,
+) -> None:
+    bundle, folded, p26 = _planner_fixture()
+    folded.completed_tool_ids = (
+        *folded.completed_tool_ids,
+        "inspect_lap_time_opportunity",
+        "inspect_time_loss_origin",
+        "inspect_corner_performance_chain",
+        "inspect_exit_carry",
+        "inspect_path_efficiency",
+    )
+    prior = _shadow_prior(completed_at=completed_at, driver_state=driver_state)
+    production = _subgoal(bundle, folded, p26, SimpleNamespace(), prior)
+    shadow = _memory_shadow_subgoal(
+        bundle,
+        folded,
+        p26,
+        SimpleNamespace(),
+        prior,
+        decision_frozen_at=datetime(2026, 8, 14, tzinfo=UTC),
+    )
+
+    assert shadow == production
+
+
+def test_p34_outcome_pair_is_earliest_persisted_differing_tool_revision(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "canonical-p34-pair.sqlite"
+    repository = InvestigationAdaptationRepository(db_path)
+    baseline_policy = baseline_investigation_policy()
+    memory_policy = memory_shadow_investigation_policy()
+    for record in (baseline_policy, memory_policy, p34_activation_protocol()):
+        repository.append_record(record)
+    mandatory = ("workspace_identity", "data_integrity")
+    baseline = InvestigationDecision(
+        decision_kind="inspect_tool",
+        action_id="inspect_lap_time_opportunity",
+        priority_tier="driver_car_confounders",
+        safe_reorder_group="performance_measurement",
+        baseline_ordinal=1,
+        selected_ordinal=1,
+        reason="Frozen deterministic baseline.",
+        mandatory_check_ids=mandatory,
+    )
+
+    def pair(
+        step: int,
+        memory_action: str,
+        memory_baseline_ordinal: int,
+    ):
+        memory = InvestigationDecision(
+            decision_kind="inspect_tool",
+            action_id=memory_action,
+            priority_tier="driver_car_confounders",
+            safe_reorder_group="performance_measurement",
+            baseline_ordinal=memory_baseline_ordinal,
+            selected_ordinal=1,
+            reason="Qualified exact-context memory shadow.",
+            mandatory_check_ids=mandatory,
+            source_memory_record_ids=("p33x_" + "a" * 24,),
+        )
+        return build_paired_investigation_decision(
+            baseline_policy=baseline_policy,
+            memory_policy=memory_policy,
+            investigation_id="investigation-canonical-pair",
+            investigation_opened_at=datetime(2026, 8, 14, 11, tzinfo=UTC),
+            run_id="run-1",
+            session_id="session-1",
+            workspace_revision=canonical_json_sha256(["workspace", step]),
+            authority_revision=canonical_json_sha256(["authority", step]),
+            step_number=step,
+            baseline_decision=baseline,
+            memory_decision=memory,
+            available_tool_ids=(
+                "inspect_lap_time_opportunity",
+                "inspect_time_loss_origin",
+                "inspect_corner_performance_chain",
+            ),
+            eligible_tool_ids=(
+                "inspect_lap_time_opportunity",
+                "inspect_time_loss_origin",
+            ),
+            completed_tool_ids=(),
+            available_artifact_ids=(),
+            current_truth_sha256=canonical_json_sha256(["truth", step]),
+                p19_snapshot_sha256="2" * 64,
+                current_p19_cause_ids=("cause-1",),
+                current_p19_cause_states=(
+                    P19CauseState(cause_id="cause-1", state="possible"),
+                ),
+            current_contradiction_ids=(),
+            strongest_contradiction_id=None,
+            current_objective="race_long_run",
+            p33_projection_sha256="0" * 64,
+            p33_history_revision="a" * 64,
+            p33_ledger_head_sha256="b" * 64,
+            p33_context_sha256="c" * 64,
+            p33_problem_sha256="d" * 64,
+            track="atlanta",
+            track_configuration="oval",
+            package_type="speedway",
+            iracing_build="2026.08.1",
+            problem_family="entry",
+            problem_orientation="combined",
+            track_class="intermediate",
+            phase="entry",
+            build_review_state="same_build",
+            driver_drift_state="stable",
+            decision_frozen_at=datetime(2026, 8, 14, 12, step, tzinfo=UTC),
+            context_transfer_class="exact",
+            p20_projection_sha256="3" * 64,
+            p26_projection_sha256="5" * 64,
+            p32_projection_sha256="9" * 64,
+        )
+
+    same = pair(1, "inspect_lap_time_opportunity", 1)
+    earliest_different = pair(2, "inspect_time_loss_origin", 2)
+    later_different = pair(3, "inspect_time_loss_origin", 2)
+    # Persistence order is deliberately hostile: the higher step arrives first.
+    for record in (same, later_different, earliest_different):
+        repository.append_paired_decision(record)
+
+    selected = _canonical_p34_outcome_pair(
+        "investigation-canonical-pair",
+        db_path=db_path,
+    )
+
+    assert selected == earliest_different
+    assert selected != later_different
+    connection = initialize_database(db_path)
+    try:
+        persisted_selection = CrewChiefRepository._canonical_p34_pair_in_transaction(
+            connection,
+            "investigation-canonical-pair",
+        )
+    finally:
+        connection.close()
+    assert persisted_selection == earliest_different
+
+
+def test_earned_attention_falls_back_for_current_shadow_pair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    earned = InvestigationImprovementReadiness(
+        production_policy="limited_attention",
+        memory_policy_state="limited_attention",
+        activation_decision="limited_attention_earned",
+        evaluation_decision="limited_attention_earned",
+        effective_activation_decision_id="p34act_" + "a" * 24,
+        effective_activation_decision_sha256="b" * 64,
+        qualified_historical_investigations=20,
+        qualified_prospective_investigations=12,
+        observable_comparisons=32,
+        unobservable_comparisons=0,
+        historical_deficit=0,
+        prospective_deficit=0,
+        exact_recurrence_deficit=0,
+        compatible_recurrence_deficit=0,
+        context_deficit=0,
+        problem_family_deficit=0,
+        objective_deficit=0,
+        safety_gate_passed=True,
+        negative_controls_passed=True,
+        subgroup_gate_passed=True,
+        blockers=(),
+        remaining_collection_missions=(),
+    )
+    shadow_pair = SimpleNamespace(activation_state="shadow_only")
+    captured: dict[str, object] = {}
+
+    class _Repository:
+        def latest_pair(self, investigation_id: str, workspace_revision: str):
+            assert investigation_id == "investigation-current-fallback"
+            assert workspace_revision == "8" * 64
+            return shadow_pair
+
+    def _capture_projection(**values):
+        captured.update(values)
+        return SimpleNamespace(**values)
+
+    monkeypatch.setattr(
+        crew_chief_service,
+        "InvestigationAdaptationRepository",
+        lambda _db_path: _Repository(),
+    )
+    monkeypatch.setattr(
+        crew_chief_service,
+        "assess_p34_repository_readiness",
+        lambda _repository: earned,
+    )
+    monkeypatch.setattr(
+        crew_chief_service,
+        "build_investigation_improvement_projection",
+        _capture_projection,
+    )
+    current_context = SimpleNamespace(context_binding_sha256="c" * 64)
+    monkeypatch.setattr(
+        crew_chief_service,
+        "_p34_adaptation_context_for_pair",
+        lambda *_args, **_kwargs: current_context,
+    )
+    identity = _identity().model_copy(
+        update={"investigation_id": "investigation-current-fallback"}
+    )
+
+    _p34_projection_for_identity(
+        identity,
+        investigation_open=True,
+        current_learning=SimpleNamespace(),
+        learning_prior=SimpleNamespace(),
+        folded=SimpleNamespace(status="open"),
+        baseline_subgoal=None,
+        evidence_index=SimpleNamespace(),
+        terminal_decision=SimpleNamespace(),
+        p19_cause_ids=(),
+        p19_contradiction_artifact_ids=(),
+        blocker_reasons=(),
+        db_path=None,
+    )
+
+    fallback = captured["readiness"]
+    assert isinstance(fallback, InvestigationImprovementReadiness)
+    assert fallback.production_policy == "deterministic_baseline"
+    assert fallback.memory_policy_state == "shadow_only"
+    assert fallback.activation_decision == "no_activation_earned"
+    assert fallback.qualified_historical_investigations == 20
+    assert fallback.qualified_prospective_investigations == 12
+    assert captured["current_pair"] is shadow_pair
+    assert captured["current_context"] is current_context
+    assert captured["safety_blockers"]
+
+
+def test_p34_unknown_driver_state_cannot_masquerade_as_drift_evidence() -> None:
+    mandatory = ("workspace_identity",)
+    baseline = InvestigationDecision(
+        decision_kind="inspect_tool",
+        action_id="inspect_lap_time_opportunity",
+        priority_tier="driver_car_confounders",
+        safe_reorder_group="performance_measurement",
+        baseline_ordinal=1,
+        selected_ordinal=1,
+        reason="Baseline.",
+        mandatory_check_ids=mandatory,
+    )
+    memory = InvestigationDecision(
+        decision_kind="inspect_tool",
+        action_id="inspect_time_loss_origin",
+        priority_tier="driver_car_confounders",
+        safe_reorder_group="performance_measurement",
+        baseline_ordinal=2,
+        selected_ordinal=1,
+        reason="Memory shadow.",
+        mandatory_check_ids=mandatory,
+        source_memory_record_ids=("p33x_" + "a" * 24,),
+    )
+    workspace = SimpleNamespace(
+        blocker_reasons=(),
+        learning_prior=SimpleNamespace(
+            context_transfers=(),
+            driver_tendencies=(),
+        ),
+    )
+    current = SimpleNamespace(
+        context=SimpleNamespace(
+            objective="race_long_run",
+            track="atlanta",
+            track_configuration="oval",
+            package_type="speedway",
+        ),
+        problem=SimpleNamespace(
+            phase="entry",
+            driver_demand_state="unknown",
+            vehicle_response_state="unknown",
+        ),
+    )
+
+    (
+        _family,
+        _orientation,
+        _track_class,
+        subgroups,
+        _build_state,
+        driver_state,
+        transfer_class,
+        bounded_memory,
+        future_memory_record_ids,
+        _negative_control,
+    ) = _p34_restart_context(
+        workspace,
+        current,
+        baseline,
+        memory,
+        "exact",
+        decision_frozen_at=datetime(2026, 8, 14, tzinfo=UTC),
+    )
+
+    assert driver_state == "unknown"
+    assert "driver_state_unknown" in subgroups
+    assert "driver_drift_detected" not in subgroups
+    assert transfer_class == "blocked"
+    assert bounded_memory == baseline
+    assert future_memory_record_ids == ()
+
+
+def test_all_frozen_negative_controls_build_real_exact_fallback_pairs() -> None:
+    frozen_at = datetime(2026, 8, 14, 15, tzinfo=UTC)
+    baseline_policy = baseline_investigation_policy()
+    memory_policy = memory_shadow_investigation_policy()
+    mandatory = ("workspace_identity",)
+    baseline = InvestigationDecision(
+        decision_kind="inspect_tool",
+        action_id="inspect_lap_time_opportunity",
+        priority_tier="driver_car_confounders",
+        safe_reorder_group="performance_measurement",
+        baseline_ordinal=1,
+        selected_ordinal=1,
+        reason="Deterministic baseline remains production.",
+        mandatory_check_ids=mandatory,
+    )
+
+    def transfer(
+        level: str,
+        *,
+        mismatched_dimensions: tuple[str, ...] = (),
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            experience_id="p33x_" + "a" * 24,
+            level=level,
+            matching_dimensions=("driver_execution_state",),
+            mismatched_dimensions=mismatched_dimensions,
+            drift_reasons=(),
+            blocker_reasons=("Physical scope is incompatible.",)
+            if level == "blocked"
+            else (),
+        )
+
+    cases = {
+        "no_relevant_history": {
+            "state": "insufficient_history",
+        },
+        "incompatible_history": {
+            "state": "available",
+            "context_transfers": (transfer("blocked"),),
+        },
+        "corrupt_history": {
+            "state": "blocked",
+            "blocker_reasons": ("The P33 ledger failed integrity validation.",),
+        },
+        "generic_component_knowledge_only": {
+            "state": "available",
+            "context_transfers": (
+                transfer(
+                    "weak",
+                    mismatched_dimensions=("setup_snapshot_sha256",),
+                ),
+            ),
+            "car_response_history": (
+                SimpleNamespace(source_experience_ids=("p33x_" + "c" * 24,)),
+            ),
+            "driver_demand_state": "unknown",
+            "vehicle_response_state": "changed_response",
+        },
+        "same_words_different_physical_scope": {
+            "state": "available",
+            "context_transfers": (
+                transfer(
+                    "weak",
+                    mismatched_dimensions=("speed_load_band",),
+                ),
+            ),
+            "recurrence": SimpleNamespace(classification="possible_recurrence"),
+            "driver_demand_state": "matched_inputs",
+            "vehicle_response_state": "changed_response",
+        },
+        "material_driver_drift": {
+            "state": "available",
+            "driver_tendencies": (SimpleNamespace(state="changed_behavior"),),
+        },
+        "future_memory_record": {
+            "state": "available",
+            "recurrence": SimpleNamespace(classification="possible_recurrence"),
+            "useful_prior_investigations": (
+                SimpleNamespace(
+                    experience_id="p33x_" + "b" * 24,
+                    outcome=SimpleNamespace(completed_at=frozen_at),
+                ),
+            ),
+        },
+    }
+    for ordinal, (expected_control, values) in enumerate(cases.items(), start=1):
+        prior = SimpleNamespace(
+            projection_sha256="0" * 64,
+            state=values.get("state", "available"),
+            context_transfers=values.get("context_transfers", ()),
+            driver_tendencies=values.get("driver_tendencies", ()),
+            car_response_history=values.get("car_response_history", ()),
+            recurrence=values.get(
+                "recurrence", SimpleNamespace(classification="new_problem")
+            ),
+            useful_prior_investigations=values.get(
+                "useful_prior_investigations", ()
+            ),
+            blocker_reasons=values.get("blocker_reasons", ()),
+        )
+        workspace = SimpleNamespace(
+            blocker_reasons=(),
+            learning_prior=prior,
+        )
+        current = SimpleNamespace(
+            context=SimpleNamespace(
+                objective="race_long_run",
+                track="atlanta",
+                track_configuration="oval",
+                package_type="speedway",
+            ),
+            problem=SimpleNamespace(
+                phase="entry",
+                driver_demand_state=values.get(
+                    "driver_demand_state", "unknown"
+                ),
+                vehicle_response_state=values.get(
+                    "vehicle_response_state", "unknown"
+                ),
+            ),
+        )
+        (
+            problem_family,
+            problem_orientation,
+            track_class,
+            _subgroups,
+            build_state,
+            driver_state,
+            transfer_class,
+            memory,
+            future_memory_record_ids,
+            control_id,
+        ) = _p34_restart_context(
+            workspace,
+            current,
+            baseline,
+            baseline,
+            "none",
+            decision_frozen_at=frozen_at,
+        )
+        assert control_id == expected_control
+        control_evidence = _p34_negative_control_evidence(
+            workspace,
+            condition=control_id,
+            driver_drift_state=driver_state,
+            future_memory_record_ids=future_memory_record_ids,
+        )
+        referenced_p33_ids = (
+            *control_evidence.context_transfer_record_ids,
+            *control_evidence.useful_prior_experience_ids,
+            *control_evidence.component_history_experience_ids,
+            *control_evidence.future_memory_record_ids,
+        )
+        pair = build_paired_investigation_decision(
+            baseline_policy=baseline_policy,
+            memory_policy=memory_policy,
+            investigation_id=f"negative-control-{ordinal}",
+            investigation_opened_at=frozen_at - timedelta(hours=1),
+            run_id="run-1",
+            session_id="session-1",
+            workspace_revision=canonical_json_sha256(
+                ["negative-control-workspace", ordinal]
+            ),
+            authority_revision=canonical_json_sha256(
+                ["negative-control-authority", ordinal]
+            ),
+            step_number=0,
+            baseline_decision=baseline,
+            memory_decision=memory,
+            available_tool_ids=(baseline.action_id,),
+            eligible_tool_ids=(baseline.action_id,),
+            completed_tool_ids=(),
+            available_artifact_ids=(),
+            current_truth_sha256=canonical_json_sha256(
+                ["negative-control-truth", ordinal]
+            ),
+            p19_snapshot_sha256="2" * 64,
+            current_p19_cause_ids=("cause-1",),
+            current_p19_cause_states=(
+                P19CauseState(cause_id="cause-1", state="possible"),
+            ),
+            current_contradiction_ids=(),
+            strongest_contradiction_id=None,
+            current_objective="race_long_run",
+            p33_projection_sha256="0" * 64,
+            p33_history_revision="a" * 64,
+            p33_ledger_head_sha256=("f" * 64 if referenced_p33_ids else None),
+            p33_context_sha256="c" * 64,
+            p33_problem_sha256="d" * 64,
+            track="atlanta",
+            track_configuration="oval",
+            package_type="speedway",
+            iracing_build="2026.08.1",
+            problem_family=problem_family,
+            problem_orientation=problem_orientation,
+            track_class=track_class,
+            phase="entry",
+            build_review_state=build_state,
+            driver_drift_state=driver_state,
+            decision_frozen_at=frozen_at,
+            context_transfer_class=transfer_class,
+            negative_control_condition=control_id,
+            negative_control_evidence=control_evidence,
+            future_memory_record_ids=future_memory_record_ids,
+            p20_projection_sha256="3" * 64,
+            p26_projection_sha256="5" * 64,
+            p32_projection_sha256="9" * 64,
+        )
+        result = build_p34_negative_control_result(
+            pair,
+            control_id=expected_control,
+            evaluated_at=frozen_at + timedelta(seconds=1),
+        )
+        assert pair.production_decision == pair.baseline_decision
+        assert pair.memory_records_consulted == ()
+        assert result.passed is True
+
+
+def test_iracing_build_mismatch_is_unreviewed_and_cannot_control_attention(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    frozen_at = datetime(2026, 8, 14, 15, tzinfo=UTC)
+    baseline = InvestigationDecision(
+        decision_kind="inspect_tool",
+        action_id="inspect_lap_time_opportunity",
+        priority_tier="driver_car_confounders",
+        safe_reorder_group="performance_measurement",
+        baseline_ordinal=1,
+        selected_ordinal=1,
+        reason="Deterministic baseline.",
+        mandatory_check_ids=("workspace_identity",),
+    )
+    memory = InvestigationDecision(
+        decision_kind="inspect_tool",
+        action_id="inspect_time_loss_origin",
+        priority_tier="driver_car_confounders",
+        safe_reorder_group="performance_measurement",
+        baseline_ordinal=2,
+        selected_ordinal=1,
+        reason="Historical attention candidate.",
+        mandatory_check_ids=("workspace_identity",),
+        source_memory_record_ids=("p33x_" + "a" * 24,),
+    )
+    transfer = SimpleNamespace(
+        experience_id="p33x_" + "a" * 24,
+        level="exact",
+        matching_dimensions=("driver_execution_state",),
+        mismatched_dimensions=("iRacing_build",),
+        drift_reasons=(),
+        blocker_reasons=(),
+    )
+    workspace = SimpleNamespace(
+        blocker_reasons=(),
+        learning_prior=SimpleNamespace(
+            state="available",
+            context_transfers=(transfer,),
+            useful_prior_investigations=(
+                SimpleNamespace(
+                    experience_id=transfer.experience_id,
+                    outcome=SimpleNamespace(
+                        completed_at=frozen_at - timedelta(days=1)
+                    ),
+                ),
+            ),
+            driver_tendencies=(),
+            car_response_history=(),
+            recurrence=SimpleNamespace(classification="possible_recurrence"),
+            blocker_reasons=(),
+        ),
+    )
+    current = SimpleNamespace(
+        context=SimpleNamespace(
+            objective="race_long_run",
+            track="atlanta",
+            track_configuration="oval",
+            package_type="speedway",
+        ),
+        problem=SimpleNamespace(
+            phase="entry",
+            driver_demand_state="matched_inputs",
+            vehicle_response_state="changed_response",
+        ),
+    )
+
+    values = _p34_restart_context(
+        workspace,
+        current,
+        baseline,
+        memory,
+        "exact",
+        decision_frozen_at=frozen_at,
+    )
+
+    assert values[4] == "future_unreviewed_build"
+    assert values[6] == "blocked"
+    assert values[7] == baseline
+    assert values[9] is None
+    pair = build_paired_investigation_decision(
+        baseline_policy=baseline_investigation_policy(),
+        memory_policy=memory_shadow_investigation_policy(),
+        investigation_id="investigation-build-mismatch",
+        investigation_opened_at=frozen_at - timedelta(minutes=1),
+        run_id="run-1",
+        session_id="session-1",
+        workspace_revision="8" * 64,
+        authority_revision="7" * 64,
+        step_number=0,
+        baseline_decision=baseline,
+        memory_decision=values[7],
+        available_tool_ids=(
+            "inspect_lap_time_opportunity",
+            "inspect_time_loss_origin",
+        ),
+        eligible_tool_ids=(
+            "inspect_lap_time_opportunity",
+            "inspect_time_loss_origin",
+        ),
+        completed_tool_ids=(),
+        available_artifact_ids=(),
+        current_truth_sha256="1" * 64,
+        p19_snapshot_sha256="2" * 64,
+        current_p19_cause_ids=("cause-1",),
+        current_p19_cause_states=(
+            P19CauseState(cause_id="cause-1", state="possible"),
+        ),
+        current_contradiction_ids=(),
+        strongest_contradiction_id=None,
+        current_objective="race_long_run",
+        p33_projection_sha256="6" * 64,
+        p33_history_revision="a" * 64,
+        p33_ledger_head_sha256="b" * 64,
+        p33_context_sha256="c" * 64,
+        p33_problem_sha256="d" * 64,
+        track="atlanta",
+        track_configuration="oval",
+        package_type="speedway",
+        iracing_build="2026.08.1",
+        problem_family=values[0],
+        problem_orientation=values[1],
+        track_class=values[2],
+        phase="entry",
+        build_review_state=values[4],
+        driver_drift_state=values[5],
+        decision_frozen_at=frozen_at,
+        context_transfer_class=values[6],
+        negative_control_condition=values[9],
+        p20_projection_sha256="3" * 64,
+        p26_projection_sha256="5" * 64,
+        p32_projection_sha256="9" * 64,
+    )
+    assert pair.production_decision == baseline
+    assert pair.negative_control_condition is None
+
+    db_path = tmp_path / "p34-build-mismatch.sqlite"
+    initialize_database(db_path).close()
+    p33_state = EngineeringLearningRepository(db_path).stream_state()
+    identity = _identity().model_copy(
+        update={
+            "learning_history_revision": p33_state.history_revision,
+            "learning_ledger_head_sha256": p33_state.head_sha256,
+            "learning_projection_sha256": "6" * 64,
+        }
+    )
+    current.context.context_sha256 = "c" * 64
+    current.context.iracing_build = "2026.08.1"
+    current.problem.problem_sha256 = "d" * 64
+    current.reasoning = SimpleNamespace(
+        causes=(SimpleNamespace(cause_id="cause-1", status="possible"),)
+    )
+    prior = workspace.learning_prior
+    prior.projection_sha256 = identity.learning_projection_sha256
+    prior.current_context_sha256 = current.context.context_sha256
+    prior.current_problem_sha256 = current.problem.problem_sha256
+    workspace.identity = identity
+    workspace.investigation = _investigation().model_copy(
+        update={"workspace_identity": identity}
+    )
+    workspace.folded_state = SimpleNamespace(
+        status="open",
+        last_sequence=0,
+        completed_tool_ids=(),
+    )
+    workspace.current_subgoal = SimpleNamespace()
+    workspace.available_tools = (
+        SimpleNamespace(tool_id="inspect_lap_time_opportunity"),
+        SimpleNamespace(tool_id="inspect_time_loss_origin"),
+    )
+    workspace.evidence_index = SimpleNamespace(entries=())
+    workspace.p19_cause_ids = ("cause-1",)
+    workspace.p19_contradiction_artifact_ids = ()
+    monkeypatch.setattr(
+        crew_chief_service,
+        "_p34_decisions_for_workspace",
+        lambda *_args, **_kwargs: (baseline, memory, "exact"),
+    )
+    monkeypatch.setattr(
+        crew_chief_service,
+        "_p34_qualified_current_evidence_tool_ids",
+        lambda *_args, **_kwargs: (),
+    )
+    monkeypatch.setattr(
+        crew_chief_service,
+        "_learning_inputs_for_workspace",
+        lambda *_args, **_kwargs: current,
+    )
+    monkeypatch.setattr(
+        crew_chief_service,
+        "_p34_current_truth_sha256",
+        lambda _workspace: "1" * 64,
+    )
+    monkeypatch.setattr(
+        crew_chief_service,
+        "resolve_effective_activation_decision",
+        lambda _repository: None,
+    )
+    monkeypatch.setattr(
+        crew_chief_service,
+        "restore_effective_activation_on_mutation",
+        lambda _repository: None,
+    )
+
+    persisted_pair = _freeze_p34_pair_for_workspace(workspace, db_path=db_path)
+
+    assert persisted_pair is not None
+    assert persisted_pair.production_decision == baseline
+    assert persisted_pair.context_transfer_class == "blocked"
+    assert persisted_pair.build_review_state == "future_unreviewed_build"
+    assert persisted_pair.negative_control_condition is None
+    restarted_pair = InvestigationAdaptationRepository(db_path).latest_pair(
+        workspace.investigation.investigation_id,
+        identity.workspace_revision,
+    )
+    assert restarted_pair == persisted_pair
 
 
 def test_known_dead_end_cannot_veto_new_live_tool_evidence() -> None:
@@ -1721,7 +2856,201 @@ def test_workspace_cache_is_namespaced_by_database_identity(tmp_path) -> None:
     assert first[1] == second[1] == identity.workspace_revision
 
 
-def test_continue_cannot_bypass_a_pending_driver_question(monkeypatch) -> None:
+def test_first_real_pair_mutation_persists_foundation_once_across_restart(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "p34-foundation-restart.sqlite"
+    initialize_database(db_path).close()
+    identity = _identity()
+    investigation = _investigation()
+    current = SimpleNamespace(
+        context=SimpleNamespace(
+            context_sha256="c" * 64,
+            objective="race_long_run",
+            track="atlanta",
+            track_configuration="oval",
+            package_type="speedway",
+            iracing_build="2026.08.1",
+        ),
+        problem=SimpleNamespace(
+            problem_sha256="d" * 64,
+            phase="entry",
+            driver_demand_state="unknown",
+            vehicle_response_state="unknown",
+        ),
+        reasoning=SimpleNamespace(
+            causes=(SimpleNamespace(cause_id="cause-1", status="possible"),)
+        ),
+    )
+    prior = SimpleNamespace(
+        projection_sha256=identity.learning_projection_sha256,
+        state="insufficient_history",
+        current_context_sha256=current.context.context_sha256,
+        current_problem_sha256=current.problem.problem_sha256,
+        context_transfers=(),
+        useful_prior_investigations=(),
+        driver_tendencies=(),
+        car_response_history=(),
+        recurrence=SimpleNamespace(classification="new_problem"),
+        blocker_reasons=(),
+    )
+    workspace = SimpleNamespace(
+        identity=identity,
+        investigation=investigation,
+        folded_state=SimpleNamespace(
+            status="open",
+            last_sequence=0,
+            completed_tool_ids=(),
+        ),
+        current_subgoal=SimpleNamespace(),
+        learning_prior=prior,
+        available_tools=(
+            SimpleNamespace(tool_id="inspect_lap_time_opportunity"),
+            SimpleNamespace(tool_id="inspect_time_loss_origin"),
+        ),
+        evidence_index=SimpleNamespace(
+            entries=(
+                SimpleNamespace(
+                    artifact_id="late-qualified-artifact",
+                    evidence_state=EvidenceState.MEASURED,
+                    blocker_reasons=("Current provenance is blocked.",),
+                ),
+            )
+        ),
+        p19_cause_ids=("cause-1",),
+        p19_contradiction_artifact_ids=(),
+        blocker_reasons=(),
+    )
+    baseline = InvestigationDecision(
+        decision_kind="inspect_tool",
+        action_id="inspect_lap_time_opportunity",
+        priority_tier="driver_car_confounders",
+        safe_reorder_group="performance_measurement",
+        baseline_ordinal=1,
+        selected_ordinal=1,
+        reason="Deterministic baseline.",
+        mandatory_check_ids=("workspace_identity",),
+    )
+    monkeypatch.setattr(
+        crew_chief_service,
+        "_p34_decisions_for_workspace",
+        lambda *_args, **_kwargs: (baseline, baseline, "none"),
+    )
+    monkeypatch.setattr(
+        crew_chief_service,
+        "_p34_qualified_current_evidence_tool_ids",
+        lambda *_args, **_kwargs: (),
+    )
+    monkeypatch.setattr(
+        crew_chief_service,
+        "_learning_inputs_for_workspace",
+        lambda *_args, **_kwargs: current,
+    )
+    monkeypatch.setattr(
+        crew_chief_service,
+        "_p34_current_truth_sha256",
+        lambda _workspace: "e" * 64,
+    )
+    monkeypatch.setattr(
+        crew_chief_service,
+        "resolve_effective_activation_decision",
+        lambda _repository: None,
+    )
+    restored_mutations: list[object] = []
+    monkeypatch.setattr(
+        crew_chief_service,
+        "restore_effective_activation_on_mutation",
+        lambda repository: restored_mutations.append(repository.db_path),
+    )
+    monkeypatch.setattr(
+        crew_chief_service,
+        "_p34_restart_context",
+        lambda *_args, **_kwargs: (
+            "entry",
+            "unresolved",
+            "intermediate",
+            ("no_transfer",),
+            "same_build",
+            "unknown",
+            "none",
+            baseline,
+            (),
+            "no_relevant_history",
+        ),
+    )
+    build_failure: list[Exception] = []
+    real_pair_builder = crew_chief_service.build_paired_investigation_decision
+
+    monkeypatch.setattr(
+        crew_chief_service,
+        "build_paired_investigation_decision",
+        lambda **_values: (_ for _ in ()).throw(
+            ValueError("injected pre-freeze validation failure")
+        ),
+    )
+    assert _freeze_p34_pair_for_workspace(workspace, db_path=db_path) is None
+    empty_repository = InvestigationAdaptationRepository(db_path)
+    empty_state = empty_repository.stream_state(validate_chain=True)
+    assert (empty_state.record_count, empty_state.head_sha256) == (0, None)
+    assert empty_repository.query_records(limit=10).records == ()
+
+    def capture_pair_build(**values):
+        try:
+            return real_pair_builder(**values)
+        except Exception as exc:
+            build_failure.append(exc)
+            raise
+
+    monkeypatch.setattr(
+        crew_chief_service,
+        "build_paired_investigation_decision",
+        capture_pair_build,
+    )
+
+    first = _freeze_p34_pair_for_workspace(workspace, db_path=db_path)
+    assert not build_failure, str(build_failure)
+    preflight_state = InvestigationAdaptationRepository(db_path).stream_state(
+        validate_chain=True
+    )
+    assert first is not None, preflight_state
+    assert first.available_artifact_ids == ("late-qualified-artifact",)
+    assert first.qualified_available_artifact_ids == ()
+    assert first.qualified_available_artifact_evidence_states == ()
+    assert first.qualified_available_artifact_provenance_sha256s == ()
+    first_state = InvestigationAdaptationRepository(db_path).stream_state(
+        validate_chain=True
+    )
+    first_records = InvestigationAdaptationRepository(db_path).query_records(
+        limit=10
+    )
+    assert first_state.record_count == 5
+    assert sum(
+        item.schema_version == "p34.paired-investigation-decision.v1"
+        for item in first_records.records
+    ) == 1
+    assert sum(
+        item.schema_version == "p34.investigation-policy.v1"
+        for item in first_records.records
+    ) == 3
+    assert sum(
+        item.schema_version == "p34.activation-protocol.v1"
+        for item in first_records.records
+    ) == 1
+
+    restarted = _freeze_p34_pair_for_workspace(workspace, db_path=db_path)
+    restarted_state = InvestigationAdaptationRepository(db_path).stream_state(
+        validate_chain=True
+    )
+    assert restarted == first
+    assert restarted_state == first_state
+    assert restored_mutations == [db_path, db_path, db_path]
+
+
+def test_continue_cannot_bypass_a_pending_driver_question(
+    monkeypatch,
+    tmp_path,
+) -> None:
     current = SimpleNamespace(
         identity=SimpleNamespace(workspace_revision="8" * 64),
         folded_state=SimpleNamespace(
@@ -1739,10 +3068,11 @@ def test_continue_cannot_bypass_a_pending_driver_question(monkeypatch) -> None:
             "investigation-1",
             session_id="session-1",
             expected_workspace_revision="8" * 64,
+            db_path=tmp_path / "pending-driver-question.sqlite",
         )
 
 
-def test_rebase_rejects_a_foreign_stale_revision(monkeypatch) -> None:
+def test_rebase_rejects_a_foreign_stale_revision(monkeypatch, tmp_path) -> None:
     current = SimpleNamespace(
         identity=_identity(),
         investigation=_investigation(),
@@ -1758,6 +3088,7 @@ def test_rebase_rejects_a_foreign_stale_revision(monkeypatch) -> None:
             "investigation-1",
             session_id="session-1",
             stale_workspace_revision="f" * 64,
+            db_path=tmp_path / "foreign-stale-revision.sqlite",
         )
 
 

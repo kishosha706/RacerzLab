@@ -15550,6 +15550,144 @@ button:focus:not(:focus-visible) {
 .crew-chief-learning { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
 .crew-chief-learning ul { margin: 0.45rem 0 0; padding-left: 1rem; }
 .crew-chief-learning li { margin-bottom: 0.25rem; }
+.crew-chief-learning .investigation-improvement {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.55rem;
+  border-color: color-mix(in srgb, #60a5fa 48%, var(--border));
+  background: linear-gradient(135deg, rgba(30, 58, 138, 0.12), rgba(8, 12, 18, 0.76));
+}
+.investigation-improvement > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.investigation-improvement-state {
+  padding: 0.25rem 0.45rem;
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  border-radius: 999px;
+  color: #93c5fd;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.investigation-improvement-decisions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+.investigation-improvement-decisions article {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(8, 12, 18, 0.66);
+}
+.investigation-improvement-decisions span,
+.investigation-improvement-decisions small,
+.investigation-improvement-policy,
+.investigation-improvement-observability,
+.investigation-improvement-unobservable,
+.investigation-improvement > small,
+.investigation-improvement > footer {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+.investigation-improvement-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.investigation-improvement-counts span {
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+.investigation-improvement-counts strong { color: var(--text); }
+.investigation-improvement-memory,
+.investigation-improvement-comparison {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(8, 12, 18, 0.66);
+}
+.investigation-improvement-memory > span,
+.investigation-improvement-comparison span,
+.investigation-improvement-comparison small {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+.investigation-improvement-memory code {
+  overflow-wrap: anywhere;
+  color: #bfdbfe;
+  font-size: 0.66rem;
+}
+.investigation-improvement-memory li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.35rem;
+}
+.investigation-improvement-memory button {
+  padding: 0.2rem 0.4rem;
+  color: #bfdbfe;
+  font-size: 0.64rem;
+}
+.investigation-improvement-comparison > div {
+  display: grid;
+  gap: 0.18rem;
+}
+.investigation-improvement-completed-decisions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0.35rem 0;
+  border-block: 1px solid var(--border);
+}
+.investigation-improvement-comparison p { margin: 0; }
+.investigation-improvement-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.8rem;
+  margin: 0 !important;
+  padding-left: 1rem !important;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+.investigation-improvement-list li { margin: 0 !important; }
+.investigation-improvement-blocker { color: #fbbf24 !important; }
+.investigation-improvement-audit {
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+.investigation-improvement-audit > summary {
+  padding-top: 0.45rem;
+  cursor: pointer;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.investigation-improvement-audit > div {
+  margin-top: 0.45rem;
+  padding: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.investigation-improvement-audit ul {
+  margin: 0.3rem 0 0;
+  padding-left: 1rem;
+}
+.investigation-improvement > footer {
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--border);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 .crew-chief-learning .engineering-memory {
   grid-column: 1 / -1;
   display: grid;
@@ -15608,4 +15746,6 @@ button:focus:not(:focus-visible) {
   .crew-chief-race-secondary { grid-template-columns: 1fr; }
   .engineering-memory-grid { grid-template-columns: 1fr; }
   .engineering-memory.engineering-memory-compact { grid-template-columns: 1fr; }
+  .investigation-improvement-decisions { grid-template-columns: 1fr; }
+  .investigation-improvement-completed-decisions { grid-template-columns: 1fr; }
 }

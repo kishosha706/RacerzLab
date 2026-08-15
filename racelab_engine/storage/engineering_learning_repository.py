@@ -136,6 +136,7 @@ class EngineeringLearningRepository:
         connection: sqlite3.Connection,
         *,
         validate_chain: bool,
+        validate_payloads: bool = True,
     ) -> EngineeringLearningStreamState:
         head = connection.execute(
             "SELECT schema_version, record_count, head_sha256 "
@@ -217,10 +218,12 @@ class EngineeringLearningRepository:
                     raise EngineeringLearningIntegrityError(
                         "P33 engineering-experience indexed identity is corrupt"
                     )
-                # The chain binds the indexed experience digest; the full audit
-                # must also prove that the immutable payload still owns that
-                # digest and the same indexed identity.
-                EngineeringLearningRepository._validate_row(row)
+                # Mutation preflights may validate the complete append-only
+                # sequence/link/index chain without parsing unrelated payloads.
+                # Exact retrieval/replay still validates every selected row,
+                # and explicit maintenance audits keep payload validation on.
+                if validate_payloads:
+                    EngineeringLearningRepository._validate_row(row)
                 previous = expected_entry
             if len(rows) != record_count or previous != head_sha256:
                 raise EngineeringLearningIntegrityError(
@@ -237,11 +240,16 @@ class EngineeringLearningRepository:
         *,
         connection: sqlite3.Connection | None = None,
         validate_chain: bool = False,
+        validate_payloads: bool = True,
     ) -> EngineeringLearningStreamState:
         owns_connection = connection is None
         active = connection or initialize_database(self.db_path)
         try:
-            return self._stream_state(active, validate_chain=validate_chain)
+            return self._stream_state(
+                active,
+                validate_chain=validate_chain,
+                validate_payloads=validate_payloads,
+            )
         finally:
             if owns_connection:
                 active.close()

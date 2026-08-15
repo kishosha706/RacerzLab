@@ -12,6 +12,10 @@ import {
 } from "../api/client";
 import type { CrewChiefEvidenceEntry, CrewChiefWorkspace, EngineeringObjective } from "../types/crewChief";
 import type { LearningEvidenceReference } from "../types/engineeringLearning";
+import type {
+  InvestigationDecision,
+  InvestigationImprovementProjection,
+} from "../types/investigationImprovement";
 import type { RunIntelligenceReport } from "../types/intelligence";
 
 type Props = {
@@ -88,6 +92,238 @@ function evidenceSourceLabel(source: EvidenceSourceSummary): string {
   }
   parts.push(humanize(source.evidence_state));
   return parts.join(" · ");
+}
+
+function investigationActionsDiffer(
+  baseline: InvestigationDecision,
+  memory: InvestigationDecision,
+): boolean {
+  return baseline.decision_kind !== memory.decision_kind
+    || baseline.action_id !== memory.action_id
+    || baseline.priority_tier !== memory.priority_tier
+    || baseline.safe_reorder_group !== memory.safe_reorder_group
+    || baseline.selected_ordinal !== memory.selected_ordinal;
+}
+
+function InvestigationMemoryRecords({
+  label,
+  openLabel,
+  recordIds,
+  evidenceReferences,
+  onFocusEvidence,
+}: {
+  label: string;
+  openLabel: string;
+  recordIds: readonly string[];
+  evidenceReferences: readonly LearningEvidenceReference[];
+  onFocusEvidence: (reference: LearningEvidenceReference) => void;
+}) {
+  return (
+    <div className="investigation-improvement-memory">
+      <span>{label}</span>
+      {recordIds.length > 0 ? <ul>{recordIds.map((recordId) => {
+        const reference = evidenceReferences.find((item) => item.experience_id === recordId);
+        return <li key={recordId}>
+          <code>{recordId}</code>
+          {reference?.state === "available" ? <button
+            type="button"
+            onClick={() => onFocusEvidence(reference)}
+            aria-label={`Open P33 source · ${evidenceSourceLabel(reference.provenance)}`}
+          >{openLabel}</button> : <small>{reference?.blocker_reasons[0] ?? "Trusted source link unavailable"}</small>}
+        </li>;
+      })}</ul> : <small>No P33 memory record IDs were accepted.</small>}
+    </div>
+  );
+}
+
+function InvestigationImprovementCard({
+  projection,
+  evidenceReferences,
+  onFocusEvidence,
+}: {
+  projection: InvestigationImprovementProjection;
+  evidenceReferences: readonly LearningEvidenceReference[];
+  onFocusEvidence: (reference: LearningEvidenceReference) => void;
+}) {
+  const pair = projection.current_pair;
+  const completedPair = projection.latest_completed_pair;
+  const comparison = projection.latest_completed_comparison;
+  const comparisonObservable = comparison != null
+    && ["directly_observed", "counterfactual_observable"].includes(comparison.observability);
+  const qualifiedDiscriminatorAdvance = comparison != null
+    && comparison.qualified
+    && comparison.observability === "counterfactual_observable"
+    && comparison.bounded_reorder_observed
+    && comparison.bounded_discriminator_step_advance === 1;
+  const completedDecisionsDiffer = completedPair != null && investigationActionsDiffer(
+    completedPair.baseline_decision,
+    completedPair.memory_decision,
+  );
+  const stateLabel = humanize(projection.memory_policy_state);
+  const productionLabel = humanize(projection.production_policy);
+  const qualifiedCases = projection.readiness.qualified_historical_investigations
+    + projection.readiness.qualified_prospective_investigations;
+  const readinessDeficits = [
+    ["Historical investigations", projection.readiness.historical_deficit],
+    ["Prospective investigations", projection.readiness.prospective_deficit],
+    ["Exact recurrence", projection.readiness.exact_recurrence_deficit],
+    ["Compatible recurrence", projection.readiness.compatible_recurrence_deficit],
+    ["Contexts", projection.readiness.context_deficit],
+    ["Problem families", projection.readiness.problem_family_deficit],
+    ["Objectives", projection.readiness.objective_deficit],
+  ] as const;
+  const remainingDeficits = readinessDeficits.filter(([, count]) => count > 0);
+  const blockers = [...new Set([
+    ...projection.safety_blockers,
+    ...projection.readiness.blockers,
+  ])];
+  return (
+    <section
+      className="investigation-improvement"
+      data-state={projection.state}
+      data-outcome={projection.latest_outcome_status ?? projection.current_pair_status ?? "none"}
+      aria-label="Investigation Improvement, read only"
+    >
+      <header>
+        <div>
+          <span className="eyebrow">INVESTIGATION IMPROVEMENT / READ ONLY</span>
+          <h3>{pair
+            ? "Frozen baseline versus memory attention"
+            : comparison
+              ? "Latest completed paired evaluation"
+              : "Paired evaluation unavailable"}</h3>
+        </div>
+        <span className="investigation-improvement-state">{stateLabel}</span>
+      </header>
+      <p>{projection.difference_explanation}</p>
+      <p className="investigation-improvement-policy">
+        <b>Active production policy</b> {productionLabel} / {stateLabel}.
+      </p>
+      <p className="investigation-improvement-policy">
+        <b>Gate evaluation</b> {humanize(projection.readiness.evaluation_decision)}. <b>Effective now</b> {humanize(projection.readiness.activation_decision)}.
+      </p>
+      {pair ? (
+        <div className="investigation-improvement-decisions" aria-label="Frozen paired investigation decisions">
+          <article>
+            <span>BASELINE NEXT</span>
+            <strong>{humanize(pair.baseline_decision.action_id)}</strong>
+            <small>{humanize(pair.baseline_decision.priority_tier)}</small>
+          </article>
+          <article>
+            <span>MEMORY NEXT / {stateLabel}</span>
+            <strong>{humanize(pair.memory_decision.action_id)}</strong>
+            <small>{projection.decisions_differ ? "Different executable action" : "Same executable action"}</small>
+          </article>
+        </div>
+      ) : (
+        <p className="investigation-improvement-unobservable">
+          No current frozen pair is available. No current investigation benefit is inferred.
+        </p>
+      )}
+      {pair && projection.decisions_differ && (
+        <InvestigationMemoryRecords
+          label={`Transfer / ${humanize(projection.context_transfer_class)}`}
+          openLabel="Open source"
+          recordIds={projection.memory_evidence_record_ids}
+          evidenceReferences={evidenceReferences}
+          onFocusEvidence={onFocusEvidence}
+        />
+      )}
+      {pair && (
+        <p className="investigation-improvement-observability">
+          <b>Current frozen pair</b> {humanize(projection.current_pair_status ?? "pending")}; pre-outcome only. A different shadow action is not evidence that it saves time, laps, or investigation steps.
+        </p>
+      )}
+      {comparison && completedPair && (
+        <article className="investigation-improvement-comparison" aria-label="Latest completed investigation comparison">
+          <div>
+            <span>Latest completed comparison</span>
+            <strong>{humanize(comparison.observability)}</strong>
+            <small>{comparison.qualified ? "Qualified evaluation record" : "Withheld from activation evidence"}</small>
+          </div>
+          <div className="investigation-improvement-completed-decisions">
+            <small>Completed baseline / {humanize(completedPair.baseline_decision.action_id)}</small>
+            <small>Completed memory / {humanize(completedPair.memory_decision.action_id)}</small>
+            <small>{completedDecisionsDiffer ? "Different executable action" : "Same executable action"}</small>
+          </div>
+          {completedDecisionsDiffer && (
+            <InvestigationMemoryRecords
+              label={`Completed transfer / ${humanize(completedPair.context_transfer_class)}`}
+              openLabel="Open source"
+              recordIds={completedPair.memory_records_consulted}
+              evidenceReferences={evidenceReferences}
+              onFocusEvidence={onFocusEvidence}
+            />
+          )}
+          <p>{comparisonObservable
+            ? pair
+              ? "Its outcome is certificate-bound historical evidence and does not establish a benefit for the current decision."
+              : "Its observed outcome is certificate-bound historical evidence; it does not authorize a setup or policy change."
+            : "Its counterfactual outcome is unobservable; no time, lap, or investigation-step saving is inferred."}</p>
+          {qualifiedDiscriminatorAdvance && (
+            <p className="investigation-improvement-observed">
+              <b>Qualified observed discriminator timing</b> The frozen memory order reached one useful discriminator position earlier. This is a localized ordering observation, not a time, lap, terminal-path, or setup benefit.
+            </p>
+          )}
+          {comparison.blockers.length > 0 && (
+            <ul>{comparison.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>
+          )}
+        </article>
+      )}
+      {!pair && !comparison && (
+        <p className="investigation-improvement-observability">
+          <b>Outcome observability</b> unavailable. A different shadow action is not evidence that it saves time, laps, or investigation steps.
+        </p>
+      )}
+      <div className="investigation-improvement-counts" aria-label="Investigation evaluation readiness">
+        <span>Historical <strong>{projection.readiness.qualified_historical_investigations}</strong></span>
+        <span>Prospective <strong>{projection.readiness.qualified_prospective_investigations}</strong></span>
+        <span>Observable pairs <strong>{projection.readiness.observable_comparisons}</strong></span>
+        <span>Safety <strong>{qualifiedCases === 0 || projection.readiness.observable_comparisons === 0
+          ? "coverage incomplete"
+          : projection.readiness.safety_gate_passed ? "0 violations" : "locked"}</strong></span>
+        <span>Negative controls <strong>{projection.readiness.negative_controls_passed ? "gate met" : "locked"}</strong></span>
+        <span>Subgroups <strong>{projection.readiness.subgroup_gate_passed ? "gate met" : "locked"}</strong></span>
+      </div>
+      {blockers[0] && <small className="investigation-improvement-blocker">Blocked: {blockers[0]}</small>}
+      {projection.readiness.remaining_collection_missions.length > 0 && (
+        <ul className="investigation-improvement-list investigation-improvement-next" aria-label="Next collection missions">
+          {projection.readiness.remaining_collection_missions.slice(0, 3)
+            .map((mission) => <li key={mission}>Next evidence: {mission}</li>)}
+        </ul>
+      )}
+      {(remainingDeficits.length > 0
+        || blockers.length > 0
+        || projection.readiness.remaining_collection_missions.length > 0) && (
+        <details className="investigation-improvement-audit">
+          <summary>
+            Full readiness audit / {remainingDeficits.length} deficits / {blockers.length} blockers / {projection.readiness.remaining_collection_missions.length} missions
+          </summary>
+          {remainingDeficits.length > 0 && <div>
+            <b>Remaining evaluation deficits</b>
+            <ul aria-label="Remaining evaluation deficits">
+              {remainingDeficits.map(([label, count]) => <li key={label}>{label}: <strong>{count}</strong></li>)}
+            </ul>
+          </div>}
+          {blockers.length > 0 && <div>
+            <b>All blockers</b>
+            <ul aria-label="Investigation improvement blockers">
+              {blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+            </ul>
+          </div>}
+          {projection.readiness.remaining_collection_missions.length > 0 && <div>
+            <b>All collection missions</b>
+            <ul aria-label="Remaining collection missions">
+              {projection.readiness.remaining_collection_missions.map((mission) => <li key={mission}>{mission}</li>)}
+            </ul>
+          </div>}
+        </details>
+      )}
+      <footer>
+        P19 authority unchanged / no setup authority / no client activation control. Frozen v1 still requires a qualified prospective trial that directly observes the memory path before terminal-path efficiency can be earned.
+      </footer>
+    </section>
+  );
 }
 
 export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, learning, onFocusEvidence }: Props) {
@@ -326,6 +562,11 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
 
       {learning && (
         <div className="crew-chief-learning">
+          <InvestigationImprovementCard
+            projection={workspace.investigation_improvement}
+            evidenceReferences={workspace.learning_prior.evidence_references}
+            onFocusEvidence={onFocusEvidence}
+          />
           {memory.state === "available" ? <section className="engineering-memory" aria-label="Engineering Memory, attention only">
             <header>
               <div><span className="eyebrow">ENGINEERING MEMORY · ATTENTION ONLY</span><h3>{memory.recurrence.classification.replace(/_/g, " ")}</h3></div>
