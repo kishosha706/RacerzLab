@@ -185,6 +185,7 @@ class CrewChiefWorkspaceIdentity(CrewChiefModel):
     p26_knowledge_graph_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     p26_reasoning_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     p32_projection_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    run_sentinel_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     learning_history_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     learning_projection_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     setup_id: str = Field(min_length=1)
@@ -725,21 +726,22 @@ class SuccessContract(CrewChiefModel):
 
 
 class RunSentinelLap(CrewChiefModel):
+    lap_id: str = Field(min_length=1)
     lap_number: int = Field(ge=0)
-    status: Literal["accepted", "rejected"]
+    status: Literal["context_cleared", "rejected"]
     reasons: tuple[str, ...] = ()
-    accepted_ordinal: int | None = Field(default=None, ge=1)
+    context_ordinal: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
-    def accepted_laps_have_an_ordinal(self) -> RunSentinelLap:
-        if self.status == "accepted" and (
-            self.accepted_ordinal is None or self.reasons
+    def context_cleared_laps_have_an_ordinal(self) -> RunSentinelLap:
+        if self.status == "context_cleared" and (
+            self.context_ordinal is None or self.reasons
         ):
             raise ValueError(
-                "accepted sentinel laps require an ordinal and no rejection"
+                "context-cleared sentinel laps require an ordinal and no rejection"
             )
         if self.status == "rejected" and (
-            not self.reasons or self.accepted_ordinal is not None
+            not self.reasons or self.context_ordinal is not None
         ):
             raise ValueError("rejected sentinel laps require exact reasons only")
         return self
@@ -767,7 +769,14 @@ class RunSentinelState(CrewChiefModel):
     success: str = Field(min_length=1)
     stop: tuple[str, ...] = Field(min_length=1)
     required_laps: int | None = Field(default=None, ge=1)
-    accepted_laps: int = Field(ge=0)
+    context_cleared_laps: int = Field(ge=0)
+    mission_accepted_lap_ids: tuple[str, ...] = ()
+    measurement_attempt_ids: tuple[str, ...] = ()
+    mission_acceptance_basis: Literal[
+        "unbound",
+        "p19_measurement_attempt",
+        "controlled_workflow_stage",
+    ] = "unbound"
     collection_complete: bool
     stage: Literal[
         "measurement", "A", "B", "A2", "blocked", "stopped", "awaiting_score"
@@ -777,13 +786,50 @@ class RunSentinelState(CrewChiefModel):
 
     @model_validator(mode="after")
     def progress_matches_laps(self) -> RunSentinelState:
-        if self.accepted_laps != sum(item.status == "accepted" for item in self.laps):
-            raise ValueError("sentinel accepted count must match exact lap decisions")
+        if self.context_cleared_laps != sum(
+            item.status == "context_cleared" for item in self.laps
+        ):
+            raise ValueError(
+                "sentinel context-cleared count must match exact lap decisions"
+            )
+        for values, label in (
+            (self.mission_accepted_lap_ids, "mission-accepted lap"),
+            (self.measurement_attempt_ids, "measurement-attempt"),
+        ):
+            if any(not value for value in values) or len(set(values)) != len(values):
+                raise ValueError(f"sentinel {label} identities must be non-empty and unique")
+        if self.mission_acceptance_basis == "unbound" and (
+            self.mission_accepted_lap_ids or self.measurement_attempt_ids
+        ):
+            raise ValueError("unbound sentinel progress cannot claim accepted evidence")
+        if self.mission_acceptance_basis == "p19_measurement_attempt" and (
+            self.p19_plan_kind not in {"measurement_mission", "discriminator"}
+            or not self.mission_accepted_lap_ids
+            or not self.measurement_attempt_ids
+        ):
+            raise ValueError(
+                "P19 mission acceptance requires exact attempts and accepted laps"
+            )
+        if self.mission_acceptance_basis == "controlled_workflow_stage" and (
+            self.p19_plan_kind != "controlled_test"
+            or not self.mission_accepted_lap_ids
+            or self.measurement_attempt_ids
+            or not set(self.mission_accepted_lap_ids).issubset(
+                {
+                    item.lap_id
+                    for item in self.laps
+                    if item.status == "context_cleared"
+                }
+            )
+        ):
+            raise ValueError(
+                "controlled-stage acceptance requires exact stage laps only"
+            )
         expected_complete = (
             self.required_laps is not None
-            and self.accepted_laps >= self.required_laps
+            and len(self.mission_accepted_lap_ids) >= self.required_laps
             and self.mission_state
-            not in {"blocked_by_p19", "stopped_by_p19", "awaiting_p19_score"}
+            not in {"blocked_by_p19", "stopped_by_p19"}
         )
         if self.collection_complete != expected_complete:
             raise ValueError(
@@ -942,8 +988,8 @@ class AdaptiveResearchBoundary(CrewChiefModel):
 
 
 class CrewChiefWorkspace(CrewChiefModel):
-    schema_version: Literal["p33.crew-chief-workspace.v1"] = (
-        "p33.crew-chief-workspace.v1"
+    schema_version: Literal["p33.crew-chief-workspace.v2"] = (
+        "p33.crew-chief-workspace.v2"
     )
     identity: CrewChiefWorkspaceIdentity
     generated_at: datetime
@@ -980,6 +1026,8 @@ class CrewChiefWorkspace(CrewChiefModel):
     def projection_scope_is_atomic(self) -> CrewChiefWorkspace:
         if self.evidence_index.workspace_revision != self.identity.workspace_revision:
             raise ValueError("evidence index must match the workspace revision")
+        if canonical_json_sha256(self.run_sentinel) != self.identity.run_sentinel_sha256:
+            raise ValueError("run sentinel must match the atomic workspace identity")
         if (
             self.performance_intelligence.projection_sha256
             != self.identity.p32_projection_sha256

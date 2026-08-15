@@ -106,6 +106,7 @@ class MeasurementAttempt(ExperimentModel):
     setup_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     compatibility_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     outcome_authority: Literal["server_derived", "client_attested"] = "client_attested"
+    collection_authority: Literal["unverified", "server_verified"] = "unverified"
     eligible_lap_ids: tuple[str, ...] = ()
     outcome: Literal[
         "completed_clean",
@@ -125,6 +126,14 @@ class MeasurementAttempt(ExperimentModel):
         return (
             self.outcome_authority == "server_derived"
             and self.outcome in {"no_signal", "failed_integrity"}
+        )
+
+    @property
+    def counts_toward_mission_completion(self) -> bool:
+        """A verified cohort may complete collection without authorizing its outcome."""
+        return (
+            self.collection_authority == "server_verified"
+            and self.outcome in {"completed_clean", "no_signal"}
         )
 
     @model_validator(mode="after")
@@ -149,6 +158,10 @@ class MeasurementAttempt(ExperimentModel):
         ):
             raise ValueError(
                 "clean and no-signal attempts require eligible laps and no integrity blocker"
+            )
+        if self.counts_toward_mission_completion and not self.observed_channels:
+            raise ValueError(
+                "server-verified mission completion requires observed channels"
             )
         if self.outcome == "failed_integrity" and not self.integrity_blockers:
             raise ValueError("integrity failures require typed blockers")

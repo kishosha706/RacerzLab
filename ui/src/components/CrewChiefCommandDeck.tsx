@@ -33,6 +33,63 @@ const objectives: Array<[EngineeringObjective, string]> = [
   ["fuel_strategy", "Fuel strategy"],
 ];
 
+const evidenceStateOrder: readonly CrewChiefEvidenceEntry["evidence_state"][] = [
+  "measured",
+  "controlled_test_effect",
+  "calculated",
+  "estimated_proxy",
+  "observed_correlation",
+  "needs_confirmation",
+  "blocked_by_context",
+  "unavailable",
+];
+
+function humanize(value: string): string {
+  return value.replace(/_/g, " ");
+}
+
+function evidenceStateSummary(entries: readonly CrewChiefEvidenceEntry[]): string {
+  const counts = new Map<CrewChiefEvidenceEntry["evidence_state"], number>();
+  for (const entry of entries) counts.set(entry.evidence_state, (counts.get(entry.evidence_state) ?? 0) + 1);
+  const summary = evidenceStateOrder.flatMap((state) => {
+    const count = counts.get(state) ?? 0;
+    return count > 0 ? [`${count} ${humanize(state)}`] : [];
+  });
+  return summary.join(" · ") || "No current-scope evidence states published";
+}
+
+function contextClearedLapSummary(cleared: number, required: number | null): string {
+  if (required != null) return `${cleared} context-cleared · ${required} mission target`;
+  return `${cleared} context-cleared lap${cleared === 1 ? "" : "s"}`;
+}
+
+type EvidenceSourceSummary = {
+  lap_numbers: readonly number[];
+  lap_pct_start: number | null;
+  lap_pct_end: number | null;
+  phase: string | null;
+  evidence_state: CrewChiefEvidenceEntry["evidence_state"];
+};
+
+function compactPercent(value: number): string {
+  return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1);
+}
+
+function evidenceSourceLabel(source: EvidenceSourceSummary): string {
+  const laps = source.lap_numbers.length === 1
+    ? `Lap ${source.lap_numbers[0]}`
+    : source.lap_numbers.length > 1
+      ? `Laps ${source.lap_numbers.join(", ")}`
+      : "Run scope";
+  const parts = [laps];
+  if (source.phase) parts.push(humanize(source.phase));
+  if (source.lap_pct_start != null && source.lap_pct_end != null) {
+    parts.push(`${compactPercent(source.lap_pct_start)}–${compactPercent(source.lap_pct_end)}%`);
+  }
+  parts.push(humanize(source.evidence_state));
+  return parts.join(" · ");
+}
+
 export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, learning, onFocusEvidence }: Props) {
   const [workspace, setWorkspace] = useState<CrewChiefWorkspace | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -93,6 +150,19 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
   const performance = workspace.performance_intelligence;
   const memory = workspace.learning_prior;
   const story = performance.speed_story;
+  const currentEvidenceEntries = workspace.evidence_index.entries.filter(
+    (entry) => entry.producer_id !== "p33.engineering_experience",
+  );
+  const evidenceSummary = evidenceStateSummary(currentEvidenceEntries);
+  const contextClearedLaps = contextClearedLapSummary(
+    workspace.run_sentinel.context_cleared_laps,
+    workspace.run_sentinel.required_laps,
+  );
+  const missionState = humanize(workspace.run_sentinel.mission_state);
+  const missionAcceptance = workspace.run_sentinel.mission_acceptance_basis === "unbound"
+    ? "Mission acceptance not established"
+    : `${workspace.run_sentinel.mission_accepted_lap_ids.length} contract-accepted lap${workspace.run_sentinel.mission_accepted_lap_ids.length === 1 ? "" : "s"} · basis ${humanize(workspace.run_sentinel.mission_acceptance_basis)}`;
+  const measurementAttempts = `${workspace.run_sentinel.measurement_attempt_ids.length} measurement attempt${workspace.run_sentinel.measurement_attempt_ids.length === 1 ? "" : "s"}`;
   const activeObjective = workspace.folded_state?.objective ?? objective;
   const opportunityEvidence = new Map(
     workspace.evidence_index.entries
@@ -116,7 +186,9 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
             type="button"
             key={reference.reference_id}
             onClick={() => onFocusEvidence(reference)}
-          >Open telemetry · {reference.provenance.artifact_id}</button>
+            aria-label={`Open source · ${evidenceSourceLabel(reference.provenance)}`}
+            title={`Technical provenance: ${reference.provenance.producer_id} · ${reference.provenance.artifact_id}`}
+          ><b>Open source</b><span>{evidenceSourceLabel(reference.provenance)}</span></button>
           : <small key={reference.reference_id}>{reference.blocker_reasons.join(" ")}</small>);
       })()}
     </div>
@@ -142,17 +214,33 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
         <p className="speed-story-next"><b>NEXT · P19</b> {story.next}</p>
         <p><b>OBSERVED · {story.observed_direction.toUpperCase()}</b> {story.what_costs_time}</p>
         <p><b>ATTRIBUTION</b> {story.attribution}</p>
-        <p><b>WHERE IT STARTS</b> {story.where_it_starts}</p>
-        <p><b>WHAT CARRIES</b> {story.what_carries}</p>
         <p className="speed-story-contradiction"><b>STRONGEST CONTRADICTION</b> {story.strongest_contradiction}</p>
-        {!learning && <p className="speed-story-memory"><b>MEMORY</b> {memoryLine}</p>}
         {learning && <>
+          <p><b>WHERE IT STARTS</b> {story.where_it_starts}</p>
+          <p><b>WHAT CARRIES</b> {story.what_carries}</p>
           <p><b>DRIVER</b> {story.driver}</p>
           <p><b>CAR</b> {story.car}</p>
           <p><b>SYSTEMS</b> {story.systems}</p>
-          <p><b>KNOW</b> {workspace.evidence_index.entries.length} exact artifacts · {workspace.run_sentinel.accepted_laps} accepted laps</p>
+          <p><b>EVIDENCE STATES</b> {evidenceSummary} · {contextClearedLaps}</p>
         </>}
       </div>
+
+      {!learning && (
+        <div className="crew-chief-race-secondary">
+          <details className="speed-story-detail">
+            <summary>Origin and carry</summary>
+            <div>
+              <p><b>WHERE IT STARTS</b> {story.where_it_starts}</p>
+              <p><b>WHAT CARRIES</b> {story.what_carries}</p>
+            </div>
+          </details>
+          <p
+            className="speed-story-memory"
+            data-learning-state={memory.state}
+            aria-label="Engineering memory, attention only"
+          ><b>MEMORY · ATTENTION ONLY</b> {memoryLine}</p>
+        </div>
+      )}
 
       {decision.kind === "controlled_test" && (
         <div className="crew-chief-exact-test">
@@ -238,9 +326,9 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
 
       {learning && (
         <div className="crew-chief-learning">
-          <section className="engineering-memory" aria-label="Engineering Memory">
+          {memory.state === "available" ? <section className="engineering-memory" aria-label="Engineering Memory, attention only">
             <header>
-              <div><span className="eyebrow">ENGINEERING MEMORY</span><h3>{memory.recurrence.classification.replace(/_/g, " ")}</h3></div>
+              <div><span className="eyebrow">ENGINEERING MEMORY · ATTENTION ONLY</span><h3>{memory.recurrence.classification.replace(/_/g, " ")}</h3></div>
               <div className="engineering-memory-badges">
                 <span>{memory.strength.replace(/_/g, " ")}</span>
                 <span>{memory.context_transfer_level.replace(/_/g, " ")} transfer</span>
@@ -363,7 +451,23 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
                 <small>Authority: attention only · setup not authorized · P19 rank not modified.</small>
               </article>
             </div>
-          </section>
+          </section> : (
+            <section
+              className="engineering-memory engineering-memory-compact"
+              data-learning-state={memory.state}
+              aria-label="Engineering Memory, attention only"
+            >
+              <header>
+                <div>
+                  <span className="eyebrow">ENGINEERING MEMORY · ATTENTION ONLY</span>
+                  <h3>{humanize(memory.state)}</h3>
+                </div>
+                <div className="engineering-memory-badges"><span>P19 order unchanged</span></div>
+              </header>
+              <p>{memoryLine}</p>
+              <small>Historical attention is withheld for this context. Current evidence and P19 remain authoritative.</small>
+            </section>
+          )}
           <section className="performance-ribbon">
             <h3>Time-loss ribbon</h3>
             {performance.opportunity_map.opportunities.length ? (
@@ -414,7 +518,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
           </section>
           <section><h3>Objective envelope</h3><p>Primary: {performance.objective_envelope.primary_outcomes.join(", ")}</p><small>Protected: {performance.objective_envelope.protected_outcomes.join(", ")}. Objective changes policy, not measured physics.</small></section>
           <section><h3>Strongest contradiction</h3><p>{performance.explanation_chain.strongest_contradiction}</p><small>Generic component relevance cannot authorize setup. P19 next: {performance.explanation_chain.p19_next_move}</small></section>
-          <section><h3>Mission ribbon</h3><p>{workspace.run_sentinel.mission}</p><small>Stage {workspace.run_sentinel.stage} · {workspace.run_sentinel.accepted_laps}/{workspace.run_sentinel.required_laps} accepted</small></section>
+          <section><h3>Mission ribbon</h3><p>{workspace.run_sentinel.mission}</p><small>State {missionState} · Stage {workspace.run_sentinel.stage} · {contextClearedLaps} · {missionAcceptance} · {measurementAttempts}</small></section>
           <section><h3>Critic</h3><p>{workspace.critique.passed ? "Authority and identity checks passed." : workspace.critique.findings.join(" ")}</p></section>
           <section><h3>P19 collection contract</h3>{workspace.p19_mission_contract
             ? <><p>{workspace.p19_mission_contract.acceptance_thresholds.join("; ")}</p><small>{workspace.p19_mission_contract.contract_id}</small></>
@@ -422,8 +526,23 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
               ? <><p>{workspace.success_contract.acceptance_rule}</p><small>{workspace.success_contract.independence_unit}</small></>
               : <p>{workspace.run_sentinel.blocker_reasons.join(" ") || "P19 published no collection contract."}</p>}
           </section>
-          <section><h3>Run sentinel</h3><p>{workspace.run_sentinel.need}</p>{workspace.run_sentinel.laps.length ? <ul>{workspace.run_sentinel.laps.slice(-6).map((lap) => <li key={lap.lap_number}><CheckCircle2 size={12} /> Lap {lap.lap_number}: {lap.status}{lap.reasons.length ? ` — ${lap.reasons.join(", ")}` : ""}</li>)}</ul> : <small>No laps have been assessed for this mission yet.</small>}</section>
-          <section><h3>Evidence index</h3>{workspace.evidence_index.entries.some((item) => item.producer_id !== "p33.engineering_experience") ? <ul>{workspace.evidence_index.entries.filter((item) => item.producer_id !== "p33.engineering_experience").slice(0, 8).map((item) => <li key={item.artifact_id}><button type="button" onClick={() => onFocusEvidence(item)}><b>{item.producer_id}</b> {item.artifact_id} · {item.mechanism_ids.join(", ") || "unclassified"}</button></li>)}</ul> : <p>No current-scope artifacts are available. Historical P33 sources remain inside Engineering Memory.</p>}</section>
+          <section><h3>Run sentinel</h3><p>{workspace.run_sentinel.need}</p>{workspace.run_sentinel.laps.length ? <ul>{workspace.run_sentinel.laps.slice(-6).map((lap) => <li key={lap.lap_number}>{lap.status === "context_cleared" ? <CheckCircle2 size={12} /> : <XCircle size={12} />} Lap {lap.lap_number}: {lap.status === "context_cleared" ? "context-cleared" : "rejected"}{lap.reasons.length ? ` — ${lap.reasons.join(", ")}` : ""}</li>)}</ul> : <small>No laps have been assessed for this mission yet.</small>}</section>
+          <section>
+            <h3>Evidence index</h3>
+            {currentEvidenceEntries.length ? <ul>{currentEvidenceEntries.slice(0, 8).map((item) => (
+              <li key={item.artifact_id}>
+                <button
+                  type="button"
+                  onClick={() => onFocusEvidence(item)}
+                  aria-label={`Open source · ${evidenceSourceLabel(item)}`}
+                  title={`Technical provenance: ${item.producer_id} · ${item.artifact_id}`}
+                >
+                  <b>Open source</b>
+                  <span>{evidenceSourceLabel(item)}</span>
+                </button>
+              </li>
+            ))}</ul> : <p>No current-scope artifacts are available. Historical P33 sources remain inside Engineering Memory.</p>}
+          </section>
           <section><h3>Research boundary</h3><p>Adaptive experimentation: {workspace.adaptive_research.state.replace(/_/g, " ")}.</p><small>{workspace.adaptive_research.activation_gate}</small></section>
         </div>
       )}

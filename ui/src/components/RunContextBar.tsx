@@ -135,7 +135,7 @@ export function RunContextBar({ overview, runs, onSelectRun, onSelectLap }: RunC
         {session && (
           <>
             <span className="context-sep">|</span>
-            <span className="context-item context-item-primary" title={session.track_display_name ?? session.track_name ?? "Unknown Track"}>
+            <span className="context-item context-item-primary context-item-track" title={session.track_display_name ?? session.track_name ?? "Unknown Track"}>
               <MapPin size={14} />
               <span className="context-item-copy">
                 <small>{session.track_temp != null ? `Track · ${session.track_temp.toFixed(0)}°C` : "Track"}</small>
@@ -143,12 +143,12 @@ export function RunContextBar({ overview, runs, onSelectRun, onSelectLap }: RunC
               </span>
             </span>
             <span className="context-sep">|</span>
-            <span className="context-item" title={session.car_name ?? "Unknown Car"}>
+            <span className="context-item context-item-car" title={session.car_name ?? "Unknown Car"}>
               <Car size={14} />
               <span className="context-item-copy"><small>Car</small><strong>{session.car_name ?? "Unknown Car"}</strong></span>
             </span>
             <span className="context-sep">|</span>
-            <span className="context-item" title={session.setup_name ?? "Unknown Setup"}>
+            <span className="context-item context-item-setup" title={session.setup_name ?? "Unknown Setup"}>
               <Wrench size={14} />
               <span className="context-item-copy">
                 <small>
@@ -333,6 +333,8 @@ export function RunContextBar({ overview, runs, onSelectRun, onSelectLap }: RunC
           className={`context-badge mode-badge mode-${selection.selectedMode}`}
           onClick={handleModeToggle}
           aria-live="polite"
+          aria-pressed={selection.selectedMode === "learning"}
+          aria-keyshortcuts="L"
           aria-label={selection.selectedMode === "learning"
             ? "Learning Mode — click to switch to Race Mode"
             : "Race Mode — click to switch to Learning Mode"}

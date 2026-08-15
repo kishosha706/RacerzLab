@@ -11,6 +11,7 @@ from racelab_engine.analysis.test_director import MeasurementMission
 from racelab_engine.models.intelligence import InformationPlan
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.setup import SetupSnapshot
+from racelab_engine.services.crew_chief_service import _sentinel
 from racelab_engine.services.experiment_service import bind_experiment_lifecycle
 
 
@@ -120,16 +121,78 @@ def _install_route_scope(
     *,
     attempt_setup: SetupSnapshot,
     session_run_ids: tuple[str, ...] = (RUN_ID,),
-    usable_channel: bool = True,
+    channel_health: str = "healthy",
+    context_blocked_laps: tuple[int, ...] = (),
+    channel_coverage: float = 1.0,
+    position_coverage: float = 1.0,
+    gapped_position_trace: bool = False,
 ) -> list[object]:
     plan = _contract_plan()
     overviews = {attempt_setup.run_id: _overview(attempt_setup.run_id, attempt_setup)}
     recorded: list[object] = []
+
+    def intelligence_bundle(run_id: str, **_kwargs: object) -> SimpleNamespace:
+        overview = overviews.get(run_id) or _overview(
+            run_id,
+            _setup(run_id, "setup-attempt"),
+        )
+        return SimpleNamespace(
+            report=SimpleNamespace(
+                best_measurement=plan,
+                data_quality=SimpleNamespace(
+                    eligible_lap_ids=tuple(lap.lap_id for lap in overview.laps),
+                ),
+                lap_context=SimpleNamespace(
+                    contexts=tuple(
+                        SimpleNamespace(
+                            lap_number=lap.lap_number,
+                            blocker_reasons=(),
+                            proximity_state=(
+                                "nearby_car_ahead"
+                                if lap.lap_number in context_blocked_laps
+                                else "no_nearby_car_reported"
+                            ),
+                            proximity_coverage_fraction=1.0,
+                            nearby_traffic_exposure_fraction=(
+                                1.0 if lap.lap_number in context_blocked_laps else 0.0
+                            ),
+                        )
+                        for lap in overview.laps
+                    )
+                ),
+            )
+        )
+
+    def telemetry_rows(
+        _run_id: str,
+        *,
+        lap: int,
+        columns: list[str],
+    ) -> list[dict[str, object]]:
+        del lap
+        row_count = 101
+        channel_count = int(row_count * channel_coverage)
+        position_count = int(row_count * position_coverage)
+        rows: list[dict[str, object]] = []
+        for index in range(row_count):
+            position = (
+                float(index) if index < 9 else 100.0
+            ) if gapped_position_trace else (
+                float(index) if index < position_count else None
+            )
+            row: dict[str, object] = {
+                "lap_dist_pct_100": position,
+                "lap_dist_pct": position / 100.0 if position is not None else None,
+            }
+            for channel in columns:
+                if channel not in {"lap", "lap_dist_pct_100", "lap_dist_pct"}:
+                    row[channel] = 150.0 if index < channel_count else None
+            rows.append(row)
+        return rows
+
     monkeypatch.setattr(
         "api.routes_intelligence.build_run_intelligence",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            report=SimpleNamespace(best_measurement=plan)
-        ),
+        intelligence_bundle,
     )
     monkeypatch.setattr(
         "api.routes_intelligence.get_racelab_session",
@@ -152,11 +215,15 @@ def _install_route_scope(
                     "name": "Speed",
                     "canonical_name": "speed_mph",
                     "archive_status": "cached",
-                    "health_status": "ready" if usable_channel else "blocked",
+                    "health_status": channel_health,
                     "valid_record_count": 360,
                 }
             ],
         },
+    )
+    monkeypatch.setattr(
+        "api.routes_intelligence.read_telemetry_rows",
+        telemetry_rows,
     )
     monkeypatch.setattr(
         "api.routes_intelligence.record_durable_measurement_attempt",
@@ -185,10 +252,50 @@ def test_no_signal_requires_server_verified_producer_channels(
     recorded = _install_route_scope(
         monkeypatch,
         attempt_setup=_setup(RUN_ID, "setup-attempt"),
-        usable_channel=False,
+        channel_health="warning",
     )
 
     with pytest.raises(HTTPException, match="not usable in its verified archive"):
+        record_measurement_attempt(RUN_ID, _request())
+    assert recorded == []
+
+
+def test_traffic_blocked_laps_cannot_become_contract_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded = _install_route_scope(
+        monkeypatch,
+        attempt_setup=_setup(RUN_ID, "setup-attempt"),
+        context_blocked_laps=(1, 2, 3),
+    )
+
+    with pytest.raises(HTTPException, match="context-cleared"):
+        record_measurement_attempt(RUN_ID, _request())
+    assert recorded == []
+
+
+@pytest.mark.parametrize(
+    ("coverage_kind", "expected_message"),
+    (
+        ("channel", "complete usable coverage"),
+        ("position", "complete finite physical-position coverage"),
+        ("position_gap", "complete finite physical-position coverage"),
+    ),
+)
+def test_partial_lap_coverage_cannot_become_contract_accepted(
+    monkeypatch: pytest.MonkeyPatch,
+    coverage_kind: str,
+    expected_message: str,
+) -> None:
+    recorded = _install_route_scope(
+        monkeypatch,
+        attempt_setup=_setup(RUN_ID, "setup-attempt"),
+        channel_coverage=0.99 if coverage_kind == "channel" else 1.0,
+        position_coverage=0.99 if coverage_kind == "position" else 1.0,
+        gapped_position_trace=coverage_kind == "position_gap",
+    )
+
+    with pytest.raises(HTTPException, match=expected_message):
         record_measurement_attempt(RUN_ID, _request())
     assert recorded == []
 
@@ -219,6 +326,8 @@ def test_exact_session_setup_build_and_channel_scope_records_one_attempt(
 
     assert response.outcome == "no_signal"
     assert response.outcome_authority == "client_attested"
+    assert response.collection_authority == "server_verified"
+    assert response.counts_toward_mission_completion is True
     assert response.counts_toward_stop_testing is False
     assert len(recorded) == 1
     attempt = recorded[0]
@@ -227,4 +336,37 @@ def test_exact_session_setup_build_and_channel_scope_records_one_attempt(
     assert attempt.setup_sha256 == SETUP_SHA256
     assert attempt.compatibility_fingerprint == COMPATIBILITY_FINGERPRINT
     assert attempt.outcome_authority == "client_attested"
+    assert attempt.collection_authority == "server_verified"
+    assert attempt.counts_toward_mission_completion is True
     assert attempt.counts_toward_stop_testing is False
+
+    overview = _overview(RUN_ID, _setup(RUN_ID, "setup-attempt"))
+    plan = _contract_plan()
+    report = SimpleNamespace(
+        run_id=RUN_ID,
+        best_measurement=plan,
+        briefing=SimpleNamespace(success_check="Three contract-qualified laps."),
+        data_quality=SimpleNamespace(
+            eligible_lap_ids=tuple(lap.lap_id for lap in overview.laps), issues=()
+        ),
+        lap_context=SimpleNamespace(
+            contexts=tuple(
+                SimpleNamespace(
+                    lap_number=lap.lap_number,
+                    blocker_reasons=(),
+                    proximity_state="no_nearby_car_reported",
+                    proximity_coverage_fraction=1.0,
+                    nearby_traffic_exposure_fraction=0.0,
+                )
+                for lap in overview.laps
+            )
+        ),
+        smart_guidance=None,
+    )
+    sentinel = _sentinel(
+        SimpleNamespace(report=report),
+        overview,
+        measurement_attempts=(attempt,),
+    )
+    assert sentinel.mission_acceptance_basis == "p19_measurement_attempt"
+    assert sentinel.collection_complete is True

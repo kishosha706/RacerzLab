@@ -67,6 +67,7 @@ def _identity() -> CrewChiefWorkspaceIdentity:
         p26_knowledge_graph_sha256="5" * 64,
         p26_reasoning_snapshot_sha256="2" * 64,
         p32_projection_sha256="9" * 64,
+        run_sentinel_sha256="c" * 64,
         learning_history_revision="a" * 64,
         learning_projection_sha256="b" * 64,
         setup_id="setup-1",
@@ -88,6 +89,16 @@ def _seed_run(db_path: str) -> None:
     )
     connection.commit()
     connection.close()
+
+
+def _clear_lap_context(lap_number: int) -> SimpleNamespace:
+    return SimpleNamespace(
+        lap_number=lap_number,
+        blocker_reasons=(),
+        proximity_state="no_nearby_car_reported",
+        proximity_coverage_fraction=1.0,
+        nearby_traffic_exposure_fraction=0.0,
+    )
 
 
 def _investigation() -> CrewChiefInvestigation:
@@ -983,7 +994,8 @@ def test_run_sentinel_rejects_missing_context_instead_of_treating_it_clean() -> 
         laps=(SimpleNamespace(lap_id="lap-1", lap_number=1, classification_tags=[]),)
     )
     state = _sentinel(SimpleNamespace(report=report), overview)
-    assert state.accepted_laps == 0
+    assert state.context_cleared_laps == 0
+    assert state.mission_accepted_lap_ids == ()
     assert state.laps[0].status == "rejected"
     assert state.laps[0].reasons == ("exact-lap context coverage is unavailable",)
 
@@ -1013,7 +1025,7 @@ def test_run_sentinel_uses_exact_a2_stage_and_rejects_reusing_stage_b_run() -> N
         briefing=SimpleNamespace(success_check="Baseline restores."),
         data_quality=SimpleNamespace(eligible_lap_ids=("lap-1",), issues=()),
         lap_context=SimpleNamespace(
-            contexts=(SimpleNamespace(lap_number=1, blocker_reasons=()),)
+            contexts=(_clear_lap_context(1),)
         ),
         smart_guidance=SimpleNamespace(
             test_preflight=SimpleNamespace(stage="A2", blocker_reasons=()),
@@ -1031,9 +1043,393 @@ def test_run_sentinel_uses_exact_a2_stage_and_rejects_reusing_stage_b_run() -> N
     state = _sentinel(SimpleNamespace(report=report), overview, workflow)
     assert state.stage == "A2"
     assert state.required_laps == 3
-    assert state.accepted_laps == 0
+    assert state.context_cleared_laps == 0
+    assert state.mission_accepted_lap_ids == ()
     assert state.laps[0].reasons == (
         "current run is already bound to Stage B; Stage A2 requires a new exact run",
+    )
+
+
+def test_run_sentinel_never_promotes_context_screening_to_mission_acceptance() -> None:
+    contract = SimpleNamespace(
+        contract_id="mission-contract-1",
+        contract_sha256="1" * 64,
+        required_laps=3,
+        required_channels=("speed_mph", "throttle_pct"),
+        session_run_ids=("run-1",),
+        setup_sha256="2" * 64,
+        compatibility_fingerprint="3" * 64,
+    )
+    plan = SimpleNamespace(
+        kind="measurement_mission",
+        measurement_mission=SimpleNamespace(
+            controlled_variables=("setup",),
+            acceptance_thresholds=("position-aligned response",),
+            stop_rule="Stop on contamination.",
+        ),
+        controlled_test=None,
+        mission_contract=contract,
+        title="Record declared channels",
+        instruction="Collect three exact passes.",
+        blocker_reasons=(),
+    )
+    laps = tuple(
+        SimpleNamespace(
+            lap_id=f"run-1:{lap_number}",
+            lap_number=lap_number,
+            classification_tags=[],
+        )
+        for lap_number in (1, 2, 3)
+    )
+    report = SimpleNamespace(
+        run_id="run-1",
+        best_measurement=plan,
+        briefing=SimpleNamespace(success_check="Three contract-qualified passes."),
+        data_quality=SimpleNamespace(
+            eligible_lap_ids=tuple(lap.lap_id for lap in laps), issues=()
+        ),
+        lap_context=SimpleNamespace(
+            contexts=tuple(
+                _clear_lap_context(lap.lap_number)
+                for lap in laps
+            )
+        ),
+        smart_guidance=None,
+    )
+
+    state = _sentinel(SimpleNamespace(report=report), SimpleNamespace(laps=laps))
+
+    assert state.context_cleared_laps == 3
+    assert state.mission_accepted_lap_ids == ()
+    assert state.measurement_attempt_ids == ()
+    assert state.mission_acceptance_basis == "unbound"
+    assert state.collection_complete is False
+    assert state.mission_state == "collecting"
+    assert all(lap.status == "context_cleared" for lap in state.laps)
+    assert "screening evidence only" in " ".join(state.blocker_reasons)
+
+
+def test_run_sentinel_accepts_only_an_exact_channel_complete_measurement_attempt() -> None:
+    contract = SimpleNamespace(
+        contract_id="mission-contract-1",
+        contract_sha256="1" * 64,
+        required_laps=3,
+        required_channels=("speed_mph", "throttle_pct"),
+        session_run_ids=("run-1",),
+        setup_sha256="2" * 64,
+        compatibility_fingerprint="3" * 64,
+    )
+    plan = SimpleNamespace(
+        kind="measurement_mission",
+        measurement_mission=SimpleNamespace(
+            controlled_variables=("setup",),
+            acceptance_thresholds=("position-aligned response",),
+            stop_rule="Stop on contamination.",
+        ),
+        controlled_test=None,
+        mission_contract=contract,
+        title="Record declared channels",
+        instruction="Collect three exact passes.",
+        blocker_reasons=(),
+    )
+    laps = tuple(
+        SimpleNamespace(
+            lap_id=f"run-1:{lap_number}",
+            lap_number=lap_number,
+            classification_tags=[],
+        )
+        for lap_number in (1, 2, 3)
+    )
+    report = SimpleNamespace(
+        run_id="run-1",
+        best_measurement=plan,
+        briefing=SimpleNamespace(success_check="Three contract-qualified passes."),
+        data_quality=SimpleNamespace(
+            eligible_lap_ids=tuple(lap.lap_id for lap in laps), issues=()
+        ),
+        lap_context=SimpleNamespace(
+            contexts=tuple(
+                _clear_lap_context(lap.lap_number)
+                for lap in laps
+            )
+        ),
+        smart_guidance=None,
+    )
+    attempt = SimpleNamespace(
+        attempt_id="attempt-1",
+        contract_id=contract.contract_id,
+        contract_sha256=contract.contract_sha256,
+        run_id="run-1",
+        setup_sha256=contract.setup_sha256,
+        compatibility_fingerprint=contract.compatibility_fingerprint,
+        outcome_authority="client_attested",
+        collection_authority="unverified",
+        outcome="completed_clean",
+        eligible_lap_ids=tuple(lap.lap_id for lap in laps),
+        observed_channels=("speed_mph", "throttle_pct"),
+        integrity_blockers=(),
+    )
+
+    client_state = _sentinel(
+        SimpleNamespace(report=report),
+        SimpleNamespace(laps=laps),
+        measurement_attempts=(attempt,),
+    )
+    assert client_state.mission_accepted_lap_ids == ()
+    assert client_state.collection_complete is False
+
+    attempt.collection_authority = "server_verified"
+
+    state = _sentinel(
+        SimpleNamespace(report=report),
+        SimpleNamespace(laps=laps),
+        measurement_attempts=(attempt,),
+    )
+
+    assert state.context_cleared_laps == 3
+    assert state.mission_accepted_lap_ids == ("run-1:1", "run-1:2", "run-1:3")
+    assert state.measurement_attempt_ids == ("attempt-1",)
+    assert state.mission_acceptance_basis == "p19_measurement_attempt"
+    assert state.collection_complete is True
+    assert state.mission_state == "collection_complete"
+
+    report.lap_context = SimpleNamespace(
+        contexts=tuple(
+            SimpleNamespace(
+                lap_number=lap.lap_number,
+                blocker_reasons=(),
+                proximity_state="nearby_car_ahead",
+                proximity_coverage_fraction=1.0,
+                nearby_traffic_exposure_fraction=1.0,
+            )
+            for lap in laps
+        )
+    )
+    traffic_blocked = _sentinel(
+        SimpleNamespace(report=report),
+        SimpleNamespace(laps=laps),
+        measurement_attempts=(attempt,),
+    )
+    assert traffic_blocked.context_cleared_laps == 0
+    assert traffic_blocked.mission_accepted_lap_ids == ()
+    assert traffic_blocked.collection_complete is False
+
+
+def test_run_sentinel_withholds_attempt_missing_a_required_channel() -> None:
+    contract = SimpleNamespace(
+        contract_id="mission-contract-1",
+        contract_sha256="1" * 64,
+        required_laps=1,
+        required_channels=("speed_mph", "throttle_pct"),
+        session_run_ids=("run-1",),
+        setup_sha256="2" * 64,
+        compatibility_fingerprint="3" * 64,
+    )
+    plan = SimpleNamespace(
+        kind="discriminator",
+        measurement_mission=SimpleNamespace(
+            controlled_variables=("setup",),
+            acceptance_thresholds=("position-aligned response",),
+            stop_rule="Stop on contamination.",
+        ),
+        controlled_test=None,
+        mission_contract=contract,
+        title="Resolve the discriminator",
+        instruction="Record the declared channels.",
+        blocker_reasons=(),
+    )
+    lap = SimpleNamespace(lap_id="run-1:1", lap_number=1, classification_tags=[])
+    report = SimpleNamespace(
+        run_id="run-1",
+        best_measurement=plan,
+        briefing=SimpleNamespace(success_check="Resolve the discriminator."),
+        data_quality=SimpleNamespace(eligible_lap_ids=(lap.lap_id,), issues=()),
+        lap_context=SimpleNamespace(
+            contexts=(_clear_lap_context(1),)
+        ),
+        smart_guidance=None,
+    )
+    attempt = SimpleNamespace(
+        attempt_id="attempt-sparse",
+        contract_id=contract.contract_id,
+        contract_sha256=contract.contract_sha256,
+        run_id="run-1",
+        setup_sha256=contract.setup_sha256,
+        compatibility_fingerprint=contract.compatibility_fingerprint,
+        outcome_authority="client_attested",
+        collection_authority="server_verified",
+        outcome="no_signal",
+        eligible_lap_ids=(lap.lap_id,),
+        observed_channels=("speed_mph",),
+        integrity_blockers=(),
+    )
+
+    state = _sentinel(
+        SimpleNamespace(report=report),
+        SimpleNamespace(laps=(lap,)),
+        measurement_attempts=(attempt,),
+    )
+
+    assert state.context_cleared_laps == 1
+    assert state.mission_accepted_lap_ids == ()
+    assert state.collection_complete is False
+    assert state.mission_state == "collecting"
+
+
+def test_run_sentinel_accepts_only_the_exact_bound_controlled_stage_cohort() -> None:
+    card = SimpleNamespace(
+        do_not_change=("all non-target controls",),
+        success_metrics=("repeatable center response",),
+        stop_rule="Stop on contamination.",
+        stages=(
+            SimpleNamespace(stage="A", required_flying_laps=1),
+            SimpleNamespace(stage="B", required_flying_laps=1),
+            SimpleNamespace(stage="A2", required_flying_laps=1),
+        ),
+    )
+    plan = SimpleNamespace(
+        kind="controlled_test",
+        measurement_mission=None,
+        controlled_test=card,
+        mission_contract=None,
+        title="Record baseline A",
+        instruction="Bind one clean baseline lap.",
+        blocker_reasons=(),
+    )
+    report = SimpleNamespace(
+        run_id="run-1",
+        best_measurement=plan,
+        briefing=SimpleNamespace(success_check="One exact Stage A lap."),
+        data_quality=SimpleNamespace(
+            eligible_lap_ids=("run-1:1", "run-1:2", "run-1:3"), issues=()
+        ),
+        lap_context=SimpleNamespace(
+            contexts=tuple(
+                _clear_lap_context(lap_number)
+                for lap_number in (1, 2, 3)
+            )
+        ),
+        smart_guidance=SimpleNamespace(
+            test_preflight=SimpleNamespace(stage="A", blocker_reasons=()),
+            next_trustworthy_move=SimpleNamespace(
+                kind="controlled_test",
+                workflow_id="workflow-1",
+                workflow_updated_at=datetime.now(UTC),
+            ),
+        ),
+    )
+    laps = tuple(
+        SimpleNamespace(
+            lap_id=f"run-1:{lap_number}",
+            lap_number=lap_number,
+            classification_tags=[],
+        )
+        for lap_number in (1, 2, 3)
+    )
+    workflow = SimpleNamespace(
+        status="a_recorded",
+        stage_run_ids={"A": "run-1", "B": None, "A2": None},
+        stage_eligible_lap_numbers={"A": (2,)},
+    )
+
+    state = _sentinel(
+        SimpleNamespace(report=report), SimpleNamespace(laps=laps), workflow
+    )
+
+    assert state.context_cleared_laps == 3
+    assert state.mission_acceptance_basis == "controlled_workflow_stage"
+    assert state.mission_accepted_lap_ids == ("run-1:2",)
+    assert state.measurement_attempt_ids == ()
+    assert state.collection_complete is True
+    assert state.mission_state == "collection_complete"
+
+    blocked_report = SimpleNamespace(**vars(report))
+    blocked_report.lap_context = SimpleNamespace(
+        contexts=tuple(
+            SimpleNamespace(
+                lap_number=lap_number,
+                blocker_reasons=("traffic blocks the recorded cohort",)
+                if lap_number == 2
+                else (),
+            )
+            for lap_number in (1, 2, 3)
+        )
+    )
+    blocked_state = _sentinel(
+        SimpleNamespace(report=blocked_report), SimpleNamespace(laps=laps), workflow
+    )
+    assert blocked_state.mission_acceptance_basis == "unbound"
+    assert blocked_state.mission_accepted_lap_ids == ()
+    assert blocked_state.collection_complete is False
+
+
+def test_run_sentinel_awaits_score_after_the_exact_a2_cohort_is_recorded() -> None:
+    card = SimpleNamespace(
+        do_not_change=("all non-target controls",),
+        success_metrics=("repeatable center response",),
+        stop_rule="Stop on contamination.",
+        stages=tuple(
+            SimpleNamespace(stage=stage, required_flying_laps=1)
+            for stage in ("A", "B", "A2")
+        ),
+    )
+    plan = SimpleNamespace(
+        kind="controlled_test",
+        measurement_mission=None,
+        controlled_test=card,
+        mission_contract=None,
+        title="Score the controlled test",
+        instruction="Review the exact A/B/A2 result.",
+        blocker_reasons=(),
+    )
+    report = SimpleNamespace(
+        run_id="run-a2",
+        best_measurement=plan,
+        briefing=SimpleNamespace(success_check="Score one exact A/B/A2 workflow."),
+        data_quality=SimpleNamespace(eligible_lap_ids=("run-a2:7",), issues=()),
+        lap_context=SimpleNamespace(
+            contexts=(_clear_lap_context(7),)
+        ),
+        smart_guidance=SimpleNamespace(
+            test_preflight=SimpleNamespace(stage="A2", blocker_reasons=()),
+            next_trustworthy_move=SimpleNamespace(
+                kind="controlled_test",
+                workflow_id="workflow-1",
+                workflow_updated_at=datetime.now(UTC),
+            ),
+        ),
+    )
+    workflow = SimpleNamespace(
+        status="a2_recorded",
+        stage_run_ids={"A": "run-a", "B": "run-b", "A2": "run-a2"},
+        stage_eligible_lap_numbers={"A": (1,), "B": (4,), "A2": (7,)},
+    )
+    lap = SimpleNamespace(
+        lap_id="run-a2:7", lap_number=7, classification_tags=[]
+    )
+
+    state = _sentinel(
+        SimpleNamespace(report=report), SimpleNamespace(laps=(lap,)), workflow
+    )
+
+    assert state.mission_state == "awaiting_p19_score"
+    assert state.stage == "awaiting_score"
+    assert state.collection_complete is True
+    assert state.mission_accepted_lap_ids == ("run-a2:7",)
+
+
+def test_sentinel_progress_refreshes_workspace_without_changing_p19_authority() -> None:
+    first = _identity()
+    second = first.model_copy(
+        update={
+            "run_sentinel_sha256": "d" * 64,
+            "workspace_revision": "e" * 64,
+        }
+    )
+
+    assert _authority_revision(first) == _authority_revision(second)
+    assert _workspace_cache_key(first, "crew.sqlite") != _workspace_cache_key(
+        second, "crew.sqlite"
     )
 
 

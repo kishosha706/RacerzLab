@@ -24,6 +24,11 @@ def test_run_header_is_two_tier_and_keeps_primary_controls_visible() -> None:
     assert '<span className="context-control-label">Run</span>' in context
     assert '<span className="context-control-label">Lap</span>' in context
     assert "mode-${selection.selectedMode}" in context
+    assert 'className="context-item context-item-primary context-item-track"' in context
+    assert 'className="context-item context-item-car"' in context
+    assert 'className="context-item context-item-setup"' in context
+    assert 'aria-pressed={selection.selectedMode === "learning"}' in context
+    assert 'aria-keyshortcuts="L"' in context
     assert "availableRuns.length > 0" in context
     assert "disabled={availableRuns.length === 1}" not in context
 
@@ -40,6 +45,10 @@ def test_run_header_is_two_tier_and_keeps_primary_controls_visible() -> None:
     assert "@media (max-width: 1280px)" in shell_styles
     assert ".context-run-control" in shell_styles
     assert ".context-lap-control" in shell_styles
+    narrow_context = shell_styles.split("@media (max-width: 860px)", 1)[1].split("}", 1)[0]
+    assert ".context-item-car" in narrow_context
+    assert ".context-item-setup" in narrow_context
+    assert "nth-of-type" not in narrow_context
 
     # The containing row must not clip the absolutely positioned Session details
     # popover; only individual text items may ellipsize at laptop widths.
@@ -138,7 +147,7 @@ def test_controlled_workflow_shell_uses_exact_scope_and_withholds_ambiguous_cata
     assert ribbon.count("<button") == 1
 
 
-def test_race_priority_rail_compacts_only_for_genuinely_clear_state() -> None:
+def test_race_priority_rail_stays_evidence_first_on_desktop_but_is_dismissible_on_narrow_screens() -> None:
     app = _read("ui/src/App.tsx")
 
     rail_effect = app.split("const genuinelyClearInRaceMode", 1)[1].split(
@@ -147,11 +156,17 @@ def test_race_priority_rail_compacts_only_for_genuinely_clear_state() -> None:
     )[0]
     assert 'selection.selectedMode === "race"' in rail_effect
     assert 'currentPlatformEventsLoadStatus === "clear"' in rail_effect
+    assert "if (priorityRailUsesOverlay)" in rail_effect
+    assert "if (genuinelyClearInRaceMode) setPriorityRailOpen(false)" in rail_effect
     assert "setPriorityRailOpen(!genuinelyClearInRaceMode)" in rail_effect
     assert "if (!genuinelyClearInRaceMode) void loadPriorityRail()" in rail_effect
     assert 'currentPlatformEventsLoadStatus !== "clear"' in app
+    assert 'const PRIORITY_RAIL_OVERLAY_QUERY = "(max-width: 700px)"' in app
+    assert "[priorityRailUsesOverlay, setPriorityRailUsesOverlay]" in app
+    assert "const priorityRailMustStayOpen = !priorityRailUsesOverlay" in app
     assert "priorityRailExpanded = priorityRailMustStayOpen || priorityRailOpen" in app
     assert "collapseDisabled={priorityRailMustStayOpen}" in app
+    assert "onToggle={closePriorityRail}" in app
     assert "priorityRailIsGenuinelyClear" in app
     assert "Supported platform checks clear; expand Priority Rail" in app
     assert "<CheckCircle2" in app
@@ -159,6 +174,40 @@ def test_race_priority_rail_compacts_only_for_genuinely_clear_state() -> None:
     priority = _read("ui/src/components/PriorityRail.tsx")
     assert "disabled={collapseDisabled}" in priority
     assert "Priority Rail stays open until evidence is genuinely clear" in priority
+
+
+def test_narrow_priority_rail_is_an_overlay_instead_of_a_workspace_sibling() -> None:
+    app = _read("ui/src/App.tsx")
+    styles = _read("ui/src/styles.css")
+    mobile = styles.split(
+        "/* Narrow shell: keep unresolved evidence visible without consuming the workspace. */",
+        1,
+    )[1].split("/* Engineer + Dial-In mission surfaces */", 1)[0]
+
+    assert 'data-priority-rail-layout={priorityRailUsesOverlay ? "overlay" : "inline"}' in app
+    assert 'data-priority-rail-state={priorityRailExpanded ? "expanded" : "collapsed"}' in app
+    assert '.cockpit-body[data-priority-rail-layout="overlay"] > .priority-rail' in mobile
+    assert "position: absolute" in mobile
+    assert "left: 52px" in mobile
+    assert "width: min(280px, calc(100vw - 110px))" in mobile
+    assert "z-index: 30" in mobile
+    assert '.priority-rail.collapsed {' in mobile
+    assert "width: 38px" in mobile
+
+
+def test_narrow_priority_rail_keeps_an_accessible_attention_trigger_and_focus_return() -> None:
+    app = _read("ui/src/App.tsx")
+    styles = _read("ui/src/styles.css")
+
+    assert "Priority evidence needs attention; expand Priority Rail" in app
+    assert "priorityRailTriggerRef" in app
+    assert "priorityRailTriggerRef.current?.focus()" in app
+    assert 'event.key !== "Escape"' in app
+    assert "closePriorityRail();" in app
+    assert 'document.querySelector(\'[role="dialog"][aria-modal="true"]\')' in app
+    assert '<AlertTriangle size={16} aria-hidden="true" />' in app
+    assert "shell-attention" in app
+    assert ".priority-rail.collapsed.shell-attention .rail-collapse-btn" in styles
 
 
 def test_loaded_session_demotes_import_to_a_compact_toolbar_drawer() -> None:
@@ -269,6 +318,9 @@ def test_premium_shell_preserves_fast_scan_keyboard_and_reduced_motion_contracts
     assert 'className="shell-session-identity"' in app
     assert 'className="shell-workspace-heading"' in app
     assert '<h1 className="shell-workspace-name">{currentWorkspaceLabel}</h1>' in app
+    engineer = _read("ui/src/tabs/EngineerTab.tsx")
+    assert "<h1>" not in engineer
+    assert '<h2>{learning ? "Decision, causes, and evidence" : missionHeadline}</h2>' in engineer
     assert 'aria-label={`${currentWorkspaceLabel} status:' in app
     assert 'className="workspace-placeholder shell-workspace-loading"' in app
     assert 'aria-busy="true"' in app

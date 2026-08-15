@@ -84,6 +84,7 @@ export type CrewChiefWorkspaceIdentity = {
   p26_knowledge_graph_sha256: string;
   p26_reasoning_snapshot_sha256: string;
   p32_projection_sha256: string;
+  run_sentinel_sha256: string;
   learning_history_revision: string;
   learning_projection_sha256: string;
   setup_id: string;
@@ -155,7 +156,7 @@ export type CrewChiefInvestigation = {
 };
 
 export type CrewChiefWorkspace = {
-  schema_version: "p33.crew-chief-workspace.v1";
+  schema_version: "p33.crew-chief-workspace.v2";
   identity: CrewChiefWorkspaceIdentity;
   generated_at: string;
   cache_state: "cold" | "warm";
@@ -236,10 +237,19 @@ export type CrewChiefWorkspace = {
     success: string;
     stop: string[];
     required_laps: number | null;
-    accepted_laps: number;
+    context_cleared_laps: number;
+    mission_accepted_lap_ids: string[];
+    measurement_attempt_ids: string[];
+    mission_acceptance_basis: "unbound" | "p19_measurement_attempt" | "controlled_workflow_stage";
     collection_complete: boolean;
     stage: "measurement" | "A" | "B" | "A2" | "blocked" | "stopped" | "awaiting_score";
-    laps: Array<{ lap_number: number; status: "accepted" | "rejected"; reasons: string[]; accepted_ordinal: number | null }>;
+    laps: Array<{
+      lap_id: string;
+      lap_number: number;
+      status: "context_cleared" | "rejected";
+      reasons: string[];
+      context_ordinal: number | null;
+    }>;
     blocker_reasons: string[];
   };
   terminal_decision: CrewChiefTerminalDecision;

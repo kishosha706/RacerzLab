@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import sqlite3
 import uuid
 from typing import Annotated
@@ -36,7 +37,10 @@ from racelab_engine.models.vehicle_systems import (
     ControlMechanismTraceResponse,
     VehicleSystemsProjection,
 )
-from racelab_engine.services.import_service import build_telemetry_capability_payload
+from racelab_engine.services.import_service import (
+    build_telemetry_capability_payload,
+    read_telemetry_rows,
+)
 from racelab_engine.services.engineering_memory_service import (
     record_driver_presentation_preference_for_run,
 )
@@ -44,6 +48,9 @@ from racelab_engine.services.experiment_service import (
     record_durable_measurement_attempt,
 )
 from racelab_engine.services.intelligence_service import answer_grounded_query
+from racelab_engine.services.lap_engineering_context_service import (
+    mission_lap_context_is_clear,
+)
 from racelab_engine.services.run_intelligence_service import build_run_intelligence
 from racelab_engine.services.session_intelligence_service import setup_policy_fingerprint
 from racelab_engine.services.session_service import get_session as get_racelab_session
@@ -63,6 +70,93 @@ from racelab_engine.services.vehicle_systems_service import (
 from racelab_engine.storage.repository import RaceLabRepository
 
 router = APIRouter(prefix="/api/runs", tags=["internal-intelligence"])
+
+
+def _usable_measurement_value(value: object) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
+
+
+def _verify_position_aligned_measurement_cohort(
+    run_id: str,
+    lap_ids: tuple[str, ...],
+    required_channels: tuple[str, ...],
+) -> None:
+    columns = list(dict.fromkeys((
+        "lap",
+        "lap_dist_pct_100",
+        "lap_dist_pct",
+        *required_channels,
+    )))
+    for lap_id in lap_ids:
+        try:
+            lap_number = int(lap_id.rsplit(":", 1)[1])
+            rows = read_telemetry_rows(run_id, lap=lap_number, columns=columns)
+        except (IndexError, OSError, TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="The declared mission cohort could not be read at exact lap scope.",
+            ) from exc
+        if not rows:
+            raise HTTPException(
+                status_code=409,
+                detail="Every mission-accepted lap requires a readable telemetry trace.",
+            )
+        positions: list[float] = []
+        for row in rows:
+            value = row.get("lap_dist_pct_100")
+            if value is None and row.get("lap_dist_pct") is not None:
+                try:
+                    value = float(row["lap_dist_pct"]) * 100.0
+                except (TypeError, ValueError):
+                    value = None
+            try:
+                position = float(value) if value is not None else None
+            except (TypeError, ValueError):
+                position = None
+            if position is not None and math.isfinite(position):
+                positions.append(position)
+        unique_positions = sorted({round(value, 3) for value in positions})
+        position_gaps = (
+            [unique_positions[0]]
+            + [
+                right - left
+                for left, right in zip(unique_positions, unique_positions[1:])
+            ]
+            + [100.0 - unique_positions[-1]]
+            if unique_positions
+            else [100.0]
+        )
+        if (
+            len(positions) != len(rows)
+            or any(value < 0.0 or value > 100.0 for value in positions)
+            or len(unique_positions) < 10
+            or max(position_gaps) > 5.0
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Every mission-accepted lap requires complete finite "
+                    "physical-position coverage across the lap."
+                ),
+            )
+        for channel in required_channels:
+            usable_count = sum(
+                _usable_measurement_value(row.get(channel)) for row in rows
+            )
+            if usable_count != len(rows):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Every mission-accepted lap requires complete usable "
+                        f"coverage for required channel {channel}."
+                    ),
+                )
 
 
 class _TrackRegionContext:
@@ -317,7 +411,7 @@ def record_measurement_attempt(
     run_id: str,
     request: MeasurementAttemptRequest,
 ) -> MeasurementAttemptResponse:
-    """Append a client-attested mission note without granting stop-testing authority."""
+    """Verify one acquisition cohort while keeping its outcome client-attested."""
     try:
         bundle = build_run_intelligence(run_id, session_id=request.session_id)
     except ValueError as exc:
@@ -418,7 +512,7 @@ def record_measurement_attempt(
             continue
         if (
             entry.get("archive_status") != "cached"
-            or entry.get("health_status") in {"blocked", "unavailable"}
+            or entry.get("health_status") != "healthy"
             or valid_record_count < 1
         ):
             continue
@@ -473,6 +567,54 @@ def record_measurement_attempt(
                 "eligible-lap cohort."
             ),
         )
+    if request.outcome in {"completed_clean", "no_signal"}:
+        try:
+            attempt_bundle = (
+                bundle
+                if attempt_run_id == run_id
+                else build_run_intelligence(
+                    attempt_run_id,
+                    session_id=request.session_id,
+                )
+            )
+            attempt_report = attempt_bundle.report
+            report_eligible_ids = set(
+                attempt_report.data_quality.eligible_lap_ids
+            )
+            context_by_lap = {
+                context.lap_number: context
+                for context in attempt_report.lap_context.contexts
+            }
+        except (AttributeError, OSError, TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "The declared mission cohort could not be verified against "
+                    "its exact P19 lap and context report."
+                ),
+            ) from exc
+        context_cleared_ids = {
+            lap_id
+            for lap_id in report_eligible_ids
+            if (
+                (context := context_by_lap.get(int(lap_id.rsplit(":", 1)[1])))
+                is not None
+                and mission_lap_context_is_clear(context)
+            )
+        }
+        if not set(supplied_laps).issubset(context_cleared_ids):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Mission completion requires every supplied lap to remain "
+                    "eligible and context-cleared in its exact P19 report."
+                ),
+            )
+        _verify_position_aligned_measurement_cohort(
+            attempt_run_id,
+            supplied_laps,
+            tuple(contract.required_channels),
+        )
     try:
         attempt = MeasurementAttempt(
             attempt_id=f"measurement-attempt:{uuid.uuid4().hex}",
@@ -483,6 +625,7 @@ def record_measurement_attempt(
             setup_sha256=attempt_setup_sha256,
             compatibility_fingerprint=contract.compatibility_fingerprint,
             outcome_authority="client_attested",
+            collection_authority="server_verified",
             eligible_lap_ids=supplied_laps,
             outcome=request.outcome,
             observed_channels=tuple(request.observed_channels),
@@ -502,6 +645,8 @@ def record_measurement_attempt(
         contract_sha256=attempt.contract_sha256,
         outcome=attempt.outcome,
         outcome_authority="client_attested",
+        collection_authority="server_verified",
+        counts_toward_mission_completion=attempt.counts_toward_mission_completion,
         counts_toward_stop_testing=False,
     )
 

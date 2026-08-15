@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RunIntelligenceReport } from "../types/intelligence";
@@ -90,16 +90,20 @@ const workspace = () => ({
     evidence_references: [{
       reference_id: "p33ref-1", experience_id: "p33x-1", state: "available", blocker_reasons: [],
       provenance: {
+        provenance_sha256: "provenance-hash",
         artifact_id: "artifact-1", producer_id: "p20.physical_episode", run_id: "run-history",
         session_id: "session-history", setup_id: "setup-history", setup_snapshot_sha256: "setup-hash",
         build_context_sha256: "build-hash", lap_numbers: [7], lap_pct_start: 20, lap_pct_end: 30,
-        phase: "entry", source_channels: ["brake_pct"],
+        phase: "entry", source_channels: ["brake_pct"], evidence_state: "measured", polarity: "support",
       },
     }],
   },
   run_sentinel: {
-    accepted_laps: 0, required_laps: 3, mission: "Collect clean laps", stage: "measurement",
-    need: "Three clean laps", laps: [], blocker_reasons: [],
+    mission_state: "collecting", p19_plan_kind: "measurement_mission",
+    context_cleared_laps: 0, mission_accepted_lap_ids: [], measurement_attempt_ids: [],
+    mission_acceptance_basis: "unbound", required_laps: 3, mission: "Collect clean laps", stage: "measurement",
+    need: "Three clean laps", hold_constant: [], watch: [], success: "Three context-cleared laps",
+    stop: [], collection_complete: false, laps: [], blocker_reasons: [],
   },
   critique: { passed: true, findings: [] },
   p19_mission_contract: null,
@@ -135,12 +139,26 @@ describe("CrewChiefCommandDeck boundary states", () => {
 
   it("shows one concise engineering-memory line in Race Mode", async () => {
     api.fetchCrewChiefWorkspace.mockResolvedValue(workspace());
-    render(<CrewChiefCommandDeck {...props} />);
+    const { container } = render(<CrewChiefCommandDeck {...props} />);
 
-    expect(await screen.findByText("MEMORY")).toBeTruthy();
+    expect(await screen.findByText("MEMORY · ATTENTION ONLY")).toBeTruthy();
     expect(screen.getByText(/Brake release timing repeated in one qualified source window/)).toBeTruthy();
-    expect(screen.queryByText("ENGINEERING MEMORY")).toBeNull();
+    expect(screen.queryByText(/ENGINEERING MEMORY/)).toBeNull();
     expect(screen.queryByText(/Legacy history must not render/)).toBeNull();
+
+    const primaryStory = screen.getByLabelText("Measured Speed Story");
+    for (const label of ["NEXT · P19", "OBSERVED · UNAVAILABLE", "ATTRIBUTION", "STRONGEST CONTRADICTION"]) {
+      expect(within(primaryStory).getByText(label)).toBeTruthy();
+    }
+    expect(within(primaryStory).queryByText("WHERE IT STARTS")).toBeNull();
+    expect(within(primaryStory).queryByText("WHAT CARRIES")).toBeNull();
+
+    const disclosure = container.querySelector<HTMLDetailsElement>("details.speed-story-detail");
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.hasAttribute("open")).toBe(false);
+    expect(within(disclosure as HTMLElement).getByText("Origin and carry")).toBeTruthy();
+    expect(within(disclosure as HTMLElement).getByText("WHERE IT STARTS")).toBeTruthy();
+    expect(within(disclosure as HTMLElement).getByText("WHAT CARRIES")).toBeTruthy();
   });
 
   it("renders the compact full P33 projection and navigates only an available typed source", async () => {
@@ -148,17 +166,107 @@ describe("CrewChiefCommandDeck boundary states", () => {
     api.fetchCrewChiefWorkspace.mockResolvedValue(workspace());
     render(<CrewChiefCommandDeck {...props} learning onFocusEvidence={onFocusEvidence} />);
 
-    expect(await screen.findByText("ENGINEERING MEMORY")).toBeTruthy();
+    expect(await screen.findByText("ENGINEERING MEMORY · ATTENTION ONLY")).toBeTruthy();
     for (const heading of [
       "Recurrence", "Context transfer", "Driver fingerprint", "Car response",
       "Investigation effectiveness", "Mind changes", "Dead ends", "Attention",
       "Learning ledger", "Post-run brief", "Blockers / strength",
     ]) expect(screen.getByText(heading)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Open telemetry · artifact-1/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Open source · Lap 7 · entry · 20–30% · measured/ }));
     expect(onFocusEvidence).toHaveBeenCalledWith(expect.objectContaining({ reference_id: "p33ref-1", state: "available" }));
     expect(screen.queryByText("Performance history")).toBeNull();
     expect(screen.queryByText("Response atlas")).toBeNull();
+    expect(screen.getByText(/Mission acceptance not established/)).toBeTruthy();
+    expect(screen.queryByText(/Contract accepted/)).toBeNull();
   });
+
+  it("reports evidence states and context-cleared mission progress without exact-artifact or accepted-lap overclaim", async () => {
+    const value = workspace() as any;
+    const evidenceEntry = (artifactId: string, evidenceState: string) => ({
+      artifact_id: artifactId,
+      producer_id: "p20.physical_episode",
+      run_id: "run-1",
+      session_id: "session-1",
+      setup_id: "setup-1",
+      workspace_run_id: "run-1",
+      workspace_session_id: "session-1",
+      workspace_setup_id: "setup-1",
+      source_run_id: "run-1",
+      source_session_id: "session-1",
+      source_setup_id: "setup-1",
+      source_setup_sha256: "setup-hash",
+      source_build_context_sha256: "build-hash",
+      source_provenance_available: true,
+      lap_numbers: [4],
+      lap_pct_start: 20,
+      lap_pct_end: 30,
+      phase: "entry",
+      mechanism_ids: [],
+      component_ids: [],
+      control_keys: [],
+      objective: "race_long_run",
+      source_channels: ["speed"],
+      evidence_state: evidenceState,
+      polarity: "neutral",
+      blocker_reasons: [],
+      typed_artifact: null,
+      authority_ceiling: "observation_only",
+    });
+    value.evidence_index.entries = [
+      evidenceEntry("measured-1", "measured"),
+      evidenceEntry("blocked-1", "blocked_by_context"),
+      { ...evidenceEntry("historical-1", "measured"), producer_id: "p33.engineering_experience" },
+    ];
+    value.run_sentinel.context_cleared_laps = 2;
+    value.run_sentinel.required_laps = 3;
+    value.run_sentinel.mission_state = "collecting";
+    value.run_sentinel.mission_accepted_lap_ids = ["mission-lap-4"];
+    value.run_sentinel.measurement_attempt_ids = ["attempt-1", "attempt-2"];
+    value.run_sentinel.mission_acceptance_basis = "p19_measurement_attempt";
+    value.run_sentinel.laps = [
+      { lap_id: "lap-4", lap_number: 4, status: "context_cleared", reasons: [], context_ordinal: 1 },
+      { lap_id: "lap-5", lap_number: 5, status: "context_cleared", reasons: [], context_ordinal: 2 },
+      { lap_id: "lap-6", lap_number: 6, status: "rejected", reasons: ["Traffic in the comparison window."], context_ordinal: null },
+    ];
+    api.fetchCrewChiefWorkspace.mockResolvedValue(value);
+
+    render(<CrewChiefCommandDeck {...props} learning />);
+
+    expect(await screen.findByText("EVIDENCE STATES")).toBeTruthy();
+    expect(screen.getByText(/1 measured · 1 blocked by context · 2 context-cleared · 3 mission target/)).toBeTruthy();
+    expect(screen.getByText(/State collecting · Stage measurement · 2 context-cleared · 3 mission target · 1 contract-accepted lap · basis p19 measurement attempt · 2 measurement attempts/)).toBeTruthy();
+    expect(screen.getByText((_content, element) => (
+      element?.tagName === "LI" && element.textContent?.includes("Lap 4: context-cleared") === true
+    ))).toBeTruthy();
+    expect(screen.getByText((_content, element) => (
+      element?.tagName === "LI" && element.textContent?.includes("Lap 6: rejected") === true
+    ))).toBeTruthy();
+    expect(screen.queryByText(/exact artifacts/i)).toBeNull();
+    expect(screen.queryByText(/accepted laps/i)).toBeNull();
+  });
+
+  it.each(["insufficient_history", "blocked"])(
+    "collapses %s Learning history to one attention-only summary",
+    async (state) => {
+      const value = workspace() as any;
+      value.learning_prior.state = state;
+      value.learning_prior.blocker_reasons = [state === "blocked"
+        ? "Engineering history integrity could not be verified."
+        : "No independent prior engineering episode cleared this context."];
+      api.fetchCrewChiefWorkspace.mockResolvedValue(value);
+
+      render(<CrewChiefCommandDeck {...props} learning />);
+
+      const memory = await screen.findByLabelText("Engineering Memory, attention only");
+      expect(within(memory).getByText("ENGINEERING MEMORY · ATTENTION ONLY")).toBeTruthy();
+      expect(within(memory).getByText(state.replace(/_/g, " "))).toBeTruthy();
+      expect(within(memory).getByText("P19 order unchanged")).toBeTruthy();
+      expect(within(memory).getByText(/Current evidence and P19 remain authoritative/)).toBeTruthy();
+      for (const emptyCardHeading of ["Recurrence", "Driver fingerprint", "Car response", "Dead ends", "Learning ledger"]) {
+        expect(within(memory).queryByText(emptyCardHeading)).toBeNull();
+      }
+    },
+  );
 
   it("renders an unavailable historical source as a blocker without a focus target", async () => {
     const blocked = workspace() as any;
@@ -168,6 +276,6 @@ describe("CrewChiefCommandDeck boundary states", () => {
     render(<CrewChiefCommandDeck {...props} learning />);
 
     expect(await screen.findByText("Saved source session is unavailable.")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Open telemetry · artifact-1/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Open source · Lap 7/ })).toBeNull();
   });
 });

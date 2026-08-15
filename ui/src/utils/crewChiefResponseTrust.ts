@@ -43,7 +43,8 @@ const workspaceIdentityKeys = [
   "run_id", "session_id", "selected_scope_hash", "reasoning_snapshot_sha256",
   "p20_state_revision", "p20_profile_hash", "p26_graph_version",
   "p26_knowledge_graph_sha256", "p26_reasoning_snapshot_sha256",
-  "p32_projection_sha256", "learning_history_revision", "learning_projection_sha256",
+  "p32_projection_sha256", "run_sentinel_sha256",
+  "learning_history_revision", "learning_projection_sha256",
   "setup_id", "setup_snapshot_sha256", "vehicle_runtime_identity_hash",
   "active_workflow_id", "active_workflow_revision", "objective_id",
   "investigation_id", "workspace_revision",
@@ -119,6 +120,20 @@ export async function hasCanonicalMeasurementMissionDigest(
   }
 }
 
+export async function hasCanonicalRunSentinelDigest(
+  value: unknown,
+  expectedSha256: unknown,
+): Promise<boolean> {
+  if (!record(value) || typeof expectedSha256 !== "string" || !hash.test(expectedSha256)) {
+    return false;
+  }
+  try {
+    return await canonicalEngineeringLearningSha256(value) === expectedSha256;
+  } catch {
+    return false;
+  }
+}
+
 function validWorkspaceIdentityShape(value: unknown): value is Record<string, unknown> {
   if (!exactKeys(value, workspaceIdentityKeys)) return false;
   return typeof value.run_id === "string" && value.run_id.length > 0
@@ -132,6 +147,7 @@ function validWorkspaceIdentityShape(value: unknown): value is Record<string, un
     && typeof value.p26_knowledge_graph_sha256 === "string" && hash.test(value.p26_knowledge_graph_sha256)
     && typeof value.p26_reasoning_snapshot_sha256 === "string" && hash.test(value.p26_reasoning_snapshot_sha256)
     && typeof value.p32_projection_sha256 === "string" && hash.test(value.p32_projection_sha256)
+    && typeof value.run_sentinel_sha256 === "string" && hash.test(value.run_sentinel_sha256)
     && typeof value.learning_history_revision === "string" && hash.test(value.learning_history_revision)
     && typeof value.learning_projection_sha256 === "string" && hash.test(value.learning_projection_sha256)
     && typeof value.setup_id === "string" && value.setup_id.length > 0
@@ -538,7 +554,7 @@ export function isCrewChiefWorkspaceResponse(
     objectiveId: string;
   },
 ): value is CrewChiefWorkspace {
-  if (!record(value) || value.schema_version !== "p33.crew-chief-workspace.v1") return false;
+  if (!record(value) || value.schema_version !== "p33.crew-chief-workspace.v2") return false;
   if (
     !record(value.identity)
     || !record(value.terminal_decision)
@@ -550,8 +566,21 @@ export function isCrewChiefWorkspaceResponse(
   ) return false;
   const missionContract = value.p19_mission_contract;
   const reportAction = scope.report.briefing.action;
-  if (!(missionContract === null || (
-    record(missionContract)
+  const reportHasMissionContract = (
+    typeof reportAction.mission_contract_id === "string"
+    && reportAction.mission_contract_id.length > 0
+    && typeof reportAction.mission_contract_sha256 === "string"
+    && hash.test(reportAction.mission_contract_sha256)
+  );
+  const reportHasNoMissionContract = (
+    reportAction.mission_contract_id == null
+    && reportAction.mission_contract_sha256 == null
+  );
+  if (
+    (!reportHasMissionContract && !reportHasNoMissionContract)
+    || (missionContract === null) !== reportHasNoMissionContract
+    || (missionContract !== null && !(
+      record(missionContract)
     && missionContract.schema_version === "p19.measurement-mission.v2"
     && typeof missionContract.contract_id === "string"
     && missionContract.contract_id === reportAction.mission_contract_id
@@ -568,7 +597,8 @@ export function isCrewChiefWorkspaceResponse(
     && safeTexts(missionContract.acceptance_thresholds)
     && safeTexts(missionContract.integrity_stop_rules)
     && safeText(missionContract.purpose)
-  ))) return false;
+    ))
+  ) return false;
   const identity = value.identity;
   const decision = value.terminal_decision;
   const scopeRunIds = new Set(scope.scopeRunIds ?? [scope.runId]);
@@ -696,22 +726,60 @@ export function isCrewChiefWorkspaceResponse(
   ) return false;
   const success = value.success_contract;
   const sentinel = value.run_sentinel;
+  const p19Action = scope.report.briefing.action;
+  const sentinelPlanMatchesP19 = (
+    (p19Action.kind === "controlled_test" && sentinel.p19_plan_kind === "controlled_test")
+    || (p19Action.kind === "measurement_mission"
+      && ["measurement_mission", "discriminator"].includes(String(sentinel.p19_plan_kind)))
+    || (p19Action.kind === "driver_focus"
+      && ["measurement_mission", "discriminator"].includes(String(sentinel.p19_plan_kind)))
+    || (p19Action.kind === "no_call"
+      && ["blocked", "stop_testing"].includes(String(sentinel.p19_plan_kind)))
+  );
+  if (!exactKeys(sentinel, [
+    "mission_state", "p19_plan_kind", "mission", "need", "hold_constant",
+    "watch", "success", "stop", "required_laps", "context_cleared_laps",
+    "mission_accepted_lap_ids", "measurement_attempt_ids",
+    "mission_acceptance_basis", "collection_complete", "stage", "laps",
+    "blocker_reasons",
+  ])) return false;
   if (["blocked", "stop_testing"].includes(String(sentinel.p19_plan_kind))
     && (success !== null || sentinel.required_laps !== null || sentinel.collection_complete)) return false;
   const critique = value.critique;
-  let acceptedOrdinal = 0;
+  let contextOrdinal = 0;
   const sentinelLapsAreCanonical = Array.isArray(sentinel.laps)
     && sentinel.laps.every((lap) => {
-      if (!record(lap)
+      if (!exactKeys(lap, ["lap_id", "lap_number", "status", "reasons", "context_ordinal"])
+        || !safeText(lap.lap_id)
         || !integerNumber(lap.lap_number)
-        || !["accepted", "rejected"].includes(String(lap.status))
+        || !["context_cleared", "rejected"].includes(String(lap.status))
         || !safeTexts(lap.reasons)) return false;
-      if (lap.status === "accepted") {
-        acceptedOrdinal += 1;
-        return lap.reasons.length === 0 && lap.accepted_ordinal === acceptedOrdinal;
+      if (lap.status === "context_cleared") {
+        contextOrdinal += 1;
+        return lap.reasons.length === 0 && lap.context_ordinal === contextOrdinal;
       }
-      return lap.reasons.length > 0 && lap.accepted_ordinal === null;
+      return lap.reasons.length > 0 && lap.context_ordinal === null;
     });
+  const missionAcceptedIds = sentinel.mission_accepted_lap_ids;
+  const attemptIds = sentinel.measurement_attempt_ids;
+  const acceptanceBasis = String(sentinel.mission_acceptance_basis);
+  const acceptanceBasisIsCanonical = uniqueStrings(missionAcceptedIds)
+    && uniqueStrings(attemptIds)
+    && ["unbound", "p19_measurement_attempt", "controlled_workflow_stage"]
+      .includes(acceptanceBasis)
+    && (acceptanceBasis !== "unbound"
+      || (missionAcceptedIds.length === 0 && attemptIds.length === 0))
+    && (acceptanceBasis !== "p19_measurement_attempt"
+      || (["measurement_mission", "discriminator"].includes(String(sentinel.p19_plan_kind))
+        && missionContract !== null
+        && missionAcceptedIds.length > 0 && attemptIds.length > 0))
+    && (acceptanceBasis !== "controlled_workflow_stage"
+      || (sentinel.p19_plan_kind === "controlled_test"
+        && missionAcceptedIds.length > 0 && attemptIds.length === 0));
+  const expectedComplete = sentinel.required_laps !== null
+    && Array.isArray(missionAcceptedIds)
+    && missionAcceptedIds.length >= Number(sentinel.required_laps)
+    && !["blocked_by_p19", "stopped_by_p19"].includes(String(sentinel.mission_state));
   if (
     !(success === null || (record(success)
       && success.workspace_revision === identity.workspace_revision
@@ -722,22 +790,30 @@ export function isCrewChiefWorkspaceResponse(
       .includes(String(sentinel.mission_state))
     || !["controlled_test", "measurement_mission", "discriminator", "stop_testing", "blocked"]
       .includes(String(sentinel.p19_plan_kind))
-    || !safeText(sentinel.mission)
-    || !safeText(sentinel.need)
-    || !safeText(sentinel.success)
-    || !safeTexts(sentinel.stop)
+    || typeof sentinel.mission !== "string" || sentinel.mission.length === 0
+    || typeof sentinel.need !== "string" || sentinel.need.length === 0
+    || typeof sentinel.success !== "string" || sentinel.success.length === 0
+    || !strings(sentinel.hold_constant)
+    || !strings(sentinel.watch)
+    || !strings(sentinel.stop)
+    || !sentinelPlanMatchesP19
+    || sentinel.mission !== p19Action.title
+    || sentinel.need !== p19Action.instruction
+    || (typeof scope.report.briefing.success_check === "string"
+      && sentinel.success !== scope.report.briefing.success_check)
     || !(sentinel.required_laps === null
       || (integerNumber(sentinel.required_laps) && sentinel.required_laps >= 1))
-    || !integerNumber(sentinel.accepted_laps)
-    || sentinel.accepted_laps !== acceptedOrdinal
+    || !integerNumber(sentinel.context_cleared_laps)
+    || sentinel.context_cleared_laps !== contextOrdinal
+    || !acceptanceBasisIsCanonical
     || typeof sentinel.collection_complete !== "boolean"
-    || sentinel.collection_complete !== (
-      sentinel.required_laps !== null
-      && acceptedOrdinal >= sentinel.required_laps
-      && !["blocked_by_p19", "stopped_by_p19", "awaiting_p19_score"].includes(String(sentinel.mission_state))
-    )
+    || sentinel.collection_complete !== expectedComplete
+    || (sentinel.mission_state === "collection_complete" && !sentinel.collection_complete)
+    || (sentinel.collection_complete
+      && !["collection_complete", "awaiting_p19_score"].includes(String(sentinel.mission_state)))
     || !["measurement", "A", "B", "A2", "blocked", "stopped", "awaiting_score"].includes(String(sentinel.stage))
     || !sentinelLapsAreCanonical
+    || !safeTexts(sentinel.blocker_reasons)
     || typeof critique.passed !== "boolean"
     || !["pass", "blocked", "reinvestigate", "ask_driver"].includes(String(critique.outcome))
     || critique.passed !== (critique.outcome === "pass")

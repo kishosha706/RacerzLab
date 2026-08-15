@@ -175,6 +175,23 @@ def test_data_quality_has_compact_status_and_learning_recovery() -> None:
     assert 'data-status={quality.status}' in engineer
 
 
+def test_race_mode_keeps_secondary_engineering_surfaces_behind_one_disclosure() -> None:
+    engineer = _read("ui/src/tabs/EngineerTab.tsx")
+    styles = _read("ui/src/styles.css")
+
+    assert "const [raceSupportOpen, setRaceSupportOpen] = useState(false)" in engineer
+    assert "setRaceSupportOpen(false)" in engineer
+    assert "{!learning && (" in engineer
+    assert 'className="engineer-race-support-toggle"' in engineer
+    assert 'aria-expanded={raceSupportOpen}' in engineer
+    assert 'aria-controls="engineer-supporting-evidence"' in engineer
+    assert "Supporting evidence and tools" in engineer
+    assert "{(learning || raceSupportOpen) && (" in engineer
+    assert 'id="engineer-supporting-evidence"' in engineer
+    assert ".engineer-race-support-toggle" in styles
+    assert '.engineer-race-support-toggle[aria-expanded="true"] svg' in styles
+
+
 def test_grounded_questions_are_not_a_generic_chat_surface() -> None:
     engineer = _read("ui/src/tabs/EngineerTab.tsx")
 

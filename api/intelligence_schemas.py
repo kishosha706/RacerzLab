@@ -193,6 +193,8 @@ class MeasurementAttemptResponse(IntelligenceApiModel):
     contract_sha256: str
     outcome: str
     outcome_authority: Literal["client_attested"] = "client_attested"
+    collection_authority: Literal["server_verified"] = "server_verified"
+    counts_toward_mission_completion: bool
     counts_toward_stop_testing: Literal[False] = False
 
 

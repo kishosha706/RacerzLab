@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   hasCanonicalMeasurementMissionDigest,
+  hasCanonicalRunSentinelDigest,
   isCrewChiefWorkspaceResponse,
 } from "../src/utils/crewChiefResponseTrust.ts";
 import { isPerformanceIntelligenceProjection } from "../src/utils/performanceIntelligenceTrust.js";
@@ -57,7 +58,10 @@ const emptyLearningPrior = {
 };
 const report = {
   reasoning_snapshot_sha256: h("a"), setup_id: "setup-1", setup_snapshot_sha256: h("b"),
-  briefing: { action: { kind: "measurement_mission", title: "Measure", instruction: "Collect three eligible laps.", setup_authorized: false, control_key: null, current_value: null, proposed_value: null, source_event_ids: [] } },
+  briefing: {
+    success_check: "Repeatable evidence",
+    action: { kind: "measurement_mission", title: "Measure", instruction: "Collect three eligible laps.", setup_authorized: false, control_key: null, current_value: null, proposed_value: null, source_event_ids: [] },
+  },
   next_trustworthy_move: null,
 };
 const performance = {
@@ -133,14 +137,14 @@ const performance = {
   },
 };
 const workspace = {
-  schema_version: "p33.crew-chief-workspace.v1",
+  schema_version: "p33.crew-chief-workspace.v2",
   identity: {
     run_id: "run-1", session_id: "session-1", reasoning_snapshot_sha256: h("a"),
     setup_id: "setup-1", setup_snapshot_sha256: h("b"), workspace_revision: h("c"),
     selected_scope_hash: h("f"), p20_profile_hash: null, p26_graph_version: "p26.v1",
     p20_state_revision: h("d"), p26_knowledge_graph_sha256: h("e"),
     p26_reasoning_snapshot_sha256: h("a"), active_workflow_id: null, active_workflow_revision: null,
-    p32_projection_sha256: h("7"), objective_id: "race_long_run",
+    p32_projection_sha256: h("7"), run_sentinel_sha256: h("6"), objective_id: "race_long_run",
     learning_history_revision: h("1"), learning_projection_sha256: h("2"),
     vehicle_runtime_identity_hash: h("9"), investigation_id: null,
   },
@@ -154,9 +158,11 @@ const workspace = {
   },
   run_sentinel: {
     mission_state: "collecting", p19_plan_kind: "measurement_mission",
-    mission: "Collect evidence", need: "Three eligible laps", success: "Repeatable evidence",
-    stop: ["Stop on integrity failure."], required_laps: 3, accepted_laps: 0,
-    collection_complete: false, stage: "measurement", laps: [],
+    mission: "Measure", need: "Collect three eligible laps.", success: "Repeatable evidence",
+    hold_constant: ["Setup"], watch: ["Position-aligned response"],
+    stop: ["Stop on integrity failure."], required_laps: 3, context_cleared_laps: 0,
+    mission_accepted_lap_ids: [], measurement_attempt_ids: [], mission_acceptance_basis: "unbound",
+    collection_complete: false, stage: "measurement", laps: [], blocker_reasons: [],
   },
   critique: { outcome: "pass", passed: true, findings: [], strongest_contradiction: null },
   adaptive_research: { state: "data_locked", authority: "none", activation_gate: "Held-out evidence is required." },
@@ -168,8 +174,24 @@ const workspace = {
     source_event_ids: [], workflow_id: null, workflow_revision: null, blocker_reasons: [],
   },
 };
+workspace.identity.run_sentinel_sha256 = await canonicalEngineeringLearningSha256(workspace.run_sentinel);
 const scope = { runId: "run-1", sessionId: "session-1", report, objectiveId: "race_long_run" };
 assert.equal(isCrewChiefWorkspaceResponse(workspace, scope), true);
+assert.equal(
+  await hasCanonicalRunSentinelDigest(workspace.run_sentinel, workspace.identity.run_sentinel_sha256),
+  true,
+);
+const staleSentinelDigest = structuredClone(workspace);
+staleSentinelDigest.run_sentinel.blocker_reasons = ["New safe blocker."];
+assert.equal(isCrewChiefWorkspaceResponse(staleSentinelDigest, scope), true);
+assert.equal(
+  await hasCanonicalRunSentinelDigest(
+    staleSentinelDigest.run_sentinel,
+    staleSentinelDigest.identity.run_sentinel_sha256,
+  ),
+  false,
+  "mission progress body must remain bound to its canonical identity",
+);
 const withInvestigation = structuredClone(workspace);
 withInvestigation.identity.investigation_id = "investigation-1";
 withInvestigation.investigation = {
@@ -252,6 +274,19 @@ const missionScope = structuredClone(scope);
 missionScope.report.briefing.action.mission_contract_id = missionContract.contract_id;
 missionScope.report.briefing.action.mission_contract_sha256 = missionContract.contract_sha256;
 assert.equal(isCrewChiefWorkspaceResponse(withMission, missionScope), true);
+assert.equal(
+  isCrewChiefWorkspaceResponse(workspace, missionScope),
+  false,
+  "a trusted P19 mission identity requires its exact workspace contract",
+);
+const halfBoundMissionScope = structuredClone(scope);
+halfBoundMissionScope.report.briefing.action.mission_contract_id = missionContract.contract_id;
+halfBoundMissionScope.report.briefing.action.mission_contract_sha256 = null;
+assert.equal(
+  isCrewChiefWorkspaceResponse(workspace, halfBoundMissionScope),
+  false,
+  "a P19 action cannot publish half of a mission identity",
+);
 assert.equal(await hasCanonicalMeasurementMissionDigest(missionContract), true);
 const staleMission = structuredClone(withMission);
 staleMission.p19_mission_contract.setup_sha256 = h("0");
@@ -259,6 +294,26 @@ assert.equal(isCrewChiefWorkspaceResponse(staleMission, missionScope), true);
 assert.equal(
   await hasCanonicalMeasurementMissionDigest(staleMission.p19_mission_contract),
   false,
+);
+const discriminatorWorkspace = structuredClone(withMission);
+discriminatorWorkspace.run_sentinel.p19_plan_kind = "discriminator";
+discriminatorWorkspace.run_sentinel.mission = "Run the evidence discriminator";
+discriminatorWorkspace.run_sentinel.need = "Record an unchanged-setup comparison.";
+discriminatorWorkspace.terminal_decision.title = "Run the evidence discriminator";
+discriminatorWorkspace.terminal_decision.instruction = "Record an unchanged-setup comparison.";
+discriminatorWorkspace.performance_intelligence.speed_story.next = "Record an unchanged-setup comparison.";
+discriminatorWorkspace.performance_intelligence.explanation_chain.p19_next_move = "Record an unchanged-setup comparison.";
+discriminatorWorkspace.identity.run_sentinel_sha256 = await canonicalEngineeringLearningSha256(
+  discriminatorWorkspace.run_sentinel,
+);
+const discriminatorScope = structuredClone(missionScope);
+discriminatorScope.report.best_measurement = { title: "Evidence discriminator" };
+discriminatorScope.report.briefing.action.title = "Run the evidence discriminator";
+discriminatorScope.report.briefing.action.instruction = "Record an unchanged-setup comparison.";
+assert.equal(
+  isCrewChiefWorkspaceResponse(discriminatorWorkspace, discriminatorScope),
+  true,
+  "the sentinel must bind the public P19 action rather than a differently titled detail card",
 );
 for (const instruction of ["Set cross_weight_percent to 52.0.", "Keep.", "Stop the test."]) {
   const hostile = structuredClone(workspace);
@@ -318,6 +373,9 @@ controlled.terminal_decision = {
 };
 controlled.performance_intelligence.speed_story.next = "Set the exact card.";
 controlled.performance_intelligence.explanation_chain.p19_next_move = "Set the exact card.";
+controlled.run_sentinel.p19_plan_kind = "controlled_test";
+controlled.run_sentinel.mission = "One P19 test";
+controlled.run_sentinel.need = "Set the exact card.";
 assert.equal(isCrewChiefWorkspaceResponse(controlled, { ...scope, report: controlledReport }), true);
 controlled.terminal_decision.proposed_value = "53.0%";
 assert.equal(isCrewChiefWorkspaceResponse(controlled, { ...scope, report: controlledReport }), false);
@@ -327,6 +385,22 @@ const rejectMutation = (label, mutate) => {
   mutate(hostile);
   assert.equal(isCrewChiefWorkspaceResponse(hostile, scope), false, label);
 };
+rejectMutation("unbound sentinel cannot claim mission-accepted laps", (value) => {
+  value.run_sentinel.mission_accepted_lap_ids = ["run-1:1"];
+});
+rejectMutation("context count must match exact lap decisions", (value) => {
+  value.run_sentinel.context_cleared_laps = 1;
+});
+rejectMutation("mission completion requires contract-accepted laps", (value) => {
+  value.run_sentinel.collection_complete = true;
+  value.run_sentinel.mission_state = "collection_complete";
+});
+rejectMutation("sentinel lap identity and ordinal are required", (value) => {
+  value.run_sentinel.context_cleared_laps = 1;
+  value.run_sentinel.laps = [{
+    lap_id: "run-1:1", lap_number: 1, status: "context_cleared", reasons: [], context_ordinal: null,
+  }];
+});
 rejectMutation("P33 exact keys reject a missing section", (value) => { delete value.learning_prior.evidence_references; });
 rejectMutation("P33 exact keys reject an extra nested field", (value) => { value.learning_prior.recurrence.setup_call = "hidden"; });
 rejectMutation("P33 history revision binds workspace identity", (value) => { value.learning_prior.history_revision = h("0"); });

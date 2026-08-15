@@ -5632,6 +5632,46 @@ td {
   align-content: start;
 }
 
+.engineer-support-stack {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.engineer-race-support-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 46px;
+  padding: 8px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  color: #cbd5e1;
+  background: rgba(13, 17, 23, 0.82);
+  text-align: left;
+}
+
+.engineer-race-support-toggle > span {
+  display: grid;
+  gap: 2px;
+}
+
+.engineer-race-support-toggle b { color: #e2e8f0; font-size: 0.75rem; }
+.engineer-race-support-toggle small { color: #7f8ea3; font-size: 0.68rem; }
+.engineer-race-support-toggle svg { transition: transform 140ms ease; }
+.engineer-race-support-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.engineer-race-support-toggle:hover,
+.engineer-race-support-toggle:focus-visible {
+  border-color: rgba(56, 189, 248, 0.42);
+  background: rgba(14, 116, 144, 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .engineer-race-support-toggle svg { transition: none; }
+}
+
 .engineer-workspace-header,
 .engineer-briefing,
 .engineer-quality-card,
@@ -5663,7 +5703,8 @@ td {
   gap: 6px;
 }
 
-.engineer-workspace-header h1 {
+.engineer-workspace-header h1,
+.engineer-workspace-header h2 {
   margin: 0;
   color: #f1f5f9;
   font-size: clamp(19px, 2vw, 25px);
@@ -7323,6 +7364,11 @@ td {
   background: rgba(34, 197, 94, 0.06);
 }
 
+.cockpit-shell .priority-rail.collapsed.shell-attention .rail-collapse-btn {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.09);
+}
+
 .cockpit-shell .priority-rail .rail-collapse-btn:disabled {
   cursor: default;
   color: #536273;
@@ -7707,7 +7753,8 @@ td {
 
 @media (max-width: 860px) {
   .cockpit-shell > .context-bar-two-tier .context-sep,
-  .cockpit-shell > .context-bar-two-tier .context-item:nth-of-type(n + 3),
+  .cockpit-shell > .context-bar-two-tier .context-item-car,
+  .cockpit-shell > .context-bar-two-tier .context-item-setup,
   .cockpit-shell > .context-bar-two-tier .context-tag-badge,
   .cockpit-shell > .context-bar-two-tier .basket-status-badge {
     display: none;
@@ -12635,6 +12682,42 @@ button:focus:not(:focus-visible) {
   .workspace-nav-rail {
     width: 52px;
   }
+
+  /* Narrow shell: keep unresolved evidence visible without consuming the workspace. */
+  .cockpit-body[data-priority-rail-layout="overlay"] {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .cockpit-body[data-priority-rail-layout="overlay"] > .priority-rail {
+    position: absolute;
+    z-index: 30;
+    top: 0;
+    bottom: 0;
+    left: 52px;
+    width: min(280px, calc(100vw - 110px));
+    min-width: 0;
+    max-width: calc(100vw - 110px);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-top: 0;
+    box-shadow: 18px 0 34px rgba(0, 0, 0, 0.42);
+  }
+
+  .cockpit-body[data-priority-rail-layout="overlay"] > .priority-rail.collapsed {
+    top: 8px;
+    bottom: auto;
+    width: 38px;
+    min-width: 38px;
+    height: 38px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 0 7px 7px 0;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+  }
+
+  .cockpit-body[data-priority-rail-layout="overlay"] > .priority-rail.collapsed .rail-collapse-btn {
+    min-height: 36px;
+    border: 0;
+  }
 }
 
 /* Engineer + Dial-In mission surfaces */
@@ -15416,6 +15499,42 @@ button:focus:not(:focus-visible) {
 .speed-story .speed-story-contradiction { border-color: color-mix(in srgb, var(--danger) 52%, var(--border)); }
 .crew-chief-deck[data-mode="race"] .crew-chief-race-brief { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .crew-chief-deck[data-mode="race"] .speed-story p:not(.speed-story-next) { min-height: 0; }
+.crew-chief-race-secondary {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.45fr) minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: start;
+}
+.speed-story-detail,
+.speed-story-memory {
+  min-width: 0;
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: rgba(8, 12, 18, 0.48);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+.speed-story-detail summary {
+  color: #aebdca;
+  cursor: pointer;
+  font-weight: 750;
+}
+.speed-story-detail > div {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+.speed-story-detail b,
+.speed-story-memory b {
+  color: #a78bfa;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+}
 .crew-chief-loading { min-height: 8rem; align-content: center; }
 .crew-chief-loading > b { color: var(--text); }
 .crew-chief-loading > p { max-width: 52rem; color: var(--text-muted); }
@@ -15444,13 +15563,49 @@ button:focus:not(:focus-visible) {
 .engineering-memory-grid article { min-width: 0; padding: 0.65rem; border: 1px solid var(--border); border-radius: 7px; }
 .engineering-memory-grid article > div + div { margin-top: 0.45rem; padding-top: 0.45rem; border-top: 1px solid var(--border); }
 .engineering-memory-grid small { display: block; margin-top: 0.3rem; color: var(--text-muted); line-height: 1.35; }
+.engineering-memory.engineering-memory-compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem 1rem;
+  min-height: 0;
+}
+.engineering-memory.engineering-memory-compact > header { grid-column: 1 / -1; }
+.engineering-memory.engineering-memory-compact > p { color: #cbd5e1; }
+.engineering-memory.engineering-memory-compact > small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
 .engineering-memory-badges { display: flex; flex-wrap: wrap; justify-content: end; gap: 0.35rem; }
 .engineering-memory-badges span { padding: 0.25rem 0.45rem; border: 1px solid var(--border); border-radius: 999px; font-size: 0.68rem; text-transform: uppercase; }
 .engineering-memory-evidence { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.35rem; }
-.engineering-memory-evidence button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; }
+.engineering-memory-evidence button,
+.crew-chief-learning section li > button {
+  display: grid;
+  max-width: 100%;
+  gap: 0.12rem;
+  overflow: hidden;
+  text-align: left;
+}
+.engineering-memory-evidence button b,
+.crew-chief-learning section li > button b {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.engineering-memory-evidence button span,
+.crew-chief-learning section li > button span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .crew-chief-question > div { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.6rem; }
 .crew-chief-inline-error, .crew-chief-error { color: var(--danger); }
 @media (max-width: 900px) {
   .crew-chief-race-brief, .crew-chief-learning, .crew-chief-open { grid-template-columns: 1fr; }
+  .crew-chief-deck[data-mode="race"] .crew-chief-race-brief { grid-template-columns: 1fr; }
+  .crew-chief-race-secondary { grid-template-columns: 1fr; }
   .engineering-memory-grid { grid-template-columns: 1fr; }
+  .engineering-memory.engineering-memory-compact { grid-template-columns: 1fr; }
 }

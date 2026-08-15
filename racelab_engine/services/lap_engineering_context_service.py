@@ -42,6 +42,18 @@ _BASE_CHANNELS: tuple[str, ...] = (
 )
 
 
+def mission_lap_context_is_clear(context: object) -> bool:
+    """Require complete, explicitly traffic-free context for mission credit."""
+
+    return bool(
+        not getattr(context, "blocker_reasons", ())
+        and getattr(context, "proximity_state", None)
+        == "no_nearby_car_reported"
+        and getattr(context, "proximity_coverage_fraction", None) == 1.0
+        and getattr(context, "nearby_traffic_exposure_fraction", None) == 0.0
+    )
+
+
 def _tire_channels() -> tuple[str, ...]:
     channels: list[str] = []
     for corner, raw in (("lf", "LF"), ("rf", "RF"), ("lr", "LR"), ("rr", "RR")):
@@ -355,4 +367,5 @@ def load_lap_engineering_context_report(
 __all__ = [
     "build_lap_engineering_context_report",
     "load_lap_engineering_context_report",
+    "mission_lap_context_is_clear",
 ]

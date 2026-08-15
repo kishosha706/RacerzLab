@@ -41,6 +41,7 @@ import { isDialInHypothesisResponse } from "../utils/dialInResponseTrust";
 import { isControlledWorkflowResponse } from "../utils/controlledWorkflowTrust";
 import {
   hasCanonicalMeasurementMissionDigest,
+  hasCanonicalRunSentinelDigest,
   isCrewChiefWorkspaceResponse,
 } from "../utils/crewChiefResponseTrust";
 import { hasCanonicalEngineeringLearningDigests } from "../utils/engineeringLearningTrust.js";
@@ -368,6 +369,12 @@ async function trustedCrewChiefResponse(
   }
   if (!await hasCanonicalMeasurementMissionDigest(payload.p19_mission_contract)) {
     throw new Error("Crew Chief failed its canonical P19 measurement-mission identity check.");
+  }
+  if (!await hasCanonicalRunSentinelDigest(
+    payload.run_sentinel,
+    payload.identity.run_sentinel_sha256,
+  )) {
+    throw new Error("Crew Chief failed its canonical mission-progress identity check.");
   }
   return payload;
 }

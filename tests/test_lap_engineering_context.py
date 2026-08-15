@@ -8,6 +8,7 @@ from racelab_engine.models.lap_engineering_context import ChannelUpdateSemantic
 from racelab_engine.services.lap_engineering_context_service import (
     build_lap_engineering_context_report,
     load_lap_engineering_context_report,
+    mission_lap_context_is_clear,
 )
 
 
@@ -85,6 +86,20 @@ def test_lap_context_distinguishes_live_channels_from_pit_snapshots() -> None:
     assert rf.odometer.semantic is ChannelUpdateSemantic.CONTINUOUS
     assert context.rear_wheel_speed_mismatch.authority == "geometry_contaminated_proxy"
     assert context.nearby_traffic_exposure_fraction == 0.0
+    assert mission_lap_context_is_clear(context) is True
+
+    traffic_rows = _rows()
+    for row in traffic_rows:
+        row["car_distance_ahead_m"] = 50.0
+    traffic_context = build_lap_engineering_context_report(
+        run_id="run-1",
+        laps=[_lap(1)],
+        rows=traffic_rows,
+    ).contexts[0]
+    assert traffic_context.blocker_reasons == ()
+    assert traffic_context.proximity_state == "nearby_car_ahead"
+    assert traffic_context.nearby_traffic_exposure_fraction == 1.0
+    assert mission_lap_context_is_clear(traffic_context) is False
 
 
 def test_vectorized_next_gen_carcass_aliases_match_row_engine_contract() -> None:

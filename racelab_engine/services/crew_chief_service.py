@@ -50,6 +50,7 @@ from racelab_engine.models.crew_chief import (
 )
 from racelab_engine.models.controlled_workflow import ControlledWorkflow
 from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.experiment import MeasurementAttempt
 from racelab_engine.models.engineering_learning import (
     CrewChiefLearningPrior,
     EngineeringSourceProvenance,
@@ -74,6 +75,9 @@ from racelab_engine.services.run_intelligence_service import (
     build_run_intelligence,
 )
 from racelab_engine.services.import_service import read_telemetry_manifest
+from racelab_engine.services.lap_engineering_context_service import (
+    mission_lap_context_is_clear,
+)
 from racelab_engine.services.session_service import get_session
 from racelab_engine.services.vehicle_systems_service import (
     build_component_awareness,
@@ -342,6 +346,7 @@ def _workspace_identity(
     p26: object,
     p32: object,
     learning_prior: CrewChiefLearningPrior,
+    run_sentinel: RunSentinelState,
 ) -> CrewChiefWorkspaceIdentity:
     report = bundle.report
     setup_id = getattr(p26, "setup_id", None)
@@ -360,6 +365,7 @@ def _workspace_identity(
         "p26_graph_hash": getattr(p26, "knowledge_graph_sha256"),
         "p26_reasoning": getattr(p26, "reasoning_snapshot_sha256"),
         "p32_projection": getattr(p32, "projection_sha256"),
+        "run_sentinel": canonical_json_sha256(run_sentinel),
         "learning_history": learning_prior.history_revision,
         "learning_projection": learning_prior.projection_sha256,
         "setup_id": setup_id,
@@ -382,6 +388,7 @@ def _workspace_identity(
         p26_knowledge_graph_sha256=base["p26_graph_hash"],
         p26_reasoning_snapshot_sha256=base["p26_reasoning"],
         p32_projection_sha256=base["p32_projection"],
+        run_sentinel_sha256=base["run_sentinel"],
         learning_history_revision=base["learning_history"],
         learning_projection_sha256=base["learning_projection"],
         setup_id=setup_id,
@@ -407,6 +414,7 @@ def _authority_revision(identity: CrewChiefWorkspaceIdentity) -> str:
                 "workspace_revision",
                 "learning_history_revision",
                 "learning_projection_sha256",
+                "run_sentinel_sha256",
             },
         )
     )
@@ -1725,7 +1733,12 @@ def _success_contract(
 
 
 def _sentinel(
-    bundle: RunIntelligenceBundle, overview: object, workflow: object | None = None
+    bundle: RunIntelligenceBundle,
+    overview: object,
+    workflow: object | None = None,
+    *,
+    measurement_attempts: tuple[MeasurementAttempt, ...] = (),
+    measurement_history_blockers: tuple[str, ...] = (),
 ) -> RunSentinelState:
     report = bundle.report
     plan = report.best_measurement
@@ -1806,7 +1819,7 @@ def _sentinel(
         for item in (report.lap_context.contexts if report.lap_context else ())
     }
     decisions: list[RunSentinelLap] = []
-    accepted = 0
+    context_cleared_ids: list[str] = []
     for lap in sorted(overview.laps, key=lambda item: item.lap_number):
         reasons: list[str] = list(mission_scope_reasons)
         if lap.lap_id not in eligible:
@@ -1818,46 +1831,145 @@ def _sentinel(
             reasons.append("exact-lap context coverage is unavailable")
         else:
             reasons.extend(context.blocker_reasons)
+            if not mission_lap_context_is_clear(context):
+                reasons.append(
+                    "nearby-car context must have complete coverage and zero traffic exposure"
+                )
         if reasons:
             decisions.append(
                 RunSentinelLap(
+                    lap_id=lap.lap_id,
                     lap_number=lap.lap_number,
                     status="rejected",
                     reasons=_unique(reasons),
                 )
             )
         else:
-            accepted += 1
+            context_cleared_ids.append(lap.lap_id)
             decisions.append(
                 RunSentinelLap(
+                    lap_id=lap.lap_id,
                     lap_number=lap.lap_number,
-                    status="accepted",
-                    accepted_ordinal=accepted,
+                    status="context_cleared",
+                    context_ordinal=len(context_cleared_ids),
                 )
+            )
+    mission_accepted_lap_ids: tuple[str, ...] = ()
+    measurement_attempt_ids: tuple[str, ...] = ()
+    mission_acceptance_basis: Literal[
+        "unbound", "p19_measurement_attempt", "controlled_workflow_stage"
+    ] = "unbound"
+    progress_blockers = list(measurement_history_blockers)
+    if plan_kind in {"measurement_mission", "discriminator"} and contract is not None:
+        qualified_attempts: list[MeasurementAttempt] = []
+        corrupt_attempt = False
+        for attempt in measurement_attempts:
+            exact_identity = (
+                attempt.contract_id == contract.contract_id
+                and attempt.contract_sha256 == contract.contract_sha256
+                and attempt.run_id in contract.session_run_ids
+                and attempt.setup_sha256 == contract.setup_sha256
+                and attempt.compatibility_fingerprint
+                == contract.compatibility_fingerprint
+                and all(
+                    lap_id.rsplit(":", 1)[0] == attempt.run_id
+                    for lap_id in attempt.eligible_lap_ids
+                )
+            )
+            if not exact_identity:
+                corrupt_attempt = True
+                continue
+            if (
+                getattr(attempt, "collection_authority", None) == "server_verified"
+                and attempt.outcome in {"completed_clean", "no_signal"}
+                and not attempt.integrity_blockers
+                and len(attempt.eligible_lap_ids) >= contract.required_laps
+                and set(contract.required_channels).issubset(
+                    attempt.observed_channels
+                )
+                and (
+                    attempt.run_id != report.run_id
+                    or set(attempt.eligible_lap_ids).issubset(context_cleared_ids)
+                )
+            ):
+                qualified_attempts.append(attempt)
+        if corrupt_attempt:
+            progress_blockers.append(
+                "Durable measurement progress failed its exact contract, run, setup, or build identity check."
+            )
+        elif qualified_attempts:
+            mission_accepted_lap_ids = _unique(
+                lap_id
+                for attempt in qualified_attempts
+                for lap_id in attempt.eligible_lap_ids
+            )
+            measurement_attempt_ids = tuple(
+                attempt.attempt_id for attempt in qualified_attempts
+            )
+            mission_acceptance_basis = "p19_measurement_attempt"
+        else:
+            progress_blockers.append(
+                "Context-cleared laps are screening evidence only; mission completion requires an exact P19 measurement attempt with every required channel."
+            )
+    elif plan_kind in {"measurement_mission", "discriminator"}:
+        progress_blockers.append(
+            "Context-cleared laps are screening evidence only; P19 has not bound an exact measurement contract."
+        )
+    elif plan_kind == "controlled_test" and stage in {"A", "B", "A2"}:
+        recorded_lap_numbers = tuple(
+            getattr(workflow, "stage_eligible_lap_numbers", {}).get(stage, ())
+        )
+        context_cleared_by_number = {
+            item.lap_number: item.lap_id
+            for item in decisions
+            if item.status == "context_cleared"
+        }
+        recorded_lap_ids = tuple(
+            context_cleared_by_number[lap_number]
+            for lap_number in recorded_lap_numbers
+            if lap_number in context_cleared_by_number
+        )
+        if (
+            recorded_stage == stage
+            and recorded_lap_numbers
+            and len(recorded_lap_ids) == len(recorded_lap_numbers)
+        ):
+            mission_accepted_lap_ids = recorded_lap_ids
+            mission_acceptance_basis = "controlled_workflow_stage"
+        else:
+            progress_blockers.append(
+                "Context-cleared laps are screening evidence until the exact recorded controlled-workflow stage cohort remains qualified."
             )
     waiting_for_score = bool(
         workflow is not None
-        and getattr(workflow, "status", None) == "active"
+        and getattr(workflow, "status", None) == "a2_recorded"
         and all(
             getattr(workflow, "stage_run_ids", {}).get(item)
             for item in ("A", "B", "A2")
         )
     )
-    collection_complete = required is not None and accepted >= required
+    collection_complete = (
+        required is not None and len(mission_accepted_lap_ids) >= required
+    )
     if plan_kind == "blocked":
         mission_state = "blocked_by_p19"
         stage = "blocked"
         required = None
         collection_complete = False
+        mission_accepted_lap_ids = ()
+        measurement_attempt_ids = ()
+        mission_acceptance_basis = "unbound"
     elif plan_kind == "stop_testing":
         mission_state = "stopped_by_p19"
         stage = "stopped"
         required = None
         collection_complete = False
+        mission_accepted_lap_ids = ()
+        measurement_attempt_ids = ()
+        mission_acceptance_basis = "unbound"
     elif waiting_for_score:
         mission_state = "awaiting_p19_score"
         stage = "awaiting_score"
-        collection_complete = False
     elif collection_complete:
         mission_state = "collection_complete"
     else:
@@ -1872,13 +1984,17 @@ def _sentinel(
         success=report.briefing.success_check,
         stop=stop,
         required_laps=required,
-        accepted_laps=accepted,
+        context_cleared_laps=len(context_cleared_ids),
+        mission_accepted_lap_ids=mission_accepted_lap_ids,
+        measurement_attempt_ids=measurement_attempt_ids,
+        mission_acceptance_basis=mission_acceptance_basis,
         collection_complete=collection_complete,
         stage=stage,
         laps=tuple(decisions),
         blocker_reasons=_unique(
             [
                 *mission_scope_reasons,
+                *progress_blockers,
                 *plan.blocker_reasons,
                 *report.data_quality.issues,
             ]
@@ -2130,6 +2246,25 @@ def build_crew_chief_workspace(
         learning_prior,
         _learning_capture_blockers(tuple(capture_workflows), events),
     )
+    measurement_attempts: tuple[MeasurementAttempt, ...] = ()
+    measurement_history_blockers: tuple[str, ...] = ()
+    mission_contract = bundle.report.best_measurement.mission_contract
+    if mission_contract is not None:
+        try:
+            measurement_attempts = (
+                storage_repository.list_measurement_mission_attempts(mission_contract)
+            )
+        except (TypeError, ValueError):
+            measurement_history_blockers = (
+                "Durable measurement-attempt history could not be verified; mission progress is withheld.",
+            )
+    run_sentinel = _sentinel(
+        bundle,
+        overview,
+        active_workflow,
+        measurement_attempts=measurement_attempts,
+        measurement_history_blockers=measurement_history_blockers,
+    )
     identity = _workspace_identity(
         bundle,
         session_id=session_id,
@@ -2141,6 +2276,7 @@ def build_crew_chief_workspace(
         p26=p26,
         p32=p32,
         learning_prior=learning_prior,
+        run_sentinel=run_sentinel,
     )
     stale_reasons = _authority_stale_reasons(investigation, events, identity)
     if folded is not None and stale_reasons:
@@ -2240,7 +2376,7 @@ def build_crew_chief_workspace(
         p19_mission_contract=bundle.report.best_measurement.mission_contract,
         performance_intelligence=p32,
         learning_prior=learning_prior,
-        run_sentinel=_sentinel(bundle, overview, active_workflow),
+        run_sentinel=run_sentinel,
         terminal_decision=decision,
         response_history_ids=response_ids,
         driver_memory_ids=driver_memory_ids,

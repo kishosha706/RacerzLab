@@ -67,6 +67,7 @@ result, and remember only what the evidence supports.
 | P32 - Lap-Time Mechanics and Speed Intelligence | Verified after P32.1 truth closure | Qualified driver demand, vehicle response, measured elapsed time, origin/carry, track demand, P20/P26 context, and exact P19 next move form one non-causal performance projection |
 | P32.1 - Performance Truth Closure | Verified | Traffic and context lead attribution, signed gain/loss truth survives, controlled memory restarts exactly, and every rendered performance claim fails closed |
 | P33 - Engineering Learning Flywheel | Verified deterministic attention-only foundation; adaptive authority remains locked | Immutable qualified experience improves recurrence retrieval and investigation order while current evidence and P19 retain all truth and setup authority |
+| P33.1 - Driver-Facing Truth and Interface Sharpening | Verified | Race Mode stays decision-first, mission progress distinguishes screening from contract acceptance, and narrow layouts preserve a usable evidence-first workspace |
 
 ---
 
@@ -2164,6 +2165,51 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   learned reorder and no P19-rank change.
 - Whole-repo Ruff, bytecode compilation, and diff integrity passed.
 
+## P33.1 - Driver-Facing Truth and Interface Sharpening
+
+- [x] Reduce Race Mode to the exact P19 next move, observed signed result,
+  attribution state, and strongest contradiction; place origin/carry and every
+  supporting engineering surface behind deliberate disclosures.
+- [x] Keep Learning Mode complete without turning insufficient or blocked P33
+  history into a wall of empty cards. Engineering Memory remains visibly
+  `attention_only` and never gains P19 rank or setup authority.
+- [x] Separate context-cleared laps from mission-accepted laps and measurement
+  attempts. Completion now requires a server-verified acquisition cohort whose
+  laps remain exact-P19 context-cleared and retain complete healthy required-
+  channel and physical-position coverage, or an exact bound controlled-workflow
+  stage. The recorded outcome remains client-attested and cannot alter P19 stop-
+  testing authority; ordinary clean laps remain screening evidence only.
+- [x] Bind the complete Run Sentinel to the atomic Crew workspace identity and
+  independently recompute its canonical digest at every public client boundary,
+  while excluding mission progress from producer authority revision.
+- [x] Replace opaque artifact IDs and `KNOW`/`exact` totals with human evidence
+  labels, typed evidence-state counts, physical lap/window context, and optional
+  technical provenance.
+- [x] Make the unresolved Priority Rail a dismissible narrow-screen overlay with
+  an always-visible attention trigger, Escape handling, focus return, and mode-
+  switch persistence while retaining the mandatory desktop evidence rail.
+- [x] Preserve one page heading, explicit Race/Learning toggle state, track context,
+  single-column narrow Race stories, and keyboard-safe support disclosure.
+
+### P33.1 release validation - VERIFIED 2026-08-14
+
+- Python: 2,527 collected; 2,522 passed and five protected tests skipped. New
+  hostile contracts cover screening-only and traffic-blocked laps, warning or
+  partially populated channels, missing or spatially gapped physical-position
+  coverage, exact controlled-stage binding, sentinel cache versus authority
+  identity, Race disclosure, and responsive evidence-rail behavior.
+- Frontend: all 12 Vitest behavior/unit tests, all six executable runtime trust
+  suites, TypeScript, and the 2,201-module production build passed. OpenAPI 3.1
+  still exposes 94 operations across 86 paths and 325 schemas with no duplicate
+  operation IDs.
+- Real product proof: persisted Atlanta and EchoPark workspaces passed the public
+  backend-to-client guard. Live EchoPark Race/Learning inspection preserved the
+  traffic-blocked performance story, zero setup authority, 11 context-cleared
+  laps, zero mission-accepted attempts, and an explicit unbound acceptance state.
+  At 390 x 844 the Priority Rail opened as an overlay, dismissed by button and
+  Escape, stayed dismissed across mode changes, and left the Race workspace usable.
+- Changed-file Ruff, backend bytecode compilation, and diff integrity passed.
+
 ---
 
 ## Professional analysis surface, without losing the product thesis
@@ -2277,3 +2323,4 @@ Implementation queue completed in this pass:
 | 2026-08-13 | Verified P32 Lap-Time Mechanics and Speed Intelligence | A run-owned empirical performance model now connects qualified driver demand, vehicle response, measured elapsed time, origin/carry, corner chains, track demand, P20 mechanisms, P26 relevance, controlled history, and the exact P19 next move. All 2,361 Python tests passed subject to five protected skips, plus 20 P32 hostile tests, three UI contracts, whole-repo Ruff, bytecode compilation, TypeScript, three behavioral UI tests, five runtime trust suites, the 2,198-module production build, diff integrity, and persisted Atlanta execution. Atlanta produced four measured opportunities, one corner chain, three non-causal component links, full reciprocal-speed coverage, exact P19/P20/P26/P32 identity, zero setup authority, and a data-locked optimizer. |
 | 2026-08-13 | Closed P32.1 Performance Truth Closure after reopening P32 | Traffic and unknown context now lead and block attribution without hiding the signed observation; canonical compatibility/proximity gates, complete demand coverage, local disturbance, opportunity-relative carry, exact adjacency/repeatability, P26-independent core intelligence, nine typed Crew tools, restart-safe exact history, and deep client trust prevent a convincing but unsupported speed story. The full collection finished with 2,400 passed and five protected skips, plus the 94-test integrated release slice, 54 hostile truth tests, Ruff, bytecode compilation, TypeScript, five UI behavior tests, the hostile runtime suite, the 2,198-module build, diff integrity, and a real public Atlanta backend-to-client guard. Atlanta exposes `+0.136447 s` observed, blocks attribution at 100% source/reference traffic, publishes zero component/setup authority, measures disturbance at `0.0613`, withholds limiter zones, and remains `no_call`. |
 | 2026-08-14 | Verified P33 Engineering Learning Flywheel | One immutable qualified-experience ledger now projects recurrence, contextual driver and car fingerprints, diagnostic effectiveness, exact mind changes, dead ends, transfer/drift, and transparent attention-only Crew memory without modifying current P19 truth or setup authority. The complete 2,514-test collection passed with 2,509 successes and five protected skips, plus 82 dedicated P33 tests, a 336-test integrated authority slice, six runtime trust suites, nine UI tests, Ruff, bytecode compilation, TypeScript, the 2,201-module build, OpenAPI inspection, packaged-sidecar health, persisted Atlanta/EchoPark client guards, and bounded 10,001-record retrieval at 34.303 ms warm / 53.024 ms cold projection / 7.197 ms cached. Corrupt history now records a visible blocked capture without vetoing P19 or Crew terminal truth; ordered request/completion evidence and normal event-hash revision advancement cannot fabricate or erase discriminator credit; all adaptive, causal, probabilistic, generative, and multi-control authority remains locked. |
+| 2026-08-14 | Sharpened the P33.1 driver-facing truth and interface | Race Mode now leads with one P19 next move and a compact signed Speed Story; supporting analysis is deliberate, Learning Mode avoids empty-memory sprawl, evidence links use lap/window/state labels, and the Run Sentinel distinguishes context screening from server-verified acquisition under a canonical client-verified digest while keeping the client-attested outcome non-authoritative. Contract acceptance now fails closed on typed P19 proximity or traffic exposure, warning/partial required channels, and missing or spatially gapped physical-position coverage. The full 2,527-test Python collection passed with five protected skips, plus 12 Vitest tests, six runtime trust suites, Ruff, bytecode compilation, TypeScript, the 2,201-module build, OpenAPI inspection, persisted Atlanta/EchoPark client guards, and live desktop plus 390 x 844 EchoPark inspection. The narrow unresolved Priority Rail is dismissible by button or Escape, stays dismissed across mode changes, and retains an accessible evidence-attention trigger without weakening the mandatory desktop rail or any P19/setup authority boundary. |

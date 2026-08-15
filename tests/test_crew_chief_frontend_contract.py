@@ -81,6 +81,8 @@ def test_real_atlanta_public_workspace_passes_the_client_trust_boundary(
         "'./ui/src/utils/crewChiefResponseTrust.ts';"
         "import {hasCanonicalMeasurementMissionDigest} from "
         "'./ui/src/utils/crewChiefResponseTrust.ts';"
+        "import {hasCanonicalRunSentinelDigest} from "
+        "'./ui/src/utils/crewChiefResponseTrust.ts';"
         "import {hasCanonicalEngineeringLearningDigests} from "
         "'./ui/src/utils/engineeringLearningTrust.js';"
         "const value=JSON.parse(fs.readFileSync(0,'utf8'));"
@@ -90,6 +92,8 @@ def test_real_atlanta_public_workspace_passes_the_client_trust_boundary(
         "throw new Error('real Atlanta P33 digests were rejected');"
         "if(!await hasCanonicalMeasurementMissionDigest(value.workspace.p19_mission_contract))"
         "throw new Error('real Atlanta P19 mission digest was rejected');"
+        "if(!await hasCanonicalRunSentinelDigest(value.workspace.run_sentinel,value.workspace.identity.run_sentinel_sha256))"
+        "throw new Error('real Atlanta mission progress digest was rejected');"
     )
     result = subprocess.run(
         [
@@ -150,12 +154,14 @@ def test_client_parses_crew_chief_as_unknown_through_exact_report_guard() -> Non
     assert "learning_history_revision" in guard
     assert "learning_projection_sha256" in guard
     assert "isCrewChiefLearningPrior" in guard
-    assert 'value.schema_version !== "p33.crew-chief-workspace.v1"' in guard
+    assert 'value.schema_version !== "p33.crew-chief-workspace.v2"' in guard
     assert "hasSetupAuthorityDirective" in guard
     assert "hasCanonicalEngineeringLearningDigests" in client
     assert "await hasCanonicalEngineeringLearningDigests(payload.learning_prior)" in client
     assert "hasCanonicalMeasurementMissionDigest" in client
     assert "await hasCanonicalMeasurementMissionDigest(payload.p19_mission_contract)" in client
+    assert "hasCanonicalRunSentinelDigest" in client
+    assert "payload.identity.run_sentinel_sha256" in client
 
 
 def test_crew_history_navigation_loads_the_saved_source_before_focusing() -> None:
@@ -244,8 +250,13 @@ def test_p33_learning_projection_has_one_exact_deep_client_mirror() -> None:
     assert 'learningReference?.state === "unavailable"' in (
         ROOT / "ui/src/App.tsx"
     ).read_text(encoding="utf-8")
-    assert "Open telemetry · {reference.provenance.artifact_id}" in deck
-    assert 'item.producer_id !== "p33.engineering_experience"' in deck
+    assert "Open source" in deck
+    assert "evidenceSourceLabel(reference.provenance)" in deck
+    assert "Technical provenance:" in deck
+    assert 'entry.producer_id !== "p33.engineering_experience"' in deck
+    assert '.crew-chief-deck[data-mode="race"] .crew-chief-race-brief' in (
+        ROOT / "ui/src/styles.css"
+    ).read_text(encoding="utf-8")
     assert "Historical evidence must be opened from its typed Engineering Memory" in (
         ROOT / "ui/src/App.tsx"
     ).read_text(encoding="utf-8")

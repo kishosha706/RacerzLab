@@ -1,4 +1,4 @@
-import { ArrowLeft, BrainCircuit, CheckCircle2, ChevronRight, Clock, Crosshair, Gauge, Layers, LoaderCircle, Upload, Wrench } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BrainCircuit, CheckCircle2, ChevronRight, Clock, Crosshair, Gauge, Layers, LoaderCircle, Upload, Wrench } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
@@ -86,6 +86,8 @@ type WorkspaceSignal = {
   short: string;
   detail: string;
 };
+
+const PRIORITY_RAIL_OVERLAY_QUERY = "(max-width: 700px)";
 
 type IntelligenceShellReportStatus = "idle" | "checking" | "ready" | "error";
 
@@ -293,6 +295,12 @@ function CockpitShell() {
   const [error, setError] = useState<string | null>(null);
   const [sessionOpenError, setSessionOpenError] = useState<string | null>(null);
   const [priorityRailOpen, setPriorityRailOpen] = useState(true);
+  const [priorityRailUsesOverlay, setPriorityRailUsesOverlay] = useState(() => (
+    typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia(PRIORITY_RAIL_OVERLAY_QUERY).matches
+  ));
+  const priorityRailTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [activeControlledWorkflow, setActiveControlledWorkflow] = useState<ControlledWorkflow | null>(null);
   const [guidanceControlledWorkflow, setGuidanceControlledWorkflow] = useState<ControlledWorkflow | null>(null);
   const [activeControlledWorkflowRequestKey, setActiveControlledWorkflowRequestKey] = useState<string | null>(null);
@@ -353,9 +361,56 @@ function CockpitShell() {
   const currentPlatformEventsLoadError = platformEventsStateOwnsRequest ? platformEventsLoadState.error : null;
   const priorityRailIsGenuinelyClear = selection.selectedMode === "race"
     && currentPlatformEventsLoadStatus === "clear";
-  const priorityRailMustStayOpen = selection.selectedMode === "race"
+  const priorityRailNeedsAttention = currentPlatformEventsLoadStatus !== "clear";
+  const priorityRailMustStayOpen = !priorityRailUsesOverlay
+    && selection.selectedMode === "race"
     && currentPlatformEventsLoadStatus !== "clear";
   const priorityRailExpanded = priorityRailMustStayOpen || priorityRailOpen;
+  const priorityRailCollapsedLabel = priorityRailIsGenuinelyClear
+    ? "Supported platform checks clear; expand Priority Rail"
+    : priorityRailNeedsAttention
+      ? "Priority evidence needs attention; expand Priority Rail"
+      : "Expand Priority Rail";
+  const closePriorityRail = useCallback(() => {
+    setPriorityRailOpen(false);
+    if (priorityRailUsesOverlay) {
+      window.setTimeout(() => priorityRailTriggerRef.current?.focus(), 0);
+    }
+  }, [priorityRailUsesOverlay]);
+  const openPriorityRail = useCallback(() => {
+    setPriorityRailOpen(true);
+    if (priorityRailUsesOverlay) {
+      window.setTimeout(() => {
+        document.querySelector<HTMLButtonElement>(
+          ".cockpit-body > .priority-rail:not(.collapsed) .rail-collapse-btn",
+        )?.focus();
+      }, 0);
+    }
+  }, [priorityRailUsesOverlay]);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return undefined;
+    const query = window.matchMedia(PRIORITY_RAIL_OVERLAY_QUERY);
+    const syncLayout = () => setPriorityRailUsesOverlay(query.matches);
+    syncLayout();
+    query.addEventListener("change", syncLayout);
+    return () => query.removeEventListener("change", syncLayout);
+  }, []);
+
+  useEffect(() => {
+    if (!priorityRailUsesOverlay || !priorityRailExpanded) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (
+        event.key !== "Escape"
+        || event.defaultPrevented
+        || document.querySelector('[role="dialog"][aria-modal="true"]')
+      ) return;
+      event.preventDefault();
+      closePriorityRail();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [closePriorityRail, priorityRailExpanded, priorityRailUsesOverlay]);
   const traceStateOwnsRequest = traceLoadState.requestKey === platformRequestKey;
   const currentTrace = traceStateOwnsRequest && traceLoadState.status === "ready" ? trace : null;
   const currentTraceLoadStatus: PlatformLoadStatus = platformRequestKey == null
@@ -732,8 +787,12 @@ function CockpitShell() {
     const genuinelyClearInRaceMode = selection.selectedMode === "race"
       && currentPlatformEventsLoadStatus === "clear";
     if (!genuinelyClearInRaceMode) void loadPriorityRail();
+    if (priorityRailUsesOverlay) {
+      if (genuinelyClearInRaceMode) setPriorityRailOpen(false);
+      return;
+    }
     setPriorityRailOpen(!genuinelyClearInRaceMode);
-  }, [currentPlatformEventsLoadStatus, platformRequestKey, selection.selectedMode]);
+  }, [currentPlatformEventsLoadStatus, platformRequestKey, priorityRailUsesOverlay, selection.selectedMode]);
 
   useEffect(() => {
     const requestSeq = ++controlledWorkflowRequestSeqRef.current;
@@ -1059,7 +1118,11 @@ function CockpitShell() {
 
   // ── keyboard shortcuts ─────────────────────────────────────
   useKeyboardShortcuts(currentPlatformEvents, setWorkspace, {
-    onTogglePriorityRail: () => setPriorityRailOpen((open) => priorityRailMustStayOpen ? true : !open),
+    onTogglePriorityRail: () => {
+      if (priorityRailMustStayOpen) setPriorityRailOpen(true);
+      else if (priorityRailExpanded) closePriorityRail();
+      else openPriorityRail();
+    },
     onToggleInspector: () => {
       void loadEvidenceInspector();
       setInspectorOpen((open) => !open);
@@ -2015,7 +2078,11 @@ function CockpitShell() {
         </aside>
       )}
 
-      <div className="cockpit-body">
+      <div
+        className="cockpit-body"
+        data-priority-rail-layout={priorityRailUsesOverlay ? "overlay" : "inline"}
+        data-priority-rail-state={priorityRailExpanded ? "expanded" : "collapsed"}
+      >
         <nav className="workspace-nav-rail" aria-label="Main workspaces">
           <div className="nav-rail-heading" aria-hidden="true">
             <span>Driver flow</span>
@@ -2060,7 +2127,7 @@ function CockpitShell() {
               runId={overview.run_id}
               selectedLap={selection.selectedLap}
               collapsed={false}
-              onToggle={() => setPriorityRailOpen(false)}
+              onToggle={closePriorityRail}
               collapseDisabled={priorityRailMustStayOpen}
               platformEvents={currentPlatformEvents}
               loadStatus={currentPlatformEventsLoadStatus}
@@ -2069,17 +2136,22 @@ function CockpitShell() {
             />
           </Suspense>
         ) : (
-          <aside className={`priority-rail collapsed${priorityRailIsGenuinelyClear ? " shell-clear" : ""}`}>
+          <aside className={`priority-rail collapsed${priorityRailIsGenuinelyClear ? " shell-clear" : priorityRailNeedsAttention ? " shell-attention" : ""}`}>
             <button
+              ref={priorityRailTriggerRef}
               className="rail-collapse-btn"
-              onClick={() => setPriorityRailOpen(true)}
+              onClick={openPriorityRail}
               onPointerEnter={() => { void loadPriorityRail(); }}
               onFocus={() => { void loadPriorityRail(); }}
-              title={priorityRailIsGenuinelyClear ? "Supported platform checks clear; expand Priority Rail" : "Expand Priority Rail"}
-              aria-label={priorityRailIsGenuinelyClear ? "Supported platform checks clear; expand Priority Rail" : "Expand Priority Rail"}
+              title={priorityRailCollapsedLabel}
+              aria-label={priorityRailCollapsedLabel}
               aria-expanded="false"
             >
-              {priorityRailIsGenuinelyClear ? <CheckCircle2 size={16} /> : <ChevronRight size={16} />}
+              {priorityRailIsGenuinelyClear
+                ? <CheckCircle2 size={16} aria-hidden="true" />
+                : priorityRailNeedsAttention
+                  ? <AlertTriangle size={16} aria-hidden="true" />
+                  : <ChevronRight size={16} aria-hidden="true" />}
             </button>
           </aside>
         )}

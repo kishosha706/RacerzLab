@@ -3,6 +3,7 @@ import {
   ArrowRight,
   BrainCircuit,
   CheckCircle2,
+  ChevronDown,
   CircleHelp,
   FlaskConical,
   Gauge,
@@ -722,6 +723,7 @@ export function IntelligencePanel({
     error: null,
   });
   const [question, setQuestion] = useState("");
+  const [raceSupportOpen, setRaceSupportOpen] = useState(false);
   const [queryState, setQueryState] = useState<QueryState>({
     requestKey: null,
     status: "idle",
@@ -906,6 +908,10 @@ export function IntelligencePanel({
     querySequence.current += 1;
     setQueryState({ requestKey: null, status: "idle", response: null, error: null });
   }, [learning, questionScopeKey, scopeKey]);
+
+  useEffect(() => {
+    setRaceSupportOpen(false);
+  }, [learning, scopeKey]);
 
   const report = reportState.requestKey === scopeKey ? reportState.report : null;
   const briefing = report?.briefing;
@@ -1351,7 +1357,7 @@ export function IntelligencePanel({
       <header className="engineer-workspace-header">
         <div>
           <span className="eyebrow"><BrainCircuit size={13} aria-hidden="true" /> Smart Engineer</span>
-          <h1>{learning ? "Decision, causes, and evidence" : missionHeadline}</h1>
+          <h2>{learning ? "Decision, causes, and evidence" : missionHeadline}</h2>
           <p>{learning
             ? "See why the call is next, what could still disprove it, and exactly which evidence carries the claim."
             : "One issue. One mission. One done-when check."}</p>
@@ -1417,6 +1423,21 @@ export function IntelligencePanel({
         </div>
       </section>
 
+      {!learning && (
+        <button
+          type="button"
+          className="engineer-race-support-toggle"
+          aria-expanded={raceSupportOpen}
+          aria-controls="engineer-supporting-evidence"
+          onClick={() => setRaceSupportOpen((open) => !open)}
+        >
+          <span><b>Supporting evidence and tools</b><small>Vehicle context, briefing, quality, measurement, and grounded questions</small></span>
+          <ChevronDown size={16} aria-hidden="true" />
+        </button>
+      )}
+
+      {(learning || raceSupportOpen) && (
+      <div id="engineer-supporting-evidence" className="engineer-support-stack">
       <EngineeringAwarenessPanel runId={runId} sessionId={sessionId} surface="engineer" />
       <VehicleSystemsPanel
         runId={runId}
@@ -1617,6 +1638,8 @@ export function IntelligencePanel({
           )}
         </div>
       </section>
+      </div>
+      )}
 
       {learning && (
         <div className="engineer-learning-grid">
