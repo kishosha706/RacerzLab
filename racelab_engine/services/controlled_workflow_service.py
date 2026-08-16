@@ -1489,6 +1489,27 @@ def validate_p19_workflow_origin(
         "authority_action_sha256": canonical_json_sha256(action),
         "source_event_ids": action["source_event_ids"],
     }
+    p351_binding = workflow.reproduction_snapshot.get(
+        "p351_performance_opportunity_binding"
+    )
+    integrity_keys: tuple[str, ...] = ()
+    if p351_binding is not None:
+        from racelab_engine.models.engineering_knowledge import (
+            CanonicalPerformanceOpportunityBinding,
+        )
+
+        try:
+            canonical_p351 = CanonicalPerformanceOpportunityBinding.model_validate(
+                p351_binding
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "The immutable workflow P32 opportunity binding is invalid."
+            ) from exc
+        expected["p351_performance_opportunity_binding_sha256"] = (
+            canonical_p351.binding_sha256
+        )
+        integrity_keys = ("p351_performance_opportunity_binding_sha256",)
     if any(binding.get(key) != value for key, value in expected.items()):
         raise ValueError("The immutable workflow P19 authority origin changed.")
     for key in (
@@ -1499,6 +1520,7 @@ def validate_p19_workflow_origin(
         "plan_binding_sha256",
         "authority_action_sha256",
         "reasoning_snapshot_sha256",
+        *integrity_keys,
     ):
         if re.fullmatch(r"[0-9a-f]{64}", str(binding.get(key) or "")) is None:
             raise ValueError(f"The workflow P19 {key} is unavailable.")

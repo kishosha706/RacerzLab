@@ -298,16 +298,15 @@ def _filter_swings(candidates: list[RankedSetupEffect], limit: int) -> list[Rank
         if not (set(item.evidence_matched) - context_only):
             continue
         action = garage_action_for_effect(item)
-        if action is None:
-            continue
-        if covered_controls.intersection(action.control_keys):
+        if action is not None and covered_controls.intersection(action.control_keys):
             continue
         if _is_major_package_swing(item):
             if major_package_count >= 1:
                 continue
             major_package_count += 1
         selected.append(item)
-        covered_controls.update(action.control_keys)
+        if action is not None:
+            covered_controls.update(action.control_keys)
     return selected
 
 
@@ -371,7 +370,25 @@ def _build_swing(
         legal_value_provenance_by_control=legal_value_provenance_by_control,
     )
     if garage_action is None:
-        raise ValueError(f"Dial-In swing lacks a specific garage action: {item.effect.effect_id}")
+        area_label = " ".join(item.effect.setup_area.replace("_", " ").split()).title()
+        garage_action = GarageAction(
+            title=area_label,
+            change_this="No setup action is authorized from this knowledge-only effect.",
+            garage_lever=area_label,
+            control_keys=[],
+            direction_sign=1,
+            change_size_label="Knowledge only",
+            change_size_explanation=(
+                "This reviewed setup effect remains visible, but it has no exact P19 control bridge."
+            ),
+            influence_label="Mechanically relevant knowledge",
+            control_expectation="Measurement must establish the current mechanism first.",
+            control_guardrail="Do not infer a setup direction or target from catalog knowledge.",
+            target_ready=False,
+            target_blockers=(
+                "No exact P19-testable control is bound to this catalog effect.",
+            ),
+        )
     debug: dict[str, Any] | None = None
     if include_debug_evidence:
         debug = {

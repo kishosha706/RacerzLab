@@ -18,6 +18,7 @@ import type {
 } from "../types/investigationImprovement";
 import type { RunIntelligenceReport } from "../types/intelligence";
 import { VehicleDynamicsBlackboard } from "./VehicleDynamicsBlackboard";
+import { EngineeringKnowledgeSpine } from "./EngineeringKnowledgeSpine";
 
 type Props = {
   runId: string;
@@ -619,6 +620,12 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
             evidenceEntries={workspace.evidence_index.entries}
             p19Next={performance.explanation_chain.p19_next_move}
             onFocusEvidence={onFocusEvidence}
+          />
+          <EngineeringKnowledgeSpine
+            projection={workspace.engineering_knowledge}
+            evidenceEntries={workspace.evidence_index.entries}
+            p19Next={workspace.terminal_decision}
+            onFocusEvidence={(entry) => onFocusEvidence(entry)}
           />
           <InvestigationImprovementCard
             projection={workspace.investigation_improvement}

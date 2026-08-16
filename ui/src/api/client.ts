@@ -50,6 +50,7 @@ import {
 import { hasCanonicalEngineeringLearningDigests } from "../utils/engineeringLearningTrust.js";
 import { hasCanonicalInvestigationImprovementDigests } from "../utils/investigationImprovementTrust";
 import { hasCanonicalPerformanceMechanismAssessmentDigest } from "../utils/vehicleDynamicsTrust.ts";
+import { hasCanonicalEngineeringKnowledgeDigest } from "../utils/engineeringKnowledgeTrust.ts";
 
 const API_BASE =
   import.meta.env.VITE_RACELAB_API_BASE_URL ??
@@ -375,6 +376,9 @@ async function trustedCrewChiefResponse(
   if (!await hasCanonicalPerformanceMechanismAssessmentDigest(payload.vehicle_dynamics)) {
     throw new Error("Crew Chief failed its canonical P35 vehicle-dynamics identity check.");
   }
+  if (!await hasCanonicalEngineeringKnowledgeDigest(payload.engineering_knowledge)) {
+    throw new Error("Crew Chief failed its canonical P35.1 engineering-knowledge identity check.");
+  }
   if (!await hasCanonicalVehicleRuntimeIdentityDigest(payload)) {
     throw new Error("Crew Chief failed its canonical P26/P35 vehicle runtime identity check.");
   }
@@ -673,9 +677,23 @@ export function analyzeRunDialIn(runId: string, payload: DialInRequest): Promise
   return requestJson<unknown>(`/api/runs/${encodeURIComponent(runId)}/dial-in`, {
     method: "POST",
     body: JSON.stringify(payload),
-  }).then((response) => {
-    if (!isDialInHypothesisResponse(response, { runId, complaint: payload.complaint })) {
+  }).then(async (response) => {
+    if (!isDialInHypothesisResponse(response, {
+      runId,
+      complaint: payload.complaint,
+      sessionId: payload.session_id,
+    })) {
       throw new Error("Dial-In returned an invalid or action-bearing hypothesis response.");
+    }
+    if (
+      response.engineering_knowledge != null
+      && !await hasCanonicalEngineeringKnowledgeDigest(
+        response.engineering_knowledge,
+      )
+    ) {
+      throw new Error(
+        "Dial-In returned a non-canonical engineering-knowledge projection.",
+      );
     }
     return response;
   });

@@ -13,6 +13,19 @@ const response = {
     id: "swing-1",
     title: "Cross Weight",
     setup_area: "cross_weight",
+    current_relevance: "knowledge_only",
+    p32_opportunity_id: null,
+    knowledge_level: "measurable_hypothesis",
+    bridge_id: `p351b_${"1".repeat(24)}`,
+    bridge_sha256: "2".repeat(64),
+    p35_mechanism_ids: ["mechanism:front_roll_support_limitation"],
+    p20_mechanism_ids: ["corner_rotation"],
+    p26_component_family_ids: ["springs"],
+    p32_performance_mechanism_ids: ["corner_rotation"],
+    inspection_tool_ids: ["inspect_steady_platform"],
+    discriminator_contract_ids: ["contract:front_roll"],
+    knowledge_version: "p351.test.v1",
+    knowledge_graph_sha256: "3".repeat(64),
     candidate_control_label: "Cross Weight",
     related_control_keys: ["cross_weight_percent"],
     influence_label: "Medium",
@@ -113,3 +126,72 @@ assert.equal(isDialInHypothesisResponse(nullableClarification, expectation), tru
 const staleRun = structuredClone(response);
 staleRun.run_id = "run-2";
 assert.equal(isDialInHypothesisResponse(staleRun, expectation), false);
+
+const hypotheses = Array.from({ length: 92 }, (_, index) => ({
+  bridge_id: `p351b_${index.toString(16).padStart(24, "0")}`,
+  effect_id: `effect_${index.toString().padStart(2, "0")}`,
+  setup_area: `area_${index.toString().padStart(2, "0")}`,
+  physical_role: "Explains one direction-neutral setup relationship.",
+  level: "educational_knowledge",
+  relevance: "knowledge_only",
+  p32_opportunity_id: null,
+  p35_mechanism_ids: [], p20_mechanism_ids: [], p26_component_family_ids: [],
+  response_regimes: [], relevant_phases: [], expected_vehicle_response_ids: [],
+  countereffect_ids: [], protected_outcomes: [], inspection_tool_ids: [],
+  support_artifact_ids: [], contradiction_artifact_ids: [],
+  discriminator_contract_ids: [], missing_evidence: ["Measurement is unavailable."],
+  controlled_history: [], p19_control: null, authority: "knowledge_only",
+  setup_authorized: false,
+}));
+const terminal = {
+  kind: "no_call", title: "No setup call", instruction: "Keep measuring.",
+  authority: "measurement_only", control_key: null, current_value: null,
+  proposed_value: null, source_event_ids: [], workflow_id: null,
+  workflow_revision: null, blocker_reasons: ["Evidence is incomplete."],
+};
+const sessionBound = structuredClone(response);
+sessionBound.engineering_knowledge = {
+  schema_version: "p351.current-engineering-knowledge.v1",
+  projection_sha256: "4".repeat(64), run_id: "run-1", session_id: "session-1",
+  complaint_prior: null, p19_reasoning_snapshot_sha256: "5".repeat(64),
+  p20_state_revision: "6".repeat(64), p26_knowledge_graph_sha256: "7".repeat(64),
+  p32_projection_sha256: "8".repeat(64), p35_assessment_sha256: "9".repeat(64),
+  p33_projection_sha256: "a".repeat(64),
+  bridge_coverage_sha256: "d3f9f95c41f85bdbc2ac697d242d6d1e560bd58575cf65155e3843f88c7c8680",
+  p32_opportunity_id: null, hypotheses, leading_hypothesis_ids: [],
+  next_discriminator_contract_id: null, blocker_reasons: ["Evidence is incomplete."],
+  terminal_authority: "p19_only", non_p19_setup_authorized: false,
+};
+sessionBound.p19_terminal_decision = terminal;
+sessionBound.top_swings[0] = {
+  ...sessionBound.top_swings[0],
+  id: hypotheses[0].effect_id,
+  bridge_id: hypotheses[0].bridge_id,
+  current_relevance: hypotheses[0].relevance,
+  p32_opportunity_id: null,
+  knowledge_level: hypotheses[0].level,
+  p35_mechanism_ids: [], p20_mechanism_ids: [], p26_component_family_ids: [],
+  inspection_tool_ids: [], discriminator_contract_ids: [],
+};
+const sessionExpectation = { ...expectation, sessionId: "session-1" };
+assert.equal(isDialInHypothesisResponse(sessionBound, sessionExpectation), true);
+
+const forgedControl = structuredClone(sessionBound);
+forgedControl.engineering_knowledge.hypotheses[0] = {
+  ...forgedControl.engineering_knowledge.hypotheses[0],
+  level: "p19_testable_control",
+  relevance: "supported_candidate",
+  p32_opportunity_id: "p32o-forged",
+  authority: "exact_p19_projection",
+  setup_authorized: true,
+  p19_control: {
+    control_key: "cross_weight_percent", current_value: "50.0%",
+    proposed_value: "52.0%", workflow_id: "workflow-forged",
+    workflow_revision: "revision-forged", source_event_ids: ["event-forged"],
+    authority: "exact_p19_projection",
+  },
+};
+forgedControl.top_swings[0].knowledge_level = "p19_testable_control";
+forgedControl.top_swings[0].current_relevance = "supported_candidate";
+forgedControl.top_swings[0].p32_opportunity_id = "p32o-forged";
+assert.equal(isDialInHypothesisResponse(forgedControl, sessionExpectation), false);

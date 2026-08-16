@@ -30,6 +30,7 @@ import {
 } from "./vehicleDynamicsTrust.ts";
 import { p35RuntimeTrustManifest } from "./vehicleDynamicsRegistry.ts";
 import { canonicalJsonSha256 } from "./canonicalJsonSha256.ts";
+import { isCurrentEngineeringKnowledgeProjection } from "./engineeringKnowledgeTrust.ts";
 
 const hash = /^[0-9a-f]{64}$/;
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -159,6 +160,10 @@ const vehicleDynamicsToolIds = [
   "inspect_tire_state_migration",
   "inspect_traffic_platform_response",
   "inspect_gear_acceleration_response",
+] as const;
+const engineeringKnowledgeToolIds = [
+  "inspect_setup_knowledge_for_mechanism",
+  "inspect_control_experiment_contract",
 ] as const;
 const vehicleDynamicsProducers = new Map(
   vehicleDynamicsToolIds.map((toolId) => [
@@ -1239,7 +1244,7 @@ export function isCrewChiefWorkspaceResponse(
     objectiveId: string;
   },
 ): value is CrewChiefWorkspace {
-  if (!record(value) || value.schema_version !== "p35.crew-chief-workspace.v1") return false;
+  if (!record(value) || value.schema_version !== "p351.crew-chief-workspace.v1") return false;
   if (
     !record(value.identity)
     || !record(value.terminal_decision)
@@ -1251,6 +1256,7 @@ export function isCrewChiefWorkspaceResponse(
     || !record(value.investigation_improvement)
     || !record(value.engineering_awareness)
     || !record(value.vehicle_dynamics)
+    || !record(value.engineering_knowledge)
   ) return false;
   const missionContract = value.p19_mission_contract;
   const reportAction = scope.report.briefing.action;
@@ -1353,6 +1359,22 @@ export function isCrewChiefWorkspaceResponse(
       && tool.authority_ceiling === "observation_only"
       && sameJson(tool.required_sources, ["p35", "p20", "p32"])
     )))
+    || !(
+      value.available_tools as Array<Record<string, unknown>>
+    ).some((tool) => (
+      tool.tool_id === "inspect_setup_knowledge_for_mechanism"
+      && tool.allowed_scope === "run"
+      && tool.authority_ceiling === "measurement_only"
+      && sameJson(tool.required_sources, ["p351", "p35", "p32"])
+    ))
+    || !(
+      value.available_tools as Array<Record<string, unknown>>
+    ).some((tool) => (
+      tool.tool_id === "inspect_control_experiment_contract"
+      && tool.allowed_scope === "workflow"
+      && tool.authority_ceiling === "measurement_only"
+      && sameJson(tool.required_sources, ["p351", "p19", "p26"])
+    ))
     || !uniqueStrings(value.p19_cause_ids)
     || !uniqueStrings(value.p19_contradiction_artifact_ids)
   ) return false;
@@ -1507,6 +1529,10 @@ export function isCrewChiefWorkspaceResponse(
     identity,
     scope.report,
     trustedAwareness,
+  )) return false;
+  if (!isCurrentEngineeringKnowledgeProjection(
+    value.engineering_knowledge,
+    value as unknown as CrewChiefWorkspace,
   )) return false;
   if (
     typeof decision.kind !== "string"
@@ -1674,8 +1700,11 @@ export function isCrewChiefWorkspaceResponse(
   const p34Entries = trustedEntries.filter((entry) => !entry.producer_id.startsWith("p35."));
   const p34ToolIds = value.available_tools
     .map((tool) => String(tool.tool_id))
-    .filter((toolId) => !vehicleDynamicsToolIds.includes(
-      toolId as (typeof vehicleDynamicsToolIds)[number],
+    .filter((toolId) => (
+      !vehicleDynamicsToolIds.includes(toolId as (typeof vehicleDynamicsToolIds)[number])
+      && !engineeringKnowledgeToolIds.includes(
+        toolId as (typeof engineeringKnowledgeToolIds)[number],
+      )
     ));
   if (!isInvestigationImprovementProjection(value.investigation_improvement, {
     runId: scope.runId,

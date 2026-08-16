@@ -1,4 +1,5 @@
 import type { DialInResponse, DialInSwing } from "../types/telemetry";
+import { isStandaloneEngineeringKnowledgeProjection } from "./engineeringKnowledgeTrust.ts";
 import { hasSetupAuthorityDirective } from "./setupAuthorityLanguage.js";
 
 const evidenceStates = new Set([
@@ -32,11 +33,26 @@ const responseKeys = new Set([
   "source_channels",
   "blocker_reasons",
   "evidence_strength",
+  "engineering_knowledge",
+  "p19_terminal_decision",
 ]);
 const swingKeys = new Set([
   "id",
   "title",
   "setup_area",
+  "current_relevance",
+  "p32_opportunity_id",
+  "knowledge_level",
+  "bridge_id",
+  "bridge_sha256",
+  "p35_mechanism_ids",
+  "p20_mechanism_ids",
+  "p26_component_family_ids",
+  "p32_performance_mechanism_ids",
+  "inspection_tool_ids",
+  "discriminator_contract_ids",
+  "knowledge_version",
+  "knowledge_graph_sha256",
   "candidate_control_label",
   "related_control_keys",
   "influence_label",
@@ -144,6 +160,19 @@ function isDialInSwing(value: unknown): value is DialInSwing {
     && isCanonicalString(value.id)
     && isCanonicalString(value.title)
     && isCanonicalString(value.setup_area)
+    && ["supported_candidate", "blocked_candidate", "knowledge_only", "inapplicable"].includes(String(value.current_relevance))
+    && (value.p32_opportunity_id === null || isCanonicalString(value.p32_opportunity_id))
+    && ["educational_knowledge", "measurable_hypothesis", "p19_testable_control", "unsupported_remove"].includes(String(value.knowledge_level))
+    && typeof value.bridge_id === "string" && /^p351b_[0-9a-f]{24}$/.test(value.bridge_id)
+    && typeof value.bridge_sha256 === "string" && /^[0-9a-f]{64}$/.test(value.bridge_sha256)
+    && isStringList(value.p35_mechanism_ids)
+    && isStringList(value.p20_mechanism_ids)
+    && isStringList(value.p26_component_family_ids)
+    && isStringList(value.p32_performance_mechanism_ids)
+    && isStringList(value.inspection_tool_ids)
+    && isStringList(value.discriminator_contract_ids)
+    && isCanonicalString(value.knowledge_version)
+    && typeof value.knowledge_graph_sha256 === "string" && /^[0-9a-f]{64}$/.test(value.knowledge_graph_sha256)
     && isCanonicalString(value.candidate_control_label)
     && isStringList(value.related_control_keys)
     && isCanonicalString(value.influence_label)
@@ -191,18 +220,55 @@ function isEvidenceStrength(value: unknown): boolean {
     && !hasSetupAuthorityDirective(value.reason);
 }
 
+function isP19TerminalDecision(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const keys = new Set([
+    "kind", "title", "instruction", "authority", "control_key", "current_value",
+    "proposed_value", "source_event_ids", "workflow_id", "workflow_revision",
+    "blocker_reasons",
+  ]);
+  const structural = hasOnlyKeys(value, keys)
+    && ["driver_question", "driver_focus", "measurement_mission", "controlled_test", "observe_only", "no_call"].includes(String(value.kind))
+    && isCanonicalString(value.title) && isCanonicalString(value.instruction)
+    && ["context_only", "measurement_only", "p19_projection_only"].includes(String(value.authority))
+    && isNullableCanonicalString(value.control_key)
+    && isNullableCanonicalString(value.current_value)
+    && isNullableCanonicalString(value.proposed_value)
+    && isStringList(value.source_event_ids)
+    && isNullableCanonicalString(value.workflow_id)
+    && isNullableCanonicalString(value.workflow_revision)
+    && isStringList(value.blocker_reasons);
+  if (!structural) return false;
+  const hasAction = value.kind === "controlled_test";
+  return hasAction
+    ? value.authority === "p19_projection_only"
+      && isCanonicalString(value.control_key)
+      && isCanonicalString(value.current_value)
+      && isCanonicalString(value.proposed_value)
+      && isCanonicalString(value.workflow_id)
+      && isCanonicalString(value.workflow_revision)
+      && (value.source_event_ids as string[]).length > 0
+    : value.control_key === null && value.current_value === null
+      && value.proposed_value === null && value.workflow_id === null
+      && value.workflow_revision === null;
+}
+
 function normalizeComplaint(value: string): string {
   return value.trim().toLocaleLowerCase().replace(/\s+/g, " ");
 }
 
 export function isDialInHypothesisResponse(
   value: unknown,
-  expectation: { runId: string; complaint: string },
+  expectation: { runId: string; complaint: string; sessionId?: string | null },
 ): value is DialInResponse {
   if (
     !isRecord(value)
     || !hasOnlyKeys(value, responseKeys)
-    || hasForbiddenAuthorityKey(value)
+    || hasForbiddenAuthorityKey(Object.fromEntries(
+      Object.entries(value).filter(([key]) => (
+        key !== "engineering_knowledge" && key !== "p19_terminal_decision"
+      )),
+    ))
   ) return false;
   if (
     value.run_id !== expectation.runId
@@ -238,5 +304,33 @@ export function isDialInHypothesisResponse(
   ];
   if (renderedText.some(hasSetupAuthorityDirective)) return false;
   if (value.evidence_strength != null && !isEvidenceStrength(value.evidence_strength)) return false;
+  if (expectation.sessionId != null) {
+    if (!isP19TerminalDecision(value.p19_terminal_decision)) return false;
+    if (!isStandaloneEngineeringKnowledgeProjection(
+      value.engineering_knowledge,
+      expectation.runId,
+      expectation.sessionId,
+      value.p19_terminal_decision,
+    )) return false;
+    const byEffect = new Map(
+      value.engineering_knowledge.hypotheses.map((item) => [item.effect_id, item]),
+    );
+    if (!value.top_swings.every((item) => {
+      const hypothesis = byEffect.get(item.id);
+      return hypothesis != null
+        && item.bridge_id === hypothesis.bridge_id
+        && item.current_relevance === hypothesis.relevance
+        && item.p32_opportunity_id === hypothesis.p32_opportunity_id
+        && item.knowledge_level === hypothesis.level
+        && JSON.stringify(item.p35_mechanism_ids) === JSON.stringify(hypothesis.p35_mechanism_ids)
+        && JSON.stringify(item.p20_mechanism_ids) === JSON.stringify(hypothesis.p20_mechanism_ids)
+        && JSON.stringify(item.p26_component_family_ids) === JSON.stringify(hypothesis.p26_component_family_ids)
+        && JSON.stringify(item.inspection_tool_ids) === JSON.stringify(hypothesis.inspection_tool_ids)
+        && JSON.stringify(item.discriminator_contract_ids)
+          === JSON.stringify(hypothesis.discriminator_contract_ids);
+    })) return false;
+  } else if (
+    value.engineering_knowledge != null || value.p19_terminal_decision != null
+  ) return false;
   return true;
 }

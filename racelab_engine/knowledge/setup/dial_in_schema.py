@@ -5,6 +5,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.engineering_knowledge import (
+    CurrentEngineeringKnowledgeProjection,
+)
+from racelab_engine.models.crew_chief import CrewChiefTerminalDecision
 
 from .evidence_schema import CandidateEvidenceReadiness, RunEvidenceGroup
 
@@ -106,6 +110,26 @@ class DialInHypothesisSwing(DialInModel):
     id: str
     title: str
     setup_area: str
+    current_relevance: Literal[
+        "supported_candidate", "blocked_candidate", "knowledge_only", "inapplicable"
+    ]
+    p32_opportunity_id: str | None = None
+    knowledge_level: Literal[
+        "educational_knowledge",
+        "measurable_hypothesis",
+        "p19_testable_control",
+        "unsupported_remove",
+    ]
+    bridge_id: str
+    bridge_sha256: str
+    p35_mechanism_ids: list[str] = Field(default_factory=list)
+    p20_mechanism_ids: list[str] = Field(default_factory=list)
+    p26_component_family_ids: list[str] = Field(default_factory=list)
+    p32_performance_mechanism_ids: list[str] = Field(default_factory=list)
+    inspection_tool_ids: list[str] = Field(default_factory=list)
+    discriminator_contract_ids: list[str] = Field(default_factory=list)
+    knowledge_version: str
+    knowledge_graph_sha256: str
     candidate_control_label: str
     related_control_keys: list[str] = Field(default_factory=list)
     influence_label: str
@@ -146,15 +170,98 @@ class DialInHypothesisResponse(DialInModel):
     source_channels: list[str] = Field(default_factory=list)
     blocker_reasons: list[str] = Field(default_factory=list)
     evidence_strength: EvidenceStrengthSignal | None = None
+    engineering_knowledge: CurrentEngineeringKnowledgeProjection | None = None
+    p19_terminal_decision: CrewChiefTerminalDecision | None = None
 
     @classmethod
-    def from_internal(cls, response: DialInResponse) -> DialInHypothesisResponse:
+    def from_internal(
+        cls,
+        response: DialInResponse,
+        *,
+        engineering_knowledge: CurrentEngineeringKnowledgeProjection | None = None,
+        p19_terminal_decision: CrewChiefTerminalDecision | None = None,
+        limit: int | None = None,
+    ) -> DialInHypothesisResponse:
+        from .engineering_knowledge import compile_mechanism_setup_bridges
+        from .loader import load_setup_knowledge
+
+        bridges = {
+            item.effect_id: item for item in compile_mechanism_setup_bridges()
+        }
+        current_by_effect = {
+            item.effect_id: item
+            for item in (
+                engineering_knowledge.hypotheses
+                if engineering_knowledge is not None
+                else ()
+            )
+        }
         authority_blocker = (
             "This Dial-In response is measurement guidance only. Only the controlled "
             "P19 workflow may authorize one exact setup target, Keep/Undo, or stop-testing."
         )
         swings = [
             DialInHypothesisSwing(
+                **(
+                    {
+                        # This route has no current P19 decision to mirror.  A
+                        # structurally controllable catalog effect therefore
+                        # remains a measurable hypothesis here; level three is
+                        # reserved for the atomic Crew/P19 projection.
+                        "knowledge_level": (
+                            current_by_effect[swing.id].level
+                            if swing.id in current_by_effect
+                            else "measurable_hypothesis"
+                            if bridges[swing.id].catalog_classification
+                            == "p19_testable_control"
+                            else bridges[swing.id].catalog_classification
+                        ),
+                        "current_relevance": (
+                            current_by_effect[swing.id].relevance
+                            if swing.id in current_by_effect
+                            else "knowledge_only"
+                        ),
+                        "p32_opportunity_id": (
+                            current_by_effect[swing.id].p32_opportunity_id
+                            if swing.id in current_by_effect
+                            else None
+                        ),
+                        "bridge_id": bridges[swing.id].bridge_id,
+                        "bridge_sha256": bridges[swing.id].bridge_sha256,
+                        "p35_mechanism_ids": list(
+                            current_by_effect[swing.id].p35_mechanism_ids
+                            if swing.id in current_by_effect
+                            else bridges[swing.id].p35_mechanism_ids
+                        ),
+                        "p20_mechanism_ids": list(
+                            current_by_effect[swing.id].p20_mechanism_ids
+                            if swing.id in current_by_effect
+                            else bridges[swing.id].p20_mechanism_ids
+                        ),
+                        "p26_component_family_ids": list(
+                            current_by_effect[swing.id].p26_component_family_ids
+                            if swing.id in current_by_effect
+                            else bridges[swing.id].p26_component_family_ids
+                        ),
+                        "p32_performance_mechanism_ids": list(
+                            bridges[swing.id].p32_performance_mechanism_ids
+                        ),
+                        "inspection_tool_ids": list(
+                            current_by_effect[swing.id].inspection_tool_ids
+                            if swing.id in current_by_effect
+                            else bridges[swing.id].inspection_tool_ids
+                        ),
+                        "discriminator_contract_ids": list(
+                            current_by_effect[swing.id].discriminator_contract_ids
+                            if swing.id in current_by_effect
+                            else bridges[swing.id].discriminator_contract_ids
+                        ),
+                        "knowledge_version": bridges[swing.id].knowledge_version,
+                        "knowledge_graph_sha256": (
+                            bridges[swing.id].p35_knowledge_graph_sha256
+                        ),
+                    }
+                ),
                 id=swing.id,
                 title=" ".join(swing.setup_area.replace("_", " ").split()).title(),
                 setup_area=swing.setup_area,
@@ -164,12 +271,21 @@ class DialInHypothesisResponse(DialInModel):
                 strength_label=swing.strength_label,
                 risk_label=swing.risk_label,
                 mechanism_to_verify=(
-                    "Determine whether this control area's measured response contributes "
-                    "to the selected symptom."
+                    "Separate current evidence for "
+                    + ", ".join(
+                        item.removeprefix("mechanism:").replace("_", " ")
+                        for item in bridges[swing.id].p35_mechanism_ids
+                    )
+                    if bridges[swing.id].p35_mechanism_ids
+                    else "This effect is not applicable to the current Next Gen control set."
                 ),
                 counter_effect_to_watch=(
-                    "Watch for a protected-phase regression or driver-execution change "
-                    "during controlled measurement."
+                    "Protect "
+                    + ", ".join(
+                        item.replace("_", " ")
+                        for item in bridges[swing.id].countereffect_targets
+                    )
+                    + " during controlled measurement."
                 ),
                 validate_with=list(swing.validate_with),
                 validate_with_labels=list(swing.validate_with_labels),
@@ -189,6 +305,100 @@ class DialInHypothesisResponse(DialInModel):
             )
             for swing in response.top_swings
         ]
+        if engineering_knowledge is not None:
+            existing_ids = {item.id for item in swings}
+            effects = {
+                item.effect_id: item
+                for item in load_setup_knowledge().setup_effects
+            }
+            for effect_id in engineering_knowledge.leading_hypothesis_ids:
+                if effect_id in existing_ids:
+                    continue
+                current = current_by_effect[effect_id]
+                bridge = bridges[effect_id]
+                effect = effects[effect_id]
+                swings.append(
+                    DialInHypothesisSwing(
+                        id=effect_id,
+                        title=" ".join(current.setup_area.replace("_", " ").split()).title(),
+                        setup_area=current.setup_area,
+                        current_relevance=current.relevance,
+                        p32_opportunity_id=current.p32_opportunity_id,
+                        knowledge_level=current.level,
+                        bridge_id=bridge.bridge_id,
+                        bridge_sha256=bridge.bridge_sha256,
+                        p35_mechanism_ids=list(current.p35_mechanism_ids),
+                        p20_mechanism_ids=list(current.p20_mechanism_ids),
+                        p26_component_family_ids=list(
+                            current.p26_component_family_ids
+                        ),
+                        p32_performance_mechanism_ids=list(
+                            bridge.p32_performance_mechanism_ids
+                        ),
+                        inspection_tool_ids=list(current.inspection_tool_ids),
+                        discriminator_contract_ids=list(
+                            current.discriminator_contract_ids
+                        ),
+                        knowledge_version=bridge.knowledge_version,
+                        knowledge_graph_sha256=bridge.p35_knowledge_graph_sha256,
+                        candidate_control_label=" ".join(
+                            current.setup_area.replace("_", " ").split()
+                        ).title(),
+                        related_control_keys=list(bridge.related_control_keys),
+                        influence_label="Current mechanism relationship",
+                        strength_label="Canonical P35 candidate",
+                        risk_label=f"{effect.coupling_risk.title()} coupling",
+                        mechanism_to_verify=current.physical_role,
+                        counter_effect_to_watch=(
+                            "Protect "
+                            + ", ".join(current.protected_outcomes)
+                            + " during controlled measurement."
+                        ),
+                        validate_with=list(current.expected_vehicle_response_ids),
+                        validate_with_labels=[
+                            item.replace("_", " ").title()
+                            for item in current.expected_vehicle_response_ids
+                        ],
+                        watch_for=list(current.countereffect_ids),
+                        watch_for_labels=[
+                            item.replace("_", " ").title()
+                            for item in current.countereffect_ids
+                        ],
+                        readiness_label="Measurement required",
+                        measurement_needed=(
+                            current.missing_evidence[0]
+                            if current.missing_evidence
+                            else "Use the candidate-owned bounded discriminator before any setup action."
+                        ),
+                        evidence_state=(
+                            EvidenceState.CALCULATED
+                            if current.relevance == "supported_candidate"
+                            else EvidenceState.BLOCKED_BY_CONTEXT
+                        ),
+                        blocker_reasons=list(current.missing_evidence),
+                    )
+                )
+            current_order = {
+                effect_id: index
+                for index, effect_id in enumerate(
+                    engineering_knowledge.leading_hypothesis_ids
+                )
+            }
+            swings.sort(
+                key=lambda item: (
+                    current_order.get(item.id, len(current_order)),
+                    {
+                        "supported_candidate": 0,
+                        "blocked_candidate": 1,
+                        "knowledge_only": 2,
+                        "inapplicable": 3,
+                    }[item.current_relevance],
+                    item.setup_area,
+                    item.id,
+                )
+            )
+        if limit is not None:
+            swings = swings[:limit]
         strength = response.evidence_strength
         if strength is not None:
             strength = strength.model_copy(update={
@@ -217,4 +427,6 @@ class DialInHypothesisResponse(DialInModel):
             source_channels=list(response.source_channels),
             blocker_reasons=list(dict.fromkeys((*response.blocker_reasons, authority_blocker))),
             evidence_strength=strength,
+            engineering_knowledge=engineering_knowledge,
+            p19_terminal_decision=p19_terminal_decision,
         )

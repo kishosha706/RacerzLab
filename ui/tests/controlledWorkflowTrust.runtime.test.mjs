@@ -14,6 +14,9 @@ const workflow = {
   status: "a_recorded",
   source_run_id: "run-a",
   complaint: "Tight in the center.",
+  p32_opportunity_id: null,
+  p32_projection_sha256: null,
+  engineering_knowledge_projection_sha256: null,
   packet: {
     decision: "test",
     primary_test: {
@@ -55,6 +58,12 @@ const workflow = {
 assert.equal(isControlledWorkflowResponse(workflow), true);
 assert.equal(hasValidLearningCaptureMetadata(workflow), true);
 
+const p32Bound = structuredClone(workflow);
+p32Bound.p32_opportunity_id = "p32o-current";
+p32Bound.p32_projection_sha256 = "b".repeat(64);
+p32Bound.engineering_knowledge_projection_sha256 = "c".repeat(64);
+assert.equal(isControlledWorkflowResponse(p32Bound), true);
+
 const captured = structuredClone(workflow);
 captured.status = "scored";
 captured.learning_capture_state = "captured";
@@ -77,6 +86,7 @@ rejectMutation("missing capture state", workflow, (value) => { delete value.lear
 rejectMutation("missing experience hash", captured, (value) => { delete value.learning_capture_experience_sha256; });
 rejectMutation("unknown capture state", workflow, (value) => { value.learning_capture_state = "pending"; });
 rejectMutation("unknown workflow field", workflow, (value) => { value.setup_authorized = true; });
+rejectMutation("partial P32 identity", p32Bound, (value) => { value.p32_projection_sha256 = null; });
 rejectMutation("partial captured identity", captured, (value) => { value.learning_capture_experience_sha256 = null; });
 rejectMutation("forged experience ID", captured, (value) => { value.learning_capture_experience_id = `p33x_${"b".repeat(24)}`; });
 rejectMutation("forged experience hash", captured, (value) => { value.learning_capture_experience_sha256 = "b".repeat(64); });

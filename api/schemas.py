@@ -66,6 +66,7 @@ class RunListItem(BaseModel):
 
 class DialInRequest(BaseModel):
     complaint: str
+    session_id: Optional[str] = Field(default=None, min_length=1, max_length=160)
     selected_lap: Optional[int] = Field(default=None, ge=1)
     selected_zone_start_pct: Optional[float] = Field(default=None, ge=0.0, lt=100.0)
     selected_zone_end_pct: Optional[float] = Field(default=None, gt=0.0, le=100.0)

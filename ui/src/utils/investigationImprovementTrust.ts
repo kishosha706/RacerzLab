@@ -69,6 +69,8 @@ const P35_INSPECTION_TOOL_IDS = new Set([
   "inspect_tire_state_migration",
   "inspect_traffic_platform_response",
   "inspect_gear_acceleration_response",
+  "inspect_setup_knowledge_for_mechanism",
+  "inspect_control_experiment_contract",
 ]);
 const FROZEN_TOOL_PRIORITY = new Map<string, string>([
   ["inspect_data_quality", "identity_integrity"],

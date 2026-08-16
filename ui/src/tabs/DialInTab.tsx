@@ -425,7 +425,18 @@ function SwingCard({ swing, compact = false, learning = false }: { swing: DialIn
             <span>Hypothesis only:</span> {swing.mechanism_to_verify}
           </p>
           <p className="dialin-garage-helper">
-            Candidate control area: {swing.candidate_control_label}
+            {swing.knowledge_level === "educational_knowledge"
+              ? "Educational setup area"
+              : swing.knowledge_level === "measurable_hypothesis"
+                ? "Measurable setup hypothesis"
+                : swing.knowledge_level === "unsupported_remove"
+                  ? "Not applicable to this car"
+                  : "P19-testable control family"}: {swing.candidate_control_label}
+          </p>
+          <p className="dialin-garage-helper">
+            {swing.p32_opportunity_id == null
+              ? "Educational relationship · no current P32 opportunity binding"
+              : "Current P32 scope · same Crew / Engineer / P19 opportunity"}
           </p>
           {helper && <p className="dialin-garage-note">{helper}</p>}
         </div>
@@ -449,6 +460,17 @@ function SwingCard({ swing, compact = false, learning = false }: { swing: DialIn
           <div>
             <span>Evidence signals</span>
             <p>{formatTargetList(swing)}</p>
+          </div>
+        )}
+        {learning && swing.p35_mechanism_ids.length > 0 && (
+          <div>
+            <span>Unified knowledge spine</span>
+            <p>
+              {swing.p35_mechanism_ids.map((item) => cleanLabel(item.replace("mechanism:", ""), "Mechanism")).join(" · ")}
+              {swing.p26_component_family_ids.length > 0
+                ? ` · ${swing.p26_component_family_ids.map((item) => cleanLabel(item, "Component")).join(" · ")}`
+                : ""}
+            </p>
           </div>
         )}
       </div>
@@ -1090,6 +1112,7 @@ export function DialInTab({
       const [dialResult, workflowResult] = await Promise.allSettled([
         analyzeRunDialIn(overview.run_id, {
           complaint: trimmed,
+          session_id: sessionId,
           selected_lap: selectedLapForRequest,
           ...decisionContext,
           baseline_run_id: usableBaseline,
@@ -1136,11 +1159,18 @@ export function DialInTab({
         return;
       }
       const nextWorkflow = workflowResult.value;
+      const canonicalKnowledge = dialResponse?.engineering_knowledge ?? null;
       if (
         !nextWorkflow.workflow_id
         || nextWorkflow.workflow_id !== nextWorkflow.workflow_id.trim()
         || nextWorkflow.source_run_id !== requestedRunId
         || !workflowMatchesRequest(nextWorkflow, requestedBinding)
+        || canonicalKnowledge == null
+        || nextWorkflow.p32_opportunity_id !== canonicalKnowledge.p32_opportunity_id
+        || nextWorkflow.p32_projection_sha256
+          !== canonicalKnowledge.p32_projection_sha256
+        || nextWorkflow.engineering_knowledge_projection_sha256
+          !== canonicalKnowledge.projection_sha256
       ) {
         const message = "The controlled-test response did not match the requested run, complaint, or complete decision context. Nothing was updated, and exact targets are hidden. Reopen Dial-In before continuing.";
         setWorkflowIdentityError(message);

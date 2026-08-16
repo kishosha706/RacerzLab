@@ -459,7 +459,9 @@ def test_driver_response_avoids_bad_product_phrases(tmp_path: Path, monkeypatch:
     assert "measured downforce" not in text
 
 
-def test_dial_in_response_titles_use_exact_garage_actions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dial_in_response_distinguishes_exact_actions_from_knowledge_only_effects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _configure_env(monkeypatch, tmp_path)
     _seed_run(
         tmp_path,
@@ -482,11 +484,20 @@ def test_dial_in_response_titles_use_exact_garage_actions(tmp_path: Path, monkey
         },
     )
     response = build_dial_in_response("run-1", "tight center", limit=9)
-    titles = " || ".join(swing.title.lower() for swing in response.top_swings)
-    assert "platform support" not in titles
-    assert "pressure trim" not in titles
-    assert "rear toe stability" not in titles
-    assert "high-speed rebound control" not in titles
+    action_titles = " || ".join(
+        swing.title.lower() for swing in response.top_swings if swing.control_keys
+    )
+    assert "platform support" not in action_titles
+    assert "pressure trim" not in action_titles
+    assert "rear toe stability" not in action_titles
+    assert "high-speed rebound control" not in action_titles
+
+    rear_toe = next(swing for swing in response.top_swings if swing.title == "Rear Toe Stability")
+    assert rear_toe.control_keys == []
+    assert rear_toe.change_size_label == "Knowledge only"
+    assert rear_toe.proposed_value_label is None
+    assert rear_toe.change_this.startswith("Do not change Rear Toe Stability yet;")
+    assert "No exact P19-testable control" in rear_toe.change_this
 
 
 def test_visible_dial_in_swings_include_specific_change_this_actions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -532,6 +543,15 @@ def test_visible_dial_in_swings_include_specific_change_this_actions(tmp_path: P
     for swing in response.top_swings:
         assert swing.change_this
         assert swing.garage_lever
+        if not swing.control_keys:
+            assert swing.change_size_label == "Knowledge only"
+            assert swing.proposed_value_label is None
+            assert swing.change_this.startswith(f"Do not change {swing.garage_lever} yet;")
+            assert "No exact P19-testable control" in swing.change_this
+            assert swing.blocker_reasons == [
+                "No exact P19-testable control is bound to this catalog effect."
+            ]
+            continue
         action = f"{swing.title} {swing.change_this}".lower()
         assert any(
             word in action

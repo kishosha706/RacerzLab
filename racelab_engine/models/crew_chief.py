@@ -16,6 +16,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.engineering_projection import EngineeringAwarenessProjection
+from racelab_engine.models.engineering_knowledge import (
+    CurrentEngineeringKnowledgeProjection,
+)
 from racelab_engine.models.investigation_adaptation import (
     InvestigationImprovementProjection,
 )
@@ -238,6 +241,14 @@ _P35_INSPECTION_TOOL_IDS = (
     "inspect_tire_state_migration",
     "inspect_traffic_platform_response",
     "inspect_gear_acceleration_response",
+)
+_P351_INSPECTION_TOOL_IDS = (
+    "inspect_setup_knowledge_for_mechanism",
+    "inspect_control_experiment_contract",
+)
+_P34_EXCLUDED_INSPECTION_TOOL_IDS = (
+    *_P35_INSPECTION_TOOL_IDS,
+    *_P351_INSPECTION_TOOL_IDS,
 )
 
 
@@ -1336,8 +1347,8 @@ class AdaptiveResearchBoundary(CrewChiefModel):
 
 
 class CrewChiefWorkspace(CrewChiefModel):
-    schema_version: Literal["p35.crew-chief-workspace.v1"] = (
-        "p35.crew-chief-workspace.v1"
+    schema_version: Literal["p351.crew-chief-workspace.v1"] = (
+        "p351.crew-chief-workspace.v1"
     )
     identity: CrewChiefWorkspaceIdentity
     generated_at: datetime
@@ -1355,6 +1366,7 @@ class CrewChiefWorkspace(CrewChiefModel):
     engineering_awareness: EngineeringAwarenessProjection | None = None
     performance_intelligence: PerformanceIntelligenceProjection
     vehicle_dynamics: PerformanceMechanismAssessment
+    engineering_knowledge: CurrentEngineeringKnowledgeProjection
     learning_prior: CrewChiefLearningPrior
     investigation_improvement: InvestigationImprovementProjection
     run_sentinel: RunSentinelState
@@ -2129,7 +2141,7 @@ class CrewChiefWorkspace(CrewChiefModel):
             tool_ids = tuple(
                 item.tool_id
                 for item in self.available_tools
-                if item.tool_id not in _P35_INSPECTION_TOOL_IDS
+                if item.tool_id not in _P34_EXCLUDED_INSPECTION_TOOL_IDS
             )
             baseline_decision = pair.baseline_decision
             eligible_tool_ids: tuple[str, ...] = ()
@@ -2191,7 +2203,7 @@ class CrewChiefWorkspace(CrewChiefModel):
                 != tuple(
                     tool_id
                     for tool_id in self.folded_state.completed_tool_ids
-                    if tool_id not in _P35_INSPECTION_TOOL_IDS
+                    if tool_id not in _P34_EXCLUDED_INSPECTION_TOOL_IDS
                 )
                 or pair.available_artifact_ids != artifact_ids
                 or pair.qualified_available_artifact_ids != qualified_artifact_ids
@@ -2310,6 +2322,69 @@ class CrewChiefWorkspace(CrewChiefModel):
         ):
             raise ValueError(
                 "controlled decision must match the active workflow revision"
+            )
+        knowledge = self.engineering_knowledge
+        if (
+            knowledge.run_id != self.identity.run_id
+            or knowledge.session_id != self.identity.session_id
+            or knowledge.p19_reasoning_snapshot_sha256
+            != self.identity.reasoning_snapshot_sha256
+            or knowledge.p20_state_revision != self.identity.p20_state_revision
+            or knowledge.p26_knowledge_graph_sha256
+            != self.identity.p26_knowledge_graph_sha256
+            or knowledge.p32_projection_sha256
+            != self.identity.p32_projection_sha256
+            or knowledge.p35_assessment_sha256
+            != self.identity.p35_assessment_sha256
+            or knowledge.p33_projection_sha256
+            != self.identity.learning_projection_sha256
+            or knowledge.p32_opportunity_id
+            != (
+                dynamics.performance_opportunity_ids[0]
+                if dynamics.performance_opportunity_ids
+                else None
+            )
+            or knowledge.next_discriminator_contract_id
+            != dynamics.next_discriminator_contract_id
+            or knowledge.terminal_authority != "p19_only"
+            or knowledge.non_p19_setup_authorized
+        ):
+            raise ValueError(
+                "P35.1 knowledge must match the atomic P19/P20/P26/P32/P33/P35 workspace"
+            )
+        from types import SimpleNamespace
+
+        from racelab_engine.services.engineering_knowledge_service import (
+            build_current_engineering_knowledge,
+        )
+
+        expected_knowledge = build_current_engineering_knowledge(
+            run_id=self.identity.run_id,
+            session_id=self.identity.session_id,
+            complaint_prior=(
+                self.investigation.raw_driver_report
+                if self.investigation is not None
+                else None
+            ),
+            p20=awareness,
+            p26=SimpleNamespace(
+                run_id=self.identity.run_id,
+                session_id=self.identity.session_id,
+                reasoning_snapshot_sha256=self.identity.p26_reasoning_snapshot_sha256,
+                knowledge_graph_sha256=self.identity.p26_knowledge_graph_sha256,
+                component_states=tuple(
+                    SimpleNamespace(component_id=component_id)
+                    for component_id in self.p26_component_ids
+                ),
+            ),
+            p32=self.performance_intelligence,
+            p35=dynamics,
+            p33=prior,
+            p19_terminal_decision=decision,
+        )
+        if knowledge != expected_knowledge:
+            raise ValueError(
+                "P35.1 knowledge must equal its canonical producer-derived projection"
             )
         return self
 

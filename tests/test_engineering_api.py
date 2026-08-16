@@ -178,6 +178,13 @@ def test_controlled_workflow_api_exposes_strict_learning_capture_truth() -> None
     blocker = properties["learning_capture_blocker_reason"]["anyOf"][0]
     assert blocker["minLength"] == 1
     assert blocker["maxLength"] == 240
+    assert properties["p32_opportunity_id"]["anyOf"][0]["type"] == "string"
+    assert properties["p32_projection_sha256"]["anyOf"][0]["pattern"] == (
+        "^[0-9a-f]{64}$"
+    )
+    assert properties["engineering_knowledge_projection_sha256"]["anyOf"][0][
+        "pattern"
+    ] == "^[0-9a-f]{64}$"
 
 
 def test_score_route_returns_blocked_capture_truth_and_clears_learning_cache(

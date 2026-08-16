@@ -12,6 +12,8 @@ from api.schemas import DialInObjective, DialInPriority
 from racelab_engine.analysis.active_reset_lab import ActiveResetLabResult, analyze_active_reset_lab
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.controlled_workflow import ControlledWorkflow
+from racelab_engine.models.crew_chief import EngineeringObjective
+from racelab_engine.services.crew_chief_service import build_crew_chief_workspace
 from racelab_engine.services.controlled_workflow_service import (
     P19_WORKFLOW_AUTHORITY_BINDING_SCHEMA,
     attach_stage,
@@ -31,6 +33,9 @@ from racelab_engine.services.engineering_learning_service import (
     build_p19_reasoning_memory,
     clear_learning_cache,
 )
+from racelab_engine.services.engineering_knowledge_service import (
+    build_canonical_performance_opportunity_binding,
+)
 from racelab_engine.services.run_intelligence_service import (
     RunIntelligenceBundle,
     build_run_intelligence,
@@ -48,6 +53,14 @@ _P19_AUTHORITY_BLOCKER = (
     "The controlled workflow is not bound to the current exact-session P19 reasoning "
     "snapshot. No setup target, Keep/Undo verdict, or stop-testing policy is available."
 )
+
+_CREW_OBJECTIVE_BY_DIAL_IN: dict[DialInObjective, EngineeringObjective] = {
+    "race-pace": EngineeringObjective.RACE_LONG_RUN,
+    "long-run": EngineeringObjective.RACE_LONG_RUN,
+    "qualifying": EngineeringObjective.QUALIFYING_PEAK,
+    "tire-conservation": EngineeringObjective.TIRE_CONSERVATION,
+    "driver-confidence": EngineeringObjective.DRIVER_CONFIDENCE,
+}
 
 
 class WorkflowStartRequest(BaseModel):
@@ -228,7 +241,7 @@ def _binding_for_authorized_candidate(
     setup = overview.setup_snapshot
     if setup is None or setup.setup_id != public.setup_id:
         raise ValueError("The workflow source setup identity is unavailable or changed.")
-    return {
+    result = {
         "schema_version": _P19_BINDING_SCHEMA,
         "workflow_id": workflow.workflow_id,
         "run_id": workflow.source_run_id,
@@ -254,6 +267,14 @@ def _binding_for_authorized_candidate(
         "reasoning_snapshot_sha256": public.reasoning_snapshot_sha256,
         "bound_at": datetime.now(UTC).isoformat(),
     }
+    performance_binding = workflow.reproduction_snapshot.get(
+        "p351_performance_opportunity_binding"
+    )
+    if isinstance(performance_binding, dict):
+        result["p351_performance_opportunity_binding_sha256"] = (
+            performance_binding.get("binding_sha256")
+        )
+    return result
 
 
 def _validate_origin_binding(
@@ -366,6 +387,31 @@ def start_workflow(request: WorkflowStartRequest) -> ControlledWorkflow:
             candidate=True,
         )
         _require_matching_p19_action(candidate, bundle, public)
+        workspace = build_crew_chief_workspace(
+            request.run_id,
+            session_id=request.session_id,
+            objective=_CREW_OBJECTIVE_BY_DIAL_IN[request.objective],
+            db_path=repository.db_path,
+        )
+        performance_binding = build_canonical_performance_opportunity_binding(
+            p32=workspace.performance_intelligence,
+            knowledge=workspace.engineering_knowledge,
+            workflow_opportunity=candidate.packet.opportunity,
+        )
+        snapshot = dict(candidate.reproduction_snapshot)
+        snapshot["p351_performance_opportunity_binding"] = (
+            performance_binding.model_dump(mode="json")
+        )
+        candidate = candidate.model_copy(
+            update={
+                "reproduction_snapshot": snapshot,
+                "p32_opportunity_id": performance_binding.p32_opportunity_id,
+                "p32_projection_sha256": performance_binding.p32_projection_sha256,
+                "engineering_knowledge_projection_sha256": (
+                    performance_binding.engineering_knowledge_projection_sha256
+                ),
+            }
+        )
         snapshot = dict(candidate.reproduction_snapshot)
         snapshot["p19_authority_binding"] = _binding_for_authorized_candidate(
             candidate,

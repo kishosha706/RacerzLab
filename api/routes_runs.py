@@ -68,10 +68,37 @@ def dial_in(run_id: str, request: DialInRequest) -> DialInHypothesisResponse:
             selected_phase=request.selected_phase,
             objective=request.objective,
             priority=request.priority,
-            limit=request.limit,
+            limit=92 if request.session_id is not None else request.limit,
             include_debug_evidence=request.include_debug_evidence,
         )
-        return DialInHypothesisResponse.from_internal(response)
+        engineering_knowledge = None
+        p19_terminal_decision = None
+        if request.session_id is not None:
+            from racelab_engine.models.crew_chief import EngineeringObjective
+            from racelab_engine.services.crew_chief_service import (
+                build_crew_chief_workspace,
+            )
+
+            objective = {
+                "race-pace": EngineeringObjective.RACE_LONG_RUN,
+                "long-run": EngineeringObjective.RACE_LONG_RUN,
+                "qualifying": EngineeringObjective.QUALIFYING_PEAK,
+                "tire-conservation": EngineeringObjective.TIRE_CONSERVATION,
+                "driver-confidence": EngineeringObjective.DRIVER_CONFIDENCE,
+            }[request.objective]
+            workspace = build_crew_chief_workspace(
+                run_id,
+                session_id=request.session_id,
+                objective=objective,
+            )
+            engineering_knowledge = workspace.engineering_knowledge
+            p19_terminal_decision = workspace.terminal_decision
+        return DialInHypothesisResponse.from_internal(
+            response,
+            engineering_knowledge=engineering_knowledge,
+            p19_terminal_decision=p19_terminal_decision,
+            limit=request.limit,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

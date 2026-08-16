@@ -16160,6 +16160,61 @@ button:focus:not(:focus-visible) {
   border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
   background: color-mix(in srgb, var(--panel) 96%, var(--accent));
 }
+.engineering-knowledge-spine {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.7rem;
+  min-width: 0;
+  padding: 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 52%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 96%, var(--accent));
+}
+.engineering-knowledge-spine > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: start;
+}
+.engineering-knowledge-spine h3 { margin: 0.18rem 0 0; }
+.engineering-knowledge-authority {
+  padding: 0.28rem 0.48rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+}
+.engineering-knowledge-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+.engineering-knowledge-grid article {
+  min-width: 0;
+  padding: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.engineering-knowledge-grid h4 {
+  margin: 0 0 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.engineering-knowledge-grid small { display: block; margin-top: 0.32rem; color: var(--text-muted); }
+.engineering-knowledge-evidence { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
+.engineering-knowledge-spine > footer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.2rem 0.6rem;
+  align-items: baseline;
+  padding: 0.65rem;
+  border-left: 3px solid var(--accent);
+}
+.engineering-knowledge-spine > footer span { color: var(--accent); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; }
+.engineering-knowledge-spine > footer p { grid-column: 2; margin: 0; color: var(--text-muted); }
 .engineering-memory > header { display: flex; justify-content: space-between; gap: 0.8rem; align-items: start; }
 .engineering-memory h4 { margin: 0 0 0.35rem; font-size: 0.76rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
 .engineering-memory-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
@@ -16210,6 +16265,7 @@ button:focus:not(:focus-visible) {
   .crew-chief-deck[data-mode="race"] .crew-chief-race-brief { grid-template-columns: 1fr; }
   .crew-chief-race-secondary { grid-template-columns: 1fr; }
   .engineering-memory-grid { grid-template-columns: 1fr; }
+  .engineering-knowledge-grid { grid-template-columns: 1fr; }
   .engineering-memory.engineering-memory-compact { grid-template-columns: 1fr; }
   .investigation-improvement-decisions { grid-template-columns: 1fr; }
   .investigation-improvement-completed-decisions { grid-template-columns: 1fr; }
@@ -16252,6 +16308,9 @@ button:focus:not(:focus-visible) {
   .crew-chief-learning:has(> .vehicle-dynamics-blackboard) {
     overflow-wrap: anywhere;
   }
+  .engineering-knowledge-spine > header { display: grid; }
+  .engineering-knowledge-spine > footer { grid-template-columns: 1fr; }
+  .engineering-knowledge-spine > footer p { grid-column: 1; }
   .crew-chief-learning:has(> .vehicle-dynamics-blackboard) .performance-ribbon button {
     grid-template-columns: 1fr;
     min-width: 0;

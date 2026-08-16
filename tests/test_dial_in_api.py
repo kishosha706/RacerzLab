@@ -51,6 +51,10 @@ def test_dial_in_api_returns_clean_response_by_default(tmp_path: Path, monkeypat
     assert payload["top_swings"][0]["validate_with_labels"]
     assert payload["top_swings"][0]["watch_for_labels"] is not None
     assert payload["evidence_strength"]["setup_test_ready"] is False
+    assert all(
+        swing["knowledge_level"] != "p19_testable_control"
+        for swing in payload["top_swings"]
+    )
     assert "controlled p19 workflow" in payload["next_step"].lower()
     assert "hidden_evidence_summary" not in payload
     assert "evidence_groups" not in payload

@@ -19,6 +19,7 @@ import type {
 } from "./vehicleDynamics";
 import type { VehicleSystemsRuntimeIdentity } from "./vehicleSystems";
 import type { EngineeringAwarenessProjection } from "./engineeringAwareness";
+import type { CurrentEngineeringKnowledgeProjection } from "./engineeringKnowledge";
 
 export type EngineeringObjective =
   | "qualifying_peak"
@@ -188,7 +189,7 @@ export type CrewChiefInvestigation = {
 };
 
 export type CrewChiefWorkspace = {
-  schema_version: "p35.crew-chief-workspace.v1";
+  schema_version: "p351.crew-chief-workspace.v1";
   identity: CrewChiefWorkspaceIdentity;
   generated_at: string;
   cache_state: "cold" | "warm";
@@ -281,6 +282,7 @@ export type CrewChiefWorkspace = {
   engineering_awareness: EngineeringAwarenessProjection;
   performance_intelligence: PerformanceIntelligenceProjection;
   vehicle_dynamics: PerformanceMechanismAssessment;
+  engineering_knowledge: CurrentEngineeringKnowledgeProjection;
   learning_prior: CrewChiefLearningPrior;
   investigation_improvement: InvestigationImprovementProjection;
   run_sentinel: {

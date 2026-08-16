@@ -111,6 +111,31 @@ const workspace = () => ({
     explanation_chain: { strongest_contradiction: "No clean reference lap.", p19_next_move: "Collect three clean laps." },
   },
   vehicle_dynamics: vehicleDynamicsAssessment(),
+  engineering_knowledge: {
+    schema_version: "p351.current-engineering-knowledge.v1",
+    projection_sha256: "9".repeat(64),
+    run_id: "run-1", session_id: "session-1", complaint_prior: null,
+    p19_reasoning_snapshot_sha256: "c".repeat(64), p20_state_revision: "d".repeat(64),
+    p26_knowledge_graph_sha256: "e".repeat(64), p32_projection_sha256: "f".repeat(64),
+    p35_assessment_sha256: "a".repeat(64), p33_projection_sha256: "2".repeat(64),
+    bridge_coverage_sha256: "8".repeat(64), p32_opportunity_id: null,
+    hypotheses: [{
+      bridge_id: `p351b_${"1".repeat(24)}`, effect_id: "front_arb_knowledge", setup_area: "front_arb_arm",
+      physical_role: "Changes direction-neutral front roll support.",
+      level: "educational_knowledge", relevance: "knowledge_only", p32_opportunity_id: null,
+      p35_mechanism_ids: [], p20_mechanism_ids: [], p26_component_family_ids: [],
+      response_regimes: ["steady_state"], relevant_phases: ["center"],
+      expected_vehicle_response_ids: ["front_roll_response"],
+      countereffect_ids: ["exit_security"], protected_outcomes: ["exit security"],
+      inspection_tool_ids: ["inspect_steady_platform"],
+      support_artifact_ids: [], contradiction_artifact_ids: [], discriminator_contract_ids: [],
+      missing_evidence: ["Current mechanism evidence is unavailable."], controlled_history: [],
+      p19_control: null, authority: "knowledge_only", setup_authorized: false,
+    }],
+    leading_hypothesis_ids: [], next_discriminator_contract_id: null,
+    blocker_reasons: ["No clean comparison window is available."], terminal_authority: "p19_only",
+    non_p19_setup_authorized: false,
+  },
   learning_prior: {
     state: "available", strength: "single_case", context_transfer_level: "compatible",
     recurrence: {
@@ -270,10 +295,32 @@ describe("CrewChiefCommandDeck boundary states", () => {
     expect(screen.queryByLabelText("Investigation Improvement, read only")).toBeNull();
     expect(screen.queryByLabelText("Vehicle Dynamics Blackboard, candidate mechanisms only")).toBeNull();
     expect(screen.queryByLabelText("Vehicle Dynamics learning handoff")).toBeNull();
+    expect(screen.queryByLabelText("Unified Dial-In engineering knowledge")).toBeNull();
     const dynamicsLine = screen.getByLabelText("Vehicle Dynamics, candidate mechanisms only");
     expect(within(dynamicsLine).getByText("VEHICLE DYNAMICS · BLOCKED")).toBeTruthy();
     expect(dynamicsLine.textContent).toContain("Vehicle mechanism remains unresolved.");
     expect(dynamicsLine.textContent).toContain("No clean comparison window is available.");
+  });
+
+  it("renders the unified knowledge spine only in Learning Mode without inventing setup authority", async () => {
+    api.fetchCrewChiefWorkspace.mockResolvedValue(workspace());
+    render(<CrewChiefCommandDeck {...props} learning />);
+
+    const spine = await screen.findByLabelText("Unified Dial-In engineering knowledge");
+    for (const heading of [
+      "Why this system is relevant",
+      "What it physically changes",
+      "What the car is doing now",
+      "What evidence is missing",
+      "What would separate the candidates",
+      "What history says",
+    ]) expect(within(spine).getByText(heading)).toBeTruthy();
+    expect(within(spine).getByText(/NEXT .* P19/)).toBeTruthy();
+    expect(within(spine).getByText("P19 ONLY FOR ACTION")).toBeTruthy();
+    expect(spine.textContent).toContain("Reviewed setup knowledge");
+    expect(spine.textContent).toContain("Changes direction-neutral front roll support.");
+    expect(spine.textContent).not.toContain("proposed value");
+    expect(spine.textContent).not.toContain("setup target");
   });
 
   it("names only the leading supported mechanism candidate in the Race secondary line", async () => {

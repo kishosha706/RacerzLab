@@ -70,6 +70,7 @@ result, and remember only what the evidence supports.
 | P33.1 - Driver-Facing Truth and Interface Sharpening | Verified | Race Mode stays decision-first, mission progress distinguishes screening from contract acceptance, and narrow layouts preserve a usable evidence-first workspace |
 | P34 - Earned Investigation Adaptation | Verified shadow evaluation infrastructure; no attention activation earned | Frozen baseline-versus-memory pairs test bounded investigation order on identical pre-outcome truth while P19 remains sole authority and production remains deterministic baseline |
 | P35 - Next Gen Oval Vehicle Dynamics Intelligence | Verified deterministic mechanical-intelligence foundation | One reviewed, build-applicable physics graph connects driver demand, vehicle response, tire/platform state, candidate mechanisms, and measured P32 time without gaining component, cause, or setup authority |
+| P35.1 - Unified Dial-In Knowledge Spine | Verified deterministic engineering-knowledge foundation | One content-addressed projection connects exact P32 time, P20 state, P35 mechanisms, P26 components, all 92 Dial-In effects, P19/P33 history, bounded discriminators, and exact P19 authority without turning education into advice |
 | P36 - Prospective Investigation Evidence Campaigns | Planned; evidence collection remains data-locked | Qualified prospective campaigns produce the independent recurrence, controls, subgroups, and observable comparisons required before learned investigation ordering can earn promotion |
 
 ---
@@ -2422,6 +2423,69 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   process, port, or temporary database behind. The production database SHA, size,
   mtime, and absent WAL/SHM state remained byte-for-byte unchanged.
 
+## P35.1 - Unified Dial-In Knowledge Spine
+
+- [x] Compile all 92 reviewed Dial-In effects into immutable, content-addressed
+  `MechanismSetupBridge` records that bind typed P20 observation families, P26
+  component families, P32 performance mechanisms, P35 vehicle-dynamics
+  mechanisms, exact phases/regimes, expected responses, countereffects,
+  protected outcomes, bounded inspection tools, applicability, and provenance.
+  Missing control mappings never erase reviewed engineering knowledge.
+- [x] Publish an exact coverage report instead of inferring coverage from the
+  legacy action table. The frozen report SHA-256 is
+  `d3f9f95c41f85bdbc2ac697d242d6d1e560bd58575cf65155e3843f88c7c8680`:
+  92 catalog effects, 92 unique bridges, 64 measurable hypotheses, 22
+  structurally P19-testable controls, six explicitly unsupported/removed legacy
+  Next Gen effects, and zero missing or duplicate effect identities.
+- [x] Build one run-owned `CurrentEngineeringKnowledgeProjection` from the
+  canonical P20, P26, P32, P35, P33, and P19 projections. Driver complaint is a
+  question/phase prior only; current candidate ordering comes from the exact P32
+  opportunity and candidate-owned P35 evidence. No raw telemetry observer or
+  parallel performance opportunity was added.
+- [x] Preserve three explicit authority levels: educational knowledge describes
+  general influence only; a measurable hypothesis adds current relevance and a
+  discriminator but no target; a P19-testable control exists only when its exact
+  action equals the current nested P19 terminal decision. Only that third level
+  can expose direction, target, or controlled-test policy.
+- [x] Make session-bound Dial-In, Crew Chief, Engineer Learning Mode, controlled
+  workflow, and P19 share the same P32 opportunity ID and projection hashes. A
+  private immutable workflow receipt seals the exact window, phase, measured
+  time, and source-channel cohort; drift from the legacy opportunity builder is
+  rejected rather than silently creating another performance truth.
+- [x] Replace hidden historical score authority with typed P19/P33 exact-context
+  history: prior response, dead ends, and Keep/Undo/Retest remain visible inputs,
+  but cannot change current P19 cause truth. Unreviewed builds remain educational
+  only, generic history cannot outrank current evidence, and track bar, truck arm,
+  bump stop, and packer logic remain forbidden for the Next Gen car.
+- [x] Add the bounded Crew tools `inspect_setup_knowledge_for_mechanism` and
+  `inspect_control_experiment_contract`, plus the Learning-only Engineering
+  Knowledge Spine with `WHY THIS SYSTEM IS RELEVANT`, `WHAT IT PHYSICALLY
+  CHANGES`, `WHAT THE CAR IS DOING NOW`, `WHAT EVIDENCE IS MISSING`, `WHAT WOULD
+  SEPARATE THE CANDIDATES`, `WHAT HISTORY SAYS`, and exact `NEXT · P19`. Race Mode
+  stays concise and renders no P35.1 knowledge-spine DOM.
+- [x] Deep client validation recomputes projection and bridge identities, enforces
+  the complete 92-effect inventory, binds every displayed Dial-In hypothesis to
+  the shared projection, and rejects complaint-only promotion, forged level-three
+  targets, opportunity drift, authority smuggling, duplicate relations,
+  unsupported builds, and legacy-control inheritance.
+
+### P35.1 release validation - VERIFIED 2026-08-16
+
+- Whole repository: an isolated no-bytecode run collected 2,709 Python tests and
+  completed with 2,700 passed, nine protected skips, and zero failures in
+  267.659 seconds. Whole-repository Ruff, temporary-output bytecode compilation
+  of all 22 changed Python files, and diff integrity passed.
+- Focused truth: 11 P35.1 backend hostiles cover the 92-effect compiler, graph
+  bindings, missing action mappings, complaint neutrality, transient-versus-
+  steady evidence, carried-loss gearing containment, exact P19 authority,
+  unreviewed builds, canonical P32 workflow identity, and session-bound Dial-In.
+  Four focused frontend contracts and the executable Dial-In, Crew, and workflow
+  trust guards passed.
+- Frontend and delivery: TypeScript passed with zero errors, all 30 Vitest
+  behaviors passed, and the production build completed with 2,207 modules.
+  Regenerated OpenAPI remained stable at 86 paths and 94 operations with no
+  missing or duplicate operation IDs.
+
 ## P36 - Prospective Investigation Evidence Campaigns
 
 - [ ] Run the preregistered prospective campaigns needed to test whether learned
@@ -2551,3 +2615,4 @@ Implementation queue completed in this pass:
 | 2026-08-15 | Verified P34 earned-investigation shadow evaluation; no attention activation earned | Three immutable planner policies and one preregistered protocol now freeze baseline-versus-memory decisions on identical pre-outcome Crew/P19-P33 truth, persist outcome/counterfactual/discriminator/control/transfer evidence, evaluate independent investigations and complete negative controls, and permit at most one same-tier attention move only after a server-owned gate. The empty real archive truthfully leaves production deterministic and memory shadow-only with exact collection deficits. All 2,620 Python tests passed subject to nine protected skips, plus 54 dedicated P34 tests, 84 runtime hostiles, 17 UI tests, Ruff, bytecode compilation, TypeScript, the 2,202-module build, 10,000-investigation bounded/zero-telemetry performance, OpenAPI, packaged health, real Atlanta truth, live Race/Learning containment, and an independent backend adversarial CLEAR. |
 | 2026-08-15 | Verified P35 Next Gen Oval Vehicle Dynamics Intelligence | A content-addressed, build-applicable Next Gen oval physics graph now connects driver demand, tire/load/platform response, candidate mechanisms, typed evidence requirements, and measured P32 time while P19 remains the sole cause and setup authority. The definitive 2,694-test collection passed with 2,685 successes and nine protected skips, plus 34 core hostiles, 30 runtime/Crew checks, an independent backend adversarial CLEAR, 20 UI behaviors, 39 focused frontend contracts (37 passed and two protected skips), seven runtime programs, Ruff, bytecode compilation, TypeScript, the 2,205-module build, OpenAPI, live traffic-blocked Atlanta Race/Learning proof, and the final packaged Windows health smoke. Prospective promotion campaigns move to data-locked P36. |
 | 2026-08-15 | Polished the P35 Race/Learning vehicle-dynamics handoff | Race Mode keeps its four-field decision hierarchy and one compact `READY`/`BLOCKED`/`UNAVAILABLE` vehicle-dynamics line; Learning Mode now separates measured time from unresolved attribution, labels uncertainty honestly, presents blocked component families only as a static possibility map, exposes exact channels through keyboard-accessible disclosures, and presents the next bounded inspection with its exact current source context, evidence scope, and blocker without inventing observation-contract requirements. Twenty-nine UI tests, six focused P35 frontend contracts, TypeScript, the 2,205-module production build, diff integrity, and live traffic-blocked Atlanta checks at 1280 x 720 and 393 x 844 passed with no horizontal clipping, vertical overlap, or browser warnings. P19 remains the sole cause and setup authority. |
+| 2026-08-16 | Verified P35.1 Unified Dial-In Knowledge Spine | One content-addressed 92-effect bridge now connects the canonical P32 opportunity, P20 state, P35 mechanisms, P26 components, direction-neutral Dial-In knowledge, exact P19/P33 history, bounded discriminators, controlled workflow, and P19 without adding another observer or authority path. The coverage report contains 64 measurable hypotheses, 22 structurally P19-testable controls, six explicitly removed legacy Next Gen effects, and zero gaps; actionless knowledge remains visible but cannot carry a target. The isolated 2,709-test collection passed with 2,700 successes and nine protected skips, plus 11 focused backend hostiles, four frontend contracts, three executable trust guards, 30 UI behaviors, whole-repo Ruff, temporary bytecode compilation, TypeScript, the 2,207-module build, stable 86-path/94-operation OpenAPI, and diff integrity. P19 remains the sole cause, setup, controlled-test, Keep/Undo/Retest, and terminal authority. |

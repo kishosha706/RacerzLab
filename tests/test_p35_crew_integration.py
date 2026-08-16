@@ -42,6 +42,7 @@ from racelab_engine.services.crew_chief_service import (
     _P35_TOOL_IDS,
     _evidence_index,
     _freeze_p34_pair_for_workspace,
+    _select_tool_entries,
     _subgoal,
     build_crew_chief_workspace,
 )
@@ -514,8 +515,9 @@ def test_real_atlanta_p35_is_read_only_traffic_blocked_and_authority_invariant(
     )
 
     p35 = workspace.vehicle_dynamics
+    knowledge = workspace.engineering_knowledge
     graph = compile_next_gen_oval_knowledge_graph()
-    assert workspace.schema_version == "p35.crew-chief-workspace.v1"
+    assert workspace.schema_version == "p351.crew-chief-workspace.v1"
     assert (p35.graph_id, p35.graph_version, p35.knowledge_graph_sha256) == (
         graph.graph_id,
         graph.graph_version,
@@ -542,6 +544,44 @@ def test_real_atlanta_p35_is_read_only_traffic_blocked_and_authority_invariant(
     assert p35.component_causal_claim_count == 0
     assert p35.setup_authorized is False
     assert p35.terminal_authority == "p19_only"
+    assert len(knowledge.hypotheses) == 92
+    assert knowledge.p32_opportunity_id == p35.performance_opportunity_ids[0]
+    assert knowledge.p35_assessment_sha256 == p35.p35_assessment_sha256
+    assert knowledge.terminal_authority == "p19_only"
+    assert knowledge.non_p19_setup_authorized is False
+    assert all(not item.setup_authorized for item in knowledge.hypotheses)
+    tools = {item.tool_id: item for item in workspace.available_tools}
+    assert tools["inspect_setup_knowledge_for_mechanism"].required_sources == (
+        "p351",
+        "p35",
+        "p32",
+    )
+    assert tools["inspect_control_experiment_contract"].required_sources == (
+        "p351",
+        "p19",
+        "p26",
+    )
+    knowledge_tool_entries = _select_tool_entries(
+        workspace, "inspect_setup_knowledge_for_mechanism", ()
+    )
+    assert knowledge_tool_entries
+    assert all(
+        item.producer_id.startswith("p35.")
+        for item in knowledge_tool_entries
+    )
+    control_tool_entries = _select_tool_entries(
+        workspace, "inspect_control_experiment_contract", ()
+    )
+    assert control_tool_entries
+    assert all(
+        item.producer_id
+        in {
+            "p19.reasoning_snapshot",
+            "p26.component_awareness",
+            "p26.component_state_unavailable",
+        }
+        for item in control_tool_entries
+    )
     assert workspace.performance_intelligence.speed_story.observed_difference_s == (
         pytest.approx(0.136447)
     )

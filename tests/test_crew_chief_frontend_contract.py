@@ -106,6 +106,8 @@ def test_real_atlanta_public_workspace_passes_the_client_trust_boundary(
         "'./ui/src/utils/investigationImprovementTrust.ts';"
         "import {hasCanonicalPerformanceMechanismAssessmentDigest} from "
         "'./ui/src/utils/vehicleDynamicsTrust.ts';"
+        "import {hasCanonicalEngineeringKnowledgeDigest} from "
+        "'./ui/src/utils/engineeringKnowledgeTrust.ts';"
         "const value=JSON.parse(fs.readFileSync(0,'utf8'));"
         "if(!isCrewChiefWorkspaceResponse(value.workspace,value.scope))"
         "throw new Error('real Atlanta public workspace was rejected');"
@@ -120,6 +122,9 @@ def test_real_atlanta_public_workspace_passes_the_client_trust_boundary(
         "if(!await hasCanonicalInvestigationImprovementDigests("
         "value.workspace.investigation_improvement,value.workspace))"
         "throw new Error('real Atlanta P34 digests were rejected');"
+        "if(!await hasCanonicalEngineeringKnowledgeDigest("
+        "value.workspace.engineering_knowledge))"
+        "throw new Error('real Atlanta P35.1 knowledge digest was rejected');"
         "if(!await hasCanonicalPerformanceMechanismAssessmentDigest("
         "value.workspace.vehicle_dynamics))"
         "throw new Error('real Atlanta P35 digest was rejected');"
@@ -187,7 +192,7 @@ def test_client_parses_crew_chief_as_unknown_through_exact_report_guard() -> Non
     assert "learning_history_revision" in guard
     assert "learning_projection_sha256" in guard
     assert "isCrewChiefLearningPrior" in guard
-    assert 'value.schema_version !== "p35.crew-chief-workspace.v1"' in guard
+    assert 'value.schema_version !== "p351.crew-chief-workspace.v1"' in guard
     assert "p35_assessment_sha256" in guard
     assert "vehicle_dynamics" in guard
     assert "isPerformanceMechanismAssessment" in guard

@@ -1,3 +1,6 @@
+import type { CurrentEngineeringKnowledgeProjection } from "./engineeringKnowledge";
+import type { CrewChiefTerminalDecision } from "./crewChief";
+
 export type SessionSummary = {
   run_id: string;
   source_file?: string | null;
@@ -184,6 +187,19 @@ export type DialInSwing = {
   id: string;
   title: string;
   setup_area: string;
+  current_relevance: "supported_candidate" | "blocked_candidate" | "knowledge_only" | "inapplicable";
+  p32_opportunity_id: string | null;
+  knowledge_level: "educational_knowledge" | "measurable_hypothesis" | "p19_testable_control" | "unsupported_remove";
+  bridge_id: string;
+  bridge_sha256: string;
+  p35_mechanism_ids: string[];
+  p20_mechanism_ids: string[];
+  p26_component_family_ids: string[];
+  p32_performance_mechanism_ids: string[];
+  inspection_tool_ids: string[];
+  discriminator_contract_ids: string[];
+  knowledge_version: string;
+  knowledge_graph_sha256: string;
   candidate_control_label: string;
   related_control_keys: string[];
   influence_label: string;
@@ -246,10 +262,13 @@ export type DialInResponse = {
   source_channels: string[];
   blocker_reasons: string[];
   evidence_strength?: DialInEvidenceStrength | null;
+  engineering_knowledge?: CurrentEngineeringKnowledgeProjection | null;
+  p19_terminal_decision?: CrewChiefTerminalDecision | null;
 };
 
 export type DialInRequest = {
   complaint: string;
+  session_id?: string | null;
   selected_lap?: number | null;
   selected_zone_start_pct?: number | null;
   selected_zone_end_pct?: number | null;
@@ -353,6 +372,9 @@ export type ControlledWorkflow = {
   source_run_id: string;
   complaint: string;
   packet: KaizenEvidencePacket;
+  p32_opportunity_id: string | null;
+  p32_projection_sha256: string | null;
+  engineering_knowledge_projection_sha256: string | null;
   stage_run_ids: Partial<Record<"A" | "B" | "A2", string>>;
   stage_eligible_lap_numbers: Partial<Record<"A" | "B" | "A2", number[]>>;
   stage_experiment_contexts: Partial<Record<"A" | "B" | "A2", Record<string, unknown>>>;

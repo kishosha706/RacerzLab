@@ -55,6 +55,13 @@ class ControlledWorkflow(BaseModel):
     source_run_id: str
     complaint: str
     packet: KaizenEvidencePacket
+    p32_opportunity_id: str | None = None
+    p32_projection_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    engineering_knowledge_projection_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     stage_run_ids: dict[Literal["A", "B", "A2"], str] = Field(default_factory=dict)
     stage_eligible_lap_numbers: dict[Literal["A", "B", "A2"], tuple[int, ...]] = Field(default_factory=dict)
     stage_experiment_contexts: dict[Literal["A", "B", "A2"], StageExperimentContext] = Field(default_factory=dict)
@@ -80,6 +87,31 @@ class ControlledWorkflow(BaseModel):
     def invalid_or_incomplete_tests_withhold_performance_memory(
         self,
     ) -> ControlledWorkflow:
+        performance_identity = (
+            self.p32_opportunity_id,
+            self.p32_projection_sha256,
+            self.engineering_knowledge_projection_sha256,
+        )
+        if any(value is None for value in performance_identity) != all(
+            value is None for value in performance_identity
+        ):
+            raise ValueError("canonical P32 workflow identity must be complete")
+        p351_binding = self.reproduction_snapshot.get(
+            "p351_performance_opportunity_binding"
+        )
+        if all(value is not None for value in performance_identity) and (
+            p351_binding is None
+        ):
+            raise ValueError("canonical P32 workflow identity requires its receipt")
+        if p351_binding is not None and (
+            not isinstance(p351_binding, dict)
+            or p351_binding.get("p32_opportunity_id") != self.p32_opportunity_id
+            or p351_binding.get("p32_projection_sha256")
+            != self.p32_projection_sha256
+            or p351_binding.get("engineering_knowledge_projection_sha256")
+            != self.engineering_knowledge_projection_sha256
+        ):
+            raise ValueError("canonical P32 workflow receipt and identity disagree")
         execution = self.execution
         quality = self.quality
         stages = ("A", "B", "A2")

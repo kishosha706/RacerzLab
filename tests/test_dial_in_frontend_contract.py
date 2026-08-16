@@ -102,7 +102,7 @@ def test_dial_in_tab_uses_backend_hypothesis_labels() -> None:
 
     assert "const TARGET_LABELS" not in dial_in_tab
     assert "garageLeverLabel" in dial_in_tab
-    assert "Candidate control area" in dial_in_tab
+    assert "P19-testable control family" in dial_in_tab
     assert "dialin-garage-helper" in dial_in_tab
     assert "validate_with_labels" in dial_in_tab
     assert "swing.undo_if" not in dial_in_tab

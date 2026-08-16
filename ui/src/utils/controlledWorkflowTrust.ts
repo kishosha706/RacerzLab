@@ -8,7 +8,8 @@ const statuses = new Set([
 ]);
 const workflowKeys = [
   "workflow_id", "created_at", "updated_at", "status", "source_run_id", "complaint",
-  "packet", "stage_run_ids", "stage_eligible_lap_numbers", "stage_experiment_contexts",
+  "packet", "p32_opportunity_id", "p32_projection_sha256",
+  "engineering_knowledge_projection_sha256", "stage_run_ids", "stage_eligible_lap_numbers", "stage_experiment_contexts",
   "analysis_version", "execution", "reproduction_snapshot", "quality", "learning_admitted",
   "learning_capture_state", "learning_capture_experience_id",
   "learning_capture_experience_sha256", "learning_capture_blocker_reason",
@@ -71,6 +72,19 @@ export function isControlledWorkflowResponse(value: unknown): value is Controlle
     || !nonempty(value.source_run_id)
     || !nonempty(value.complaint)
     || !record(value.packet)
+    || !(
+      value.p32_opportunity_id === null
+      || nonempty(value.p32_opportunity_id)
+    )
+    || !(
+      value.p32_projection_sha256 === null
+      || typeof value.p32_projection_sha256 === "string" && hash.test(value.p32_projection_sha256)
+    )
+    || !(
+      value.engineering_knowledge_projection_sha256 === null
+      || typeof value.engineering_knowledge_projection_sha256 === "string"
+        && hash.test(value.engineering_knowledge_projection_sha256)
+    )
     || !stageMap(value.stage_run_ids)
     || !stageLapMap(value.stage_eligible_lap_numbers)
     || !stageContextMap(value.stage_experiment_contexts)
@@ -80,5 +94,12 @@ export function isControlledWorkflowResponse(value: unknown): value is Controlle
     || !nullableRecord(value.quality)
     || !(value.learning_admitted === null || typeof value.learning_admitted === "boolean")
     || !hasValidLearningCaptureMetadata(value)) return false;
+  const performanceIdentity = [
+    value.p32_opportunity_id,
+    value.p32_projection_sha256,
+    value.engineering_knowledge_projection_sha256,
+  ];
+  if (performanceIdentity.some((item) => item === null)
+    !== performanceIdentity.every((item) => item === null)) return false;
   return value.status === "scored" || value.learning_capture_state === "not_applicable";
 }

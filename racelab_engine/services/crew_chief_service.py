@@ -147,6 +147,9 @@ from racelab_engine.storage.investigation_adaptation_repository import (
     InvestigationAdaptationRepository,
 )
 from racelab_engine.storage.repository import RaceLabRepository
+from racelab_engine.services.engineering_knowledge_service import (
+    build_current_engineering_knowledge,
+)
 
 
 _CACHE_LOCK = RLock()
@@ -206,6 +209,11 @@ _P35_TOOL_IDS: tuple[VehicleDynamicsInspectionToolId, ...] = (
     "inspect_traffic_platform_response",
     "inspect_gear_acceleration_response",
 )
+_P351_TOOL_IDS = (
+    "inspect_setup_knowledge_for_mechanism",
+    "inspect_control_experiment_contract",
+)
+_P34_EXCLUDED_TOOL_IDS = (*_P35_TOOL_IDS, *_P351_TOOL_IDS)
 _TOOLS = (
     CrewChiefToolDefinition(
         tool_id="inspect_data_quality",
@@ -339,6 +347,22 @@ _TOOLS = (
         for tool_id in _P35_TOOL_IDS
     ),
     CrewChiefToolDefinition(
+        tool_id="inspect_setup_knowledge_for_mechanism",
+        allowed_scope="run",
+        input_schema="P35.1 direction-neutral mechanism/setup bridge",
+        output_artifact_type="educational or measurable setup-effect hypotheses",
+        authority_ceiling="measurement_only",
+        required_sources=("p351", "p35", "p32"),
+    ),
+    CrewChiefToolDefinition(
+        tool_id="inspect_control_experiment_contract",
+        allowed_scope="workflow",
+        input_schema="P35.1 hypothesis plus exact P19/P26 experiment boundary",
+        output_artifact_type="measurement contract or exact P19 projection",
+        authority_ceiling="measurement_only",
+        required_sources=("p351", "p19", "p26"),
+    ),
+    CrewChiefToolDefinition(
         tool_id="inspect_component_performance_link",
         allowed_scope="component",
         input_schema="P32 non-causal P20/P26 performance bridge",
@@ -366,7 +390,7 @@ _TOOL_SAFETY_BANDS: dict[str, str] = {
     "inspect_path_efficiency": "performance_measurement",
     "inspect_driver_vehicle_separation": "performance_measurement",
     "inspect_track_demand": "performance_measurement",
-    **{tool_id: "mechanism_separation" for tool_id in _P35_TOOL_IDS},
+    **{tool_id: "mechanism_separation" for tool_id in _P34_EXCLUDED_TOOL_IDS},
     "inspect_driver_execution": "driver",
     "inspect_p19_causes": "contradiction",
     "inspect_mechanism_episodes": "mechanism_separation",
@@ -725,7 +749,7 @@ def _p34_projection_for_identity(
     current_context: InvestigationAdaptationContext | None = None
     p35_outside_frozen_cohort = bool(
         baseline_subgoal is not None
-        and baseline_subgoal.selected_tool in _P35_TOOL_IDS
+        and baseline_subgoal.selected_tool in _P34_EXCLUDED_TOOL_IDS
     )
     if p35_outside_frozen_cohort:
         pair_blockers = (
@@ -2860,7 +2884,7 @@ def _freeze_p34_pair_for_workspace(
     current_subgoal = getattr(workspace, "current_subgoal", None)
     if (
         current_subgoal is not None
-        and getattr(current_subgoal, "selected_tool", None) in _P35_TOOL_IDS
+        and getattr(current_subgoal, "selected_tool", None) in _P34_EXCLUDED_TOOL_IDS
     ):
         # P34 v1 is immutable and preregistered without P35 tools.  A P35
         # inspection remains a deterministic Crew action and cannot enter the
@@ -2960,7 +2984,7 @@ def _freeze_p34_pair_for_workspace(
             completed_tool_ids=tuple(
                 tool_id
                 for tool_id in folded.completed_tool_ids
-                if tool_id not in _P35_TOOL_IDS
+                if tool_id not in _P34_EXCLUDED_TOOL_IDS
             ),
         )
         current_evidence_pinned_tool_ids = tuple(
@@ -2997,13 +3021,13 @@ def _freeze_p34_pair_for_workspace(
             available_tool_ids=tuple(
                 item.tool_id
                 for item in workspace.available_tools
-                if item.tool_id not in _P35_TOOL_IDS
+                if item.tool_id not in _P34_EXCLUDED_TOOL_IDS
             ),
             eligible_tool_ids=eligible_tool_ids,
             completed_tool_ids=tuple(
                 tool_id
                 for tool_id in folded.completed_tool_ids
-                if tool_id not in _P35_TOOL_IDS
+                if tool_id not in _P34_EXCLUDED_TOOL_IDS
             ),
             available_artifact_ids=tuple(
                 item.artifact_id
@@ -3273,6 +3297,21 @@ def _select_tool_entries(
             item
             for item in entries
             if item.producer_id == f"p35.{tool_id.removeprefix('inspect_')}"
+        )
+    elif tool_id == "inspect_setup_knowledge_for_mechanism":
+        selected = tuple(
+            item for item in entries if item.producer_id.startswith("p35.")
+        )
+    elif tool_id == "inspect_control_experiment_contract":
+        selected = tuple(
+            item
+            for item in entries
+            if item.producer_id
+            in {
+                "p19.reasoning_snapshot",
+                "p26.component_awareness",
+                "p26.component_state_unavailable",
+            }
         )
     elif tool_id in {
         "inspect_lap_time_opportunity",
@@ -4151,6 +4190,19 @@ def build_crew_chief_workspace(
             authority_ceiling=definition.authority_ceiling,
         )
     decision = _decision(bundle, identity, critique, question)
+    engineering_knowledge = build_current_engineering_knowledge(
+        run_id=run_id,
+        session_id=session_id,
+        complaint_prior=(
+            investigation.raw_driver_report if investigation is not None else None
+        ),
+        p20=p20,
+        p26=p26,
+        p32=p32,
+        p35=p35,
+        p33=learning_prior,
+        p19_terminal_decision=decision,
+    )
     investigation_improvement = _p34_projection_for_identity(
         identity,
         investigation_open=folded is not None and folded.status == "open",
@@ -4187,6 +4239,7 @@ def build_crew_chief_workspace(
         engineering_awareness=p20,
         performance_intelligence=p32,
         vehicle_dynamics=p35,
+        engineering_knowledge=engineering_knowledge,
         learning_prior=learning_prior,
         investigation_improvement=investigation_improvement,
         run_sentinel=run_sentinel,
