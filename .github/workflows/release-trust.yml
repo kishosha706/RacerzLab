@@ -18,7 +18,7 @@ jobs:
     name: Real .ibt release trust gate
     runs-on: [self-hosted, Windows]
     env:
-      RACELAB_DB_PATH: ${{ runner.temp }}\racelab-release-trust.sqlite3
+      RACELAB_DB_PATH: ${{ github.workspace }}\racelab-release-trust-${{ github.run_id }}.sqlite3
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

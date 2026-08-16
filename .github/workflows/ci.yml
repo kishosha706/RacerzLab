@@ -8,7 +8,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      RACELAB_DB_PATH: ${{ runner.temp }}/racelab-ci-fast.sqlite3
+      RACELAB_DB_PATH: ${{ github.workspace }}/.racelab-ci-fast-${{ github.run_id }}.sqlite3
 
     steps:
       - name: Check out repository
@@ -68,7 +68,7 @@ jobs:
     name: Permanent synthetic trust gate
     runs-on: ubuntu-latest
     env:
-      RACELAB_DB_PATH: ${{ runner.temp }}/racelab-ci-trust.sqlite3
+      RACELAB_DB_PATH: ${{ github.workspace }}/.racelab-ci-trust-${{ github.run_id }}.sqlite3
 
     steps:
       - name: Check out repository
@@ -94,7 +94,7 @@ jobs:
     needs: [test, trust-gate]
     runs-on: ubuntu-latest
     env:
-      RACELAB_DB_PATH: ${{ runner.temp }}/racelab-ci-full.sqlite3
+      RACELAB_DB_PATH: ${{ github.workspace }}/.racelab-ci-full-${{ github.run_id }}.sqlite3
 
     steps:
       - name: Check out repository
