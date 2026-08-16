@@ -254,6 +254,7 @@ describe("CrewChiefCommandDeck boundary states", () => {
     expect(screen.queryByText(/Legacy history must not render/)).toBeNull();
 
     const primaryStory = screen.getByLabelText("Measured Speed Story");
+    expect(primaryStory.querySelectorAll(":scope > p")).toHaveLength(4);
     for (const label of ["NEXT · P19", "OBSERVED · UNAVAILABLE", "ATTRIBUTION", "STRONGEST CONTRADICTION"]) {
       expect(within(primaryStory).getByText(label)).toBeTruthy();
     }
@@ -268,8 +269,10 @@ describe("CrewChiefCommandDeck boundary states", () => {
     expect(within(disclosure as HTMLElement).getByText("WHAT CARRIES")).toBeTruthy();
     expect(screen.queryByLabelText("Investigation Improvement, read only")).toBeNull();
     expect(screen.queryByLabelText("Vehicle Dynamics Blackboard, candidate mechanisms only")).toBeNull();
+    expect(screen.queryByLabelText("Vehicle Dynamics learning handoff")).toBeNull();
     const dynamicsLine = screen.getByLabelText("Vehicle Dynamics, candidate mechanisms only");
-    expect(within(dynamicsLine).getByText("VEHICLE DYNAMICS · UNAVAILABLE")).toBeTruthy();
+    expect(within(dynamicsLine).getByText("VEHICLE DYNAMICS · BLOCKED")).toBeTruthy();
+    expect(dynamicsLine.textContent).toContain("Vehicle mechanism remains unresolved.");
     expect(dynamicsLine.textContent).toContain("No clean comparison window is available.");
   });
 
@@ -284,20 +287,117 @@ describe("CrewChiefCommandDeck boundary states", () => {
     render(<CrewChiefCommandDeck {...props} />);
 
     const dynamicsLine = await screen.findByLabelText("Vehicle Dynamics, candidate mechanisms only");
-    expect(within(dynamicsLine).getByText("VEHICLE DYNAMICS · CANDIDATE")).toBeTruthy();
-    expect(dynamicsLine.textContent).toContain("center rotation deficit");
-    expect(dynamicsLine.textContent).toContain("no component cause or setup authority");
+    expect(within(dynamicsLine).getByText("VEHICLE DYNAMICS · READY")).toBeTruthy();
+    expect(dynamicsLine.textContent).toContain("Current evidence supports center rotation deficit as a mechanism candidate to inspect.");
+    expect(dynamicsLine.textContent).not.toContain("component cause");
+    expect(dynamicsLine.textContent).not.toContain("setup authority");
     expect(screen.queryByLabelText("Vehicle Dynamics Blackboard, candidate mechanisms only")).toBeNull();
+  });
+
+  it("keeps a reviewed ready scope with no candidate in the blocked hierarchy", async () => {
+    const value = workspace() as any;
+    value.vehicle_dynamics.applicability_state = "ready";
+    value.vehicle_dynamics.applicability_blockers = [];
+    value.vehicle_dynamics.blocker_reasons = [];
+    value.vehicle_dynamics.candidates = [];
+    value.vehicle_dynamics.chain = value.vehicle_dynamics.chain.map((stage: any) => ({
+      ...stage,
+      blocker_reasons: [],
+    }));
+    api.fetchCrewChiefWorkspace.mockResolvedValue(value);
+    render(<CrewChiefCommandDeck {...props} />);
+
+    const dynamicsLine = await screen.findByLabelText("Vehicle Dynamics, candidate mechanisms only");
+    expect(within(dynamicsLine).getByText("VEHICLE DYNAMICS · BLOCKED")).toBeTruthy();
+    expect(dynamicsLine.textContent).toContain("Vehicle mechanism remains unresolved.");
+    expect(dynamicsLine.textContent).toContain("No typed current-scope vehicle-response evidence is available.");
+    expect(dynamicsLine.textContent).not.toContain("VEHICLE DYNAMICS · UNAVAILABLE");
+  });
+
+  it("keeps measured time above a blocked mechanism call in the Race secondary line", async () => {
+    const value = workspace() as any;
+    value.vehicle_dynamics.measured_time_consequence_available = true;
+    value.vehicle_dynamics.candidates = [{
+      mechanism_id: "mechanism:center_rotation_deficit",
+      relevance: "blocked",
+      blocker_reasons: ["Traffic overlaps the comparison window."],
+    }];
+    api.fetchCrewChiefWorkspace.mockResolvedValue(value);
+    render(<CrewChiefCommandDeck {...props} />);
+
+    const dynamicsLine = await screen.findByLabelText("Vehicle Dynamics, candidate mechanisms only");
+    expect(within(dynamicsLine).getByText("VEHICLE DYNAMICS · BLOCKED")).toBeTruthy();
+    expect(dynamicsLine.textContent).toContain("Time loss is measured; vehicle mechanism remains unresolved.");
+    expect(dynamicsLine.textContent).toContain("Traffic overlaps the comparison window.");
+    expect(dynamicsLine.textContent).not.toContain("setup authority");
+  });
+
+  it("labels an unreviewed runtime unavailable instead of implying a blocked diagnosis", async () => {
+    const value = workspace() as any;
+    value.vehicle_dynamics.applicability_state = "unreviewed_build";
+    value.vehicle_dynamics.applicability_blockers = ["This iRacing build has not been reviewed."];
+    value.vehicle_dynamics.blocker_reasons = [];
+    api.fetchCrewChiefWorkspace.mockResolvedValue(value);
+    render(<CrewChiefCommandDeck {...props} />);
+
+    const dynamicsLine = await screen.findByLabelText("Vehicle Dynamics, candidate mechanisms only");
+    expect(within(dynamicsLine).getByText("VEHICLE DYNAMICS · UNAVAILABLE")).toBeTruthy();
+    expect(dynamicsLine.textContent).toContain("Vehicle-response evidence is unavailable in this scope");
+    expect(dynamicsLine.textContent).toContain("This iRacing build has not been reviewed.");
+    expect(dynamicsLine.textContent).not.toContain("mechanism remains unresolved");
+  });
+
+  it("hands a ready mechanism candidate into the Learning blackboard without a cause call", async () => {
+    const value = workspace() as any;
+    value.vehicle_dynamics.candidates = [{
+      mechanism_id: "mechanism:center_rotation_deficit",
+      p32_performance_mechanism_ids: ["mechanism:mid_corner_rotation"],
+      support_artifact_ids: [],
+      contradiction_artifact_ids: [],
+      discriminator_contract_ids: [],
+      component_family_ids: [],
+      relevance: "candidate",
+      blocker_reasons: [],
+    }];
+    api.fetchCrewChiefWorkspace.mockResolvedValue(value);
+    render(<CrewChiefCommandDeck {...props} learning />);
+
+    const handoff = await screen.findByLabelText("Vehicle Dynamics learning handoff");
+    expect(within(handoff).getByText("MECHANISM HANDOFF · READY")).toBeTruthy();
+    expect(handoff.textContent).toContain("A current mechanism candidate cleared the evidence screen.");
+    expect(handoff.textContent).toContain("Follow its support, uncertainty, and discriminator below.");
+    expect(handoff.textContent).not.toContain("cause");
+    expect(handoff.textContent).not.toContain("setup authority");
+    expect(screen.getByLabelText("Vehicle Dynamics Blackboard, candidate mechanisms only")).toBeTruthy();
+  });
+
+  it("does not promise a discriminator for a blocked empty assessment with none published", async () => {
+    const value = workspace() as any;
+    value.vehicle_dynamics.candidates = [];
+    value.vehicle_dynamics.next_discriminator_contract_id = null;
+    api.fetchCrewChiefWorkspace.mockResolvedValue(value);
+    render(<CrewChiefCommandDeck {...props} learning />);
+
+    const handoff = await screen.findByLabelText("Vehicle Dynamics learning handoff");
+    expect(within(handoff).getByText("MECHANISM HANDOFF · BLOCKED")).toBeTruthy();
+    expect(handoff.textContent).toContain("The blackboard shows the blocker and the evidence still missing in this scope.");
+    expect(handoff.textContent).not.toContain("next discriminator");
   });
 
   it("shows unavailable Investigation Improvement only in Learning Mode without activation controls", async () => {
     const value = workspace() as any;
+    value.vehicle_dynamics.next_discriminator_contract_id = "contract:separate-current-response";
     value.investigation_improvement.readiness.observable_comparisons = 1;
     value.investigation_improvement.readiness.safety_gate_passed = true;
     api.fetchCrewChiefWorkspace.mockResolvedValue(value);
     render(<CrewChiefCommandDeck {...props} learning />);
 
     const improvement = await screen.findByLabelText("Investigation Improvement, read only");
+    const handoff = screen.getByLabelText("Vehicle Dynamics learning handoff");
+    expect(within(handoff).getByText("MECHANISM HANDOFF · BLOCKED")).toBeTruthy();
+    expect(handoff.textContent).toContain("The vehicle mechanism is not isolated.");
+    expect(handoff.textContent).toContain("The blackboard shows the blocker and the next discriminator.");
+    expect(handoff.textContent).not.toContain("setup authority");
     expect(screen.getByLabelText("Vehicle Dynamics Blackboard, candidate mechanisms only")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "NEXT · P19" })).toBeTruthy();
     expect(within(improvement).getByText("Paired evaluation unavailable")).toBeTruthy();

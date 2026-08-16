@@ -53,6 +53,10 @@ function humanize(value: string): string {
   return value.replace(/_/g, " ");
 }
 
+function sentenceFragment(value: string): string {
+  return value.trim().replace(/[.!?]+$/, "");
+}
+
 function evidenceStateSummary(entries: readonly CrewChiefEvidenceEntry[]): string {
   const counts = new Map<CrewChiefEvidenceEntry["evidence_state"], number>();
   for (const entry of entries) counts.set(entry.evidence_state, (counts.get(entry.evidence_state) ?? 0) + 1);
@@ -419,19 +423,37 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
   const blockedDynamicsCandidate = workspace.vehicle_dynamics.candidates.find(
     (candidate) => candidate.relevance === "blocked",
   );
-  const dynamicsRaceState = leadingDynamicsCandidate
-    ? "candidate"
-    : blockedDynamicsCandidate ? "blocked" : "unavailable";
-  const dynamicsRaceBlocker = blockedDynamicsCandidate?.blocker_reasons[0]
+  const dynamicsBlocker = blockedDynamicsCandidate?.blocker_reasons[0]
     ?? workspace.vehicle_dynamics.blocker_reasons[0]
-    ?? workspace.vehicle_dynamics.applicability_blockers[0]
     ?? workspace.vehicle_dynamics.chain.flatMap((stage) => stage.blocker_reasons)[0]
     ?? "No typed current-scope vehicle-response evidence is available.";
-  const dynamicsRaceLine = leadingDynamicsCandidate
-    ? `${humanize(leadingDynamicsCandidate.mechanism_id.replace(/^mechanism:/, ""))}. Candidate only; no component cause or setup authority.`
-    : `${dynamicsRaceBlocker}${workspace.vehicle_dynamics.measured_time_consequence_available
-      ? " Measured P32 time is retained; mechanism attribution remains blocked."
-      : ""}`;
+  const dynamicsRaceState = leadingDynamicsCandidate
+    ? "ready"
+    : workspace.vehicle_dynamics.applicability_state === "ready"
+      ? "blocked"
+      : "unavailable";
+  const dynamicsCandidateLabel = leadingDynamicsCandidate
+    ? humanize(leadingDynamicsCandidate.mechanism_id.replace(/^mechanism:/, ""))
+    : null;
+  const dynamicsUnavailableReason = workspace.vehicle_dynamics.applicability_blockers[0];
+  const dynamicsRaceLine = dynamicsRaceState === "ready"
+    ? `Current evidence supports ${dynamicsCandidateLabel} as a mechanism candidate to inspect.`
+    : dynamicsRaceState === "blocked"
+      ? `${workspace.vehicle_dynamics.measured_time_consequence_available
+        ? "Time loss is measured; vehicle mechanism remains unresolved."
+        : "Vehicle mechanism remains unresolved."} ${sentenceFragment(dynamicsBlocker)}.`
+      : `Vehicle-response evidence is unavailable in this scope${dynamicsUnavailableReason
+        ? `: ${sentenceFragment(dynamicsUnavailableReason)}`
+        : ""}.`;
+  const dynamicsLearningLine = dynamicsRaceState === "ready"
+    ? `A current mechanism candidate cleared the evidence screen. Follow its support, uncertainty, and discriminator below.`
+    : dynamicsRaceState === "blocked"
+      ? `${workspace.vehicle_dynamics.measured_time_consequence_available
+        ? "The time loss is measured, but the vehicle mechanism is not isolated."
+        : "The vehicle mechanism is not isolated."} ${workspace.vehicle_dynamics.next_discriminator_contract_id !== null
+        ? "The blackboard shows the blocker and the next discriminator."
+        : "The blackboard shows the blocker and the evidence still missing in this scope."}`
+      : "Vehicle-response evidence is unavailable in this scope. The blackboard keeps the missing evidence explicit.";
   const evidenceLinks = (experienceIds: readonly string[]) => experienceIds.length ? (
     <div className="engineering-memory-evidence" aria-label="Historical telemetry evidence">
       {(() => {
@@ -587,6 +609,11 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
 
       {learning && (
         <div className="crew-chief-learning">
+          <p
+            className="vehicle-dynamics-learning-handoff"
+            data-state={dynamicsRaceState}
+            aria-label="Vehicle Dynamics learning handoff"
+          ><b>MECHANISM HANDOFF · {dynamicsRaceState.toUpperCase()}</b> {dynamicsLearningLine}</p>
           <VehicleDynamicsBlackboard
             assessment={workspace.vehicle_dynamics}
             evidenceEntries={workspace.evidence_index.entries}

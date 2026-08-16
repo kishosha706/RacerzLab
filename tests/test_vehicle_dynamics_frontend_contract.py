@@ -285,7 +285,7 @@ def test_p35_blackboard_is_learning_only_complete_and_noncausal() -> None:
         "Component families",
         "Strongest support",
         "Strongest contradiction",
-        "What would separate them?",
+        "Next bounded inspection",
     ):
         assert heading in component
     assert "NEXT" in component and "P19" in component
