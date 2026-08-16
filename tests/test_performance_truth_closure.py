@@ -412,7 +412,10 @@ def test_persisted_atlanta_track_demand_does_not_call_banked_load_disturbance() 
     if not default_db_path().exists():
         pytest.skip("persisted Atlanta fixture database is unavailable")
     run_id = "stockcars-chevycamarozl12022-atlanta-2022-oval-2-37e380eb"
-    rows = read_telemetry_rows(run_id, lap=24, columns=list(service._COLUMNS))
+    try:
+        rows = read_telemetry_rows(run_id, lap=24, columns=list(service._COLUMNS))
+    except TelemetryArtifactIdentityError:
+        pytest.skip("persisted Atlanta telemetry lacks verified run ownership")
     if len(rows) < 1_000:
         pytest.skip("persisted Atlanta lap 24 telemetry fixture is unavailable")
     demand = service._track_demand(rows, None, (), eligible_lap_count=10)
