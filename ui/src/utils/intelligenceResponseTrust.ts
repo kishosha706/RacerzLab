@@ -220,6 +220,11 @@ function isMechanismObservationReport(
 function isIntelligenceAction(value: unknown): value is Record<string, unknown> {
   if (!isRecord(value)) return false;
   const exactValues = [value.control_key, value.current_value, value.proposed_value];
+  const semanticIdentity = [
+    value.setup_effect_id,
+    value.experiment_factor_id,
+    value.direction_sign,
+  ];
   const missionIdentityPaired = (value.mission_contract_id == null)
     === (value.mission_contract_sha256 == null);
   if (
@@ -241,11 +246,15 @@ function isIntelligenceAction(value: unknown): value is Record<string, unknown> 
   ) return false;
   if (!value.setup_authorized) {
     return exactValues.every((field) => field == null)
+      && semanticIdentity.every((field) => field == null)
       && !hasSetupAuthorityDirective(value.title)
       && !hasSetupAuthorityDirective(value.instruction);
   }
   return value.kind === "controlled_test"
     && exactValues.every(isCanonicalString)
+    && isCanonicalString(value.setup_effect_id)
+    && isCanonicalString(value.experiment_factor_id)
+    && (value.direction_sign === -1 || value.direction_sign === 1)
     && value.source_event_ids.length > 0
     && value.blocker_reasons.length === 0;
 }

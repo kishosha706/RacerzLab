@@ -251,6 +251,7 @@ def test_every_action_plan_preserves_its_typed_direction_into_workflow_candidate
         assert action.direction_sign == plan.direction_sign, effect_id
 
         swing = SimpleNamespace(
+            id=effect_id,
             control_keys=action.control_keys,
             direction_sign=action.direction_sign,
             setup_area="test",

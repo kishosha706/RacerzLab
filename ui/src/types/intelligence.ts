@@ -45,6 +45,9 @@ export type IntelligenceAction = {
   /** Only the server can authorize a setup action. */
   setup_authorized: boolean;
   control_key?: string | null;
+  setup_effect_id?: string | null;
+  experiment_factor_id?: string | null;
+  direction_sign?: -1 | 1 | null;
   current_value?: string | null;
   proposed_value?: string | null;
   evidence_state: EvidenceState;

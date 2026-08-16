@@ -517,7 +517,7 @@ def test_real_atlanta_p35_is_read_only_traffic_blocked_and_authority_invariant(
     p35 = workspace.vehicle_dynamics
     knowledge = workspace.engineering_knowledge
     graph = compile_next_gen_oval_knowledge_graph()
-    assert workspace.schema_version == "p351.crew-chief-workspace.v1"
+    assert workspace.schema_version == "p352.crew-chief-workspace.v1"
     assert (p35.graph_id, p35.graph_version, p35.knowledge_graph_sha256) == (
         graph.graph_id,
         graph.graph_version,

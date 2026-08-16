@@ -1221,6 +1221,9 @@ class CrewChiefTerminalDecision(CrewChiefModel):
     instruction: str = Field(min_length=1)
     authority: Literal["context_only", "measurement_only", "p19_projection_only"]
     control_key: str | None = None
+    setup_effect_id: str | None = None
+    experiment_factor_id: str | None = None
+    direction_sign: Literal[-1, 1] | None = None
     current_value: str | None = None
     proposed_value: str | None = None
     source_event_ids: tuple[str, ...] = ()
@@ -1231,10 +1234,15 @@ class CrewChiefTerminalDecision(CrewChiefModel):
     @model_validator(mode="after")
     def setup_fields_are_p19_projection_only(self) -> CrewChiefTerminalDecision:
         setup_values = (self.control_key, self.current_value, self.proposed_value)
+        semantic_identity = (
+            self.setup_effect_id,
+            self.experiment_factor_id,
+            self.direction_sign,
+        )
         if self.kind == "controlled_test":
             if self.authority != "p19_projection_only" or any(
                 value is None for value in setup_values
-            ):
+            ) or any(value is None for value in semantic_identity):
                 raise ValueError("controlled tests require one complete P19 projection")
             if (
                 not self.source_event_ids
@@ -1244,7 +1252,7 @@ class CrewChiefTerminalDecision(CrewChiefModel):
                 raise ValueError(
                     "controlled tests require exact evidence and workflow revision"
                 )
-        elif any(value is not None for value in setup_values):
+        elif any(value is not None for value in (*setup_values, *semantic_identity)):
             raise ValueError(
                 "non-controlled Crew Chief decisions cannot expose setup values"
             )
@@ -1347,8 +1355,8 @@ class AdaptiveResearchBoundary(CrewChiefModel):
 
 
 class CrewChiefWorkspace(CrewChiefModel):
-    schema_version: Literal["p351.crew-chief-workspace.v1"] = (
-        "p351.crew-chief-workspace.v1"
+    schema_version: Literal["p352.crew-chief-workspace.v1"] = (
+        "p352.crew-chief-workspace.v1"
     )
     identity: CrewChiefWorkspaceIdentity
     generated_at: datetime
@@ -2358,6 +2366,44 @@ class CrewChiefWorkspace(CrewChiefModel):
             build_current_engineering_knowledge,
         )
 
+        component_partitions: dict[str, str] = {}
+        for hypothesis in knowledge.hypotheses:
+            for partition, component_ids in (
+                ("candidate", hypothesis.current_candidate_component_ids),
+                ("supported", hypothesis.current_supported_component_ids),
+                ("contradicted", hypothesis.contradicted_component_ids),
+                ("blocked", hypothesis.blocked_component_ids),
+                ("unobservable", hypothesis.unobservable_component_ids),
+                ("irrelevant", hypothesis.irrelevant_component_ids),
+            ):
+                for component_id in component_ids:
+                    prior_partition = component_partitions.setdefault(
+                        component_id, partition
+                    )
+                    if prior_partition != partition:
+                        raise ValueError(
+                            "P35.2 component relevance must be globally consistent"
+                        )
+
+        def _component_state(component_id: str) -> SimpleNamespace:
+            partition = component_partitions.get(component_id, "irrelevant")
+            return SimpleNamespace(
+                component_id=component_id,
+                relevance=(
+                    "candidate" if partition == "unobservable" else partition
+                ),
+                observability_states=(
+                    ("unavailable",)
+                    if partition == "unobservable"
+                    else ("measured",)
+                ),
+                current_response_state=(
+                    "unavailable"
+                    if partition == "unobservable"
+                    else "observed_correlation"
+                ),
+            )
+
         expected_knowledge = build_current_engineering_knowledge(
             run_id=self.identity.run_id,
             session_id=self.identity.session_id,
@@ -2373,8 +2419,21 @@ class CrewChiefWorkspace(CrewChiefModel):
                 reasoning_snapshot_sha256=self.identity.p26_reasoning_snapshot_sha256,
                 knowledge_graph_sha256=self.identity.p26_knowledge_graph_sha256,
                 component_states=tuple(
-                    SimpleNamespace(component_id=component_id)
+                    _component_state(component_id)
                     for component_id in self.p26_component_ids
+                ),
+                experiment_factors=(
+                    (
+                        SimpleNamespace(
+                            factor_id=decision.experiment_factor_id,
+                            primary_controls=(decision.control_key,),
+                            coordinated_controls=(),
+                        ),
+                    )
+                    if decision.kind == "controlled_test"
+                    and decision.experiment_factor_id is not None
+                    and decision.control_key is not None
+                    else ()
                 ),
             ),
             p32=self.performance_intelligence,

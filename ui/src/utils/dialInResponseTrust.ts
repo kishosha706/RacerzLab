@@ -45,12 +45,28 @@ const swingKeys = new Set([
   "knowledge_level",
   "bridge_id",
   "bridge_sha256",
+  "direction_sign",
+  "experiment_factor_id",
   "p35_mechanism_ids",
   "p20_mechanism_ids",
+  "possible_component_family_ids",
   "p26_component_family_ids",
+  "current_candidate_component_ids",
+  "current_supported_component_ids",
+  "contradicted_component_ids",
+  "blocked_component_ids",
+  "unobservable_component_ids",
+  "irrelevant_component_ids",
   "p32_performance_mechanism_ids",
   "inspection_tool_ids",
   "discriminator_contract_ids",
+  "expected_vehicle_state_ids",
+  "validation_metric_ids",
+  "countereffect_state_ids",
+  "protected_performance_outcome_ids",
+  "rollback_condition_ids",
+  "knowledge_applicability",
+  "runtime_evidence_state",
   "knowledge_version",
   "knowledge_graph_sha256",
   "candidate_control_label",
@@ -85,7 +101,6 @@ const evidenceStrengthKeys = new Set([
 ]);
 const forbiddenAuthorityKeys = new Set([
   "change_this",
-  "direction_sign",
   "current_value",
   "current_value_label",
   "proposed_value",
@@ -165,12 +180,31 @@ function isDialInSwing(value: unknown): value is DialInSwing {
     && ["educational_knowledge", "measurable_hypothesis", "p19_testable_control", "unsupported_remove"].includes(String(value.knowledge_level))
     && typeof value.bridge_id === "string" && /^p351b_[0-9a-f]{24}$/.test(value.bridge_id)
     && typeof value.bridge_sha256 === "string" && /^[0-9a-f]{64}$/.test(value.bridge_sha256)
+    && [-1, 0, 1].includes(Number(value.direction_sign))
+    && (value.experiment_factor_id === null || isCanonicalString(value.experiment_factor_id))
     && isStringList(value.p35_mechanism_ids)
     && isStringList(value.p20_mechanism_ids)
+    && isStringList(value.possible_component_family_ids)
     && isStringList(value.p26_component_family_ids)
+    && isStringList(value.current_candidate_component_ids)
+    && isStringList(value.current_supported_component_ids)
+    && isStringList(value.contradicted_component_ids)
+    && isStringList(value.blocked_component_ids)
+    && isStringList(value.unobservable_component_ids)
+    && isStringList(value.irrelevant_component_ids)
     && isStringList(value.p32_performance_mechanism_ids)
     && isStringList(value.inspection_tool_ids)
     && isStringList(value.discriminator_contract_ids)
+    && isStringList(value.expected_vehicle_state_ids)
+    && isStringList(value.validation_metric_ids)
+    && isStringList(value.countereffect_state_ids)
+    && isStringList(value.protected_performance_outcome_ids)
+    && isStringList(value.rollback_condition_ids)
+    && ["applicable", "educational_only", "blocked_by_build", "unsupported"]
+      .includes(String(value.knowledge_applicability))
+    && typeof value.runtime_evidence_state === "string"
+    && evidenceStates.has(value.runtime_evidence_state)
+    && value.evidence_state === value.runtime_evidence_state
     && isCanonicalString(value.knowledge_version)
     && typeof value.knowledge_graph_sha256 === "string" && /^[0-9a-f]{64}$/.test(value.knowledge_graph_sha256)
     && isCanonicalString(value.candidate_control_label)
@@ -223,7 +257,8 @@ function isEvidenceStrength(value: unknown): boolean {
 function isP19TerminalDecision(value: unknown): boolean {
   if (!isRecord(value)) return false;
   const keys = new Set([
-    "kind", "title", "instruction", "authority", "control_key", "current_value",
+    "kind", "title", "instruction", "authority", "control_key", "setup_effect_id",
+    "experiment_factor_id", "direction_sign", "current_value",
     "proposed_value", "source_event_ids", "workflow_id", "workflow_revision",
     "blocker_reasons",
   ]);
@@ -232,6 +267,9 @@ function isP19TerminalDecision(value: unknown): boolean {
     && isCanonicalString(value.title) && isCanonicalString(value.instruction)
     && ["context_only", "measurement_only", "p19_projection_only"].includes(String(value.authority))
     && isNullableCanonicalString(value.control_key)
+    && isNullableCanonicalString(value.setup_effect_id)
+    && isNullableCanonicalString(value.experiment_factor_id)
+    && (value.direction_sign === null || value.direction_sign === -1 || value.direction_sign === 1)
     && isNullableCanonicalString(value.current_value)
     && isNullableCanonicalString(value.proposed_value)
     && isStringList(value.source_event_ids)
@@ -243,12 +281,17 @@ function isP19TerminalDecision(value: unknown): boolean {
   return hasAction
     ? value.authority === "p19_projection_only"
       && isCanonicalString(value.control_key)
+      && isCanonicalString(value.setup_effect_id)
+      && isCanonicalString(value.experiment_factor_id)
+      && (value.direction_sign === -1 || value.direction_sign === 1)
       && isCanonicalString(value.current_value)
       && isCanonicalString(value.proposed_value)
       && isCanonicalString(value.workflow_id)
       && isCanonicalString(value.workflow_revision)
       && (value.source_event_ids as string[]).length > 0
-    : value.control_key === null && value.current_value === null
+    : value.control_key === null && value.setup_effect_id === null
+      && value.experiment_factor_id === null && value.direction_sign === null
+      && value.current_value === null
       && value.proposed_value === null && value.workflow_id === null
       && value.workflow_revision === null;
 }
@@ -324,7 +367,23 @@ export function isDialInHypothesisResponse(
         && item.knowledge_level === hypothesis.level
         && JSON.stringify(item.p35_mechanism_ids) === JSON.stringify(hypothesis.p35_mechanism_ids)
         && JSON.stringify(item.p20_mechanism_ids) === JSON.stringify(hypothesis.p20_mechanism_ids)
+        && item.direction_sign === hypothesis.direction_sign
+        && item.experiment_factor_id === hypothesis.experiment_factor_id
+        && JSON.stringify(item.possible_component_family_ids) === JSON.stringify(hypothesis.possible_component_family_ids)
         && JSON.stringify(item.p26_component_family_ids) === JSON.stringify(hypothesis.p26_component_family_ids)
+        && JSON.stringify(item.current_candidate_component_ids) === JSON.stringify(hypothesis.current_candidate_component_ids)
+        && JSON.stringify(item.current_supported_component_ids) === JSON.stringify(hypothesis.current_supported_component_ids)
+        && JSON.stringify(item.contradicted_component_ids) === JSON.stringify(hypothesis.contradicted_component_ids)
+        && JSON.stringify(item.blocked_component_ids) === JSON.stringify(hypothesis.blocked_component_ids)
+        && JSON.stringify(item.unobservable_component_ids) === JSON.stringify(hypothesis.unobservable_component_ids)
+        && JSON.stringify(item.irrelevant_component_ids) === JSON.stringify(hypothesis.irrelevant_component_ids)
+        && JSON.stringify(item.expected_vehicle_state_ids) === JSON.stringify(hypothesis.expected_vehicle_state_ids)
+        && JSON.stringify(item.validation_metric_ids) === JSON.stringify(hypothesis.validation_metric_ids)
+        && JSON.stringify(item.countereffect_state_ids) === JSON.stringify(hypothesis.countereffect_state_ids)
+        && JSON.stringify(item.protected_performance_outcome_ids) === JSON.stringify(hypothesis.protected_performance_outcome_ids)
+        && JSON.stringify(item.rollback_condition_ids) === JSON.stringify(hypothesis.rollback_condition_ids)
+        && item.knowledge_applicability === hypothesis.knowledge_applicability
+        && item.runtime_evidence_state === hypothesis.runtime_evidence_state
         && JSON.stringify(item.inspection_tool_ids) === JSON.stringify(hypothesis.inspection_tool_ids)
         && JSON.stringify(item.discriminator_contract_ids)
           === JSON.stringify(hypothesis.discriminator_contract_ids);

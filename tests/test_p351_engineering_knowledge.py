@@ -23,6 +23,7 @@ from racelab_engine.knowledge.vehicle_dynamics.next_gen_oval import (
 from racelab_engine.models.crew_chief import CrewChiefTerminalDecision
 from racelab_engine.models.observation_intelligence import MechanismKind
 from racelab_engine.services.engineering_knowledge_service import (
+    _resolve_p19_bridge,
     build_canonical_performance_opportunity_binding,
     build_current_engineering_knowledge,
 )
@@ -70,8 +71,20 @@ def _current_inputs(monkeypatch, tmp_path, *, future_build: bool = False):
         reasoning_snapshot_sha256=p32.p19_reasoning_snapshot_sha256,
         knowledge_graph_sha256=p32.p26_knowledge_graph_sha256,
         component_states=tuple(
-            SimpleNamespace(component_id=component_id)
+            SimpleNamespace(
+                component_id=component_id,
+                relevance="candidate",
+                observability_states=("measured",),
+                current_response_state="observed_correlation",
+            )
             for component_id in component_ids
+        ),
+        experiment_factors=(
+            SimpleNamespace(
+                factor_id="factor:crossweight",
+                primary_controls=("cross_weight_percent",),
+                coordinated_controls=(),
+            ),
         ),
     )
     p33 = SimpleNamespace(
@@ -96,7 +109,11 @@ def test_every_reviewed_effect_has_one_typed_bridge_and_legacy_is_removed() -> N
     assert coverage.unmapped_effect_ids == ()
     assert coverage.duplicate_effect_ids == ()
     assert coverage.unsupported_remove_count == 6
-    assert coverage.structurally_p19_testable_count == len(_PLANS) == 22
+    assert coverage.testable_effect_count == len(_PLANS) == 22
+    assert coverage.current_action_ready_count == 0
+    assert coverage.identity_coverage_count == 92
+    assert coverage.semantic_precision_count == 92
+    assert coverage.experiment_coverage_count == 22
     assert {item.effect_id for item in bridges} == {
         item.effect_id for item in knowledge.setup_effects
     }
@@ -282,7 +299,22 @@ def test_workflow_must_bind_the_exact_canonical_p32_opportunity(
     assert binding.engineering_knowledge_projection_sha256 == (
         knowledge.projection_sha256
     )
+    assert binding.schema_version == "p352.workflow-performance-opportunity.v1"
+    assert binding.circular_scope is False
+    assert binding.independence_unit == "one_contiguous_physical_window"
+    assert tuple(
+        (item.start_pct, item.end_pct) for item in binding.segments
+    ) == ((opportunity.start_pct, opportunity.end_pct),)
     assert binding.setup_authorized is False
+
+    hostile = binding.model_dump(mode="json")
+    hostile["segments"] = [
+        {"start_pct": 0.0, "end_pct": 2.0},
+        {"start_pct": 98.0, "end_pct": 100.0},
+    ]
+    hostile["circular_scope"] = True
+    with pytest.raises(ValueError, match="fails closed"):
+        type(binding).model_validate(hostile)
 
     drifted = SimpleNamespace(
         **{**workflow_opportunity.__dict__, "start_pct": opportunity.start_pct + 0.1}
@@ -384,6 +416,9 @@ def test_only_one_exact_p19_action_can_promote_a_hypothesis(monkeypatch, tmp_pat
         title="P19 controlled test",
         instruction="Use the exact P19 target.",
         authority="p19_projection_only",
+        setup_effect_id="add_crossweight_small",
+        experiment_factor_id="factor:crossweight",
+        direction_sign=1,
         control_key="cross_weight_percent",
         current_value="50.0%",
         proposed_value="50.2%",
@@ -409,7 +444,10 @@ def test_only_one_exact_p19_action_can_promote_a_hypothesis(monkeypatch, tmp_pat
     assert len(promoted) == 1
     assert promoted[0].p19_control is not None
     assert promoted[0].p19_control.model_dump(mode="json") == {
+        "effect_id": decision.setup_effect_id,
         "control_key": decision.control_key,
+        "direction_sign": decision.direction_sign,
+        "experiment_factor_id": decision.experiment_factor_id,
         "current_value": decision.current_value,
         "proposed_value": decision.proposed_value,
         "workflow_id": decision.workflow_id,
@@ -422,6 +460,198 @@ def test_only_one_exact_p19_action_can_promote_a_hypothesis(monkeypatch, tmp_pat
         for item in projection.hypotheses
         if item is not promoted[0]
     )
+
+
+@pytest.mark.parametrize(
+    ("effect_id", "control_key", "direction_sign", "factor_id"),
+    (
+        ("add_crossweight_small", "cross_weight_percent", 1, "factor:crossweight"),
+        ("reduce_crossweight_small", "cross_weight_percent", -1, "factor:crossweight"),
+        (
+            "add_front_brake_bias_small",
+            "front_brake_bias_percent",
+            1,
+            "factor:front_brake_distribution",
+        ),
+        (
+            "reduce_front_brake_bias_small",
+            "front_brake_bias_percent",
+            -1,
+            "factor:front_brake_distribution",
+        ),
+        ("shorter_final_drive", "rear_end_ratio", 1, "factor:final_drive_ratio"),
+        ("taller_final_drive", "rear_end_ratio", -1, "factor:final_drive_ratio"),
+        (
+            "add_rf_spring_small",
+            "rf_front_spring_n_per_mm",
+            1,
+            "factor:rf_spring_rate",
+        ),
+        (
+            "reduce_rf_spring_small",
+            "rf_front_spring_n_per_mm",
+            -1,
+            "factor:rf_spring_rate",
+        ),
+        (
+            "reduce_front_platform_support",
+            "lf_ride_height_mm",
+            1,
+            "factor:front_platform_height",
+        ),
+        (
+            "add_front_platform_support",
+            "lf_ride_height_mm",
+            -1,
+            "factor:front_platform_height",
+        ),
+    ),
+)
+def test_directional_p19_bridge_identity_is_exact_and_order_independent(
+    effect_id: str,
+    control_key: str,
+    direction_sign: int,
+    factor_id: str,
+) -> None:
+    bridges = compile_mechanism_setup_bridges()
+    expected = next(item for item in bridges if item.effect_id == effect_id)
+    p26 = SimpleNamespace(
+        experiment_factors=(
+            SimpleNamespace(
+                factor_id=factor_id,
+                primary_controls=(control_key,),
+                coordinated_controls=expected.related_control_keys,
+            ),
+        )
+    )
+    decision = SimpleNamespace(
+        setup_effect_id=effect_id,
+        control_key=control_key,
+        direction_sign=direction_sign,
+        experiment_factor_id=factor_id,
+    )
+    active = set(expected.p35_mechanism_ids)
+
+    forward = _resolve_p19_bridge(
+        bridges=bridges,
+        p26=p26,
+        active_mechanism_ids=active,
+        decision=decision,
+    )
+    reversed_order = _resolve_p19_bridge(
+        bridges=tuple(reversed(bridges)),
+        p26=p26,
+        active_mechanism_ids=active,
+        decision=decision,
+    )
+
+    assert forward.bridge_id == reversed_order.bridge_id == expected.bridge_id
+    assert forward.direction_sign == direction_sign
+    assert forward.experiment_factor_id == factor_id
+
+
+def test_directional_p19_bridge_resolution_fails_closed_on_zero_or_many() -> None:
+    bridges = compile_mechanism_setup_bridges()
+    expected = next(item for item in bridges if item.effect_id == "add_crossweight_small")
+    p26 = SimpleNamespace(
+        experiment_factors=(
+            SimpleNamespace(
+                factor_id="factor:crossweight",
+                primary_controls=("cross_weight_percent",),
+                coordinated_controls=(),
+            ),
+        )
+    )
+    decision = SimpleNamespace(
+        setup_effect_id="add_crossweight_small",
+        control_key="cross_weight_percent",
+        direction_sign=1,
+        experiment_factor_id="factor:crossweight",
+    )
+    active = set(expected.p35_mechanism_ids)
+
+    with pytest.raises(ValueError, match="does not resolve to one"):
+        _resolve_p19_bridge(
+            bridges=bridges,
+            p26=p26,
+            active_mechanism_ids=set(),
+            decision=decision,
+        )
+    with pytest.raises(ValueError, match="does not resolve to one"):
+        _resolve_p19_bridge(
+            bridges=(*bridges, expected),
+            p26=p26,
+            active_mechanism_ids=active,
+            decision=decision,
+        )
+
+
+def test_p26_component_presence_never_masquerades_as_current_relevance(
+    monkeypatch, tmp_path
+) -> None:
+    p20, p26, p32, p35, p33 = _current_inputs(monkeypatch, tmp_path)
+    relevances = {
+        "tires": "candidate",
+        "alignment": "supported",
+        "springs": "tested",
+        "anti_roll_bars": "contradicted",
+        "platform": "blocked",
+        "weight_distribution": "candidate",
+        "differential": "irrelevant",
+        "steering": "candidate",
+    }
+    p26.component_states = tuple(
+        SimpleNamespace(
+            component_id=component_id,
+            relevance=relevance,
+            observability_states=(
+                ("unavailable",)
+                if component_id == "weight_distribution"
+                else ("measured",)
+            ),
+            current_response_state=(
+                "unavailable"
+                if component_id == "weight_distribution"
+                else "observed_correlation"
+            ),
+        )
+        for component_id, relevance in relevances.items()
+    )
+    projection = build_current_engineering_knowledge(
+        run_id=p32.run_id,
+        session_id=p32.session_id,
+        complaint_prior=None,
+        p20=p20,
+        p26=p26,
+        p32=p32,
+        p35=p35,
+        p33=p33,
+        p19_terminal_decision=CrewChiefTerminalDecision(
+            kind="no_call",
+            title="No setup call",
+            instruction="Preserve component relevance truth.",
+            authority="measurement_only",
+        ),
+    )
+    item = next(
+        hypothesis
+        for hypothesis in projection.hypotheses
+        if hypothesis.effect_id == "add_crossweight_small"
+    )
+
+    assert item.possible_component_family_ids == tuple(relevances)
+    assert item.current_candidate_component_ids == ("tires", "steering")
+    assert item.current_supported_component_ids == ("alignment", "springs")
+    assert item.p26_component_family_ids == (
+        "tires",
+        "steering",
+        "alignment",
+        "springs",
+    )
+    assert item.contradicted_component_ids == ("anti_roll_bars",)
+    assert item.blocked_component_ids == ("platform",)
+    assert item.unobservable_component_ids == ("weight_distribution",)
+    assert item.irrelevant_component_ids == ("differential",)
 
 
 def test_unreviewed_build_keeps_generic_knowledge_but_no_current_relevance(

@@ -41,8 +41,10 @@ def _workflow() -> ControlledWorkflow:
         canonical_symptom="tight_entry",
         candidates=[CauseCandidate(
             cause_bucket="corner_balance",
+            effect_id="add_crossweight_small",
             control_key="cross_weight_percent",
             direction_sign=1,
+            experiment_factor_id="factor:crossweight",
             score=0.82,
             hypothesis="Test whether one adjacent legal step improves entry rotation.",
             success_metrics=("Entry phase time improves beyond 0.04 s",),

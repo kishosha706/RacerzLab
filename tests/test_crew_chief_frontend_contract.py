@@ -10,6 +10,7 @@ import pytest
 
 from api.routes_intelligence import get_run_intelligence
 from racelab_engine.identity import canonical_json_sha256
+from racelab_engine.knowledge.setup import compile_mechanism_setup_bridges
 from racelab_engine.models.investigation_adaptation import (
     InvestigationAdaptationContext,
     InvestigationDecision,
@@ -25,6 +26,45 @@ from racelab_engine.services.session_service import get_session
 from racelab_engine.storage.repository import RaceLabRepository
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_p352_client_static_bridge_registry_exactly_mirrors_the_compiler() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for the P35.2 bridge-registry contract")
+    script = (
+        "import {ENGINEERING_KNOWLEDGE_STATIC_REGISTRY as value} from "
+        "'./ui/src/utils/engineeringKnowledgeRegistry.ts';"
+        "console.log(JSON.stringify(value));"
+    )
+    result = subprocess.run(
+        [
+            node,
+            "--no-warnings",
+            "--experimental-strip-types",
+            "--input-type=module",
+            "-e",
+            script,
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    expected = [
+        {
+            "effectId": bridge.effect_id,
+            "bridgeId": bridge.bridge_id,
+            "directionSign": bridge.direction_sign,
+            "experimentFactorId": bridge.experiment_factor_id,
+            "p35MechanismIds": list(bridge.p35_mechanism_ids),
+            "p20MechanismIds": list(bridge.p20_mechanism_ids),
+            "possibleComponentFamilyIds": list(bridge.p26_component_family_ids),
+        }
+        for bridge in compile_mechanism_setup_bridges()
+    ]
+    assert json.loads(result.stdout) == expected
 
 
 def test_crew_chief_runtime_guard_rejects_forged_authority() -> None:
@@ -192,7 +232,7 @@ def test_client_parses_crew_chief_as_unknown_through_exact_report_guard() -> Non
     assert "learning_history_revision" in guard
     assert "learning_projection_sha256" in guard
     assert "isCrewChiefLearningPrior" in guard
-    assert 'value.schema_version !== "p351.crew-chief-workspace.v1"' in guard
+    assert 'value.schema_version !== "p352.crew-chief-workspace.v1"' in guard
     assert "p35_assessment_sha256" in guard
     assert "vehicle_dynamics" in guard
     assert "isPerformanceMechanismAssessment" in guard

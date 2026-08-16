@@ -558,6 +558,7 @@ def build_run_evidence_context(
     test_run_id: str | None = None,
     car_family_override: str | None = None,
     track_family_override: str | None = None,
+    canonical_runtime_owned: bool = False,
 ) -> RunEvidenceContext:
     repo = RaceLabRepository()
     if not (overview := repo.get_overview(run_id)):
@@ -587,10 +588,16 @@ def build_run_evidence_context(
         flags.add("setup_snapshot")
 
     useful_laps = eligible_laps(overview.laps)
-    observed_flags, observed_event_ids, _event_ids_by_flag, _, _ = _observed_mechanism_evidence(
-        overview,
-        eligible_lap_numbers={lap.lap_number for lap in useful_laps},
-    )
+    if canonical_runtime_owned:
+        observed_flags: list[str] = []
+        observed_event_ids: list[str] = []
+    else:
+        observed_flags, observed_event_ids, _event_ids_by_flag, _, _ = (
+            _observed_mechanism_evidence(
+                overview,
+                eligible_lap_numbers={lap.lap_number for lap in useful_laps},
+            )
+        )
     lap_status = "ready" if useful_laps else "missing"
     lap_present = ["lap/window data"] if useful_laps else []
     lap_missing = [] if useful_laps else ["lap/window data"]
@@ -955,6 +962,7 @@ def query_setup_for_run_context(
     objective: str | None = None,
     priority: str | None = None,
     limit: int = 5,
+    canonical_runtime_owned: bool = False,
 ) -> RunContextSetupQueryResult:
     context = evidence_context or build_run_evidence_context(
         run_id,
@@ -962,6 +970,7 @@ def query_setup_for_run_context(
         test_run_id=test_run_id,
         car_family_override=car_family_override,
         track_family_override=track_family_override,
+        canonical_runtime_owned=canonical_runtime_owned,
     )
     repo = RaceLabRepository()
     overview = repo.get_overview(run_id)
@@ -977,7 +986,7 @@ def query_setup_for_run_context(
             effective_phase = parse_symptom(symptom, load_setup_knowledge()).phase
         except ValueError:
             effective_phase = None
-    if overview is not None:
+    if overview is not None and not canonical_runtime_owned:
         eligible = eligible_laps(overview.laps)
         scoped_laps = (
             {selected_lap}

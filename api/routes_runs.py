@@ -70,6 +70,7 @@ def dial_in(run_id: str, request: DialInRequest) -> DialInHypothesisResponse:
             priority=request.priority,
             limit=92 if request.session_id is not None else request.limit,
             include_debug_evidence=request.include_debug_evidence,
+            canonical_runtime_owned=request.session_id is not None,
         )
         engineering_knowledge = None
         p19_terminal_decision = None

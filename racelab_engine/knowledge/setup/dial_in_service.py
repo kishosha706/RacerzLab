@@ -689,6 +689,7 @@ def build_dial_in_response(
     include_debug_evidence: bool = False,
     legal_values_by_control: dict[str, list[Any]] | None = None,
     legal_value_provenance_by_control: dict[str, dict[Any, list[str]]] | None = None,
+    canonical_runtime_owned: bool = False,
 ) -> DialInResponse:
     selected_zone: tuple[float, float] | None = None
     if selected_zone_start_pct is not None or selected_zone_end_pct is not None:
@@ -703,6 +704,7 @@ def build_dial_in_response(
         test_run_id=test_run_id,
         car_family_override=car_family_override,
         track_family_override=track_family_override,
+        canonical_runtime_owned=canonical_runtime_owned,
     )
     knowledge = load_setup_knowledge()
     try:
@@ -815,6 +817,7 @@ def build_dial_in_response(
                     objective=objective,
                     priority=priority,
                     limit=max(limit, 1),
+                    canonical_runtime_owned=canonical_runtime_owned,
                 ),
                 context,
             )
@@ -879,6 +882,7 @@ def build_dial_in_response(
         objective=objective,
         priority=priority,
         limit=max(limit * 4, limit),
+        canonical_runtime_owned=canonical_runtime_owned,
     )
     selected = _filter_swings(query_result.setup_query.candidate_effects, limit)
     setup_values = _driver_setup_values(run_id)

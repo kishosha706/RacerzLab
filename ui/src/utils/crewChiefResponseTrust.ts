@@ -1244,7 +1244,7 @@ export function isCrewChiefWorkspaceResponse(
     objectiveId: string;
   },
 ): value is CrewChiefWorkspace {
-  if (!record(value) || value.schema_version !== "p351.crew-chief-workspace.v1") return false;
+  if (!record(value) || value.schema_version !== "p352.crew-chief-workspace.v1") return false;
   if (
     !record(value.identity)
     || !record(value.terminal_decision)
@@ -1533,9 +1533,16 @@ export function isCrewChiefWorkspaceResponse(
   if (!isCurrentEngineeringKnowledgeProjection(
     value.engineering_knowledge,
     value as unknown as CrewChiefWorkspace,
+    scope.report.vehicle_systems ?? null,
   )) return false;
   if (
-    typeof decision.kind !== "string"
+    !exactKeys(decision, [
+      "kind", "title", "instruction", "authority", "control_key",
+      "setup_effect_id", "experiment_factor_id", "direction_sign",
+      "current_value", "proposed_value", "source_event_ids", "workflow_id",
+      "workflow_revision", "blocker_reasons",
+    ])
+    || typeof decision.kind !== "string"
     || typeof decision.title !== "string"
     || typeof decision.instruction !== "string"
     || !strings(decision.source_event_ids)
@@ -1753,6 +1760,9 @@ export function isCrewChiefWorkspaceResponse(
       && decision.title === action.title
       && decision.instruction === action.instruction
       && decision.control_key === action.control_key
+      && decision.setup_effect_id === action.setup_effect_id
+      && decision.experiment_factor_id === action.experiment_factor_id
+      && decision.direction_sign === action.direction_sign
       && decision.current_value === action.current_value
       && decision.proposed_value === action.proposed_value
       && JSON.stringify(decision.source_event_ids) === JSON.stringify(action.source_event_ids)
@@ -1764,6 +1774,9 @@ export function isCrewChiefWorkspaceResponse(
   if (
     decision.authority === "p19_projection_only"
     || decision.control_key != null
+    || decision.setup_effect_id != null
+    || decision.experiment_factor_id != null
+    || decision.direction_sign != null
     || decision.current_value != null
     || decision.proposed_value != null
     || decision.workflow_id != null

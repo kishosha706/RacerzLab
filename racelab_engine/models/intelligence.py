@@ -909,6 +909,9 @@ class IntelligenceAction(IntelligenceModel):
     instruction: str = Field(min_length=1)
     setup_authorized: bool = False
     control_key: str | None = None
+    setup_effect_id: str | None = None
+    experiment_factor_id: str | None = None
+    direction_sign: Literal[-1, 1] | None = None
     current_value: str | None = None
     proposed_value: str | None = None
     evidence_state: EvidenceState
@@ -918,8 +921,17 @@ class IntelligenceAction(IntelligenceModel):
     @model_validator(mode="after")
     def setup_values_require_authorization(self) -> IntelligenceAction:
         setup_values = (self.control_key, self.current_value, self.proposed_value)
+        semantic_identity = (
+            self.setup_effect_id,
+            self.experiment_factor_id,
+            self.direction_sign,
+        )
         if self.setup_authorized:
-            if self.kind != "controlled_test" or any(value is None for value in setup_values):
+            if (
+                self.kind != "controlled_test"
+                or any(value is None for value in setup_values)
+                or any(value is None for value in semantic_identity)
+            ):
                 raise ValueError("authorized actions require one complete controlled setup target")
             if any(not str(value).strip() for value in setup_values):
                 raise ValueError("authorized setup targets cannot contain blank values")
@@ -930,7 +942,7 @@ class IntelligenceAction(IntelligenceModel):
                 EvidenceState.NEEDS_CONFIRMATION,
             }:
                 raise ValueError("authorized setup actions require a usable evidence state")
-        elif any(value is not None for value in setup_values):
+        elif any(value is not None for value in (*setup_values, *semantic_identity)):
             raise ValueError("unauthorized actions cannot expose setup values")
         return self
 

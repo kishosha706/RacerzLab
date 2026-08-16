@@ -71,6 +71,7 @@ result, and remember only what the evidence supports.
 | P34 - Earned Investigation Adaptation | Verified shadow evaluation infrastructure; no attention activation earned | Frozen baseline-versus-memory pairs test bounded investigation order on identical pre-outcome truth while P19 remains sole authority and production remains deterministic baseline |
 | P35 - Next Gen Oval Vehicle Dynamics Intelligence | Verified deterministic mechanical-intelligence foundation | One reviewed, build-applicable physics graph connects driver demand, vehicle response, tire/platform state, candidate mechanisms, and measured P32 time without gaining component, cause, or setup authority |
 | P35.1 - Unified Dial-In Knowledge Spine | Verified deterministic engineering-knowledge foundation | One content-addressed projection connects exact P32 time, P20 state, P35 mechanisms, P26 components, all 92 Dial-In effects, P19/P33 history, bounded discriminators, and exact P19 authority without turning education into advice |
+| P35.2 - Semantic Precision and Release Trust | Verified locally; remote SHA validation awaits the next push | Direction, experiment factor, component relevance, semantic roles, runtime evidence, physical scope, client trust, and normal CI gates are exact without changing P19 authority |
 | P36 - Prospective Investigation Evidence Campaigns | Planned; evidence collection remains data-locked | Qualified prospective campaigns produce the independent recurrence, controls, subgroups, and observable comparisons required before learned investigation ordering can earn promotion |
 
 ---
@@ -2486,6 +2487,71 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   Regenerated OpenAPI remained stable at 86 paths and 94 operations with no
   missing or duplicate operation IDs.
 
+## P35.2 - Semantic Precision and Release Trust
+
+- [x] Bind every P19-testable setup action to one exact reviewed effect,
+  control, direction, and experiment factor. Opposite directions that share a
+  garage control no longer share an ambiguous knowledge handoff, and shuffled
+  bridge/catalog order cannot change the selected identity. Zero or multiple
+  matches fail closed.
+- [x] Preserve P26 component truth as separate static possibility, current
+  candidate, current support/tested, contradicted, blocked, unobservable, and
+  irrelevant cohorts. The public Dial-In and Learning surfaces no longer turn
+  component presence into current relevance.
+- [x] Separate effect-level expected vehicle state, validation metric,
+  countereffect state, protected performance outcome, and rollback condition.
+  Coverage now reports identity, semantic precision, runtime observability, and
+  experiment readiness independently. The P35.2 coverage SHA-256 is
+  `a7dd3bcb645b037d803289dd94ffa7a0c89c6d01e7ce7c52e635c8471826cc1c`:
+  92 of 92 identities and semantic contracts, 86 runtime-observable contracts,
+  22 testable effects, nine distinct controls, 15 control/direction pairs,
+  eight physical experiment factors, and three coordinated-control contracts.
+- [x] Publish independent `knowledge_applicability` and
+  `runtime_evidence_state` axes. Reviewed mechanical possibility can remain
+  visible while current measurement is unavailable, contradicted, or blocked;
+  it cannot masquerade as a calculated current-run result.
+- [x] Make session-bound Dial-In consume the canonical P20/P26/P32/P35/P33/P19
+  products and bypass the legacy event-to-mechanism inference, telemetry-row
+  history query, and weighted learning-bias ranker. The legacy adapter remains
+  available only for unbound capability/fallback use.
+- [x] Bind controlled workflow performance truth to a content-addressed physical
+  segment set with explicit segment list, circular-scope flag, and independence
+  unit. The current one-window contract rejects wrapping and disjoint scopes
+  instead of flattening them into a different interval.
+- [x] Make the Learning summary diversity-aware: the candidate that owns the
+  best discriminator leads, then distinct mechanisms/components are represented
+  before catalog-order fill. Static possibilities, current evidence, strongest
+  contradiction, evidence debt, and the one exact P19 next move remain visibly
+  separate.
+- [x] Pin the client to the reviewed 92-effect static bridge registry and exact
+  runtime P26/P35 partitions. A coordinated projection rehash cannot swap a
+  bridge, direction, experiment factor, mechanism relation, or static component
+  map. Authorized public actions and Crew terminal decisions require the same
+  complete semantic identity as P19.
+- [x] Repair normal CI policy: Ruff is version-pinned, every job uses an isolated
+  database, the push/PR gate includes a nonempty integration slice plus Vitest,
+  TypeScript, production build, and synthetic trust, and main adds the complete
+  Python suite. The protected real-`.ibt` release job also uses an isolated
+  database. A new remote SHA is not called green until these workflows pass after
+  a future push.
+
+### P35.2 release validation - VERIFIED LOCALLY 2026-08-16
+
+- Whole repository: the isolated no-bytecode run collected 2,723 Python tests
+  and completed with 2,714 passed, nine protected skips, and zero failures in
+  267.606 seconds. Whole-repository Ruff and diff integrity passed.
+- Trust and integration: the permanent synthetic trust audit passed, including
+  exact directional pairs, order independence, P26 relevance partitions,
+  semantic-role separation, legacy-path bypass, physical-scope rejection, P19
+  equality, and compiler-to-client registry parity.
+- Frontend: the executable Intelligence, Dial-In, and Crew hostile guards passed;
+  TypeScript reported zero errors; all 30 Vitest behaviors passed; and the
+  production build completed with 2,208 modules.
+- Remote status: production `main` at `a9b1d3799e0756eb487aac648d7f683b24bdb0ac`
+  remains the previously failing Actions SHA. These local repairs are not labeled
+  remotely green until they are intentionally committed/pushed and the new exact
+  SHA completes Actions successfully.
+
 ## P36 - Prospective Investigation Evidence Campaigns
 
 - [ ] Run the preregistered prospective campaigns needed to test whether learned
@@ -2616,3 +2682,4 @@ Implementation queue completed in this pass:
 | 2026-08-15 | Verified P35 Next Gen Oval Vehicle Dynamics Intelligence | A content-addressed, build-applicable Next Gen oval physics graph now connects driver demand, tire/load/platform response, candidate mechanisms, typed evidence requirements, and measured P32 time while P19 remains the sole cause and setup authority. The definitive 2,694-test collection passed with 2,685 successes and nine protected skips, plus 34 core hostiles, 30 runtime/Crew checks, an independent backend adversarial CLEAR, 20 UI behaviors, 39 focused frontend contracts (37 passed and two protected skips), seven runtime programs, Ruff, bytecode compilation, TypeScript, the 2,205-module build, OpenAPI, live traffic-blocked Atlanta Race/Learning proof, and the final packaged Windows health smoke. Prospective promotion campaigns move to data-locked P36. |
 | 2026-08-15 | Polished the P35 Race/Learning vehicle-dynamics handoff | Race Mode keeps its four-field decision hierarchy and one compact `READY`/`BLOCKED`/`UNAVAILABLE` vehicle-dynamics line; Learning Mode now separates measured time from unresolved attribution, labels uncertainty honestly, presents blocked component families only as a static possibility map, exposes exact channels through keyboard-accessible disclosures, and presents the next bounded inspection with its exact current source context, evidence scope, and blocker without inventing observation-contract requirements. Twenty-nine UI tests, six focused P35 frontend contracts, TypeScript, the 2,205-module production build, diff integrity, and live traffic-blocked Atlanta checks at 1280 x 720 and 393 x 844 passed with no horizontal clipping, vertical overlap, or browser warnings. P19 remains the sole cause and setup authority. |
 | 2026-08-16 | Verified P35.1 Unified Dial-In Knowledge Spine | One content-addressed 92-effect bridge now connects the canonical P32 opportunity, P20 state, P35 mechanisms, P26 components, direction-neutral Dial-In knowledge, exact P19/P33 history, bounded discriminators, controlled workflow, and P19 without adding another observer or authority path. The coverage report contains 64 measurable hypotheses, 22 structurally P19-testable controls, six explicitly removed legacy Next Gen effects, and zero gaps; actionless knowledge remains visible but cannot carry a target. The isolated 2,709-test collection passed with 2,700 successes and nine protected skips, plus 11 focused backend hostiles, four frontend contracts, three executable trust guards, 30 UI behaviors, whole-repo Ruff, temporary bytecode compilation, TypeScript, the 2,207-module build, stable 86-path/94-operation OpenAPI, and diff integrity. P19 remains the sole cause, setup, controlled-test, Keep/Undo/Retest, and terminal authority. |
+| 2026-08-16 | Verified P35.2 Semantic Precision and Release Trust locally | Exact effect/control/direction/factor matching, P26 relevance partitions, five distinct semantic roles, separate static/runtime truth axes, canonical session-bound producer ownership, fail-closed physical segment sets, diversity-aware Learning selection, and a compiler-pinned client registry close the precision findings without changing P19 authority. The isolated 2,723-test collection passed with 2,714 successes and nine protected skips, plus the permanent synthetic trust audit, whole-repo Ruff, three executable client guards, TypeScript, 30 UI behaviors, the 2,208-module build, CI-policy checks, and diff integrity. Remote `main` remains the prior failing SHA until these repairs are intentionally pushed and the new exact SHA passes Actions. |

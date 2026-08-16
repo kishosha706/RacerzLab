@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import re
 
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.knowledge.vehicle_dynamics.next_gen_oval import (
@@ -14,7 +15,11 @@ from racelab_engine.models.engineering_knowledge import (
     MechanismSetupBridge,
 )
 
-from .dial_in_controls import control_keys_for_effect
+from .dial_in_controls import (
+    control_direction_for_effect,
+    control_keys_for_effect,
+    experiment_factor_id_for_effect,
+)
 from .loader import load_setup_knowledge
 
 
@@ -137,6 +142,54 @@ def _unique(values: list[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(values))
 
 
+def _effect_direction_sign(effect_id: str, direction: str) -> int:
+    action_direction = control_direction_for_effect(effect_id)
+    if action_direction is not None:
+        return action_direction
+    normalized = f"{effect_id} {direction}".casefold()
+    if any(
+        value in normalized
+        for value in ("reduce", "lower", "soften", "taller", "digressive")
+    ):
+        return -1
+    if any(
+        value in normalized
+        for value in ("increase", "raise", "add_", "add ", "stiffen", "shorter", "linear")
+    ):
+        return 1
+    return 0
+
+
+def _semantic_ids(role: str, effect_id: str, values: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(
+        f"p352.{role}:{effect_id}:{index}:{re.sub(r'[^a-z0-9]+', '_', value.casefold()).strip('_')}"
+        for index, value in enumerate(values)
+    )
+
+
+def _effect_phases(effect: object) -> tuple[str, ...]:
+    aliases = {"braking": "brake", "turn_in": "entry"}
+    values = tuple(
+        dict.fromkeys(
+            aliases.get(value, value)
+            for value in (*effect.helps_phases, *effect.can_hurt_phases)
+        )
+    )
+    return values or ("unscoped",)
+
+
+def _effect_response_regimes(
+    effect_id: str, phases: tuple[str, ...]
+) -> tuple[str, ...]:
+    if "hs_compression" in effect_id or "hs_rebound" in effect_id:
+        return ("transient",)
+    transient = bool(set(phases) & {"brake", "entry", "transition"})
+    steady = bool(set(phases) & {"center", "exit", "straight", "long_run"})
+    if transient and steady:
+        return ("transient", "steady_state")
+    return ("transient",) if transient else ("steady_state",)
+
+
 @lru_cache(maxsize=1)
 def compile_mechanism_setup_bridges() -> tuple[MechanismSetupBridge, ...]:
     knowledge = load_setup_knowledge()
@@ -156,12 +209,17 @@ def compile_mechanism_setup_bridges() -> tuple[MechanismSetupBridge, ...]:
         mechanism_ids = _AREA_MECHANISMS.get(effect.setup_area, ())
         trusts = tuple(trust_by_id[item] for item in mechanism_ids)
         control_keys = control_keys_for_effect(effect.effect_id)
+        direction_sign = _effect_direction_sign(effect.effect_id, effect.direction)
+        experiment_factor_id = experiment_factor_id_for_effect(effect.effect_id)
         if effect.setup_area in _LEGACY_FORBIDDEN_AREAS:
             classification = "unsupported_remove"
         elif control_keys:
             classification = "p19_testable_control"
         else:
             classification = "measurable_hypothesis"
+        phases = _effect_phases(effect)
+        validation_targets = tuple(effect.validation_targets)
+        countereffects = tuple(effect.watch_for_targets)
         bridges.append(
             MechanismSetupBridge.build(
                 effect_id=effect.effect_id,
@@ -170,6 +228,8 @@ def compile_mechanism_setup_bridges() -> tuple[MechanismSetupBridge, ...]:
                 p35_knowledge_graph_sha256=graph.content_sha256,
                 p35_runtime_trust_sha256=trust_manifest.runtime_trust_sha256,
                 catalog_classification=classification,
+                direction_sign=direction_sign,
+                experiment_factor_id=experiment_factor_id,
                 physical_role=setup_areas[effect.setup_area].what_it_changes,
                 car_applicability=tuple(effect.applies_to),
                 disabled_car_families=tuple(effect.disabled_for),
@@ -187,12 +247,8 @@ def compile_mechanism_setup_bridges() -> tuple[MechanismSetupBridge, ...]:
                         for value in trust.p32_performance_mechanism_ids
                     ]
                 ),
-                response_regimes=_unique(
-                    [trust.response_regime.value for trust in trusts]
-                ),
-                relevant_phases=_unique(
-                    [phase.value for trust in trusts for phase in trust.relevant_phases]
-                ),
+                response_regimes=_effect_response_regimes(effect.effect_id, phases),
+                relevant_phases=phases,
                 inspection_tool_ids=_unique(
                     [trust.inspection_tool_id.value for trust in trusts]
                 ),
@@ -211,9 +267,22 @@ def compile_mechanism_setup_bridges() -> tuple[MechanismSetupBridge, ...]:
                     ]
                 ),
                 evidence_requirements=tuple(effect.evidence_required),
-                validation_targets=tuple(effect.validation_targets),
-                countereffect_targets=tuple(effect.watch_for_targets),
-                protected_outcomes=tuple(effect.watch_for_targets),
+                validation_targets=validation_targets,
+                countereffect_targets=countereffects,
+                protected_outcomes=countereffects,
+                expected_vehicle_state_ids=_semantic_ids(
+                    "expected_vehicle_state", effect.effect_id, validation_targets
+                ),
+                validation_metric_ids=_semantic_ids(
+                    "validation_metric", effect.effect_id, validation_targets
+                ),
+                countereffect_state_ids=_semantic_ids(
+                    "countereffect_state", effect.effect_id, countereffects
+                ),
+                protected_performance_outcome_ids=_semantic_ids(
+                    "protected_outcome", effect.effect_id, countereffects
+                ),
+                rollback_condition_ids=(f"p352.rollback:{effect.effect_id}",),
                 related_control_keys=control_keys,
                 source_ids=tuple(effect.source_ids),
             )
@@ -241,13 +310,62 @@ def compile_engineering_knowledge_coverage() -> EngineeringKnowledgeCoverageRepo
             "unsupported_remove",
         )
     }
+    control_keys = {
+        control_key
+        for bridge in bridges
+        for control_key in bridge.related_control_keys
+    }
+    control_directions = {
+        (bridge.related_control_keys, bridge.direction_sign)
+        for bridge in bridges
+        if bridge.related_control_keys
+    }
+    experiment_factors = {
+        bridge.experiment_factor_id
+        for bridge in bridges
+        if bridge.experiment_factor_id is not None
+    }
     body = {
-        "schema_version": "p351.knowledge-coverage.v1",
+        "schema_version": "p352.knowledge-coverage.v1",
         "catalog_effect_count": len(effects),
         "bridge_count": len(bridges),
         "educational_count": counts["educational_knowledge"],
         "measurable_count": counts["measurable_hypothesis"],
-        "structurally_p19_testable_count": counts["p19_testable_control"],
+        "testable_effect_count": counts["p19_testable_control"],
+        "distinct_control_count": len(control_keys),
+        "distinct_control_direction_count": len(control_directions),
+        "distinct_experiment_factor_count": len(experiment_factors),
+        "coordinated_multi_control_contract_count": len(
+            {
+                bridge.related_control_keys
+                for bridge in bridges
+                if len(bridge.related_control_keys) > 1
+            }
+        ),
+        "current_action_ready_count": 0,
+        "identity_coverage_count": len(mapped),
+        "semantic_precision_count": sum(
+            bool(
+                bridge.relevant_phases
+                and bridge.response_regimes
+                and bridge.expected_vehicle_state_ids
+                and bridge.validation_metric_ids
+                and bridge.countereffect_state_ids
+                and bridge.protected_performance_outcome_ids
+                and bridge.rollback_condition_ids
+            )
+            for bridge in bridges
+        ),
+        "runtime_observability_contract_count": sum(
+            bridge.catalog_classification != "unsupported_remove"
+            and bool(bridge.p20_mechanism_ids and bridge.required_evidence_layers)
+            for bridge in bridges
+        ),
+        "experiment_coverage_count": sum(
+            bridge.catalog_classification == "p19_testable_control"
+            and bridge.experiment_factor_id is not None
+            for bridge in bridges
+        ),
         "unsupported_remove_count": counts["unsupported_remove"],
         "mapped_effect_ids": mapped,
         "unmapped_effect_ids": unmapped,

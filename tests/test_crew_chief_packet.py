@@ -34,10 +34,19 @@ def _opportunity(**updates):
 
 
 def _candidate(key: str, score: float, event: str = "entry-event") -> CauseCandidate:
+    semantic_identity = {
+        "cross_weight_percent": ("add_crossweight_small", "factor:crossweight"),
+        "front_brake_bias_percent": (
+            "add_front_brake_bias_small",
+            "factor:front_brake_distribution",
+        ),
+    }[key]
     return CauseCandidate(
         cause_bucket="corner_balance",
+        effect_id=semantic_identity[0],
         control_key=key,
         direction_sign=1,
+        experiment_factor_id=semantic_identity[1],
         score=score,
         hypothesis="A small controlled input may reduce the repeatable entry loss.",
         success_metrics=("Entry phase time improves beyond 0.05 s",),

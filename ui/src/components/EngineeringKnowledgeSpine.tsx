@@ -29,7 +29,22 @@ export function EngineeringKnowledgeSpine({
     (item) => item.level !== "unsupported_remove",
   );
   const currentMechanisms = unique(leading.flatMap((item) => item.p35_mechanism_ids));
-  const currentComponents = unique(leading.flatMap((item) => item.p26_component_family_ids));
+  const possibleComponents = unique(leading.flatMap(
+    (item) => item.possible_component_family_ids,
+  ));
+  const candidateComponents = unique(leading.flatMap(
+    (item) => item.current_candidate_component_ids,
+  ));
+  const supportedComponents = unique(leading.flatMap(
+    (item) => item.current_supported_component_ids,
+  ));
+  const contradictedComponents = unique(leading.flatMap(
+    (item) => item.contradicted_component_ids,
+  ));
+  const blockedComponents = unique(leading.flatMap((item) => item.blocked_component_ids));
+  const unobservableComponents = unique(leading.flatMap(
+    (item) => item.unobservable_component_ids,
+  ));
   const missing = unique(leading.flatMap((item) => item.missing_evidence));
   const history = leading.flatMap((item) => item.controlled_history);
   const supportIds = new Set(leading.flatMap((item) => item.support_artifact_ids));
@@ -72,9 +87,23 @@ export function EngineeringKnowledgeSpine({
         <article>
           <h4>What it physically changes</h4>
           <p>{current?.physical_role ?? `${label(current?.setup_area ?? "setup system")} remains a static mechanical relationship only.`}</p>
-          <small>{currentComponents.length > 0
-            ? `${currentComponents.map(label).join(" · ")} are mechanically related component families, not proven causes.`
-            : "No current component family has cleared the evidence gates."}</small>
+          <small>{possibleComponents.length > 0
+            ? `Static possibility map · ${possibleComponents.map(label).join(" · ")}.`
+            : "No reviewed component possibility map is available."}</small>
+          <small>{supportedComponents.length > 0
+            ? `Current support · ${supportedComponents.map(label).join(" · ")}.`
+            : candidateComponents.length > 0
+              ? `Current candidates · ${candidateComponents.map(label).join(" · ")}; none is supported yet.`
+              : "No component family has current supporting evidence."}</small>
+          {contradictedComponents.length > 0 && (
+            <small>Contradicted now · {contradictedComponents.map(label).join(" · ")}.</small>
+          )}
+          {(blockedComponents.length > 0 || unobservableComponents.length > 0) && (
+            <small>
+              Evidence debt · {[...blockedComponents, ...unobservableComponents]
+                .map(label).join(" · ")}.
+            </small>
+          )}
           {current && current.countereffect_ids.length > 0 && (
             <small>Protect: {current.countereffect_ids.slice(0, 3).map(label).join(" · ")}.</small>
           )}
@@ -87,6 +116,11 @@ export function EngineeringKnowledgeSpine({
             : opportunity
               ? `P32 opportunity · ${opportunity.phase ?? "unscoped phase"} · ${opportunity.lap_pct_start ?? "?"}–${opportunity.lap_pct_end ?? "?"}% · L${opportunity.lap_numbers.join(", L")}`
               : "The exact P32 opportunity is bound, but its focus entry is not navigable here."}</p>
+          {current && (
+            <small>
+              Knowledge · {label(current.knowledge_applicability)}. Current evidence · {label(current.runtime_evidence_state)}.
+            </small>
+          )}
           {navigable.length > 0 && <div className="engineering-knowledge-evidence">
             {navigable.slice(0, 4).map((entry) => (
               <button type="button" key={entry.artifact_id} onClick={() => onFocusEvidence(entry)}>

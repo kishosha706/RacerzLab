@@ -45,6 +45,8 @@ class OpportunityEvidence(PacketModel):
 
 
 class CauseCandidate(PacketModel):
+    effect_id: str
+    experiment_factor_id: str
     cause_bucket: str
     control_key: str
     direction_sign: Literal[-1, 1]
@@ -144,6 +146,8 @@ def build_kaizen_packet(
             control_key=primary.control_key,
             current_value=current_setup_values.get(primary.control_key),
             direction_sign=primary.direction_sign,
+            setup_effect_id=primary.effect_id,
+            experiment_factor_id=primary.experiment_factor_id,
             hypothesis=primary.hypothesis,
             target_phase=opportunity.phase,
             success_metrics=list(primary.success_metrics),

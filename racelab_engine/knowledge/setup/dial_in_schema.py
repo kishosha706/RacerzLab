@@ -122,12 +122,30 @@ class DialInHypothesisSwing(DialInModel):
     ]
     bridge_id: str
     bridge_sha256: str
+    direction_sign: Literal[-1, 0, 1]
+    experiment_factor_id: str | None = None
     p35_mechanism_ids: list[str] = Field(default_factory=list)
     p20_mechanism_ids: list[str] = Field(default_factory=list)
+    possible_component_family_ids: list[str] = Field(default_factory=list)
     p26_component_family_ids: list[str] = Field(default_factory=list)
+    current_candidate_component_ids: list[str] = Field(default_factory=list)
+    current_supported_component_ids: list[str] = Field(default_factory=list)
+    contradicted_component_ids: list[str] = Field(default_factory=list)
+    blocked_component_ids: list[str] = Field(default_factory=list)
+    unobservable_component_ids: list[str] = Field(default_factory=list)
+    irrelevant_component_ids: list[str] = Field(default_factory=list)
     p32_performance_mechanism_ids: list[str] = Field(default_factory=list)
     inspection_tool_ids: list[str] = Field(default_factory=list)
     discriminator_contract_ids: list[str] = Field(default_factory=list)
+    expected_vehicle_state_ids: list[str] = Field(default_factory=list)
+    validation_metric_ids: list[str] = Field(default_factory=list)
+    countereffect_state_ids: list[str] = Field(default_factory=list)
+    protected_performance_outcome_ids: list[str] = Field(default_factory=list)
+    rollback_condition_ids: list[str] = Field(default_factory=list)
+    knowledge_applicability: Literal[
+        "applicable", "educational_only", "blocked_by_build", "unsupported"
+    ]
+    runtime_evidence_state: EvidenceState
     knowledge_version: str
     knowledge_graph_sha256: str
     candidate_control_label: str
@@ -228,6 +246,8 @@ class DialInHypothesisResponse(DialInModel):
                         ),
                         "bridge_id": bridges[swing.id].bridge_id,
                         "bridge_sha256": bridges[swing.id].bridge_sha256,
+                        "direction_sign": bridges[swing.id].direction_sign,
+                        "experiment_factor_id": bridges[swing.id].experiment_factor_id,
                         "p35_mechanism_ids": list(
                             current_by_effect[swing.id].p35_mechanism_ids
                             if swing.id in current_by_effect
@@ -238,10 +258,45 @@ class DialInHypothesisResponse(DialInModel):
                             if swing.id in current_by_effect
                             else bridges[swing.id].p20_mechanism_ids
                         ),
+                        "possible_component_family_ids": list(
+                            current_by_effect[swing.id].possible_component_family_ids
+                            if swing.id in current_by_effect
+                            else bridges[swing.id].p26_component_family_ids
+                        ),
                         "p26_component_family_ids": list(
                             current_by_effect[swing.id].p26_component_family_ids
                             if swing.id in current_by_effect
                             else bridges[swing.id].p26_component_family_ids
+                        ),
+                        "current_candidate_component_ids": list(
+                            current_by_effect[swing.id].current_candidate_component_ids
+                            if swing.id in current_by_effect
+                            else ()
+                        ),
+                        "current_supported_component_ids": list(
+                            current_by_effect[swing.id].current_supported_component_ids
+                            if swing.id in current_by_effect
+                            else ()
+                        ),
+                        "contradicted_component_ids": list(
+                            current_by_effect[swing.id].contradicted_component_ids
+                            if swing.id in current_by_effect
+                            else ()
+                        ),
+                        "blocked_component_ids": list(
+                            current_by_effect[swing.id].blocked_component_ids
+                            if swing.id in current_by_effect
+                            else ()
+                        ),
+                        "unobservable_component_ids": list(
+                            current_by_effect[swing.id].unobservable_component_ids
+                            if swing.id in current_by_effect
+                            else ()
+                        ),
+                        "irrelevant_component_ids": list(
+                            current_by_effect[swing.id].irrelevant_component_ids
+                            if swing.id in current_by_effect
+                            else ()
                         ),
                         "p32_performance_mechanism_ids": list(
                             bridges[swing.id].p32_performance_mechanism_ids
@@ -255,6 +310,36 @@ class DialInHypothesisResponse(DialInModel):
                             current_by_effect[swing.id].discriminator_contract_ids
                             if swing.id in current_by_effect
                             else bridges[swing.id].discriminator_contract_ids
+                        ),
+                        "expected_vehicle_state_ids": list(
+                            bridges[swing.id].expected_vehicle_state_ids
+                        ),
+                        "validation_metric_ids": list(
+                            bridges[swing.id].validation_metric_ids
+                        ),
+                        "countereffect_state_ids": list(
+                            bridges[swing.id].countereffect_state_ids
+                        ),
+                        "protected_performance_outcome_ids": list(
+                            bridges[swing.id].protected_performance_outcome_ids
+                        ),
+                        "rollback_condition_ids": list(
+                            bridges[swing.id].rollback_condition_ids
+                        ),
+                        "knowledge_applicability": (
+                            current_by_effect[swing.id].knowledge_applicability
+                            if swing.id in current_by_effect
+                            else "unsupported"
+                            if bridges[swing.id].catalog_classification
+                            == "unsupported_remove"
+                            else "educational_only"
+                        ),
+                        "runtime_evidence_state": (
+                            EvidenceState(
+                                current_by_effect[swing.id].runtime_evidence_state
+                            )
+                            if swing.id in current_by_effect
+                            else EvidenceState.UNAVAILABLE
                         ),
                         "knowledge_version": bridges[swing.id].knowledge_version,
                         "knowledge_graph_sha256": (
@@ -297,7 +382,11 @@ class DialInHypothesisResponse(DialInModel):
                     if swing.blocker_reasons
                     else "Repeat the selected symptom and phase on eligible, matched laps with the setup unchanged."
                 ),
-                evidence_state=swing.evidence_state,
+                evidence_state=(
+                    EvidenceState(current_by_effect[swing.id].runtime_evidence_state)
+                    if swing.id in current_by_effect
+                    else EvidenceState.UNAVAILABLE
+                ),
                 source_channels=list(swing.source_channels),
                 observed_evidence_flags=list(swing.observed_evidence_flags),
                 supporting_event_ids=list(swing.supporting_event_ids),
@@ -327,10 +416,31 @@ class DialInHypothesisResponse(DialInModel):
                         knowledge_level=current.level,
                         bridge_id=bridge.bridge_id,
                         bridge_sha256=bridge.bridge_sha256,
+                        direction_sign=current.direction_sign,
+                        experiment_factor_id=current.experiment_factor_id,
                         p35_mechanism_ids=list(current.p35_mechanism_ids),
                         p20_mechanism_ids=list(current.p20_mechanism_ids),
+                        possible_component_family_ids=list(
+                            current.possible_component_family_ids
+                        ),
                         p26_component_family_ids=list(
                             current.p26_component_family_ids
+                        ),
+                        current_candidate_component_ids=list(
+                            current.current_candidate_component_ids
+                        ),
+                        current_supported_component_ids=list(
+                            current.current_supported_component_ids
+                        ),
+                        contradicted_component_ids=list(
+                            current.contradicted_component_ids
+                        ),
+                        blocked_component_ids=list(current.blocked_component_ids),
+                        unobservable_component_ids=list(
+                            current.unobservable_component_ids
+                        ),
+                        irrelevant_component_ids=list(
+                            current.irrelevant_component_ids
                         ),
                         p32_performance_mechanism_ids=list(
                             bridge.p32_performance_mechanism_ids
@@ -338,6 +448,21 @@ class DialInHypothesisResponse(DialInModel):
                         inspection_tool_ids=list(current.inspection_tool_ids),
                         discriminator_contract_ids=list(
                             current.discriminator_contract_ids
+                        ),
+                        expected_vehicle_state_ids=list(
+                            current.expected_vehicle_state_ids
+                        ),
+                        validation_metric_ids=list(current.validation_metric_ids),
+                        countereffect_state_ids=list(
+                            current.countereffect_state_ids
+                        ),
+                        protected_performance_outcome_ids=list(
+                            current.protected_performance_outcome_ids
+                        ),
+                        rollback_condition_ids=list(current.rollback_condition_ids),
+                        knowledge_applicability=current.knowledge_applicability,
+                        runtime_evidence_state=EvidenceState(
+                            current.runtime_evidence_state
                         ),
                         knowledge_version=bridge.knowledge_version,
                         knowledge_graph_sha256=bridge.p35_knowledge_graph_sha256,
@@ -370,11 +495,7 @@ class DialInHypothesisResponse(DialInModel):
                             if current.missing_evidence
                             else "Use the candidate-owned bounded discriminator before any setup action."
                         ),
-                        evidence_state=(
-                            EvidenceState.CALCULATED
-                            if current.relevance == "supported_candidate"
-                            else EvidenceState.BLOCKED_BY_CONTEXT
-                        ),
+                        evidence_state=EvidenceState(current.runtime_evidence_state),
                         blocker_reasons=list(current.missing_evidence),
                     )
                 )

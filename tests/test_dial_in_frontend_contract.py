@@ -120,7 +120,8 @@ def test_dial_in_cards_render_non_authorizing_hypotheses_only() -> None:
     assert "change_this: string" not in telemetry_types
     assert "garage_lever: string" not in telemetry_types
     assert "proposed_value_label" not in telemetry_types
-    assert "direction_sign" not in telemetry_types
+    assert "direction_sign: -1 | 0 | 1" in telemetry_types
+    assert "swing.direction_sign" not in dial_in_tab
     assert "dialin-change-this" in dial_in_tab
     assert "Hypothesis only:" in dial_in_tab
     assert "Make this setup change:" not in dial_in_tab

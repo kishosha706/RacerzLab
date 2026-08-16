@@ -158,6 +158,9 @@ export type CrewChiefTerminalDecision = {
   instruction: string;
   authority: "context_only" | "measurement_only" | "p19_projection_only";
   control_key: string | null;
+  setup_effect_id: string | null;
+  experiment_factor_id: string | null;
+  direction_sign: -1 | 1 | null;
   current_value: string | null;
   proposed_value: string | null;
   source_event_ids: string[];
@@ -189,7 +192,7 @@ export type CrewChiefInvestigation = {
 };
 
 export type CrewChiefWorkspace = {
-  schema_version: "p351.crew-chief-workspace.v1";
+  schema_version: "p352.crew-chief-workspace.v1";
   identity: CrewChiefWorkspaceIdentity;
   generated_at: string;
   cache_state: "cold" | "warm";

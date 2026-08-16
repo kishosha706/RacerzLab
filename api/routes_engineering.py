@@ -193,6 +193,9 @@ def _require_matching_p19_action(
     action = public.briefing.action
     authority = bundle.report.reasoning_snapshot.authority
     observed = {
+        "setup_effect_id": action.setup_effect_id,
+        "experiment_factor_id": action.experiment_factor_id,
+        "direction_sign": action.direction_sign,
         "control_key": action.control_key,
         "current_value": action.current_value,
         "proposed_value": action.proposed_value,
@@ -268,10 +271,10 @@ def _binding_for_authorized_candidate(
         "bound_at": datetime.now(UTC).isoformat(),
     }
     performance_binding = workflow.reproduction_snapshot.get(
-        "p351_performance_opportunity_binding"
+        "p352_performance_opportunity_binding"
     )
     if isinstance(performance_binding, dict):
-        result["p351_performance_opportunity_binding_sha256"] = (
+        result["p352_performance_opportunity_binding_sha256"] = (
             performance_binding.get("binding_sha256")
         )
     return result
@@ -399,7 +402,7 @@ def start_workflow(request: WorkflowStartRequest) -> ControlledWorkflow:
             workflow_opportunity=candidate.packet.opportunity,
         )
         snapshot = dict(candidate.reproduction_snapshot)
-        snapshot["p351_performance_opportunity_binding"] = (
+        snapshot["p352_performance_opportunity_binding"] = (
             performance_binding.model_dump(mode="json")
         )
         candidate = candidate.model_copy(

@@ -63,7 +63,6 @@ def test_dial_in_api_returns_clean_response_by_default(tmp_path: Path, monkeypat
         "change_this",
         "proposed_value",
         "current_value",
-        "direction_sign",
         "change_size",
         "keep_if",
         "undo_if",
@@ -72,6 +71,7 @@ def test_dial_in_api_returns_clean_response_by_default(tmp_path: Path, monkeypat
         "control_guardrail",
     ]:
         assert forbidden not in dumped
+    assert all(swing["direction_sign"] in {-1, 0, 1} for swing in payload["top_swings"])
     assert "increasing cross weight" not in dumped
     assert "stiffer" not in dumped
     assert "ai recommends" not in dumped

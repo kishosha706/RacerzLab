@@ -754,9 +754,11 @@ def test_cli_json_returns_stable_keys(tmp_path: Path, monkeypatch: pytest.Monkey
     payload = json.loads(completed.stdout)
     assert {"run_id", "complaint_raw", "confidence_label", "readiness_label", "driver_message", "top_swings", "clarification", "warnings"}.issubset(payload)
     assert payload["top_swings"][0]["validate_with_labels"]
+    assert payload["top_swings"][0]["direction_sign"] in {-1, 0, 1}
+    if payload["top_swings"][0]["direction_sign"]:
+        assert payload["top_swings"][0]["experiment_factor_id"].startswith("factor:")
     assert {
         "change_this",
-        "direction_sign",
         "current_value_label",
         "proposed_value_label",
         "one_change_test",

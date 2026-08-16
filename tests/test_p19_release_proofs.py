@@ -133,8 +133,10 @@ def _controlled_packet():
         candidates=(
             CauseCandidate(
                 cause_bucket="corner_balance",
+                effect_id="add_crossweight_small",
                 control_key="cross_weight_percent",
                 direction_sign=1,
+                experiment_factor_id="factor:crossweight",
                 score=0.9,
                 hypothesis="Test whether a small cross-weight increase reduces entry time.",
                 success_metrics=("Entry time improves beyond the empirical noise floor.",),

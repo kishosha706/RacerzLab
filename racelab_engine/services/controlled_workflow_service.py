@@ -47,7 +47,10 @@ from racelab_engine.analysis.test_director import (
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.analysis.time_alignment import TimeAlignmentResult, analyze_time_alignment
 from racelab_engine.knowledge.setup.dial_in_service import build_dial_in_response
-from racelab_engine.knowledge.setup.dial_in_controls import expanded_related_setup_keys
+from racelab_engine.knowledge.setup.dial_in_controls import (
+    expanded_related_setup_keys,
+    experiment_factor_id_for_effect,
+)
 from racelab_engine.knowledge.setup.evidence_adapter import (
     event_matches_phase,
     event_matches_zone,
@@ -236,6 +239,10 @@ def _cause_candidate_from_swing(
     if len(supported_keys) != 1 or len(swing.control_keys) != 1:
         return None
     key = supported_keys[0]
+    effect_id = str(swing.id)
+    experiment_factor_id = experiment_factor_id_for_effect(effect_id)
+    if experiment_factor_id is None:
+        return None
     linked_events = tuple(event_ids_by_key.get(key, ()))
     event_link = 1.0 if linked_events else 0.0
     observed_channels = tuple(dict.fromkeys(
@@ -293,6 +300,8 @@ def _cause_candidate_from_swing(
     if swing.blocker_reasons:
         score = 0.0
     return CauseCandidate(
+        effect_id=effect_id,
+        experiment_factor_id=experiment_factor_id,
         cause_bucket=swing.setup_area,
         control_key=key,
         direction_sign=swing.direction_sign,
@@ -1409,6 +1418,9 @@ def workflow_authority_action_identity(
     if workflow.packet.decision != "test" or card is None:
         raise ValueError("The workflow does not contain one controlled setup action.")
     return {
+        "setup_effect_id": card.setup_effect_id,
+        "experiment_factor_id": card.experiment_factor_id,
+        "direction_sign": card.direction_sign,
         "control_key": card.control_key,
         "current_value": format_setup_value(card.control_key, card.current_value),
         "proposed_value": format_setup_value(
@@ -1490,7 +1502,7 @@ def validate_p19_workflow_origin(
         "source_event_ids": action["source_event_ids"],
     }
     p351_binding = workflow.reproduction_snapshot.get(
-        "p351_performance_opportunity_binding"
+        "p352_performance_opportunity_binding"
     )
     integrity_keys: tuple[str, ...] = ()
     if p351_binding is not None:
@@ -1506,10 +1518,10 @@ def validate_p19_workflow_origin(
             raise ValueError(
                 "The immutable workflow P32 opportunity binding is invalid."
             ) from exc
-        expected["p351_performance_opportunity_binding_sha256"] = (
+        expected["p352_performance_opportunity_binding_sha256"] = (
             canonical_p351.binding_sha256
         )
-        integrity_keys = ("p351_performance_opportunity_binding_sha256",)
+        integrity_keys = ("p352_performance_opportunity_binding_sha256",)
     if any(binding.get(key) != value for key, value in expected.items()):
         raise ValueError("The immutable workflow P19 authority origin changed.")
     for key in (

@@ -92,9 +92,44 @@ _PLANS: dict[str, _ActionPlan] = {
 }
 
 
+_EXPERIMENT_FACTOR_BY_CONTROL_SET: dict[tuple[str, ...], str] = {
+    ("cross_weight_percent",): "factor:crossweight",
+    ("rf_front_spring_n_per_mm",): "factor:rf_spring_rate",
+    ("lr_rear_spring_n_per_mm",): "factor:lr_spring_rate",
+    ("front_brake_bias_percent",): "factor:front_brake_distribution",
+    ("rear_end_ratio",): "factor:final_drive_ratio",
+    ("lf_ride_height_mm", "rf_ride_height_mm"): "factor:front_platform_height",
+    ("lr_ride_height_mm", "rr_ride_height_mm"): "factor:rear_platform_height",
+    (
+        "lf_ride_height_mm",
+        "rf_ride_height_mm",
+        "lr_ride_height_mm",
+        "rr_ride_height_mm",
+    ): "factor:whole_platform_height",
+}
+
+
 def control_keys_for_effect(effect_id: str) -> tuple[str, ...]:
     plan = _PLANS.get(effect_id)
     return plan.control_keys if plan is not None else ()
+
+
+def control_direction_for_effect(effect_id: str) -> int | None:
+    """Return the reviewed action direction, never a prose-derived guess."""
+
+    plan = _PLANS.get(effect_id)
+    return plan.direction_sign if plan is not None else None
+
+
+def experiment_factor_id_for_effect(effect_id: str) -> str | None:
+    """Bind an actionable catalog effect to one P26 experiment factor."""
+
+    plan = _PLANS.get(effect_id)
+    return (
+        _EXPERIMENT_FACTOR_BY_CONTROL_SET.get(plan.control_keys)
+        if plan is not None
+        else None
+    )
 
 
 def _current_summary(keys: tuple[str, ...], setup_values: dict[str, Any]) -> str | None:

@@ -96,7 +96,8 @@ def test_p351_learning_spine_is_learning_only_and_keeps_p19_as_sole_action() -> 
         assert heading in component
     assert "P19 ONLY FOR ACTION" in component
     assert "Driver report is a prior only" in component
-    assert "not proven causes" in component
+    assert "Static possibility map" in component
+    assert "none is supported yet" in component
     assert "onFocusEvidence(entry)" in component
     assert "onFocusEvidence(discriminatorFocus)" in component
 

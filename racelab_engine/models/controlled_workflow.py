@@ -96,19 +96,19 @@ class ControlledWorkflow(BaseModel):
             value is None for value in performance_identity
         ):
             raise ValueError("canonical P32 workflow identity must be complete")
-        p351_binding = self.reproduction_snapshot.get(
-            "p351_performance_opportunity_binding"
+        p352_binding = self.reproduction_snapshot.get(
+            "p352_performance_opportunity_binding"
         )
         if all(value is not None for value in performance_identity) and (
-            p351_binding is None
+            p352_binding is None
         ):
             raise ValueError("canonical P32 workflow identity requires its receipt")
-        if p351_binding is not None and (
-            not isinstance(p351_binding, dict)
-            or p351_binding.get("p32_opportunity_id") != self.p32_opportunity_id
-            or p351_binding.get("p32_projection_sha256")
+        if p352_binding is not None and (
+            not isinstance(p352_binding, dict)
+            or p352_binding.get("p32_opportunity_id") != self.p32_opportunity_id
+            or p352_binding.get("p32_projection_sha256")
             != self.p32_projection_sha256
-            or p351_binding.get("engineering_knowledge_projection_sha256")
+            or p352_binding.get("engineering_knowledge_projection_sha256")
             != self.engineering_knowledge_projection_sha256
         ):
             raise ValueError("canonical P32 workflow receipt and identity disagree")

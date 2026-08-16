@@ -121,6 +121,9 @@ class IntelligenceActionResponse(IntelligenceApiModel):
     instruction: str
     setup_authorized: bool = False
     control_key: str | None = None
+    setup_effect_id: str | None = None
+    experiment_factor_id: str | None = None
+    direction_sign: Literal[-1, 1] | None = None
     current_value: str | None = None
     proposed_value: str | None = None
     evidence_state: EvidenceState
@@ -132,6 +135,11 @@ class IntelligenceActionResponse(IntelligenceApiModel):
     @model_validator(mode="after")
     def exact_setup_values_require_server_authorization(self) -> IntelligenceActionResponse:
         exact_values = (self.control_key, self.current_value, self.proposed_value)
+        semantic_identity = (
+            self.setup_effect_id,
+            self.experiment_factor_id,
+            self.direction_sign,
+        )
         if (
             len(set(self.source_event_ids)) != len(self.source_event_ids)
             or any(
@@ -144,11 +152,11 @@ class IntelligenceActionResponse(IntelligenceApiModel):
             if self.kind != "controlled_test" or any(
                 not isinstance(value, str) or not value or value.strip() != value
                 for value in exact_values
-            ):
+            ) or any(value is None for value in semantic_identity):
                 raise ValueError("authorized setup actions require one complete controlled-test target")
             if not self.source_event_ids or self.blocker_reasons:
                 raise ValueError("authorized setup actions require linked evidence and no blockers")
-        elif any(value is not None for value in exact_values):
+        elif any(value is not None for value in (*exact_values, *semantic_identity)):
             raise ValueError("unauthorized actions cannot publish exact setup values")
         if (self.mission_contract_id is None) != (self.mission_contract_sha256 is None):
             raise ValueError("measurement contract identity and hash must be paired")

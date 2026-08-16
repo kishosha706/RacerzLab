@@ -46,8 +46,10 @@ def _packet():
         canonical_symptom="tight_entry",
         candidates=[CauseCandidate(
             cause_bucket="corner_balance",
+            effect_id="add_crossweight_small",
             control_key="cross_weight_percent",
             direction_sign=1,
+            experiment_factor_id="factor:crossweight",
             score=0.9,
             hypothesis="Test entry balance.",
             success_metrics=("Target-window entry time",),

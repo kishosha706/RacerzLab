@@ -33,6 +33,7 @@ import {
   hasCanonicalEngineeringKnowledgeDigest,
   isCurrentEngineeringKnowledgeProjection,
 } from "../src/utils/engineeringKnowledgeTrust.ts";
+import { ENGINEERING_KNOWLEDGE_STATIC_REGISTRY } from "../src/utils/engineeringKnowledgeRegistry.ts";
 
 const h = (value) => value.repeat(64);
 const requiredSupportChannels = (mechanism) => [...new Set(
@@ -106,6 +107,7 @@ const report = {
   vehicle_systems: {
     graph_version: "p26.v1", knowledge_graph_sha256: h("e"),
     runtime_identity: structuredClone(vehicleRuntimeIdentity),
+    component_states: [],
   },
   mechanism_observations: {
     status: "ready", run_id: "run-1", setup_id: "setup-1",
@@ -135,7 +137,7 @@ const report = {
   },
   briefing: {
     success_check: "Repeatable evidence",
-    action: { kind: "measurement_mission", title: "Measure", instruction: "Collect three eligible laps.", setup_authorized: false, control_key: null, current_value: null, proposed_value: null, source_event_ids: [] },
+    action: { kind: "measurement_mission", title: "Measure", instruction: "Collect three eligible laps.", setup_authorized: false, control_key: null, setup_effect_id: null, experiment_factor_id: null, direction_sign: null, current_value: null, proposed_value: null, source_event_ids: [] },
   },
   next_trustworthy_move: null,
 };
@@ -380,27 +382,48 @@ const availableTools = [
     authority_ceiling: "measurement_only", required_sources: ["p351", "p19", "p26"],
   },
 ];
-const emptyKnowledgeHypotheses = Array.from({ length: 92 }, (_, index) => ({
-  bridge_id: `p351b_${index.toString(16).padStart(24, "0")}`,
-  effect_id: `effect_${index.toString().padStart(2, "0")}`,
-  setup_area: `area_${index.toString().padStart(2, "0")}`,
+const emptyKnowledgeHypotheses = ENGINEERING_KNOWLEDGE_STATIC_REGISTRY.map((identity) => ({
+  bridge_id: identity.bridgeId,
+  effect_id: identity.effectId,
+  setup_area: "reviewed_setup_catalog",
   physical_role: "Provides a direction-neutral setup-system relationship.",
-  level: "educational_knowledge", relevance: "knowledge_only",
-  p32_opportunity_id: null, p35_mechanism_ids: [], p20_mechanism_ids: [],
-  p26_component_family_ids: [], response_regimes: [], relevant_phases: [],
-  expected_vehicle_response_ids: [], countereffect_ids: [], protected_outcomes: [],
+  direction_sign: identity.directionSign, experiment_factor_id: identity.experimentFactorId,
+  level: identity.p35MechanismIds.length === 0 ? "unsupported_remove" : "educational_knowledge",
+  relevance: identity.p35MechanismIds.length === 0 ? "inapplicable" : "knowledge_only",
+  p32_opportunity_id: null, p35_mechanism_ids: [],
+  p20_mechanism_ids: identity.p20MechanismIds.filter((mechanismId) => (
+    engineeringAwareness.subsystem_states.some(
+      (state) => state.status === "ready" && state.mechanism === mechanismId,
+    )
+  )),
+  possible_component_family_ids: [...identity.possibleComponentFamilyIds],
+  p26_component_family_ids: [],
+  current_candidate_component_ids: [], current_supported_component_ids: [],
+  contradicted_component_ids: [], blocked_component_ids: [],
+  unobservable_component_ids: [], irrelevant_component_ids: [],
+  response_regimes: [], relevant_phases: [], expected_vehicle_response_ids: [],
+  expected_vehicle_state_ids: [`p352.expected_vehicle_state:${identity.effectId}:0:state`],
+  validation_metric_ids: [`p352.validation_metric:${identity.effectId}:0:metric`],
+  countereffect_ids: [],
+  countereffect_state_ids: [`p352.countereffect_state:${identity.effectId}:0:countereffect`],
+  protected_outcomes: [],
+  protected_performance_outcome_ids: [`p352.protected_outcome:${identity.effectId}:0:outcome`],
+  rollback_condition_ids: [`p352.rollback:${identity.effectId}`],
   inspection_tool_ids: [], support_artifact_ids: [], contradiction_artifact_ids: [],
   discriminator_contract_ids: [], missing_evidence: ["Current mechanism evidence is unavailable."],
-  controlled_history: [], p19_control: null, authority: "knowledge_only", setup_authorized: false,
+  controlled_history: [], knowledge_applicability: identity.p35MechanismIds.length === 0
+    ? "unsupported" : "educational_only",
+  runtime_evidence_state: "unavailable", p19_control: null,
+  authority: "knowledge_only", setup_authorized: false,
 }));
 const engineeringKnowledgeBody = {
-  schema_version: "p351.current-engineering-knowledge.v1",
+  schema_version: "p352.current-engineering-knowledge.v1",
   run_id: "run-1", session_id: "session-1", complaint_prior: null,
   p19_reasoning_snapshot_sha256: h("a"), p20_state_revision: h("d"),
   p26_knowledge_graph_sha256: h("e"), p32_projection_sha256: h("7"),
   p35_assessment_sha256: vehicleDynamics.p35_assessment_sha256,
   p33_projection_sha256: h("2"),
-  bridge_coverage_sha256: "d3f9f95c41f85bdbc2ac697d242d6d1e560bd58575cf65155e3843f88c7c8680",
+  bridge_coverage_sha256: "a7dd3bcb645b037d803289dd94ffa7a0c89c6d01e7ce7c52e635c8471826cc1c",
   p32_opportunity_id: null, hypotheses: emptyKnowledgeHypotheses,
   leading_hypothesis_ids: [], next_discriminator_contract_id: null,
   blocker_reasons: ["No qualified P32 performance opportunity is available."],
@@ -410,19 +433,72 @@ const engineeringKnowledge = {
   ...engineeringKnowledgeBody,
   projection_sha256: await canonicalJsonSha256(engineeringKnowledgeBody),
 };
+const selectLeadingKnowledgeHypotheses = (hypotheses, discriminatorId) => {
+  const current = hypotheses.filter((item) => item.relevance === "supported_candidate"
+    || item.relevance === "blocked_candidate");
+  const selected = [];
+  const mechanisms = new Set();
+  const components = new Set();
+  const discriminatorOwner = discriminatorId == null ? undefined : current.find(
+    (item) => item.discriminator_contract_ids.includes(discriminatorId),
+  );
+  if (discriminatorOwner != null) selected.push(discriminatorOwner);
+  selected.forEach((item) => {
+    item.p35_mechanism_ids.forEach((id) => mechanisms.add(id));
+    item.p26_component_family_ids.forEach((id) => components.add(id));
+  });
+  for (const item of current) {
+    if (selected.includes(item)) continue;
+    const addsMechanism = item.p35_mechanism_ids.some((id) => !mechanisms.has(id));
+    const addsComponent = item.p26_component_family_ids.some((id) => !components.has(id));
+    if (!addsMechanism && !addsComponent) continue;
+    selected.push(item);
+    item.p35_mechanism_ids.forEach((id) => mechanisms.add(id));
+    item.p26_component_family_ids.forEach((id) => components.add(id));
+    if (selected.length === 8) return selected.map((item) => item.effect_id);
+  }
+  for (const item of current) {
+    if (!selected.includes(item)) selected.push(item);
+    if (selected.length === 8) break;
+  }
+  return selected.map((item) => item.effect_id);
+};
 const synchronizeEngineeringKnowledge = async (value) => {
   const hypotheses = structuredClone(emptyKnowledgeHypotheses);
-  value.vehicle_dynamics.candidates.forEach((candidate, index) => {
-    hypotheses[index] = {
-      ...hypotheses[index],
+  hypotheses.forEach((hypothesis, hypothesisIndex) => {
+    const identity = ENGINEERING_KNOWLEDGE_STATIC_REGISTRY[hypothesisIndex];
+    const candidates = identity.p35MechanismIds.flatMap((mechanismId) => {
+      const candidate = value.vehicle_dynamics.candidates.find(
+        (item) => item.mechanism_id === mechanismId,
+      );
+      return candidate == null ? [] : [candidate];
+    });
+    if (candidates.length === 0) return;
+    hypotheses[hypothesisIndex] = {
+      ...hypothesis,
       level: "measurable_hypothesis",
-      relevance: candidate.relevance === "candidate" ? "supported_candidate" : "blocked_candidate",
+      relevance: candidates.some((candidate) => candidate.relevance === "candidate")
+        ? "supported_candidate" : "blocked_candidate",
       p32_opportunity_id: value.vehicle_dynamics.performance_opportunity_ids[0] ?? null,
-      p35_mechanism_ids: [candidate.mechanism_id],
-      support_artifact_ids: [...candidate.support_artifact_ids],
-      contradiction_artifact_ids: [...candidate.contradiction_artifact_ids],
-      discriminator_contract_ids: [...candidate.discriminator_contract_ids],
-      missing_evidence: [...candidate.blocker_reasons],
+      p35_mechanism_ids: candidates.map((candidate) => candidate.mechanism_id),
+      support_artifact_ids: candidates.flatMap((candidate) => candidate.support_artifact_ids),
+      contradiction_artifact_ids: candidates.flatMap(
+        (candidate) => candidate.contradiction_artifact_ids,
+      ),
+      discriminator_contract_ids: [...new Set(candidates.flatMap(
+        (candidate) => candidate.discriminator_contract_ids,
+      ))],
+      missing_evidence: [...new Set(candidates.flatMap((candidate) => candidate.blocker_reasons))],
+      knowledge_applicability: "applicable",
+      runtime_evidence_state: candidates.some((candidate) => candidate.relevance === "blocked")
+        ? "blocked_by_context"
+        : candidates.some((candidate) => candidate.support_artifact_ids.length > 0)
+          ? value.vehicle_dynamics.focus_artifacts.find(
+            (item) => candidates.some(
+              (candidate) => candidate.support_artifact_ids.includes(item.artifact_id),
+            ),
+          )?.evidence_state ?? "unavailable"
+          : "unavailable",
       authority: "measurement_only",
     };
   });
@@ -431,11 +507,10 @@ const synchronizeEngineeringKnowledge = async (value) => {
     p35_assessment_sha256: value.vehicle_dynamics.p35_assessment_sha256,
     p32_opportunity_id: value.vehicle_dynamics.performance_opportunity_ids[0] ?? null,
     hypotheses,
-    leading_hypothesis_ids: hypotheses
-      .filter((item) => item.relevance === "supported_candidate"
-        || item.relevance === "blocked_candidate")
-      .slice(0, 8)
-      .map((item) => item.effect_id),
+    leading_hypothesis_ids: selectLeadingKnowledgeHypotheses(
+      hypotheses,
+      value.vehicle_dynamics.next_discriminator_contract_id,
+    ),
     next_discriminator_contract_id: value.vehicle_dynamics.next_discriminator_contract_id,
     blocker_reasons: value.vehicle_dynamics.blocker_reasons.length > 0
       ? [...value.vehicle_dynamics.blocker_reasons]
@@ -448,7 +523,7 @@ const synchronizeEngineeringKnowledge = async (value) => {
   };
 };
 const workspace = {
-  schema_version: "p351.crew-chief-workspace.v1",
+  schema_version: "p352.crew-chief-workspace.v1",
   generated_at: "2026-08-15T09:05:00Z",
   identity: {
     run_id: "run-1", session_id: "session-1", reasoning_snapshot_sha256: h("a"),
@@ -492,11 +567,14 @@ const workspace = {
   current_subgoal: null, pending_driver_question: null, investigation: null, folded_state: null,
   blocker_reasons: [], post_run_brief: ["P19 status: ready."], response_history_ids: [], driver_memory_ids: [],
   p19_cause_ids: [],
-  p26_component_ids: [],
+  p26_component_ids: [...new Set(ENGINEERING_KNOWLEDGE_STATIC_REGISTRY.flatMap(
+    (item) => item.possibleComponentFamilyIds,
+  ))],
   p19_contradiction_artifact_ids: [],
   terminal_decision: {
     kind: "measurement_mission", title: "Measure", instruction: "Collect three eligible laps.",
-    authority: "measurement_only", control_key: null, current_value: null, proposed_value: null,
+    authority: "measurement_only", control_key: null, setup_effect_id: null,
+    experiment_factor_id: null, direction_sign: null, current_value: null, proposed_value: null,
     source_event_ids: [], workflow_id: null, workflow_revision: null, blocker_reasons: [],
   },
 };
@@ -525,6 +603,23 @@ assert.equal(
   isCrewChiefWorkspaceResponse(duplicateKnowledgeBridge, scope),
   false,
   "the 92-effect projection cannot reuse one bridge identity",
+);
+const forgedKnowledgeDirection = structuredClone(workspace);
+forgedKnowledgeDirection.engineering_knowledge.hypotheses[0].direction_sign = -1;
+await rehashEngineeringKnowledge(forgedKnowledgeDirection);
+assert.equal(
+  isCrewChiefWorkspaceResponse(forgedKnowledgeDirection, scope),
+  false,
+  "a coordinated rehash cannot swap the reviewed direction of a setup effect",
+);
+const forgedKnowledgeComponents = structuredClone(workspace);
+forgedKnowledgeComponents.engineering_knowledge.hypotheses[0]
+  .possible_component_family_ids = ["invented_component_family"];
+await rehashEngineeringKnowledge(forgedKnowledgeComponents);
+assert.equal(
+  isCrewChiefWorkspaceResponse(forgedKnowledgeComponents, scope),
+  false,
+  "a coordinated rehash cannot replace the reviewed static component relationship",
 );
 const forgedKnowledgeHistory = structuredClone(workspace);
 forgedKnowledgeHistory.engineering_knowledge.hypotheses[0].controlled_history = [{
@@ -637,6 +732,9 @@ unavailableRuntimeWorkspace.identity.p35_assessment_sha256 =
   unavailableRuntimeWorkspace.vehicle_dynamics.p35_assessment_sha256;
 unavailableRuntimeWorkspace.engineering_knowledge.p35_assessment_sha256 =
   unavailableRuntimeWorkspace.vehicle_dynamics.p35_assessment_sha256;
+unavailableRuntimeWorkspace.engineering_knowledge.hypotheses.forEach((item) => {
+  if (item.level !== "unsupported_remove") item.knowledge_applicability = "blocked_by_build";
+});
 {
   const { projection_sha256: _digest, ...body } = unavailableRuntimeWorkspace.engineering_knowledge;
   unavailableRuntimeWorkspace.engineering_knowledge.projection_sha256 = await canonicalJsonSha256(body);
@@ -867,7 +965,11 @@ assert.deepEqual(
     .map((tool) => tool.tool_id),
 );
 assert.equal(
-  isCurrentEngineeringKnowledgeProjection(withP34Pair.engineering_knowledge, withP34Pair),
+  isCurrentEngineeringKnowledgeProjection(
+    withP34Pair.engineering_knowledge,
+    withP34Pair,
+    report.vehicle_systems,
+  ),
   true,
   "P35.1 projection remains valid for the P34 pair fixture",
 );
@@ -1343,7 +1445,9 @@ assert.equal(isCrewChiefWorkspaceResponse(
 const controlledReport = structuredClone(report);
 controlledReport.briefing.action = {
   kind: "controlled_test", title: "One P19 test", instruction: "Set the exact card.",
-  setup_authorized: true, control_key: "cross_weight_percent", current_value: "51.5%",
+  setup_authorized: true, control_key: "cross_weight_percent",
+  setup_effect_id: "add_crossweight_small", experiment_factor_id: "factor:crossweight",
+  direction_sign: 1, current_value: "51.5%",
   proposed_value: "52.0%", source_event_ids: ["event-1"],
 };
 controlledReport.next_trustworthy_move = { workflow_id: "workflow-1", workflow_updated_at: "revision-1" };
@@ -1351,7 +1455,9 @@ const controlled = structuredClone(workspace);
 Object.assign(controlled.identity, { active_workflow_id: "workflow-1", active_workflow_revision: "revision-1" });
 controlled.terminal_decision = {
   kind: "controlled_test", title: "One P19 test", instruction: "Set the exact card.",
-  authority: "p19_projection_only", control_key: "cross_weight_percent", current_value: "51.5%",
+  authority: "p19_projection_only", control_key: "cross_weight_percent",
+  setup_effect_id: "add_crossweight_small", experiment_factor_id: "factor:crossweight",
+  direction_sign: 1, current_value: "51.5%",
   proposed_value: "52.0%", source_event_ids: ["event-1"], workflow_id: "workflow-1",
   workflow_revision: "revision-1", blocker_reasons: [],
 };

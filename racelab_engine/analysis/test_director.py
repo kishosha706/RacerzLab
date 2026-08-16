@@ -58,6 +58,8 @@ class TestStage(DirectorModel):
 
 class ControlledTestCard(DirectorModel):
     hypothesis: str
+    setup_effect_id: str | None = None
+    experiment_factor_id: str | None = None
     control_key: str
     control_label: str
     direction_sign: Literal[-1, 1]
@@ -87,6 +89,10 @@ class ControlledTestCard(DirectorModel):
             raise ValueError("controlled test cards must use A/B/A2 order")
         if self.control_key not in SETUP_CONTROL_SPECS:
             raise ValueError("test cards must use a driver-changeable setup control")
+        if (self.setup_effect_id is None) != (self.experiment_factor_id is None):
+            raise ValueError(
+                "controlled-test semantic effect and experiment-factor identities are paired"
+            )
         return self
 
 
@@ -243,6 +249,8 @@ def build_controlled_test(
     control_key: str,
     current_value: Any,
     direction_sign: int,
+    setup_effect_id: str | None = None,
+    experiment_factor_id: str | None = None,
     hypothesis: str,
     target_phase: str,
     success_metrics: list[str],
@@ -354,6 +362,8 @@ def build_controlled_test(
         ready=True,
         card=ControlledTestCard(
             hypothesis=hypothesis,
+            setup_effect_id=setup_effect_id,
+            experiment_factor_id=experiment_factor_id,
             control_key=control_key,
             control_label=spec.label,
             direction_sign=direction,

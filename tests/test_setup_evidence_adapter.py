@@ -491,3 +491,26 @@ def test_adapter_uses_channel_summary_path_without_row_materialization(tmp_path:
     monkeypatch.setattr(import_service, "read_telemetry_rows", _boom)
     context = build_run_evidence_context("run-1")
     assert context.run_id == "run-1"
+
+
+def test_canonical_runtime_owned_query_bypasses_legacy_inference_and_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    _seed_run(tmp_path, channels={"yaw_rate": 1.2, "steering_wheel_angle": 4.0})
+    import racelab_engine.knowledge.setup.evidence_adapter as adapter
+
+    def _legacy_path_must_not_run(*args, **kwargs):
+        raise AssertionError("session-bound Dial-In must use canonical P20/P26/P32/P35/P33 truth")
+
+    monkeypatch.setattr(adapter, "_observed_mechanism_evidence", _legacy_path_must_not_run)
+    monkeypatch.setattr(adapter, "read_telemetry_rows", _legacy_path_must_not_run)
+    monkeypatch.setattr(adapter, "get_setup_area_biases", _legacy_path_must_not_run)
+
+    result = query_setup_for_run_context(
+        "run-1",
+        "tight center",
+        canonical_runtime_owned=True,
+    )
+    assert result.evidence_context.run_id == "run-1"

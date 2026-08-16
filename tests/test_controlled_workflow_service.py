@@ -41,7 +41,9 @@ def _packet():
         ),
         canonical_symptom="tight_entry",
         candidates=[CauseCandidate(
-            cause_bucket="corner_balance", control_key="cross_weight_percent",
+            cause_bucket="corner_balance", effect_id="add_crossweight_small",
+            control_key="cross_weight_percent",
+            experiment_factor_id="factor:crossweight",
             direction_sign=1, score=0.9, hypothesis="Test entry balance.",
             success_metrics=("Target-window entry time",),
             countereffects=("Median non-target phase time must not worsen beyond empirical noise.",),
@@ -554,6 +556,7 @@ def test_every_dial_in_plan_preserves_structured_direction_without_parsing_prose
 
 def test_candidate_score_is_evidence_based_not_list_position() -> None:
     swing = SimpleNamespace(
+        id="add_crossweight_small",
         control_keys=["cross_weight_percent"], direction_sign=1,
         setup_area="cross_weight", effect="Expected effect.",
         counter_effect="Expected trade-off.", validate_with_labels=["Target phase time"],
@@ -577,6 +580,7 @@ def test_candidate_score_is_evidence_based_not_list_position() -> None:
 
 def test_candidate_without_event_link_cannot_receive_strong_score() -> None:
     swing = SimpleNamespace(
+        id="add_crossweight_small",
         control_keys=["cross_weight_percent"], direction_sign=1,
         setup_area="cross_weight", effect="Expected effect.",
         counter_effect="Expected trade-off.", validate_with_labels=["Target phase time"],
@@ -657,7 +661,8 @@ def test_specific_priority_is_part_of_personal_learning_context() -> None:
 
 def test_exact_context_response_model_can_block_a_generic_direction() -> None:
     candidate = CauseCandidate(
-        cause_bucket="cross_weight", control_key="cross_weight_percent",
+        cause_bucket="cross_weight", effect_id="add_crossweight_small",
+        control_key="cross_weight_percent", experiment_factor_id="factor:crossweight",
         direction_sign=1, score=0.8, hypothesis="Test the direction.",
         success_metrics=("Target phase time",), countereffects=("Guardrail",),
         supporting_event_ids=("event-1",), score_components={"eligible_event_link": 1.0},
@@ -696,7 +701,8 @@ def test_exact_context_response_model_can_block_a_generic_direction() -> None:
 
 def test_response_model_is_not_used_outside_observed_delta_range() -> None:
     candidate = CauseCandidate(
-        cause_bucket="cross_weight", control_key="cross_weight_percent",
+        cause_bucket="cross_weight", effect_id="add_crossweight_small",
+        control_key="cross_weight_percent", experiment_factor_id="factor:crossweight",
         direction_sign=1, score=0.8, hypothesis="Test the direction.",
         success_metrics=("Target phase time",), countereffects=("Guardrail",),
         supporting_event_ids=("event-1",),
@@ -731,7 +737,8 @@ def test_response_model_is_not_used_outside_observed_delta_range() -> None:
 
 def test_response_model_is_not_shared_across_surrounding_setups() -> None:
     candidate = CauseCandidate(
-        cause_bucket="cross_weight", control_key="cross_weight_percent",
+        cause_bucket="cross_weight", effect_id="add_crossweight_small",
+        control_key="cross_weight_percent", experiment_factor_id="factor:crossweight",
         direction_sign=1, score=0.8, hypothesis="Test the direction.",
         success_metrics=("Target phase time",), countereffects=("Guardrail",),
         supporting_event_ids=("event-1",),
@@ -766,7 +773,8 @@ def test_response_model_is_not_shared_across_surrounding_setups() -> None:
 
 def test_response_model_is_not_used_outside_absolute_control_levels() -> None:
     candidate = CauseCandidate(
-        cause_bucket="cross_weight", control_key="cross_weight_percent",
+        cause_bucket="cross_weight", effect_id="add_crossweight_small",
+        control_key="cross_weight_percent", experiment_factor_id="factor:crossweight",
         direction_sign=1, score=0.8, hypothesis="Test the direction.",
         success_metrics=("Target phase time",), countereffects=("Guardrail",),
         supporting_event_ids=("event-1",),
@@ -819,6 +827,7 @@ def test_server_packet_requires_same_qualified_mechanism_event_as_opportunity(
             return None
 
     swing = SimpleNamespace(
+        id="add_crossweight_small",
         control_keys=["cross_weight_percent"], direction_sign=1,
         setup_area="cross_weight", effect="Expected effect.", counter_effect="Trade-off.",
         validate_with_labels=["Target phase time"], validate_with=[], blocker_reasons=[],
