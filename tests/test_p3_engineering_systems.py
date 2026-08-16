@@ -1880,11 +1880,7 @@ def test_p3_contracts_reject_prohibited_claims(contract, forbidden: str) -> None
 def test_p3_engineering_endpoints_are_registered() -> None:
     from api.main import app
 
-    paths = {
-        path
-        for route in app.routes
-        if (path := getattr(route, "path", None)) is not None
-    }
+    paths = set(app.openapi()["paths"])
     assert {
         "/api/runs/{run_id}/braking-efficiency",
         "/api/runs/{run_id}/tire-state",
