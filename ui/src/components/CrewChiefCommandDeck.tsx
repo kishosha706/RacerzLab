@@ -17,6 +17,7 @@ import type {
   InvestigationImprovementProjection,
 } from "../types/investigationImprovement";
 import type { RunIntelligenceReport } from "../types/intelligence";
+import { VehicleDynamicsBlackboard } from "./VehicleDynamicsBlackboard";
 
 type Props = {
   runId: string;
@@ -375,7 +376,7 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
     return <section className="crew-chief-deck crew-chief-loading" aria-busy="true" aria-live="polite">
       <span className="eyebrow"><BrainCircuit size={13} aria-hidden="true" /> Crew Chief</span>
       <b>{busy ? "Binding current evidence" : "Crew Chief is waiting"}</b>
-      <p>Checking the exact P19, P20, P26, P32, and P33 identities before showing a decision.</p>
+      <p>Checking the exact P19, P20, P26, P32, P33, P34, and P35 identities before showing a decision.</p>
     </section>;
   }
 
@@ -412,6 +413,25 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
     : memory.blocker_reasons[0]
       ?? memory.post_run_brief.blocker_reasons[0]
       ?? "No qualified engineering history is available for this context.";
+  const leadingDynamicsCandidate = workspace.vehicle_dynamics.candidates.find(
+    (candidate) => candidate.relevance === "candidate",
+  );
+  const blockedDynamicsCandidate = workspace.vehicle_dynamics.candidates.find(
+    (candidate) => candidate.relevance === "blocked",
+  );
+  const dynamicsRaceState = leadingDynamicsCandidate
+    ? "candidate"
+    : blockedDynamicsCandidate ? "blocked" : "unavailable";
+  const dynamicsRaceBlocker = blockedDynamicsCandidate?.blocker_reasons[0]
+    ?? workspace.vehicle_dynamics.blocker_reasons[0]
+    ?? workspace.vehicle_dynamics.applicability_blockers[0]
+    ?? workspace.vehicle_dynamics.chain.flatMap((stage) => stage.blocker_reasons)[0]
+    ?? "No typed current-scope vehicle-response evidence is available.";
+  const dynamicsRaceLine = leadingDynamicsCandidate
+    ? `${humanize(leadingDynamicsCandidate.mechanism_id.replace(/^mechanism:/, ""))}. Candidate only; no component cause or setup authority.`
+    : `${dynamicsRaceBlocker}${workspace.vehicle_dynamics.measured_time_consequence_available
+      ? " Measured P32 time is retained; mechanism attribution remains blocked."
+      : ""}`;
   const evidenceLinks = (experienceIds: readonly string[]) => experienceIds.length ? (
     <div className="engineering-memory-evidence" aria-label="Historical telemetry evidence">
       {(() => {
@@ -463,6 +483,11 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
 
       {!learning && (
         <div className="crew-chief-race-secondary">
+          <p
+            className="vehicle-dynamics-race-line"
+            data-state={dynamicsRaceState}
+            aria-label="Vehicle Dynamics, candidate mechanisms only"
+          ><b>VEHICLE DYNAMICS · {dynamicsRaceState.toUpperCase()}</b> {dynamicsRaceLine}</p>
           <details className="speed-story-detail">
             <summary>Origin and carry</summary>
             <div>
@@ -562,6 +587,12 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
 
       {learning && (
         <div className="crew-chief-learning">
+          <VehicleDynamicsBlackboard
+            assessment={workspace.vehicle_dynamics}
+            evidenceEntries={workspace.evidence_index.entries}
+            p19Next={performance.explanation_chain.p19_next_move}
+            onFocusEvidence={onFocusEvidence}
+          />
           <InvestigationImprovementCard
             projection={workspace.investigation_improvement}
             evidenceReferences={workspace.learning_prior.evidence_references}

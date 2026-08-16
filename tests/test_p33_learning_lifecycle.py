@@ -120,6 +120,7 @@ def _workspace_identity(
         p26_knowledge_graph_sha256="5" * 64,
         p26_reasoning_snapshot_sha256="2" * 64,
         p32_projection_sha256="9" * 64,
+        p35_assessment_sha256="d" * 64,
         run_sentinel_sha256="c" * 64,
         learning_history_revision="a" * 64,
         learning_projection_sha256="b" * 64,

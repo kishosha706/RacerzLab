@@ -65,15 +65,16 @@ def longitudinal_weight_transfer_n(
             ["wheelbase_m"], set(),
             ["Wheelbase unavailable or invalid."],
         )
-    effective_cg = cg_height_m if cg_height_m is not None else 0.30
-    assumptions: list[str] = []
     if cg_height_m is None:
-        assumptions.append("cg_height_m defaulted to 0.30 m (low confidence).")
-    transfer = mass_kg * long_accel_mps2 * effective_cg / wheelbase_m
+        return None, confidence_from_missing(
+            ["cg_height_m"], {"mass_kg", "long_accel_mps2", "wheelbase_m"},
+            ["CG height is required; RacerZLab does not substitute a nominal value."],
+        )
+    transfer = mass_kg * long_accel_mps2 * cg_height_m / wheelbase_m
     return transfer, confidence_from_missing(
-        [] if cg_height_m is not None else ["cg_height_m"],
+        [],
         set(),
-        assumptions,
+        ["Rigid-body longitudinal transfer estimate; not a measured axle or wheel load."],
     )
 
 
@@ -106,15 +107,16 @@ def lateral_weight_transfer_n(
             ["track_width_m"], set(),
             ["Track width unavailable or invalid."],
         )
-    effective_cg = cg_height_m if cg_height_m is not None else 0.30
-    assumptions: list[str] = []
     if cg_height_m is None:
-        assumptions.append("cg_height_m defaulted to 0.30 m (low confidence).")
-    transfer = mass_kg * lat_accel_mps2 * effective_cg / track_width_m
+        return None, confidence_from_missing(
+            ["cg_height_m"], {"mass_kg", "lat_accel_mps2", "track_width_m"},
+            ["CG height is required; RacerZLab does not substitute a nominal value."],
+        )
+    transfer = mass_kg * lat_accel_mps2 * cg_height_m / track_width_m
     return transfer, confidence_from_missing(
-        [] if cg_height_m is not None else ["cg_height_m"],
-        {"mass_kg", "lat_accel_mps2", "track_width_m"},
-        assumptions,
+        [],
+        set(),
+        ["Rigid-body lateral transfer estimate; not a measured axle or wheel load."],
     )
 
 
@@ -264,13 +266,15 @@ def yaw_error_rad_s(
 def understeer_yaw_error_proxy(
     expected_yaw_rate_rad_s: float | None,
     actual_yaw_rate_rad_s: float | None,
-) -> tuple[float, EstimateConfidence]:
+) -> tuple[float | None, EstimateConfidence]:
     """Understeer proxy: max(0, expected - actual).
 
-    Returns 0 if oversteer or data unavailable.
+    Returns 0 for a measured non-positive yaw error. Missing data remains
+    unavailable so it cannot masquerade as evidence of no understeer-like
+    response.
     """
     error, conf = yaw_error_rad_s(expected_yaw_rate_rad_s, actual_yaw_rate_rad_s)
-    return (max(0.0, error), conf) if error is not None else (0.0, conf)
+    return (max(0.0, error), conf) if error is not None else (None, conf)
 
 
 # ── Dynamic grade isolation ────────────────────────────────────
@@ -458,7 +462,7 @@ def ackermann_scrub_proxy(
     actual_steering_deg: float | None,
     expected_steering_deg: float | None,
     scale_deg: float = 5.0,
-) -> tuple[float, EstimateConfidence]:
+) -> tuple[float | None, EstimateConfidence]:
     """Ackermann scrub proxy: clamp01(max(0, error) / scale).
 
     Positive error (extra steering beyond Ackermann) suggests scrub.
@@ -467,7 +471,7 @@ def ackermann_scrub_proxy(
     """
     error, conf = ackermann_steering_error_deg(actual_steering_deg, expected_steering_deg)
     if error is None or scale_deg <= 0:
-        return 0.0, conf
+        return None, conf
     return min(1.0, max(0.0, error) / scale_deg), conf
 
 

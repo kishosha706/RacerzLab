@@ -8,6 +8,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.main import app
+from racelab_engine.models.crew_chief import (
+    engineering_awareness_scientific_sha256,
+)
+from racelab_engine.models.engineering_context import (
+    ControlMutationEvent,
+    ControlMutationKind,
+)
 from racelab_engine.models.engineering_awareness import TrustAxis, TrustBudget, TrustState
 from racelab_engine.models.engineering_projection import (
     AwarenessArtifactVersion,
@@ -70,9 +77,49 @@ def _projection(run_id: str = "run-a") -> EngineeringAwarenessProjection:
         state_drift_status="unavailable",
         state_drift_blocker_reasons=("No canonical drift ledger.",),
         artifact_versions=(
-            AwarenessArtifactVersion(artifact_key="projection_schema", version="p20.awareness.v2"),
+            AwarenessArtifactVersion(
+                artifact_key="projection_schema",
+                version="p20.awareness.v2",
+            ),
         ),
     )
+
+
+def _projection_with_control_value(
+    previous_value: float | int | bool,
+    new_value: float | int | bool,
+) -> EngineeringAwarenessProjection:
+    mutation = ControlMutationEvent(
+        mutation_id="mutation-canonical-number",
+        run_id="run-a",
+        control_key="brake_bias",
+        mutation_kind=ControlMutationKind.APPLIED_STATE,
+        previous_value=previous_value,
+        new_value=new_value,
+        session_time=10.0,
+        lap=2,
+        lap_pct=25.0,
+        context_revision=1,
+        evidence_state=EvidenceState.MEASURED,
+    )
+    return _projection().model_copy(update={"control_mutations": (mutation,)})
+
+
+def test_crew_scientific_hash_normalizes_numeric_controls_but_not_booleans() -> None:
+    integer_projection = _projection_with_control_value(0, 1)
+    float_projection = _projection_with_control_value(0.0, 1.0)
+    boolean_projection = _projection_with_control_value(False, True)
+
+    assert engineering_awareness_scientific_sha256(integer_projection) == (
+        engineering_awareness_scientific_sha256(float_projection)
+    )
+    assert engineering_awareness_scientific_sha256(boolean_projection) != (
+        engineering_awareness_scientific_sha256(float_projection)
+    )
+    assert type(integer_projection.control_mutations[0].new_value) is int
+    assert type(float_projection.control_mutations[0].new_value) is float
+    assert type(boolean_projection.control_mutations[0].previous_value) is bool
+    assert type(boolean_projection.control_mutations[0].new_value) is bool
 
 
 def test_projection_requires_all_ten_mechanisms_and_exact_identity() -> None:

@@ -94,6 +94,56 @@ assert.equal(isRunIntelligenceResponse(projectedReport, reportExpectation), true
 projectedReport.vehicle_systems.reasoning_snapshot_sha256 = "c".repeat(64);
 assert.equal(isRunIntelligenceResponse(projectedReport, reportExpectation), false);
 
+const blockedMechanismReport = structuredClone(report);
+blockedMechanismReport.mechanism_observations = {
+  status: "ready",
+  run_id: "run-1",
+  setup_id: "setup-1",
+  authority: "observation_only",
+  observations: [{
+    observation_id: "p20:braking-response:blocked",
+    producer_id: "p20.braking_response",
+    artifact_id: "p20-artifact-blocked",
+    source_run_ids: ["run-1"],
+    source_setup_ids: ["setup-1"],
+    sample_coverage: 0,
+    mechanism: "braking_response",
+    mechanism_kinds: ["braking_response"],
+    run_id: "run-1",
+    setup_id: "setup-1",
+    lap_number: 4,
+    phase: null,
+    lap_pct_start: null,
+    lap_pct_end: null,
+    lap_pct_peak: null,
+    summary: "Brake-response evidence is unavailable for this scope.",
+    evidence_state: "blocked_by_context",
+    authority: "observation_only",
+    observational_label: "typed_mechanism_observation",
+    qualified: false,
+    source_channels: [],
+    required_channels: ["brake_pct", "yaw_rate"],
+    supporting_evidence: [],
+    contradicting_evidence: [],
+    telemetry_sample_count: 0,
+    repetition_count: 0,
+    citations: [],
+    blocker_reasons: ["Required brake-response channels are unavailable."],
+  }],
+  blocker_reasons: [],
+};
+assert.equal(isRunIntelligenceResponse(blockedMechanismReport, reportExpectation), true);
+
+const partiallyScopedBlockedMechanism = structuredClone(blockedMechanismReport);
+partiallyScopedBlockedMechanism.mechanism_observations.observations[0].lap_pct_start = 20;
+assert.equal(isRunIntelligenceResponse(partiallyScopedBlockedMechanism, reportExpectation), false);
+
+const uncitedQualifiedMechanism = structuredClone(blockedMechanismReport);
+uncitedQualifiedMechanism.mechanism_observations.observations[0].qualified = true;
+uncitedQualifiedMechanism.mechanism_observations.observations[0].evidence_state = "calculated";
+uncitedQualifiedMechanism.mechanism_observations.observations[0].blocker_reasons = [];
+assert.equal(isRunIntelligenceResponse(uncitedQualifiedMechanism, reportExpectation), false);
+
 const staleReport = structuredClone(report);
 staleReport.reasoning_snapshot_sha256 = "c".repeat(64);
 staleReport.vehicle_systems = { reasoning_snapshot_sha256: reasoningHash };

@@ -12,6 +12,13 @@ import type {
   ProblemFingerprint,
 } from "./engineeringLearning";
 import type { InvestigationImprovementProjection } from "./investigationImprovement";
+import type {
+  PerformanceMechanismAssessment,
+  VehicleDynamicsFocusArtifact,
+  VehicleDynamicsInspectionToolId,
+} from "./vehicleDynamics";
+import type { VehicleSystemsRuntimeIdentity } from "./vehicleSystems";
+import type { EngineeringAwarenessProjection } from "./engineeringAwareness";
 
 export type EngineeringObjective =
   | "qualifying_peak"
@@ -74,17 +81,30 @@ export type CrewChiefPerformanceArtifact =
     blocker_reasons: string[];
   };
 
+export type CrewChiefVehicleDynamicsFocusArtifact = {
+  artifact_type: "vehicle_dynamics_focus";
+  inspection_tool_id: VehicleDynamicsInspectionToolId;
+  assessment_sha256: string;
+  focus: VehicleDynamicsFocusArtifact;
+};
+
+export type CrewChiefEvidenceArtifact =
+  | CrewChiefPerformanceArtifact
+  | CrewChiefVehicleDynamicsFocusArtifact;
+
 export type CrewChiefWorkspaceIdentity = {
   run_id: string;
   session_id: string;
   selected_scope_hash: string;
   reasoning_snapshot_sha256: string;
   p20_state_revision: string;
+  p20_projection_sha256: string;
   p20_profile_hash: string | null;
   p26_graph_version: string;
   p26_knowledge_graph_sha256: string;
   p26_reasoning_snapshot_sha256: string;
   p32_projection_sha256: string;
+  p35_assessment_sha256: string;
   run_sentinel_sha256: string;
   learning_history_revision: string;
   learning_ledger_head_sha256: string | null;
@@ -92,6 +112,7 @@ export type CrewChiefWorkspaceIdentity = {
   setup_id: string;
   setup_snapshot_sha256: string;
   vehicle_runtime_identity_hash: string;
+  vehicle_runtime_identity: VehicleSystemsRuntimeIdentity | null;
   active_workflow_id: string | null;
   active_workflow_revision: string | null;
   objective_id: EngineeringObjective;
@@ -126,7 +147,7 @@ export type CrewChiefEvidenceEntry = {
   evidence_state: EvidenceState;
   polarity: "support" | "contradiction" | "neutral";
   blocker_reasons: string[];
-  typed_artifact: CrewChiefPerformanceArtifact | null;
+  typed_artifact: CrewChiefEvidenceArtifact | null;
   authority_ceiling: "observation_only" | "context_only" | "measurement_only" | "p19_projection_only" | "attention_only";
 };
 
@@ -167,7 +188,7 @@ export type CrewChiefInvestigation = {
 };
 
 export type CrewChiefWorkspace = {
-  schema_version: "p34.crew-chief-workspace.v1";
+  schema_version: "p35.crew-chief-workspace.v1";
   identity: CrewChiefWorkspaceIdentity;
   generated_at: string;
   cache_state: "cold" | "warm";
@@ -257,7 +278,9 @@ export type CrewChiefWorkspace = {
     integrity_stop_rules: string[];
     purpose: string;
   };
+  engineering_awareness: EngineeringAwarenessProjection;
   performance_intelligence: PerformanceIntelligenceProjection;
+  vehicle_dynamics: PerformanceMechanismAssessment;
   learning_prior: CrewChiefLearningPrior;
   investigation_improvement: InvestigationImprovementProjection;
   run_sentinel: {

@@ -384,6 +384,7 @@ def _crew_investigation(
         p26_knowledge_graph_sha256="3" * 64,
         p26_reasoning_snapshot_sha256=current.reasoning.reasoning_snapshot_sha256,
         p32_projection_sha256="5" * 64,
+        p35_assessment_sha256="d" * 64,
         run_sentinel_sha256="9" * 64,
         learning_history_revision="6" * 64,
         learning_projection_sha256="7" * 64,

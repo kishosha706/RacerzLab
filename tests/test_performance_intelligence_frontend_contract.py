@@ -66,7 +66,7 @@ def test_client_requires_atomic_p32_identity_and_rejects_authority_smuggling() -
     assert "isPerformanceIntelligenceProjection" in crew_trust
     assert "objectiveId: scope.objectiveId" in crew_trust
     assert "opportunityEvidence: p32Evidence" in crew_trust
-    assert 'value.schema_version !== "p34.crew-chief-workspace.v1"' in crew_trust
+    assert 'value.schema_version !== "p35.crew-chief-workspace.v1"' in crew_trust
 
 
 def test_crew_planner_begins_with_measured_time_before_component_relevance() -> None:

@@ -27,7 +27,9 @@ function canonicalJson(value: unknown, options: CanonicalJsonOptions, key?: stri
       `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`
     ));
   }
-  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item, options)).join(",")}]`;
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item, options, key)).join(",")}]`;
+  }
   if (typeof value === "object") {
     const record = value as Record<string, unknown>;
     return `{${Object.keys(record).sort().map((itemKey) => `${JSON.stringify(itemKey)}:${canonicalJson(record[itemKey], options, itemKey)}`).join(",")}}`;

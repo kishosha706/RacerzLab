@@ -14,13 +14,13 @@ from racelab_engine.analysis.vehicle_dynamics import (
 )
 
 
-def test_weight_transfer_formula_and_default_cg_confidence() -> None:
+def test_weight_transfer_formula_and_missing_cg_stays_unavailable() -> None:
     transfer, conf = longitudinal_weight_transfer_n(1500.0, 3.0, 0.4, 2.8)
     defaulted, default_conf = longitudinal_weight_transfer_n(1500.0, 3.0, None, 2.8)
 
     assert transfer == pytest.approx(1500.0 * 3.0 * 0.4 / 2.8)
     assert conf.tier == "high"
-    assert defaulted == pytest.approx(1500.0 * 3.0 * 0.30 / 2.8)
+    assert defaulted is None
     assert "cg_height_m" in default_conf.missing_inputs
     assert default_conf.assumptions
 

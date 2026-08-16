@@ -51,6 +51,25 @@ const PERFORMANCE_REORDER_GROUP = [
   "inspect_driver_vehicle_separation",
   "inspect_track_demand",
 ] as const;
+// P34's frozen decision cohort predates P35. P35 remains part of the current
+// workspace truth hash, but it cannot retroactively change P34 tool/artifact
+// availability or authority-revision inputs.
+const P35_INSPECTION_TOOL_IDS = new Set([
+  "inspect_tire_demand",
+  "inspect_load_transfer",
+  "inspect_roll_response",
+  "inspect_pitch_response",
+  "inspect_platform_state",
+  "inspect_transient_settling",
+  "inspect_steady_state_balance",
+  "inspect_brake_vehicle_response",
+  "inspect_power_on_response",
+  "inspect_differential_response",
+  "inspect_alignment_response",
+  "inspect_tire_state_migration",
+  "inspect_traffic_platform_response",
+  "inspect_gear_acceleration_response",
+]);
 const FROZEN_TOOL_PRIORITY = new Map<string, string>([
   ["inspect_data_quality", "identity_integrity"],
   ["inspect_lap_context", "context_qualification"],
@@ -1183,7 +1202,7 @@ function authorityIdentityBody(identity: Record<string, unknown>): Record<string
   const excluded = new Set([
     "objective_id", "investigation_id", "workspace_revision",
     "learning_history_revision", "learning_ledger_head_sha256",
-    "learning_projection_sha256", "run_sentinel_sha256",
+    "learning_projection_sha256", "run_sentinel_sha256", "p35_assessment_sha256",
   ]);
   return Object.fromEntries(
     Object.entries(identity).filter(([key]) => !excluded.has(key)),
@@ -1250,6 +1269,7 @@ function qualifiedCurrentEntries(
   const identity = workspace.identity;
   return workspace.evidence_index.entries.filter((item): item is Record<string, unknown> => (
     record(item)
+    && !String(item.producer_id).startsWith("p35.")
     && QUALIFIED_ARTIFACT_STATES.has(String(item.evidence_state))
     && Array.isArray(item.blocker_reasons)
     && item.blocker_reasons.length === 0
@@ -1374,7 +1394,9 @@ function expectedCurrentEvidencePin(
   }
   if (!record(workspace.evidence_index)
     || !Array.isArray(workspace.evidence_index.entries)) return null;
-  const entries = workspace.evidence_index.entries.filter(record);
+  const entries = workspace.evidence_index.entries.filter((item): item is Record<string, unknown> => (
+    record(item) && !String(item.producer_id).startsWith("p35.")
+  ));
   const selected = selectedToolEntries(
     entries,
     workspace.current_subgoal.selected_tool,
@@ -1679,11 +1701,15 @@ export async function hasCanonicalInvestigationImprovementDigests(
         || pair.p33_problem_sha256 !== learningPrior.current_problem_sha256
         || !sameList(
           pair.available_tool_ids,
-          workspace.available_tools.map((tool) => record(tool) ? tool.tool_id : null),
+          workspace.available_tools
+            .filter((tool) => record(tool) && !P35_INSPECTION_TOOL_IDS.has(String(tool.tool_id)))
+            .map((tool) => record(tool) ? tool.tool_id : null),
         )
         || !sameList(
           pair.available_artifact_ids,
-          workspace.evidence_index.entries.map((entry) => record(entry) ? entry.artifact_id : null),
+          workspace.evidence_index.entries
+            .filter((entry) => record(entry) && !String(entry.producer_id).startsWith("p35."))
+            .map((entry) => record(entry) ? entry.artifact_id : null),
         )
         || !sameList(pair.completed_tool_ids, workspace.folded_state.completed_tool_ids)
         || !sameList(pair.qualified_available_artifact_ids, qualifiedIds)

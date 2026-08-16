@@ -255,6 +255,11 @@ export type IntelligenceObservationCitation = {
   source_channels: string[];
   event_id: string | null;
   telemetry_sample_count: number;
+  physical_segments: Array<{
+    start_pct: number;
+    end_pct: number;
+    sample_count: number;
+  }>;
 };
 
 export type IntelligenceOpportunitySignature = {
@@ -310,7 +315,13 @@ export type IntelligenceMechanismKind =
 
 export type IntelligenceMechanismObservation = {
   observation_id: string;
+  producer_id: string;
+  artifact_id: string;
+  source_run_ids: string[];
+  source_setup_ids: string[];
+  sample_coverage: number;
   mechanism: IntelligenceMechanismKind;
+  mechanism_kinds: IntelligenceMechanismKind[];
   run_id: string;
   setup_id: string | null;
   lap_number: number | null;

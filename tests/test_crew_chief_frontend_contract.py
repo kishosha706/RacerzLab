@@ -94,18 +94,35 @@ def test_real_atlanta_public_workspace_passes_the_client_trust_boundary(
         "'./ui/src/utils/crewChiefResponseTrust.ts';"
         "import {hasCanonicalRunSentinelDigest} from "
         "'./ui/src/utils/crewChiefResponseTrust.ts';"
+        "import {hasCanonicalEngineeringAwarenessDigest} from "
+        "'./ui/src/utils/crewChiefResponseTrust.ts';"
+        "import {hasCanonicalCrewEvidenceIndexDigest} from "
+        "'./ui/src/utils/crewChiefResponseTrust.ts';"
+        "import {hasCanonicalVehicleRuntimeIdentityDigest} from "
+        "'./ui/src/utils/crewChiefResponseTrust.ts';"
         "import {hasCanonicalEngineeringLearningDigests} from "
         "'./ui/src/utils/engineeringLearningTrust.js';"
         "import {hasCanonicalInvestigationImprovementDigests} from "
         "'./ui/src/utils/investigationImprovementTrust.ts';"
+        "import {hasCanonicalPerformanceMechanismAssessmentDigest} from "
+        "'./ui/src/utils/vehicleDynamicsTrust.ts';"
         "const value=JSON.parse(fs.readFileSync(0,'utf8'));"
         "if(!isCrewChiefWorkspaceResponse(value.workspace,value.scope))"
         "throw new Error('real Atlanta public workspace was rejected');"
+        "if(!await hasCanonicalEngineeringAwarenessDigest(value.workspace))"
+        "throw new Error('real Atlanta P20 scientific digest was rejected');"
+        "if(!await hasCanonicalCrewEvidenceIndexDigest(value.workspace))"
+        "throw new Error('real Atlanta evidence-index digest was rejected');"
+        "if(!await hasCanonicalVehicleRuntimeIdentityDigest(value.workspace))"
+        "throw new Error('real Atlanta P26 runtime digest was rejected');"
         "if(!await hasCanonicalEngineeringLearningDigests(value.workspace.learning_prior))"
         "throw new Error('real Atlanta P33 digests were rejected');"
         "if(!await hasCanonicalInvestigationImprovementDigests("
         "value.workspace.investigation_improvement,value.workspace))"
         "throw new Error('real Atlanta P34 digests were rejected');"
+        "if(!await hasCanonicalPerformanceMechanismAssessmentDigest("
+        "value.workspace.vehicle_dynamics))"
+        "throw new Error('real Atlanta P35 digest was rejected');"
         "if(!await hasCanonicalMeasurementMissionDigest(value.workspace.p19_mission_contract))"
         "throw new Error('real Atlanta P19 mission digest was rejected');"
         "if(!await hasCanonicalRunSentinelDigest(value.workspace.run_sentinel,value.workspace.identity.run_sentinel_sha256))"
@@ -170,7 +187,10 @@ def test_client_parses_crew_chief_as_unknown_through_exact_report_guard() -> Non
     assert "learning_history_revision" in guard
     assert "learning_projection_sha256" in guard
     assert "isCrewChiefLearningPrior" in guard
-    assert 'value.schema_version !== "p34.crew-chief-workspace.v1"' in guard
+    assert 'value.schema_version !== "p35.crew-chief-workspace.v1"' in guard
+    assert "p35_assessment_sha256" in guard
+    assert "vehicle_dynamics" in guard
+    assert "isPerformanceMechanismAssessment" in guard
     assert "hasSetupAuthorityDirective" in guard
     assert "hasCanonicalEngineeringLearningDigests" in client
     assert "await hasCanonicalEngineeringLearningDigests(payload.learning_prior)" in client
@@ -180,6 +200,17 @@ def test_client_parses_crew_chief_as_unknown_through_exact_report_guard() -> Non
     assert "await hasCanonicalMeasurementMissionDigest(payload.p19_mission_contract)" in client
     assert "hasCanonicalRunSentinelDigest" in client
     assert "payload.identity.run_sentinel_sha256" in client
+    assert "hasCanonicalPerformanceMechanismAssessmentDigest" in client
+    assert "payload.vehicle_dynamics" in client
+    assert "hasCanonicalEngineeringAwarenessDigest" in client
+    assert "await hasCanonicalEngineeringAwarenessDigest(payload)" in client
+    assert "hasCanonicalCrewEvidenceIndexDigest" in client
+    assert "await hasCanonicalCrewEvidenceIndexDigest(payload)" in client
+    assert "hasCanonicalVehicleRuntimeIdentityDigest" in client
+    assert "await hasCanonicalVehicleRuntimeIdentityDigest(payload)" in client
+    assert "p20_projection_sha256" in guard
+    assert "engineering_awareness" in guard
+    assert "p20EntryIsProjectionOwned" in guard
 
 
 def test_crew_history_navigation_loads_the_saved_source_before_focusing() -> None:

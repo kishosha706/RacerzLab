@@ -28,6 +28,60 @@ const props = {
   onFocusEvidence: vi.fn(),
 };
 
+const vehicleDynamicsAssessment = () => ({
+  schema_version: "p35.performance-mechanism-assessment.v1",
+  p35_assessment_sha256: "a".repeat(64),
+  run_id: "run-1",
+  session_id: "session-1",
+  objective_id: "race_long_run",
+  car_path: "stockcars chevycamarozl1 2022",
+  car_version: "next-gen",
+  iracing_build_version: "2026.08.01.01",
+  track_package: "oval",
+  vehicle_runtime_identity_sha256: "b".repeat(64),
+  graph_id: "p35vdg_c14af7ad22a752df5710a6e6",
+  graph_version: "2026.08.next-gen-oval.v1:c14af7ad22a7",
+  knowledge_version: "2026.08.p35-next-gen-oval.v1",
+  knowledge_graph_sha256: "c14af7ad22a752df5710a6e695b50f085fa4d15ecb20b271b3dc6205e3113030",
+  p19_reasoning_snapshot_sha256: "c".repeat(64),
+  p20_state_revision: "d".repeat(64),
+  p20_profile_hash: null,
+  p26_graph_version: "p26.next-gen.v1",
+  p26_knowledge_graph_sha256: "e".repeat(64),
+  p32_projection_sha256: "f".repeat(64),
+  p32_performance_mechanism_ids: [],
+  performance_opportunity_ids: [],
+  measured_time_consequence_available: false,
+  chain: ["driver_input", "vehicle_demand", "vehicle_response", "tire_platform_state", "time_consequence"]
+    .map((stage) => ({
+      stage,
+      evidence_state: "unavailable",
+      source_artifact_ids: [],
+      source_channels: [],
+      summary: `${stage.replace(/_/g, " ")} is unavailable in this scope.`,
+      blocker_reasons: ["No clean comparison window is available."],
+      authority: "observation_only",
+    })),
+  tire_demand_state_ids: [],
+  load_path_ids: [],
+  response_regime: null,
+  candidates: [],
+  focus_artifacts: [],
+  strongest_support_artifact_id: null,
+  strongest_contradiction_artifact_id: null,
+  next_discriminator_contract_id: null,
+  unavailable_quantity_ids: ["quantity:exact_wheel_load", "quantity:exact_tire_force"],
+  traffic_blocked: false,
+  applicability_state: "ready",
+  applicability_blockers: [],
+  blocker_reasons: ["No clean comparison window is available."],
+  observation_authority: "observation_only",
+  mechanism_authority: "candidate_only",
+  component_causal_claim_count: 0,
+  setup_authorized: false,
+  terminal_authority: "p19_only",
+});
+
 const workspace = () => ({
   identity: { investigation_id: null, workspace_revision: "revision-1" },
   terminal_decision: {
@@ -56,6 +110,7 @@ const workspace = () => ({
     objective_envelope: { primary_outcomes: ["repeatability"], protected_outcomes: ["stability"] },
     explanation_chain: { strongest_contradiction: "No clean reference lap.", p19_next_move: "Collect three clean laps." },
   },
+  vehicle_dynamics: vehicleDynamicsAssessment(),
   learning_prior: {
     state: "available", strength: "single_case", context_transfer_level: "compatible",
     recurrence: {
@@ -177,7 +232,7 @@ describe("CrewChiefCommandDeck boundary states", () => {
 
     expect(container.querySelector("[aria-busy='true']")).not.toBeNull();
     expect(screen.getByText("Binding current evidence")).toBeTruthy();
-    expect(screen.getByText(/P19, P20, P26, P32, and P33 identities/)).toBeTruthy();
+    expect(screen.getByText(/P19, P20, P26, P32, P33, P34, and P35 identities/)).toBeTruthy();
   });
 
   it("renders a fail-closed empty boundary when workspace trust rejects", async () => {
@@ -212,6 +267,27 @@ describe("CrewChiefCommandDeck boundary states", () => {
     expect(within(disclosure as HTMLElement).getByText("WHERE IT STARTS")).toBeTruthy();
     expect(within(disclosure as HTMLElement).getByText("WHAT CARRIES")).toBeTruthy();
     expect(screen.queryByLabelText("Investigation Improvement, read only")).toBeNull();
+    expect(screen.queryByLabelText("Vehicle Dynamics Blackboard, candidate mechanisms only")).toBeNull();
+    const dynamicsLine = screen.getByLabelText("Vehicle Dynamics, candidate mechanisms only");
+    expect(within(dynamicsLine).getByText("VEHICLE DYNAMICS · UNAVAILABLE")).toBeTruthy();
+    expect(dynamicsLine.textContent).toContain("No clean comparison window is available.");
+  });
+
+  it("names only the leading supported mechanism candidate in the Race secondary line", async () => {
+    const value = workspace() as any;
+    value.vehicle_dynamics.candidates = [{
+      mechanism_id: "mechanism:center_rotation_deficit",
+      relevance: "candidate",
+      blocker_reasons: [],
+    }];
+    api.fetchCrewChiefWorkspace.mockResolvedValue(value);
+    render(<CrewChiefCommandDeck {...props} />);
+
+    const dynamicsLine = await screen.findByLabelText("Vehicle Dynamics, candidate mechanisms only");
+    expect(within(dynamicsLine).getByText("VEHICLE DYNAMICS · CANDIDATE")).toBeTruthy();
+    expect(dynamicsLine.textContent).toContain("center rotation deficit");
+    expect(dynamicsLine.textContent).toContain("no component cause or setup authority");
+    expect(screen.queryByLabelText("Vehicle Dynamics Blackboard, candidate mechanisms only")).toBeNull();
   });
 
   it("shows unavailable Investigation Improvement only in Learning Mode without activation controls", async () => {
@@ -222,6 +298,8 @@ describe("CrewChiefCommandDeck boundary states", () => {
     render(<CrewChiefCommandDeck {...props} learning />);
 
     const improvement = await screen.findByLabelText("Investigation Improvement, read only");
+    expect(screen.getByLabelText("Vehicle Dynamics Blackboard, candidate mechanisms only")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "NEXT · P19" })).toBeTruthy();
     expect(within(improvement).getByText("Paired evaluation unavailable")).toBeTruthy();
     expect(within(improvement).getByText(/No current frozen pair is available. No current investigation benefit is inferred/)).toBeTruthy();
     expect(within(improvement).getByText(/not evidence that it saves time, laps, or investigation steps/)).toBeTruthy();

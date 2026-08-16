@@ -34,6 +34,7 @@ from racelab_engine.models.crew_chief import (
     CrewChiefToolResult,
     CrewChiefTrackDemandArtifact,
     CrewChiefUnavailablePerformanceArtifact,
+    CrewChiefVehicleDynamicsFocusArtifact,
     CrewChiefWorkspace,
     CrewChiefWorkspaceIdentity,
     DriverDiagnosticQuestion,
@@ -45,12 +46,14 @@ from racelab_engine.models.crew_chief import (
     HypothesisInspectionState,
     InvestigationProgress,
     InvestigationSubgoal,
+    engineering_awareness_scientific_sha256,
     p34_qualified_current_artifact_cohort,
     p34_qualified_current_artifact_ids,
     RunSentinelLap,
     RunSentinelState,
     SuccessContract,
     SuccessMetric,
+    VehicleDynamicsInspectionToolId,
 )
 from racelab_engine.models.controlled_workflow import ControlledWorkflow
 from racelab_engine.models.evidence import EvidenceState
@@ -123,6 +126,14 @@ from racelab_engine.services.vehicle_systems_service import (
     build_component_awareness,
     vehicle_systems_runtime_identity,
 )
+from racelab_engine.services.vehicle_dynamics_service import (
+    build_unavailable_vehicle_dynamics_assessment,
+    build_vehicle_dynamics_assessment,
+)
+from racelab_engine.models.vehicle_dynamics_knowledge import (
+    PerformanceMechanismAssessment,
+)
+from racelab_engine.models.vehicle_systems import VehicleSystemsRuntimeIdentity
 from racelab_engine.storage.crew_chief_repository import (
     CrewChiefRepository,
     crew_chief_event_hash,
@@ -156,7 +167,7 @@ class _UnavailableP26:
     graph_version: str
     knowledge_graph_sha256: str
     reasoning_snapshot_sha256: str
-    runtime_identity: dict[str, str]
+    runtime_identity: dict[str, object]
     unavailable_reason: str
     component_states: tuple[object, ...] = ()
     leading_component_ids: tuple[str, ...] = ()
@@ -178,6 +189,22 @@ _OPTIONAL_P26_FAILURE_MARKERS = (
     "requires review for future iracing build",
     "does not cover iracing build",
     "requires an oval track configuration",
+)
+_P35_TOOL_IDS: tuple[VehicleDynamicsInspectionToolId, ...] = (
+    "inspect_tire_demand",
+    "inspect_load_transfer",
+    "inspect_roll_response",
+    "inspect_pitch_response",
+    "inspect_platform_state",
+    "inspect_transient_settling",
+    "inspect_steady_state_balance",
+    "inspect_brake_vehicle_response",
+    "inspect_power_on_response",
+    "inspect_differential_response",
+    "inspect_alignment_response",
+    "inspect_tire_state_migration",
+    "inspect_traffic_platform_response",
+    "inspect_gear_acceleration_response",
 )
 _TOOLS = (
     CrewChiefToolDefinition(
@@ -300,6 +327,17 @@ _TOOLS = (
         authority_ceiling="observation_only",
         required_sources=("p32",),
     ),
+    *(
+        CrewChiefToolDefinition(
+            tool_id=tool_id,
+            allowed_scope="run",
+            input_schema="P35 typed mechanism assessment and existing P20/P26/P32 evidence",
+            output_artifact_type=f"P35 {tool_id.removeprefix('inspect_').replace('_', ' ')} evidence",
+            authority_ceiling="observation_only",
+            required_sources=("p35", "p20", "p32"),
+        )
+        for tool_id in _P35_TOOL_IDS
+    ),
     CrewChiefToolDefinition(
         tool_id="inspect_component_performance_link",
         allowed_scope="component",
@@ -328,6 +366,7 @@ _TOOL_SAFETY_BANDS: dict[str, str] = {
     "inspect_path_efficiency": "performance_measurement",
     "inspect_driver_vehicle_separation": "performance_measurement",
     "inspect_track_demand": "performance_measurement",
+    **{tool_id: "mechanism_separation" for tool_id in _P35_TOOL_IDS},
     "inspect_driver_execution": "driver",
     "inspect_p19_causes": "contradiction",
     "inspect_mechanism_episodes": "mechanism_separation",
@@ -416,6 +455,7 @@ def _workspace_identity(
     p20: object,
     p26: object,
     p32: object,
+    p35: PerformanceMechanismAssessment,
     learning_prior: CrewChiefLearningPrior,
     learning_ledger_head_sha256: str | None,
     run_sentinel: RunSentinelState,
@@ -425,7 +465,15 @@ def _workspace_identity(
     setup_hash = getattr(p26, "setup_snapshot_sha256", None)
     if not setup_id or not setup_hash:
         raise ValueError("Crew Chief requires an exact captured setup snapshot.")
+    raw_runtime_identity = getattr(p26, "runtime_identity")
+    try:
+        runtime_identity = VehicleSystemsRuntimeIdentity.model_validate(
+            raw_runtime_identity
+        )
+    except (TypeError, ValueError):
+        runtime_identity = None
     workflow_id, workflow_revision = _active_workflow_identity(bundle)
+    p20_projection_sha256 = engineering_awareness_scientific_sha256(p20)
     base = {
         "run_id": report.run_id,
         "session_id": session_id,
@@ -433,17 +481,19 @@ def _workspace_identity(
         "p19": canonical_json_sha256(report.reasoning_snapshot),
         "p20": getattr(p20, "state_revision"),
         "p20_profile": getattr(p20, "profile_hash"),
+        "p20_projection": p20_projection_sha256,
         "p26_graph": getattr(p26, "graph_version"),
         "p26_graph_hash": getattr(p26, "knowledge_graph_sha256"),
         "p26_reasoning": getattr(p26, "reasoning_snapshot_sha256"),
         "p32_projection": getattr(p32, "projection_sha256"),
+        "p35_assessment": p35.p35_assessment_sha256,
         "run_sentinel": canonical_json_sha256(run_sentinel),
         "learning_history": learning_prior.history_revision,
         "learning_head": learning_ledger_head_sha256,
         "learning_projection": learning_prior.projection_sha256,
         "setup_id": setup_id,
         "setup_hash": setup_hash,
-        "runtime": canonical_json_sha256(getattr(p26, "runtime_identity")),
+        "runtime": canonical_json_sha256(raw_runtime_identity),
         "workflow_id": workflow_id,
         "workflow_revision": workflow_revision,
         "objective": objective.value,
@@ -457,10 +507,12 @@ def _workspace_identity(
         reasoning_snapshot_sha256=base["p19"],
         p20_state_revision=base["p20"],
         p20_profile_hash=base["p20_profile"],
+        p20_projection_sha256=base["p20_projection"],
         p26_graph_version=base["p26_graph"],
         p26_knowledge_graph_sha256=base["p26_graph_hash"],
         p26_reasoning_snapshot_sha256=base["p26_reasoning"],
         p32_projection_sha256=base["p32_projection"],
+        p35_assessment_sha256=base["p35_assessment"],
         run_sentinel_sha256=base["run_sentinel"],
         learning_history_revision=base["learning_history"],
         learning_ledger_head_sha256=base["learning_head"],
@@ -468,6 +520,7 @@ def _workspace_identity(
         setup_id=setup_id,
         setup_snapshot_sha256=setup_hash,
         vehicle_runtime_identity_hash=base["runtime"],
+        vehicle_runtime_identity=runtime_identity,
         active_workflow_id=workflow_id,
         active_workflow_revision=workflow_revision,
         objective_id=objective,
@@ -670,7 +723,19 @@ def _p34_projection_for_identity(
     latest_comparison: PairedInvestigationComparison | None = None
     pair_blockers: tuple[str, ...] = ()
     current_context: InvestigationAdaptationContext | None = None
-    if identity.investigation_id is not None and investigation_open:
+    p35_outside_frozen_cohort = bool(
+        baseline_subgoal is not None
+        and baseline_subgoal.selected_tool in _P35_TOOL_IDS
+    )
+    if p35_outside_frozen_cohort:
+        pair_blockers = (
+            "P35 tool is outside the frozen P34 v1 evaluation cohort; deterministic Crew baseline remains in production.",
+        )
+    if (
+        identity.investigation_id is not None
+        and investigation_open
+        and not p35_outside_frozen_cohort
+    ):
         try:
             pair = repository.latest_pair(
                 identity.investigation_id,
@@ -854,6 +919,7 @@ def _evidence_index(
     p32: object | None = None,
     repository: RaceLabRepository | None = None,
     learning_prior: CrewChiefLearningPrior | None = None,
+    p35: PerformanceMechanismAssessment | None = None,
 ) -> EngineeringEvidenceIndex:
     report = bundle.report
     repository = repository or RaceLabRepository()
@@ -1006,6 +1072,51 @@ def _evidence_index(
                     else "observation_only"
                 ),
             )
+    mechanism_report = getattr(report, "mechanism_observations", None)
+    for observation in (
+        mechanism_report.observations if mechanism_report is not None else ()
+    ):
+        if (
+            not observation.qualified
+            or observation.run_id != identity.run_id
+            or observation.setup_id != identity.setup_id
+            or set(observation.source_run_ids) != {identity.run_id}
+            or set(observation.source_setup_ids) != {identity.setup_id}
+        ):
+            continue
+        assert observation.lap_number is not None
+        assert observation.phase is not None
+        assert observation.lap_pct_start is not None
+        assert observation.lap_pct_end is not None
+        entries.setdefault(
+            observation.artifact_id,
+            EngineeringEvidenceIndexEntry(
+                artifact_id=observation.artifact_id,
+                producer_id="p20.mechanism_observation",
+                run_id=identity.run_id,
+                session_id=identity.session_id,
+                setup_id=identity.setup_id,
+                workspace_run_id=identity.run_id,
+                workspace_session_id=identity.session_id,
+                workspace_setup_id=identity.setup_id,
+                source_run_id=identity.run_id,
+                source_session_id=identity.session_id,
+                source_setup_id=identity.setup_id,
+                source_setup_sha256=identity.setup_snapshot_sha256,
+                source_build_context_sha256=identity.vehicle_runtime_identity_hash,
+                source_provenance_available=True,
+                lap_numbers=(observation.lap_number,),
+                lap_pct_start=observation.lap_pct_start,
+                lap_pct_end=observation.lap_pct_end,
+                phase=observation.phase,
+                mechanism_ids=observation.mechanism_kinds,
+                objective=objective,
+                source_channels=observation.source_channels,
+                evidence_state=observation.evidence_state,
+                polarity="support",
+                authority_ceiling="observation_only",
+            ),
+        )
     for episode in report.reasoning_snapshot.mechanism_episodes:
         artifact_id = episode.episode_id
         component_ids = _unique(
@@ -1116,6 +1227,7 @@ def _evidence_index(
             start_pct: float = 0.0,
             end_pct: float = 100.0,
             state: EvidenceState = EvidenceState.CALCULATED,
+            source_lap_numbers: tuple[int, ...] | None = None,
             source_channels: tuple[str, ...] = (),
             mechanisms: tuple[str, ...] = (),
             components: tuple[str, ...] = (),
@@ -1138,7 +1250,11 @@ def _evidence_index(
                 source_setup_sha256=identity.setup_snapshot_sha256,
                 source_build_context_sha256=identity.vehicle_runtime_identity_hash,
                 source_provenance_available=True,
-                lap_numbers=source_laps,
+                lap_numbers=(
+                    source_laps
+                    if source_lap_numbers is None
+                    else source_lap_numbers
+                ),
                 lap_pct_start=start_pct,
                 lap_pct_end=end_pct,
                 phase=phase,
@@ -1177,6 +1293,7 @@ def _evidence_index(
                 start_pct=opportunity.start_pct,
                 end_pct=opportunity.end_pct,
                 state=opportunity_state,
+                source_lap_numbers=opportunity.source_laps,
                 source_channels=opportunity.source_channels,
                 mechanisms=opportunity.mechanism_candidates,
                 components=opportunity.component_candidates,
@@ -1195,6 +1312,7 @@ def _evidence_index(
                 state=(
                     opportunity_state if origin_available else EvidenceState.UNAVAILABLE
                 ),
+                source_lap_numbers=opportunity.source_laps,
                 source_channels=opportunity.source_channels,
                 mechanisms=opportunity.mechanism_candidates,
                 components=opportunity.component_candidates,
@@ -1230,6 +1348,7 @@ def _evidence_index(
                     start_pct=opportunity.following_phase_start_pct,
                     end_pct=opportunity.following_phase_end_pct,
                     state=opportunity_state,
+                    source_lap_numbers=opportunity.source_laps,
                     source_channels=opportunity.source_channels,
                     mechanisms=opportunity.mechanism_candidates,
                     components=opportunity.component_candidates,
@@ -1286,6 +1405,9 @@ def _evidence_index(
                     if chain_has_time
                     else EvidenceState.UNAVAILABLE
                 ),
+                source_lap_numbers=tuple(dict.fromkeys(
+                    (*chain.lap_numbers, *chain.reference_lap_numbers)
+                )),
                 source_channels=chain_channels,
                 blockers=chain_blockers,
                 typed_artifact=(
@@ -1315,6 +1437,9 @@ def _evidence_index(
                         if not basis_blockers
                         else EvidenceState.BLOCKED_BY_CONTEXT
                     ),
+                    source_lap_numbers=tuple(dict.fromkeys(
+                        (*chain.lap_numbers, *chain.reference_lap_numbers)
+                    )),
                     source_channels=phase_state.source_channels,
                     blockers=basis_blockers,
                     typed_artifact=CrewChiefPathEfficiencyArtifact(
@@ -1339,6 +1464,9 @@ def _evidence_index(
                         if separation_blocked
                         else EvidenceState.OBSERVED_CORRELATION
                     ),
+                    source_lap_numbers=tuple(dict.fromkeys(
+                        (*chain.lap_numbers, *chain.reference_lap_numbers)
+                    )),
                     source_channels=chain_channels,
                     blockers=_unique(
                         (
@@ -1444,13 +1572,12 @@ def _evidence_index(
             "p32.corner_performance_chain": "No qualified corner performance chain is available.",
             "p32.exit_carry": "No qualified exit or following-straight carry effect is available.",
             "p32.path_efficiency": "No measured path/time comparison is available.",
-            "p32.driver_vehicle_separation": "Driver-demand versus vehicle-response separation is unresolved.",
-            "p32.track_demand": "Measured track demand is unavailable.",
-            "p32.component_performance_link": getattr(
-                p26,
-                "unavailable_reason",
-                "No non-causal P20/P26 component-performance link is available.",
-            ),
+                "p32.driver_vehicle_separation": "Driver-demand versus vehicle-response separation is unresolved.",
+                "p32.track_demand": "Measured track demand is unavailable.",
+                "p32.component_performance_link": (
+                    getattr(p26, "unavailable_reason", None)
+                    or "No non-causal P20/P26 component-performance link is available."
+                ),
             "p32.objective_envelope": "The P32 objective envelope is unavailable.",
         }
         for producer_id in sorted(p32_producers - present_producers):
@@ -1474,6 +1601,136 @@ def _evidence_index(
                     claimed_artifact_type=producer_id.removeprefix("p32."),
                     blocker_reasons=_unique((*basis_blockers, reason)),
                 ),
+            )
+    if p35 is not None:
+        support_ids = {
+            artifact_id
+            for candidate in p35.candidates
+            for artifact_id in candidate.support_artifact_ids
+        }
+        contradiction_ids = {
+            artifact_id
+            for candidate in p35.candidates
+            for artifact_id in candidate.contradiction_artifact_ids
+        }
+        if support_ids & contradiction_ids:
+            raise ValueError(
+                "one P35 focus artifact cannot be global support and contradiction"
+            )
+        for focus in p35.focus_artifacts:
+            source_entries = tuple(
+                entries[source_id]
+                for source_id in focus.source_artifact_ids
+                if source_id in entries
+            )
+            if len(source_entries) != len(focus.source_artifact_ids):
+                raise ValueError(
+                    "P35 focus evidence must resolve every typed P20/P26/P32 source artifact"
+                )
+            if any(
+                item.source_run_id != identity.run_id
+                or item.source_session_id != identity.session_id
+                or item.source_setup_id != identity.setup_id
+                or item.source_setup_sha256 != identity.setup_snapshot_sha256
+                or item.source_build_context_sha256
+                != identity.vehicle_runtime_identity_hash
+                or not item.source_provenance_available
+                for item in source_entries
+            ):
+                raise ValueError(
+                    "P35 runtime focus evidence requires exact current run/setup/build provenance"
+                )
+            positive_focus = focus.evidence_state in {
+                EvidenceState.MEASURED,
+                EvidenceState.CALCULATED,
+                EvidenceState.ESTIMATED_PROXY,
+                EvidenceState.OBSERVED_CORRELATION,
+                EvidenceState.CONTROLLED_TEST_EFFECT,
+            }
+            source_channel_ids = {
+                channel for item in source_entries for channel in item.source_channels
+            }
+            if not set(focus.source_channels) <= source_channel_ids or (
+                positive_focus
+                and any(
+                    item.blocker_reasons
+                    or item.evidence_state
+                    in {
+                        EvidenceState.UNAVAILABLE,
+                        EvidenceState.BLOCKED_BY_CONTEXT,
+                        EvidenceState.NEEDS_CONFIRMATION,
+                    }
+                    for item in source_entries
+                )
+            ):
+                raise ValueError(
+                    "P35 focus evidence cannot exceed its typed source channels or blocker state"
+                )
+            source_windows = tuple(
+                dict.fromkeys(
+                    (item.lap_pct_start, item.lap_pct_end)
+                    for item in source_entries
+                )
+            )
+            source_lap_scopes = tuple(
+                dict.fromkeys(item.lap_numbers for item in source_entries)
+            )
+            source_phases = tuple(
+                dict.fromkeys(item.phase for item in source_entries)
+            )
+            if (
+                len(source_windows) != 1
+                or len(source_lap_scopes) != 1
+                or len(source_phases) != 1
+                or focus.lap_numbers != source_lap_scopes[0]
+                or (focus.lap_pct_start, focus.lap_pct_end) != source_windows[0]
+                or focus.phase != source_phases[0]
+            ):
+                raise ValueError(
+                    "P35 focus sources must share one exact typed physical scope; scope union is forbidden"
+                )
+            tool_id = focus.inspection_tool_id.value
+            polarity: Literal["support", "contradiction", "neutral"] = "neutral"
+            if focus.artifact_id in support_ids:
+                polarity = "support"
+            elif focus.artifact_id in contradiction_ids:
+                polarity = "contradiction"
+            entries[focus.artifact_id] = EngineeringEvidenceIndexEntry(
+                artifact_id=focus.artifact_id,
+                producer_id=f"p35.{tool_id.removeprefix('inspect_')}",
+                run_id=identity.run_id,
+                session_id=identity.session_id,
+                setup_id=identity.setup_id,
+                workspace_run_id=identity.run_id,
+                workspace_session_id=identity.session_id,
+                workspace_setup_id=identity.setup_id,
+                source_run_id=identity.run_id,
+                source_session_id=identity.session_id,
+                source_setup_id=identity.setup_id,
+                source_setup_sha256=identity.setup_snapshot_sha256,
+                source_build_context_sha256=identity.vehicle_runtime_identity_hash,
+                source_provenance_available=True,
+                lap_numbers=focus.lap_numbers,
+                lap_pct_start=focus.lap_pct_start,
+                lap_pct_end=focus.lap_pct_end,
+                phase=focus.phase,
+                mechanism_ids=_unique(
+                    mechanism
+                    for item in source_entries
+                    for mechanism in item.mechanism_ids
+                ),
+                component_ids=(),
+                objective=objective,
+                source_channels=focus.source_channels,
+                evidence_state=focus.evidence_state,
+                polarity=polarity,
+                blocker_reasons=focus.blocker_reasons,
+                typed_artifact=CrewChiefVehicleDynamicsFocusArtifact(
+                    inspection_tool_id=tool_id,
+                    assessment_sha256=p35.p35_assessment_sha256,
+                    focus=focus,
+                ),
+                authority_ceiling="observation_only",
             )
     if learning_prior is not None:
         for reference in learning_prior.evidence_references:
@@ -1639,6 +1896,7 @@ def _subgoal(
     p26: object,
     p32: object,
     learning_prior: CrewChiefLearningPrior | None = None,
+    p35: PerformanceMechanismAssessment | None = None,
 ) -> InvestigationSubgoal | None:
     """Return the deterministic production subgoal.
 
@@ -1703,6 +1961,40 @@ def _subgoal(
         priorities.append("inspect_p19_causes")
     elif unresolved:
         priorities.append("inspect_p19_causes")
+    if p35 is not None:
+        positive_states = {
+            EvidenceState.MEASURED,
+            EvidenceState.CALCULATED,
+            EvidenceState.ESTIMATED_PROXY,
+            EvidenceState.OBSERVED_CORRELATION,
+            EvidenceState.CONTROLLED_TEST_EFFECT,
+        }
+        focus_tools = {
+            item.inspection_tool_id.value
+            for item in p35.focus_artifacts
+            if item.evidence_state in positive_states
+            or (
+                item.evidence_state == EvidenceState.NEEDS_CONFIRMATION
+                and item.observation_contract_id is not None
+            )
+        }
+        discriminator_tool = next(
+            (
+                item.inspection_tool_id.value
+                for item in p35.focus_artifacts
+                if item.observation_contract_id
+                == p35.next_discriminator_contract_id
+                and item.evidence_state == EvidenceState.NEEDS_CONFIRMATION
+            ),
+            None,
+        )
+        if discriminator_tool is not None:
+            priorities.append(discriminator_tool)
+        priorities.extend(
+            tool_id
+            for tool_id in _P35_TOOL_IDS
+            if tool_id in focus_tools and tool_id != discriminator_tool
+        )
     if folded.objective in {
         EngineeringObjective.TIRE_CONSERVATION,
         EngineeringObjective.DRIVER_CONFIDENCE,
@@ -2565,6 +2857,15 @@ def _freeze_p34_pair_for_workspace(
         or folded.status != "open"
     ):
         return None
+    current_subgoal = getattr(workspace, "current_subgoal", None)
+    if (
+        current_subgoal is not None
+        and getattr(current_subgoal, "selected_tool", None) in _P35_TOOL_IDS
+    ):
+        # P34 v1 is immutable and preregistered without P35 tools.  A P35
+        # inspection remains a deterministic Crew action and cannot enter the
+        # P34 evaluated cohort or create a prediction receipt.
+        return None
     repository = InvestigationAdaptationRepository(db_path)
     try:
         from racelab_engine.services.controlled_workflow_service import (
@@ -2656,7 +2957,11 @@ def _freeze_p34_pair_for_workspace(
         eligible_tool_ids = _p34_live_eligible_tool_ids(
             baseline_decision,
             memory_decision,
-            completed_tool_ids=folded.completed_tool_ids,
+            completed_tool_ids=tuple(
+                tool_id
+                for tool_id in folded.completed_tool_ids
+                if tool_id not in _P35_TOOL_IDS
+            ),
         )
         current_evidence_pinned_tool_ids = tuple(
             tool_id
@@ -2689,11 +2994,21 @@ def _freeze_p34_pair_for_workspace(
             step_number=folded.last_sequence,
             baseline_decision=baseline_decision,
             memory_decision=memory_decision,
-            available_tool_ids=tuple(item.tool_id for item in workspace.available_tools),
+            available_tool_ids=tuple(
+                item.tool_id
+                for item in workspace.available_tools
+                if item.tool_id not in _P35_TOOL_IDS
+            ),
             eligible_tool_ids=eligible_tool_ids,
-            completed_tool_ids=folded.completed_tool_ids,
+            completed_tool_ids=tuple(
+                tool_id
+                for tool_id in folded.completed_tool_ids
+                if tool_id not in _P35_TOOL_IDS
+            ),
             available_artifact_ids=tuple(
-                item.artifact_id for item in workspace.evidence_index.entries
+                item.artifact_id
+                for item in workspace.evidence_index.entries
+                if not getattr(item, "producer_id", "").startswith("p35.")
             ),
             qualified_available_artifact_ids=qualified_artifact_ids,
             qualified_available_artifact_evidence_states=qualified_artifact_states,
@@ -2796,6 +3111,7 @@ def _driver_question(
     investigation: CrewChiefInvestigation | None,
     folded: FoldedInvestigationState | None,
     causes: tuple[object, ...],
+    p35: PerformanceMechanismAssessment | None = None,
 ) -> DriverDiagnosticQuestion | None:
     if (
         investigation is None
@@ -2805,16 +3121,95 @@ def _driver_question(
     ):
         return None
     competing = tuple(cause.cause_id for cause in causes if cause.status != "ruled_out")
-    question = (
-        "Where does the handling issue first become clear?"
-        if folded.objective != EngineeringObjective.TIRE_CONSERVATION
-        else "Where does the tire behavior first stop repeating across the run?"
+    candidate_ids = {
+        item.mechanism_id for item in (p35.candidates if p35 is not None else ())
+    }
+    response_regime = (
+        _enum_text(p35.response_regime) if p35 is not None else ""
     )
+    if candidate_ids & {
+        "mechanism:brake_entry_instability",
+        "mechanism:brake_release_rotation_deficit",
+    }:
+        question = (
+            "Does the rear move while brake is still applied, during brake release, "
+            "or only after throttle?"
+        )
+        answer_options = (
+            "while brake applied",
+            "during brake release",
+            "after throttle",
+            "not repeatable",
+        )
+    elif candidate_ids & {
+        "mechanism:center_rotation_deficit",
+        "mechanism:front_tire_saturation_like",
+    }:
+        question = (
+            "Does the car begin rotating normally and then stop, or never develop rotation?"
+        )
+        answer_options = (
+            "rotates then stops",
+            "never develops rotation",
+            "only after throttle",
+            "not repeatable",
+        )
+    elif "mechanism:tire_state_migration" in candidate_ids:
+        question = "Is the balance problem immediate or does it build with tire state?"
+        answer_options = (
+            "immediate",
+            "builds through run",
+            "only after traffic",
+            "not repeatable",
+        )
+    elif p35 is not None and p35.traffic_blocked:
+        question = "Is the car worse only in traffic or also in clean air?"
+        answer_options = (
+            "traffic only",
+            "also clean air",
+            "load transition only",
+            "not repeatable",
+        )
+    elif candidate_ids & {
+        "mechanism:gearing_headroom_limitation",
+        "mechanism:scrub_like_resistance",
+    }:
+        question = (
+            "Does the straight deficit begin before throttle application or only after full throttle?"
+        )
+        answer_options = (
+            "before throttle",
+            "after full throttle",
+            "after exit carry",
+            "not repeatable",
+        )
+    elif response_regime == "transient":
+        question = (
+            "Does the issue occur during a bump or load transition, or after the chassis has settled?"
+        )
+        answer_options = (
+            "during load transition",
+            "after chassis settles",
+            "both",
+            "not repeatable",
+        )
+    else:
+        question = (
+            "Where does the handling issue first become clear?"
+            if folded.objective != EngineeringObjective.TIRE_CONSERVATION
+            else "Where does the tire behavior first stop repeating across the run?"
+        )
+        answer_options = (
+            "braking/entry",
+            "center",
+            "exit/power",
+            "not repeatable",
+        )
     return DriverDiagnosticQuestion(
         question_id=folded.pending_driver_question_id,
         workspace_revision=identity.workspace_revision,
         question=question,
-        answer_options=("braking/entry", "center", "exit/power", "not repeatable"),
+        answer_options=answer_options,
         distinguishes_cause_ids=competing,
         reason=(
             "The selected objective and answer scope the next physical evidence inspection only; "
@@ -2836,8 +3231,14 @@ def _select_tool_entries(
     )
     answer_phase = {
         "braking/entry": ("brak", "entry", "turn"),
+        "while brake applied": ("brak", "entry"),
+        "during brake release": ("brak", "entry", "turn"),
         "center": ("center", "apex", "corner"),
+        "rotates then stops": ("center", "apex", "corner"),
+        "never develops rotation": ("turn", "entry", "center"),
         "exit/power": ("exit", "throttle", "power"),
+        "after throttle": ("exit", "throttle", "power"),
+        "only after throttle": ("exit", "throttle", "power"),
     }.get(answer or "", ())
     if tool_id == "inspect_data_quality":
         selected = tuple(
@@ -2866,6 +3267,12 @@ def _select_tool_entries(
                 not answer_phase
                 or any(token in (item.phase or "").casefold() for token in answer_phase)
             )
+        )
+    elif tool_id in _P35_TOOL_IDS:
+        selected = tuple(
+            item
+            for item in entries
+            if item.producer_id == f"p35.{tool_id.removeprefix('inspect_')}"
         )
     elif tool_id in {
         "inspect_lap_time_opportunity",
@@ -3432,6 +3839,7 @@ def build_crew_chief_workspace(
         raise ValueError("Crew Chief requires an imported run and captured setup.")
     p20 = project_engineering_awareness(bundle)
     p26: object | None
+    runtime: object | None = None
     p26_unavailable_reason: str | None = None
     try:
         runtime = vehicle_systems_runtime_identity(run_id)
@@ -3506,12 +3914,44 @@ def build_crew_chief_workspace(
             reasoning_snapshot_sha256=canonical_json_sha256(
                 bundle.report.reasoning_snapshot
             ),
-            runtime_identity={
-                "run_id": run_id,
-                "state": "unavailable",
-                "reason": reason,
-            },
+            runtime_identity=(
+                runtime.model_dump(mode="json")
+                if runtime is not None and hasattr(runtime, "model_dump")
+                else {
+                    "run_id": run_id,
+                    "state": "unavailable",
+                    "reason": reason,
+                }
+            ),
             unavailable_reason=reason,
+        )
+    try:
+        p35 = build_vehicle_dynamics_assessment(
+            run_id=run_id,
+            session_id=session_id,
+            objective_id=objective.value,
+            p19_reasoning_snapshot_sha256=canonical_json_sha256(
+                bundle.report.reasoning_snapshot
+            ),
+            p20=p20,
+            p26=p26,
+            p32=p32,
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        p35 = build_unavailable_vehicle_dynamics_assessment(
+            run_id=run_id,
+            session_id=session_id,
+            objective_id=objective.value,
+            p19_reasoning_snapshot_sha256=canonical_json_sha256(
+                bundle.report.reasoning_snapshot
+            ),
+            p20=p20,
+            p26=p26,
+            p32=p32,
+            blocker_reason=(
+                "P35 runtime mechanism assessment failed closed while P32 measured "
+                f"performance truth remains available: {exc}"
+            ),
         )
     current_learning = build_current_learning_inputs(
         run_id,
@@ -3581,6 +4021,7 @@ def build_crew_chief_workspace(
         p20=p20,
         p26=p26,
         p32=p32,
+        p35=p35,
         learning_prior=learning_prior,
         learning_ledger_head_sha256=learning_ledger_head_sha256,
         run_sentinel=run_sentinel,
@@ -3606,7 +4047,11 @@ def build_crew_chief_workspace(
                 update={"cache_state": "warm", "generated_at": _now()}
             )
     question = _driver_question(
-        identity, investigation, folded, bundle.report.reasoning_snapshot.causes
+        identity,
+        investigation,
+        folded,
+        bundle.report.reasoning_snapshot.causes,
+        p35,
     )
     critique = _critique(bundle, identity, stale_reasons=stale_reasons)
     contract = _success_contract(bundle, identity, objective)
@@ -3627,6 +4072,7 @@ def build_crew_chief_workspace(
         p32,
         storage_repository,
         learning_prior,
+        p35,
     )
     p19_cause_ids = tuple(
         cause.cause_id for cause in bundle.report.reasoning_snapshot.causes
@@ -3646,10 +4092,18 @@ def build_crew_chief_workspace(
             *p20.knowledge_debt,
             *p26.knowledge_debt,
             *p32.blockers,
+            *p35.blocker_reasons,
             *learning_prior.blocker_reasons,
         ]
     )
-    baseline_subgoal = _subgoal(bundle, folded, p26, p32, learning_prior)
+    baseline_subgoal = _subgoal(
+        bundle,
+        folded,
+        p26,
+        p32,
+        learning_prior,
+        p35,
+    )
     latest_result = None
     if folded and folded.completed_tool_ids:
         latest = folded.completed_tool_ids[-1]
@@ -3730,7 +4184,9 @@ def build_crew_chief_workspace(
         pending_driver_question=question,
         success_contract=contract,
         p19_mission_contract=bundle.report.best_measurement.mission_contract,
+        engineering_awareness=p20,
         performance_intelligence=p32,
+        vehicle_dynamics=p35,
         learning_prior=learning_prior,
         investigation_improvement=investigation_improvement,
         run_sentinel=run_sentinel,
@@ -3747,6 +4203,7 @@ def build_crew_chief_workspace(
         post_run_brief=(
             f"P19 status: {bundle.report.status}.",
             f"Speed Story: {p32.speed_story.what_costs_time}",
+            f"Vehicle dynamics: {len(p35.candidates)} candidate mechanism families; setup authority false.",
             f"{len(evidence_index.entries)} evidence artifacts indexed without raw traces.",
             f"Next move: {decision.title}",
         ),

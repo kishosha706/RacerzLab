@@ -41,11 +41,15 @@ import { isDialInHypothesisResponse } from "../utils/dialInResponseTrust";
 import { isControlledWorkflowResponse } from "../utils/controlledWorkflowTrust";
 import {
   hasCanonicalMeasurementMissionDigest,
+  hasCanonicalCrewEvidenceIndexDigest,
+  hasCanonicalEngineeringAwarenessDigest,
   hasCanonicalRunSentinelDigest,
+  hasCanonicalVehicleRuntimeIdentityDigest,
   isCrewChiefWorkspaceResponse,
 } from "../utils/crewChiefResponseTrust";
 import { hasCanonicalEngineeringLearningDigests } from "../utils/engineeringLearningTrust.js";
 import { hasCanonicalInvestigationImprovementDigests } from "../utils/investigationImprovementTrust";
+import { hasCanonicalPerformanceMechanismAssessmentDigest } from "../utils/vehicleDynamicsTrust.ts";
 
 const API_BASE =
   import.meta.env.VITE_RACELAB_API_BASE_URL ??
@@ -363,7 +367,19 @@ async function trustedCrewChiefResponse(
   if (!isCrewChiefWorkspaceResponse(payload, {
     runId, sessionId, report, objectiveId, scopeRunIds,
   })) {
-    throw new Error("Crew Chief failed its exact P19/P20/P26/P32/P33/P34 workspace authority check.");
+    throw new Error("Crew Chief failed its exact P19/P20/P26/P32/P33/P34/P35 workspace authority check.");
+  }
+  if (!await hasCanonicalEngineeringAwarenessDigest(payload)) {
+    throw new Error("Crew Chief failed its canonical P20 scientific-projection identity check.");
+  }
+  if (!await hasCanonicalPerformanceMechanismAssessmentDigest(payload.vehicle_dynamics)) {
+    throw new Error("Crew Chief failed its canonical P35 vehicle-dynamics identity check.");
+  }
+  if (!await hasCanonicalVehicleRuntimeIdentityDigest(payload)) {
+    throw new Error("Crew Chief failed its canonical P26/P35 vehicle runtime identity check.");
+  }
+  if (!await hasCanonicalCrewEvidenceIndexDigest(payload)) {
+    throw new Error("Crew Chief failed its canonical evidence-index identity check.");
   }
   if (!await hasCanonicalEngineeringLearningDigests(payload.learning_prior)) {
     throw new Error("Crew Chief failed its canonical P33 learning identity check.");

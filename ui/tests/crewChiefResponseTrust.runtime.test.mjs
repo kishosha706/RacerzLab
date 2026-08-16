@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
 import {
+  canonicalCrewEvidenceIndexSha256,
+  canonicalEngineeringAwarenessScientificSha256,
   hasCanonicalMeasurementMissionDigest,
   hasCanonicalRunSentinelDigest,
+  hasCanonicalCrewEvidenceIndexDigest,
+  hasCanonicalEngineeringAwarenessDigest,
+  hasCanonicalVehicleRuntimeIdentityDigest,
+  deriveP35ChainTruth,
+  p35FocusEntriesMatchAssessment,
   isCrewChiefWorkspaceResponse,
+  typedArtifactMatchesProjection,
 } from "../src/utils/crewChiefResponseTrust.ts";
 import { isPerformanceIntelligenceProjection } from "../src/utils/performanceIntelligenceTrust.js";
 import { canonicalJsonSha256 } from "../src/utils/canonicalJsonSha256.ts";
@@ -14,8 +22,27 @@ import {
   canonicalInvestigationImprovementSha256,
   hasCanonicalInvestigationImprovementDigests,
 } from "../src/utils/investigationImprovementTrust.ts";
+import { p35RuntimeTrustManifest } from "../src/utils/vehicleDynamicsRegistry.ts";
+import {
+  canonicalPerformanceMechanismAssessmentSha256,
+  deriveCanonicalP35P32Binding,
+  hasCanonicalPerformanceMechanismAssessmentDigest,
+  isPerformanceMechanismAssessment,
+} from "../src/utils/vehicleDynamicsTrust.ts";
 
 const h = (value) => value.repeat(64);
+const requiredSupportChannels = (mechanism) => [...new Set(
+  mechanism.support_required_channel_groups.flatMap((requirement) => (
+    requirement.alternatives
+      .slice(0, requirement.minimum_alternatives)
+      .map((alternative) => alternative.accepted_source_channel_ids[0])
+  )),
+)];
+const centerSupportTrust = p35RuntimeTrustManifest.mechanisms.find(
+  (mechanism) => mechanism.mechanism_id === "mechanism:center_rotation_deficit",
+);
+assert.ok(centerSupportTrust);
+const centerSupportChannels = requiredSupportChannels(centerSupportTrust);
 const counts = (observationCount = 0) => ({
   observation_count: observationCount,
   independent_episode_count: observationCount,
@@ -60,14 +87,94 @@ const emptyLearningPrior = {
   blocker_reasons: ["No qualified engineering history is available."],
   authority: "attention_only", setup_authorized: false, p19_rank_modified: false,
 };
+const vehicleRuntimeIdentity = {
+  run_id: "run-1", car_path: "stockcars chevycamarozl1 2022",
+  car_version: "next-gen", iracing_build_version: "2026.08.01.01",
+  track_configuration_name: "oval", source_file_sha256: h("4"),
+  telemetry_cache_sha256: h("5"), schema_fingerprint: h("6"),
+  compatibility_fingerprint: h("7"),
+  available_telemetry_channels: [...new Set(["speed_mph", ...centerSupportChannels])],
+  source: "verified_telemetry_artifact",
+};
+const vehicleRuntimeIdentityHash = await canonicalJsonSha256(vehicleRuntimeIdentity);
 const report = {
   reasoning_snapshot_sha256: h("a"), setup_id: "setup-1", setup_snapshot_sha256: h("b"),
+  vehicle_systems: {
+    graph_version: "p26.v1", knowledge_graph_sha256: h("e"),
+    runtime_identity: structuredClone(vehicleRuntimeIdentity),
+  },
+  mechanism_observations: {
+    status: "ready", run_id: "run-1", setup_id: "setup-1",
+    authority: "observation_only", blocker_reasons: [],
+    observations: [{
+      observation_id: "p20-observation-corner-rotation", producer_id: "p20.corner_rotation",
+      artifact_id: "observation-center_rotation", source_run_ids: ["run-1"],
+      source_setup_ids: ["setup-1"], sample_coverage: 1, mechanism: "corner_rotation",
+      mechanism_kinds: ["corner_rotation"], run_id: "run-1", setup_id: "setup-1",
+      lap_number: 2, phase: "center", lap_pct_start: 20, lap_pct_end: 30,
+      lap_pct_peak: 25, summary: "Higher steering demand with lower yaw response.",
+      evidence_state: "observed_correlation", authority: "observation_only",
+      observational_label: "typed_mechanism_observation", qualified: true,
+      source_channels: [...centerSupportChannels],
+      required_channels: [...centerSupportChannels],
+      supporting_evidence: ["typed-current-observation"], contradicting_evidence: [],
+      telemetry_sample_count: 32, repetition_count: 1,
+      citations: [{
+        run_id: "run-1", lap_number: 2, setup_id: "setup-1", lap_pct_start: 20,
+        lap_pct_end: 30, lap_pct_peak: 25, phase: "center",
+        evidence_state: "observed_correlation",
+        source_channels: [...centerSupportChannels], event_id: null,
+        telemetry_sample_count: 32,
+        physical_segments: [{ start_pct: 20, end_pct: 30, sample_count: 32 }],
+      }], blocker_reasons: [],
+    }],
+  },
   briefing: {
     success_check: "Repeatable evidence",
     action: { kind: "measurement_mission", title: "Measure", instruction: "Collect three eligible laps.", setup_authorized: false, control_key: null, current_value: null, proposed_value: null, source_event_ids: [] },
   },
   next_trustworthy_move: null,
 };
+const p20TrustAxis = (basis) => ({
+  state: "trusted", basis, blockers: [], source_artifact_ids: [],
+});
+const engineeringAwareness = {
+  schema_version: "p20.awareness.v2",
+  run_id: "run-1", session_id: "session-1",
+  reasoning_snapshot_id: h("a"), state_revision: h("d"),
+  request_identity: {
+    run_id: "run-1", session_id: "session-1",
+    reasoning_snapshot_id: h("a"), state_revision: h("d"),
+  },
+  generated_at: "2026-08-15T09:04:59Z", cache_state: "cold", build_duration_ms: 1,
+  profile_hash: null, authority: "observation_only",
+  trust_budget: {
+    data_health: p20TrustAxis("Current telemetry is readable."),
+    alignment_quality: p20TrustAxis("The physical window is position aligned."),
+    context_comparability: p20TrustAxis("Current context is explicit."),
+    driver_repeatability: p20TrustAxis("Driver demand coverage is measured."),
+    mechanism_separation: p20TrustAxis("Mechanism evidence remains observational."),
+    controlled_response_validity: p20TrustAxis("No controlled response is claimed."),
+    policy_countereffect_risk: p20TrustAxis("Countereffects remain protected."),
+    history_completeness: p20TrustAxis("Current-run evidence is complete for this scope."),
+  },
+  primary_state: null,
+  subsystem_states: [{
+    mechanism: "corner_rotation", status: "ready",
+    summary: "Current center response is observed without causal authority.",
+    phase: "center", lap_number: 2, lap_pct_start: 20, lap_pct_end: 30,
+    evidence_state: "observed_correlation",
+    source_artifact_ids: ["observation-center_rotation"],
+    source_channels: [...centerSupportChannels],
+    blocker_reasons: [], authority: "observation_only",
+  }],
+  episodes: [], state_drift_status: "no_finding", state_drift_findings: [],
+  state_drift_blocker_reasons: [], expected_vs_observed: [], control_mutations: [],
+  knowledge_debt: [], artifact_versions: [], raw_trace_included: false,
+};
+const engineeringAwarenessSha256 = await canonicalEngineeringAwarenessScientificSha256(
+  engineeringAwareness,
+);
 const performance = {
   schema_version: "p32.performance-intelligence.v1", projection_sha256: h("7"),
   run_id: "run-1", session_id: "session-1", objective_id: "race_long_run",
@@ -140,6 +247,61 @@ const performance = {
     authority: "observation_and_p19_projection",
   },
 };
+const mandatoryUnavailableDynamics = [
+  "quantity:exact_tire_force",
+  "quantity:exact_wheel_load",
+  "quantity:exact_spring_force",
+  "quantity:exact_damper_force",
+  "quantity:exact_arb_torque",
+  "quantity:exact_aerodynamic_downforce",
+  "quantity:exact_aerodynamic_balance",
+  "quantity:exact_aerodynamic_drag_force",
+  "quantity:exact_drag_coefficient",
+  "quantity:exact_differential_torque",
+  "quantity:exact_contact_patch_distribution",
+  "quantity:exact_friction_coefficient",
+];
+const dynamicsGraphSha = "c14af7ad22a752df5710a6e695b50f085fa4d15ecb20b271b3dc6205e3113030";
+const vehicleDynamicsBody = {
+  schema_version: "p35.performance-mechanism-assessment.v1",
+  run_id: "run-1", session_id: "session-1", objective_id: "race_long_run",
+  car_path: "stockcars chevycamarozl1 2022", car_version: "next-gen",
+  iracing_build_version: "2026.08.01.01", track_package: "oval",
+  vehicle_runtime_identity_sha256: vehicleRuntimeIdentityHash,
+  graph_id: `p35vdg_${dynamicsGraphSha.slice(0, 24)}`,
+  graph_version: `2026.08.next-gen-oval.v1:${dynamicsGraphSha.slice(0, 12)}`,
+  knowledge_version: "2026.08.p35-next-gen-oval.v1",
+  knowledge_graph_sha256: dynamicsGraphSha,
+  p19_reasoning_snapshot_sha256: h("a"), p20_state_revision: h("d"),
+  p20_profile_hash: null, p26_graph_version: "p26.v1",
+  p26_knowledge_graph_sha256: h("e"), p32_projection_sha256: h("7"),
+  p32_performance_mechanism_ids: [], performance_opportunity_ids: [],
+  measured_time_consequence_available: false,
+  chain: [
+    ["driver_input", "Driver-input demand is unresolved in the typed P32 phase evidence."],
+    ["vehicle_demand", "Run-specific vehicle demand is unavailable from the typed P32 track profile."],
+    ["vehicle_response", "Yaw, acceleration, speed, and line response are unresolved in typed P32 evidence."],
+    ["tire_platform_state", "Typed tire/platform proxies are unavailable; exact tire force and platform loads stay locked."],
+    ["time_consequence", "No measured P32 elapsed-time consequence is available for a qualified physical scope."],
+  ].map(([stage, reason]) => ({
+    stage, evidence_state: "unavailable", source_artifact_ids: [], source_channels: [],
+    summary: reason, blocker_reasons: [reason], authority: "observation_only",
+  })),
+  tire_demand_state_ids: [], load_path_ids: [], response_regime: null,
+  candidates: [], focus_artifacts: [], strongest_support_artifact_id: null,
+  strongest_contradiction_artifact_id: null, next_discriminator_contract_id: null,
+  unavailable_quantity_ids: mandatoryUnavailableDynamics, traffic_blocked: false,
+  applicability_state: "ready", applicability_blockers: [],
+  blocker_reasons: ["No qualified P32 performance opportunity is available."],
+  observation_authority: "observation_only", mechanism_authority: "candidate_only",
+  component_causal_claim_count: 0, setup_authorized: false, terminal_authority: "p19_only",
+};
+const vehicleDynamics = {
+  ...vehicleDynamicsBody,
+  p35_assessment_sha256: await canonicalPerformanceMechanismAssessmentSha256(
+    vehicleDynamicsBody,
+  ),
+};
 const improvementBody = {
   schema_version: "p34.investigation-improvement-projection.v1",
   run_id: "run-1", session_id: "session-1", workspace_revision: h("c"),
@@ -171,6 +333,14 @@ const investigationImprovement = {
   ...improvementBody,
   projection_sha256: await canonicalInvestigationImprovementSha256(improvementBody),
 };
+const p35ToolIds = [
+  "inspect_tire_demand", "inspect_load_transfer", "inspect_roll_response",
+  "inspect_pitch_response", "inspect_platform_state", "inspect_transient_settling",
+  "inspect_steady_state_balance", "inspect_brake_vehicle_response",
+  "inspect_power_on_response", "inspect_differential_response",
+  "inspect_alignment_response", "inspect_tire_state_migration",
+  "inspect_traffic_platform_response", "inspect_gear_acceleration_response",
+];
 const availableTools = [
   {
     tool_id: "inspect_exit_carry", allowed_scope: "run", input_schema: "current run",
@@ -182,25 +352,38 @@ const availableTools = [
     output_artifact_type: "path_efficiency", authority_ceiling: "measurement_only",
     required_sources: ["p32"],
   },
+  ...p35ToolIds.map((toolId) => ({
+    tool_id: toolId, allowed_scope: "run",
+    input_schema: "P35 typed mechanism assessment and existing P20/P26/P32 evidence",
+    output_artifact_type: `P35 ${toolId.replace(/^inspect_/, "").replaceAll("_", " ")} evidence`,
+    authority_ceiling: "observation_only", required_sources: ["p35", "p20", "p32"],
+  })),
 ];
 const workspace = {
-  schema_version: "p34.crew-chief-workspace.v1",
+  schema_version: "p35.crew-chief-workspace.v1",
   generated_at: "2026-08-15T09:05:00Z",
   identity: {
     run_id: "run-1", session_id: "session-1", reasoning_snapshot_sha256: h("a"),
     setup_id: "setup-1", setup_snapshot_sha256: h("b"), workspace_revision: h("c"),
     selected_scope_hash: h("f"), p20_profile_hash: null, p26_graph_version: "p26.v1",
-    p20_state_revision: h("d"), p26_knowledge_graph_sha256: h("e"),
+    p20_state_revision: h("d"), p20_projection_sha256: engineeringAwarenessSha256,
+    p26_knowledge_graph_sha256: h("e"),
     p26_reasoning_snapshot_sha256: h("a"), active_workflow_id: null, active_workflow_revision: null,
-    p32_projection_sha256: h("7"), run_sentinel_sha256: h("6"), objective_id: "race_long_run",
+    p32_projection_sha256: h("7"), p35_assessment_sha256: vehicleDynamics.p35_assessment_sha256,
+    run_sentinel_sha256: h("6"), objective_id: "race_long_run",
     learning_history_revision: h("1"), learning_ledger_head_sha256: null,
     learning_projection_sha256: h("2"),
-    vehicle_runtime_identity_hash: h("9"), investigation_id: null,
+    vehicle_runtime_identity_hash: vehicleRuntimeIdentityHash,
+    vehicle_runtime_identity: structuredClone(vehicleRuntimeIdentity), investigation_id: null,
   },
-  evidence_index: { workspace_revision: h("c"), index_hash: h("8"), entries: [] },
+  evidence_index: {
+    workspace_revision: h("c"), index_hash: await canonicalJsonSha256([]), entries: [],
+  },
   available_tools: availableTools,
   p19_mission_contract: null,
+  engineering_awareness: engineeringAwareness,
   performance_intelligence: performance,
+  vehicle_dynamics: vehicleDynamics,
   learning_prior: emptyLearningPrior,
   investigation_improvement: investigationImprovement,
   success_contract: {
@@ -230,6 +413,95 @@ const workspace = {
 workspace.identity.run_sentinel_sha256 = await canonicalEngineeringLearningSha256(workspace.run_sentinel);
 const scope = { runId: "run-1", sessionId: "session-1", report, objectiveId: "race_long_run" };
 assert.equal(isCrewChiefWorkspaceResponse(workspace, scope), true);
+assert.equal(await hasCanonicalEngineeringAwarenessDigest(workspace), true);
+assert.equal(await hasCanonicalCrewEvidenceIndexDigest(workspace), true);
+assert.equal(await hasCanonicalVehicleRuntimeIdentityDigest(workspace), true);
+const p20DeliveryVariant = structuredClone(workspace);
+p20DeliveryVariant.engineering_awareness.generated_at = "2026-08-15T09:05:01Z";
+p20DeliveryVariant.engineering_awareness.cache_state = "warm";
+p20DeliveryVariant.engineering_awareness.build_duration_ms = 99;
+assert.equal(
+  await hasCanonicalEngineeringAwarenessDigest(p20DeliveryVariant),
+  true,
+  "P20 delivery metadata is excluded from the scientific identity",
+);
+const integerValuedP20Controls = structuredClone(workspace);
+integerValuedP20Controls.engineering_awareness.control_mutations = [{
+  mutation_id: "control-integer-float",
+  run_id: "run-1",
+  control_key: "requested_fuel_fill",
+  mutation_kind: "requested_state",
+  previous_value: 0,
+  new_value: 1,
+  session_time: 4008,
+  lap: 5,
+  lap_pct: 10,
+  confirmation_artifact_ids: [],
+  context_revision: 1,
+  evidence_state: "measured",
+  authority: "context_only",
+  applied_state_confirmed: false,
+}];
+integerValuedP20Controls.identity.p20_projection_sha256 =
+  await canonicalEngineeringAwarenessScientificSha256(
+    integerValuedP20Controls.engineering_awareness,
+  );
+assert.equal(
+  await hasCanonicalEngineeringAwarenessDigest(integerValuedP20Controls),
+  true,
+  "integer-looking P20 float fields retain Python canonical-number semantics",
+);
+integerValuedP20Controls.engineering_awareness.control_mutations[0].lap_pct = 11;
+assert.equal(
+  await hasCanonicalEngineeringAwarenessDigest(integerValuedP20Controls),
+  false,
+  "P20 numeric drift cannot retain a stale scientific digest",
+);
+const staleP20ScientificBody = structuredClone(workspace);
+staleP20ScientificBody.engineering_awareness.subsystem_states[0].summary =
+  "A different scientific observation.";
+assert.equal(
+  await hasCanonicalEngineeringAwarenessDigest(staleP20ScientificBody),
+  false,
+  "P20 scientific content remains bound to the workspace identity",
+);
+const unavailableRuntimeWorkspace = structuredClone(workspace);
+const unavailableRuntimeReport = structuredClone(report);
+unavailableRuntimeReport.vehicle_systems = null;
+unavailableRuntimeWorkspace.identity.vehicle_runtime_identity = null;
+const unavailableDynamicsBody = structuredClone(unavailableRuntimeWorkspace.vehicle_dynamics);
+delete unavailableDynamicsBody.p35_assessment_sha256;
+unavailableDynamicsBody.car_path = "unavailable";
+unavailableDynamicsBody.car_version = "unavailable";
+unavailableDynamicsBody.iracing_build_version = "unavailable";
+unavailableDynamicsBody.track_package = "unavailable";
+unavailableDynamicsBody.applicability_state = "unavailable";
+unavailableDynamicsBody.applicability_blockers = [
+  "Verified P26 runtime identity is unavailable.",
+];
+unavailableDynamicsBody.blocker_reasons = [
+  ...unavailableDynamicsBody.blocker_reasons,
+  "Verified P26 runtime identity is unavailable.",
+];
+unavailableRuntimeWorkspace.vehicle_dynamics = {
+  ...unavailableDynamicsBody,
+  p35_assessment_sha256: await canonicalPerformanceMechanismAssessmentSha256(
+    unavailableDynamicsBody,
+  ),
+};
+unavailableRuntimeWorkspace.identity.p35_assessment_sha256 =
+  unavailableRuntimeWorkspace.vehicle_dynamics.p35_assessment_sha256;
+const unavailableRuntimeScope = { ...scope, report: unavailableRuntimeReport };
+assert.equal(
+  isCrewChiefWorkspaceResponse(unavailableRuntimeWorkspace, unavailableRuntimeScope),
+  true,
+  "P26/P35 unavailable remains a valid observation-only workspace",
+);
+assert.equal(
+  await hasCanonicalVehicleRuntimeIdentityDigest(unavailableRuntimeWorkspace),
+  true,
+  "the canonical unavailable runtime carries no P35 candidate or focus",
+);
 assert.equal(
   await hasCanonicalInvestigationImprovementDigests(
     workspace.investigation_improvement,
@@ -328,6 +600,7 @@ const authorityIdentity = structuredClone(withInvestigation.identity);
 for (const key of [
   "objective_id", "investigation_id", "workspace_revision", "learning_history_revision",
   "learning_ledger_head_sha256", "learning_projection_sha256", "run_sentinel_sha256",
+  "p35_assessment_sha256",
 ]) delete authorityIdentity[key];
 const currentP34Truth = await canonicalJsonSha256({
   identity: withInvestigation.identity,
@@ -362,8 +635,8 @@ const p34PairBody = {
   production_policy_kind: "deterministic_baseline",
   baseline_decision: baselineP34Decision, memory_decision: memoryP34Decision,
   production_decision: baselineP34Decision,
-  available_tool_ids: availableTools.map((tool) => tool.tool_id),
-  eligible_tool_ids: availableTools.map((tool) => tool.tool_id), completed_tool_ids: [],
+  available_tool_ids: availableTools.filter((tool) => !p35ToolIds.includes(tool.tool_id)).map((tool) => tool.tool_id),
+  eligible_tool_ids: availableTools.filter((tool) => !p35ToolIds.includes(tool.tool_id)).map((tool) => tool.tool_id), completed_tool_ids: [],
   available_artifact_ids: [], qualified_available_artifact_ids: [],
   qualified_available_artifact_evidence_states: [],
   qualified_available_artifact_provenance_sha256s: [], current_evidence_pinned_tool_ids: [],
@@ -1341,13 +1614,15 @@ rejectMutation("phase evidence state matches metrics", (value) => {
 });
 
 const withOpportunity = structuredClone(workspace);
+withOpportunity.performance_intelligence.basis.context_blockers = [];
+withOpportunity.performance_intelligence.basis.source_lap_numbers = [2, 3];
 withOpportunity.performance_intelligence.opportunity_map.opportunities = [{
   opportunity_id: "opportunity-1", start_pct: 20, end_pct: 30, track_region: "Turn 1", turn: "1",
   phase: "center", local_delta_s: 0.1, cumulative_delta_at_entry_s: 0.02,
   cumulative_delta_at_exit_s: 0.12, origin_kind: "local_generation", persistence_distance_pct: 8,
   following_phase_effect_s: 0.02, following_phase_start_pct: 30, following_phase_end_pct: 38,
   repeatability: "observed_once", noise_basis: "One eligible pair.",
-  source_laps: [2], source_channels: ["speed_mph"], driver_execution_state: "unresolved",
+  source_laps: [2, 3], source_channels: ["speed_mph"], driver_execution_state: "unresolved",
   vehicle_response_state: "candidate only", context_state: "qualified_pair", attribution_state: "candidate_only",
   source_traffic_exposure_fraction: 0, reference_traffic_exposure_fraction: 0,
   mechanism_candidates: ["center_rotation"], component_candidates: [], contradictions: ["One pair only."],
@@ -1362,10 +1637,10 @@ Object.assign(withOpportunity.performance_intelligence.speed_story, {
 });
 withOpportunity.evidence_index.entries = [{
   artifact_id: "opportunity-1", producer_id: "p32.lap_time_opportunity", run_id: "run-1",
-  session_id: "session-1", setup_id: "setup-1", lap_numbers: [2], workspace_run_id: "run-1",
+  session_id: "session-1", setup_id: "setup-1", lap_numbers: [2, 3], workspace_run_id: "run-1",
   workspace_session_id: "session-1", workspace_setup_id: "setup-1", source_run_id: "run-1",
   source_session_id: "session-1", source_setup_id: "setup-1", source_setup_sha256: h("b"),
-  source_build_context_sha256: h("9"), source_provenance_available: true, lap_pct_start: 20,
+  source_build_context_sha256: vehicleRuntimeIdentityHash, source_provenance_available: true, lap_pct_start: 20,
   lap_pct_end: 30, phase: "center", mechanism_ids: ["unclassified"], component_ids: [],
   control_keys: [], objective: "race_long_run", source_channels: ["speed_mph"],
   evidence_state: "observed_correlation", polarity: "neutral", blocker_reasons: [],
@@ -1375,14 +1650,653 @@ withOpportunity.evidence_index.entries = [{
   },
   authority_ceiling: "observation_only",
 }];
+const p35TrackDemandArtifactId = `p32-track-demand:${"1".repeat(20)}`;
+withOpportunity.evidence_index.entries.push({
+  artifact_id: p35TrackDemandArtifactId, producer_id: "p32.track_demand",
+  run_id: "run-1", session_id: "session-1", setup_id: "setup-1",
+  workspace_run_id: "run-1", workspace_session_id: "session-1", workspace_setup_id: "setup-1",
+  source_run_id: "run-1", source_session_id: "session-1", source_setup_id: "setup-1",
+  source_setup_sha256: h("b"), source_build_context_sha256: vehicleRuntimeIdentityHash,
+  source_provenance_available: true, lap_numbers: [2, 3], lap_pct_start: 0, lap_pct_end: 100,
+  phase: "whole_run", mechanism_ids: [], component_ids: [], control_keys: [],
+  objective: "race_long_run", source_channels: ["speed_mph"], evidence_state: "calculated",
+  polarity: "neutral", blocker_reasons: [],
+  typed_artifact: {
+    artifact_type: "track_demand",
+    profile: structuredClone(withOpportunity.performance_intelligence.track_demand),
+  },
+  authority_ceiling: "observation_only",
+});
+const focusArtifactId = async (mechanism, kind, sourceArtifactId = null, contractId = null) => {
+  const parts = kind === "support"
+    ? ["opportunity-1", mechanism.mechanism_id, sourceArtifactId, "support"]
+    : kind === "uncertainty"
+      ? ["opportunity-1", mechanism.mechanism_id, "uncertainty"]
+      : ["opportunity-1", mechanism.mechanism_id, contractId, "discriminator"];
+  return `${mechanism.focus_artifact_prefix}${(await canonicalJsonSha256(parts)).slice(0, 24)}`;
+};
+const expectedCenterMechanisms = p35RuntimeTrustManifest.mechanisms.filter((mechanism) => (
+  mechanism.p32_performance_mechanism_ids.includes("center_rotation")
+  && mechanism.relevant_phases.includes("center")
+  && mechanism.allowed_time_origin_kinds.includes("local_generation")
+  && ["steady_state", "both"].includes(mechanism.response_regime)
+)).slice(0, 6);
+const blockedCandidates = [];
+const blockedFocusArtifacts = [];
+for (const mechanism of expectedCenterMechanisms) {
+  const contradictionId = await focusArtifactId(mechanism, "uncertainty");
+  const discriminatorId = await focusArtifactId(
+    mechanism,
+    "discriminator",
+    null,
+    mechanism.discriminator_observation_contract_ids[0],
+  );
+  blockedCandidates.push({
+    mechanism_id: mechanism.mechanism_id,
+    p32_performance_mechanism_ids: mechanism.p32_performance_mechanism_ids
+      .filter((id) => id === "center_rotation"),
+    support_artifact_ids: [], contradiction_artifact_ids: [contradictionId],
+    discriminator_contract_ids: [...mechanism.discriminator_observation_contract_ids],
+    component_family_ids: [...mechanism.component_family_ids],
+    blocker_reasons: ["A typed P20 observation is unavailable in this exact scope."],
+    relevance: "blocked", authority: "candidate_only",
+    component_cause_authorized: false, setup_authorized: false,
+  });
+  blockedFocusArtifacts.push(
+    {
+      artifact_id: contradictionId, mechanism_id: mechanism.mechanism_id,
+      observation_contract_id: null, inspection_tool_id: mechanism.inspection_tool_id,
+      stage: "tire_platform_state", evidence_state: "needs_confirmation",
+      source_artifact_ids: ["opportunity-1"], source_channels: ["speed_mph"],
+      lap_numbers: [2, 3], lap_pct_start: 20, lap_pct_end: 30, phase: "center",
+      polarity: "uncertainty",
+      summary: "The exact current window does not yet support this mechanism candidate.",
+      blocker_reasons: ["A typed P20 observation is unavailable in this exact scope."],
+      authority: "observation_only",
+    },
+    {
+      artifact_id: discriminatorId, mechanism_id: mechanism.mechanism_id,
+      observation_contract_id: mechanism.discriminator_observation_contract_ids[0],
+      inspection_tool_id: mechanism.inspection_tool_id,
+      stage: "tire_platform_state", evidence_state: "needs_confirmation",
+      source_artifact_ids: ["opportunity-1"], source_channels: ["speed_mph"],
+      lap_numbers: [2, 3], lap_pct_start: 20, lap_pct_end: 30, phase: "center",
+      polarity: "neutral", summary: "This typed observation is the next bounded discriminator.",
+      blocker_reasons: ["The discriminator has not been observed."],
+      authority: "observation_only",
+    },
+  );
+}
+const appendP35EvidenceEntries = (value) => {
+  const supportIds = new Set(value.vehicle_dynamics.candidates.flatMap((item) => item.support_artifact_ids));
+  const contradictionIds = new Set(
+    value.vehicle_dynamics.candidates.flatMap((item) => item.contradiction_artifact_ids),
+  );
+  const sourceById = new Map(value.evidence_index.entries.map((entry) => [entry.artifact_id, entry]));
+  for (const focus of value.vehicle_dynamics.focus_artifacts) {
+    const sources = focus.source_artifact_ids.map((id) => sourceById.get(id));
+    const mechanismIds = [...new Set(sources.flatMap((entry) => entry.mechanism_ids))];
+    value.evidence_index.entries.push({
+      artifact_id: focus.artifact_id,
+      producer_id: `p35.${focus.inspection_tool_id.replace(/^inspect_/, "")}`,
+      run_id: "run-1", session_id: "session-1", setup_id: "setup-1",
+      workspace_run_id: "run-1", workspace_session_id: "session-1", workspace_setup_id: "setup-1",
+      source_run_id: "run-1", source_session_id: "session-1", source_setup_id: "setup-1",
+      source_setup_sha256: h("b"), source_build_context_sha256: vehicleRuntimeIdentityHash,
+      source_provenance_available: true, lap_numbers: [...focus.lap_numbers],
+      lap_pct_start: focus.lap_pct_start, lap_pct_end: focus.lap_pct_end, phase: focus.phase,
+      mechanism_ids: mechanismIds, component_ids: [], control_keys: [], objective: "race_long_run",
+      source_channels: [...focus.source_channels], evidence_state: focus.evidence_state,
+      polarity: supportIds.has(focus.artifact_id)
+        ? "support" : contradictionIds.has(focus.artifact_id) ? "contradiction" : "neutral",
+      blocker_reasons: [...focus.blocker_reasons],
+      typed_artifact: {
+        artifact_type: "vehicle_dynamics_focus", inspection_tool_id: focus.inspection_tool_id,
+        assessment_sha256: value.vehicle_dynamics.p35_assessment_sha256,
+        focus: structuredClone(focus),
+      },
+      authority_ceiling: "observation_only",
+    });
+  }
+};
+const opportunityDynamicsBody = structuredClone(withOpportunity.vehicle_dynamics);
+delete opportunityDynamicsBody.p35_assessment_sha256;
+opportunityDynamicsBody.p32_performance_mechanism_ids = ["center_rotation"];
+opportunityDynamicsBody.performance_opportunity_ids = ["opportunity-1"];
+opportunityDynamicsBody.measured_time_consequence_available = true;
+opportunityDynamicsBody.response_regime = "steady_state";
+opportunityDynamicsBody.candidates = blockedCandidates;
+opportunityDynamicsBody.focus_artifacts = blockedFocusArtifacts;
+opportunityDynamicsBody.strongest_support_artifact_id = null;
+opportunityDynamicsBody.strongest_contradiction_artifact_id =
+  blockedCandidates[0].contradiction_artifact_ids[0];
+opportunityDynamicsBody.next_discriminator_contract_id =
+  blockedCandidates[0].discriminator_contract_ids[0];
+opportunityDynamicsBody.chain = [
+  {
+    stage: "driver_input", evidence_state: "unavailable", source_artifact_ids: [],
+    source_channels: [], summary: "Driver-input demand is unresolved in the typed P32 phase evidence.",
+    blocker_reasons: ["Driver-input demand is unresolved in the typed P32 phase evidence."],
+    authority: "observation_only",
+  },
+  {
+    stage: "vehicle_demand", evidence_state: "estimated_proxy",
+    source_artifact_ids: [p35TrackDemandArtifactId], source_channels: ["speed_mph"],
+    summary: "Typed relative vehicle-demand proxies are available; exact loads remain unavailable.",
+    blocker_reasons: [], authority: "observation_only",
+  },
+  {
+    stage: "vehicle_response", evidence_state: "unavailable", source_artifact_ids: [],
+    source_channels: [], summary: "Yaw, acceleration, speed, and line response are unresolved in typed P32 evidence.",
+    blocker_reasons: ["Yaw, acceleration, speed, and line response are unresolved in typed P32 evidence."],
+    authority: "observation_only",
+  },
+  {
+    stage: "tire_platform_state", evidence_state: "estimated_proxy",
+    source_artifact_ids: [p35TrackDemandArtifactId], source_channels: ["speed_mph"],
+    summary: "Typed relative tire/platform proxies are available; exact forces remain unavailable.",
+    blocker_reasons: [], authority: "observation_only",
+  },
+  {
+    stage: "time_consequence", evidence_state: "measured",
+    source_artifact_ids: ["opportunity-1"], source_channels: ["speed_mph"],
+    summary: "P32 measured +0.100000 s in this physical window; P35 does not assign causation.",
+    blocker_reasons: [], authority: "observation_only",
+  },
+];
+withOpportunity.vehicle_dynamics = {
+  ...opportunityDynamicsBody,
+  p35_assessment_sha256: await canonicalPerformanceMechanismAssessmentSha256(
+    opportunityDynamicsBody,
+  ),
+};
+withOpportunity.identity.p35_assessment_sha256 = withOpportunity.vehicle_dynamics.p35_assessment_sha256;
+appendP35EvidenceEntries(withOpportunity);
 const directScope = {
   runId: "run-1", sessionId: "session-1", setupId: "setup-1", setupSnapshotHash: h("b"),
-  buildContextHash: h("9"), objectiveId: "race_long_run", p19Hash: h("a"), p20Revision: h("d"),
+  buildContextHash: vehicleRuntimeIdentityHash, objectiveId: "race_long_run", p19Hash: h("a"), p20Revision: h("d"),
   p26Hash: h("e"), projectionHash: h("7"), p19Next: "Collect three eligible laps.",
   scopeRunIds: new Set(["run-1"]), opportunityEvidence: new Map([["opportunity-1", withOpportunity.evidence_index.entries[0]]]),
 };
 assert.equal(isPerformanceIntelligenceProjection(withOpportunity.performance_intelligence, directScope), true, "direct P32 opportunity contract");
+const pairedLapProjection = structuredClone(withOpportunity.performance_intelligence);
+pairedLapProjection.basis.source_lap_numbers = [2];
+pairedLapProjection.basis.reference_lap_numbers = [3];
+const pairedLapEvidence = structuredClone(withOpportunity.evidence_index.entries[0]);
+assert.equal(isPerformanceIntelligenceProjection(pairedLapProjection, {
+  ...directScope,
+  opportunityEvidence: new Map([["opportunity-1", pairedLapEvidence]]),
+}), true, "within-run opportunity evidence preserves the exact source/reference lap pair");
+pairedLapEvidence.lap_numbers = [2];
+assert.equal(isPerformanceIntelligenceProjection(pairedLapProjection, {
+  ...directScope,
+  opportunityEvidence: new Map([["opportunity-1", pairedLapEvidence]]),
+}), false, "within-run opportunity evidence cannot omit the reference lap");
 assert.equal(isCrewChiefWorkspaceResponse(withOpportunity, scope), true, "atomically bound opportunity");
+const unavailableRuntimeWithCandidate = structuredClone(unavailableRuntimeWorkspace);
+unavailableRuntimeWithCandidate.vehicle_dynamics.candidates = structuredClone(
+  withOpportunity.vehicle_dynamics.candidates,
+);
+const unavailableCandidateBody = structuredClone(
+  unavailableRuntimeWithCandidate.vehicle_dynamics,
+);
+delete unavailableCandidateBody.p35_assessment_sha256;
+unavailableRuntimeWithCandidate.vehicle_dynamics.p35_assessment_sha256 =
+  await canonicalPerformanceMechanismAssessmentSha256(unavailableCandidateBody);
+unavailableRuntimeWithCandidate.identity.p35_assessment_sha256 =
+  unavailableRuntimeWithCandidate.vehicle_dynamics.p35_assessment_sha256;
+assert.equal(
+  isCrewChiefWorkspaceResponse(unavailableRuntimeWithCandidate, unavailableRuntimeScope),
+  false,
+  "an unavailable P26/P35 runtime cannot carry mechanism candidates or support",
+);
+
+const tiedOpportunitiesWorkspace = structuredClone(withOpportunity);
+const tiedOpportunity = structuredClone(
+  tiedOpportunitiesWorkspace.performance_intelligence.opportunity_map.opportunities[0],
+);
+tiedOpportunity.opportunity_id = "opportunity-z";
+tiedOpportunitiesWorkspace.performance_intelligence.opportunity_map.opportunities = [
+  tiedOpportunity,
+  tiedOpportunitiesWorkspace.performance_intelligence.opportunity_map.opportunities[0],
+];
+const tiedOpportunityEntry = structuredClone(tiedOpportunitiesWorkspace.evidence_index.entries[0]);
+tiedOpportunityEntry.artifact_id = "opportunity-z";
+tiedOpportunityEntry.typed_artifact.opportunity = structuredClone(tiedOpportunity);
+tiedOpportunitiesWorkspace.evidence_index.entries.push(tiedOpportunityEntry);
+assert.equal(
+  isCrewChiefWorkspaceResponse(tiedOpportunitiesWorkspace, scope),
+  true,
+  "equal-delta P32 ordering cannot change the canonical earliest/smallest opportunity binding",
+);
+const rehashedAlternateTieWorkspace = structuredClone(tiedOpportunitiesWorkspace);
+const alternateTieDynamicsBody = structuredClone(rehashedAlternateTieWorkspace.vehicle_dynamics);
+delete alternateTieDynamicsBody.p35_assessment_sha256;
+alternateTieDynamicsBody.performance_opportunity_ids = ["opportunity-z"];
+alternateTieDynamicsBody.chain[4].source_artifact_ids = ["opportunity-z"];
+rehashedAlternateTieWorkspace.vehicle_dynamics = {
+  ...alternateTieDynamicsBody,
+  p35_assessment_sha256: await canonicalPerformanceMechanismAssessmentSha256(
+    alternateTieDynamicsBody,
+  ),
+};
+rehashedAlternateTieWorkspace.identity.p35_assessment_sha256 =
+  rehashedAlternateTieWorkspace.vehicle_dynamics.p35_assessment_sha256;
+assert.equal(
+  isCrewChiefWorkspaceResponse(rehashedAlternateTieWorkspace, scope),
+  false,
+  "a rehashed alternate equal-delta opportunity cannot replace the canonical P32 leader",
+);
+
+const rehashedEmptyDynamicsWorkspace = structuredClone(withOpportunity);
+const emptyDynamicsBody = structuredClone(rehashedEmptyDynamicsWorkspace.vehicle_dynamics);
+delete emptyDynamicsBody.p35_assessment_sha256;
+emptyDynamicsBody.p32_performance_mechanism_ids = [];
+emptyDynamicsBody.performance_opportunity_ids = [];
+emptyDynamicsBody.measured_time_consequence_available = false;
+emptyDynamicsBody.response_regime = null;
+emptyDynamicsBody.candidates = [];
+emptyDynamicsBody.focus_artifacts = [];
+emptyDynamicsBody.strongest_support_artifact_id = null;
+emptyDynamicsBody.strongest_contradiction_artifact_id = null;
+emptyDynamicsBody.next_discriminator_contract_id = null;
+emptyDynamicsBody.chain[4] = {
+  stage: "time_consequence", evidence_state: "unavailable",
+  source_artifact_ids: [], source_channels: [],
+  summary: "No measured P32 elapsed-time consequence is available.",
+  blocker_reasons: ["No measured P32 opportunity is available."],
+  authority: "observation_only",
+};
+rehashedEmptyDynamicsWorkspace.vehicle_dynamics = {
+  ...emptyDynamicsBody,
+  p35_assessment_sha256: await canonicalPerformanceMechanismAssessmentSha256(
+    emptyDynamicsBody,
+  ),
+};
+rehashedEmptyDynamicsWorkspace.identity.p35_assessment_sha256 =
+  rehashedEmptyDynamicsWorkspace.vehicle_dynamics.p35_assessment_sha256;
+rehashedEmptyDynamicsWorkspace.evidence_index.entries =
+  rehashedEmptyDynamicsWorkspace.evidence_index.entries.filter(
+    (entry) => !entry.producer_id.startsWith("p35."),
+  );
+assert.equal(
+  isCrewChiefWorkspaceResponse(rehashedEmptyDynamicsWorkspace, scope),
+  false,
+  "a fully rehashed empty P35 assessment cannot omit nonempty trusted P32 truth",
+);
+
+const focusedDynamicsWorkspace = structuredClone(withOpportunity);
+focusedDynamicsWorkspace.evidence_index.entries = focusedDynamicsWorkspace.evidence_index.entries.filter(
+  (entry) => !entry.producer_id.startsWith("p35."),
+);
+focusedDynamicsWorkspace.performance_intelligence.basis.source_lap_numbers = [2, 3];
+focusedDynamicsWorkspace.performance_intelligence.basis.reference_lap_numbers = [3];
+focusedDynamicsWorkspace.evidence_index.entries.find(
+  (entry) => entry.artifact_id === p35TrackDemandArtifactId,
+).lap_numbers = [2, 3];
+const focusedOpportunity =
+  focusedDynamicsWorkspace.performance_intelligence.opportunity_map.opportunities[0];
+focusedOpportunity.source_laps = [2, 3];
+const focusedOpportunityEntry = focusedDynamicsWorkspace.evidence_index.entries.find(
+  (entry) => entry.artifact_id === "opportunity-1",
+);
+focusedOpportunityEntry.lap_numbers = [2, 3];
+focusedOpportunityEntry.typed_artifact.opportunity = structuredClone(focusedOpportunity);
+const focusedPhaseState = {
+  phase: "center", start_pct: 20, end_pct: 30, elapsed_delta_s: 0.1,
+  speed_delta_mph: -1, throttle_delta_pct: 2, brake_delta_pct: 0,
+  steering_delta_deg: 1.5, yaw_rate_delta: -0.8, long_accel_delta: 0.1,
+  path_delta_m: null, line_separation_m: 0.2,
+  driver_demand_source_coverage: 1, driver_demand_reference_coverage: 1,
+  evidence_state: "measured",
+  source_channels: [...new Set(["speed_mph", ...centerSupportChannels])],
+  blockers: [],
+};
+const focusedSeparation = {
+  separation_id: "separation-p35-center", phase: "center",
+  driver_demand_changed: false, vehicle_response_changed: true,
+  line_changed: false, context_changed: false, time_changed: true,
+  result: "vehicle_response_changed_with_matched_inputs",
+  support: ["Exact driver demand is matched."], contradictions: [], blockers: [],
+  authority: "observation_only",
+};
+const focusedChain = {
+  chain_id: "chain-p35-center", track_region: "Turn 1", turn: "1",
+  lap_numbers: [2], reference_lap_numbers: [3], approach_state: null,
+  braking_state: null, entry_state: null, center_state: focusedPhaseState,
+  exit_state: null, carry_state: null, local_time_effect_s: 0.1,
+  downstream_time_effect_s: 0.02, driver_vehicle_separation: [focusedSeparation],
+  context: [], contradictions: ["One qualified comparison does not establish component cause."],
+  authority: "observation_only",
+};
+focusedDynamicsWorkspace.performance_intelligence.corner_chains = [focusedChain];
+focusedDynamicsWorkspace.evidence_index.entries.push({
+  artifact_id: focusedChain.chain_id, producer_id: "p32.corner_performance_chain",
+  run_id: "run-1", session_id: "session-1", setup_id: "setup-1",
+  workspace_run_id: "run-1", workspace_session_id: "session-1", workspace_setup_id: "setup-1",
+  source_run_id: "run-1", source_session_id: "session-1", source_setup_id: "setup-1",
+  source_setup_sha256: h("b"), source_build_context_sha256: vehicleRuntimeIdentityHash,
+  source_provenance_available: true, lap_numbers: [2, 3], lap_pct_start: 20, lap_pct_end: 30,
+  phase: "corner_chain", mechanism_ids: [], component_ids: [], control_keys: [],
+  objective: "race_long_run", source_channels: [...focusedPhaseState.source_channels],
+  evidence_state: "calculated", polarity: "neutral", blocker_reasons: [],
+  typed_artifact: {
+    artifact_type: "corner_performance_chain", start_pct: 20, end_pct: 30,
+    chain: structuredClone(focusedChain),
+  },
+  authority_ceiling: "observation_only",
+});
+const p20SupportArtifactId = "observation-center_rotation";
+focusedDynamicsWorkspace.evidence_index.entries.push({
+  artifact_id: p20SupportArtifactId, producer_id: "p20.mechanism_observation",
+  run_id: "run-1", session_id: "session-1", setup_id: "setup-1",
+  workspace_run_id: "run-1", workspace_session_id: "session-1", workspace_setup_id: "setup-1",
+  source_run_id: "run-1", source_session_id: "session-1", source_setup_id: "setup-1",
+  source_setup_sha256: h("b"), source_build_context_sha256: vehicleRuntimeIdentityHash,
+  source_provenance_available: true, lap_numbers: [2], lap_pct_start: 20, lap_pct_end: 30,
+  phase: "center", mechanism_ids: ["corner_rotation"], component_ids: [], control_keys: [],
+  objective: "race_long_run", source_channels: [...centerSupportChannels],
+  evidence_state: "observed_correlation", polarity: "support", blocker_reasons: [],
+  typed_artifact: null, authority_ceiling: "observation_only",
+});
+const leadingMechanism = expectedCenterMechanisms[0];
+const supportFocusId = await focusArtifactId(
+  leadingMechanism,
+  "support",
+  p20SupportArtifactId,
+);
+const supportFocus = {
+  artifact_id: supportFocusId, mechanism_id: leadingMechanism.mechanism_id,
+  observation_contract_id: null, inspection_tool_id: leadingMechanism.inspection_tool_id,
+  stage: "vehicle_response", evidence_state: "observed_correlation",
+  source_artifact_ids: [p20SupportArtifactId],
+  source_channels: [...centerSupportChannels],
+  lap_numbers: [2], lap_pct_start: 20, lap_pct_end: 30, phase: "center",
+  polarity: "support", summary: "The exact typed P20 response supports candidate relevance only.",
+  blocker_reasons: [], authority: "observation_only",
+};
+const focusedDynamicsBody = structuredClone(focusedDynamicsWorkspace.vehicle_dynamics);
+delete focusedDynamicsBody.p35_assessment_sha256;
+focusedDynamicsBody.candidates[0].support_artifact_ids = [supportFocusId];
+focusedDynamicsBody.candidates[0].blocker_reasons = [];
+focusedDynamicsBody.candidates[0].relevance = "candidate";
+focusedDynamicsBody.focus_artifacts = [supportFocus, ...focusedDynamicsBody.focus_artifacts];
+for (const focus of focusedDynamicsBody.focus_artifacts.slice(1)) focus.lap_numbers = [2, 3];
+focusedDynamicsBody.chain[2] = {
+  stage: "vehicle_response", evidence_state: "measured",
+  source_artifact_ids: [focusedChain.chain_id, p20SupportArtifactId],
+  source_channels: [...focusedPhaseState.source_channels],
+  summary: "P20 observed a current-scope vehicle response; no component cause is assigned.",
+  blocker_reasons: [], authority: "observation_only",
+};
+focusedDynamicsBody.chain[0] = {
+  stage: "driver_input", evidence_state: "measured",
+  source_artifact_ids: [focusedChain.chain_id], source_channels: [...focusedPhaseState.source_channels],
+  summary: "Measured driver demand is available for the exact phase.",
+  blocker_reasons: [], authority: "observation_only",
+};
+focusedDynamicsBody.strongest_support_artifact_id = supportFocusId;
+focusedDynamicsWorkspace.vehicle_dynamics = {
+  ...focusedDynamicsBody,
+  p35_assessment_sha256: await canonicalPerformanceMechanismAssessmentSha256(
+    focusedDynamicsBody,
+  ),
+};
+focusedDynamicsWorkspace.identity.p35_assessment_sha256 =
+  focusedDynamicsWorkspace.vehicle_dynamics.p35_assessment_sha256;
+appendP35EvidenceEntries(focusedDynamicsWorkspace);
+assert.equal(
+  isPerformanceIntelligenceProjection(
+    focusedDynamicsWorkspace.performance_intelligence,
+    {
+      ...directScope,
+      opportunityEvidence: new Map([["opportunity-1", focusedOpportunityEntry]]),
+    },
+  ),
+  true,
+  "supported P35 fixture retains a trusted exact P32 chain and separation",
+);
+const focusedBinding = deriveCanonicalP35P32Binding(
+  focusedDynamicsWorkspace.performance_intelligence.opportunity_map.opportunities,
+  focusedDynamicsWorkspace.performance_intelligence.basis.context_blockers,
+);
+const focusedChainTruth = deriveP35ChainTruth(
+  focusedDynamicsWorkspace.performance_intelligence,
+  focusedDynamicsWorkspace.evidence_index.entries,
+  focusedBinding,
+);
+assert.equal(isPerformanceMechanismAssessment(focusedDynamicsWorkspace.vehicle_dynamics, {
+  runId: "run-1", sessionId: "session-1", objectiveId: "race_long_run",
+  assessmentSha256: focusedDynamicsWorkspace.identity.p35_assessment_sha256,
+  carPath: vehicleRuntimeIdentity.car_path, carVersion: vehicleRuntimeIdentity.car_version,
+  iRacingBuildVersion: vehicleRuntimeIdentity.iracing_build_version, trackPackage: "oval",
+  vehicleRuntimeIdentitySha256: vehicleRuntimeIdentityHash,
+  p19ReasoningSnapshotSha256: h("a"), p20StateRevision: h("d"), p20ProfileHash: null,
+  p26GraphVersion: "p26.v1", p26KnowledgeGraphSha256: h("e"), p32ProjectionSha256: h("7"),
+  ...focusedBinding, ...focusedChainTruth,
+  evidenceArtifactIds: focusedDynamicsWorkspace.evidence_index.entries
+    .filter((entry) => !entry.producer_id.startsWith("p35."))
+    .map((entry) => entry.artifact_id),
+}), true, "supported P35 assessment mirrors exact P32/P20 chain truth");
+assert.equal(p35FocusEntriesMatchAssessment(
+  focusedDynamicsWorkspace.evidence_index.entries,
+  focusedDynamicsWorkspace.vehicle_dynamics,
+  focusedDynamicsWorkspace.identity,
+  report,
+  focusedDynamicsWorkspace.engineering_awareness,
+), true, "supported P35 Crew focus entries bind exact P20/P32 sources");
+for (const entry of focusedDynamicsWorkspace.evidence_index.entries) {
+  assert.equal(
+    typedArtifactMatchesProjection(
+      entry,
+      focusedDynamicsWorkspace.performance_intelligence,
+      focusedDynamicsWorkspace.identity,
+    ),
+    true,
+    `supported P35 fixture entry ${entry.artifact_id} binds its typed projection`,
+  );
+}
+assert.equal(
+  isCrewChiefWorkspaceResponse(focusedDynamicsWorkspace, scope),
+  true,
+  "typed P35 support, contradiction, and discriminator entries bind to exact current evidence",
+);
+focusedDynamicsWorkspace.evidence_index.index_hash = await canonicalCrewEvidenceIndexSha256(
+  focusedDynamicsWorkspace.evidence_index.entries,
+);
+assert.equal(
+  await hasCanonicalCrewEvidenceIndexDigest(focusedDynamicsWorkspace),
+  true,
+  "the ordered evidence index binds every current P20/P32/P35 entry",
+);
+const staleFocusedEvidenceIndex = structuredClone(focusedDynamicsWorkspace);
+staleFocusedEvidenceIndex.evidence_index.entries.find(
+  (entry) => entry.artifact_id === p20SupportArtifactId,
+).source_channels = ["steering_angle_deg"];
+assert.equal(
+  await hasCanonicalCrewEvidenceIndexDigest(staleFocusedEvidenceIndex),
+  false,
+  "evidence-entry drift invalidates the ordered index digest",
+);
+
+const projectionDetachedP20Support = structuredClone(focusedDynamicsWorkspace);
+projectionDetachedP20Support.engineering_awareness.subsystem_states[0].source_artifact_ids = [
+  "observation-unrelated",
+];
+projectionDetachedP20Support.identity.p20_projection_sha256 =
+  await canonicalEngineeringAwarenessScientificSha256(
+    projectionDetachedP20Support.engineering_awareness,
+);
+assert.equal(
+  await hasCanonicalEngineeringAwarenessDigest(projectionDetachedP20Support),
+  true,
+  "a coordinated P20 scientific rehash is internally consistent",
+);
+assert.equal(
+  isCrewChiefWorkspaceResponse(projectionDetachedP20Support, scope),
+  false,
+  "P35 support must remain owned by the separately hashed P20 projection",
+);
+
+const rehashFocusedDynamics = async (value) => {
+  const body = structuredClone(value.vehicle_dynamics);
+  delete body.p35_assessment_sha256;
+  value.vehicle_dynamics.p35_assessment_sha256 =
+    await canonicalPerformanceMechanismAssessmentSha256(body);
+  value.identity.p35_assessment_sha256 = value.vehicle_dynamics.p35_assessment_sha256;
+  for (const entry of value.evidence_index.entries.filter((item) => item.producer_id.startsWith("p35."))) {
+    entry.typed_artifact.assessment_sha256 = value.vehicle_dynamics.p35_assessment_sha256;
+    entry.typed_artifact.focus = structuredClone(
+      value.vehicle_dynamics.focus_artifacts.find((focus) => focus.artifact_id === entry.artifact_id),
+    );
+  }
+};
+const rehashedFordRelabel = structuredClone(focusedDynamicsWorkspace);
+rehashedFordRelabel.vehicle_dynamics.car_path = "stockcars fordmustang 2022";
+await rehashFocusedDynamics(rehashedFordRelabel);
+rehashedFordRelabel.evidence_index.index_hash = await canonicalCrewEvidenceIndexSha256(
+  rehashedFordRelabel.evidence_index.entries,
+);
+assert.equal(
+  await hasCanonicalPerformanceMechanismAssessmentDigest(
+    rehashedFordRelabel.vehicle_dynamics,
+  ),
+  true,
+  "the foreign-car P35 assessment and envelopes are fully rehashed",
+);
+assert.equal(await hasCanonicalVehicleRuntimeIdentityDigest(rehashedFordRelabel), true);
+assert.equal(
+  isCrewChiefWorkspaceResponse(rehashedFordRelabel, scope),
+  false,
+  "an Atlanta Chevrolet runtime cannot be relabeled as an allowed Ford",
+);
+const rehashedFordRuntimeMirror = structuredClone(rehashedFordRelabel);
+rehashedFordRuntimeMirror.identity.vehicle_runtime_identity.car_path =
+  "stockcars fordmustang 2022";
+assert.equal(
+  await hasCanonicalVehicleRuntimeIdentityDigest(rehashedFordRuntimeMirror),
+  false,
+  "a coordinated full runtime relabel cannot retain the old independent runtime hash",
+);
+assert.equal(
+  isCrewChiefWorkspaceResponse(rehashedFordRuntimeMirror, scope),
+  false,
+  "the response-owned runtime mirror also remains equal to trusted Run Intelligence",
+);
+const retargetFocusedSupport = async (value, sourceArtifactId) => {
+  const candidate = value.vehicle_dynamics.candidates.find(
+    (item) => item.relevance === "candidate",
+  );
+  const oldSupportId = candidate.support_artifact_ids[0];
+  const focus = value.vehicle_dynamics.focus_artifacts.find(
+    (item) => item.artifact_id === oldSupportId,
+  );
+  const oldSourceId = focus.source_artifact_ids[0];
+  const source = value.evidence_index.entries.find(
+    (entry) => entry.artifact_id === sourceArtifactId,
+  );
+  const newSupportId = `${p35RuntimeTrustManifest.mechanisms.find(
+    (item) => item.mechanism_id === candidate.mechanism_id,
+  ).focus_artifact_prefix}${(await canonicalJsonSha256([
+    value.vehicle_dynamics.performance_opportunity_ids[0],
+    focus.mechanism_id,
+    sourceArtifactId,
+    "support",
+  ])).slice(0, 24)}`;
+  focus.artifact_id = newSupportId;
+  focus.source_artifact_ids = [sourceArtifactId];
+  focus.source_channels = [...source.source_channels];
+  focus.lap_numbers = [...source.lap_numbers];
+  focus.lap_pct_start = source.lap_pct_start;
+  focus.lap_pct_end = source.lap_pct_end;
+  focus.phase = source.phase;
+  focus.evidence_state = source.evidence_state;
+  focus.blocker_reasons = [];
+  candidate.support_artifact_ids = [newSupportId];
+  value.vehicle_dynamics.strongest_support_artifact_id = newSupportId;
+  const responseStage = value.vehicle_dynamics.chain.find(
+    (item) => item.stage === "vehicle_response",
+  );
+  responseStage.source_artifact_ids = responseStage.source_artifact_ids.map(
+    (item) => item === oldSourceId ? sourceArtifactId : item,
+  );
+  responseStage.source_channels = [...new Set([
+    ...responseStage.source_channels,
+    ...source.source_channels,
+  ])];
+  value.evidence_index.entries = value.evidence_index.entries.filter(
+    (entry) => !entry.producer_id.startsWith("p35."),
+  );
+  await rehashFocusedDynamics(value);
+  appendP35EvidenceEntries(value);
+  value.evidence_index.index_hash = await canonicalCrewEvidenceIndexSha256(
+    value.evidence_index.entries,
+  );
+};
+const unrelatedP20Support = structuredClone(focusedDynamicsWorkspace);
+const unrelatedP20Entry = structuredClone(unrelatedP20Support.evidence_index.entries.find(
+  (entry) => entry.artifact_id === p20SupportArtifactId,
+));
+unrelatedP20Entry.artifact_id = "observation-unrelated";
+unrelatedP20Support.evidence_index.entries.push(unrelatedP20Entry);
+await retargetFocusedSupport(unrelatedP20Support, unrelatedP20Entry.artifact_id);
+assert.equal(
+  await hasCanonicalPerformanceMechanismAssessmentDigest(
+    unrelatedP20Support.vehicle_dynamics,
+  ),
+  true,
+  "the unrelated-P20 hostile rehashes its assessment and focus identities",
+);
+assert.equal(await hasCanonicalCrewEvidenceIndexDigest(unrelatedP20Support), true);
+assert.equal(
+  isCrewChiefWorkspaceResponse(unrelatedP20Support, scope),
+  false,
+  "response-owned evidence cannot invent P20 support absent from the hashed projection and report",
+);
+const p32ChainAsSupport = structuredClone(focusedDynamicsWorkspace);
+await retargetFocusedSupport(p32ChainAsSupport, focusedChain.chain_id);
+assert.equal(
+  await hasCanonicalPerformanceMechanismAssessmentDigest(
+    p32ChainAsSupport.vehicle_dynamics,
+  ),
+  true,
+  "the P32-chain-as-support hostile rehashes all P35 focus identities",
+);
+assert.equal(await hasCanonicalCrewEvidenceIndexDigest(p32ChainAsSupport), true);
+assert.equal(
+  isCrewChiefWorkspaceResponse(p32ChainAsSupport, scope),
+  false,
+  "a P32 chain cannot impersonate the exact P20 support producer",
+);
+const detachedP35Envelope = structuredClone(focusedDynamicsWorkspace);
+detachedP35Envelope.evidence_index.entries.find(
+  (entry) => entry.producer_id.startsWith("p35."),
+).typed_artifact.assessment_sha256 = h("f");
+assert.equal(isCrewChiefWorkspaceResponse(detachedP35Envelope, scope), false, "P35 entry envelope binds the assessment digest");
+const wrongP35Producer = structuredClone(focusedDynamicsWorkspace);
+wrongP35Producer.evidence_index.entries.find(
+  (entry) => entry.producer_id.startsWith("p35."),
+).producer_id = "p35.definitely_wrong";
+assert.equal(isCrewChiefWorkspaceResponse(wrongP35Producer, scope), false, "P35 producer binds the exact inspection tool");
+const wrongP35Polarity = structuredClone(focusedDynamicsWorkspace);
+wrongP35Polarity.evidence_index.entries.find(
+  (entry) => entry.producer_id.startsWith("p35.") && entry.polarity === "contradiction",
+).polarity = "support";
+assert.equal(isCrewChiefWorkspaceResponse(wrongP35Polarity, scope), false, "candidate contradiction cannot navigate as support");
+const missingP35FocusEntry = structuredClone(focusedDynamicsWorkspace);
+missingP35FocusEntry.evidence_index.entries.pop();
+assert.equal(isCrewChiefWorkspaceResponse(missingP35FocusEntry, scope), false, "every P35 focus has exactly one Crew entry");
+const rehashedP35ScopeUnion = structuredClone(focusedDynamicsWorkspace);
+rehashedP35ScopeUnion.vehicle_dynamics.focus_artifacts[0].lap_pct_start = 21;
+rehashedP35ScopeUnion.evidence_index.entries.find(
+  (entry) => entry.artifact_id === rehashedP35ScopeUnion.vehicle_dynamics.focus_artifacts[0].artifact_id,
+).lap_pct_start = 21;
+await rehashFocusedDynamics(rehashedP35ScopeUnion);
+assert.equal(isCrewChiefWorkspaceResponse(rehashedP35ScopeUnion, scope), false, "a rehashed focus cannot synthesize scope beyond its typed source");
+const rehashedP35SetupDirective = structuredClone(focusedDynamicsWorkspace);
+rehashedP35SetupDirective.vehicle_dynamics.focus_artifacts[0].summary = "Increase the right-front spring by 25 lb/in.";
+await rehashFocusedDynamics(rehashedP35SetupDirective);
+assert.equal(isCrewChiefWorkspaceResponse(rehashedP35SetupDirective, scope), false, "P35 cannot smuggle setup authority through focus narration");
 const missingTypedArtifact = structuredClone(withOpportunity);
 missingTypedArtifact.evidence_index.entries[0].typed_artifact = null;
 assert.equal(isCrewChiefWorkspaceResponse(missingTypedArtifact, scope), false, "P32 evidence requires typed payload");
@@ -1409,7 +2323,7 @@ unavailableWorkspace.evidence_index.entries = [{
   producer_id: "p32.lap_time_opportunity", run_id: "run-1", session_id: "session-1",
   setup_id: "setup-1", workspace_run_id: "run-1", workspace_session_id: "session-1",
   workspace_setup_id: "setup-1", source_run_id: "run-1", source_session_id: "session-1",
-  source_setup_id: "setup-1", source_setup_sha256: h("b"), source_build_context_sha256: h("9"),
+  source_setup_id: "setup-1", source_setup_sha256: h("b"), source_build_context_sha256: vehicleRuntimeIdentityHash,
   source_provenance_available: true, lap_numbers: [2], lap_pct_start: 0, lap_pct_end: 100,
   phase: "unavailable", mechanism_ids: [], component_ids: [], control_keys: [],
   objective: "race_long_run", source_channels: [], evidence_state: "unavailable", polarity: "neutral",
@@ -1464,7 +2378,7 @@ const p32Entry = (overrides) => ({
   artifact_id: "", producer_id: "", run_id: "run-1", session_id: "session-1", setup_id: "setup-1",
   workspace_run_id: "run-1", workspace_session_id: "session-1", workspace_setup_id: "setup-1",
   source_run_id: "run-1", source_session_id: "session-1", source_setup_id: "setup-1",
-  source_setup_sha256: h("b"), source_build_context_sha256: h("9"), source_provenance_available: true,
+  source_setup_sha256: h("b"), source_build_context_sha256: vehicleRuntimeIdentityHash, source_provenance_available: true,
   lap_numbers: [2], lap_pct_start: 0, lap_pct_end: 100, phase: "whole_run", mechanism_ids: [],
   component_ids: [], control_keys: [], objective: "race_long_run", source_channels: [],
   evidence_state: "calculated", polarity: "neutral", blocker_reasons: [], typed_artifact: null,
@@ -1472,20 +2386,41 @@ const p32Entry = (overrides) => ({
 });
 const opportunity = typedWorkspace.performance_intelligence.opportunity_map.opportunities[0];
 typedWorkspace.evidence_index.entries = [
-  p32Entry({ artifact_id: "opportunity-1", producer_id: "p32.lap_time_opportunity", lap_pct_start: 20, lap_pct_end: 30, phase: "center", mechanism_ids: ["unclassified"], source_channels: ["speed_mph"], evidence_state: "observed_correlation", typed_artifact: { artifact_type: "lap_time_opportunity", opportunity: structuredClone(opportunity) } }),
-  p32Entry({ artifact_id: "opportunity-1:time-origin", producer_id: "p32.time_loss_origin", lap_pct_start: 20, lap_pct_end: 30, phase: "center", mechanism_ids: ["unclassified"], source_channels: ["speed_mph"], evidence_state: "observed_correlation", typed_artifact: { artifact_type: "time_loss_origin", opportunity: structuredClone(opportunity) } }),
-  p32Entry({ artifact_id: "opportunity-1:exit-carry", producer_id: "p32.exit_carry", lap_pct_start: 30, lap_pct_end: 38, phase: "following_straight_carry", mechanism_ids: ["unclassified"], source_channels: ["speed_mph"], evidence_state: "observed_correlation", typed_artifact: { artifact_type: "exit_carry", opportunity: structuredClone(opportunity) } }),
-  p32Entry({ artifact_id: "chain-1", producer_id: "p32.corner_performance_chain", lap_pct_start: 20, lap_pct_end: 30, phase: "corner_chain", source_channels: ["speed_mph", "lat", "lon"], evidence_state: "blocked_by_context", blocker_reasons: ["Reference unavailable."], typed_artifact: { artifact_type: "corner_performance_chain", start_pct: 20, end_pct: 30, chain: structuredClone(chain) } }),
-  p32Entry({ artifact_id: "chain-1:path:center", producer_id: "p32.path_efficiency", lap_pct_start: 20, lap_pct_end: 30, phase: "center", source_channels: ["speed_mph", "lat", "lon"], evidence_state: "blocked_by_context", blocker_reasons: ["Reference unavailable."], typed_artifact: { artifact_type: "path_efficiency", chain_id: "chain-1", phase_state: structuredClone(phaseState) } }),
+  p32Entry({ artifact_id: "opportunity-1", producer_id: "p32.lap_time_opportunity", lap_numbers: [2, 3], lap_pct_start: 20, lap_pct_end: 30, phase: "center", mechanism_ids: ["unclassified"], source_channels: ["speed_mph"], evidence_state: "observed_correlation", typed_artifact: { artifact_type: "lap_time_opportunity", opportunity: structuredClone(opportunity) } }),
+  p32Entry({ artifact_id: "opportunity-1:time-origin", producer_id: "p32.time_loss_origin", lap_numbers: [2, 3], lap_pct_start: 20, lap_pct_end: 30, phase: "center", mechanism_ids: ["unclassified"], source_channels: ["speed_mph"], evidence_state: "observed_correlation", typed_artifact: { artifact_type: "time_loss_origin", opportunity: structuredClone(opportunity) } }),
+  p32Entry({ artifact_id: "opportunity-1:exit-carry", producer_id: "p32.exit_carry", lap_numbers: [2, 3], lap_pct_start: 30, lap_pct_end: 38, phase: "following_straight_carry", mechanism_ids: ["unclassified"], source_channels: ["speed_mph"], evidence_state: "observed_correlation", typed_artifact: { artifact_type: "exit_carry", opportunity: structuredClone(opportunity) } }),
+  p32Entry({ artifact_id: "chain-1", producer_id: "p32.corner_performance_chain", lap_pct_start: 20, lap_pct_end: 30, phase: "corner_chain", source_channels: ["speed_mph", "lat", "lon"], typed_artifact: { artifact_type: "corner_performance_chain", start_pct: 20, end_pct: 30, chain: structuredClone(chain) } }),
+  p32Entry({ artifact_id: "chain-1:path:center", producer_id: "p32.path_efficiency", lap_pct_start: 20, lap_pct_end: 30, phase: "center", source_channels: ["speed_mph", "lat", "lon"], typed_artifact: { artifact_type: "path_efficiency", chain_id: "chain-1", phase_state: structuredClone(phaseState) } }),
   p32Entry({ artifact_id: "separation-1", producer_id: "p32.driver_vehicle_separation", lap_pct_start: 20, lap_pct_end: 30, phase: "center", source_channels: ["speed_mph", "lat", "lon"], evidence_state: "blocked_by_context", blocker_reasons: ["Driver demand is incomplete."], authority_ceiling: "context_only", typed_artifact: { artifact_type: "driver_vehicle_separation", chain_id: "chain-1", track_region: "Turn 1", start_pct: 20, end_pct: 30, separation: structuredClone(separation) } }),
-  p32Entry({ artifact_id: `p32-track-demand:${"1".repeat(20)}`, producer_id: "p32.track_demand", source_channels: ["speed_mph"], typed_artifact: { artifact_type: "track_demand", profile: structuredClone(typedWorkspace.performance_intelligence.track_demand) } }),
-  p32Entry({ artifact_id: "influence-1", producer_id: "p32.component_performance_link", phase: "component_performance_link", mechanism_ids: ["unclassified"], component_ids: ["anti_roll_bars"], source_channels: ["lat_accel"], evidence_state: "needs_confirmation", typed_artifact: { artifact_type: "component_performance_link", influence: structuredClone(influence) } }),
-  p32Entry({ artifact_id: `p32-objective:${"2".repeat(20)}`, producer_id: "p32.objective_envelope", authority_ceiling: "context_only", typed_artifact: { artifact_type: "objective_envelope", envelope: structuredClone(typedWorkspace.performance_intelligence.objective_envelope) } }),
+  p32Entry({ artifact_id: `p32-track-demand:${"1".repeat(20)}`, producer_id: "p32.track_demand", lap_numbers: [2, 3], source_channels: ["speed_mph"], typed_artifact: { artifact_type: "track_demand", profile: structuredClone(typedWorkspace.performance_intelligence.track_demand) } }),
+  p32Entry({ artifact_id: "influence-1", producer_id: "p32.component_performance_link", lap_numbers: [2, 3], phase: "component_performance_link", mechanism_ids: ["unclassified"], component_ids: ["anti_roll_bars"], source_channels: ["lat_accel"], evidence_state: "needs_confirmation", typed_artifact: { artifact_type: "component_performance_link", influence: structuredClone(influence) } }),
+  p32Entry({ artifact_id: `p32-objective:${"2".repeat(20)}`, producer_id: "p32.objective_envelope", lap_numbers: [2, 3], authority_ceiling: "context_only", typed_artifact: { artifact_type: "objective_envelope", envelope: structuredClone(typedWorkspace.performance_intelligence.objective_envelope) } }),
 ];
-assert.equal(isCrewChiefWorkspaceResponse(typedWorkspace, scope), true, "all nine typed performance artifacts");
+for (const entry of typedWorkspace.evidence_index.entries) {
+  assert.equal(
+    typedArtifactMatchesProjection(
+      entry,
+      typedWorkspace.performance_intelligence,
+      typedWorkspace.identity,
+    ),
+    true,
+    `all-nine fixture entry ${entry.artifact_id} binds its typed projection`,
+  );
+}
+assert.equal(
+  isPerformanceIntelligenceProjection(typedWorkspace.performance_intelligence, {
+    ...directScope,
+    opportunityEvidence: new Map([["opportunity-1", typedWorkspace.evidence_index.entries[0]]]),
+  }),
+  true,
+  "all-nine fixture retains a trusted performance projection",
+);
 const invalidDemandCoverage = structuredClone(typedWorkspace);
 invalidDemandCoverage.performance_intelligence.corner_chains[0].center_state.driver_demand_source_coverage = 1.1;
-assert.equal(isCrewChiefWorkspaceResponse(invalidDemandCoverage, scope), false, "driver-demand coverage stays bounded");
+assert.equal(isPerformanceIntelligenceProjection(invalidDemandCoverage.performance_intelligence, {
+  ...directScope,
+  opportunityEvidence: new Map([["opportunity-1", invalidDemandCoverage.evidence_index.entries[0]]]),
+}), false, "driver-demand coverage stays bounded");
 const incompleteMatchedDemand = structuredClone(typedWorkspace);
 Object.assign(incompleteMatchedDemand.performance_intelligence.corner_chains[0].driver_vehicle_separation[0], {
   driver_demand_changed: false,
@@ -1496,7 +2431,10 @@ Object.assign(incompleteMatchedDemand.performance_intelligence.corner_chains[0].
   blockers: [],
 });
 incompleteMatchedDemand.performance_intelligence.corner_chains[0].center_state.driver_demand_source_coverage = 0.9;
-assert.equal(isCrewChiefWorkspaceResponse(incompleteMatchedDemand, scope), false, "matched inputs require complete co-observed demand");
+assert.equal(isPerformanceIntelligenceProjection(incompleteMatchedDemand.performance_intelligence, {
+  ...directScope,
+  opportunityEvidence: new Map([["opportunity-1", incompleteMatchedDemand.evidence_index.entries[0]]]),
+}), false, "matched inputs require complete co-observed demand");
 for (const [label, mutate] of [
   ["time-origin payload drift", (value) => { value.evidence_index.entries[1].typed_artifact.opportunity.origin_kind = "carried_in"; }],
   ["exit-carry window drift", (value) => { value.evidence_index.entries[2].typed_artifact.opportunity.following_phase_end_pct = 39; }],
@@ -1510,7 +2448,11 @@ for (const [label, mutate] of [
 ]) {
   const hostile = structuredClone(typedWorkspace);
   mutate(hostile);
-  assert.equal(isCrewChiefWorkspaceResponse(hostile, scope), false, label);
+  assert.equal(hostile.evidence_index.entries.every((entry) => typedArtifactMatchesProjection(
+    entry,
+    hostile.performance_intelligence,
+    hostile.identity,
+  )), false, label);
 }
 
 const trafficBlocked = structuredClone(withOpportunity);
@@ -1528,6 +2470,41 @@ trafficBlocked.evidence_index.entries[0].blocker_reasons = ["Traffic covered the
 trafficBlocked.evidence_index.entries[0].typed_artifact.opportunity = structuredClone(
   trafficBlocked.performance_intelligence.opportunity_map.opportunities[0],
 );
+const trafficBinding = deriveCanonicalP35P32Binding(
+  trafficBlocked.performance_intelligence.opportunity_map.opportunities,
+  trafficBlocked.performance_intelligence.basis.context_blockers,
+);
+const trafficChainTruth = deriveP35ChainTruth(
+  trafficBlocked.performance_intelligence,
+  trafficBlocked.evidence_index.entries,
+  trafficBinding,
+);
+trafficBlocked.vehicle_dynamics.traffic_blocked = true;
+trafficBlocked.vehicle_dynamics.chain = trafficBlocked.vehicle_dynamics.chain.map((stage, index) => ({
+  ...stage,
+  ...trafficChainTruth.expectedChain[index],
+}));
+await rehashFocusedDynamics(trafficBlocked);
+assert.equal(isPerformanceIntelligenceProjection(
+  trafficBlocked.performance_intelligence,
+  {
+    ...directScope,
+    opportunityEvidence: new Map([["opportunity-1", trafficBlocked.evidence_index.entries[0]]]),
+  },
+), true, "traffic fixture retains exact P32 truth");
+assert.equal(isPerformanceMechanismAssessment(trafficBlocked.vehicle_dynamics, {
+  runId: "run-1", sessionId: "session-1", objectiveId: "race_long_run",
+  assessmentSha256: trafficBlocked.identity.p35_assessment_sha256,
+  carPath: vehicleRuntimeIdentity.car_path, carVersion: vehicleRuntimeIdentity.car_version,
+  iRacingBuildVersion: vehicleRuntimeIdentity.iracing_build_version, trackPackage: "oval",
+  vehicleRuntimeIdentitySha256: vehicleRuntimeIdentityHash,
+  p19ReasoningSnapshotSha256: h("a"), p20StateRevision: h("d"), p20ProfileHash: null,
+  p26GraphVersion: "p26.v1", p26KnowledgeGraphSha256: h("e"), p32ProjectionSha256: h("7"),
+  ...trafficBinding, ...trafficChainTruth,
+  evidenceArtifactIds: trafficBlocked.evidence_index.entries
+    .filter((entry) => !entry.producer_id.startsWith("p35."))
+    .map((entry) => entry.artifact_id),
+}), true, "traffic fixture retains exact P35 blocked truth");
 assert.equal(isCrewChiefWorkspaceResponse(trafficBlocked, scope), true, "traffic difference remains visible but blocked");
 const contextBlockedWithComponent = structuredClone(trafficBlocked);
 Object.assign(contextBlockedWithComponent.performance_intelligence.opportunity_map.opportunities[0], {

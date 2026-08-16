@@ -179,6 +179,7 @@ def _fixture_workspace_identity(
         p26_knowledge_graph_sha256=p26_sha256,
         p26_reasoning_snapshot_sha256=p19_sha256,
         p32_projection_sha256=p32_sha256,
+        p35_assessment_sha256="d" * 64,
         run_sentinel_sha256="c" * 64,
         learning_history_revision=p33_history_revision,
         learning_ledger_head_sha256=p33_ledger_head_sha256,

@@ -230,9 +230,10 @@ def test_longitudinal_weight_transfer_known() -> None:
     assert conf.tier == "high"
 
 
-def test_longitudinal_weight_transfer_default_cg() -> None:
+def test_longitudinal_weight_transfer_requires_cg_height() -> None:
     wt, conf = longitudinal_weight_transfer_n(1500.0, 3.0, None, 3.0)
-    assert wt is not None
+    assert wt is None
+    assert "cg_height_m" in conf.missing_inputs
     assert conf.tier == "low"
 
 
@@ -295,6 +296,12 @@ def test_understeer_proxy() -> None:
 def test_understeer_proxy_oversteer_returns_zero() -> None:
     proxy, conf = understeer_yaw_error_proxy(0.06, 0.10)
     assert proxy == 0.0
+
+
+def test_understeer_proxy_missing_input_stays_unavailable() -> None:
+    proxy, conf = understeer_yaw_error_proxy(None, 0.10)
+    assert proxy is None
+    assert "expected_yaw_rate_rad_s" in conf.missing_inputs
 
 
 # ── Slip angles ───────────────────────────────────────────────
@@ -865,10 +872,10 @@ def test_ackermann_scrub_proxy_zero_when_understeering() -> None:
 
 
 def test_ackermann_scrub_proxy_missing_inputs() -> None:
-    """Missing inputs return 0.0, not crash."""
+    """Missing inputs remain unavailable, not false evidence of zero scrub."""
     from racelab_engine.analysis.vehicle_dynamics import ackermann_scrub_proxy
     proxy, conf = ackermann_scrub_proxy(None, 5.0)
-    assert proxy == 0.0
+    assert proxy is None
 
 
 # ── Camber temp bias ──────────────────────────────────────────

@@ -126,7 +126,7 @@ function validOpportunity(value, scope, basis, knownMechanisms) {
     && evidence.lap_pct_start === value.start_pct
     && evidence.lap_pct_end === value.end_pct
     && evidence.phase === value.phase
-    && JSON.stringify(evidence.lap_numbers) === JSON.stringify(basis.source_lap_numbers)
+    && JSON.stringify(evidence.lap_numbers) === JSON.stringify(value.source_laps)
     && JSON.stringify(evidence.source_channels) === JSON.stringify(value.source_channels)
     && JSON.stringify(evidence.component_ids) === JSON.stringify(value.component_candidates)
     && JSON.stringify(evidence.mechanism_ids) === JSON.stringify(mappedMechanisms)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -94,6 +95,7 @@ def _identity() -> CrewChiefWorkspaceIdentity:
         p26_knowledge_graph_sha256="5" * 64,
         p26_reasoning_snapshot_sha256="2" * 64,
         p32_projection_sha256="9" * 64,
+        p35_assessment_sha256="d" * 64,
         run_sentinel_sha256="c" * 64,
         learning_history_revision="a" * 64,
         learning_projection_sha256="b" * 64,
@@ -456,6 +458,91 @@ def test_event_store_survives_restart_and_rejects_tampering(tmp_path) -> None:
     connection.close()
     with pytest.raises(CrewChiefIntegrityError, match="corrupt"):
         restarted.list_events("investigation-1")
+
+
+def test_pre_p35_runtime_identity_payload_restarts_without_authority_or_event_drift(
+    tmp_path,
+) -> None:
+    identity = _identity()
+    legacy_identity = identity.model_dump(mode="json")
+    for field_name in (
+        "p35_assessment_sha256",
+        "p20_projection_sha256",
+        "vehicle_runtime_identity",
+    ):
+        legacy_identity.pop(field_name, None)
+    restored_identity = CrewChiefWorkspaceIdentity.model_validate(legacy_identity)
+    assert restored_identity.vehicle_runtime_identity is None
+    assert restored_identity.p35_assessment_sha256 is None
+    assert restored_identity.p20_projection_sha256 is None
+    assert restored_identity.authority_revision == identity.authority_revision
+    assert identity.model_copy(
+        update={"p20_projection_sha256": "e" * 64}
+    ).authority_revision == identity.authority_revision
+
+    investigation = _investigation()
+    legacy_investigation = investigation.model_dump(mode="json")
+    for field_name in (
+        "p35_assessment_sha256",
+        "p20_projection_sha256",
+        "vehicle_runtime_identity",
+    ):
+        legacy_investigation["workspace_identity"].pop(field_name, None)
+    restored_investigation = CrewChiefInvestigation.model_validate(
+        legacy_investigation
+    )
+    db_path = str(tmp_path / "pre-p35-crew-restart.sqlite")
+    _seed_run(db_path)
+    connection = initialize_database(db_path)
+    connection.execute(
+        """
+        INSERT INTO crew_chief_investigations (
+          investigation_id, run_id, session_id, workspace_revision,
+          status, opened_at, investigation_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            restored_investigation.investigation_id,
+            restored_identity.run_id,
+            restored_identity.session_id,
+            restored_identity.workspace_revision,
+            restored_investigation.status,
+            restored_investigation.opened_at.isoformat(),
+            json.dumps(legacy_investigation),
+        ),
+    )
+    connection.commit()
+    connection.close()
+    event = _event(
+        restored_investigation.investigation_id,
+        1,
+        restored_identity.workspace_revision,
+        "problem_interpreted",
+        CrewChiefEventPayload(message="Driver report normalized."),
+    )
+    event_hash = event.event_hash
+    repository = CrewChiefRepository(db_path)
+    repository.append_event(event)
+    restarted_investigation = CrewChiefRepository(db_path).get_investigation(
+        restored_investigation.investigation_id
+    )
+    restarted_events = CrewChiefRepository(db_path).list_events(
+        restored_investigation.investigation_id
+    )
+
+    assert restarted_investigation is not None
+    assert restarted_investigation.workspace_identity.authority_revision == (
+        identity.authority_revision
+    )
+    assert restarted_events[0].event_hash == event_hash
+    folded = fold_investigation(
+        restarted_investigation,
+        restarted_events,
+        (),
+    )
+
+    assert folded.last_sequence == 1
+    assert event.event_hash == event_hash
 
 
 @pytest.mark.integration

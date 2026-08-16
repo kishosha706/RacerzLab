@@ -85,18 +85,28 @@ def build_platform_proxy_estimates(row: Mapping[str, Any], setup: Any | None = N
         missing_constants.append("corner_motion_ratios")
 
     # Detect high transients (lat/long accel in m/s² → divide by 9.81 for g)
-    lat_g = abs(_get_float(row, "lat_accel") or 0.0) / 9.81
-    long_g = abs(_get_float(row, "long_accel") or 0.0) / 9.81
+    lat_accel = _get_float(row, "lat_accel")
+    long_accel = _get_float(row, "long_accel")
+    lat_g = abs(lat_accel) / 9.81 if lat_accel is not None else None
+    long_g = abs(long_accel) / 9.81 if long_accel is not None else None
     transient_label: str | None = None
-    if lat_g > 0.50 or long_g > 0.50:
+    if (lat_g is not None and lat_g > 0.50) or (
+        long_g is not None and long_g > 0.50
+    ):
         transient_label = "very_low (high-G transient >0.50g)"
-    elif lat_g > 0.35 or long_g > 0.35:
+    elif (lat_g is not None and lat_g > 0.35) or (
+        long_g is not None and long_g > 0.35
+    ):
         transient_label = "low (elevated-G transient >0.35g)"
 
     # Shock/noise: check shock velocity RMS
     shock_keys = ["lf_shock_vel_in_s", "rf_shock_vel_in_s", "lr_shock_vel_in_s", "rr_shock_vel_in_s"]
-    shock_vals = [abs(_get_float(row, k) or 0.0) for k in shock_keys]
-    shock_activity = max(shock_vals, default=0.0)
+    shock_vals = [
+        abs(value)
+        for key in shock_keys
+        if (value := _get_float(row, key)) is not None
+    ]
+    shock_activity = max(shock_vals) if shock_vals else math.nan
     shock_noisy = shock_activity > 2.5  # in/s threshold — high platform disturbance
 
     assumptions = [
@@ -110,6 +120,15 @@ def build_platform_proxy_estimates(row: Mapping[str, Any], setup: Any | None = N
     if not has_motion_ratios:
         assumptions.append("Default 1:1 motion ratio assumed — may over/under-estimate load.")
 
+    if lat_g is None or long_g is None:
+        assumptions.append(
+            "Acceleration context is incomplete; missing channels remain unavailable and are not treated as zero."
+        )
+    if not shock_vals:
+        assumptions.append(
+            "Damper-velocity context is unavailable; missing activity is not treated as a settled platform."
+        )
+
     # Determine confidence
     warnings: list[str] = []
     confidence = "medium (steady-state comparison only)"
@@ -119,7 +138,7 @@ def build_platform_proxy_estimates(row: Mapping[str, Any], setup: Any | None = N
             "High-G transient detected; ride-height compression may include "
             "mechanical weight transfer, damping, and bump effects."
         )
-    elif missing_constants:
+    elif missing_constants or lat_g is None or long_g is None or not shock_vals:
         confidence = "low"
     if shock_noisy:
         if not transient_label:

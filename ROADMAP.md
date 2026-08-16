@@ -69,6 +69,8 @@ result, and remember only what the evidence supports.
 | P33 - Engineering Learning Flywheel | Verified deterministic attention-only foundation; adaptive authority remains locked | Immutable qualified experience improves recurrence retrieval and investigation order while current evidence and P19 retain all truth and setup authority |
 | P33.1 - Driver-Facing Truth and Interface Sharpening | Verified | Race Mode stays decision-first, mission progress distinguishes screening from contract acceptance, and narrow layouts preserve a usable evidence-first workspace |
 | P34 - Earned Investigation Adaptation | Verified shadow evaluation infrastructure; no attention activation earned | Frozen baseline-versus-memory pairs test bounded investigation order on identical pre-outcome truth while P19 remains sole authority and production remains deterministic baseline |
+| P35 - Next Gen Oval Vehicle Dynamics Intelligence | Verified deterministic mechanical-intelligence foundation | One reviewed, build-applicable physics graph connects driver demand, vehicle response, tire/platform state, candidate mechanisms, and measured P32 time without gaining component, cause, or setup authority |
+| P36 - Prospective Investigation Evidence Campaigns | Planned; evidence collection remains data-locked | Qualified prospective campaigns produce the independent recurrence, controls, subgroups, and observable comparisons required before learned investigation ordering can earn promotion |
 
 ---
 
@@ -2305,6 +2307,133 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   remains `attention_only`; P34 reports deterministic baseline, shadow only, no
   activation, no effective activation artifact, and exact acquisition deficits.
 
+## P35 - Next Gen Oval Vehicle Dynamics Intelligence
+
+- [x] Compile one immutable, content-addressed Next Gen oval vehicle-dynamics
+  knowledge graph from reviewed local sources. Typed quantities, mechanisms,
+  load paths, tire-demand states, chassis responses, transient and steady-state
+  behavior, component influences, interactions, observation contracts, and
+  driver-response chains carry exact provenance, units, phase, context,
+  applicability, unavailable-quantity, forbidden-inference, and authority locks.
+- [x] Model the current Next Gen car instead of legacy stock-car folklore. The
+  graph covers independent rear suspension, rack-and-pinion steering, four-corner
+  brake pressure and wheel response, springs versus dampers, front and rear bars,
+  static distribution versus dynamic loading, alignment, differential behavior,
+  tires, platform/aero proxies, gearing, and tire-state evolution. Track-bar and
+  truck-arm controls are forbidden for this architecture.
+- [x] Represent the oval lap as connected physical states and preserve the exact
+  five-stage chain `DriverInput -> VehicleDemand -> VehicleResponse ->
+  Tire/Platform -> Time`. Each of the 16 reviewed mechanism families declares
+  transient/steady-state regime, supporting and contradicting evidence, exact
+  discriminator, driver/context confounders, P20 observations, P26 candidate
+  families, and P32 consequences.
+- [x] Keep physics honest. Exact tire force, wheel load, spring/damper force, ARB
+  torque, downforce, aerodynamic balance, drag coefficient, differential torque,
+  friction coefficient, and contact-patch distribution remain unavailable. Static
+  crossweight cannot become live wheel load, banking cannot fabricate tire load,
+  and generic combined-demand knowledge cannot invent a friction limit.
+- [x] Project one run-owned `PerformanceMechanismAssessment` into the existing Crew
+  workspace. P20 remains the observation producer, P32 remains measured-time and
+  driver-versus-car authority, P26 remains current component relevance, and P19
+  remains the sole cause, setup, controlled-test, Keep/Undo/Retest, and terminal
+  authority. P35 reads no raw rows, laps, segments, or unrestricted telemetry.
+- [x] Bind every positive mechanism and focus artifact to the exact current P19,
+  P20, P26, P32, runtime, run/session, lap cohort, physical-position window,
+  phase, evidence state, channels, traffic/context state, and source hash. The
+  frozen runtime-trust manifest independently constrains each mechanism's P20/P32
+  bridge, component families, inspection tool, observation contracts, evidence
+  layers, aliases, and 76 exact channel-requirement groups.
+- [x] Add 14 bounded Vehicle Dynamics inspection tools and expert context-only
+  questions. Their outputs are typed evidence, never setup advice. The sealed P34
+  protocol is unchanged: P35 tools and artifacts are excluded from P34 cohorts,
+  and a P35 inspection revision executes deterministic baseline with P34 pairing
+  explicitly withheld.
+- [x] Add a compact Learning-only Vehicle Dynamics Blackboard with performance
+  problem, driver demand, vehicle response, tire/platform demand, regime,
+  candidates, candidate-only component families, strongest support and
+  contradiction, discriminator, and exact `NEXT · P19`. Race Mode retains its
+  decision-first story and adds only one compact non-authoritative dynamics line;
+  no tab, setup control, component cause, or alternate recommendation path exists.
+- [x] Fail closed against static-knowledge authority, stale or foreign builds,
+  non-oval scope, traffic, missing channels, partial brake corners, unmatched
+  P20/P19 snapshots, cross-lap evidence, forged graph/component/focus relations,
+  response-label/body disagreement, carried exit loss mislabeled as gearing,
+  tire migration overclaim, unavailable physics, and coordinated payload rehashes.
+
+### P35 frozen knowledge contract
+
+- Knowledge version: `2026.08.p35-next-gen-oval.v1`.
+- Graph: `p35vdg_c14af7ad22a752df5710a6e6`, version
+  `2026.08.next-gen-oval.v1:c14af7ad22a7`, SHA-256
+  `c14af7ad22a752df5710a6e695b50f085fa4d15ecb20b271b3dc6205e3113030`.
+- Runtime trust: `p35.vehicle-dynamics-runtime-trust.v1`, SHA-256
+  `5bc9139f42049f391015040948147f9de37af1b2da770ea99e10d1db72f74164`.
+- Exact reviewed applicability: current NASCAR Next Gen oval car paths, car
+  version `2026.06.08.02`, and iRacing builds `2026.03.09.03` through
+  `2026.06.24.02`. A later build or non-oval package resolves unavailable until
+  reviewed; no compatibility is inferred from a nearby version string.
+- Inventory: 13 sources, four external namespaces, 56 quantities, 16 mechanisms,
+  eight load paths, eight tire-demand states, eight chassis-response states, four
+  transient and three steady responses, 11 component influences, 16 interactions,
+  32 observation contracts, three driver-response chains, two forbidden control
+  families, 226 nodes, 83 edges, and 76 runtime channel groups.
+
+### P35 release validation - VERIFIED 2026-08-15
+
+- Whole repository: the definitive isolated run collected 2,694 Python tests and
+  finished with 2,685 passed, nine protected skips, and zero failures. Whole-repo
+  Ruff, bytecode compilation of every changed Python file, and diff integrity
+  passed; the production database SHA, size, mtime, and absent WAL/SHM state were
+  unchanged.
+- Backend: 34 ontology/compiler hostiles and 30 runtime/Crew integration tests
+  passed. The broader Crew/P32.1/P33/P34/P35 slice passed 225 checks with one
+  protected skip. An independent coordinated-rehash adversary returned
+  **BACKEND CLEAR** after replaying build, runtime, P20/P32 provenance, lap/window,
+  traffic, unavailable-physics, brake-channel, focus, component, P19, and P34
+  authority attacks.
+- Frontend: all seven executable runtime-trust programs, 20 of 20 Vitest behavior
+  tests, TypeScript, the 2,205-module production build, and 39 focused frontend
+  contracts (37 passed and two protected fixture skips) passed. Exact runtime
+  mirrors reject stale graph/trust identities, scientific P20 or evidence-index drift, invalid
+  mechanism-channel relations, unavailable runtime, and coordinated rehashing.
+  Python float-number semantics and float arrays are mirrored explicitly; frozen
+  model parity prevents those canonical key sets from silently drifting.
+- API: regenerated OpenAPI 3.1 remains stable at 86 paths and 94 operations with
+  no missing or duplicate operation IDs. P35 adds no route; the assessment is one
+  atomic field of the existing Crew workspace. Published model property order is
+  exact, static graph/trust internals are not public, and every authority-shaped
+  P35 field is a denial or ceiling literal.
+- Scenario evidence: a synthetic position-aligned telemetry cohort flows through
+  the real P20/P32 producers into one qualified P35 candidate. The known Atlanta
+  session, evaluated only through an isolated database copy, preserves the
+  measured `+0.136447 s` loss while traffic blocks attribution: candidates remain
+  visible but blocked, positive support and component causal claims remain zero,
+  a contradiction and useful discriminator remain navigable, setup authority is
+  false, and P19 remains `no_call`.
+- Live and packaged delivery: isolated Atlanta browser QA passed the complete
+  backend-to-client structural and canonical-hash boundary. Race Mode rendered no
+  Blackboard and one compact blocked-dynamics line; Learning Mode rendered every
+  requested expert section, compact channel provenance, the exact measured loss,
+  blocked zero-support candidate, contradiction/discriminator navigation, and no
+  setup authority. The final Windows sidecar built from the post-canonicalization
+  tree to 83,869,869 bytes (SHA-256
+  `A1653CC0A4EBFED2EF2A28525EC9D58FE85C400C523EAEBF30EC878315073494`),
+  returned the exact health contract from its sole loopback listener, and left no
+  process, port, or temporary database behind. The production database SHA, size,
+  mtime, and absent WAL/SHM state remained byte-for-byte unchanged.
+
+## P36 - Prospective Investigation Evidence Campaigns
+
+- [ ] Run the preregistered prospective campaigns needed to test whether learned
+  investigation ordering earns promotion. **DATA LOCKED:** P35 builds the car
+  expert; it does not manufacture the independent real investigations, recurrence,
+  negative controls, subgroup coverage, or observable comparisons required by the
+  frozen P34 activation protocol.
+- [ ] Admit a learned-order promotion only from source-owned prospective evidence
+  that satisfies the existing P21/P22 acquisition rules and P34 safety/rollback
+  gates. Until then production remains deterministic baseline, P33 remains
+  attention-only, P34 remains shadow-only, and P19 remains sole setup authority.
+
 ---
 
 ## Professional analysis surface, without losing the product thesis
@@ -2420,3 +2549,4 @@ Implementation queue completed in this pass:
 | 2026-08-14 | Verified P33 Engineering Learning Flywheel | One immutable qualified-experience ledger now projects recurrence, contextual driver and car fingerprints, diagnostic effectiveness, exact mind changes, dead ends, transfer/drift, and transparent attention-only Crew memory without modifying current P19 truth or setup authority. The complete 2,514-test collection passed with 2,509 successes and five protected skips, plus 82 dedicated P33 tests, a 336-test integrated authority slice, six runtime trust suites, nine UI tests, Ruff, bytecode compilation, TypeScript, the 2,201-module build, OpenAPI inspection, packaged-sidecar health, persisted Atlanta/EchoPark client guards, and bounded 10,001-record retrieval at 34.303 ms warm / 53.024 ms cold projection / 7.197 ms cached. Corrupt history now records a visible blocked capture without vetoing P19 or Crew terminal truth; ordered request/completion evidence and normal event-hash revision advancement cannot fabricate or erase discriminator credit; all adaptive, causal, probabilistic, generative, and multi-control authority remains locked. |
 | 2026-08-14 | Sharpened the P33.1 driver-facing truth and interface | Race Mode now leads with one P19 next move and a compact signed Speed Story; supporting analysis is deliberate, Learning Mode avoids empty-memory sprawl, evidence links use lap/window/state labels, and the Run Sentinel distinguishes context screening from server-verified acquisition under a canonical client-verified digest while keeping the client-attested outcome non-authoritative. Contract acceptance now fails closed on typed P19 proximity or traffic exposure, warning/partial required channels, and missing or spatially gapped physical-position coverage. The full 2,527-test Python collection passed with five protected skips, plus 12 Vitest tests, six runtime trust suites, Ruff, bytecode compilation, TypeScript, the 2,201-module build, OpenAPI inspection, persisted Atlanta/EchoPark client guards, and live desktop plus 390 x 844 EchoPark inspection. The narrow unresolved Priority Rail is dismissible by button or Escape, stays dismissed across mode changes, and retains an accessible evidence-attention trigger without weakening the mandatory desktop rail or any P19/setup authority boundary. |
 | 2026-08-15 | Verified P34 earned-investigation shadow evaluation; no attention activation earned | Three immutable planner policies and one preregistered protocol now freeze baseline-versus-memory decisions on identical pre-outcome Crew/P19-P33 truth, persist outcome/counterfactual/discriminator/control/transfer evidence, evaluate independent investigations and complete negative controls, and permit at most one same-tier attention move only after a server-owned gate. The empty real archive truthfully leaves production deterministic and memory shadow-only with exact collection deficits. All 2,620 Python tests passed subject to nine protected skips, plus 54 dedicated P34 tests, 84 runtime hostiles, 17 UI tests, Ruff, bytecode compilation, TypeScript, the 2,202-module build, 10,000-investigation bounded/zero-telemetry performance, OpenAPI, packaged health, real Atlanta truth, live Race/Learning containment, and an independent backend adversarial CLEAR. |
+| 2026-08-15 | Verified P35 Next Gen Oval Vehicle Dynamics Intelligence | A content-addressed, build-applicable Next Gen oval physics graph now connects driver demand, tire/load/platform response, candidate mechanisms, typed evidence requirements, and measured P32 time while P19 remains the sole cause and setup authority. The definitive 2,694-test collection passed with 2,685 successes and nine protected skips, plus 34 core hostiles, 30 runtime/Crew checks, an independent backend adversarial CLEAR, 20 UI behaviors, 39 focused frontend contracts (37 passed and two protected skips), seven runtime programs, Ruff, bytecode compilation, TypeScript, the 2,205-module build, OpenAPI, live traffic-blocked Atlanta Race/Learning proof, and the final packaged Windows health smoke. Prospective promotion campaigns move to data-locked P36. |

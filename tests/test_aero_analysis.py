@@ -53,6 +53,35 @@ def test_aero_platform_non_finite_inputs_are_unavailable() -> None:
     assert estimates["rear_scrape_risk_score"].value is None
 
 
+def test_missing_motion_channels_do_not_become_zero_activity() -> None:
+    estimates = build_platform_proxy_estimates(
+        {
+            "lf_ride_height_mm": 48.0,
+            "rf_ride_height_mm": 49.0,
+            "lr_ride_height_mm": 8.0,
+            "rr_ride_height_mm": 12.0,
+        },
+        setup={
+            "lf_ride_height_mm": 50.0,
+            "rf_ride_height_mm": 50.0,
+            "lr_ride_height_mm": 15.0,
+            "rr_ride_height_mm": 15.0,
+            "lf_front_spring_n_per_mm": 100.0,
+            "rf_front_spring_n_per_mm": 100.0,
+            "lr_rear_spring_n_per_mm": 120.0,
+            "rr_rear_spring_n_per_mm": 120.0,
+        },
+    )
+
+    estimate = estimates["front_load_proxy_n"]
+    assert estimate.confidence == "low"
+    assert any("not treated as zero" in note for note in estimate.assumptions)
+    assert any(
+        "not treated as a settled platform" in note
+        for note in estimate.assumptions
+    )
+
+
 def test_aero_coefficients_dynamic_pressure_and_air_speed_confidence() -> None:
     ground_speed, ground_conf = air_speed_mps(50.0)
     q, q_conf = coeff_dynamic_pressure_pa(None, 50.0)

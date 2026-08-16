@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.engineering_projection import EngineeringAwarenessProjection
 from racelab_engine.models.investigation_adaptation import (
     InvestigationImprovementProjection,
 )
@@ -35,10 +36,39 @@ from racelab_engine.models.performance_intelligence import (
     PerformancePhaseState,
     TrackDemandProfile,
 )
+from racelab_engine.models.vehicle_dynamics_knowledge import (
+    PerformanceMechanismAssessment,
+    VehicleDynamicsFocusArtifact,
+)
+from racelab_engine.models.vehicle_systems import VehicleSystemsRuntimeIdentity
 
 
 class CrewChiefModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+
+_P20_DELIVERY_ONLY_FIELDS = {
+    "generated_at",
+    "cache_state",
+    "build_duration_ms",
+}
+
+
+def engineering_awareness_scientific_sha256(
+    projection: EngineeringAwarenessProjection,
+) -> str:
+    """Hash the complete P20 scientific projection, excluding delivery metadata."""
+
+    payload = projection.model_dump(
+        mode="json",
+        exclude=_P20_DELIVERY_ONLY_FIELDS,
+    )
+    for mutation in payload["control_mutations"]:
+        for field_name in ("previous_value", "new_value"):
+            value = mutation[field_name]
+            if not isinstance(value, bool) and isinstance(value, (int, float)):
+                mutation[field_name] = float(value)
+    return canonical_json_sha256(payload)
 
 
 class EngineeringObjective(str, Enum):
@@ -177,6 +207,73 @@ CrewChiefPerformanceArtifact = Annotated[
 ]
 
 
+VehicleDynamicsInspectionToolId = Literal[
+    "inspect_tire_demand",
+    "inspect_load_transfer",
+    "inspect_roll_response",
+    "inspect_pitch_response",
+    "inspect_platform_state",
+    "inspect_transient_settling",
+    "inspect_steady_state_balance",
+    "inspect_brake_vehicle_response",
+    "inspect_power_on_response",
+    "inspect_differential_response",
+    "inspect_alignment_response",
+    "inspect_tire_state_migration",
+    "inspect_traffic_platform_response",
+    "inspect_gear_acceleration_response",
+]
+_P35_INSPECTION_TOOL_IDS = (
+    "inspect_tire_demand",
+    "inspect_load_transfer",
+    "inspect_roll_response",
+    "inspect_pitch_response",
+    "inspect_platform_state",
+    "inspect_transient_settling",
+    "inspect_steady_state_balance",
+    "inspect_brake_vehicle_response",
+    "inspect_power_on_response",
+    "inspect_differential_response",
+    "inspect_alignment_response",
+    "inspect_tire_state_migration",
+    "inspect_traffic_platform_response",
+    "inspect_gear_acceleration_response",
+)
+
+
+class CrewChiefVehicleDynamicsFocusArtifact(CrewChiefModel):
+    """One P35 focus target, bound to its complete runtime assessment."""
+
+    artifact_type: Literal["vehicle_dynamics_focus"] = "vehicle_dynamics_focus"
+    inspection_tool_id: VehicleDynamicsInspectionToolId
+    assessment_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    focus: VehicleDynamicsFocusArtifact
+
+    @model_validator(mode="after")
+    def focus_tool_is_exact(self) -> CrewChiefVehicleDynamicsFocusArtifact:
+        if self.focus.inspection_tool_id.value != self.inspection_tool_id:
+            raise ValueError(
+                "P35 focus envelope must preserve the producer-owned inspection tool"
+            )
+        return self
+
+
+CrewChiefEvidenceArtifact = Annotated[
+    CrewChiefLapTimeOpportunityArtifact
+    | CrewChiefTimeLossOriginArtifact
+    | CrewChiefCornerPerformanceChainArtifact
+    | CrewChiefExitCarryArtifact
+    | CrewChiefPathEfficiencyArtifact
+    | CrewChiefDriverVehicleSeparationArtifact
+    | CrewChiefTrackDemandArtifact
+    | CrewChiefComponentPerformanceLinkArtifact
+    | CrewChiefObjectiveEnvelopeArtifact
+    | CrewChiefUnavailablePerformanceArtifact
+    | CrewChiefVehicleDynamicsFocusArtifact,
+    Field(discriminator="artifact_type"),
+]
+
+
 class InvestigationProgress(str, Enum):
     UNINSPECTED = "uninspected"
     INSPECTION_PENDING = "inspection_pending"
@@ -194,10 +291,19 @@ class CrewChiefWorkspaceIdentity(CrewChiefModel):
     reasoning_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     p20_state_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     p20_profile_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    p20_projection_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     p26_graph_version: str = Field(min_length=1)
     p26_knowledge_graph_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     p26_reasoning_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     p32_projection_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    # Optional only so pre-P35 persisted investigation identities remain
+    # readable. Every current public Crew workspace requires an exact value in
+    # projection_scope_is_atomic.
+    p35_assessment_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     run_sentinel_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     learning_history_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     learning_ledger_head_sha256: str | None = Field(
@@ -207,6 +313,7 @@ class CrewChiefWorkspaceIdentity(CrewChiefModel):
     setup_id: str = Field(min_length=1)
     setup_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     vehicle_runtime_identity_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    vehicle_runtime_identity: VehicleSystemsRuntimeIdentity | None = None
     active_workflow_id: str | None = None
     active_workflow_revision: str | None = None
     objective_id: EngineeringObjective
@@ -217,6 +324,14 @@ class CrewChiefWorkspaceIdentity(CrewChiefModel):
     def workflow_identity_is_complete(self) -> CrewChiefWorkspaceIdentity:
         if (self.active_workflow_id is None) != (self.active_workflow_revision is None):
             raise ValueError("workflow identity and revision must be present together")
+        if (
+            self.vehicle_runtime_identity is not None
+            and canonical_json_sha256(self.vehicle_runtime_identity)
+            != self.vehicle_runtime_identity_hash
+        ):
+            raise ValueError(
+                "vehicle runtime identity hash must bind the complete producer payload"
+            )
         return self
 
     @property
@@ -234,6 +349,15 @@ class CrewChiefWorkspaceIdentity(CrewChiefModel):
                     "learning_ledger_head_sha256",
                     "learning_projection_sha256",
                     "run_sentinel_sha256",
+                    "p35_assessment_sha256",
+                    # P20 scientific content changes the workspace/cache revision,
+                    # but P34 v1 authority remains bound to the already-frozen
+                    # P20 state revision.
+                    "p20_projection_sha256",
+                    # The existing full runtime hash already owns this producer
+                    # truth. Excluding its newly exposed typed mirror preserves
+                    # the pre-P35 P34 authority revision byte-for-byte.
+                    "vehicle_runtime_identity",
                 },
             )
         )
@@ -615,7 +739,7 @@ class EngineeringEvidenceIndexEntry(CrewChiefModel):
     evidence_state: EvidenceState
     polarity: Literal["support", "contradiction", "neutral"]
     blocker_reasons: tuple[str, ...] = ()
-    typed_artifact: CrewChiefPerformanceArtifact | None = None
+    typed_artifact: CrewChiefEvidenceArtifact | None = None
     authority_ceiling: Literal[
         "observation_only",
         "context_only",
@@ -660,9 +784,32 @@ class EngineeringEvidenceIndexEntry(CrewChiefModel):
             "p32.objective_envelope": "objective_envelope",
         }
         expected_type = performance_types.get(self.producer_id)
-        if expected_type is None:
+        dynamics_tools: dict[str, VehicleDynamicsInspectionToolId] = {
+            f"p35.{tool_id.removeprefix('inspect_')}": tool_id
+            for tool_id in _P35_INSPECTION_TOOL_IDS
+        }
+        expected_dynamics_tool = dynamics_tools.get(self.producer_id)
+        if expected_type is None and expected_dynamics_tool is None:
             if self.typed_artifact is not None:
-                raise ValueError("only P32 evidence may carry a performance artifact")
+                raise ValueError("only typed P32/P35 evidence may carry an artifact")
+            return self
+        if expected_dynamics_tool is not None:
+            if not isinstance(
+                self.typed_artifact, CrewChiefVehicleDynamicsFocusArtifact
+            ):
+                raise ValueError("P35 evidence requires its typed focus artifact")
+            focus = self.typed_artifact.focus
+            if (
+                self.typed_artifact.inspection_tool_id != expected_dynamics_tool
+                or focus.inspection_tool_id.value != expected_dynamics_tool
+                or self.artifact_id != focus.artifact_id
+                or self.evidence_state != focus.evidence_state
+                or self.source_channels != focus.source_channels
+                or self.blocker_reasons != focus.blocker_reasons
+            ):
+                raise ValueError(
+                    "P35 producer, focus identity, state, channels, and blockers must agree"
+                )
             return self
         if self.typed_artifact is None:
             raise ValueError(
@@ -752,6 +899,13 @@ class EngineeringEvidenceIndex(CrewChiefModel):
         ids = [entry.artifact_id for entry in self.entries]
         if len(ids) != len(set(ids)):
             raise ValueError("evidence index artifact identities must be unique")
+        expected_hash = canonical_json_sha256(
+            [entry.model_dump(mode="json") for entry in self.entries]
+        )
+        if self.index_hash != expected_hash:
+            raise ValueError(
+                "evidence index hash must bind the ordered complete entry payloads"
+            )
         return self
 
 
@@ -776,7 +930,8 @@ def _p34_qualified_current_artifact_entries(
     return tuple(
         item
         for item in evidence_index.entries
-        if item.evidence_state in qualified_states
+        if not getattr(item, "producer_id", "").startswith("p35.")
+        and item.evidence_state in qualified_states
         and not item.blocker_reasons
         and item.source_provenance_available
         and item.run_id == identity.run_id
@@ -1181,8 +1336,8 @@ class AdaptiveResearchBoundary(CrewChiefModel):
 
 
 class CrewChiefWorkspace(CrewChiefModel):
-    schema_version: Literal["p34.crew-chief-workspace.v1"] = (
-        "p34.crew-chief-workspace.v1"
+    schema_version: Literal["p35.crew-chief-workspace.v1"] = (
+        "p35.crew-chief-workspace.v1"
     )
     identity: CrewChiefWorkspaceIdentity
     generated_at: datetime
@@ -1197,7 +1352,9 @@ class CrewChiefWorkspace(CrewChiefModel):
     pending_driver_question: DriverDiagnosticQuestion | None = None
     success_contract: SuccessContract | None = None
     p19_mission_contract: MeasurementMissionContract | None = None
+    engineering_awareness: EngineeringAwarenessProjection | None = None
     performance_intelligence: PerformanceIntelligenceProjection
+    vehicle_dynamics: PerformanceMechanismAssessment
     learning_prior: CrewChiefLearningPrior
     investigation_improvement: InvestigationImprovementProjection
     run_sentinel: RunSentinelState
@@ -1223,6 +1380,30 @@ class CrewChiefWorkspace(CrewChiefModel):
             raise ValueError("evidence index must match the workspace revision")
         if canonical_json_sha256(self.run_sentinel) != self.identity.run_sentinel_sha256:
             raise ValueError("run sentinel must match the atomic workspace identity")
+        awareness = self.engineering_awareness
+        if (
+            awareness is None
+            or self.identity.p20_projection_sha256 is None
+            or engineering_awareness_scientific_sha256(awareness)
+            != self.identity.p20_projection_sha256
+            or awareness.run_id != self.identity.run_id
+            or awareness.session_id != self.identity.session_id
+            or awareness.reasoning_snapshot_id
+            != self.identity.reasoning_snapshot_sha256
+            or awareness.request_identity.run_id != self.identity.run_id
+            or awareness.request_identity.session_id != self.identity.session_id
+            or awareness.request_identity.reasoning_snapshot_id
+            != self.identity.reasoning_snapshot_sha256
+            or awareness.state_revision != self.identity.p20_state_revision
+            or awareness.request_identity.state_revision
+            != self.identity.p20_state_revision
+            or awareness.profile_hash != self.identity.p20_profile_hash
+            or awareness.authority != "observation_only"
+            or awareness.raw_trace_included
+        ):
+            raise ValueError(
+                "P20 scientific projection must match the atomic Crew Chief workspace"
+            )
         if (
             self.performance_intelligence.projection_sha256
             != self.identity.p32_projection_sha256
@@ -1239,6 +1420,663 @@ class CrewChiefWorkspace(CrewChiefModel):
         ):
             raise ValueError(
                 "P32 projection must match the atomic Crew Chief workspace"
+            )
+        dynamics = self.vehicle_dynamics
+        from racelab_engine.knowledge.vehicle_dynamics.next_gen_oval import (
+            compile_next_gen_oval_knowledge_graph,
+            compile_next_gen_oval_runtime_trust_manifest,
+            resolve_next_gen_oval_knowledge_graph,
+        )
+        from racelab_engine.services.vehicle_dynamics_service import (
+            _augment_vehicle_response_with_p20,
+            _comparison_context_truth,
+            _driver_input_stage,
+            _focus_id,
+            _matched_driver_vehicle_separation,
+            _matching_chain,
+            _matching_phase_state,
+            _phase_kind,
+            _response_regime,
+            _runtime_unavailable_quantities,
+            _runtime_support_contract_blockers,
+            _time_stage,
+            _tire_platform_stage,
+            _vehicle_demand_stage,
+            _vehicle_response_stage,
+        )
+
+        canonical_dynamics_graph = compile_next_gen_oval_knowledge_graph()
+        runtime_trust = compile_next_gen_oval_runtime_trust_manifest()
+        producer_runtime = self.identity.vehicle_runtime_identity
+        expected_car_path = (
+            producer_runtime.car_path if producer_runtime is not None else "unavailable"
+        )
+        expected_car_version = (
+            producer_runtime.car_version
+            if producer_runtime is not None
+            else "unavailable"
+        )
+        expected_build = (
+            producer_runtime.iracing_build_version
+            if producer_runtime is not None
+            else "unavailable"
+        )
+        expected_track_package = (
+            "oval"
+            if producer_runtime is not None
+            and producer_runtime.track_configuration_name.casefold() == "oval"
+            else "unavailable"
+        )
+        canonical_resolution = resolve_next_gen_oval_knowledge_graph(
+            car_path=(
+                None if dynamics.car_path == "unavailable" else dynamics.car_path
+            ),
+            car_version=(
+                None if dynamics.car_version == "unavailable" else dynamics.car_version
+            ),
+            iracing_build_version=(
+                None
+                if dynamics.iracing_build_version == "unavailable"
+                else dynamics.iracing_build_version
+            ),
+            track_package=(
+                None
+                if dynamics.track_package == "unavailable"
+                else dynamics.track_package
+            ),
+        )
+        if (
+            dynamics.p35_assessment_sha256
+            != self.identity.p35_assessment_sha256
+            or dynamics.run_id != self.identity.run_id
+            or dynamics.session_id != self.identity.session_id
+            or dynamics.objective_id != self.identity.objective_id.value
+            or dynamics.vehicle_runtime_identity_sha256
+            != self.identity.vehicle_runtime_identity_hash
+            or dynamics.car_path != expected_car_path
+            or dynamics.car_version != expected_car_version
+            or dynamics.iracing_build_version != expected_build
+            or dynamics.track_package != expected_track_package
+            or dynamics.p19_reasoning_snapshot_sha256
+            != self.identity.reasoning_snapshot_sha256
+            or dynamics.p20_state_revision != self.identity.p20_state_revision
+            or dynamics.p20_profile_hash != self.identity.p20_profile_hash
+            or dynamics.p26_graph_version != self.identity.p26_graph_version
+            or dynamics.p26_knowledge_graph_sha256
+            != self.identity.p26_knowledge_graph_sha256
+            or dynamics.p32_projection_sha256
+            != self.identity.p32_projection_sha256
+            or dynamics.observation_authority != "observation_only"
+            or dynamics.mechanism_authority != "candidate_only"
+            or dynamics.component_causal_claim_count != 0
+            or dynamics.setup_authorized
+            or dynamics.terminal_authority != "p19_only"
+            or dynamics.graph_id != canonical_dynamics_graph.graph_id
+            or dynamics.graph_version != canonical_dynamics_graph.graph_version
+            or dynamics.knowledge_version
+            != canonical_dynamics_graph.knowledge_version
+            or dynamics.knowledge_graph_sha256
+            != canonical_dynamics_graph.content_sha256
+            or runtime_trust.graph_id != canonical_dynamics_graph.graph_id
+            or runtime_trust.graph_version != canonical_dynamics_graph.graph_version
+            or runtime_trust.knowledge_version
+            != canonical_dynamics_graph.knowledge_version
+            or runtime_trust.knowledge_graph_sha256
+            != canonical_dynamics_graph.content_sha256
+            or dynamics.applicability_state != canonical_resolution.status
+            or dynamics.applicability_blockers
+            != canonical_resolution.blocker_reasons
+        ):
+            raise ValueError(
+                "P35 assessment must match the atomic non-authoritative Crew workspace"
+            )
+        measured_opportunities = tuple(
+            item
+            for item in self.performance_intelligence.opportunity_map.opportunities
+            if item.local_delta_s is not None
+            and item.source_channels
+            and item.source_laps
+        )
+        loss_opportunities = tuple(
+            item
+            for item in measured_opportunities
+            if (item.local_delta_s or 0.0) > 0.0
+        )
+        opportunity_cohort = loss_opportunities or measured_opportunities
+        leading_opportunity = min(
+            opportunity_cohort,
+            key=lambda item: (
+                -(
+                    item.local_delta_s
+                    if loss_opportunities
+                    else abs(item.local_delta_s or 0.0)
+                ),
+                item.start_pct,
+                item.opportunity_id,
+            ),
+            default=None,
+        )
+        expected_opportunity_ids = (
+            (leading_opportunity.opportunity_id,)
+            if leading_opportunity is not None
+            else ()
+        )
+        expected_mechanism_ids = (
+            tuple(dict.fromkeys(leading_opportunity.mechanism_candidates))
+            if leading_opportunity is not None
+            else ()
+        )
+        time_stage = dynamics.chain[-1]
+        if (
+            dynamics.performance_opportunity_ids != expected_opportunity_ids
+            or dynamics.p32_performance_mechanism_ids != expected_mechanism_ids
+            or (
+                leading_opportunity is not None
+                and (
+                    time_stage.evidence_state != EvidenceState.MEASURED
+                    or time_stage.source_artifact_ids
+                    != (leading_opportunity.opportunity_id,)
+                    or time_stage.source_channels
+                    != leading_opportunity.source_channels
+                    or not dynamics.measured_time_consequence_available
+                )
+            )
+            or (
+                leading_opportunity is None
+                and (
+                    time_stage.evidence_state != EvidenceState.UNAVAILABLE
+                    or time_stage.source_artifact_ids
+                    or dynamics.measured_time_consequence_available
+                )
+            )
+        ):
+            raise ValueError(
+                "P35 must preserve the deterministic leading P32 opportunity and time truth"
+            )
+        current_phase = (
+            _phase_kind(leading_opportunity.phase)
+            if leading_opportunity is not None
+            else None
+        )
+        expected_response_regime = (
+            _response_regime(current_phase) if current_phase is not None else None
+        )
+        if dynamics.response_regime != expected_response_regime:
+            raise ValueError("P35 response regime must derive from the exact P32 phase")
+        current_chain = _matching_chain(
+            self.performance_intelligence, leading_opportunity
+        )
+        current_phase_state = _matching_phase_state(
+            current_chain, leading_opportunity
+        )
+        separation_matched, _separation_blocker = (
+            _matched_driver_vehicle_separation(
+                current_chain, leading_opportunity
+            )
+        )
+        context_truth = _comparison_context_truth(
+            self.performance_intelligence, leading_opportunity
+        )
+        derived_driver_stage = _driver_input_stage(
+            current_chain, current_phase_state
+        )
+        derived_response_stage = _vehicle_response_stage(
+            current_chain, current_phase_state
+        )
+        positive_states = {
+            EvidenceState.MEASURED,
+            EvidenceState.CALCULATED,
+            EvidenceState.ESTIMATED_PROXY,
+            EvidenceState.OBSERVED_CORRELATION,
+            EvidenceState.CONTROLLED_TEST_EFFECT,
+        }
+        support_prerequisites_met = bool(
+            context_truth.qualified
+            and separation_matched
+            and derived_driver_stage.evidence_state in positive_states
+            and derived_response_stage.evidence_state in positive_states
+        )
+        base_support_chain = (
+            derived_driver_stage,
+            _vehicle_demand_stage(self.performance_intelligence),
+            derived_response_stage,
+            _tire_platform_stage(
+                self.performance_intelligence,
+                traffic_blocked=context_truth.traffic_blocked,
+                context_blockers=context_truth.blockers,
+            ),
+            _time_stage(leading_opportunity),
+        )
+        if dynamics.traffic_blocked != context_truth.traffic_blocked:
+            raise ValueError(
+                "P35 traffic state must derive from the complete typed P32 context"
+            )
+        expected_mechanisms = ()
+        if (
+            dynamics.applicability_state == "ready"
+            and leading_opportunity is not None
+            and current_phase is not None
+            and expected_response_regime is not None
+            and leading_opportunity.source_channels
+            and len(leading_opportunity.source_laps) >= 2
+            and leading_opportunity.local_delta_s != 0.0
+        ):
+            requested_mechanisms = set(expected_mechanism_ids)
+            expected_mechanisms = tuple(
+                mechanism
+                for mechanism in canonical_dynamics_graph.mechanisms
+                if requested_mechanisms.intersection(
+                    mechanism.p32_performance_mechanism_ids
+                )
+                and current_phase in mechanism.relevant_phases
+                and leading_opportunity.origin_kind
+                in mechanism.allowed_time_origin_kinds
+                and (
+                    expected_response_regime.value == "both"
+                    or mechanism.response_regime.value
+                    in {expected_response_regime.value, "both"}
+                )
+            )[:6]
+        if tuple(item.mechanism_id for item in dynamics.candidates) != tuple(
+            item.definition_id for item in expected_mechanisms
+        ):
+            raise ValueError(
+                "P35 candidate inventory must equal the canonical graph-filtered cohort"
+            )
+        trust_by_mechanism = {
+            item.mechanism_id: item for item in runtime_trust.mechanisms
+        }
+        for candidate, mechanism in zip(
+            dynamics.candidates, expected_mechanisms, strict=True
+        ):
+            trust = trust_by_mechanism.get(candidate.mechanism_id)
+            expected_p32_ids = tuple(
+                mechanism_id
+                for mechanism_id in mechanism.p32_performance_mechanism_ids
+                if mechanism_id in set(expected_mechanism_ids)
+            )
+            if (
+                trust is None
+                or candidate.p32_performance_mechanism_ids != expected_p32_ids
+                or candidate.component_family_ids != trust.component_family_ids
+                or candidate.discriminator_contract_ids
+                != trust.discriminator_observation_contract_ids
+                or mechanism.inspection_tool_id != trust.inspection_tool_id
+                or mechanism.p20_mechanism_ids != trust.p20_mechanism_ids
+                or mechanism.p32_performance_mechanism_ids
+                != trust.p32_performance_mechanism_ids
+                or mechanism.allowed_time_origin_kinds
+                != trust.allowed_time_origin_kinds
+                or mechanism.relevant_phases != trust.relevant_phases
+                or mechanism.response_regime != trust.response_regime
+                or mechanism.p26_component_family_ids
+                != trust.component_family_ids
+            ):
+                raise ValueError(
+                    "P35 candidate relationships must match the canonical runtime trust manifest"
+                )
+        indexed_dynamics = {
+            item.artifact_id: item
+            for item in self.evidence_index.entries
+            if item.producer_id.startswith("p35.")
+        }
+        focus_by_id = {item.artifact_id: item for item in dynamics.focus_artifacts}
+        expected_focus_ids: set[str] = set()
+        if leading_opportunity is not None:
+            for candidate in dynamics.candidates:
+                trust = trust_by_mechanism[candidate.mechanism_id]
+                tool_id = trust.inspection_tool_id.value
+                uncertainty_id = _focus_id(
+                    tool_id,
+                    leading_opportunity.opportunity_id,
+                    candidate.mechanism_id,
+                    "uncertainty",
+                )
+                if candidate.contradiction_artifact_ids != (uncertainty_id,):
+                    raise ValueError(
+                        "P35 uncertainty identity must use the canonical producer formula"
+                    )
+                uncertainty = focus_by_id.get(uncertainty_id)
+                if (
+                    uncertainty is None
+                    or uncertainty.mechanism_id != candidate.mechanism_id
+                    or uncertainty.inspection_tool_id != trust.inspection_tool_id
+                    or uncertainty.observation_contract_id is not None
+                    or uncertainty.stage.value != "tire_platform_state"
+                    or uncertainty.polarity != "uncertainty"
+                    or uncertainty.source_artifact_ids
+                    != (leading_opportunity.opportunity_id,)
+                ):
+                    raise ValueError(
+                        "P35 uncertainty focus must match its canonical mechanism and tool"
+                    )
+                expected_focus_ids.add(uncertainty_id)
+
+                discriminator_contract_id = (
+                    trust.discriminator_observation_contract_ids[0]
+                )
+                discriminator_id = _focus_id(
+                    tool_id,
+                    leading_opportunity.opportunity_id,
+                    candidate.mechanism_id,
+                    discriminator_contract_id,
+                    "discriminator",
+                )
+                discriminator = focus_by_id.get(discriminator_id)
+                if (
+                    discriminator is None
+                    or discriminator.mechanism_id != candidate.mechanism_id
+                    or discriminator.inspection_tool_id != trust.inspection_tool_id
+                    or discriminator.observation_contract_id
+                    != discriminator_contract_id
+                    or discriminator_contract_id
+                    not in trust.discriminator_observation_contract_ids
+                    or discriminator.stage.value != "tire_platform_state"
+                    or discriminator.polarity != "neutral"
+                    or discriminator.source_artifact_ids
+                    != (leading_opportunity.opportunity_id,)
+                ):
+                    raise ValueError(
+                        "P35 discriminator focus must match its canonical contract group"
+                    )
+                expected_focus_ids.add(discriminator_id)
+
+                if candidate.relevance == "candidate":
+                    if len(candidate.support_artifact_ids) != 1:
+                        raise ValueError(
+                            "unblocked P35 candidates require one canonical support focus"
+                        )
+                    support_id = candidate.support_artifact_ids[0]
+                    support = focus_by_id.get(support_id)
+                    if support is None or len(support.source_artifact_ids) != 1:
+                        raise ValueError(
+                            "P35 support requires one exact producer artifact"
+                        )
+                    expected_support_id = _focus_id(
+                        tool_id,
+                        leading_opportunity.opportunity_id,
+                        candidate.mechanism_id,
+                        support.source_artifact_ids[0],
+                        "support",
+                    )
+                    if (
+                        support_id != expected_support_id
+                        or support.mechanism_id != candidate.mechanism_id
+                        or support.inspection_tool_id != trust.inspection_tool_id
+                        or support.observation_contract_id is not None
+                        or support.stage.value != "vehicle_response"
+                        or support.polarity != "support"
+                    ):
+                        raise ValueError(
+                            "P35 support focus must use the canonical producer formula and tool"
+                        )
+                    expected_focus_ids.add(support_id)
+                elif candidate.support_artifact_ids:
+                    raise ValueError("blocked P35 candidates cannot retain support focus")
+        if set(focus_by_id) != expected_focus_ids:
+            raise ValueError(
+                "P35 focus inventory must exactly match canonical candidate evidence"
+            )
+        leading_candidate = next(
+            (
+                item
+                for item in dynamics.candidates
+                if item.relevance == "candidate"
+            ),
+            dynamics.candidates[0] if dynamics.candidates else None,
+        )
+        if (
+            dynamics.strongest_support_artifact_id
+            != (
+                leading_candidate.support_artifact_ids[0]
+                if leading_candidate is not None
+                and leading_candidate.support_artifact_ids
+                else None
+            )
+            or dynamics.strongest_contradiction_artifact_id
+            != (
+                leading_candidate.contradiction_artifact_ids[0]
+                if leading_candidate is not None
+                else None
+            )
+            or dynamics.next_discriminator_contract_id
+            != (
+                leading_candidate.discriminator_contract_ids[0]
+                if leading_candidate is not None
+                else None
+            )
+        ):
+            raise ValueError(
+                "P35 strongest evidence and next discriminator must follow canonical candidate order"
+            )
+        if set(indexed_dynamics) != set(focus_by_id):
+            raise ValueError(
+                "P35 focus artifacts must exactly equal their evidence-index targets"
+            )
+        qualified_support_mechanisms: set[str] = set()
+
+        def p20_entry_is_projection_owned(
+            entry: EngineeringEvidenceIndexEntry,
+        ) -> bool:
+            """Require a support entry to equal the hashed P20 state that owns it."""
+
+            matched_mechanisms: set[str] = set()
+            primary = awareness.primary_state
+            if (
+                primary is not None
+                and entry.artifact_id in primary.source_artifact_ids
+                and entry.lap_numbers == (primary.lap_number,)
+                and entry.lap_pct_start == primary.lap_pct_start
+                and entry.lap_pct_end == primary.lap_pct_end
+                and entry.phase == primary.phase
+                and entry.evidence_state == primary.evidence_state
+                and entry.source_channels == primary.source_channels
+            ):
+                matched_mechanisms.add(primary.mechanism.value)
+            for state in awareness.subsystem_states:
+                if (
+                    state.status == "ready"
+                    and not state.blocker_reasons
+                    and entry.artifact_id in state.source_artifact_ids
+                    and state.lap_number is not None
+                    and entry.lap_numbers == (state.lap_number,)
+                    and entry.lap_pct_start == state.lap_pct_start
+                    and entry.lap_pct_end == state.lap_pct_end
+                    and entry.phase == state.phase
+                    and entry.evidence_state == state.evidence_state
+                    and entry.source_channels == state.source_channels
+                ):
+                    matched_mechanisms.add(state.mechanism.value)
+            entry_mechanisms = {item.value for item in entry.mechanism_ids}
+            return bool(entry_mechanisms) and entry_mechanisms <= matched_mechanisms
+
+        for artifact_id, focus in focus_by_id.items():
+            entry = indexed_dynamics[artifact_id]
+            source_entries = tuple(
+                item
+                for item in self.evidence_index.entries
+                if item.artifact_id in focus.source_artifact_ids
+                and not item.producer_id.startswith("p35.")
+            )
+            source_windows = tuple(
+                dict.fromkeys(
+                    (item.lap_pct_start, item.lap_pct_end)
+                    for item in source_entries
+                )
+            )
+            source_lap_scopes = tuple(
+                dict.fromkeys(item.lap_numbers for item in source_entries)
+            )
+            source_phases = tuple(
+                dict.fromkeys(item.phase for item in source_entries)
+            )
+            positive_focus = focus.evidence_state in {
+                EvidenceState.MEASURED,
+                EvidenceState.CALCULATED,
+                EvidenceState.ESTIMATED_PROXY,
+                EvidenceState.OBSERVED_CORRELATION,
+                EvidenceState.CONTROLLED_TEST_EFFECT,
+            }
+            source_channels = {
+                channel for item in source_entries for channel in item.source_channels
+            }
+            trust = trust_by_mechanism.get(focus.mechanism_id)
+            if trust is None:
+                raise ValueError("P35 focus mechanism is absent from runtime trust")
+            if focus.polarity == "support" and (
+                leading_opportunity is None
+                or not leading_opportunity.source_laps
+                or len(source_entries) != 1
+                or source_entries[0].producer_id != "p20.mechanism_observation"
+                or not source_entries[0].mechanism_ids
+                or any(
+                    mechanism_id.value not in trust.p20_mechanism_ids
+                    for mechanism_id in source_entries[0].mechanism_ids
+                )
+                or source_entries[0].lap_numbers
+                != (leading_opportunity.source_laps[0],)
+                or source_entries[0].lap_pct_start
+                != leading_opportunity.start_pct
+                or source_entries[0].lap_pct_end != leading_opportunity.end_pct
+                or source_entries[0].phase != leading_opportunity.phase
+                or source_entries[0].polarity != "support"
+                or source_entries[0].evidence_state not in positive_states
+                or bool(source_entries[0].blocker_reasons)
+                or focus.source_channels != source_entries[0].source_channels
+                or not p20_entry_is_projection_owned(source_entries[0])
+                or bool(
+                    _runtime_support_contract_blockers(
+                        trust,
+                        base_support_chain,
+                        focus.source_channels,
+                    )
+                )
+            ):
+                raise ValueError(
+                    "P35 support must resolve to the exact hashed P20 mechanism observation"
+                )
+            if focus.polarity == "support":
+                qualified_support_mechanisms.add(focus.mechanism_id)
+            if (
+                not isinstance(
+                    entry.typed_artifact, CrewChiefVehicleDynamicsFocusArtifact
+                )
+                or entry.typed_artifact.assessment_sha256
+                != dynamics.p35_assessment_sha256
+                or entry.typed_artifact.focus != focus
+                or entry.run_id != self.identity.run_id
+                or entry.session_id != self.identity.session_id
+                or entry.setup_id != self.identity.setup_id
+                or entry.source_run_id != self.identity.run_id
+                or entry.source_session_id != self.identity.session_id
+                or entry.source_setup_id != self.identity.setup_id
+                or entry.source_setup_sha256
+                != self.identity.setup_snapshot_sha256
+                or entry.source_build_context_sha256
+                != self.identity.vehicle_runtime_identity_hash
+                or not entry.source_provenance_available
+                or entry.authority_ceiling != "observation_only"
+                or len(source_entries) != len(focus.source_artifact_ids)
+                or len(source_windows) != 1
+                or len(source_lap_scopes) != 1
+                or len(source_phases) != 1
+                or focus.lap_numbers != source_lap_scopes[0]
+                or (focus.lap_pct_start, focus.lap_pct_end)
+                != source_windows[0]
+                or focus.phase != source_phases[0]
+                or entry.lap_numbers != focus.lap_numbers
+                or (entry.lap_pct_start, entry.lap_pct_end)
+                != (focus.lap_pct_start, focus.lap_pct_end)
+                or entry.phase != focus.phase
+                or not set(focus.source_channels) <= source_channels
+                or (
+                    positive_focus
+                    and any(
+                        item.blocker_reasons
+                        or item.evidence_state
+                        in {
+                            EvidenceState.UNAVAILABLE,
+                            EvidenceState.BLOCKED_BY_CONTEXT,
+                            EvidenceState.NEEDS_CONFIRMATION,
+                        }
+                        for item in source_entries
+                    )
+                )
+            ):
+                raise ValueError(
+                    "P35 evidence navigation must preserve exact current provenance"
+                )
+        for candidate in dynamics.candidates:
+            should_be_candidate = bool(
+                support_prerequisites_met
+                and candidate.mechanism_id in qualified_support_mechanisms
+            )
+            if (candidate.relevance == "candidate") != should_be_candidate:
+                raise ValueError(
+                    "P35 candidate relevance must derive from current P20/P32 support gates"
+                )
+        expected_chain = base_support_chain
+        expected_chain = _augment_vehicle_response_with_p20(
+            expected_chain, dynamics.focus_artifacts
+        )
+        if dynamics.chain != expected_chain:
+            raise ValueError(
+                "P35 five-stage evidence chain must derive exactly from current P20/P32 truth"
+            )
+        if (
+            dynamics.tire_demand_state_ids
+            or dynamics.load_path_ids
+            or dynamics.unavailable_quantity_ids
+            != _runtime_unavailable_quantities(
+                canonical_dynamics_graph, self.performance_intelligence
+            )
+        ):
+            raise ValueError(
+                "P35 runtime states and unavailable quantities must match the frozen contract"
+            )
+        candidate_focus_ids = {
+            artifact_id
+            for candidate in dynamics.candidates
+            for artifact_id in (
+                *candidate.support_artifact_ids,
+                *candidate.contradiction_artifact_ids,
+            )
+        }
+        if not candidate_focus_ids.issubset(focus_by_id):
+            raise ValueError(
+                "P35 candidate support and contradiction must resolve to focus evidence"
+            )
+        entry_polarities = {
+            artifact_id: indexed_dynamics[artifact_id].polarity
+            for artifact_id in indexed_dynamics
+        }
+        if any(
+            entry_polarities[artifact_id] != "support"
+            for candidate in dynamics.candidates
+            for artifact_id in candidate.support_artifact_ids
+        ) or any(
+            entry_polarities[artifact_id] != "contradiction"
+            for candidate in dynamics.candidates
+            for artifact_id in candidate.contradiction_artifact_ids
+        ):
+            raise ValueError(
+                "P35 candidate evidence polarity must match its typed relationship"
+            )
+        if (
+            dynamics.strongest_support_artifact_id is not None
+            and entry_polarities[dynamics.strongest_support_artifact_id] != "support"
+        ) or (
+            dynamics.strongest_contradiction_artifact_id is not None
+            and entry_polarities[dynamics.strongest_contradiction_artifact_id]
+            != "contradiction"
+        ):
+            raise ValueError("P35 strongest evidence polarity is inconsistent")
+        if dynamics.next_discriminator_contract_id is not None and not any(
+            item.observation_contract_id == dynamics.next_discriminator_contract_id
+            for item in dynamics.focus_artifacts
+        ):
+            raise ValueError(
+                "P35 next discriminator must resolve to one typed focus artifact"
             )
         prior = self.learning_prior
         if (
@@ -1288,7 +2126,11 @@ class CrewChiefWorkspace(CrewChiefModel):
         if pair is not None:
             if self.folded_state is None or self.folded_state.status != "open":
                 raise ValueError("P34 pairs are exclusive to open Crew revisions")
-            tool_ids = tuple(item.tool_id for item in self.available_tools)
+            tool_ids = tuple(
+                item.tool_id
+                for item in self.available_tools
+                if item.tool_id not in _P35_INSPECTION_TOOL_IDS
+            )
             baseline_decision = pair.baseline_decision
             eligible_tool_ids: tuple[str, ...] = ()
             if baseline_decision.decision_kind == "inspect_tool":
@@ -1307,7 +2149,11 @@ class CrewChiefWorkspace(CrewChiefModel):
                     if position + 1 < len(live):
                         eligible.append(live[position + 1])
                 eligible_tool_ids = tuple(eligible)
-            artifact_ids = tuple(item.artifact_id for item in self.evidence_index.entries)
+            artifact_ids = tuple(
+                item.artifact_id
+                for item in self.evidence_index.entries
+                if not item.producer_id.startswith("p35.")
+            )
             (
                 qualified_artifact_ids,
                 qualified_artifact_states,
@@ -1341,7 +2187,12 @@ class CrewChiefWorkspace(CrewChiefModel):
                 pair.step_number != self.folded_state.last_sequence
                 or pair.available_tool_ids != tool_ids
                 or pair.eligible_tool_ids != eligible_tool_ids
-                or pair.completed_tool_ids != self.folded_state.completed_tool_ids
+                or pair.completed_tool_ids
+                != tuple(
+                    tool_id
+                    for tool_id in self.folded_state.completed_tool_ids
+                    if tool_id not in _P35_INSPECTION_TOOL_IDS
+                )
                 or pair.available_artifact_ids != artifact_ids
                 or pair.qualified_available_artifact_ids != qualified_artifact_ids
                 or pair.qualified_available_artifact_evidence_states
@@ -1475,6 +2326,7 @@ __all__ = [
         "EngineeringEvidenceIndex",
         "EngineeringEvidenceIndexEntry",
         "EngineeringObjective",
+        "engineering_awareness_scientific_sha256",
         "GenerativeExecutiveBoundary",
         "AdaptiveResearchBoundary",
         "FoldedInvestigationState",
