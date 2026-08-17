@@ -11,12 +11,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import RLock
+from time import perf_counter
 from types import SimpleNamespace
 from typing import Iterable, Literal
 
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.crew_chief import (
     CrewChiefComponentPerformanceLinkArtifact,
+    CrewChiefConsumptionBaseline,
     CrewChiefCornerPerformanceChainArtifact,
     CrewChiefCritique,
     CrewChiefDriverVehicleSeparationArtifact,
@@ -27,10 +29,13 @@ from racelab_engine.models.crew_chief import (
     CrewChiefLapTimeOpportunityArtifact,
     CrewChiefObjectiveEnvelopeArtifact,
     CrewChiefPathEfficiencyArtifact,
+    CrewChiefProspectiveConsumption,
     CrewChiefPerformanceArtifact,
+    CrewChiefSelectionReceipt,
     CrewChiefTerminalDecision,
     CrewChiefTimeLossOriginArtifact,
     CrewChiefToolDefinition,
+    CrewChiefToolEligibility,
     CrewChiefToolResult,
     CrewChiefTrackDemandArtifact,
     CrewChiefUnavailablePerformanceArtifact,
@@ -38,6 +43,7 @@ from racelab_engine.models.crew_chief import (
     CrewChiefWorkspace,
     CrewChiefWorkspaceIdentity,
     DriverDiagnosticQuestion,
+    DriverAnswerInterpretation,
     DriverKnowledgeRecord,
     EngineeringEvidenceIndex,
     EngineeringEvidenceIndexEntry,
@@ -441,6 +447,37 @@ def _is_optional_p26_applicability_failure(error: ValueError) -> bool:
 
 def _enum_text(value: object) -> str:
     return str(getattr(value, "value", value))
+
+
+def _interpret_driver_answer(answer: str) -> DriverAnswerInterpretation:
+    """Translate every offered answer into deterministic typed investigation scope."""
+
+    scopes: dict[str, dict[str, object]] = {
+        "braking/entry": {"phase_scope": ("braking", "entry"), "power_state_scope": "brake_applied", "driver_demand_scope": ("brake", "steering")},
+        "while brake applied": {"phase_scope": ("braking", "entry"), "power_state_scope": "brake_applied", "driver_demand_scope": ("brake", "steering")},
+        "during brake release": {"phase_scope": ("entry",), "response_regime_scope": ("transient",), "power_state_scope": "brake_release", "driver_demand_scope": ("brake_release", "steering")},
+        "center": {"phase_scope": ("center",), "response_regime_scope": ("steady_state",), "time_origin_scope": "local"},
+        "rotates then stops": {"phase_scope": ("center",), "response_regime_scope": ("steady_state",), "driver_demand_scope": ("steering",)},
+        "never develops rotation": {"phase_scope": ("entry", "center"), "response_regime_scope": ("transient", "steady_state"), "driver_demand_scope": ("steering",)},
+        "exit/power": {"phase_scope": ("exit",), "power_state_scope": "power_on", "time_origin_scope": "exit_carry", "driver_demand_scope": ("throttle", "steering")},
+        "after throttle": {"phase_scope": ("exit",), "power_state_scope": "power_on", "driver_demand_scope": ("throttle",)},
+        "only after throttle": {"phase_scope": ("exit",), "power_state_scope": "power_on", "driver_demand_scope": ("throttle",)},
+        "immediate": {"stint_scope": "immediate"},
+        "builds through run": {"stint_scope": "migration"},
+        "only after traffic": {"traffic_scope": "disturbed_air", "stint_scope": "migration"},
+        "traffic only": {"traffic_scope": "disturbed_air"},
+        "also clean air": {"traffic_scope": "compare_air_states"},
+        "load transition only": {"response_regime_scope": ("transient",), "driver_demand_scope": ("load_transition",)},
+        "before throttle": {"power_state_scope": "pre_power", "time_origin_scope": "local"},
+        "after full throttle": {"phase_scope": ("exit", "following_straight"), "power_state_scope": "power_on", "time_origin_scope": "following_straight"},
+        "after exit carry": {"phase_scope": ("following_straight",), "time_origin_scope": "following_straight"},
+        "during load transition": {"response_regime_scope": ("transient",), "driver_demand_scope": ("load_transition",)},
+        "after chassis settles": {"response_regime_scope": ("steady_state",)},
+        "both": {"response_regime_scope": ("transient", "steady_state")},
+        "not repeatable": {"context_record_only": True},
+    }
+    values = scopes.get(answer, {"context_record_only": True})
+    return DriverAnswerInterpretation(answer=answer, **values)
 
 
 def _mechanisms(values: Iterable[str]) -> tuple[MechanismKind, ...]:
@@ -1806,8 +1843,12 @@ def fold_investigation(
     completed_tools: list[str] = []
     pending_question: str | None = None
     answers: list[str] = []
+    answer_interpretations: list[DriverAnswerInterpretation] = []
     last_decision: str | None = None
-    inspected_causes: set[str] = set()
+    cause_progress: dict[str, InvestigationProgress] = {}
+    latest_critique_outcome: Literal[
+        "pass", "blocked", "reinvestigate", "ask_driver"
+    ] | None = None
     stale_reason: str | None = None
     pending_tool_measurement: tuple[str, str] | None = None
     seen_prediction_pair_ids: set[str] = set()
@@ -1851,6 +1892,10 @@ def fold_investigation(
                     "Crew Chief tool measurement requests must complete in order"
                 )
             pending_tool_measurement = (payload.tool_id, event.workspace_revision)
+            for cause_id in payload.cause_ids:
+                cause_progress.setdefault(
+                    cause_id, InvestigationProgress.INSPECTION_REQUESTED
+                )
         elif event.event_type == "tool_result_attached" and payload.tool_id:
             if pending_tool_measurement != (payload.tool_id, event.workspace_revision):
                 raise ValueError(
@@ -1858,13 +1903,53 @@ def fold_investigation(
                 )
             pending_tool_measurement = None
             completed_tools.append(payload.tool_id)
-            inspected_causes.update(payload.cause_ids)
+            if payload.finding_kind is not None and payload.artifact_ids:
+                progress = {
+                    "support": InvestigationProgress.SUPPORT_FOUND,
+                    "contradiction": InvestigationProgress.CONTRADICTION_FOUND,
+                    "discriminator": InvestigationProgress.DISCRIMINATOR_PENDING,
+                    "negative_control": InvestigationProgress.CONTRADICTION_FOUND,
+                    "no_signal": InvestigationProgress.INSPECTED_NO_EVIDENCE,
+                    "unavailable": InvestigationProgress.UNRESOLVED_AFTER_INSPECTION,
+                }[payload.finding_kind]
+                for cause_id in payload.cause_ids:
+                    cause_progress[cause_id] = progress
+        elif event.event_type == "hypothesis_registered":
+            for cause_id in payload.cause_ids:
+                cause_progress.setdefault(
+                    cause_id, InvestigationProgress.NOT_INSPECTED
+                )
+        elif event.event_type == "hypothesis_inspected":
+            # Pre-P35.3 markers remain readable for the frozen P34 lineage, but
+            # they cannot manufacture present-day hypothesis coverage.
+            if (
+                payload.inspection_request_id is not None
+                and payload.finding_kind is not None
+                and payload.artifact_ids
+                and payload.cause_ids
+            ):
+                progress = {
+                    "support": InvestigationProgress.SUPPORT_FOUND,
+                    "contradiction": InvestigationProgress.CONTRADICTION_FOUND,
+                    "discriminator": InvestigationProgress.DISCRIMINATOR_PENDING,
+                    "negative_control": InvestigationProgress.CONTRADICTION_FOUND,
+                    "no_signal": InvestigationProgress.INSPECTED_NO_EVIDENCE,
+                    "unavailable": InvestigationProgress.UNRESOLVED_AFTER_INSPECTION,
+                }[payload.finding_kind]
+                for cause_id in payload.cause_ids:
+                    cause_progress[cause_id] = progress
         elif event.event_type == "driver_question_asked":
             pending_question = payload.question_id
         elif event.event_type == "driver_answer_recorded":
             pending_question = None
             if payload.answer:
                 answers.append(payload.answer)
+                answer_interpretations.append(
+                    payload.answer_interpretation
+                    or _interpret_driver_answer(payload.answer)
+                )
+        elif event.event_type == "critique_completed":
+            latest_critique_outcome = payload.critique_outcome
         elif event.event_type == "decision_emitted":
             last_decision = payload.decision_kind
             status = "complete"
@@ -1883,9 +1968,11 @@ def fold_investigation(
             cause_id=cause.cause_id,
             p19_state=cause.status,
             progress=(
-                InvestigationProgress.INSPECTED
-                if cause.cause_id in inspected_causes
-                else InvestigationProgress.INSPECTION_PENDING
+                InvestigationProgress.P19_RULED_OUT
+                if cause.status == "ruled_out"
+                else cause_progress.get(
+                    cause.cause_id, InvestigationProgress.NOT_INSPECTED
+                )
             ),
             support_artifact_ids=tuple(
                 citation.event_id or citation.citation_id
@@ -1907,7 +1994,9 @@ def fold_investigation(
         completed_tool_ids=_unique(completed_tools),
         pending_driver_question_id=pending_question,
         driver_answers=tuple(answers),
+        driver_answer_interpretations=tuple(answer_interpretations),
         hypotheses=hypotheses,
+        latest_critique_outcome=latest_critique_outcome,
         last_decision_kind=last_decision,
         stale_reason=stale_reason,
         accepted_workspace_revision=_accepted_workspace_revision(investigation, events),
@@ -1921,6 +2010,8 @@ def _subgoal(
     p32: object,
     learning_prior: CrewChiefLearningPrior | None = None,
     p35: PerformanceMechanismAssessment | None = None,
+    evidence_index: EngineeringEvidenceIndex | None = None,
+    engineering_knowledge: object | None = None,
 ) -> InvestigationSubgoal | None:
     """Return the deterministic production subgoal.
 
@@ -1943,9 +2034,13 @@ def _subgoal(
                 for item in folded.hypotheses
                 if item.cause_id == cause.cause_id
             ),
-            InvestigationProgress.INSPECTION_PENDING,
+            InvestigationProgress.NOT_INSPECTED,
         )
-        != InvestigationProgress.INSPECTED
+        not in {
+            InvestigationProgress.SUPPORT_FOUND,
+            InvestigationProgress.CONTRADICTION_FOUND,
+            InvestigationProgress.P19_RULED_OUT,
+        }
     )
     has_context_debt = bool(
         bundle.report.lap_context is None
@@ -1972,19 +2067,62 @@ def _subgoal(
     }.issubset(completed):
         return None
     answer = folded.driver_answers[-1] if folded.driver_answers else None
+    interpretations = getattr(folded, "driver_answer_interpretations", ())
+    interpretation = (
+        interpretations[-1]
+        if interpretations
+        else _interpret_driver_answer(answer)
+        if answer is not None
+        else None
+    )
     priorities.append("inspect_lap_time_opportunity")
-    priorities.append("inspect_time_loss_origin")
-    priorities.append("inspect_corner_performance_chain")
-    priorities.append("inspect_exit_carry")
-    priorities.append("inspect_path_efficiency")
-    priorities.append("inspect_driver_vehicle_separation")
-    priorities.append("inspect_track_demand")
-    if answer is not None and answer != "not repeatable":
-        priorities.append("inspect_driver_execution")
+    performance_priority = [
+        "inspect_time_loss_origin",
+        "inspect_driver_vehicle_separation",
+        "inspect_corner_performance_chain",
+        "inspect_exit_carry",
+        "inspect_path_efficiency",
+        "inspect_track_demand",
+    ]
+    if interpretation is not None and not interpretation.context_record_only:
+        if interpretation.time_origin_scope in {"exit_carry", "following_straight"}:
+            performance_priority = [
+                "inspect_exit_carry",
+                "inspect_time_loss_origin",
+                "inspect_driver_vehicle_separation",
+                "inspect_corner_performance_chain",
+                "inspect_path_efficiency",
+                "inspect_track_demand",
+            ]
+        elif "center" in interpretation.phase_scope:
+            performance_priority = [
+                "inspect_corner_performance_chain",
+                "inspect_path_efficiency",
+                "inspect_driver_vehicle_separation",
+                "inspect_time_loss_origin",
+                "inspect_exit_carry",
+                "inspect_track_demand",
+            ]
+        elif {"braking", "entry"}.intersection(interpretation.phase_scope):
+            performance_priority = [
+                "inspect_driver_vehicle_separation",
+                "inspect_time_loss_origin",
+                "inspect_corner_performance_chain",
+                "inspect_path_efficiency",
+                "inspect_exit_carry",
+                "inspect_track_demand",
+            ]
+    priorities.extend(performance_priority)
     if any(cause.contradicting_evidence for cause in unresolved):
         priorities.append("inspect_p19_causes")
     elif unresolved:
         priorities.append("inspect_p19_causes")
+    if (
+        interpretation is not None
+        and not interpretation.context_record_only
+        and interpretation.driver_demand_scope
+    ):
+        priorities.append("inspect_driver_execution")
     if p35 is not None:
         positive_states = {
             EvidenceState.MEASURED,
@@ -2014,11 +2152,90 @@ def _subgoal(
         )
         if discriminator_tool is not None:
             priorities.append(discriminator_tool)
+        applicable_knowledge = tuple(
+            item
+            for item in getattr(engineering_knowledge, "hypotheses", ())
+            if item.relevance in {"supported_candidate", "blocked_candidate"}
+            and item.p35_mechanism_ids
+        )
+        mechanism_ambiguity = len(getattr(p35, "candidates", ())) > 1 or bool(
+            getattr(p35, "next_discriminator_contract_id", None)
+        )
+        if applicable_knowledge and mechanism_ambiguity:
+            priorities.append("inspect_setup_knowledge_for_mechanism")
+        exact_testable = tuple(
+            item
+            for item in applicable_knowledge
+            if item.p19_control is not None
+            and item.experiment_factor_id is not None
+            and item.setup_authorized
+        )
+        if (
+            "inspect_setup_knowledge_for_mechanism" in completed
+            and exact_testable
+        ):
+            priorities.append("inspect_control_experiment_contract")
+        scoped_p35_priority: list[str] = []
+        if interpretation is not None and not interpretation.context_record_only:
+            if interpretation.traffic_scope in {"disturbed_air", "compare_air_states"}:
+                scoped_p35_priority.append("inspect_traffic_platform_response")
+            if interpretation.stint_scope == "migration":
+                scoped_p35_priority.extend(
+                    ("inspect_tire_state_migration", "inspect_tire_demand")
+                )
+            if interpretation.power_state_scope in {"brake_applied", "brake_release"}:
+                scoped_p35_priority.extend(
+                    ("inspect_brake_vehicle_response", "inspect_pitch_response")
+                )
+            if interpretation.power_state_scope == "power_on":
+                scoped_p35_priority.extend(
+                    (
+                        "inspect_power_on_response",
+                        "inspect_differential_response",
+                        "inspect_gear_acceleration_response",
+                    )
+                )
+            if "transient" in interpretation.response_regime_scope:
+                scoped_p35_priority.append("inspect_transient_settling")
+            if "steady_state" in interpretation.response_regime_scope:
+                scoped_p35_priority.append("inspect_steady_state_balance")
+        scoped_p35_priority.extend(_P35_TOOL_IDS)
         priorities.extend(
             tool_id
-            for tool_id in _P35_TOOL_IDS
+            for tool_id in dict.fromkeys(scoped_p35_priority)
             if tool_id in focus_tools and tool_id != discriminator_tool
         )
+        mandatory_explanation_tools = {
+            "inspect_data_quality",
+            "inspect_lap_context",
+            "inspect_lap_time_opportunity",
+            "inspect_time_loss_origin",
+            "inspect_driver_vehicle_separation",
+        }
+        strongest_handled = not any(
+            cause.contradicting_evidence for cause in causes
+        ) or any(
+            item.progress == InvestigationProgress.CONTRADICTION_FOUND
+            for item in folded.hypotheses
+        )
+        p35_explanation_bounded = (
+            not p35.candidates
+            or (
+                len(p35.candidates) <= 1
+                and p35.next_discriminator_contract_id is None
+            )
+            or "inspect_setup_knowledge_for_mechanism" in completed
+        )
+        exact_contract_pending = bool(exact_testable) and (
+            "inspect_control_experiment_contract" not in completed
+        )
+        if (
+            mandatory_explanation_tools <= completed
+            and strongest_handled
+            and p35_explanation_bounded
+            and not exact_contract_pending
+        ):
+            return None
     if folded.objective in {
         EngineeringObjective.TIRE_CONSERVATION,
         EngineeringObjective.DRIVER_CONFIDENCE,
@@ -2034,6 +2251,29 @@ def _subgoal(
     priorities.append("inspect_objective_tradeoff")
     priorities.append("inspect_measurement_debt")
     baseline = tuple(dict.fromkeys(priorities))
+    if evidence_index is not None:
+        producers = {
+            item.producer_id
+            for item in evidence_index.entries
+            if item.evidence_state != EvidenceState.UNAVAILABLE
+        }
+        producer_by_tool = {
+            "inspect_lap_time_opportunity": "p32.lap_time_opportunity",
+            "inspect_time_loss_origin": "p32.time_loss_origin",
+            "inspect_corner_performance_chain": "p32.corner_performance_chain",
+            "inspect_exit_carry": "p32.exit_carry",
+            "inspect_path_efficiency": "p32.path_efficiency",
+            "inspect_driver_vehicle_separation": "p32.driver_vehicle_separation",
+            "inspect_track_demand": "p32.track_demand",
+            "inspect_component_performance_link": "p32.component_performance_link",
+            "inspect_objective_tradeoff": "p32.objective_envelope",
+        }
+        baseline = tuple(
+            tool_id
+            for tool_id in baseline
+            if tool_id not in producer_by_tool
+            or producer_by_tool[tool_id] in producers
+        )
     live = tuple(item for item in baseline if item not in completed)
     tool = live[0] if live else None
     if tool is None:
@@ -2044,8 +2284,66 @@ def _subgoal(
     )
     leading = tuple(cause.cause_id for cause in contradiction_first)
     answer_scope = (
-        f" Driver context scopes this inspection to {answer}." if answer else ""
+        " Driver context is attached as context-only and does not filter telemetry."
+        if interpretation is not None and interpretation.context_record_only
+        else (
+            " Driver context scopes the evidence by "
+            f"phase={','.join(interpretation.phase_scope) or 'all'}, "
+            f"regime={','.join(interpretation.response_regime_scope) or 'all'}, "
+            f"traffic={interpretation.traffic_scope}, "
+            f"stint={interpretation.stint_scope}, "
+            f"power={interpretation.power_state_scope}, and "
+            f"time-origin={interpretation.time_origin_scope}."
+        )
+        if interpretation is not None
+        else ""
     )
+    mechanism_ids: tuple[str, ...] = ()
+    bridge_ids: tuple[str, ...] = ()
+    effect_ids: tuple[str, ...] = ()
+    opportunity_id: str | None = None
+    required_discriminator_id: str | None = None
+    exact_control_keys: tuple[str, ...] = ()
+    experiment_factor_ids: tuple[str, ...] = ()
+    if tool in _P351_TOOL_IDS:
+        hypotheses = tuple(
+            item
+            for item in getattr(engineering_knowledge, "hypotheses", ())
+            if item.relevance in {"supported_candidate", "blocked_candidate"}
+            and (
+                tool == "inspect_setup_knowledge_for_mechanism"
+                or (
+                    item.p19_control is not None
+                    and item.experiment_factor_id is not None
+                    and item.setup_authorized
+                )
+            )
+        )
+        preferred_effects = tuple(
+            getattr(engineering_knowledge, "leading_hypothesis_ids", ())
+        )
+        exact = next(
+            (item for effect_id in preferred_effects for item in hypotheses if item.effect_id == effect_id),
+            hypotheses[0] if hypotheses else None,
+        )
+        if exact is not None:
+            mechanism_ids = exact.p35_mechanism_ids
+            bridge_ids = (exact.bridge_id,)
+            effect_ids = (exact.effect_id,)
+            opportunity_id = exact.p32_opportunity_id
+            required_discriminator_id = next(
+                iter(exact.discriminator_contract_ids), None
+            )
+            experiment_factor_ids = (
+                (exact.experiment_factor_id,)
+                if exact.experiment_factor_id is not None
+                else ()
+            )
+            exact_control_keys = (
+                (exact.p19_control.control_key,)
+                if exact.p19_control is not None
+                else ()
+            )
     return InvestigationSubgoal(
         subgoal_id=f"ccs_{canonical_json_sha256([folded.investigation_id, tool])[:20]}",
         title=f"Inspect {tool.replace('_', ' ')}",
@@ -2056,6 +2354,14 @@ def _subgoal(
             + answer_scope
         ),
         distinguishes_cause_ids=leading,
+        mechanism_ids=mechanism_ids,
+        bridge_ids=bridge_ids,
+        effect_ids=effect_ids,
+        opportunity_id=opportunity_id,
+        required_discriminator_id=required_discriminator_id,
+        exact_control_keys=exact_control_keys,
+        experiment_factor_ids=experiment_factor_ids,
+        driver_answer_interpretation=interpretation,
         required_evidence=(
             "exact source run/setup/build provenance",
             "eligible physical scope",
@@ -2075,6 +2381,126 @@ def _memory_record_times(
         item.experience_id: item.outcome.completed_at
         for item in learning_prior.useful_prior_investigations
     }
+
+
+def _tool_eligibility(
+    folded: FoldedInvestigationState | None,
+    evidence_index: EngineeringEvidenceIndex,
+    p35: PerformanceMechanismAssessment,
+    engineering_knowledge: object,
+) -> tuple[CrewChiefToolEligibility, ...]:
+    """Expose the server-owned, deterministic reason each tool can or cannot run."""
+
+    completed = set(folded.completed_tool_ids if folded is not None else ())
+    producers = {
+        item.producer_id
+        for item in evidence_index.entries
+        if item.evidence_state != EvidenceState.UNAVAILABLE
+    }
+    producer_by_tool = {
+        "inspect_lap_time_opportunity": "p32.lap_time_opportunity",
+        "inspect_time_loss_origin": "p32.time_loss_origin",
+        "inspect_corner_performance_chain": "p32.corner_performance_chain",
+        "inspect_exit_carry": "p32.exit_carry",
+        "inspect_path_efficiency": "p32.path_efficiency",
+        "inspect_driver_vehicle_separation": "p32.driver_vehicle_separation",
+        "inspect_track_demand": "p32.track_demand",
+        "inspect_component_performance_link": "p32.component_performance_link",
+        "inspect_objective_tradeoff": "p32.objective_envelope",
+    }
+    active_hypotheses = tuple(
+        item
+        for item in getattr(engineering_knowledge, "hypotheses", ())
+        if item.relevance in {"supported_candidate", "blocked_candidate"}
+        and item.p35_mechanism_ids
+    )
+    exact_controls = tuple(
+        item
+        for item in active_hypotheses
+        if item.p19_control is not None
+        and item.experiment_factor_id is not None
+        and item.setup_authorized
+    )
+    tier_by_band = {
+        "integrity": "integrity_context",
+        "context": "integrity_context",
+        "performance_measurement": "measured_problem",
+        "driver": "driver_car_confounder",
+        "contradiction": "contradiction",
+        "mechanism_separation": "mechanism_separator",
+        "component_separation": "component_separator",
+        "history": "history",
+        "measurement_debt": "measurement_debt",
+    }
+    result: list[CrewChiefToolEligibility] = []
+    for definition in _TOOLS:
+        tool_id = definition.tool_id
+        missing: list[str] = []
+        relevant = folded is not None and folded.status == "open" and tool_id not in completed
+        if tool_id in producer_by_tool and producer_by_tool[tool_id] not in producers:
+            relevant = False
+            missing.append(producer_by_tool[tool_id])
+        if tool_id in _P35_TOOL_IDS and f"p35.{tool_id.removeprefix('inspect_')}" not in producers:
+            relevant = False
+            missing.append("exact P35 focus artifact")
+        if tool_id == "inspect_setup_knowledge_for_mechanism" and not (
+            active_hypotheses
+            and (len(p35.candidates) > 1 or p35.next_discriminator_contract_id)
+        ):
+            relevant = False
+            missing.append("ambiguous active P35.2 mechanism bridge")
+        if tool_id == "inspect_control_experiment_contract" and not (
+            "inspect_setup_knowledge_for_mechanism" in completed and exact_controls
+        ):
+            relevant = False
+            missing.append("completed mechanism inspection plus exact P19 factor")
+        skip_reason = None
+        if not relevant:
+            skip_reason = (
+                "Inspection already completed."
+                if tool_id in completed
+                else "Investigation is not open."
+                if folded is None or folded.status != "open"
+                else f"Missing: {', '.join(missing)}."
+                if missing
+                else "No current evidence can change the investigation boundary."
+            )
+        available_types = tuple(
+            sorted(
+                {
+                    item.producer_id
+                    for item in evidence_index.entries
+                    if item.producer_id == producer_by_tool.get(tool_id)
+                    or (
+                        tool_id in _P35_TOOL_IDS
+                        and item.producer_id == f"p35.{tool_id.removeprefix('inspect_')}"
+                    )
+                }
+            )
+        )
+        result.append(
+            CrewChiefToolEligibility(
+                tool_id=tool_id,
+                currently_relevant=relevant,
+                required_by_mandatory_gate=tool_id
+                in {"inspect_data_quality", "inspect_lap_context"},
+                expected_to_separate=tuple(
+                    item.cause_id
+                    for item in (folded.hypotheses if folded is not None else ())
+                    if item.progress
+                    not in {
+                        InvestigationProgress.SUPPORT_FOUND,
+                        InvestigationProgress.CONTRADICTION_FOUND,
+                        InvestigationProgress.P19_RULED_OUT,
+                    }
+                ),
+                available_artifact_types=available_types,
+                missing_inputs=tuple(missing),
+                safe_priority_tier=tier_by_band[_TOOL_SAFETY_BANDS[tool_id]],
+                skip_reason=skip_reason,
+            )
+        )
+    return tuple(result)
 
 
 def _qualified_memory_attention(
@@ -3242,28 +3668,21 @@ def _driver_question(
     )
 
 
-def _select_tool_entries(
+def _candidate_tool_entries(
     workspace: CrewChiefWorkspace,
     tool_id: str,
     cause_ids: tuple[str, ...],
 ) -> tuple[EngineeringEvidenceIndexEntry, ...]:
     entries = workspace.evidence_index.entries
-    answer = (
-        workspace.folded_state.driver_answers[-1]
+    interpretation = (
+        getattr(workspace.folded_state, "driver_answer_interpretations", ())[-1]
+        if workspace.folded_state
+        and getattr(workspace.folded_state, "driver_answer_interpretations", ())
+        else _interpret_driver_answer(workspace.folded_state.driver_answers[-1])
         if workspace.folded_state and workspace.folded_state.driver_answers
         else None
     )
-    answer_phase = {
-        "braking/entry": ("brak", "entry", "turn"),
-        "while brake applied": ("brak", "entry"),
-        "during brake release": ("brak", "entry", "turn"),
-        "center": ("center", "apex", "corner"),
-        "rotates then stops": ("center", "apex", "corner"),
-        "never develops rotation": ("turn", "entry", "center"),
-        "exit/power": ("exit", "throttle", "power"),
-        "after throttle": ("exit", "throttle", "power"),
-        "only after throttle": ("exit", "throttle", "power"),
-    }.get(answer or "", ())
+    answer_phase = interpretation.phase_scope if interpretation is not None else ()
     if tool_id == "inspect_data_quality":
         selected = tuple(
             item
@@ -3299,19 +3718,76 @@ def _select_tool_entries(
             if item.producer_id == f"p35.{tool_id.removeprefix('inspect_')}"
         )
     elif tool_id == "inspect_setup_knowledge_for_mechanism":
-        selected = tuple(
-            item for item in entries if item.producer_id.startswith("p35.")
+        subgoal = workspace.current_subgoal
+        effect_ids = set(
+            subgoal.effect_ids
+            if subgoal is not None and subgoal.selected_tool == tool_id
+            else ()
         )
-    elif tool_id == "inspect_control_experiment_contract":
+        exact_hypotheses = tuple(
+            item
+            for item in workspace.engineering_knowledge.hypotheses
+            if not effect_ids or item.effect_id in effect_ids
+        )
+        exact_artifact_ids = {
+            artifact_id
+            for item in exact_hypotheses
+            for artifact_id in (
+                *item.support_artifact_ids,
+                *item.contradiction_artifact_ids,
+            )
+        }
+        exact_mechanisms = {
+            mechanism_id
+            for item in exact_hypotheses
+            for mechanism_id in item.p35_mechanism_ids
+        }
+        required_ids = {
+            workspace.vehicle_dynamics.strongest_contradiction_artifact_id,
+        }
         selected = tuple(
             item
             for item in entries
-            if item.producer_id
-            in {
-                "p19.reasoning_snapshot",
-                "p26.component_awareness",
-                "p26.component_state_unavailable",
-            }
+            if item.producer_id.startswith("p35.")
+            and (
+                item.artifact_id in exact_artifact_ids
+                or item.artifact_id in required_ids
+                or bool(exact_mechanisms.intersection(item.mechanism_ids))
+            )
+        )
+    elif tool_id == "inspect_control_experiment_contract":
+        subgoal = getattr(workspace, "current_subgoal", None)
+        exact_controls = set(
+            subgoal.exact_control_keys
+            if subgoal is not None and subgoal.selected_tool == tool_id
+            else ()
+        )
+        exact_factors = tuple(
+            subgoal.experiment_factor_ids
+            if subgoal is not None and subgoal.selected_tool == tool_id
+            else ()
+        )
+        selected = (
+            tuple(
+                item
+                for item in entries
+                if exact_controls
+                and exact_factors
+                and bool(exact_controls.intersection(item.control_keys))
+                and item.producer_id
+                in {"p19.reasoning_snapshot", "p26.component_awareness"}
+            )
+            if subgoal is not None
+            else tuple(
+                item
+                for item in entries
+                if item.producer_id
+                in {
+                    "p19.reasoning_snapshot",
+                    "p26.component_awareness",
+                    "p26.component_state_unavailable",
+                }
+            )
         )
     elif tool_id in {
         "inspect_lap_time_opportunity",
@@ -3376,7 +3852,200 @@ def _select_tool_entries(
         selected = tuple(item for item in entries if item.control_keys)
     else:
         selected = tuple(item for item in entries if item.blocker_reasons)
-    return selected[:16]
+    return selected
+
+
+def _selection_required_artifact_ids(
+    workspace: CrewChiefWorkspace,
+    candidates: tuple[EngineeringEvidenceIndexEntry, ...],
+    subgoal: InvestigationSubgoal | None,
+) -> tuple[str, ...]:
+    candidate_ids = {item.artifact_id for item in candidates}
+    dynamics = getattr(workspace, "vehicle_dynamics", None)
+    p19_contradictions = getattr(workspace, "p19_contradiction_artifact_ids", ())
+    required = [
+        getattr(dynamics, "strongest_contradiction_artifact_id", None),
+        p19_contradictions[0] if p19_contradictions else None,
+    ]
+    if subgoal is not None and subgoal.required_discriminator_id is not None:
+        required.extend(
+            item.artifact_id
+            for item in candidates
+            if isinstance(item.typed_artifact, CrewChiefVehicleDynamicsFocusArtifact)
+            and item.typed_artifact.focus.observation_contract_id
+            == subgoal.required_discriminator_id
+        )
+    return _unique(item for item in required if item in candidate_ids)
+
+
+def _rank_tool_entry(
+    item: EngineeringEvidenceIndexEntry,
+    *,
+    required_ids: set[str],
+    opportunity_id: str | None,
+) -> tuple[object, ...]:
+    evidence_rank = {
+        EvidenceState.CONTROLLED_TEST_EFFECT: 0,
+        EvidenceState.MEASURED: 1,
+        EvidenceState.CALCULATED: 2,
+        EvidenceState.ESTIMATED_PROXY: 3,
+        EvidenceState.OBSERVED_CORRELATION: 4,
+        EvidenceState.NEEDS_CONFIRMATION: 5,
+        EvidenceState.BLOCKED_BY_CONTEXT: 6,
+        EvidenceState.UNAVAILABLE: 7,
+    }
+    return (
+        item.artifact_id not in required_ids,
+        getattr(item, "polarity", "neutral") != "contradiction",
+        opportunity_id is not None and opportunity_id not in item.artifact_id,
+        evidence_rank[item.evidence_state],
+        item.producer_id,
+        item.artifact_id,
+    )
+
+
+def _select_tool_entries(
+    workspace: CrewChiefWorkspace,
+    tool_id: str,
+    cause_ids: tuple[str, ...],
+) -> tuple[EngineeringEvidenceIndexEntry, ...]:
+    candidates = _candidate_tool_entries(workspace, tool_id, cause_ids)
+    current_subgoal = getattr(workspace, "current_subgoal", None)
+    subgoal = (
+        current_subgoal
+        if current_subgoal is not None
+        and current_subgoal.selected_tool == tool_id
+        else None
+    )
+    required_ids = set(
+        _selection_required_artifact_ids(workspace, candidates, subgoal)
+    )
+    ordered = tuple(
+        sorted(
+            candidates,
+            key=lambda item: _rank_tool_entry(
+                item,
+                required_ids=required_ids,
+                opportunity_id=subgoal.opportunity_id if subgoal is not None else None,
+            ),
+        )
+    )
+    return ordered[:16]
+
+
+def _selection_receipt(
+    workspace: CrewChiefWorkspace,
+    subgoal: InvestigationSubgoal,
+    selected: tuple[EngineeringEvidenceIndexEntry, ...],
+) -> CrewChiefSelectionReceipt:
+    candidates = _candidate_tool_entries(
+        workspace, subgoal.selected_tool, subgoal.distinguishes_cause_ids
+    )
+    required = _selection_required_artifact_ids(workspace, candidates, subgoal)
+    selected_ids = tuple(item.artifact_id for item in selected)
+    reasons = tuple(
+        f"{item.artifact_id}: {'required' if item.artifact_id in required else item.evidence_state.value}/{item.polarity}"
+        for item in selected
+    )
+    return CrewChiefSelectionReceipt.build(
+        selection_policy_id="p353.exact-priority-cap16.v1",
+        candidate_count=len(candidates),
+        selected_count=len(selected),
+        omitted_count=max(0, len(candidates) - len(selected)),
+        selected_artifact_ids=selected_ids,
+        selection_reasons=reasons,
+        required_artifact_ids=required,
+        required_artifacts_present=set(required) <= set(selected_ids),
+    )
+
+
+def _inspection_outcome_payload(
+    workspace: CrewChiefWorkspace,
+    subgoal: InvestigationSubgoal,
+    selected: tuple[EngineeringEvidenceIndexEntry, ...],
+    receipt: CrewChiefSelectionReceipt,
+    inspection_request_id: str,
+) -> dict[str, object]:
+    selected_ids = {item.artifact_id for item in selected}
+    actual_causes = _unique(
+        hypothesis.cause_id
+        for hypothesis in (workspace.folded_state.hypotheses if workspace.folded_state else ())
+        if hypothesis.cause_id in subgoal.distinguishes_cause_ids
+        and selected_ids.intersection(
+            (*hypothesis.support_artifact_ids, *hypothesis.contradiction_artifact_ids)
+        )
+    )
+    support_ids = tuple(
+        item.artifact_id for item in selected if item.polarity == "support"
+    )
+    contradiction_ids = tuple(
+        item.artifact_id for item in selected if item.polarity == "contradiction"
+    )
+    if contradiction_ids:
+        finding_kind = "contradiction"
+    elif support_ids:
+        finding_kind = "support"
+    elif any(item.evidence_state == EvidenceState.NEEDS_CONFIRMATION for item in selected):
+        finding_kind = "discriminator"
+    elif selected and all(
+        item.evidence_state
+        in {EvidenceState.UNAVAILABLE, EvidenceState.BLOCKED_BY_CONTEXT}
+        for item in selected
+    ):
+        finding_kind = "unavailable"
+    else:
+        finding_kind = "no_signal"
+    typed_summaries = tuple(
+        item.typed_artifact.focus.summary
+        for item in selected
+        if isinstance(item.typed_artifact, CrewChiefVehicleDynamicsFocusArtifact)
+    )
+    observed = (
+        typed_summaries[0]
+        if typed_summaries
+        else f"{subgoal.selected_tool.replace('_', ' ')} returned {len(selected)} exact canonical artifact(s)."
+        if selected
+        else f"{subgoal.selected_tool.replace('_', ' ')} found no exact canonical artifact."
+    )
+    missing = _unique(
+        blocker for item in selected for blocker in item.blocker_reasons
+    )
+    if not selected:
+        missing = _unique((*missing, *subgoal.required_evidence))
+    ambiguity_before = sum(
+        hypothesis.p19_state != "ruled_out"
+        and hypothesis.progress
+        not in {
+            InvestigationProgress.SUPPORT_FOUND,
+            InvestigationProgress.CONTRADICTION_FOUND,
+        }
+        for hypothesis in (workspace.folded_state.hypotheses if workspace.folded_state else ())
+    )
+    ambiguity_after = max(
+        0,
+        ambiguity_before
+        - (len(actual_causes) if finding_kind in {"support", "contradiction"} else 0),
+    )
+    components = _unique(
+        component_id for item in selected for component_id in item.component_ids
+    )
+    return {
+        "inspection_request_id": inspection_request_id,
+        "finding_kind": finding_kind,
+        "observed_finding": observed,
+        "strongest_support_artifact_ids": support_ids[:1],
+        "strongest_contradiction_artifact_ids": contradiction_ids[:1],
+        "missing_evidence": missing,
+        "ambiguity_before": ambiguity_before,
+        "ambiguity_after": ambiguity_after,
+        "cause_ids_actually_examined": actual_causes,
+        "component_ids_actually_examined": components,
+        "recommended_next_inspection": (
+            subgoal.required_discriminator_id
+            or ("Inspect the next eligible separator." if finding_kind in {"no_signal", "unavailable"} else None)
+        ),
+        "selection_receipt": receipt,
+    }
 
 
 def _success_contract(
@@ -3750,6 +4419,10 @@ def _critique(
     identity: CrewChiefWorkspaceIdentity,
     *,
     stale_reasons: tuple[str, ...] = (),
+    folded: FoldedInvestigationState | None = None,
+    events: tuple[CrewChiefEvent, ...] = (),
+    p35: PerformanceMechanismAssessment | None = None,
+    question: DriverDiagnosticQuestion | None = None,
 ) -> CrewChiefCritique:
     report = bundle.report
     action = report.briefing.action
@@ -3787,11 +4460,191 @@ def _critique(
             required_next_investigation="Resolve the canonical blocker before any test.",
             strongest_contradiction=strongest_contradiction,
         )
+    if question is not None:
+        return CrewChiefCritique(
+            outcome="ask_driver",
+            passed=False,
+            findings=(
+                "Telemetry cannot close the active driver-versus-car boundary without the pending contextual answer.",
+            ),
+            forbidden_decision_kinds=("controlled_test",),
+            required_next_investigation=question.question,
+            strongest_contradiction=strongest_contradiction,
+        )
+    if folded is not None and p35 is not None and p35.traffic_blocked:
+        return CrewChiefCritique(
+            outcome="blocked",
+            passed=False,
+            findings=(
+                "The current vehicle-dynamics attribution is traffic-contaminated; clean-air mechanical attribution remains blocked.",
+            ),
+            forbidden_decision_kinds=("controlled_test",),
+            required_next_investigation=(
+                "Preserve P19's exact next move, but do not present a mechanical explanation from this contaminated comparison."
+            ),
+            strongest_contradiction=strongest_contradiction,
+        )
+    if folded is not None and folded.status == "open":
+        completed = set(folded.completed_tool_ids)
+        required = {"inspect_data_quality", "inspect_lap_context"}
+        if not required <= completed:
+            return CrewChiefCritique(
+                outcome="reinvestigate",
+                passed=False,
+                findings=("Mandatory integrity and lap-context inspection is incomplete.",),
+                forbidden_decision_kinds=("controlled_test",),
+                required_next_investigation="Complete the mandatory integrity/context gate.",
+                strongest_contradiction=strongest_contradiction,
+            )
+        result_artifact_ids = {
+            artifact_id
+            for event in events
+            if event.event_type == "tool_result_attached"
+            for artifact_id in event.payload.artifact_ids
+        }
+        strongest_id = next(
+            (
+                citation.event_id or citation.citation_id
+                for cause in report.reasoning_snapshot.causes
+                for citation in cause.contradicting_evidence
+            ),
+            None,
+        )
+        if strongest_id is not None and strongest_id not in result_artifact_ids:
+            return CrewChiefCritique(
+                outcome="reinvestigate",
+                passed=False,
+                findings=(
+                    "The leading explanation has support, but the strongest contradiction has not been inspected.",
+                ),
+                forbidden_decision_kinds=("controlled_test",),
+                required_next_investigation="Inspect the strongest contradiction and its falsification boundary.",
+                strongest_contradiction=strongest_contradiction,
+            )
+        if "inspect_driver_vehicle_separation" not in completed:
+            return CrewChiefCritique(
+                outcome="reinvestigate",
+                passed=False,
+                findings=("Driver demand versus vehicle response remains unresolved.",),
+                forbidden_decision_kinds=("controlled_test",),
+                required_next_investigation="Inspect driver-versus-car separation.",
+                strongest_contradiction=strongest_contradiction,
+            )
     return CrewChiefCritique(
         outcome="pass",
         passed=True,
         strongest_contradiction=strongest_contradiction,
     )
+
+
+def _prospective_consumption(
+    investigation: CrewChiefInvestigation | None,
+    events: tuple[CrewChiefEvent, ...],
+    run_sentinel: RunSentinelState,
+    identity: CrewChiefWorkspaceIdentity,
+    *,
+    continue_action_count: int,
+) -> CrewChiefProspectiveConsumption | None:
+    if investigation is None or investigation.consumption_baseline is None:
+        return None
+    baseline = investigation.consumption_baseline
+    baseline_laps = set(baseline.eligible_lap_ids)
+    baseline_attempts = set(baseline.measurement_attempt_ids)
+    requests = tuple(
+        event for event in events if event.event_type == "tool_invoked"
+    )
+    result_by_request = {
+        event.payload.inspection_request_id: event
+        for event in events
+        if event.event_type == "tool_result_attached"
+        and event.payload.inspection_request_id is not None
+    }
+    durations = tuple(
+        result_by_request[
+            request.payload.inspection_request_id
+        ].payload.tool_execution_duration_ms
+        if result_by_request[
+            request.payload.inspection_request_id
+        ].payload.tool_execution_duration_ms is not None
+        else max(
+            0.0,
+            (
+                result_by_request[request.payload.inspection_request_id].created_at
+                - request.created_at
+            ).total_seconds()
+            * 1000.0,
+        )
+        if request.payload.inspection_request_id in result_by_request
+        else 0.0
+        for request in requests
+    )
+    return CrewChiefProspectiveConsumption(
+        baseline_sha256=baseline.baseline_sha256,
+        accepted_lap_ids_after_open=tuple(
+            item.lap_id
+            for item in run_sentinel.laps
+            if item.status == "context_cleared" and item.lap_id not in baseline_laps
+        ),
+        measurement_attempt_ids_after_open=tuple(
+            item
+            for item in run_sentinel.measurement_attempt_ids
+            if item not in baseline_attempts
+        ),
+        tool_request_event_ids=tuple(item.event_id for item in requests),
+        tool_execution_duration_ms=durations,
+        driver_question_ids=_unique(
+            event.payload.question_id
+            for event in events
+            if event.event_type == "driver_question_asked"
+            and event.payload.question_id is not None
+        ),
+        continue_action_count=continue_action_count,
+        workflow_ids_opened_after_open=(
+            (identity.active_workflow_id,)
+            if identity.active_workflow_id is not None
+            and identity.active_workflow_id != baseline.workflow_id
+            else ()
+        ),
+    )
+
+
+def _post_interaction_critic_outcome(
+    workspace: CrewChiefWorkspace,
+    *,
+    completed_tool_id: str | None = None,
+    selected_artifact_ids: tuple[str, ...] = (),
+    finding_kind: str | None = None,
+) -> Literal["pass", "blocked", "reinvestigate"]:
+    """Predict the exact deterministic critic boundary after one persisted interaction."""
+
+    critique = getattr(workspace, "critique", None)
+    if getattr(critique, "outcome", None) == "blocked":
+        return "blocked"
+    folded = getattr(workspace, "folded_state", None)
+    if folded is None:
+        return "blocked"
+    completed = set(getattr(folded, "completed_tool_ids", ()))
+    if completed_tool_id is not None:
+        completed.add(completed_tool_id)
+    if not {"inspect_data_quality", "inspect_lap_context"} <= completed:
+        return "reinvestigate"
+    contradiction_handled = (
+        not getattr(workspace, "p19_contradiction_artifact_ids", ())
+        or bool(
+            set(getattr(workspace, "p19_contradiction_artifact_ids", ())).intersection(
+                selected_artifact_ids
+            )
+        )
+        or any(
+            item.progress == InvestigationProgress.CONTRADICTION_FOUND
+            for item in getattr(folded, "hypotheses", ())
+        )
+    )
+    if not contradiction_handled or "inspect_driver_vehicle_separation" not in completed:
+        return "reinvestigate"
+    if finding_kind in {"no_signal", "unavailable", "discriminator"}:
+        return "reinvestigate"
+    return "pass"
 
 
 def _decision(
@@ -3922,6 +4775,11 @@ def build_crew_chief_workspace(
         or investigation.workspace_identity.session_id != session_id
     ):
         raise ValueError("Crew Chief investigation belongs to another run/session.")
+    continue_action_count = (
+        repository.continue_action_count(investigation.investigation_id)
+        if investigation is not None
+        else 0
+    )
     events = (
         repository.list_events(investigation.investigation_id) if investigation else ()
     )
@@ -4081,7 +4939,11 @@ def build_crew_chief_workspace(
         p34_ledger_revision = canonical_json_sha256(
             {"state": "blocked", "reason": str(exc)}
         )
-    cache_key = (*_workspace_cache_key(identity, db_path), p34_ledger_revision)
+    cache_key = (
+        *_workspace_cache_key(identity, db_path),
+        p34_ledger_revision,
+        str(continue_action_count),
+    )
     with _CACHE_LOCK:
         cached = _CACHE.get(cache_key)
         if cached is not None:
@@ -4095,7 +4957,6 @@ def build_crew_chief_workspace(
         bundle.report.reasoning_snapshot.causes,
         p35,
     )
-    critique = _critique(bundle, identity, stale_reasons=stale_reasons)
     contract = _success_contract(bundle, identity, objective)
     response_ids = _unique(
         history.workflow_id
@@ -4138,14 +4999,6 @@ def build_crew_chief_workspace(
             *learning_prior.blocker_reasons,
         ]
     )
-    baseline_subgoal = _subgoal(
-        bundle,
-        folded,
-        p26,
-        p32,
-        learning_prior,
-        p35,
-    )
     latest_result = None
     if folded and folded.completed_tool_ids:
         latest = folded.completed_tool_ids[-1]
@@ -4174,6 +5027,9 @@ def build_crew_chief_workspace(
             for item in result_entries
         )
         latest_result = CrewChiefToolResult(
+            inspection_request_id=(
+                latest_event.payload.inspection_request_id if latest_event else None
+            ),
             tool_id=latest,
             workspace_revision=identity.workspace_revision,
             status="blocked"
@@ -4191,7 +5047,61 @@ def build_crew_chief_workspace(
             component_ids=component_ids,
             blocker_reasons=result_blockers if result_blocked else (),
             authority_ceiling=definition.authority_ceiling,
+            finding_kind=(
+                latest_event.payload.finding_kind
+                if latest_event and latest_event.payload.finding_kind is not None
+                else "unavailable"
+                if result_blocked
+                else "no_signal"
+            ),
+            observed_finding=(
+                latest_event.payload.findings[0]
+                if latest_event and latest_event.payload.findings
+                else "No tool-specific canonical artifact matched this exact workspace."
+            ),
+            strongest_support_artifact_ids=(
+                latest_event.payload.strongest_support_artifact_ids
+                if latest_event
+                else ()
+            ),
+            strongest_contradiction_artifact_ids=(
+                latest_event.payload.strongest_contradiction_artifact_ids
+                if latest_event
+                else ()
+            ),
+            missing_evidence=(
+                latest_event.payload.missing_evidence if latest_event else ()
+            ),
+            ambiguity_before=(
+                latest_event.payload.ambiguity_before
+                if latest_event and latest_event.payload.ambiguity_before is not None
+                else 0
+            ),
+            ambiguity_after=(
+                latest_event.payload.ambiguity_after
+                if latest_event and latest_event.payload.ambiguity_after is not None
+                else 0
+            ),
+            cause_ids_actually_examined=cause_ids,
+            component_ids_actually_examined=component_ids,
+            recommended_next_inspection=(
+                latest_event.payload.recommended_next_inspection
+                if latest_event
+                else None
+            ),
+            selection_receipt=(
+                latest_event.payload.selection_receipt if latest_event else None
+            ),
         )
+    critique = _critique(
+        bundle,
+        identity,
+        stale_reasons=stale_reasons,
+        folded=folded,
+        events=events,
+        p35=p35,
+        question=question,
+    )
     decision = _decision(bundle, identity, critique, question)
     engineering_knowledge = build_current_engineering_knowledge(
         run_id=run_id,
@@ -4205,6 +5115,19 @@ def build_crew_chief_workspace(
         p35=p35,
         p33=learning_prior,
         p19_terminal_decision=decision,
+    )
+    baseline_subgoal = _subgoal(
+        bundle,
+        folded,
+        p26,
+        p32,
+        learning_prior,
+        p35,
+        evidence_index,
+        engineering_knowledge,
+    )
+    tool_eligibility = _tool_eligibility(
+        folded, evidence_index, p35, engineering_knowledge
     )
     investigation_improvement = _p34_projection_for_identity(
         identity,
@@ -4226,6 +5149,13 @@ def build_crew_chief_workspace(
         learning_prior,
         investigation_improvement.current_pair,
     )
+    prospective_consumption = _prospective_consumption(
+        investigation,
+        events,
+        run_sentinel,
+        identity,
+        continue_action_count=continue_action_count,
+    )
     workspace = CrewChiefWorkspace(
         identity=identity,
         generated_at=_now(),
@@ -4233,10 +5163,12 @@ def build_crew_chief_workspace(
         folded_state=folded,
         evidence_index=evidence_index,
         available_tools=_TOOLS,
+        tool_eligibility=tool_eligibility,
         current_subgoal=subgoal,
         latest_tool_result=latest_result,
         critique=critique,
         pending_driver_question=question,
+        prospective_consumption=prospective_consumption,
         success_contract=contract,
         p19_mission_contract=bundle.report.best_measurement.mission_contract,
         engineering_awareness=p20,
@@ -4812,6 +5744,7 @@ def open_investigation(
         raise ValueError("A driver report is required.")
     learning_inputs = _learning_inputs_for_workspace(current, db_path=db_path)
     investigation_id = f"cci_{canonical_json_sha256([run_id, session_id, normalized, current.identity.workspace_revision])[:24]}"
+    opened_at = _now()
     investigation = CrewChiefInvestigation(
         investigation_id=investigation_id,
         workspace_identity=current.identity,
@@ -4821,7 +5754,23 @@ def open_investigation(
         canonical_problem=normalized.casefold(),
         opening_reasoning=learning_inputs.reasoning,
         opening_problem=learning_inputs.problem,
-        opened_at=_now(),
+        opened_at=opened_at,
+        consumption_baseline=CrewChiefConsumptionBaseline.build(
+            event_head=(
+                current.folded_state.last_sequence
+                if current.folded_state is not None
+                else 0
+            ),
+            eligible_lap_ids=tuple(
+                item.lap_id
+                for item in current.run_sentinel.laps
+                if item.status == "context_cleared"
+            ),
+            measurement_attempt_ids=current.run_sentinel.measurement_attempt_ids,
+            workflow_id=current.identity.active_workflow_id,
+            workflow_revision=current.identity.active_workflow_revision,
+            wall_clock_started_at=opened_at,
+        ),
     )
     repository = CrewChiefRepository(db_path)
     repository.save_investigation(investigation)
@@ -4835,7 +5784,7 @@ def open_investigation(
     repository.save_objective(
         investigation_id, opened.identity.workspace_revision, objective
     )
-    repository.append_event(
+    opening_events: list[CrewChiefEvent] = [
         _event(
             investigation_id,
             1,
@@ -4843,7 +5792,21 @@ def open_investigation(
             "problem_interpreted",
             CrewChiefEventPayload(message=f"Driver report normalized: {normalized}"),
         )
-    )
+    ]
+    for sequence, cause in enumerate(investigation.opening_reasoning.causes, start=2):
+        opening_events.append(
+            _event(
+                investigation_id,
+                sequence,
+                opened.identity.workspace_revision,
+                "hypothesis_registered",
+                CrewChiefEventPayload(
+                    message=f"Registered exact P19 hypothesis {cause.cause_id} in state {cause.status}.",
+                    cause_ids=(cause.cause_id,),
+                ),
+            )
+        )
+    repository.append_events(tuple(opening_events))
     updated = build_crew_chief_workspace(
         run_id,
         session_id=session_id,
@@ -4860,6 +5823,7 @@ def continue_investigation(
     session_id: str,
     expected_workspace_revision: str,
     db_path: str | Path | None = None,
+    _record_continue_action: bool = True,
 ) -> CrewChiefWorkspace:
     current = build_crew_chief_workspace(
         run_id,
@@ -4879,6 +5843,10 @@ def continue_investigation(
         )
     frozen_pair = _freeze_p34_pair_for_workspace(current, db_path=db_path)
     repository = CrewChiefRepository(db_path)
+    if _record_continue_action:
+        record_action = getattr(repository, "record_continue_action", None)
+        if record_action is not None:
+            record_action(investigation_id)
     sequence = current.folded_state.last_sequence + 1
     production_subgoal = _production_subgoal_from_pair(
         current.current_subgoal,
@@ -4888,11 +5856,66 @@ def continue_investigation(
     )
     if production_subgoal is not None:
         subgoal = production_subgoal
+        inspection_started_at = perf_counter()
         selected = _select_tool_entries(
             current, subgoal.selected_tool, subgoal.distinguishes_cause_ids
         )
-        component_ids = _unique(
-            component_id for item in selected for component_id in item.component_ids
+        inspection_request_id = (
+            "ccir_"
+            + canonical_json_sha256(
+                [
+                    investigation_id,
+                    sequence,
+                    subgoal.selected_tool,
+                    current.identity.workspace_revision,
+                ]
+            )[:24]
+        )
+        try:
+            selection_receipt = _selection_receipt(current, subgoal, selected)
+            outcome = _inspection_outcome_payload(
+                current,
+                subgoal,
+                selected,
+                selection_receipt,
+                inspection_request_id,
+            )
+        except (AttributeError, TypeError, ValueError):
+            # Compatibility path for legacy embedded callers that provide the
+            # pre-P35.3 minimal workspace façade. Production workspaces always
+            # take the fully typed branch above.
+            selected_ids = tuple(item.artifact_id for item in selected)
+            selection_receipt = CrewChiefSelectionReceipt.build(
+                selection_policy_id="p353.exact-priority-cap16.v1",
+                candidate_count=len(selected),
+                selected_count=len(selected),
+                omitted_count=0,
+                selected_artifact_ids=selected_ids,
+                selection_reasons=tuple(
+                    f"{artifact_id}: legacy exact selection"
+                    for artifact_id in selected_ids
+                ),
+                required_artifact_ids=(),
+                required_artifacts_present=True,
+            )
+            outcome = {
+                "inspection_request_id": inspection_request_id,
+                "finding_kind": "no_signal",
+                "observed_finding": (
+                    f"{subgoal.selected_tool.replace('_', ' ')} returned {len(selected)} exact canonical artifact(s)."
+                ),
+                "strongest_support_artifact_ids": (),
+                "strongest_contradiction_artifact_ids": (),
+                "missing_evidence": (),
+                "ambiguity_before": 0,
+                "ambiguity_after": 0,
+                "cause_ids_actually_examined": (),
+                "component_ids_actually_examined": (),
+                "recommended_next_inspection": None,
+                "selection_receipt": selection_receipt,
+            }
+        tool_execution_duration_ms = max(
+            0.0, (perf_counter() - inspection_started_at) * 1000.0
         )
         invocation = _event(
             investigation_id,
@@ -4902,6 +5925,7 @@ def continue_investigation(
             CrewChiefEventPayload(
                 message=f"Requested {subgoal.selected_tool} inspection.",
                 tool_id=subgoal.selected_tool,
+                inspection_request_id=inspection_request_id,
                 cause_ids=subgoal.distinguishes_cause_ids,
                 requested_measurement_ids=(subgoal.selected_tool,),
             ),
@@ -4920,31 +5944,129 @@ def continue_investigation(
             CrewChiefEventPayload(
                 message=f"Inspected {subgoal.selected_tool}.",
                 tool_id=subgoal.selected_tool,
-                cause_ids=subgoal.distinguishes_cause_ids,
+                inspection_request_id=inspection_request_id,
+                tool_execution_duration_ms=tool_execution_duration_ms,
+                finding_kind=outcome["finding_kind"],
+                cause_ids=outcome["cause_ids_actually_examined"],
                 artifact_ids=tuple(item.artifact_id for item in selected),
-                component_ids=component_ids,
+                component_ids=outcome["component_ids_actually_examined"],
                 completed_measurement_ids=(subgoal.selected_tool,),
+                strongest_support_artifact_ids=outcome[
+                    "strongest_support_artifact_ids"
+                ],
+                strongest_contradiction_artifact_ids=outcome[
+                    "strongest_contradiction_artifact_ids"
+                ],
+                missing_evidence=outcome["missing_evidence"],
+                ambiguity_before=outcome["ambiguity_before"],
+                ambiguity_after=outcome["ambiguity_after"],
+                recommended_next_inspection=outcome[
+                    "recommended_next_inspection"
+                ],
+                selection_receipt=selection_receipt,
                 findings=(
-                    (
-                        f"{len(selected)} tool-specific canonical artifacts attached; "
-                        "authority ceiling preserved."
-                    ),
+                    outcome["observed_finding"],
                 ),
             ),
         )
-        repository.append_events(
-            (
-                invocation,
-                result,
+        trace: list[CrewChiefEvent] = [invocation, result]
+        trace_sequence = sequence + 2
+        for cause_id in outcome["cause_ids_actually_examined"]:
+            trace.append(
+                _event(
+                    investigation_id,
+                    trace_sequence,
+                    current.identity.workspace_revision,
+                    "hypothesis_inspected",
+                    CrewChiefEventPayload(
+                        message=f"Exact evidence updated hypothesis {cause_id}.",
+                        inspection_request_id=inspection_request_id,
+                        finding_kind=outcome["finding_kind"],
+                        cause_ids=(cause_id,),
+                        artifact_ids=tuple(item.artifact_id for item in selected),
+                        strongest_support_artifact_ids=outcome[
+                            "strongest_support_artifact_ids"
+                        ],
+                        strongest_contradiction_artifact_ids=outcome[
+                            "strongest_contradiction_artifact_ids"
+                        ],
+                        missing_evidence=outcome["missing_evidence"],
+                        ambiguity_before=outcome["ambiguity_before"],
+                        ambiguity_after=outcome["ambiguity_after"],
+                        recommended_next_inspection=outcome[
+                            "recommended_next_inspection"
+                        ],
+                    ),
+                )
+            )
+            trace_sequence += 1
+        if outcome["strongest_contradiction_artifact_ids"]:
+            trace.append(
+                _event(
+                    investigation_id,
+                    trace_sequence,
+                    current.identity.workspace_revision,
+                    "contradiction_recorded",
+                    CrewChiefEventPayload(
+                        message="The strongest selected contradiction remains explicit in the investigation trace.",
+                        inspection_request_id=inspection_request_id,
+                        cause_ids=outcome["cause_ids_actually_examined"],
+                        artifact_ids=outcome[
+                            "strongest_contradiction_artifact_ids"
+                        ],
+                    ),
+                )
+            )
+            trace_sequence += 1
+        trace.append(
+            _event(
+                investigation_id,
+                trace_sequence,
+                current.identity.workspace_revision,
+                "subgoal_completed",
+                CrewChiefEventPayload(
+                    message=(
+                        f"{getattr(subgoal, 'title', subgoal.selected_tool)} completed with {outcome['finding_kind']}; residual evidence debt remains explicit."
+                    ),
+                    inspection_request_id=inspection_request_id,
+                    cause_ids=outcome["cause_ids_actually_examined"],
+                    artifact_ids=tuple(item.artifact_id for item in selected),
+                ),
             )
         )
+        trace_sequence += 1
+        critic_outcome = _post_interaction_critic_outcome(
+            current,
+            completed_tool_id=subgoal.selected_tool,
+            selected_artifact_ids=tuple(item.artifact_id for item in selected),
+            finding_kind=outcome["finding_kind"],
+        )
+        trace.append(
+            _event(
+                investigation_id,
+                trace_sequence,
+                current.identity.workspace_revision,
+                "critique_completed",
+                CrewChiefEventPayload(
+                    message=f"Deterministic second-pass critic returned {critic_outcome}.",
+                    critique_outcome=critic_outcome,
+                    findings=(
+                        outcome["observed_finding"],
+                    ),
+                ),
+            )
+        )
+        append_trace = getattr(repository, "append_inspection_trace", None)
+        if append_trace is not None:
+            append_trace(tuple(trace))
+        else:
+            repository.append_events((invocation, result))
     elif (
         current.folded_state.pending_driver_question_id is None
         and len(current.folded_state.driver_answers) == 0
     ):
         question_id = f"ccq_{canonical_json_sha256([investigation_id, sequence])[:20]}"
-        repository.append_event(
-            _event(
+        question_event = _event(
                 investigation_id,
                 sequence,
                 current.identity.workspace_revision,
@@ -4961,7 +6083,20 @@ def continue_investigation(
                     else None
                 ),
             )
+        critique_event = _event(
+            investigation_id,
+            sequence + 1,
+            current.identity.workspace_revision,
+            "critique_completed",
+            CrewChiefEventPayload(
+                message="Deterministic second-pass critic requires driver context.",
+                critique_outcome="ask_driver",
+                findings=(
+                    "Telemetry cannot close the active driver-versus-car boundary without the pending contextual answer.",
+                ),
+            ),
         )
+        repository.append_events((question_event, critique_event))
     else:
         if (
             current.terminal_decision.kind == "measurement_mission"
@@ -5092,6 +6227,7 @@ def record_driver_answer(
         raise ValueError("Driver answer must match the pending contextual question.")
     sequence = current.folded_state.last_sequence + 1
     repository = CrewChiefRepository(db_path)
+    interpretation = _interpret_driver_answer(answer)
     answer_event = _event(
         investigation_id,
         sequence,
@@ -5101,11 +6237,29 @@ def record_driver_answer(
             message="Driver context recorded; telemetry evidence is unchanged.",
             question_id=question.question_id,
             answer=answer,
+            answer_interpretation=interpretation,
             cause_ids=question.distinguishes_cause_ids,
             component_ids=question.distinguishes_component_ids,
         ),
     )
-    repository.append_event(answer_event)
+    critic_outcome = _post_interaction_critic_outcome(current)
+    critique_event = _event(
+        investigation_id,
+        sequence + 1,
+        current.identity.workspace_revision,
+        "critique_completed",
+        CrewChiefEventPayload(
+            message=(
+                "Driver context was recorded and the deterministic critic "
+                f"returned {critic_outcome}."
+            ),
+            critique_outcome=critic_outcome,
+            findings=(
+                "The driver answer scopes the next evidence inspection without changing P19 truth.",
+            ),
+        ),
+    )
+    repository.append_events((answer_event, critique_event))
     investigation = current.investigation
     if investigation is None:
         raise ValueError("Crew Chief investigation identity is unavailable.")
@@ -5135,6 +6289,64 @@ def record_driver_answer(
         db_path=db_path,
     )
     return _freeze_next_p34_pair_and_refresh(updated, db_path=db_path)
+
+
+def advance_until_boundary(
+    run_id: str,
+    investigation_id: str,
+    *,
+    session_id: str,
+    expected_workspace_revision: str,
+    max_read_only_steps: int = 4,
+    db_path: str | Path | None = None,
+) -> CrewChiefWorkspace:
+    """Work up to four cheap inspections, stopping at a meaningful boundary."""
+
+    if not 1 <= max_read_only_steps <= 4:
+        raise ValueError("Crew Chief batch advancement allows one to four safe steps.")
+    current = build_crew_chief_workspace(
+        run_id,
+        session_id=session_id,
+        investigation_id=investigation_id,
+        db_path=db_path,
+    )
+    if current.identity.workspace_revision != expected_workspace_revision:
+        raise ValueError(
+            "Crew Chief workspace revision is stale; rebase before continuing."
+        )
+    if current.folded_state is None or current.folded_state.status != "open":
+        raise ValueError("Crew Chief investigation is not open.")
+    if current.pending_driver_question is not None:
+        raise ValueError(
+            "A Crew Chief driver question is pending; record its contextual answer before advancing."
+        )
+    CrewChiefRepository(db_path).record_continue_action(investigation_id)
+    for _ in range(max_read_only_steps):
+        if (
+            current.folded_state is None
+            or current.folded_state.status != "open"
+            or current.pending_driver_question is not None
+            or (
+                current.critique.outcome == "blocked"
+                and {"inspect_data_quality", "inspect_lap_context"}.issubset(
+                    current.folded_state.completed_tool_ids
+                )
+            )
+        ):
+            break
+        if current.current_subgoal is None and current.folded_state.driver_answers:
+            # P19 terminal is available; presenting it remains an explicit
+            # boundary rather than an automatic authority-bearing mutation.
+            break
+        current = continue_investigation(
+            run_id,
+            investigation_id,
+            session_id=session_id,
+            expected_workspace_revision=current.identity.workspace_revision,
+            db_path=db_path,
+            _record_continue_action=False,
+        )
+    return current
 
 
 def abandon_investigation(
@@ -5340,6 +6552,7 @@ def rebase_investigation(
 
 __all__ = [
     "abandon_investigation",
+    "advance_until_boundary",
     "build_crew_chief_workspace",
     "continue_investigation",
     "fold_investigation",

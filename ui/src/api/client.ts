@@ -462,6 +462,23 @@ export function continueCrewChiefInvestigation(
   ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report, objective, scopeRunIds));
 }
 
+export function advanceCrewChiefInvestigation(
+  runId: string,
+  sessionId: string,
+  investigationId: string,
+  expectedWorkspaceRevision: string,
+  report: RunIntelligenceReport,
+  scopeRunIds: readonly string[],
+  objective: EngineeringObjective,
+): Promise<CrewChiefWorkspace> {
+  return requestJson<unknown>(
+    `/api/runs/${encodeURIComponent(runId)}/crew-chief-investigations/${encodeURIComponent(investigationId)}/advance-until-boundary`,
+    { method: "POST", body: JSON.stringify({ session_id: sessionId, expected_workspace_revision: expectedWorkspaceRevision, max_read_only_steps: 4 }) },
+    INTELLIGENCE_TIMEOUT_MS,
+    "Advance Crew Chief to the next boundary",
+  ).then((payload) => trustedCrewChiefResponse(payload, runId, sessionId, report, objective, scopeRunIds));
+}
+
 export function answerCrewChiefQuestion(
   runId: string,
   sessionId: string,

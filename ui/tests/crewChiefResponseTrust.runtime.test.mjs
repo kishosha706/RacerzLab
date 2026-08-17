@@ -543,6 +543,17 @@ const workspace = {
     workspace_revision: h("c"), index_hash: await canonicalJsonSha256([]), entries: [],
   },
   available_tools: availableTools,
+  tool_eligibility: availableTools.map((tool) => ({
+    tool_id: tool.tool_id,
+    currently_relevant: false,
+    required_by_mandatory_gate: ["inspect_data_quality", "inspect_lap_context"].includes(tool.tool_id),
+    expected_to_separate: [],
+    available_artifact_types: [],
+    missing_inputs: [],
+    cost_class: "cheap",
+    safe_priority_tier: "p19_terminal",
+    skip_reason: "Investigation is not open.",
+  })),
   p19_mission_contract: null,
   engineering_awareness: engineeringAwareness,
   performance_intelligence: performance,
@@ -564,7 +575,8 @@ const workspace = {
   },
   critique: { outcome: "pass", passed: true, findings: [], strongest_contradiction: null },
   adaptive_research: { state: "data_locked", authority: "none", activation_gate: "Held-out evidence is required." },
-  current_subgoal: null, pending_driver_question: null, investigation: null, folded_state: null,
+  current_subgoal: null, latest_tool_result: null, pending_driver_question: null,
+  prospective_consumption: null, investigation: null, folded_state: null,
   blocker_reasons: [], post_run_brief: ["P19 status: ready."], response_history_ids: [], driver_memory_ids: [],
   p19_cause_ids: [],
   p26_component_ids: [...new Set(ENGINEERING_KNOWLEDGE_STATIC_REGISTRY.flatMap(
@@ -796,23 +808,43 @@ withInvestigation.investigation = {
     source_artifact_ids: ["artifact-opening"],
   },
   opened_at: "2026-08-15T09:00:00Z",
+  consumption_baseline: null,
   status: "open",
 };
 withInvestigation.folded_state = {
   investigation_id: "investigation-1", status: "open", event_count: 0,
   last_sequence: 0, objective: "race_long_run", completed_tool_ids: [],
   pending_driver_question_id: null, driver_answers: ["center changed"],
+  driver_answer_interpretations: [{
+    answer: "center changed", phase_scope: [], response_regime_scope: [],
+    traffic_scope: "all", stint_scope: "all", power_state_scope: "all",
+    time_origin_scope: "all", driver_demand_scope: [], context_record_only: true,
+  }],
   hypotheses: [],
+  latest_critique_outcome: null,
   last_decision_kind: null, accepted_workspace_revision: h("c"),
 };
 withInvestigation.current_subgoal = {
   subgoal_id: "subgoal-1", title: "Inspect exit carry",
   selected_tool: "inspect_exit_carry",
   why_this_tool: "This bounded measurement addresses the next evidence gap.",
-  distinguishes_cause_ids: [], required_evidence: ["qualified elapsed time"],
+  distinguishes_cause_ids: [], mechanism_ids: [], bridge_ids: [], effect_ids: [],
+  opportunity_id: null, required_discriminator_id: null, exact_control_keys: [],
+  experiment_factor_ids: [],
+  driver_answer_interpretation: structuredClone(
+    withInvestigation.folded_state.driver_answer_interpretations[
+      withInvestigation.folded_state.driver_answer_interpretations.length - 1
+    ],
+  ),
+  required_evidence: ["qualified elapsed time"],
   stop_condition: "Stop when the bounded inspection resolves.",
   priority_rank: 1,
 };
+const exitEligibility = withInvestigation.tool_eligibility.find(
+  (item) => item.tool_id === "inspect_exit_carry",
+);
+exitEligibility.currently_relevant = true;
+exitEligibility.skip_reason = null;
 assert.equal(isCrewChiefWorkspaceResponse(withInvestigation, scope), true);
 for (const [label, mutate] of [
   ["missing opening problem", (value) => { delete value.investigation.opening_problem; }],
@@ -1120,7 +1152,7 @@ assert.equal(
 
 const forgedProductionBinding = structuredClone(withP34Pair);
 forgedProductionBinding.current_subgoal.selected_tool = "inspect_path_efficiency";
-assert.equal(isCrewChiefWorkspaceResponse(forgedProductionBinding, scope), true);
+assert.equal(isCrewChiefWorkspaceResponse(forgedProductionBinding, scope), false);
 assert.equal(
   await hasCanonicalInvestigationImprovementDigests(
     forgedProductionBinding.investigation_improvement,

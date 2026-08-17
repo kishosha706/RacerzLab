@@ -286,13 +286,62 @@ CrewChiefEvidenceArtifact = Annotated[
 
 
 class InvestigationProgress(str, Enum):
-    UNINSPECTED = "uninspected"
-    INSPECTION_PENDING = "inspection_pending"
-    INSPECTED = "inspected"
+    NOT_INSPECTED = "not_inspected"
+    INSPECTION_REQUESTED = "inspection_requested"
+    INSPECTED_NO_EVIDENCE = "inspected_no_evidence"
+    SUPPORT_FOUND = "support_found"
+    CONTRADICTION_FOUND = "contradiction_found"
+    DISCRIMINATOR_PENDING = "discriminator_pending"
+    UNRESOLVED_AFTER_INSPECTION = "unresolved_after_inspection"
+    P19_RULED_OUT = "p19_ruled_out"
     NEEDS_DRIVER_ANSWER = "needs_driver_answer"
     NEEDS_MEASUREMENT = "needs_measurement"
-    COMPLETE = "complete"
     STALE = "stale"
+
+
+InspectionFindingKind = Literal[
+    "support",
+    "contradiction",
+    "discriminator",
+    "negative_control",
+    "no_signal",
+    "unavailable",
+]
+
+
+class DriverAnswerInterpretation(CrewChiefModel):
+    answer: str = Field(min_length=1)
+    phase_scope: tuple[str, ...] = ()
+    response_regime_scope: tuple[Literal["transient", "steady_state"], ...] = ()
+    traffic_scope: Literal[
+        "all", "disturbed_air", "clean_air", "compare_air_states"
+    ] = "all"
+    stint_scope: Literal["all", "immediate", "migration"] = "all"
+    power_state_scope: Literal[
+        "all", "brake_applied", "brake_release", "pre_power", "power_on"
+    ] = "all"
+    time_origin_scope: Literal[
+        "all", "local", "exit_carry", "following_straight"
+    ] = "all"
+    driver_demand_scope: tuple[str, ...] = ()
+    context_record_only: bool = False
+
+    @model_validator(mode="after")
+    def every_answer_has_one_semantic_consequence(self) -> DriverAnswerInterpretation:
+        changed_scope = bool(
+            self.phase_scope
+            or self.response_regime_scope
+            or self.traffic_scope != "all"
+            or self.stint_scope != "all"
+            or self.power_state_scope != "all"
+            or self.time_origin_scope != "all"
+            or self.driver_demand_scope
+        )
+        if changed_scope == self.context_record_only:
+            raise ValueError(
+                "driver answers must either change typed investigation scope or be explicitly context-only"
+            )
+        return self
 
 
 class CrewChiefWorkspaceIdentity(CrewChiefModel):
@@ -374,6 +423,55 @@ class CrewChiefWorkspaceIdentity(CrewChiefModel):
         )
 
 
+class CrewChiefConsumptionBaseline(CrewChiefModel):
+    baseline_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    event_head: int = Field(ge=0)
+    eligible_lap_ids: tuple[str, ...] = ()
+    measurement_attempt_ids: tuple[str, ...] = ()
+    workflow_id: str | None = Field(default=None, min_length=1)
+    workflow_revision: str | None = Field(default=None, min_length=1)
+    wall_clock_started_at: datetime
+
+    @classmethod
+    def build(cls, **values: object) -> CrewChiefConsumptionBaseline:
+        draft = cls.model_construct(**values, baseline_sha256="0" * 64)
+        digest = canonical_json_sha256(
+            draft.model_dump(mode="json", exclude={"baseline_sha256"})
+        )
+        return cls.model_validate({**values, "baseline_sha256": digest})
+
+    @model_validator(mode="after")
+    def baseline_is_content_addressed(self) -> CrewChiefConsumptionBaseline:
+        if (self.workflow_id is None) != (self.workflow_revision is None):
+            raise ValueError("consumption workflow head must be complete")
+        expected = canonical_json_sha256(
+            self.model_dump(mode="json", exclude={"baseline_sha256"})
+        )
+        if self.baseline_sha256 != expected:
+            raise ValueError("Crew Chief consumption baseline identity is corrupt")
+        return self
+
+
+class CrewChiefProspectiveConsumption(CrewChiefModel):
+    baseline_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    accepted_lap_ids_after_open: tuple[str, ...] = ()
+    measurement_attempt_ids_after_open: tuple[str, ...] = ()
+    tool_request_event_ids: tuple[str, ...] = ()
+    tool_execution_duration_ms: tuple[float, ...] = ()
+    driver_question_ids: tuple[str, ...] = ()
+    continue_action_count: int = Field(ge=0)
+    workflow_ids_opened_after_open: tuple[str, ...] = ()
+    authority: Literal["operational_counts_only"] = "operational_counts_only"
+
+    @model_validator(mode="after")
+    def timing_aligns_with_requests(self) -> CrewChiefProspectiveConsumption:
+        if len(self.tool_request_event_ids) != len(self.tool_execution_duration_ms):
+            raise ValueError("prospective tool timing must align with exact request events")
+        if any(value < 0 for value in self.tool_execution_duration_ms):
+            raise ValueError("prospective tool duration cannot be negative")
+        return self
+
+
 class CrewChiefInvestigation(CrewChiefModel):
     investigation_id: str = Field(min_length=1)
     workspace_identity: CrewChiefWorkspaceIdentity
@@ -384,6 +482,7 @@ class CrewChiefInvestigation(CrewChiefModel):
     opening_reasoning: P19ReasoningMemory
     opening_problem: ProblemFingerprint
     opened_at: datetime
+    consumption_baseline: CrewChiefConsumptionBaseline | None = None
     status: Literal["open", "complete", "stale", "abandoned"] = "open"
 
     @model_validator(mode="after")
@@ -397,6 +496,55 @@ class CrewChiefInvestigation(CrewChiefModel):
             raise ValueError(
                 "Crew Chief opening reasoning/problem must match the immutable workspace truth"
             )
+        if (
+            self.consumption_baseline is not None
+            and self.consumption_baseline.wall_clock_started_at != self.opened_at
+        ):
+            raise ValueError(
+                "Crew Chief consumption timing must freeze at investigation open"
+            )
+        return self
+
+
+class CrewChiefSelectionReceipt(CrewChiefModel):
+    selection_policy_id: str = Field(min_length=1)
+    selection_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    candidate_count: int = Field(ge=0)
+    selected_count: int = Field(ge=0, le=16)
+    omitted_count: int = Field(ge=0)
+    selected_artifact_ids: tuple[str, ...] = ()
+    selection_reasons: tuple[str, ...] = ()
+    required_artifact_ids: tuple[str, ...] = ()
+    required_artifacts_present: bool
+
+    @classmethod
+    def build(cls, **values: object) -> CrewChiefSelectionReceipt:
+        draft = cls.model_construct(**values, selection_sha256="0" * 64)
+        digest = canonical_json_sha256(
+            draft.model_dump(mode="json", exclude={"selection_sha256"})
+        )
+        return cls.model_validate({**values, "selection_sha256": digest})
+
+    @model_validator(mode="after")
+    def receipt_binds_the_complete_selection(self) -> CrewChiefSelectionReceipt:
+        if (
+            self.selected_count != len(self.selected_artifact_ids)
+            or self.omitted_count != self.candidate_count - self.selected_count
+            or self.omitted_count < 0
+            or len(self.selected_artifact_ids) != len(set(self.selected_artifact_ids))
+            or len(self.required_artifact_ids) != len(set(self.required_artifact_ids))
+        ):
+            raise ValueError("Crew Chief selection receipt counts or identities disagree")
+        expected_required = set(self.required_artifact_ids) <= set(
+            self.selected_artifact_ids
+        )
+        if self.required_artifacts_present != expected_required:
+            raise ValueError("required-artifact receipt state is inconsistent")
+        expected = canonical_json_sha256(
+            self.model_dump(mode="json", exclude={"selection_sha256"})
+        )
+        if self.selection_sha256 != expected:
+            raise ValueError("Crew Chief selection receipt identity is corrupt")
         return self
 
 
@@ -427,8 +575,24 @@ class CrewChiefEventPayload(CrewChiefModel):
     requested_measurement_ids: tuple[str, ...] = ()
     completed_measurement_ids: tuple[str, ...] = ()
     tool_id: str | None = None
+    inspection_request_id: str | None = Field(
+        default=None, pattern=r"^ccir_[0-9a-f]{24}$"
+    )
+    tool_execution_duration_ms: float | None = Field(
+        default=None, ge=0, allow_inf_nan=False
+    )
+    finding_kind: InspectionFindingKind | None = None
+    strongest_support_artifact_ids: tuple[str, ...] = ()
+    strongest_contradiction_artifact_ids: tuple[str, ...] = ()
+    missing_evidence: tuple[str, ...] = ()
+    ambiguity_before: int | None = Field(default=None, ge=0)
+    ambiguity_after: int | None = Field(default=None, ge=0)
+    recommended_next_inspection: str | None = Field(default=None, min_length=1)
+    selection_receipt: CrewChiefSelectionReceipt | None = None
     question_id: str | None = None
     answer: str | None = None
+    answer_interpretation: DriverAnswerInterpretation | None = None
+    critique_outcome: Literal["pass", "blocked", "reinvestigate", "ask_driver"] | None = None
     decision_kind: str | None = None
     objective: EngineeringObjective | None = None
     previous_workspace_revision: str | None = Field(
@@ -487,6 +651,12 @@ class CrewChiefEventPayload(CrewChiefModel):
             (self.requested_measurement_ids, "requested measurement"),
             (self.completed_measurement_ids, "completed measurement"),
             (self.findings, "finding"),
+            (self.strongest_support_artifact_ids, "strongest support artifact"),
+            (
+                self.strongest_contradiction_artifact_ids,
+                "strongest contradiction artifact",
+            ),
+            (self.missing_evidence, "missing evidence"),
         ):
             if any(not value for value in values) or len(values) != len(set(values)):
                 raise ValueError(
@@ -579,6 +749,11 @@ class CrewChiefEventPayload(CrewChiefModel):
             raise ValueError(
                 "blocked Crew Chief P34 outcome requires its attempted certificate and blocker"
             )
+        if (self.ambiguity_before is None) != (self.ambiguity_after is None):
+            raise ValueError("Crew Chief ambiguity bounds must be present together")
+        if self.ambiguity_after is not None and self.ambiguity_before is not None:
+            if self.ambiguity_after > self.ambiguity_before:
+                raise ValueError("one inspection cannot silently increase Crew ambiguity")
         return self
 
 
@@ -620,6 +795,68 @@ class CrewChiefEvent(CrewChiefModel):
             raise ValueError(
                 "completed measurement identities are exclusive to tool results"
             )
+        typed_inspection = payload.finding_kind is not None
+        if self.event_type == "tool_invoked":
+            if payload.inspection_request_id is None:
+                # Persisted pre-P35.3 events remain readable.
+                pass
+            elif any(
+                (
+                    typed_inspection,
+                    payload.selection_receipt is not None,
+                    bool(payload.strongest_support_artifact_ids),
+                    bool(payload.strongest_contradiction_artifact_ids),
+                )
+            ):
+                raise ValueError("tool invocation cannot carry an inspection outcome")
+        elif self.event_type == "tool_result_attached" and typed_inspection:
+            if (
+                payload.inspection_request_id is None
+                or payload.tool_execution_duration_ms is None
+                or payload.selection_receipt is None
+                or payload.ambiguity_before is None
+                or payload.ambiguity_after is None
+                or payload.selection_receipt.selected_artifact_ids
+                != payload.artifact_ids
+            ):
+                raise ValueError(
+                    "typed tool results require their request, receipt, ambiguity, and exact artifacts"
+                )
+        elif self.event_type == "hypothesis_inspected":
+            if typed_inspection and (
+                payload.inspection_request_id is None
+                or not payload.cause_ids
+                or not payload.artifact_ids
+            ):
+                raise ValueError(
+                    "hypothesis inspection requires an exact result/artifact/cause relationship"
+                )
+        elif self.event_type in {"contradiction_recorded", "subgoal_completed"}:
+            if payload.inspection_request_id is None:
+                raise ValueError(
+                    "cognitive inspection events require their exact request identity"
+                )
+        elif payload.inspection_request_id is not None:
+            raise ValueError(
+                "inspection request identity is exclusive to inspection trace events"
+            )
+        if (
+            payload.tool_execution_duration_ms is not None
+            and self.event_type != "tool_result_attached"
+        ):
+            raise ValueError("tool execution duration is exclusive to tool results")
+        if self.event_type not in {"tool_result_attached", "hypothesis_inspected"} and (
+            payload.finding_kind is not None
+            or payload.tool_execution_duration_ms is not None
+            or payload.selection_receipt is not None
+            or payload.strongest_support_artifact_ids
+            or payload.strongest_contradiction_artifact_ids
+            or payload.missing_evidence
+            or payload.ambiguity_before is not None
+            or payload.ambiguity_after is not None
+            or payload.recommended_next_inspection is not None
+        ):
+            raise ValueError("inspection outcome fields are exclusive to result cognition")
         if self.event_type == "driver_question_asked":
             if payload.question_id is None or payload.answer is not None:
                 raise ValueError(
@@ -632,6 +869,19 @@ class CrewChiefEvent(CrewChiefModel):
                 )
         elif payload.question_id is not None or payload.answer is not None:
             raise ValueError("driver dialogue fields are exclusive to driver events")
+        if payload.answer_interpretation is not None and (
+            self.event_type != "driver_answer_recorded"
+            or payload.answer_interpretation.answer != payload.answer
+        ):
+            raise ValueError(
+                "typed driver-answer semantics are exclusive to their exact answer event"
+            )
+        if (self.event_type == "critique_completed") != (
+            payload.critique_outcome is not None
+        ):
+            raise ValueError(
+                "critic outcome is exclusive and required for critique events"
+            )
         if (self.event_type == "decision_emitted") != (
             payload.decision_kind is not None
         ):
@@ -715,7 +965,11 @@ class FoldedInvestigationState(CrewChiefModel):
     completed_tool_ids: tuple[str, ...] = ()
     pending_driver_question_id: str | None = None
     driver_answers: tuple[str, ...] = ()
+    driver_answer_interpretations: tuple[DriverAnswerInterpretation, ...] = ()
     hypotheses: tuple[HypothesisInspectionState, ...] = ()
+    latest_critique_outcome: Literal[
+        "pass", "blocked", "reinvestigate", "ask_driver"
+    ] | None = None
     last_decision_kind: str | None = None
     stale_reason: str | None = None
     accepted_workspace_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -1005,7 +1259,38 @@ class CrewChiefToolDefinition(CrewChiefModel):
     required_sources: tuple[str, ...] = ()
 
 
+class CrewChiefToolEligibility(CrewChiefModel):
+    tool_id: str = Field(min_length=1)
+    currently_relevant: bool
+    required_by_mandatory_gate: bool = False
+    expected_to_separate: tuple[str, ...] = ()
+    available_artifact_types: tuple[str, ...] = ()
+    missing_inputs: tuple[str, ...] = ()
+    cost_class: Literal["cheap", "moderate"] = "cheap"
+    safe_priority_tier: Literal[
+        "integrity_context",
+        "measured_problem",
+        "driver_car_confounder",
+        "contradiction",
+        "mechanism_separator",
+        "component_separator",
+        "history",
+        "measurement_debt",
+        "p19_terminal",
+    ]
+    skip_reason: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def relevance_matches_skip_state(self) -> CrewChiefToolEligibility:
+        if self.currently_relevant == (self.skip_reason is not None):
+            raise ValueError("tool eligibility relevance and skip reason disagree")
+        return self
+
+
 class CrewChiefToolResult(CrewChiefModel):
+    inspection_request_id: str | None = Field(
+        default=None, pattern=r"^ccir_[0-9a-f]{24}$"
+    )
     tool_id: str = Field(min_length=1)
     workspace_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     status: Literal["complete", "blocked", "no_finding"]
@@ -1015,6 +1300,31 @@ class CrewChiefToolResult(CrewChiefModel):
     component_ids: tuple[str, ...] = ()
     blocker_reasons: tuple[str, ...] = ()
     authority_ceiling: Literal["observation_only", "context_only", "measurement_only"]
+    finding_kind: InspectionFindingKind = "no_signal"
+    observed_finding: str | None = Field(default=None, min_length=1)
+    strongest_support_artifact_ids: tuple[str, ...] = ()
+    strongest_contradiction_artifact_ids: tuple[str, ...] = ()
+    missing_evidence: tuple[str, ...] = ()
+    ambiguity_before: int = Field(default=0, ge=0)
+    ambiguity_after: int = Field(default=0, ge=0)
+    cause_ids_actually_examined: tuple[str, ...] = ()
+    component_ids_actually_examined: tuple[str, ...] = ()
+    recommended_next_inspection: str | None = Field(default=None, min_length=1)
+    selection_receipt: CrewChiefSelectionReceipt | None = None
+
+    @model_validator(mode="after")
+    def typed_outcome_is_bounded(self) -> CrewChiefToolResult:
+        if self.ambiguity_after > self.ambiguity_before:
+            raise ValueError("inspection result cannot silently increase ambiguity")
+        if self.cause_ids != self.cause_ids_actually_examined:
+            raise ValueError("legacy cause IDs must equal causes actually examined")
+        if self.component_ids != self.component_ids_actually_examined:
+            raise ValueError("legacy component IDs must equal components actually examined")
+        if self.selection_receipt is not None and (
+            self.selection_receipt.selected_artifact_ids != self.artifact_ids
+        ):
+            raise ValueError("inspection result must equal its selection receipt")
+        return self
 
 
 class InvestigationSubgoal(CrewChiefModel):
@@ -1023,6 +1333,14 @@ class InvestigationSubgoal(CrewChiefModel):
     selected_tool: str = Field(min_length=1)
     why_this_tool: str = Field(min_length=1)
     distinguishes_cause_ids: tuple[str, ...] = ()
+    mechanism_ids: tuple[str, ...] = ()
+    bridge_ids: tuple[str, ...] = ()
+    effect_ids: tuple[str, ...] = ()
+    opportunity_id: str | None = Field(default=None, min_length=1)
+    required_discriminator_id: str | None = Field(default=None, min_length=1)
+    exact_control_keys: tuple[str, ...] = ()
+    experiment_factor_ids: tuple[str, ...] = ()
+    driver_answer_interpretation: DriverAnswerInterpretation | None = None
     required_evidence: tuple[str, ...] = ()
     stop_condition: str = Field(min_length=1)
     priority_rank: int = Field(ge=1)
@@ -1365,10 +1683,12 @@ class CrewChiefWorkspace(CrewChiefModel):
     folded_state: FoldedInvestigationState | None = None
     evidence_index: EngineeringEvidenceIndex
     available_tools: tuple[CrewChiefToolDefinition, ...]
+    tool_eligibility: tuple[CrewChiefToolEligibility, ...] = ()
     current_subgoal: InvestigationSubgoal | None = None
     latest_tool_result: CrewChiefToolResult | None = None
     critique: CrewChiefCritique
     pending_driver_question: DriverDiagnosticQuestion | None = None
+    prospective_consumption: CrewChiefProspectiveConsumption | None = None
     success_contract: SuccessContract | None = None
     p19_mission_contract: MeasurementMissionContract | None = None
     engineering_awareness: EngineeringAwarenessProjection | None = None
@@ -1398,6 +1718,60 @@ class CrewChiefWorkspace(CrewChiefModel):
     def projection_scope_is_atomic(self) -> CrewChiefWorkspace:
         if self.evidence_index.workspace_revision != self.identity.workspace_revision:
             raise ValueError("evidence index must match the workspace revision")
+        tool_ids = tuple(item.tool_id for item in self.available_tools)
+        eligibility_ids = tuple(item.tool_id for item in self.tool_eligibility)
+        if (
+            not self.tool_eligibility
+            or len(tool_ids) != len(set(tool_ids))
+            or eligibility_ids != tool_ids
+        ):
+            raise ValueError(
+                "every advertised Crew tool requires one ordered server-owned eligibility record"
+            )
+        if self.current_subgoal is not None and not any(
+            item.tool_id == self.current_subgoal.selected_tool
+            and item.currently_relevant
+            for item in self.tool_eligibility
+        ):
+            raise ValueError("the active Crew subgoal must be currently executable")
+        latest_driver_scope = (
+            self.folded_state.driver_answer_interpretations[-1]
+            if self.folded_state is not None
+            and self.folded_state.driver_answer_interpretations
+            else None
+        )
+        if self.current_subgoal is not None and (
+            self.current_subgoal.driver_answer_interpretation != latest_driver_scope
+        ):
+            raise ValueError(
+                "the active Crew subgoal must carry the exact latest driver-answer scope"
+            )
+        if (
+            self.folded_state is not None
+            and self.folded_state.status == "open"
+            and self.folded_state.latest_critique_outcome is not None
+            and self.folded_state.latest_critique_outcome != self.critique.outcome
+        ):
+            raise ValueError(
+                "the persisted Crew critic result must equal the reconstructed open-workspace critic"
+            )
+        baseline = (
+            self.investigation.consumption_baseline
+            if self.investigation is not None
+            else None
+        )
+        if baseline is not None and (
+            self.prospective_consumption is None
+            or self.prospective_consumption.baseline_sha256
+            != baseline.baseline_sha256
+        ):
+            raise ValueError(
+                "prospective consumption must bind the exact at-open baseline"
+            )
+        if baseline is None and self.prospective_consumption is not None:
+            raise ValueError(
+                "prospective consumption cannot exist without an at-open baseline"
+            )
         if canonical_json_sha256(self.run_sentinel) != self.identity.run_sentinel_sha256:
             raise ValueError("run sentinel must match the atomic workspace identity")
         awareness = self.engineering_awareness

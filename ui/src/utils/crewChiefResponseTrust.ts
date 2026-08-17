@@ -587,23 +587,94 @@ function validInvestigation(value: unknown): value is Record<string, unknown> {
   if (!exactKeys(value, [
     "investigation_id", "workspace_identity", "origin", "objective",
     "raw_driver_report", "canonical_problem", "opening_reasoning", "opening_problem",
-    "opened_at", "status",
+    "opened_at", "consumption_baseline", "status",
   ]) || !validWorkspaceIdentityShape(value.workspace_identity)
     || !isP19ReasoningMemory(value.opening_reasoning)
     || !isProblemFingerprint(value.opening_problem)) return false;
   const openingIdentity = value.workspace_identity;
   const openingReasoning = value.opening_reasoning;
   const openingProblem = value.opening_problem;
+  const baseline = value.consumption_baseline;
   return typeof value.investigation_id === "string" && value.investigation_id.length > 0
     && ["post_import", "driver_report", "manual_review"].includes(String(value.origin))
     && typeof value.objective === "string" && engineeringObjectives.has(value.objective)
     && typeof value.raw_driver_report === "string" && value.raw_driver_report.length > 0
     && typeof value.canonical_problem === "string" && value.canonical_problem.length > 0
     && typeof value.opened_at === "string" && Number.isFinite(Date.parse(value.opened_at))
+    && (baseline === null || (
+      exactKeys(baseline, [
+        "baseline_sha256", "event_head", "eligible_lap_ids",
+        "measurement_attempt_ids", "workflow_id", "workflow_revision",
+        "wall_clock_started_at",
+      ])
+      && typeof baseline.baseline_sha256 === "string" && hash.test(baseline.baseline_sha256)
+      && integerNumber(baseline.event_head) && baseline.event_head >= 0
+      && uniqueStrings(baseline.eligible_lap_ids)
+      && uniqueStrings(baseline.measurement_attempt_ids)
+      && nullableString(baseline.workflow_id)
+      && nullableString(baseline.workflow_revision)
+      && (baseline.workflow_id === null) === (baseline.workflow_revision === null)
+      && typeof baseline.wall_clock_started_at === "string"
+      && Number.isFinite(Date.parse(baseline.wall_clock_started_at))
+    ))
     && ["open", "complete", "stale", "abandoned"].includes(String(value.status))
     && value.objective === openingIdentity.objective_id
     && openingProblem.objective === value.objective
     && openingReasoning.reasoning_snapshot_sha256 === openingIdentity.reasoning_snapshot_sha256;
+}
+
+const driverInterpretationKeys = [
+  "answer", "phase_scope", "response_regime_scope", "traffic_scope",
+  "stint_scope", "power_state_scope", "time_origin_scope",
+  "driver_demand_scope", "context_record_only",
+] as const;
+
+function validDriverAnswerInterpretation(value: unknown): value is Record<string, unknown> {
+  return record(value)
+    && exactKeys(value, driverInterpretationKeys)
+    && safeText(value.answer)
+    && uniqueStrings(value.phase_scope)
+    && Array.isArray(value.response_regime_scope)
+    && value.response_regime_scope.every((item) => (
+      ["transient", "steady_state"].includes(String(item))
+    ))
+    && ["all", "disturbed_air", "clean_air", "compare_air_states"]
+      .includes(String(value.traffic_scope))
+    && ["all", "immediate", "migration"].includes(String(value.stint_scope))
+    && ["all", "brake_applied", "brake_release", "pre_power", "power_on"]
+      .includes(String(value.power_state_scope))
+    && ["all", "local", "exit_carry", "following_straight"]
+      .includes(String(value.time_origin_scope))
+    && uniqueStrings(value.driver_demand_scope)
+    && typeof value.context_record_only === "boolean";
+}
+
+function validSelectionReceipt(
+  value: unknown,
+  selectedArtifactIds: unknown,
+): value is Record<string, unknown> {
+  if (!record(value) || !exactKeys(value, [
+    "selection_policy_id", "selection_sha256", "candidate_count",
+    "selected_count", "omitted_count", "selected_artifact_ids",
+    "selection_reasons", "required_artifact_ids", "required_artifacts_present",
+  ])) return false;
+  if (!safeText(value.selection_policy_id)
+    || typeof value.selection_sha256 !== "string" || !hash.test(value.selection_sha256)
+    || !integerNumber(value.candidate_count) || value.candidate_count < 0
+    || !integerNumber(value.selected_count) || value.selected_count < 0
+    || !integerNumber(value.omitted_count) || value.omitted_count < 0
+    || !uniqueStrings(value.selected_artifact_ids)
+    || !safeTexts(value.selection_reasons)
+    || !uniqueStrings(value.required_artifact_ids)
+    || typeof value.required_artifacts_present !== "boolean") return false;
+  const selected = value.selected_artifact_ids as string[];
+  const required = value.required_artifact_ids as string[];
+  return sameJson(selected, selectedArtifactIds)
+    && value.selected_count === selected.length
+    && value.selection_reasons.length === selected.length
+    && value.candidate_count === value.selected_count + value.omitted_count
+    && value.required_artifacts_present
+      === required.every((artifactId) => selected.includes(artifactId));
 }
 
 function validToolDefinition(value: unknown): value is Record<string, unknown> {
@@ -1351,6 +1422,27 @@ export function isCrewChiefWorkspaceResponse(
     || !Array.isArray(value.available_tools)
     || !value.available_tools.every(validToolDefinition)
     || new Set(value.available_tools.map((tool) => tool.tool_id)).size !== value.available_tools.length
+    || !Array.isArray(value.tool_eligibility)
+    || value.tool_eligibility.length !== value.available_tools.length
+    || !value.tool_eligibility.every((item) => (
+      record(item)
+      && safeText(item.tool_id)
+      && typeof item.currently_relevant === "boolean"
+      && typeof item.required_by_mandatory_gate === "boolean"
+      && uniqueStrings(item.expected_to_separate)
+      && uniqueStrings(item.available_artifact_types)
+      && uniqueStrings(item.missing_inputs)
+      && ["cheap", "moderate"].includes(String(item.cost_class))
+      && safeText(item.safe_priority_tier)
+      && (item.skip_reason === null || safeText(item.skip_reason))
+      && item.currently_relevant === (item.skip_reason === null)
+    ))
+    || new Set(value.tool_eligibility.map((item) => item.tool_id)).size
+      !== value.tool_eligibility.length
+    || !sameJson(
+      value.tool_eligibility.map((item) => item.tool_id),
+      value.available_tools.map((tool) => tool.tool_id),
+    )
     || !vehicleDynamicsToolIds.every((toolId) => (
       value.available_tools as Array<Record<string, unknown>>
     ).some((tool) => (
@@ -1662,10 +1754,61 @@ export function isCrewChiefWorkspaceResponse(
     ))
     || !safeText(value.current_subgoal.why_this_tool)
     || !uniqueStrings(value.current_subgoal.distinguishes_cause_ids)
+    || !uniqueStrings(value.current_subgoal.mechanism_ids)
+    || !uniqueStrings(value.current_subgoal.bridge_ids)
+    || !uniqueStrings(value.current_subgoal.effect_ids)
+    || !nullableString(value.current_subgoal.opportunity_id)
+    || !nullableString(value.current_subgoal.required_discriminator_id)
+    || !uniqueStrings(value.current_subgoal.exact_control_keys)
+    || !uniqueStrings(value.current_subgoal.experiment_factor_ids)
+    || !(value.current_subgoal.driver_answer_interpretation === null
+      || validDriverAnswerInterpretation(value.current_subgoal.driver_answer_interpretation))
+    || !value.tool_eligibility.some((item) => (
+      item.tool_id === String((value.current_subgoal as Record<string, unknown>).selected_tool)
+      && item.currently_relevant === true
+    ))
     || !uniqueStrings(value.current_subgoal.required_evidence)
     || !safeText(value.current_subgoal.stop_condition)
     || !integerNumber(value.current_subgoal.priority_rank)
     || value.current_subgoal.priority_rank < 1
+  )) return false;
+  if (value.latest_tool_result !== null && (
+    !record(value.latest_tool_result)
+    || value.latest_tool_result.workspace_revision !== identity.workspace_revision
+    || !(value.latest_tool_result.inspection_request_id === null
+      || /^ccir_[0-9a-f]{24}$/.test(String(value.latest_tool_result.inspection_request_id)))
+    || !safeText(value.latest_tool_result.tool_id)
+    || !["complete", "blocked", "no_finding"].includes(String(value.latest_tool_result.status))
+    || !safeText(value.latest_tool_result.summary)
+    || !["support", "contradiction", "discriminator", "negative_control", "no_signal", "unavailable"]
+      .includes(String(value.latest_tool_result.finding_kind))
+    || !uniqueStrings(value.latest_tool_result.artifact_ids)
+    || !uniqueStrings(value.latest_tool_result.cause_ids)
+    || !uniqueStrings(value.latest_tool_result.component_ids)
+    || !uniqueStrings(value.latest_tool_result.cause_ids_actually_examined)
+    || !uniqueStrings(value.latest_tool_result.component_ids_actually_examined)
+    || !safeTexts(value.latest_tool_result.blocker_reasons)
+    || !["observation_only", "context_only", "measurement_only"]
+      .includes(String(value.latest_tool_result.authority_ceiling))
+    || !sameJson(value.latest_tool_result.cause_ids, value.latest_tool_result.cause_ids_actually_examined)
+    || !sameJson(value.latest_tool_result.component_ids, value.latest_tool_result.component_ids_actually_examined)
+    || !uniqueStrings(value.latest_tool_result.strongest_support_artifact_ids)
+    || !uniqueStrings(value.latest_tool_result.strongest_contradiction_artifact_ids)
+    || !uniqueStrings(value.latest_tool_result.missing_evidence)
+    || !integerNumber(value.latest_tool_result.ambiguity_before)
+    || !integerNumber(value.latest_tool_result.ambiguity_after)
+    || value.latest_tool_result.ambiguity_after > value.latest_tool_result.ambiguity_before
+    || !(value.latest_tool_result.observed_finding === null
+      || safeText(value.latest_tool_result.observed_finding))
+    || !(value.latest_tool_result.recommended_next_inspection === null
+      || safeText(value.latest_tool_result.recommended_next_inspection))
+    || !(value.latest_tool_result.selection_receipt === null
+      || validSelectionReceipt(
+        value.latest_tool_result.selection_receipt,
+        value.latest_tool_result.artifact_ids,
+      ))
+    || (value.latest_tool_result.inspection_request_id !== null
+      && value.latest_tool_result.selection_receipt === null)
   )) return false;
   if (value.pending_driver_question !== null && (
     !record(value.pending_driver_question)
@@ -1674,10 +1817,38 @@ export function isCrewChiefWorkspaceResponse(
     || !safeText(value.pending_driver_question.reason)
     || !safeTexts(value.pending_driver_question.answer_options)
   )) return false;
+  if (value.prospective_consumption !== null && (
+    !record(value.prospective_consumption)
+    || typeof value.prospective_consumption.baseline_sha256 !== "string"
+    || !hash.test(value.prospective_consumption.baseline_sha256)
+    || !uniqueStrings(value.prospective_consumption.accepted_lap_ids_after_open)
+    || !uniqueStrings(value.prospective_consumption.measurement_attempt_ids_after_open)
+    || !uniqueStrings(value.prospective_consumption.tool_request_event_ids)
+    || !Array.isArray(value.prospective_consumption.tool_execution_duration_ms)
+    || !value.prospective_consumption.tool_execution_duration_ms.every((duration) => (
+      finiteNumber(duration) && duration >= 0
+    ))
+    || value.prospective_consumption.tool_execution_duration_ms.length
+      !== value.prospective_consumption.tool_request_event_ids.length
+    || !uniqueStrings(value.prospective_consumption.driver_question_ids)
+    || !integerNumber(value.prospective_consumption.continue_action_count)
+    || value.prospective_consumption.continue_action_count < 0
+    || !uniqueStrings(value.prospective_consumption.workflow_ids_opened_after_open)
+    || value.prospective_consumption.authority !== "operational_counts_only"
+  )) return false;
   if (value.investigation !== null && (
     !validInvestigation(value.investigation)
     || value.investigation.investigation_id !== identity.investigation_id
   )) return false;
+  if (
+    value.investigation !== null
+    && record(value.investigation.consumption_baseline)
+    && (
+      !record(value.prospective_consumption)
+      || value.prospective_consumption.baseline_sha256
+        !== value.investigation.consumption_baseline.baseline_sha256
+    )
+  ) return false;
   if (value.folded_state !== null && (
     !record(value.folded_state)
     || value.folded_state.investigation_id !== identity.investigation_id
@@ -1686,13 +1857,21 @@ export function isCrewChiefWorkspaceResponse(
     || value.folded_state.last_sequence < 0
     || !uniqueStrings(value.folded_state.completed_tool_ids)
     || !strings(value.folded_state.driver_answers)
+    || !Array.isArray(value.folded_state.driver_answer_interpretations)
+    || value.folded_state.driver_answer_interpretations.length
+      !== value.folded_state.driver_answers.length
+    || !value.folded_state.driver_answer_interpretations.every(
+      validDriverAnswerInterpretation,
+    )
     || !Array.isArray(value.folded_state.hypotheses)
     || !value.folded_state.hypotheses.every((item) => (
       record(item)
       && typeof item.cause_id === "string" && item.cause_id.length > 0
       && ["likely", "possible", "ruled_out", "unresolved"].includes(String(item.p19_state))
-      && ["uninspected", "inspection_pending", "inspected", "needs_driver_answer",
-        "needs_measurement", "complete", "stale"].includes(String(item.progress))
+      && ["not_inspected", "inspection_requested", "inspected_no_evidence",
+        "support_found", "contradiction_found", "discriminator_pending",
+        "unresolved_after_inspection", "p19_ruled_out", "needs_driver_answer",
+        "needs_measurement", "stale"].includes(String(item.progress))
       && uniqueStrings(item.component_ids)
       && uniqueStrings(item.support_artifact_ids)
       && uniqueStrings(item.contradiction_artifact_ids)
@@ -1701,8 +1880,24 @@ export function isCrewChiefWorkspaceResponse(
       (item as Record<string, unknown>).cause_id
     ))).size !== value.folded_state.hypotheses.length
     || !nullableString(value.folded_state.pending_driver_question_id)
+    || !(value.folded_state.latest_critique_outcome === null
+      || ["pass", "blocked", "reinvestigate", "ask_driver"]
+        .includes(String(value.folded_state.latest_critique_outcome)))
     || typeof value.folded_state.accepted_workspace_revision !== "string"
     || !hash.test(value.folded_state.accepted_workspace_revision)
+  )) return false;
+  const foldedDriverInterpretations = value.folded_state === null
+    ? []
+    : value.folded_state.driver_answer_interpretations as unknown[];
+  if (value.folded_state !== null && value.folded_state.status === "open" && (
+    (value.folded_state.latest_critique_outcome !== null
+      && value.folded_state.latest_critique_outcome !== value.critique.outcome)
+    || (value.current_subgoal !== null && !sameJson(
+      value.current_subgoal.driver_answer_interpretation,
+      foldedDriverInterpretations.length
+        ? foldedDriverInterpretations[foldedDriverInterpretations.length - 1]
+        : null,
+    ))
   )) return false;
   const p34Entries = trustedEntries.filter((entry) => !entry.producer_id.startsWith("p35."));
   const p34ToolIds = value.available_tools

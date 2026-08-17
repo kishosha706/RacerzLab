@@ -178,6 +178,18 @@ export type CrewChiefToolDefinition = {
   required_sources: string[];
 };
 
+export type DriverAnswerInterpretation = {
+  answer: string;
+  phase_scope: string[];
+  response_regime_scope: Array<"transient" | "steady_state">;
+  traffic_scope: "all" | "disturbed_air" | "clean_air" | "compare_air_states";
+  stint_scope: "all" | "immediate" | "migration";
+  power_state_scope: "all" | "brake_applied" | "brake_release" | "pre_power" | "power_on";
+  time_origin_scope: "all" | "local" | "exit_carry" | "following_straight";
+  driver_demand_scope: string[];
+  context_record_only: boolean;
+};
+
 export type CrewChiefInvestigation = {
   investigation_id: string;
   workspace_identity: CrewChiefWorkspaceIdentity;
@@ -188,6 +200,15 @@ export type CrewChiefInvestigation = {
   opening_reasoning: P19ReasoningMemory;
   opening_problem: ProblemFingerprint;
   opened_at: string;
+  consumption_baseline: null | {
+    baseline_sha256: string;
+    event_head: number;
+    eligible_lap_ids: string[];
+    measurement_attempt_ids: string[];
+    workflow_id: string | null;
+    workflow_revision: string | null;
+    wall_clock_started_at: string;
+  };
   status: "open" | "complete" | "stale" | "abandoned";
 };
 
@@ -207,21 +228,27 @@ export type CrewChiefWorkspace = {
     completed_tool_ids: string[];
     pending_driver_question_id: string | null;
     driver_answers: string[];
+    driver_answer_interpretations: DriverAnswerInterpretation[];
     hypotheses: Array<{
       cause_id: string;
       p19_state: "likely" | "possible" | "ruled_out" | "unresolved";
       progress:
-        | "uninspected"
-        | "inspection_pending"
-        | "inspected"
+        | "not_inspected"
+        | "inspection_requested"
+        | "inspected_no_evidence"
+        | "support_found"
+        | "contradiction_found"
+        | "discriminator_pending"
+        | "unresolved_after_inspection"
+        | "p19_ruled_out"
         | "needs_driver_answer"
         | "needs_measurement"
-        | "complete"
         | "stale";
       component_ids: string[];
       support_artifact_ids: string[];
       contradiction_artifact_ids: string[];
     }>;
+    latest_critique_outcome: "pass" | "blocked" | "reinvestigate" | "ask_driver" | null;
     last_decision_kind: string | null;
     stale_reason: string | null;
     accepted_workspace_revision: string;
@@ -232,15 +259,67 @@ export type CrewChiefWorkspace = {
     index_hash: string;
   };
   available_tools: CrewChiefToolDefinition[];
+  tool_eligibility: Array<{
+    tool_id: string;
+    currently_relevant: boolean;
+    required_by_mandatory_gate: boolean;
+    expected_to_separate: string[];
+    available_artifact_types: string[];
+    missing_inputs: string[];
+    cost_class: "cheap" | "moderate";
+    safe_priority_tier: string;
+    skip_reason: string | null;
+  }>;
   current_subgoal: null | {
     subgoal_id: string;
     title: string;
     selected_tool: string;
     why_this_tool: string;
     distinguishes_cause_ids: string[];
+    mechanism_ids: string[];
+    bridge_ids: string[];
+    effect_ids: string[];
+    opportunity_id: string | null;
+    required_discriminator_id: string | null;
+    exact_control_keys: string[];
+    experiment_factor_ids: string[];
+    driver_answer_interpretation: DriverAnswerInterpretation | null;
     required_evidence: string[];
     stop_condition: string;
     priority_rank: number;
+  };
+  latest_tool_result: null | {
+    inspection_request_id: string | null;
+    tool_id: string;
+    workspace_revision: string;
+    status: "complete" | "blocked" | "no_finding";
+    summary: string;
+    artifact_ids: string[];
+    cause_ids: string[];
+    component_ids: string[];
+    blocker_reasons: string[];
+    authority_ceiling: "observation_only" | "context_only" | "measurement_only";
+    finding_kind: "support" | "contradiction" | "discriminator" | "negative_control" | "no_signal" | "unavailable";
+    observed_finding: string | null;
+    strongest_support_artifact_ids: string[];
+    strongest_contradiction_artifact_ids: string[];
+    missing_evidence: string[];
+    ambiguity_before: number;
+    ambiguity_after: number;
+    cause_ids_actually_examined: string[];
+    component_ids_actually_examined: string[];
+    recommended_next_inspection: string | null;
+    selection_receipt: null | {
+      selection_policy_id: string;
+      selection_sha256: string;
+      candidate_count: number;
+      selected_count: number;
+      omitted_count: number;
+      selected_artifact_ids: string[];
+      selection_reasons: string[];
+      required_artifact_ids: string[];
+      required_artifacts_present: boolean;
+    };
   };
   critique: {
     outcome: "pass" | "blocked" | "reinvestigate" | "ask_driver";
@@ -255,6 +334,17 @@ export type CrewChiefWorkspace = {
     answer_options: string[];
     reason: string;
     authority: "context_only";
+  };
+  prospective_consumption: null | {
+    baseline_sha256: string;
+    accepted_lap_ids_after_open: string[];
+    measurement_attempt_ids_after_open: string[];
+    tool_request_event_ids: string[];
+    tool_execution_duration_ms: number[];
+    driver_question_ids: string[];
+    continue_action_count: number;
+    workflow_ids_opened_after_open: string[];
+    authority: "operational_counts_only";
   };
   success_contract: null | {
     contract_id: string;

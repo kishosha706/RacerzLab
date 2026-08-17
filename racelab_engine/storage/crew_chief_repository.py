@@ -163,6 +163,56 @@ class CrewChiefRepository:
             connection.close()
         return self.get_investigation(row["investigation_id"]) if row else None
 
+    def record_continue_action(self, investigation_id: str) -> int:
+        """Record one user-requested Continue/bounded-advance action outside P34 events."""
+
+        connection = initialize_database(self.db_path)
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            updated = connection.execute(
+                """
+                UPDATE crew_chief_investigations
+                SET continue_action_count = continue_action_count + 1
+                WHERE investigation_id = ?
+                """,
+                (investigation_id,),
+            )
+            if updated.rowcount != 1:
+                raise CrewChiefIntegrityError(
+                    "Crew Chief continue action has no investigation identity"
+                )
+            row = connection.execute(
+                "SELECT continue_action_count FROM crew_chief_investigations "
+                "WHERE investigation_id = ?",
+                (investigation_id,),
+            ).fetchone()
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        return int(row["continue_action_count"])
+
+    def continue_action_count(self, investigation_id: str) -> int:
+        connection = initialize_database(self.db_path)
+        try:
+            row = connection.execute(
+                "SELECT continue_action_count FROM crew_chief_investigations "
+                "WHERE investigation_id = ?",
+                (investigation_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            raise CrewChiefIntegrityError(
+                "Crew Chief continue action count has no investigation identity"
+            )
+        value = int(row["continue_action_count"])
+        if value < 0:
+            raise CrewChiefIntegrityError("Crew Chief continue action count is corrupt")
+        return value
+
     @classmethod
     def _p34_pair_source_snapshot_sha256(cls, pair: Any) -> str:
         return investigation_adaptation_source_snapshot_sha256(
@@ -370,6 +420,23 @@ class CrewChiefRepository:
             raise
         finally:
             connection.close()
+
+    def append_inspection_trace(
+        self, events: tuple[CrewChiefEvent, ...]
+    ) -> None:
+        """Atomically persist one tool pair and its complete cognitive trace."""
+
+        if (
+            len(events) < 4
+            or events[0].event_type != "tool_invoked"
+            or events[1].event_type != "tool_result_attached"
+            or events[-1].event_type != "critique_completed"
+            or not any(event.event_type == "subgoal_completed" for event in events)
+        ):
+            raise ValueError(
+                "Crew Chief inspection trace requires request, result, subgoal, and critic events."
+            )
+        self.append_events(events)
 
     def append_terminal_event_and_experience(
         self,

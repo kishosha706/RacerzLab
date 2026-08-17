@@ -4,7 +4,7 @@ import { BrainCircuit, CheckCircle2, CircleHelp, Play, RefreshCw, ShieldCheck, X
 import {
   answerCrewChiefQuestion,
   abandonCrewChiefInvestigation,
-  continueCrewChiefInvestigation,
+  advanceCrewChiefInvestigation,
   fetchCrewChiefWorkspace,
   openCrewChiefInvestigation,
   rebaseCrewChiefInvestigation,
@@ -406,6 +406,17 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
     : `${workspace.run_sentinel.mission_accepted_lap_ids.length} contract-accepted lap${workspace.run_sentinel.mission_accepted_lap_ids.length === 1 ? "" : "s"} · basis ${humanize(workspace.run_sentinel.mission_acceptance_basis)}`;
   const measurementAttempts = `${workspace.run_sentinel.measurement_attempt_ids.length} measurement attempt${workspace.run_sentinel.measurement_attempt_ids.length === 1 ? "" : "s"}`;
   const activeObjective = workspace.folded_state?.objective ?? objective;
+  const toolEligibility = workspace.tool_eligibility ?? [];
+  const activeEligibility = workspace.current_subgoal == null
+    ? null
+    : toolEligibility.find(
+      (item) => item.tool_id === workspace.current_subgoal?.selected_tool,
+    ) ?? null;
+  const relevantTools = toolEligibility.filter((item) => item.currently_relevant);
+  const driverInterpretations = workspace.folded_state?.driver_answer_interpretations ?? [];
+  const latestDriverInterpretation = driverInterpretations.length
+    ? driverInterpretations[driverInterpretations.length - 1]
+    : null;
   const opportunityEvidence = new Map(
     workspace.evidence_index.entries
       .filter((item) => item.producer_id === "p32.lap_time_opportunity")
@@ -572,6 +583,10 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
         </div>
       ) : workspace.folded_state?.status === "open" ? (
         <div className="crew-chief-lifecycle">
+          {workspace.current_subgoal && <p className="crew-chief-active-subgoal">
+            <b>NEXT INSPECTION</b> {workspace.current_subgoal.title.replace(/^Inspect /, "")}
+            {activeEligibility?.required_by_mandatory_gate && <small>Mandatory integrity/context gate</small>}
+          </p>}
           <label>Investigation objective
             <select
               value={workspace.folded_state.objective}
@@ -584,11 +599,11 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
           <button
             type="button"
             disabled={busy}
-            onClick={() => { void runMutation(() => continueCrewChiefInvestigation(
+            onClick={() => { void runMutation(() => advanceCrewChiefInvestigation(
               runId, sessionId, investigationId!, revision, report, scopeRunIds,
               activeObjective,
             )); }}
-          ><Play size={14} /> {workspace.current_subgoal ? "Run next inspection" : "Emit bounded decision"}</button>
+          ><Play size={14} /> {busy ? "Working the problem…" : workspace.current_subgoal ? "Work to next boundary" : "Continue to boundary"}</button>
           <button type="button" disabled={busy} onClick={() => { void runMutation(() => abandonCrewChiefInvestigation(
             runId, sessionId, investigationId!, revision, "Abandoned explicitly by driver.", report, scopeRunIds,
             activeObjective,
@@ -825,7 +840,41 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
           <section><h3>Objective envelope</h3><p>Primary: {performance.objective_envelope.primary_outcomes.join(", ")}</p><small>Protected: {performance.objective_envelope.protected_outcomes.join(", ")}. Objective changes policy, not measured physics.</small></section>
           <section><h3>Strongest contradiction</h3><p>{performance.explanation_chain.strongest_contradiction}</p><small>Generic component relevance cannot authorize setup. P19 next: {performance.explanation_chain.p19_next_move}</small></section>
           <section><h3>Mission ribbon</h3><p>{workspace.run_sentinel.mission}</p><small>State {missionState} · Stage {workspace.run_sentinel.stage} · {contextClearedLaps} · {missionAcceptance} · {measurementAttempts}</small></section>
-          <section><h3>Critic</h3><p>{workspace.critique.passed ? "Authority and identity checks passed." : workspace.critique.findings.join(" ")}</p></section>
+          {workspace.investigation && <section>
+            <h3>Investigation path</h3>
+            {workspace.current_subgoal ? <>
+              <p><b>{workspace.current_subgoal.title}</b> · tier {activeEligibility?.safe_priority_tier.replace(/_/g, " ") ?? "verified"}</p>
+              <small>{workspace.current_subgoal.why_this_tool}</small>
+              <small>{workspace.current_subgoal.required_evidence.join(" · ")}</small>
+            </> : <p>The deterministic planner is at a driver, evidence, or P19 terminal boundary.</p>}
+            <small>{relevantTools.length} reachable inspection{relevantTools.length === 1 ? "" : "s"}; {toolEligibility.length - relevantTools.length} explicitly skipped or complete.</small>
+            {latestDriverInterpretation && <small>
+              Driver scope: {latestDriverInterpretation.context_record_only
+                ? "context only"
+                : [
+                  latestDriverInterpretation.phase_scope.join("/"),
+                  latestDriverInterpretation.response_regime_scope.join("/"),
+                  latestDriverInterpretation.traffic_scope,
+                  latestDriverInterpretation.stint_scope,
+                  latestDriverInterpretation.power_state_scope,
+                  latestDriverInterpretation.time_origin_scope,
+                ].filter((item) => item && item !== "all").join(" · ") || "all typed contexts"}.
+            </small>}
+          </section>}
+          {workspace.latest_tool_result && <section>
+            <h3>Latest inspection · {workspace.latest_tool_result.finding_kind.replace(/_/g, " ")}</h3>
+            <p>{workspace.latest_tool_result.observed_finding ?? workspace.latest_tool_result.summary}</p>
+            <small>Ambiguity {workspace.latest_tool_result.ambiguity_before} → {workspace.latest_tool_result.ambiguity_after}. {workspace.latest_tool_result.missing_evidence[0] ?? "No additional evidence debt recorded by this inspection."}</small>
+            {workspace.latest_tool_result.selection_receipt && <small>
+              Selected {workspace.latest_tool_result.selection_receipt.selected_count}/{workspace.latest_tool_result.selection_receipt.candidate_count} exact artifacts · required evidence {workspace.latest_tool_result.selection_receipt.required_artifacts_present ? "present" : "missing"}.
+            </small>}
+          </section>}
+          <section><h3>Critic · {(workspace.critique.outcome ?? (workspace.critique.passed ? "pass" : "blocked")).replace(/_/g, " ")}</h3><p>{workspace.critique.passed ? "Mandatory context, contradiction, and authority checks passed." : workspace.critique.findings.join(" ")}</p></section>
+          {workspace.prospective_consumption && <section>
+            <h3>Post-open consumption · operational only</h3>
+            <p>{workspace.prospective_consumption.tool_request_event_ids.length} tool requests · {workspace.prospective_consumption.continue_action_count} driver continue actions · {workspace.prospective_consumption.driver_question_ids.length} questions</p>
+            <small>{workspace.prospective_consumption.accepted_lap_ids_after_open.length} new accepted laps · {workspace.prospective_consumption.measurement_attempt_ids_after_open.length} new measurement attempts · {workspace.prospective_consumption.workflow_ids_opened_after_open.length} workflows opened.</small>
+          </section>}
           <section><h3>P19 collection contract</h3>{workspace.p19_mission_contract
             ? <><p>{workspace.p19_mission_contract.acceptance_thresholds.join("; ")}</p><small>{workspace.p19_mission_contract.contract_id}</small></>
             : workspace.success_contract

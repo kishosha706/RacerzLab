@@ -770,6 +770,7 @@ CREATE TABLE IF NOT EXISTS crew_chief_investigations (
   opened_at TEXT NOT NULL,
   event_count INTEGER NOT NULL DEFAULT 0,
   event_head_hash TEXT,
+  continue_action_count INTEGER NOT NULL DEFAULT 0,
   investigation_json TEXT NOT NULL,
   FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
 );

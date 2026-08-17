@@ -72,6 +72,7 @@ result, and remember only what the evidence supports.
 | P35 - Next Gen Oval Vehicle Dynamics Intelligence | Verified deterministic mechanical-intelligence foundation | One reviewed, build-applicable physics graph connects driver demand, vehicle response, tire/platform state, candidate mechanisms, and measured P32 time without gaining component, cause, or setup authority |
 | P35.1 - Unified Dial-In Knowledge Spine | Verified deterministic engineering-knowledge foundation | One content-addressed projection connects exact P32 time, P20 state, P35 mechanisms, P26 components, all 92 Dial-In effects, P19/P33 history, bounded discriminators, and exact P19 authority without turning education into advice |
 | P35.2 - Semantic Precision and Release Trust | Verified locally; remote SHA validation awaits the next push | Direction, experiment factor, component relevance, semantic roles, runtime evidence, physical scope, client trust, and normal CI gates are exact without changing P19 authority |
+| P35.3 - Inner Crew Chief Cognitive Closure | Verified locally; remote SHA validation awaits the next push | Reachability-aware planning, exact cause state, typed inspection traces, bounded critic outcomes, driver-answer semantics, and post-open consumption counts close the deterministic investigation loop without changing P19 or frozen P34 authority |
 | P36 - Prospective Investigation Evidence Campaigns | Planned; evidence collection remains data-locked | Qualified prospective campaigns produce the independent recurrence, controls, subgroups, and observable comparisons required before learned investigation ordering can earn promotion |
 
 ---
@@ -2552,6 +2553,56 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   remotely green until they are intentionally committed/pushed and the new exact
   SHA completes Actions successfully.
 
+## P35.3 - Inner Crew Chief Cognitive Closure
+
+- [x] Make every advertised inspection tool either reachable for the current
+  typed subgoal or explicitly non-executable with its missing inputs and skip
+  reason. Required context, the strongest contradiction, exact P35.1 mechanism
+  knowledge, and exact P19 control/experiment factors cannot disappear behind a
+  broad artifact cap or a nonexistent producer.
+- [x] Replace scheduled-tool coverage with exact cause cognition. Causes now
+  distinguish not inspected, requested, inspected without evidence, supported,
+  contradicted, discriminator pending, unresolved after inspection, and exact
+  P19 ruled-out state. Only a typed request/result/artifact/cause relationship can
+  advance current coverage; historical P34 markers remain readable but inert.
+- [x] Persist a complete deterministic cognitive trace: problem interpretation,
+  hypothesis registration, request, typed result and selection receipt,
+  hypothesis inspection, contradiction, subgoal completion, critique, driver
+  dialogue, and terminal decision. One bounded `advance-until-boundary` operation
+  performs safe mandatory work and stops at a driver, evidence, traffic, stale,
+  blocked, or terminal boundary.
+- [x] Give the critic real `pass`, `blocked`, `reinvestigate`, and `ask_driver`
+  outcomes without granting it setup authority. Driver answers carry typed phase,
+  transient/steady-state, traffic, stint, power-state, time-origin, and demand
+  semantics or are explicitly context-only.
+- [x] Freeze an investigation-open consumption baseline and expose only exact
+  post-open accepted laps, measurement attempts, requests/durations, questions,
+  continue actions, and workflows for the future P36 campaign. P34 v1 outcome
+  certificates and promotion rules remain unchanged, and P19 remains the sole
+  cause, experiment, setup, and terminal-action authority.
+
+### P35.3 release validation - VERIFIED LOCALLY 2026-08-17
+
+- Whole repository: 2,734 Python tests were collected; 2,729 passed and five
+  protected tests skipped, with zero failures. The frozen P34 suite and 11
+  dedicated P35.3 cause, driver, critic, selection, persistence, and compatibility
+  tests passed. Whole-repository Ruff and diff integrity passed.
+- Frontend: TypeScript reported zero errors, all 30 Vitest behaviors passed, the
+  executable Crew trust guard and both real Atlanta public-workspace trust cases
+  passed, and the production build completed with 2,208 modules.
+- Operational proof: a persisted Atlanta workspace opened exact P19 hypotheses,
+  completed mandatory data-quality and lap-context inspections, recorded typed
+  support and consumption events, stopped at the traffic boundary, and preserved
+  the underlying P19 decision while the Crew presentation failed safe.
+- End-to-end polish: typed driver scope now changes the next physical inspection,
+  persisted critique must equal reconstructed critique, server and client both
+  enforce ordered eligibility plus exact selection receipts, one driver continue
+  action remains one count across restart, and each new typed result records its
+  measured execution duration. Learning Mode exposes the active subgoal, evidence
+  gate, eligibility, receipt, and post-open consumption without widening authority.
+- Remote status: these local changes are not labeled remotely green until they
+  are intentionally committed/pushed and the new exact SHA passes Actions.
+
 ## P36 - Prospective Investigation Evidence Campaigns
 
 - [ ] Run the preregistered prospective campaigns needed to test whether learned
@@ -2683,3 +2734,5 @@ Implementation queue completed in this pass:
 | 2026-08-15 | Polished the P35 Race/Learning vehicle-dynamics handoff | Race Mode keeps its four-field decision hierarchy and one compact `READY`/`BLOCKED`/`UNAVAILABLE` vehicle-dynamics line; Learning Mode now separates measured time from unresolved attribution, labels uncertainty honestly, presents blocked component families only as a static possibility map, exposes exact channels through keyboard-accessible disclosures, and presents the next bounded inspection with its exact current source context, evidence scope, and blocker without inventing observation-contract requirements. Twenty-nine UI tests, six focused P35 frontend contracts, TypeScript, the 2,205-module production build, diff integrity, and live traffic-blocked Atlanta checks at 1280 x 720 and 393 x 844 passed with no horizontal clipping, vertical overlap, or browser warnings. P19 remains the sole cause and setup authority. |
 | 2026-08-16 | Verified P35.1 Unified Dial-In Knowledge Spine | One content-addressed 92-effect bridge now connects the canonical P32 opportunity, P20 state, P35 mechanisms, P26 components, direction-neutral Dial-In knowledge, exact P19/P33 history, bounded discriminators, controlled workflow, and P19 without adding another observer or authority path. The coverage report contains 64 measurable hypotheses, 22 structurally P19-testable controls, six explicitly removed legacy Next Gen effects, and zero gaps; actionless knowledge remains visible but cannot carry a target. The isolated 2,709-test collection passed with 2,700 successes and nine protected skips, plus 11 focused backend hostiles, four frontend contracts, three executable trust guards, 30 UI behaviors, whole-repo Ruff, temporary bytecode compilation, TypeScript, the 2,207-module build, stable 86-path/94-operation OpenAPI, and diff integrity. P19 remains the sole cause, setup, controlled-test, Keep/Undo/Retest, and terminal authority. |
 | 2026-08-16 | Verified P35.2 Semantic Precision and Release Trust locally | Exact effect/control/direction/factor matching, P26 relevance partitions, five distinct semantic roles, separate static/runtime truth axes, canonical session-bound producer ownership, fail-closed physical segment sets, diversity-aware Learning selection, and a compiler-pinned client registry close the precision findings without changing P19 authority. The isolated 2,723-test collection passed with 2,714 successes and nine protected skips, plus the permanent synthetic trust audit, whole-repo Ruff, three executable client guards, TypeScript, 30 UI behaviors, the 2,208-module build, CI-policy checks, and diff integrity. Remote `main` remains the prior failing SHA until these repairs are intentionally pushed and the new exact SHA passes Actions. |
+| 2026-08-16 | Verified P35.3 Inner Crew Chief Cognitive Closure locally | The deterministic Crew now selects reachable typed evidence against exact subgoals, records request/result/cause/contradiction/critique traces, preserves typed driver-answer scope, stops bounded batch work at real evidence or driver boundaries, and exposes post-open operational consumption without changing P19 or frozen P34 authority. The complete 2,728-test collection passed with 2,723 successes and five protected skips, plus five new hostiles, the frozen P34 suite, whole-repository Ruff, TypeScript, 30 UI behaviors, executable and real-fixture client trust, the 2,208-module build, real Atlanta boundary proof, and diff integrity. Remote validation awaits an intentional push and green Actions result for the new exact SHA. |
+| 2026-08-17 | Polished P35.3 end-to-end wiring locally | Typed driver scope now materially orders the next physical inspection while P19 cause truth remains unchanged; reconstructed and persisted critic state must agree; eligibility order, active relevance, exact selection receipts, strongest contradictions, and measured tool durations fail closed across server and client; and one persisted driver continue action remains one count even when bounded work emits multiple trace events. Learning Mode now exposes the active subgoal, evidence gate, eligibility, selection receipt, and post-open resource use. The full 2,734-test collection completed with 2,729 passes and five protected skips, plus 11 dedicated P35.3 tests, the frozen P34 suite, whole-repository Ruff, frontend contract fixtures, TypeScript, 30 UI behaviors, the 2,208-module build, real Atlanta boundary proof, and diff integrity. P19 and frozen P34 authority remain unchanged; remote validation still awaits an intentional push and green Actions result. |

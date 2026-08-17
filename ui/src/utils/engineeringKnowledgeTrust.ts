@@ -296,7 +296,8 @@ function hypothesis(
     || JSON.stringify(value.support_artifact_ids) !== JSON.stringify(expectedSupport)
     || JSON.stringify(value.contradiction_artifact_ids) !== JSON.stringify(expectedContradiction)
     || JSON.stringify(value.discriminator_contract_ids) !== JSON.stringify(expectedDiscriminators)
-    || !possibleComponents.every((item) => workspace.p26_component_ids.includes(item))
+    || (p26 !== null
+      && !possibleComponents.every((item) => workspace.p26_component_ids.includes(item)))
     || JSON.stringify(value.current_candidate_component_ids) !== JSON.stringify(expectedPartitions.candidate)
     || JSON.stringify(value.current_supported_component_ids) !== JSON.stringify(expectedPartitions.supported)
     || JSON.stringify(value.contradicted_component_ids) !== JSON.stringify(expectedPartitions.contradicted)
@@ -350,7 +351,8 @@ export function isCurrentEngineeringKnowledgeProjection(
   if (!value.hypotheses.every((item) => hypothesis(item, workspace, p26))) return false;
   const effectIds = value.hypotheses.map((item) => item.effect_id);
   const expectedEffectIds = ENGINEERING_KNOWLEDGE_STATIC_REGISTRY.map((item) => item.effectId);
-  if (JSON.stringify(effectIds) !== JSON.stringify(expectedEffectIds)) return false;
+  if (effectIds.length !== expectedEffectIds.length
+    || expectedEffectIds.some((effectId) => !effectIds.includes(effectId))) return false;
   if (new Set(effectIds).size !== effectIds.length) return false;
   const bridgeIds = value.hypotheses.map((item) => item.bridge_id);
   if (new Set(bridgeIds).size !== bridgeIds.length) return false;
@@ -488,7 +490,8 @@ export function isStandaloneEngineeringKnowledgeProjection(
   const bridgeIds = hypotheses.map((item) => (item as Record<string, unknown>).bridge_id);
   const leading = value.leading_hypothesis_ids as string[];
   const expectedEffectIds = ENGINEERING_KNOWLEDGE_STATIC_REGISTRY.map((item) => item.effectId);
-  return JSON.stringify(effectIds) === JSON.stringify(expectedEffectIds)
+  return effectIds.length === expectedEffectIds.length
+    && expectedEffectIds.every((effectId) => effectIds.includes(effectId))
     && new Set(effectIds).size === 92 && new Set(bridgeIds).size === 92
     && leading.every((item) => effectIds.includes(item))
     && hypotheses.filter((item) => record(item) && item.level === "p19_testable_control").length <= 1;

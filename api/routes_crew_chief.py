@@ -11,6 +11,7 @@ from racelab_engine.models.crew_chief import (
 )
 from racelab_engine.services.crew_chief_service import (
     abandon_investigation,
+    advance_until_boundary,
     build_crew_chief_workspace,
     continue_investigation,
     open_investigation,
@@ -41,6 +42,10 @@ class RevisionRequest(CrewChiefRequest):
 
 class DriverAnswerRequest(RevisionRequest):
     answer: str = Field(min_length=1, max_length=160)
+
+
+class AdvanceRequest(RevisionRequest):
+    max_read_only_steps: int = Field(default=4, ge=1, le=4)
 
 
 class ObjectiveRequest(RevisionRequest):
@@ -120,6 +125,27 @@ def continue_crew_chief_investigation(
             investigation_id,
             session_id=request.session_id,
             expected_workspace_revision=request.expected_workspace_revision,
+        )
+    except ValueError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post(
+    "/{run_id}/crew-chief-investigations/{investigation_id}/advance-until-boundary",
+    response_model=CrewChiefWorkspace,
+)
+def advance_crew_chief_investigation(
+    run_id: Annotated[str, ApiPath(min_length=1, max_length=160)],
+    investigation_id: Annotated[str, ApiPath(min_length=1, max_length=160)],
+    request: AdvanceRequest,
+) -> CrewChiefWorkspace:
+    try:
+        return advance_until_boundary(
+            run_id,
+            investigation_id,
+            session_id=request.session_id,
+            expected_workspace_revision=request.expected_workspace_revision,
+            max_read_only_steps=request.max_read_only_steps,
         )
     except ValueError as exc:
         raise _http_error(exc) from exc

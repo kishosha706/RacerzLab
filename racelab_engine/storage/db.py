@@ -93,6 +93,7 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
           opened_at TEXT NOT NULL,
           event_count INTEGER NOT NULL DEFAULT 0,
           event_head_hash TEXT,
+          continue_action_count INTEGER NOT NULL DEFAULT 0,
           investigation_json TEXT NOT NULL,
           FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
         );
@@ -476,6 +477,12 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
             "crew_chief_investigations",
             "event_head_hash",
             "event_head_hash TEXT",
+        )
+        _add_column_if_missing(
+            connection,
+            "crew_chief_investigations",
+            "continue_action_count",
+            "continue_action_count INTEGER NOT NULL DEFAULT 0",
         )
         if needs_stream_head_backfill:
             connection.execute(

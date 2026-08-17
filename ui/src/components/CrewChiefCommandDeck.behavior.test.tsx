@@ -12,7 +12,7 @@ vi.mock("../api/client", () => ({
   fetchCrewChiefWorkspace: api.fetchCrewChiefWorkspace,
   answerCrewChiefQuestion: vi.fn(),
   abandonCrewChiefInvestigation: vi.fn(),
-  continueCrewChiefInvestigation: vi.fn(),
+  advanceCrewChiefInvestigation: vi.fn(),
   openCrewChiefInvestigation: vi.fn(),
   rebaseCrewChiefInvestigation: vi.fn(),
   updateCrewChiefObjective: vi.fn(),
