@@ -131,6 +131,12 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Create compile-time sidecar resource placeholder
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path ui/src-tauri/bin | Out-Null
+          New-Item -ItemType File -Force -Path ui/src-tauri/bin/racerzlab-backend.exe | Out-Null
+
       - name: Compile the desktop shell
         run: cargo check --manifest-path ui/src-tauri/Cargo.toml --locked
 
