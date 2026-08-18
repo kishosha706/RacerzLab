@@ -15,6 +15,7 @@ from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.performance_intelligence import TimeOriginKind
 from racelab_engine.models.vehicle_dynamics_knowledge import (
     DynamicsChainStageKind,
+    PhaseResponseMetric,
     PerformanceMechanismAssessment,
     QuantitySemantics,
     TireDemandLevel,
@@ -26,7 +27,10 @@ from racelab_engine.models.vehicle_dynamics_knowledge import (
     VehicleDynamicsNodeKind,
     VehicleDynamicsPhase,
     VehicleDynamicsRuntimeTrustManifest,
+    build_phase_response_metric,
     build_performance_mechanism_assessment,
+    build_vehicle_problem_signature,
+    build_vehicle_response_observation,
     build_vehicle_dynamics_knowledge_graph,
     performance_mechanism_assessment_hash,
     vehicle_dynamics_graph_hash,
@@ -85,7 +89,7 @@ def _assessment() -> PerformanceMechanismAssessment:
         evidence_state=EvidenceState.MEASURED,
         source_artifact_ids=("crew:response",),
         source_channels=("yaw_rate",),
-        lap_numbers=(4, 8),
+        lap_numbers=(4,),
         lap_pct_start=32.0,
         lap_pct_end=41.0,
         phase="center",
@@ -95,15 +99,108 @@ def _assessment() -> PerformanceMechanismAssessment:
     uncertainty = VehicleDynamicsFocusArtifact(
         artifact_id=f"p35.focus.steady_state_balance:{'2' * 24}",
         mechanism_id=mechanism.definition_id,
+        inspection_tool_id=mechanism.inspection_tool_id,
+        stage=DynamicsChainStageKind.TIRE_PLATFORM_STATE,
+        evidence_state=EvidenceState.NEEDS_CONFIRMATION,
+        source_artifact_ids=("opportunity:center",),
+        source_channels=("session_time",),
+        lap_numbers=(4, 8),
+        lap_pct_start=32.0,
+        lap_pct_end=41.0,
+        phase="center",
+        polarity="uncertainty",
+        summary="Tire-state and roll-platform candidates remain unresolved.",
+        blocker_reasons=("The required tire/platform discriminator is incomplete.",),
+    )
+    discriminator_focus = VehicleDynamicsFocusArtifact(
+        artifact_id=f"p35.focus.steady_state_balance:{'3' * 24}",
+        mechanism_id=mechanism.definition_id,
         observation_contract_id=discriminator,
         inspection_tool_id=mechanism.inspection_tool_id,
         stage=DynamicsChainStageKind.TIRE_PLATFORM_STATE,
         evidence_state=EvidenceState.NEEDS_CONFIRMATION,
-        source_artifact_ids=("crew:tire",),
-        source_channels=("steering_deg",),
-        polarity="uncertainty",
-        summary="Tire-state and roll-platform candidates remain unresolved.",
+        source_artifact_ids=("opportunity:center",),
+        source_channels=("session_time",),
+        lap_numbers=(4, 8),
+        lap_pct_start=32.0,
+        lap_pct_end=41.0,
+        phase="center",
+        polarity="neutral",
+        summary="The exact tire/platform observation is the next discriminator.",
         blocker_reasons=("The required tire/platform discriminator is incomplete.",),
+    )
+    metrics = (
+        build_phase_response_metric(
+            {
+                "quantity": "elapsed_time_delta_s",
+                "value": 0.1,
+                "units": "s",
+                "semantics": "calculated_delta",
+                "source_channels": ("session_time",),
+            }
+        ),
+        build_phase_response_metric(
+            {
+                "quantity": "steering_wheel_demand_delta_deg",
+                "value": 2.0,
+                "units": "deg",
+                "semantics": "measured_delta",
+                "source_channels": ("steering_deg",),
+            }
+        ),
+        build_phase_response_metric(
+            {
+                "quantity": "yaw_rate_response_delta_rad_s",
+                "value": -0.1,
+                "units": "rad/s",
+                "semantics": "measured_delta",
+                "source_channels": ("yaw_rate",),
+            }
+        ),
+    )
+    response = build_vehicle_response_observation(
+        {
+            "opportunity_id": "opportunity:center",
+            "run_id": "run-1",
+            "source_lap_numbers": (4,),
+            "reference_lap_numbers": (8,),
+            "phase": "center",
+            "lap_pct_start": 32.0,
+            "lap_pct_end": 41.0,
+            "onset_pct": 32.0,
+            "response_regime": "steady_state",
+            "driver_demand_state": "matched",
+            "vehicle_response_state": "changed",
+            "line_state": "matched",
+            "context_state": "qualified",
+            "persistence": "phase_local",
+            "metrics": metrics,
+            "source_artifact_ids": (
+                "opportunity:center",
+                "crew:driver",
+                "crew:response",
+            ),
+            "source_channels": ("session_time", "steering_deg", "yaw_rate"),
+            "evidence_state": "measured",
+        }
+    )
+    signature = build_vehicle_problem_signature(
+        {
+            "response_observation_id": response.observation_id,
+            "opportunity_id": "opportunity:center",
+            "time_origin": "local_generation",
+            "local_time_delta_s": 0.1,
+            "phase": "center",
+            "onset_pct": 32.0,
+            "response_regime": "steady_state",
+            "driver_demand_state": "matched",
+            "vehicle_response_state": "changed",
+            "line_state": "matched",
+            "traffic_dependence": "clear",
+            "strongest_contradiction": (
+                "The required tire/platform discriminator is incomplete."
+            ),
+        }
     )
     return build_performance_mechanism_assessment(
         {
@@ -132,6 +229,24 @@ def _assessment() -> PerformanceMechanismAssessment:
             "tire_demand_state_ids": ("tire_demand:high_relative_demand",),
             "load_path_ids": ("load_path:center",),
             "response_regime": "steady_state",
+            "response_observations": (response,),
+            "problem_signature": signature,
+            "mechanism_separation": (
+                {
+                    "mechanism_id": mechanism.definition_id,
+                    "response_observation_id": response.observation_id,
+                    "required_response_kpi_ids": (discriminator,),
+                    "support_artifact_ids": (support.artifact_id,),
+                    "contradiction_artifact_ids": (uncertainty.artifact_id,),
+                    "missing_evidence": (
+                        "The required tire/platform discriminator is incomplete.",
+                    ),
+                    "discriminator_contract_ids": mechanism.discriminator_contract_ids,
+                    "protected_countereffects": mechanism.expected_countereffects,
+                    "component_family_ids": mechanism.p26_component_family_ids,
+                    "state": "alive",
+                },
+            ),
             "candidates": (
                 {
                     "mechanism_id": mechanism.definition_id,
@@ -143,7 +258,7 @@ def _assessment() -> PerformanceMechanismAssessment:
                     "relevance": "candidate",
                 },
             ),
-            "focus_artifacts": (support, uncertainty),
+            "focus_artifacts": (support, uncertainty, discriminator_focus),
             "strongest_support_artifact_id": support.artifact_id,
             "strongest_contradiction_artifact_id": uncertainty.artifact_id,
             "next_discriminator_contract_id": discriminator,
@@ -945,7 +1060,7 @@ def test_assessment_rejects_orphan_and_cross_mechanism_focus_artifacts() -> None
     assessment = _assessment()
     orphan = assessment.focus_artifacts[1].model_copy(
         update={
-            "artifact_id": f"p35.focus.steady_state_balance:{'3' * 24}",
+            "artifact_id": f"p35.focus.steady_state_balance:{'4' * 24}",
             "observation_contract_id": None,
         }
     )
@@ -956,7 +1071,7 @@ def test_assessment_rejects_orphan_and_cross_mechanism_focus_artifacts() -> None
 
     swapped = assessment.focus_artifacts[1].model_copy(
         update={
-            "artifact_id": f"p35.focus.steady_state_balance:{'4' * 24}",
+            "artifact_id": f"p35.focus.steady_state_balance:{'5' * 24}",
             "mechanism_id": "mechanism:foreign",
             "polarity": "neutral",
         }
@@ -968,16 +1083,51 @@ def test_assessment_rejects_orphan_and_cross_mechanism_focus_artifacts() -> None
 
 
 def test_traffic_blocked_assessment_retains_candidates_without_fake_support() -> None:
-    payload = _assessment().model_dump(mode="json", exclude={"p35_assessment_sha256"})
+    assessment = _assessment()
+    payload = assessment.model_dump(mode="json", exclude={"p35_assessment_sha256"})
     payload["candidates"][0]["relevance"] = "blocked"  # type: ignore[index]
     payload["candidates"][0]["support_artifact_ids"] = []  # type: ignore[index]
     payload["candidates"][0]["blocker_reasons"] = ["Traffic blocks attribution."]  # type: ignore[index]
-    payload["focus_artifacts"] = [payload["focus_artifacts"][1]]  # type: ignore[index]
+    payload["mechanism_separation"][0]["state"] = "blocked"  # type: ignore[index]
+    payload["mechanism_separation"][0]["support_artifact_ids"] = []  # type: ignore[index]
+    payload["mechanism_separation"][0]["missing_evidence"] = [  # type: ignore[index]
+        "Traffic blocks attribution."
+    ]
+    payload["focus_artifacts"] = payload["focus_artifacts"][1:]  # type: ignore[index]
+    for focus in payload["focus_artifacts"]:  # type: ignore[union-attr]
+        focus["evidence_state"] = "blocked_by_context"
     payload["strongest_support_artifact_id"] = None
     payload["traffic_blocked"] = True
     payload["blocker_reasons"] = ["Traffic blocks vehicle-dynamics attribution."]
     payload["chain"][3]["evidence_state"] = "blocked_by_context"  # type: ignore[index]
     payload["chain"][3]["blocker_reasons"] = ["Traffic contaminates tire/platform state."]  # type: ignore[index]
+    response = build_vehicle_response_observation(
+        {
+            **assessment.response_observations[0].model_dump(
+                mode="json", exclude={"observation_id", "context_state", "blocker_reasons", "evidence_state"}
+            ),
+            "context_state": "blocked",
+            "blocker_reasons": ("Traffic blocks attribution.",),
+            "evidence_state": "blocked_by_context",
+        }
+    )
+    signature = build_vehicle_problem_signature(
+        {
+            **assessment.problem_signature.model_dump(
+                mode="json",
+                exclude={
+                    "signature_id",
+                    "response_observation_id",
+                    "traffic_dependence",
+                },
+            ),
+            "response_observation_id": response.observation_id,
+            "traffic_dependence": "blocked",
+        }
+    )
+    payload["response_observations"] = [response.model_dump(mode="json")]
+    payload["problem_signature"] = signature.model_dump(mode="json")
+    payload["mechanism_separation"][0]["response_observation_id"] = response.observation_id  # type: ignore[index]
 
     blocked = build_performance_mechanism_assessment(payload)
 
@@ -1002,3 +1152,129 @@ def test_all_fourteen_inspection_tools_are_typed_and_covered() -> None:
             graph.mechanism(mechanism_id).inspection_tool_id is contract.inspection_tool_id
             for mechanism_id in direct
         )
+
+
+def test_phase_response_rejects_force_like_and_snapshot_channel_smuggling() -> None:
+    metric = build_phase_response_metric(
+        {
+            "quantity": "yaw_rate_response_delta_rad_s",
+            "value": -0.02,
+            "units": "rad/s",
+            "semantics": "measured_delta",
+            "source_channels": ("YawRate",),
+        }
+    )
+    with pytest.raises(ValidationError, match="research/display-only physics"):
+        build_vehicle_response_observation(
+            {
+                "opportunity_id": "p32o:test",
+                "run_id": "run-1",
+                "source_lap_numbers": (4,),
+                "reference_lap_numbers": (5,),
+                "phase": "center",
+                "lap_pct_start": 20.0,
+                "lap_pct_end": 30.0,
+                "onset_pct": 20.0,
+                "response_regime": "steady_state",
+                "driver_demand_state": "matched",
+                "vehicle_response_state": "changed",
+                "line_state": "matched",
+                "context_state": "qualified",
+                "persistence": "phase_local",
+                "metrics": (metric,),
+                "source_artifact_ids": ("p32o:test",),
+                "source_channels": ("YawRate", "front_slip_angle_deg"),
+                "evidence_state": "measured",
+            }
+        )
+
+    with pytest.raises(ValidationError, match="match the measured quantity"):
+        PhaseResponseMetric.model_validate(
+            {
+                **metric.model_dump(mode="json"),
+                "source_channels": ["rf_carcass_temp_m"],
+            }
+        )
+
+
+def test_p354_nested_identity_scope_and_candidate_contracts_fail_closed() -> None:
+    assessment = _assessment()
+    response = assessment.response_observations[0]
+    signature = assessment.problem_signature
+    assert signature is not None
+
+    metric_payload = response.metrics[0].model_dump(mode="json")
+    metric_payload["value"] = 99.0
+    with pytest.raises(ValidationError, match="metric ID does not match"):
+        PhaseResponseMetric.model_validate(metric_payload)
+
+    with pytest.raises(ValidationError, match="units do not match"):
+        build_phase_response_metric(
+            {
+                "quantity": "yaw_rate_response_delta_rad_s",
+                "value": -0.1,
+                "units": "mph",
+                "semantics": "measured_delta",
+                "source_channels": ("yaw_rate",),
+            }
+        )
+
+    payload = assessment.model_dump(mode="json", exclude={"p35_assessment_sha256"})
+    payload["response_observations"] = []
+    payload["problem_signature"] = None
+    payload["mechanism_separation"] = []
+    with pytest.raises(ValidationError, match="candidates require one phase-response"):
+        build_performance_mechanism_assessment(payload)
+
+    payload = assessment.model_dump(mode="json", exclude={"p35_assessment_sha256"})
+    payload["mechanism_separation"][0]["required_response_kpi_ids"] = [  # type: ignore[index]
+        "observation:foreign"
+    ]
+    with pytest.raises(ValidationError, match="exactly mirror its candidate"):
+        build_performance_mechanism_assessment(payload)
+
+    drifted_signature = build_vehicle_problem_signature(
+        {
+            **signature.model_dump(
+                mode="json", exclude={"signature_id", "driver_demand_state"}
+            ),
+            "driver_demand_state": "mixed",
+        }
+    )
+    payload = assessment.model_dump(mode="json", exclude={"p35_assessment_sha256"})
+    payload["problem_signature"] = drifted_signature.model_dump(mode="json")
+    with pytest.raises(ValidationError, match="exactly mirror response truth"):
+        build_performance_mechanism_assessment(payload)
+
+    foreign_response = build_vehicle_response_observation(
+        {
+            **response.model_dump(
+                mode="json", exclude={"observation_id", "source_artifact_ids"}
+            ),
+            "source_artifact_ids": (
+                response.opportunity_id,
+                "p32:foreign-chain",
+            ),
+        }
+    )
+    rebound_signature = build_vehicle_problem_signature(
+        {
+            **signature.model_dump(
+                mode="json", exclude={"signature_id", "response_observation_id"}
+            ),
+            "response_observation_id": foreign_response.observation_id,
+        }
+    )
+    payload = assessment.model_dump(mode="json", exclude={"p35_assessment_sha256"})
+    payload["response_observations"] = [foreign_response.model_dump(mode="json")]
+    payload["problem_signature"] = rebound_signature.model_dump(mode="json")
+    payload["mechanism_separation"][0]["response_observation_id"] = (  # type: ignore[index]
+        foreign_response.observation_id
+    )
+    with pytest.raises(ValidationError, match="sources must resolve through the chain"):
+        build_performance_mechanism_assessment(payload)
+
+    payload = assessment.model_dump(mode="json", exclude={"p35_assessment_sha256"})
+    payload["focus_artifacts"][0]["lap_numbers"] = [8]  # type: ignore[index]
+    with pytest.raises(ValidationError, match="support focus must match source response"):
+        build_performance_mechanism_assessment(payload)

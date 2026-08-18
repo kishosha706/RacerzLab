@@ -14,11 +14,13 @@ from api.intelligence_adapter import (
     to_public_intelligence_navigation,
     to_public_intelligence_report,
     to_public_mind_change_criterion,
+    to_public_next_trustworthy_move,
 )
 from api.intelligence_schemas import (
     IntelligenceCitationResponse,
     IntelligenceQueryRequest,
     IntelligenceQueryResponse,
+    IntelligenceShellProjectionResponse,
     MeasurementAttemptRequest,
     MeasurementAttemptResponse,
     RunIntelligenceResponse,
@@ -51,7 +53,10 @@ from racelab_engine.services.intelligence_service import answer_grounded_query
 from racelab_engine.services.lap_engineering_context_service import (
     mission_lap_context_is_clear,
 )
-from racelab_engine.services.run_intelligence_service import build_run_intelligence
+from racelab_engine.services.run_intelligence_service import (
+    build_run_intelligence,
+    peek_cached_run_intelligence,
+)
 from racelab_engine.services.session_intelligence_service import setup_policy_fingerprint
 from racelab_engine.services.session_service import get_session as get_racelab_session
 from racelab_engine.services.track_map_service import (
@@ -304,6 +309,63 @@ def _query_action_matches_current_report(
         and tuple(result.action_source_event_ids) == tuple(action.source_event_ids)
         and len(set(result.action_source_event_ids)) == len(result.action_source_event_ids)
     )
+
+
+@router.get(
+    "/{run_id}/intelligence-shell",
+    response_model=IntelligenceShellProjectionResponse,
+)
+def get_run_intelligence_shell(
+    run_id: str,
+    session_id: str | None = None,
+) -> IntelligenceShellProjectionResponse:
+    """Return a compact current cached move without starting cold intelligence."""
+
+    try:
+        bundle = peek_cached_run_intelligence(run_id, session_id=session_id)
+        if bundle is None:
+            return IntelligenceShellProjectionResponse(
+                schema_version="p19.intelligence-shell.v1",
+                run_id=run_id,
+                session_id=session_id,
+                status="not_built",
+                recovery=(
+                    "Open Smart Engineer when you want to assemble the full exact-scope "
+                    "briefing. Run open remains fast and does not precompute it."
+                ),
+            )
+        report = bundle.report
+        if report.run_id != run_id or report.session_id != session_id:
+            raise ValueError("cached intelligence does not match the requested scope")
+        overview = RaceLabRepository().get_overview(run_id)
+        setup_snapshot = overview.setup_snapshot if overview is not None else None
+        identity = intelligence_snapshot_identity(
+            report.reasoning_snapshot,
+            run_id=run_id,
+            setup_snapshot=setup_snapshot,
+        )
+        move = to_public_next_trustworthy_move(report)
+        navigation_move = (
+            move if move is not None and move.authority == "navigation_only" else None
+        )
+        return IntelligenceShellProjectionResponse(
+            schema_version="p19.intelligence-shell.v1",
+            run_id=run_id,
+            session_id=session_id,
+            status="ready",
+            reasoning_snapshot_sha256=identity.reasoning_snapshot_sha256,
+            setup_id=identity.setup_id,
+            setup_snapshot_sha256=identity.setup_snapshot_sha256,
+            next_trustworthy_move=navigation_move,
+            recovery=(
+                "Open the projected supporting view. Setup authority remains in the "
+                "exact controlled-test ribbon."
+                if navigation_move is not None
+                else "No navigation-only move is available for this exact scope."
+            ),
+        )
+    except ValueError as exc:
+        raise _http_error(exc) from exc
 
 
 @router.get("/{run_id}/intelligence", response_model=RunIntelligenceResponse)

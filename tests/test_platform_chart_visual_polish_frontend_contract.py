@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -93,7 +92,7 @@ def test_local_platform_trace_layers_grid_glow_and_focus_without_smoothing_data(
     assert 'className="platform-local-trace-focus"' in local_trace
     assert 'strokeLinecap="round"' in local_trace
     assert "signals auto-scaled independently" in local_trace
-    assert 'isProxy: isProxyChannel(channelName)' in source
+    assert 'isProxy: selectedCatalogChannel?.is_proxy ?? isProxyChannel(channelName)' in source
     assert 'data-channel-basis={channel.isProxy ? "proxy" : "measured"}' in local_trace
     assert 'strokeDasharray={channel.isProxy ? "7 6" : undefined}' in local_trace
     assert 'channel.isProxy && <b>Proxy</b>' in local_trace

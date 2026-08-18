@@ -267,6 +267,20 @@ def _public_next_move(
     )
 
 
+def to_public_next_trustworthy_move(
+    report: InternalIntelligenceReport,
+) -> NextTrustworthyMove | None:
+    """Project only the current public move using the canonical authority gate."""
+
+    guidance = report.smart_guidance
+    public_action = _action(report)
+    return _public_next_move(
+        report,
+        guidance.test_preflight if guidance is not None else None,
+        setup_authorized=public_action.setup_authorized,
+    )
+
+
 def _cause(item: Any) -> IntelligenceCauseResponse:
     evidence_for = [_citation(citation) for citation in item.evidence_for]
     evidence_against = [_citation(citation) for citation in item.evidence_against]
@@ -747,6 +761,7 @@ def to_public_intelligence_report(
 __all__ = [
     "to_public_intelligence_citation",
     "to_public_intelligence_navigation",
+    "to_public_next_trustworthy_move",
     "to_public_intelligence_report",
     "to_public_mind_change_criterion",
 ]

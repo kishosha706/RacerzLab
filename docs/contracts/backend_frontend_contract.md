@@ -1,6 +1,6 @@
 # RaceLab Garage - Backend/Frontend Contract
 
-Last verified: 2026-08-10
+Last verified: 2026-08-18
 
 ## Scope
 
@@ -13,6 +13,8 @@ together with executable contract coverage.
 
 - Production import is columnar and frame-native through
   `normalize_telemetry_frame`; row normalization is fallback/debug parity only.
+- Decoder path, actual analysis engine, and any expected row-fallback reason are
+  persisted in the telemetry manifest. Unexpected vector failures are not hidden.
 - Every conclusion keeps exact run, lap/window, physical-position, setup, and
   source-channel identity where those dimensions apply.
 - Missing data stays unavailable. A proxy stays labeled as a proxy. An invalid,
@@ -62,7 +64,8 @@ than ignored.
 - Observation tools: `/api/compare`, `/api/compare/insights`,
   `/api/runs/{run_id}/shock-reader`, and `/api/runs/{run_id}/dial-in`.
 - Canonical intelligence: `/api/runs/{run_id}/intelligence` and its scoped
-  query/measurement-attempt operations.
+  query/measurement-attempt operations. `/intelligence-shell` is a compact,
+  cached, navigation-only projection and never starts cold intelligence.
 - Controlled authority: `/api/engineering/workflows` and its stage, score,
   cancel, and report operations.
 - Observation archive: `/api/notebook/findings` and
@@ -88,3 +91,9 @@ and caveats. Mode selection must never change what is authorized.
 
 Internal controlled-workflow verdict values are not a general-purpose public
 Compare or Notebook contract.
+
+The generated structural source is `docs/contracts/openapi.generated.json` and
+its runtime-free TypeScript projection is
+`ui/src/types/openapi.generated.d.ts`. Handwritten client guards remain
+responsible for cross-field identity, digest, and authority semantics that an
+OpenAPI type cannot prove.

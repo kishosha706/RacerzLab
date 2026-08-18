@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -20,7 +19,7 @@ def test_overview_broadcast_uses_one_fail_closed_decision_contract_in_both_modes
     assert "actionableRecommendations" not in source
     assert "evidenceQualifiedRecommendations" not in source
     assert "const trustedPrimaryFindings = topEvent && dataTrustReady ? overview.primary_findings : [];" in source
-    assert "const broadcastWarning = blockingOverviewWarnings[0] ?? overview.warnings[0] ?? null;" in source
+    assert "const broadcastWarning = blockingOverviewBlockers[0]?.message ?? overview.warnings[0] ?? null;" in source
     assert "const topObservedEvent = useMemo" in source
     assert "Evidence only - this signal does not authorize a setup call." in source
     assert "Only the current P19 report can authorize one controlled setup test." in source
@@ -31,7 +30,7 @@ def test_overview_broadcast_uses_one_fail_closed_decision_contract_in_both_modes
 def test_overview_handoffs_preserve_scope_and_do_not_offer_setup_when_blocked() -> None:
     source = _read("ui/src/tabs/OverviewTab.tsx")
     evidence = source.split("const buildOverviewEvidence", 1)[1].split("const openTopEvent", 1)[0]
-    broadcast = source.split('aria-label="Overview handoffs"', 1)[1].split("</section>", 1)[0]
+    broadcast = source.split('aria-label="Supporting evidence views"', 1)[1].split("</section>", 1)[0]
 
     assert 'lapScope: event.lap_number != null ? "single_lap" as const : "run" as const' in evidence
     assert "lapWindowStart: null" in evidence
@@ -40,7 +39,8 @@ def test_overview_handoffs_preserve_scope_and_do_not_offer_setup_when_blocked() 
     assert "buildZoneEvidence(selection, { lapPct })" in evidence
     assert "channelId: null" in evidence
     assert 'focusEvidence(buildOverviewEvidence(topEvent), "engineer")' in source
-    assert "{topEvent && decisionContextReady && (" in broadcast
+    assert "{isLearning && topEvent && decisionContextReady && (" in broadcast
+    assert 'data-role="supporting-evidence-navigation"' in broadcast
     assert "Setup impact" in broadcast
     assert "Exact scope: {decisionScope}" in source
     assert 'const visibleRunLabel = isLearning ? `Run ${overview.run_id}` : "Current run"' in source

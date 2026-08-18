@@ -22,6 +22,7 @@ export function useKeyboardShortcuts(
     onHideShortcuts?: () => void;
     shortcutsOpen?: boolean;
     eventTimelineOwnsKeyboard?: boolean;
+    characterShortcutsEnabled?: boolean;
   },
 ) {
   const { selection, focusEvidence, clearEvidenceFocus, setMode } = useTelemetrySelection();
@@ -46,6 +47,7 @@ export function useKeyboardShortcuts(
         return;
       }
       if (timelineOwnsEventKey && [" ", "ArrowLeft", "ArrowRight", "Enter", "Escape"].includes(key)) return;
+      if (key.length === 1 && options?.characterShortcutsEnabled === false) return;
 
       switch (key) {
         case "?":

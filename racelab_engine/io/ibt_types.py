@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, PrivateAttr
 
@@ -54,6 +54,14 @@ class IBTImportResult(BaseModel):
     records: list[dict[str, Any]] = Field(default_factory=list)
     missing_channels: list[str] = Field(default_factory=list)
     overview: Optional[RunOverview] = None
+    decoder_path: Literal[
+        "columnar_vectorized",
+        "columnar_row_debug",
+        "row_fallback",
+        "forced_row",
+        "unavailable",
+    ] = "unavailable"
+    decoder_fallback_reason: Optional[str] = None
     _normalized_frame: Any = PrivateAttr(default=None)
 
     def set_normalized_frame(self, frame: Any) -> None:

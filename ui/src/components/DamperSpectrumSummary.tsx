@@ -2,6 +2,7 @@ import { Activity, AlertTriangle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { fetchDamperResponse } from "../api/client";
 import type { DamperResponseReport } from "../types/damperResponse";
+import { evidenceStrengthOutOf100 } from "../utils/evidenceScore";
 
 type Props = {
   runId: string;
@@ -64,7 +65,7 @@ export function DamperSpectrumSummary({ runId, lap }: Props) {
           </p>
         </div>
         <span className={`confidence-badge ${report.gate.confidence_cap >= 0.75 ? "high" : "medium"}`}>
-          cap {Math.round(report.gate.confidence_cap * 100)}%
+          evidence cap {evidenceStrengthOutOf100(report.gate.confidence_cap)}
         </span>
       </div>
       <div className="metric-grid">

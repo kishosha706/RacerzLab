@@ -195,6 +195,8 @@ def _run(
                 lap_type="flying",
                 is_complete=True,
                 is_useful=True,
+                timing_primary_clock="session_tick",
+                timing_clock_state="qualified",
                 lap_time=30.0 + lap_number / 10.0,
             )
             for lap_number in range(1, 6)

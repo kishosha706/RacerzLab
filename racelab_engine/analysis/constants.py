@@ -4,6 +4,8 @@ Centralizes thresholds and confidence baselines so that the Verdict engine,
 Target Zone Classifier, and any future analysis modules stay in sync.
 """
 
+import math
+
 # ── Speed thresholds (mph) ────────────────────────────────────
 SPEED_NOISE_THRESHOLD = 0.05  # mph — below this is considered noise/no-change
 SPEED_LARGE_CHANGE = 0.5  # mph — above this is a large/significant change
@@ -112,7 +114,8 @@ WCI_WEIGHT_PROFILES: dict[str, dict[str, float]] = {
 # ── Proxy constants ───────────────────────────────────────────
 FORCE_PROXY_WARNING = (
     "Force values are estimates/proxies derived from telemetry, setup spring rates, ride heights, "
-    "shock movement, and dynamic pressure. They are not direct iRacing aerodynamic force channels."
+    "shock movement, source-backed motion ratios, and a ground-speed pressure proxy. They are not "
+    "direct iRacing aerodynamic force channels."
 )
 
 FORCE_PROXY_CHANNELS: set[str] = {
@@ -153,20 +156,43 @@ FORCE_PROXY_CHANNELS: set[str] = {
     "grade_corrected_speed_loss_mph_s",
     "ackermann_scrub_proxy",
     "yaw_error_proxy",
-    "lf_camber_bias_label",
-    "rf_camber_bias_label",
-    "lr_camber_bias_label",
-    "rr_camber_bias_label",
     "damper_energy_proxy",
     "damper_work_proxy",
 }
 
+# Geometry-derived diffuser quantities are never measured vehicle truth.  They
+# are available only when a reviewed vehicle profile supplies every required
+# constant, and even then remain calculated geometry proxies.
+DIFFUSER_GEOMETRY_PROXY_CHANNELS: set[str] = {
+    "diffuser_track_width_in",
+    "diffuser_wheelbase_in",
+    "diffuser_rub_block_correction_in",
+    "diffuser_base_volume_ft3",
+    "diffuser_wedge_volume_ft3",
+    "diffuser_volume_ft3",
+    "smooth_diffuser_volume_ft3",
+    "lr_height_rub_block_in",
+    "rear_center_rh_in",
+    "center_rake_in",
+    "smooth_center_rake_in",
+}
+
+CALCULATED_PROXY_CHANNELS: set[str] = (
+    FORCE_PROXY_CHANNELS | DIFFUSER_GEOMETRY_PROXY_CHANNELS
+)
+
 # ── Motion ratio helper ───────────────────────────────────────
-def apply_motion_ratio(wheel_delta: float, motion_ratio: float | None) -> float:
-    """Apply motion ratio to convert wheel delta to spring delta.
-    Defaults to 1:1 if motion_ratio is unavailable."""
-    if motion_ratio is None or motion_ratio <= 0:
-        return wheel_delta
+def apply_motion_ratio(
+    wheel_delta: float, motion_ratio: float | None
+) -> float | None:
+    """Apply a source-backed motion ratio; unknown never becomes 1:1."""
+    if (
+        motion_ratio is None
+        or not math.isfinite(motion_ratio)
+        or motion_ratio <= 0
+        or not math.isfinite(wheel_delta)
+    ):
+        return None
     return wheel_delta * motion_ratio
 
 

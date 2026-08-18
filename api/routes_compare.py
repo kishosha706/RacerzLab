@@ -7,24 +7,41 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from api.routes_runs import repository
-from racelab_engine.analysis.comparison import (
-    COMPARE_CHANNELS,
-    ContextChange,
-    EnhancedComparisonSummary,
-    compare_target_zone,
-)
 from racelab_engine.analysis.compare_delta_traces import (
     DEFAULT_DELTA_CHANNELS,
     DeltaTraceResponse,
     compute_delta_traces,
 )
 from racelab_engine.analysis.compare_math import (
-    aggregate_platform_stats, aggregate_driver_stats,
-    aggregate_powertrain_stats, aggregate_corner_stats,
-    aggregate_tire_comparison, aggregate_shock_comparison,
+    aggregate_corner_stats,
+    aggregate_driver_stats,
+    aggregate_platform_stats,
+    aggregate_powertrain_stats,
+    aggregate_shock_comparison,
+    aggregate_tire_comparison,
     compute_whole_car_index,
 )
+from racelab_engine.analysis.comparison import (
+    COMPARE_CHANNELS,
+    ContextChange,
+    EnhancedComparisonSummary,
+    compare_target_zone,
+)
 from racelab_engine.analysis.did_it_work import compute_observation
+from racelab_engine.analysis.lap_eligibility import (
+    eligible_laps,
+    find_lap,
+    lap_ineligibility_reasons,
+    lap_is_eligible,
+    longest_contiguous_eligible_lap_count,
+)
+from racelab_engine.analysis.pace_comparison import build_pace_comparison
+from racelab_engine.analysis.phase_engineering import analyze_phase_engineering_systems
+from racelab_engine.analysis.proximity_context import (
+    ProximityContext,
+    ProximityState,
+    classify_proximity_time_gap_window,
+)
 from racelab_engine.analysis.setup_diff import (
     diff_context,
     diff_setups,
@@ -38,25 +55,20 @@ from racelab_engine.analysis.sim_integrity import (
 )
 from racelab_engine.analysis.test_discipline import score_test_discipline
 from racelab_engine.analysis.time_alignment import analyze_time_alignment
-from racelab_engine.analysis.phase_engineering import analyze_phase_engineering_systems
-from racelab_engine.analysis.lap_eligibility import (
-    eligible_laps,
-    find_lap,
-    lap_ineligibility_reasons,
-    lap_is_eligible,
-    longest_contiguous_eligible_lap_count,
-)
-from racelab_engine.analysis.pace_comparison import build_pace_comparison
-from racelab_engine.analysis.proximity_context import (
-    ProximityContext,
-    ProximityState,
-    classify_proximity_time_gap_window,
-)
-from racelab_engine.services.import_service import read_telemetry_manifest, read_telemetry_rows
-from racelab_engine.services.insight_service import build_comparison_insights
-from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.identity import canonical_json_sha256
+from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.phase_engineering import EngineeringSystemsResponse
+from racelab_engine.recording_identity import (
+    RecordingIdentityError,
+    SameRecordingError,
+    require_independent_recordings,
+    resolve_recording_sha256,
+)
+from racelab_engine.services.import_service import (
+    read_telemetry_manifest,
+    read_telemetry_rows,
+)
+from racelab_engine.services.insight_service import build_comparison_insights
 
 router = APIRouter(prefix="/api/compare", tags=["compare"])
 
@@ -126,6 +138,44 @@ def _compare_run_identity(run_id: str, repo) -> dict:
         "setup_id": setup.setup_id if setup is not None else None,
         "setup_sha256": canonical_json_sha256(setup) if setup is not None else None,
     }
+
+
+def _assert_independent_compare_recordings(
+    baseline_run_id: str,
+    test_run_id: str,
+    repo,
+) -> tuple[str, str]:
+    """Fail closed when run aliases point at one physical ``.ibt`` source."""
+
+    source_by_run: dict[str, str] = {}
+    for run_id in (baseline_run_id, test_run_id):
+        manifest = read_telemetry_manifest(run_id)
+        get_recording_sha256 = getattr(repo, "get_recording_sha256", None)
+        stored_sha = (
+            get_recording_sha256(run_id)
+            if callable(get_recording_sha256)
+            else getattr(
+                getattr(repo.get_overview(run_id), "session", None),
+                "file_hash",
+                None,
+            )
+        )
+        try:
+            source_by_run[run_id] = resolve_recording_sha256(
+                run_id=run_id,
+                stored_source_sha256=stored_sha,
+                manifest_source_sha256=manifest.get("source_file_sha256"),
+            )
+        except RecordingIdentityError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        independent = require_independent_recordings(
+            source_by_run,
+            ordered_run_ids=(baseline_run_id, test_run_id),
+        )
+    except (SameRecordingError, RecordingIdentityError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return independent[0], independent[1]
 
 
 def _compare_identity(req: CompareRequest, repo, baseline_lap: int | None, test_lap: int | None) -> dict:
@@ -806,6 +856,9 @@ def run_comparison(req: CompareRequest) -> dict:
     if t_overview is None:
         raise HTTPException(404, f"Test run not found: {req.test_run_id}")
     compatibility_missing = _assert_run_compatibility(req.baseline_run_id, req.test_run_id)
+    _assert_independent_compare_recordings(
+        req.baseline_run_id, req.test_run_id, repo
+    )
 
     bl_lap = _resolve_eligible_lap(bl_overview, req.baseline_lap, "baseline")
     t_lap = _resolve_eligible_lap(t_overview, req.test_lap, "test")
@@ -1049,6 +1102,7 @@ def compare_preview(baseline_run_id: str, test_run_id: str) -> ComparePreviewRes
     t = repo.get_overview(test_run_id)
     if bl is None or t is None:
         raise HTTPException(404, "One or both runs not found.")
+    _assert_independent_compare_recordings(baseline_run_id, test_run_id, repo)
 
     bl_setup = repo.get_setup_snapshot(baseline_run_id)
     t_setup = repo.get_setup_snapshot(test_run_id)
@@ -1101,6 +1155,9 @@ def get_delta_traces(req: DeltaTraceRequest) -> dict:
     if t_overview is None:
         raise HTTPException(404, f"Test run not found: {req.test_run_id}")
     _assert_run_compatibility(req.baseline_run_id, req.test_run_id)
+    _assert_independent_compare_recordings(
+        req.baseline_run_id, req.test_run_id, repo
+    )
 
     bl_lap = _resolve_eligible_lap(bl_overview, req.baseline_lap, "baseline")
     t_lap = _resolve_eligible_lap(t_overview, req.test_lap, "test")
@@ -1173,6 +1230,9 @@ def get_time_analysis(req: TimeAnalysisRequest) -> dict:
             + ", ".join(missing_identity)
             + ". Reimport both runs.",
         )
+    _assert_independent_compare_recordings(
+        req.baseline_run_id, req.test_run_id, repo
+    )
     baseline_lap = _resolve_eligible_lap(baseline_overview, req.baseline_lap, "baseline")
     test_lap = _resolve_eligible_lap(test_overview, req.test_lap, "test")
     if req.baseline_run_id == req.test_run_id and baseline_lap == test_lap:
@@ -1291,6 +1351,9 @@ def get_engineering_systems(req: TimeAnalysisRequest) -> dict:
             + ", ".join(missing_identity)
             + ". Reimport both runs.",
         )
+    _assert_independent_compare_recordings(
+        req.baseline_run_id, req.test_run_id, repo
+    )
     baseline_lap = _resolve_eligible_lap(baseline_overview, req.baseline_lap, "baseline")
     test_lap = _resolve_eligible_lap(test_overview, req.test_lap, "test")
     if req.baseline_run_id == req.test_run_id and baseline_lap == test_lap:
@@ -1373,6 +1436,9 @@ def get_comparison_insights(req: InsightsRequest) -> dict:
     if t_overview is None:
         raise HTTPException(404, f"Test run not found: {req.test_run_id}")
     compatibility_missing = _assert_run_compatibility(req.baseline_run_id, req.test_run_id)
+    _assert_independent_compare_recordings(
+        req.baseline_run_id, req.test_run_id, repo
+    )
 
     bl_lap = _resolve_eligible_lap(bl_overview, req.baseline_lap, "baseline")
     t_lap = _resolve_eligible_lap(t_overview, req.test_lap, "test")

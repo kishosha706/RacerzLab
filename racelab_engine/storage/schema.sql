@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS runs (
   notes TEXT,
   primary_findings_json TEXT,
   warnings_json TEXT,
+  engineering_blockers_json TEXT,
   session_json TEXT NOT NULL
 );
 

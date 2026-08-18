@@ -1005,7 +1005,9 @@ def detect_max_dynamic_pressure(rows: list[dict[str, Any]]) -> PlatformEvent | N
     air_density = _sample_value(row, "air_density")
     cfs_in = _sample_value(row, "cfs_ride_height_in")
 
-    evidence = ["Dynamic pressure peaked here due to speed and air density."]
+    evidence = [
+        "The ground-speed pressure proxy peaked here from measured speed and air density; wind-relative aero load is unavailable."
+    ]
     if speed is not None:
         evidence.append(f"Speed: {speed:.1f} mph")
     if air_density is not None:
@@ -1042,6 +1044,7 @@ def detect_platform_events(
     *,
     lap: int | None = None,
     event_types: list[str] | None = None,
+    expected_sample_rate_hz: float | None = None,
 ) -> list[PlatformEvent]:
     """Detect structured platform diagnostic events from normalized telemetry rows."""
 
@@ -1053,7 +1056,11 @@ def detect_platform_events(
 
     eligible_lap_numbers = {
         summary.lap_number
-        for summary in eligible_laps(classify_laps(detect_laps(working, run_id="platform-events")))
+        for summary in eligible_laps(classify_laps(detect_laps(
+            working,
+            run_id="platform-events",
+            expected_sample_rate_hz=expected_sample_rate_hz,
+        )))
     }
 
     detectors = [

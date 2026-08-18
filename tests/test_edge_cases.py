@@ -219,8 +219,8 @@ def test_dynamic_pressure_index_alias() -> None:
     assert meta_lap["label"] != meta_old["label"]  # different labels
 
 
-def test_aero_load_index_comparable() -> None:
-    """aero_load_index should be marked comparable across runs."""
+def test_speed_density_reference_proxy_is_not_cross_run_aero_truth() -> None:
     from racelab_engine.analysis.calculated_channels import channel_metadata
     meta = channel_metadata("aero_load_index")
-    assert meta["comparable_across_runs"] is True
+    assert meta["comparable_across_runs"] is False
+    assert "not aero load" in meta["description"]

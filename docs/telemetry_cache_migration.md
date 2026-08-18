@@ -21,3 +21,19 @@ re-import leaves the previously promoted artifacts in place.
 There is intentionally no lossy in-place migration. If the original `.ibt` is
 unavailable, the run remains visible as historical metadata, but analyses that
 need universal telemetry must report the missing evidence and stay blocked.
+
+## Manifest schema v6
+
+Schema v6 cannot reuse v5 calculated evidence because two upstream truth
+contracts changed:
+
+- canonical elapsed time is now qualified from `SessionTick` plus the declared
+  base rate, with raw `SessionTime` retained as corroboration;
+- nominal 110-inch wheelbase, 79-inch track width, and 0.5-inch rub-block
+  substitutions were removed from diffuser geometry.
+
+Re-import therefore rebuilds lap timing, integrity, calculated columns, typed
+engineering blockers, and engineering-role metadata from the original source.
+Legacy filename-derived run rows remain available for audit, but session
+membership converges on one content-addressed recording owner. Same-source
+aliases can never be compared or counted as independent evidence.

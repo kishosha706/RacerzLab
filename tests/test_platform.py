@@ -84,16 +84,23 @@ def _dense_platform_lap(
     for index in range(101):
         pct = index / 100.0
         splitter = splitter_by_index.get(index, default_splitter_mm)
-        rows.append(
-            _row(
+        rows.append({
+            **_row(
                 lap_dist_pct=pct,
                 lap_dist_m=4230.0 * pct,
                 lap_dist_ft=13877.95 * pct,
                 cfsr_height_mm=splitter,
                 session_time=duration_s * pct,
-            )
-        )
+            ),
+            "session_tick": index,
+        })
     return rows
+
+
+def _declared_rate(rows: list[dict[str, float | int | None]]) -> float:
+    start = float(rows[0]["session_time"])
+    end = float(rows[-1]["session_time"])
+    return (len(rows) - 1) / (end - start)
 
 
 def test_analysis_package_exports_only_canonical_platform_detector_names() -> None:
@@ -138,7 +145,11 @@ def test_overview_platform_event_conversion_uses_canonical_detector() -> None:
     rows[67]["lap_dist_pct"] = 0.6702
     rows[67]["speed_mph"] = 186.08
 
-    events = _build_overview_platform_events(rows, run_id="test-run")
+    events = _build_overview_platform_events(
+        rows,
+        run_id="test-run",
+        expected_sample_rate_hz=_declared_rate(rows),
+    )
 
     assert len(events) == 1
     assert isinstance(events[0], TelemetryEvent)
@@ -216,7 +227,11 @@ def test_overview_allows_sustained_negative_scrape_on_eligible_lap() -> None:
         splitter_by_index={49: -1.0, 50: -1.5, 51: -1.0},
     )
 
-    events = _build_overview_platform_events(rows, run_id="sustained-scrape")
+    events = _build_overview_platform_events(
+        rows,
+        run_id="sustained-scrape",
+        expected_sample_rate_hz=_declared_rate(rows),
+    )
 
     assert len(events) == 1
     assert events[0].event_type == "PLATFORM_SCRAPE"
@@ -303,4 +318,6 @@ def test_platform_routes_use_canonical_detector_path() -> None:
 
     assert "from racelab_engine.analysis.platform_events import PLATFORM_EVENT_COLUMNS, detect_platform_events" in routes_events
     assert "from api.routes_events import get_platform_events" in routes_track_map
-    assert "from racelab_engine.analysis.platform_events import PlatformEvent, detect_platform_events" in ibt_reader
+    assert "from racelab_engine.analysis.platform_events import (" in ibt_reader
+    assert "PlatformEvent," in ibt_reader
+    assert "detect_platform_events," in ibt_reader

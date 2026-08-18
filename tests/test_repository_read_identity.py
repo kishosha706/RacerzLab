@@ -34,6 +34,8 @@ def _seed_evidence_run(
             is_complete=True,
             is_useful=True,
             lap_time=90.0 + (lap_number - 1) * 0.5,
+            timing_primary_clock="session_tick",
+            timing_clock_state="qualified",
             pct_min=0.0,
             pct_max=100.0,
             pct_span=100.0,

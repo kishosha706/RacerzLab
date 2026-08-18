@@ -56,6 +56,7 @@ def _overview(
         laps=[*(_lap(run_id, number) for number in lap_numbers), *extra_laps],
         setup_snapshot=setup,
         warnings=list(warnings),
+        engineering_blockers=[],
     )
 
 

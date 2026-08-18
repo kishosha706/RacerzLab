@@ -21,6 +21,7 @@ class HealthResponse(BaseModel):
     status: str
     app: str
     version: str
+    instance_id: str | None = None
 
 
 class ImportIbtRequest(BaseModel):
@@ -43,15 +44,18 @@ class TrackMapResolution(BaseModel):
 
 class ImportIbtResponse(BaseModel):
     run_id: Optional[str] = None
+    recording_sha256: Optional[str] = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     status: ImportStatus
     cache: Optional[CacheInfo] = None
     track_map: Optional[TrackMapResolution] = None
     analysis_status: Optional[str] = None  # imported | analyzing | ready | failed
     existing_run_updated: bool = False
+    recording_reused: bool = False
 
 
 class RunListItem(BaseModel):
     run_id: str
+    recording_sha256: Optional[str] = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     car_name: Optional[str] = None
     track_name: Optional[str] = None
     setup_name: Optional[str] = None
@@ -129,6 +133,9 @@ class ChannelCatalogItem(BaseModel):
     canonical_name: Optional[str] = None
     canonical_mapping_kind: Optional[str] = None
     registry_status: Optional[str] = None
+    engineering_role: Optional[str] = None
+    engineering_admission_state: Optional[str] = None
+    engineering_authority_limit: Optional[str] = None
     archive_status: Optional[str] = None
     variation: Optional[str] = None
     count_as_time: bool = False
@@ -169,6 +176,9 @@ class ChannelSummaryItem(BaseModel):
     canonical_name: Optional[str] = None
     canonical_mapping_kind: Optional[str] = None
     registry_status: Optional[str] = None
+    engineering_role: Optional[str] = None
+    engineering_admission_state: Optional[str] = None
+    engineering_authority_limit: Optional[str] = None
     archive_status: Optional[str] = None
     variation: Optional[str] = None
     count_as_time: bool = False

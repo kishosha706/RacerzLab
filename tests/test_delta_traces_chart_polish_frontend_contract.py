@@ -28,7 +28,7 @@ def test_delta_traces_exposes_a_premium_open_chart_surface() -> None:
 
 def test_delta_traces_uses_clear_axis_cursor_and_tooltip_hierarchy() -> None:
     assert "show: true,\n        trigger: \"axis\"" in TRACES
-    assert 'triggerOn: "mousemove|click"' in TRACES
+    assert 'triggerOn: "mousemove|click|mousewheel"' in TRACES
     assert 'confine: true' in TRACES
     assert 'link: [{ xAxisIndex: available.map((_, i) => i) }]' in TRACES
     assert 'formatter: "0 Δ"' in TRACES

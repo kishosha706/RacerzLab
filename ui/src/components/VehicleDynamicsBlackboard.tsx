@@ -41,6 +41,24 @@ function inspectionLabel(value: string): string {
   return humanize(value.replace(/^inspect_/, ""));
 }
 
+function responseMetricLabel(value: string): string {
+  return ({
+    elapsed_time_delta_s: "Phase time",
+    speed_delta_mph: "Speed response",
+    throttle_demand_delta_pct: "Throttle demand",
+    brake_demand_delta_pct: "Brake demand",
+    steering_wheel_demand_delta_deg: "Steering-wheel demand",
+    yaw_rate_response_delta_rad_s: "Yaw response",
+    longitudinal_accel_response_delta_mps2: "Acceleration response",
+    path_delta_m: "Path delta",
+    line_separation_m: "Line separation",
+  } as Record<string, string>)[value] ?? humanize(value);
+}
+
+function signedMetric(value: number, units: string): string {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(3)} ${units}`;
+}
+
 function scopeLabel(entry: EvidenceScope): string {
   const laps = entry.lap_numbers.length === 0
     ? "run scope"
@@ -208,6 +226,11 @@ export function VehicleDynamicsBlackboard({
     (candidate) => candidate.relevance === "candidate",
   ).length;
   const presentation = assessmentPresentation(assessment, supportedCandidateCount);
+  // Trusted API payloads require these fields. Keep the component defensive for
+  // stale in-memory fixtures or a pre-P35.4 view that survives hot reload.
+  const responseObservation = assessment.response_observations?.[0];
+  const problemSignature = assessment.problem_signature ?? null;
+  const mechanismSeparation = assessment.mechanism_separation ?? [];
 
   const evidenceButton = (
     focus: VehicleDynamicsFocusArtifact | undefined,
@@ -300,6 +323,49 @@ export function VehicleDynamicsBlackboard({
     </ol>
 
     <div className="vehicle-dynamics-grid">
+      {problemSignature && responseObservation && <article
+        className="vehicle-dynamics-wide vehicle-response-story"
+        aria-label="Phase-resolved vehicle problem signature"
+      >
+        <div className="vehicle-dynamics-section-heading">
+          <h4>Phase-resolved car state</h4>
+          <span>{humanize(responseObservation.evidence_state)}</span>
+        </div>
+        <dl className="vehicle-response-story-grid">
+          <div>
+            <dt>WHAT</dt>
+            <dd>{signedMetric(problemSignature.local_time_delta_s, "s")} · {humanize(problemSignature.phase)}</dd>
+          </div>
+          <div>
+            <dt>ONSET</dt>
+            <dd>{problemSignature.onset_pct.toFixed(1)}% lap · phase-boundary resolution</dd>
+          </div>
+          <div>
+            <dt>DRIVER</dt>
+            <dd>Demand {humanize(problemSignature.driver_demand_state)} · line {humanize(problemSignature.line_state)}</dd>
+          </div>
+          <div>
+            <dt>CAR RESPONSE</dt>
+            <dd>{humanize(problemSignature.vehicle_response_state)} · {humanize(problemSignature.response_regime)}</dd>
+          </div>
+          <div>
+            <dt>PERSISTENCE</dt>
+            <dd>{humanize(responseObservation.persistence)}</dd>
+          </div>
+          <div>
+            <dt>CONTEXT</dt>
+            <dd>Traffic {humanize(problemSignature.traffic_dependence)}</dd>
+          </div>
+        </dl>
+        <ul className="vehicle-response-metrics" aria-label="Measured response deltas">
+          {responseObservation.metrics.map((metric) => <li key={metric.metric_id}>
+            <span>{responseMetricLabel(metric.quantity)}</span>
+            <b>{signedMetric(metric.value, metric.units)}</b>
+          </li>)}
+        </ul>
+        <small>Steering values are steering-wheel demand, never road-wheel angle. Onset is only shown at the resolution currently measured.</small>
+      </article>}
+
       <article className="vehicle-dynamics-summary-card">
         <h4>Performance problem</h4>
         <p>{timeConsequence.summary}</p>
@@ -374,6 +440,36 @@ export function VehicleDynamicsBlackboard({
           </li>)}
         </ul> : <p>No mechanism candidate cleared current evidence.</p>}
       </article>
+
+      {mechanismSeparation.length > 0 && <article
+        className="vehicle-dynamics-wide vehicle-dynamics-separation"
+      >
+        <div className="vehicle-dynamics-section-heading">
+          <h4>Mechanism separation</h4>
+          <span>support · contradiction · discriminator</span>
+        </div>
+        <div className="vehicle-dynamics-separation-scroll">
+          <table>
+            <thead><tr>
+              <th>Mechanism</th>
+              <th>State</th>
+              <th>Support</th>
+              <th>Contradiction</th>
+              <th>Missing evidence</th>
+              <th>Best discriminator</th>
+            </tr></thead>
+            <tbody>{mechanismSeparation.map((row) => <tr key={row.mechanism_id}>
+              <th>{displayTypedId(row.mechanism_id)}</th>
+              <td>{humanize(row.state)}</td>
+              <td>{row.support_artifact_ids.length || "none"}</td>
+              <td>{row.contradiction_artifact_ids.length}</td>
+              <td>{row.missing_evidence[0]}</td>
+              <td>{displayTypedId(row.discriminator_contract_ids[0] ?? "unavailable")}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+        <small>Component families remain mechanically relevant possibilities only. Exact control authority stays with P19.</small>
+      </article>}
 
       <article className="vehicle-dynamics-components">
         <h4>Component families</h4>

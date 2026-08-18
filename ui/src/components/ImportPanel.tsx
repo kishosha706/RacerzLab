@@ -219,6 +219,9 @@ export function ImportPanel({
         <span className="import-file-chip">.ibt telemetry</span>
         {!desktop && <span className="import-file-chip">.mt2 track map</span>}
       </div>
+      <p className="section-note" data-product-scope="next-gen-oval-alpha">
+        Alpha engineering decisions are reviewed for NASCAR Next Gen oval context. Other telemetry imports remain archival and may return a no-call until their exact car, build, and track scope is validated.
+      </p>
 
       {progressIndex != null && (
         <ol className="import-progress-track" aria-label="Import progress">
@@ -255,4 +258,3 @@ export function ImportPanel({
     </div>
   );
 }
-

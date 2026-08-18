@@ -7,15 +7,15 @@ laps (not telemetry rows) as the statistical experiment unit.
 
 from __future__ import annotations
 
+import math
 from bisect import bisect_left
 from dataclasses import asdict, dataclass, field
-import math
+from itertools import pairwise
 from numbers import Real
 from statistics import median
 from typing import Any, Literal
 
 from racelab_engine.analysis.comparison import build_lap_grid, interpolate_run_to_grid
-
 
 PhaseName = Literal[
     "straight", "lift", "brake_application", "threshold_braking", "brake_release",
@@ -54,6 +54,26 @@ class AlignmentPoint:
     methods: list[str]
     is_gap: bool = False
     gap_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class DriverEventCorrespondence:
+    """A driver-demand or response event observed on the physical lap grid.
+
+    These observations are deliberately separate from ``AlignmentPoint``.
+    They retain useful event timing differences without granting brake,
+    throttle, steering, or yaw any authority to translate track position.
+    """
+
+    event: str
+    source_channel: str
+    baseline_pct: float
+    test_pct: float
+    delta_pct: float
+    threshold: float
+    threshold_unit: str
+    calculation_basis: str = "threshold_crossing_on_physical_position_grid"
+    is_physical_alignment_authority: bool = False
 
 
 @dataclass(frozen=True)
@@ -117,6 +137,7 @@ class TimeAlignmentResult:
     distance_basis: str
     warnings: list[str]
     source_channels: list[str]
+    driver_event_correspondence: list[DriverEventCorrespondence] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -195,7 +216,7 @@ def _categorical_state_grid(
 def _confirmed_reset_positions(rows: list[dict[str, Any]]) -> list[float]:
     """Require reset action state plus a physical-position discontinuity."""
     confirmed: list[float] = []
-    for previous, current in zip(rows, rows[1:]):
+    for previous, current in pairwise(rows):
         previous_pct = _finite(previous.get("lap_dist_pct_100"))
         current_pct = _finite(current.get("lap_dist_pct_100"))
         previous_state = _finite(previous.get("enter_exit_reset_state"))
@@ -331,7 +352,7 @@ def detect_engineering_phases(
         ):
             phase_values[index] = phase_values[index - 1]
 
-    carry_bins = max(1, int(round(5.0 / (position_grid[1] - position_grid[0])))) if len(position_grid) > 1 else 1
+    carry_bins = max(1, round(5.0 / (position_grid[1] - position_grid[0]))) if len(position_grid) > 1 else 1
     for index, phase in enumerate(list(phase_values)):
         if phase != "full_throttle_exit":
             continue
@@ -385,6 +406,90 @@ def _has_local_signal_variation(
     return _has_signal_variation(values[max(0, index - radius):index + radius + 1], minimum_range)
 
 
+_DRIVER_EVENT_SPECS = (
+    ("brake_application", "brake_pct", 5.0, "rising", False, "%"),
+    ("brake_release", "brake_pct", 5.0, "falling", False, "%"),
+    ("throttle_application", "throttle_pct", 10.0, "rising", False, "%"),
+    ("throttle_release", "throttle_pct", 10.0, "falling", False, "%"),
+    ("steering_application", "steering_deg", 2.0, "rising", True, "deg"),
+    ("yaw_response_onset", "yaw_rate", 0.02, "rising", True, "rad/s"),
+)
+
+
+def _threshold_crossing_positions(
+    values: list[float | None],
+    grid: list[float],
+    *,
+    threshold: float,
+    direction: str,
+    use_absolute_value: bool,
+) -> list[float]:
+    positions: list[float] = []
+    for index in range(1, len(grid)):
+        previous = values[index - 1]
+        current = values[index]
+        if previous is None or current is None:
+            continue
+        left = abs(previous) if use_absolute_value else previous
+        right = abs(current) if use_absolute_value else current
+        crossed = (
+            left < threshold <= right
+            if direction == "rising"
+            else left >= threshold > right
+        )
+        if not crossed or right == left:
+            continue
+        fraction = (threshold - left) / (right - left)
+        pct = grid[index - 1] + fraction * (grid[index] - grid[index - 1])
+        if math.isfinite(pct):
+            positions.append(round(pct, 6))
+    return positions
+
+
+def build_driver_event_correspondence(
+    baseline: dict[str, list[float | None]],
+    test: dict[str, list[float | None]],
+    grid: list[float],
+) -> list[DriverEventCorrespondence]:
+    """Retain event-position differences without changing physical alignment.
+
+    Events are paired only when both laps expose the same ordered event count.
+    Ambiguous or missing transitions remain absent instead of being forced into
+    a correspondence.
+    """
+    observations: list[DriverEventCorrespondence] = []
+    for event, channel, threshold, direction, use_absolute, unit in _DRIVER_EVENT_SPECS:
+        baseline_positions = _threshold_crossing_positions(
+            baseline.get(channel, [None] * len(grid)),
+            grid,
+            threshold=threshold,
+            direction=direction,
+            use_absolute_value=use_absolute,
+        )
+        test_positions = _threshold_crossing_positions(
+            test.get(channel, [None] * len(grid)),
+            grid,
+            threshold=threshold,
+            direction=direction,
+            use_absolute_value=use_absolute,
+        )
+        if not baseline_positions or len(baseline_positions) != len(test_positions):
+            continue
+        observations.extend(
+            DriverEventCorrespondence(
+                event=event,
+                source_channel=channel,
+                baseline_pct=baseline_pct,
+                test_pct=test_pct,
+                delta_pct=round(test_pct - baseline_pct, 6),
+                threshold=threshold,
+                threshold_unit=unit,
+            )
+            for baseline_pct, test_pct in zip(baseline_positions, test_positions)
+        )
+    return observations
+
+
 _MAX_CIRCULAR_BOUNDARY_GAP_PCT = 2.0
 _BOUNDARY_SPACING_MULTIPLIER = 3.0
 _MIN_BOUNDARY_SAMPLES = 8
@@ -424,7 +529,7 @@ def _admit_bounded_circular_boundary(
         positions, samples = _channel_boundary_samples(rows, channel)
         if len(positions) < _MIN_BOUNDARY_SAMPLES:
             continue
-        spacings = [right - left for left, right in zip(positions, positions[1:]) if right > left]
+        spacings = [right - left for left, right in pairwise(positions) if right > left]
         if not spacings:
             continue
         observed_spacing = median(spacings)
@@ -647,7 +752,13 @@ def build_layered_alignment(
     test_rows: list[dict[str, Any]],
     grid: list[float],
 ) -> tuple[list[AlignmentPoint], dict[str, list[float | None]], dict[str, list[float | None]]]:
-    """Build monotonic local alignment using only available physical evidence."""
+    """Build monotonic local alignment using only physical-position evidence.
+
+    Lap position is the immutable default. Only qualified GPS geometry or a
+    repeatable road-profile landmark may move a test candidate away from that
+    position. Driver demand and vehicle response remain available in the
+    interpolated channel maps, but never participate in this physical score.
+    """
     evidence_channels = list(dict.fromkeys([*_PHASE_CHANNELS, "lap_dist_pct_100"]))
     baseline = interpolate_run_to_grid(baseline_rows, evidence_channels, grid)
     test = interpolate_run_to_grid(test_rows, evidence_channels, grid)
@@ -658,30 +769,19 @@ def build_layered_alignment(
         for run in (baseline, test)
         for name in ("lat", "lon")
     )
-    yaw_available = all(_has_signal_variation(run["yaw_rate"], 0.02) for run in (baseline, test))
     road_thresholds = {
         "vert_accel": 0.5,
         "lf_shock_defl_in": 0.02,
         "rf_shock_defl_in": 0.02,
         "lr_shock_defl_in": 0.02,
         "rr_shock_defl_in": 0.02,
-        "lf_ride_height_in": 0.02,
-        "rf_ride_height_in": 0.02,
-        "lr_ride_height_in": 0.02,
-        "rr_ride_height_in": 0.02,
-        "cfs_ride_height_in": 0.02,
     }
     road_available = {
         name: all(_has_signal_variation(run[name], threshold) for run in (baseline, test))
         for name, threshold in road_thresholds.items()
     }
-    anchor_thresholds = {"brake_pct": 5.0, "throttle_pct": 10.0, "steering_deg": 2.0}
-    anchors_available = {
-        name: all(_has_signal_variation(run[name], threshold) for run in (baseline, test))
-        for name, threshold in anchor_thresholds.items()
-    }
     step = grid[1] - grid[0] if len(grid) > 1 else 0.1
-    radius = max(1, int(round(0.5 / step)))
+    radius = max(1, round(0.5 / step))
     points: list[AlignmentPoint] = []
     last_index = -1
     reuse_count = 0
@@ -709,61 +809,50 @@ def build_layered_alignment(
             if track_distance is not None:
                 costs.append(track_distance)
                 methods.append("track_distance_geometry")
-            curvature = _normalized_difference(baseline["yaw_rate"][index], test["yaw_rate"][candidate], 0.12)
-            local_curvature = (
-                _has_local_signal_variation(baseline["yaw_rate"], index, radius, 0.01)
-                and _has_local_signal_variation(test["yaw_rate"], candidate, radius, 0.01)
+            road_costs: list[float] = []
+            baseline_vertical = baseline["vert_accel"][index]
+            test_vertical = test["vert_accel"][candidate]
+            repeatable_vertical_landmark = (
+                road_available["vert_accel"]
+                and baseline_vertical is not None
+                and test_vertical is not None
+                and abs(baseline_vertical - 9.80665) >= 2.0
+                and abs(test_vertical - 9.80665) >= 2.0
+                and _has_local_signal_variation(baseline["vert_accel"], index, radius, 1.0)
+                and _has_local_signal_variation(test["vert_accel"], candidate, radius, 1.0)
             )
-            if yaw_available and local_curvature and curvature is not None:
-                costs.append(curvature)
-                methods.append("yaw_curvature")
-            road_costs = [
-                value for name, scale in (
-                    ("vert_accel", 3.0), ("lf_shock_defl_in", 0.15),
-                    ("rf_shock_defl_in", 0.15), ("lr_shock_defl_in", 0.15),
-                    ("rr_shock_defl_in", 0.15),
-                    ("lf_ride_height_in", 0.15), ("rf_ride_height_in", 0.15),
-                    ("lr_ride_height_in", 0.15), ("rr_ride_height_in", 0.15),
-                    ("cfs_ride_height_in", 0.15),
+            if repeatable_vertical_landmark:
+                vertical_cost = _normalized_difference(baseline_vertical, test_vertical, 3.0)
+                if vertical_cost is not None:
+                    road_costs.append(vertical_cost)
+                road_costs.extend(
+                    value
+                    for name in (
+                        "lf_shock_defl_in",
+                        "rf_shock_defl_in",
+                        "lr_shock_defl_in",
+                        "rr_shock_defl_in",
+                    )
+                    if road_available[name]
+                    and _has_local_signal_variation(
+                        baseline[name], index, radius, road_thresholds[name] / 2,
+                    )
+                    and _has_local_signal_variation(
+                        test[name], candidate, radius, road_thresholds[name] / 2,
+                    )
+                    and (
+                        value := _normalized_difference(
+                            baseline[name][index], test[name][candidate], 0.15,
+                        )
+                    ) is not None
                 )
-                if road_available[name]
-                and _has_local_signal_variation(baseline[name], index, radius, road_thresholds[name] / 2)
-                and _has_local_signal_variation(test[name], candidate, radius, road_thresholds[name] / 2)
-                and (value := _normalized_difference(baseline[name][index], test[name][candidate], scale)) is not None
-            ]
             if road_costs:
                 costs.append(median(road_costs))
                 methods.append("road_profile")
-                vertical_values = (baseline["vert_accel"][index], test["vert_accel"][candidate])
-                shock_values = [
-                    abs(value)
-                    for run, position in ((baseline, index), (test, candidate))
-                    for name in ("lf_shock_defl_in", "rf_shock_defl_in", "lr_shock_defl_in", "rr_shock_defl_in")
-                    if (value := run[name][position]) is not None
-                ]
-                if (
-                    any(value is not None and abs(value - 9.80665) >= 2.0 for value in vertical_values)
-                    or (shock_values and max(shock_values) >= 0.2)
-                ):
+                if repeatable_vertical_landmark:
                     methods.append("repeatable_bump_anchor")
-            baseline_brake, test_brake = baseline["brake_pct"][index], test["brake_pct"][candidate]
-            brake_anchor = _normalized_difference(baseline_brake, test_brake, 15.0)
-            if (
-                anchors_available["brake_pct"]
-                and brake_anchor is not None
-                and max(baseline_brake or 0.0, test_brake or 0.0) >= 5.0
-            ):
-                costs.append(brake_anchor)
-                methods.append("braking_onset_anchor")
-            baseline_steering, test_steering = baseline["steering_deg"][index], test["steering_deg"][candidate]
-            steering_anchor = _normalized_difference(baseline_steering, test_steering, 5.0)
-            if (
-                anchors_available["steering_deg"]
-                and steering_anchor is not None
-                and max(abs(baseline_steering or 0.0), abs(test_steering or 0.0)) >= 3.0
-            ):
-                costs.append(steering_anchor)
-                methods.append("apex_curvature_anchor")
+            if candidate != index and not {"gps_geometry", "road_profile"}.intersection(methods):
+                continue
             primary_penalty = abs(candidate - index) * step / 0.5
             score = (sum(costs) / len(costs) if costs else 0.0) + 0.35 * primary_penalty
             candidates.append((score, candidate, methods))
@@ -790,7 +879,7 @@ def build_layered_alignment(
         if boundary_admitted:
             methods.append("bounded_circular_boundary")
         layer_count = len(set(methods) - {"lap_percentage", "bounded_circular_boundary"})
-        confidence = max(0.2, min(1.0, 0.55 + layer_count * 0.12 - min(score, 3.0) * 0.12))
+        confidence = max(0.2, min(1.0, 0.55 + layer_count * 0.125 - min(score, 3.0) * 0.12))
         if boundary_admitted:
             confidence = min(confidence, 0.7)
         uncertainty = step * (1.0 + max(0.0, score) + 0.5 * reuse_count) / max(confidence, 0.1)
@@ -970,6 +1059,7 @@ def analyze_time_alignment(
 ) -> TimeAlignmentResult:
     grid = build_lap_grid(start_pct, end_pct, step_pct)
     alignment, baseline, test = build_layered_alignment(baseline_rows, test_rows, grid)
+    driver_event_correspondence = build_driver_event_correspondence(baseline, test, grid)
     phase_by_position, phases, _phase_channels = detect_engineering_phases(
         baseline_rows,
         grid=grid,
@@ -1163,4 +1253,5 @@ def analyze_time_alignment(
         distance_basis=distance_basis,
         warnings=warnings,
         source_channels=methods,
+        driver_event_correspondence=driver_event_correspondence,
     )

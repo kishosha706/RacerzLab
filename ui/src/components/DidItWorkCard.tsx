@@ -1,5 +1,6 @@
 import { AlertTriangle, Thermometer, TrendingDown, TrendingUp } from "lucide-react";
 import type { ObservationKind } from "../types/compare";
+import { evidenceStrengthOutOf100 } from "../utils/evidenceScore";
 
 export interface TireContextProps {
   pressureGainDelta?: number | null;
@@ -15,6 +16,7 @@ export interface DidItWorkCardProps {
   headline: string;
   confidenceScore: number;           // 0-1
   testDisciplineScore?: number;      // 0-100
+  disciplineFactors?: { positive: string[]; negative: string[] } | null;
   targetZoneDeltaMph?: number | null;
   splitterDeltaMm?: number | null;
   platformRiskDelta?: number | null;
@@ -68,7 +70,7 @@ function tireContextColor(delta: number | null | undefined): string {
 }
 
 export function DidItWorkCard({
-  observation, headline, confidenceScore, testDisciplineScore,
+  observation, headline, confidenceScore, testDisciplineScore, disciplineFactors,
   targetZoneDeltaMph, splitterDeltaMm, platformRiskDelta, scrubDelta,
   wholeLapDeltaS, paceNoiseBandS, eligibleLapCounts,
   evidence, warnings,
@@ -88,7 +90,7 @@ export function DidItWorkCard({
         <Icon size={20} color={color} />
         <h3 style={{ color }}>{observation.replace(/_/g, " ").toUpperCase()}</h3>
         <span className="diw-confidence" style={{ background: `${color}18`, color, borderColor: `${color}30` }}>
-          {Math.round(confidenceScore * 100)}% confidence
+          Evidence strength {evidenceStrengthOutOf100(confidenceScore)}
         </span>
       </div>
 
@@ -138,6 +140,18 @@ export function DidItWorkCard({
           </div>
         )}
       </div>
+
+      {disciplineFactors && (disciplineFactors.positive.length > 0 || disciplineFactors.negative.length > 0) && (
+        <details className="diw-section" open>
+          <summary>Why this evidence strength</summary>
+          {disciplineFactors.positive.map((factor) => (
+            <p key={`positive-${factor}`} className="diw-evidence-item">Supports: {factor}</p>
+          ))}
+          {disciplineFactors.negative.map((factor) => (
+            <p key={`negative-${factor}`} className="warning-line">Limits: {factor}</p>
+          ))}
+        </details>
+      )}
 
       {/* ── Context warnings (grouped) ── */}
       {(weatherWarning || (contextWarnings?.length ?? 0) > 0) && (
@@ -254,4 +268,3 @@ export function DidItWorkCard({
     </div>
   );
 }
-

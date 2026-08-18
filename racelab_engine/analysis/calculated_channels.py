@@ -6,23 +6,26 @@ from contextlib import suppress
 from typing import Any, cast
 
 from racelab_engine.analysis.constants import (
-    SLIP_RATIO_SPEED_FLOOR_MPS,
-    SLIP_RATIO_CLAMP_MAX,
     REFERENCE_DYNAMIC_PRESSURE_PA,
+    SLIP_RATIO_CLAMP_MAX,
+    SLIP_RATIO_SPEED_FLOOR_MPS,
 )
-from racelab_engine.analysis.drag_scrub import compute_drag_scrub_index, aero_normalized_resistance
-from racelab_engine.analysis.tire_semantics import TIRE_CORNERS, semantic_source
+from racelab_engine.analysis.drag_scrub import (
+    aero_normalized_resistance,
+    compute_drag_scrub_index,
+)
 from racelab_engine.analysis.ride_height_calibration import (
     apply_next_gen_lr_ride_height_offset_to_row,
 )
+from racelab_engine.analysis.tire_semantics import TIRE_CORNERS, semantic_source
 from racelab_engine.analysis.units import (
     EARTH_RADIUS_M,
+    KPA_TO_PSI,
     M_TO_FT,
     M_TO_IN,
+    MM_TO_IN,
     MPS_TO_MPH,
     PA_TO_PSF,
-    KPA_TO_PSI,
-    MM_TO_IN,
     input_01_to_percent,
     radians_to_degrees,
 )
@@ -97,6 +100,10 @@ HIGH_VALUE_RAW_CHANNELS = [
     "LapDeltaToOptimalLap",
     "LapDeltaToSessionBestLap",
     "LapDeltaToSessionOptimalLap",
+    "LapDeltaToBestLap_OK",
+    "LapDeltaToOptimalLap_OK",
+    "LapDeltaToSessionBestLap_OK",
+    "LapDeltaToSessionOptimalLap_OK",
     "OnPitRoad",
     "IsOnTrack",
     "PlayerTrackSurface",
@@ -134,6 +141,8 @@ HIGH_VALUE_RAW_CHANNELS = [
     "FrontTireSetsAvailable",
     "RearTireSetsAvailable",
     "TireSetsAvailable",
+    "LFTiresUsed", "RFTiresUsed", "LRTiresUsed", "RRTiresUsed",
+    "LFTiresAvailable", "RFTiresAvailable", "LRTiresAvailable", "RRTiresAvailable",
     "DriverMarker",
     "EnterExitReset",
     "Speed",
@@ -513,6 +522,9 @@ CALCULATED_CHANNEL_UNITS: dict[str, str] = {
     "diffuser_wedge_volume_ft3": "ft³",
     "diffuser_volume_ft3": "ft³",
     "smooth_diffuser_volume_ft3": "ft³",
+    "diffuser_geometry_source": "label",
+    "diffuser_geometry_profile_sha256": "sha256",
+    "diffuser_rub_block_correction_in": "in",
 }
 
 
@@ -712,8 +724,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
 
     # ── dynamic pressure ──
     "dynamic_pressure_psf": {
-        "label": "Dynamic Pressure",
-        "description": "Dynamic pressure in pounds per square foot. Aero load scales with this value.",
+        "label": "Ground-Speed Pressure Proxy",
+        "description": "DISPLAY-ONLY PROXY — density times ground speed squared in psf. Wind-relative air speed is unavailable, so this is not measured aerodynamic load or cross-run aero truth.",
         "formula": "0.5 * AirDensity * Speed^2 / 47.88025898",
         "dependencies": ["AirDensity", "Speed"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM, DRAG_SCRUB],
@@ -721,8 +733,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "used_by_analyses": [AERO_PLATFORM_CHECK, RIDE_HEIGHT_REVIEW],
     },
     "dynamic_pressure_lap_index": {
-        "label": "Dynamic Pressure Lap Index",
-        "description": "ESTIMATE — normalized dynamic pressure (0-1 scale relative to max in lap). LAP-RELATIVE index — NOT comparable across runs. Proxy, not absolute pressure.",
+        "label": "Ground-Speed Pressure Lap Index",
+        "description": "DISPLAY-ONLY PROXY — normalized density/ground-speed pressure relative to the current lap. Not air-relative and not comparable across runs.",
         "formula": "dynamic_pressure_psf / max(dynamic_pressure_psf in lap)",
         "dependencies": ["dynamic_pressure_psf"],
         "used_by_charts": [AERO_PLATFORM],
@@ -731,8 +743,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "comparable_across_runs": False,
     },
     "dynamic_pressure_index": {
-        "label": "Dynamic Pressure Index",
-        "description": "ESTIMATE — alias for dynamic_pressure_lap_index. LAP-RELATIVE — NOT comparable across runs. Normalized proxy, not absolute pressure.",
+        "label": "Ground-Speed Pressure Index",
+        "description": "DISPLAY-ONLY PROXY — alias for the lap-relative density/ground-speed index. Not air-relative and not comparable across runs.",
         "formula": "dynamic_pressure_psf / max(dynamic_pressure_psf in lap)",
         "dependencies": ["dynamic_pressure_psf"],
         "used_by_charts": [AERO_PLATFORM],
@@ -741,24 +753,24 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "comparable_across_runs": False,
     },
     "aero_load_index": {
-        "label": "Aero Load Index",
-        "description": "ESTIMATE — cross-run comparable aero load index. Ratio of current dynamic pressure to reference pressure at 180 mph sea level. Proxy — not a direct force measurement. Safe for Notebook comparisons across runs, tracks, weather, and sessions.",
+        "label": "Speed-Density Reference Proxy",
+        "description": "RESEARCH/DISPLAY-ONLY PROXY — ground-speed pressure divided by a fixed 180 mph sea-level reference. Wind-relative air speed is unavailable; this is not aero load and is not comparable across unmatched runs.",
         "formula": "dynamic_pressure_pa / REFERENCE_DYNAMIC_PRESSURE_PA",
         "dependencies": ["dynamic_pressure_pa"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
         "used_by_analyses": [AERO_PLATFORM_CHECK],
-        "comparable_across_runs": True,
+        "comparable_across_runs": False,
     },
     "aero_load_index_180mph": {
-        "label": "Aero Load Index (180 mph ref)",
-        "description": "ESTIMATE — alias for aero_load_index. Cross-run comparable. Proxy — not a direct force measurement.",
+        "label": "Speed-Density Proxy (180 mph ref)",
+        "description": "RESEARCH/DISPLAY-ONLY PROXY — alias for the fixed-reference ground-speed pressure ratio. It is not aero load and is not comparable across unmatched runs.",
         "formula": "dynamic_pressure_pa / (0.5 * 1.225 * 80.4672^2)",
         "dependencies": ["dynamic_pressure_pa"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
         "used_by_analyses": [AERO_PLATFORM_CHECK],
-        "comparable_across_runs": True,
+        "comparable_across_runs": False,
     },
 
     # ── risk / suspicion ──
@@ -1030,18 +1042,18 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     # ── platform angles ──
     "platform_pitch_deg_from_rh": {
         "label": "Platform Pitch (from RH)",
-        "description": "ESTIMATE — platform pitch angle derived from front/rear ride height difference. Assumes 1:1 motion ratio unless setup data provides it. Delegates to geometry.compute_pitch_deg().",
-        "formula": "geometry.compute_pitch_deg(front_rh_m, rear_rh_m, wheelbase_m)",
-        "dependencies": ["front_avg_rh_in", "rear_avg_rh_in", "wheelbase_m"],
+        "description": "DISPLAY-ONLY PROXY — platform pitch angle from ride-height differences, source-backed wheelbase, and source-backed front/rear motion ratios. Unavailable when geometry is missing.",
+        "formula": "geometry.compute_pitch_deg(front_rh_m, rear_rh_m, wheelbase_m, front_motion_ratio, rear_motion_ratio)",
+        "dependencies": ["front_avg_rh_in", "rear_avg_rh_in", "wheelbase_m", "motion_ratio_front", "motion_ratio_rear"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
         "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "platform_roll_deg_from_rh": {
         "label": "Platform Roll (from RH)",
-        "description": "ESTIMATE — platform roll angle derived from left/right ride height difference. Assumes 1:1 motion ratio unless setup data provides it. Delegates to geometry.compute_roll_deg().",
-        "formula": "geometry.compute_roll_deg(left_rh_m, right_rh_m, track_width_m)",
-        "dependencies": ["left_avg_rh_in", "right_avg_rh_in", "front_track_width_m"],
+        "description": "REMOVED — one blended whole-car roll angle cannot be derived from mixed front/rear ride heights and one axle motion ratio. Use direct left-right height states or axle-specific source-backed estimates.",
+        "formula": "unavailable",
+        "dependencies": ["left_avg_rh_in", "right_avg_rh_in", "front_track_width_m", "rear_track_width_m", "motion_ratio_front", "motion_ratio_rear"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
         "used_by_analyses": [RIDE_HEIGHT_REVIEW],
@@ -1049,8 +1061,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
 
     # ── dynamic pressure raw ──
     "dynamic_pressure_pa": {
-        "label": "Dynamic Pressure (Pa)",
-        "description": "Dynamic pressure in Pascals. Raw SI value before conversion to psf.",
+        "label": "Ground-Speed Pressure Proxy (Pa)",
+        "description": "DISPLAY-ONLY PROXY — density times ground speed squared in Pa. Wind-relative air speed is unavailable, so this is not measured aerodynamic load.",
         "formula": "0.5 * AirDensity * Speed^2",
         "dependencies": ["AirDensity", "Speed"],
         "used_by_charts": [AERO_PLATFORM],
@@ -1405,17 +1417,17 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
 
     # ── slip angles ──
     "front_slip_angle_deg": {
-        "label": "Front Slip Angle",
-        "description": "ESTIMATE — kinematic front tire slip angle from steering, yaw rate, and local velocity. Requires axle-to-CG distance from setup constants.",
-        "formula": "tire_dynamics.front_slip_angle_rad(steer, vx, vy, r, a)",
-        "dependencies": ["velocity_z", "velocity_x", "yaw_rate", "steering_rad", "front_axle_to_cg_m"],
+        "label": "Front Slip Angle (research shadow)",
+        "description": "RESEARCH SHADOW — kinematic front tire slip angle requires validated local-frame velocity semantics, source-backed road-wheel steer angle, and axle-to-CG geometry. Raw steering-wheel angle is never accepted.",
+        "formula": "tire_dynamics.front_slip_angle_rad(road_wheel_steer_rad, vx, vy, r, a)",
+        "dependencies": ["velocity_z", "velocity_x", "yaw_rate", "road_wheel_steer_rad", "front_axle_to_cg_m", "coordinate_frame_validated", "steering_geometry_validated"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["STEERING_SCRUB"],
         "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rear_slip_angle_deg": {
-        "label": "Rear Slip Angle",
-        "description": "ESTIMATE — kinematic rear tire slip angle from yaw rate and local velocity. Requires axle-to-CG distance from setup constants.",
+        "label": "Rear Slip Angle (research shadow)",
+        "description": "RESEARCH SHADOW — kinematic rear slip angle requires validated local-frame velocity semantics and axle-to-CG geometry.",
         "formula": "tire_dynamics.rear_slip_angle_rad(vx, vy, r, b)",
         "dependencies": ["velocity_z", "velocity_x", "yaw_rate", "rear_axle_to_cg_m"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
@@ -1423,8 +1435,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "slip_angle_balance_deg": {
-        "label": "Slip Angle Balance",
-        "description": "ESTIMATE — difference between front and rear slip angles (front - rear). Positive = understeer bias, negative = oversteer bias.",
+        "label": "Slip Angle Balance (research shadow)",
+        "description": "RESEARCH SHADOW — front-minus-rear kinematic slip estimate. It cannot publish a measured understeer gradient or setup direction.",
         "formula": "tire_dynamics.slip_angle_balance_rad(af, ar)",
         "dependencies": ["front_slip_angle_deg", "rear_slip_angle_deg"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
@@ -1500,7 +1512,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     # ── Ackermann steering ──
     "ackermann_steering_expected_deg": {
         "label": "Ackermann Steering Expected",
-        "description": "ESTIMATE — expected steering angle from Ackermann geometry: atan(wheelbase * curvature). Bicycle model, no steering ratio. Positive = left, negative = right.",
+        "description": "RESEARCH SHADOW PROXY — expected road-wheel steer angle from bicycle geometry. It is not comparable with raw steering-wheel angle.",
         "formula": "atan(wheelbase_m * curvature_1_per_m)",
         "dependencies": ["wheelbase_m", "curvature_1_per_m"],
         "used_by_charts": [],
@@ -1509,9 +1521,9 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "ackermann_steering_error_deg": {
         "label": "Ackermann Steering Error",
-        "description": "ESTIMATE — |actual_steering| - |expected_ackermann|. Positive = more steering than geometry predicts (understeer or extra input). Negative = less steering (oversteer or reduced input).",
-        "formula": "abs(steering_deg) - abs(ackermann_steering_expected_deg)",
-        "dependencies": ["steering_deg", "ackermann_steering_expected_deg"],
+        "description": "RESEARCH SHADOW PROXY — source-backed road-wheel steer minus expected bicycle-model steer. Unavailable when steering-rack/wheel conversion is unknown.",
+        "formula": "abs(road_wheel_steer_deg) - abs(ackermann_steering_expected_deg)",
+        "dependencies": ["road_wheel_steer_deg", "ackermann_steering_expected_deg"],
         "used_by_charts": [],
         "used_by_events": [],
         "used_by_analyses": [],
@@ -1531,7 +1543,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "label": "Front Platform Roll (from RH)",
         "description": "ESTIMATE — front axle roll angle from LF/RF ride height difference using front track width and front motion ratio. Not a direct chassis attitude measurement.",
         "formula": "compute_roll_deg(lf_rh_m, rf_rh_m, front_track_width_m, front_motion_ratio)",
-        "dependencies": ["lf_ride_height_mm", "rf_ride_height_mm", "front_track_width_m"],
+        "dependencies": ["lf_ride_height_mm", "rf_ride_height_mm", "front_track_width_m", "motion_ratio_front"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
         "used_by_analyses": [RIDE_HEIGHT_REVIEW],
@@ -1540,14 +1552,14 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "label": "Rear Platform Roll (from RH)",
         "description": "ESTIMATE — rear axle roll angle from LR/RR ride height difference using rear track width and rear motion ratio. Not a direct chassis attitude measurement.",
         "formula": "compute_roll_deg(lr_rh_m, rr_rh_m, rear_track_width_m, rear_motion_ratio)",
-        "dependencies": ["lr_ride_height_mm", "rr_ride_height_mm", "rear_track_width_m"],
+        "dependencies": ["lr_ride_height_mm", "rr_ride_height_mm", "rear_track_width_m", "motion_ratio_rear"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
         "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "platform_roll_balance_deg": {
         "label": "Platform Roll Balance",
-        "description": "ESTIMATE — front roll minus rear roll. Positive = front rolls more than rear (more front grip or softer front roll stiffness). Negative = rear rolls more.",
+        "description": "DISPLAY-ONLY PROXY — front axle ride-height roll estimate minus rear axle estimate. It does not measure grip, wheel load, or roll stiffness.",
         "formula": "front_platform_roll_deg_from_rh - rear_platform_roll_deg_from_rh",
         "dependencies": ["front_platform_roll_deg_from_rh", "rear_platform_roll_deg_from_rh"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
@@ -1558,7 +1570,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     # ── camber heat spread proxy ──
     "lf_camber_temp_bias_c": {
         "label": "LF Camber Temp Bias",
-        "description": "ESTIMATE — left-front inner minus outer carcass temperature. Positive = inside hotter (too much negative camber or cornering load). Proxy — not a direct camber measurement.",
+        "description": "DISPLAY-ONLY PROXY — left-front physical inboard-minus-outboard carcass-temperature pit snapshot. It does not identify camber cause or authorize alignment direction.",
         "formula": "lf_carcass_temp_l - lf_carcass_temp_r",
         "dependencies": ["lf_carcass_temp_l", "lf_carcass_temp_r"],
         "used_by_charts": [TIRES],
@@ -1567,7 +1579,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "rf_camber_temp_bias_c": {
         "label": "RF Camber Temp Bias",
-        "description": "ESTIMATE — right-front inner minus outer carcass temperature.",
+        "description": "DISPLAY-ONLY PROXY — right-front physical inboard-minus-outboard carcass-temperature pit snapshot; no camber cause is assigned.",
         "formula": "rf_carcass_temp_l - rf_carcass_temp_r",
         "dependencies": ["rf_carcass_temp_l", "rf_carcass_temp_r"],
         "used_by_charts": [TIRES],
@@ -1576,7 +1588,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "lr_camber_temp_bias_c": {
         "label": "LR Camber Temp Bias",
-        "description": "ESTIMATE — left-rear inner minus outer carcass temperature.",
+        "description": "DISPLAY-ONLY PROXY — left-rear physical inboard-minus-outboard carcass-temperature pit snapshot; no camber cause is assigned.",
         "formula": "lr_carcass_temp_l - lr_carcass_temp_r",
         "dependencies": ["lr_carcass_temp_l", "lr_carcass_temp_r"],
         "used_by_charts": [TIRES],
@@ -1585,7 +1597,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "rr_camber_temp_bias_c": {
         "label": "RR Camber Temp Bias",
-        "description": "ESTIMATE — right-rear inner minus outer carcass temperature.",
+        "description": "DISPLAY-ONLY PROXY — right-rear physical inboard-minus-outboard carcass-temperature pit snapshot; no camber cause is assigned.",
         "formula": "rr_carcass_temp_l - rr_carcass_temp_r",
         "dependencies": ["rr_carcass_temp_l", "rr_carcass_temp_r"],
         "used_by_charts": [TIRES],
@@ -1594,8 +1606,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "lf_camber_bias_label": {
         "label": "LF Camber Bias Label",
-        "description": "ESTIMATE — qualitative camber bias: high_inside, high_outside, even, or unknown.",
-        "formula": "classification from lf_camber_temp_bias_c",
+        "description": "REMOVED — an absolute carcass-temperature threshold cannot classify camber or alignment direction.",
+        "formula": "unavailable",
         "dependencies": ["lf_camber_temp_bias_c"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -1603,8 +1615,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "rf_camber_bias_label": {
         "label": "RF Camber Bias Label",
-        "description": "ESTIMATE — qualitative camber bias for right-front.",
-        "formula": "classification from rf_camber_temp_bias_c",
+        "description": "REMOVED — an absolute carcass-temperature threshold cannot classify camber or alignment direction.",
+        "formula": "unavailable",
         "dependencies": ["rf_camber_temp_bias_c"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -1612,8 +1624,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "lr_camber_bias_label": {
         "label": "LR Camber Bias Label",
-        "description": "ESTIMATE — qualitative camber bias for left-rear.",
-        "formula": "classification from lr_camber_temp_bias_c",
+        "description": "REMOVED — an absolute carcass-temperature threshold cannot classify camber or alignment direction.",
+        "formula": "unavailable",
         "dependencies": ["lr_camber_temp_bias_c"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -1621,8 +1633,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "rr_camber_bias_label": {
         "label": "RR Camber Bias Label",
-        "description": "ESTIMATE — qualitative camber bias for right-rear.",
-        "formula": "classification from rr_camber_temp_bias_c",
+        "description": "REMOVED — an absolute carcass-temperature threshold cannot classify camber or alignment direction.",
+        "formula": "unavailable",
         "dependencies": ["rr_camber_temp_bias_c"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -1951,7 +1963,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "used_by_events": ["REAR_PLATFORM_LOW", "REAR_PLATFORM_SCRAPE"],
         "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
-    # ── diffuser geometry (Roger's diffuser geometry math) ──
+    # ── profile-backed diffuser clearance geometry ──
     "front_center_rh_in": {
         "label": "Front Center RH",
         "unit": "in",
@@ -1963,102 +1975,132 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "dependencies": ["rf_ride_height_in", "lf_ride_height_in"],
     },
     "rear_center_rh_in": {
-        "label": "Rear Center RH",
+        "label": "Rear Center RH Proxy",
         "unit": "in",
         "category": "diffuser",
         "source_nature": "derived",
         "precision": 2,
-        "description": "Average rear ride height: (rr_ride_height_in + lr_height_rub_block_in) / 2 with 0.5 in rub-block correction on LR.",
-        "formula": "(rr_ride_height_in + lr_ride_height_in - 0.5) / 2",
-        "dependencies": ["rr_ride_height_in", "lr_ride_height_in"],
+        "description": "CALCULATED PROXY — rear center height after applying a reviewed profile-backed LR rub-block correction.",
+        "formula": "(rr_ride_height_in + lr_height_rub_block_in) / 2",
+        "dependencies": ["rr_ride_height_in", "lr_height_rub_block_in", "diffuser_geometry_profile_sha256"],
     },
     "lr_height_rub_block_in": {
-        "label": "LR Height — Rub Block",
+        "label": "LR Corrected Height Proxy",
         "unit": "in",
         "category": "diffuser",
         "source_nature": "derived",
         "precision": 2,
-        "description": "Left-rear ride height with 0.5 in rub-block correction subtracted.",
-        "formula": "lr_ride_height_in - 0.5",
-        "dependencies": ["lr_ride_height_in"],
+        "description": "CALCULATED PROXY — left-rear ride height after a reviewed profile-backed rub-block correction.",
+        "formula": "lr_ride_height_in - diffuser_rub_block_correction_in",
+        "dependencies": ["lr_ride_height_in", "diffuser_rub_block_correction_in", "diffuser_geometry_profile_sha256"],
     },
     "center_rake_in": {
-        "label": "Center Rake",
+        "label": "Center Rake Proxy",
         "unit": "in",
         "category": "diffuser",
         "source_nature": "derived",
         "precision": 2,
-        "description": "Rake angle proxy: rear_center_rh_in - front_center_rh_in.",
+        "description": "CALCULATED PROXY — profile-backed rear center height minus measured front center height; not direct chassis attitude.",
         "formula": "rear_center_rh_in - front_center_rh_in",
         "dependencies": ["rear_center_rh_in", "front_center_rh_in"],
     },
     "smooth_center_rake_in": {
-        "label": "Smooth Center Rake",
+        "label": "Smoothed Center Rake Proxy",
         "unit": "in",
         "category": "diffuser",
         "source_nature": "derived",
         "precision": 2,
-        "description": "Trailing/causal smooth of center_rake_in (window 20 samples).",
+        "description": "CALCULATED PROXY — trailing display smooth of profile-backed center_rake_in (window 20 samples).",
         "formula": "rolling smooth of center_rake_in, window 20",
         "dependencies": ["center_rake_in"],
     },
+    "diffuser_geometry_source": {
+        "label": "Diffuser Geometry Source",
+        "unit": "label",
+        "category": "diffuser",
+        "source_nature": "derived",
+        "precision": 0,
+        "description": "Exact provenance class for admitted diffuser geometry.",
+        "formula": "reviewed_vehicle_profile only",
+        "dependencies": ["diffuser_geometry_profile_sha256"],
+    },
+    "diffuser_geometry_profile_sha256": {
+        "label": "Diffuser Geometry Profile Identity",
+        "unit": "sha256",
+        "category": "diffuser",
+        "source_nature": "derived",
+        "precision": 0,
+        "description": "Content identity of the reviewed vehicle profile supplying geometry constants.",
+        "formula": "reviewed profile content SHA-256",
+        "dependencies": [],
+    },
+    "diffuser_rub_block_correction_in": {
+        "label": "Diffuser Rub-Block Correction Proxy",
+        "unit": "in",
+        "category": "diffuser",
+        "source_nature": "derived",
+        "precision": 3,
+        "description": "CALCULATED PROXY — reviewed vehicle-profile LR rub-block correction. Unavailable without profile provenance.",
+        "formula": "reviewed profile constant",
+        "dependencies": ["diffuser_geometry_profile_sha256"],
+    },
     "diffuser_track_width_in": {
-        "label": "Diffuser Track Width Used",
+        "label": "Diffuser Track Width Proxy",
         "unit": "in",
         "category": "diffuser",
         "source_nature": "derived",
         "precision": 2,
-        "description": "Resolved vehicle track width for diffuser calculation. Prefers rear_track_width_m from geometry; falls back to 79 in with assumption label.",
-        "formula": "Resolved from geometry or fallback 79 in",
-        "dependencies": ["rear_track_width_m", "front_track_width_m"],
+        "description": "CALCULATED PROXY — reviewed vehicle-profile track width used for diffuser geometry. Unavailable without profile provenance.",
+        "formula": "reviewed rear_track_width_m (or reviewed front_track_width_m) * 39.37007874",
+        "dependencies": ["rear_track_width_m", "front_track_width_m", "diffuser_geometry_profile_sha256"],
     },
     "diffuser_wheelbase_in": {
-        "label": "Diffuser Wheelbase Used",
+        "label": "Diffuser Wheelbase Proxy",
         "unit": "in",
         "category": "diffuser",
         "source_nature": "derived",
         "precision": 2,
-        "description": "Resolved vehicle wheelbase for diffuser calculation. Prefers wheelbase_m from geometry; falls back to 110 in.",
-        "formula": "Resolved from geometry or fallback 110 in",
-        "dependencies": ["wheelbase_m"],
+        "description": "CALCULATED PROXY — reviewed vehicle-profile wheelbase used for diffuser geometry. Unavailable without profile provenance.",
+        "formula": "reviewed wheelbase_m * 39.37007874",
+        "dependencies": ["wheelbase_m", "diffuser_geometry_profile_sha256"],
     },
     "diffuser_base_volume_ft3": {
-        "label": "Diffuser Base Volume",
+        "label": "Diffuser Base-Volume Proxy",
         "unit": "ft³",
         "category": "diffuser",
         "source_nature": "derived",
         "precision": 2,
-        "description": "Base diffuser volume: (front_center_rh_in * wheelbase_in * track_width_in) / 1728.",
+        "description": "CALCULATED PROXY — base clearance-volume geometry from measured ride heights and reviewed profile constants; not measured diffuser volume or aerodynamic load.",
         "formula": "(front_center_rh_in * diffuser_wheelbase_in * diffuser_track_width_in) / 1728",
         "dependencies": ["front_center_rh_in", "diffuser_wheelbase_in", "diffuser_track_width_in"],
     },
     "diffuser_wedge_volume_ft3": {
-        "label": "Diffuser Wedge Volume",
+        "label": "Diffuser Wedge-Volume Proxy",
         "unit": "ft³",
         "category": "diffuser",
         "source_nature": "derived",
         "precision": 2,
-        "description": "Wedge diffuser volume from rake delta and diagonal length.",
+        "description": "CALCULATED PROXY — signed clearance geometry from measured ride heights and reviewed profile constants; not measured diffuser volume or aerodynamic load.",
         "formula": "(track_width_in * rake_delta * sqrt(wb² + rake_delta²/2)) / 1728",
         "dependencies": ["diffuser_track_width_in", "diffuser_wheelbase_in", "front_center_rh_in", "rear_center_rh_in"],
     },
     "diffuser_volume_ft3": {
-        "label": "Diffuser Volume",
+        "label": "Diffuser Clearance-Volume Proxy",
         "unit": "ft³",
         "category": "diffuser",
         "source_nature": "derived",
         "precision": 2,
-        "description": "Total diffuser volume: base + wedge.",
+        "description": "CALCULATED PROXY — combined clearance geometry; not measured physical volume, downforce, or aerodynamic load.",
         "formula": "diffuser_base_volume_ft3 + diffuser_wedge_volume_ft3",
         "dependencies": ["diffuser_base_volume_ft3", "diffuser_wedge_volume_ft3"],
     },
     "smooth_diffuser_volume_ft3": {
-        "label": "Smooth Diffuser Volume",
+        "label": "Smoothed Diffuser Clearance Proxy",
         "unit": "ft³",
         "category": "diffuser",
         "source_nature": "derived",
         "precision": 2,
-        "description": "Trailing/causal smooth of diffuser_volume_ft3 (window 20 samples).",
+        "description": "CALCULATED PROXY — trailing display smooth of profile-backed diffuser clearance geometry (window 20 samples).",
         "formula": "rolling smooth of diffuser_volume_ft3, window 20",
         "dependencies": ["diffuser_volume_ft3"],
     },
@@ -2156,6 +2198,16 @@ def _average(item: dict[str, Any], *keys: str) -> float | None:
 _ALIAS_MAP: dict[str, str] = {
     "SessionTime": "session_time", "SessionTick": "session_tick",
     "Lap": "lap", "LapCompleted": "lap_completed",
+    "LapCurrentLapTime": "lap_current_time_s",
+    "LapLastLapTime": "lap_last_time_s", "LapBestLapTime": "lap_best_time_s",
+    "LapDeltaToBestLap": "lap_delta_to_best_s",
+    "LapDeltaToOptimalLap": "lap_delta_to_optimal_s",
+    "LapDeltaToSessionBestLap": "lap_delta_to_session_best_s",
+    "LapDeltaToSessionOptimalLap": "lap_delta_to_session_optimal_s",
+    "LapDeltaToBestLap_OK": "lap_delta_to_best_valid",
+    "LapDeltaToOptimalLap_OK": "lap_delta_to_optimal_valid",
+    "LapDeltaToSessionBestLap_OK": "lap_delta_to_session_best_valid",
+    "LapDeltaToSessionOptimalLap_OK": "lap_delta_to_session_optimal_valid",
     "OnPitRoad": "on_pit_road", "IsOnTrack": "is_on_track",
     "PlayerTrackSurface": "player_track_surface",
     "LapDist": "lap_dist_m", "LapDistPct": "lap_dist_pct",
@@ -2222,6 +2274,10 @@ _REMAINING_ALIAS_MAP: dict[str, str] = {
     "FrontTireSetsAvailable": "front_tire_sets_available",
     "RearTireSetsAvailable": "rear_tire_sets_available",
     "TireSetsAvailable": "tire_sets_available",
+    "LFTiresUsed": "lf_tires_used", "RFTiresUsed": "rf_tires_used",
+    "LRTiresUsed": "lr_tires_used", "RRTiresUsed": "rr_tires_used",
+    "LFTiresAvailable": "lf_tires_available", "RFTiresAvailable": "rf_tires_available",
+    "LRTiresAvailable": "lr_tires_available", "RRTiresAvailable": "rr_tires_available",
     "CarDistAhead": "car_distance_ahead_m",
     "CarDistBehind": "car_distance_behind_m",
     "DriverMarker": "driver_marker",
@@ -2601,7 +2657,12 @@ def _compute_averages(item: dict[str, Any]) -> None:
 def _compute_dynamic_pressure(item: dict[str, Any]) -> None:
     air_density = _number(item.get("air_density"))
     speed_mps = _number(item.get("speed_mps"))
-    if air_density is not None and speed_mps is not None:
+    if (
+        air_density is not None
+        and air_density > 0.0
+        and speed_mps is not None
+        and speed_mps >= 0.0
+    ):
         dynamic_pressure_pa = 0.5 * air_density * speed_mps * speed_mps
         _set_number(item, "dynamic_pressure_pa", dynamic_pressure_pa)
         _set_number(item, "dynamic_pressure_psf", dynamic_pressure_pa * PA_TO_PSF)
@@ -2631,7 +2692,12 @@ def _scrape_side_code(lr_mm: float, rr_mm: float) -> int:
 
 def _risk_from_rear_mm(value: Any) -> float | None:
     """Risk score for rear ride height using same scale as CFS risk."""
-    from racelab_engine.analysis.constants import REAR_SCRAPE_MM, REAR_CRITICAL_MM, REAR_HIGH_MM, REAR_WATCH_MM
+    from racelab_engine.analysis.constants import (
+        REAR_CRITICAL_MM,
+        REAR_HIGH_MM,
+        REAR_SCRAPE_MM,
+        REAR_WATCH_MM,
+    )
     rear_mm = _number(value)
     if rear_mm is None:
         return None
@@ -2718,7 +2784,7 @@ def _compute_slip_ratios(item: dict[str, Any]) -> None:
             _set_number(item, target, slip)
 
     # Geometry-corrected wheel speed mismatch using yaw rate
-    yaw_rate = _number(item.get("yaw_rate")) or 0.0
+    yaw_rate = _number(item.get("yaw_rate"))
     front_tw_m = _number(item.get("front_track_width_m"))
     rear_tw_m = _number(item.get("rear_track_width_m"))
 
@@ -2727,14 +2793,14 @@ def _compute_slip_ratios(item: dict[str, Any]) -> None:
     _set_number(item, "rear_wheel_speed_mismatch_raw", _difference(item, "RRspeed", "LRspeed"))
 
     # Geometry-corrected mismatch
-    if front_tw_m is not None:
+    if front_tw_m is not None and yaw_rate is not None:
         front_geo = yaw_rate * front_tw_m
         front_diff = _difference(item, "RFspeed", "LFspeed")
         if front_diff is not None:
             _set_number(item, "front_wheel_speed_mismatch_corrected", front_diff - front_geo)
     else:
         item.setdefault("front_wheel_speed_mismatch_corrected", None)
-    if rear_tw_m is not None:
+    if rear_tw_m is not None and yaw_rate is not None:
         rear_geo = yaw_rate * rear_tw_m
         rear_diff = _difference(item, "RRspeed", "LRspeed")
         if rear_diff is not None:
@@ -2848,7 +2914,9 @@ def _compute_stability_scores(row: dict[str, Any], previous: dict[str, Any]) -> 
 
 def _compute_resistance_indices(row: dict[str, Any], previous: dict[str, Any]) -> None:
     from racelab_engine.analysis.constants import (
-        DRAG_SCRUB_MIN_SPEED_MPH, FULL_THROTTLE_PCT, LOW_BRAKE_PCT,
+        DRAG_SCRUB_MIN_SPEED_MPH,
+        FULL_THROTTLE_PCT,
+        LOW_BRAKE_PCT,
         RESISTANCE_COEFF_CRITICAL,
     )
 
@@ -2946,52 +3014,68 @@ def _apply_row_calculations(item: dict[str, Any], car_path: Any = None) -> None:
     _compute_camber_bias(item)
 
 
-# ── diffuser geometry (Roger's diffuser geometry math) ────────────
+# ── profile-backed diffuser clearance geometry ────────────────────
 
-_DIFFUSER_FALLBACK_WHEELBASE_IN = 110.0
-_DIFFUSER_FALLBACK_TRACK_WIDTH_IN = 79.0
-_DIFFUSER_RUB_BLOCK_CORRECTION_IN = 0.5
+_DIFFUSER_PROFILE_SOURCE = "reviewed_vehicle_profile"
 _CUBIC_INCHES_PER_FT3 = 1728.0
 _DIFFUSER_SMOOTH_WINDOW = 20
 
 
 def _resolve_diffuser_geometry(
-    geometry: Mapping[str, float] | None,
-    default_wb: float = _DIFFUSER_FALLBACK_WHEELBASE_IN,
-    default_tw: float = _DIFFUSER_FALLBACK_TRACK_WIDTH_IN,
-) -> tuple[float, float]:
-    """Resolve wheelbase and track-width in inches for diffuser computation."""
-    if geometry:
-        wb_m = geometry.get("wheelbase_m")
-        if wb_m is not None and wb_m > 0:
-            wb_in = wb_m * 39.37007874
-        else:
-            wb_in = default_wb
+    geometry: Mapping[str, Any] | None,
+) -> tuple[float | None, float | None, float | None, str | None, str | None]:
+    """Resolve only reviewed, content-addressed diffuser geometry.
 
-        rear_tw_m = geometry.get("rear_track_width_m")
-        front_tw_m = geometry.get("front_track_width_m")
-        if rear_tw_m is not None and rear_tw_m > 0:
-            tw_in = rear_tw_m * 39.37007874
-        elif front_tw_m is not None and front_tw_m > 0:
-            tw_in = front_tw_m * 39.37007874
-        else:
-            tw_in = default_tw
-    else:
-        wb_in = default_wb
-        tw_in = default_tw
-    return wb_in, tw_in
+    File presence or a plausible nominal value is never provenance.  A caller
+    must supply the reviewed-profile source marker, its content SHA, wheelbase,
+    one track-width value, and the LR rub-block correction as one complete
+    contract.  Otherwise every dependent diffuser quantity stays unavailable.
+    """
+    if not geometry or geometry.get("geometry_source") != _DIFFUSER_PROFILE_SOURCE:
+        return None, None, None, None, None
+    profile_sha = geometry.get("geometry_profile_sha256")
+    if (
+        not isinstance(profile_sha, str)
+        or len(profile_sha) != 64
+        or any(character not in "0123456789abcdef" for character in profile_sha)
+    ):
+        return None, None, None, None, None
+
+    def finite_value(key: str, *, positive: bool) -> float | None:
+        value = _number(geometry.get(key))
+        if value is None or (positive and value <= 0) or (not positive and value < 0):
+            return None
+        return value
+
+    wheelbase_m = finite_value("wheelbase_m", positive=True)
+    track_width_m = finite_value("rear_track_width_m", positive=True)
+    if track_width_m is None:
+        track_width_m = finite_value("front_track_width_m", positive=True)
+    rub_block_in = finite_value("lr_rub_block_correction_in", positive=False)
+    if wheelbase_m is None or track_width_m is None or rub_block_in is None:
+        return None, None, None, None, None
+    return (
+        wheelbase_m * 39.37007874,
+        track_width_m * 39.37007874,
+        rub_block_in,
+        _DIFFUSER_PROFILE_SOURCE,
+        profile_sha,
+    )
 
 
 def _compute_diffuser_channels(
     rows: list[dict[str, Any]],
-    geometry: Mapping[str, float] | None = None,
+    geometry: Mapping[str, Any] | None = None,
 ) -> None:
-    """Compute diffuser geometry channels on all rows (row path)."""
+    """Compute profile-backed diffuser clearance proxies on all rows."""
     if not rows:
         return
 
-    wb_in, tw_in = _resolve_diffuser_geometry(geometry)
-    rub = _DIFFUSER_RUB_BLOCK_CORRECTION_IN
+    wb_in, tw_in, rub, geometry_source, profile_sha = _resolve_diffuser_geometry(geometry)
+    geometry_ready = all(
+        value is not None
+        for value in (wb_in, tw_in, rub, geometry_source, profile_sha)
+    )
     ft3_div = _CUBIC_INCHES_PER_FT3
 
     # Per-row volume calc
@@ -3001,13 +3085,16 @@ def _compute_diffuser_channels(
         rf = row.get("rf_ride_height_in")
         lr = row.get("lr_ride_height_in")
         rr = row.get("rr_ride_height_in")
+        row["diffuser_geometry_source"] = geometry_source
+        row["diffuser_geometry_profile_sha256"] = profile_sha
+        row["diffuser_track_width_in"] = tw_in
+        row["diffuser_wheelbase_in"] = wb_in
+        row["diffuser_rub_block_correction_in"] = rub
         if lf is None or rf is None or lr is None or rr is None:
             row["front_center_rh_in"] = None
             row["lr_height_rub_block_in"] = None
             row["rear_center_rh_in"] = None
             row["center_rake_in"] = None
-            row["diffuser_track_width_in"] = tw_in
-            row["diffuser_wheelbase_in"] = wb_in
             row["diffuser_base_volume_ft3"] = None
             row["diffuser_wedge_volume_ft3"] = None
             row["diffuser_volume_ft3"] = None
@@ -3015,16 +3102,25 @@ def _compute_diffuser_channels(
             continue
 
         front_c = (rf + lf) / 2.0
+        row["front_center_rh_in"] = front_c
+        if not geometry_ready:
+            row["lr_height_rub_block_in"] = None
+            row["rear_center_rh_in"] = None
+            row["center_rake_in"] = None
+            row["diffuser_base_volume_ft3"] = None
+            row["diffuser_wedge_volume_ft3"] = None
+            row["diffuser_volume_ft3"] = None
+            volumes.append(float("nan"))
+            continue
+
+        assert rub is not None and wb_in is not None and tw_in is not None
         lr_rub = lr - rub
         rear_c = (rr + lr_rub) / 2.0
         rake = rear_c - front_c
 
-        row["front_center_rh_in"] = front_c
         row["lr_height_rub_block_in"] = lr_rub
         row["rear_center_rh_in"] = rear_c
         row["center_rake_in"] = rake
-        row["diffuser_track_width_in"] = tw_in
-        row["diffuser_wheelbase_in"] = wb_in
 
         base_vol = (front_c * wb_in * tw_in) / ft3_div
         row["diffuser_base_volume_ft3"] = base_vol
@@ -3066,17 +3162,24 @@ def _compute_g_values(item: dict[str, Any]) -> None:
 
 
 def _compute_kinematic_slip_angles(item: dict[str, Any]) -> None:
-    """Estimate front and rear slip angles using local velocity and geometry.
-    Requires local frame velocities (VelocityX/Z) and axle-to-CG distances.
-    """
+    """Research-shadow slip angles with validated geometry inputs only."""
     from racelab_engine.analysis.tire_dynamics import (
-        front_slip_angle_rad, rear_slip_angle_rad, slip_angle_balance_rad
+        front_slip_angle_rad,
+        rear_slip_angle_rad,
+        slip_angle_balance_rad,
     )
-    # iRacing: VelocityZ is forward, VelocityX is sideways
+    if item.get("coordinate_frame_validated") is not True or item.get(
+        "steering_geometry_validated"
+    ) is not True:
+        return
+    # These axis meanings may be used only after the explicit source audit.
     vx = _number(item.get("velocity_z")) or _number(item.get("speed_mps"))
     vy = _number(item.get("velocity_x"))
     r = _number(item.get("yaw_rate"))
-    steer = _number(item.get("steering_rad"))
+    # SteeringWheelAngle is driver demand, not road-wheel steer angle.  This
+    # research path activates only when a future source-backed conversion owns
+    # the explicit road-wheel channel.
+    steer = _number(item.get("road_wheel_steer_rad"))
     a = _number(item.get("front_axle_to_cg_m"))
     b = _number(item.get("rear_axle_to_cg_m"))
     
@@ -3098,9 +3201,13 @@ def _compute_platform_angles(item: dict[str, Any]) -> None:
     These are geometric estimates only — not true inertial angles.
 
     Uses geometry.py for SI-first math with motion-ratio hooks.
-    Geometry estimate assumes 1:1 motion ratio until setup data provides it.
+    Angles remain unavailable until source-backed motion ratios are present.
     """
-    from racelab_engine.analysis.geometry import compute_pitch_deg, compute_roll_deg, ride_height_mm_to_m
+    from racelab_engine.analysis.geometry import (
+        compute_pitch_deg,
+        compute_roll_deg,
+        ride_height_mm_to_m,
+    )
     wb_m = _number(item.get("wheelbase_m"))
     ftw = _number(item.get("front_track_width_m"))
     rtw = _number(item.get("rear_track_width_m"))
@@ -3128,10 +3235,9 @@ def _compute_platform_angles(item: dict[str, Any]) -> None:
         assert fl_mm is not None and fr_mm is not None and rl_mm is not None and rr_mm is not None
         left_m = ride_height_mm_to_m((fl_mm + rl_mm) / 2.0)
         right_m = ride_height_mm_to_m((fr_mm + rr_mm) / 2.0)
-        # Legacy global roll using blended track width
-        roll = compute_roll_deg(left_m, right_m, tw_m, left_motion_ratio=mrf, right_motion_ratio=mrf)
-        if roll is not None:
-            _set_number(item, "platform_roll_deg_from_rh", roll)
+        # A blended whole-car roll angle would combine axle geometry and use a
+        # false single motion ratio. Preserve direct height states instead.
+        _ = left_m, right_m
 
         # Front axle roll (uses front track width + front motion ratio)
         if ftw and ftw > 0:
@@ -3159,20 +3265,24 @@ def _compute_platform_angles(item: dict[str, Any]) -> None:
 def _compute_ackermann(item: dict[str, Any]) -> None:
     """Compute Ackermann steering channels. Optional — requires wheelbase and curvature."""
     from racelab_engine.analysis.vehicle_dynamics import (
-        ackermann_steering_expected_deg as _ase,
-        ackermann_steering_error_deg as _ase_err,
         ackermann_scrub_proxy as _asp,
+    )
+    from racelab_engine.analysis.vehicle_dynamics import (
+        ackermann_steering_error_deg as _ase_err,
+    )
+    from racelab_engine.analysis.vehicle_dynamics import (
+        ackermann_steering_expected_deg as _ase,
     )
     wb = _number(item.get("wheelbase_m"))
     curv = _number(item.get("curvature_1_per_m"))
-    steer = _number(item.get("steering_deg"))
+    steer = _number(item.get("road_wheel_steer_deg"))
 
     if wb is not None and curv is not None:
         expected, _ = _ase(wb, curv)
         if expected is not None:
             _set_number(item, "ackermann_steering_expected_deg", expected)
 
-            if steer is not None:
+        if steer is not None and item.get("steering_geometry_validated") is True:
                 error, _ = _ase_err(steer, expected)
                 if error is not None:
                     _set_number(item, "ackermann_steering_error_deg", error)
@@ -3181,40 +3291,49 @@ def _compute_ackermann(item: dict[str, Any]) -> None:
 
 
 def _compute_camber_bias(item: dict[str, Any]) -> None:
-    """Compute camber temp bias channels from carcass temps."""
-    CAMBER_BIAS_THRESHOLD_C = 15.0
+    """Retain only the physical inboard-minus-outboard pit snapshot."""
     for c in ["lf", "rf", "lr", "rr"]:
+        item[f"{c}_camber_bias_label"] = None
         inner = _number(item.get(f"{c}_carcass_temp_{semantic_source(c, 'inner')[0]}"))
         outer = _number(item.get(f"{c}_carcass_temp_{semantic_source(c, 'outer')[0]}"))
         if inner is not None and outer is not None:
             bias = inner - outer
             _set_number(item, f"{c}_camber_temp_bias_c", bias)
-            if abs(bias) < CAMBER_BIAS_THRESHOLD_C:
-                item[f"{c}_camber_bias_label"] = "even"
-            elif bias > 0:
-                item[f"{c}_camber_bias_label"] = "high_inside"
-            else:
-                item[f"{c}_camber_bias_label"] = "high_outside"
 
 
 def _apply_derivatives(rows: list[dict[str, Any]]) -> None:
-    _max_dynamic_pressure = max(
-        (_number(row.get("dynamic_pressure_psf")) or 0.0 for row in rows),
-        default=1.0,
-    )
-    if _max_dynamic_pressure <= 0:
+    available_dynamic_pressure = [
+        value
+        for row in rows
+        if (value := _number(row.get("dynamic_pressure_psf"))) is not None
+        and value >= 0.0
+    ]
+    _max_dynamic_pressure = max(available_dynamic_pressure, default=None)
+    if _max_dynamic_pressure is not None and _max_dynamic_pressure <= 0:
         _max_dynamic_pressure = 1.0
 
     previous: dict[str, Any] | None = None
     for row in rows:
-        dp_psf = _number(row.get("dynamic_pressure_psf")) or 0.0
-        row["dynamic_pressure_lap_index"] = dp_psf / _max_dynamic_pressure
-        row["dynamic_pressure_index"] = dp_psf / _max_dynamic_pressure  # alias for backward compat
+        dp_psf = _number(row.get("dynamic_pressure_psf"))
+        lap_index = (
+            dp_psf / _max_dynamic_pressure
+            if dp_psf is not None
+            and dp_psf >= 0.0
+            and _max_dynamic_pressure is not None
+            else None
+        )
+        row["dynamic_pressure_lap_index"] = lap_index
+        row["dynamic_pressure_index"] = lap_index  # alias for backward compat
 
         # Cross-run comparable aero load index
-        dp_pa = _number(row.get("dynamic_pressure_pa")) or 0.0
-        row["aero_load_index"] = dp_pa / REFERENCE_DYNAMIC_PRESSURE_PA
-        row["aero_load_index_180mph"] = dp_pa / REFERENCE_DYNAMIC_PRESSURE_PA
+        dp_pa = _number(row.get("dynamic_pressure_pa"))
+        aero_index = (
+            dp_pa / REFERENCE_DYNAMIC_PRESSURE_PA
+            if dp_pa is not None and dp_pa >= 0.0
+            else None
+        )
+        row["aero_load_index"] = aero_index
+        row["aero_load_index_180mph"] = aero_index
 
         if previous is None:
             _init_derivative_row(row)
@@ -3236,10 +3355,16 @@ def _compute_dynamic_grade(row: dict[str, Any]) -> None:
     All grade values are ESTIMATES — not surveyed elevation.
     """
     from racelab_engine.analysis.vehicle_dynamics import (
-        dynamic_grade_rad as _dg_rad,
         dynamic_grade_deg as _dg_deg,
-        grade_force_proxy_n as _gf,
+    )
+    from racelab_engine.analysis.vehicle_dynamics import (
+        dynamic_grade_rad as _dg_rad,
+    )
+    from racelab_engine.analysis.vehicle_dynamics import (
         grade_corrected_long_accel_mps2 as _gc,
+    )
+    from racelab_engine.analysis.vehicle_dynamics import (
+        grade_force_proxy_n as _gf,
     )
 
     ax = _number(row.get("long_accel"))
@@ -3327,7 +3452,7 @@ def _apply_gps_projection(rows: list[dict[str, Any]]) -> None:
 
 def normalize_telemetry_rows(
     table: Any,
-    geometry: Mapping[str, float] | None = None,
+    geometry: Mapping[str, Any] | None = None,
     car_path: Any = None,
 ) -> list[dict[str, Any]]:
     rows = rows_from_table(table)
@@ -3337,7 +3462,9 @@ def normalize_telemetry_rows(
     physics_keys = [
         "mass_kg", "cg_height_m", "wheelbase_m", "front_track_width_m", 
         "rear_track_width_m", "front_axle_to_cg_m", "rear_axle_to_cg_m", 
-        "crr", "motion_ratio_front", "motion_ratio_rear"
+        "crr", "motion_ratio_front", "motion_ratio_rear",
+        "geometry_source", "geometry_profile_sha256",
+        "lr_rub_block_correction_in",
     ]
 
     for row in rows:

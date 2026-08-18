@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, BrainCircuit, CheckCircle2, ChevronRight, Clock, Crosshair, Gauge, Layers, LoaderCircle, Upload, Wrench } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BrainCircuit, CheckCircle2, ChevronRight, CircleHelp, Clock, Crosshair, Gauge, Layers, LoaderCircle, Upload, Wrench } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addRunToSession,
@@ -8,6 +8,7 @@ import {
   fetchControlledWorkflowCatalog,
   fetchEvents,
   fetchHealth,
+  fetchIntelligenceShellProjection,
   fetchRunIntelligence,
   fetchLaps,
   fetchOverview,
@@ -36,13 +37,17 @@ import { isTauri } from "./utils/env";
 import { buildZoneEvidence } from "./utils/evidenceFocus";
 import {
   bestUsefulLapMatchesRun,
-  overviewWarningBlocksDecision,
+  engineeringBlockersMatchRun,
+  overviewBlockerBlocksDecision,
+  performanceBlockerBlocksDecision,
   setupSnapshotMatchesRun,
+  telemetryClockDecisionReady,
   telemetryEventIsActionable,
 } from "./utils/evidenceTrust";
 import type {
   ChannelCatalogItem,
   ControlledWorkflow,
+  EngineeringBlocker,
   LapSummary,
   PlatformEventItem,
   PlatformEventVisibilityMode,
@@ -114,6 +119,33 @@ type ControlledWorkflowCatalogState = {
 };
 
 const LONG_RUN_REVIEW_MIN_LAPS = 10;
+const CHARACTER_SHORTCUTS_KEY = "racerzlab.characterShortcutsEnabled.v1";
+
+function clientEvidenceIntegrityBlocker(
+  runId: string,
+  messages: readonly string[],
+): EngineeringBlocker {
+  return {
+    code: "CLIENT_EVIDENCE_IDENTITY_FAILURE",
+    severity: "critical",
+    scope: "run_integrity",
+    blocks: [
+      "observation",
+      "comparison",
+      "performance",
+      "mechanism",
+      "component",
+      "setup_attribution",
+      "navigation",
+    ],
+    message: "A nested run response failed exact identity validation.",
+    evidence_state: "unavailable",
+    source_artifact_ids: [`run:${runId}`],
+    source_channels: [],
+    physical_scope: { run_id: runId, event_ids: [] },
+    recovery: messages.join(" ") || "Reload the exact run before reviewing evidence.",
+  };
+}
 
 function longestContinuousEligibleLapBlock(laps: readonly LapSummary[]): number {
   const lapNumbers = [...new Set(laps.map((lap) => lap.lap_number))].sort((left, right) => left - right);
@@ -187,6 +219,7 @@ const loadOverviewTab = () => import("./tabs/OverviewTab");
 const loadLapsTab = () => import("./tabs/LapsTab");
 const loadPlatformTab = () => import("./tabs/PlatformTab");
 const loadSetupTab = () => import("./tabs/SetupTab");
+const loadRawChannelsTab = () => import("./tabs/RawChannelsTab");
 const loadPriorityRail = () => import("./components/PriorityRail");
 const loadEvidenceInspector = () => import("./components/EvidenceInspector");
 const loadEventTimeline = () => import("./components/EventTimeline");
@@ -237,6 +270,10 @@ const SetupTab = lazy(async () => {
   const module = await loadSetupTab();
   return { default: module.SetupTab };
 });
+const RawChannelsTab = lazy(async () => {
+  const module = await loadRawChannelsTab();
+  return { default: module.RawChannelsTab };
+});
 
 function preloadWorkspace(workspace: string): void {
   if (workspace === "overview") void loadOverviewTab();
@@ -245,6 +282,7 @@ function preloadWorkspace(workspace: string): void {
   else if (workspace === "platform_trace") void loadPlatformTab();
   else if (workspace === "setup_impact") void loadSetupTab();
   else if (workspace === "dial_in") void loadDialInTab();
+  else if (workspace === "channels") void loadRawChannelsTab();
 }
 
 function ShellLoadingState({ eyebrow, title, detail }: { eyebrow: string; title: string; detail: string }) {
@@ -282,6 +320,8 @@ function CockpitShell() {
   const [traceRetryToken, setTraceRetryToken] = useState(0);
   const [channels, setChannels] = useState<ChannelCatalogItem[]>([]);
   const [channelsHaveFullCatalog, setChannelsHaveFullCatalog] = useState(false);
+  const [channelsLoadError, setChannelsLoadError] = useState<string | null>(null);
+  const [channelsRetryToken, setChannelsRetryToken] = useState(0);
   const [platformEvents, setPlatformEvents] = useState<PlatformEventItem[]>([]);
   const [platformEventsLoadState, setPlatformEventsLoadState] = useState<PlatformLoadState>({ requestKey: null, status: "idle", error: null });
   const [platformEventsRetryToken, setPlatformEventsRetryToken] = useState(0);
@@ -323,6 +363,13 @@ function CockpitShell() {
   const [timelineOwnsKeyboard, setTimelineOwnsKeyboard] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [characterShortcutsEnabled, setCharacterShortcutsEnabled] = useState(() => {
+    try {
+      return window.localStorage.getItem(CHARACTER_SHORTCUTS_KEY) !== "false";
+    } catch {
+      return true;
+    }
+  });
   const shortcutModalRef = useRef<HTMLElement | null>(null);
   const shortcutModalCloseRef = useRef<HTMLButtonElement | null>(null);
   const [mapOverlayOpen, setMapOverlayOpen] = useState(false);
@@ -348,8 +395,19 @@ function CockpitShell() {
   }, []);
   const selectedTraceLap = selection.selectedRepresentativeLap ?? selection.selectedLap ?? null;
   const platformTargetLap = overview ? selectedTraceLap ?? overview.best_useful_lap?.lap_number ?? null : null;
+  const traceChannels = useMemo(
+    () => [...new Set([
+      ...TRACE_WORKBENCH_CHANNELS,
+      ...(selection.selectedChannel ? [selection.selectedChannel] : []),
+    ])],
+    [selection.selectedChannel],
+  );
   const platformRequestKey = overview && platformTargetLap != null
-    ? JSON.stringify({ run_id: overview.run_id, lap: platformTargetLap })
+    ? JSON.stringify({
+        run_id: overview.run_id,
+        lap: platformTargetLap,
+        custom_channel: selection.selectedChannel,
+      })
     : null;
   const platformEventsStateOwnsRequest = platformEventsLoadState.requestKey === platformRequestKey;
   const currentPlatformEvents = platformEventsStateOwnsRequest && ["ready", "clear"].includes(platformEventsLoadState.status)
@@ -492,6 +550,7 @@ function CockpitShell() {
     workflow_status: currentAuthorityWorkflow?.status ?? null,
     workflow_updated_at: currentAuthorityWorkflowUpdatedAt,
     active_workflow_ambiguous: currentControlledWorkflowAmbiguous,
+    selected_workspace: selection.selectedWorkspace,
     artifact_refresh_generation: intelligenceAuthorityRefreshGeneration,
   });
   const intelligenceAuthorityCanLoad = Boolean(
@@ -566,9 +625,17 @@ function CockpitShell() {
   );
   const longRunLapsNeeded = Math.max(0, LONG_RUN_REVIEW_MIN_LAPS - longestEligibleLapBlock);
   const hasOverviewIntegrityBlocker = useMemo(
-    () => overview?.warnings.some((warning) => /integrity|identity|mismatch|malformed|withheld/i.test(warning)) ?? false,
-    [overview?.warnings],
+    () => overview?.engineering_blockers.some(overviewBlockerBlocksDecision) ?? false,
+    [overview?.engineering_blockers],
   );
+  useEffect(() => {
+    if (
+      selection.selectedMode === "race"
+      && selection.selectedWorkspace === "channels"
+    ) {
+      setWorkspace("overview", "manual");
+    }
+  }, [selection.selectedMode, selection.selectedWorkspace, setWorkspace]);
   const workspaceSignals = useMemo<Record<"overview" | "engineer" | "laps" | "platform_trace" | "setup_impact" | "dial_in", WorkspaceSignal>>(() => {
     const platformSignal: WorkspaceSignal = currentPlatformEventsLoadStatus === "loading"
       ? { tone: "loading", short: "Checking", detail: "Qualifying the selected lap's platform evidence." }
@@ -590,12 +657,21 @@ function CockpitShell() {
     const bestUsefulLapReady = overview != null
       && bestUsefulLapMatchesRun(overview.best_useful_lap, overview.run_id);
     const setupTechReady = overview?.session.setup_passed_tech !== false;
-    const overviewBlockingWarnings = overview?.warnings.filter(overviewWarningBlocksDecision) ?? [];
+    const overviewBlockingBlockers = overview?.engineering_blockers.filter(
+      overviewBlockerBlocksDecision,
+    ) ?? [];
+    const performanceBlockingBlockers = overview?.engineering_blockers.filter(
+      performanceBlockerBlocksDecision,
+    ) ?? [];
+    const overviewClockDecisionReady = telemetryClockDecisionReady(
+      telemetryCapabilities?.capability_summary,
+    );
     const overviewArchiveVerified = Boolean(
       telemetryCapabilities
       && telemetryCapabilities.cache_compatibility.status === "current"
       && telemetryCapabilities.capability_summary.lossless_archive_complete
-      && telemetryCapabilities.capability_summary.warning_channels === 0,
+      && telemetryCapabilities.capability_summary.warning_channels === 0
+      && overviewClockDecisionReady
     );
     const overviewDecisionContextReady = Boolean(
       usefulLapCount > 0
@@ -603,7 +679,7 @@ function CockpitShell() {
       && setupSnapshotReady
       && setupTechReady
       && overviewArchiveVerified
-      && overviewBlockingWarnings.length === 0,
+      && overviewBlockingBlockers.length === 0,
     );
     const actionableOverviewFindings = overviewDecisionContextReady
       ? overview?.events.filter(telemetryEventIsActionable).length ?? 0
@@ -614,11 +690,14 @@ function CockpitShell() {
         ? { tone: "blocked", short: "No setup", detail: "The current run has no identity-matched setup snapshot, so setup conclusions are withheld." }
         : !setupTechReady
           ? { tone: "blocked", short: "Tech failed", detail: "The recorded setup failed tech inspection; setup conclusions are withheld." }
-          : !overviewArchiveVerified || overviewBlockingWarnings.length > 0
+          : !overviewArchiveVerified || overviewBlockingBlockers.length > 0
             ? {
                 tone: "blocked",
                 short: "No call",
-                detail: overviewBlockingWarnings[0]
+                detail: overviewBlockingBlockers[0]?.message
+                  ?? (!overviewClockDecisionReady
+                    ? "Decision timing requires contiguous SessionTick at the declared rate; SessionTime remains archival corroboration only."
+                    : null)
                   ?? telemetryCapabilities?.cache_compatibility.reason
                   ?? "Telemetry capability verification is unavailable or incomplete.",
               }
@@ -633,11 +712,11 @@ function CockpitShell() {
       overview: overviewSignal,
       engineer: currentControlledWorkflowAmbiguous
         ? { tone: "blocked", short: "Resolve", detail: "Multiple active workflows share this session; exact action authority is withheld." }
-        : !overviewArchiveVerified || overviewBlockingWarnings.length > 0
+        : !overviewArchiveVerified || overviewBlockingBlockers.length > 0
           ? {
               tone: "blocked",
               short: "Recover",
-              detail: overviewBlockingWarnings[0]
+              detail: overviewBlockingBlockers[0]?.message
                 ?? telemetryCapabilities?.cache_compatibility.reason
                 ?? "Re-import the original telemetry before opening a current Smart Engineer briefing.",
             }
@@ -657,11 +736,11 @@ function CockpitShell() {
                   : currentControlledWorkflow?.packet.decision === "measure"
                     ? { tone: "attention", short: "Measure", detail: "The run briefing remains measurement-only until this workflow is closed." }
                     : { tone: "attention", short: "Review", detail: "Open the evidence-bound issue, causes, and best next measurement." },
-      laps: overviewBlockingWarnings.length > 0
+      laps: performanceBlockingBlockers.length > 0
         ? {
             tone: "blocked",
             short: "No call",
-            detail: overviewBlockingWarnings[0] ?? "Run integrity must be resolved before pace conclusions.",
+            detail: performanceBlockingBlockers[0]?.message ?? "Run integrity must be resolved before pace conclusions.",
           }
         : usefulLapCount > 0
         ? {
@@ -970,14 +1049,13 @@ function CockpitShell() {
     });
     if (!intelligenceShellCanLoad || !requestedRunId || !requestedSessionId || requestedSessionId !== sessionId) return undefined;
 
-    void fetchRunIntelligence(requestedRunId, {
+    void fetchIntelligenceShellProjection(requestedRunId, {
       sessionId: requestedSessionId,
-      refreshKey: requestKey,
     })
-      .then((report) => {
+      .then((projection) => {
         if (cancelled || requestSeq !== intelligenceShellRequestSeqRef.current) return;
-        const exactReportScope = report.run_id === requestedRunId
-          && (report.session_id ?? null) === requestedSessionId;
+        const exactReportScope = projection.run_id === requestedRunId
+          && (projection.session_id ?? null) === requestedSessionId;
         if (!exactReportScope) {
           setIntelligenceShellReportState({
             requestKey,
@@ -987,12 +1065,13 @@ function CockpitShell() {
           });
           return;
         }
-        const move = report.next_trustworthy_move?.authority === "navigation_only"
-          && trustedNavigationMove(report.next_trustworthy_move, requestedRunId, {
+        const move = projection.status === "ready"
+          && projection.next_trustworthy_move?.authority === "navigation_only"
+          && trustedNavigationMove(projection.next_trustworthy_move, requestedRunId, {
             workflowId: currentGuidanceWorkflow?.workflow_id ?? null,
             workflowUpdatedAt: currentGuidanceWorkflowUpdatedAt,
           })
-          ? report.next_trustworthy_move
+          ? projection.next_trustworthy_move
           : null;
         setIntelligenceShellReportState({ requestKey, status: "ready", move, error: null });
       })
@@ -1068,25 +1147,65 @@ function CockpitShell() {
 
   useEffect(() => {
     let cancelled = false;
-    const deadline = Date.now() + 30_000;
+    let startupDeadline = Date.now() + 30_000;
 
-    const pollHealth = async () => {
-      while (!cancelled && Date.now() < deadline) {
+    const monitorHealth = async () => {
+      let expectedInstanceId: string | null = null;
+      let ensureOwnedBackend: (() => Promise<boolean>) | null = null;
+      const requireExactDesktopInstance = isTauri() && !import.meta.env.DEV;
+      if (isTauri()) {
         try {
-          const health = await fetchHealth();
-          if (health.status === "ok") {
-            setEngineStatus("ready");
+          const { invoke } = await import("@tauri-apps/api/core");
+          expectedInstanceId = await invoke<string>("backend_instance_token");
+          ensureOwnedBackend = () => invoke<boolean>("ensure_backend_running");
+        } catch {
+          if (requireExactDesktopInstance) {
+            if (!cancelled) setEngineStatus("failed");
             return;
           }
+        }
+      }
+      let wasReady = false;
+      let consecutiveFailures = 0;
+      while (!cancelled) {
+        let exactBackend = false;
+        try {
+          const health = await fetchHealth();
+          exactBackend = health.status === "ok"
+            && health.app === "RacerZLab"
+            && (!requireExactDesktopInstance || (
+              expectedInstanceId != null
+              && health.instance_id === expectedInstanceId
+            ));
         } catch {
           // The local engine may still be starting.
         }
-        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        if (exactBackend) {
+          wasReady = true;
+          consecutiveFailures = 0;
+          setEngineStatus("ready");
+        } else {
+          consecutiveFailures += 1;
+          if (wasReady && consecutiveFailures >= 3) {
+            if (ensureOwnedBackend && await ensureOwnedBackend()) {
+              wasReady = false;
+              consecutiveFailures = 0;
+              startupDeadline = Date.now() + 30_000;
+              setEngineStatus("starting");
+            } else {
+              if (!cancelled) setEngineStatus("failed");
+              return;
+            }
+          } else if (!wasReady && Date.now() >= startupDeadline) {
+            if (!cancelled) setEngineStatus("failed");
+            return;
+          }
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, wasReady ? 5_000 : 500));
       }
-      if (!cancelled) setEngineStatus("failed");
     };
 
-    void pollHealth();
+    void monitorHealth();
     return () => {
       cancelled = true;
     };
@@ -1114,6 +1233,20 @@ function CockpitShell() {
     missing_status: channel.missing_status ?? null,
     group: channel.group ?? null,
     source: channel.source ?? null,
+    raw_name: channel.raw_name ?? null,
+    canonical_name: channel.canonical_name ?? null,
+    canonical_mapping_kind: channel.canonical_mapping_kind ?? null,
+    registry_status: channel.registry_status ?? null,
+    engineering_role: channel.engineering_role ?? null,
+    engineering_admission_state: channel.engineering_admission_state ?? null,
+    engineering_authority_limit: channel.engineering_authority_limit ?? null,
+    archive_status: channel.archive_status ?? null,
+    variation: channel.variation ?? null,
+    health_status: channel.health_status ?? null,
+    health_warnings: channel.health_warnings ?? [],
+    base_sample_rate_hz: channel.base_sample_rate_hz ?? null,
+    effective_sample_rate_hz: channel.effective_sample_rate_hz ?? null,
+    missing_fraction: channel.missing_fraction ?? null,
   }), []);
 
   // ── keyboard shortcuts ─────────────────────────────────────
@@ -1135,6 +1268,7 @@ function CockpitShell() {
     onHideShortcuts: () => setShortcutsOpen(false),
     shortcutsOpen,
     eventTimelineOwnsKeyboard: timelineOwnsKeyboard,
+    characterShortcutsEnabled,
   });
 
   useEffect(() => {
@@ -1190,15 +1324,27 @@ function CockpitShell() {
         if (base.run_id !== runId || base.session.run_id !== runId) {
           throw new Error("The run overview response did not match the requested run. Reload the run before reviewing evidence.");
         }
+        if (!engineeringBlockersMatchRun(base.engineering_blockers, runId)) {
+          throw new Error(
+            "The run overview returned an invalid typed engineering-blocker contract. Reload or re-import the run before reviewing evidence.",
+          );
+        }
         const baseBestUsefulLap = base.best_useful_lap;
         const bestLap = bestUsefulLapMatchesRun(baseBestUsefulLap, runId)
           ? baseBestUsefulLap.lap_number
           : undefined;
-        const [laps, events, setup, channelCatalog, capabilityPayload] = await Promise.all([
+        const [laps, events, setup, channelResult, capabilityPayload] = await Promise.all([
           fetchLaps(runId).catch(() => base.laps),
           fetchEvents(runId).catch(() => base.events),
           fetchSetup(runId).catch(() => base.setup_snapshot ?? null),
-          fetchChannelSummary(runId).catch(() => []),
+          fetchChannelSummary(runId)
+            .then((items) => ({ items, error: null as string | null }))
+            .catch((caught: unknown) => ({
+              items: [],
+              error: caught instanceof Error
+                ? caught.message
+                : "Telemetry capability inventory could not be loaded.",
+            })),
           fetchTelemetryCapabilities(runId).catch(() => null),
         ]);
         if (seq !== loadSelectedRunSeqRef.current) return false;
@@ -1227,6 +1373,9 @@ function CockpitShell() {
             : []),
         ];
         const derivedIdentityMismatch = nestedIdentityWarnings.length > 0;
+        const identityBlockers = derivedIdentityMismatch
+          ? [clientEvidenceIntegrityBlocker(runId, nestedIdentityWarnings)]
+          : [];
         setOverview({
           ...base,
           best_useful_lap: safeBestUsefulLap,
@@ -1235,9 +1384,11 @@ function CockpitShell() {
           setup_snapshot: setupMatchesRun ? setup : null,
           primary_findings: derivedIdentityMismatch ? [] : base.primary_findings,
           warnings: [...base.warnings, ...nestedIdentityWarnings],
+          engineering_blockers: [...base.engineering_blockers, ...identityBlockers],
         });
-        setChannels(channelCatalog.map((item) => toCatalogShape(item)));
+        setChannels(channelResult.items.map((item) => toCatalogShape(item)));
         setChannelsHaveFullCatalog(false);
+        setChannelsLoadError(channelResult.error);
         setTelemetryCapabilities(capabilityMatchesRun ? capabilityPayload : null);
         setTrace(null);
         setPlatformEvents([]);
@@ -1650,8 +1801,8 @@ function CockpitShell() {
       if (!opened) return;
       setImportOutcome("run");
       setSessionToolsOpen(false);
-      if (result.existing_run_updated) {
-        setStatus("Existing run updated. Duplicate telemetry detected - updated the existing run record.");
+      if (result.recording_reused) {
+        setStatus("Same recording reused. Existing telemetry source and artifacts were updated in place.");
       }
       setImportStage(null);
     } catch (caught) {
@@ -1753,7 +1904,7 @@ function CockpitShell() {
     fetchTrace(overview.run_id, {
       lap: platformTargetLap,
       x: "lap_dist_ft",
-      channels: TRACE_WORKBENCH_CHANNELS,
+      channels: traceChannels,
       downsample: "auto",
       preserveExtrema: true,
     })
@@ -1784,24 +1935,32 @@ function CockpitShell() {
     return () => {
       cancelled = true;
     };
-  }, [isTraceWorkspace, overview, platformRequestKey, platformTargetLap, traceRetryToken]);
+  }, [isTraceWorkspace, overview, platformRequestKey, platformTargetLap, traceChannels, traceRetryToken]);
 
   useEffect(() => {
     if (!overview || channelsHaveFullCatalog) return;
     const needsFullCatalog = selection.selectedWorkspace === "channels" || selection.selectedChannel != null;
     if (!needsFullCatalog) return;
     let cancelled = false;
+    setChannelsLoadError(null);
     fetchChannelsFull(overview.run_id)
       .then((fullCatalog) => {
         if (cancelled) return;
         setChannels(fullCatalog.map((item) => toCatalogShape(item)));
         setChannelsHaveFullCatalog(true);
       })
-      .catch(() => {});
+      .catch((caught: unknown) => {
+        if (cancelled) return;
+        setChannelsLoadError(
+          caught instanceof Error
+            ? caught.message
+            : "Telemetry capability inventory could not be loaded.",
+        );
+      });
     return () => {
       cancelled = true;
     };
-  }, [overview, selection.selectedWorkspace, selection.selectedChannel, channelsHaveFullCatalog, toCatalogShape]);
+  }, [channelsRetryToken, overview, selection.selectedWorkspace, selection.selectedChannel, channelsHaveFullCatalog, toCatalogShape]);
 
   useEffect(() => {
     if (!sessionId || sessionRunsLoading) return;
@@ -1851,6 +2010,11 @@ function CockpitShell() {
           overview={overview}
           sessionId={currentSession?.session_id ?? null}
           trace={currentTrace}
+          customChannel={
+            selection.selectedChannel
+              ? channels.find((channel) => channel.name === selection.selectedChannel) ?? null
+              : null
+          }
           traceLoadStatus={currentTraceLoadStatus}
           traceLoadError={currentTraceLoadError}
           onRetryTrace={retryTrace}
@@ -1891,8 +2055,20 @@ function CockpitShell() {
       );
     }
     if (ws === "channels") {
-      // Channels removed from nav; redirect to overview if stale state exists
-      return <OverviewTab overview={overview} sessionId={currentSession?.session_id ?? null} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={openMapOverlay} />;
+      return selection.selectedMode === "learning"
+        ? (
+          <RawChannelsTab
+            overview={overview}
+            trace={currentTrace}
+            channels={channels}
+            loadError={channelsLoadError}
+            onRetry={() => {
+              setChannelsHaveFullCatalog(false);
+              setChannelsRetryToken((token) => token + 1);
+            }}
+          />
+        )
+        : <OverviewTab overview={overview} sessionId={currentSession?.session_id ?? null} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={openMapOverlay} />;
     }
     if (ws === "laps") {
       return (
@@ -1907,7 +2083,7 @@ function CockpitShell() {
       );
     }
     return <OverviewTab overview={overview} sessionId={currentSession?.session_id ?? null} telemetryCapabilities={telemetryCapabilities} onToggleMapOverlay={openMapOverlay} />;
-  }, [currentGuidanceWorkflow?.workflow_id, currentGuidanceWorkflowUpdatedAt, currentIntelligenceAuthority, currentIntelligenceAuthorityRecovery, currentIntelligenceAuthorityStatus, currentPlatformEvents, currentPlatformEventsLoadError, currentPlatformEventsLoadStatus, currentSession, currentTrace, currentTraceLoadError, currentTraceLoadStatus, explicitControlledWorkflowId, handleMapOverlayZoomRangeChange, openCrewChiefEvidence, openIntelligenceCitation, openMapOverlay, overview, platformEventVisibilityMode, retryPlatformEvents, retryTrace, selection.selectedLap, selection.selectedLapScope, selection.selectedLapWindowEnd, selection.selectedLapWindowStart, selection.selectedRepresentativeLap, selection.selectedWorkspace, sessionRuns, sessionRunsLoading, sessionSelectionSource]);
+  }, [channels, channelsLoadError, currentGuidanceWorkflow?.workflow_id, currentGuidanceWorkflowUpdatedAt, currentIntelligenceAuthority, currentIntelligenceAuthorityRecovery, currentIntelligenceAuthorityStatus, currentPlatformEvents, currentPlatformEventsLoadError, currentPlatformEventsLoadStatus, currentSession, currentTrace, currentTraceLoadError, currentTraceLoadStatus, explicitControlledWorkflowId, handleMapOverlayZoomRangeChange, openCrewChiefEvidence, openIntelligenceCitation, openMapOverlay, overview, platformEventVisibilityMode, retryPlatformEvents, retryTrace, selection.selectedLap, selection.selectedLapScope, selection.selectedLapWindowEnd, selection.selectedLapWindowStart, selection.selectedMode, selection.selectedRepresentativeLap, selection.selectedWorkspace, sessionRuns, sessionRunsLoading, sessionSelectionSource]);
 
   if (engineStatus === "starting") {
     return (
@@ -2119,6 +2295,18 @@ function CockpitShell() {
               </button>
             );
           })}
+          <button
+            type="button"
+            className="nav-rail-item"
+            onClick={() => setShortcutsOpen(true)}
+            aria-label="Open keyboard shortcut preferences"
+          >
+            <span className="nav-rail-icon" aria-hidden="true"><CircleHelp size={17} /></span>
+            <span className="nav-rail-copy">
+              <strong>Shortcuts</strong>
+              <small className="nav-rail-signal" aria-hidden="true">{characterShortcutsEnabled ? "On" : "Off"}</small>
+            </span>
+          </button>
         </nav>
 
         {priorityRailExpanded ? (
@@ -2237,6 +2425,7 @@ function CockpitShell() {
               overview={overview}
               platformEvents={currentPlatformEvents}
               channels={channels}
+              channelsLoadError={channelsLoadError}
               collapsed={false}
               onToggle={() => setInspectorOpen(false)}
               eventVisibilityMode={platformEventVisibilityMode}
@@ -2265,6 +2454,7 @@ function CockpitShell() {
         <EventTimeline platformEvents={currentPlatformEvents}
           eventVisibilityMode={platformEventVisibilityMode}
           workspace={selection.selectedWorkspace}
+          lapDurationSeconds={overview.laps.find((lap) => lap.lap_number === selection.selectedLap)?.lap_time ?? null}
           onKeyboardOwnershipChange={setTimelineOwnsKeyboard}
         />
       </Suspense>
@@ -2317,6 +2507,22 @@ function CockpitShell() {
               <span>L</span><p>Toggle race/learning mode</p>
               <span>[ / ]</span><p>Toggle rails</p>
             </div>
+            <label className="shortcut-character-toggle">
+              <input
+                type="checkbox"
+                checked={characterShortcutsEnabled}
+                onChange={(event) => {
+                  const enabled = event.target.checked;
+                  setCharacterShortcutsEnabled(enabled);
+                  try {
+                    window.localStorage.setItem(CHARACTER_SHORTCUTS_KEY, String(enabled));
+                  } catch {
+                    // Preference persistence is optional; current-window behavior still updates.
+                  }
+                }}
+              />
+              Enable single-character shortcuts. Turn this off to prevent accidental activation.
+            </label>
           </section>
         </div>
       )}

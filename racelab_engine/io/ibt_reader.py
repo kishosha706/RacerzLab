@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import math
-import re
 import struct
 import time
 from pathlib import Path
@@ -15,26 +14,48 @@ from racelab_engine.analysis.calculated_channels import (
     HIGH_VALUE_RAW_CHANNELS,
     normalize_telemetry_rows,
 )
-from racelab_engine.analysis.constants import LOW_BRAKE_PCT, PLATFORM_VALID_MIN_SPEED_MPH, PLATFORM_VALID_THROTTLE_PCT
+from racelab_engine.analysis.constants import (
+    LOW_BRAKE_PCT,
+    PLATFORM_VALID_MIN_SPEED_MPH,
+    PLATFORM_VALID_THROTTLE_PCT,
+)
 from racelab_engine.analysis.drag_scrub import detect_drag_scrub_risk_zones
 from racelab_engine.analysis.evidence_contracts import (
+    RUN_OBSERVATION_CONTRACT,
     EvidenceEvaluationInput,
     EvidenceState,
-    RUN_OBSERVATION_CONTRACT,
     evaluate_evidence_contract,
 )
 from racelab_engine.analysis.lap_classification import classify_laps
-from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.analysis.lap_detection import detect_laps
-from racelab_engine.analysis.platform_events import PlatformEvent, detect_platform_events
+from racelab_engine.analysis.lap_eligibility import eligible_laps
+from racelab_engine.analysis.platform_events import (
+    PlatformEvent,
+    detect_platform_events,
+)
 from racelab_engine.analysis.proximity_context import classify_proximity_time_gap_window
 from racelab_engine.analysis.time_alignment import detect_engineering_phases
 from racelab_engine.io.file_fingerprint import fingerprint_file
-from racelab_engine.io.ibt_types import IBTHeader, IBTImportResult, IBTVariableDefinition, ImportStatus
-from racelab_engine.io.session_yaml import extract_session_summary, extract_setup_snapshot, parse_session_yaml
+from racelab_engine.io.ibt_types import (
+    IBTHeader,
+    IBTImportResult,
+    IBTVariableDefinition,
+    ImportStatus,
+)
+from racelab_engine.io.session_yaml import (
+    extract_session_summary,
+    extract_setup_snapshot,
+    parse_session_yaml,
+)
 from racelab_engine.models.event import TelemetryEvent
+from racelab_engine.models.evidence import (
+    BlockerPhysicalScope,
+    EngineeringBlocker,
+    EngineeringBlockerSeverity,
+    EngineeringBlockTarget,
+)
 from racelab_engine.models.session import RunOverview
-
+from racelab_engine.recording_identity import canonical_recording_run_id
 
 _log = logging.getLogger(__name__)
 LAST_IMPORT_PROFILE: dict[str, Any] = {}
@@ -128,6 +149,147 @@ def _build_missing_optional_warnings(
     if not _shock_movement_telemetry_available(available_channels):
         warnings.append(_SHOCK_MOVEMENT_UNAVAILABLE_WARNING)
     return warnings
+
+
+def _build_overview_engineering_blockers(
+    *,
+    run_id: str,
+    missing_channels: list[str],
+    available_channels: Collection[str],
+    proximity_warning: str | None,
+    drag_events: list[TelemetryEvent],
+    invalid_scrapes: list[TelemetryEvent],
+) -> list[EngineeringBlocker]:
+    """Build typed scope; warning prose is display-only compatibility data."""
+    blockers: list[EngineeringBlocker] = [
+        EngineeringBlocker(
+            code="TIRE_DEGRADATION_REQUIRES_LONG_RUN",
+            severity=EngineeringBlockerSeverity.INFO,
+            scope="tire_degradation_policy",
+            blocks=(),
+            message="Short runs cannot support strong tire degradation or cooling conclusions.",
+            evidence_state=EvidenceState.NEEDS_CONFIRMATION,
+            source_artifact_ids=(f"run:{run_id}",),
+            recovery="Collect a qualified same-setup long run before evaluating degradation or cooling.",
+        ),
+        EngineeringBlocker(
+            code="ABSOLUTE_AERODYNAMIC_DRAG_UNAVAILABLE",
+            severity=EngineeringBlockerSeverity.BLOCKER,
+            scope="absolute_aerodynamic_drag",
+            blocks=(
+                EngineeringBlockTarget.MECHANISM,
+                EngineeringBlockTarget.COMPONENT,
+                EngineeringBlockTarget.SETUP_ATTRIBUTION,
+            ),
+            message="Exact aerodynamic drag force or coefficient cannot be inferred from .ibt telemetry.",
+            evidence_state=EvidenceState.UNAVAILABLE,
+            source_artifact_ids=(f"run:{run_id}",),
+            recovery="Use qualified relative run-to-run resistance evidence; do not request an absolute force claim.",
+        ),
+    ]
+    non_shock_missing = [
+        channel for channel in missing_channels if channel not in _ALL_SHOCK_MOVEMENT_CHANNELS
+    ]
+    if non_shock_missing:
+        blockers.append(
+            EngineeringBlocker(
+                code="OPTIONAL_TELEMETRY_UNAVAILABLE",
+                severity=EngineeringBlockerSeverity.INFO,
+                scope="optional_telemetry",
+                blocks=(),
+                message=f"Missing optional channels: {', '.join(non_shock_missing)}.",
+                evidence_state=EvidenceState.UNAVAILABLE,
+                source_artifact_ids=(f"run:{run_id}",),
+                source_channels=tuple(non_shock_missing),
+                recovery="Record those optional channels only when their analysis is needed.",
+            )
+        )
+    if not _shock_movement_telemetry_available(available_channels):
+        blockers.append(
+            EngineeringBlocker(
+                code="SHOCK_MOVEMENT_TELEMETRY_UNAVAILABLE",
+                severity=EngineeringBlockerSeverity.BLOCKER,
+                scope="damper_response",
+                blocks=(
+                    EngineeringBlockTarget.MECHANISM,
+                    EngineeringBlockTarget.COMPONENT,
+                    EngineeringBlockTarget.SETUP_ATTRIBUTION,
+                ),
+                message=_SHOCK_MOVEMENT_UNAVAILABLE_WARNING,
+                evidence_state=EvidenceState.UNAVAILABLE,
+                source_artifact_ids=(f"run:{run_id}",),
+                source_channels=tuple(sorted(_CANONICAL_SHOCK_DEFL_CHANNELS)),
+                recovery="Record four-corner shock movement before evaluating damper response.",
+            )
+        )
+    if proximity_warning:
+        scoped_drag_events = [event for event in drag_events if event.blocker_reasons]
+        starts = [
+            value
+            for event in scoped_drag_events
+            for value in (event.lap_pct_start, event.lap_pct_peak)
+            if value is not None
+        ]
+        ends = [
+            value
+            for event in scoped_drag_events
+            for value in (event.lap_pct_end, event.lap_pct_peak)
+            if value is not None
+        ]
+        blockers.append(
+            EngineeringBlocker(
+                code="TRAFFIC_EXPOSURE",
+                severity=EngineeringBlockerSeverity.BLOCKER,
+                scope="relative_resistance",
+                blocks=(
+                    EngineeringBlockTarget.MECHANISM,
+                    EngineeringBlockTarget.COMPONENT,
+                    EngineeringBlockTarget.SETUP_ATTRIBUTION,
+                ),
+                message=f"Drag/scrub attribution was suppressed: {proximity_warning}",
+                evidence_state=EvidenceState.BLOCKED_BY_CONTEXT,
+                source_artifact_ids=(f"run:{run_id}",),
+                source_channels=("car_dist_ahead", "car_dist_behind"),
+                physical_scope=BlockerPhysicalScope(
+                    run_id=run_id,
+                    lap_number=(
+                        scoped_drag_events[0].lap_number if scoped_drag_events else None
+                    ),
+                    lap_pct_start=min(starts) if starts and ends else None,
+                    lap_pct_end=max(ends) if starts and ends else None,
+                    event_ids=tuple(event.event_id for event in scoped_drag_events),
+                ),
+                recovery="Repeat the same physical window without nearby-car exposure before attributing relative resistance.",
+            )
+        )
+    if invalid_scrapes:
+        blockers.append(
+            EngineeringBlocker(
+                code="SLOWDOWN_CONTEXT_PLATFORM_SCRAPE",
+                severity=EngineeringBlockerSeverity.WARNING,
+                scope="platform_scrape",
+                blocks=(
+                    EngineeringBlockTarget.MECHANISM,
+                    EngineeringBlockTarget.SETUP_ATTRIBUTION,
+                ),
+                message="Low or negative splitter observations in slowdown context are not valid setup evidence.",
+                evidence_state=EvidenceState.BLOCKED_BY_CONTEXT,
+                source_artifact_ids=(f"run:{run_id}",),
+                source_channels=tuple(
+                    dict.fromkeys(
+                        channel
+                        for event in invalid_scrapes
+                        for channel in event.source_channels
+                    )
+                ),
+                physical_scope=BlockerPhysicalScope(
+                    run_id=run_id,
+                    event_ids=tuple(event.event_id for event in invalid_scrapes),
+                ),
+                recovery="Use an eligible high-speed repeat at the same physical position.",
+            )
+        )
+    return blockers
 
 
 def _collect_missing_channels(available_channels: Collection[str]) -> list[str]:
@@ -573,8 +735,8 @@ def read_normalized_records(path: str | Path) -> tuple[list[dict[str, Any]], lis
     target_vars = [channel for channel in TARGET_CHANNELS if channel in available]
 
     # ── Columnar decoder (default, env-overridable) ─────────────
-    import os
     import logging
+    import os
     _dec_log = logging.getLogger(__name__)
     decoder_mode = os.environ.get("RACELAB_IBT_DECODER", "").strip().lower()
     use_columnar = decoder_mode != "row"
@@ -583,7 +745,10 @@ def read_normalized_records(path: str | Path) -> tuple[list[dict[str, Any]], lis
         try:
             t0 = time.perf_counter()
             columns = _read_records_columnar(data, header, definitions, variables=target_vars)
-            from racelab_engine.analysis.vectorized_channels import normalize_telemetry_frame, frame_to_rows
+            from racelab_engine.analysis.vectorized_channels import (
+                frame_to_rows,
+                normalize_telemetry_frame,
+            )
             df = normalize_telemetry_frame(columns)
             result = frame_to_rows(df)
             dt = time.perf_counter() - t0
@@ -612,8 +777,11 @@ def read_normalized_records(path: str | Path) -> tuple[list[dict[str, Any]], lis
 
 
 def _slug_run_id(file_path: Path, file_hash: str) -> str:
-    stem = re.sub(r"[^a-zA-Z0-9]+", "-", file_path.stem).strip("-").lower()
-    return f"{stem[:48]}-{file_hash[:8]}"
+    # A filename is user-controlled presentation metadata, not evidence
+    # identity.  The full source hash makes renamed/re-uploaded recordings
+    # converge on one immutable run and artifact namespace.
+    del file_path
+    return canonical_recording_run_id(file_hash)
 
 
 _OVERVIEW_ROW_COLUMNS: frozenset[str] = frozenset({
@@ -626,6 +794,13 @@ _OVERVIEW_ROW_COLUMNS: frozenset[str] = frozenset({
     "lap_dist_ft",
     "session_time",
     "session_tick",
+    "lap_current_time_s",
+    "lap_last_time_s",
+    "lap_best_time_s",
+    "lap_delta_to_best_valid",
+    "lap_delta_to_optimal_valid",
+    "lap_delta_to_session_best_valid",
+    "lap_delta_to_session_optimal_valid",
     "session_flags",
     "speed_mps",
     "speed_mph",
@@ -885,13 +1060,22 @@ def _has_sustained_platform_risk(rows: list[dict[str, Any]], sample_index: int) 
     return _sustained_platform_risk_interval(rows, sample_index) is not None
 
 
-def _build_overview_platform_events(table: Any, run_id: str) -> list[TelemetryEvent]:
+def _build_overview_platform_events(
+    table: Any,
+    run_id: str,
+    *,
+    expected_sample_rate_hz: float | None = None,
+) -> list[TelemetryEvent]:
     rows = _platform_detection_rows(table)
     if not rows:
         return []
     eligible_lap_numbers = {
         lap.lap_number
-        for lap in eligible_laps(classify_laps(detect_laps(rows, run_id=run_id)))
+        for lap in eligible_laps(classify_laps(detect_laps(
+            rows,
+            run_id=run_id,
+            expected_sample_rate_hz=expected_sample_rate_hz,
+        )))
     }
 
     lap_numbers = sorted(
@@ -907,7 +1091,12 @@ def _build_overview_platform_events(table: Any, run_id: str) -> list[TelemetryEv
         lap_rows = rows if lap_number is None else [row for row in rows if _safe_float(row.get("lap")) == float(lap_number)]
         if not lap_rows:
             continue
-        platform_events = detect_platform_events(lap_rows, lap=lap_number, event_types=["MIN_SPLITTER"])
+        platform_events = detect_platform_events(
+            lap_rows,
+            lap=lap_number,
+            event_types=["MIN_SPLITTER"],
+            expected_sample_rate_hz=expected_sample_rate_hz,
+        )
         if not platform_events:
             continue
         event = platform_events[0]
@@ -1107,7 +1296,11 @@ def _build_overview(
     setup = extract_setup_snapshot(session_yaml, run_id=run_id, parsed_data=parsed_yaml)
     profile["overview_setup_extract_s"] = time.perf_counter() - t0
     t0 = time.perf_counter()
-    detected_laps = detect_laps(telemetry_table, run_id=run_id)
+    detected_laps = detect_laps(
+        telemetry_table,
+        run_id=run_id,
+        expected_sample_rate_hz=header.telemetry_rate_hz,
+    )
     profile["overview_lap_detect_s"] = time.perf_counter() - t0
     t0 = time.perf_counter()
     laps = classify_laps(detected_laps)
@@ -1122,7 +1315,11 @@ def _build_overview(
     overview_rows = _platform_detection_rows(telemetry_table)
     profile["overview_row_projection_s"] = time.perf_counter() - t0
     t0 = time.perf_counter()
-    platform_events = _build_overview_platform_events(overview_rows, run_id=run_id)
+    platform_events = _build_overview_platform_events(
+        overview_rows,
+        run_id=run_id,
+        expected_sample_rate_hz=header.telemetry_rate_hz,
+    )
     profile["overview_platform_events_s"] = time.perf_counter() - t0
     t0 = time.perf_counter()
     drag_events, proximity_warning = _build_overview_drag_events(
@@ -1238,6 +1435,14 @@ def _build_overview(
         )
     if invalid_scrapes:
         warnings.append("At least one low/negative splitter event occurred in slowdown context and is not valid setup evidence.")
+    engineering_blockers = _build_overview_engineering_blockers(
+        run_id=run_id,
+        missing_channels=missing_channels,
+        available_channels=available_channels,
+        proximity_warning=proximity_warning,
+        drag_events=drag_events,
+        invalid_scrapes=invalid_scrapes,
+    )
 
     t0 = time.perf_counter()
     out = RunOverview(
@@ -1253,6 +1458,7 @@ def _build_overview(
             [event for event in events if event.event_type == "FULL_THROTTLE_SPEED_LOSS"],
         ),
         warnings=warnings,
+        engineering_blockers=engineering_blockers,
     )
     profile["overview_model_build_s"] = time.perf_counter() - t0
     profile["overview_total_s"] = sum(profile.values())
@@ -1327,6 +1533,8 @@ def import_ibt(path: str | Path) -> IBTImportResult:
         )
         analysis_mode = get_analysis_engine_mode()
         normalized_frame = None
+        decoder_path = "unavailable"
+        decoder_fallback_reason: str | None = None
         raw_archive_columns: dict[str, str] = {}
         rows: list[dict[str, Any]]
         overview_table: Any | None = None
@@ -1350,6 +1558,7 @@ def import_ibt(path: str | Path) -> IBTImportResult:
                 if profile_enabled:
                     LAST_IMPORT_PROFILE["decode_columnar_loop_s"] = time.time() - t_loop
                 if analysis_mode == "row":
+                    decoder_path = "columnar_row_debug"
                     import polars as pl
                     raw_rows = pl.DataFrame(columns, strict=False).to_dicts()
                     declared_names = {definition.name for definition in definitions}
@@ -1391,12 +1600,15 @@ def import_ibt(path: str | Path) -> IBTImportResult:
                     del declared_columns
                     columns.clear()
                     normalized_frame = df
+                    decoder_path = "columnar_vectorized"
                     overview_table = df
                     if profile_enabled:
                         LAST_IMPORT_PROFILE["normalized_frame_available"] = 1.0
                         LAST_IMPORT_PROFILE["normalize_vectorized_frame_s"] = time.time() - t_norm
                         try:
-                            from racelab_engine.analysis import vectorized_channels as _vec_mod
+                            from racelab_engine.analysis import (
+                                vectorized_channels as _vec_mod,
+                            )
                             for _k, _v in (getattr(_vec_mod, "LAST_NORMALIZE_PROFILE", {}) or {}).items():
                                 if isinstance(_v, (int, float)):
                                     LAST_IMPORT_PROFILE[_k] = float(_v)
@@ -1404,8 +1616,25 @@ def import_ibt(path: str | Path) -> IBTImportResult:
                             pass
                     rows = []
                     _log.info("IBT decoder (columnar+vectorized): %d records in %.3fs", len(rows), time.time() - t0)
-            except Exception:
-                _log.debug("Columnar fast path failed, using row decoder", exc_info=True)
+            except (
+                IBTParseError,
+                IndexError,
+                KeyError,
+                OverflowError,
+                TypeError,
+                ValueError,
+                pl.exceptions.PolarsError,
+                struct.error,
+            ) as exc:
+                decoder_path = "row_fallback"
+                decoder_fallback_reason = (
+                    f"{type(exc).__name__}: {str(exc).strip() or 'no detail'}"
+                )[:512]
+                _log.warning(
+                    "Columnar fast path failed, using row decoder: %s",
+                    decoder_fallback_reason,
+                    exc_info=True,
+                )
                 raw_rows = _read_records_from_data(
                     data, header, definitions,
                     variables=None,
@@ -1433,6 +1662,7 @@ def import_ibt(path: str | Path) -> IBTImportResult:
                     LAST_IMPORT_PROFILE["frame_to_rows_reason"] = "row_decoder_fallback"
                 _log.info("IBT decoder (row normalize): %d rows in %.3fs", len(rows), time.time() - t0)
         else:
+            decoder_path = "forced_row"
             raw_rows = _read_records_from_data(
                 data, header, definitions,
                 variables=None,
@@ -1493,6 +1723,8 @@ def import_ibt(path: str | Path) -> IBTImportResult:
         records=rows,
         missing_channels=missing,
         overview=overview,
+        decoder_path=decoder_path,
+        decoder_fallback_reason=decoder_fallback_reason,
         status=ImportStatus(
             status="imported",
             message="Imported every file-declared iRacing telemetry channel plus selective normalized analysis channels.",
@@ -1515,6 +1747,14 @@ def import_ibt(path: str | Path) -> IBTImportResult:
                 "No .sto decoding is claimed.",
                 "No track map decoding is claimed.",
                 "Exact aerodynamic drag force is not inferred from .ibt telemetry.",
+                *(
+                    [
+                        "The production vectorized decoder fell back to the row path: "
+                        f"{decoder_fallback_reason}"
+                    ]
+                    if decoder_fallback_reason
+                    else []
+                ),
             ],
         ),
     )

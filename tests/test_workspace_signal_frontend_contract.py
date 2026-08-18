@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -19,10 +18,11 @@ def test_shell_broadcasts_each_workspace_status_from_current_owned_state() -> No
     assert "bestUsefulLapMatchesRun(overview.best_useful_lap, overview.run_id)" in app
     assert 'currentPlatformEventsLoadStatus === "ready"' in app
     assert "setupSnapshotMatchesRun(overview.setup_snapshot, overview.run_id)" in app
-    assert "overviewWarningBlocksDecision" in app
-    assert 'laps: overviewBlockingWarnings.length > 0' in app
+    assert "overviewBlockerBlocksDecision" in app
+    assert "performanceBlockerBlocksDecision" in app
+    assert 'laps: performanceBlockingBlockers.length > 0' in app
     assert "overviewArchiveVerified" in app
-    assert '!overviewArchiveVerified || overviewBlockingWarnings.length > 0' in app
+    assert '!overviewArchiveVerified || overviewBlockingBlockers.length > 0' in app
     assert 'short: "Recover"' in app
     assert "overview?.events.filter(telemetryEventIsActionable).length" in app
     assert "currentControlledWorkflow" in app

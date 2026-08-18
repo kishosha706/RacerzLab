@@ -7,6 +7,7 @@ Returns:
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -19,7 +20,10 @@ def _pick_fixture() -> Path | None:
 
 
 def main() -> int:
-    fixture = _pick_fixture()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fixture", type=Path)
+    args = parser.parse_args()
+    fixture = args.fixture or _pick_fixture()
     if fixture is None:
         print("SKIP: No .ibt fixture found for import-pipeline contract audit.")
         return 2

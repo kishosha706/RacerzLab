@@ -629,21 +629,30 @@ def test_real_atlanta_p35_is_read_only_traffic_blocked_and_authority_invariant(
     quiet_payload = p35.model_dump(
         mode="python", exclude={"p35_assessment_sha256"}
     )
-    quiet_payload.update(
-        candidates=tuple(
-            candidate.model_copy(
-                update={
-                    "blocker_reasons": tuple(
-                        dict.fromkeys(
-                            (
-                                *candidate.blocker_reasons,
-                                "Synthetic non-authoritative P35 narrative variant.",
-                            )
+    quiet_candidates = tuple(
+        candidate.model_copy(
+            update={
+                "blocker_reasons": tuple(
+                    dict.fromkeys(
+                        (
+                            *candidate.blocker_reasons,
+                            "Synthetic non-authoritative P35 narrative variant.",
                         )
                     )
+                )
+            }
+        )
+        for candidate in p35.candidates
+    )
+    quiet_payload.update(
+        candidates=quiet_candidates,
+        mechanism_separation=tuple(
+            row.model_copy(
+                update={
+                    "missing_evidence": quiet_candidates[index].blocker_reasons,
                 }
             )
-            for candidate in p35.candidates
+            for index, row in enumerate(p35.mechanism_separation)
         ),
         blocker_reasons=tuple(
             dict.fromkeys(
@@ -776,60 +785,22 @@ def test_real_atlanta_p35_is_read_only_traffic_blocked_and_authority_invariant(
         for stage in p35.chain
     )
     traffic_rehash_payload["strongest_support_artifact_id"] = forged_support_id
-    traffic_rehash = build_performance_mechanism_assessment(
-        traffic_rehash_payload
-    )
-    opportunity_entry = next(
-        entry
-        for entry in workspace.evidence_index.entries
-        if entry.artifact_id == leading_opportunity.opportunity_id
-    )
-    forged_p20_entry = opportunity_entry.model_dump(mode="python")
-    forged_p20_entry.update(
-        artifact_id=forged_p20_id,
-        producer_id="p20.mechanism_observation",
-        lap_numbers=(leading_opportunity.source_laps[0],),
-        mechanism_ids=(MechanismKind(trust.p20_mechanism_ids[0]),),
-        evidence_state=EvidenceState.OBSERVED_CORRELATION,
-        polarity="support",
-        blocker_reasons=(),
-        typed_artifact=None,
-        authority_ceiling="observation_only",
-    )
-    focus_template = next(
-        entry
-        for entry in workspace.evidence_index.entries
-        if entry.producer_id.startswith("p35.")
-    )
-    forged_focus_entry = focus_template.model_dump(mode="python")
-    forged_focus_entry.update(
-        artifact_id=forged_support_id,
-        producer_id=(
-            f"p35.{trust.inspection_tool_id.value.removeprefix('inspect_')}"
-        ),
-        lap_numbers=forged_support.lap_numbers,
-        lap_pct_start=forged_support.lap_pct_start,
-        lap_pct_end=forged_support.lap_pct_end,
-        phase=forged_support.phase,
-        source_channels=forged_support.source_channels,
-        evidence_state=forged_support.evidence_state,
-        polarity="support",
-        blocker_reasons=(),
-        typed_artifact={
-            "artifact_type": "vehicle_dynamics_focus",
-            "assessment_sha256": traffic_rehash.p35_assessment_sha256,
-            "inspection_tool_id": trust.inspection_tool_id.value,
-            "focus": forged_support.model_dump(mode="python"),
-        },
-    )
-    with pytest.raises(ValidationError, match="hashed P20"):
-        CrewChiefWorkspace.model_validate(
-            _coordinated_p35_workspace_payload(
-                workspace,
-                traffic_rehash,
-                extra_entries=(forged_p20_entry, forged_focus_entry),
-            )
+    traffic_rehash_payload["mechanism_separation"] = tuple(
+        row.model_copy(
+            update={
+                "state": "alive",
+                "support_artifact_ids": (forged_support_id,),
+                "missing_evidence": (
+                    "The forged candidate still lacks a controlled discriminator.",
+                ),
+            }
         )
+        if row.mechanism_id == first_candidate.mechanism_id
+        else row
+        for row in p35.mechanism_separation
+    )
+    with pytest.raises(ValidationError, match="matched demand, line, response, and context"):
+        build_performance_mechanism_assessment(traffic_rehash_payload)
 
     foreign_component_payload = p35.model_dump(
         mode="python", exclude={"p35_assessment_sha256"}
@@ -841,6 +812,14 @@ def test_real_atlanta_p35_is_read_only_traffic_blocked_and_authority_invariant(
         if candidate.mechanism_id == first_candidate.mechanism_id
         else candidate
         for candidate in p35.candidates
+    )
+    foreign_component_payload["mechanism_separation"] = tuple(
+        row.model_copy(
+            update={"component_family_ids": ("invented_component_family",)}
+        )
+        if row.mechanism_id == first_candidate.mechanism_id
+        else row
+        for row in p35.mechanism_separation
     )
     foreign_component = build_performance_mechanism_assessment(
         foreign_component_payload
@@ -897,6 +876,25 @@ def test_real_atlanta_p35_is_read_only_traffic_blocked_and_authority_invariant(
             }
         )
         for candidate in p35.candidates
+    )
+    renamed_focus_payload["mechanism_separation"] = tuple(
+        row.model_copy(
+            update={
+                "support_artifact_ids": tuple(
+                    renamed_focus_id
+                    if value == renamed_focus_source.artifact_id
+                    else value
+                    for value in row.support_artifact_ids
+                ),
+                "contradiction_artifact_ids": tuple(
+                    renamed_focus_id
+                    if value == renamed_focus_source.artifact_id
+                    else value
+                    for value in row.contradiction_artifact_ids
+                ),
+            }
+        )
+        for row in p35.mechanism_separation
     )
     if (
         renamed_focus_payload["strongest_support_artifact_id"]

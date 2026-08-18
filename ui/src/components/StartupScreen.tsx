@@ -18,6 +18,46 @@ type StartupScreenProps = {
   onSessionSelected: (sessionId: string, source: SessionSelectionSource) => void;
 };
 
+const LAUNCH_SPLASH_DISMISSED_KEY = "racerzlab.launchSplashDismissed.v1";
+const LAST_SESSION_KEY = "racerzlab.lastSessionId.v1";
+
+function launchSplashWasDismissed(): boolean {
+  if (!isBrowser()) return false;
+  try {
+    return window.localStorage.getItem(LAUNCH_SPLASH_DISMISSED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function rememberLaunchSplashDismissal(): void {
+  if (!isBrowser()) return;
+  try {
+    window.localStorage.setItem(LAUNCH_SPLASH_DISMISSED_KEY, "true");
+  } catch {
+    // Storage is presentation-only. The session picker still opens normally.
+  }
+}
+
+function savedLastSessionId(): string | null {
+  if (!isBrowser()) return null;
+  try {
+    return window.localStorage.getItem(LAST_SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistLastSessionId(sessionId: string | null): void {
+  if (!isBrowser()) return;
+  try {
+    if (sessionId) window.localStorage.setItem(LAST_SESSION_KEY, sessionId);
+    else window.localStorage.removeItem(LAST_SESSION_KEY);
+  } catch {
+    // Recent-session convenience never owns session truth.
+  }
+}
+
 type PendingStartupFocus =
   | { kind: "delete-trigger"; sessionId: string }
   | { kind: "session-or-new"; preferredSessionIds: string[]; fallbackIndex: number };
@@ -56,7 +96,10 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
   const [deletingSession, setDeletingSession] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [bannerVisible, setBannerVisible] = useState(true);
-  const [launchSplashVisible, setLaunchSplashVisible] = useState(true);
+  const [launchSplashVisible, setLaunchSplashVisible] = useState(
+    () => !launchSplashWasDismissed(),
+  );
+  const [lastSessionId, setLastSessionId] = useState(savedLastSessionId);
 
   const loadRequestRef = useRef(0);
   const deletingSessionRef = useRef<string | null>(null);
@@ -125,6 +168,7 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
   }, [confirmDelete, creating, loading, sessions]);
 
   const enterSessionPicker = useCallback(() => {
+    rememberLaunchSplashDismissal();
     setLaunchSplashVisible(false);
   }, []);
 
@@ -147,12 +191,20 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
     setCreateError(null);
     try {
       const session = await createSession();
+      persistLastSessionId(session.session_id);
+      setLastSessionId(session.session_id);
       onSessionSelected(session.session_id, "new");
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Could not create session.");
     } finally {
       setCreating(false);
     }
+  }, [onSessionSelected]);
+
+  const handleOpenSession = useCallback((sessionId: string) => {
+    persistLastSessionId(sessionId);
+    setLastSessionId(sessionId);
+    onSessionSelected(sessionId, "existing");
   }, [onSessionSelected]);
 
   const handleRequestDelete = useCallback((sessionId: string) => {
@@ -177,6 +229,10 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
     setDeleteError(null);
     try {
       await deleteSession(sessionId);
+      if (lastSessionId === sessionId) {
+        persistLastSessionId(null);
+        setLastSessionId(null);
+      }
       await loadSessions();
       pendingFocusRef.current = {
         kind: "session-or-new",
@@ -191,7 +247,9 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
       deletingSessionRef.current = null;
       setDeletingSession(null);
     }
-  }, [loadSessions, sessions]);
+  }, [lastSessionId, loadSessions, sessions]);
+
+  const lastSession = sessions.find((session) => session.session_id === lastSessionId) ?? null;
 
   return (
     <main className="start-shell" data-banner-visible={bannerVisible} data-launch-splash={launchSplashVisible}>
@@ -226,6 +284,9 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
             <p className="start-subtitle">
               Qualify the run, find the repeatable loss, and leave with one controlled next move.
             </p>
+            <p className="start-primary-note">
+              Current alpha decision scope: NASCAR Next Gen oval telemetry. Other `.ibt` files remain available for truthful archive inspection and fail closed where applicability is unverified.
+            </p>
 
             <div className="startup-value-grid" aria-label="RacerZLab engineering workflow">
               <div className="startup-value-item">
@@ -243,9 +304,18 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
             </div>
 
             <div className="start-actions">
+              {lastSession && (
+                <button
+                  className="start-primary-btn"
+                  onClick={() => handleOpenSession(lastSession.session_id)}
+                  aria-label={`Resume last session ${sessionAccessibleContext(lastSession)}`}
+                >
+                  <ArrowRight size={18} aria-hidden="true" /> Resume {lastSession.name}
+                </button>
+              )}
               <button
                 ref={newSessionButtonRef}
-                className="start-primary-btn"
+                className={lastSession ? "secondary-button" : "start-primary-btn"}
                 onClick={handleNewSession}
                 disabled={creating}
               >
@@ -304,7 +374,7 @@ export function StartupScreen({ onSessionSelected }: StartupScreenProps) {
                     else sessionCardRefs.current.delete(s.session_id);
                   }}
                   className="session-card-body"
-                  onClick={() => onSessionSelected(s.session_id, "existing")}
+                  onClick={() => handleOpenSession(s.session_id)}
                   aria-label={`Open session ${sessionAccessibleContext(s)}`}
                 >
                   <span className="session-card-overline">

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import math
+from dataclasses import dataclass, field
 from typing import Any
 
 from racelab_engine.analysis.comparison import build_lap_grid, interpolate_run_to_grid
-from racelab_engine.services.import_service import FORCE_PROXY_CHANNELS
-
+from racelab_engine.analysis.constants import CALCULATED_PROXY_CHANNELS
 
 # ── models ───────────────────────────────────────────────────────
 
@@ -187,7 +186,7 @@ def compute_delta_traces(
                 baseline_values=[None] * len(grid),
                 test_values=[None] * len(grid),
                 delta_values=[None] * len(grid),
-                is_proxy=ch in FORCE_PROXY_CHANNELS,
+                is_proxy=ch in CALCULATED_PROXY_CHANNELS,
                 unavailable_reason="Channel not available in either run.",
             )
             continue
@@ -201,7 +200,7 @@ def compute_delta_traces(
                 baseline_values=[None] * len(grid),
                 test_values=t_vals,
                 delta_values=[None] * len(grid),
-                is_proxy=ch in FORCE_PROXY_CHANNELS,
+                is_proxy=ch in CALCULATED_PROXY_CHANNELS,
                 unavailable_reason="Channel not available in baseline run.",
             )
             continue
@@ -215,7 +214,7 @@ def compute_delta_traces(
                 baseline_values=bl_vals,
                 test_values=[None] * len(grid),
                 delta_values=[None] * len(grid),
-                is_proxy=ch in FORCE_PROXY_CHANNELS,
+                is_proxy=ch in CALCULATED_PROXY_CHANNELS,
                 unavailable_reason="Channel not available in test run.",
             )
             continue
@@ -254,7 +253,7 @@ def compute_delta_traces(
                 test_min=min(t_clean, default=None),
                 test_max=max(t_clean, default=None),
                 paired_coverage=paired_coverage,
-                is_proxy=ch in FORCE_PROXY_CHANNELS,
+                is_proxy=ch in CALCULATED_PROXY_CHANNELS,
                 unavailable_reason=reason,
             )
             continue
@@ -274,7 +273,7 @@ def compute_delta_traces(
             delta_max=max(delta_clean, default=None) if delta_clean else None,
             delta_mean=sum(delta_clean) / len(delta_clean) if delta_clean else None,
             paired_coverage=paired_coverage,
-            is_proxy=ch in FORCE_PROXY_CHANNELS,
+                is_proxy=ch in CALCULATED_PROXY_CHANNELS,
         )
 
     if missing:

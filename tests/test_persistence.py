@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import pytest
-
 import sqlite3
 from pathlib import Path
 
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from api.main import app
@@ -155,9 +155,9 @@ def test_trace_builder_reads_cache_file(tmp_path: Path, talladega_ibt_path: Path
 
 # ── same-run guard ────────────────────────────────────────────
 
-def test_compare_same_run_triggers_reference_warning() -> None:
-    """Same run_id + same lap should produce an inconclusive reference observation."""
-    from api.routes_compare import run_comparison, CompareRequest
+def test_compare_same_run_is_blocked_as_the_same_recording() -> None:
+    """One physical source cannot enter Compare twice as independent evidence."""
+    from api.routes_compare import CompareRequest, run_comparison
     from api.routes_runs import repository
 
     # Use the existing persisted run from the default DB
@@ -171,16 +171,15 @@ def test_compare_same_run_triggers_reference_warning() -> None:
         return
     lap_number = overview.best_useful_lap.lap_number
     try:
-        resp = run_comparison(CompareRequest(
-            baseline_run_id=rid, test_run_id=rid,
-            baseline_lap=lap_number, test_lap=lap_number,
-        ))
+        with pytest.raises(HTTPException) as raised:
+            run_comparison(CompareRequest(
+                baseline_run_id=rid, test_run_id=rid,
+                baseline_lap=lap_number, test_lap=lap_number,
+            ))
     except TelemetryArtifactIdentityError:
         pytest.skip("Persisted telemetry predates immutable artifact identity; re-import is required.")
-    observation = resp.get("observation", {})
-    assert observation.get("observation_state") == "inconclusive"
-    warnings = resp.get("warnings", [])
-    assert any("same" in w.lower() or "reference" in w.lower() for w in warnings), f"got warnings={warnings}"
+    assert raised.value.status_code == 400
+    assert "SAME RECORDING" in str(raised.value.detail)
 
 
 def test_compare_different_run_not_blocked() -> None:
@@ -194,7 +193,11 @@ def test_compare_different_run_not_blocked() -> None:
                   "rpm": 8000, "speed_rate_mph_1000ft": -0.2,
                   "lf_ride_height_in": 2.0, "rf_ride_height_in": 2.1} for i in range(101)]
 
-    from racelab_engine.analysis.compare_math import aggregate_platform_stats, aggregate_driver_stats, aggregate_powertrain_stats
+    from racelab_engine.analysis.compare_math import (
+        aggregate_driver_stats,
+        aggregate_platform_stats,
+        aggregate_powertrain_stats,
+    )
     plat = aggregate_platform_stats(same_rows, same_rows)
     driver = aggregate_driver_stats(same_rows, same_rows)
     pt = aggregate_powertrain_stats(same_rows, same_rows)
@@ -228,8 +231,9 @@ def test_import_endpoint_rejects_non_ibt_multipart(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    from api.main import app
     from fastapi.testclient import TestClient
+
+    from api.main import app
 
     db_path = tmp_path / "racelab.sqlite"
     monkeypatch.setenv("RACELAB_DB_PATH", str(db_path))

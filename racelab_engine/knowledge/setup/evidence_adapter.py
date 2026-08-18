@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 import math
+from dataclasses import dataclass, replace
 from typing import Any
 
 from racelab_engine.analysis.constants import FORCE_PROXY_WARNING
+from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.analysis.track_matching import infer_layout_key, normalize_track_key
+from racelab_engine.knowledge.setup.dial_in_controls import (
+    control_keys_for_effect,
+    expanded_related_setup_keys,
+)
 from racelab_engine.knowledge.setup.evidence_schema import (
     CandidateEvidenceReadiness,
     EvidenceStatus,
     RunEvidenceContext,
     RunEvidenceGroup,
-)
-from racelab_engine.knowledge.setup.dial_in_controls import (
-    control_keys_for_effect,
-    expanded_related_setup_keys,
 )
 from racelab_engine.knowledge.setup.loader import load_setup_knowledge
 from racelab_engine.knowledge.setup.matcher import (
@@ -23,9 +24,9 @@ from racelab_engine.knowledge.setup.matcher import (
     query_result_to_dict,
     query_setup_knowledge,
 )
+from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.session import RunOverview
 from racelab_engine.models.setup import SetupSnapshot
-from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.services.import_service import (
     build_channel_summary,
     read_telemetry_manifest,
@@ -37,8 +38,6 @@ from racelab_engine.services.setup_learning_service import (
 )
 from racelab_engine.services.track_map_service import find_best_map_for_run
 from racelab_engine.storage.repository import RaceLabRepository
-from racelab_engine.analysis.lap_eligibility import eligible_laps
-
 
 NEXT_GEN_PATTERNS = (
     "next gen",
@@ -120,6 +119,11 @@ DIFFUSER_PROXY_CHANNELS = {
     "smooth_diffuser_volume_ft3",
     "diffuser_track_width_in",
     "diffuser_wheelbase_in",
+}
+DIFFUSER_PROFILE_PROVENANCE_CHANNELS = {
+    "diffuser_geometry_source",
+    "diffuser_geometry_profile_sha256",
+    "diffuser_rub_block_correction_in",
 }
 REAR_SCRAPE_CHANNELS = {
     "rear_min_ride_height_in",
@@ -666,23 +670,50 @@ def build_run_evidence_context(
         flags.update({"rear_ride_height_platform", "rear_platform"})
 
     diffuser_present = _sorted_present(available_channels, DIFFUSER_PROXY_CHANNELS)
-    diffuser_status = "ready" if {"front_center_rh_in", "rear_center_rh_in"} <= set(diffuser_present) and len(diffuser_present) >= 4 else "partially_ready" if len(diffuser_present) >= 2 else "missing"
-    diffuser_notes = [FORCE_PROXY_WARNING] if diffuser_present else []
+    diffuser_provenance = _sorted_present(
+        available_channels,
+        DIFFUSER_PROFILE_PROVENANCE_CHANNELS,
+    )
+    diffuser_profile_verified = (
+        set(diffuser_provenance) == DIFFUSER_PROFILE_PROVENANCE_CHANNELS
+    )
+    diffuser_status = (
+        "ready"
+        if diffuser_profile_verified
+        and {"front_center_rh_in", "rear_center_rh_in"} <= set(diffuser_present)
+        and len(diffuser_present) >= 4
+        else "missing"
+    )
+    diffuser_notes = (
+        [
+            "Calculated geometry proxy backed by one reviewed vehicle-profile identity.",
+            FORCE_PROXY_WARNING,
+        ]
+        if diffuser_status == "ready"
+        else [
+            "Legacy or unprovenanced diffuser columns are ignored; complete reviewed vehicle-profile geometry is required."
+        ]
+        if diffuser_present
+        else []
+    )
     groups["diffuser_proxy"] = _build_group(
         group_id="diffuser_proxy",
         label="Diffuser Proxy",
         status=diffuser_status,
         source="channel_summary",
-        present_items=["derived diffuser geometry proxy"] if diffuser_present else [],
-        missing_items=[] if diffuser_present else ["derived diffuser geometry proxy"],
-        channels_present=diffuser_present,
-        channels_missing=_sorted_missing(available_channels, DIFFUSER_PROXY_CHANNELS),
+        present_items=["profile-backed diffuser geometry proxy"] if diffuser_status == "ready" else [],
+        missing_items=[] if diffuser_status == "ready" else ["reviewed diffuser geometry profile provenance"],
+        channels_present=[*diffuser_present, *diffuser_provenance],
+        channels_missing=[
+            *_sorted_missing(available_channels, DIFFUSER_PROXY_CHANNELS),
+            *_sorted_missing(available_channels, DIFFUSER_PROFILE_PROVENANCE_CHANNELS),
+        ],
         notes=diffuser_notes,
-        confidence_boost=0.25 if diffuser_status == "ready" else 0.1 if diffuser_status == "partially_ready" else 0.0,
+        confidence_boost=0.1 if diffuser_status == "ready" else 0.0,
     )
-    if diffuser_status in {"ready", "partially_ready"}:
+    if diffuser_status == "ready":
         flags.add("diffuser_proxy")
-        warnings.append("Derived diffuser geometry proxy is available. Treat it as geometry context, not measured downforce.")
+        warnings.append("Profile-backed diffuser geometry proxy is available. Treat it as calculated geometry context, not measured downforce.")
 
     scrape_present = _sorted_present(available_channels, REAR_SCRAPE_CHANNELS)
     scrape_status = "ready" if any(name in scrape_present for name in ("rear_scrape_margin_mm", "rear_scrape_risk_score", "rear_platform_contact_risk")) else "partially_ready" if scrape_present else "missing"

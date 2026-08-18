@@ -7,6 +7,7 @@ import type {
   EngineeringGate,
   EngineeringSystemsResponse,
 } from "../types/compare";
+import { evidenceStrengthOutOf100 } from "../utils/evidenceScore";
 
 type Props = {
   baselineRunId: string;
@@ -53,7 +54,7 @@ function ConclusionDetails({ conclusion }: { conclusion: EngineeringConclusion }
       <div className="section-header-row">
         <strong>{label(conclusion.key)}</strong>
         <span className={`confidence-badge ${conclusion.confidence_score >= 0.75 ? "high" : conclusion.confidence_score >= 0.55 ? "medium" : "low"}`}>
-          {label(conclusion.evidence_state)} · {Math.round(conclusion.confidence_score * 100)}%
+          {label(conclusion.evidence_state)} · strength {evidenceStrengthOutOf100(conclusion.confidence_score)}
         </span>
       </div>
       <p className="section-note">{conclusion.summary}</p>
@@ -245,7 +246,7 @@ export function EngineeringSystemsComparison({ baselineRunId, testRunId, baselin
             <strong>{headline}</strong>
             <small className="muted">{detail}</small>
             <span className={`confidence-badge ${gateTone(report.gate)}`} style={{ marginTop: 8 }}>
-              {report.gate.eligible ? "Eligible" : "Blocked"} · cap {Math.round(report.gate.confidence_cap * 100)}%
+              {report.gate.eligible ? "Eligible" : "Blocked"} · evidence cap {evidenceStrengthOutOf100(report.gate.confidence_cap)}
             </span>
           </div>
         ))}
@@ -263,8 +264,8 @@ export function EngineeringSystemsComparison({ baselineRunId, testRunId, baselin
       {learning && (
         <div style={{ marginTop: 12 }}>
           <p className="section-note">
-            Alignment: {Math.round(data.alignment_coverage_fraction * 100)}% coverage · {Math.round(data.local_alignment_confidence * 100)}% local confidence ·
-            integrity cap {Math.round(data.sim_integrity_confidence_cap * 100)}%.
+            Alignment: {Math.round(data.alignment_coverage_fraction * 100)}% measured coverage · local quality {evidenceStrengthOutOf100(data.local_alignment_confidence)} ·
+            integrity cap {evidenceStrengthOutOf100(data.sim_integrity_confidence_cap)}.
           </p>
           <p className="section-note">
             Curvature basis: baseline {label(data.baseline_curvature_basis)} · test {label(data.test_curvature_basis)}.

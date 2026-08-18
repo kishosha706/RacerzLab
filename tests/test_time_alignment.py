@@ -83,6 +83,47 @@ def _fractional_lap_rows(
     return rows
 
 
+def _driver_event_lap_rows(
+    *,
+    shift_pct: float = 0.0,
+    channels: tuple[str, ...] = ("brake_pct", "throttle_pct", "steering_deg", "yaw_rate"),
+    speed_bias_mps: float = 0.0,
+) -> list[dict[str, float]]:
+    rows: list[dict[str, float]] = []
+    elapsed = 0.0
+    previous_distance_ft = 0.0
+    for index in range(1001):
+        pct = index / 10.0
+        distance_ft = pct * 100.0
+        speed_mps = (
+            43.0
+            + 8.0 * math.sin(2.0 * math.pi * pct / 100.0)
+            + 5.0 * math.sin(10.0 * math.pi * pct / 100.0)
+            + (speed_bias_mps if 20.0 <= pct <= 80.0 else 0.0)
+        )
+        elapsed += ((distance_ft - previous_distance_ft) / 3.280839895) / speed_mps
+        previous_distance_ft = distance_ft
+        event_pct = pct - shift_pct
+        row = {
+            "lap_dist_pct_100": pct,
+            "lap_dist_ft": distance_ft,
+            "session_time": elapsed,
+            "speed_mps": speed_mps,
+            "lat_accel": 0.0,
+            "vert_accel": 9.80665,
+        }
+        if "brake_pct" in channels:
+            row["brake_pct"] = 75.0 if 39.5 <= event_pct <= 44.5 else 0.0
+        if "throttle_pct" in channels:
+            row["throttle_pct"] = 100.0 if 45.0 <= event_pct <= 80.0 else 0.0
+        if "steering_deg" in channels:
+            row["steering_deg"] = 15.0 if 42.0 <= event_pct <= 48.0 else 0.0
+        if "yaw_rate" in channels:
+            row["yaw_rate"] = 0.3 if 42.3 <= event_pct <= 48.0 else 0.0
+        rows.append(row)
+    return rows
+
+
 def _noise_context() -> dict[str, object]:
     return {
         "baseline_driver_identity": "driver-7",
@@ -153,7 +194,7 @@ def test_phase_engine_detects_sustained_brake_corner_apex_and_exit() -> None:
     assert all(interval.end_pct >= interval.start_pct for interval in intervals)
 
 
-def test_layered_alignment_is_monotonic_and_reports_physical_methods() -> None:
+def test_layered_alignment_is_monotonic_and_keeps_driver_signals_out_of_physical_methods() -> None:
     grid = [float(value) for value in range(101)]
     baseline = _lap_rows()
     test = _lap_rows()
@@ -161,7 +202,7 @@ def test_layered_alignment_is_monotonic_and_reports_physical_methods() -> None:
         for row in rows:
             pct = row["lap_dist_pct_100"]
             row["yaw_rate"] = 0.3 * math.sin(4 * math.pi * pct / 100.0)
-            row["vert_accel"] = 9.80665 + math.sin(10 * math.pi * pct / 100.0)
+            row["vert_accel"] = 9.80665 + 3.0 * math.sin(10 * math.pi * pct / 100.0)
             row["brake_pct"] = 70.0 if 20 <= pct <= 25 else 0.0
     points, _baseline, _test = build_layered_alignment(baseline, test, grid)
 
@@ -170,9 +211,11 @@ def test_layered_alignment_is_monotonic_and_reports_physical_methods() -> None:
     assert all(not point.is_gap for point in points)
     assert all("lap_percentage" in point.methods for point in points)
     assert any("gps_geometry" in point.methods for point in points)
-    assert any("yaw_curvature" in point.methods for point in points)
     assert any("road_profile" in point.methods for point in points)
-    assert any("braking_onset_anchor" in point.methods for point in points)
+    assert all(
+        {"yaw_curvature", "braking_onset_anchor", "apex_curvature_anchor"}.isdisjoint(point.methods)
+        for point in points
+    )
     assert all(point.uncertainty_pct is not None for point in points)
 
 
@@ -183,6 +226,8 @@ def test_local_spike_does_not_inflate_road_profile_confidence_around_whole_lap()
         row["lf_shock_defl_in"] = 0.0
     baseline[50]["lf_shock_defl_in"] = 0.5
     test[50]["lf_shock_defl_in"] = 0.5
+    baseline[50]["vert_accel"] = 13.0
+    test[50]["vert_accel"] = 13.0
     points, _baseline, _test = build_layered_alignment(
         baseline,
         test,
@@ -235,7 +280,7 @@ def test_controlled_many_to_one_alignment_recovers_from_local_geometric_shift() 
     assert len(set(aligned)) < len(aligned)  # controlled local reuse, not a forced end gap
 
 
-def test_point_one_percent_cross_session_event_shift_stays_bound_to_physical_location() -> None:
+def test_point_one_percent_independent_geometry_shift_can_correct_physical_location() -> None:
     grid = [round(index / 10.0, 1) for index in range(1001)]
 
     def shifted_event_rows(shift_pct: float) -> list[dict[str, float]]:
@@ -244,17 +289,16 @@ def test_point_one_percent_cross_session_event_shift_stays_bound_to_physical_loc
             physical_pct = pct - shift_pct
             angle = 2.0 * math.pi * physical_pct / 100.0
             bump = math.exp(-((physical_pct - 40.0) / 0.12) ** 2)
-            brake = 80.0 if 39.8 <= physical_pct <= 40.3 else 0.0
             rows.append({
                 "lap_dist_pct_100": pct,
                 "lap_dist_ft": pct * 100.0,
                 "session_time": pct * 2.0,
                 "speed_mps": 50.0,
-                "throttle_pct": 0.0 if brake else 100.0,
-                "brake_pct": brake,
-                "steering_deg": 15.0 * bump,
-                "yaw_rate": 0.5 * bump,
-                "lat_accel": 7.0 * bump,
+                "throttle_pct": 100.0,
+                "brake_pct": 0.0,
+                "steering_deg": 0.0,
+                "yaw_rate": 0.0,
+                "lat_accel": 0.0,
                 "vert_accel": 9.80665 + 5.0 * bump,
                 "lf_shock_defl_in": 0.3 * bump,
                 "lat": 33.0 + 0.001 * math.sin(angle),
@@ -272,15 +316,117 @@ def test_point_one_percent_cross_session_event_shift_stays_bound_to_physical_loc
 
     assert event.aligned_test_pct == pytest.approx(40.1)
     assert event.aligned_test_pct != event.lap_pct
-    assert {
-        "gps_geometry",
-        "yaw_curvature",
-        "road_profile",
-        "braking_onset_anchor",
-    }.issubset(event.methods)
+    assert {"gps_geometry", "road_profile"}.issubset(event.methods)
+    assert {"yaw_curvature", "braking_onset_anchor", "apex_curvature_anchor"}.isdisjoint(
+        event.methods
+    )
     assert [point.aligned_test_pct for point in points if point.aligned_test_pct is not None] == sorted(
         point.aligned_test_pct for point in points if point.aligned_test_pct is not None
     )
+
+
+def test_repeatable_road_landmark_can_correct_position_without_gps() -> None:
+    grid = [round(index / 10.0, 1) for index in range(1001)]
+
+    def rows(shift_pct: float) -> list[dict[str, float]]:
+        result: list[dict[str, float]] = []
+        for pct in grid:
+            physical_pct = pct - shift_pct
+            bump = math.exp(-((physical_pct - 40.0) / 0.12) ** 2)
+            result.append({
+                "lap_dist_pct_100": pct,
+                "lap_dist_ft": pct * 100.0,
+                "session_time": pct * 2.0,
+                "speed_mps": 50.0,
+                "vert_accel": 9.80665 + 5.0 * bump,
+                "lf_shock_defl_in": 0.3 * bump,
+            })
+        return result
+
+    points, _baseline, _test = build_layered_alignment(rows(0.0), rows(0.1), grid)
+    landmark = points[grid.index(40.0)]
+
+    assert landmark.aligned_test_pct == pytest.approx(40.1)
+    assert {"road_profile", "repeatable_bump_anchor"}.issubset(landmark.methods)
+    assert "gps_geometry" not in landmark.methods
+
+
+def test_unqualified_platform_response_cannot_translate_physical_position() -> None:
+    baseline = _driver_event_lap_rows(channels=())
+    test = _driver_event_lap_rows(channels=())
+    for rows, shift_pct in ((baseline, 0.0), (test, 0.5)):
+        for row in rows:
+            event_pct = row["lap_dist_pct_100"] - shift_pct
+            active = 40.0 <= event_pct <= 45.0
+            row["lf_ride_height_in"] = 1.5 if active else 2.0
+            row["lf_shock_defl_in"] = 0.5 if active else 0.0
+
+    result = analyze_time_alignment(baseline, test, step_pct=0.1)
+
+    assert result.selected_effect_s == pytest.approx(0.0, abs=1e-9)
+    assert all(point.aligned_test_pct == point.lap_pct for point in result.alignment)
+    assert all("road_profile" not in point.methods for point in result.alignment)
+
+
+@pytest.mark.parametrize(
+    ("channel", "event"),
+    [
+        ("brake_pct", "brake_application"),
+        ("throttle_pct", "throttle_application"),
+        ("steering_deg", "steering_application"),
+        ("yaw_rate", "yaw_response_onset"),
+    ],
+)
+def test_shifted_driver_or_response_event_cannot_fabricate_time_delta(
+    channel: str,
+    event: str,
+) -> None:
+    result = analyze_time_alignment(
+        _driver_event_lap_rows(channels=(channel,)),
+        _driver_event_lap_rows(shift_pct=0.5, channels=(channel,)),
+        step_pct=0.1,
+    )
+
+    assert result.selected_effect_s == pytest.approx(0.0, abs=1e-9)
+    assert all(point.aligned_test_pct == point.lap_pct for point in result.alignment)
+    assert all(
+        {"yaw_curvature", "braking_onset_anchor", "apex_curvature_anchor"}.isdisjoint(point.methods)
+        for point in result.alignment
+    )
+    correspondence = next(
+        item
+        for item in result.driver_event_correspondence
+        if item.source_channel == channel and item.event == event
+    )
+    assert correspondence.delta_pct == pytest.approx(0.5)
+    assert correspondence.is_physical_alignment_authority is False
+
+
+def test_removing_driver_and_response_channels_does_not_change_physical_time_solution() -> None:
+    driver_channels = {"brake_pct", "throttle_pct", "steering_deg", "yaw_rate"}
+    baseline = _driver_event_lap_rows()
+    test = _driver_event_lap_rows(shift_pct=0.5, speed_bias_mps=1.5)
+    without_driver_baseline = [
+        {key: value for key, value in row.items() if key not in driver_channels}
+        for row in baseline
+    ]
+    without_driver_test = [
+        {key: value for key, value in row.items() if key not in driver_channels}
+        for row in test
+    ]
+
+    with_driver = analyze_time_alignment(baseline, test, step_pct=0.1)
+    without_driver = analyze_time_alignment(
+        without_driver_baseline,
+        without_driver_test,
+        step_pct=0.1,
+    )
+
+    assert with_driver.alignment == without_driver.alignment
+    assert with_driver.incremental_delta_s == without_driver.incremental_delta_s
+    assert with_driver.cumulative_delta_s == without_driver.cumulative_delta_s
+    assert with_driver.selected_effect_s == without_driver.selected_effect_s
+    assert with_driver.selected_effect_s is not None and with_driver.selected_effect_s < 0.0
 
 
 def test_alignment_never_extrapolates_and_preserves_honest_gaps() -> None:

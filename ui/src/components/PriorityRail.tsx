@@ -210,10 +210,10 @@ export function PriorityRail({
         </span>
       </header>
 
-      {eventsRenderable && <div className="rail-next-action">
+      {eventsRenderable && <div className="rail-next-action" data-role="supporting-evidence-navigation">
         <div className="rail-next-action-body">
           <span className="rail-next-action-label">
-            <Lightbulb size={12} /> Next Action
+            <Lightbulb size={12} /> Supporting view
           </span>
           <span className="nbc-question">{suggestion.question}</span>
           <button
@@ -226,7 +226,7 @@ export function PriorityRail({
                 setWorkspace(suggestion.workspace, "manual");
               }
             }}
-            aria-label={`Next action: ${suggestion.action}`}
+            aria-label={`Open supporting evidence view: ${suggestion.action}`}
           >
             <ArrowRight size={14} /> {suggestion.action}
           </button>

@@ -5,6 +5,7 @@ export interface ChannelUiMeta {
   unit: string;
   isProxy: boolean;
   isEstimate: boolean;
+  isCalculated?: boolean;
   category: string;
   precision: number;
   warning?: string;
@@ -45,16 +46,18 @@ const CHANNEL_META: Record<string, ChannelUiMeta> = {
   grade_corrected_speed_loss_mph_s: { label: "Grade-Corrected Speed Loss", unit: "mph/s", isProxy: true, isEstimate: true, category: "grade", precision: 2 },
 
   // -- Dynamic pressure / aero --
-  dynamic_pressure_pa: { label: "Dynamic Pressure", unit: "Pa", isProxy: false, isEstimate: false, category: "aero", precision: 0 },
-  dynamic_pressure_psf: { label: "Dynamic Pressure", unit: "psf", isProxy: false, isEstimate: false, category: "aero", precision: 1 },
-  dynamic_pressure_lap_index: { label: "DP Lap Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
-    warning: "Lap-relative - not comparable across runs." },
-  dynamic_pressure_index: { label: "DP Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
-    warning: "Lap-relative - not comparable across runs." },
-  aero_load_index: { label: "Aero Load Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
-    warning: "Proxy - not a direct force measurement." },
-  aero_load_index_180mph: { label: "Aero Load Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
-    warning: "Proxy - not a direct force measurement." },
+  dynamic_pressure_pa: { label: "Ground-Speed Pressure Proxy", unit: "Pa", isProxy: true, isEstimate: true, category: "aero", precision: 0,
+    warning: "Display only - wind-relative air speed is unavailable." },
+  dynamic_pressure_psf: { label: "Ground-Speed Pressure Proxy", unit: "psf", isProxy: true, isEstimate: true, category: "aero", precision: 1,
+    warning: "Display only - wind-relative air speed is unavailable." },
+  dynamic_pressure_lap_index: { label: "Ground-Speed Pressure Lap Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
+    warning: "Lap-relative display proxy - not comparable across runs." },
+  dynamic_pressure_index: { label: "Ground-Speed Pressure Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
+    warning: "Lap-relative display proxy - not comparable across runs." },
+  aero_load_index: { label: "Speed-Density Reference Proxy", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
+    warning: "Research/display only - not aero load and not comparable across unmatched runs." },
+  aero_load_index_180mph: { label: "Speed-Density Reference Proxy", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
+    warning: "Research/display only - not aero load and not comparable across unmatched runs." },
 
   // -- Ride heights / platform --
   cfs_ride_height_in: { label: "CFS Ride Height", unit: "in", isProxy: false, isEstimate: false, category: "platform", precision: 3 },
@@ -196,14 +199,10 @@ const CHANNEL_META: Record<string, ChannelUiMeta> = {
   rf_wear_spread: { label: "RF Wear Spread", unit: "%", isProxy: true, isEstimate: true, category: "tires", precision: 2 },
   lr_wear_spread: { label: "LR Wear Spread", unit: "%", isProxy: true, isEstimate: true, category: "tires", precision: 2 },
   rr_wear_spread: { label: "RR Wear Spread", unit: "%", isProxy: true, isEstimate: true, category: "tires", precision: 2 },
-  lf_camber_temp_bias_c: { label: "LF Camber Bias", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
-  rf_camber_temp_bias_c: { label: "RF Camber Bias", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
-  lr_camber_temp_bias_c: { label: "LR Camber Bias", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
-  rr_camber_temp_bias_c: { label: "RR Camber Bias", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
-  lf_camber_bias_label: { label: "LF Camber", unit: "", isProxy: true, isEstimate: true, category: "tires", precision: 0 },
-  rf_camber_bias_label: { label: "RF Camber", unit: "", isProxy: true, isEstimate: true, category: "tires", precision: 0 },
-  lr_camber_bias_label: { label: "LR Camber", unit: "", isProxy: true, isEstimate: true, category: "tires", precision: 0 },
-  rr_camber_bias_label: { label: "RR Camber", unit: "", isProxy: true, isEstimate: true, category: "tires", precision: 0 },
+  lf_camber_temp_bias_c: { label: "LF Inboard−Outboard Snapshot", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
+  rf_camber_temp_bias_c: { label: "RF Inboard−Outboard Snapshot", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
+  lr_camber_temp_bias_c: { label: "LR Inboard−Outboard Snapshot", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
+  rr_camber_temp_bias_c: { label: "RR Inboard−Outboard Snapshot", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
 
   // -- Shocks --
   lf_shock_defl_in: { label: "LF Shock Defl", unit: "in", isProxy: false, isEstimate: false, category: "shocks", precision: 2 },
@@ -246,17 +245,29 @@ const CHANNEL_META: Record<string, ChannelUiMeta> = {
   track_y_ft: { label: "Track Y", unit: "ft", isProxy: false, isEstimate: false, category: "gps", precision: 0 },
 
   // -- Diffuser geometry --
-  front_center_rh_in: { label: "Front Center RH", unit: "in", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  lr_height_rub_block_in: { label: "LR Height - Rub Block", unit: "in", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  rear_center_rh_in: { label: "Rear Center RH", unit: "in", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  center_rake_in: { label: "Center Rake", unit: "in", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  smooth_center_rake_in: { label: "Smooth Center Rake", unit: "in", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  diffuser_track_width_in: { label: "Diffuser Track Width", unit: "in", isProxy: false, isEstimate: true, category: "diffuser", precision: 2 },
-  diffuser_wheelbase_in: { label: "Diffuser Wheelbase", unit: "in", isProxy: false, isEstimate: true, category: "diffuser", precision: 2 },
-  diffuser_base_volume_ft3: { label: "Diffuser Base Volume", unit: "ft3", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  diffuser_wedge_volume_ft3: { label: "Diffuser Wedge Volume", unit: "ft3", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  diffuser_volume_ft3: { label: "Diffuser Volume", unit: "ft3", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  smooth_diffuser_volume_ft3: { label: "Smooth Diffuser Volume", unit: "ft3", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
+  front_center_rh_in: { label: "Front Center RH", unit: "in", isProxy: false, isEstimate: false, isCalculated: true, category: "diffuser", precision: 2 },
+  diffuser_rub_block_correction_in: { label: "Diffuser Rub-Block Correction Proxy", unit: "in", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 3,
+    warning: "Reviewed vehicle-profile constant; unavailable without exact profile provenance." },
+  lr_height_rub_block_in: { label: "LR Corrected Height Proxy", unit: "in", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Depends on a reviewed rub-block geometry profile." },
+  rear_center_rh_in: { label: "Rear Center RH Proxy", unit: "in", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Depends on a reviewed rub-block geometry profile." },
+  center_rake_in: { label: "Center Rake Proxy", unit: "in", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Depends on reviewed diffuser geometry; not direct chassis attitude." },
+  smooth_center_rake_in: { label: "Smoothed Center Rake Proxy", unit: "in", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Display smoothing of a profile-backed calculated proxy." },
+  diffuser_track_width_in: { label: "Diffuser Track Width Proxy", unit: "in", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Calculated only from complete reviewed vehicle-profile geometry; unavailable otherwise." },
+  diffuser_wheelbase_in: { label: "Diffuser Wheelbase Proxy", unit: "in", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Calculated only from complete reviewed vehicle-profile geometry; unavailable otherwise." },
+  diffuser_base_volume_ft3: { label: "Diffuser Base-Volume Proxy", unit: "ft3", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Clearance-geometry proxy, not measured physical volume or aerodynamic load." },
+  diffuser_wedge_volume_ft3: { label: "Diffuser Wedge-Volume Proxy", unit: "ft3", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Clearance-geometry proxy, not measured physical volume or aerodynamic load." },
+  diffuser_volume_ft3: { label: "Diffuser Clearance-Volume Proxy", unit: "ft3", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Clearance-geometry proxy, not measured physical volume, downforce, or aerodynamic load." },
+  smooth_diffuser_volume_ft3: { label: "Smoothed Diffuser Clearance Proxy", unit: "ft3", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Display smoothing of a profile-backed calculated proxy." },
 };
 
 export function getChannelUiMeta(channel: string): ChannelUiMeta | null {
@@ -317,6 +328,7 @@ export function getChannelConfidenceLevel(channel: string): ConfidenceLevel {
   if (!meta) return "measured";
   if (meta.isProxy) return "proxy";
   if (meta.isEstimate) return "estimate";
+  if (meta.isCalculated) return "calculated";
   return "measured";
 }
 
@@ -332,4 +344,3 @@ export function getLegendLabel(channel: string, mode: "race" | "learning" = "rac
   }
   return label;
 }
-

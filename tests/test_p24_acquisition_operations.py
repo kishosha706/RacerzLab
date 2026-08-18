@@ -58,6 +58,8 @@ def _overview(
                 lap_number=lap,
                 is_complete=True,
                 is_useful=True,
+                timing_primary_clock="session_tick",
+                timing_clock_state="qualified",
                 lap_time=30.0,
                 pct_min=0.0,
                 pct_max=100.0,

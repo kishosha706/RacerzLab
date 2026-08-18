@@ -1,7 +1,27 @@
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // This must be the first desktop plugin. A second launch focuses the
+    // existing window and never reaches setup, so it cannot spawn or attach to
+    // an ambiguous fixed-port backend process.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }));
+    }
+
+    builder
         .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![
+            backend_instance_token,
+            ensure_backend_running,
+        ])
         .setup(|app| {
             app.manage(BackendProcess::start(app.path().resource_dir().ok()));
             Ok(())
@@ -20,6 +40,7 @@ use std::{
     path::PathBuf,
     process::{Child, Command, Stdio},
     sync::Mutex,
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::Manager;
 
@@ -29,12 +50,15 @@ const BACKEND_PORT: &str = "8010";
 
 struct BackendProcess {
     child: Mutex<Option<Child>>,
+    instance_token: String,
+    resource_dir: Option<PathBuf>,
 }
 
 impl BackendProcess {
     fn start(resource_dir: Option<PathBuf>) -> Self {
-        let child = match find_backend_sidecar(resource_dir) {
-            Some(path) => start_backend_sidecar(path),
+        let instance_token = backend_instance_token_value();
+        let child = match find_backend_sidecar(resource_dir.clone()) {
+            Some(path) => start_backend_sidecar(path, &instance_token),
             None => {
                 eprintln!("RacerZLab backend sidecar was not found.");
                 None
@@ -42,6 +66,8 @@ impl BackendProcess {
         };
         Self {
             child: Mutex::new(child),
+            instance_token,
+            resource_dir,
         }
     }
 
@@ -52,6 +78,25 @@ impl BackendProcess {
             }
         }
     }
+
+    fn ensure_running(&self) -> bool {
+        let Ok(mut guard) = self.child.lock() else {
+            return false;
+        };
+        if let Some(child) = guard.as_mut() {
+            match child.try_wait() {
+                Ok(None) => return true,
+                Ok(Some(_)) | Err(_) => {
+                    *guard = None;
+                }
+            }
+        }
+        let Some(path) = find_backend_sidecar(self.resource_dir.clone()) else {
+            return false;
+        };
+        *guard = start_backend_sidecar(path, &self.instance_token);
+        guard.is_some()
+    }
 }
 
 impl Drop for BackendProcess {
@@ -60,7 +105,25 @@ impl Drop for BackendProcess {
     }
 }
 
-fn start_backend_sidecar(path: PathBuf) -> Option<Child> {
+fn backend_instance_token_value() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    format!("{}-{nanos:x}", std::process::id())
+}
+
+#[tauri::command]
+fn backend_instance_token(process: tauri::State<'_, BackendProcess>) -> String {
+    process.instance_token.clone()
+}
+
+#[tauri::command]
+fn ensure_backend_running(process: tauri::State<'_, BackendProcess>) -> bool {
+    process.ensure_running()
+}
+
+fn start_backend_sidecar(path: PathBuf, instance_token: &str) -> Option<Child> {
     let mut command = Command::new(path);
     command
         .arg("--host")
@@ -69,6 +132,7 @@ fn start_backend_sidecar(path: PathBuf) -> Option<Child> {
         .arg(BACKEND_PORT)
         .env("RACERZLAB_BACKEND_HOST", BACKEND_HOST)
         .env("RACERZLAB_BACKEND_PORT", BACKEND_PORT)
+        .env("RACERZLAB_BACKEND_INSTANCE_TOKEN", instance_token)
         .env("RACERZLAB_BACKEND_LOG", backend_log_path())
         .stdin(Stdio::null())
         .stdout(Stdio::null())

@@ -7,13 +7,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from racelab_engine.analysis.dynamic_response import (
+    analyze_brake_throttle_dynamic_response,
+)
+from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.analysis.observation_intelligence import (
     adapt_event_mechanism_observations,
     build_driver_repeatability_signature,
     build_opportunity_signatures,
     build_same_setup_anomaly_envelopes,
 )
-from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.evidence import (
+    EngineeringBlockTarget,
+    EvidenceState,
+    engineering_blockers_for,
+)
 from racelab_engine.models.observation_intelligence import (
     DriverRepeatabilitySignature,
     MechanismObservationReport,
@@ -22,13 +30,13 @@ from racelab_engine.models.observation_intelligence import (
     RunObservationIntelligence,
     SameSetupAnomalyReport,
 )
-from racelab_engine.services.import_service import (
-    TelemetryArtifactIdentityError,
-    read_telemetry_rows,
-)
 from racelab_engine.services.engineering_awareness_service import (
     EngineeringAwarenessEvidenceBuild,
     build_engineering_awareness_evidence,
+)
+from racelab_engine.services.import_service import (
+    TelemetryArtifactIdentityError,
+    read_telemetry_rows,
 )
 from racelab_engine.services.p3_observation_bridge import (
     build_p3_mechanism_observations,
@@ -37,7 +45,6 @@ from racelab_engine.services.p3_observation_bridge import (
     revalidate_event_mechanism_observations,
 )
 from racelab_engine.storage.repository import RaceLabRepository
-
 
 _DEFAULT_ANOMALY_CHANNELS = (
     "speed_mph",
@@ -190,13 +197,15 @@ def _build_observation_intelligence_with_awareness(
         return _blocked_build(
             run_id, "The stored run identity does not match the requested scope."
         )
-    integrity_warnings = tuple(
-        warning
-        for warning in overview.warnings
-        if warning.casefold().startswith("evidence integrity:")
+    integrity_blockers = engineering_blockers_for(
+        overview.engineering_blockers,
+        EngineeringBlockTarget.OBSERVATION,
     )
-    if integrity_warnings:
-        return _blocked_build(run_id, " ".join(integrity_warnings))
+    if integrity_blockers:
+        return _blocked_build(
+            run_id,
+            " ".join(blocker.message for blocker in integrity_blockers),
+        )
 
     setup = overview.setup_snapshot
     setup_id = setup.setup_id if setup is not None and setup.run_id == run_id else None
@@ -241,7 +250,25 @@ def _build_observation_intelligence_with_awareness(
     # A verified cache is now explicitly bound to this requested run for the
     # pure builders' cross-run guard.  Untrusted caller-supplied rows never pass
     # through this wrapper.
-    scoped_rows = [{**row, "run_id": run_id} for row in rows]
+    # ``read_telemetry_rows`` owns these freshly materialized dictionaries.
+    # Bind them in place rather than allocating and copying another full cold
+    # telemetry population solely to add an immutable run identity.
+    for row in rows:
+        row["run_id"] = run_id
+    scoped_rows = rows
+    brake_throttle_response = analyze_brake_throttle_dynamic_response(
+        scoped_rows,
+        run_id=run_id,
+        setup_id=setup_id,
+        eligible_lap_numbers=tuple(
+            lap.lap_number for lap in eligible_laps(overview.laps)
+        ),
+        expected_sample_rate_hz=getattr(
+            overview.session,
+            "telemetry_rate_hz",
+            None,
+        ),
+    )
     lap_setup_ids = (
         {lap.lap_number: setup_id for lap in overview.laps}
         if setup_id is not None
@@ -344,6 +371,7 @@ def _build_observation_intelligence_with_awareness(
             mechanism_observations=mechanisms,
             anomaly_envelopes=anomalies,
             driver_repeatability=driver,
+            brake_throttle_response=brake_throttle_response,
             blocker_reasons=aggregate_blockers,
         ),
         awareness=awareness,

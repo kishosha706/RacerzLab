@@ -28,7 +28,7 @@ import { EngineeringAwarenessPanel } from "../components/EngineeringAwarenessPan
 import { ValueDisplay } from "../components/ValueDisplay";
 import { useCompareBasket } from "../store/CompareBasketContext";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
-import { bestUsefulLapMatchesRun, overviewWarningBlocksDecision } from "../utils/evidenceTrust";
+import { bestUsefulLapMatchesRun, performanceBlockerBlocksDecision } from "../utils/evidenceTrust";
 import type { LapWindowSummary, LapWindowsResponse, StintCompareResult, StintResponse, StintRunSummary, StintSummary } from "../types/laps";
 import type { RaceLabSession, SessionSelectionSource } from "../types/session";
 import type { LapSummary, RunListItem, RunOverview } from "../types/telemetry";
@@ -1278,16 +1278,18 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
   const bestCurrentWindow = bestWindow?.run_id === overview.run_id && bestWindow.valid_lap_count > 0
     ? bestWindow
     : null;
-  const blockingRunWarning = overview.warnings.find(overviewWarningBlocksDecision) ?? null;
+  const blockingRunBlocker = overview.engineering_blockers.find(
+    performanceBlockerBlocksDecision,
+  ) ?? null;
   const paceDecisionWindow = useMemo(
-    () => blockingRunWarning
+    () => blockingRunBlocker
       ? null
       : bestCurrentSustainedStint
       ? stintToWindowSummary(bestCurrentSustainedStint)
       : bestCurrentWindow,
-    [bestCurrentSustainedStint, bestCurrentWindow, blockingRunWarning, stintToWindowSummary],
+    [bestCurrentSustainedStint, bestCurrentWindow, blockingRunBlocker, stintToWindowSummary],
   );
-  const paceDecisionLap = blockingRunWarning ? null : fastestUsableLap;
+  const paceDecisionLap = blockingRunBlocker ? null : fastestUsableLap;
   const paceEvidenceLoading = currentWindowsLoadStatus === "loading" || currentStintsLoadStatus === "loading";
   const lapWindowRequestFailed = currentWindowsLoadStatus === "error";
   const stintRequestFailed = currentStintsLoadStatus === "error";
@@ -1295,7 +1297,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
   const currentValidLapCount = currentWindowsData?.total_valid_laps ?? usefulLaps.length;
   const currentTotalLapCount = currentWindowsData?.total_laps ?? laps.length;
   const excludedLapCount = Math.max(0, currentTotalLapCount - currentValidLapCount);
-  const backendStintReady = !blockingRunWarning && currentStintData?.run_summary?.data_status === "Ready";
+  const backendStintReady = !blockingRunBlocker && currentStintData?.run_summary?.data_status === "Ready";
   const longRunPaceReady = Boolean(
     paceDecisionWindow
     && paceDecisionWindow.valid_lap_count >= 10
@@ -1303,7 +1305,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     && backendStintReady
     && !paceEvidenceRequestFailed,
   );
-  const paceDecisionState = blockingRunWarning
+  const paceDecisionState = blockingRunBlocker
     ? "NO CALL"
     : paceEvidenceLoading
     ? "CHECKING"
@@ -1327,8 +1329,8 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
         : "guarded";
   const paceWindowLabel = bestCurrentSustainedStint?.display_label_short
     ?? (paceDecisionWindow ? `${paceDecisionWindow.window_size}-lap window` : null);
-  const paceDecisionHeadline = blockingRunWarning
-    ? "Hold the pace call: run integrity is blocked."
+  const paceDecisionHeadline = blockingRunBlocker
+    ? `Hold the pace call: ${blockingRunBlocker.scope.replace(/_/g, " ")} is blocked.`
     : paceEvidenceLoading
     ? paceDecisionLap
       ? `Clean reference settled: Lap ${paceDecisionLap.lap_number} at ${formatTime(paceDecisionLap.lap_time)}.`
@@ -1338,8 +1340,8 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
       : paceDecisionLap
         ? `Fastest clean reference: Lap ${paceDecisionLap.lap_number} at ${formatTime(paceDecisionLap.lap_time)}.`
         : "No clean pace reference yet.";
-  const paceDecisionDetail = blockingRunWarning
-    ? blockingRunWarning
+  const paceDecisionDetail = blockingRunBlocker
+    ? blockingRunBlocker.message
     : lapWindowRequestFailed && stintRequestFailed
     ? "Lap-window and stint evidence requests failed. No missing result is converted into a pace conclusion."
     : stintRequestFailed && paceDecisionWindow
@@ -1356,7 +1358,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
   const visiblePaceRunLabel = selection.selectedMode === "learning"
     ? `Run ${overview.run_id}`
     : "Current run";
-  const paceDecisionScope = blockingRunWarning
+  const paceDecisionScope = blockingRunBlocker
     ? `${visiblePaceRunLabel} | Evidence blocked`
     : paceDecisionWindow
     ? `${visiblePaceRunLabel} | Laps ${paceDecisionWindow.start_lap}-${paceDecisionWindow.end_lap}`
@@ -1381,8 +1383,8 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
   const sustainedBlockLapsNeeded = paceDecisionWindow
     ? Math.max(0, 10 - paceDecisionWindow.window_size)
     : Math.max(0, 10 - currentValidLapCount);
-  const paceDecisionNext = blockingRunWarning
-    ? "Resolve the integrity warning before comparing laps or staging a test."
+  const paceDecisionNext = blockingRunBlocker
+    ? blockingRunBlocker.recovery
     : paceEvidenceLoading
       ? "Keep the settled clean-lap reference while the exact stint scope finishes loading."
       : paceEvidenceRequestFailed
@@ -1400,10 +1402,10 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
               : "Use this block as the pace reference, then compare the next qualified run at matched track positions.";
 
   const currentRunSummary = currentStintData?.run_summary ?? null;
-  const shortRunPace = !blockingRunWarning && !stintRequestFailed
+  const shortRunPace = !blockingRunBlocker && !stintRequestFailed
     ? firstAvailableRunAverage(currentRunSummary, shortRunAveragePriority)
     : null;
-  const raceRunPace = !blockingRunWarning && !stintRequestFailed
+  const raceRunPace = !blockingRunBlocker && !stintRequestFailed
     ? firstAvailableRunAverage(currentRunSummary, raceRunAveragePriority)
     : null;
   const shortToRaceRunGap = shortRunPace && raceRunPace
@@ -1425,12 +1427,12 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
   const rfTireReadiness = cornerTireReadiness(
     "RF",
     ovalPrimaryStint,
-    Boolean(blockingRunWarning || stintRequestFailed || !backendStintReady),
+    Boolean(blockingRunBlocker || stintRequestFailed || !backendStintReady),
   );
   const rrTireReadiness = cornerTireReadiness(
     "RR",
     ovalPrimaryStint,
-    Boolean(blockingRunWarning || stintRequestFailed || !backendStintReady),
+    Boolean(blockingRunBlocker || stintRequestFailed || !backendStintReady),
   );
   const exclusionReasonSummary = useMemo(() => {
     const counts = new Map<string, number>();
@@ -1447,11 +1449,11 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
     return ranked.length > 0 ? ranked.join(" · ") : "None";
   }, [laps, overview.run_id]);
   const balanceObservation = useMemo(() => {
-    if (blockingRunWarning) {
+    if (blockingRunBlocker) {
       return {
         state: "withheld" as const,
-        headline: "Withheld by run integrity",
-        detail: "Resolve the run warning before reading handling drift.",
+        headline: `Withheld by ${blockingRunBlocker.scope.replace(/_/g, " ")}`,
+        detail: blockingRunBlocker.recovery,
         sourceChannels: [] as string[],
       };
     }
@@ -1508,7 +1510,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
         : "Qualified handling evidence appears only in the early half of the block, so no late-run drift is claimed.",
       sourceChannels,
     };
-  }, [blockingRunWarning, cleanUsefulLaps, overview.events, overview.run_id, paceDecisionWindow]);
+  }, [blockingRunBlocker, cleanUsefulLaps, overview.events, overview.run_id, paceDecisionWindow]);
 
   const openPaceEvidence = useCallback((workspace: "platform_trace" | "engineer") => {
     if (paceDecisionWindow) {
@@ -1633,6 +1635,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
   const runHistory = useMemo(() => {
     const current: RunListItem = {
       run_id: overview.run_id,
+      recording_sha256: overview.session.file_hash ?? null,
       car_name: overview.session.car_name ?? null,
       track_name: overview.session.track_display_name ?? overview.session.track_name ?? null,
       setup_name: overview.session.setup_name ?? null,
@@ -2614,7 +2617,7 @@ export function LapsTab({ overview, session, sessionRuns, sessionRunsLoading, se
             <div><span>Valid</span><strong>{currentStintData?.run_summary?.valid_laps ?? currentWindowsData?.total_valid_laps ?? usefulLaps.length}</strong></div>
             <div><span>Best Lap</span><strong>{formatTime(currentStintData?.run_summary?.best_lap_time ?? bestTime)}</strong></div>
             <div><span>Best Sustained</span><strong>{bestSustainedStint ? `${bestSustainedStint.display_label_short} ${formatTime(bestSustainedStint.avg_lap_time)}` : "Need 20 clean"}</strong></div>
-            <div><span>Data</span><strong>{blockingRunWarning ? "Blocked" : currentStintsLoadStatus === "loading" ? "Loading" : currentStintsLoadStatus === "error" ? "Unavailable" : currentStintData?.run_summary?.data_status ?? (currentStintData ? "Limited" : "Unavailable")}</strong></div>
+            <div><span>Data</span><strong>{blockingRunBlocker ? "Blocked" : currentStintsLoadStatus === "loading" ? "Loading" : currentStintsLoadStatus === "error" ? "Unavailable" : currentStintData?.run_summary?.data_status ?? (currentStintData ? "Limited" : "Unavailable")}</strong></div>
           </div>
 
           {stintsLoading && <p className="muted">Loading stint windows...</p>}

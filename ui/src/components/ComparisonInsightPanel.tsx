@@ -1,6 +1,7 @@
 import { AlertTriangle, BarChart3, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { ProxyBadge } from "./ProxyBadge";
 import type { ComparisonInsightsResponse, TraceAnnotation, CorrelationInsight, SectorDeltaSummary } from "../types/compare";
+import { evidenceStrengthLabel } from "../utils/evidenceScore";
 
 type ComparisonInsightPanelProps = {
   insights: ComparisonInsightsResponse;
@@ -76,7 +77,7 @@ export function ComparisonInsightPanel({ insights, onOpenDeltaTraces }: Comparis
             <span className="insight-badge" style={{ backgroundColor: CLASSIFICATION_COLORS[tz.classification] ?? "#8d9aaa" }}>
               {tz.headline}
             </span>
-            <span className="insight-confidence">{formatVal(tz.confidence * 100, 0)}% confidence</span>
+            <span className="insight-confidence">{evidenceStrengthLabel(tz.confidence)}</span>
           </div>
           {tz.evidence.length > 0 && (
             <ul className="insight-evidence">

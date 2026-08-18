@@ -1,11 +1,12 @@
-"""Vehicle physics input dataclass.
+"""Source-backed vehicle physics inputs.
 
-Centralizes the vehicle parameters needed for force, aero, and tire estimates.
-Default values carry low confidence and are documented as assumptions.
+Unknown physical constants stay unknown. Production analysis never substitutes
+nominal values for a quantity that was not measured or supplied by setup truth.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,49 +30,49 @@ class VehiclePhysicsInputs:
     motion_ratio_rear: float | None = None
 
     def provided(self) -> set[str]:
-        return {k for k, v in self.__dict__.items() if v is not None}
+        return {
+            key
+            for key, value in self.__dict__.items()
+            if _valid_physics_value(key, value) is not None
+        }
 
     def confidence(self, required: list[str]) -> EstimateConfidence:
         """Return confidence that the required inputs are available."""
         provided = self.provided()
-        assumptions: list[str] = []
-        if self.cg_height_m is None and "cg_height_m" in required:
-            assumptions.append("cg_height_m defaulted to 0.30 m (low confidence).")
-        if self.crr is None and "crr" in required:
-            assumptions.append("crr defaulted to 0.015 (low confidence).")
-        if self.motion_ratio_front is None and "motion_ratio_front" in required:
-            assumptions.append("motion_ratio_front defaulted to 1.0 (low confidence).")
-        if self.motion_ratio_rear is None and "motion_ratio_rear" in required:
-            assumptions.append("motion_ratio_rear defaulted to 1.0 (low confidence).")
-        return confidence_from_missing(required, provided, assumptions)
+        missing = [name for name in required if name not in provided]
+        return confidence_from_missing(
+            required,
+            provided,
+            [
+                f"{name} is unavailable; the dependent physical quantity is unavailable."
+                for name in missing
+            ],
+        )
 
     def resolve_mass_kg(self) -> float | None:
-        return self.mass_kg
+        return _valid_physics_value("mass_kg", self.mass_kg)
 
-    def resolve_cg_height_m(self) -> float:
-        """Return cg_height_m or a low-confidence default of 0.30 m."""
-        return self.cg_height_m if self.cg_height_m is not None else 0.30
+    def resolve_cg_height_m(self) -> float | None:
+        """Return only a supplied CG height."""
+        return _valid_physics_value("cg_height_m", self.cg_height_m)
 
-    def resolve_crr(self) -> float:
-        """Return crr or a low-confidence default of 0.015."""
-        return self.crr if self.crr is not None else 0.015
+    def resolve_crr(self) -> float | None:
+        """Return only a supplied rolling-resistance coefficient."""
+        return _valid_physics_value("crr", self.crr)
 
-    def resolve_motion_ratio_front(self) -> float:
-        """Return motion_ratio_front or a low-confidence default of 1.0."""
-        return self.motion_ratio_front if self.motion_ratio_front is not None else 1.0
+    def resolve_motion_ratio_front(self) -> float | None:
+        """Return only a supplied front motion ratio."""
+        return _valid_physics_value("motion_ratio_front", self.motion_ratio_front)
 
-    def resolve_motion_ratio_rear(self) -> float:
-        """Return motion_ratio_rear or a low-confidence default of 1.0."""
-        return self.motion_ratio_rear if self.motion_ratio_rear is not None else 1.0
+    def resolve_motion_ratio_rear(self) -> float | None:
+        """Return only a supplied rear motion ratio."""
+        return _valid_physics_value("motion_ratio_rear", self.motion_ratio_rear)
 
-    def resolve_motion_ratio_corner(self, corner: str) -> float:
-        """Return motion ratio for a specific corner (lf/rf/lr/rr).
-
-        Falls back to front or rear average, then 1.0.
-        """
+    def resolve_motion_ratio_corner(self, corner: str) -> float | None:
+        """Return a supplied axle motion ratio for a known corner."""
         if corner in {"lf", "rf"}:
             return self.resolve_motion_ratio_front()
-        return self.resolve_motion_ratio_rear() if corner in {"lr", "rr"} else 1.0
+        return self.resolve_motion_ratio_rear() if corner in {"lr", "rr"} else None
 
     @staticmethod
     def from_row(row: dict[str, Any]) -> VehiclePhysicsInputs:
@@ -95,6 +96,19 @@ def _float(d: dict[str, Any], key: str) -> float | None:
     if v is None:
         return None
     try:
-        return float(v)
+        number = float(v)
     except (TypeError, ValueError):
         return None
+    return number if math.isfinite(number) else None
+
+
+def _valid_physics_value(key: str, value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    if key == "crr":
+        return number if number >= 0.0 else None
+    return number if number > 0.0 else None

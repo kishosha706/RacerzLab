@@ -26,11 +26,10 @@ def _finite_number(row: dict[str, Any], key: str) -> float | None:
 
 
 def aero_normalized_resistance(row: dict[str, Any]) -> float | None:
-    """Compute a dynamic-pressure-normalized deceleration proxy.
+    """Compute a ground-speed-pressure-normalized deceleration proxy.
 
-    Returns deceleration (mph/s) divided by dynamic pressure (psf).
-    Higher values mean more speed loss per unit dynamic pressure. This is a
-    resistance-like comparison proxy, not aerodynamic load, force, or CdA.
+    Returns deceleration divided by the speed-density pressure proxy. This is a
+    resistance-like comparison proxy, not aerodynamic load, force, drag, or CdA.
     """
     speed_rate = _finite_number(row, "speed_rate_mph_s")
     dynamic_pressure_psf = _finite_number(row, "dynamic_pressure_psf")

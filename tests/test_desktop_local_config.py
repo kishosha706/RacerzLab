@@ -130,6 +130,21 @@ def test_tauri_shell_starts_hidden_backend_sidecar_and_cleans_up() -> None:
     assert '.arg("/T")' in shell
     assert "child.kill()" in shell
     assert "RACERZLAB_BACKEND_LOG" in shell
+    assert "tauri_plugin_single_instance::init" in shell
+    assert "ensure_backend_running" in shell
+    assert "RACERZLAB_BACKEND_INSTANCE_TOKEN" in shell
+    assert 'get_webview_window("main")' in shell
+
+
+def test_health_binds_to_owned_desktop_instance(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RACERZLAB_BACKEND_INSTANCE_TOKEN", "owned-instance")
+    payload = TestClient(app).get("/api/health").json()
+    assert payload == {
+        "status": "ok",
+        "app": "RacerZLab",
+        "version": payload["version"],
+        "instance_id": "owned-instance",
+    }
 
 
 def test_tauri_config_uses_local_dev_and_dist_assets() -> None:

@@ -2086,9 +2086,40 @@ td {
 
 .timeline-track {
   position: relative;
-  height: 28px;
+  height: 46px;
   background: var(--panel-soft);
   border-radius: 4px;
+}
+
+.timeline-full-scrubber {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 4;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  opacity: 0.35;
+  cursor: ew-resize;
+}
+
+.timeline-full-scrubber:focus-visible {
+  opacity: 0.8;
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.timeline-playback-cursor {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--cyan);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--cyan) 65%, transparent);
+  pointer-events: none;
 }
 
 .timeline-pct-marker {
@@ -8821,7 +8852,7 @@ td {
   .trackmap-marker-glow-ring { animation: none; }
 }
 
-/* ── Aero Load Pressure Ribbon ─────────────────────────────── */
+/* ── Ground-speed pressure proxy ribbon ───────────────────── */
 .aero-pressure-ribbon {
   display: flex;
   align-items: center;
@@ -15842,6 +15873,81 @@ button:focus:not(:focus-visible) {
   border-color: rgba(103, 232, 249, 0.24) !important;
   background: linear-gradient(145deg, rgba(8, 47, 73, 0.22), rgba(8, 12, 18, 0.68)) !important;
 }
+.vehicle-dynamics-grid .vehicle-response-story,
+.vehicle-dynamics-grid .vehicle-dynamics-separation {
+  grid-column: 1 / -1;
+}
+.vehicle-response-story {
+  border-color: rgba(103, 232, 249, 0.26) !important;
+  background: linear-gradient(145deg, rgba(8, 47, 73, 0.26), rgba(8, 12, 18, 0.72)) !important;
+}
+.vehicle-response-story-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin: 0;
+}
+.vehicle-response-story-grid > div {
+  min-width: 0;
+  padding: 0.42rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 6px;
+  background: rgba(2, 8, 23, 0.2);
+}
+.vehicle-response-story-grid dt {
+  color: #67e8f9;
+  font-size: 0.58rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+}
+.vehicle-response-story-grid dd {
+  margin: 0.16rem 0 0;
+  color: #e2e8f0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.vehicle-response-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.28rem;
+  margin: 0 !important;
+  padding: 0 !important;
+  list-style: none;
+}
+.vehicle-response-metrics li {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.32rem 0.4rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  color: var(--text-muted);
+  font-size: 0.66rem;
+}
+.vehicle-response-metrics b { color: #d7e4ec; white-space: nowrap; }
+.vehicle-dynamics-separation-scroll { overflow-x: auto; }
+.vehicle-dynamics-separation table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  color: #d7e4ec;
+  font-size: 0.66rem;
+  text-align: left;
+}
+.vehicle-dynamics-separation th,
+.vehicle-dynamics-separation td {
+  padding: 0.4rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.13);
+  vertical-align: top;
+}
+.vehicle-dynamics-separation thead th {
+  color: #93c5fd;
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.vehicle-dynamics-separation tbody th { color: #e2e8f0; }
 .vehicle-dynamics-grid .vehicle-dynamics-next {
   grid-column: 1 / -1;
   grid-template-columns: minmax(7rem, 0.22fr) minmax(0, 1fr);
@@ -16290,6 +16396,8 @@ button:focus:not(:focus-visible) {
   .vehicle-dynamics-chain,
   .vehicle-dynamics-grid,
   .vehicle-dynamics-candidates { grid-template-columns: 1fr; }
+  .vehicle-response-story-grid,
+  .vehicle-response-metrics { grid-template-columns: 1fr; }
   .vehicle-dynamics-chain { overflow-x: visible; scroll-snap-type: none; }
   .vehicle-dynamics-stage { border-right: 0; border-bottom: 1px solid rgba(148, 163, 184, 0.14); }
   .vehicle-dynamics-stage:last-child { border-bottom: 0; }
@@ -16348,4 +16456,45 @@ button:focus:not(:focus-visible) {
     max-width: 100%;
     overflow-wrap: anywhere;
   }
+}
+.shortcut-character-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin-top: 1rem;
+  color: var(--text-muted, #aab5c2);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.shortcut-character-toggle input {
+  margin-top: 0.15rem;
+  accent-color: var(--accent, #38bdf8);
+}
+.compare-evidence-debt {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+}
+
+.compare-evidence-debt summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.compare-evidence-debt section {
+  margin-top: 0.6rem;
+}
+
+.compare-evidence-debt ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.15rem;
+  color: var(--muted);
+  font-size: 0.75rem;
 }

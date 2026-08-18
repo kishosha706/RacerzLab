@@ -45,7 +45,7 @@ def test_force_energy_and_power_helpers_do_not_missing_to_zero() -> None:
     assert "grade_rad" in force_conf.missing_inputs
     assert energy == 0.0
     assert energy_conf.assumptions
-    assert power == pytest.approx(100.0)
+    assert power is None
     assert "drag_power_w" in power_conf.missing_inputs
     assert yaw is None
     assert "speed_mps" in yaw_conf.missing_inputs

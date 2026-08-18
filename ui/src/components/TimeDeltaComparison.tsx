@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCompareTimeAnalysis } from "../api/client";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { TimeAnalysisResponse } from "../types/compare";
+import { evidenceStrengthOutOf100 } from "../utils/evidenceScore";
 
 type Props = {
   baselineRunId: string;
@@ -185,7 +186,7 @@ export function TimeDeltaComparison({ baselineRunId, testRunId, baselineLap, tes
           </p>
         </div>
         <span className={`confidence-badge ${data.local_alignment_confidence >= 0.75 ? "high" : data.local_alignment_confidence >= 0.55 ? "medium" : "low"}`}>
-          {Math.round(data.local_alignment_confidence * 100)}% local alignment
+          Alignment quality {evidenceStrengthOutOf100(data.local_alignment_confidence)}
         </span>
       </div>
 
@@ -244,7 +245,7 @@ export function TimeDeltaComparison({ baselineRunId, testRunId, baselineLap, tes
         <strong>Cursor</strong>{" "}
         {cursor ? (
           <span>
-            {cursor.pct.toFixed(1)}% · {phaseLabel(cursor.phase)} · {seconds(cursor.delta)} · {Math.round(cursor.alignment.confidence * 100)}% alignment
+            {cursor.pct.toFixed(1)}% · {phaseLabel(cursor.phase)} · {seconds(cursor.delta)} · alignment quality {evidenceStrengthOutOf100(cursor.alignment.confidence)}
             {cursor.alignment.uncertainty_pct != null ? ` · ±${cursor.alignment.uncertainty_pct.toFixed(2)}% position` : ""}
             {cursor.alignment.is_gap ? ` · gap: ${cursor.alignment.gap_reason ?? "missing paired coverage"}` : ""}
             {learning && cursor.basis ? ` · ${phaseLabel(cursor.basis)}` : ""}
@@ -263,7 +264,7 @@ export function TimeDeltaComparison({ baselineRunId, testRunId, baselineLap, tes
                   <td>{phaseLabel(effect.phase)}</td>
                   <td>{effect.start_pct.toFixed(1)}–{effect.end_pct.toFixed(1)}%</td>
                   <td>{seconds(effect.delta_s)}</td>
-                  <td>{Math.round(effect.alignment_confidence * 100)}%</td>
+                  <td>{evidenceStrengthOutOf100(effect.alignment_confidence)}</td>
                   {learning && <td title={effect.source_channels.join(", ")}>{phaseLabel(effect.calculation_basis)}</td>}
                 </tr>
               ))}

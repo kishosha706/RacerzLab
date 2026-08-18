@@ -16,10 +16,12 @@ import type {
   TelemetryEvent,
   TraceResponse,
 } from "../types/telemetry";
+import type { components as OpenApiComponents } from "../types/openapi.generated";
 import type { DamperResponseReport } from "../types/damperResponse";
 import type {
   IntelligenceQueryRequest,
   IntelligenceQueryResponse,
+  IntelligenceShellProjection,
   RunIntelligenceReport,
 } from "../types/intelligence";
 import type {
@@ -36,21 +38,12 @@ import type {
   LearningReadinessProjection,
   ProspectivePredictionResponse,
 } from "../types/learningReadiness";
-import { isRunIntelligenceResponse } from "../utils/intelligenceResponseTrust";
+import {
+  isIntelligenceShellProjection,
+  isRunIntelligenceResponse,
+} from "../utils/intelligenceResponseTrust";
 import { isDialInHypothesisResponse } from "../utils/dialInResponseTrust";
 import { isControlledWorkflowResponse } from "../utils/controlledWorkflowTrust";
-import {
-  hasCanonicalMeasurementMissionDigest,
-  hasCanonicalCrewEvidenceIndexDigest,
-  hasCanonicalEngineeringAwarenessDigest,
-  hasCanonicalRunSentinelDigest,
-  hasCanonicalVehicleRuntimeIdentityDigest,
-  isCrewChiefWorkspaceResponse,
-} from "../utils/crewChiefResponseTrust";
-import { hasCanonicalEngineeringLearningDigests } from "../utils/engineeringLearningTrust.js";
-import { hasCanonicalInvestigationImprovementDigests } from "../utils/investigationImprovementTrust";
-import { hasCanonicalPerformanceMechanismAssessmentDigest } from "../utils/vehicleDynamicsTrust.ts";
-import { hasCanonicalEngineeringKnowledgeDigest } from "../utils/engineeringKnowledgeTrust.ts";
 
 const API_BASE =
   import.meta.env.VITE_RACELAB_API_BASE_URL ??
@@ -85,11 +78,7 @@ type JsonCacheEntry = {
   value: unknown;
 };
 
-export type HealthResponse = {
-  status: string;
-  app: string;
-  version: string;
-};
+export type HealthResponse = OpenApiComponents["schemas"]["HealthResponse"];
 
 const inflightGetRequests = new Map<string, Promise<unknown>>();
 const getResponseCache = new Map<string, JsonCacheEntry>();
@@ -357,6 +346,31 @@ export function fetchRunIntelligence(
   });
 }
 
+export function fetchIntelligenceShellProjection(
+  runId: string,
+  options?: { sessionId?: string | null },
+): Promise<IntelligenceShellProjection> {
+  const params = new URLSearchParams();
+  if (options?.sessionId) params.set("session_id", options.sessionId);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestJson<unknown>(
+    `/api/runs/${encodeURIComponent(runId)}/intelligence-shell${suffix}`,
+    undefined,
+    REQUEST_TIMEOUT_MS,
+    "Intelligence shell projection",
+  ).then((payload) => {
+    if (!isIntelligenceShellProjection(payload, {
+      runId,
+      sessionId: options?.sessionId ?? null,
+    })) {
+      throw new Error(
+        "The intelligence shell projection failed its exact run, session, schema, or navigation-only authority check.",
+      );
+    }
+    return payload;
+  });
+}
+
 async function trustedCrewChiefResponse(
   payload: unknown,
   runId: string,
@@ -365,39 +379,52 @@ async function trustedCrewChiefResponse(
   objectiveId: EngineeringObjective,
   scopeRunIds?: readonly string[],
 ): Promise<CrewChiefWorkspace> {
-  if (!isCrewChiefWorkspaceResponse(payload, {
+  const [
+    crewTrust,
+    learningTrust,
+    investigationTrust,
+    vehicleDynamicsTrust,
+    engineeringKnowledgeTrust,
+  ] = await Promise.all([
+    import("../utils/crewChiefResponseTrust"),
+    import("../utils/engineeringLearningTrust.js"),
+    import("../utils/investigationImprovementTrust"),
+    import("../utils/vehicleDynamicsTrust.ts"),
+    import("../utils/engineeringKnowledgeTrust.ts"),
+  ]);
+  if (!crewTrust.isCrewChiefWorkspaceResponse(payload, {
     runId, sessionId, report, objectiveId, scopeRunIds,
   })) {
     throw new Error("Crew Chief failed its exact P19/P20/P26/P32/P33/P34/P35 workspace authority check.");
   }
-  if (!await hasCanonicalEngineeringAwarenessDigest(payload)) {
+  if (!await crewTrust.hasCanonicalEngineeringAwarenessDigest(payload)) {
     throw new Error("Crew Chief failed its canonical P20 scientific-projection identity check.");
   }
-  if (!await hasCanonicalPerformanceMechanismAssessmentDigest(payload.vehicle_dynamics)) {
+  if (!await vehicleDynamicsTrust.hasCanonicalPerformanceMechanismAssessmentDigest(payload.vehicle_dynamics)) {
     throw new Error("Crew Chief failed its canonical P35 vehicle-dynamics identity check.");
   }
-  if (!await hasCanonicalEngineeringKnowledgeDigest(payload.engineering_knowledge)) {
+  if (!await engineeringKnowledgeTrust.hasCanonicalEngineeringKnowledgeDigest(payload.engineering_knowledge)) {
     throw new Error("Crew Chief failed its canonical P35.1 engineering-knowledge identity check.");
   }
-  if (!await hasCanonicalVehicleRuntimeIdentityDigest(payload)) {
+  if (!await crewTrust.hasCanonicalVehicleRuntimeIdentityDigest(payload)) {
     throw new Error("Crew Chief failed its canonical P26/P35 vehicle runtime identity check.");
   }
-  if (!await hasCanonicalCrewEvidenceIndexDigest(payload)) {
+  if (!await crewTrust.hasCanonicalCrewEvidenceIndexDigest(payload)) {
     throw new Error("Crew Chief failed its canonical evidence-index identity check.");
   }
-  if (!await hasCanonicalEngineeringLearningDigests(payload.learning_prior)) {
+  if (!await learningTrust.hasCanonicalEngineeringLearningDigests(payload.learning_prior)) {
     throw new Error("Crew Chief failed its canonical P33 learning identity check.");
   }
-  if (!await hasCanonicalInvestigationImprovementDigests(
+  if (!await investigationTrust.hasCanonicalInvestigationImprovementDigests(
     payload.investigation_improvement,
     payload,
   )) {
     throw new Error("Crew Chief failed its canonical P34 investigation-improvement identity check.");
   }
-  if (!await hasCanonicalMeasurementMissionDigest(payload.p19_mission_contract)) {
+  if (!await crewTrust.hasCanonicalMeasurementMissionDigest(payload.p19_mission_contract)) {
     throw new Error("Crew Chief failed its canonical P19 measurement-mission identity check.");
   }
-  if (!await hasCanonicalRunSentinelDigest(
+  if (!await crewTrust.hasCanonicalRunSentinelDigest(
     payload.run_sentinel,
     payload.identity.run_sentinel_sha256,
   )) {
@@ -609,6 +636,9 @@ export function fetchEngineeringAwareness(
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return requestJson<unknown>(
     `/api/runs/${encodeURIComponent(runId)}/engineering-awareness${suffix}`,
+    undefined,
+    INTELLIGENCE_TIMEOUT_MS,
+    "Engineering awareness",
   ).then((payload) => {
     if (!isEngineeringAwarenessProjection(payload, {
       runId, sessionId: options?.sessionId ?? null,
@@ -702,15 +732,14 @@ export function analyzeRunDialIn(runId: string, payload: DialInRequest): Promise
     })) {
       throw new Error("Dial-In returned an invalid or action-bearing hypothesis response.");
     }
-    if (
-      response.engineering_knowledge != null
-      && !await hasCanonicalEngineeringKnowledgeDigest(
-        response.engineering_knowledge,
-      )
-    ) {
-      throw new Error(
-        "Dial-In returned a non-canonical engineering-knowledge projection.",
-      );
+    const engineeringKnowledge = response.engineering_knowledge;
+    if (engineeringKnowledge != null) {
+      const trust = await import("../utils/engineeringKnowledgeTrust.ts");
+      if (!await trust.hasCanonicalEngineeringKnowledgeDigest(engineeringKnowledge)) {
+        throw new Error(
+          "Dial-In returned a non-canonical engineering-knowledge projection.",
+        );
+      }
     }
     return response;
   });

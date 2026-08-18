@@ -7,9 +7,8 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from racelab_engine.analysis.p3_common import average, finite, lap_number, qualify_phase_engine, values
+from racelab_engine.analysis.p3_common import average, finite, qualify_phase_engine, values
 from racelab_engine.analysis.p3_contracts import TIRE_STATE_CONTRACT
-from racelab_engine.analysis.tire_semantics import TIRE_CORNERS
 from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.models.engineering import EngineGate, EngineeringConclusion, EngineeringModel
 from racelab_engine.models.evidence import EvidenceState
@@ -83,27 +82,6 @@ def _coobserved_averages(
     return [mean(float(items[index]) for items in complete) for index in range(len(channels))], coverage
 
 
-def _repeated_pressure_pattern(
-    rows: list[dict[str, Any]],
-    eligible_numbers: set[int],
-    corner: str,
-) -> int:
-    repeated = 0
-    for number in eligible_numbers:
-        lap_rows = [row for row in rows if lap_number(row) == number]
-        profile, _coverage = _coobserved_averages(lap_rows, (
-            f"{corner}_temp_inner", f"{corner}_temp_middle", f"{corner}_temp_outer",
-            f"{corner}_pressure", f"{corner}_cold_pressure",
-        ))
-        inner, middle, outer, running, cold = profile
-        if None in {inner, middle, outer, running, cold}:
-            continue
-        shoulders = (float(inner) + float(outer)) / 2.0
-        if float(middle) - shoulders >= 3.0 and float(running) > float(cold):
-            repeated += 1
-    return repeated
-
-
 def analyze_tire_state(
     rows: list[dict[str, Any]],
     lap_summaries: list[LapSummary] | None,
@@ -140,7 +118,6 @@ def analyze_tire_state(
 
     states: list[TireCornerState] = []
     conclusions: list[EngineeringConclusion] = []
-    phase_set = phases & TIRE_PHASES
     for corner_upper in ("LF", "RF", "LR", "RR"):
         corner = corner_upper.lower()
         profile, profile_coverage = _coobserved_averages(scoped, (
@@ -163,17 +140,12 @@ def analyze_tire_state(
         gradient = inner - outer if inner is not None and outer is not None else None
         slip_values = values(scoped, f"{corner}_slip_ratio")
         slip_rms = _rms(slip_values)
+        # Absolute I/M/O, pressure-gain, and slip thresholds are descriptive
+        # measurements only. They cannot establish a thermal/usage origin or a
+        # setup direction across cars, builds, tracks, tire ages, and weather.
+        # Cause classes stay empty until a same-context empirical residual and
+        # independent repetition contract is supplied by a future producer.
         causes: list[TireCause] = []
-        repeated_pressure = _repeated_pressure_pattern(rows, eligible_numbers, corner)
-        if middle_shoulders is not None and middle_shoulders >= 3.0 and pressure_gain is not None and pressure_gain > 0:
-            causes.append("pressure_driven_heating")
-        if gradient is not None and abs(gradient) >= 6.0:
-            causes.extend(["shoulder_load", "camber_bias"])
-        semantics = TIRE_CORNERS[corner]
-        if semantics.axle == "front" and phase_set & {"brake_application", "threshold_braking", "brake_release"}:
-            causes.append("braking_heat")
-        if semantics.axle == "rear" and phase_set & {"initial_throttle", "full_throttle_exit"} and slip_rms is not None and slip_rms >= 0.03:
-            causes.append("traction_heat")
         distance = average(scoped, f"{corner}_tire_distance_m")
         wear_values = [
             average(scoped, f"{corner}_wear_inner"),
@@ -248,8 +220,10 @@ def analyze_tire_state(
         ]
         if carcass is None:
             contradictions.append("The carcass pit-boundary snapshot is missing.")
-        if repeated_pressure < 3:
-            contradictions.append("Fewer than three eligible laps repeat the pressure/profile pattern.")
+        contradictions.append(
+            "A same-car, same-build, same-track, same-age, same-weather empirical residual "
+            "and independent repetition floor are not available, so no thermal-origin class is emitted."
+        )
         conclusions.append(EngineeringConclusion(
             key=f"{corner}_tire_state",
             summary=(
@@ -264,7 +238,7 @@ def analyze_tire_state(
         ))
     return TireStateReport(
         selected_lap=selected_lap,
-        phases=sorted(phase_set),
+        phases=sorted(phases & TIRE_PHASES),
         gate=gate,
         corners=states,
         conclusions=conclusions,

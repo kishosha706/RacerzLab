@@ -13,7 +13,7 @@ import { ProxyBadge } from "../components/ProxyBadge";
 import { PlatformChartPanelReadout } from "../components/PlatformChartPanelReadout";
 import { fetchPlatformEvents, fetchShockReader, fetchTrace } from "../api/client";
 import { TRACE_WORKBENCH_CHANNELS } from "../constants/workbenchChannels";
-import { getChannelUnit, isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
+import { getChannelLabel, getChannelUnit, isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
 import { getTraceValues, formatChannelValue, formatForceProxyN, safeStringValue } from "../utils/channelFormat";
 import { echarts, type EChartsType } from "../utils/echarts";
 import { buildPlatformChartAnnotations } from "../utils/platformChartAnnotations";
@@ -21,6 +21,7 @@ import { filterPlatformEvents, isClearPlatformDiagnostic, isMutedPlatformEvent, 
 import { useTelemetryCursor, useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
 import type {
+  ChannelCatalogItem,
   PlatformEventItem,
   PlatformEventVisibilityMode,
   RunOverview,
@@ -36,6 +37,7 @@ type PlatformTabProps = {
   overview: RunOverview;
   sessionId?: string | null;
   trace: TraceResponse | null;
+  customChannel?: ChannelCatalogItem | null;
   traceLoadStatus?: PlatformLoadStatus;
   traceLoadError?: string | null;
   onRetryTrace?: () => void;
@@ -54,6 +56,7 @@ type PlatformTraceWorkbenchProps = {
   overview: RunOverview;
   sessionId?: string | null;
   trace: TraceResponse;
+  customChannel?: ChannelCatalogItem | null;
   platformEvents?: PlatformEventItem[];
   platformEventsLoadStatus?: PlatformLoadStatus;
   platformEventsLoadError?: string | null;
@@ -191,18 +194,18 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "brake_pct", label: "Brake", color: "#ef4444" },
     ], min: 0, max: 105 },
   ],
-  "Aero Load": [
-    { label: "Speed / Dynamic Pressure", channels: [
+  "Speed-Density Proxy": [
+    { label: "Speed / Ground-Speed Pressure Proxy", channels: [
       { name: "speed_mph", label: "Speed", color: "#93c5fd" },
-      { name: "dynamic_pressure_psf", label: "Dyn Pressure", color: "#38bdf8" },
+      { name: "dynamic_pressure_psf", label: "Pressure Proxy", color: "#38bdf8" },
     ] },
-    { label: "Dynamic Pressure Index", channels: [
+    { label: "Lap-Relative Pressure Proxy", channels: [
       { name: "dynamic_pressure_lap_index", label: "Lap Index", color: "#60a5fa" },
       { name: "dynamic_pressure_index", label: "Index", color: "#22d3ee" },
     ] },
-    { label: "Aero Load Index", channels: [
-      { name: "aero_load_index", label: "Aero Load", color: "#f59e0b" },
-      { name: "aero_load_index_180mph", label: "180 mph Index", color: "#f97316" },
+    { label: "Speed-Density Reference Proxy", channels: [
+      { name: "aero_load_index", label: "Reference Proxy", color: "#f59e0b" },
+      { name: "aero_load_index_180mph", label: "180 mph Reference", color: "#f97316" },
     ] },
     { label: "Front / Rear Aero Proxy [N]", channels: [
       { name: "front_aero_proxy_n", label: "Front", color: "#22d3ee" },
@@ -339,8 +342,8 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "speed_rate_mph_1000ft", label: "Rate/1000ft", color: "#f97316" },
       { name: "grade_corrected_speed_loss_mph_s", label: "Grade-Corrected", color: "#22c55e" },
     ] },
-    { label: "Dynamic Pressure", channels: [
-      { name: "dynamic_pressure_psf", label: "Pressure", color: "#38bdf8" },
+    { label: "Ground-Speed Pressure Proxy", channels: [
+      { name: "dynamic_pressure_psf", label: "Pressure Proxy", color: "#38bdf8" },
       { name: "dynamic_pressure_lap_index", label: "Lap Index", color: "#60a5fa" },
     ] },
   ],
@@ -361,15 +364,6 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "rr_ride_height_in", label: "RR", color: "#22d3ee" },
       { name: "rear_min_ride_height_in", label: "Rear Min", color: "#a78bfa" },
     ], heightDetailed: 144, heightCompact: 104, yAxisUnit: "in" },
-  ],
-  Diffuser: [
-    { label: "Ground Speed [mph]", channels: [{ name: "speed_mph", label: "Speed", color: "#22c55e" }] },
-    { label: "Front Center RH [in]", channels: [{ name: "front_center_rh_in", label: "Front Center", color: "#38bdf8" }] },
-    { label: "Rear Center RH [in]", channels: [{ name: "rear_center_rh_in", label: "Rear Center", color: "#a78bfa" }] },
-    { label: "Smooth Diffuser Volume [ft3]", channels: [{ name: "smooth_diffuser_volume_ft3", label: "Smooth Vol", color: "#4ade80" }] },
-    { label: "Diffuser Base Volume [ft3]", channels: [{ name: "diffuser_base_volume_ft3", label: "Base Vol", color: "#60a5fa" }] },
-    { label: "Diffuser Wedge Volume [ft3]", channels: [{ name: "diffuser_wedge_volume_ft3", label: "Wedge Vol", color: "#f97316" }] },
-    { label: "Smooth Center Rake [in]", channels: [{ name: "smooth_center_rake_in", label: "Center Rake", color: "#c084fc" }] },
   ],
 };
 
@@ -553,6 +547,46 @@ function zoomRangeSummary(range: { startValue?: number; endValue?: number } | nu
   return `Zoomed: ${formatDistanceNumber(start)}-${formatDistanceNumber(end)} ft`;
 }
 
+const PLATFORM_ZOOM_STORAGE_PREFIX = "racerzlab.platformZoom.v1";
+
+function readPersistedZoomRange(key: string): { startValue: number; endValue: number } | null {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) ?? "null") as {
+      startValue?: unknown;
+      endValue?: unknown;
+    } | null;
+    if (
+      parsed == null
+      || typeof parsed.startValue !== "number"
+      || !Number.isFinite(parsed.startValue)
+      || typeof parsed.endValue !== "number"
+      || !Number.isFinite(parsed.endValue)
+      || parsed.startValue >= parsed.endValue
+    ) return null;
+    return { startValue: parsed.startValue, endValue: parsed.endValue };
+  } catch {
+    return null;
+  }
+}
+
+function persistZoomRange(
+  key: string,
+  range: { startValue?: number; endValue?: number } | null,
+): void {
+  try {
+    if (
+      range?.startValue != null
+      && range.endValue != null
+      && Number.isFinite(range.startValue)
+      && Number.isFinite(range.endValue)
+      && range.startValue < range.endValue
+    ) window.localStorage.setItem(key, JSON.stringify(range));
+    else window.localStorage.removeItem(key);
+  } catch {
+    // Zoom persistence is presentation-only.
+  }
+}
+
 function finiteXRange(xs: Array<number | null>): { min: number; max: number } | null {
   const finiteXs = xs.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
   if (finiteXs.length === 0) return null;
@@ -729,7 +763,7 @@ function RiskCorridorSVG({
   );
 }
 
-type LocalTraceChannel = {
+export type LocalTraceChannel = {
   name: string;
   label: string;
   color: string;
@@ -807,7 +841,7 @@ function platformChartTooltipMarkup(
   ].join("");
 }
 
-function LocalPlatformTrace({
+export function LocalPlatformTrace({
   trace,
   xs,
   centerIndex,
@@ -1251,6 +1285,7 @@ export function PlatformTab({
   overview,
   sessionId = null,
   trace,
+  customChannel = null,
   traceLoadStatus,
   traceLoadError,
   onRetryTrace,
@@ -1388,6 +1423,7 @@ export function PlatformTab({
       overview={overview}
       sessionId={sessionId}
       trace={trace}
+      customChannel={customChannel}
       platformEvents={platformEvents}
       platformEventsLoadStatus={platformEventsLoadStatus}
       platformEventsLoadError={platformEventsLoadError}
@@ -1405,6 +1441,7 @@ function PlatformTraceWorkbench({
   overview,
   sessionId = null,
   trace: overviewTrace,
+  customChannel = null,
   platformEvents: externalPlatformEvents,
   platformEventsLoadStatus = "ready",
   platformEventsLoadError,
@@ -1417,6 +1454,14 @@ function PlatformTraceWorkbench({
 }: PlatformTraceWorkbenchProps) {
   const { selection, setWorkspace, focusEvidence, setHover } = useTelemetrySelection();
   const telemetryCursor = useTelemetryCursor();
+  const zoomStorageKey = useMemo(
+    () => `${PLATFORM_ZOOM_STORAGE_PREFIX}:${overviewTrace.run_id}:${overviewTrace.lap ?? "run"}`,
+    [overviewTrace.lap, overviewTrace.run_id],
+  );
+  const initialZoomRange = useMemo(
+    () => readPersistedZoomRange(zoomStorageKey),
+    [zoomStorageKey],
+  );
   const chartNode = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<EChartsType | null>(null);
   const cursorLineRef = useRef<HTMLDivElement | null>(null);
@@ -1425,7 +1470,7 @@ function PlatformTraceWorkbench({
   const hoverSampleIndexRef = useRef<number | null>(null);
   const clickedCursorDistanceFtRef = useRef<number | null>(null);
   const hoverCursorDistanceFtRef = useRef<number | null>(null);
-  const zoomRangeRef = useRef<{ startValue?: number; endValue?: number } | null>(null);
+  const zoomRangeRef = useRef<{ startValue?: number; endValue?: number } | null>(initialZoomRange);
   const dragZoomRef = useRef<DragZoomState | null>(null);
   const lastPointerOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const latestXsRef = useRef<Array<number | null>>([]);
@@ -1456,8 +1501,8 @@ function PlatformTraceWorkbench({
   const [clickedCursorDistanceFt, setClickedCursorDistanceFt] = useState<number | null>(null);
   const [hoverCursorDistanceFt, setHoverCursorDistanceFt] = useState<number | null>(null);
   const [chartDensity, setChartDensity] = useState<ChartDensity>("detailed");
-  const [zoomSummary, setZoomSummary] = useState("Full range");
-  const [visibleZoomRange, setVisibleZoomRange] = useState<{ startValue?: number; endValue?: number } | null>(null);
+  const [zoomSummary, setZoomSummary] = useState(() => zoomRangeSummary(initialZoomRange));
+  const [visibleZoomRange, setVisibleZoomRange] = useState<{ startValue?: number; endValue?: number } | null>(initialZoomRange);
   const [detailTrace, setDetailTrace] = useState<TraceResponse | null>(null);
   const [detailTraceLoading, setDetailTraceLoading] = useState(false);
   const [detailTraceStatus, setDetailTraceStatus] = useState<string | null>(null);
@@ -1470,16 +1515,22 @@ function PlatformTraceWorkbench({
     setWorkbenchView(normalizedInitialView);
     setWholeLapExpanded(selection.selectedMode === "learning");
   }, [normalizedInitialView, overviewTrace.lap, overviewTrace.run_id, selection.selectedMode]);
+  useEffect(() => {
+    const restored = readPersistedZoomRange(zoomStorageKey);
+    zoomRangeRef.current = restored;
+    setVisibleZoomRange(restored);
+    setZoomSummary(zoomRangeSummary(restored));
+    onMapOverlayZoomRangeChange?.(restored);
+  }, [onMapOverlayZoomRangeChange, zoomStorageKey]);
 
   const presetFromView: Record<WorkbenchView, string> = {
     balance: "Platform / Rake / Ride Height",
     rear_scrape: SCRAPE_SCRUB_PRESET,
-    aero_load: "Aero Load",
+    aero_load: "Speed-Density Proxy",
     scrub_steering: SCRAPE_SCRUB_PRESET,
     tires: "Tires",
     shocks: "Shocks",
     grade_pull: "Grade / Pull",
-    diffuser: "Diffuser",
   };
   const preset = presetFromView[workbenchView] ?? "Platform / Rake / Ride Height";
   const scrapeScrubChartView = workbenchView === "rear_scrape" || workbenchView === "scrub_steering";
@@ -2053,8 +2104,9 @@ function PlatformTraceWorkbench({
     setHoverCursorDistanceFt(null);
     onMapOverlayZoomRangeChange?.(null);
     setZoomSummary("Full range");
+    persistZoomRange(zoomStorageKey, null);
     chartRef.current?.dispatchAction({ type: "dataZoom", start: 0, end: 100 });
-  }, [onMapOverlayZoomRangeChange]);
+  }, [onMapOverlayZoomRangeChange, zoomStorageKey]);
 
   const keyboardTraceIndices = useMemo(
     () => xs.flatMap((value, index) => typeof value === "number" && Number.isFinite(value) ? [index] : []),
@@ -2419,6 +2471,7 @@ function PlatformTraceWorkbench({
               endValue: Math.max(drag.startValue, endValue),
             };
             zoomRangeRef.current = nextRange;
+            persistZoomRange(zoomStorageKey, nextRange);
             setVisibleZoomRange(nextRange);
             onMapOverlayZoomRangeChange?.(nextRange);
             setZoomSummary(zoomRangeSummary(nextRange));
@@ -2474,6 +2527,7 @@ function PlatformTraceWorkbench({
     const handleDataZoom = () => {
       const nextRange = zoomRangeFromOption();
       zoomRangeRef.current = nextRange;
+      persistZoomRange(zoomStorageKey, nextRange);
       setVisibleZoomRange(nextRange);
       onMapOverlayZoomRangeChange?.(nextRange);
       setZoomSummary(zoomRangeSummary(nextRange));
@@ -2503,7 +2557,7 @@ function PlatformTraceWorkbench({
       if (cancelDragZoomRef.current === cancelDragZoom) cancelDragZoomRef.current = () => {};
       if (restoreHoverAtPointerRef.current === restoreHoverAtPointer) restoreHoverAtPointerRef.current = () => false;
     };
-  }, [onMapOverlayZoomRangeChange, wholeLapExpanded]);;
+  }, [onMapOverlayZoomRangeChange, wholeLapExpanded, zoomStorageKey]);;
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -3338,6 +3392,7 @@ function PlatformTraceWorkbench({
   );
   const localTraceChannels: LocalTraceChannel[] = [];
   const localTraceChannelNames = [
+    ...(selection.selectedChannel ? [selection.selectedChannel] : []),
     ...(focusedPlatformEvent?.channels_used ?? []),
     ...rows.flatMap((row) => row.channels.map((channel) => channel.name)),
   ];
@@ -3345,16 +3400,21 @@ function PlatformTraceWorkbench({
     if (localTraceChannels.some((channel) => channel.name === channelName)) continue;
     if (!channelHasNumericData(trace, channelName)) continue;
     const configured = rowChannelLookup.get(channelName);
+    const selectedCatalogChannel = customChannel?.name === channelName
+      ? customChannel
+      : null;
     localTraceChannels.push({
       name: channelName,
-      label: configured?.label ?? channelName.replace(/_/g, " "),
+      label: selectedCatalogChannel?.label ?? configured?.label ?? channelName.replace(/_/g, " "),
       color: configured?.color ?? ["#38bdf8", "#f59e0b", "#a78bfa"][localTraceChannels.length % 3],
-      isProxy: isProxyChannel(channelName),
-      unit: getChannelUnit(channelName) || rowUnit(channelName),
+      isProxy: selectedCatalogChannel?.is_proxy ?? isProxyChannel(channelName),
+      unit: selectedCatalogChannel?.unit ?? (getChannelUnit(channelName) || rowUnit(channelName)),
     });
     if (localTraceChannels.length === 3) break;
   }
-  const localTraceContextLabel = focusedPlatformEvent
+  const localTraceContextLabel = selection.selectedChannel
+    ? `Custom observation channel · ${getChannelLabel(selection.selectedChannel)} · no setup authority`
+    : focusedPlatformEvent
     ? focusedPlatformEvent.title
     : localFocusIndex != null && xs[localFocusIndex] != null
       ? `Selected sample at ${formatDistanceFt(xs[localFocusIndex])}`
@@ -3414,13 +3474,13 @@ function PlatformTraceWorkbench({
     const aeroIdx = latest("aero_load_index") as number | null;
     const dynPsf = latest("dynamic_pressure_psf") as number | null;
     const ribbonPct = aeroIdx != null ? Math.min(100, Math.max(0, (aeroIdx / 2) * 100)) : 0;
-    const ribbonColor = aeroIdx != null ? (aeroIdx > 1.2 ? "#ef4444" : aeroIdx > 0.8 ? "#f59e0b" : "#22c55e") : "#475569";
+    const ribbonColor = aeroIdx != null ? "#38bdf8" : "#475569";
     return (
     <div className="engineering-panel">
-      <p className="proxy-warning">Aero/load values are telemetry-derived estimates/proxies, not direct force sensor measurements. Confidence depends on setup geometry, mass, motion ratios, and steady-state conditions.</p>
-      {/* Aero Load Pressure Ribbon */}
-      <div className="aero-pressure-ribbon" title={`Aero Load Index: ${aeroIdx?.toFixed(3) ?? "—"} · Dynamic Pressure: ${dynPsf?.toFixed(1) ?? "—"} psf`}>
-        <span className="aero-pressure-label">Aero Load</span>
+      <p className="proxy-warning">Speed-density values use ground speed because validated wind-relative air speed is unavailable. They are display-only proxies, not aero load, drag, downforce, balance, or cross-run truth.</p>
+      {/* Ground-speed pressure reference ribbon */}
+      <div className="aero-pressure-ribbon" title={`Speed-density reference proxy: ${aeroIdx?.toFixed(3) ?? "—"} · Ground-speed pressure proxy: ${dynPsf?.toFixed(1) ?? "—"} psf`}>
+        <span className="aero-pressure-label">Speed-density proxy</span>
         <div className="aero-pressure-track">
           <div className="aero-pressure-fill aero-flow" style={{ width: `${ribbonPct}%`, background: ribbonColor }} />
         </div>
@@ -3428,13 +3488,13 @@ function PlatformTraceWorkbench({
       </div>
       <div className="aero-scatter-panel">
         <div className="aero-scatter-header">
-          <span><BarChart3 size={13} /> Speed² vs aero/load proxy</span>
+          <span><BarChart3 size={13} /> Speed² vs platform proxy</span>
           <ProxyBadge kind="proxy" />
         </div>
         {scatterPoints.length === 0 ? (
-          <p className="muted" style={{ margin: 0, fontSize: 11 }}>Unavailable: speed and aero/load proxy channels are required.</p>
+          <p className="muted" style={{ margin: 0, fontSize: 11 }}>Unavailable: speed and platform proxy channels are required.</p>
         ) : (
-          <svg className="aero-scatter-svg" viewBox="0 0 360 120" role="img" aria-label="Speed squared versus aero load proxy scatter">
+          <svg className="aero-scatter-svg" viewBox="0 0 360 120" role="img" aria-label="Speed squared versus platform proxy scatter">
             <line x1="28" y1="96" x2="344" y2="96" className="scatter-axis" />
             <line x1="28" y1="10" x2="28" y2="96" className="scatter-axis" />
             <text x="344" y="113" className="scatter-label" textAnchor="end">speed²</text>
@@ -3456,8 +3516,8 @@ function PlatformTraceWorkbench({
         )}
       </div>
       <div className="engineering-panel-grid">
-        <EngineeringMetricCard title="Aero Load Index" channelName="aero_load_index" value={latest("aero_load_index")} color="#38bdf8" />
-        <EngineeringMetricCard title="Dynamic Pressure" value={`${formatChannelValue(latest("dynamic_pressure_psf") as number, "psf")} / ${formatChannelValue(latest("dynamic_pressure_pa") as number, "Pa")}`} subtitle={`Lap index: ${formatChannelValue(latest("dynamic_pressure_lap_index") as number, "index")}`} channelName="dynamic_pressure_lap_index" color="#60a5fa" />
+        <EngineeringMetricCard title="Speed-Density Reference Proxy" channelName="aero_load_index" value={latest("aero_load_index")} subtitle="Display only · not aero load" color="#38bdf8" />
+        <EngineeringMetricCard title="Ground-Speed Pressure Proxy" value={`${formatChannelValue(latest("dynamic_pressure_psf") as number, "psf")} / ${formatChannelValue(latest("dynamic_pressure_pa") as number, "Pa")}`} subtitle={`Lap-relative proxy: ${formatChannelValue(latest("dynamic_pressure_lap_index") as number, "index")} · wind-relative air speed unavailable`} channelName="dynamic_pressure_lap_index" color="#60a5fa" />
         <EngineeringMetricCard title="Front Aero Proxy" channelName="front_aero_proxy_n" value={latest("front_aero_proxy_n")} color="#22d3ee" />
         <EngineeringMetricCard title="Rear Aero Proxy" channelName="rear_aero_proxy_n" value={latest("rear_aero_proxy_n")} color="#a78bfa" />
         <EngineeringMetricCard title="Rear Platform Proxy" channelName="rear_platform_proxy_n" value={latest("rear_platform_proxy_n")} subtitle={`Diffuser: ${formatForceProxyN(latest("rear_diffuser_proxy_n") as number | null)}`} color="#c084fc" />
@@ -3574,7 +3634,6 @@ function PlatformTraceWorkbench({
     </div>
   );
 
-  const renderDiffuserPanel = () => null;
 
   const renderGradePanel = () => (
     <div className="engineering-panel">
@@ -3600,7 +3659,6 @@ function PlatformTraceWorkbench({
       case "tires": return renderTiresPanel();
       case "shocks": return renderShocksPanel();
       case "grade_pull": return renderGradePanel();
-      case "diffuser": return renderDiffuserPanel();
       default: return null;
     }
   };
@@ -3758,7 +3816,7 @@ function PlatformTraceWorkbench({
       </header>
       {!scrapeScrubChartView && (
         <p className="proxy-warning">
-          Force values are estimates/proxies derived from telemetry, setup spring rates, ride heights, shock movement, and dynamic pressure. They are not direct iRacing aerodynamic force channels.
+          Force values are estimates/proxies derived from telemetry, setup spring rates, ride heights, shock movement, source-backed motion ratios, and a ground-speed pressure proxy. They are not direct iRacing aerodynamic force channels.
         </p>
       )}
       {selection.selectedMode === "learning" && (
@@ -3886,7 +3944,7 @@ function PlatformTraceWorkbench({
         contextLabel={localTraceContextLabel}
       />
       <WorkbenchSubnav active={workbenchView} onChange={handleViewChange} />
-      {workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && (
+      {workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
           <span className="laps-stint-legend-item" style={{ fontSize: 10, color: "#8d9aaa", fontWeight: 600 }}>
             Engineering cards basis:
@@ -3900,7 +3958,7 @@ function PlatformTraceWorkbench({
           </span>
         </div>
       )}
-      {workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && renderEngineeringPanel()}
+      {workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView && renderEngineeringPanel()}
       <div className="platform-whole-lap-disclosure">
         <button
           type="button"

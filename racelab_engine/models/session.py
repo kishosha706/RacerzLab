@@ -6,6 +6,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from racelab_engine.models.event import TelemetryEvent
+from racelab_engine.models.evidence import EngineeringBlocker
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.setup import SetupSnapshot
 
@@ -69,3 +70,4 @@ class RunOverview(BaseModel):
     setup_snapshot: Optional[SetupSnapshot] = None
     primary_findings: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    engineering_blockers: list[EngineeringBlocker] = Field(default_factory=list)

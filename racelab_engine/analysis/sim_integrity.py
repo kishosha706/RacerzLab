@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
-import math
-from statistics import median
 from typing import Any, Literal
 
 from pydantic import Field
 
-from racelab_engine.analysis.evidence_contracts import EvidenceEvaluationInput, evaluate_evidence_contract
+from racelab_engine.analysis.evidence_contracts import (
+    EvidenceEvaluationInput,
+    evaluate_evidence_contract,
+)
 from racelab_engine.analysis.p3_common import finite, percentile, values
 from racelab_engine.analysis.p3_contracts import SIM_INTEGRITY_CONTRACT
+from racelab_engine.analysis.qualified_clock import (
+    QualifiedTelemetryClock,
+    build_qualified_telemetry_clock,
+)
 from racelab_engine.models.engineering import EngineeringConclusion, EngineeringModel
 from racelab_engine.models.evidence import EvidenceState
-
 
 IntegrityStatus = Literal["pass", "warning", "fail", "unknown"]
 
@@ -40,6 +44,10 @@ class SimIntegrityCertificate(EngineeringModel):
     clock_skew_p95_s: float | None = None
     observed_sample_rate_hz: float | None = None
     core_clock_coverage_pct: float | None = None
+    observed_session_time_coverage_pct: float | None = None
+    session_time_duplicate_count: int | None = None
+    session_time_reverse_count: int | None = None
+    qualified_clock: QualifiedTelemetryClock
     conclusion: EngineeringConclusion
 
 
@@ -77,82 +85,60 @@ def _ratio_scale(value: float | None) -> tuple[float | None, str]:
     return None, "invalid_or_ambiguous"
 
 
-def _first_finite(row: dict[str, Any], *names: str) -> tuple[str | None, float | None]:
-    for name in names:
-        value = finite(row.get(name))
-        if value is not None:
-            return name, value
-    return None, None
-
-
 def build_sim_integrity_certificate(
     rows: list[dict[str, Any]],
     *,
     expected_sample_rate_hz: float | None,
 ) -> SimIntegrityCertificate:
-    paired_clock: list[tuple[float, float]] = []
-    tick_names: set[str] = set()
-    time_names: set[str] = set()
-    for row in rows:
-        row_tick_name, tick = _first_finite(row, "session_tick", "SessionTick")
-        row_time_name, time = _first_finite(row, "session_time", "SessionTime")
-        if row_tick_name:
-            tick_names.add(row_tick_name)
-        if row_time_name:
-            time_names.add(row_time_name)
-        if tick is not None and time is not None:
-            paired_clock.append((tick, time))
-    tick_name = sorted(tick_names)[0] if tick_names else None
-    time_name = sorted(time_names)[0] if time_names else None
-    ticks = [item[0] for item in paired_clock]
-    times = [item[1] for item in paired_clock]
-    tick_deltas = [right - left for left, right in zip(ticks, ticks[1:])]
-    time_deltas = [right - left for left, right in zip(times, times[1:])]
-    integer_ticks = all(math.isclose(tick, round(tick), abs_tol=1e-9) for tick in ticks)
+    clock = build_qualified_telemetry_clock(
+        rows,
+        expected_sample_rate_hz=expected_sample_rate_hz,
+    )
+    tick_name = next(
+        (name for name in clock.source_channels if name in {"session_tick", "SessionTick"}),
+        None,
+    )
+    time_name = next(
+        (name for name in clock.source_channels if name in {"session_time", "SessionTime"}),
+        None,
+    )
+    tick_names = {tick_name} if tick_name else set()
+    time_names = {time_name} if time_name else set()
     discontinuities = (
-        sum(not math.isclose(delta, 1.0, abs_tol=1e-9) for delta in tick_deltas)
-        if tick_deltas and integer_ticks else None
+        clock.tick_discontinuity_count if tick_name is not None else None
     )
-    dropped = (
-        sum(max(0, round(delta) - 1) for delta in tick_deltas)
-        if tick_deltas and integer_ticks else None
+    dropped = clock.dropped_tick_count if tick_name is not None else None
+    non_monotonic = (
+        clock.session_time_duplicate_count + clock.session_time_reverse_count
+        if time_name is not None else None
     )
-    non_monotonic = sum(delta <= 0 for delta in time_deltas) if time_deltas else None
-    positive_time_deltas = [delta for delta in time_deltas if delta > 0]
-    observed_rate = 1.0 / median(positive_time_deltas) if positive_time_deltas else None
-    clock_skews = []
+    observed_rate = clock.observed_sample_rate_hz
     declared_rate = finite(expected_sample_rate_hz)
-    if declared_rate is not None and declared_rate > 0:
-        clock_skews = [
-            abs(time_delta - (tick_delta / declared_rate))
-            for tick_delta, time_delta in zip(tick_deltas, time_deltas)
-            if tick_delta > 0 and time_delta > 0
-        ]
-    clock_skew_p95 = percentile(clock_skews, 0.95)
+    clock_skew_p95 = clock.qualified_session_time_residual_p95_s
     rate_credible = (
-        observed_rate is not None
+        clock.primary_clock == "session_tick"
+        and observed_rate is not None
         and declared_rate is not None
         and declared_rate > 0
         and abs(observed_rate - declared_rate) / declared_rate <= 0.05
     )
-    core_available = len(paired_clock) >= 2
-    core_coverage_pct = len(paired_clock) / len(rows) * 100.0 if rows else None
-    core_complete = bool(rows) and len(paired_clock) == len(rows)
+    core_available = clock.primary_clock != "unavailable" and clock.sample_count >= 2
+    core_coverage_pct = clock.canonical_clock_coverage_pct
+    core_complete = bool(rows) and core_coverage_pct == 100.0
 
     checks: list[IntegrityCheck] = []
     checks.append(IntegrityCheck(
         key="clock_coverage",
         status="pass" if core_complete else "fail" if rows else "unknown",
         observed=core_coverage_pct,
-        threshold="100% of samples contain a paired SessionTick and SessionTime",
-        explanation="Missing either clock value prevents trustworthy sample pairing and timing attribution.",
+        threshold="100% of samples have a canonical qualified-clock projection",
+        explanation="Qualified ticks may supply canonical time while observed SessionTime remains corroborating evidence.",
         source_channels=sorted(tick_names | time_names),
     ))
     checks.append(IntegrityCheck(
         key="sample_continuity",
         status=(
-            "fail" if ticks and not integer_ticks
-            else "pass" if discontinuities == 0
+            "pass" if discontinuities == 0
             else "fail" if discontinuities is not None
             else "unknown"
         ),
@@ -163,10 +149,18 @@ def build_sim_integrity_certificate(
     ))
     checks.append(IntegrityCheck(
         key="clock_monotonicity",
-        status=("pass" if non_monotonic == 0 else "fail" if non_monotonic is not None else "unknown"),
+        status=(
+            "pass" if non_monotonic == 0
+            else "warning" if non_monotonic is not None and clock.primary_clock == "session_tick"
+            else "fail" if non_monotonic is not None
+            else "unknown"
+        ),
         observed=non_monotonic,
         threshold="0 non-monotonic transitions",
-        explanation="SessionTime must increase monotonically.",
+        explanation=(
+            "Observed SessionTime anomalies are retained as residual evidence. "
+            "They do not replace or invalidate a qualified contiguous tick clock by themselves."
+        ),
         source_channels=[time_name] if time_name else [],
     ))
     checks.append(IntegrityCheck(
@@ -174,8 +168,8 @@ def build_sim_integrity_certificate(
         status="pass" if rate_credible else "fail" if observed_rate is not None and declared_rate else "unknown",
         observed=observed_rate,
         threshold="within 5% of declared rate",
-        explanation="Unexpected sample rate can distort derivatives and input timing.",
-        source_channels=[time_name] if time_name else [],
+        explanation="Observed SessionTime cadence must corroborate the declared rate used by contiguous SessionTick.",
+        source_channels=[name for name in (tick_name, time_name) if name],
     ))
     checks.append(IntegrityCheck(
         key="clock_skew",
@@ -188,6 +182,52 @@ def build_sim_integrity_certificate(
         threshold="95th percentile <= 0.002 s; >0.010 s blocks attribution",
         explanation="SessionTime progression should agree with SessionTick at the declared sample rate.",
         source_channels=[name for name in (tick_name, time_name) if name],
+    ))
+    checks.append(IntegrityCheck(
+        key="observed_session_time_coverage",
+        status=(
+            "pass" if clock.session_time_coverage_pct == 100.0
+            else "warning" if clock.session_time_coverage_pct is not None and time_name is not None
+            else "unknown"
+        ),
+        observed=clock.session_time_coverage_pct,
+        threshold="100% preferred for simulator-clock corroboration",
+        explanation=(
+            "Missing observed timestamps limit corroboration but do not remove a complete qualified tick clock."
+        ),
+        source_channels=[time_name] if time_name else [],
+    ))
+    checks.append(IntegrityCheck(
+        key="clock_epoch_scope",
+        status=(
+            "pass" if clock.epoch_count == 1
+            else "fail" if clock.epoch_count > 1
+            else "unknown"
+        ),
+        observed=clock.epoch_count,
+        threshold="one reset epoch per analysis window",
+        explanation="A timing-sensitive analysis window cannot cross a telemetry-clock reset boundary.",
+        source_channels=[name for name in (tick_name, time_name) if name],
+    ))
+    checks.append(IntegrityCheck(
+        key="simulator_lap_time_corroboration",
+        status=(
+            "pass" if clock.lap_time_channel_corroboration == "agrees"
+            else "fail" if clock.lap_time_channel_corroboration == "disagrees"
+            else "unknown"
+        ),
+        observed=clock.simulator_lap_time_residual_s,
+        threshold=(
+            f"absolute residual <= {clock.simulator_lap_time_tolerance_s:.6f} s"
+            if clock.simulator_lap_time_tolerance_s is not None
+            else "corroboration optional; it never creates timing authority"
+        ),
+        explanation=(
+            "Simulator lap time can corroborate the qualified clock; material disagreement blocks timing attribution."
+        ),
+        source_channels=[
+            name for name in (clock.simulator_lap_time_source, tick_name, time_name) if name
+        ],
     ))
 
     fps_name, fps = _channel(rows, "frame_rate", "FrameRate", "fps")
@@ -297,8 +337,10 @@ def build_sim_integrity_certificate(
             usable_channels=frozenset(usable_channels),
             condition_results={
                 "continuous_clock_window": (
-                    core_available and core_complete and integer_ticks
-                    and discontinuities == 0 and non_monotonic == 0
+                    core_available
+                    and core_complete
+                    and clock.clock_state == "qualified"
+                    and clock.epoch_count == 1
                 ),
                 "credible_sample_rate": rate_credible,
             },
@@ -353,6 +395,14 @@ def build_sim_integrity_certificate(
         clock_skew_p95_s=clock_skew_p95,
         observed_sample_rate_hz=observed_rate,
         core_clock_coverage_pct=core_coverage_pct,
+        observed_session_time_coverage_pct=clock.session_time_coverage_pct,
+        session_time_duplicate_count=(
+            clock.session_time_duplicate_count if time_name is not None else None
+        ),
+        session_time_reverse_count=(
+            clock.session_time_reverse_count if time_name is not None else None
+        ),
+        qualified_clock=clock,
         conclusion=conclusion,
     )
 

@@ -11,6 +11,16 @@ export default defineConfig({
           if (id.includes("/node_modules/echarts/") || id.includes("/node_modules/zrender/")) {
             return "charting";
           }
+          if (
+            id.includes("/node_modules/react/")
+            || id.includes("/node_modules/react-dom/")
+            || id.includes("/node_modules/scheduler/")
+          ) {
+            return "react-runtime";
+          }
+          if (id.includes("/node_modules/lucide-react/")) {
+            return "icons";
+          }
           return undefined;
         },
       },

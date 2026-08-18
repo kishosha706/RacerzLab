@@ -31,6 +31,7 @@ export type SessionSummary = {
 
 export type RunListItem = {
   run_id: string;
+  recording_sha256?: string | null;
   car_name?: string | null;
   track_name?: string | null;
   setup_name?: string | null;
@@ -109,6 +110,34 @@ export type EvidenceState =
   | "blocked_by_context"
   | "needs_confirmation";
 
+export type EngineeringBlockTarget =
+  | "observation"
+  | "comparison"
+  | "performance"
+  | "mechanism"
+  | "component"
+  | "setup_attribution"
+  | "navigation";
+
+export type EngineeringBlocker = {
+  code: string;
+  severity: "info" | "warning" | "blocker" | "critical";
+  scope: string;
+  blocks: EngineeringBlockTarget[];
+  message: string;
+  evidence_state: Extract<EvidenceState, "unavailable" | "blocked_by_context" | "needs_confirmation">;
+  source_artifact_ids: string[];
+  source_channels: string[];
+  physical_scope?: {
+    run_id?: string | null;
+    lap_number?: number | null;
+    lap_pct_start?: number | null;
+    lap_pct_end?: number | null;
+    event_ids: string[];
+  } | null;
+  recovery: string;
+};
+
 export type TelemetryEvent = {
   event_id: string;
   run_id: string;
@@ -143,6 +172,7 @@ export type RunOverview = {
   setup_snapshot?: SetupSnapshot | null;
   primary_findings: string[];
   warnings: string[];
+  engineering_blockers: EngineeringBlocker[];
 };
 
 export type CanonicalMappingKind =
@@ -167,6 +197,14 @@ export type TelemetryCapabilitySummary = {
   warning_channels: number;
   lossless_archive_complete: boolean;
   analysis_readiness_counts: Record<string, number>;
+  engineering_role_counts?: Record<string, number>;
+  engineering_admission_counts?: Record<string, number>;
+  qualified_clock_state?: string | null;
+  qualified_clock_primary?: string | null;
+  qualified_clock_decision_ready?: boolean;
+  analysis_engine?: "vectorized" | "row" | null;
+  decoder_path?: "columnar_vectorized" | "columnar_row_debug" | "row_fallback" | "forced_row" | "unavailable" | null;
+  decoder_fallback_reason?: string | null;
 };
 
 export type TelemetryCapabilitiesResponse = {
@@ -436,6 +474,7 @@ export type TrackMapResolution = {
 
 export type ImportIbtResponse = {
   run_id?: string | null;
+  recording_sha256?: string | null;
   status: {
     status: string;
     message: string;
@@ -451,6 +490,7 @@ export type ImportIbtResponse = {
   track_map?: TrackMapResolution | null;
   analysis_status?: string | null;
   existing_run_updated?: boolean;
+  recording_reused?: boolean;
 };
 
 export type ChannelCatalogItem = {
@@ -475,6 +515,20 @@ export type ChannelCatalogItem = {
   missing_status?: string | null;
   group?: string | null;
   source?: string | null;
+  raw_name?: string | null;
+  canonical_name?: string | null;
+  canonical_mapping_kind?: CanonicalMappingKind | null;
+  registry_status?: string | null;
+  engineering_role?: string | null;
+  engineering_admission_state?: string | null;
+  engineering_authority_limit?: string | null;
+  archive_status?: string | null;
+  variation?: string | null;
+  health_status?: string | null;
+  health_warnings?: string[];
+  base_sample_rate_hz?: number | null;
+  effective_sample_rate_hz?: number | null;
+  missing_fraction?: number | null;
 };
 
 export type ChannelSummaryItem = {
@@ -490,6 +544,20 @@ export type ChannelSummaryItem = {
   missing_status?: string | null;
   group?: string | null;
   source?: string | null;
+  raw_name?: string | null;
+  canonical_name?: string | null;
+  canonical_mapping_kind?: CanonicalMappingKind | null;
+  registry_status?: string | null;
+  engineering_role?: string | null;
+  engineering_admission_state?: string | null;
+  engineering_authority_limit?: string | null;
+  archive_status?: string | null;
+  variation?: string | null;
+  health_status?: string | null;
+  health_warnings?: string[];
+  base_sample_rate_hz?: number | null;
+  effective_sample_rate_hz?: number | null;
+  missing_fraction?: number | null;
 };
 
 export type TraceChannelPayload = {

@@ -31,6 +31,10 @@ from racelab_engine.analysis.time_alignment import (
     analyze_time_alignment,
     nearest_sorted_index,
 )
+from racelab_engine.models.evidence import (
+    EngineeringBlockTarget,
+    engineering_blockers_for,
+)
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.observation_intelligence import (
     ObservationStatus,
@@ -166,9 +170,10 @@ def _canonical_eligible_laps(overview: Any, run_id: str) -> tuple[LapSummary, ..
         overview is None
         or overview.run_id != run_id
         or overview.session.run_id != run_id
-        or any(
-            str(warning).casefold().startswith("evidence integrity:")
-            for warning in overview.warnings
+        or engineering_blockers_for(
+            overview.engineering_blockers,
+            EngineeringBlockTarget.PERFORMANCE,
+            EngineeringBlockTarget.COMPARISON,
         )
     ):
         return None

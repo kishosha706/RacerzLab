@@ -5,9 +5,14 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from api.main import app
 from api import routes_imports
-from racelab_engine.io.ibt_types import IBTHeader, IBTImportResult, IBTVariableDefinition, ImportStatus
+from api.main import app
+from racelab_engine.io.ibt_types import (
+    IBTHeader,
+    IBTImportResult,
+    IBTVariableDefinition,
+    ImportStatus,
+)
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.services import import_service as import_service_module
@@ -296,7 +301,7 @@ def test_partial_stage_write_failure_removes_orphan_cache_file(
     assert list((tmp_path / "data").rglob("*.tmp.csv")) == []
 
 
-def test_multipart_upload_uses_unique_paths_and_keeps_successful_upload_copies(
+def test_multipart_upload_reuses_one_content_addressed_source_copy(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -311,16 +316,24 @@ def test_multipart_upload_uses_unique_paths_and_keeps_successful_upload_copies(
     monkeypatch.setattr(ImportService, "import_ibt_file", fake_import)
     client = TestClient(app)
 
+    responses = []
     for _ in range(2):
         response = client.post(
             "/api/imports/ibt",
             files={"file": ("same.ibt", b"IBT", "application/octet-stream")},
         )
         assert response.status_code == 200
+        responses.append(response.json())
 
     assert len(seen_paths) == 2
-    assert seen_paths[0] != seen_paths[1]
+    assert seen_paths[0] == seen_paths[1]
     assert all(Path(path).exists() for path in seen_paths)
+    assert Path(seen_paths[0]).name == (
+        "0261be77728311f045bc3bd13d07fcf27d8922a695581deb0f6d12827441d38a.ibt"
+    )
+    assert len(list((tmp_path / "imports").glob("*.ibt"))) == 1
+    assert responses[0]["recording_reused"] is False
+    assert responses[1]["recording_reused"] is True
 
 
 def test_failed_multipart_import_removes_uploaded_copy(
@@ -348,3 +361,80 @@ def test_failed_multipart_import_removes_uploaded_copy(
     assert detail["next_step"] == "Try importing again, or choose a different .ibt file."
     assert detail["cleanup"] == "Temporary import files were cleaned when possible."
     assert list((tmp_path / "imports").glob("*.ibt")) == []
+
+
+def test_failed_repeat_import_preserves_preexisting_content_addressed_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(routes_imports, "IMPORTS_DIR", tmp_path / "imports")
+    routes_imports.IMPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    source = b"IBT"
+    source_sha = "0261be77728311f045bc3bd13d07fcf27d8922a695581deb0f6d12827441d38a"
+    canonical = routes_imports.IMPORTS_DIR / f"{source_sha}.ibt"
+    canonical.write_bytes(source)
+
+    def fail_import(self: ImportService, path: str) -> tuple[IBTImportResult, None]:
+        assert Path(path) == canonical
+        raise RuntimeError("decoder exploded")
+
+    monkeypatch.setattr(ImportService, "import_ibt_file", fail_import)
+    response = TestClient(app).post(
+        "/api/imports/ibt",
+        files={"file": ("renamed.ibt", source, "application/octet-stream")},
+    )
+
+    assert response.status_code == 500
+    assert canonical.read_bytes() == source
+
+
+def test_content_addressed_upload_rejects_same_size_corruption(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(routes_imports, "IMPORTS_DIR", tmp_path / "imports")
+    routes_imports.IMPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    source_sha = "0261be77728311f045bc3bd13d07fcf27d8922a695581deb0f6d12827441d38a"
+    canonical = routes_imports.IMPORTS_DIR / f"{source_sha}.ibt"
+    canonical.write_bytes(b"BAD")
+    incoming = routes_imports.IMPORTS_DIR / ".upload-hostile.tmp"
+    incoming.write_bytes(b"IBT")
+
+    with pytest.raises(RuntimeError, match="conflicts with its content identity"):
+        routes_imports._promote_content_addressed_upload(
+            incoming,
+            source_sha,
+            3,
+        )
+
+    assert canonical.read_bytes() == b"BAD"
+    assert not incoming.exists()
+
+
+def test_multipart_integrity_conflict_fails_before_decoder(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(routes_imports, "IMPORTS_DIR", tmp_path / "imports")
+    routes_imports.IMPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    source = b"IBT"
+    source_sha = "0261be77728311f045bc3bd13d07fcf27d8922a695581deb0f6d12827441d38a"
+    canonical = routes_imports.IMPORTS_DIR / f"{source_sha}.ibt"
+    canonical.write_bytes(b"BAD")
+    decoder_called = False
+
+    def should_not_decode(self: ImportService, path: str) -> tuple[IBTImportResult, None]:
+        nonlocal decoder_called
+        decoder_called = True
+        raise AssertionError(path)
+
+    monkeypatch.setattr(ImportService, "import_ibt_file", should_not_decode)
+    response = TestClient(app).post(
+        "/api/imports/ibt",
+        files={"file": ("same-size.ibt", source, "application/octet-stream")},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["title"] == "Recording source integrity conflict"
+    assert decoder_called is False
+    assert canonical.read_bytes() == b"BAD"

@@ -24,6 +24,8 @@ from racelab_engine.models.vehicle_dynamics_knowledge import (
     DynamicsChainStageKind,
     PerformanceMechanismAssessment,
     PerformanceMechanismCandidate,
+    MechanismSeparationRow,
+    PhaseResponseMetric,
     VehicleDynamicMechanism,
     VehicleDynamicsChainStage,
     VehicleDynamicsFocusArtifact,
@@ -31,7 +33,12 @@ from racelab_engine.models.vehicle_dynamics_knowledge import (
     VehicleDynamicsKnowledgeResolution,
     VehicleDynamicsPhase,
     VehicleDynamicsRuntimeMechanismTrust,
+    VehicleProblemSignature,
+    VehicleResponseObservation,
+    build_phase_response_metric,
     build_performance_mechanism_assessment,
+    build_vehicle_problem_signature,
+    build_vehicle_response_observation,
 )
 
 
@@ -68,6 +75,35 @@ _DRIVER_INPUT_CHANNELS = frozenset(
     for channels in _DRIVER_INPUT_CHANNELS_BY_FIELD.values()
     for channel in channels
 )
+_NON_DIAGNOSTIC_PHYSICS_CHANNELS = frozenset(
+    {
+        "front_slip_angle_deg",
+        "rear_slip_angle_deg",
+        "slip_angle_balance_deg",
+        "ackermann_steering_error_deg",
+        "ackermann_scrub_proxy",
+        "wheel_power_proxy_w",
+        "cda_coastdown_proxy_m2",
+        "full_throttle_resistance_cda_proxy_m2",
+        "platform_roll_deg_from_rh",
+        "front_load_proxy_n",
+        "rear_load_proxy_n",
+        "front_aero_proxy_n",
+        "rear_aero_proxy_n",
+        "aero_balance_front_pct",
+        "rear_downforce_proxy_n",
+        "rear_platform_proxy_n",
+        "rear_diffuser_proxy_n",
+        "aero_load_proxy_n",
+        "drag_force_proxy_n",
+        "dynamic_pressure_pa",
+        "dynamic_pressure_psf",
+        "dynamic_pressure_lap_index",
+        "dynamic_pressure_index",
+        "aero_load_index",
+        "aero_load_index_180mph",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -90,6 +126,12 @@ class _ComparisonContextTruth:
 
 def _unique(values: Iterable[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(value for value in values if value))
+
+
+def _diagnostic_channels(values: Iterable[str]) -> tuple[str, ...]:
+    return _unique(
+        value for value in values if value not in _NON_DIAGNOSTIC_PHYSICS_CHANNELS
+    )
 
 
 def _enum_text(value: object) -> str:
@@ -487,7 +529,7 @@ def _vehicle_response_stage(
         state.line_separation_m if state is not None else None,
     )
     source_channels = (
-        tuple(
+        _diagnostic_channels(
             channel
             for channel in state.source_channels
             if channel not in _DRIVER_INPUT_CHANNELS
@@ -657,6 +699,11 @@ def _exact_p20_mechanism_support(
         and bool(opportunity.source_laps)
         and primary.lap_number == opportunity.source_laps[0]
     ):
+        if _NON_DIAGNOSTIC_PHYSICS_CHANNELS.intersection(primary.source_channels):
+            return (
+                None,
+                "A research/display-only force, slip-angle, aero, or nominal-geometry proxy cannot support a P35 mechanism.",
+            )
         return (
             _P20MechanismSupport(
                 source_artifact_id=primary.source_artifact_ids[0],
@@ -688,6 +735,13 @@ def _exact_p20_mechanism_support(
             and state.lap_pct_end == opportunity.end_pct
             and state.source_channels
         ):
+            if _NON_DIAGNOSTIC_PHYSICS_CHANNELS.intersection(
+                state.source_channels
+            ):
+                return (
+                    None,
+                    "A research/display-only force, slip-angle, aero, or nominal-geometry proxy cannot support a P35 mechanism.",
+                )
             assert state.lap_pct_start is not None
             assert state.lap_pct_end is not None
             return (
@@ -1044,6 +1098,292 @@ def _runtime_unavailable_quantities(
     return _unique((*_MANDATORY_UNAVAILABLE_QUANTITIES, *values))
 
 
+_PHASE_METRIC_SPECS = (
+    (
+        "elapsed_time_delta_s",
+        "s",
+        "calculated_delta",
+        ("session_time", "SessionTime", "lap_dist_pct_100", "lap_dist_pct"),
+    ),
+    (
+        "speed_delta_mph",
+        "mph",
+        "measured_delta",
+        ("speed_mph", "Speed", "speed_mps"),
+    ),
+    (
+        "throttle_demand_delta_pct",
+        "%",
+        "measured_delta",
+        ("Throttle", "throttle_pct", "throttle_01", "throttle"),
+    ),
+    (
+        "brake_demand_delta_pct",
+        "%",
+        "measured_delta",
+        ("Brake", "brake_pct", "brake_01"),
+    ),
+    (
+        "steering_wheel_demand_delta_deg",
+        "deg",
+        "measured_delta",
+        ("SteeringWheelAngle", "steering_deg", "steering_rad"),
+    ),
+    (
+        "yaw_rate_response_delta_rad_s",
+        "rad/s",
+        "measured_delta",
+        ("YawRate", "yaw_rate"),
+    ),
+    (
+        "longitudinal_accel_response_delta_mps2",
+        "m/s^2",
+        "measured_delta",
+        ("LongAccel", "long_accel", "long_accel_mps2"),
+    ),
+    (
+        "path_delta_m",
+        "m",
+        "calculated_delta",
+        ("lat", "lon", "Lat", "Lon", "lap_dist_pct_100"),
+    ),
+    (
+        "line_separation_m",
+        "m",
+        "calculated_delta",
+        ("lat", "lon", "Lat", "Lon", "lap_dist_pct_100"),
+    ),
+)
+
+
+def _phase_response_metrics(
+    opportunity: LapTimeOpportunity,
+    state: PerformancePhaseState | None,
+) -> tuple[PhaseResponseMetric, ...]:
+    values: dict[str, float | None] = {
+        "elapsed_time_delta_s": opportunity.local_delta_s,
+        "speed_delta_mph": state.speed_delta_mph if state is not None else None,
+        "throttle_demand_delta_pct": (
+            state.throttle_delta_pct if state is not None else None
+        ),
+        "brake_demand_delta_pct": state.brake_delta_pct if state is not None else None,
+        "steering_wheel_demand_delta_deg": (
+            state.steering_delta_deg if state is not None else None
+        ),
+        "yaw_rate_response_delta_rad_s": (
+            state.yaw_rate_delta if state is not None else None
+        ),
+        "longitudinal_accel_response_delta_mps2": (
+            state.long_accel_delta if state is not None else None
+        ),
+        "path_delta_m": state.path_delta_m if state is not None else None,
+        "line_separation_m": state.line_separation_m if state is not None else None,
+    }
+    available_channels = _unique(
+        (
+            *opportunity.source_channels,
+            *(state.source_channels if state is not None else ()),
+        )
+    )
+    metrics: list[PhaseResponseMetric] = []
+    for quantity, units, semantics, accepted_channels in _PHASE_METRIC_SPECS:
+        value = values[quantity]
+        if value is None:
+            continue
+        channels = tuple(
+            channel for channel in available_channels if channel in accepted_channels
+        )
+        if not channels:
+            # P32 owns the numeric delta, but missing per-quantity provenance must
+            # stay unavailable to this narrower response layer.
+            continue
+        metrics.append(
+            build_phase_response_metric(
+                {
+                    "quantity": quantity,
+                    "value": value,
+                    "units": units,
+                    "semantics": semantics,
+                    "source_channels": channels,
+                }
+            )
+        )
+    return tuple(metrics)
+
+
+def _response_and_signature(
+    *,
+    run_id: str,
+    opportunity: LapTimeOpportunity | None,
+    chain: CornerPerformanceChain | None,
+    phase_state: PerformancePhaseState | None,
+    regime: DynamicResponseRegime | None,
+    context_truth: _ComparisonContextTruth,
+) -> tuple[tuple[VehicleResponseObservation, ...], VehicleProblemSignature | None]:
+    if opportunity is None or opportunity.local_delta_s is None or regime is None:
+        return (), None
+    metrics = _phase_response_metrics(opportunity, phase_state)
+    if not metrics or not any(
+        metric.quantity == "elapsed_time_delta_s" for metric in metrics
+    ):
+        return (), None
+    separations = tuple(
+        item
+        for item in (chain.driver_vehicle_separation if chain is not None else ())
+        if item.phase == opportunity.phase
+    )
+    separation = separations[0] if separations else None
+    result = _enum_text(separation.result) if separation is not None else "unresolved"
+    driver_state = {
+        "vehicle_response_changed_with_matched_inputs": "matched",
+        "driver_execution_changed": "changed",
+        "mixed_change": "mixed",
+    }.get(result, "unavailable")
+    vehicle_state = (
+        "changed"
+        if separation is not None and separation.vehicle_response_changed is True
+        else "not_established"
+        if separation is not None and separation.vehicle_response_changed is False
+        else "unavailable"
+    )
+    line_state = (
+        "changed"
+        if separation is not None and separation.line_changed is True
+        else "matched"
+        if separation is not None and separation.line_changed is False
+        else "unavailable"
+    )
+    persistence = {
+        "carried_in": "carried_forward",
+        "amplified": "carried_forward",
+        "surrendered": "carried_forward",
+        "recovered": "recovered",
+        "local_generation": "phase_local",
+    }.get(_enum_text(opportunity.origin_kind), "unavailable")
+    context_state = (
+        "qualified"
+        if context_truth.qualified
+        else "blocked"
+        if context_truth.blockers
+        else "unavailable"
+    )
+    blockers = context_truth.blockers if context_state != "qualified" else ()
+    source_laps = chain.lap_numbers if chain is not None else opportunity.source_laps[:1]
+    reference_laps = (
+        chain.reference_lap_numbers
+        if chain is not None
+        else opportunity.source_laps[1:]
+    )
+    if not source_laps or not reference_laps:
+        return (), None
+    source_channels = _unique(
+        channel for metric in metrics for channel in metric.source_channels
+    )
+    source_artifacts = _unique(
+        (
+            opportunity.opportunity_id,
+            *((chain.chain_id,) if chain is not None and phase_state is not None else ()),
+        )
+    )
+    observation = build_vehicle_response_observation(
+        {
+            "opportunity_id": opportunity.opportunity_id,
+            "run_id": run_id,
+            "source_lap_numbers": source_laps,
+            "reference_lap_numbers": reference_laps,
+            "phase": opportunity.phase,
+            "lap_pct_start": opportunity.start_pct,
+            "lap_pct_end": opportunity.end_pct,
+            "onset_pct": opportunity.start_pct,
+            "response_regime": regime,
+            "driver_demand_state": driver_state,
+            "vehicle_response_state": vehicle_state,
+            "line_state": line_state,
+            "context_state": context_state,
+            "persistence": persistence,
+            "metrics": metrics,
+            "source_artifact_ids": source_artifacts,
+            "source_channels": source_channels,
+            "blocker_reasons": blockers,
+            "evidence_state": (
+                EvidenceState.MEASURED
+                if context_state == "qualified"
+                else EvidenceState.BLOCKED_BY_CONTEXT
+                if context_state == "blocked"
+                else EvidenceState.NEEDS_CONFIRMATION
+            ),
+        }
+    )
+    strongest_contradiction = next(
+        iter(
+            _unique(
+                (
+                    *context_truth.blockers,
+                    *(separation.contradictions if separation is not None else ()),
+                    *(separation.blockers if separation is not None else ()),
+                    *opportunity.contradictions,
+                    "No mechanism has yet survived a controlled discriminator.",
+                )
+            )
+        )
+    )
+    signature = build_vehicle_problem_signature(
+        {
+            "response_observation_id": observation.observation_id,
+            "opportunity_id": opportunity.opportunity_id,
+            "time_origin": opportunity.origin_kind,
+            "local_time_delta_s": opportunity.local_delta_s,
+            "phase": opportunity.phase,
+            "onset_pct": opportunity.start_pct,
+            "response_regime": regime,
+            "driver_demand_state": driver_state,
+            "vehicle_response_state": vehicle_state,
+            "line_state": line_state,
+            "traffic_dependence": (
+                "blocked"
+                if context_truth.traffic_blocked
+                else "clear"
+                if context_truth.qualified
+                else "unavailable"
+            ),
+            "strongest_contradiction": strongest_contradiction,
+        }
+    )
+    return (observation,), signature
+
+
+def _mechanism_separation_rows(
+    mechanisms: tuple[VehicleDynamicMechanism, ...],
+    candidates: tuple[PerformanceMechanismCandidate, ...],
+    response_observations: tuple[VehicleResponseObservation, ...],
+) -> tuple[MechanismSeparationRow, ...]:
+    if not response_observations:
+        return ()
+    by_id = {item.definition_id: item for item in mechanisms}
+    response_id = response_observations[0].observation_id
+    rows: list[MechanismSeparationRow] = []
+    for candidate in candidates:
+        mechanism = by_id[candidate.mechanism_id]
+        missing = candidate.blocker_reasons or (
+            "The leading mechanism remains unresolved from competing candidates.",
+        )
+        rows.append(
+            MechanismSeparationRow(
+                mechanism_id=candidate.mechanism_id,
+                response_observation_id=response_id,
+                required_response_kpi_ids=mechanism.support_contract_ids,
+                support_artifact_ids=candidate.support_artifact_ids,
+                contradiction_artifact_ids=candidate.contradiction_artifact_ids,
+                missing_evidence=missing,
+                discriminator_contract_ids=candidate.discriminator_contract_ids,
+                protected_countereffects=mechanism.expected_countereffects,
+                component_family_ids=candidate.component_family_ids,
+                state=("alive" if candidate.relevance == "candidate" else "blocked"),
+            )
+        )
+    return tuple(rows)
+
+
 def build_vehicle_dynamics_assessment(
     *,
     run_id: str,
@@ -1127,6 +1467,14 @@ def build_vehicle_dynamics_assessment(
         if stages[-1].evidence_state == EvidenceState.MEASURED
         else None
     )
+    response_observations, problem_signature = _response_and_signature(
+        run_id=run_id,
+        opportunity=measured_opportunity,
+        chain=chain,
+        phase_state=phase_state,
+        regime=regime,
+        context_truth=context_truth,
+    )
 
     p32_mechanism_ids = _unique(
         measured_opportunity.mechanism_candidates
@@ -1140,6 +1488,7 @@ def build_vehicle_dynamics_assessment(
         resolution.status == "ready"
         and measured_opportunity is not None
         and regime is not None
+        and response_observations
         and measured_opportunity.local_delta_s != 0.0
     ):
         mechanisms = _candidate_mechanisms(
@@ -1161,6 +1510,11 @@ def build_vehicle_dynamics_assessment(
             attribution_blockers=attribution_blockers,
         )
         stages = _augment_vehicle_response_with_p20(stages, focus_artifacts)
+    mechanism_separation = _mechanism_separation_rows(
+        mechanisms,
+        candidates,
+        response_observations,
+    )
 
     # Graph states remain reviewed possibilities until one typed observer
     # directly supports their exact identity.  Do not project every
@@ -1183,6 +1537,15 @@ def build_vehicle_dynamics_assessment(
             *(
                 ("No current P32 mechanism vocabulary matched the reviewed P35 graph.",)
                 if resolution.status == "ready" and not mechanisms
+                else ()
+            ),
+            *(
+                (
+                    "A phase-response comparison requires distinct source and reference lap identities; mechanism candidates remain withheld.",
+                )
+                if measured_opportunity is not None
+                and regime is not None
+                and not response_observations
                 else ()
             ),
             *(
@@ -1269,6 +1632,9 @@ def build_vehicle_dynamics_assessment(
             "tire_demand_state_ids": tire_demand_state_ids,
             "load_path_ids": load_path_ids,
             "response_regime": regime,
+            "response_observations": response_observations,
+            "problem_signature": problem_signature,
+            "mechanism_separation": mechanism_separation,
             "candidates": candidates,
             "focus_artifacts": focus_artifacts,
             "strongest_support_artifact_id": strongest_support,
@@ -1329,6 +1695,19 @@ def build_unavailable_vehicle_dynamics_assessment(
         if stages[-1].evidence_state == EvidenceState.MEASURED
         else None
     )
+    regime = (
+        _response_regime(phase)
+        if opportunity is not None and phase is not None
+        else None
+    )
+    response_observations, problem_signature = _response_and_signature(
+        run_id=run_id,
+        opportunity=measured_opportunity,
+        chain=chain,
+        phase_state=phase_state,
+        regime=regime,
+        context_truth=context_truth,
+    )
     return build_performance_mechanism_assessment(
         {
             "run_id": run_id,
@@ -1367,11 +1746,10 @@ def build_unavailable_vehicle_dynamics_assessment(
             "chain": stages,
             "tire_demand_state_ids": (),
             "load_path_ids": (),
-            "response_regime": (
-                _response_regime(phase)
-                if opportunity is not None and phase is not None
-                else None
-            ),
+            "response_regime": regime,
+            "response_observations": response_observations,
+            "problem_signature": problem_signature,
+            "mechanism_separation": (),
             "candidates": (),
             "focus_artifacts": (),
             "strongest_support_artifact_id": None,

@@ -3,11 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-import racelab_engine.storage.db as db_module
-import racelab_engine.storage.repository as repository_module
 from fastapi.testclient import TestClient
 
 import api.routes_runs as routes_runs
+import racelab_engine.storage.db as db_module
+import racelab_engine.storage.repository as repository_module
 from api.main import app
 from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.session import RunOverview, SessionSummary
@@ -35,6 +35,8 @@ def _seed_run(db_path: Path, run_id: str = "read-path-run") -> RaceLabRepository
                 is_complete=True,
                 is_useful=True,
                 lap_time=30.25,
+                timing_primary_clock="session_tick",
+                timing_clock_state="qualified",
                 pct_min=0.0,
                 pct_max=100.0,
                 pct_span=100.0,
@@ -109,9 +111,10 @@ def test_run_list_uses_one_select_instead_of_per_run_queries(
 
     assert len(selects) == 1
     assert items == [
-        {
-            "run_id": "read-path-run",
-            "car_name": "Test Car",
+            {
+                "run_id": "read-path-run",
+                "recording_sha256": None,
+                "car_name": "Test Car",
             "track_name": "Test Track",
             "setup_name": "Baseline",
             "imported_at": items[0]["imported_at"],
@@ -174,6 +177,16 @@ def test_run_lists_requalify_legacy_implausibly_fast_laps(tmp_path: Path) -> Non
     legacy_fast = overview.laps[-1]
     connection = initialize_database(db_path)
     with connection:
+        for lap in overview.laps:
+            connection.execute(
+                "UPDATE laps SET lap_json = ? WHERE lap_id = ?",
+                (
+                    lap.model_dump_json(
+                        exclude={"timing_primary_clock", "timing_clock_state"}
+                    ),
+                    lap.lap_id,
+                ),
+            )
         connection.execute(
             """
             UPDATE laps
@@ -183,7 +196,9 @@ def test_run_lists_requalify_legacy_implausibly_fast_laps(tmp_path: Path) -> Non
             (
                 legacy_fast.lap_type,
                 '["SOLO_CLEAN"]',
-                legacy_fast.model_dump_json(),
+                legacy_fast.model_dump_json(
+                    exclude={"timing_primary_clock", "timing_clock_state"}
+                ),
                 legacy_fast.lap_id,
             ),
         )
@@ -208,8 +223,16 @@ def test_run_lists_requalify_legacy_implausibly_fast_laps(tmp_path: Path) -> Non
     version = connection.execute(
         "SELECT lap_eligibility_version FROM runs WHERE run_id = ?", (run_id,)
     ).fetchone()[0]
+    stored_lap_payloads = [
+        row[0]
+        for row in connection.execute(
+            "SELECT lap_json FROM laps WHERE run_id = ? ORDER BY lap_number", (run_id,)
+        ).fetchall()
+    ]
     connection.close()
     assert version == "relative-pace-v2"
+    assert all('"timing_primary_clock"' not in payload for payload in stored_lap_payloads)
+    assert all('"timing_clock_state"' not in payload for payload in stored_lap_payloads)
 
 
 def test_tech_passing_setup_candidates_use_one_indexed_bulk_read(

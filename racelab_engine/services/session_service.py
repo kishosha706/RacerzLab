@@ -320,6 +320,58 @@ def remove_run_from_session(session_id: str, run_id: str, db_path: str | Path | 
     return get_session(session_id, db_path)
 
 
+def rebind_recording_alias_memberships(
+    owner_run_id: str,
+    alias_run_ids: list[str] | tuple[str, ...],
+    *,
+    db_path: str | Path | None = None,
+) -> int:
+    """Point session membership at one recording owner without deleting history.
+
+    Legacy run rows and workflow references remain intact for auditability. Only
+    user/session membership converges, so reopening or re-importing a renamed
+    recording cannot present aliases as separate session runs.
+    """
+    aliases = {run_id for run_id in alias_run_ids if run_id and run_id != owner_run_id}
+    if not owner_run_id or not aliases:
+        return 0
+    conn = initialize_database(db_path)
+    _ensure_schema(conn)
+    rows = conn.execute(
+        "SELECT session_id, run_ids_json, last_opened_run_id FROM racelab_sessions"
+    ).fetchall()
+    updated = 0
+    now = _utc_now()
+    with conn:
+        for raw_row in rows:
+            row = dict(raw_row)
+            run_ids = _load_identity_list(
+                row.get("run_ids_json"),
+                label="run identities",
+            )
+            if not aliases.intersection(run_ids):
+                continue
+            rebound: list[str] = []
+            for run_id in run_ids:
+                resolved = owner_run_id if run_id in aliases else run_id
+                if resolved not in rebound:
+                    rebound.append(resolved)
+            last_opened = row.get("last_opened_run_id")
+            if last_opened in aliases:
+                last_opened = owner_run_id
+            conn.execute(
+                """
+                UPDATE racelab_sessions
+                SET run_ids_json = ?, last_opened_run_id = ?, updated_at = ?
+                WHERE session_id = ?
+                """,
+                (_json(rebound), last_opened, now, row["session_id"]),
+            )
+            updated += 1
+    conn.close()
+    return updated
+
+
 def set_last_opened(
     session_id: str,
     run_id: str | None,

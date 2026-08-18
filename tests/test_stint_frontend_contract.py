@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -198,9 +197,10 @@ def test_laps_rejects_cross_run_or_incomplete_lap_candidates() -> None:
     assert "Number.isFinite(lap.lap_time)" in trust
     assert '"PIT_ROAD"' in trust
     assert "INVALID_PACE_LAP_TAGS.has(tag.trim().toUpperCase())" in trust
-    assert "overview.warnings.find(overviewWarningBlocksDecision)" in source
-    assert 'blockingRunWarning\n    ? "NO CALL"' in source
-    assert 'blockingRunWarning ? "Blocked"' in source
+    assert "overview.engineering_blockers.find(" in source
+    assert "performanceBlockerBlocksDecision" in source
+    assert 'blockingRunBlocker\n    ? "NO CALL"' in source
+    assert 'blockingRunBlocker ? "Blocked"' in source
 
     hostile_laps = [
         {"lap_time": 1.0, "is_useful": False, "lap_type": "partial"},

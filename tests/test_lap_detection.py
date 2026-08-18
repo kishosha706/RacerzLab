@@ -6,6 +6,9 @@ from racelab_engine.analysis.lap_detection import detect_laps
 from racelab_engine.analysis.lap_classification import classify_laps
 
 
+_QUALIFIED_TEST_RATE_HZ = 10.0
+
+
 def _lap_row(lap: object, pct: float, time: float, speed: float = 120.0) -> dict[str, object]:
     return {
         "lap": lap,
@@ -26,20 +29,28 @@ def _complete_lap_rows(
     speed: float = 120.0,
     samples: int | None = None,
 ) -> list[dict[str, object]]:
-    samples = samples or max(101, int(lap_time * 3) + 1)
-    return [
-        _lap_row(
-            lap,
-            index / (samples - 1),
-            start_time + lap_time * index / (samples - 1),
-            speed,
-        )
+    samples = samples or max(101, int(round(lap_time * _QUALIFIED_TEST_RATE_HZ)) + 1)
+    rows = [
+        {
+            **_lap_row(
+                lap,
+                index / (samples - 1),
+                start_time + lap_time * index / (samples - 1),
+                speed,
+            ),
+            "session_tick": index,
+        }
         for index in range(samples)
     ]
+    return rows
 
 
 def test_detects_normal_complete_lap_boundary() -> None:
-    laps = detect_laps(_complete_lap_rows(1, 40.0, start_time=10.0), run_id="run")
+    laps = detect_laps(
+        _complete_lap_rows(1, 40.0, start_time=10.0),
+        run_id="run",
+        expected_sample_rate_hz=_QUALIFIED_TEST_RATE_HZ,
+    )
 
     assert len(laps) == 1
     assert laps[0].is_complete is True
@@ -116,7 +127,7 @@ def test_relative_pace_filter_rejects_obvious_cooldown() -> None:
             row["throttle_pct"] = throttle
         rows.extend(lap_rows)
 
-    laps = detect_laps(rows)
+    laps = detect_laps(rows, expected_sample_rate_hz=_QUALIFIED_TEST_RATE_HZ)
     cooldown = next(lap for lap in laps if lap.lap_number == 4)
 
     assert cooldown.is_useful is False
@@ -165,7 +176,13 @@ def test_caution_and_yellow_flags_block_row_and_frame_setup_evidence() -> None:
     rows = [_lap_row(9, 0.0, 0.0), _lap_row(9, 0.5, 20.0), _lap_row(9, 1.0, 40.0)]
     rows[1]["SessionFlags"] = 0x4000 | 0x0008
 
-    for lap in (detect_laps(rows)[0], detect_laps(pl.DataFrame(rows, strict=False))[0]):
+    for lap in (
+        detect_laps(rows, expected_sample_rate_hz=_QUALIFIED_TEST_RATE_HZ)[0],
+        detect_laps(
+            pl.DataFrame(rows, strict=False),
+            expected_sample_rate_hz=_QUALIFIED_TEST_RATE_HZ,
+        )[0],
+    ):
         assert lap.is_useful is False
         assert "CAUTION" in lap.classification_tags
         assert "YELLOW" in lap.classification_tags
@@ -176,7 +193,13 @@ def test_enter_exit_reset_state_alone_does_not_claim_a_reset_event() -> None:
     rows = _complete_lap_rows(10, 40.0)
     rows[len(rows) // 2]["enter_exit_reset_state"] = 1
 
-    for lap in (detect_laps(rows)[0], detect_laps(pl.DataFrame(rows, strict=False))[0]):
+    for lap in (
+        detect_laps(rows, expected_sample_rate_hz=_QUALIFIED_TEST_RATE_HZ)[0],
+        detect_laps(
+            pl.DataFrame(rows, strict=False),
+            expected_sample_rate_hz=_QUALIFIED_TEST_RATE_HZ,
+        )[0],
+    ):
         assert lap.is_useful is True
         assert "ACTIVE_RESET" not in lap.classification_tags
 
@@ -215,12 +238,18 @@ def test_five_sample_full_span_lap_fails_sparse_coverage_in_both_engines() -> No
 def test_sustained_spin_like_signature_blocks_row_and_frame_setup_evidence() -> None:
     rows = _complete_lap_rows(14, 40.0)
     for index, row in enumerate(rows):
-        row["yaw_rate"] = 6.0 if 40 <= index < 60 else 0.2
-        row["abs_steering_deg"] = 25.0 if 40 <= index < 60 else 4.0
-        if 40 <= index < 60:
+        row["yaw_rate"] = 6.0 if 100 <= index < 180 else 0.2
+        row["abs_steering_deg"] = 25.0 if 100 <= index < 180 else 4.0
+        if 100 <= index < 180:
             row["speed_mph"] = 5.0
 
-    for lap in (detect_laps(rows)[0], detect_laps(pl.DataFrame(rows, strict=False))[0]):
+    for lap in (
+        detect_laps(rows, expected_sample_rate_hz=_QUALIFIED_TEST_RATE_HZ)[0],
+        detect_laps(
+            pl.DataFrame(rows, strict=False),
+            expected_sample_rate_hz=_QUALIFIED_TEST_RATE_HZ,
+        )[0],
+    ):
         assert lap.is_useful is False
         assert "WRECK_OR_SPIN" in lap.classification_tags
         assert "NO_SETUP_CONCLUSION" in lap.classification_tags
@@ -240,7 +269,13 @@ def test_three_lap_cohort_rejects_extreme_low_demand_outlier_in_both_engines() -
         rows.extend(lap_rows)
         start += lap_time + 1.0
 
-    for detected in (detect_laps(rows), detect_laps(pl.DataFrame(rows, strict=False))):
+    for detected in (
+        detect_laps(rows, expected_sample_rate_hz=_QUALIFIED_TEST_RATE_HZ),
+        detect_laps(
+            pl.DataFrame(rows, strict=False),
+            expected_sample_rate_hz=_QUALIFIED_TEST_RATE_HZ,
+        ),
+    ):
         outlier = next(lap for lap in detected if lap.lap_number == 23)
         assert outlier.is_useful is False
         assert "COOLDOWN" in outlier.classification_tags

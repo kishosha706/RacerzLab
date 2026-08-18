@@ -257,6 +257,23 @@ def test_ready_assessment_requires_exact_p20_and_p32_response(
     assert assessment.setup_authorized is False
     assert assessment.terminal_authority == "p19_only"
     assert "observation-corner_rotation" in assessment.chain[2].source_artifact_ids
+    assert len(assessment.response_observations) == 1
+    response = assessment.response_observations[0]
+    assert response.driver_demand_state == "matched"
+    assert response.vehicle_response_state == "changed"
+    assert response.onset_pct == assessment.problem_signature.onset_pct
+    assert {metric.quantity for metric in response.metrics} >= {
+        "elapsed_time_delta_s",
+        "steering_wheel_demand_delta_deg",
+        "yaw_rate_response_delta_rad_s",
+    }
+    assert len(assessment.mechanism_separation) == len(assessment.candidates)
+    assert all(
+        row.response_observation_id == response.observation_id
+        and row.discriminator_contract_ids
+        and row.protected_countereffects
+        for row in assessment.mechanism_separation
+    )
     assert all(
         "disturbance_compliance_issue" not in item.mechanism_id
         and "brake_release_rotation_deficit" not in item.mechanism_id
@@ -446,6 +463,76 @@ def test_missing_exact_response_never_becomes_positive_support(
     assert assessment.measured_time_consequence_available
 
 
+def test_single_lap_time_observation_cannot_become_phase_response_or_candidate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    monkeypatch.setenv("RACELAB_DB_PATH", str(tmp_path / "p35-single-lap.sqlite3"))
+    p32 = _build_public_projection(
+        monkeypatch, tmp_path, effect_s=0.10, traffic=False
+    )
+    p20 = _p20_for_scope(p32, MechanismKind.CORNER_ROTATION)
+    p32 = _exact_response_projection(p32, p20)
+    opportunity = p32.opportunity_map.opportunities[0]
+    single_lap = opportunity.model_copy(
+        update={"source_laps": opportunity.source_laps[:1]}
+    )
+    p32 = p32.model_copy(
+        update={
+            "opportunity_map": p32.opportunity_map.model_copy(
+                update={"opportunities": (single_lap,)}
+            ),
+            "corner_chains": (),
+            "projection_sha256": canonical_json_sha256(
+                [p32.projection_sha256, "single-lap-only"]
+            ),
+        }
+    )
+
+    assessment = _assessment(p32, p20)
+
+    assert assessment.measured_time_consequence_available
+    assert assessment.response_observations == ()
+    assert assessment.problem_signature is None
+    assert assessment.mechanism_separation == ()
+    assert assessment.candidates == ()
+    assert any("source and reference lap" in item for item in assessment.blocker_reasons)
+
+
+@pytest.mark.parametrize(
+    "unsafe_channel",
+    ("front_load_proxy_n", "aero_load_index", "dynamic_pressure_psf"),
+)
+def test_force_like_proxy_cannot_support_a_mechanism(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, unsafe_channel: str
+) -> None:
+    monkeypatch.setenv("RACELAB_DB_PATH", str(tmp_path / "p35-force-proxy.sqlite3"))
+    p32 = _build_public_projection(
+        monkeypatch, tmp_path, effect_s=0.10, traffic=False
+    )
+    p20 = _p20_for_scope(p32, MechanismKind.CORNER_ROTATION)
+    p32 = _exact_response_projection(p32, p20)
+    contaminated = _p20_with_source_channels(
+        p20,
+        MechanismKind.CORNER_ROTATION,
+        ("SteeringWheelAngle", "YawRate", unsafe_channel),
+    )
+
+    assessment = _assessment(p32, contaminated)
+
+    assert assessment.candidates
+    assert {item.relevance for item in assessment.candidates} == {"blocked"}
+    assert assessment.strongest_support_artifact_id is None
+    assert any(
+        "research/display-only" in blocker
+        for candidate in assessment.candidates
+        for blocker in candidate.blocker_reasons
+    )
+    assert all(
+        unsafe_channel not in response.source_channels
+        for response in assessment.response_observations
+    )
+
+
 def test_traffic_keeps_measured_time_and_blocks_every_candidate(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
@@ -469,6 +556,8 @@ def test_traffic_keeps_measured_time_and_blocks_every_candidate(
     assert assessment.strongest_contradiction_artifact_id is not None
     assert assessment.next_discriminator_contract_id is not None
     assert assessment.component_causal_claim_count == 0
+    assert assessment.response_observations[0].context_state == "blocked"
+    assert assessment.problem_signature.traffic_dependence == "blocked"
 
 
 def test_steady_state_filters_transient_damper_candidate(
@@ -513,6 +602,8 @@ def test_driver_demand_change_blocks_mechanism_support(
     assert assessment.strongest_support_artifact_id is None
     assert not any(item.polarity == "support" for item in assessment.focus_artifacts)
     assert assessment.measured_time_consequence_available
+    assert assessment.response_observations[0].driver_demand_state == "mixed"
+    assert {row.state for row in assessment.mechanism_separation} == {"blocked"}
 
 
 @pytest.mark.parametrize(
@@ -732,6 +823,7 @@ def test_carried_exit_time_cannot_be_recast_as_gearing(
         item.mechanism_id != "mechanism:gearing_headroom_limitation"
         for item in assessment.candidates
     )
+    assert assessment.response_observations[0].persistence == "carried_forward"
     assert any("matched" in item.casefold() for item in assessment.blocker_reasons)
 
 

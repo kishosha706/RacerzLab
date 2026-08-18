@@ -1,12 +1,12 @@
 """Telemetry analysis contracts and MVP analyzers."""
 
 from racelab_engine.analysis.calculated_channels import (
-    normalize_telemetry_rows,
-    channel_metadata,
-    CHANNEL_METADATA,
     CALCULATED_CHANNEL_UNITS,
+    CHANNEL_METADATA,
     CORE_REQUIRED_CHANNELS,
     HIGH_VALUE_RAW_CHANNELS,
+    channel_metadata,
+    normalize_telemetry_rows,
 )
 
 # ── Vectorized path — lazy/eager depending on polars availability ──
@@ -27,12 +27,22 @@ from contextlib import suppress  # noqa: E402
 
 with suppress(ImportError):  # noqa: E402
     from racelab_engine.analysis.vectorized_channels import (
-        normalize_telemetry_frame as _nft,
-        calculate_core_channels_frame as _ccf,
-        frame_to_rows as _ftr,
         CORE_CHANNELS as _cc,
-        get_analysis_engine_mode as _gaem,
+    )
+    from racelab_engine.analysis.vectorized_channels import (
+        calculate_core_channels_frame as _ccf,
+    )
+    from racelab_engine.analysis.vectorized_channels import (
         compare_row_vs_vectorized as _crvv,
+    )
+    from racelab_engine.analysis.vectorized_channels import (
+        frame_to_rows as _ftr,
+    )
+    from racelab_engine.analysis.vectorized_channels import (
+        get_analysis_engine_mode as _gaem,
+    )
+    from racelab_engine.analysis.vectorized_channels import (
+        normalize_telemetry_frame as _nft,
     )
     _normalize_telemetry_frame = _nft
     _calculate_core_channels_frame = _ccf
@@ -85,28 +95,36 @@ def compare_row_vs_vectorized(*args, **kwargs):
     return _compare_row_vs_vectorized(*args, **kwargs)  # type: ignore[misc]
 
 
+from racelab_engine.analysis.constants import (  # noqa: E402
+    CALCULATED_PROXY_CHANNELS,
+    DIFFUSER_GEOMETRY_PROXY_CHANNELS,
+    FORCE_PROXY_CHANNELS,
+    FORCE_PROXY_WARNING,
+    REFERENCE_DYNAMIC_PRESSURE_PA,
+    SLIP_RATIO_CLAMP_MAX,
+    SLIP_RATIO_SPEED_FLOOR_MPS,
+)
 from racelab_engine.analysis.drag_scrub import (  # noqa: E402
-    compute_drag_scrub_index,
     aero_normalized_resistance,
+    compute_drag_scrub_index,
     detect_drag_scrub_risk_zones,
 )
-from racelab_engine.analysis.platform_metrics import classify_splitter_height_mm  # noqa: E402
 from racelab_engine.analysis.platform_events import (  # noqa: E402
-    PlatformEventType,
     PlatformEvent,
+    PlatformEventType,
     detect_platform_events,
 )
-from racelab_engine.analysis.constants import (  # noqa: E402
-    FORCE_PROXY_WARNING,
-    FORCE_PROXY_CHANNELS,
-    SLIP_RATIO_SPEED_FLOOR_MPS,
-    SLIP_RATIO_CLAMP_MAX,
-    REFERENCE_DYNAMIC_PRESSURE_PA,
+from racelab_engine.analysis.platform_metrics import (  # noqa: E402
+    classify_splitter_height_mm,
+)
+from racelab_engine.analysis.qualified_clock import (  # noqa: E402
+    QualifiedTelemetryClock,
+    build_qualified_telemetry_clock,
 )
 from racelab_engine.analysis.units import (  # noqa: E402
-    MPS_TO_MPH,
     M_TO_FT,
     M_TO_IN,
+    MPS_TO_MPH,
     PA_TO_PSF,
 )
 
@@ -134,9 +152,14 @@ __all__ = [
     "detect_platform_events",
     "PlatformEvent",
     "PlatformEventType",
+    # Qualified base-record clock
+    "QualifiedTelemetryClock",
+    "build_qualified_telemetry_clock",
     # Constants
     "FORCE_PROXY_WARNING",
     "FORCE_PROXY_CHANNELS",
+    "DIFFUSER_GEOMETRY_PROXY_CHANNELS",
+    "CALCULATED_PROXY_CHANNELS",
     "SLIP_RATIO_SPEED_FLOOR_MPS",
     "SLIP_RATIO_CLAMP_MAX",
     "REFERENCE_DYNAMIC_PRESSURE_PA",

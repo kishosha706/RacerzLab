@@ -30,9 +30,15 @@ class ProxyEstimate:
 
 
 def dynamic_pressure_pa(speed_mps: float | None, air_density_kg_m3: float | None) -> float | None:
+    """Ground-speed pressure proxy; not wind-relative aerodynamic pressure."""
     speed_mps = _finite(speed_mps)
     air_density_kg_m3 = _finite(air_density_kg_m3)
-    if speed_mps is None or air_density_kg_m3 is None:
+    if (
+        speed_mps is None
+        or speed_mps < 0.0
+        or air_density_kg_m3 is None
+        or air_density_kg_m3 <= 0.0
+    ):
         return None
     return 0.5 * float(air_density_kg_m3) * float(speed_mps) * float(speed_mps)
 
@@ -61,26 +67,44 @@ def spring_load_delta_proxy_n(
     current_height_mm: float | None,
     baseline_height_mm: float | None,
     spring_rate_n_per_mm: float | None,
+    motion_ratio: float | None = None,
 ) -> float | None:
     current_height_mm = _finite(current_height_mm)
     baseline_height_mm = _finite(baseline_height_mm)
     spring_rate_n_per_mm = _finite(spring_rate_n_per_mm)
-    if current_height_mm is None or baseline_height_mm is None or spring_rate_n_per_mm is None:
+    motion_ratio = _finite(motion_ratio)
+    if (
+        current_height_mm is None
+        or baseline_height_mm is None
+        or spring_rate_n_per_mm is None
+        or spring_rate_n_per_mm <= 0.0
+        or motion_ratio is None
+        or motion_ratio <= 0.0
+    ):
         return None
-    compression_mm = baseline_height_mm - current_height_mm
+    compression_mm = (baseline_height_mm - current_height_mm) * motion_ratio
     return compression_mm * spring_rate_n_per_mm
 
 
 def build_platform_proxy_estimates(row: Mapping[str, Any], setup: Any | None = None) -> dict[str, ProxyEstimate]:
     missing_constants = [
         key
-        for key in ["wheelbase_m", "front_track_width_m", "rear_track_width_m", "cg_height_m", "motion_ratios"]
+        for key in ["wheelbase_m", "front_track_width_m", "rear_track_width_m", "cg_height_m"]
         if _get_float(setup, key) is None
     ]
+    corner_motion_ratios = {
+        key: _get_float(setup, key)
+        for key in (
+            "lf_motion_ratio",
+            "rf_motion_ratio",
+            "lr_motion_ratio",
+            "rr_motion_ratio",
+        )
+    }
     has_motion_ratios = all(
-        _get_float(setup, key) is not None
-        for key in ["lf_motion_ratio", "rf_motion_ratio", "lr_motion_ratio", "rr_motion_ratio"]
-    ) if setup is not None else False
+        value is not None and value > 0.0
+        for value in corner_motion_ratios.values()
+    )
     if not has_motion_ratios:
         missing_constants.append("corner_motion_ratios")
 
@@ -111,14 +135,15 @@ def build_platform_proxy_estimates(row: Mapping[str, Any], setup: Any | None = N
 
     assumptions = [
         "Ride-height deltas are treated as relative compression proxies.",
-        "A 1:1 Motion Ratio is assumed per corner unless setup provides motion ratios.",
         "Mechanical weight transfer is not subtracted from these raw platform load proxies. "
         "Use aero_residual_load_proxy_n (vehicle_dynamics) when mass, geometry, and "
         "mechanical transfer are available for a corrected aero residual estimate.",
-        "Dynamic pressure is calculated from air density and speed when both are available.",
+        "The ground-speed pressure proxy uses air density and speed; wind-relative air speed is unavailable.",
     ]
     if not has_motion_ratios:
-        assumptions.append("Default 1:1 motion ratio assumed — may over/under-estimate load.")
+        assumptions.append(
+            "One or more corner motion ratios are unavailable; affected force-like spring/platform/aero proxies are withheld."
+        )
 
     if lat_g is None or long_g is None:
         assumptions.append(
@@ -145,22 +170,28 @@ def build_platform_proxy_estimates(row: Mapping[str, Any], setup: Any | None = N
             confidence = "low (shock-active)"
         warnings.append(
             "High shock activity detected; platform is noisy and steady-state "
-            "aero/load proxy confidence is reduced."
+            "platform proxy confidence is reduced."
         )
 
     corner_specs = {
-        "lf": ("lf_ride_height_mm", "lf_ride_height_mm", "lf_front_spring_n_per_mm"),
-        "rf": ("rf_ride_height_mm", "rf_ride_height_mm", "rf_front_spring_n_per_mm"),
-        "lr": ("lr_ride_height_mm", "lr_ride_height_mm", "lr_rear_spring_n_per_mm"),
-        "rr": ("rr_ride_height_mm", "rr_ride_height_mm", "rr_rear_spring_n_per_mm"),
+        "lf": ("lf_ride_height_mm", "lf_ride_height_mm", "lf_front_spring_n_per_mm", "lf_motion_ratio"),
+        "rf": ("rf_ride_height_mm", "rf_ride_height_mm", "rf_front_spring_n_per_mm", "rf_motion_ratio"),
+        "lr": ("lr_ride_height_mm", "lr_ride_height_mm", "lr_rear_spring_n_per_mm", "lr_motion_ratio"),
+        "rr": ("rr_ride_height_mm", "rr_ride_height_mm", "rr_rear_spring_n_per_mm", "rr_motion_ratio"),
     }
     corner_loads = {
         corner: spring_load_delta_proxy_n(
             _get_float(row, row_key),
             _get_float(setup, setup_height_key),
             _get_float(setup, spring_key),
+            _get_float(setup, motion_ratio_key),
         )
-        for corner, (row_key, setup_height_key, spring_key) in corner_specs.items()
+        for corner, (
+            row_key,
+            setup_height_key,
+            spring_key,
+            motion_ratio_key,
+        ) in corner_specs.items()
     }
 
     front = None

@@ -12,6 +12,7 @@ import {
 import { useCompareBasket } from "../store/CompareBasketContext";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { setupSnapshotMatchesRun } from "../utils/evidenceTrust";
+import { evidenceStrengthOutOf100 } from "../utils/evidenceScore";
 import {
   currentIntelligenceAuthorityMatchesWorkflow,
   type CurrentIntelligenceAuthority,
@@ -2054,7 +2055,7 @@ export function DialInTab({
               <>
                 <p className="section-note">{decisionPresentation.explanation}</p>
                 <p className="section-note">
-                  Evidence strength {(workflow.packet.confidence_score * 100).toFixed(0)}/100. {workflow.packet.confidence_basis}
+                  Evidence strength {evidenceStrengthOutOf100(workflow.packet.confidence_score)}. {workflow.packet.confidence_basis}
                 </p>
                 {workflow.packet.recommendation_score_basis && (
                   <p className="section-note">Ranking basis: {workflow.packet.recommendation_score_basis}</p>

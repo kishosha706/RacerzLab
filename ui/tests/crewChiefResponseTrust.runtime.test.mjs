@@ -36,6 +36,36 @@ import {
 import { ENGINEERING_KNOWLEDGE_STATIC_REGISTRY } from "../src/utils/engineeringKnowledgeRegistry.ts";
 
 const h = (value) => value.repeat(64);
+const sealP354 = async (value) => {
+  for (const response of value.response_observations) {
+    for (const metric of response.metrics) {
+      const metricBody = structuredClone(metric);
+      delete metricBody.metric_id;
+      metric.metric_id = `p354.metric:${(await canonicalJsonSha256(
+        metricBody,
+        { pythonFloatKeys: new Set(["value"]) },
+      )).slice(0, 24)}`;
+    }
+    const responseBody = structuredClone(response);
+    delete responseBody.observation_id;
+    response.observation_id = `p354.response:${(await canonicalJsonSha256(
+      responseBody,
+      { pythonFloatKeys: new Set(["lap_pct_end", "lap_pct_start", "onset_pct", "value"]) },
+    )).slice(0, 24)}`;
+  }
+  if (value.problem_signature) {
+    value.problem_signature.response_observation_id = value.response_observations[0].observation_id;
+    for (const row of value.mechanism_separation) {
+      row.response_observation_id = value.response_observations[0].observation_id;
+    }
+    const signatureBody = structuredClone(value.problem_signature);
+    delete signatureBody.signature_id;
+    value.problem_signature.signature_id = `p354.signature:${(await canonicalJsonSha256(
+      signatureBody,
+      { pythonFloatKeys: new Set(["local_time_delta_s", "onset_pct"]) },
+    )).slice(0, 24)}`;
+  }
+};
 const requiredSupportChannels = (mechanism) => [...new Set(
   mechanism.support_required_channel_groups.flatMap((requirement) => (
     requirement.alternatives
@@ -294,6 +324,7 @@ const vehicleDynamicsBody = {
     summary: reason, blocker_reasons: [reason], authority: "observation_only",
   })),
   tire_demand_state_ids: [], load_path_ids: [], response_regime: null,
+  response_observations: [], problem_signature: null, mechanism_separation: [],
   candidates: [], focus_artifacts: [], strongest_support_artifact_id: null,
   strongest_contradiction_artifact_id: null, next_discriminator_contract_id: null,
   unavailable_quantity_ids: mandatoryUnavailableDynamics, traffic_blocked: false,
@@ -2064,7 +2095,51 @@ opportunityDynamicsBody.p32_performance_mechanism_ids = ["center_rotation"];
 opportunityDynamicsBody.performance_opportunity_ids = ["opportunity-1"];
 opportunityDynamicsBody.measured_time_consequence_available = true;
 opportunityDynamicsBody.response_regime = "steady_state";
+const p354ResponseId = `p354.response:${"1".repeat(24)}`;
+opportunityDynamicsBody.response_observations = [{
+  observation_id: p354ResponseId, opportunity_id: "opportunity-1", run_id: "run-1",
+  source_lap_numbers: [2], reference_lap_numbers: [3], phase: "center",
+  lap_pct_start: 20, lap_pct_end: 30, onset_pct: 20,
+  onset_resolution: "phase_boundary", response_regime: "steady_state",
+  driver_demand_state: "unavailable", vehicle_response_state: "unavailable",
+  line_state: "unavailable", context_state: "qualified", persistence: "phase_local",
+  metrics: [{
+    metric_id: `p354.metric:${"4".repeat(24)}`, quantity: "elapsed_time_delta_s",
+    value: 0.1, units: "s", semantics: "calculated_delta", source_channels: ["speed_mph"],
+    force_like: false, setup_authorized: false,
+  }, {
+    metric_id: `p354.metric:${"2".repeat(24)}`, quantity: "speed_delta_mph",
+    value: -1, units: "mph", semantics: "measured_delta", source_channels: ["speed_mph"],
+    force_like: false, setup_authorized: false,
+  }],
+  source_artifact_ids: ["opportunity-1"], source_channels: ["speed_mph"],
+  blocker_reasons: [], evidence_state: "measured", authority: "observation_only",
+  component_cause_authorized: false, setup_authorized: false,
+}];
+opportunityDynamicsBody.problem_signature = {
+  signature_id: `p354.signature:${"3".repeat(24)}`,
+  response_observation_id: p354ResponseId, opportunity_id: "opportunity-1",
+  time_origin: "local_generation", local_time_delta_s: 0.1, phase: "center",
+  onset_pct: 20, onset_resolution: "phase_boundary", response_regime: "steady_state",
+  driver_demand_state: "unavailable", vehicle_response_state: "unavailable",
+  line_state: "unavailable", speed_dependence: "not_established",
+  stint_dependence: "not_established", traffic_dependence: "clear",
+  surface_dependence: "not_established", front_rear_corner_scope: "unresolved",
+  strongest_contradiction: "A typed P20 observation is unavailable in this exact scope.",
+  authority: "observation_only", component_cause_authorized: false,
+  setup_authorized: false,
+};
 opportunityDynamicsBody.candidates = blockedCandidates;
+opportunityDynamicsBody.mechanism_separation = blockedCandidates.map((candidate) => ({
+  mechanism_id: candidate.mechanism_id, response_observation_id: p354ResponseId,
+  required_response_kpi_ids: [candidate.discriminator_contract_ids[0]],
+  support_artifact_ids: [], contradiction_artifact_ids: [...candidate.contradiction_artifact_ids],
+  missing_evidence: [...candidate.blocker_reasons],
+  discriminator_contract_ids: [...candidate.discriminator_contract_ids],
+  protected_countereffects: ["Protect stability, tire state, workload, and downstream time."],
+  component_family_ids: [...candidate.component_family_ids], state: "blocked",
+  authority: "candidate_only", setup_authorized: false,
+}));
 opportunityDynamicsBody.focus_artifacts = blockedFocusArtifacts;
 opportunityDynamicsBody.strongest_support_artifact_id = null;
 opportunityDynamicsBody.strongest_contradiction_artifact_id =
@@ -2103,6 +2178,7 @@ opportunityDynamicsBody.chain = [
     blocker_reasons: [], authority: "observation_only",
   },
 ];
+await sealP354(opportunityDynamicsBody);
 withOpportunity.vehicle_dynamics = {
   ...opportunityDynamicsBody,
   p35_assessment_sha256: await canonicalPerformanceMechanismAssessmentSha256(
@@ -2195,6 +2271,9 @@ emptyDynamicsBody.p32_performance_mechanism_ids = [];
 emptyDynamicsBody.performance_opportunity_ids = [];
 emptyDynamicsBody.measured_time_consequence_available = false;
 emptyDynamicsBody.response_regime = null;
+emptyDynamicsBody.response_observations = [];
+emptyDynamicsBody.problem_signature = null;
+emptyDynamicsBody.mechanism_separation = [];
 emptyDynamicsBody.candidates = [];
 emptyDynamicsBody.focus_artifacts = [];
 emptyDynamicsBody.strongest_support_artifact_id = null;
@@ -2320,6 +2399,17 @@ delete focusedDynamicsBody.p35_assessment_sha256;
 focusedDynamicsBody.candidates[0].support_artifact_ids = [supportFocusId];
 focusedDynamicsBody.candidates[0].blocker_reasons = [];
 focusedDynamicsBody.candidates[0].relevance = "candidate";
+focusedDynamicsBody.mechanism_separation[0].support_artifact_ids = [supportFocusId];
+focusedDynamicsBody.mechanism_separation[0].missing_evidence = [
+  "The candidate still requires its controlled discriminator.",
+];
+focusedDynamicsBody.mechanism_separation[0].state = "alive";
+focusedDynamicsBody.response_observations[0].driver_demand_state = "matched";
+focusedDynamicsBody.response_observations[0].vehicle_response_state = "changed";
+focusedDynamicsBody.response_observations[0].line_state = "matched";
+focusedDynamicsBody.problem_signature.driver_demand_state = "matched";
+focusedDynamicsBody.problem_signature.vehicle_response_state = "changed";
+focusedDynamicsBody.problem_signature.line_state = "matched";
 focusedDynamicsBody.focus_artifacts = [supportFocus, ...focusedDynamicsBody.focus_artifacts];
 for (const focus of focusedDynamicsBody.focus_artifacts.slice(1)) focus.lap_numbers = [2, 3];
 focusedDynamicsBody.chain[2] = {
@@ -2336,6 +2426,7 @@ focusedDynamicsBody.chain[0] = {
   blocker_reasons: [], authority: "observation_only",
 };
 focusedDynamicsBody.strongest_support_artifact_id = supportFocusId;
+await sealP354(focusedDynamicsBody);
 focusedDynamicsWorkspace.vehicle_dynamics = {
   ...focusedDynamicsBody,
   p35_assessment_sha256: await canonicalPerformanceMechanismAssessmentSha256(
@@ -2442,8 +2533,11 @@ assert.equal(
 const rehashFocusedDynamics = async (value) => {
   const body = structuredClone(value.vehicle_dynamics);
   delete body.p35_assessment_sha256;
-  value.vehicle_dynamics.p35_assessment_sha256 =
-    await canonicalPerformanceMechanismAssessmentSha256(body);
+  await sealP354(body);
+  value.vehicle_dynamics = {
+    ...body,
+    p35_assessment_sha256: await canonicalPerformanceMechanismAssessmentSha256(body),
+  };
   value.identity.p35_assessment_sha256 = value.vehicle_dynamics.p35_assessment_sha256;
   for (const entry of value.evidence_index.entries.filter((item) => item.producer_id.startsWith("p35."))) {
     entry.typed_artifact.assessment_sha256 = value.vehicle_dynamics.p35_assessment_sha256;
@@ -2782,6 +2876,12 @@ const trafficChainTruth = deriveP35ChainTruth(
   trafficBinding,
 );
 trafficBlocked.vehicle_dynamics.traffic_blocked = true;
+trafficBlocked.vehicle_dynamics.response_observations[0].context_state = "blocked";
+trafficBlocked.vehicle_dynamics.response_observations[0].evidence_state = "blocked_by_context";
+trafficBlocked.vehicle_dynamics.response_observations[0].blocker_reasons = [
+  "Traffic covered the comparison window.",
+];
+trafficBlocked.vehicle_dynamics.problem_signature.traffic_dependence = "blocked";
 trafficBlocked.vehicle_dynamics.chain = trafficBlocked.vehicle_dynamics.chain.map((stage, index) => ({
   ...stage,
   ...trafficChainTruth.expectedChain[index],

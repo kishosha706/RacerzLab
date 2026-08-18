@@ -2,19 +2,17 @@ from __future__ import annotations
 
 import math
 
-import pytest
 import polars as pl
+import pytest
 
-from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
-from racelab_engine.analysis.vectorized_channels import normalize_telemetry_frame
 from racelab_engine.analysis.braking_efficiency import analyze_braking_efficiency
+from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
 from racelab_engine.analysis.damper_response import analyze_damper_response
-from racelab_engine.analysis.sim_integrity import (
-    build_sim_integrity_certificate,
-    comparison_integrity_gate,
+from racelab_engine.analysis.evidence_contracts import (
+    EvidenceEvaluationInput,
+    evaluate_evidence_contract,
 )
-from racelab_engine.analysis.tire_state_energy import analyze_tire_state
-from racelab_engine.analysis.evidence_contracts import EvidenceEvaluationInput, evaluate_evidence_contract
+from racelab_engine.analysis.p3_common import bounded_confidence, lap_pct
 from racelab_engine.analysis.p3_contracts import (
     BRAKING_EFFICIENCY_CONTRACT,
     DAMPER_RESPONSE_CONTRACT,
@@ -23,13 +21,18 @@ from racelab_engine.analysis.p3_contracts import (
     TIRE_STATE_CONTRACT,
 )
 from racelab_engine.analysis.powertrain_gearing import analyze_powertrain_gearing
-from racelab_engine.analysis.p3_common import bounded_confidence, lap_pct
 from racelab_engine.analysis.relative_resistance import analyze_relative_resistance_aba
+from racelab_engine.analysis.setup_controls import SETUP_CONTROL_SPECS
+from racelab_engine.analysis.sim_integrity import (
+    build_sim_integrity_certificate,
+    comparison_integrity_gate,
+)
 from racelab_engine.analysis.stint_strategy import analyze_stint_strategy
+from racelab_engine.analysis.tire_state_energy import analyze_tire_state
+from racelab_engine.analysis.vectorized_channels import normalize_telemetry_frame
 from racelab_engine.models.engineering import EngineeringConclusion
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.lap import LapSummary
-from racelab_engine.analysis.setup_controls import SETUP_CONTROL_SPECS
 
 
 def _laps(count: int) -> list[LapSummary]:
@@ -263,7 +266,7 @@ def test_tire_pressure_pattern_remains_observational_with_snapshot_only_history(
     )
 
     assert repeated.gate.eligible is True
-    assert all("pressure_driven_heating" in corner.cause_classes for corner in repeated.corners)
+    assert all(corner.cause_classes == [] for corner in repeated.corners)
     assert all(corner.carcass_update_semantic == "pit_snapshot" for corner in repeated.corners)
     assert all(corner.wear_update_semantic == "pit_snapshot" for corner in repeated.corners)
     assert all("recommendation" not in item.model_dump() for item in repeated.conclusions)
@@ -274,6 +277,10 @@ def test_tire_pressure_pattern_remains_observational_with_snapshot_only_history(
     )
     assert all(
         any("pit-boundary snapshots" in evidence for evidence in item.contradicting_evidence)
+        for item in repeated.conclusions
+    )
+    assert all(
+        any("empirical residual" in evidence for evidence in item.contradicting_evidence)
         for item in repeated.conclusions
     )
 
@@ -1651,16 +1658,22 @@ def test_sim_integrity_rejects_impossible_system_values(
         assert check.normalization_provenance == "invalid_or_ambiguous"
 
 
-def test_sim_integrity_fails_incomplete_paired_clock_coverage() -> None:
+def test_sim_integrity_uses_complete_ticks_when_one_observed_timestamp_is_missing() -> None:
     rows = _integrity_rows()
     del rows[60]["session_time"]
 
     certificate = build_sim_integrity_certificate(rows, expected_sample_rate_hz=60.0)
     coverage = next(check for check in certificate.checks if check.key == "clock_coverage")
 
-    assert coverage.status == "fail"
-    assert certificate.core_clock_coverage_pct == pytest.approx(119 / 120 * 100.0)
-    assert certificate.is_clear_for_analysis is False
+    observed_coverage = next(
+        check for check in certificate.checks
+        if check.key == "observed_session_time_coverage"
+    )
+    assert coverage.status == "pass"
+    assert certificate.core_clock_coverage_pct == 100.0
+    assert observed_coverage.status == "warning"
+    assert certificate.observed_session_time_coverage_pct == pytest.approx(119 / 120 * 100.0)
+    assert certificate.is_clear_for_analysis is True
 
 
 @pytest.mark.parametrize("invalid_redline", [math.nan, math.inf, -1.0, 100.0, 50_000.0])

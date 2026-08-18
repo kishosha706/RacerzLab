@@ -11,6 +11,7 @@ type EventTimelineProps = {
   platformEvents: PlatformEventItem[];
   eventVisibilityMode: PlatformEventVisibilityMode;
   workspace: Workspace;
+  lapDurationSeconds?: number | null;
   onKeyboardOwnershipChange?: (ownsKeyboard: boolean) => void;
 };
 
@@ -59,16 +60,18 @@ function timelineEventLocationLabel(event: PlatformEventItem, selection: Telemet
   return "location unavailable";
 }
 
-export function EventTimeline({ platformEvents, eventVisibilityMode, workspace, onKeyboardOwnershipChange }: EventTimelineProps) {
+export function EventTimeline({ platformEvents, eventVisibilityMode, workspace, lapDurationSeconds, onKeyboardOwnershipChange }: EventTimelineProps) {
   const { selection, focusEvidence, setHover, setPlaybackActive } = useTelemetrySelection();
   const [browseIndex, setBrowseIndex] = useState<number | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<number>(1);
+  const [playbackPct, setPlaybackPct] = useState(0);
   const [expanded, setExpanded] = useState(() => TRACE_HEAVY_WORKSPACES.has(workspace));
   const [focusWithin, setFocusWithin] = useState(false);
   const timelineRef = useRef<HTMLElement | null>(null);
   const playbackRef = useRef<number | null>(null);
+  const playbackPctRef = useRef(0);
   const indexRef = useRef(0);
   const visibleEvents = useMemo(
     () => filterPlatformEvents(platformEvents, eventVisibilityMode),
@@ -89,7 +92,12 @@ export function EventTimeline({ platformEvents, eventVisibilityMode, workspace, 
       event.event_type,
     ]),
   }), [eventVisibilityMode, selection.selectedLap, selection.selectedRunId, visibleEvents]);
-  const ownsKeyboard = expanded && focusWithin && visibleEvents.length > 0;
+  const ownsKeyboard = expanded && focusWithin && selection.selectedLap != null;
+  const qualifiedLapDurationSeconds = (
+    lapDurationSeconds != null
+    && Number.isFinite(lapDurationSeconds)
+    && lapDurationSeconds > 0
+  ) ? lapDurationSeconds : 60;
 
   const sorted = useMemo(
     () => [...visibleEvents].filter((e) => e.lap_pct != null).sort((a, b) => (a.lap_pct ?? 0) - (b.lap_pct ?? 0)),
@@ -129,6 +137,17 @@ export function EventTimeline({ platformEvents, eventVisibilityMode, workspace, 
         ? event.sample_index
         : null;
     setHover(event.lap_pct ?? null, sampleIndex);
+    if (event.lap_pct != null) {
+      playbackPctRef.current = event.lap_pct;
+      setPlaybackPct(event.lap_pct);
+    }
+  }, [setHover]);
+
+  const setContinuousPreview = useCallback((pct: number) => {
+    const bounded = Math.max(0, Math.min(100, pct));
+    playbackPctRef.current = bounded;
+    setPlaybackPct(bounded);
+    setHover(bounded, null);
   }, [setHover]);
 
   useEffect(() => {
@@ -141,6 +160,8 @@ export function EventTimeline({ platformEvents, eventVisibilityMode, workspace, 
     setBrowseIndex(null);
     setHoveredIndex(null);
     setPreviewHover(null);
+    playbackPctRef.current = 0;
+    setPlaybackPct(0);
     setPlaybackActive(false);
   }, [eventScopeKey, setPlaybackActive, setPreviewHover]);
 
@@ -182,15 +203,12 @@ export function EventTimeline({ platformEvents, eventVisibilityMode, workspace, 
   }, [sorted, focusEvidence, buildTimelineEvidence]);
 
   const togglePlay = useCallback(() => {
-    if (sorted.length === 0) return;
     setPlaying((p) => {
       if (p) return false;
-      if (indexRef.current >= sorted.length - 1) {
-        stepTo(0);
-      }
+      if (playbackPctRef.current >= 100) setContinuousPreview(0);
       return true;
     });
-  }, [sorted.length, stepTo]);
+  }, [setContinuousPreview]);
 
   const stepPrev = useCallback(() => {
     setPlaying(false);
@@ -205,30 +223,29 @@ export function EventTimeline({ platformEvents, eventVisibilityMode, workspace, 
   }, [sorted.length, stepTo]);
 
   useEffect(() => {
-    if (!playing || sorted.length === 0) {
+    if (!playing || selection.selectedLap == null) {
       if (playbackRef.current != null) {
         cancelAnimationFrame(playbackRef.current);
         playbackRef.current = null;
       }
       return;
     }
-
     let lastTime = performance.now();
-    const intervalMs = 1000 / speed;
+    const durationMs = qualifiedLapDurationSeconds * 1000;
 
     const tick = (now: number) => {
-      if (now - lastTime < intervalMs) {
-        playbackRef.current = requestAnimationFrame(tick);
-        return;
-      }
+      const elapsedMs = now - lastTime;
       lastTime = now;
-      const next = indexRef.current + 1;
-      if (next >= sorted.length) {
+      const nextPct = Math.min(
+        100,
+        playbackPctRef.current + (elapsedMs / durationMs) * 100 * speed,
+      );
+      setContinuousPreview(nextPct);
+      if (nextPct >= 100) {
         setPlaying(false);
         playbackRef.current = null;
         return;
       }
-      stepTo(next);
       playbackRef.current = requestAnimationFrame(tick);
     };
 
@@ -236,14 +253,13 @@ export function EventTimeline({ platformEvents, eventVisibilityMode, workspace, 
     return () => {
       if (playbackRef.current != null) cancelAnimationFrame(playbackRef.current);
     };
-  }, [playing, speed, sorted, stepTo, commitEvent]);
+  }, [playing, qualifiedLapDurationSeconds, selection.selectedLap, setContinuousPreview, speed]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!expanded || !timelineRef.current?.contains(document.activeElement)) return;
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (sorted.length === 0) return;
       if (e.target instanceof HTMLElement && e.target.closest("select, [contenteditable='true']")) return;
       const buttonOwnsActivation = e.target instanceof HTMLElement && e.target.closest("button") != null;
 
@@ -253,6 +269,7 @@ export function EventTimeline({ platformEvents, eventVisibilityMode, workspace, 
         togglePlay();
         return;
       }
+      if (sorted.length === 0) return;
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         setPlaying(false);
@@ -302,7 +319,7 @@ export function EventTimeline({ platformEvents, eventVisibilityMode, workspace, 
     }
   }, [sorted, selection.selectedEventId, browseIndex, hoveredIndex]);
 
-  if (visibleEvents.length === 0) return null;
+  if (selection.selectedLap == null) return null;
 
   const selectedIndex = selection.selectedEventId == null
     ? -1
@@ -343,13 +360,13 @@ export function EventTimeline({ platformEvents, eventVisibilityMode, workspace, 
 
       <div id="event-timeline-details" className="timeline-details" hidden={!expanded}>
           <div className="playback-controls">
-            <button className="playback-btn" onClick={stepPrev} title="Previous event" aria-label="Previous event">
+            <button className="playback-btn" onClick={stepPrev} title="Previous event" aria-label="Previous event" disabled={sorted.length === 0}>
               <SkipBack size={14} />
             </button>
             <button className="playback-btn playback-btn-play" onClick={togglePlay} title={playing ? "Pause" : "Play"} aria-label={playing ? "Pause playback" : "Start playback"}>
               {playing ? <Pause size={14} /> : <Play size={14} />}
             </button>
-            <button className="playback-btn" onClick={stepNext} title="Next event" aria-label="Next event">
+            <button className="playback-btn" onClick={stepNext} title="Next event" aria-label="Next event" disabled={sorted.length === 0}>
               <SkipForward size={14} />
             </button>
             <div className="playback-speed">
@@ -369,9 +386,30 @@ export function EventTimeline({ platformEvents, eventVisibilityMode, workspace, 
                 {currentEvent.title} · {timelineEventLocationLabel(currentEvent, selection)}
               </span>
             )}
+            {!currentEvent && (
+              <span className="playback-location" aria-live="polite">
+                {playbackPct.toFixed(1)}% lap distance · {qualifiedLapDurationSeconds.toFixed(3)} s recorded lap
+              </span>
+            )}
           </div>
 
           <div className="timeline-track">
+            <input
+              className="timeline-full-scrubber"
+              type="range"
+              min={0}
+              max={100}
+              step={0.1}
+              value={playbackPct}
+              onChange={(event) => {
+                setPlaying(false);
+                setBrowseIndex(null);
+                setHoveredIndex(null);
+                setContinuousPreview(Number(event.target.value));
+              }}
+              aria-label="Scrub continuously through the selected lap by physical track position"
+            />
+            <span className="timeline-playback-cursor" style={{ left: `${playbackPct}%` }} aria-hidden="true" />
             {[0, 25, 50, 75, 100].map((pct) => (
               <span key={pct} className="timeline-pct-marker" style={{ left: `${pct}%` }}>
                 <span className="timeline-pct-label">{pct}%</span>

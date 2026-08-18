@@ -31,6 +31,8 @@ def _lap(
         lap_type="timed",
         is_complete=True,
         is_useful=useful,
+        timing_primary_clock="session_tick",
+        timing_clock_state="qualified",
         lap_time=t,
         classification_tags=tags or ["SOLO_CLEAN"],
         sample_count=120,

@@ -2,6 +2,12 @@
 
 RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app. It turns `.ibt` telemetry into a clear test decision: which lap is useful, where speed was lost, what evidence supports the finding, and whether to keep, undo, or retest the setup change.
 
+> **Current alpha scope:** source-owned NASCAR Next Gen oval telemetry. Import and
+> archival inspection remain broader, but reviewed vehicle-mechanism applicability,
+> controlled learning, and release claims fail closed outside the exact supported
+> car/build/track context. Road-course and short-track field validation is still
+> pending.
+
 ---
 
 ## Current MVP Features
@@ -32,12 +38,12 @@ RaceLab Garage is a local-first iRacing telemetry and setup-analysis desktop app
 - **P19 Controlled Workflow** — the sole public setup authority. Exact-session P19 reasoning must authorize and bind one adjacent setup target before an A/B/A2 workflow can be persisted; P19 also validates its Keep/Undo/retest result.
 - **P27-P29 Deterministic Crew Chief** — one revision-bound Engineer command deck schedules typed inspections, runs the lap sentinel, remembers exact controlled component response, and mirrors only the current P19 terminal authority; optional generative and P30 adaptive paths remain disabled/data-locked.
 - **P31 Truthful Crew Loop** — integrity-normalized and co-observed telemetry, exact vehicle/control/context experiment identity, segmented physical evidence, quantity-level component observability, deterministic Crew investigation, strict UI response trust, and a shared single-flight intelligence snapshot. P19 remains the only setup and Keep/Undo/retest authority.
-- **Keyboard Shortcuts** — Esc clear, M/P/O/C/N workspace nav, L mode toggle, ←/→ event navigation
+- **Keyboard Shortcuts** — Esc clear, M/P/O/E/C/D workspace nav, L mode toggle, ←/→ event navigation
 - **Persistent Evidence Inspector** — right-side observation inspector with event selection, evidence cards, and setup linkage
 - **Local SQLite persistence** — imported runs, laps, events, setup snapshots, segments, notebook observations, exact P19 workflow history, and RaceLab sessions stored locally
-- **112+ calculated channels** — ride heights, rake, dynamic pressure, tire pressure gain, temp/wear spread, slip ratio, shock velocity/activity/RMS, damper energy, motion g-conversions, platform pitch/roll estimates, kinematic slip angles, dynamic grade, aero load index, drag/scrub suspicion, platform compression, stability scores, rear scrape detection, platform balance classification
+- **112+ calculated channels** — ride heights, rake, dynamic pressure, tire pressure gain, temp/wear spread, slip-like wheel-speed exposure, shock velocity/activity/RMS, damper energy, motion g-conversions, source-qualified platform pitch, dynamic grade, aero-load proxy, drag/scrub suspicion, platform compression, stability scores, rear scrape detection, and platform balance classification. Research-shadow slip-angle fields remain unavailable unless their independent geometry and coordinate-validation receipts are present.
 - **Signal smoothing helpers** — Savitzky-Golay 5-point and centered SMA smoothing (opt-in, pure Python, zero-phase)
-- **Vehicle Dynamics Engine** — 6 physics modules: aero coefficients, tire dynamics (slip angles, understeer gradient), vehicle dynamics (weight transfer, brake energy), geometry (pitch/roll with motion ratios), estimate confidence, physics inputs
+- **Vehicle Dynamics Engine** — guarded physics helpers for aero proxies, tire and wheel-speed observations, weight-transfer/brake-energy calculations, source-qualified geometry, evidence strength, and physics inputs. Steering-wheel angle is driver demand; it cannot create road-wheel steer, front slip angle, Ackermann error, or understeer-gradient claims.
 - **Vectorized Analysis Pipeline** — default Polars path with parity coverage against row fallback, frame-native overview consumers, and no full-row materialization in the normal import path.
 - **Engine Comparison Script** — `scripts/compare_analysis_engines.py` for validating vector vs row path on real data
 - **Extrema-preserving downsampling** — CFS minimums and event peaks never lost in chart views
@@ -80,7 +86,7 @@ User `.ibt`, `.sto`, track map files, reports, cache files, setup snapshots, Not
 ## Prerequisites
 
 - Python 3.11+
-- Node.js 20+ with npm
+- Node.js 20.19+ (or 22.12+) with npm
 - Rust/Cargo from rustup
 - Tauri system prerequisites for Windows
 
@@ -107,24 +113,13 @@ See [TESTING.md](TESTING.md) for full details.
 
 ## Core Workflow
 
-1. **Create or open a RaceLab session** — via the startup screen
-2. **Import baseline .ibt** — via file picker or `POST /api/imports/ibt`
-3. **Import test .ibt** — your experimental setup or driving change
-4. **Import a track map file** — via file picker or folder import for spatial overlays
-5. **Browse Laps** — view lap table, stint map, Performance/Trust/Engineering Value badges
-6. **Add to Test Basket** — set baseline/test from Laps, All Sessions, Baselines, or Stint Intelligence
-7. **Open Platform Workbench** — inspect ride heights, rake, dynamic pressure, tire pressure/temp/slip via ECharts
-8. **Open Track Map** — view centerline geometry with platform event markers, heatmaps, section cards, and layer toggles
-9. **Review Stint Intelligence** — compare baseline/test stints inline from Laps
-10. **Review comparison observations** — inspect physical-position evidence in Laps without treating it as a setup verdict
-11. **Explore Delta Traces** — see per-channel deltas by lap position with target zone highlight
-12. **Check Setup Relevance** — highlighted setup fields linked to selected event, Explicit/Inferred badges
-13. **Ask Engineer** — review the canonical P19 report, competing causes, evidence, and best measurement
-14. **Open Dial-In** — review observational hypotheses; exact direction and target remain hidden unless P19 authorizes them
-15. **Start a controlled workflow** — bind the exact session, run, setup, build, laps, events, and P19 reasoning identity before persistence
-16. **Run A/B/A2** — record three eligible cohorts while changing only the authorized control
-17. **Review P19 outcome** — Keep/Undo/retest policy appears only after P19 validates the controlled result
-18. **Save Notebook observation** — preserve evidence and user notes without creating setup authority
+1. **Import** — resume the last exact session or create one, then import the source-owned `.ibt` run.
+2. **Follow one trustworthy next move** — RacerZLab qualifies the run and exposes one canonical navigation or measurement handoff. Supporting maps, laps, traces, setup relevance, and Compare evidence remain optional inspection views.
+3. **Execute and grade one mission** — only when P19 authorizes a single adjacent setup control, record A/B/A2 cohorts and let the exact controlled result publish Keep/Undo/Retest.
+
+Learning Mode exposes the complete evidence trail, acquisition certificates,
+blockers, channel provenance, competing causes, and recovery steps. Notebook and
+comparison records preserve observations but never create another setup-policy path.
 
 ---
 
@@ -172,6 +167,7 @@ GET  /api/notebook/findings
 GET  /api/notebook/findings/{id}
 PATCH /api/notebook/findings/{id}
 GET  /api/runs/{id}/intelligence?session_id={session_id}
+GET  /api/runs/{id}/intelligence-shell?session_id={session_id} (cached navigation-only projection; never starts cold intelligence)
 POST /api/engineering/workflows (requires exact session_id; server binds current P19 authority)
 GET  /api/engineering/workflows
 POST /api/engineering/workflows/{workflow_id}/stages/{stage}
@@ -207,7 +203,7 @@ GET  /api/sessions/runs/{run_id}/laps (standalone lap list)
 - No cloud sync — all data is local only
 - Native Tauri file dialogs scaffolded and wired for `.ibt` and track map file import; browser file input preserved as fallback
 - No setup editor or live setup comparison
-- Vectorized engine validated on Talladega oval only — road course and short-track real .ibt samples pending
+- Protected real-telemetry validation is oval-focused; road-course and short-track real `.ibt` samples remain pending
 - Dynamic track-type weighting deferred — insufficient .ibt variety for validation
 - Global unit toggle deferred/design-only — high risk, needs architecture change
 - Ghost lap proxy deferred/design-only — no implementation yet

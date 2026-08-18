@@ -27,6 +27,10 @@ from racelab_engine.analysis.time_alignment import (
 )
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.crew_chief import EngineeringObjective
+from racelab_engine.models.evidence import (
+    EngineeringBlockTarget,
+    engineering_blockers_for,
+)
 from racelab_engine.models.performance_intelligence import (
     ComponentPerformanceInfluence,
     CornerPerformanceChain,
@@ -55,7 +59,6 @@ from racelab_engine.services.import_service import (
 from racelab_engine.services.run_intelligence_service import RunIntelligenceBundle
 from racelab_engine.storage.db import default_db_path
 from racelab_engine.storage.repository import RaceLabRepository
-
 
 _KNOWLEDGE_VERSION = "2026.08.p32-performance.v1"
 _P26_UNAVAILABLE_SHA256 = canonical_json_sha256(
@@ -612,9 +615,10 @@ def _lap_time_key(lap: Any) -> tuple[float, int]:
 
 
 def _qualified(overview: Any) -> tuple[Any, ...]:
-    if overview is None or any(
-        str(warning).casefold().startswith("evidence integrity:")
-        for warning in overview.warnings
+    if overview is None or engineering_blockers_for(
+        overview.engineering_blockers,
+        EngineeringBlockTarget.PERFORMANCE,
+        EngineeringBlockTarget.COMPARISON,
     ):
         return ()
     return tuple(sorted(eligible_laps(overview.laps), key=_lap_time_key))

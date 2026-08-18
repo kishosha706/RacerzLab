@@ -4,14 +4,20 @@ from pathlib import Path
 
 import pytest
 
-from racelab_engine.services.import_service import build_trace_payload, write_telemetry_cache
+from racelab_engine.services.import_service import (
+    build_trace_payload,
+    write_telemetry_cache,
+)
 from racelab_engine.storage import parquet_query
 from racelab_engine.storage.parquet_query import ParquetQueryEngine
 
+requires_duckdb = pytest.mark.skipif(
+    not parquet_query.HAS_DUCKDB,
+    reason="DuckDB optional dependency not installed",
+)
 
-pytestmark = pytest.mark.skipif(not parquet_query.HAS_DUCKDB, reason="DuckDB optional dependency not installed")
 
-
+@requires_duckdb
 def test_parquet_query_rejects_unsafe_channel_name(tmp_path: Path) -> None:
     write_telemetry_cache(
         "safe-run",
@@ -26,6 +32,7 @@ def test_parquet_query_rejects_unsafe_channel_name(tmp_path: Path) -> None:
     assert any("Unsafe channel name rejected" in warning for warning in engine.warnings)
 
 
+@requires_duckdb
 def test_parquet_query_rejects_unknown_channel_without_fake_zero(tmp_path: Path) -> None:
     write_telemetry_cache(
         "safe-run",
@@ -40,6 +47,7 @@ def test_parquet_query_rejects_unknown_channel_without_fake_zero(tmp_path: Path)
     assert any("Unknown channel rejected" in warning for warning in engine.warnings)
 
 
+@requires_duckdb
 def test_parquet_query_valid_channel_still_queries(tmp_path: Path) -> None:
     write_telemetry_cache(
         "safe-run",

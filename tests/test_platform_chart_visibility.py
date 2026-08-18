@@ -6,14 +6,27 @@ from pathlib import Path
 
 import pytest
 
-from racelab_engine.services.import_service import build_trace_payload, write_telemetry_cache
-
+from racelab_engine.services.import_service import (
+    build_trace_payload,
+    write_telemetry_cache,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def test_platform_zoom_persists_only_exact_run_lap_ranges() -> None:
+    source = _read("ui/src/tabs/PlatformTab.tsx")
+
+    assert 'const PLATFORM_ZOOM_STORAGE_PREFIX = "racerzlab.platformZoom.v1"' in source
+    assert '`${PLATFORM_ZOOM_STORAGE_PREFIX}:${overviewTrace.run_id}:${overviewTrace.lap ?? "run"}`' in source
+    assert "readPersistedZoomRange(zoomStorageKey)" in source
+    assert "persistZoomRange(zoomStorageKey, nextRange)" in source
+    assert "persistZoomRange(zoomStorageKey, null)" in source
+    assert "parsed.startValue >= parsed.endValue" in source
 
 
 def test_chart_annotation_source_filters_events_by_display_scope() -> None:
@@ -201,8 +214,8 @@ def test_balance_default_removes_duplicate_ride_height_engineering_cards() -> No
     platform = _read("ui/src/tabs/PlatformTab.tsx")
 
     assert 'case "balance": return null;' in platform
-    assert 'workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && renderEngineeringPanel()' in platform
-    assert 'workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && (' in platform
+    assert 'workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView && renderEngineeringPanel()' in platform
+    assert 'workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView && (' in platform
     assert 'EngineeringMetricCard title="CFS Ride Height"' not in platform
     assert 'EngineeringMetricCard title="Front Ride Heights"' not in platform
     assert 'EngineeringMetricCard title="Rear Ride Heights"' not in platform
@@ -250,7 +263,7 @@ def test_tires_view_removes_prototype_full_lap_distribution_panel() -> None:
     assert 'label: "Diffuser"' not in visible_views
     assert 'icon: "DIF"' not in visible_views
     assert 'id: "diffuser"' not in visible_views
-    assert 'view === "aero_load" || view === "grade_pull" || view === "tires" || view === "diffuser"' in subnav
+    assert 'view === "aero_load" || view === "grade_pull" || view === "tires"' in subnav
     assert "CornerTireMap" not in platform
     assert "tireMapMode" not in platform
     assert "Tire map: Full-lap distribution" not in platform
@@ -259,7 +272,7 @@ def test_tires_view_removes_prototype_full_lap_distribution_panel() -> None:
     assert "Tire temps are measured iRacing telemetry channels" not in platform
     assert "Tire Pressure / Camber Setup" not in platform
     assert "Bar charts show" not in platform
-    assert 'workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView' in platform
+    assert 'workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView' in platform
     assert "corner-tire-map" not in styles
     assert "tire-map-mode-select" not in styles
     assert "tire-map-mode-btn" not in styles
@@ -274,7 +287,7 @@ def test_tires_view_removes_prototype_full_lap_distribution_panel() -> None:
     assert 'label: "Slip Ratio Proxy"' in tires_preset
 
 
-def test_tire_backend_channels_remain_available_for_evidence() -> None:
+def test_tire_backend_channels_remain_available_but_are_not_eagerly_requested() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
     channels = _read("ui/src/constants/workbenchChannels.ts")
     channel_meta = _read("ui/src/utils/channelMeta.ts")
@@ -293,7 +306,7 @@ def test_tire_backend_channels_remain_available_for_evidence() -> None:
     ]
 
     for channel in [*calculated_literal_channels, *generated_slip_channels]:
-        assert channel in channels
+        assert channel not in channels
         assert channel in channel_meta
 
     for channel in calculated_literal_channels:
@@ -301,18 +314,45 @@ def test_tire_backend_channels_remain_available_for_evidence() -> None:
 
     assert 'f"{c}_slip_ratio_proxy"' in calculated
     assert "channelHasNumericData(trace, channel.name)" in platform
+    assert "Question-owned Platform projections" in channels
 
 
-def test_diffuser_view_removes_engineering_metric_card_block() -> None:
+def test_tire_snapshot_delta_cannot_publish_alignment_classification() -> None:
+    channels = _read("ui/src/constants/workbenchChannels.ts")
+    ui_channels = _read("ui/src/constants/ui.ts")
+    channel_meta = _read("ui/src/utils/channelMeta.ts")
+    calculated = _read("racelab_engine/analysis/calculated_channels.py")
+    vectorized = _read("racelab_engine/analysis/vectorized_channels.py")
+    corner_map = _read("ui/src/components/CornerTireMap.tsx")
+
+    for label in (
+        "lf_camber_bias_label",
+        "rf_camber_bias_label",
+        "lr_camber_bias_label",
+        "rr_camber_bias_label",
+    ):
+        assert label not in channels
+        assert label not in ui_channels
+        assert label not in channel_meta
+
+    assert 'item[f"{c}_camber_bias_label"] = None' in calculated
+    assert 'pl.lit(None, dtype=pl.String).alias(f"{corner}_camber_bias_label")' in vectorized
+    assert 'label: "I/O Snapshot"' in corner_map
+    assert 'label: "Camber"' not in corner_map
+    assert "high_inside" not in calculated
+    assert "high_outside" not in calculated
+    assert "bias.abs() < 15.0" not in vectorized
+
+
+def test_unprovenanced_diffuser_geometry_is_purged_from_platform_display() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
     channels = _read("ui/src/constants/workbenchChannels.ts")
     channel_meta = _read("ui/src/utils/channelMeta.ts")
     calculated = _read("racelab_engine/analysis/calculated_channels.py")
     vectorized = _read("racelab_engine/analysis/vectorized_channels.py")
 
-    assert "const renderDiffuserPanel = () => null;" in platform
-    assert 'workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && renderEngineeringPanel()' in platform
-    assert 'workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && (' in platform
+    assert 'case "diffuser"' not in platform
+    assert "Diffuser: [" not in platform
     assert 'EngineeringMetricCard title="Front Center RH"' not in platform
     assert 'EngineeringMetricCard title="Rear Center RH"' not in platform
     assert 'EngineeringMetricCard title="Smooth Diffuser Volume"' not in platform
@@ -320,14 +360,6 @@ def test_diffuser_view_removes_engineering_metric_card_block() -> None:
     assert 'EngineeringMetricCard title="Wheelbase Used"' not in platform
     assert "Diffuser Geometry Setup" not in platform
     assert "Jump to Min Smooth Diffuser Volume" not in platform
-
-    diffuser_preset = platform.split("  Diffuser: [", 1)[1].split("],\n};", 1)[0]
-    for label in [
-        'label: "Front Center RH [in]"',
-        'label: "Rear Center RH [in]"',
-        'label: "Smooth Diffuser Volume [ft3]"',
-    ]:
-        assert label in diffuser_preset
 
     for channel in [
         "front_center_rh_in",
@@ -340,10 +372,15 @@ def test_diffuser_view_removes_engineering_metric_card_block() -> None:
         "diffuser_volume_ft3",
         "smooth_diffuser_volume_ft3",
     ]:
-        assert channel in channels
+        assert channel not in channels
         assert channel in channel_meta
         assert channel in calculated
         assert channel in vectorized
+    assert "isProxy: true" in channel_meta.split("diffuser_volume_ft3:", 1)[1].split("},", 1)[0]
+    assert "_DIFFUSER_FALLBACK_WHEELBASE" not in calculated
+    assert "_DIFFUSER_FALLBACK_TRACK_WIDTH" not in calculated
+    assert "_DIFFUSER_FALLBACK_WHEELBASE" not in vectorized
+    assert "_DIFFUSER_FALLBACK_TRACK_WIDTH" not in vectorized
 
 
 def test_aero_and_grade_views_are_backend_only_not_visible_platform_tabs() -> None:
@@ -357,7 +394,7 @@ def test_aero_and_grade_views_are_backend_only_not_visible_platform_tabs() -> No
     assert 'icon: "AER"' not in visible_views
     assert 'label: "Grade / Pull"' not in visible_views
     assert 'icon: "GRD"' not in visible_views
-    assert 'view === "aero_load" || view === "grade_pull" || view === "tires" || view === "diffuser"' in subnav
+    assert 'view === "aero_load" || view === "grade_pull" || view === "tires"' in subnav
     assert 'return "balance";' in subnav
 
     for channel in [
@@ -373,7 +410,7 @@ def test_aero_and_grade_views_are_backend_only_not_visible_platform_tabs() -> No
         "grade_context_label",
         "grade_corrected_speed_loss_mph_s",
     ]:
-        assert channel in channels
+        assert channel not in channels
         assert channel in channel_meta
         assert channel in calculated
 
@@ -630,7 +667,7 @@ def test_scrape_scrub_tab_is_chart_first_ride_height_vs_speed_loss() -> None:
     assert "rear_scrape: SCRAPE_SCRUB_PRESET" in platform
     assert "scrub_steering: SCRAPE_SCRUB_PRESET" in platform
 
-    preset_block = platform.split("[SCRAPE_SCRUB_PRESET]: [", 1)[1].split("  Diffuser:", 1)[0]
+    preset_block = platform.split("[SCRAPE_SCRUB_PRESET]: [", 1)[1].split("  ],\n};", 1)[0]
     assert 'label: "Speed [m/s]"' in preset_block
     assert 'name: "speed_mps"' in preset_block
     assert 'label: "Front Ride Heights [in]"' in preset_block
@@ -668,8 +705,8 @@ def test_scrape_scrub_tab_is_chart_first_ride_height_vs_speed_loss() -> None:
     assert "rear_scrape_risk_score" not in preset_block
 
     assert "const renderRearScrapeScrubPanel = () => null;" in platform
-    assert 'workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && renderEngineeringPanel()' in platform
-    assert 'workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && (' in platform
+    assert 'workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView && renderEngineeringPanel()' in platform
+    assert 'workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView && (' in platform
     assert 'scrapeScrubChartView ? "Ride Height vs Speed Loss" : "Ride-height chart density"' in platform
     assert 'const MPH_TO_MPS = 0.44704;' in platform
     assert 'function displaySeriesSamples(trace: TraceResponse | null, channel: string)' in platform
@@ -686,19 +723,21 @@ def test_scrape_scrub_tab_is_chart_first_ride_height_vs_speed_loss() -> None:
     assert "fmtReadout(channel.low" in readout
     assert "fmtReadout(channel.high" in readout
     assert "fmtReadout(channel.avg" in readout
-    assert '"speed_mps", "speed_mph"' in channels
+    assert '"speed_mps"' in channels
+    assert '"speed_mph"' in channels
+    assert "TRACE_CONTEXT_CHANNELS" in channels
     assert 'speed_mps: { label: "Speed", unit: "m/s"' in channel_meta
     assert 'speed_rate_mps2: { label: "Speed Rate", unit: "m/s^2"' in channel_meta
     assert 'speed_loss_mps2: { label: "Speed Loss", unit: "m/s^2"' in channel_meta
 
     for internal_channel in [
-        "front_scrub_proxy",
-        "rear_scrub_proxy",
         "drag_scrub_suspicion",
         "full_throttle_resistance_index",
         "rear_scrape_risk_score",
     ]:
         assert internal_channel in channels
+    assert "front_scrub_proxy" not in channels
+    assert "rear_scrub_proxy" not in channels
 
 
 def test_balance_readout_uses_unavailable_for_missing_values_not_zero() -> None:
@@ -815,10 +854,11 @@ def test_map_overlay_formats_chart_window_to_tenths_without_rounding_range() -> 
 
 def test_reset_zoom_does_not_clear_selected_event_or_session_state() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
-    reset_body = platform.split("const resetRideHeightZoom = useCallback(() => {", 1)[1].split("}, [onMapOverlayZoomRangeChange]);", 1)[0]
+    reset_body = platform.split("const resetRideHeightZoom = useCallback(() => {", 1)[1].split("}, [onMapOverlayZoomRangeChange, zoomStorageKey]);", 1)[0]
 
     assert 'chartRef.current?.dispatchAction({ type: "dataZoom", start: 0, end: 100 });' in reset_body
     assert "onMapOverlayZoomRangeChange?.(null)" in reset_body
+    assert "persistZoomRange(zoomStorageKey, null)" in reset_body
     assert "setSelectedPlatformEvent" not in reset_body
     assert "focusEvidence" not in reset_body
     assert "setWorkspace" not in reset_body

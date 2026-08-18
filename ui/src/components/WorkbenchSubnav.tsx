@@ -4,7 +4,6 @@ export type WorkbenchView =
   | "rear_scrape"
   | "aero_load"
   | "scrub_steering"
-  | "diffuser"
   | "tires"
   | "shocks"
   | "grade_pull";
@@ -17,7 +16,7 @@ export const WORKBENCH_VIEWS: { id: WorkbenchView; label: string; icon: string }
 
 export function visiblePlatformWorkbenchView(view: WorkbenchView): WorkbenchView {
   if (view === "scrub_steering") return "rear_scrape";
-  if (view === "aero_load" || view === "grade_pull" || view === "tires" || view === "diffuser") return "balance";
+  if (view === "aero_load" || view === "grade_pull" || view === "tires") return "balance";
   return view;
 }
 

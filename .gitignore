@@ -25,6 +25,8 @@ node_modules/
 ui/node_modules/
 ui/dist/
 ui/build/
+ui/test-results/
+ui/playwright-report/
 
 # Tauri / Rust build outputs
 ui/src-tauri/target/
@@ -68,6 +70,7 @@ data/imports/mt2/*
 data/cache/parquet/*
 data/cache/maps/*
 data/cache/normalized/*
+data/cache/intelligence/*
 
 # Local exports
 data/exports/reports/*

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import math
 import subprocess
 import sys
 import tempfile
@@ -15,7 +16,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from racelab_engine.services.import_service import ImportService, read_telemetry_manifest
+from racelab_engine.models.evidence import EngineeringBlockTarget
+from racelab_engine.services.import_service import (
+    ImportService,
+    build_telemetry_capability_payload,
+    read_telemetry_manifest,
+)
 
 
 TRUST_TESTS = (
@@ -34,6 +40,13 @@ TRUST_TESTS = (
     "tests/test_advanced_experimentation.py",
     "tests/test_setup_controls.py",
     "tests/test_dial_in_service.py",
+    "tests/test_qualified_telemetry_clock.py",
+    "tests/test_recording_identity.py",
+    "tests/test_p3541_typed_blockers.py",
+    "tests/test_frame_native_overview_parity.py",
+    "tests/test_lap_detection.py",
+    "tests/test_intelligence_response_trust_frontend.py",
+    "tests/test_p19_release_proofs.py",
 )
 
 TRUST_DESELECTS = (
@@ -54,6 +67,7 @@ def audit_real_ibt(
     expected_schema_fingerprint: str,
     expected_records: int,
     expected_declared_channels: int,
+    require_attribution_blocked: bool = False,
 ) -> None:
     if not path.is_file() or path.suffix.lower() != ".ibt":
         raise SystemExit(f"Release fixture is missing or is not an .ibt file: {path}")
@@ -102,9 +116,85 @@ def audit_real_ibt(
         missing_aliases = advertised_aliases - set(frame.columns)
         if missing_aliases:
             raise SystemExit(f"Advertised aliases are missing from the archive: {sorted(missing_aliases)}")
+        capability_payload = build_telemetry_capability_payload(
+            result.overview.run_id,
+            root / "data",
+            expected_source_file_sha256=expected_sha256,
+        )
+        summary = capability_payload.get("capability_summary") or {}
+        if (
+            summary.get("qualified_clock_state") != "qualified"
+            or summary.get("qualified_clock_primary") != "session_tick"
+            or summary.get("qualified_clock_decision_ready") is not True
+        ):
+            raise SystemExit(
+                "Real .ibt timing is not decision-ready on contiguous SessionTick."
+            )
+
+        junk_tags = {
+            "OUT_LAP",
+            "COOLDOWN",
+            "PIT_ROAD",
+            "WRECK_OR_SPIN",
+            "INVALID_SPEED_EVENT",
+            "PARTIAL",
+            "ACTIVE_RESET",
+            "CAUTION",
+            "YELLOW",
+        }
+        useful_laps = {
+            lap.lap_number for lap in result.overview.laps if lap.is_useful
+        }
+        if not useful_laps:
+            raise SystemExit("Real .ibt release fixture produced no useful lap.")
+        for lap in result.overview.laps:
+            tags = set(lap.classification_tags)
+            if lap.is_useful and (
+                not lap.is_complete
+                or lap.timing_primary_clock != "session_tick"
+                or lap.timing_clock_state != "qualified"
+                or lap.timing_blockers
+                or lap.lap_time is None
+                or not math.isfinite(lap.lap_time)
+                or lap.lap_time <= 0.0
+                or tags.intersection(junk_tags)
+            ):
+                raise SystemExit(
+                    f"Junk or timing-ineligible Lap {lap.lap_number} became useful."
+                )
+        for event in result.overview.events:
+            if not event.valid_for_tuning:
+                continue
+            if (
+                not event.source_channels
+                or event.blocker_reasons
+                or event.evidence_state.value
+                not in {
+                    "measured",
+                    "calculated",
+                    "estimated_proxy",
+                    "observed_correlation",
+                    "controlled_test_effect",
+                }
+                or (
+                    event.lap_number is not None
+                    and event.lap_number not in useful_laps
+                )
+            ):
+                raise SystemExit(
+                    f"Event {event.event_id} bypassed useful-lap or provenance truth."
+                )
+        if require_attribution_blocked and not any(
+            EngineeringBlockTarget.SETUP_ATTRIBUTION in blocker.blocks
+            for blocker in result.overview.engineering_blockers
+        ):
+            raise SystemExit(
+                "The protected context-contaminated fixture did not block setup attribution."
+            )
         print(
             "Real .ibt trust audit passed: "
             f"{frame.height} records, {declared}/{declared} declared channels archived, "
+            f"{len(useful_laps)} useful laps on qualified SessionTick, "
             f"schema {manifest.get('schema_fingerprint') or 'unavailable'}."
         )
 
@@ -116,6 +206,11 @@ def main() -> None:
     parser.add_argument("--expected-schema-fingerprint")
     parser.add_argument("--expected-records", type=int)
     parser.add_argument("--expected-declared-channels", type=int)
+    parser.add_argument(
+        "--require-attribution-blocked",
+        action="store_true",
+        help="Require the protected context-contaminated fixture to withhold setup attribution.",
+    )
     parser.add_argument(
         "--synthetic-only",
         action="store_true",
@@ -148,6 +243,7 @@ def main() -> None:
             expected_schema_fingerprint=args.expected_schema_fingerprint,
             expected_records=args.expected_records,
             expected_declared_channels=args.expected_declared_channels,
+            require_attribution_blocked=args.require_attribution_blocked,
         )
     else:
         print("Synthetic trust audit passed. A real .ibt audit is still required before release.")

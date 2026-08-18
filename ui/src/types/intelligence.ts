@@ -210,6 +210,18 @@ export type IntelligenceNextTrustworthyMove = {
   blocker_reasons: string[];
 };
 
+export type IntelligenceShellProjection = {
+  schema_version: "p19.intelligence-shell.v1";
+  run_id: string;
+  session_id: string | null;
+  status: "ready" | "not_built";
+  reasoning_snapshot_sha256: string | null;
+  setup_id: string | null;
+  setup_snapshot_sha256: string | null;
+  next_trustworthy_move: IntelligenceNextTrustworthyMove | null;
+  recovery: string;
+};
+
 export type IntelligenceTestPreflight = {
   workflow_id: string;
   stage: "A" | "B" | "A2" | "complete";
