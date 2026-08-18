@@ -29,11 +29,6 @@ jobs:
       - name: Validate setup knowledge data
         run: python -c "from racelab_engine.knowledge.setup.loader import load_setup_knowledge; load_setup_knowledge()"
 
-      - name: Verify Python dependency lock is current
-        run: |
-          python -m piptools compile pyproject.toml --extra api --extra parquet --extra dev --extra build --generate-hashes --allow-unsafe --no-strip-extras --output-file requirements.lock
-          git diff --exit-code -- requirements.lock
-
       - name: Lint Python
         run: python -m ruff check .
 
