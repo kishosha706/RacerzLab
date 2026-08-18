@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import math
 import hashlib
 import json
 import logging
+import math
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,13 +44,16 @@ from racelab_engine.analysis.test_director import (
     TestExecution,
     score_test_execution,
 )
+from racelab_engine.analysis.time_alignment import (
+    TimeAlignmentResult,
+    analyze_time_alignment,
+)
 from racelab_engine.identity import canonical_json_sha256
-from racelab_engine.analysis.time_alignment import TimeAlignmentResult, analyze_time_alignment
-from racelab_engine.knowledge.setup.dial_in_service import build_dial_in_response
 from racelab_engine.knowledge.setup.dial_in_controls import (
     expanded_related_setup_keys,
     experiment_factor_id_for_effect,
 )
+from racelab_engine.knowledge.setup.dial_in_service import build_dial_in_response
 from racelab_engine.knowledge.setup.evidence_adapter import (
     event_matches_phase,
     event_matches_zone,
@@ -63,13 +66,20 @@ from racelab_engine.models.controlled_workflow import (
     VehicleConditionEpoch,
 )
 from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.recording_identity import (
+    require_independent_recordings,
+    resolve_recording_sha256,
+)
 from racelab_engine.services.engineering_memory_service import (
     record_workflow_cancellation,
     record_workflow_outcome,
     record_workflow_plan,
     record_workflow_stage,
 )
-from racelab_engine.services.import_service import read_telemetry_manifest, read_telemetry_rows
+from racelab_engine.services.import_service import (
+    read_telemetry_manifest,
+    read_telemetry_rows,
+)
 from racelab_engine.services.session_intelligence_service import (
     build_hypothesis_lifecycle,
     controlled_hypothesis_policy_identity,
@@ -77,7 +87,6 @@ from racelab_engine.services.session_intelligence_service import (
 )
 from racelab_engine.services.session_service import get_session, list_sessions
 from racelab_engine.storage.repository import RaceLabRepository
-
 
 _log = logging.getLogger(__name__)
 
@@ -2395,6 +2404,26 @@ def attach_stage(workflow_id: str, stage: Literal["A", "B", "A2"], run_id: str, 
             + ", ".join([*missing, *mismatched])
             + "."
         )
+    prospective_stage_ids = tuple((*workflow.stage_run_ids.values(), run_id))
+    stage_source_sha_by_run: dict[str, str] = {}
+    for stage_run_id in prospective_stage_ids:
+        stage_overview = overview if stage_run_id == run_id else repo.get_overview(stage_run_id)
+        if stage_overview is None:
+            raise ValueError(f"Stage recording is unavailable: {stage_run_id}.")
+        manifest = (
+            stage_manifest
+            if stage_run_id == run_id
+            else read_telemetry_manifest(stage_run_id)
+        )
+        stage_source_sha_by_run[stage_run_id] = resolve_recording_sha256(
+            run_id=stage_run_id,
+            stored_source_sha256=stage_overview.session.file_hash,
+            manifest_source_sha256=manifest.get("source_file_sha256"),
+        )
+    require_independent_recordings(
+        stage_source_sha_by_run,
+        ordered_run_ids=prospective_stage_ids,
+    )
     previous_run_id = workflow.source_run_id
     previous = source_overview
     previous_manifest = source_manifest
@@ -2565,6 +2594,7 @@ def _validate_recorded_stage_bindings(
     }
     expected_reproduction_stages: dict[str, dict[str, Any]] = {}
     expected_stage_contexts: dict[str, StageExperimentContext] = {}
+    stage_source_sha_by_run: dict[str, str] = {}
 
     baseline_setup = source_setup
     for stage in stage_order[:stage_count]:
@@ -2578,6 +2608,11 @@ def _validate_recorded_stage_bindings(
         if overview.session.setup_passed_tech is not True:
             raise ValueError(f"Stage {stage} setup is not recorded as passing tech inspection.")
         manifest = read_telemetry_manifest(run_id)
+        stage_source_sha_by_run[run_id] = resolve_recording_sha256(
+            run_id=run_id,
+            stored_source_sha256=overview.session.file_hash,
+            manifest_source_sha256=manifest.get("source_file_sha256"),
+        )
         identity = manifest.get("compatibility_identity") or {}
         if any(identity.get(key) is None for key in identity_fields) or any(
             identity.get(key) != source_identity.get(key) for key in identity_fields
@@ -2661,6 +2696,13 @@ def _validate_recorded_stage_bindings(
 
         previous_overview = overview
         previous_manifest = manifest
+
+    require_independent_recordings(
+        stage_source_sha_by_run,
+        ordered_run_ids=tuple(
+            workflow.stage_run_ids[stage] for stage in stage_order[:stage_count]
+        ),
+    )
 
     for stage, expected_context in expected_stage_contexts.items():
         if context_reason := _experiment_context_blocker(expected_context):

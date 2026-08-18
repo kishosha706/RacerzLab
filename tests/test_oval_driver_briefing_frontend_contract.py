@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -17,7 +16,7 @@ def test_laps_oval_brief_separates_short_run_from_race_run_without_estimation() 
     assert "const raceRunAveragePriority = [60, 50, 40, 30, 25, 20] as const;" in source
     assert "firstAvailableRunAverage(currentRunSummary, shortRunAveragePriority)" in source
     assert "firstAvailableRunAverage(currentRunSummary, raceRunAveragePriority)" in source
-    assert "!blockingRunWarning && !stintRequestFailed" in source
+    assert "!blockingRunBlocker && !stintRequestFailed" in source
     assert 'data-driver-briefing="oval-stint"' in source
     assert 'data-authority="observation-only"' in source
     assert "Short vs race run" in source
@@ -45,7 +44,7 @@ def test_loaded_side_tire_reads_fail_closed_until_corner_and_long_run_evidence_e
     assert "thermal and wear causes are not separated" in readiness
     assert 'cornerTireReadiness(\n    "RF"' in source
     assert 'cornerTireReadiness(\n    "RR"' in source
-    assert "Boolean(blockingRunWarning || stintRequestFailed || !backendStintReady)" in source
+    assert "Boolean(blockingRunBlocker || stintRequestFailed || !backendStintReady)" in source
     assert 'data-corner="RF" data-state={rfTireReadiness.state}' in source
     assert 'data-corner="RR" data-state={rrTireReadiness.state}' in source
     assert "[...bestWindowCards, ...stints]" in source

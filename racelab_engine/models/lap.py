@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +15,17 @@ class LapSummary(BaseModel):
     start_time: Optional[float] = None
     end_time: Optional[float] = None
     lap_time: Optional[float] = None
+    timing_primary_clock: Literal["session_tick", "session_time", "unavailable"] = "session_time"
+    timing_clock_state: Literal["qualified", "degraded", "blocked", "unavailable"] = "degraded"
+    timing_epoch_count: int = 1
+    session_time_duplicate_count: int = 0
+    session_time_reverse_count: int = 0
+    session_time_residual_p95_s: Optional[float] = None
+    simulator_lap_time_s: Optional[float] = None
+    simulator_lap_time_residual_s: Optional[float] = None
+    lap_time_channel_corroboration: str = "unavailable"
+    lap_delta_validity_corroboration: Optional[bool] = None
+    timing_blockers: list[str] = Field(default_factory=list)
     pct_min: Optional[float] = None
     pct_max: Optional[float] = None
     pct_span: Optional[float] = None

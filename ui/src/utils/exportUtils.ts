@@ -1,4 +1,5 @@
 import type { NotebookFinding } from "../types/compare";
+import { evidenceStrengthOutOf100 } from "./evidenceScore";
 
 type FindingSectorSummary = {
   label?: string;
@@ -18,7 +19,7 @@ export function findingToMarkdown(f: NotebookFinding): string {
   lines.push("> Observational notebook record only. This entry is not setup guidance and carries no Keep/Undo or test authority.");
   lines.push("");
   lines.push(`**Car:** ${f.car_name ?? "-"}  **Track:** ${f.track_name ?? "-"}  **Setup:** ${f.setup_name ?? "-"}`);
-  lines.push(`**Observation confidence:** ${formatVal(f.confidence_score * 100, 0)}%  **Tier:** ${f.confidence_tier ?? "-"}`);
+  lines.push(`**Evidence strength:** ${evidenceStrengthOutOf100(f.confidence_score)}  **Tier:** ${f.confidence_tier ?? "-"}`);
   lines.push(`**Target Zone:** ${f.target_zone_start_pct}-${f.target_zone_end_pct}%`);
   if (f.target_zone_classification) lines.push(`**Classification:** ${f.target_zone_classification}`);
   lines.push("");

@@ -4,6 +4,7 @@ import { useCompareBasket } from "../store/CompareBasketContext";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import type { NotebookFinding } from "../types/compare";
 import { findingToMarkdown } from "../utils/exportUtils";
+import { evidenceStrengthOutOf100 } from "../utils/evidenceScore";
 
 const API_BASE =
   import.meta.env.VITE_RACELAB_API_BASE_URL ??
@@ -281,7 +282,7 @@ export function NotebookTab() {
           <div className="insight-card" style={{ borderLeftColor: "#38bdf8" }}>
             <h3>{selectedFinding.summary_headline ?? "Recorded telemetry observation"}</h3>
             <div className="finding-meta">
-              <span>Observation confidence: {formatVal(selectedFinding.confidence_score * 100, 0)}%</span>
+              <span>Evidence strength: {evidenceStrengthOutOf100(selectedFinding.confidence_score)}</span>
               <span>Tier: {selectedFinding.confidence_tier ?? "-"}</span>
               <span>Classification: {selectedFinding.target_zone_classification ?? "-"}</span>
             </div>

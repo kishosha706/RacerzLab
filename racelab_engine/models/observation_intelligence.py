@@ -12,6 +12,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from racelab_engine.models.dynamic_response import DynamicResponseReport
 from racelab_engine.models.evidence import EvidenceState
 
 
@@ -511,6 +512,7 @@ class RunObservationIntelligence(ObservationModel):
     mechanism_observations: MechanismObservationReport
     anomaly_envelopes: SameSetupAnomalyReport
     driver_repeatability: DriverRepeatabilitySignature
+    brake_throttle_response: DynamicResponseReport | None = None
     blocker_reasons: tuple[str, ...] = ()
 
     @model_validator(mode="after")
@@ -523,6 +525,11 @@ class RunObservationIntelligence(ObservationModel):
         )
         if any(scope.run_id != self.run_id for scope in scopes):
             raise ValueError("all observation reports must match the requested run")
+        if (
+            self.brake_throttle_response is not None
+            and self.brake_throttle_response.run_id != self.run_id
+        ):
+            raise ValueError("the dynamic-response report must match the requested run")
         return self
 
 

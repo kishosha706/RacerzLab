@@ -22,8 +22,12 @@ from racelab_engine.analysis.comparison import (
 )
 from racelab_engine.analysis.setup_controls import canonical_setup_value_key
 from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.recording_identity import (
+    RecordingIdentityError,
+    require_independent_recordings,
+)
 from racelab_engine.storage.db import initialize_database
-
+from racelab_engine.storage.repository import RaceLabRepository
 
 CONTROL_TO_SETUP_AREAS: dict[str, tuple[str, ...]] = {
     "lf_ride_height_mm": ("front_ride_height_platform", "ride_height", "diffuser_platform"),
@@ -42,6 +46,29 @@ CONTROL_TO_SETUP_AREAS: dict[str, tuple[str, ...]] = {
     "steering_ratio": ("steering_response",),
     "steering_offset_deg": ("steering_response",),
 }
+
+
+def _source_runs_are_independent(
+    source_run_ids: list[str] | tuple[str, ...],
+    *,
+    db_path: str | Path | None,
+) -> bool:
+    """Require complete source identities and reject recording aliases.
+
+    Durable learning cannot treat an unknown legacy run as an independent
+    observation.  Every source run must resolve to one immutable recording
+    SHA before it can affect recurrence, response summaries, or fitted models.
+    """
+
+    ordered = tuple(source_run_ids)
+    source_by_run = RaceLabRepository(db_path).get_recording_sha256s(ordered)
+    if len(source_by_run) != len(set(ordered)):
+        return False
+    try:
+        require_independent_recordings(source_by_run, ordered_run_ids=ordered)
+    except RecordingIdentityError:
+        return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -480,6 +507,9 @@ def record_setup_response(
         or baseline_setup_passed_tech is not True
         or test_setup_passed_tech is not True
     ):
+        return False
+    assert source_run_ids is not None
+    if not _source_runs_are_independent(source_run_ids, db_path=db_path):
         return False
     change = setup_changes[0]
     baseline_surrounding = surrounding_setup_fingerprint(baseline_setup_for_model, change.setup_key)
@@ -1070,6 +1100,8 @@ def record_interaction_response(
         or not math.isfinite(uncertainty)
     ):
         return False
+    if not _source_runs_are_independent(source_run_ids, db_path=db_path):
+        return False
     qualified = set(getattr(experiment_unlock, "qualified_factor_keys", ()))
     if not set(factor_deltas).issubset(qualified):
         return False
@@ -1149,6 +1181,14 @@ def get_interaction_response_models(
         (response_context.key,),
     ).fetchall()
     conn.close()
+    interaction_source_run_ids = {
+        run_id
+        for row in rows
+        for run_id in (_json_string_list(row["source_run_ids_json"]) or ())
+    }
+    interaction_recording_sha_by_run = RaceLabRepository(
+        db_path
+    ).get_recording_sha256s(tuple(sorted(interaction_source_run_ids)))
     parsed_rows: list[dict[str, Any]] = []
     for row in rows:
         context_payload = _json_object(row["response_context_json"])
@@ -1184,6 +1224,15 @@ def get_interaction_response_models(
             or not packet_ids
             or source_run_ids is None
             or not source_run_ids
+        ):
+            continue
+        source_hashes = tuple(
+            interaction_recording_sha_by_run.get(run_id)
+            for run_id in source_run_ids
+        )
+        if (
+            not all(source_hashes)
+            or len(set(source_hashes)) != len(source_hashes)
         ):
             continue
         parsed_rows.append({
@@ -1289,6 +1338,27 @@ def get_setup_response_graph(
         (response_context.key,),
     ).fetchall()
     conn.close()
+    candidate_run_ids: set[str] = {
+        str(value)
+        for row in rows
+        for value in (row["baseline_run_id"], row["test_run_id"])
+        if value
+    }
+    for row in rows:
+        try:
+            evidence = json.loads(row["evidence_json"] or "{}")
+        except (TypeError, ValueError):
+            continue
+        source_runs = evidence.get("source_run_ids") if isinstance(evidence, dict) else None
+        if isinstance(source_runs, list):
+            candidate_run_ids.update(
+                str(run_id)
+                for run_id in source_runs
+                if isinstance(run_id, str) and run_id
+            )
+    recording_sha_by_run = RaceLabRepository(db_path).get_recording_sha256s(
+        tuple(sorted(candidate_run_ids))
+    )
     edges: list[dict[str, Any]] = []
     grouped: dict[tuple[str, int], list[dict[str, Any]]] = {}
     for row in rows:
@@ -1310,6 +1380,18 @@ def get_setup_response_graph(
             if isinstance(evidence_source_runs, list) and evidence_source_runs
             else [edge["baseline_run_id"], edge["test_run_id"]]
         )
+        source_runs = tuple(str(run_id) for run_id in edge["source_runs"])
+        source_hashes = tuple(
+            recording_sha_by_run.get(run_id) for run_id in source_runs
+        )
+        if (
+            not source_runs
+            or not all(source_hashes)
+            or len(set(source_hashes)) != len(source_hashes)
+        ):
+            # Retain the immutable row for audit, but it cannot affect response
+            # summaries, models, setup envelopes, or P19 history projection.
+            continue
         edge["source_laps"] = [edge["baseline_lap"], edge["test_lap"]]
         edge["setup_passed_tech"] = (
             edge.pop("baseline_setup_passed_tech") == 1

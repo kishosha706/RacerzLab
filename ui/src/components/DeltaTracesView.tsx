@@ -409,7 +409,7 @@ export function DeltaTracesView({ baselineRunId, testRunId, startPct, endPct, re
       tooltip: {
         show: true,
         trigger: "axis",
-        triggerOn: "mousemove|click",
+        triggerOn: "mousemove|click|mousewheel",
         confine: true,
         renderMode: "html",
         backgroundColor: "rgba(7, 12, 20, 0.96)",

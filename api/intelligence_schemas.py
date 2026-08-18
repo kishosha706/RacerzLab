@@ -362,6 +362,47 @@ class IntelligenceDriverProfileResponse(IntelligenceApiModel):
     affects_evidence_eligibility: Literal[False] = False
 
 
+class IntelligenceShellProjectionResponse(IntelligenceApiModel):
+    """Small cached shell projection; it never starts intelligence construction."""
+
+    schema_version: Literal["p19.intelligence-shell.v1"]
+    run_id: str = Field(min_length=1, max_length=160)
+    session_id: str | None = Field(default=None, min_length=1, max_length=160)
+    status: Literal["ready", "not_built"]
+    reasoning_snapshot_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    setup_id: str | None = Field(default=None, min_length=1, max_length=240)
+    setup_snapshot_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    next_trustworthy_move: NextTrustworthyMove | None = None
+    recovery: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def cached_identity_and_move_are_exact(self) -> IntelligenceShellProjectionResponse:
+        if (self.setup_id is None) != (self.setup_snapshot_sha256 is None):
+            raise ValueError("shell setup identity and snapshot hash must be paired")
+        if self.status == "not_built":
+            if (
+                self.reasoning_snapshot_sha256 is not None
+                or self.setup_id is not None
+                or self.next_trustworthy_move is not None
+            ):
+                raise ValueError("an unbuilt shell projection cannot carry report truth")
+            return self
+        if self.reasoning_snapshot_sha256 is None:
+            raise ValueError("a ready shell projection requires exact reasoning identity")
+        move = self.next_trustworthy_move
+        if move is not None and (
+            move.run_id != self.run_id or move.authority != "navigation_only"
+        ):
+            raise ValueError(
+                "the shell may expose only an exact-run navigation-only move"
+            )
+        return self
+
+
 class RunIntelligenceResponse(IntelligenceApiModel):
     schema_version: Literal["p19.run-intelligence.v1"]
     run_id: str

@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from collections import defaultdict
 import math
+from collections import defaultdict
 from statistics import mean, median
 from typing import Any, cast
 
 import polars as pl
 
 from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
+from racelab_engine.analysis.qualified_clock import (
+    QualifiedTelemetryClock,
+    build_qualified_telemetry_clock,
+)
 from racelab_engine.models.lap import LapSummary
-
 
 _YELLOW_FLAG_MASK = 0x0008 | 0x0100
 _CAUTION_FLAG_MASK = 0x4000 | 0x8000
@@ -43,9 +46,42 @@ def _truthy(value: Any) -> bool | None:
     return bool(number) if math.isfinite(number) else None
 
 
-def _direct_invalid_tags(rows: list[dict[str, Any]]) -> tuple[set[str], list[str]]:
+def _clock_invalid_tags(clock: QualifiedTelemetryClock) -> tuple[set[str], list[str]]:
     tags: set[str] = set()
     notes: list[str] = []
+    if clock.tick_discontinuity_count:
+        tags.add("SAMPLE_DISCONTINUITY")
+        notes.append("SessionTick was not continuous through this lap.")
+    if clock.epoch_count > 1:
+        tags.add("CLOCK_RESET_BOUNDARY")
+        notes.append("The lap crossed a qualified telemetry-clock reset epoch.")
+    if clock.clock_state != "qualified" or clock.primary_clock != "session_tick":
+        tags.add("TIMING_INTEGRITY_BLOCKED")
+        notes.append(
+            "Canonical lap timing was not decision-qualified: "
+            + ", ".join(
+                clock.blockers
+                or [
+                    "contiguous SessionTick plus the declared telemetry rate are required; "
+                    "SessionTime is archival corroboration only"
+                ]
+            )
+            + "."
+        )
+    return tags, notes
+
+
+def _direct_invalid_tags(
+    rows: list[dict[str, Any]],
+    *,
+    clock: QualifiedTelemetryClock | None = None,
+) -> tuple[set[str], list[str]]:
+    tags: set[str] = set()
+    notes: list[str] = []
+    clock = clock or build_qualified_telemetry_clock(
+        rows,
+        expected_sample_rate_hz=None,
+    )
     pit_values = [_truthy(row.get("on_pit_road", row.get("OnPitRoad"))) for row in rows]
     if any(value is True for value in pit_values):
         tags.add("PIT_ROAD")
@@ -87,18 +123,9 @@ def _direct_invalid_tags(rows: list[dict[str, Any]]) -> tuple[set[str], list[str
         tags.add("CAUTION")
         notes.append("The simulator reported a caution state during this lap.")
 
-    ticks: list[int] = []
-    for row in rows:
-        value = row.get("session_tick", row.get("SessionTick"))
-        try:
-            tick = int(value) if value is not None else None
-        except (TypeError, ValueError, OverflowError):
-            tick = None
-        if tick is not None:
-            ticks.append(tick)
-    if len(ticks) >= 2 and any(current - previous != 1 for previous, current in zip(ticks, ticks[1:])):
-        tags.add("SAMPLE_DISCONTINUITY")
-        notes.append("SessionTick was not continuous through this lap.")
+    clock_tags, clock_notes = _clock_invalid_tags(clock)
+    tags.update(clock_tags)
+    notes.extend(clock_notes)
 
     pct_sequence = [_pct(row.get("lap_dist_pct")) for row in rows]
     pct_sequence = [value for value in pct_sequence if value is not None]
@@ -112,8 +139,7 @@ def _direct_invalid_tags(rows: list[dict[str, Any]]) -> tuple[set[str], list[str
         tags.add("SPARSE_POSITION_COVERAGE")
         notes.append("Lap-position samples had implausibly large forward gaps.")
 
-    times = _numbers(rows, "session_time")
-    duration_s = max(times) - min(times) if len(times) >= 2 else None
+    duration_s = clock.canonical_duration_s
     density_hz = len(rows) / duration_s if duration_s is not None and duration_s > 0 else None
     if (
         len(rows) < _MIN_CREDIBLE_LAP_SAMPLES
@@ -306,9 +332,18 @@ def _lap_number(row: dict[str, Any]) -> int | None:
     return int(number) if math.isfinite(number) else None
 
 
-def detect_laps(table: Any, run_id: str = "unassigned") -> list[LapSummary]:
+def detect_laps(
+    table: Any,
+    run_id: str = "unassigned",
+    *,
+    expected_sample_rate_hz: float | None = None,
+) -> list[LapSummary]:
     if isinstance(table, pl.DataFrame):
-        return _detect_laps_frame(table, run_id=run_id)
+        return _detect_laps_frame(
+            table,
+            run_id=run_id,
+            expected_sample_rate_hz=expected_sample_rate_hz,
+        )
     rows = _ensure_normalized(table)
     if not rows:
         return []
@@ -321,10 +356,17 @@ def detect_laps(table: Any, run_id: str = "unassigned") -> list[LapSummary]:
 
     laps: list[LapSummary] = []
     for lap_number, lap_rows in sorted(grouped.items()):
+        clock = build_qualified_telemetry_clock(
+            lap_rows,
+            expected_sample_rate_hz=expected_sample_rate_hz,
+        )
         pct_values = [_pct(row.get("lap_dist_pct")) for row in lap_rows]
         pct_values = [value for value in pct_values if value is not None]
         pct_values_clean: list[float] = cast(list[float], pct_values)
-        times = _numbers(lap_rows, "session_time")
+        times = [
+            value for value in clock.canonical_time_by_sample_s
+            if value is not None
+        ]
         speeds = _numbers(lap_rows, "speed_mph")
         rpms = _numbers(lap_rows, "rpm")
         throttles = _numbers(lap_rows, "throttle_pct")
@@ -336,7 +378,7 @@ def detect_laps(table: Any, run_id: str = "unassigned") -> list[LapSummary]:
         pct_max = max(pct_values_clean) if pct_values_clean else None
         pct_span = (pct_max - pct_min) if pct_min is not None and pct_max is not None else None
         is_complete = pct_min is not None and pct_max is not None and pct_min <= 2.0 and pct_max >= 98.0
-        direct_invalid_tags, direct_notes = _direct_invalid_tags(lap_rows)
+        direct_invalid_tags, direct_notes = _direct_invalid_tags(lap_rows, clock=clock)
         is_useful = is_complete and bool(speeds) and max(speeds) >= 30.0 and not direct_invalid_tags
         min_splitter = min(splitters) if splitters else None
         splitter_row = None
@@ -360,7 +402,18 @@ def detect_laps(table: Any, run_id: str = "unassigned") -> list[LapSummary]:
                 is_useful=is_useful,
                 start_time=min(times) if times else None,
                 end_time=max(times) if times else None,
-                lap_time=(max(times) - min(times)) if len(times) >= 2 else None,
+                lap_time=clock.canonical_duration_s,
+                timing_primary_clock=clock.primary_clock,
+                timing_clock_state=clock.clock_state,
+                timing_epoch_count=clock.epoch_count,
+                session_time_duplicate_count=clock.session_time_duplicate_count,
+                session_time_reverse_count=clock.session_time_reverse_count,
+                session_time_residual_p95_s=clock.session_time_residual_p95_s,
+                simulator_lap_time_s=clock.simulator_lap_time_s,
+                simulator_lap_time_residual_s=clock.simulator_lap_time_residual_s,
+                lap_time_channel_corroboration=clock.lap_time_channel_corroboration,
+                lap_delta_validity_corroboration=clock.lap_delta_validity_corroboration,
+                timing_blockers=clock.blockers,
                 pct_min=pct_min,
                 pct_max=pct_max,
                 pct_span=pct_span,
@@ -389,11 +442,25 @@ def detect_laps(table: Any, run_id: str = "unassigned") -> list[LapSummary]:
     return _apply_relative_pace_filter(laps)
 
 
-def _detect_laps_frame(df: pl.DataFrame, run_id: str = "unassigned") -> list[LapSummary]:
+def _detect_laps_frame(
+    df: pl.DataFrame,
+    run_id: str = "unassigned",
+    *,
+    expected_sample_rate_hz: float | None = None,
+) -> list[LapSummary]:
     if df.is_empty():
         return []
-    required = {"lap_dist_pct", "session_time", "speed_mph"}
-    if not required.issubset(df.columns) or not ({"lap", "lap_number"} & set(df.columns)):
+    required = {"lap_dist_pct", "speed_mph"}
+    has_clock = "session_time" in df.columns or (
+        "session_tick" in df.columns
+        and expected_sample_rate_hz is not None
+        and expected_sample_rate_hz > 0
+    )
+    if (
+        not required.issubset(df.columns)
+        or not ({"lap", "lap_number"} & set(df.columns))
+        or not has_clock
+    ):
         return []
     lap_expr = (
         pl.coalesce([pl.col("lap"), pl.col("lap_number")])
@@ -409,6 +476,31 @@ def _detect_laps_frame(df: pl.DataFrame, run_id: str = "unassigned") -> list[Lap
     ).filter(pl.col("_lap_number").is_not_null())
     if base.is_empty():
         return []
+    clock_columns = [
+        name
+        for name in (
+            "_lap_number", "lap", "lap_number", "Lap",
+            "lap_dist_pct", "LapDistPct",
+            "session_tick", "SessionTick", "session_time", "SessionTime",
+            "lap_current_time_s", "LapCurrentLapTime",
+            "lap_delta_to_best_valid", "LapDeltaToBestLap_OK",
+            "lap_delta_to_optimal_valid", "LapDeltaToOptimalLap_OK",
+            "lap_delta_to_session_best_valid", "LapDeltaToSessionBestLap_OK",
+            "lap_delta_to_session_optimal_valid", "LapDeltaToSessionOptimalLap_OK",
+        )
+        if name in base.columns
+    ]
+    clocks_by_lap: dict[int, QualifiedTelemetryClock] = {}
+    for partition in base.select(clock_columns).partition_by(
+        "_lap_number",
+        maintain_order=True,
+    ):
+        lap_value = partition.get_column("_lap_number").item(0)
+        if lap_value is not None:
+            clocks_by_lap[int(lap_value)] = build_qualified_telemetry_clock(
+                partition,
+                expected_sample_rate_hz=expected_sample_rate_hz,
+            )
     sequence_exprs: list[pl.Expr] = [
         pl.col("_lap_pct").diff().over("_lap_number").alias("_lap_pct_delta"),
     ]
@@ -435,8 +527,16 @@ def _detect_laps_frame(df: pl.DataFrame, run_id: str = "unassigned") -> list[Lap
         pl.len().alias("sample_count"),
         pl.col("_lap_pct").min().alias("pct_min"),
         pl.col("_lap_pct").max().alias("pct_max"),
-        pl.col("session_time").min().alias("start_time"),
-        pl.col("session_time").max().alias("end_time"),
+        (
+            pl.col("session_time").min()
+            if "session_time" in base.columns
+            else pl.lit(None, dtype=pl.Float64)
+        ).alias("start_time"),
+        (
+            pl.col("session_time").max()
+            if "session_time" in base.columns
+            else pl.lit(None, dtype=pl.Float64)
+        ).alias("end_time"),
         pl.col("speed_mph").mean().alias("avg_speed_mph"),
         pl.col("speed_mph").max().alias("max_speed_mph"),
         pl.col("speed_mph").min().alias("min_speed_mph"),
@@ -529,6 +629,7 @@ def _detect_laps_frame(df: pl.DataFrame, run_id: str = "unassigned") -> list[Lap
     laps: list[LapSummary] = []
     for rec in joined.to_dicts():
         lap_number = int(rec["_lap_number"])
+        clock = clocks_by_lap[lap_number]
         pct_min = rec.get("pct_min")
         pct_max = rec.get("pct_max")
         pct_span = (float(pct_max) - float(pct_min)) if pct_min is not None and pct_max is not None else None
@@ -558,6 +659,9 @@ def _detect_laps_frame(df: pl.DataFrame, run_id: str = "unassigned") -> list[Lap
         ):
             direct_tags.add("SAMPLE_DISCONTINUITY")
             direct_notes.append("SessionTick was not continuous through this lap.")
+        clock_tags, clock_notes = _clock_invalid_tags(clock)
+        direct_tags.update(clock_tags)
+        direct_notes.extend(clock_notes)
         min_pct_delta = rec.get("min_lap_pct_delta")
         if min_pct_delta is not None and float(min_pct_delta) < -5.0:
             direct_tags.add("POSITION_DISCONTINUITY")
@@ -566,14 +670,14 @@ def _detect_laps_frame(df: pl.DataFrame, run_id: str = "unassigned") -> list[Lap
         if max_pct_delta is not None and float(max_pct_delta) > _MAX_CREDIBLE_FORWARD_PCT_GAP:
             direct_tags.add("SPARSE_POSITION_COVERAGE")
             direct_notes.append("Lap-position samples had implausibly large forward gaps.")
-        start_time = rec.get("start_time")
-        end_time = rec.get("end_time")
+        canonical_times = [
+            value for value in clock.canonical_time_by_sample_s
+            if value is not None
+        ]
+        start_time = min(canonical_times) if canonical_times else None
+        end_time = max(canonical_times) if canonical_times else None
         sample_count = int(rec.get("sample_count") or 0)
-        duration_s = (
-            float(end_time) - float(start_time)
-            if start_time is not None and end_time is not None
-            else None
-        )
+        duration_s = clock.canonical_duration_s
         density_hz = sample_count / duration_s if duration_s is not None and duration_s > 0 else None
         if (
             sample_count < _MIN_CREDIBLE_LAP_SAMPLES
@@ -622,7 +726,18 @@ def _detect_laps_frame(df: pl.DataFrame, run_id: str = "unassigned") -> list[Lap
                 is_useful=is_useful,
                 start_time=float(start_time) if start_time is not None else None,
                 end_time=float(end_time) if end_time is not None else None,
-                lap_time=(float(end_time) - float(start_time)) if start_time is not None and end_time is not None else None,
+                lap_time=clock.canonical_duration_s,
+                timing_primary_clock=clock.primary_clock,
+                timing_clock_state=clock.clock_state,
+                timing_epoch_count=clock.epoch_count,
+                session_time_duplicate_count=clock.session_time_duplicate_count,
+                session_time_reverse_count=clock.session_time_reverse_count,
+                session_time_residual_p95_s=clock.session_time_residual_p95_s,
+                simulator_lap_time_s=clock.simulator_lap_time_s,
+                simulator_lap_time_residual_s=clock.simulator_lap_time_residual_s,
+                lap_time_channel_corroboration=clock.lap_time_channel_corroboration,
+                lap_delta_validity_corroboration=clock.lap_delta_validity_corroboration,
+                timing_blockers=clock.blockers,
                 pct_min=float(pct_min) if pct_min is not None else None,
                 pct_max=float(pct_max) if pct_max is not None else None,
                 pct_span=pct_span,

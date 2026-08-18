@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import csv
 import ctypes
-from copy import deepcopy
-import importlib.util
 import hashlib
+import importlib.util
 import json
 import logging
 import math
@@ -13,6 +12,7 @@ import sys
 import time
 import uuid
 from bisect import bisect_left
+from copy import deepcopy
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -26,22 +26,34 @@ from racelab_engine.analysis.calculated_channels import (
     normalize_telemetry_rows,
 )
 from racelab_engine.analysis.channel_registry import canonical_name
-from racelab_engine.analysis.constants import FORCE_PROXY_WARNING, FORCE_PROXY_CHANNELS
+from racelab_engine.analysis.constants import (
+    CALCULATED_PROXY_CHANNELS,
+    DIFFUSER_GEOMETRY_PROXY_CHANNELS,
+    FORCE_PROXY_CHANNELS,
+    FORCE_PROXY_WARNING,
+)
 from racelab_engine.analysis.ride_height_calibration import (
     apply_next_gen_lr_ride_height_offset_to_rows,
     trace_offset_metadata,
 )
 from racelab_engine.io import ibt_reader as ibt_mod
 from racelab_engine.io.ibt_reader import import_ibt
-from racelab_engine.io.ibt_types import IBTHeader, IBTImportResult, IBTVariableDefinition
+from racelab_engine.io.ibt_types import (
+    IBTHeader,
+    IBTImportResult,
+    IBTVariableDefinition,
+)
 from racelab_engine.io.telemetry_manifest import (
     assess_cache_compatibility,
     build_telemetry_manifest,
     compact_capability_summary,
 )
 from racelab_engine.models.event import TelemetryEvent
+from racelab_engine.recording_identity import (
+    canonical_recording_run_id,
+    normalize_source_sha256,
+)
 from racelab_engine.storage.repository import RaceLabRepository
-
 
 TRACE_DEFAULT_CHANNELS = [
     "speed_mph",
@@ -322,7 +334,7 @@ _CHANNEL_SUMMARY_CACHE: dict[tuple[str, str], _ChannelSummaryCacheEntry] = {}
 _CHANNEL_SUMMARY_CACHE_MAX = 24
 _CHANNEL_SUMMARY_CACHE_MAX_BYTES = 12 * 1024 * 1024
 _CHANNEL_SUMMARY_CACHE_MAX_ENTRY_BYTES = 2 * 1024 * 1024
-_CHANNEL_SCHEMA_VERSION = "v4-health-provenance"
+_CHANNEL_SCHEMA_VERSION = "v5-p3541-truth-provenance"
 
 def default_data_dir() -> Path:
     return Path(os.environ.get("RACELAB_DATA_DIR", "data"))
@@ -658,6 +670,9 @@ def write_telemetry_manifest(
     source_file_sha256: str | None = None,
     source_file_size_bytes: int | None = None,
     telemetry_cache_sha256: str | None = None,
+    analysis_engine: str | None = None,
+    decoder_path: str | None = None,
+    decoder_fallback_reason: str | None = None,
 ) -> Path:
     data_root = Path(data_dir) if data_dir is not None else default_data_dir()
     final_path = telemetry_manifest_path(data_root, run_id)
@@ -675,6 +690,9 @@ def write_telemetry_manifest(
                     source_file_sha256=source_file_sha256,
                     source_file_size_bytes=source_file_size_bytes,
                     telemetry_cache_sha256=telemetry_cache_sha256,
+                    analysis_engine=analysis_engine,
+                    decoder_path=decoder_path,
+                    decoder_fallback_reason=decoder_fallback_reason,
                 ),
                 indent=2,
             ),
@@ -868,6 +886,9 @@ def _stage_import_cache(
     data_dir: str | Path,
     source_file_sha256: str | None,
     source_file_size_bytes: int | None,
+    analysis_engine: str,
+    decoder_path: str,
+    decoder_fallback_reason: str | None,
     profile_out: dict[str, float] | None = None,
 ) -> _StagedImportCache:
     data_root = Path(data_dir)
@@ -929,6 +950,9 @@ def _stage_import_cache(
             source_file_sha256=source_file_sha256,
             source_file_size_bytes=source_file_size_bytes,
             telemetry_cache_sha256=_sha256_file(cache_result.path),
+            analysis_engine=analysis_engine,
+            decoder_path=decoder_path,
+            decoder_fallback_reason=decoder_fallback_reason,
         )
     except Exception:
         _safe_unlink(cache_result.path if cache_result is not None else None)
@@ -1739,6 +1763,9 @@ def _manifest_channel_fields(manifest_channel: dict[str, Any] | None) -> dict[st
             "canonical_name",
             "canonical_mapping_kind",
             "registry_status",
+            "engineering_role",
+            "engineering_admission_state",
+            "engineering_authority_limit",
             "provenance",
             "archive_status",
             "variation",
@@ -1797,7 +1824,7 @@ def _build_catalog_item(
         "is_raw": is_raw,
         "is_calculated": is_calculated,
         "is_canonical_alias": is_canonical_alias,
-        "is_proxy": name in FORCE_PROXY_CHANNELS,
+        "is_proxy": name in CALCULATED_PROXY_CHANNELS,
         "formula": meta.get("formula"),
         "dependencies": meta.get("dependencies", []),
         "used_by_charts": meta.get("used_by_charts", []),
@@ -1814,6 +1841,13 @@ def _build_catalog_item(
         item["is_proxy"] = True
         if not item.get("description") or "ESTIMATE" not in str(item.get("description", "")):
             item["description"] = f"ESTIMATE — {FORCE_PROXY_WARNING}"
+    elif name in DIFFUSER_GEOMETRY_PROXY_CHANNELS:
+        item["is_proxy"] = True
+        if not item.get("description") or "PROXY" not in str(item.get("description", "")).upper():
+            item["description"] = (
+                "CALCULATED PROXY — requires complete reviewed vehicle-profile "
+                "geometry; unavailable when that provenance is missing."
+            )
     return item
 
 
@@ -1845,7 +1879,7 @@ def _build_summary_item(
         "is_raw": is_raw,
         "is_calculated": is_calculated,
         "is_canonical_alias": is_canonical_alias,
-        "is_proxy": name in FORCE_PROXY_CHANNELS,
+        "is_proxy": name in CALCULATED_PROXY_CHANNELS,
         "formula": None,
         "dependencies": [],
         "used_by_charts": [],
@@ -2491,17 +2525,121 @@ def build_trace_payload(
     }
 
 
+def _replace_run_scoped_id(value: str, old_run_id: str, new_run_id: str) -> str:
+    if value == old_run_id:
+        return new_run_id
+    if value.startswith(f"{old_run_id}:"):
+        return f"{new_run_id}{value[len(old_run_id):]}"
+    # Import-owned IDs are expected to carry the run prefix.  Preserve a
+    # deterministic namespace even for one malformed/legacy decoder result.
+    return f"{new_run_id}:{value}"
+
+
+def _replace_nested_run_identity(value: Any, old_run_id: str, new_run_id: str) -> Any:
+    if isinstance(value, str):
+        if value == old_run_id or value.startswith(f"{old_run_id}:"):
+            return _replace_run_scoped_id(value, old_run_id, new_run_id)
+        if value == f"run:{old_run_id}" or value.startswith(f"run:{old_run_id}:"):
+            return f"run:{new_run_id}{value[len(f'run:{old_run_id}'):]}"
+        return value
+    if isinstance(value, list):
+        return [_replace_nested_run_identity(item, old_run_id, new_run_id) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_replace_nested_run_identity(item, old_run_id, new_run_id) for item in value)
+    if isinstance(value, dict):
+        return {
+            key: _replace_nested_run_identity(item, old_run_id, new_run_id)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _rebind_import_result_run_id(
+    result: IBTImportResult,
+    new_run_id: str,
+) -> IBTImportResult:
+    """Rebind a decoded legacy alias to its existing non-destructive owner."""
+
+    overview = result.overview
+    if overview is None or overview.run_id == new_run_id:
+        return result
+    old_run_id = overview.run_id
+    laps = [
+        lap.model_copy(
+            update={
+                "lap_id": _replace_run_scoped_id(lap.lap_id, old_run_id, new_run_id),
+                "run_id": new_run_id,
+            }
+        )
+        for lap in overview.laps
+    ]
+    lap_by_number = {lap.lap_number: lap for lap in laps}
+    best_lap = (
+        lap_by_number.get(overview.best_useful_lap.lap_number)
+        if overview.best_useful_lap is not None
+        else None
+    )
+    events = [
+        event.model_copy(
+            update={
+                "event_id": _replace_run_scoped_id(
+                    event.event_id, old_run_id, new_run_id
+                ),
+                "run_id": new_run_id,
+                "evidence_json": _replace_nested_run_identity(
+                    event.evidence_json, old_run_id, new_run_id
+                ),
+            }
+        )
+        for event in overview.events
+    ]
+    setup = overview.setup_snapshot
+    rebound_setup = (
+        setup.model_copy(
+            update={
+                "setup_id": _replace_run_scoped_id(
+                    setup.setup_id, old_run_id, new_run_id
+                ),
+                "run_id": new_run_id,
+            }
+        )
+        if setup is not None
+        else None
+    )
+    result.overview = overview.model_copy(
+        update={
+            "run_id": new_run_id,
+            "session": overview.session.model_copy(update={"run_id": new_run_id}),
+            "best_useful_lap": best_lap,
+            "laps": laps,
+            "events": events,
+            "setup_snapshot": rebound_setup,
+            "engineering_blockers": [
+                blocker.__class__.model_validate(
+                    _replace_nested_run_identity(
+                        blocker.model_dump(mode="python"), old_run_id, new_run_id
+                    )
+                )
+                for blocker in overview.engineering_blockers
+            ],
+        }
+    )
+    return result
+
+
 class ImportService:
     def __init__(self, db_path: str | Path | None = None, data_dir: str | Path | None = None):
         self.repository = RaceLabRepository(db_path)
         self.data_dir = Path(data_dir) if data_dir is not None else default_data_dir()
         self.last_import_timings: dict[str, float] = {}
+        self.last_import_existing_run_updated = False
 
     def import_ibt_file(
         self,
         path: str | Path,
     ) -> tuple[IBTImportResult, TelemetryCacheResult | None]:
         _log = logging.getLogger(__name__)
+        self.last_import_existing_run_updated = False
         t0 = time.perf_counter()
         result = import_ibt(path)
         _timings: dict[str, Any] = {"decode_ibt": time.perf_counter() - t0}
@@ -2514,19 +2652,10 @@ class ImportService:
                 _timings[f"decode_sub_{k}"] = v  # type: ignore[assignment]
 
         if result.overview is None:
+            self.last_import_existing_run_updated = False
             self.last_import_timings = dict(_timings)
             return result, None
 
-        run_id = result.overview.run_id
-        existing_run_updated = self.repository.get_overview(run_id) is not None
-
-        t0 = time.perf_counter()
-        cache_profile: dict[str, float] = {}
-        normalized_frame = getattr(result, "get_normalized_frame", lambda: None)()
-        manifest_header = result.header or IBTHeader(
-            variable_count=len(result.variable_definitions),
-            record_count=(normalized_frame.height if normalized_frame is not None else len(result.records)),
-        )
         source_file_sha256 = (
             result.fingerprint.sha256
             if result.fingerprint is not None
@@ -2540,6 +2669,36 @@ class ImportService:
             raise RuntimeError(
                 "Telemetry import identity failed: decoded source fingerprints disagree."
             )
+        content_addressed_name = normalize_source_sha256(Path(path).stem)
+        if (
+            result.fingerprint is not None
+            and content_addressed_name is not None
+            and result.fingerprint.sha256 != content_addressed_name
+        ):
+            raise RuntimeError(
+                "Telemetry import identity failed: the immutable uploaded source "
+                "does not match its content-addressed filename."
+            )
+        if result.fingerprint is not None:
+            # A current decoder always has a full file fingerprint.  Prefer an
+            # existing legacy owner so re-import upgrades its cache in place;
+            # otherwise use the greenfield content-addressed run namespace.
+            recording_owner = self.repository.find_recording_owner_run_id(
+                source_file_sha256
+            ) or canonical_recording_run_id(source_file_sha256)
+            result = _rebind_import_result_run_id(result, recording_owner)
+
+        run_id = result.overview.run_id
+        existing_run_updated = self.repository.get_overview(run_id) is not None
+        self.last_import_existing_run_updated = existing_run_updated
+
+        t0 = time.perf_counter()
+        cache_profile: dict[str, float] = {}
+        normalized_frame = getattr(result, "get_normalized_frame", lambda: None)()
+        manifest_header = result.header or IBTHeader(
+            variable_count=len(result.variable_definitions),
+            record_count=(normalized_frame.height if normalized_frame is not None else len(result.records)),
+        )
         staged_cache = _stage_import_cache(
             run_id,
             result.records,
@@ -2553,6 +2712,9 @@ class ImportService:
             source_file_size_bytes=(
                 result.fingerprint.file_size if result.fingerprint is not None else None
             ),
+            analysis_engine="vectorized" if normalized_frame is not None else "row",
+            decoder_path=result.decoder_path,
+            decoder_fallback_reason=result.decoder_fallback_reason,
             profile_out=cache_profile,
         )
         _timings["write_parquet_cache"] = time.perf_counter() - t0
@@ -2576,6 +2738,26 @@ class ImportService:
             staged_cache.rollback()
             staged_cache.cleanup()
             raise
+
+        membership_warning: str | None = None
+        try:
+            from racelab_engine.services.session_service import (
+                rebind_recording_alias_memberships,
+            )
+
+            aliases = self.repository.list_recording_alias_run_ids(
+                source_file_sha256
+            )
+            rebind_recording_alias_memberships(
+                run_id,
+                aliases,
+                db_path=self.repository.db_path,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            membership_warning = (
+                "Recording import succeeded, but legacy session aliases could not "
+                f"be rebound to the canonical owner: {exc}"
+            )
 
         # ── Post-import analysis ──────────────────────────────────
         rows_or_frame: Any = normalized_frame if normalized_frame is not None else result.records
@@ -2624,6 +2806,8 @@ class ImportService:
         warnings = list(result.status.warnings)
         if segment_warning:
             warnings.append(segment_warning)
+        if membership_warning:
+            warnings.append(membership_warning)
         if existing_run_updated:
             warnings.append("Duplicate telemetry detected - updated the existing run record.")
         result.status = result.status.model_copy(

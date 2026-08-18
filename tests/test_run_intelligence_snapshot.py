@@ -40,3 +40,26 @@ def test_shared_intelligence_snapshot_is_single_flight_and_semantic(monkeypatch)
         "inflight": 0,
     }
     service.clear_run_intelligence_snapshot_cache()
+
+
+def test_persisted_exact_snapshot_skips_cold_builder(monkeypatch) -> None:
+    service.clear_run_intelligence_snapshot_cache()
+    persisted_bundle = object()
+    monkeypatch.setattr(service, "_snapshot_key", lambda *_args: "semantic-revision")
+    monkeypatch.setattr(
+        service,
+        "_load_persisted_snapshot",
+        lambda _database, key: persisted_bundle if key == "semantic-revision" else None,
+    )
+
+    def unexpected_build(*_args, **_kwargs):
+        raise AssertionError("persistent exact-identity reuse must not cold-build")
+
+    monkeypatch.setattr(service, "_build_run_intelligence_uncached", unexpected_build)
+    assert service.build_run_intelligence("run-a") is persisted_bundle
+    assert service.run_intelligence_snapshot_stats() == {
+        "build_count": 0,
+        "cache_entries": 1,
+        "inflight": 0,
+    }
+    service.clear_run_intelligence_snapshot_cache()

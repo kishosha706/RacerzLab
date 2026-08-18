@@ -5,18 +5,21 @@ import json
 import math
 from typing import Any, Iterable
 
-from racelab_engine.analysis.channel_registry import canonical_mapping_kind, canonical_name
+from racelab_engine.analysis.channel_registry import (
+    canonical_mapping_kind,
+    canonical_name,
+)
+from racelab_engine.analysis.qualified_clock import build_qualified_telemetry_clock
 from racelab_engine.io.ibt_types import IBTHeader, IBTVariableDefinition
 from racelab_engine.io.session_yaml import parse_session_yaml
 
-
-MANIFEST_SCHEMA_VERSION = 5
+MANIFEST_SCHEMA_VERSION = 6
 UNIVERSAL_ARCHIVE_VERSION = 1
 
-# These raw fields are collection candidates, not admitted runtime physics.
-# The manifest records what the simulator declared and what the archive observed
-# so a future held-out fixture can validate semantics without silently mapping a
-# convenient column today.
+# These raw fields are reviewed by role.  Lap timing and delta-validity fields
+# may corroborate the qualified clock, but can never create timing or mechanism
+# authority.  All other families remain collection candidates pending held-out
+# validation.
 _MEASUREMENT_CANDIDATE_FAMILIES: dict[str, tuple[str, ...]] = {
     "transport_integrity": ("ChanClockSkew", "ChanPartnerQuality"),
     "vehicle_condition": (
@@ -35,14 +38,98 @@ _MEASUREMENT_CANDIDATE_FAMILIES: dict[str, tuple[str, ...]] = {
         "LapDeltaToSessionBestLap_OK", "LapDeltaToSessionOptimalLap_OK",
         "LapDeltaToBestLap_OK", "LapDeltaToOptimalLap_OK",
     ),
+    "lap_timing_corroboration": (
+        "LapCurrentLapTime", "LapLastLapTime", "LapBestLapTime",
+    ),
 }
+
+_CLOCK_CORROBORATION_FAMILIES = frozenset({"delta_validity", "lap_timing_corroboration"})
+
+# Engineering admission is explicit for every raw field in the audited Next
+# Gen schema.  These roles constrain how a channel may be consumed; mapping a
+# name never upgrades pit, control, corroboration, or integrity state into a
+# continuous mechanism observation.
+_CHANNEL_ENGINEERING_ROLES: dict[str, frozenset[str]] = {
+    "measurement_candidate": frozenset({"HandbrakeRaw"}),
+    "corroboration": frozenset({
+        "SessionNum", "SessionUniqueID", "SessionJokerLapsRemain",
+        "SessionOnJokerLap", "SessionTimeOfDay", "LapBestLap",
+        "LapBestLapTime", "LapLastLapTime", "LapCurrentLapTime",
+        "LapLasNLapSeq", "LapLastNLapTime", "LapBestNLapLap",
+        "LapBestNLapTime", "LapDeltaToBestLap", "LapDeltaToBestLap_DD",
+        "LapDeltaToBestLap_OK", "LapDeltaToOptimalLap",
+        "LapDeltaToOptimalLap_DD", "LapDeltaToOptimalLap_OK",
+        "LapDeltaToSessionBestLap", "LapDeltaToSessionBestLap_DD",
+        "LapDeltaToSessionBestLap_OK", "LapDeltaToSessionOptimalLap",
+        "LapDeltaToSessionOptimalLap_DD", "LapDeltaToSessionOptimalLap_OK",
+        "LapDeltaToSessionLastlLap", "LapDeltaToSessionLastlLap_DD",
+        "LapDeltaToSessionLastlLap_OK", "SolarAltitude", "SolarAzimuth",
+        "WeatherDeclaredWet", "IsOnTrackCar",
+    }),
+    "pit_snapshot": frozenset({
+        "PlayerFastRepairsUsed", "FastRepairUsed", "FastRepairAvailable",
+        "LFTiresUsed", "RFTiresUsed", "LRTiresUsed", "RRTiresUsed",
+        "LFTiresAvailable", "RFTiresAvailable", "LRTiresAvailable",
+        "RRTiresAvailable", "PitSvLFP", "PitSvRFP", "PitSvLRP", "PitSvRRP",
+    }),
+    "control_state": frozenset({
+        "PushToTalk", "PushToPass", "ManualBoost", "ManualNoBoost",
+        "P2P_Status", "P2P_Count", "ShiftIndicatorPct", "dcStarter",
+        "dpWindshieldTearoff", "dpFastRepair", "dpWeightJackerLeft",
+        "dpWeightJackerRight",
+    }),
+    "integrity": frozenset({"ChanPartnerQuality", "ChanClockSkew"}),
+    "inventory_debug": frozenset(),
+}
+_ROLE_BY_RAW_CHANNEL = {
+    raw_name: role
+    for role, raw_names in _CHANNEL_ENGINEERING_ROLES.items()
+    for raw_name in raw_names
+}
+if sum(len(names) for names in _CHANNEL_ENGINEERING_ROLES.values()) != len(
+    _ROLE_BY_RAW_CHANNEL
+):
+    raise RuntimeError("telemetry engineering-role registry contains duplicates")
+
+
+def _engineering_admission(raw_name: str, canonical: str | None) -> tuple[str, str, str]:
+    role = _ROLE_BY_RAW_CHANNEL.get(raw_name)
+    if role is None:
+        if canonical is not None:
+            return (
+                "admitted_analysis",
+                "admitted",
+                "Use remains subject to the owning analysis evidence contract.",
+            )
+        return (
+            "inventory_debug",
+            "archived_only",
+            "Archived losslessly but not reviewed for runtime engineering use.",
+        )
+    state_by_role = {
+        "measurement_candidate": "candidate",
+        "corroboration": "corroboration_only",
+        "pit_snapshot": "pit_boundary_only",
+        "control_state": "context_only",
+        "integrity": "integrity_only",
+        "inventory_debug": "archived_only",
+    }
+    limit_by_role = {
+        "measurement_candidate": "Cannot create mechanism or setup authority before held-out semantic validation.",
+        "corroboration": "May validate context or timing but cannot replace the canonical producer.",
+        "pit_snapshot": "Valid only at qualified pit/service boundaries; never continuous on-track evidence.",
+        "control_state": "Driver/simulator request context only; cannot prove vehicle response.",
+        "integrity": "May qualify data health but cannot create a handling mechanism.",
+        "inventory_debug": "Archived for future review with no runtime engineering authority.",
+    }
+    return role, state_by_role[role], limit_by_role[role]
 
 
 def _measurement_candidate_contracts(
     channels: list[dict[str, Any]],
     compatibility: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Describe measurement debt without admitting a channel to runtime use."""
+    """Describe measurement debt and narrow clock-corroboration admission."""
 
     by_name = {str(channel.get("raw_name")): channel for channel in channels}
     build_identity = {
@@ -78,11 +165,31 @@ def _measurement_candidate_contracts(
                 blockers.append("Raw samples were not archived.")
             if channel.get("health_status") != "healthy":
                 blockers.append("Raw samples did not pass manifest health checks.")
+            corroboration_admitted = bool(
+                family in _CLOCK_CORROBORATION_FAMILIES
+                and canonical_name(name) is not None
+                and not blockers
+            )
             result.append({
                 "raw_name": name,
                 "family": family,
-                "state": "source_contract_observed" if not blockers else "data_locked",
-                "runtime_mapping_admitted": False,
+                "state": (
+                    "clock_corroboration_admitted"
+                    if corroboration_admitted
+                    else "source_contract_observed" if not blockers
+                    else "data_locked"
+                ),
+                "runtime_mapping_admitted": corroboration_admitted,
+                "engineering_role": (
+                    "simulator_clock_corroboration_only"
+                    if family in _CLOCK_CORROBORATION_FAMILIES
+                    else "measurement_candidate"
+                ),
+                "authority_limit": (
+                    "Cannot replace the qualified clock, create a lap-time delta, or support a mechanism claim."
+                    if family in _CLOCK_CORROBORATION_FAMILIES
+                    else "Not admitted to runtime engineering authority."
+                ),
                 "raw_semantics": channel.get("description"),
                 "declared_unit": channel.get("unit"),
                 "valid_record_count": channel.get("valid_record_count", 0),
@@ -90,9 +197,12 @@ def _measurement_candidate_contracts(
                 "variation": channel.get("variation", "unavailable"),
                 "raw_provenance": "ibt_variable_definition+lossless_raw_archive",
                 "build_applicability": build_identity,
-                "blockers": blockers or [
-                    "Semantics still require a known-behavior held-out fixture before runtime mapping."
-                ],
+                "blockers": (
+                    blockers
+                    if blockers
+                    else [] if corroboration_admitted
+                    else ["Semantics still require a known-behavior held-out fixture before runtime mapping."]
+                ),
             })
     return result
 
@@ -159,6 +269,29 @@ def compact_capability_summary(manifest: dict[str, Any]) -> dict[str, Any]:
         readiness = str(capability.get("analysis_readiness", "unknown"))
         readiness_counts[readiness] = readiness_counts.get(readiness, 0) + 1
     health = manifest.get("health_summary", {})
+    continuity = manifest.get("sample_continuity", {})
+    qualified_clock = (
+        continuity.get("qualified_clock", {})
+        if isinstance(continuity, dict)
+        else {}
+    )
+    qualified_clock_state = qualified_clock.get("clock_state")
+    health_clock_state = health.get("qualified_clock_state")
+    qualified_clock_primary = qualified_clock.get("primary_clock")
+    qualified_clock_decision_ready = bool(
+        qualified_clock_state == "qualified"
+        and health_clock_state == "qualified"
+        and qualified_clock_primary == "session_tick"
+        and not qualified_clock.get("blockers")
+    )
+    channels = manifest.get("channels", [])
+    role_counts: dict[str, int] = {}
+    admission_counts: dict[str, int] = {}
+    for channel in channels if isinstance(channels, list) else []:
+        role = str(channel.get("engineering_role") or "unclassified")
+        admission = str(channel.get("engineering_admission_state") or "unclassified")
+        role_counts[role] = role_counts.get(role, 0) + 1
+        admission_counts[admission] = admission_counts.get(admission, 0) + 1
     return {
         "declared_channels": int(manifest.get("declared_channel_count") or 0),
         "cached_channels": int(manifest.get("cached_channel_count") or 0),
@@ -166,6 +299,14 @@ def compact_capability_summary(manifest: dict[str, Any]) -> dict[str, Any]:
         "warning_channels": int(health.get("warning_channel_count") or 0),
         "lossless_archive_complete": manifest.get("lossless_archive_complete") is True,
         "analysis_readiness_counts": readiness_counts,
+        "engineering_role_counts": role_counts,
+        "engineering_admission_counts": admission_counts,
+        "qualified_clock_state": qualified_clock_state,
+        "qualified_clock_primary": qualified_clock_primary,
+        "qualified_clock_decision_ready": qualified_clock_decision_ready,
+        "analysis_engine": manifest.get("analysis_engine"),
+        "decoder_path": manifest.get("decoder_path"),
+        "decoder_fallback_reason": manifest.get("decoder_fallback_reason"),
     }
 
 
@@ -509,17 +650,27 @@ def _series_health(
     record_count = len(series)
     null_count = int(series.null_count())
     values = series.drop_nulls()
+    assessment_failures: list[str] = []
     is_array = definition.data_type_id != 0 and definition.count > 1
     if is_array:
         try:
             values = values.explode().drop_nulls()
-        except Exception:
-            pass
+        except Exception as exc:
+            assessment_failures.append(
+                f"Array health expansion could not be assessed ({type(exc).__name__})."
+            )
+    distinct_assessed = True
     try:
         distinct_count = int(values.n_unique())
-    except Exception:
+    except Exception as exc:
+        distinct_assessed = False
         distinct_count = 0
-    if len(values) == 0:
+        assessment_failures.append(
+            f"Distinct-value health could not be assessed ({type(exc).__name__})."
+        )
+    if not distinct_assessed:
+        variation = "not_assessed"
+    elif len(values) == 0:
         variation = "no_valid_samples"
     elif distinct_count <= 1:
         variation = "constant"
@@ -532,8 +683,10 @@ def _series_health(
         try:
             observed_min = _json_number(values.min())
             observed_max = _json_number(values.max())
-        except Exception:
-            pass
+        except Exception as exc:
+            assessment_failures.append(
+                f"Numeric range health could not be assessed ({type(exc).__name__})."
+            )
 
     array_lengths: list[int] = []
     null_element_count = 0
@@ -545,7 +698,7 @@ def _series_health(
             array_lengths.append(len(sample))
             null_element_count += sum(item is None for item in sample)
     minimum, maximum, bounds_reason = _impossible_bounds(definition)
-    if definition.data_type_id in {2, 3, 4, 5}:
+    if definition.data_type_id in {2, 3, 4, 5} and not assessment_failures:
         (
             non_finite_count,
             impossible_count,
@@ -561,15 +714,21 @@ def _series_health(
         upper_occupancy = 0.0
     malformed_array_count = sum(length != definition.count for length in array_lengths)
 
-    clipping_status = "possible_numeric_limit_clipping" if numeric_limit_hit_count else "none_detected"
-    saturation_status = "none_detected"
+    clipping_status = (
+        "not_assessed"
+        if assessment_failures
+        else "possible_numeric_limit_clipping"
+        if numeric_limit_hit_count
+        else "none_detected"
+    )
+    saturation_status = "not_assessed" if assessment_failures else "none_detected"
     if (
         definition.name in {"Throttle", "Brake", "Clutch", "Handbrake"}
         and max(lower_occupancy, upper_occupancy) >= 0.05
     ):
         saturation_status = "normal_control_boundary_occupancy"
 
-    warnings: list[str] = []
+    warnings: list[str] = [*assessment_failures]
     if null_count:
         warnings.append(f"{null_count} raw record(s) are null.")
     if null_element_count:
@@ -584,7 +743,7 @@ def _series_health(
         )
     if numeric_limit_hit_count:
         warnings.append(f"{numeric_limit_hit_count} sample(s) equal the storage type limit.")
-    health_status = "warning" if warnings else "healthy"
+    health_status = "not_assessed" if assessment_failures else "warning" if warnings else "healthy"
 
     return {
         "archive_status": "cached",
@@ -610,71 +769,40 @@ def _series_health(
     }
 
 
-def _numeric_column(frame: Any, name: str) -> list[float]:
-    if frame is None or name not in getattr(frame, "columns", []):
-        return []
-    values, _ = _flat_samples(frame.get_column(name))
-    numeric, _ = _numeric_samples(values)
-    return numeric
-
-
 def _sample_continuity(frame: Any, telemetry_rate_hz: int | None) -> dict[str, Any]:
-    ticks = _numeric_column(frame, "SessionTick")
-    times = _numeric_column(frame, "SessionTime")
-    tick_record_count = (
-        len(frame.get_column("SessionTick"))
-        if frame is not None and "SessionTick" in getattr(frame, "columns", [])
-        else 0
+    clock = build_qualified_telemetry_clock(
+        frame,
+        expected_sample_rate_hz=telemetry_rate_hz,
     )
-    time_record_count = (
-        len(frame.get_column("SessionTime"))
-        if frame is not None and "SessionTime" in getattr(frame, "columns", [])
-        else 0
-    )
-    invalid_tick_samples = tick_record_count - len(ticks)
-    invalid_time_samples = time_record_count - len(times)
-    tick_deltas = [right - left for left, right in zip(ticks, ticks[1:])]
-    time_deltas = [right - left for left, right in zip(times, times[1:])]
     expected_dt = 1.0 / telemetry_rate_hz if telemetry_rate_hz else None
-    duplicate_ticks = sum(delta == 0 for delta in tick_deltas)
-    reversed_ticks = sum(delta < 0 for delta in tick_deltas)
-    dropped_ticks = sum(max(0, int(round(delta)) - 1) for delta in tick_deltas if delta > 1)
-    non_monotonic_times = sum(delta <= 0 for delta in time_deltas)
-    timestamp_gap_count = (
-        sum(delta > expected_dt * 1.5 for delta in time_deltas)
-        if expected_dt is not None
-        else 0
-    )
-    hard_issues = (
-        duplicate_ticks
-        + reversed_ticks
-        + dropped_ticks
-        + non_monotonic_times
-        + invalid_tick_samples
-        + invalid_time_samples
-    )
-    assessed = bool(tick_deltas or time_deltas)
-    status = "not_assessed"
-    if assessed:
-        if hard_issues:
-            status = "issues_detected"
-        elif timestamp_gap_count:
-            status = "timestamp_gap_observed_with_contiguous_ticks" if tick_deltas else "issues_detected"
-        else:
-            status = "healthy"
+    if clock.sample_count < 2:
+        status = "not_assessed"
+    elif clock.clock_state == "qualified":
+        status = "qualified_tick_clock"
+    elif clock.clock_state == "degraded":
+        status = "observed_session_time_only"
+    else:
+        status = "issues_detected"
     return {
         "status": status,
-        "session_tick_available": bool(ticks),
-        "session_time_available": bool(times),
-        "invalid_tick_sample_count": invalid_tick_samples,
-        "invalid_timestamp_sample_count": invalid_time_samples,
-        "duplicate_tick_transition_count": duplicate_ticks,
-        "reversed_tick_transition_count": reversed_ticks,
-        "estimated_dropped_tick_count": dropped_ticks,
-        "non_monotonic_timestamp_transition_count": non_monotonic_times,
-        "timestamp_gap_count": timestamp_gap_count,
+        "session_tick_available": bool(clock.session_tick_coverage_pct),
+        "session_time_available": bool(clock.session_time_coverage_pct),
+        "invalid_tick_sample_count": clock.invalid_tick_sample_count,
+        "invalid_timestamp_sample_count": clock.invalid_session_time_sample_count,
+        "duplicate_tick_transition_count": clock.duplicate_tick_transition_count,
+        "reversed_tick_transition_count": clock.reversed_tick_transition_count,
+        "estimated_dropped_tick_count": clock.dropped_tick_count,
+        "tick_discontinuity_count": clock.tick_discontinuity_count,
+        "reset_epoch_count": clock.reset_epoch_count,
+        "non_monotonic_timestamp_transition_count": (
+            clock.session_time_duplicate_count + clock.session_time_reverse_count
+        ),
+        "duplicate_timestamp_transition_count": clock.session_time_duplicate_count,
+        "reversed_timestamp_transition_count": clock.session_time_reverse_count,
+        "timestamp_gap_count": clock.timestamp_gap_count,
         "expected_timestamp_step_s": expected_dt,
-        "largest_timestamp_step_s": max(time_deltas) if time_deltas else None,
+        "largest_timestamp_step_s": clock.largest_timestamp_step_s,
+        "qualified_clock": clock.model_dump(mode="json"),
     }
 
 
@@ -843,11 +971,18 @@ def build_telemetry_manifest(
     source_file_sha256: str | None = None,
     source_file_size_bytes: int | None = None,
     telemetry_cache_sha256: str | None = None,
+    analysis_engine: str | None = None,
+    decoder_path: str | None = None,
+    decoder_fallback_reason: str | None = None,
 ) -> dict[str, Any]:
     declared = {definition.name for definition in definitions}
     channels: list[dict[str, Any]] = []
     for definition in definitions:
         canonical = canonical_name(definition.name)
+        engineering_role, admission_state, authority_limit = _engineering_admission(
+            definition.name,
+            canonical,
+        )
         archive_column = (raw_archive_columns or {}).get(definition.name, definition.name)
         effective_rate = None
         if header.telemetry_rate_hz:
@@ -860,6 +995,9 @@ def build_telemetry_manifest(
                 "canonical_name": canonical,
                 "registry_status": "mapped" if canonical else "unmapped",
                 "canonical_mapping_kind": canonical_mapping_kind(definition.name),
+                "engineering_role": engineering_role,
+                "engineering_admission_state": admission_state,
+                "engineering_authority_limit": authority_limit,
                 "provenance": "ibt_variable_definition",
                 "base_sample_rate_hz": header.telemetry_rate_hz,
                 "effective_sample_rate_hz": effective_rate,
@@ -877,7 +1015,10 @@ def build_telemetry_manifest(
     malformed_array_count = sum(channel["malformed_array_record_count"] for channel in channels)
     non_finite_count = sum(channel["non_finite_sample_count"] for channel in channels)
     impossible_count = sum(channel["impossible_sample_count"] for channel in channels)
-    warning_channel_count = sum(channel["health_status"] == "warning" for channel in channels)
+    warning_channel_count = sum(
+        channel["health_status"] in {"warning", "not_assessed"}
+        for channel in channels
+    )
     expected_record_count = (
         header.record_count
         if header.record_count is not None
@@ -900,6 +1041,12 @@ def build_telemetry_manifest(
                 continue
             if math.isfinite(number):
                 session_times.append(number)
+    sample_continuity = _sample_continuity(frame, header.telemetry_rate_hz)
+    qualified_clock = sample_continuity.get("qualified_clock", {})
+    clock_state = qualified_clock.get("clock_state")
+    clock_health_warning = clock_state in {"blocked", "unavailable"} and bool(
+        {"SessionTick", "SessionTime"} & declared
+    )
     manifest = {
         "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
         "universal_archive_version": UNIVERSAL_ARCHIVE_VERSION,
@@ -909,6 +1056,9 @@ def build_telemetry_manifest(
         "source_file_sha256": source_file_sha256,
         "source_file_size_bytes": source_file_size_bytes,
         "telemetry_cache_sha256": telemetry_cache_sha256,
+        "analysis_engine": analysis_engine,
+        "decoder_path": decoder_path,
+        "decoder_fallback_reason": decoder_fallback_reason,
         "schema_fingerprint": schema_id,
         "compatibility_fingerprint": compatibility_fingerprint(schema_id, identity),
         "compatibility_identity": identity,
@@ -932,16 +1082,22 @@ def build_telemetry_manifest(
         "lossless_archive_complete": complete_channel_count == len(definitions),
         "complete_channel_count": complete_channel_count,
         "health_summary": {
-            "status": "warning" if warning_channel_count else "healthy",
+            "status": "warning" if warning_channel_count or clock_health_warning else "healthy",
             "warning_channel_count": warning_channel_count,
             "non_finite_sample_count": non_finite_count,
             "impossible_sample_count": impossible_count,
             "malformed_array_record_count": malformed_array_count,
+            "qualified_clock_state": clock_state,
+            "qualified_clock_blocker_count": len(qualified_clock.get("blockers", [])),
         },
-        "sample_continuity": _sample_continuity(frame, header.telemetry_rate_hz),
+        "sample_continuity": sample_continuity,
         "recording_session_time_bounds_s": {
             "start": min(session_times) if session_times else None,
             "end": max(session_times) if session_times else None,
+        },
+        "recording_canonical_time_bounds_s": {
+            "start": qualified_clock.get("canonical_start_time_s"),
+            "end": qualified_clock.get("canonical_end_time_s"),
         },
         "channels": channels,
         "capabilities": _capabilities(declared),

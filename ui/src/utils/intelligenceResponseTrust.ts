@@ -1,8 +1,10 @@
 import type {
   IntelligenceCitation,
   IntelligenceQueryResponse,
+  IntelligenceShellProjection,
   RunIntelligenceReport,
 } from "../types/intelligence";
+import { trustedNavigationMove } from "./intelligenceNavigation.ts";
 import { hasSetupAuthorityDirective } from "./setupAuthorityLanguage.js";
 
 const sha256Pattern = /^[0-9a-f]{64}$/;
@@ -308,6 +310,44 @@ function isCitation(value: unknown): value is IntelligenceCitation {
     && value.source_channels.every(isCanonicalString)
     && new Set(value.source_channels).size === value.source_channels.length
     && typeof value.valid_for_tuning === "boolean";
+}
+
+export function isIntelligenceShellProjection(
+  value: unknown,
+  expectation: { runId: string; sessionId: string | null },
+): value is IntelligenceShellProjection {
+  if (!isRecord(value) || !exactKeys(value, [
+    "schema_version", "run_id", "session_id", "status",
+    "reasoning_snapshot_sha256", "setup_id", "setup_snapshot_sha256",
+    "next_trustworthy_move", "recovery",
+  ])) return false;
+  if (
+    value.schema_version !== "p19.intelligence-shell.v1"
+    || value.run_id !== expectation.runId
+    || value.session_id !== expectation.sessionId
+    || !["ready", "not_built"].includes(String(value.status))
+    || !isCanonicalString(value.recovery)
+    || isCanonicalString(value.setup_id) !== (
+      typeof value.setup_snapshot_sha256 === "string"
+      && sha256Pattern.test(value.setup_snapshot_sha256)
+    )
+  ) return false;
+  if (value.status === "not_built") {
+    return value.reasoning_snapshot_sha256 === null
+      && value.setup_id === null
+      && value.setup_snapshot_sha256 === null
+      && value.next_trustworthy_move === null;
+  }
+  return typeof value.reasoning_snapshot_sha256 === "string"
+    && sha256Pattern.test(value.reasoning_snapshot_sha256)
+    && (value.next_trustworthy_move === null || (
+      isRecord(value.next_trustworthy_move)
+      && trustedNavigationMove(
+        value.next_trustworthy_move as IntelligenceShellProjection["next_trustworthy_move"],
+        expectation.runId,
+      )
+      && value.next_trustworthy_move.authority === "navigation_only"
+    ));
 }
 
 export function isRunIntelligenceResponse(

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import math
 import hashlib
 import json
+import math
 import shutil
 import struct
 from pathlib import Path
@@ -12,40 +12,48 @@ import pytest
 
 from api.schemas import ChannelCatalogItem, ChannelSummaryItem
 from racelab_engine.analysis.calculated_channels import (
-    CORE_REQUIRED_CHANNELS,
     _REMAINING_ALIAS_MAP,
+    CORE_REQUIRED_CHANNELS,
     normalize_telemetry_rows,
 )
-from racelab_engine.analysis.channel_registry import canonical_mapping_kind, canonical_name
+from racelab_engine.analysis.channel_registry import (
+    canonical_mapping_kind,
+    canonical_name,
+)
 from racelab_engine.analysis.stint_strategy import analyze_stint_strategy
 from racelab_engine.analysis.vectorized_channels import (
     _ALIAS_MAP as VECTOR_ALIAS_MAP,
+)
+from racelab_engine.analysis.vectorized_channels import (
     normalize_telemetry_frame,
 )
 from racelab_engine.io.ibt_reader import (
-    IBTParseError,
     TARGET_CHANNELS,
+    IBTParseError,
     _merge_raw_columns,
     _merge_raw_rows,
-    _read_records_columnar,
     _raw_archive_column_mapping,
+    _read_records_columnar,
     _validate_variable_definitions,
 )
 from racelab_engine.io.ibt_types import IBTHeader, IBTVariableDefinition
 from racelab_engine.io.telemetry_manifest import (
-    build_telemetry_manifest,
+    _series_health,
     assess_cache_compatibility,
+    build_telemetry_manifest,
     compatibility_fingerprint,
     compatibility_identity,
+    compact_capability_summary,
     schema_fingerprint,
 )
+from racelab_engine.models.observation_intelligence import MechanismKind
 from racelab_engine.services.import_service import (
-    _assert_declared_channels_archived,
     ImportService,
     TelemetryArtifactIdentityError,
-    build_telemetry_capability_payload,
+    _assert_declared_channels_archived,
     build_channel_catalog,
     build_channel_summary,
+    build_telemetry_capability_payload,
     read_telemetry_manifest,
     read_telemetry_rows,
     telemetry_manifest_path,
@@ -53,7 +61,6 @@ from racelab_engine.services.import_service import (
     write_telemetry_cache,
     write_telemetry_manifest,
 )
-from racelab_engine.models.observation_intelligence import MechanismKind
 from racelab_engine.services.lap_engineering_context_service import (
     build_lap_engineering_context_report,
 )
@@ -616,6 +623,8 @@ def test_real_atlanta_archive_health_has_no_false_faults(tmp_path: Path) -> None
         "non_finite_sample_count": 0,
         "impossible_sample_count": 0,
         "malformed_array_record_count": 0,
+        "qualified_clock_state": "qualified",
+        "qualified_clock_blocker_count": 0,
     }
     assert manifest["sample_continuity"]["estimated_dropped_tick_count"] == 0
     assert manifest["sample_continuity"]["timestamp_gap_count"] == 1
@@ -922,3 +931,69 @@ def test_duplicate_variable_names_are_rejected() -> None:
             IBTHeader(record_length=8),
             [definition, definition.model_copy(update={"offset": 4})],
         )
+
+
+def test_manifest_reduction_failure_is_visible_and_not_healthy() -> None:
+    class BrokenValues:
+        def __len__(self) -> int:
+            return 1
+
+        def n_unique(self) -> int:
+            raise RuntimeError("future dtype cannot be reduced")
+
+    class BrokenSeries:
+        def __len__(self) -> int:
+            return 1
+
+        def null_count(self) -> int:
+            return 0
+
+        def drop_nulls(self) -> BrokenValues:
+            return BrokenValues()
+
+    class BrokenFrame:
+        columns = ["FutureSignal"]
+
+        def get_column(self, _name: str) -> BrokenSeries:
+            return BrokenSeries()
+
+    health = _series_health(
+        BrokenFrame(),
+        IBTVariableDefinition(
+            name="FutureSignal",
+            data_type="float",
+            data_type_id=4,
+            offset=0,
+            count=1,
+        ),
+        "FutureSignal",
+    )
+
+    assert health["health_status"] == "not_assessed"
+    assert health["variation"] == "not_assessed"
+    assert health["clipping_status"] == "not_assessed"
+    assert any("Distinct-value health could not be assessed" in item for item in health["health_warnings"])
+
+
+def test_manifest_exposes_actual_decoder_and_fallback_provenance() -> None:
+    manifest = build_telemetry_manifest(
+        IBTHeader(telemetry_rate_hz=60, record_count=2),
+        [
+            IBTVariableDefinition(
+                name="Speed",
+                data_type="float",
+                data_type_id=4,
+                offset=0,
+                count=1,
+            )
+        ],
+        pl.DataFrame({"Speed": [10.0, 11.0]}),
+        analysis_engine="row",
+        decoder_path="row_fallback",
+        decoder_fallback_reason="ValueError: unsupported future declaration",
+    )
+    summary = compact_capability_summary(manifest)
+
+    assert summary["analysis_engine"] == "row"
+    assert summary["decoder_path"] == "row_fallback"
+    assert summary["decoder_fallback_reason"] == "ValueError: unsupported future declaration"

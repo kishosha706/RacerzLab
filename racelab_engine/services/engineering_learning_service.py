@@ -12,7 +12,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
-from typing import Any, Iterable, Literal
+from typing import Any, Iterable, Literal, Mapping
 
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.controlled_workflow import ControlledWorkflow
@@ -21,7 +21,6 @@ from racelab_engine.models.crew_chief import (
     CrewChiefInvestigation,
     CrewChiefTerminalDecision,
 )
-from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.engineering_learning import (
     AttentionOrderItem,
     CarResponseFact,
@@ -52,12 +51,17 @@ from racelab_engine.models.engineering_learning import (
     ProblemFingerprint,
     RecurringProblemMatch,
 )
+from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.performance_intelligence import (
     DriverVehicleResult,
     LapTimeOpportunity,
     PerformanceIntelligenceProjection,
 )
 from racelab_engine.models.session import RunOverview
+from racelab_engine.recording_identity import (
+    RECORDING_RUN_ID_PREFIX,
+    normalize_source_sha256,
+)
 from racelab_engine.services.import_service import read_telemetry_manifest
 from racelab_engine.services.run_intelligence_service import RunIntelligenceBundle
 from racelab_engine.storage.db import default_db_path, initialize_database
@@ -66,7 +70,6 @@ from racelab_engine.storage.engineering_learning_repository import (
     EngineeringLearningRepository,
 )
 from racelab_engine.storage.repository import RaceLabRepository
-
 
 _OBJECTIVES: frozenset[str] = frozenset(
     {
@@ -733,8 +736,75 @@ def _transfer_assessment(
     )
 
 
-def _counts(records: Iterable[EngineeringExperienceRecord]) -> EvidenceUnitCounts:
+def _recording_independence_keys(
+    records: tuple[EngineeringExperienceRecord, ...],
+    *,
+    db_path: str | Path | None,
+) -> dict[str, str]:
+    """Cluster historical experiences by physical source recordings.
+
+    Multiple sessions/investigations may reference the same immutable source,
+    but they remain one independence unit.  Pre-P35.4 test/legacy rows without
+    a stored full hash retain their existing episode/workflow contract; current
+    production imports always carry the source identity and therefore collapse
+    filename aliases.
+    """
+
+    run_ids = _unique(
+        provenance.run_id for record in records for provenance in record.source_provenance
+    )
+    source_by_run = RaceLabRepository(db_path).get_recording_sha256s(run_ids)
+    for run_id in run_ids:
+        if run_id in source_by_run or not run_id.startswith(RECORDING_RUN_ID_PREFIX):
+            continue
+        embedded = normalize_source_sha256(run_id.removeprefix(RECORDING_RUN_ID_PREFIX))
+        if embedded is not None:
+            source_by_run[run_id] = embedded
+    keys: dict[str, str] = {}
+    for record in records:
+        hashes = {
+            source_by_run.get(provenance.run_id)
+            for provenance in record.source_provenance
+        }
+        if None in hashes or not hashes:
+            continue
+        keys[record.experience_id] = "recording-cluster:" + canonical_json_sha256(
+            tuple(sorted(str(value) for value in hashes))
+        )
+    return keys
+
+
+def _counts(
+    records: Iterable[EngineeringExperienceRecord],
+    independence_keys: Mapping[str, str] | None = None,
+) -> EvidenceUnitCounts:
     values = tuple(records)
+    if independence_keys is not None:
+        episode_units = {
+            independence_keys.get(item.experience_id)
+            or item.problem.physical_episode_id
+            or item.source_investigation_id
+            or item.source_workflow_id
+            or item.experience_id
+            for item in values
+        }
+        workflow_units = {
+            independence_keys.get(item.experience_id) or item.source_workflow_id
+            for item in values
+            if item.source_workflow_id is not None
+        }
+        independent_count = len(episode_units)
+        return EvidenceUnitCounts(
+            observation_count=len(values),
+            independent_episode_count=independent_count,
+            independent_workflow_count=len(workflow_units),
+            distinct_session_count=min(
+                len({item.context.session_id for item in values}), independent_count
+            ),
+            distinct_context_count=min(
+                len({item.context.context_sha256 for item in values}), independent_count
+            ),
+        )
     return EvidenceUnitCounts(
         observation_count=len(values),
         independent_episode_count=len(
@@ -762,9 +832,10 @@ def _strength(
     records: Iterable[EngineeringExperienceRecord],
     *,
     conflicted: bool = False,
+    independence_keys: Mapping[str, str] | None = None,
 ) -> LearningStrength:
     values = tuple(records)
-    counts = _counts(values)
+    counts = _counts(values, independence_keys)
     if not values:
         return "insufficient"
     if conflicted:
@@ -884,6 +955,7 @@ def _recurrence(
     current: CurrentLearningInputs,
     records: tuple[EngineeringExperienceRecord, ...],
     transfers: dict[str, ContextTransferAssessment],
+    independence_keys: Mapping[str, str] | None = None,
 ) -> RecurringProblemMatch:
     matching = tuple(
         item
@@ -896,7 +968,7 @@ def _recurrence(
             current,
             blocker="No independent prior physical episode matches this fingerprint.",
         )
-    counts = _counts(matching)
+    counts = _counts(matching, independence_keys)
     independent = max(
         counts.independent_episode_count, counts.independent_workflow_count
     )
@@ -969,13 +1041,14 @@ def _recurrence(
         ),
         transfer=transfer,
         counts=counts,
-        strength=_strength(matching),
+        strength=_strength(matching, independence_keys=independence_keys),
     )
 
 
 def _investigation_records(
     records: tuple[EngineeringExperienceRecord, ...],
     transfers: dict[str, ContextTransferAssessment],
+    independence_keys: Mapping[str, str] | None = None,
 ) -> tuple[InvestigationOutcomeRecord, ...]:
     projected: list[InvestigationOutcomeRecord] = []
     for record in records:
@@ -999,7 +1072,7 @@ def _investigation_records(
                 experience_id=record.experience_id,
                 transfer_level=transfer.level,
                 outcome=fact,
-                counts=_counts((record,)),
+                counts=_counts((record,), independence_keys),
                 useful=useful,
                 explanation=(
                     "This prior investigation reached a recorded discriminator or terminal evidence state."
@@ -1014,6 +1087,7 @@ def _investigation_records(
 def _dead_end_records(
     records: tuple[EngineeringExperienceRecord, ...],
     transfers: dict[str, ContextTransferAssessment],
+    independence_keys: Mapping[str, str] | None = None,
 ) -> tuple[EngineeringDeadEndRecord, ...]:
     grouped: dict[
         tuple[str, str | None, str | None, str | None],
@@ -1035,7 +1109,7 @@ def _dead_end_records(
             (transfers[item.experience_id].level for item in group_records),
             key=lambda level: _TRANSFER_ORDER[level],
         )
-        counts = _counts(group_records)
+        counts = _counts(group_records, independence_keys)
         repeatable = (
             transfer_level in {"exact", "compatible"}
             and max(
@@ -1078,6 +1152,7 @@ def _driver_fingerprints(
     current: CurrentLearningInputs,
     records: tuple[EngineeringExperienceRecord, ...],
     transfers: dict[str, ContextTransferAssessment],
+    independence_keys: Mapping[str, str] | None = None,
 ) -> tuple[DriverPerformanceFingerprint, ...]:
     if current.context.driver_id is None:
         return ()
@@ -1113,7 +1188,7 @@ def _driver_fingerprints(
     for metric in sorted(grouped):
         pairs = grouped[metric]
         group_records = tuple(record for record, _ in pairs)
-        counts = _counts(group_records)
+        counts = _counts(group_records, independence_keys)
         if (
             counts.independent_episode_count < 2
             and counts.independent_workflow_count < 2
@@ -1195,6 +1270,7 @@ def _driver_fingerprints(
 def _car_fingerprints(
     records: tuple[EngineeringExperienceRecord, ...],
     transfers: dict[str, ContextTransferAssessment],
+    independence_keys: Mapping[str, str] | None = None,
 ) -> tuple[CarResponseFingerprint, ...]:
     grouped: dict[tuple[str, str, str, str], list[EngineeringExperienceRecord]] = (
         defaultdict(list)
@@ -1235,7 +1311,7 @@ def _car_fingerprints(
                 )[:24],
                 transfer_level=transfer_level,
                 response=representative,
-                counts=_counts(group_records),
+                counts=_counts(group_records, independence_keys),
                 source_experience_ids=tuple(
                     record.experience_id for record in group_records
                 ),
@@ -1281,6 +1357,7 @@ def _mind_change_records(
 def _attention_order(
     investigation_records: tuple[InvestigationOutcomeRecord, ...],
     record_by_id: dict[str, EngineeringExperienceRecord],
+    independence_keys: Mapping[str, str] | None = None,
 ) -> tuple[AttentionOrderItem, ...]:
     exact_or_compatible = tuple(
         item
@@ -1292,6 +1369,22 @@ def _attention_order(
         values: Iterable[InvestigationOutcomeRecord],
     ) -> tuple[set[str], set[str]]:
         items = tuple(values)
+        if independence_keys is not None:
+            episode_units = {
+                independence_keys.get(item.experience_id)
+                or record_by_id[item.experience_id].problem.physical_episode_id
+                or item.outcome.investigation_id
+                for item in items
+            }
+            workflow_units = {
+                independence_keys.get(item.experience_id)
+                or record_by_id[item.experience_id].source_workflow_id
+                or next(iter(item.outcome.workflow_ids), item.outcome.investigation_id)
+                for item in items
+                if item.outcome.workflow_ids
+                or record_by_id[item.experience_id].source_workflow_id is not None
+            }
+            return episode_units, workflow_units
         episode_ids = {
             episode_id
             for item in items
@@ -1651,19 +1744,35 @@ def build_crew_chief_learning_prior(
             blocker=query.blockers,
         )
     records = query.records
+    independence_keys = _recording_independence_keys(
+        records,
+        db_path=db_path or learning_repository.db_path,
+    )
     transfers = {
         record.experience_id: _transfer_assessment(current.context, record)
         for record in records
     }
     transfer_values = tuple(transfers.values())
-    recurrence = _recurrence(current, records, transfers)
-    investigations = _investigation_records(records, transfers)
-    dead_ends = _dead_end_records(records, transfers)
-    driver = _driver_fingerprints(current, records, transfers)
-    car = _car_fingerprints(records, transfers)
+    recurrence = _recurrence(
+        current, records, transfers, independence_keys=independence_keys
+    )
+    investigations = _investigation_records(
+        records, transfers, independence_keys=independence_keys
+    )
+    dead_ends = _dead_end_records(
+        records, transfers, independence_keys=independence_keys
+    )
+    driver = _driver_fingerprints(
+        current, records, transfers, independence_keys=independence_keys
+    )
+    car = _car_fingerprints(
+        records, transfers, independence_keys=independence_keys
+    )
     mind_changes = _mind_change_records(records, transfers)
     attention = _attention_order(
-        investigations, {record.experience_id: record for record in records}
+        investigations,
+        {record.experience_id: record for record in records},
+        independence_keys=independence_keys,
     )
     surfaced = (
         {item.experience_id for item in investigations}
@@ -1720,7 +1829,7 @@ def build_crew_chief_learning_prior(
     )
     if best_transfer in {"weak", "blocked"}:
         attention = ()
-    counts = _counts(records)
+    counts = _counts(records, independence_keys)
     brief = _post_run_brief(
         state=prior_state,
         recurrence=recurrence,
@@ -1751,7 +1860,7 @@ def build_crew_chief_learning_prior(
         context_transfers=transfer_values,
         evidence_references=references,
         context_transfer_level=best_transfer,
-        strength=_strength(records),
+        strength=_strength(records, independence_keys=independence_keys),
         counts=counts,
         ledger=_ledger(records),
         post_run_brief=brief,

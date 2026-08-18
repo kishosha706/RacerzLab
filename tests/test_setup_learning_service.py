@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import hashlib
 from pathlib import Path
 
 import pytest
 
+from racelab_engine.analysis.advanced_experimentation import (
+    ExperimentHistorySummary,
+    evaluate_experiment_unlock,
+)
 from racelab_engine.analysis.comparison import (
     ComparedChannelDelta,
     DidItWorkVerdict,
@@ -18,18 +23,14 @@ from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.services.setup_learning_service import (
     SetupResponseContext,
     build_setup_response_context,
-    get_setup_area_biases,
     get_interaction_response_models,
     get_observed_tech_envelope,
+    get_setup_area_biases,
     get_setup_response_graph,
     get_setup_response_models,
     record_interaction_response,
     record_setup_response,
     response_environment_key,
-)
-from racelab_engine.analysis.advanced_experimentation import (
-    ExperimentHistorySummary,
-    evaluate_experiment_unlock,
 )
 from racelab_engine.storage.db import initialize_database
 
@@ -66,6 +67,13 @@ def _record(
     response_context: SetupResponseContext | None = None,
 ) -> bool:
     context = response_context or _context()
+    source_run_ids = (
+        (f"{comparison_id}-a", f"{comparison_id}-b", f"{comparison_id}-a2")
+        if include_source_runs
+        else None
+    )
+    if source_run_ids is not None:
+        _seed_unique_recordings(db_path, source_run_ids)
     return record_setup_response(
         comparison_id=comparison_id,
         car_name="Next Gen Camaro",
@@ -111,10 +119,7 @@ def _record(
         evidence_state=EvidenceState.CONTROLLED_TEST_EFFECT,
         source_channels=["lap_dist_pct", "speed_mph"],
         evidence_event_ids=[f"{comparison_id}:event"],
-        source_run_ids=(
-            [f"{comparison_id}-a", f"{comparison_id}-b", f"{comparison_id}-a2"]
-            if include_source_runs else None
-        ),
+        source_run_ids=list(source_run_ids) if source_run_ids is not None else None,
         baseline_setup_passed_tech=True,
         test_setup_passed_tech=True,
         baseline_setup_for_model={"rf_front_spring_n_per_mm": 300.0, "cross_weight_percent": 50.0},
@@ -207,6 +212,88 @@ def test_same_physical_aba_cannot_be_counted_again_under_a_new_comparison_id(tmp
         test_setup_for_model={"rf_front_spring_n_per_mm": 305.0, "cross_weight_percent": 50.0},
         db_path=db_path,
     ) is False
+
+
+def _seed_recording_aliases(
+    db_path: Path,
+    run_ids: tuple[str, ...],
+    source_sha256: str,
+) -> None:
+    connection = initialize_database(db_path)
+    try:
+        for run_id in run_ids:
+            connection.execute(
+                "INSERT INTO runs "
+                "(run_id, source_file, file_hash, import_time, imported_at, session_json) "
+                "VALUES (?, ?, ?, '2026-08-18', '2026-08-18', '{}') "
+                "ON CONFLICT(run_id) DO UPDATE SET file_hash = excluded.file_hash",
+                (run_id, f"{run_id}.ibt", source_sha256),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _seed_unique_recordings(
+    db_path: Path,
+    run_ids: tuple[str, ...],
+) -> None:
+    connection = initialize_database(db_path)
+    try:
+        for run_id in run_ids:
+            source_sha256 = hashlib.sha256(run_id.encode("utf-8")).hexdigest()
+            connection.execute(
+                "INSERT OR IGNORE INTO runs "
+                "(run_id, source_file, file_hash, import_time, imported_at, session_json) "
+                "VALUES (?, ?, ?, '2026-08-18', '2026-08-18', '{}')",
+                (run_id, f"{run_id}.ibt", source_sha256),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_same_recording_aliases_cannot_enter_or_reenter_p19_response_memory(
+    tmp_path: Path,
+) -> None:
+    rejected_db = tmp_path / "rejected-alias-learning.sqlite"
+    _seed_recording_aliases(
+        rejected_db,
+        ("alias-a", "alias-b", "alias-a2"),
+        "7" * 64,
+    )
+    assert _record(rejected_db, "alias") is False
+
+    legacy_db = tmp_path / "legacy-alias-learning.sqlite"
+    assert _record(legacy_db, "legacy") is True
+    _seed_recording_aliases(
+        legacy_db,
+        ("legacy-a", "legacy-b", "legacy-a2"),
+        "6" * 64,
+    )
+    assert get_setup_response_graph(_context(), db_path=legacy_db)["edges"] == []
+
+
+def test_missing_recording_identity_cannot_reenter_response_projection(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "missing-identity-learning.sqlite"
+    assert _record(db_path, "identity-loss") is True
+    connection = initialize_database(db_path)
+    with connection:
+        connection.execute(
+            "DELETE FROM runs WHERE run_id = ?",
+            ("identity-loss-a2",),
+        )
+    connection.close()
+
+    assert get_setup_response_graph(_context(), db_path=db_path)["edges"] == []
+    assert get_setup_area_biases(
+        "Next Gen Camaro",
+        "Charlotte Oval",
+        response_context=_context(),
+        db_path=db_path,
+    ) == {}
 
 
 def test_existing_setup_response_is_idempotent_and_cannot_be_partially_rewritten(tmp_path: Path) -> None:
@@ -346,6 +433,7 @@ def test_response_graph_skips_malformed_or_cross_context_memory_rows(tmp_path: P
         contradiction_rate=0.1,
         traceable_fraction=1.0,
     ))
+    _seed_unique_recordings(interaction_db_path, ("a", "b", "a2"))
     assert record_interaction_response(
         experiment_id="malformed-interaction",
         response_context=_context(),
@@ -596,6 +684,12 @@ def _record_model_point(
     test_tape: float = 20.0,
 ) -> bool:
     context = replace(_context(), baseline_setup_fingerprint=f"baseline-{baseline}")
+    source_run_ids = (
+        f"{comparison_id}-a",
+        f"{comparison_id}-b",
+        f"{comparison_id}-a2",
+    )
+    _seed_unique_recordings(db_path, source_run_ids)
     return record_setup_response(
         comparison_id=comparison_id,
         car_name=context.car_name,
@@ -637,7 +731,7 @@ def _record_model_point(
         evidence_state=EvidenceState.CONTROLLED_TEST_EFFECT,
         source_channels=["lap_dist_pct", "speed_mph"],
         evidence_event_ids=[f"{comparison_id}:event"],
-        source_run_ids=[f"{comparison_id}-a", f"{comparison_id}-b", f"{comparison_id}-a2"],
+        source_run_ids=list(source_run_ids),
         baseline_setup_passed_tech=tech_passed,
         test_setup_passed_tech=tech_passed,
         baseline_setup_for_model={"cross_weight_percent": baseline, "tape_percent": baseline_tape},
@@ -757,6 +851,12 @@ def test_qualified_interaction_learning_is_traceable_and_exact_context(tmp_path:
     unlock = evaluate_experiment_unlock(history)
     rows = [(-1.0, -1.0), (-1.0, 1.0), (1.0, -1.0), (1.0, 1.0)] * 2
     for index, (left, right) in enumerate(rows):
+        source_run_ids = (
+            f"run-{index}-a",
+            f"run-{index}-b",
+            f"run-{index}-a2",
+        )
+        _seed_unique_recordings(db_path, source_run_ids)
         assert record_interaction_response(
             experiment_id=f"doe-{index}",
             response_context=_context(),
@@ -765,7 +865,7 @@ def test_qualified_interaction_learning_is_traceable_and_exact_context(tmp_path:
             uncertainty=0.03,
             setup_passed_tech=True,
             evidence_packet_ids=[f"packet-{index}"],
-            source_run_ids=[f"run-{index}-a", f"run-{index}-b", f"run-{index}-a2"],
+            source_run_ids=list(source_run_ids),
             experiment_unlock=unlock,
             controlled_effect_eligible=True,
             evidence_state=EvidenceState.CONTROLLED_TEST_EFFECT,
@@ -799,6 +899,13 @@ def test_qualified_interaction_learning_is_traceable_and_exact_context(tmp_path:
 
     unchanged = get_interaction_response_models(_context(), db_path=db_path)
     assert unchanged["outcomes"]["lap_time_delta_s"]["coefficients"]["f0*f1"] == pytest.approx(0.4, abs=1e-5)
+
+    connection = initialize_database(db_path)
+    with connection:
+        connection.execute("DELETE FROM runs WHERE run_id = ?", ("run-0-a2",))
+    connection.close()
+    identity_filtered = get_interaction_response_models(_context(), db_path=db_path)
+    assert identity_filtered["observation_count"] == 7
 
 
 def test_interaction_admission_requires_controlled_context_and_two_real_factor_changes(tmp_path: Path) -> None:

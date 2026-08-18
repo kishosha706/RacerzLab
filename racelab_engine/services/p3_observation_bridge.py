@@ -47,7 +47,12 @@ from racelab_engine.analysis.stint_strategy import (
     STINT_TRAFFIC_CHANNELS,
     analyze_stint_strategy,
 )
-from racelab_engine.analysis.time_alignment import TimeAlignmentResult, analyze_time_alignment
+from racelab_engine.analysis.time_alignment import (
+    TimeAlignmentResult,
+    analyze_time_alignment,
+    detect_engineering_phases,
+    nearest_sorted_index,
+)
 from racelab_engine.analysis.tire_state_energy import analyze_tire_state
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.lap import LapSummary
@@ -126,6 +131,42 @@ _PHASE_COMPARISON_CHANNELS = (
     "dynamic_pressure_psf",
     "cfs_risk_score",
 )
+
+
+def _annotate_eligible_engineering_phases(
+    grouped: dict[int, list[dict[str, Any]]],
+    eligible_lap_numbers: set[int],
+) -> None:
+    """Attach one canonical phase solution per eligible lap for all P3 consumers."""
+
+    for lap_number_value in sorted(eligible_lap_numbers):
+        lap_rows = grouped.get(lap_number_value, [])
+        if not lap_rows or all(row.get("engineering_phase") for row in lap_rows):
+            continue
+        grid = sorted({
+            round(position, 3)
+            for row in lap_rows
+            if (position := lap_pct(row)) is not None
+        })
+        if len(grid) < 3:
+            continue
+        detector_rows = [
+            row
+            if row.get("lap_dist_pct_100") is not None
+            else {**row, "lap_dist_pct_100": lap_pct(row)}
+            for row in lap_rows
+        ]
+        phase_by_position, _intervals, _channels = detect_engineering_phases(
+            detector_rows,
+            grid=grid,
+        )
+        for row in lap_rows:
+            position = lap_pct(row)
+            if position is None:
+                continue
+            row["engineering_phase"] = phase_by_position[
+                nearest_sorted_index(grid, position)
+            ]
 _TIRE_HISTORY_CHANNELS = tuple(
     f"{corner}_{suffix}"
     for corner in ("lf", "rf", "lr", "rr")
@@ -1112,7 +1153,11 @@ def build_p3_mechanism_observations(
             blocker_reasons=_ordered_unique(selection_blockers),
         )
 
-    normalized_rows = [dict(row) for row in rows]
+    normalized_rows = (
+        rows
+        if isinstance(rows, list) and all(isinstance(row, dict) for row in rows)
+        else [dict(row) for row in rows]
+    )
     grouped = _group_rows(normalized_rows)
     selected_rows = grouped.get(selected.lap_number, [])
     if not selected_rows:
@@ -1122,6 +1167,14 @@ def build_p3_mechanism_observations(
             setup_id=setup_id,
             blocker_reasons=("The selected eligible lap has no telemetry rows.",),
         )
+    eligible_lap_numbers = {lap.lap_number for lap in eligible}
+    _annotate_eligible_engineering_phases(grouped, eligible_lap_numbers)
+    eligible_rows = [
+        row
+        for lap_number_value, lap_rows in grouped.items()
+        if lap_number_value in eligible_lap_numbers
+        for row in lap_rows
+    ]
     try:
         cohort_clear, cohort_cap, certificates = _cohort_integrity(
             grouped,
@@ -1205,7 +1258,7 @@ def build_p3_mechanism_observations(
         try:
             if mechanism is MechanismKind.DAMPER_RESPONSE:
                 producer_report = analyzer(
-                    normalized_rows,
+                    eligible_rows,
                     list(laps),
                     run_id=run_id,
                     selected_lap=selected.lap_number,
@@ -1215,7 +1268,7 @@ def build_p3_mechanism_observations(
                 )
             elif mechanism is MechanismKind.POWERTRAIN_RESPONSE:
                 producer_report = analyzer(
-                    normalized_rows,
+                    eligible_rows,
                     list(laps),
                     selected_lap=selected.lap_number,
                     sim_integrity_clear=cohort_clear,
@@ -1224,7 +1277,7 @@ def build_p3_mechanism_observations(
                 )
             else:
                 producer_report = analyzer(
-                    normalized_rows,
+                    eligible_rows,
                     list(laps),
                     selected_lap=selected.lap_number,
                     sim_integrity_clear=cohort_clear,

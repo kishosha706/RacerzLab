@@ -69,7 +69,8 @@ def _load_platform_events(
     event_type: Optional[str] = None,
 ) -> tuple[list[PlatformEventItem], str, list[str]]:
     repo = repository()
-    if repo.get_session(run_id) is None:
+    session = repo.get_session(run_id)
+    if session is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
 
     laps = repo.get_laps(run_id)
@@ -104,7 +105,12 @@ def _load_platform_events(
         blocker_reasons = ["No telemetry rows were available for the selected run and lap."]
     else:
         event_types = [event_type] if event_type else None
-        events = detect_platform_events(rows, lap=lap, event_types=event_types)
+        events = detect_platform_events(
+            rows,
+            lap=lap,
+            event_types=event_types,
+            expected_sample_rate_hz=getattr(session, "telemetry_rate_hz", None),
+        )
         payload = [PlatformEventItem(**event.as_dict()) for event in events]
         if lap is not None and any(event.lap != lap for event in payload):
             payload = []

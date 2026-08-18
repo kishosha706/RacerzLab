@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
+import shutil
 import time
 import uuid
 from pathlib import Path
 
 import aiofiles  # type: ignore[import-untyped]
-
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
@@ -25,6 +26,10 @@ os.makedirs(IMPORTS_DIR, exist_ok=True)
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
+class RecordingSourceConflictError(RuntimeError):
+    """A retained source no longer matches its content-addressed identity."""
+
+
 def _get_request_id(request: Request) -> str:
     """Get or generate a correlation ID for this request."""
     return request.headers.get("x-racerzlab-request-id") or f"be_{uuid.uuid4().hex[:12]}"
@@ -37,6 +42,61 @@ def _sanitize_filename(name: str) -> str:
         raise HTTPException(400, "Invalid filename.")
     name = re.sub(r'[^\w.\- ]', "_", name)
     return name
+
+
+def _promote_content_addressed_upload(
+    temp_path: Path,
+    source_sha256: str,
+    size_bytes: int,
+) -> tuple[Path, bool]:
+    """Atomically retain one uploaded source copy per full file SHA."""
+
+    destination = IMPORTS_DIR / f"{source_sha256}.ibt"
+
+    def existing_source_matches() -> bool:
+        if destination.stat().st_size != size_bytes:
+            return False
+        digest = hashlib.sha256()
+        with destination.open("rb") as source:
+            for chunk in iter(lambda: source.read(UPLOAD_CHUNK_SIZE), b""):
+                digest.update(chunk)
+        return digest.hexdigest() == source_sha256
+
+    try:
+        if destination.exists():
+            if not existing_source_matches():
+                raise RecordingSourceConflictError(
+                    "Stored recording source conflicts with its content identity."
+                )
+            return destination, False
+        try:
+            # A same-directory hard link is an atomic create-if-absent and
+            # avoids copying a potentially large recording a second time.
+            os.link(temp_path, destination)
+        except FileExistsError:
+            if not existing_source_matches():
+                raise RecordingSourceConflictError(
+                    "Stored recording source conflicts with its content identity."
+                )
+            return destination, False
+        except OSError:
+            # Filesystems without hard-link support retain the same exclusive
+            # create semantics; another importer winning the race is reuse.
+            try:
+                with destination.open("xb") as output, temp_path.open("rb") as source:
+                    shutil.copyfileobj(source, output, length=UPLOAD_CHUNK_SIZE)
+            except FileExistsError:
+                if not existing_source_matches():
+                    raise RecordingSourceConflictError(
+                        "Stored recording source conflicts with its content identity."
+                    )
+                return destination, False
+            except Exception:
+                destination.unlink(missing_ok=True)
+                raise
+        return destination, True
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 class ScanTelemetryFolderRequest(BaseModel):
@@ -93,6 +153,8 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
     content_type = request.headers.get("content-type", "").lower()
     import_mode = "unknown"
     uploaded_dest: Path | None = None
+    uploaded_dest_created = False
+    uploaded_source_reused = False
 
     if "multipart/form-data" in content_type or "application/octet-stream" in content_type:
         import_mode = "multipart"
@@ -106,18 +168,47 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
         if filename is None or not filename.lower().endswith(".ibt"):
             raise HTTPException(400, "Unsupported file type. Please select an .ibt telemetry file.")
         _log.info("[%s] Multipart file accepted: %s", req_id, filename)
-        safe_name = _sanitize_filename(filename)
-        dest = IMPORTS_DIR / f"{uuid.uuid4().hex}-{safe_name}"
+        _sanitize_filename(filename)
+        temp_dest = IMPORTS_DIR / f".upload-{uuid.uuid4().hex}.tmp"
+        digest = hashlib.sha256()
+        size_bytes = 0
         try:
-            async with aiofiles.open(dest, "wb") as f:
+            async with aiofiles.open(temp_dest, "wb") as f:
                 while chunk := await file.read(UPLOAD_CHUNK_SIZE):
+                    digest.update(chunk)
+                    size_bytes += len(chunk)
                     await f.write(chunk)
-        except Exception:
+            dest, uploaded_dest_created = await run_in_threadpool(
+                _promote_content_addressed_upload,
+                temp_dest,
+                digest.hexdigest(),
+                size_bytes,
+            )
+            uploaded_source_reused = not uploaded_dest_created
+        except Exception as exc:
             try:
-                if dest.exists():
-                    dest.unlink()
+                temp_dest.unlink(missing_ok=True)
             except OSError:
-                _log.warning("[%s] Could not remove failed upload temp file: %s", req_id, dest)
+                _log.warning(
+                    "[%s] Could not remove failed upload temp file: %s",
+                    req_id,
+                    temp_dest,
+                )
+            if isinstance(exc, RecordingSourceConflictError):
+                raise HTTPException(
+                    409,
+                    detail={
+                        "title": "Recording source integrity conflict",
+                        "message": (
+                            "The stored source no longer matches its content-addressed identity."
+                        ),
+                        "impact": "The existing source was preserved and no import was started.",
+                        "next_step": (
+                            "Preserve the imports folder for diagnosis, then restore or re-import "
+                            "the original .ibt source."
+                        ),
+                    },
+                ) from exc
             raise
         uploaded_dest = dest
         path_or_file = str(dest)
@@ -163,7 +254,7 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
         result, cache_result = await run_in_threadpool(import_service.import_ibt_file, path_or_file)
     except Exception as exc:
         _log.error("[%s] Import_service raised unhandled exception: %s", req_id, exc)
-        if uploaded_dest is not None:
+        if uploaded_dest is not None and uploaded_dest_created:
             try:
                 uploaded_dest.unlink(missing_ok=True)
             except OSError:
@@ -181,7 +272,10 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
         ) from exc
     elapsed = time.time() - t0
     run_id = result.overview.run_id if result.overview else None
-    existing_run_updated = any("Duplicate telemetry detected" in warning for warning in result.status.warnings)
+    recording_sha256 = (
+        result.overview.session.file_hash if result.overview is not None else None
+    )
+    existing_run_updated = import_service.last_import_existing_run_updated
     _log.info("[%s] Import_service finished in %.1f s: run_id=%s", req_id, elapsed, run_id)
 
     cache = None
@@ -270,9 +364,11 @@ async def import_ibt_file(request: Request) -> ImportIbtResponse:
     _log.info("[%s] Returning response: run_id=%s track_map=%s", req_id, run_id, track_map_resolution.status if track_map_resolution else "None")
     return ImportIbtResponse(
         run_id=run_id,
+        recording_sha256=recording_sha256,
         status=result.status,
         cache=cache,
         track_map=track_map_resolution,
         analysis_status="ready",
         existing_run_updated=existing_run_updated,
+        recording_reused=uploaded_source_reused or existing_run_updated,
     )

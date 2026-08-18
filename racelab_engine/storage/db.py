@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import os
 import json
+import hashlib
+import os
 import sqlite3
 from pathlib import Path
 from threading import RLock
@@ -14,6 +15,10 @@ DEFAULT_DB_PATH = Path("data/racelab.sqlite")
 # mode.  That added several milliseconds to even a single-row lookup.
 _INITIALIZED_DATABASES: dict[str, tuple[int, int]] = {}
 _INITIALIZE_LOCK = RLock()
+_LIGHTWEIGHT_MIGRATION_VERSION = 1
+_LIGHTWEIGHT_MIGRATION_CHECKSUM = hashlib.sha256(
+    b"racelab-additive-schema-through-p35.4.1-v1"
+).hexdigest()
 
 
 def default_db_path() -> Path:
@@ -79,9 +84,37 @@ def _add_column_if_missing(connection: sqlite3.Connection, table_name: str, colu
 
 
 def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
-    # Existing developer databases from the scaffold had narrower tables. These
-    # additive migrations keep local data usable without pretending to be a full
-    # migration framework.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+          version INTEGER PRIMARY KEY,
+          checksum TEXT NOT NULL,
+          applied_at TEXT NOT NULL
+        )
+        """
+    )
+    newer = connection.execute(
+        "SELECT version FROM schema_migrations WHERE version > ? ORDER BY version LIMIT 1",
+        (_LIGHTWEIGHT_MIGRATION_VERSION,),
+    ).fetchone()
+    if newer is not None:
+        raise RuntimeError(
+            "Database schema was created by a newer RacerZLab build; upgrade this app before opening it."
+        )
+    applied = connection.execute(
+        "SELECT checksum FROM schema_migrations WHERE version = ?",
+        (_LIGHTWEIGHT_MIGRATION_VERSION,),
+    ).fetchone()
+    if applied is not None:
+        if applied["checksum"] != _LIGHTWEIGHT_MIGRATION_CHECKSUM:
+            raise RuntimeError(
+                "Database migration history checksum does not match this RacerZLab build."
+            )
+        return
+
+    # Existing developer databases from the scaffold had narrower tables. This
+    # checksum-bound compatibility migration runs once per database. A future
+    # schema change must add a new ordered version rather than mutating this one.
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS crew_chief_investigations (
@@ -519,6 +552,7 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
             "air_pressure": "air_pressure REAL",
             "primary_findings_json": "primary_findings_json TEXT",
             "warnings_json": "warnings_json TEXT",
+            "engineering_blockers_json": "engineering_blockers_json TEXT",
             "session_json": "session_json TEXT",
         }.items():
             _add_column_if_missing(connection, "runs", column_name, ddl)
@@ -1049,6 +1083,13 @@ def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
             ON DELETE RESTRICT
         )
         """
+    )
+    connection.execute(
+        """
+        INSERT INTO schema_migrations(version, checksum, applied_at)
+        VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        """,
+        (_LIGHTWEIGHT_MIGRATION_VERSION, _LIGHTWEIGHT_MIGRATION_CHECKSUM),
     )
 
 

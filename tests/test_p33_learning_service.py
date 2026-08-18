@@ -5,6 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
+from test_engineering_memory_service import _scored_workflow
+from test_p19_release_proofs import _run as _imported_run
 
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.crew_chief import (
@@ -39,8 +41,6 @@ from racelab_engine.storage.engineering_learning_repository import (
     EngineeringLearningRepository,
 )
 from racelab_engine.storage.repository import RaceLabRepository
-from test_engineering_memory_service import _scored_workflow
-from test_p19_release_proofs import _run as _imported_run
 
 
 def _context(
@@ -1912,3 +1912,42 @@ def test_relevant_corruption_blocks_memory_and_stream_head_corruption_blocks(
     assert blocked.state == "blocked"
     assert blocked.recommended_attention_order == ()
     assert "stream tail is corrupt" in blocked.blocker_reasons[0]
+
+
+def test_same_recording_aliases_do_not_increment_p33_independence(tmp_path) -> None:
+    problem = _problem(99)
+    first = _investigation_experience(1, problem=problem)
+    alias = _investigation_experience(2, problem=problem)
+    db_path = tmp_path / "same-recording-learning.sqlite"
+    connection = initialize_database(db_path)
+    try:
+        for run_id in {
+            provenance.run_id
+            for record in (first, alias)
+            for provenance in record.source_provenance
+        }:
+            connection.execute(
+                "INSERT INTO runs "
+                "(run_id, source_file, file_hash, import_time, imported_at, session_json) "
+                "VALUES (?, ?, ?, '2026-08-18', '2026-08-18', '{}')",
+                (run_id, f"{run_id}.ibt", "9" * 64),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+    same_recording = service._recording_independence_keys(
+        (first, alias),
+        db_path=db_path,
+    )
+
+    counts = service._counts((first, alias), same_recording)
+
+    assert len(set(same_recording.values())) == 1
+    assert counts.observation_count == 2
+    assert counts.independent_episode_count == 1
+    assert counts.distinct_session_count == 1
+    assert counts.distinct_context_count == 1
+    assert (
+        service._strength((first, alias), independence_keys=same_recording)
+        == "single_case"
+    )

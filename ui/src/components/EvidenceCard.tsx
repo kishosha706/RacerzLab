@@ -4,6 +4,7 @@ import { humanizeEventLabel } from "../constants/ui";
 import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { getChannelLabel, getChannelPrecision, getChannelUnit } from "../utils/channelMeta";
 import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
+import { evidenceStrengthOutOf100 } from "../utils/evidenceScore";
 import { telemetryEventIsActionable } from "../utils/evidenceTrust";
 import type { TelemetryEvent } from "../types/telemetry";
 
@@ -13,9 +14,7 @@ type EvidenceCardProps = {
 };
 
 export function EvidenceCard({ event, onToggleMapOverlay }: EvidenceCardProps) {
-  const confidence = Number.isFinite(event.confidence_score)
-    ? `${Math.round(event.confidence_score * 100)}%`
-    : "Unavailable";
+  const confidence = evidenceStrengthOutOf100(event.confidence_score);
   const actionable = telemetryEventIsActionable(event);
   const { selection, focusEvidence } = useTelemetrySelection();
   const rawSubtype = event.event_subtype?.trim();

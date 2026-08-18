@@ -11,7 +11,7 @@ from racelab_engine.analysis.observation_intelligence import (
     build_opportunity_signatures,
     build_same_setup_anomaly_envelopes,
 )
-from racelab_engine.models.engineering import EngineGate, EngineeringConclusion
+from racelab_engine.models.engineering import EngineeringConclusion, EngineGate
 from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.lap import LapSummary
@@ -20,10 +20,10 @@ from racelab_engine.models.observation_intelligence import (
     ObservationStatus,
     OpportunitySignature,
 )
+from racelab_engine.services.import_service import TelemetryArtifactIdentityError
 from racelab_engine.services.observation_intelligence_service import (
     build_observation_intelligence,
 )
-from racelab_engine.services.import_service import TelemetryArtifactIdentityError
 
 
 def _lap(
@@ -543,6 +543,7 @@ def test_wrapper_fails_closed_when_telemetry_artifact_identity_is_unverifiable(
         run_id="run-a",
         session=SimpleNamespace(run_id="run-a"),
         warnings=[],
+        engineering_blockers=[],
         setup_snapshot=SimpleNamespace(run_id="run-a", setup_id="setup-a"),
         laps=_laps(),
         events=[],

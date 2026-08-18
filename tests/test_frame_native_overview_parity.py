@@ -18,29 +18,51 @@ from racelab_engine.io.ibt_reader import (
 )
 
 
+def _assert_complete_payload_parity(left, right) -> None:
+    if isinstance(left, dict) and isinstance(right, dict):
+        assert set(left) == set(right)
+        for key in left:
+            _assert_complete_payload_parity(left[key], right[key])
+        return
+    if isinstance(left, (list, tuple)) and isinstance(right, (list, tuple)):
+        assert len(left) == len(right)
+        for left_item, right_item in zip(left, right):
+            _assert_complete_payload_parity(left_item, right_item)
+        return
+    if isinstance(left, float) or isinstance(right, float):
+        assert left == pytest.approx(right, nan_ok=True)
+        return
+    assert left == right
+
+
 def test_detect_laps_row_vs_frame_parity(talladega_ibt_path) -> None:
     rows, _ = read_normalized_records(talladega_ibt_path)
     frame = pl.DataFrame(rows)
-    row_laps = detect_laps(rows, run_id="parity")
-    frame_laps = detect_laps(frame, run_id="parity")
+    row_laps = detect_laps(rows, run_id="parity", expected_sample_rate_hz=60.0)
+    frame_laps = detect_laps(frame, run_id="parity", expected_sample_rate_hz=60.0)
     assert len(row_laps) == len(frame_laps)
     for a, b in zip(row_laps, frame_laps):
-        assert a.lap_number == b.lap_number
-        assert a.is_complete == b.is_complete
-        assert a.sample_count == b.sample_count
-        assert a.min_splitter_mm == b.min_splitter_mm
+        _assert_complete_payload_parity(
+            a.model_dump(mode="json"),
+            b.model_dump(mode="json"),
+        )
 
 
 def test_detect_platform_row_vs_frame_parity(talladega_ibt_path) -> None:
     rows, _ = read_normalized_records(talladega_ibt_path)
     frame = pl.DataFrame(rows)
-    row_events = _build_overview_platform_events(rows, run_id="parity")
-    frame_events = _build_overview_platform_events(frame, run_id="parity")
+    row_events = _build_overview_platform_events(
+        rows, run_id="parity", expected_sample_rate_hz=60.0,
+    )
+    frame_events = _build_overview_platform_events(
+        frame, run_id="parity", expected_sample_rate_hz=60.0,
+    )
     assert len(row_events) == len(frame_events)
     for a, b in zip(row_events, frame_events):
-        assert a.lap_number == b.lap_number
-        assert a.event_subtype == b.event_subtype
-        assert a.primary_metric_value == b.primary_metric_value
+        _assert_complete_payload_parity(
+            a.model_dump(mode="json"),
+            b.model_dump(mode="json"),
+        )
 
 
 def test_detect_drag_scrub_row_vs_frame_parity(talladega_ibt_path) -> None:
@@ -49,12 +71,21 @@ def test_detect_drag_scrub_row_vs_frame_parity(talladega_ibt_path) -> None:
     row_events = detect_drag_scrub_risk_zones(rows, run_id="parity")
     frame_events = detect_drag_scrub_risk_zones(frame, run_id="parity")
     assert len(row_events) == len(frame_events)
+    for row_event, frame_event in zip(row_events, frame_events):
+        _assert_complete_payload_parity(
+            row_event.model_dump(mode="json"),
+            frame_event.model_dump(mode="json"),
+        )
 
 
 def test_overview_drag_uses_frame_native_path_without_changing_evidence(talladega_ibt_path) -> None:
     rows, _ = read_normalized_records(talladega_ibt_path)
     frame = pl.DataFrame(rows)
-    laps = eligible_laps(classify_laps(detect_laps(frame, run_id="parity")))
+    laps = eligible_laps(classify_laps(detect_laps(
+        frame,
+        run_id="parity",
+        expected_sample_rate_hz=60.0,
+    )))
     best_lap = min(laps, key=lambda lap: lap.lap_time or 999_999.0)
 
     row_events, row_warning = _build_overview_drag_events(

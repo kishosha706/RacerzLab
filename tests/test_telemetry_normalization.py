@@ -9,7 +9,6 @@ import pytest
 from racelab_engine.analysis.calculated_channels import normalize_telemetry_rows
 from racelab_engine.io.ibt_reader import read_normalized_records
 from racelab_engine.services.import_service import (
-    TelemetryArtifactIdentityError,
     bucket_downsample,
     build_trace_payload,
 )
@@ -232,21 +231,19 @@ def test_missing_channel_behavior() -> None:
 
 
 
-def test_trace_preserves_extrema_with_new_channels(talladega_run_id: str) -> None:
+def test_trace_preserves_extrema_with_new_channels(talladega_run) -> None:
     """Trace API with preserve_extrema should not lose min CFS from new channels."""
-    run_id = talladega_run_id
+    run_id = talladega_run.run_id
 
     # Full-resolution trace
-    try:
-        full_trace = build_trace_payload(
-            run_id,
-            lap=2,
-            channels=["cfs_ride_height_in", "center_rake_fs_in", "dynamic_pressure_psf"],
-            downsample=1,
-            preserve_extrema=False,
-        )
-    except TelemetryArtifactIdentityError:
-        pytest.skip("Persisted telemetry predates immutable artifact identity; re-import is required.")
+    full_trace = build_trace_payload(
+        run_id,
+        lap=2,
+        channels=["cfs_ride_height_in", "center_rake_fs_in", "dynamic_pressure_psf"],
+        downsample=1,
+        preserve_extrema=False,
+        data_dir=talladega_run.data_dir,
+    )
     full_min = _trace_channel_min(full_trace, "cfs_ride_height_in")
 
     # Downsampled with extrema preservation
@@ -256,6 +253,7 @@ def test_trace_preserves_extrema_with_new_channels(talladega_run_id: str) -> Non
         channels=["cfs_ride_height_in", "center_rake_fs_in", "dynamic_pressure_psf"],
         downsample="auto",
         preserve_extrema=True,
+        data_dir=talladega_run.data_dir,
     )
     ds_min = _trace_channel_min(ds_trace, "cfs_ride_height_in")
 
@@ -290,8 +288,6 @@ def test_aero_proxy_confidence_drops_on_transients():
     transient_row = {"lat_accel": 15.0, "long_accel": -20.0, "speed_mps": 40.0}
     transient_est = build_platform_proxy_estimates(transient_row)
     assert "very_low" in transient_est["front_aero_proxy_n"].confidence.lower()
-
-
 
 
 

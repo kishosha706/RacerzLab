@@ -11,6 +11,7 @@ type EvidenceInspectorProps = {
   overview: RunOverview | null;
   platformEvents: PlatformEventItem[];
   channels: ChannelCatalogItem[];
+  channelsLoadError?: string | null;
   collapsed?: boolean;
   onToggle?: () => void;
   eventVisibilityMode: PlatformEventVisibilityMode;
@@ -43,6 +44,7 @@ export function EvidenceInspector({
   overview,
   platformEvents,
   channels,
+  channelsLoadError = null,
   collapsed,
   onToggle,
   eventVisibilityMode,
@@ -105,7 +107,7 @@ export function EvidenceInspector({
     );
   }
   if (selectedChannel) return <ChannelInspector channel={selectedChannel} collapsed={collapsed} onToggle={onToggle} />;
-  return <RunInspector overview={overview} channels={channels} collapsed={collapsed} onToggle={onToggle} />;
+  return <RunInspector overview={overview} channels={channels} channelsLoadError={channelsLoadError} collapsed={collapsed} onToggle={onToggle} />;
 }
 
 function HiddenSelectedEventInspector({
@@ -148,7 +150,7 @@ function HiddenSelectedEventInspector({
   );
 }
 
-function RunInspector({ overview, channels, collapsed, onToggle }: { overview: RunOverview | null; channels: ChannelCatalogItem[]; collapsed?: boolean; onToggle?: () => void }) {
+function RunInspector({ overview, channels, channelsLoadError, collapsed, onToggle }: { overview: RunOverview | null; channels: ChannelCatalogItem[]; channelsLoadError?: string | null; collapsed?: boolean; onToggle?: () => void }) {
   const { selection, setWorkspace } = useTelemetrySelection();
 
   const channelCounts = useMemo(() => ({
@@ -216,13 +218,46 @@ function RunInspector({ overview, channels, collapsed, onToggle }: { overview: R
       </div>
       <div className="inspector-data-coverage">
         <h4>Data Coverage</h4>
-        <div className="coverage-grid">
-          <span>Raw: {raw}</span>
-          <span>Calculated: {calc}</span>
-          <span>Proxy: {proxy}</span>
-          {missing > 0 && <span className="coverage-warn">Missing: {missing}</span>}
-        </div>
+        {channelsLoadError ? (
+          <p className="coverage-warn">Capability inventory unavailable · open Telemetry Capabilities to retry.</p>
+        ) : (
+          <div className="coverage-grid">
+            <span>Raw: {raw}</span>
+            <span>Calculated: {calc}</span>
+            <span>Proxy: {proxy}</span>
+            {missing > 0 && <span className="coverage-warn">Missing: {missing}</span>}
+          </div>
+        )}
+        {selection.selectedMode === "learning" && (
+          <button
+            type="button"
+            className="trackmap-action-btn"
+            onClick={() => setWorkspace("channels", "manual")}
+          >
+            <Database size={10} /> Telemetry Capabilities
+          </button>
+        )}
       </div>
+      {overview.engineering_blockers.length > 0 && (
+        <div className="inspector-warnings" aria-label="Typed engineering limitations">
+          <h4>Engineering limitations</h4>
+          {overview.engineering_blockers.map((blocker) => (
+            <div key={`${blocker.code}:${blocker.scope}`} className="warning-line">
+              <AlertTriangle size={12} />
+              <span>
+                <strong>{blocker.code.replace(/_/g, " ")}</strong> · {blocker.scope.replace(/_/g, " ")}
+                <br />
+                {blocker.message}
+                <br />
+                <small>
+                  Blocks: {blocker.blocks.length > 0 ? blocker.blocks.join(", ").replace(/_/g, " ") : "no current surface"}
+                  {` · Recovery: ${blocker.recovery}`}
+                </small>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       {overview.warnings.length > 0 && (
         <div className="inspector-warnings">
           {overview.warnings.map((w, i) => (

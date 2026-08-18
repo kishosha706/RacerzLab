@@ -152,9 +152,21 @@ def generate_markdown_report(overview: RunOverview) -> str:
                 else "Import a real telemetry run and identify a useful lap."
             ),
             "",
-            "## Warnings",
+            "## Typed Engineering Limitations",
         ]
     )
+    if overview.engineering_blockers:
+        for blocker in overview.engineering_blockers:
+            blocks = ", ".join(target.value for target in blocker.blocks) or "no current surface"
+            lines.extend(
+                [
+                    f"- **{blocker.code}** (`{blocker.scope}`; blocks: {blocks}) — {blocker.message}",
+                    f"  Recovery: {blocker.recovery}",
+                ]
+            )
+    else:
+        lines.append("- None.")
+    lines.extend(["", "## Display Warnings"])
     warnings = list(overview.warnings)
     if warnings:
         lines.extend(f"- {warning}" for warning in warnings)

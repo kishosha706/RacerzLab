@@ -9,52 +9,51 @@ import math
 
 import pytest
 
+from racelab_engine.analysis.aero_coefficients import (
+    _coastdown_is_valid,
+    aero_load_index,
+    air_speed_mps,
+    cda_coastdown_proxy_m2,
+    dynamic_pressure_pa,
+    full_throttle_resistance_cda_proxy_m2,
+    rolling_resistance_force_n,
+)
 from racelab_engine.analysis.estimate_confidence import confidence_from_missing
 from racelab_engine.analysis.physics_inputs import VehiclePhysicsInputs
-from racelab_engine.analysis.aero_coefficients import (
-    air_speed_mps,
-    dynamic_pressure_pa,
-    aero_load_index,
-    rolling_resistance_force_n,
-    cda_coastdown_proxy_m2,
-    full_throttle_resistance_cda_proxy_m2,
-    _coastdown_is_valid,
-)
-from racelab_engine.analysis.vehicle_dynamics import (
-    longitudinal_weight_transfer_n,
-    lateral_weight_transfer_n,
-    axle_transfer_distribution,
-    aero_residual_load_proxy_n,
-    curvature_from_heading_distance,
-    yaw_rate_expected_rad_s,
-    lat_accel_expected_mps2,
-    yaw_error_rad_s,
-    understeer_yaw_error_proxy,
-    brake_energy_j,
-    brake_power_w,
-    accel_power_w,
-    drag_power_w,
-    wheel_power_proxy_w,
-    dynamic_grade_rad,
-    dynamic_grade_deg,
-    grade_force_proxy_n,
-    grade_corrected_long_accel_mps2,
-    MAX_GRADE_COMPONENT,
-)
 from racelab_engine.analysis.tire_dynamics import (
-    vehicle_sideslip_beta_rad,
+    carcass_temp_avg,
     front_slip_angle_rad,
     rear_slip_angle_rad,
-    slip_angle_balance_rad,
-    understeer_gradient_proxy_deg_per_g,
-    tire_utilization_total_proxy,
-    surface_temp_avg,
-    carcass_temp_avg,
     scrub_heat_index,
+    slip_angle_balance_rad,
+    surface_temp_avg,
     thermal_origin_label,
+    tire_utilization_total_proxy,
+    understeer_gradient_proxy_deg_per_g,
+    vehicle_sideslip_beta_rad,
     wheel_speed_bias_mps,
 )
-
+from racelab_engine.analysis.vehicle_dynamics import (
+    MAX_GRADE_COMPONENT,
+    accel_power_w,
+    aero_residual_load_proxy_n,
+    axle_transfer_distribution,
+    brake_energy_j,
+    brake_power_w,
+    curvature_from_heading_distance,
+    drag_power_w,
+    dynamic_grade_deg,
+    dynamic_grade_rad,
+    grade_corrected_long_accel_mps2,
+    grade_force_proxy_n,
+    lat_accel_expected_mps2,
+    lateral_weight_transfer_n,
+    longitudinal_weight_transfer_n,
+    understeer_yaw_error_proxy,
+    wheel_power_proxy_w,
+    yaw_error_rad_s,
+    yaw_rate_expected_rad_s,
+)
 
 # ── Confidence ────────────────────────────────────────────────
 
@@ -802,8 +801,9 @@ def test_curvature_smoothing_constant() -> None:
 
 def test_curvature_smoothing_jitter_reduced() -> None:
     """Jittered curvature should have lower variance after smoothing."""
-    from racelab_engine.io.mt2_reader import smooth_curvature_5point
     import statistics
+
+    from racelab_engine.io.mt2_reader import smooth_curvature_5point
     curvatures: list[float | None] = [0.001 + (i % 3 - 1) * 0.0005 for i in range(50)]
     smoothed = smooth_curvature_5point(curvatures)
     raw_var = statistics.variance([v for v in curvatures if v is not None])
@@ -974,8 +974,8 @@ def test_frontend_channels_are_backend_known() -> None:
     channel to be frontend-requested — only that frontend requests
     point to real channels.
     """
-    from pathlib import Path
     import re
+    from pathlib import Path
 
     # Read frontend channel list
     frontend_file = Path(__file__).resolve().parents[1] / "ui/src/constants/workbenchChannels.ts"
@@ -988,7 +988,10 @@ def test_frontend_channels_are_backend_known() -> None:
             frontend_channels.add(m.group(1))
 
     # Build set of all known backend channels (metadata + units + CORE)
-    from racelab_engine.analysis.calculated_channels import CHANNEL_METADATA, CALCULATED_CHANNEL_UNITS
+    from racelab_engine.analysis.calculated_channels import (
+        CALCULATED_CHANNEL_UNITS,
+        CHANNEL_METADATA,
+    )
     try:
         from racelab_engine.analysis.vectorized_channels import CORE_CHANNELS
     except ImportError:
@@ -1001,7 +1004,7 @@ def test_frontend_channels_are_backend_known() -> None:
     known |= {
         "throttle_pct", "brake_pct", "steering_deg", "abs_steering_deg",
         "abs_lat_accel", "lat_accel_g", "long_accel_g", "vert_accel_g",
-        "rpm", "gear", "lap_dist_pct_100", "speed_mph", "speed_fps",
+        "rpm", "gear", "lap_dist_pct_100", "speed_mps", "speed_mph", "speed_fps",
         "lf_pressure", "rf_pressure", "lr_pressure", "rr_pressure",
         # slip ratio proxies — computed in row path _compute_tire_derived
         "lf_slip_ratio_proxy", "rf_slip_ratio_proxy",

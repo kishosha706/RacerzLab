@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -510,13 +511,15 @@ def test_publication_blocks_tampered_active_stage_and_attach_cannot_extend_it(
         "iracing_build_version": "build",
         "session_type": "test",
     }
-    manifest = {
-        "compatibility_identity": identity,
-        "recording_session_time_bounds_s": {"start": 0.0, "end": 100.0},
-    }
+    def manifest_for(run_id: str) -> dict:
+        return {
+            "compatibility_identity": identity,
+            "recording_session_time_bounds_s": {"start": 0.0, "end": 100.0},
+            "source_file_sha256": hashlib.sha256(run_id.encode()).hexdigest(),
+        }
     repository = StageRepo()
     monkeypatch.setattr(service, "build_server_kaizen_packet", lambda *_args, **_kwargs: packet)
-    monkeypatch.setattr(service, "read_telemetry_manifest", lambda _run_id: manifest)
+    monkeypatch.setattr(service, "read_telemetry_manifest", manifest_for)
     monkeypatch.setattr(service, "setup_controls_comparable", lambda *_args: True)
     monkeypatch.setattr(service, "unmapped_setup_change_paths", lambda *_args: [])
     monkeypatch.setattr(service, "diff_setups", lambda *_args: [])
@@ -614,12 +617,14 @@ def test_report_rejects_a_cherry_picked_or_corrupted_stage_cohort(
         "iracing_build_version": "build",
         "session_type": "test",
     }
-    manifest = {
-        "compatibility_identity": identity,
-        "recording_session_time_bounds_s": {"start": 0.0, "end": 100.0},
-    }
+    def manifest_for(run_id: str) -> dict:
+        return {
+            "compatibility_identity": identity,
+            "recording_session_time_bounds_s": {"start": 0.0, "end": 100.0},
+            "source_file_sha256": hashlib.sha256(run_id.encode()).hexdigest(),
+        }
     monkeypatch.setattr(service, "build_server_kaizen_packet", lambda *_args, **_kwargs: packet)
-    monkeypatch.setattr(service, "read_telemetry_manifest", lambda _run_id: manifest)
+    monkeypatch.setattr(service, "read_telemetry_manifest", manifest_for)
     monkeypatch.setattr(service, "setup_controls_comparable", lambda _left, _right: True)
     monkeypatch.setattr(service, "unmapped_setup_change_paths", lambda *_args: [])
     monkeypatch.setattr(
@@ -639,7 +644,7 @@ def test_report_rejects_a_cherry_picked_or_corrupted_stage_cohort(
     monkeypatch.setattr(service, "_continuous_stage_cohort", lambda *_args: (True, None))
     monkeypatch.setattr(
         "racelab_engine.services.report_service.read_telemetry_manifest",
-        lambda _run_id: manifest,
+        manifest_for,
     )
     report = ReportService()
     report.repository = EvidenceRepo()

@@ -54,12 +54,12 @@ from racelab_engine.analysis.ride_height_calibration import (
 from racelab_engine.analysis.tire_semantics import TIRE_CORNERS, semantic_source
 from racelab_engine.analysis.units import (
     EARTH_RADIUS_M,
+    KPA_TO_PSI,
     M_TO_FT,
     M_TO_IN,
+    MM_TO_IN,
     MPS_TO_MPH,
     PA_TO_PSF,
-    MM_TO_IN,
-    KPA_TO_PSI,
 )
 
 # ── Feature flag ─────────────────────────────────────────────────
@@ -497,7 +497,7 @@ def _columns_to_frame(columns: dict[str, list[Any]]) -> pl.DataFrame:
 
 def normalize_telemetry_frame(
     data: pl.DataFrame | list[dict[str, Any]] | dict[str, list[Any]],
-    geometry: dict[str, float] | None = None,
+    geometry: dict[str, Any] | None = None,
     car_path: Any = None,
 ) -> pl.DataFrame:
     """Vectorised normalizer. Accepts DataFrame, list[dict], or dict[str,list]."""
@@ -525,6 +525,8 @@ def normalize_telemetry_frame(
             "mass_kg", "cg_height_m", "wheelbase_m", "front_track_width_m",
             "rear_track_width_m", "front_axle_to_cg_m", "rear_axle_to_cg_m",
             "crr", "motion_ratio_front", "motion_ratio_rear",
+            "geometry_source", "geometry_profile_sha256",
+            "lr_rub_block_correction_in",
         ]
         for k in physics_keys:
             if k in geometry and k not in df.columns:
@@ -609,6 +611,17 @@ _ALIAS_MAP: dict[str, str] = {
     "SessionLapsTotal": "session_laps_total",
     "Lap": "lap",
     "LapCompleted": "lap_completed",
+    "LapCurrentLapTime": "lap_current_time_s",
+    "LapLastLapTime": "lap_last_time_s",
+    "LapBestLapTime": "lap_best_time_s",
+    "LapDeltaToBestLap": "lap_delta_to_best_s",
+    "LapDeltaToOptimalLap": "lap_delta_to_optimal_s",
+    "LapDeltaToSessionBestLap": "lap_delta_to_session_best_s",
+    "LapDeltaToSessionOptimalLap": "lap_delta_to_session_optimal_s",
+    "LapDeltaToBestLap_OK": "lap_delta_to_best_valid",
+    "LapDeltaToOptimalLap_OK": "lap_delta_to_optimal_valid",
+    "LapDeltaToSessionBestLap_OK": "lap_delta_to_session_best_valid",
+    "LapDeltaToSessionOptimalLap_OK": "lap_delta_to_session_optimal_valid",
     "OnPitRoad": "on_pit_road",
     "IsOnTrack": "is_on_track",
     "PlayerTrackSurface": "player_track_surface",
@@ -704,6 +717,14 @@ _ALIAS_MAP: dict[str, str] = {
     "FrontTireSetsAvailable": "front_tire_sets_available",
     "RearTireSetsAvailable": "rear_tire_sets_available",
     "TireSetsAvailable": "tire_sets_available",
+    "LFTiresUsed": "lf_tires_used",
+    "RFTiresUsed": "rf_tires_used",
+    "LRTiresUsed": "lr_tires_used",
+    "RRTiresUsed": "rr_tires_used",
+    "LFTiresAvailable": "lf_tires_available",
+    "RFTiresAvailable": "rf_tires_available",
+    "LRTiresAvailable": "lr_tires_available",
+    "RRTiresAvailable": "rr_tires_available",
     "CarDistAhead": "car_distance_ahead_m",
     "CarDistBehind": "car_distance_behind_m",
     "DriverMarker": "driver_marker",
@@ -1172,7 +1193,10 @@ def _compute_risk_scores(df: pl.DataFrame) -> pl.DataFrame:
     in calculated_channels.py.
     """
     from racelab_engine.analysis.constants import (
-        REAR_SCRAPE_MM, REAR_CRITICAL_MM, REAR_HIGH_MM, REAR_WATCH_MM,
+        REAR_CRITICAL_MM,
+        REAR_HIGH_MM,
+        REAR_SCRAPE_MM,
+        REAR_WATCH_MM,
     )
 
     # ── Front/CFS risk ─────────────────────────────────────────
@@ -1430,7 +1454,9 @@ def _compute_resistance_indices(df: pl.DataFrame) -> pl.DataFrame:
     Delegates to the shared drag_scrub module for aero-normalized logic.
     """
     from racelab_engine.analysis.constants import (
-        DRAG_SCRUB_MIN_SPEED_MPH, FULL_THROTTLE_PCT, LOW_BRAKE_PCT,
+        DRAG_SCRUB_MIN_SPEED_MPH,
+        FULL_THROTTLE_PCT,
+        LOW_BRAKE_PCT,
         RESISTANCE_COEFF_CRITICAL,
     )
     if df.is_empty():
@@ -1811,37 +1837,51 @@ def _compute_dynamic_grade(df: pl.DataFrame) -> pl.DataFrame:
     return df
 
 
-# ── diffuser geometry (Roger's diffuser geometry math) ────────────
+# ── profile-backed diffuser clearance geometry ────────────────────
 
-_DIFFUSER_FALLBACK_WHEELBASE_IN_V = 110.0
-_DIFFUSER_FALLBACK_TRACK_WIDTH_IN_V = 79.0
-_DIFFUSER_RUB_BLOCK_CORRECTION_IN_V = 0.5
+_DIFFUSER_PROFILE_SOURCE_V = "reviewed_vehicle_profile"
 _CUBIC_INCHES_PER_FT3_V = 1728.0
 _DIFFUSER_SMOOTH_WINDOW_V = 20
 
 
 def _compute_diffuser_geometry(df: pl.DataFrame) -> pl.DataFrame:
-    """Compute diffuser geometry channels (vectorized)."""
+    """Compute diffuser proxies only from one reviewed profile identity."""
     needed = {"lf_ride_height_in", "rf_ride_height_in", "lr_ride_height_in", "rr_ride_height_in"}
     if not needed.issubset(df.columns):
         return df
 
-    wb_in = _DIFFUSER_FALLBACK_WHEELBASE_IN_V
-    tw_in = _DIFFUSER_FALLBACK_TRACK_WIDTH_IN_V
-    if "wheelbase_m" in df.columns and df.height > 0:
-        wb_m = df["wheelbase_m"].item(0)
-        if wb_m is not None and wb_m > 0:
-            wb_in = wb_m * 39.37007874
-    if "rear_track_width_m" in df.columns and df.height > 0:
-        tw_m = df["rear_track_width_m"].item(0)
-        if tw_m is not None and tw_m > 0:
-            tw_in = tw_m * 39.37007874
-    elif "front_track_width_m" in df.columns and df.height > 0:
-        tw_m = df["front_track_width_m"].item(0)
-        if tw_m is not None and tw_m > 0:
-            tw_in = tw_m * 39.37007874
+    def one_value(name: str) -> Any | None:
+        if name not in df.columns or df.height == 0:
+            return None
+        values = df[name].drop_nulls().unique().to_list()
+        return values[0] if len(values) == 1 else None
 
-    rub = _DIFFUSER_RUB_BLOCK_CORRECTION_IN_V
+    geometry_source = one_value("geometry_source")
+    profile_sha = one_value("geometry_profile_sha256")
+    wb_m = one_value("wheelbase_m")
+    rear_tw_m = one_value("rear_track_width_m")
+    front_tw_m = one_value("front_track_width_m")
+    rub = one_value("lr_rub_block_correction_in")
+    tw_m = rear_tw_m if isinstance(rear_tw_m, (int, float)) and rear_tw_m > 0 else front_tw_m
+    profile_identity_ok = (
+        geometry_source == _DIFFUSER_PROFILE_SOURCE_V
+        and isinstance(profile_sha, str)
+        and len(profile_sha) == 64
+        and all(character in "0123456789abcdef" for character in profile_sha)
+    )
+    geometry_ready = (
+        profile_identity_ok
+        and isinstance(wb_m, (int, float))
+        and math.isfinite(float(wb_m))
+        and float(wb_m) > 0
+        and isinstance(tw_m, (int, float))
+        and math.isfinite(float(tw_m))
+        and float(tw_m) > 0
+        and isinstance(rub, (int, float))
+        and math.isfinite(float(rub))
+        and float(rub) >= 0
+    )
+
     ft3 = _CUBIC_INCHES_PER_FT3_V
     window = _DIFFUSER_SMOOTH_WINDOW_V
 
@@ -1852,6 +1892,29 @@ def _compute_diffuser_geometry(df: pl.DataFrame) -> pl.DataFrame:
     has_all = lf.is_not_null() & rf.is_not_null() & lr.is_not_null() & rr.is_not_null()
 
     front_c = (rf + lf) / 2.0
+    if not geometry_ready:
+        df = df.with_columns([
+            pl.when(has_all).then(front_c).otherwise(None).alias("front_center_rh_in"),
+            pl.lit(None, dtype=pl.Float64).alias("lr_height_rub_block_in"),
+            pl.lit(None, dtype=pl.Float64).alias("rear_center_rh_in"),
+            pl.lit(None, dtype=pl.Float64).alias("center_rake_in"),
+            pl.lit(None, dtype=pl.String).alias("diffuser_geometry_source"),
+            pl.lit(None, dtype=pl.String).alias("diffuser_geometry_profile_sha256"),
+            pl.lit(None, dtype=pl.Float64).alias("diffuser_rub_block_correction_in"),
+            pl.lit(None, dtype=pl.Float64).alias("diffuser_track_width_in"),
+            pl.lit(None, dtype=pl.Float64).alias("diffuser_wheelbase_in"),
+            pl.lit(None, dtype=pl.Float64).alias("diffuser_base_volume_ft3"),
+            pl.lit(None, dtype=pl.Float64).alias("diffuser_wedge_volume_ft3"),
+            pl.lit(None, dtype=pl.Float64).alias("diffuser_volume_ft3"),
+        ])
+        return df.with_columns(
+            pl.lit(None, dtype=pl.Float64).alias("smooth_center_rake_in"),
+            pl.lit(None, dtype=pl.Float64).alias("smooth_diffuser_volume_ft3"),
+        )
+
+    wb_in = float(wb_m) * 39.37007874
+    tw_in = float(tw_m) * 39.37007874
+    rub = float(rub)
     lr_rub = lr - rub
     rear_c = (rr + lr_rub) / 2.0
     rake = rear_c - front_c
@@ -1866,6 +1929,9 @@ def _compute_diffuser_geometry(df: pl.DataFrame) -> pl.DataFrame:
         pl.when(has_all).then(lr_rub).otherwise(None).alias("lr_height_rub_block_in"),
         pl.when(has_all).then(rear_c).otherwise(None).alias("rear_center_rh_in"),
         pl.when(has_all).then(rake).otherwise(None).alias("center_rake_in"),
+        pl.lit(_DIFFUSER_PROFILE_SOURCE_V).alias("diffuser_geometry_source"),
+        pl.lit(profile_sha).alias("diffuser_geometry_profile_sha256"),
+        pl.lit(rub).alias("diffuser_rub_block_correction_in"),
         pl.lit(tw_in).alias("diffuser_track_width_in"),
         pl.lit(wb_in).alias("diffuser_wheelbase_in"),
         pl.when(has_all).then(base_vol).otherwise(None).alias("diffuser_base_volume_ft3"),

@@ -5,15 +5,28 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from racelab_engine.io.file_fingerprint import FileFingerprint
-from racelab_engine.models.event import TelemetryEvent
-from racelab_engine.models.evidence import EvidenceState
-from racelab_engine.models.lap import LapSummary
-from racelab_engine.models.segment import SegmentSummary
-from racelab_engine.models.session import RunOverview, SessionSummary, ShiftLightRpmThresholds
-from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.analysis.lap_detection import apply_relative_pace_filter
 from racelab_engine.analysis.lap_eligibility import eligible_laps
+from racelab_engine.io.file_fingerprint import FileFingerprint
+from racelab_engine.models.event import TelemetryEvent
+from racelab_engine.models.evidence import (
+    EngineeringBlocker,
+    EngineeringBlockerSeverity,
+    EngineeringBlockTarget,
+    EvidenceState,
+)
+from racelab_engine.models.lap import LapSummary
+from racelab_engine.models.segment import SegmentSummary
+from racelab_engine.models.session import (
+    RunOverview,
+    SessionSummary,
+    ShiftLightRpmThresholds,
+)
+from racelab_engine.models.setup import SetupSnapshot
+from racelab_engine.recording_identity import (
+    canonical_recording_run_id,
+    normalize_source_sha256,
+)
 from racelab_engine.storage.db import initialize_database
 
 if TYPE_CHECKING:
@@ -39,6 +52,25 @@ def _model_json(model: Any) -> str:
     return model.json()
 
 
+_LAP_CLOCK_TRUTH_FIELDS = frozenset({"timing_primary_clock", "timing_clock_state"})
+
+
+def _requalified_lap_json(lap: LapSummary) -> str:
+    """Rewrite pace qualification without inventing modern clock provenance.
+
+    Pre-qualified-clock lap rows are intentionally readable as legacy evidence
+    only while both clock-truth fields remain absent.  Serializing every model
+    default during a pace-only migration would materialize ``session_time`` /
+    ``degraded`` and make those same rows ineligible on their next read.  Keep
+    the original explicit-field boundary for legacy rows; current rows retain
+    their complete timing provenance.
+    """
+
+    if lap.model_fields_set.isdisjoint(_LAP_CLOCK_TRUTH_FIELDS):
+        return lap.model_dump_json(exclude_unset=True)
+    return _model_json(lap)
+
+
 def _load_json(value: str | None, fallback: Any) -> Any:
     return json.loads(value) if value else fallback
 
@@ -53,6 +85,30 @@ def _load_string_list(value: str | None) -> tuple[list[str], bool]:
     if not isinstance(payload, list) or any(not isinstance(item, str) for item in payload):
         return [], False
     return payload, True
+
+
+def _load_engineering_blockers(
+    value: str | None,
+) -> tuple[list[EngineeringBlocker], bool]:
+    if value is None:
+        return [
+            EngineeringBlocker(
+                code="LEGACY_TYPED_BLOCKER_SCOPE_UNAVAILABLE",
+                severity=EngineeringBlockerSeverity.BLOCKER,
+                scope="run_integrity",
+                blocks=tuple(EngineeringBlockTarget),
+                message="This run predates typed engineering-blocker scope.",
+                evidence_state=EvidenceState.UNAVAILABLE,
+                recovery="Re-import the original .ibt under the current telemetry truth contract.",
+            )
+        ], True
+    try:
+        payload = json.loads(value)
+        if not isinstance(payload, list):
+            return [], False
+        return [EngineeringBlocker.model_validate(item) for item in payload], True
+    except (TypeError, ValueError):
+        return [], False
 
 
 def _session_from_run_row(row: Any) -> SessionSummary:
@@ -185,6 +241,7 @@ def _qualify_events_for_current_laps(
 _RUN_LIST_SELECT = """
     SELECT
       runs.run_id,
+      runs.file_hash AS recording_sha256,
       runs.car_name,
       runs.track_name,
       runs.track_display_name,
@@ -866,7 +923,10 @@ class RaceLabRepository:
     @staticmethod
     def _controlled_workflow_from_row(row: Any) -> ControlledWorkflow:
         from racelab_engine.analysis.crew_chief_packet import KaizenEvidencePacket
-        from racelab_engine.analysis.test_director import TestExecution, TestQualityResult
+        from racelab_engine.analysis.test_director import (
+            TestExecution,
+            TestQualityResult,
+        )
         from racelab_engine.models.controlled_workflow import ControlledWorkflow
 
         return ControlledWorkflow(
@@ -937,14 +997,15 @@ class RaceLabRepository:
                   session_type, weather_summary, setup_name, setup_passed_tech,
                   setup_modified, telemetry_rate_hz, variable_count, record_count,
                   duration_seconds, air_temp, track_temp, wind_speed, wind_direction,
-                  air_pressure, notes, primary_findings_json, warnings_json, session_json
+                  air_pressure, notes, primary_findings_json, warnings_json,
+                  engineering_blockers_json, session_json
                 ) VALUES (
                   ?, ?, ?, ?, ?,
                   ?, ?, ?, ?, ?,
                   ?,
                   ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                   ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                  ?, ?, ?
+                  ?, ?, ?, ?
                 )
                 ON CONFLICT(run_id) DO UPDATE SET
                   source_file=excluded.source_file,
@@ -979,6 +1040,7 @@ class RaceLabRepository:
                   notes=excluded.notes,
                   primary_findings_json=excluded.primary_findings_json,
                   warnings_json=excluded.warnings_json,
+                  engineering_blockers_json=excluded.engineering_blockers_json,
                   session_json=excluded.session_json
                 """,
                 (
@@ -1015,6 +1077,10 @@ class RaceLabRepository:
                     _json(session.notes),
                     _json(overview.primary_findings),
                     _json(overview.warnings),
+                    _json([
+                        blocker.model_dump(mode="json")
+                        for blocker in overview.engineering_blockers
+                    ]),
                     _model_json(session),
                 ),
             )
@@ -1173,7 +1239,7 @@ class RaceLabRepository:
                             lap.lap_type,
                             int(lap.is_useful),
                             _json(lap.classification_tags),
-                            _model_json(lap),
+                            _requalified_lap_json(lap),
                             lap.lap_id,
                         ),
                     )
@@ -1211,6 +1277,95 @@ class RaceLabRepository:
         finally:
             connection.close()
         return [self._run_list_item_from_row(row) for row in rows]
+
+    def find_recording_owner_run_id(self, source_sha256: object) -> str | None:
+        """Return the one preferred artifact owner for a full source hash.
+
+        New imports use the content-addressed ID.  For a legacy database that
+        already contains filename-derived aliases, the earliest stored run is
+        reused non-destructively so its workflow/session history remains valid.
+        Existing aliases are not deleted by this migration seam.
+        """
+
+        normalized = normalize_source_sha256(source_sha256)
+        if normalized is None:
+            return None
+        preferred = canonical_recording_run_id(normalized)
+        connection = initialize_database(self.db_path)
+        try:
+            row = connection.execute(
+                """
+                SELECT run_id
+                FROM runs
+                WHERE lower(file_hash) = ?
+                ORDER BY CASE WHEN run_id = ? THEN 0 ELSE 1 END,
+                         imported_at ASC,
+                         run_id ASC
+                LIMIT 1
+                """,
+                (normalized, preferred),
+            ).fetchone()
+        finally:
+            connection.close()
+        return str(row["run_id"]) if row is not None else None
+
+    def list_recording_alias_run_ids(self, source_sha256: object) -> tuple[str, ...]:
+        """List every stored legacy/current run identity for one source hash."""
+
+        normalized = normalize_source_sha256(source_sha256)
+        if normalized is None:
+            return ()
+        connection = initialize_database(self.db_path)
+        try:
+            rows = connection.execute(
+                """
+                SELECT run_id
+                FROM runs
+                WHERE lower(file_hash) = ?
+                ORDER BY imported_at ASC, run_id ASC
+                """,
+                (normalized,),
+            ).fetchall()
+        finally:
+            connection.close()
+        return tuple(str(row["run_id"]) for row in rows)
+
+    def get_recording_sha256(self, run_id: str) -> str | None:
+        """Read the normalized full source identity without loading evidence."""
+
+        connection = initialize_database(self.db_path)
+        try:
+            row = connection.execute(
+                "SELECT file_hash FROM runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        return normalize_source_sha256(row["file_hash"]) if row is not None else None
+
+    def get_recording_sha256s(self, run_ids: list[str] | tuple[str, ...]) -> dict[str, str]:
+        """Resolve a bounded set of run aliases to physical recordings."""
+
+        ordered = tuple(dict.fromkeys(run_id for run_id in run_ids if run_id))
+        if not ordered:
+            return {}
+        resolved: dict[str, str] = {}
+        connection = initialize_database(self.db_path)
+        try:
+            for offset in range(0, len(ordered), _RUN_LIST_QUERY_CHUNK_SIZE):
+                chunk = ordered[offset : offset + _RUN_LIST_QUERY_CHUNK_SIZE]
+                placeholders = ",".join("?" for _ in chunk)
+                rows = connection.execute(
+                    f"SELECT run_id, file_hash FROM runs WHERE run_id IN ({placeholders})",
+                    chunk,
+                ).fetchall()
+                for row in rows:
+                    source_sha = normalize_source_sha256(row["file_hash"])
+                    if source_sha is not None:
+                        resolved[str(row["run_id"])] = source_sha
+        finally:
+            connection.close()
+        return resolved
 
     def get_run_list_item(self, run_id: str) -> dict[str, Any] | None:
         connection = initialize_database(self.db_path)
@@ -1330,6 +1485,7 @@ class RaceLabRepository:
         best_time = row["best_lap_time"]
         return {
             "run_id": row["run_id"],
+            "recording_sha256": normalize_source_sha256(row["recording_sha256"]),
             "car_name": row["car_name"],
             "track_name": row["track_display_name"] or row["track_name"],
             "setup_name": row["setup_name"],
@@ -1629,6 +1785,27 @@ class RaceLabRepository:
             integrity_warnings.append(
                 "Evidence integrity: the stored warning collection was malformed and withheld."
             )
+        stored_blockers, stored_blockers_valid = _load_engineering_blockers(
+            row["engineering_blockers_json"]
+        )
+        if not stored_blockers_valid:
+            integrity_warnings.append(
+                "Evidence integrity: the stored engineering-blocker collection was malformed and withheld."
+            )
+            stored_blockers = []
+        if integrity_warnings:
+            stored_blockers.append(
+                EngineeringBlocker(
+                    code="STORED_EVIDENCE_INTEGRITY_FAILURE",
+                    severity=EngineeringBlockerSeverity.CRITICAL,
+                    scope="run_integrity",
+                    blocks=tuple(EngineeringBlockTarget),
+                    message="Stored run evidence failed identity or schema validation.",
+                    evidence_state=EvidenceState.UNAVAILABLE,
+                    source_artifact_ids=(f"run:{run_id}",),
+                    recovery="Re-import the original source and preserve the corrupt store for diagnosis.",
+                )
+            )
         qualified_event_ids = {event.event_id for event in events if event.valid_for_tuning}
         useful_laps = eligible_laps(laps)
         best_lap = min(useful_laps, key=lambda lap: lap.lap_time or 999999.0) if useful_laps else None
@@ -1647,4 +1824,10 @@ class RaceLabRepository:
                 *stored_warnings,
                 *integrity_warnings,
             ])),
+            engineering_blockers=list(
+                {
+                    (blocker.code, blocker.scope): blocker
+                    for blocker in stored_blockers
+                }.values()
+            ),
         )

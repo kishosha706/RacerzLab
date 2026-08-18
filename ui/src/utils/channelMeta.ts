@@ -5,6 +5,7 @@ export interface ChannelUiMeta {
   unit: string;
   isProxy: boolean;
   isEstimate: boolean;
+  isCalculated?: boolean;
   category: string;
   precision: number;
   warning?: string;
@@ -244,17 +245,29 @@ const CHANNEL_META: Record<string, ChannelUiMeta> = {
   track_y_ft: { label: "Track Y", unit: "ft", isProxy: false, isEstimate: false, category: "gps", precision: 0 },
 
   // -- Diffuser geometry --
-  front_center_rh_in: { label: "Front Center RH", unit: "in", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  lr_height_rub_block_in: { label: "LR Height - Rub Block", unit: "in", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  rear_center_rh_in: { label: "Rear Center RH", unit: "in", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  center_rake_in: { label: "Center Rake", unit: "in", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  smooth_center_rake_in: { label: "Smooth Center Rake", unit: "in", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  diffuser_track_width_in: { label: "Diffuser Track Width", unit: "in", isProxy: false, isEstimate: true, category: "diffuser", precision: 2 },
-  diffuser_wheelbase_in: { label: "Diffuser Wheelbase", unit: "in", isProxy: false, isEstimate: true, category: "diffuser", precision: 2 },
-  diffuser_base_volume_ft3: { label: "Diffuser Base Volume", unit: "ft3", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  diffuser_wedge_volume_ft3: { label: "Diffuser Wedge Volume", unit: "ft3", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  diffuser_volume_ft3: { label: "Diffuser Volume", unit: "ft3", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
-  smooth_diffuser_volume_ft3: { label: "Smooth Diffuser Volume", unit: "ft3", isProxy: false, isEstimate: false, category: "diffuser", precision: 2 },
+  front_center_rh_in: { label: "Front Center RH", unit: "in", isProxy: false, isEstimate: false, isCalculated: true, category: "diffuser", precision: 2 },
+  diffuser_rub_block_correction_in: { label: "Diffuser Rub-Block Correction Proxy", unit: "in", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 3,
+    warning: "Reviewed vehicle-profile constant; unavailable without exact profile provenance." },
+  lr_height_rub_block_in: { label: "LR Corrected Height Proxy", unit: "in", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Depends on a reviewed rub-block geometry profile." },
+  rear_center_rh_in: { label: "Rear Center RH Proxy", unit: "in", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Depends on a reviewed rub-block geometry profile." },
+  center_rake_in: { label: "Center Rake Proxy", unit: "in", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Depends on reviewed diffuser geometry; not direct chassis attitude." },
+  smooth_center_rake_in: { label: "Smoothed Center Rake Proxy", unit: "in", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Display smoothing of a profile-backed calculated proxy." },
+  diffuser_track_width_in: { label: "Diffuser Track Width Proxy", unit: "in", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Calculated only from complete reviewed vehicle-profile geometry; unavailable otherwise." },
+  diffuser_wheelbase_in: { label: "Diffuser Wheelbase Proxy", unit: "in", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Calculated only from complete reviewed vehicle-profile geometry; unavailable otherwise." },
+  diffuser_base_volume_ft3: { label: "Diffuser Base-Volume Proxy", unit: "ft3", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Clearance-geometry proxy, not measured physical volume or aerodynamic load." },
+  diffuser_wedge_volume_ft3: { label: "Diffuser Wedge-Volume Proxy", unit: "ft3", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Clearance-geometry proxy, not measured physical volume or aerodynamic load." },
+  diffuser_volume_ft3: { label: "Diffuser Clearance-Volume Proxy", unit: "ft3", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Clearance-geometry proxy, not measured physical volume, downforce, or aerodynamic load." },
+  smooth_diffuser_volume_ft3: { label: "Smoothed Diffuser Clearance Proxy", unit: "ft3", isProxy: true, isEstimate: true, isCalculated: true, category: "diffuser", precision: 2,
+    warning: "Display smoothing of a profile-backed calculated proxy." },
 };
 
 export function getChannelUiMeta(channel: string): ChannelUiMeta | null {
@@ -315,6 +328,7 @@ export function getChannelConfidenceLevel(channel: string): ConfidenceLevel {
   if (!meta) return "measured";
   if (meta.isProxy) return "proxy";
   if (meta.isEstimate) return "estimate";
+  if (meta.isCalculated) return "calculated";
   return "measured";
 }
 

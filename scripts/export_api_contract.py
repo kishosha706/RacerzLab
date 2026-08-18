@@ -20,7 +20,7 @@ from pathlib import Path
 def main() -> None:
     # Ensure we can import the app
     repo_root = Path(__file__).resolve().parent.parent
-    sys.path.insert(0, str(repo_root / "racelab-garage"))
+    sys.path.insert(0, str(repo_root))
 
     try:
         from api.main import app
@@ -31,7 +31,7 @@ def main() -> None:
 
     openapi_schema = app.openapi()
 
-    output_dir = repo_root / "racelab-garage" / "docs" / "contracts"
+    output_dir = repo_root / "docs" / "contracts"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "openapi.generated.json"
 

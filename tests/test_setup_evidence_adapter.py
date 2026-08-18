@@ -13,12 +13,15 @@ from racelab_engine.knowledge.setup.evidence_adapter import (
     query_setup_for_run_context,
     run_context_result_to_dict,
 )
-from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.event import TelemetryEvent
 from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.lap import LapSummary
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
-from racelab_engine.services.import_service import write_channel_metadata, write_telemetry_cache
+from racelab_engine.services.import_service import (
+    write_channel_metadata,
+    write_telemetry_cache,
+)
 from racelab_engine.storage.repository import RaceLabRepository
 
 
@@ -96,6 +99,8 @@ def _seed_run(
             lap_type="timed",
             is_complete=True,
             is_useful=True,
+            timing_primary_clock="session_tick",
+            timing_clock_state="qualified",
             lap_time=30.0 + idx,
             sample_count=100,
             pct_min=0.0,
@@ -282,7 +287,7 @@ def test_shock_histogram_missing_when_only_garage_damper_values_exist(tmp_path: 
     assert any("Garage damper settings exist" in note for note in shock_group.notes)
 
 
-def test_diffuser_proxy_ready_when_diffuser_channels_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_diffuser_proxy_ready_only_with_reviewed_profile_provenance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_env(monkeypatch, tmp_path)
     _seed_run(
         tmp_path,
@@ -291,6 +296,9 @@ def test_diffuser_proxy_ready_when_diffuser_channels_exist(tmp_path: Path, monke
             "rear_center_rh_in": 2.6,
             "smooth_center_rake_in": 0.7,
             "diffuser_volume_ft3": 12.0,
+            "diffuser_geometry_source": "reviewed_vehicle_profile",
+            "diffuser_geometry_profile_sha256": "a" * 64,
+            "diffuser_rub_block_correction_in": 0.5,
         },
     )
     context = build_run_evidence_context("run-1")
@@ -453,7 +461,7 @@ def test_query_with_run_context_returns_parsed_symptom_and_candidates(tmp_path: 
     assert payload["candidates"]
 
 
-def test_diffuser_proxy_warning_uses_derived_proxy_language(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unprovenanced_diffuser_columns_are_ignored(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_env(monkeypatch, tmp_path)
     _seed_run(
         tmp_path,
@@ -467,8 +475,9 @@ def test_diffuser_proxy_warning_uses_derived_proxy_language(tmp_path: Path, monk
     context = build_run_evidence_context("run-1")
     diffuser_group = next(group for group in context.evidence_groups if group.group_id == "diffuser_proxy")
     combined = " ".join([*context.warnings, *diffuser_group.notes]).lower()
-    assert "measured downforce" in combined
-    assert "not measured downforce" in combined
+    assert diffuser_group.status == "missing"
+    assert diffuser_group.confidence_boost == 0.0
+    assert "unprovenanced diffuser columns are ignored" in combined
 
 
 def test_adapter_uses_channel_summary_path_without_row_materialization(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

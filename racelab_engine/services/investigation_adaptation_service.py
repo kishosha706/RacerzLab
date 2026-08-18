@@ -8,13 +8,14 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from statistics import median
-from typing import Iterable, Literal
+from typing import Iterable, Literal, Mapping
 
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.investigation_adaptation import (
+    P34_PHYSICAL_SCOPE_MISMATCH_DIMENSIONS,
     DiscriminatorOutcome,
-    InvestigationDecision,
     InvestigationAdaptationContext,
+    InvestigationDecision,
     InvestigationImprovementProjection,
     InvestigationImprovementReadiness,
     InvestigationNegativeTransfer,
@@ -29,7 +30,6 @@ from racelab_engine.models.investigation_adaptation import (
     P34EfficiencyResults,
     P34InvestigationActivationProtocol,
     P34NegativeControlResult,
-    P34_PHYSICAL_SCOPE_MISMATCH_DIMENSIONS,
     P34QualityResults,
     P34SafetyResults,
     P34SubgroupResult,
@@ -39,16 +39,16 @@ from racelab_engine.models.investigation_adaptation import (
     canonical_context_subgroups,
     investigation_adaptation_source_snapshot_sha256,
 )
-from racelab_engine.storage.investigation_adaptation_repository import (
-    InvestigationAdaptationIntegrityError,
-    InvestigationAdaptationRepository,
-)
+from racelab_engine.recording_identity import normalize_source_sha256
 from racelab_engine.storage.db import (
     connect_read_only,
     default_db_path,
     initialize_database,
 )
-
+from racelab_engine.storage.investigation_adaptation_repository import (
+    InvestigationAdaptationIntegrityError,
+    InvestigationAdaptationRepository,
+)
 
 _FROZEN_AT = datetime(2026, 8, 15, 8, 12, 46, tzinfo=timezone.utc)
 _CODE_VERSION = "p34.earned-investigation-adaptation.v1"
@@ -1929,6 +1929,7 @@ def evaluate_investigation_policies(
     authoritative_case_ids: frozenset[str] = frozenset(),
     authoritative_discriminator_ids: frozenset[str] = frozenset(),
     authoritative_followup_ids: frozenset[str] = frozenset(),
+    recording_sha256_by_investigation: Mapping[str, str] | None = None,
     canonical_activation_evaluation_ids: frozenset[str] = frozenset(),
     capacity_overflow_kinds: tuple[str, ...] = (),
     registry_identity_sha256: str,
@@ -2191,6 +2192,28 @@ def evaluate_investigation_policies(
             > protocol.prospective_boundary
         )
     )
+    repeated_recording_aliases: list[str] = []
+    if recording_sha256_by_investigation is not None:
+        independent_by_recording: dict[str, PairedInvestigationComparison] = {}
+        for item in sorted(
+            eligible,
+            key=lambda value: (
+                value.compared_at,
+                value.investigation_id,
+                value.comparison_id,
+            ),
+        ):
+            recording_sha = normalize_source_sha256(
+                recording_sha256_by_investigation.get(item.investigation_id)
+            )
+            # Unknown legacy ownership is one fail-closed cluster.  It cannot
+            # manufacture independent P34 recurrence or promotion counts.
+            cluster = recording_sha or "unverified-recording"
+            if cluster in independent_by_recording:
+                repeated_recording_aliases.append(item.investigation_id)
+                continue
+            independent_by_recording[cluster] = item
+        eligible = tuple(independent_by_recording.values())
     historical = tuple(item for item in eligible if not item.prospective)
     prospective = tuple(item for item in eligible if item.prospective)
     observable = tuple(
@@ -2622,6 +2645,11 @@ def evaluate_investigation_policies(
             blockers.append(f"Need {deficit} additional qualified {label} unit(s).")
     if duplicate_conflicts:
         blockers.append("Conflicting repeated investigation comparisons were withheld.")
+    if repeated_recording_aliases:
+        blockers.append(
+            "Repeated investigations from the same physical recording were "
+            "withheld from independent P34 counts."
+        )
     if followup_conflicts:
         blockers.append("Conflicting repeated P19 outcome follow-ups were withheld.")
     if capacity_overflow_kinds:
@@ -3402,11 +3430,6 @@ def _authoritative_crew_lineage(
         CrewChiefEvent,
         CrewChiefInvestigation,
     )
-    from racelab_engine.storage.crew_chief_repository import crew_chief_event_hash
-    from racelab_engine.storage.engineering_learning_repository import (
-        EngineeringLearningIntegrityError,
-        EngineeringLearningRepository,
-    )
     from racelab_engine.services.engineering_learning_service import (
         CurrentLearningInputs,
         _attention_order,
@@ -3417,6 +3440,11 @@ def _authoritative_crew_lineage(
         _mind_change_records,
         _recurrence,
         _transfer_assessment,
+    )
+    from racelab_engine.storage.crew_chief_repository import crew_chief_event_hash
+    from racelab_engine.storage.engineering_learning_repository import (
+        EngineeringLearningIntegrityError,
+        EngineeringLearningRepository,
     )
 
     active = connection
@@ -4580,6 +4608,7 @@ def evaluate_p34_repository(
     pre_source_revision = _authoritative_source_revision(active)
     records: list[object] = []
     blockers: list[str] = []
+    recording_sha256_by_investigation: dict[str, str] = {}
     cache_key: tuple[object, ...] | None = None
     snapshot_stable = False
     storage_stable = False
@@ -4733,6 +4762,23 @@ def evaluate_p34_repository(
         pairs = tuple(
             item for item in records if isinstance(item, PairedInvestigationDecision)
         )
+        run_sha256_by_id: dict[str, str] = {}
+        pair_run_ids = tuple(dict.fromkeys(item.run_id for item in pairs))
+        for offset in range(0, len(pair_run_ids), 500):
+            chunk = pair_run_ids[offset : offset + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            for row in active.execute(
+                f"SELECT run_id, file_hash FROM runs WHERE run_id IN ({placeholders})",
+                chunk,
+            ).fetchall():
+                source_sha = normalize_source_sha256(row["file_hash"])
+                if source_sha is not None:
+                    run_sha256_by_id[str(row["run_id"])] = source_sha
+        recording_sha256_by_investigation = {
+            item.investigation_id: run_sha256_by_id[item.run_id]
+            for item in pairs
+            if item.run_id in run_sha256_by_id
+        }
         certificates = tuple(
             item
             for item in records
@@ -4838,6 +4884,11 @@ def evaluate_p34_repository(
         authoritative_case_ids=authoritative_cases,
         authoritative_discriminator_ids=authoritative_discriminators,
         authoritative_followup_ids=authoritative_followups,
+        recording_sha256_by_investigation=(
+            recording_sha256_by_investigation
+            if recording_sha256_by_investigation
+            else None
+        ),
         canonical_activation_evaluation_ids=canonical_activation_evaluation_ids,
         capacity_overflow_kinds=capacity_overflow,
         registry_identity_sha256=registry_identity,

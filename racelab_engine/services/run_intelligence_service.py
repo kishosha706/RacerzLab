@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from concurrent.futures import Future
-from pathlib import Path
 import json
+import os
 import re
 import sqlite3
+from concurrent.futures import Future
+from dataclasses import dataclass
+from pathlib import Path
 from threading import RLock
 from typing import Any, Sequence
 
-from racelab_engine.identity import canonical_json_sha256
-from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.analysis.calculated_channels import CHANNEL_METADATA
 from racelab_engine.analysis.channel_registry import canonical_name
+from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.analysis.setup_controls import (
     SETUP_CONTROL_SPECS,
     numeric_setup_value,
@@ -25,13 +25,24 @@ from racelab_engine.analysis.test_director import (
     MeasurementMission,
     TestDirectorDecision,
 )
+from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.controlled_workflow import ControlledWorkflow
 from racelab_engine.models.engineering_memory import (
     DriverPresentationProfile,
     EngineeringNarrativeEntry,
     PredictionCalibrationSummary,
 )
-from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.engineering_awareness import (
+    EngineeringStateFrame,
+    MechanismEpisode,
+    StateTransition,
+)
+from racelab_engine.models.engineering_context import ControlMutationEvent
+from racelab_engine.models.evidence import (
+    EngineeringBlockTarget,
+    EvidenceState,
+    engineering_blockers_for,
+)
 from racelab_engine.models.intelligence import (
     CalibrationSummary,
     CapabilityAssessment,
@@ -43,15 +54,15 @@ from racelab_engine.models.intelligence import (
     SetupEvidenceValue,
 )
 from racelab_engine.models.lap_engineering_context import LapEngineeringContextReport
-from racelab_engine.models.session_intelligence import (
-    HypothesisLifecycle,
-    HypothesisLifecycleEntry,
-    HypothesisPolicyIdentity,
-)
 from racelab_engine.models.observation_intelligence import (
     MechanismObservationReport,
     ObservationStatus,
     RunObservationIntelligence,
+)
+from racelab_engine.models.session_intelligence import (
+    HypothesisLifecycle,
+    HypothesisLifecycleEntry,
+    HypothesisPolicyIdentity,
 )
 from racelab_engine.models.smart_guidance import (
     MeasurementBlocker,
@@ -63,6 +74,9 @@ from racelab_engine.services.controlled_workflow_service import (
     revalidate_controlled_test_packet,
     validate_p19_workflow_origin,
 )
+from racelab_engine.services.engineering_awareness_service import (
+    EngineeringAwarenessEvidenceBuild,
+)
 from racelab_engine.services.engineering_memory_service import (
     build_prediction_contract,
     get_driver_presentation_profile_for_run,
@@ -70,9 +84,6 @@ from racelab_engine.services.engineering_memory_service import (
     list_engineering_narrative,
 )
 from racelab_engine.services.experiment_service import bind_durable_experiment_lifecycle
-from racelab_engine.services.engineering_awareness_service import (
-    EngineeringAwarenessEvidenceBuild,
-)
 from racelab_engine.services.import_service import (
     build_telemetry_capability_payload,
     read_telemetry_manifest,
@@ -114,8 +125,8 @@ from racelab_engine.services.smart_guidance_service import build_smart_guidance
 from racelab_engine.services.telemetry_health_service import (
     build_telemetry_health_baseline,
 )
-from racelab_engine.storage.repository import RaceLabRepository
 from racelab_engine.storage.db import default_db_path, initialize_database
+from racelab_engine.storage.repository import RaceLabRepository
 
 _QUALIFIED_STATES = frozenset({
     EvidenceState.MEASURED,
@@ -189,7 +200,135 @@ _SNAPSHOT_LOCK = RLock()
 _SNAPSHOT_CACHE: dict[str, RunIntelligenceBundle] = {}
 _SNAPSHOT_INFLIGHT: dict[str, Future[RunIntelligenceBundle]] = {}
 _SNAPSHOT_SCHEMA_VERSION = "p31.shared-intelligence.v1"
+_PERSISTED_SNAPSHOT_SCHEMA_VERSION = "p35.5.persisted-intelligence.v1"
 _SNAPSHOT_BUILD_COUNT = 0
+
+
+def _persisted_snapshot_path(database: Path, key: str) -> Path:
+    return database.parent / "cache" / "intelligence" / f"{key}.json"
+
+
+def _persisted_snapshot_enabled() -> bool:
+    return (
+        "PYTEST_CURRENT_TEST" not in os.environ
+        and os.environ.get("RACELAB_DISABLE_PERSISTED_INTELLIGENCE_CACHE", "").strip().lower()
+        not in {"1", "true", "yes", "on"}
+    )
+
+
+def _bundle_payload(bundle: RunIntelligenceBundle) -> dict[str, Any]:
+    return {
+        "report": bundle.report.model_dump(mode="json"),
+        "narrative_entries": [
+            item.model_dump(mode="json") for item in bundle.narrative_entries
+        ],
+        "calibration": bundle.calibration.model_dump(mode="json"),
+        "driver_profile": bundle.driver_profile.model_dump(mode="json"),
+        "awareness": {
+            "frames": [item.model_dump(mode="json") for item in bundle.awareness.frames],
+            "transitions": [
+                item.model_dump(mode="json") for item in bundle.awareness.transitions
+            ],
+            "episodes": [
+                item.model_dump(mode="json") for item in bundle.awareness.episodes
+            ],
+            "episode_observations": bundle.awareness.episode_observations.model_dump(
+                mode="json"
+            ),
+            "control_mutations": [
+                item.model_dump(mode="json")
+                for item in bundle.awareness.control_mutations
+            ],
+            "blocker_reasons": list(bundle.awareness.blocker_reasons),
+        },
+    }
+
+
+def _load_persisted_snapshot(database: Path, key: str) -> RunIntelligenceBundle | None:
+    if not _persisted_snapshot_enabled():
+        return None
+    path = _persisted_snapshot_path(database, key)
+    try:
+        envelope = json.loads(path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(envelope, dict)
+            or envelope.get("schema_version") != _PERSISTED_SNAPSHOT_SCHEMA_VERSION
+            or envelope.get("semantic_key") != key
+            or not isinstance(envelope.get("bundle"), dict)
+            or envelope.get("bundle_sha256")
+            != canonical_json_sha256(envelope["bundle"])
+        ):
+            return None
+        payload = envelope["bundle"]
+        awareness = payload["awareness"]
+        return RunIntelligenceBundle(
+            report=InternalIntelligenceReport.model_validate(payload["report"]),
+            narrative_entries=tuple(
+                EngineeringNarrativeEntry.model_validate(item)
+                for item in payload["narrative_entries"]
+            ),
+            calibration=PredictionCalibrationSummary.model_validate(
+                payload["calibration"]
+            ),
+            driver_profile=DriverPresentationProfile.model_validate(
+                payload["driver_profile"]
+            ),
+            awareness=EngineeringAwarenessEvidenceBuild(
+                frames=tuple(
+                    EngineeringStateFrame.model_validate(item)
+                    for item in awareness["frames"]
+                ),
+                transitions=tuple(
+                    StateTransition.model_validate(item)
+                    for item in awareness["transitions"]
+                ),
+                episodes=tuple(
+                    MechanismEpisode.model_validate(item)
+                    for item in awareness["episodes"]
+                ),
+                episode_observations=MechanismObservationReport.model_validate(
+                    awareness["episode_observations"]
+                ),
+                control_mutations=tuple(
+                    ControlMutationEvent.model_validate(item)
+                    for item in awareness["control_mutations"]
+                ),
+                blocker_reasons=tuple(awareness["blocker_reasons"]),
+            ),
+        )
+    except (KeyError, OSError, TypeError, ValueError):
+        return None
+
+
+def _store_persisted_snapshot(
+    database: Path,
+    key: str,
+    bundle: RunIntelligenceBundle,
+) -> None:
+    if not _persisted_snapshot_enabled():
+        return
+    path = _persisted_snapshot_path(database, key)
+    temporary = path.with_suffix(f".{os.getpid()}.tmp")
+    payload = _bundle_payload(bundle)
+    envelope = {
+        "schema_version": _PERSISTED_SNAPSHOT_SCHEMA_VERSION,
+        "semantic_key": key,
+        "bundle_sha256": canonical_json_sha256(payload),
+        "bundle": payload,
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary.write_text(
+            json.dumps(envelope, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        temporary.replace(path)
+    except (OSError, TypeError, ValueError):
+        # Derived cache is optional. Canonical construction remains available.
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def _semantic_repository_revision(
@@ -1771,9 +1910,12 @@ def _build_run_intelligence_uncached(
             ),
         )
     overview_integrity_blockers = tuple(
-        warning.removeprefix("Evidence integrity: ").strip()
-        for warning in overview.warnings
-        if warning.startswith("Evidence integrity: ")
+        blocker.message
+        for blocker in engineering_blockers_for(
+            overview.engineering_blockers,
+            EngineeringBlockTarget.OBSERVATION,
+            EngineeringBlockTarget.NAVIGATION,
+        )
     )
     quality = _apply_persistence_integrity_blockers(
         quality,
@@ -2075,6 +2217,15 @@ def build_run_intelligence(
     if not owner:
         return future.result()
     global _SNAPSHOT_BUILD_COUNT
+    repository = RaceLabRepository(db_path)
+    database = Path(repository.db_path or default_db_path()).resolve()
+    persisted = _load_persisted_snapshot(database, key)
+    if persisted is not None:
+        with _SNAPSHOT_LOCK:
+            _SNAPSHOT_CACHE[key] = persisted
+            _SNAPSHOT_INFLIGHT.pop(key, None)
+            future.set_result(persisted)
+        return persisted
     try:
         with _SNAPSHOT_LOCK:
             _SNAPSHOT_BUILD_COUNT += 1
@@ -2084,6 +2235,7 @@ def build_run_intelligence(
             db_path=db_path,
             workflow_candidate=workflow_candidate,
         )
+        _store_persisted_snapshot(database, key, bundle)
     except BaseException as exc:
         with _SNAPSHOT_LOCK:
             _SNAPSHOT_INFLIGHT.pop(key, None)
@@ -2096,6 +2248,26 @@ def build_run_intelligence(
         while len(_SNAPSHOT_CACHE) > 16:
             _SNAPSHOT_CACHE.pop(next(iter(_SNAPSHOT_CACHE)))
     return bundle
+
+
+def peek_cached_run_intelligence(
+    run_id: str,
+    *,
+    session_id: str | None = None,
+    db_path: str | Path | None = None,
+    workflow_candidate: ControlledWorkflow | None = None,
+) -> RunIntelligenceBundle | None:
+    """Return an exact current cached bundle without starting cold construction.
+
+    The semantic key is recomputed from current persisted truth, so a stale cache
+    entry cannot be projected after telemetry, setup, workflow, or history drift.
+    In-flight work is intentionally not awaited: the desktop shell must never pay
+    the full intelligence latency merely to render navigation.
+    """
+
+    key = _snapshot_key(run_id, session_id, db_path, workflow_candidate)
+    with _SNAPSHOT_LOCK:
+        return _SNAPSHOT_CACHE.get(key)
 
 
 def run_intelligence_snapshot_stats() -> dict[str, int]:
@@ -2118,6 +2290,7 @@ def clear_run_intelligence_snapshot_cache() -> None:
 __all__ = [
     "RunIntelligenceBundle",
     "build_run_intelligence",
+    "peek_cached_run_intelligence",
     "clear_run_intelligence_snapshot_cache",
     "run_intelligence_snapshot_stats",
 ]

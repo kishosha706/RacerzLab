@@ -21,6 +21,8 @@ INVALID_TUNING_TAGS = frozenset(
         "RESET",
         "ACTIVE_RESET",
         "SAMPLE_DISCONTINUITY",
+        "CLOCK_RESET_BOUNDARY",
+        "TIMING_INTEGRITY_BLOCKED",
         "POSITION_DISCONTINUITY",
         "SPARSE_POSITION_COVERAGE",
         "NON_CREDIBLE_LAP_SAMPLING",
@@ -45,6 +47,8 @@ _TAG_REASONS = {
     "RESET": "Reset segment",
     "ACTIVE_RESET": "Active Reset segment",
     "SAMPLE_DISCONTINUITY": "Telemetry sample continuity failed",
+    "CLOCK_RESET_BOUNDARY": "Lap crossed a telemetry clock reset boundary",
+    "TIMING_INTEGRITY_BLOCKED": "Qualified SessionTick timing unavailable",
     "POSITION_DISCONTINUITY": "Track-position continuity failed",
     "SPARSE_POSITION_COVERAGE": "Track-position coverage was too sparse",
     "NON_CREDIBLE_LAP_SAMPLING": "Lap duration or sample density was not credible",
@@ -54,6 +58,23 @@ _TAG_REASONS = {
 }
 
 
+def _qualified_timing_or_legacy_record(lap: LapSummary) -> bool:
+    """Require explicit modern timing fields while keeping old stored rows readable.
+
+    Current imports always persist both timing fields.  A pre-clock ``lap_json``
+    has neither in Pydantic's explicit field set and remains readable for cache
+    migration, but it cannot come from the current lap detector without the
+    qualified-clock gate.
+    """
+    timing_fields = {"timing_primary_clock", "timing_clock_state"}
+    if not (lap.model_fields_set & timing_fields):
+        return True
+    return (
+        lap.timing_primary_clock == "session_tick"
+        and lap.timing_clock_state == "qualified"
+    )
+
+
 def lap_ineligibility_reasons(lap: LapSummary) -> list[str]:
     """Return stable, user-facing reasons a lap cannot drive a setup decision."""
     reasons: list[str] = []
@@ -61,6 +82,8 @@ def lap_ineligibility_reasons(lap: LapSummary) -> list[str]:
         reasons.append("Incomplete lap")
     if lap.lap_time is None or not math.isfinite(float(lap.lap_time)) or lap.lap_time <= 0:
         reasons.append("Valid lap time unavailable")
+    if not _qualified_timing_or_legacy_record(lap):
+        reasons.append("Qualified SessionTick timing unavailable")
     for tag in sorted({tag.upper() for tag in lap.classification_tags} & INVALID_TUNING_TAGS):
         reason = _TAG_REASONS[tag]
         if reason not in reasons:
@@ -78,6 +101,7 @@ def lap_is_eligible(lap: LapSummary) -> bool:
         and lap.lap_time is not None
         and math.isfinite(float(lap.lap_time))
         and lap.lap_time > 0
+        and _qualified_timing_or_legacy_record(lap)
         and not ({tag.upper() for tag in lap.classification_tags} & INVALID_TUNING_TAGS)
     )
 

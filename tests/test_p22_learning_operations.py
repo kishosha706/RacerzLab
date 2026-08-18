@@ -39,6 +39,8 @@ def _overview(run_id: str = "run-1", *, file_hash: str = SOURCE) -> RunOverview:
             lap_number=number,
             is_complete=True,
             is_useful=True,
+            timing_primary_clock="session_tick",
+            timing_clock_state="qualified",
             lap_time=30.0,
             pct_min=0.0,
             pct_max=100.0,

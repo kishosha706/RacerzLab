@@ -13,7 +13,7 @@ import { ProxyBadge } from "../components/ProxyBadge";
 import { PlatformChartPanelReadout } from "../components/PlatformChartPanelReadout";
 import { fetchPlatformEvents, fetchShockReader, fetchTrace } from "../api/client";
 import { TRACE_WORKBENCH_CHANNELS } from "../constants/workbenchChannels";
-import { getChannelUnit, isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
+import { getChannelLabel, getChannelUnit, isProxyChannel, isEstimateChannel } from "../utils/channelMeta";
 import { getTraceValues, formatChannelValue, formatForceProxyN, safeStringValue } from "../utils/channelFormat";
 import { echarts, type EChartsType } from "../utils/echarts";
 import { buildPlatformChartAnnotations } from "../utils/platformChartAnnotations";
@@ -21,6 +21,7 @@ import { filterPlatformEvents, isClearPlatformDiagnostic, isMutedPlatformEvent, 
 import { useTelemetryCursor, useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { buildWindowEvidence, buildZoneEvidence } from "../utils/evidenceFocus";
 import type {
+  ChannelCatalogItem,
   PlatformEventItem,
   PlatformEventVisibilityMode,
   RunOverview,
@@ -36,6 +37,7 @@ type PlatformTabProps = {
   overview: RunOverview;
   sessionId?: string | null;
   trace: TraceResponse | null;
+  customChannel?: ChannelCatalogItem | null;
   traceLoadStatus?: PlatformLoadStatus;
   traceLoadError?: string | null;
   onRetryTrace?: () => void;
@@ -54,6 +56,7 @@ type PlatformTraceWorkbenchProps = {
   overview: RunOverview;
   sessionId?: string | null;
   trace: TraceResponse;
+  customChannel?: ChannelCatalogItem | null;
   platformEvents?: PlatformEventItem[];
   platformEventsLoadStatus?: PlatformLoadStatus;
   platformEventsLoadError?: string | null;
@@ -362,15 +365,6 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "rear_min_ride_height_in", label: "Rear Min", color: "#a78bfa" },
     ], heightDetailed: 144, heightCompact: 104, yAxisUnit: "in" },
   ],
-  Diffuser: [
-    { label: "Ground Speed [mph]", channels: [{ name: "speed_mph", label: "Speed", color: "#22c55e" }] },
-    { label: "Front Center RH [in]", channels: [{ name: "front_center_rh_in", label: "Front Center", color: "#38bdf8" }] },
-    { label: "Rear Center RH [in]", channels: [{ name: "rear_center_rh_in", label: "Rear Center", color: "#a78bfa" }] },
-    { label: "Smooth Diffuser Volume [ft3]", channels: [{ name: "smooth_diffuser_volume_ft3", label: "Smooth Vol", color: "#4ade80" }] },
-    { label: "Diffuser Base Volume [ft3]", channels: [{ name: "diffuser_base_volume_ft3", label: "Base Vol", color: "#60a5fa" }] },
-    { label: "Diffuser Wedge Volume [ft3]", channels: [{ name: "diffuser_wedge_volume_ft3", label: "Wedge Vol", color: "#f97316" }] },
-    { label: "Smooth Center Rake [in]", channels: [{ name: "smooth_center_rake_in", label: "Center Rake", color: "#c084fc" }] },
-  ],
 };
 
 function asPayload(trace: TraceResponse | null, channel: string): TraceChannelPayload | null {
@@ -553,6 +547,46 @@ function zoomRangeSummary(range: { startValue?: number; endValue?: number } | nu
   return `Zoomed: ${formatDistanceNumber(start)}-${formatDistanceNumber(end)} ft`;
 }
 
+const PLATFORM_ZOOM_STORAGE_PREFIX = "racerzlab.platformZoom.v1";
+
+function readPersistedZoomRange(key: string): { startValue: number; endValue: number } | null {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) ?? "null") as {
+      startValue?: unknown;
+      endValue?: unknown;
+    } | null;
+    if (
+      parsed == null
+      || typeof parsed.startValue !== "number"
+      || !Number.isFinite(parsed.startValue)
+      || typeof parsed.endValue !== "number"
+      || !Number.isFinite(parsed.endValue)
+      || parsed.startValue >= parsed.endValue
+    ) return null;
+    return { startValue: parsed.startValue, endValue: parsed.endValue };
+  } catch {
+    return null;
+  }
+}
+
+function persistZoomRange(
+  key: string,
+  range: { startValue?: number; endValue?: number } | null,
+): void {
+  try {
+    if (
+      range?.startValue != null
+      && range.endValue != null
+      && Number.isFinite(range.startValue)
+      && Number.isFinite(range.endValue)
+      && range.startValue < range.endValue
+    ) window.localStorage.setItem(key, JSON.stringify(range));
+    else window.localStorage.removeItem(key);
+  } catch {
+    // Zoom persistence is presentation-only.
+  }
+}
+
 function finiteXRange(xs: Array<number | null>): { min: number; max: number } | null {
   const finiteXs = xs.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
   if (finiteXs.length === 0) return null;
@@ -729,7 +763,7 @@ function RiskCorridorSVG({
   );
 }
 
-type LocalTraceChannel = {
+export type LocalTraceChannel = {
   name: string;
   label: string;
   color: string;
@@ -807,7 +841,7 @@ function platformChartTooltipMarkup(
   ].join("");
 }
 
-function LocalPlatformTrace({
+export function LocalPlatformTrace({
   trace,
   xs,
   centerIndex,
@@ -1251,6 +1285,7 @@ export function PlatformTab({
   overview,
   sessionId = null,
   trace,
+  customChannel = null,
   traceLoadStatus,
   traceLoadError,
   onRetryTrace,
@@ -1388,6 +1423,7 @@ export function PlatformTab({
       overview={overview}
       sessionId={sessionId}
       trace={trace}
+      customChannel={customChannel}
       platformEvents={platformEvents}
       platformEventsLoadStatus={platformEventsLoadStatus}
       platformEventsLoadError={platformEventsLoadError}
@@ -1405,6 +1441,7 @@ function PlatformTraceWorkbench({
   overview,
   sessionId = null,
   trace: overviewTrace,
+  customChannel = null,
   platformEvents: externalPlatformEvents,
   platformEventsLoadStatus = "ready",
   platformEventsLoadError,
@@ -1417,6 +1454,14 @@ function PlatformTraceWorkbench({
 }: PlatformTraceWorkbenchProps) {
   const { selection, setWorkspace, focusEvidence, setHover } = useTelemetrySelection();
   const telemetryCursor = useTelemetryCursor();
+  const zoomStorageKey = useMemo(
+    () => `${PLATFORM_ZOOM_STORAGE_PREFIX}:${overviewTrace.run_id}:${overviewTrace.lap ?? "run"}`,
+    [overviewTrace.lap, overviewTrace.run_id],
+  );
+  const initialZoomRange = useMemo(
+    () => readPersistedZoomRange(zoomStorageKey),
+    [zoomStorageKey],
+  );
   const chartNode = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<EChartsType | null>(null);
   const cursorLineRef = useRef<HTMLDivElement | null>(null);
@@ -1425,7 +1470,7 @@ function PlatformTraceWorkbench({
   const hoverSampleIndexRef = useRef<number | null>(null);
   const clickedCursorDistanceFtRef = useRef<number | null>(null);
   const hoverCursorDistanceFtRef = useRef<number | null>(null);
-  const zoomRangeRef = useRef<{ startValue?: number; endValue?: number } | null>(null);
+  const zoomRangeRef = useRef<{ startValue?: number; endValue?: number } | null>(initialZoomRange);
   const dragZoomRef = useRef<DragZoomState | null>(null);
   const lastPointerOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const latestXsRef = useRef<Array<number | null>>([]);
@@ -1456,8 +1501,8 @@ function PlatformTraceWorkbench({
   const [clickedCursorDistanceFt, setClickedCursorDistanceFt] = useState<number | null>(null);
   const [hoverCursorDistanceFt, setHoverCursorDistanceFt] = useState<number | null>(null);
   const [chartDensity, setChartDensity] = useState<ChartDensity>("detailed");
-  const [zoomSummary, setZoomSummary] = useState("Full range");
-  const [visibleZoomRange, setVisibleZoomRange] = useState<{ startValue?: number; endValue?: number } | null>(null);
+  const [zoomSummary, setZoomSummary] = useState(() => zoomRangeSummary(initialZoomRange));
+  const [visibleZoomRange, setVisibleZoomRange] = useState<{ startValue?: number; endValue?: number } | null>(initialZoomRange);
   const [detailTrace, setDetailTrace] = useState<TraceResponse | null>(null);
   const [detailTraceLoading, setDetailTraceLoading] = useState(false);
   const [detailTraceStatus, setDetailTraceStatus] = useState<string | null>(null);
@@ -1470,6 +1515,13 @@ function PlatformTraceWorkbench({
     setWorkbenchView(normalizedInitialView);
     setWholeLapExpanded(selection.selectedMode === "learning");
   }, [normalizedInitialView, overviewTrace.lap, overviewTrace.run_id, selection.selectedMode]);
+  useEffect(() => {
+    const restored = readPersistedZoomRange(zoomStorageKey);
+    zoomRangeRef.current = restored;
+    setVisibleZoomRange(restored);
+    setZoomSummary(zoomRangeSummary(restored));
+    onMapOverlayZoomRangeChange?.(restored);
+  }, [onMapOverlayZoomRangeChange, zoomStorageKey]);
 
   const presetFromView: Record<WorkbenchView, string> = {
     balance: "Platform / Rake / Ride Height",
@@ -1479,7 +1531,6 @@ function PlatformTraceWorkbench({
     tires: "Tires",
     shocks: "Shocks",
     grade_pull: "Grade / Pull",
-    diffuser: "Diffuser",
   };
   const preset = presetFromView[workbenchView] ?? "Platform / Rake / Ride Height";
   const scrapeScrubChartView = workbenchView === "rear_scrape" || workbenchView === "scrub_steering";
@@ -2053,8 +2104,9 @@ function PlatformTraceWorkbench({
     setHoverCursorDistanceFt(null);
     onMapOverlayZoomRangeChange?.(null);
     setZoomSummary("Full range");
+    persistZoomRange(zoomStorageKey, null);
     chartRef.current?.dispatchAction({ type: "dataZoom", start: 0, end: 100 });
-  }, [onMapOverlayZoomRangeChange]);
+  }, [onMapOverlayZoomRangeChange, zoomStorageKey]);
 
   const keyboardTraceIndices = useMemo(
     () => xs.flatMap((value, index) => typeof value === "number" && Number.isFinite(value) ? [index] : []),
@@ -2419,6 +2471,7 @@ function PlatformTraceWorkbench({
               endValue: Math.max(drag.startValue, endValue),
             };
             zoomRangeRef.current = nextRange;
+            persistZoomRange(zoomStorageKey, nextRange);
             setVisibleZoomRange(nextRange);
             onMapOverlayZoomRangeChange?.(nextRange);
             setZoomSummary(zoomRangeSummary(nextRange));
@@ -2474,6 +2527,7 @@ function PlatformTraceWorkbench({
     const handleDataZoom = () => {
       const nextRange = zoomRangeFromOption();
       zoomRangeRef.current = nextRange;
+      persistZoomRange(zoomStorageKey, nextRange);
       setVisibleZoomRange(nextRange);
       onMapOverlayZoomRangeChange?.(nextRange);
       setZoomSummary(zoomRangeSummary(nextRange));
@@ -2503,7 +2557,7 @@ function PlatformTraceWorkbench({
       if (cancelDragZoomRef.current === cancelDragZoom) cancelDragZoomRef.current = () => {};
       if (restoreHoverAtPointerRef.current === restoreHoverAtPointer) restoreHoverAtPointerRef.current = () => false;
     };
-  }, [onMapOverlayZoomRangeChange, wholeLapExpanded]);;
+  }, [onMapOverlayZoomRangeChange, wholeLapExpanded, zoomStorageKey]);;
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -3338,6 +3392,7 @@ function PlatformTraceWorkbench({
   );
   const localTraceChannels: LocalTraceChannel[] = [];
   const localTraceChannelNames = [
+    ...(selection.selectedChannel ? [selection.selectedChannel] : []),
     ...(focusedPlatformEvent?.channels_used ?? []),
     ...rows.flatMap((row) => row.channels.map((channel) => channel.name)),
   ];
@@ -3345,16 +3400,21 @@ function PlatformTraceWorkbench({
     if (localTraceChannels.some((channel) => channel.name === channelName)) continue;
     if (!channelHasNumericData(trace, channelName)) continue;
     const configured = rowChannelLookup.get(channelName);
+    const selectedCatalogChannel = customChannel?.name === channelName
+      ? customChannel
+      : null;
     localTraceChannels.push({
       name: channelName,
-      label: configured?.label ?? channelName.replace(/_/g, " "),
+      label: selectedCatalogChannel?.label ?? configured?.label ?? channelName.replace(/_/g, " "),
       color: configured?.color ?? ["#38bdf8", "#f59e0b", "#a78bfa"][localTraceChannels.length % 3],
-      isProxy: isProxyChannel(channelName),
-      unit: getChannelUnit(channelName) || rowUnit(channelName),
+      isProxy: selectedCatalogChannel?.is_proxy ?? isProxyChannel(channelName),
+      unit: selectedCatalogChannel?.unit ?? (getChannelUnit(channelName) || rowUnit(channelName)),
     });
     if (localTraceChannels.length === 3) break;
   }
-  const localTraceContextLabel = focusedPlatformEvent
+  const localTraceContextLabel = selection.selectedChannel
+    ? `Custom observation channel · ${getChannelLabel(selection.selectedChannel)} · no setup authority`
+    : focusedPlatformEvent
     ? focusedPlatformEvent.title
     : localFocusIndex != null && xs[localFocusIndex] != null
       ? `Selected sample at ${formatDistanceFt(xs[localFocusIndex])}`
@@ -3574,7 +3634,6 @@ function PlatformTraceWorkbench({
     </div>
   );
 
-  const renderDiffuserPanel = () => null;
 
   const renderGradePanel = () => (
     <div className="engineering-panel">
@@ -3600,7 +3659,6 @@ function PlatformTraceWorkbench({
       case "tires": return renderTiresPanel();
       case "shocks": return renderShocksPanel();
       case "grade_pull": return renderGradePanel();
-      case "diffuser": return renderDiffuserPanel();
       default: return null;
     }
   };
@@ -3886,7 +3944,7 @@ function PlatformTraceWorkbench({
         contextLabel={localTraceContextLabel}
       />
       <WorkbenchSubnav active={workbenchView} onChange={handleViewChange} />
-      {workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && (
+      {workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
           <span className="laps-stint-legend-item" style={{ fontSize: 10, color: "#8d9aaa", fontWeight: 600 }}>
             Engineering cards basis:
@@ -3900,7 +3958,7 @@ function PlatformTraceWorkbench({
           </span>
         </div>
       )}
-      {workbenchView !== "balance" && workbenchView !== "tires" && workbenchView !== "diffuser" && !scrapeScrubChartView && renderEngineeringPanel()}
+      {workbenchView !== "balance" && workbenchView !== "tires" && !scrapeScrubChartView && renderEngineeringPanel()}
       <div className="platform-whole-lap-disclosure">
         <button
           type="button"

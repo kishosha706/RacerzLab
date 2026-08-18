@@ -49,6 +49,20 @@ RAW_TO_CANONICAL: dict[str, str] = {
     "PitSvFuel": "pending_pit_fuel_add",
     "LapDist": "lap_dist_m",
     "LapDistPct": "lap_dist_pct",
+    # Simulator lap clocks and delta-validity fields are corroboration only.
+    # They never replace RacerZLab's qualified base-record clock or physical
+    # position integration.
+    "LapCurrentLapTime": "lap_current_time_s",
+    "LapLastLapTime": "lap_last_time_s",
+    "LapBestLapTime": "lap_best_time_s",
+    "LapDeltaToBestLap": "lap_delta_to_best_s",
+    "LapDeltaToOptimalLap": "lap_delta_to_optimal_s",
+    "LapDeltaToSessionBestLap": "lap_delta_to_session_best_s",
+    "LapDeltaToSessionOptimalLap": "lap_delta_to_session_optimal_s",
+    "LapDeltaToBestLap_OK": "lap_delta_to_best_valid",
+    "LapDeltaToOptimalLap_OK": "lap_delta_to_optimal_valid",
+    "LapDeltaToSessionBestLap_OK": "lap_delta_to_session_best_valid",
+    "LapDeltaToSessionOptimalLap_OK": "lap_delta_to_session_optimal_valid",
     # Driver and vehicle state.
     "Speed": "speed_mps",
     "RPM": "rpm",
@@ -178,6 +192,16 @@ RAW_TO_CANONICAL: dict[str, str] = {
     "FrontTireSetsAvailable": "front_tire_sets_available",
     "RearTireSetsAvailable": "rear_tire_sets_available",
     "TireSetsAvailable": "tire_sets_available",
+    # Per-corner tire inventory is a pit-boundary snapshot.  Preserve each
+    # corner independently; never collapse it into an on-track tire-state cause.
+    "LFTiresUsed": "lf_tires_used",
+    "RFTiresUsed": "rf_tires_used",
+    "LRTiresUsed": "lr_tires_used",
+    "RRTiresUsed": "rr_tires_used",
+    "LFTiresAvailable": "lf_tires_available",
+    "RFTiresAvailable": "rf_tires_available",
+    "LRTiresAvailable": "lr_tires_available",
+    "RRTiresAvailable": "rr_tires_available",
     # Brake system.
     "LFbrakeLinePress": "lf_brake_line_pressure_bar",
     "RFbrakeLinePress": "rf_brake_line_pressure_bar",

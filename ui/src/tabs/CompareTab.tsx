@@ -13,7 +13,7 @@ import type {
   CornerMatrix,
   ComparisonObservation, ContextChange, DriverComparison, PaceComparison, PlatformComparison,
   PowertrainComparison, ShockComparison, SetupChange, TireComparison,
-  WholeCarIndex,
+  TestDisciplineResult, WholeCarIndex,
 } from "../types/compare";
 
 type CompareTabProps = { runs: RunListItem[]; currentRunId: string; sessionId?: string | null };
@@ -297,6 +297,34 @@ function OvalComparisonBrief({
     testDisciplineBriefFact(data),
   ];
   const pace = facts[0];
+  const evidenceDebtGroups = [
+    {
+      label: "Context",
+      items: data.context_changes
+        .filter((item) => item.is_problem || item.warning)
+        .map((item) => item.warning ?? `${item.label} differs.`),
+    },
+    {
+      label: "Test discipline",
+      items: data.test_discipline?.negative_factors ?? [],
+    },
+    {
+      label: "Simulator integrity",
+      items: data.sim_integrity?.warnings ?? [],
+    },
+    {
+      label: "Eligibility / evidence",
+      items: [
+        ...(data.observation?.blocker_reasons ?? []),
+        ...data.warnings,
+      ],
+    },
+  ].map((group) => ({ ...group, items: [...new Set(group.items)] }))
+    .filter((group) => group.items.length > 0);
+  const evidenceDebtCount = evidenceDebtGroups.reduce(
+    (total, group) => total + group.items.length,
+    0,
+  );
   return (
     <section
       className="oval-compare-brief"
@@ -321,6 +349,19 @@ function OvalComparisonBrief({
           </article>
         ))}
       </div>
+      <details className="compare-evidence-debt" open={learningMode || undefined}>
+        <summary>
+          Evidence debt · {evidenceDebtCount === 0 ? "none recorded" : `${evidenceDebtCount} blocker${evidenceDebtCount === 1 ? "" : "s"}`}
+        </summary>
+        {evidenceDebtGroups.length > 0 ? evidenceDebtGroups.map((group) => (
+          <section key={group.label}>
+            <strong>{group.label}</strong>
+            <ul>{group.items.map((item) => <li key={item}>{item}</li>)}</ul>
+          </section>
+        )) : (
+          <p>No recorded evidence debt in this response. This remains an observation, not a setup-policy certificate.</p>
+        )}
+      </details>
       <div className="oval-compare-actions" aria-label="Oval comparison details">
         <button type="button" onClick={() => onOpen("target-zone")}>Where</button>
         <button type="button" onClick={() => onOpen("driver")}>Driver</button>
@@ -337,7 +378,7 @@ function OvalComparisonBrief({
 }
 
 function ObservationView({ observation, disc, wci, pace, confidence, targetSpeedDeltaMph, setupChanges, contextChanges, weatherWarning, isSelfCompare }: {
-  observation: ComparisonObservation | null; disc: { score: number; label: string } | null;
+  observation: ComparisonObservation | null; disc: TestDisciplineResult | null;
   wci: WholeCarIndex | null; pace: PaceComparison | null; confidence: number;
   targetSpeedDeltaMph?: number | null;
   setupChanges: SetupChange[];
@@ -354,6 +395,10 @@ function ObservationView({ observation, disc, wci, pace, confidence, targetSpeed
         headline={observation.headline}
         confidenceScore={confidence}
         testDisciplineScore={disc?.score}
+        disciplineFactors={disc ? {
+          positive: disc.positive_factors,
+          negative: disc.negative_factors,
+        } : null}
         evidence={observation.evidence}
         warnings={observation.warnings}
         weatherWarning={weatherWarning}
@@ -741,10 +786,15 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
 
   const otherRuns = runs.filter((r) => r.run_id !== baselineRunId);
   const isSameRun = testRunId === baselineRunId && testRunId !== "";
+  const baselineRecordingSha = runs.find((run) => run.run_id === baselineRunId)?.recording_sha256 ?? null;
+  const testRecordingSha = runs.find((run) => run.run_id === testRunId)?.recording_sha256 ?? null;
+  const isSameRecording = baselineRecordingSha != null
+    && testRecordingSha != null
+    && baselineRecordingSha === testRecordingSha;
   const compareDisabledReason = !testRunId
     ? "Select a test run to enable Compare."
-    : isSameRun
-      ? "Baseline and test are the same run. Choose a different test run for setup decisions."
+    : isSameRun || isSameRecording
+      ? "SAME RECORDING — these entries reference identical telemetry and cannot be compared as independent runs."
       : null;
   const showBasketSyncHint = !isBasketDriven && basketBaselineRunId != null && basketTestRunId != null;
   const selectedZoneReady = selection.selectedRunId === baselineRunId
@@ -799,14 +849,14 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
   }, [comparisonScopeKey]);
 
   useEffect(() => {
-    if (!testRunId || testRunId === baselineRunId) return;
+    if (!testRunId || testRunId === baselineRunId || isSameRecording) return;
     const controller = new AbortController();
     setPreviewLoading(true);
     fetchComparePreview(baselineRunId, testRunId, controller.signal)
       .then(p => { if (!controller.signal.aborted) { setPreview(p); setPreviewLoading(false); } })
       .catch(() => { if (!controller.signal.aborted) { setPreview(null); setPreviewLoading(false); } });
     return () => { controller.abort(); };
-  }, [baselineRunId, testRunId]);
+  }, [baselineRunId, isSameRecording, testRunId]);
 
   useEffect(() => {
     if (!selectedZoneReady) {
@@ -839,7 +889,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
   ]);
 
   const handleCompare = useCallback(async () => {
-    if (!testRunId) return;
+    if (!testRunId || isSameRecording) return;
     const request = {
       baseline_run_id: baselineRunId,
       test_run_id: testRunId,
@@ -877,7 +927,7 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
     } finally {
       if (sequence === comparisonRequestSequenceRef.current) setLoading(false);
     }
-  }, [baselineRunId, effectiveBaselineLap, effectiveTestLap, testRunId, startPct, endPct]);
+  }, [baselineRunId, effectiveBaselineLap, effectiveTestLap, isSameRecording, testRunId, startPct, endPct]);
 
   // ── load insights when comparison exists ────────────────────
   useEffect(() => {
@@ -1041,7 +1091,16 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
           <label>Test Run</label>
           <select value={testRunId} onChange={(e) => { setTestRunId(e.target.value); setResult(null); }}>
             <option value="">Select test run...</option>
-            {otherRuns.map(r => <option key={r.run_id} value={r.run_id}>{r.track_name ?? r.run_id.slice(0, 24)}</option>)}
+            {otherRuns.map((run) => {
+              const sameRecording = baselineRecordingSha != null
+                && run.recording_sha256 != null
+                && run.recording_sha256 === baselineRecordingSha;
+              return (
+                <option key={run.run_id} value={run.run_id} disabled={sameRecording}>
+                  {run.track_name ?? run.run_id.slice(0, 24)}{sameRecording ? " — SAME RECORDING" : ""}
+                </option>
+              );
+            })}
           </select>
         </div>
         <div className="selector-group">
@@ -1055,10 +1114,10 @@ export function CompareTab({ runs, currentRunId, sessionId = null }: CompareTabP
         <button
           className="primary-button"
           onClick={handleCompare}
-          disabled={!testRunId || loading || isSameRun}
+          disabled={!testRunId || loading || isSameRun || isSameRecording}
           title={compareDisabledReason ?? "Run baseline vs test comparison"}
         >
-          {loading ? "Comparing..." : isSameRun ? "Same run selected" : "Compare"}
+          {loading ? "Comparing..." : isSameRun || isSameRecording ? "Same recording" : "Compare"}
         </button>
       </div>
 

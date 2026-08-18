@@ -160,6 +160,27 @@ FORCE_PROXY_CHANNELS: set[str] = {
     "damper_work_proxy",
 }
 
+# Geometry-derived diffuser quantities are never measured vehicle truth.  They
+# are available only when a reviewed vehicle profile supplies every required
+# constant, and even then remain calculated geometry proxies.
+DIFFUSER_GEOMETRY_PROXY_CHANNELS: set[str] = {
+    "diffuser_track_width_in",
+    "diffuser_wheelbase_in",
+    "diffuser_rub_block_correction_in",
+    "diffuser_base_volume_ft3",
+    "diffuser_wedge_volume_ft3",
+    "diffuser_volume_ft3",
+    "smooth_diffuser_volume_ft3",
+    "lr_height_rub_block_in",
+    "rear_center_rh_in",
+    "center_rake_in",
+    "smooth_center_rake_in",
+}
+
+CALCULATED_PROXY_CHANNELS: set[str] = (
+    FORCE_PROXY_CHANNELS | DIFFUSER_GEOMETRY_PROXY_CHANNELS
+)
+
 # ── Motion ratio helper ───────────────────────────────────────
 def apply_motion_ratio(
     wheel_delta: float, motion_ratio: float | None

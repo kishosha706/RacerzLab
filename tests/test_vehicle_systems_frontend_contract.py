@@ -37,6 +37,17 @@ def test_vehicle_systems_client_uses_read_only_run_scope() -> None:
     assert "method: \"POST\"" not in client[client.index("export function fetchVehicleSystems"):client.index("export function fetchEngineeringAwareness")]
 
 
+def test_engineering_awareness_uses_the_real_run_intelligence_timeout() -> None:
+    client = _read("ui/src/api/client.ts")
+    awareness = client[
+        client.index("export function fetchEngineeringAwareness"):
+        client.index("export function fetchLearningReadiness")
+    ]
+
+    assert "INTELLIGENCE_TIMEOUT_MS" in awareness
+    assert '"Engineering awareness"' in awareness
+
+
 def test_vehicle_systems_runtime_guards_reject_foreign_and_malformed_payloads() -> None:
     node = shutil.which("node")
     if node is None:

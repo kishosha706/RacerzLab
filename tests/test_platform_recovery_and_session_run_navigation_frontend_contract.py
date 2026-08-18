@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -15,7 +14,10 @@ def test_platform_resources_are_keyed_cleared_and_recoverable() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
     priority = _read("ui/src/components/PriorityRail.tsx")
 
-    assert 'JSON.stringify({ run_id: overview.run_id, lap: platformTargetLap })' in app
+    assert "const platformRequestKey = overview && platformTargetLap != null" in app
+    assert "run_id: overview.run_id" in app
+    assert "lap: platformTargetLap" in app
+    assert "custom_channel: selection.selectedChannel" in app
     assert 'type PlatformLoadStatus = "idle" | "loading" | "ready" | "clear" | "unavailable" | "error";' in app
     assert 'platformEventsLoadState.requestKey === platformRequestKey' in app
     assert 'traceLoadState.requestKey === platformRequestKey' in app

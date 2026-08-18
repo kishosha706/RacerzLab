@@ -9,24 +9,10 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-import racelab_engine.storage.investigation_adaptation_repository as adaptation_storage
 import racelab_engine.services.crew_chief_service as crew_chief_service
 import racelab_engine.services.investigation_adaptation_service as adaptation_service
+import racelab_engine.storage.investigation_adaptation_repository as adaptation_storage
 from racelab_engine.identity import canonical_json_sha256
-
-from racelab_engine.models.investigation_adaptation import (
-    InvestigationDecision,
-    InvestigationAdaptationContext,
-    InvestigationPolicyEvaluation,
-    NegativeControlConditionEvidence,
-    P19CauseChange,
-    P19CauseState,
-    P34NegativeControlResult,
-    P34ActivationDecision,
-    PairedInvestigationComparison,
-    PairedInvestigationDecision,
-    investigation_adaptation_source_snapshot_sha256,
-)
 from racelab_engine.models.crew_chief import (
     CrewChiefEvent,
     CrewChiefEventPayload,
@@ -44,6 +30,19 @@ from racelab_engine.models.engineering_learning import (
     P19ReasoningMemory,
     ProblemFingerprint,
 )
+from racelab_engine.models.investigation_adaptation import (
+    InvestigationAdaptationContext,
+    InvestigationDecision,
+    InvestigationPolicyEvaluation,
+    NegativeControlConditionEvidence,
+    P19CauseChange,
+    P19CauseState,
+    P34ActivationDecision,
+    P34NegativeControlResult,
+    PairedInvestigationComparison,
+    PairedInvestigationDecision,
+    investigation_adaptation_source_snapshot_sha256,
+)
 from racelab_engine.services.engineering_learning_service import (
     CurrentLearningInputs,
     build_crew_chief_learning_prior,
@@ -57,10 +56,10 @@ from racelab_engine.services.investigation_adaptation_service import (
     build_discriminator_outcome_from_crew_events,
     build_investigation_improvement_projection,
     build_investigation_negative_transfer,
+    build_investigation_outcome_certificate,
     build_investigation_outcome_followup,
     build_p34_activation_decision,
     build_p34_negative_control_result,
-    build_investigation_outcome_certificate,
     build_paired_investigation_comparison,
     build_paired_investigation_decision,
     canonical_investigation_evaluation_pair,
@@ -72,19 +71,18 @@ from racelab_engine.services.investigation_adaptation_service import (
     persist_p34_foundation,
     resolve_effective_activation_decision,
 )
-from racelab_engine.storage.db import initialize_database
-from racelab_engine.storage.investigation_adaptation_repository import (
-    InvestigationAdaptationIntegrityError,
-    InvestigationAdaptationRepository,
-)
 from racelab_engine.storage.crew_chief_repository import (
     CrewChiefRepository,
     crew_chief_event_hash,
 )
+from racelab_engine.storage.db import initialize_database
 from racelab_engine.storage.engineering_learning_repository import (
     EngineeringLearningRepository,
 )
-
+from racelab_engine.storage.investigation_adaptation_repository import (
+    InvestigationAdaptationIntegrityError,
+    InvestigationAdaptationRepository,
+)
 
 _FROZEN = datetime(2026, 8, 15, 8, 12, 47, tzinfo=timezone.utc)
 
@@ -2307,6 +2305,32 @@ def test_same_track_runs_do_not_inflate_track_package_contexts(tmp_path) -> None
 
     assert evaluation.independent_investigation_count == 3
     assert evaluation.context_count == 1
+
+
+def test_same_recording_does_not_increment_p34_independent_investigations(
+    tmp_path,
+) -> None:
+    repository = InvestigationAdaptationRepository(tmp_path / "p34-source-identity.sqlite")
+    persist_p34_foundation(repository)
+    _append_case(repository, investigation_id="same-recording-a")
+    _append_case(repository, investigation_id="same-recording-b")
+    connection = initialize_database(repository.db_path)
+    try:
+        connection.execute(
+            "UPDATE runs SET file_hash = ? WHERE run_id = 'run-1'",
+            ("8" * 64,),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    evaluation = evaluate_p34_repository(repository, evaluated_at=_FROZEN)
+
+    assert evaluation.independent_investigation_count == 1
+    assert any(
+        "same physical recording" in blocker
+        for blocker in evaluation.blockers
+    )
     assert evaluation.context_count < p34_activation_protocol().minimum_contexts
 
 

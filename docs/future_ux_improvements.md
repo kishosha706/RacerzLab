@@ -17,8 +17,9 @@ canonical P19 workflow.
 
 **Page/Component:** EventTimeline, PlatformTab, TrackMapTab
 
-**Status:** Not implemented. EventTimeline currently acts as an interactive
-event navigator, but full requestAnimationFrame playback is deferred.
+**Status:** Implemented in the 2026-08-18 alpha-hardening pass. EventTimeline
+retains event anchors and adds requestAnimationFrame playback plus a continuous
+0-100% physical-position scrubber using the selected lap's recorded duration.
 
 **Recommendation:** Implement the full playback scrubber, allowing users to
 "play" through a lap at various speeds, with all synchronized elements
@@ -35,7 +36,8 @@ components.
 
 **Page/Component:** RunContextBar.tsx, TelemetrySelectionContext.tsx
 
-**Status:** Not implemented.
+**Status:** Implemented. RunContextBar binds BASELINE/TEST badges to the current
+run's exact persisted Compare Basket role.
 
 **Recommendation:** Add a small, distinct badge (e.g., "BASELINE", "TEST")
 next to the run name in the RunContextBar when applicable. State needs to
@@ -55,7 +57,8 @@ TelemetrySelectionContext and updating the RunContextBar component.
 
 **Page/Component:** OverviewTab.tsx
 
-**Status:** Basic zero-event state exists ("No critical events detected").
+**Status:** Implemented. The empty state says no supported platform finding
+exists in the current scope and explicitly denies that this is a health certificate.
 
 **Recommendation:** Refine the empty state without turning absence of a finding
 into a health certificate. Prefer "No supported platform finding in this
@@ -96,7 +99,8 @@ aggregation.
 
 **Page/Component:** CompareTab.tsx, DidItWorkCard.tsx
 
-**Status:** Warnings are present but could be visually grouped or prioritized.
+**Status:** Implemented. Compare groups context, test discipline, simulator
+integrity, and eligibility/evidence debt without creating policy authority.
 
 **Recommendation:** Implement a dedicated evidence-debt summary that groups
 context, eligibility, discipline, integrity, and missing-channel blockers.
@@ -109,8 +113,8 @@ next setup step.
 
 **Page/Component:** EvidenceInspector.tsx, SetupTab.tsx
 
-**Status:** EvidenceInspector shows "Related Setup" section but requires
-manual navigation to SetupTab.
+**Status:** Implemented. EvidenceInspector and Platform provide an exact-event
+"Open Setup" handoff that preserves focus scope.
 
 **Recommendation:** Add a prominent "Open Setup with Focus" button in the
 EvidenceInspector that directly navigates to the SetupTab and activates
@@ -122,7 +126,8 @@ Setup Focus Mode for the selected event.
 
 **Page/Component:** DidItWorkCard.tsx
 
-**Status:** Scores are shown but contributing factors are not explicit.
+**Status:** Implemented. Compare displays supporting and limiting test-discipline
+factors and labels the underlying value as ordinal evidence strength, never probability.
 
 **Recommendation:** Expand the confidence score display to include a brief,
 bulleted list of factors contributing to the score (e.g., "Positive: Clean
@@ -208,7 +213,8 @@ channel.
 
 ### Chart Zoom Persistence
 
-**Status:** Not implemented.
+**Status:** Implemented per exact run/lap in localStorage. Invalid or stale
+serialized ranges fail closed to full range and reset clears the stored range.
 
 **Recommendation:** Persist chart zoom state per run/lap in localStorage,
 restore on re-open, clear when run changes.
@@ -238,11 +244,11 @@ restore on re-open, clear when run changes.
 **Status:** Partially implemented. Platform, Laps, Dial In, and Setup are
 loaded with dynamic imports from `App.tsx`.
 
-**Bundle audit (2026-08-03):** Replacing the full ECharts namespace import
-with registered core/chart/components reduced the minified Platform chunk from
-about 1.12 MB to 657 KB. It remains above Vite's 500 KB advisory threshold.
-A forced ECharts/zrender vendor split was rejected because Rollup reported a
-circular chunk dependency; the threshold was not raised or hidden.
+**Bundle audit (2026-08-18):** Domain trust registries now load with the Crew
+workspace instead of the cockpit shell. Together with the audited Vite 8 move,
+the entry fell from 450.99 KB to about 191 KB raw. The ECharts 6.1 security
+upgrade leaves the charting chunk about 608 KB decimal / 593 KiB raw and lazy. Enforced
+entry and CSS budgets were tightened to preserve the gain.
 
 **Future work:**
 - Extract the stacked chart workbench from `PlatformTab` behind its own lazy
@@ -341,4 +347,3 @@ users accustomed to iRacing's imperial defaults. Must be opt-in.
 ### Phase 5: Accessibility & Data Hardening (P2/P3)
 1. Remaining accessibility improvements
 2. Final audit of data contract adherence and missing-state handling
-

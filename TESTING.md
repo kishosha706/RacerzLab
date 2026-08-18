@@ -80,6 +80,20 @@ npm run check
 python -B -m pytest -p no:cacheprovider -q
 ```
 
+Desktop and first-use release checks:
+
+```powershell
+npm run check:e2e
+npm run check:desktop
+npm run check:api-contract
+npm --prefix ui audit -- --audit-level=high
+```
+
+`requirements.lock`, `ui/package-lock.json`, and `ui/src-tauri/Cargo.lock` are
+the reproducible Python, Node, and Rust inputs. The generated OpenAPI JSON and
+TypeScript declarations must be regenerated together; semantic client guards
+still verify identities, hashes, and authority beyond structural types.
+
 P31 also requires the behavioral and truth-boundary gates:
 
 ```powershell
@@ -157,6 +171,6 @@ Benchmark tests in `TestBenchmark` skip gracefully if `pytest-benchmark` is not 
 - Service/API integration -> add `@pytest.mark.integration`
 - See `pyproject.toml` for registered markers
 
-Last reviewed: 2026-08-13. Exact suite totals belong in the release/audit
+Last reviewed: 2026-08-18. Exact suite totals belong in the release/audit
 evidence for the commit being tested; category counts intentionally remain
 non-fixed here.

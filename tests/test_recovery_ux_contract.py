@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -89,7 +88,7 @@ def test_duplicate_import_ui_surfaces_existing_run_updated() -> None:
     assert "Existing run updated." in backend
     assert "Duplicate telemetry detected - updated the existing run record." in backend
     assert "existing_run_updated" in route
-    assert "Existing run updated. Duplicate telemetry detected - updated the existing run record." in app
+    assert "Same recording reused. Existing telemetry source and artifacts were updated in place." in app
 
 
 def test_stale_selection_clears_with_calm_status_copy() -> None:

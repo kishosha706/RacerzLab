@@ -7,10 +7,12 @@ import { useTelemetrySelection } from "../store/TelemetrySelectionContext";
 import { SEVERITY_COLOURS, humanizeEventLabel } from "../constants/ui";
 import { isProxyChannel } from "../utils/channelMeta";
 import { buildZoneEvidence } from "../utils/evidenceFocus";
+import { evidenceStrengthLabel } from "../utils/evidenceScore";
 import {
   bestUsefulLapMatchesRun,
-  overviewWarningBlocksDecision,
+  overviewBlockerBlocksDecision,
   setupSnapshotMatchesRun,
+  telemetryClockDecisionReady,
   telemetryEventIsActionable,
 } from "../utils/evidenceTrust";
 import type { LapSummary, RunOverview, TelemetryCapabilitiesResponse, TelemetryEvent } from "../types/telemetry";
@@ -260,10 +262,13 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
     telemetryCapabilities
     && telemetryCapabilities.cache_compatibility.status === "current"
     && telemetryCapabilities.capability_summary.lossless_archive_complete
-    && telemetryCapabilities.capability_summary.warning_channels === 0,
+    && telemetryCapabilities.capability_summary.warning_channels === 0
+    && telemetryClockDecisionReady(telemetryCapabilities.capability_summary),
   );
-  const blockingOverviewWarnings = overview.warnings.filter(overviewWarningBlocksDecision);
-  const dataTrustReady = archiveVerified && blockingOverviewWarnings.length === 0;
+  const blockingOverviewBlockers = overview.engineering_blockers.filter(
+    overviewBlockerBlocksDecision,
+  );
+  const dataTrustReady = archiveVerified && blockingOverviewBlockers.length === 0;
   const decisionContextReady = Boolean(lap && setupAvailable && setupTechReady && dataTrustReady);
   const trustBlocker = !telemetryCapabilities
     ? "Telemetry capability verification is unavailable for this run."
@@ -271,9 +276,13 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
       ? telemetryCapabilities.cache_compatibility.reason
       : !telemetryCapabilities.capability_summary.lossless_archive_complete
         ? "The universal telemetry archive is incomplete."
+        : !telemetryClockDecisionReady(telemetryCapabilities.capability_summary)
+          ? telemetryCapabilities.capability_summary.qualified_clock_state === "degraded"
+            ? "Canonical telemetry timing is degraded: SessionTime is archived for corroboration, but decision readiness requires contiguous SessionTick at the declared rate."
+            : "Canonical telemetry timing is blocked or unavailable."
         : telemetryCapabilities.capability_summary.warning_channels > 0
           ? `${telemetryCapabilities.capability_summary.warning_channels} telemetry channels have health warnings.`
-          : blockingOverviewWarnings[0] ?? null;
+          : blockingOverviewBlockers[0]?.message ?? null;
   const decisionState = !decisionContextReady
     ? "NO CALL"
     : topEvent
@@ -305,7 +314,7 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
       : !setupTechReady
         ? "Return to a tech-passing baseline before drawing a setup conclusion."
       : !dataTrustReady
-        ? trustBlocker ?? "Resolve the run warnings before using this run for a setup decision."
+        ? trustBlocker ?? "Resolve the typed evidence limitation before using this run for a setup decision."
       : topEvent
           ? `${priorityPhase ? `${priorityPhase} | ` : ""}${priorityLocation}${topEvent.lap_number != null ? ` | Lap ${topEvent.lap_number}` : ""}`
           : "This overview is observational and does not authorize a setup test.";
@@ -330,7 +339,7 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
       : `${lap.lap_time.toFixed(3)}s | single clean reference`
     : "No clean reference";
   const decisionSignal = topEvent
-    ? `${severityLabel(topEvent.severity)} | ${(topEvent.confidence_score * 100).toFixed(0)}% confidence`
+    ? `${severityLabel(topEvent.severity)} | ${evidenceStrengthLabel(topEvent.confidence_score)}`
     : decisionContextReady
       ? "No tuning-valid event"
       : "Withheld";
@@ -341,7 +350,7 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
       ? `${visibleRunLabel} | Best eligible Lap ${lap.lap_number}`
       : `${visibleRunLabel} | No eligible lap`;
   const trustedPrimaryFindings = topEvent && dataTrustReady ? overview.primary_findings : [];
-  const broadcastWarning = blockingOverviewWarnings[0] ?? overview.warnings[0] ?? null;
+  const broadcastWarning = blockingOverviewBlockers[0]?.message ?? overview.warnings[0] ?? null;
 
   const runRiskEvents = useMemo(
     () => overview.events.filter((event) => event.lap_pct_peak != null || event.lap_pct_start != null || event.distance_m_peak != null).slice(0, 24),
@@ -403,7 +412,7 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
           </div>
         )}
       </div>
-      <div className="tab-handoff-actions" aria-label="Overview handoffs">
+      <div className="tab-handoff-actions" aria-label="Supporting evidence views" data-role="supporting-evidence-navigation">
         {topEvent && (
           <button type="button" onClick={openTopEvent}>
             <Layers size={13} /> Inspect evidence
@@ -414,18 +423,18 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
             <Layers size={13} /> Inspect evidence limit
           </button>
         )}
-        {topEvent && onToggleMapOverlay && (
+        {isLearning && topEvent && onToggleMapOverlay && (
           <button type="button" onClick={openTopEventMapOverlay}>
             <MapPin size={13} /> Show on map
           </button>
         )}
-        <button type="button" onClick={openEngineerBriefing}>
+        {isLearning && <button type="button" onClick={openEngineerBriefing}>
           <BrainCircuit size={13} /> Engineer briefing
-        </button>
-        <button type="button" onClick={() => setWorkspace("laps", "overview")}>
+        </button>}
+        {isLearning && <button type="button" onClick={() => setWorkspace("laps", "overview")}>
           <Clock size={13} /> Review laps
-        </button>
-        {topEvent && decisionContextReady && (
+        </button>}
+        {isLearning && topEvent && decisionContextReady && (
           <button type="button" onClick={() => focusEvidence(buildOverviewEvidence(topEvent), "setup_impact")}>
             <Wrench size={13} /> Setup impact
           </button>
@@ -505,12 +514,37 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
             <span>Archived {telemetryCapabilities.capability_summary.cached_channels}</span>
             <span>Unmapped {telemetryCapabilities.capability_summary.unmapped_channels}</span>
             <span>Warnings {telemetryCapabilities.capability_summary.warning_channels}</span>
+            <span>
+              Clock {telemetryCapabilities.capability_summary.qualified_clock_state ?? "unavailable"}
+              {telemetryCapabilities.capability_summary.qualified_clock_primary
+                ? ` · ${telemetryCapabilities.capability_summary.qualified_clock_primary}`
+                : ""}
+            </span>
+            <span>
+              Engine {telemetryCapabilities.capability_summary.analysis_engine ?? "unavailable"}
+              {telemetryCapabilities.capability_summary.decoder_path
+                ? ` · ${telemetryCapabilities.capability_summary.decoder_path.replace(/_/g, " ")}`
+                : ""}
+            </span>
           </div>
           <p className="muted">
             {telemetryCapabilities.capability_summary.lossless_archive_complete
               ? "Every file-declared channel is preserved in the universal archive."
               : "This run does not satisfy the universal archive invariant."}
           </p>
+          {telemetryCapabilities.capability_summary.qualified_clock_state === "degraded" && (
+            <p className="muted">
+              SessionTime is preserved for archive inspection and corroboration only. This run cannot produce timing-eligible decisions without contiguous SessionTick at the declared telemetry rate.
+            </p>
+          )}
+          {telemetryCapabilities.capability_summary.decoder_fallback_reason && (
+            <div className="race-warning-line" role="status">
+              <AlertTriangle size={14} />
+              <span>
+                Production decoder fallback: {telemetryCapabilities.capability_summary.decoder_fallback_reason}. Re-import after repairing the vectorized path before release use.
+              </span>
+            </div>
+          )}
           {telemetryCapabilities.cache_compatibility.status !== "current" && (
             <div className="race-warning-line">
               <AlertTriangle size={14} />
@@ -611,7 +645,7 @@ export function OverviewTab({ overview, sessionId = null, telemetryCapabilities,
         <ol className="findings-list">
           {trustedPrimaryFindings.length > 0
             ? trustedPrimaryFindings.map((finding) => <li key={finding}>{finding}</li>)
-            : <li className="muted">No findings yet.</li>}
+            : <li className="muted">No supported platform finding in this scope. This is not a health certificate.</li>}
         </ol>
       </section>
 

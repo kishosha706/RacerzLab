@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -62,7 +64,12 @@ app.add_middleware(
 
 @app.get("/api/health")
 def health() -> HealthResponse:
-    return HealthResponse(status="ok", app="RacerZLab", version=__version__)
+    return HealthResponse(
+        status="ok",
+        app="RacerZLab",
+        version=__version__,
+        instance_id=os.environ.get("RACERZLAB_BACKEND_INSTANCE_TOKEN") or None,
+    )
 
 
 app.include_router(compare_router)

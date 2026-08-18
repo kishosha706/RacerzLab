@@ -42,6 +42,7 @@ result, and remember only what the evidence supports.
 | P6 - Setup Response Memory | Verified guarded response learning | Only controlled, provenance-complete effects become durable knowledge |
 | P7 - Advanced Experimentation | Offline engine verified; activation LOCKED | No real controlled dataset has met the production unlock threshold |
 | P8 - Unified Recommendation Intelligence | Production slice verified; calibration remains data-locked | One evidence authority ranks one context-aware next decision and explains its basis |
+| P9 - Whole-App Performance | Verified import/frame-native foundation; full cold Engineer vectorization remains open | Run open, archive, trace, and warm intelligence avoid duplicate full-row work while cold decision access is measured explicitly |
 | P10 - Evidence Integrity and Resilience | Verified | Hostile context, cache, persistence, and stale-UI paths fail closed without losing evidence |
 | P11 - Decision-First Desktop UX | Verified | Race Mode exposes the next trustworthy decision first; Learning Mode preserves the complete evidence trail |
 | P12 - Internal Engineering Intelligence | Verified | One evidence-bound Smart Engineer explains the decision, best next measurement, memory, and uncertainty without creating new setup authority |
@@ -73,6 +74,9 @@ result, and remember only what the evidence supports.
 | P35.1 - Unified Dial-In Knowledge Spine | Verified deterministic engineering-knowledge foundation | One content-addressed projection connects exact P32 time, P20 state, P35 mechanisms, P26 components, all 92 Dial-In effects, P19/P33 history, bounded discriminators, and exact P19 authority without turning education into advice |
 | P35.2 - Semantic Precision and Release Trust | Verified locally; remote SHA validation awaits the next push | Direction, experiment factor, component relevance, semantic roles, runtime evidence, physical scope, client trust, and normal CI gates are exact without changing P19 authority |
 | P35.3 - Inner Crew Chief Cognitive Closure | Verified locally; remote SHA validation awaits the next push | Reachability-aware planning, exact cause state, typed inspection traces, bounded critic outcomes, driver-answer semantics, and post-open consumption counts close the deterministic investigation loop without changing P19 or frozen P34 authority |
+| P35.4 - Phase-Resolved Vehicle Response and Setup Diagnosis | Verified deterministic response foundation; additional controls remain evidence-locked | Phase-resolved observations and qualified continuous response signatures describe driver demand and vehicle response without gaining cause, component, setup, or P19 authority |
+| P35.4.1 - Canonical Telemetry Truth Closure | Verified locally | Source identity, tick clock, physical position, geometry provenance, typed blocker scope, and channel admission fail closed before any diagnosis or learned recurrence |
+| P35.5 - Field-Ready Alpha Hardening | Verified local release slice; field evidence remains unearned | One honest Next Gen oval alpha opens quickly, exposes one canonical move, packages as one owned desktop instance, and ships only after semantic real-file, dependency, contract, UI, and lifecycle gates pass |
 | P36 - Prospective Investigation Evidence Campaigns | Planned; evidence collection remains data-locked | Qualified prospective campaigns produce the independent recurrence, controls, subgroups, and observable comparisons required before learned investigation ordering can earn promotion |
 
 ---
@@ -1921,7 +1925,9 @@ that graph; it does not create another setup-authority path.
 
 ### P31 cache, persistence, and truth migrations
 
-- Telemetry manifest schema is v5; protected `.ibt` files must be re-imported.
+- Telemetry manifest schema is v6; protected `.ibt` files must be re-imported.
+  V6 invalidates persisted nominal diffuser geometry, records qualified-clock
+  decision readiness, and adds typed engineering role/admission provenance.
 - New controlled workflows use `controlled-workflow-aba2-v2` stage condition and
   control identity. Historic v1 hashes remain verifiable without invented context.
 - SQLite adds `stage_experiment_contexts_json` and the indexed
@@ -2648,12 +2654,12 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   geometry correction; nonfinite physics stays unavailable; absolute carcass-
   temperature labels and severity coloring are removed; and ground-speed
   pressure values are explicitly non-comparable display proxies, never aero load.
-- [ ] Add continuous-clock producer contracts for brake-to-four-line-pressure/
+- [x] Add continuous-clock producer contracts for brake-to-four-line-pressure/
   deceleration, brake-release-to-yaw, throttle-to-acceleration/yaw, event-aligned
-  four-corner platform/damper settling, and qualified stint migration. The current
-  slice projects only metrics already owned by typed P20/P32 evidence and does not
-  fabricate missing delay, gain, overshoot, settling, noise-floor, or repetition
-  values.
+  four-corner platform/damper settling, and qualified stint migration. Exact
+  onset/lag, gain, overshoot, settling, correction, noise-floor, repetition,
+  speed, phase, physical-scope, source, and clock fields remain observation-only;
+  unavailable measurements never become numeric defaults.
 - [ ] Promote additional ARB, differential-preload, tire-pressure, damper-row,
   and alignment controls only after those measurement contracts earn exact
   response evidence. P35.4 adds no new setup direction or adjacent legal value.
@@ -2679,6 +2685,114 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   build passed. The build retains the existing large-main-chunk advisory; no
   warning threshold was weakened and no packaging work was added to this physics
   milestone.
+
+## P35.4.1 - Canonical Telemetry Truth Closure
+
+- [x] Make the physical alignment grid immutable. Brake, throttle, steering,
+  yaw, and platform response annotate driver-event correspondence but cannot
+  translate physical position; only qualified GPS/road landmarks may correct it.
+- [x] Make one full source SHA-256 one recording. Imports reuse content-addressed
+  artifacts, aliases remain auditable but cannot count independently, every
+  Compare route rejects `SAME RECORDING`, and A/B/A2 plus durable learning require
+  complete distinct source identities.
+- [x] Establish one qualified telemetry clock. Contiguous integer `SessionTick`
+  plus the declared rate owns decision timing; `SessionTime` remains preserved
+  corroboration and a degraded clock cannot make a lap or UI decision eligible.
+- [x] Remove nominal diffuser geometry. Missing wheelbase, track width, or
+  rub-block correction makes all dependent fields unavailable; reviewed-profile
+  output remains an explicitly calculated proxy and manifest/cache schema v6
+  prevents stale nominal values from surviving migration.
+- [x] Replace warning-prose decisions with typed engineering blockers whose
+  explicit target axes prevent a traffic-blocked resistance mechanism from
+  poisoning valid pace, platform, stint, map, or navigation observations.
+- [x] Classify all 62 audited unmapped channels by engineering role and admission
+  authority. Simulator lap values corroborate timing only; per-corner tire
+  counters remain pit snapshots; unknown future signals remain inventory/debug.
+- [x] Restore Learning-only **Telemetry Capabilities**, support one custom
+  observation-only chart lane, reduce Platform to question-owned channel
+  projections, and execute chart tests for gaps, proxy styling, exact physical
+  scope, and extrema preservation.
+
+### P35.4.1 verification - 2026-08-18
+
+- The definitive collection contained 2,839 Python tests: 2,836 passed, three
+  DuckDB-dependent tests remained intentionally skipped, and zero failed. The
+  repaired adversarial boundary passed 214 focused hostiles; all 165 tests that
+  exposed legacy fixture/migration incompatibilities then passed together.
+- All 38 Vitest behavior tests, TypeScript, the 2,209-module production build,
+  entry/chunk/CSS bundle budgets, whole-repository Ruff, and diff integrity passed.
+- The protected real Atlanta audit re-imported 26,556 records, archived 277/277
+  declared channels, and retained schema fingerprint
+  `5565017159206c0b2f4407add6f97b66dfcd28b38c3ded62a78899b5428441af`.
+- Live 1,280-pixel and 390-pixel Race/Learning checks had no document overflow,
+  browser warnings, or console errors. Cold whole-car awareness completed inside
+  its intelligence timeout; pit snapshots could not open continuous lanes; an
+  admitted custom lane retained unit, proxy, physical-scope, and no-authority truth.
+- Adversarial review and regression now cover driver-input alignment warping,
+  far-apart response clustering, duplicate/unknown recording identity, foreign
+  response clocks and telemetry, SessionTime-only eligibility, unbound stint
+  sources, unsupported diffuser constants, typed blocker scope, pit-only channel
+  semantics, legacy clock migration, and setup-authority smuggling. P19 remains
+  the sole cause, exact test, setup, Keep/Undo/Retest, and terminal authority.
+
+## P35.5 - Field-Ready Alpha Hardening
+
+- [x] Bound the current decision product to an honest NASCAR Next Gen oval alpha.
+  Other telemetry remains available for lossless archival inspection and fails
+  closed outside exact reviewed car/build/track applicability.
+- [x] Remove probability-shaped UI language from uncalibrated evidence. Event,
+  comparison, Notebook, damper, alignment-quality, and engineering scores render
+  as ordinal strength out of 100; measured coverage remains a percentage.
+- [x] Make one canonical next move singular. Priority and Overview handoffs are
+  explicitly supporting evidence navigation, and the shell reads only a compact
+  exact-identity cached projection that never starts cold intelligence.
+- [x] Simplify first use to Import -> one trustworthy move -> one graded mission.
+  Returning drivers resume the last exact session without a mandatory splash;
+  continuous 0-100% lap playback, per-run/lap zoom persistence, evidence-debt
+  grouping, setup-focus handoff, and test-discipline factors support inspection.
+- [x] Make desktop ownership exact. The official Tauri single-instance plugin
+  focuses the first window; a per-process backend identity blocks attachment to
+  another service; an owned sidecar exit is detected and restarted; normal close
+  terminates the owned process tree.
+- [x] Make delivery reproducible and reviewable. Python, Node, and Cargo inputs
+  are locked; OpenAPI and TypeScript contracts are generated together; Vite,
+  ECharts, and direct dependencies pass the advisory gate; PR CI adds Playwright,
+  Cargo, API-drift, dependency, and tightened bundle gates.
+- [x] Expand release truth beyond archive counts. The protected real fixture now
+  proves qualified SessionTick, useful-lap/junk exclusion, evidence-linked events,
+  frame-native import, and the expected context-blocked setup-attribution no-call
+  before Tauri installers are built and smoked.
+- [x] Reduce cold duplicate work without weakening producers. Observation rows
+  are bound in place, P3 consumes only the eligible cohort, and canonical phase
+  labels are computed once per eligible lap. Full Engineer vectorization remains
+  open, but ordinary run open no longer pays that construction cost.
+- [ ] Earn Null Session 01 and one real source-owned P19 A/B/A2 outcome.
+  **FIELD DATA REQUIRED:** implementation and synthetic validation cannot create
+  the independent driving sessions required by P23/P36.
+
+### P35.5 verification - 2026-08-18
+
+- Current Python collection: 2,850 tests. The definitive 2,847-test run passed
+  with three protected skips and zero failures; the three subsequently added
+  manifest, zoom, and persisted-snapshot contracts passed in focused closure suites.
+- Frontend: 43 Vitest behaviors, TypeScript, two Chromium first-use flows, the
+  2,228-module Vite 8/ECharts 6.1 production build, tightened entry/CSS/chunk
+  budgets, zero npm advisories, and generated API drift checks passed.
+- Delivery: Cargo locked check, optimized Tauri build, MSI and NSIS bundles, and
+  packaged single-instance/backend-identity/normal-shutdown smoke passed.
+- API: generated OpenAPI 3.1 contains 88 paths, 96 operations, and 361 schemas;
+  the TypeScript declaration projection regenerates without diff.
+- Performance: uncached shell projection measured 13.173 ms with intelligence
+  build count remaining zero; cached shell projection measured 28.376 ms. The
+  full Atlanta Engineer cold path improved from a 13.426 s local pre-optimization sample
+  to 12.226 s in this pass and remains explicit vectorization debt, not a closed
+  first-construction 2.0 s claim. Digest-verified exact-semantic restart reuse
+  measured 104.327 ms with the reasoning snapshot unchanged and zero fresh build
+  count. The entry bundle fell from 450.99 KB to 191.10 KB raw.
+- Security/truth: ordinal scores no longer render as probability percentages;
+  README slip-angle/understeer scope matches runtime; decoder fallback provenance
+  is typed and visible; manifest reduction failures become `not_assessed`; schema
+  migrations are checksum-bound and fail closed on tamper or newer history.
 
 ## P36 - Prospective Investigation Evidence Campaigns
 
@@ -2813,3 +2927,5 @@ Implementation queue completed in this pass:
 | 2026-08-16 | Verified P35.2 Semantic Precision and Release Trust locally | Exact effect/control/direction/factor matching, P26 relevance partitions, five distinct semantic roles, separate static/runtime truth axes, canonical session-bound producer ownership, fail-closed physical segment sets, diversity-aware Learning selection, and a compiler-pinned client registry close the precision findings without changing P19 authority. The isolated 2,723-test collection passed with 2,714 successes and nine protected skips, plus the permanent synthetic trust audit, whole-repo Ruff, three executable client guards, TypeScript, 30 UI behaviors, the 2,208-module build, CI-policy checks, and diff integrity. Remote `main` remains the prior failing SHA until these repairs are intentionally pushed and the new exact SHA passes Actions. |
 | 2026-08-16 | Verified P35.3 Inner Crew Chief Cognitive Closure locally | The deterministic Crew now selects reachable typed evidence against exact subgoals, records request/result/cause/contradiction/critique traces, preserves typed driver-answer scope, stops bounded batch work at real evidence or driver boundaries, and exposes post-open operational consumption without changing P19 or frozen P34 authority. The complete 2,728-test collection passed with 2,723 successes and five protected skips, plus five new hostiles, the frozen P34 suite, whole-repository Ruff, TypeScript, 30 UI behaviors, executable and real-fixture client trust, the 2,208-module build, real Atlanta boundary proof, and diff integrity. Remote validation awaits an intentional push and green Actions result for the new exact SHA. |
 | 2026-08-17 | Polished P35.3 end-to-end wiring locally | Typed driver scope now materially orders the next physical inspection while P19 cause truth remains unchanged; reconstructed and persisted critic state must agree; eligibility order, active relevance, exact selection receipts, strongest contradictions, and measured tool durations fail closed across server and client; and one persisted driver continue action remains one count even when bounded work emits multiple trace events. Learning Mode now exposes the active subgoal, evidence gate, eligibility, selection receipt, and post-open resource use. The full 2,734-test collection completed with 2,729 passes and five protected skips, plus 11 dedicated P35.3 tests, the frozen P34 suite, whole-repository Ruff, frontend contract fixtures, TypeScript, 30 UI behaviors, the 2,208-module build, real Atlanta boundary proof, and diff integrity. P19 and frozen P34 authority remain unchanged; remote validation still awaits an intentional push and green Actions result. |
+| 2026-08-18 | Verified P35.4.1 Canonical Telemetry Truth Closure locally | Physical alignment is driver-input invariant; full source SHA owns recording independence; tick-primary timing is mandatory for eligible decisions; nominal diffuser geometry is unavailable; typed blockers scope authority; all 62 audited channels have explicit roles; Learning Telemetry Capabilities and executable chart truth are restored; and the first brake/throttle, surface-settling, and stint-migration response producers remain observation-only. The complete 2,839-test collection passed with 2,836 successes and three protected DuckDB skips, plus 214 focused hostiles, 38 UI behaviors, Ruff, TypeScript, the 2,209-module budgeted build, diff integrity, live 1,280/390-pixel Race/Learning verification, and the protected 26,556-record/277-channel Atlanta release audit. P19 remains sole setup authority and P36 remains data-locked. |
+| 2026-08-18 | Verified P35.5 field-ready alpha hardening locally | Next Gen oval scope and ordinal evidence wording are honest; one compact cached shell move replaces eager full-intelligence run-open work; returning-session resume, continuous lap playback, exact zoom persistence, grouped evidence debt, shortcut disablement, generated contracts, locked dependencies, single-instance sidecar identity/restart, semantic real-file gates, Windows packaging, and lifecycle smoke are wired without changing P19 authority. The current 2,850-test Python collection is covered by the green definitive 2,847-test run plus focused closure of the three later additions, 43 UI behaviors, two Chromium flows, TypeScript, Ruff, Cargo, zero npm advisories, generated 88-path/96-operation OpenAPI parity, the 2,228-module budgeted build, MSI/NSIS bundles, and packaged ownership/shutdown smoke. Shell access is 13.173 ms unbuilt / 28.376 ms cached without starting intelligence; full first construction remains measured at 12.226 s, while digest-verified exact-semantic restart reuse is 104.327 ms with zero fresh build count. Null Session 01, real A/B/A2, P23/P36 evidence, and every statistical activation remain unearned. |

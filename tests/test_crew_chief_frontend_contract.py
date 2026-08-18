@@ -95,7 +95,7 @@ def test_crew_chief_runtime_guard_rejects_forged_authority() -> None:
             "session_ed52db305244",
         ),
         (
-            "554cd5018d6248f9b28ce39811102a56-stockcars-chevy-3e347305",
+            "stockcars-chevycamarozl12022-atlanta-2022-oval-2-3e347305",
             "session_bce98a1e008e",
         ),
     ),
@@ -237,22 +237,22 @@ def test_client_parses_crew_chief_as_unknown_through_exact_report_guard() -> Non
     assert "vehicle_dynamics" in guard
     assert "isPerformanceMechanismAssessment" in guard
     assert "hasSetupAuthorityDirective" in guard
-    assert "hasCanonicalEngineeringLearningDigests" in client
-    assert "await hasCanonicalEngineeringLearningDigests(payload.learning_prior)" in client
+    assert 'import("../utils/engineeringLearningTrust.js")' in client
+    assert "await learningTrust.hasCanonicalEngineeringLearningDigests(payload.learning_prior)" in client
     assert "hasCanonicalInvestigationImprovementDigests" in client
     assert "payload.investigation_improvement" in client
     assert "hasCanonicalMeasurementMissionDigest" in client
-    assert "await hasCanonicalMeasurementMissionDigest(payload.p19_mission_contract)" in client
+    assert "await crewTrust.hasCanonicalMeasurementMissionDigest(payload.p19_mission_contract)" in client
     assert "hasCanonicalRunSentinelDigest" in client
     assert "payload.identity.run_sentinel_sha256" in client
     assert "hasCanonicalPerformanceMechanismAssessmentDigest" in client
     assert "payload.vehicle_dynamics" in client
     assert "hasCanonicalEngineeringAwarenessDigest" in client
-    assert "await hasCanonicalEngineeringAwarenessDigest(payload)" in client
+    assert "await crewTrust.hasCanonicalEngineeringAwarenessDigest(payload)" in client
     assert "hasCanonicalCrewEvidenceIndexDigest" in client
-    assert "await hasCanonicalCrewEvidenceIndexDigest(payload)" in client
+    assert "await crewTrust.hasCanonicalCrewEvidenceIndexDigest(payload)" in client
     assert "hasCanonicalVehicleRuntimeIdentityDigest" in client
-    assert "await hasCanonicalVehicleRuntimeIdentityDigest(payload)" in client
+    assert "await crewTrust.hasCanonicalVehicleRuntimeIdentityDigest(payload)" in client
     assert "p20_projection_sha256" in guard
     assert "engineering_awareness" in guard
     assert "p20EntryIsProjectionOwned" in guard

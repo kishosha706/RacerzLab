@@ -1,30 +1,40 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import hashlib
 import math
-from pathlib import Path
 import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from test_setup_evidence_adapter import _configure_env, _seed_run
 
-from racelab_engine.analysis.crew_chief_packet import CauseCandidate, OpportunityEvidence, build_kaizen_packet
+from racelab_engine.analysis.crew_chief_packet import (
+    CauseCandidate,
+    OpportunityEvidence,
+    build_kaizen_packet,
+)
 from racelab_engine.analysis.test_director import (
     TestEvidenceLink,
     TestExecution,
+)
+from racelab_engine.analysis.test_director import (
     TestQualityResult as WorkflowQualityResult,
+)
+from racelab_engine.knowledge.setup.dial_in_controls import (
+    _PLANS,
+    garage_action_for_effect,
 )
 from racelab_engine.models.controlled_workflow import ControlledWorkflow
 from racelab_engine.models.event import TelemetryEvent
+from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.lap import LapSummary
+from racelab_engine.models.segment import SegmentSummary
 from racelab_engine.models.session import RunOverview, SessionSummary
 from racelab_engine.models.setup import SetupSnapshot
 from racelab_engine.services import controlled_workflow_service as service
 from racelab_engine.storage.repository import RaceLabRepository
-from racelab_engine.knowledge.setup.dial_in_controls import _PLANS, garage_action_for_effect
-from racelab_engine.models.evidence import EvidenceState
-from test_setup_evidence_adapter import _configure_env, _seed_run
-from racelab_engine.models.segment import SegmentSummary
 
 
 def _packet():
@@ -194,6 +204,7 @@ def test_attach_rejects_historical_b_run_even_when_stage_order_is_chronological(
     monkeypatch.setattr(service, "read_telemetry_manifest", lambda run_id: {
         "compatibility_identity": identity,
         "recording_session_time_bounds_s": bounds[run_id],
+        "source_file_sha256": hashlib.sha256(run_id.encode()).hexdigest(),
     })
     monkeypatch.setattr(
         service,
@@ -344,6 +355,7 @@ def test_attach_b_accepts_exact_typed_garage_value_without_float_coercion(
     monkeypatch.setattr(service, "read_telemetry_manifest", lambda run_id: {
         "compatibility_identity": identity,
         "recording_session_time_bounds_s": bounds[run_id],
+        "source_file_sha256": hashlib.sha256(run_id.encode()).hexdigest(),
     })
     monkeypatch.setattr(
         service,

@@ -201,7 +201,7 @@ export function humanizeWorkspaceLabel(ws: string): string {
     setup_impact: "Setup Impact",
     compare: "Compare",
     notebook: "Notes",
-    channels: "Raw Channels",
+    channels: "Telemetry Capabilities",
     laps: "Laps",
     dial_in: "Dial-In",
     setup: "Setup",

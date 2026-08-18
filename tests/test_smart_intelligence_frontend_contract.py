@@ -71,9 +71,9 @@ def test_next_move_navigation_fails_closed_on_identity_scope_and_authority() -> 
     assert "move.source_event_ids.length > 0" in helper
     assert "move.blocker_reasons.length === 0" in helper
 
-    assert "report.run_id === requestedRunId" in app
-    assert "(report.session_id ?? null) === requestedSessionId" in app
-    assert 'report.next_trustworthy_move?.authority === "navigation_only"' in app
+    assert "projection.run_id === requestedRunId" in app
+    assert "(projection.session_id ?? null) === requestedSessionId" in app
+    assert 'projection.next_trustworthy_move?.authority === "navigation_only"' in app
     assert 'data-authority={currentIntelligenceShellMove.authority}' in app
     assert 'data-scope={intelligenceShellScope.kind}' in app
     assert "Opens the evidence view only" in app
@@ -134,7 +134,9 @@ def test_shell_next_move_refreshes_on_exact_controlled_workflow_revision() -> No
     assert 'status: "error"' in effect
     assert "move: null" in effect
     assert "requestSeq !== intelligenceShellRequestSeqRef.current" in effect
-    assert "refreshKey: requestKey" in effect
+    assert "fetchIntelligenceShellProjection(requestedRunId" in effect
+    assert "fetchRunIntelligence(requestedRunId" not in effect
+    assert "sessionId: requestedSessionId" in effect
     assert "workflowId: currentGuidanceWorkflow?.workflow_id ?? null" in effect
     assert "workflowUpdatedAt: currentGuidanceWorkflowUpdatedAt" in effect
     for dependency in (
