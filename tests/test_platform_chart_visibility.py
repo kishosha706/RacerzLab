@@ -303,6 +303,33 @@ def test_tire_backend_channels_remain_available_for_evidence() -> None:
     assert "channelHasNumericData(trace, channel.name)" in platform
 
 
+def test_tire_snapshot_delta_cannot_publish_alignment_classification() -> None:
+    channels = _read("ui/src/constants/workbenchChannels.ts")
+    ui_channels = _read("ui/src/constants/ui.ts")
+    channel_meta = _read("ui/src/utils/channelMeta.ts")
+    calculated = _read("racelab_engine/analysis/calculated_channels.py")
+    vectorized = _read("racelab_engine/analysis/vectorized_channels.py")
+    corner_map = _read("ui/src/components/CornerTireMap.tsx")
+
+    for label in (
+        "lf_camber_bias_label",
+        "rf_camber_bias_label",
+        "lr_camber_bias_label",
+        "rr_camber_bias_label",
+    ):
+        assert label not in channels
+        assert label not in ui_channels
+        assert label not in channel_meta
+
+    assert 'item[f"{c}_camber_bias_label"] = None' in calculated
+    assert 'pl.lit(None, dtype=pl.String).alias(f"{corner}_camber_bias_label")' in vectorized
+    assert 'label: "I/O Snapshot"' in corner_map
+    assert 'label: "Camber"' not in corner_map
+    assert "high_inside" not in calculated
+    assert "high_outside" not in calculated
+    assert "bias.abs() < 15.0" not in vectorized
+
+
 def test_diffuser_view_removes_engineering_metric_card_block() -> None:
     platform = _read("ui/src/tabs/PlatformTab.tsx")
     channels = _read("ui/src/constants/workbenchChannels.ts")

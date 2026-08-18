@@ -35,7 +35,10 @@ from racelab_engine.models.vehicle_dynamics_knowledge import (
     VehicleDynamicsRuntimeMechanismTrust,
     VehicleProblemSignature,
     VehicleResponseObservation,
+    build_phase_response_metric,
     build_performance_mechanism_assessment,
+    build_vehicle_problem_signature,
+    build_vehicle_response_observation,
 )
 
 
@@ -85,8 +88,20 @@ _NON_DIAGNOSTIC_PHYSICS_CHANNELS = frozenset(
         "platform_roll_deg_from_rh",
         "front_load_proxy_n",
         "rear_load_proxy_n",
+        "front_aero_proxy_n",
+        "rear_aero_proxy_n",
+        "aero_balance_front_pct",
+        "rear_downforce_proxy_n",
+        "rear_platform_proxy_n",
+        "rear_diffuser_proxy_n",
         "aero_load_proxy_n",
         "drag_force_proxy_n",
+        "dynamic_pressure_pa",
+        "dynamic_pressure_psf",
+        "dynamic_pressure_lap_index",
+        "dynamic_pressure_index",
+        "aero_load_index",
+        "aero_load_index_180mph",
     }
 )
 
@@ -1178,22 +1193,19 @@ def _phase_response_metrics(
         channels = tuple(
             channel for channel in available_channels if channel in accepted_channels
         )
-        if quantity == "elapsed_time_delta_s" and not channels:
-            channels = opportunity.source_channels
         if not channels:
             # P32 owns the numeric delta, but missing per-quantity provenance must
             # stay unavailable to this narrower response layer.
             continue
         metrics.append(
-            PhaseResponseMetric(
-                metric_id=(
-                    f"p354.metric:{canonical_json_sha256((opportunity.opportunity_id, quantity, value, channels))[:24]}"
-                ),
-                quantity=quantity,
-                value=value,
-                units=units,
-                semantics=semantics,
-                source_channels=channels,
+            build_phase_response_metric(
+                {
+                    "quantity": quantity,
+                    "value": value,
+                    "units": units,
+                    "semantics": semantics,
+                    "source_channels": channels,
+                }
             )
         )
     return tuple(metrics)
@@ -1211,7 +1223,9 @@ def _response_and_signature(
     if opportunity is None or opportunity.local_delta_s is None or regime is None:
         return (), None
     metrics = _phase_response_metrics(opportunity, phase_state)
-    if not metrics:
+    if not metrics or not any(
+        metric.quantity == "elapsed_time_delta_s" for metric in metrics
+    ):
         return (), None
     separations = tuple(
         item
@@ -1260,53 +1274,45 @@ def _response_and_signature(
         if chain is not None
         else opportunity.source_laps[1:]
     )
+    if not source_laps or not reference_laps:
+        return (), None
     source_channels = _unique(
         channel for metric in metrics for channel in metric.source_channels
     )
     source_artifacts = _unique(
         (
             opportunity.opportunity_id,
-            *((chain.chain_id,) if chain is not None else ()),
+            *((chain.chain_id,) if chain is not None and phase_state is not None else ()),
         )
     )
-    observation_seed = (
-        run_id,
-        opportunity.opportunity_id,
-        source_laps,
-        reference_laps,
-        opportunity.phase,
-        opportunity.start_pct,
-        opportunity.end_pct,
-        tuple(metric.metric_id for metric in metrics),
-        context_state,
-    )
-    observation = VehicleResponseObservation(
-        observation_id=f"p354.response:{canonical_json_sha256(observation_seed)[:24]}",
-        opportunity_id=opportunity.opportunity_id,
-        run_id=run_id,
-        source_lap_numbers=source_laps,
-        reference_lap_numbers=reference_laps,
-        phase=opportunity.phase,
-        lap_pct_start=opportunity.start_pct,
-        lap_pct_end=opportunity.end_pct,
-        onset_pct=opportunity.start_pct,
-        response_regime=regime,
-        driver_demand_state=driver_state,
-        vehicle_response_state=vehicle_state,
-        line_state=line_state,
-        context_state=context_state,
-        persistence=persistence,
-        metrics=metrics,
-        source_artifact_ids=source_artifacts,
-        source_channels=source_channels,
-        blocker_reasons=blockers,
-        evidence_state=(
-            EvidenceState.MEASURED
-            if context_state == "qualified"
-            else EvidenceState.BLOCKED_BY_CONTEXT
-            if context_state == "blocked"
-            else EvidenceState.NEEDS_CONFIRMATION
-        ),
+    observation = build_vehicle_response_observation(
+        {
+            "opportunity_id": opportunity.opportunity_id,
+            "run_id": run_id,
+            "source_lap_numbers": source_laps,
+            "reference_lap_numbers": reference_laps,
+            "phase": opportunity.phase,
+            "lap_pct_start": opportunity.start_pct,
+            "lap_pct_end": opportunity.end_pct,
+            "onset_pct": opportunity.start_pct,
+            "response_regime": regime,
+            "driver_demand_state": driver_state,
+            "vehicle_response_state": vehicle_state,
+            "line_state": line_state,
+            "context_state": context_state,
+            "persistence": persistence,
+            "metrics": metrics,
+            "source_artifact_ids": source_artifacts,
+            "source_channels": source_channels,
+            "blocker_reasons": blockers,
+            "evidence_state": (
+                EvidenceState.MEASURED
+                if context_state == "qualified"
+                else EvidenceState.BLOCKED_BY_CONTEXT
+                if context_state == "blocked"
+                else EvidenceState.NEEDS_CONFIRMATION
+            ),
+        }
     )
     strongest_contradiction = next(
         iter(
@@ -1321,28 +1327,27 @@ def _response_and_signature(
             )
         )
     )
-    signature = VehicleProblemSignature(
-        signature_id=(
-            f"p354.signature:{canonical_json_sha256((observation.observation_id, opportunity.origin_kind, strongest_contradiction))[:24]}"
-        ),
-        response_observation_id=observation.observation_id,
-        opportunity_id=opportunity.opportunity_id,
-        time_origin=opportunity.origin_kind,
-        local_time_delta_s=opportunity.local_delta_s,
-        phase=opportunity.phase,
-        onset_pct=opportunity.start_pct,
-        response_regime=regime,
-        driver_demand_state=driver_state,
-        vehicle_response_state=vehicle_state,
-        line_state=line_state,
-        traffic_dependence=(
-            "blocked"
-            if context_truth.traffic_blocked
-            else "clear"
-            if context_truth.qualified
-            else "unavailable"
-        ),
-        strongest_contradiction=strongest_contradiction,
+    signature = build_vehicle_problem_signature(
+        {
+            "response_observation_id": observation.observation_id,
+            "opportunity_id": opportunity.opportunity_id,
+            "time_origin": opportunity.origin_kind,
+            "local_time_delta_s": opportunity.local_delta_s,
+            "phase": opportunity.phase,
+            "onset_pct": opportunity.start_pct,
+            "response_regime": regime,
+            "driver_demand_state": driver_state,
+            "vehicle_response_state": vehicle_state,
+            "line_state": line_state,
+            "traffic_dependence": (
+                "blocked"
+                if context_truth.traffic_blocked
+                else "clear"
+                if context_truth.qualified
+                else "unavailable"
+            ),
+            "strongest_contradiction": strongest_contradiction,
+        }
     )
     return (observation,), signature
 
@@ -1483,6 +1488,7 @@ def build_vehicle_dynamics_assessment(
         resolution.status == "ready"
         and measured_opportunity is not None
         and regime is not None
+        and response_observations
         and measured_opportunity.local_delta_s != 0.0
     ):
         mechanisms = _candidate_mechanisms(
@@ -1531,6 +1537,15 @@ def build_vehicle_dynamics_assessment(
             *(
                 ("No current P32 mechanism vocabulary matched the reviewed P35 graph.",)
                 if resolution.status == "ready" and not mechanisms
+                else ()
+            ),
+            *(
+                (
+                    "A phase-response comparison requires distinct source and reference lap identities; mechanism candidates remain withheld.",
+                )
+                if measured_opportunity is not None
+                and regime is not None
+                and not response_observations
                 else ()
             ),
             *(

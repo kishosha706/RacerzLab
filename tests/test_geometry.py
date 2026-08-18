@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from racelab_engine.analysis.geometry import (
     compute_pitch_deg,
     compute_roll_deg,
@@ -54,3 +56,7 @@ def test_ride_height_conversions() -> None:
     assert ride_height_m_to_in(None) is None
     assert ride_height_mm_to_m(1000.0) == 1.0
     assert ride_height_mm_to_m(None) is None
+    assert ride_height_m_to_in(math.nan) is None
+    assert ride_height_mm_to_m(math.inf) is None
+    assert compute_pitch_deg(0.1, 0.15, math.nan, 1.0, 1.0) is None
+    assert compute_roll_deg(0.1, 0.12, math.inf, 1.0, 1.0) is None

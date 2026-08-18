@@ -986,8 +986,14 @@ def _apply_lr_ride_height_offset(df: pl.DataFrame, car_path: Any = None) -> pl.D
 def _compute_dynamic_pressure(df: pl.DataFrame) -> pl.DataFrame:
     if "air_density" not in df.columns or "speed_mps" not in df.columns:
         return df
+    density = pl.col("air_density").cast(pl.Float64, strict=False)
+    speed = pl.col("speed_mps").cast(pl.Float64, strict=False)
+    valid = density.is_finite() & (density > 0.0) & speed.is_finite() & (speed >= 0.0)
     df = df.with_columns(
-        (0.5 * pl.col("air_density") * pl.col("speed_mps") ** 2).alias("dynamic_pressure_pa"),
+        pl.when(valid)
+        .then(0.5 * density * speed**2)
+        .otherwise(None)
+        .alias("dynamic_pressure_pa"),
     )
     df = df.with_columns(
         (pl.col("dynamic_pressure_pa") * PA_TO_PSF).alias("dynamic_pressure_psf"),
@@ -998,8 +1004,13 @@ def _compute_dynamic_pressure(df: pl.DataFrame) -> pl.DataFrame:
 def _compute_aero_load_index(df: pl.DataFrame) -> pl.DataFrame:
     if "dynamic_pressure_pa" not in df.columns:
         return df
+    pressure = pl.col("dynamic_pressure_pa").cast(pl.Float64, strict=False)
+    valid = pressure.is_finite() & (pressure >= 0.0)
     df = df.with_columns(
-        (pl.col("dynamic_pressure_pa") / REFERENCE_DYNAMIC_PRESSURE_PA).alias("aero_load_index"),
+        pl.when(valid)
+        .then(pressure / REFERENCE_DYNAMIC_PRESSURE_PA)
+        .otherwise(None)
+        .alias("aero_load_index"),
     )
     df = df.with_columns(
         pl.col("aero_load_index").alias("aero_load_index_180mph"),
@@ -1644,21 +1655,21 @@ def _compute_tire_derived(df: pl.DataFrame) -> pl.DataFrame:
 
 def _compute_camber_bias(df: pl.DataFrame) -> pl.DataFrame:
     """Vectorized physical inboard-minus-outboard carcass temperature proxy."""
+    if df.height == 0:
+        return df
+    df = df.with_columns([
+        pl.lit(None, dtype=pl.String).alias(f"{corner}_camber_bias_label")
+        for corner in TIRE_CORNERS
+    ])
     for corner in TIRE_CORNERS:
         inner = f"{corner}_carcass_temp_{semantic_source(corner, 'inner')[0]}"
         outer = f"{corner}_carcass_temp_{semantic_source(corner, 'outer')[0]}"
         if inner not in df.columns or outer not in df.columns:
             continue
         bias = pl.col(inner) - pl.col(outer)
-        label = (
-            pl.when(bias.abs() < 15.0).then(pl.lit("even"))
-            .when(bias > 0).then(pl.lit("high_inside"))
-            .otherwise(pl.lit("high_outside"))
-        )
         complete = pl.col(inner).is_not_null() & pl.col(outer).is_not_null()
         df = df.with_columns(
             pl.when(complete).then(bias).otherwise(None).alias(f"{corner}_camber_temp_bias_c"),
-            pl.when(complete).then(label).otherwise(None).alias(f"{corner}_camber_bias_label"),
         )
     return df
 
@@ -1725,10 +1736,12 @@ def _compute_dynamic_pressure_lap_index(df: pl.DataFrame) -> pl.DataFrame:
     """
     if "dynamic_pressure_psf" not in df.columns:
         return df
-    max_dp = pl.col("dynamic_pressure_psf").max()
+    pressure = pl.col("dynamic_pressure_psf").cast(pl.Float64, strict=False)
+    valid = pressure.is_finite() & (pressure >= 0.0)
+    max_dp = pl.when(valid).then(pressure).otherwise(None).max()
     # Use max of max_dp and 1.0 to avoid division by zero
     denom = pl.max_horizontal(max_dp, pl.lit(1.0))
-    idx = pl.col("dynamic_pressure_psf") / denom
+    idx = pl.when(valid & max_dp.is_not_null()).then(pressure / denom).otherwise(None)
     df = df.with_columns(
         idx.alias("dynamic_pressure_lap_index"),
         idx.alias("dynamic_pressure_index"),

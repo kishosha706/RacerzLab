@@ -712,8 +712,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
 
     # ── dynamic pressure ──
     "dynamic_pressure_psf": {
-        "label": "Dynamic Pressure",
-        "description": "Dynamic pressure in pounds per square foot. Aero load scales with this value.",
+        "label": "Ground-Speed Pressure Proxy",
+        "description": "DISPLAY-ONLY PROXY — density times ground speed squared in psf. Wind-relative air speed is unavailable, so this is not measured aerodynamic load or cross-run aero truth.",
         "formula": "0.5 * AirDensity * Speed^2 / 47.88025898",
         "dependencies": ["AirDensity", "Speed"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM, DRAG_SCRUB],
@@ -721,8 +721,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "used_by_analyses": [AERO_PLATFORM_CHECK, RIDE_HEIGHT_REVIEW],
     },
     "dynamic_pressure_lap_index": {
-        "label": "Dynamic Pressure Lap Index",
-        "description": "ESTIMATE — normalized dynamic pressure (0-1 scale relative to max in lap). LAP-RELATIVE index — NOT comparable across runs. Proxy, not absolute pressure.",
+        "label": "Ground-Speed Pressure Lap Index",
+        "description": "DISPLAY-ONLY PROXY — normalized density/ground-speed pressure relative to the current lap. Not air-relative and not comparable across runs.",
         "formula": "dynamic_pressure_psf / max(dynamic_pressure_psf in lap)",
         "dependencies": ["dynamic_pressure_psf"],
         "used_by_charts": [AERO_PLATFORM],
@@ -731,8 +731,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "comparable_across_runs": False,
     },
     "dynamic_pressure_index": {
-        "label": "Dynamic Pressure Index",
-        "description": "ESTIMATE — alias for dynamic_pressure_lap_index. LAP-RELATIVE — NOT comparable across runs. Normalized proxy, not absolute pressure.",
+        "label": "Ground-Speed Pressure Index",
+        "description": "DISPLAY-ONLY PROXY — alias for the lap-relative density/ground-speed index. Not air-relative and not comparable across runs.",
         "formula": "dynamic_pressure_psf / max(dynamic_pressure_psf in lap)",
         "dependencies": ["dynamic_pressure_psf"],
         "used_by_charts": [AERO_PLATFORM],
@@ -741,24 +741,24 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "comparable_across_runs": False,
     },
     "aero_load_index": {
-        "label": "Aero Load Index",
-        "description": "ESTIMATE — cross-run comparable aero load index. Ratio of current dynamic pressure to reference pressure at 180 mph sea level. Proxy — not a direct force measurement. Safe for Notebook comparisons across runs, tracks, weather, and sessions.",
+        "label": "Speed-Density Reference Proxy",
+        "description": "RESEARCH/DISPLAY-ONLY PROXY — ground-speed pressure divided by a fixed 180 mph sea-level reference. Wind-relative air speed is unavailable; this is not aero load and is not comparable across unmatched runs.",
         "formula": "dynamic_pressure_pa / REFERENCE_DYNAMIC_PRESSURE_PA",
         "dependencies": ["dynamic_pressure_pa"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
         "used_by_analyses": [AERO_PLATFORM_CHECK],
-        "comparable_across_runs": True,
+        "comparable_across_runs": False,
     },
     "aero_load_index_180mph": {
-        "label": "Aero Load Index (180 mph ref)",
-        "description": "ESTIMATE — alias for aero_load_index. Cross-run comparable. Proxy — not a direct force measurement.",
+        "label": "Speed-Density Proxy (180 mph ref)",
+        "description": "RESEARCH/DISPLAY-ONLY PROXY — alias for the fixed-reference ground-speed pressure ratio. It is not aero load and is not comparable across unmatched runs.",
         "formula": "dynamic_pressure_pa / (0.5 * 1.225 * 80.4672^2)",
         "dependencies": ["dynamic_pressure_pa"],
         "used_by_charts": [AERO_PLATFORM],
         "used_by_events": [],
         "used_by_analyses": [AERO_PLATFORM_CHECK],
-        "comparable_across_runs": True,
+        "comparable_across_runs": False,
     },
 
     # ── risk / suspicion ──
@@ -1049,8 +1049,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
 
     # ── dynamic pressure raw ──
     "dynamic_pressure_pa": {
-        "label": "Dynamic Pressure (Pa)",
-        "description": "Dynamic pressure in Pascals. Raw SI value before conversion to psf.",
+        "label": "Ground-Speed Pressure Proxy (Pa)",
+        "description": "DISPLAY-ONLY PROXY — density times ground speed squared in Pa. Wind-relative air speed is unavailable, so this is not measured aerodynamic load.",
         "formula": "0.5 * AirDensity * Speed^2",
         "dependencies": ["AirDensity", "Speed"],
         "used_by_charts": [AERO_PLATFORM],
@@ -1408,7 +1408,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "label": "Front Slip Angle (research shadow)",
         "description": "RESEARCH SHADOW — kinematic front tire slip angle requires validated local-frame velocity semantics, source-backed road-wheel steer angle, and axle-to-CG geometry. Raw steering-wheel angle is never accepted.",
         "formula": "tire_dynamics.front_slip_angle_rad(road_wheel_steer_rad, vx, vy, r, a)",
-        "dependencies": ["velocity_z", "velocity_x", "yaw_rate", "road_wheel_steer_rad", "front_axle_to_cg_m"],
+        "dependencies": ["velocity_z", "velocity_x", "yaw_rate", "road_wheel_steer_rad", "front_axle_to_cg_m", "coordinate_frame_validated", "steering_geometry_validated"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["STEERING_SCRUB"],
         "used_by_analyses": [LINE_STEERING_REVIEW],
@@ -1558,7 +1558,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     # ── camber heat spread proxy ──
     "lf_camber_temp_bias_c": {
         "label": "LF Camber Temp Bias",
-        "description": "ESTIMATE — left-front inner minus outer carcass temperature. Positive = inside hotter (too much negative camber or cornering load). Proxy — not a direct camber measurement.",
+        "description": "DISPLAY-ONLY PROXY — left-front physical inboard-minus-outboard carcass-temperature pit snapshot. It does not identify camber cause or authorize alignment direction.",
         "formula": "lf_carcass_temp_l - lf_carcass_temp_r",
         "dependencies": ["lf_carcass_temp_l", "lf_carcass_temp_r"],
         "used_by_charts": [TIRES],
@@ -1567,7 +1567,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "rf_camber_temp_bias_c": {
         "label": "RF Camber Temp Bias",
-        "description": "ESTIMATE — right-front inner minus outer carcass temperature.",
+        "description": "DISPLAY-ONLY PROXY — right-front physical inboard-minus-outboard carcass-temperature pit snapshot; no camber cause is assigned.",
         "formula": "rf_carcass_temp_l - rf_carcass_temp_r",
         "dependencies": ["rf_carcass_temp_l", "rf_carcass_temp_r"],
         "used_by_charts": [TIRES],
@@ -1576,7 +1576,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "lr_camber_temp_bias_c": {
         "label": "LR Camber Temp Bias",
-        "description": "ESTIMATE — left-rear inner minus outer carcass temperature.",
+        "description": "DISPLAY-ONLY PROXY — left-rear physical inboard-minus-outboard carcass-temperature pit snapshot; no camber cause is assigned.",
         "formula": "lr_carcass_temp_l - lr_carcass_temp_r",
         "dependencies": ["lr_carcass_temp_l", "lr_carcass_temp_r"],
         "used_by_charts": [TIRES],
@@ -1585,7 +1585,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "rr_camber_temp_bias_c": {
         "label": "RR Camber Temp Bias",
-        "description": "ESTIMATE — right-rear inner minus outer carcass temperature.",
+        "description": "DISPLAY-ONLY PROXY — right-rear physical inboard-minus-outboard carcass-temperature pit snapshot; no camber cause is assigned.",
         "formula": "rr_carcass_temp_l - rr_carcass_temp_r",
         "dependencies": ["rr_carcass_temp_l", "rr_carcass_temp_r"],
         "used_by_charts": [TIRES],
@@ -1594,8 +1594,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "lf_camber_bias_label": {
         "label": "LF Camber Bias Label",
-        "description": "ESTIMATE — qualitative camber bias: high_inside, high_outside, even, or unknown.",
-        "formula": "classification from lf_camber_temp_bias_c",
+        "description": "REMOVED — an absolute carcass-temperature threshold cannot classify camber or alignment direction.",
+        "formula": "unavailable",
         "dependencies": ["lf_camber_temp_bias_c"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -1603,8 +1603,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "rf_camber_bias_label": {
         "label": "RF Camber Bias Label",
-        "description": "ESTIMATE — qualitative camber bias for right-front.",
-        "formula": "classification from rf_camber_temp_bias_c",
+        "description": "REMOVED — an absolute carcass-temperature threshold cannot classify camber or alignment direction.",
+        "formula": "unavailable",
         "dependencies": ["rf_camber_temp_bias_c"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -1612,8 +1612,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "lr_camber_bias_label": {
         "label": "LR Camber Bias Label",
-        "description": "ESTIMATE — qualitative camber bias for left-rear.",
-        "formula": "classification from lr_camber_temp_bias_c",
+        "description": "REMOVED — an absolute carcass-temperature threshold cannot classify camber or alignment direction.",
+        "formula": "unavailable",
         "dependencies": ["lr_camber_temp_bias_c"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -1621,8 +1621,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "rr_camber_bias_label": {
         "label": "RR Camber Bias Label",
-        "description": "ESTIMATE — qualitative camber bias for right-rear.",
-        "formula": "classification from rr_camber_temp_bias_c",
+        "description": "REMOVED — an absolute carcass-temperature threshold cannot classify camber or alignment direction.",
+        "formula": "unavailable",
         "dependencies": ["rr_camber_temp_bias_c"],
         "used_by_charts": [TIRES],
         "used_by_events": [],
@@ -2601,7 +2601,12 @@ def _compute_averages(item: dict[str, Any]) -> None:
 def _compute_dynamic_pressure(item: dict[str, Any]) -> None:
     air_density = _number(item.get("air_density"))
     speed_mps = _number(item.get("speed_mps"))
-    if air_density is not None and speed_mps is not None:
+    if (
+        air_density is not None
+        and air_density > 0.0
+        and speed_mps is not None
+        and speed_mps >= 0.0
+    ):
         dynamic_pressure_pa = 0.5 * air_density * speed_mps * speed_mps
         _set_number(item, "dynamic_pressure_pa", dynamic_pressure_pa)
         _set_number(item, "dynamic_pressure_psf", dynamic_pressure_pa * PA_TO_PSF)
@@ -2718,7 +2723,7 @@ def _compute_slip_ratios(item: dict[str, Any]) -> None:
             _set_number(item, target, slip)
 
     # Geometry-corrected wheel speed mismatch using yaw rate
-    yaw_rate = _number(item.get("yaw_rate")) or 0.0
+    yaw_rate = _number(item.get("yaw_rate"))
     front_tw_m = _number(item.get("front_track_width_m"))
     rear_tw_m = _number(item.get("rear_track_width_m"))
 
@@ -2727,14 +2732,14 @@ def _compute_slip_ratios(item: dict[str, Any]) -> None:
     _set_number(item, "rear_wheel_speed_mismatch_raw", _difference(item, "RRspeed", "LRspeed"))
 
     # Geometry-corrected mismatch
-    if front_tw_m is not None:
+    if front_tw_m is not None and yaw_rate is not None:
         front_geo = yaw_rate * front_tw_m
         front_diff = _difference(item, "RFspeed", "LFspeed")
         if front_diff is not None:
             _set_number(item, "front_wheel_speed_mismatch_corrected", front_diff - front_geo)
     else:
         item.setdefault("front_wheel_speed_mismatch_corrected", None)
-    if rear_tw_m is not None:
+    if rear_tw_m is not None and yaw_rate is not None:
         rear_geo = yaw_rate * rear_tw_m
         rear_diff = _difference(item, "RRspeed", "LRspeed")
         if rear_diff is not None:
@@ -3070,7 +3075,11 @@ def _compute_kinematic_slip_angles(item: dict[str, Any]) -> None:
     from racelab_engine.analysis.tire_dynamics import (
         front_slip_angle_rad, rear_slip_angle_rad, slip_angle_balance_rad
     )
-    # iRacing: VelocityZ is forward, VelocityX is sideways
+    if item.get("coordinate_frame_validated") is not True or item.get(
+        "steering_geometry_validated"
+    ) is not True:
+        return
+    # These axis meanings may be used only after the explicit source audit.
     vx = _number(item.get("velocity_z")) or _number(item.get("speed_mps"))
     vy = _number(item.get("velocity_x"))
     r = _number(item.get("yaw_rate"))
@@ -3172,7 +3181,7 @@ def _compute_ackermann(item: dict[str, Any]) -> None:
         if expected is not None:
             _set_number(item, "ackermann_steering_expected_deg", expected)
 
-            if steer is not None:
+        if steer is not None and item.get("steering_geometry_validated") is True:
                 error, _ = _ase_err(steer, expected)
                 if error is not None:
                     _set_number(item, "ackermann_steering_error_deg", error)
@@ -3181,40 +3190,49 @@ def _compute_ackermann(item: dict[str, Any]) -> None:
 
 
 def _compute_camber_bias(item: dict[str, Any]) -> None:
-    """Compute camber temp bias channels from carcass temps."""
-    CAMBER_BIAS_THRESHOLD_C = 15.0
+    """Retain only the physical inboard-minus-outboard pit snapshot."""
     for c in ["lf", "rf", "lr", "rr"]:
+        item[f"{c}_camber_bias_label"] = None
         inner = _number(item.get(f"{c}_carcass_temp_{semantic_source(c, 'inner')[0]}"))
         outer = _number(item.get(f"{c}_carcass_temp_{semantic_source(c, 'outer')[0]}"))
         if inner is not None and outer is not None:
             bias = inner - outer
             _set_number(item, f"{c}_camber_temp_bias_c", bias)
-            if abs(bias) < CAMBER_BIAS_THRESHOLD_C:
-                item[f"{c}_camber_bias_label"] = "even"
-            elif bias > 0:
-                item[f"{c}_camber_bias_label"] = "high_inside"
-            else:
-                item[f"{c}_camber_bias_label"] = "high_outside"
 
 
 def _apply_derivatives(rows: list[dict[str, Any]]) -> None:
-    _max_dynamic_pressure = max(
-        (_number(row.get("dynamic_pressure_psf")) or 0.0 for row in rows),
-        default=1.0,
-    )
-    if _max_dynamic_pressure <= 0:
+    available_dynamic_pressure = [
+        value
+        for row in rows
+        if (value := _number(row.get("dynamic_pressure_psf"))) is not None
+        and value >= 0.0
+    ]
+    _max_dynamic_pressure = max(available_dynamic_pressure, default=None)
+    if _max_dynamic_pressure is not None and _max_dynamic_pressure <= 0:
         _max_dynamic_pressure = 1.0
 
     previous: dict[str, Any] | None = None
     for row in rows:
-        dp_psf = _number(row.get("dynamic_pressure_psf")) or 0.0
-        row["dynamic_pressure_lap_index"] = dp_psf / _max_dynamic_pressure
-        row["dynamic_pressure_index"] = dp_psf / _max_dynamic_pressure  # alias for backward compat
+        dp_psf = _number(row.get("dynamic_pressure_psf"))
+        lap_index = (
+            dp_psf / _max_dynamic_pressure
+            if dp_psf is not None
+            and dp_psf >= 0.0
+            and _max_dynamic_pressure is not None
+            else None
+        )
+        row["dynamic_pressure_lap_index"] = lap_index
+        row["dynamic_pressure_index"] = lap_index  # alias for backward compat
 
         # Cross-run comparable aero load index
-        dp_pa = _number(row.get("dynamic_pressure_pa")) or 0.0
-        row["aero_load_index"] = dp_pa / REFERENCE_DYNAMIC_PRESSURE_PA
-        row["aero_load_index_180mph"] = dp_pa / REFERENCE_DYNAMIC_PRESSURE_PA
+        dp_pa = _number(row.get("dynamic_pressure_pa"))
+        aero_index = (
+            dp_pa / REFERENCE_DYNAMIC_PRESSURE_PA
+            if dp_pa is not None and dp_pa >= 0.0
+            else None
+        )
+        row["aero_load_index"] = aero_index
+        row["aero_load_index_180mph"] = aero_index
 
         if previous is None:
             _init_derivative_row(row)

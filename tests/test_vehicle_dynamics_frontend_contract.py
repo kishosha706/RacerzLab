@@ -14,11 +14,15 @@ from racelab_engine.knowledge.vehicle_dynamics.next_gen_oval import (
     compile_next_gen_oval_runtime_trust_manifest,
 )
 from racelab_engine.models.vehicle_dynamics_knowledge import (
+    MechanismSeparationRow,
+    PhaseResponseMetric,
     PerformanceMechanismAssessment,
     PerformanceMechanismCandidate,
     VehicleDynamicsChainStage,
     VehicleDynamicsFocusArtifact,
     VehicleDynamicsInspectionToolId,
+    VehicleProblemSignature,
+    VehicleResponseObservation,
 )
 from racelab_engine.models.crew_chief import EngineeringEvidenceIndexEntry
 from racelab_engine.models.engineering_projection import EngineeringAwarenessProjection
@@ -142,6 +146,22 @@ def test_p35_client_exact_key_lists_cannot_drift_from_public_models() -> None:
         return re.findall(r"^  ([a-z0-9_]+):", match.group(1), flags=re.MULTILINE)
 
     for key_list, type_name, model in (
+        ("phaseResponseMetricKeys", "PhaseResponseMetric", PhaseResponseMetric),
+        (
+            "vehicleResponseObservationKeys",
+            "VehicleResponseObservation",
+            VehicleResponseObservation,
+        ),
+        (
+            "vehicleProblemSignatureKeys",
+            "VehicleProblemSignature",
+            VehicleProblemSignature,
+        ),
+        (
+            "mechanismSeparationRowKeys",
+            "MechanismSeparationRow",
+            MechanismSeparationRow,
+        ),
         ("vehicleDynamicsStageKeys", "VehicleDynamicsChainStage", VehicleDynamicsChainStage),
         (
             "performanceMechanismCandidateKeys",

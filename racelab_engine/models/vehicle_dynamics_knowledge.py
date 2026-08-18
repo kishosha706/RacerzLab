@@ -1204,7 +1204,15 @@ class VehicleDynamicsFocusArtifact(VehicleDynamicsModel):
 
 _PHASE_RESPONSE_CHANNELS = {
     "elapsed_time_delta_s": frozenset(
-        {"session_time", "SessionTime", "lap_dist_pct_100", "lap_dist_pct"}
+        {
+            "session_time",
+            "SessionTime",
+            "lap_dist_pct_100",
+            "lap_dist_pct",
+            "speed_mph",
+            "speed_mps",
+            "Speed",
+        }
     ),
     "speed_delta_mph": frozenset({"speed_mph", "Speed", "speed_mps"}),
     "throttle_demand_delta_pct": frozenset(
@@ -1225,6 +1233,35 @@ _PHASE_RESPONSE_CHANNELS = {
         {"lat", "lon", "Lat", "Lon", "lap_dist_pct_100"}
     ),
 }
+_PHASE_RESPONSE_UNITS = {
+    "elapsed_time_delta_s": "s",
+    "speed_delta_mph": "mph",
+    "throttle_demand_delta_pct": "%",
+    "brake_demand_delta_pct": "%",
+    "steering_wheel_demand_delta_deg": "deg",
+    "yaw_rate_response_delta_rad_s": "rad/s",
+    "longitudinal_accel_response_delta_mps2": "m/s^2",
+    "path_delta_m": "m",
+    "line_separation_m": "m",
+}
+_PHASE_RESPONSE_SEMANTICS = {
+    "elapsed_time_delta_s": "calculated_delta",
+    "speed_delta_mph": "measured_delta",
+    "throttle_demand_delta_pct": "measured_delta",
+    "brake_demand_delta_pct": "measured_delta",
+    "steering_wheel_demand_delta_deg": "measured_delta",
+    "yaw_rate_response_delta_rad_s": "measured_delta",
+    "longitudinal_accel_response_delta_mps2": "measured_delta",
+    "path_delta_m": "calculated_delta",
+    "line_separation_m": "calculated_delta",
+}
+
+
+def _p354_content_id(prefix: str, value: BaseModel, identity_field: str) -> str:
+    digest = canonical_json_sha256(
+        value.model_dump(mode="json", exclude={identity_field})
+    )
+    return f"{prefix}:{digest[:24]}"
 
 
 class PhaseResponseMetric(VehicleDynamicsModel):
@@ -1254,13 +1291,23 @@ class PhaseResponseMetric(VehicleDynamicsModel):
     setup_authorized: Literal[False] = False
 
     @model_validator(mode="after")
-    def metric_provenance_matches_quantity(self) -> PhaseResponseMetric:
+    def metric_provenance_matches_quantity(
+        self, info: ValidationInfo
+    ) -> PhaseResponseMetric:
         if len(self.source_channels) != len(set(self.source_channels)):
             raise ValueError("phase-response metric channels must be unique")
         if not set(self.source_channels) <= _PHASE_RESPONSE_CHANNELS[self.quantity]:
             raise ValueError(
                 "phase-response metric channels must match the measured quantity"
             )
+        if self.units != _PHASE_RESPONSE_UNITS[self.quantity]:
+            raise ValueError("phase-response metric units do not match the quantity")
+        if self.semantics != _PHASE_RESPONSE_SEMANTICS[self.quantity]:
+            raise ValueError("phase-response metric semantics do not match the quantity")
+        if not (info.context or {}).get("skip_content_hash") and self.metric_id != (
+            _p354_content_id("p354.metric", self, "metric_id")
+        ):
+            raise ValueError("phase-response metric ID does not match canonical content")
         return self
 
 
@@ -1271,7 +1318,7 @@ class VehicleResponseObservation(VehicleDynamicsModel):
     opportunity_id: str = Field(pattern=_ID_PATTERN)
     run_id: str = Field(min_length=1)
     source_lap_numbers: tuple[int, ...] = Field(min_length=1)
-    reference_lap_numbers: tuple[int, ...] = ()
+    reference_lap_numbers: tuple[int, ...] = Field(min_length=1)
     phase: str = Field(min_length=1)
     lap_pct_start: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
     lap_pct_end: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
@@ -1297,7 +1344,9 @@ class VehicleResponseObservation(VehicleDynamicsModel):
     setup_authorized: Literal[False] = False
 
     @model_validator(mode="after")
-    def response_truth_is_exact_and_noncausal(self) -> VehicleResponseObservation:
+    def response_truth_is_exact_and_noncausal(
+        self, info: ValidationInfo
+    ) -> VehicleResponseObservation:
         if self.lap_pct_end < self.lap_pct_start:
             raise ValueError("phase-response physical window is reversed")
         if not self.lap_pct_start <= self.onset_pct <= self.lap_pct_end:
@@ -1325,14 +1374,41 @@ class VehicleResponseObservation(VehicleDynamicsModel):
             "cda_coastdown_proxy_m2",
             "full_throttle_resistance_cda_proxy_m2",
             "platform_roll_deg_from_rh",
+            "dynamic_pressure_pa",
+            "dynamic_pressure_psf",
+            "dynamic_pressure_lap_index",
+            "dynamic_pressure_index",
+            "aero_load_index",
+            "aero_load_index_180mph",
         }
         if unsafe.intersection(self.source_channels):
             raise ValueError("research/display-only physics cannot support a phase response")
-        positive = self.evidence_state is EvidenceState.MEASURED
-        if positive and self.blocker_reasons:
-            raise ValueError("measured phase response cannot carry blockers")
-        if not positive and not self.blocker_reasons:
+        metric_channels = tuple(
+            dict.fromkeys(
+                channel for metric in self.metrics for channel in metric.source_channels
+            )
+        )
+        if self.source_channels != metric_channels:
+            raise ValueError(
+                "phase-response source channels must equal the metric provenance union"
+            )
+        if self.opportunity_id not in self.source_artifact_ids:
+            raise ValueError("phase response must retain its P32 opportunity source")
+        expected_evidence = {
+            "qualified": EvidenceState.MEASURED,
+            "blocked": EvidenceState.BLOCKED_BY_CONTEXT,
+            "unavailable": EvidenceState.NEEDS_CONFIRMATION,
+        }[self.context_state]
+        if self.evidence_state is not expected_evidence:
+            raise ValueError("phase-response evidence state must match context state")
+        if self.context_state == "qualified" and self.blocker_reasons:
+            raise ValueError("qualified phase response cannot carry blockers")
+        if self.context_state != "qualified" and not self.blocker_reasons:
             raise ValueError("blocked phase response requires explicit blockers")
+        if not (info.context or {}).get("skip_content_hash") and self.observation_id != (
+            _p354_content_id("p354.response", self, "observation_id")
+        ):
+            raise ValueError("phase-response observation ID does not match canonical content")
         return self
 
 
@@ -1360,6 +1436,16 @@ class VehicleProblemSignature(VehicleDynamicsModel):
     authority: Literal["observation_only"] = "observation_only"
     component_cause_authorized: Literal[False] = False
     setup_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def signature_is_content_addressed(
+        self, info: ValidationInfo
+    ) -> VehicleProblemSignature:
+        if not (info.context or {}).get("skip_content_hash") and self.signature_id != (
+            _p354_content_id("p354.signature", self, "signature_id")
+        ):
+            raise ValueError("vehicle-problem signature ID does not match canonical content")
+        return self
 
 
 class MechanismSeparationRow(VehicleDynamicsModel):
@@ -1396,6 +1482,57 @@ class MechanismSeparationRow(VehicleDynamicsModel):
         if self.state != "alive" and self.support_artifact_ids:
             raise ValueError("weakened/blocked mechanisms cannot carry positive support")
         return self
+
+
+def build_phase_response_metric(payload: dict[str, Any]) -> PhaseResponseMetric:
+    if "metric_id" in payload:
+        raise ValueError("phase-response metric identity is derived")
+    provisional = PhaseResponseMetric.model_validate(
+        {**payload, "metric_id": f"p354.metric:{'0' * 24}"},
+        context={"skip_content_hash": True},
+    )
+    return PhaseResponseMetric.model_validate(
+        {
+            **provisional.model_dump(mode="json", exclude={"metric_id"}),
+            "metric_id": _p354_content_id("p354.metric", provisional, "metric_id"),
+        }
+    )
+
+
+def build_vehicle_response_observation(
+    payload: dict[str, Any],
+) -> VehicleResponseObservation:
+    if "observation_id" in payload:
+        raise ValueError("phase-response observation identity is derived")
+    provisional = VehicleResponseObservation.model_validate(
+        {**payload, "observation_id": f"p354.response:{'0' * 24}"},
+        context={"skip_content_hash": True},
+    )
+    return VehicleResponseObservation.model_validate(
+        {
+            **provisional.model_dump(mode="json", exclude={"observation_id"}),
+            "observation_id": _p354_content_id(
+                "p354.response", provisional, "observation_id"
+            ),
+        }
+    )
+
+
+def build_vehicle_problem_signature(payload: dict[str, Any]) -> VehicleProblemSignature:
+    if "signature_id" in payload:
+        raise ValueError("vehicle-problem signature identity is derived")
+    provisional = VehicleProblemSignature.model_validate(
+        {**payload, "signature_id": f"p354.signature:{'0' * 24}"},
+        context={"skip_content_hash": True},
+    )
+    return VehicleProblemSignature.model_validate(
+        {
+            **provisional.model_dump(mode="json", exclude={"signature_id"}),
+            "signature_id": _p354_content_id(
+                "p354.signature", provisional, "signature_id"
+            ),
+        }
+    )
 
 
 class PerformanceMechanismAssessment(VehicleDynamicsModel):
@@ -1494,6 +1631,8 @@ class PerformanceMechanismAssessment(VehicleDynamicsModel):
             )
         if self.candidates and len(self.performance_opportunity_ids) != 1:
             raise ValueError("P35 candidates require one selected P32 opportunity")
+        if self.candidates and len(self.response_observations) != 1:
+            raise ValueError("P35 candidates require one phase-response observation")
         if self.response_observations and not (
             self.performance_opportunity_ids and self.response_regime is not None
         ):
@@ -1504,6 +1643,14 @@ class PerformanceMechanismAssessment(VehicleDynamicsModel):
             raise ValueError("problem signature must bind the phase response")
         if self.response_observations:
             response = self.response_observations[0]
+            chain_source_ids = {
+                artifact_id
+                for stage in self.chain
+                for artifact_id in stage.source_artifact_ids
+            }
+            chain_source_channels = {
+                channel for stage in self.chain for channel in stage.source_channels
+            }
             if (
                 response.run_id != self.run_id
                 or response.opportunity_id != self.performance_opportunity_ids[0]
@@ -1512,17 +1659,51 @@ class PerformanceMechanismAssessment(VehicleDynamicsModel):
                 or self.problem_signature.opportunity_id != response.opportunity_id
             ):
                 raise ValueError("P35.4 response/signature scope is not atomic")
-        if self.mechanism_separation and len(self.mechanism_separation) != len(
-            self.candidates
-        ):
+            if not set(response.source_artifact_ids) <= chain_source_ids:
+                raise ValueError("phase-response sources must resolve through the chain")
+            if not set(response.source_channels) <= chain_source_channels:
+                raise ValueError("phase-response channels must resolve through the chain")
+            signature = self.problem_signature
+            elapsed_metrics = tuple(
+                metric
+                for metric in response.metrics
+                if metric.quantity == "elapsed_time_delta_s"
+            )
+            if len(elapsed_metrics) != 1:
+                raise ValueError("phase response requires one elapsed-time metric")
+            if (
+                signature.phase != response.phase
+                or signature.onset_pct != response.onset_pct
+                or signature.onset_resolution != response.onset_resolution
+                or signature.response_regime != response.response_regime
+                or signature.driver_demand_state != response.driver_demand_state
+                or signature.vehicle_response_state != response.vehicle_response_state
+                or signature.line_state != response.line_state
+                or signature.local_time_delta_s != elapsed_metrics[0].value
+            ):
+                raise ValueError("problem signature must exactly mirror response truth")
+            expected_traffic = (
+                "blocked"
+                if self.traffic_blocked
+                else "clear"
+                if response.context_state == "qualified"
+                else "unavailable"
+            )
+            if signature.traffic_dependence != expected_traffic:
+                raise ValueError("problem-signature traffic state does not match context")
+            if self.traffic_blocked and response.context_state != "blocked":
+                raise ValueError("traffic-blocked assessment requires blocked response context")
+        elif self.problem_signature is not None:
+            raise ValueError("problem signature cannot exist without a phase response")
+        if len(self.mechanism_separation) != len(self.candidates):
             raise ValueError("every mechanism candidate requires one separation row")
-        if self.mechanism_separation and tuple(
+        if tuple(
             item.mechanism_id for item in self.mechanism_separation
         ) != tuple(
             item.mechanism_id for item in self.candidates
         ):
             raise ValueError("mechanism separation order must match current candidates")
-        if self.response_observations and any(
+        if any(
             item.response_observation_id != self.response_observations[0].observation_id
             for item in self.mechanism_separation
         ):
@@ -1581,6 +1762,46 @@ class PerformanceMechanismAssessment(VehicleDynamicsModel):
         candidate_by_mechanism = {
             candidate.mechanism_id: candidate for candidate in self.candidates
         }
+        separation_by_mechanism = {
+            row.mechanism_id: row for row in self.mechanism_separation
+        }
+        response = self.response_observations[0] if self.response_observations else None
+        for candidate in self.candidates:
+            row = separation_by_mechanism[candidate.mechanism_id]
+            expected_state = (
+                "alive" if candidate.relevance == "candidate" else "blocked"
+            )
+            if (
+                row.state != expected_state
+                or row.required_response_kpi_ids
+                != (candidate.discriminator_contract_ids[0],)
+                or row.support_artifact_ids != candidate.support_artifact_ids
+                or row.contradiction_artifact_ids
+                != candidate.contradiction_artifact_ids
+                or row.discriminator_contract_ids
+                != candidate.discriminator_contract_ids
+                or row.component_family_ids != candidate.component_family_ids
+            ):
+                raise ValueError(
+                    "mechanism separation must exactly mirror its candidate contract"
+                )
+            if candidate.relevance == "blocked" and (
+                row.missing_evidence != candidate.blocker_reasons
+            ):
+                raise ValueError(
+                    "blocked separation evidence must equal candidate blockers"
+                )
+            if candidate.relevance == "candidate" and (
+                response is None
+                or response.driver_demand_state != "matched"
+                or response.vehicle_response_state != "changed"
+                or response.line_state != "matched"
+                or response.context_state != "qualified"
+                or self.traffic_blocked
+            ):
+                raise ValueError(
+                    "positive mechanism support requires matched demand, line, response, and context"
+                )
         for focus in self.focus_artifacts:
             candidate = candidate_by_mechanism.get(focus.mechanism_id)
             if candidate is None:
@@ -1603,6 +1824,75 @@ class PerformanceMechanismAssessment(VehicleDynamicsModel):
                 raise ValueError(
                     "every P35 focus must be owned by a same-mechanism candidate relation"
                 )
+        if response is not None:
+            all_response_laps = (
+                *response.source_lap_numbers,
+                *response.reference_lap_numbers,
+            )
+            opportunity_sources = (response.opportunity_id,)
+            for candidate in self.candidates:
+                support_focus = tuple(
+                    focus_by_id[artifact_id]
+                    for artifact_id in candidate.support_artifact_ids
+                )
+                contradiction_focus = tuple(
+                    focus_by_id[artifact_id]
+                    for artifact_id in candidate.contradiction_artifact_ids
+                )
+                discriminator_focus = tuple(
+                    focus
+                    for focus in self.focus_artifacts
+                    if focus.mechanism_id == candidate.mechanism_id
+                    and focus.observation_contract_id is not None
+                )
+                if (
+                    len(candidate.support_artifact_ids) > 1
+                    or len(contradiction_focus) != 1
+                    or len(discriminator_focus) != 1
+                ):
+                    raise ValueError(
+                        "each mechanism requires bounded support, contradiction, and discriminator focus"
+                    )
+                if any(
+                    focus.stage is not DynamicsChainStageKind.VEHICLE_RESPONSE
+                    or focus.observation_contract_id is not None
+                    or focus.source_artifact_ids == opportunity_sources
+                    or focus.lap_numbers != response.source_lap_numbers
+                    or focus.lap_pct_start != response.lap_pct_start
+                    or focus.lap_pct_end != response.lap_pct_end
+                    or focus.phase != response.phase
+                    for focus in support_focus
+                ):
+                    raise ValueError("P35 support focus must match source response scope")
+                challenge = contradiction_focus[0]
+                if (
+                    challenge.stage is not DynamicsChainStageKind.TIRE_PLATFORM_STATE
+                    or challenge.observation_contract_id is not None
+                    or challenge.source_artifact_ids != opportunity_sources
+                    or challenge.lap_numbers != all_response_laps
+                    or challenge.lap_pct_start != response.lap_pct_start
+                    or challenge.lap_pct_end != response.lap_pct_end
+                    or challenge.phase != response.phase
+                ):
+                    raise ValueError(
+                        "P35 contradiction focus must match the full response comparison"
+                    )
+                discriminator = discriminator_focus[0]
+                if (
+                    discriminator.observation_contract_id
+                    != candidate.discriminator_contract_ids[0]
+                    or discriminator.polarity != "neutral"
+                    or discriminator.stage
+                    is not DynamicsChainStageKind.TIRE_PLATFORM_STATE
+                    or discriminator.source_artifact_ids != opportunity_sources
+                    or discriminator.lap_numbers != all_response_laps
+                    or discriminator.lap_pct_start != response.lap_pct_start
+                    or discriminator.lap_pct_end != response.lap_pct_end
+                    or discriminator.phase != response.phase
+                ):
+                    raise ValueError(
+                        "P35 discriminator focus must match its exact comparison contract"
+                    )
         chain_source_ids = {
             artifact_id for stage in self.chain for artifact_id in stage.source_artifact_ids
         }

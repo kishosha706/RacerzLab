@@ -191,18 +191,18 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "brake_pct", label: "Brake", color: "#ef4444" },
     ], min: 0, max: 105 },
   ],
-  "Aero Load": [
-    { label: "Speed / Dynamic Pressure", channels: [
+  "Speed-Density Proxy": [
+    { label: "Speed / Ground-Speed Pressure Proxy", channels: [
       { name: "speed_mph", label: "Speed", color: "#93c5fd" },
-      { name: "dynamic_pressure_psf", label: "Dyn Pressure", color: "#38bdf8" },
+      { name: "dynamic_pressure_psf", label: "Pressure Proxy", color: "#38bdf8" },
     ] },
-    { label: "Dynamic Pressure Index", channels: [
+    { label: "Lap-Relative Pressure Proxy", channels: [
       { name: "dynamic_pressure_lap_index", label: "Lap Index", color: "#60a5fa" },
       { name: "dynamic_pressure_index", label: "Index", color: "#22d3ee" },
     ] },
-    { label: "Aero Load Index", channels: [
-      { name: "aero_load_index", label: "Aero Load", color: "#f59e0b" },
-      { name: "aero_load_index_180mph", label: "180 mph Index", color: "#f97316" },
+    { label: "Speed-Density Reference Proxy", channels: [
+      { name: "aero_load_index", label: "Reference Proxy", color: "#f59e0b" },
+      { name: "aero_load_index_180mph", label: "180 mph Reference", color: "#f97316" },
     ] },
     { label: "Front / Rear Aero Proxy [N]", channels: [
       { name: "front_aero_proxy_n", label: "Front", color: "#22d3ee" },
@@ -339,8 +339,8 @@ const PRESET_ROWS: Record<string, ChartRow[]> = {
       { name: "speed_rate_mph_1000ft", label: "Rate/1000ft", color: "#f97316" },
       { name: "grade_corrected_speed_loss_mph_s", label: "Grade-Corrected", color: "#22c55e" },
     ] },
-    { label: "Dynamic Pressure", channels: [
-      { name: "dynamic_pressure_psf", label: "Pressure", color: "#38bdf8" },
+    { label: "Ground-Speed Pressure Proxy", channels: [
+      { name: "dynamic_pressure_psf", label: "Pressure Proxy", color: "#38bdf8" },
       { name: "dynamic_pressure_lap_index", label: "Lap Index", color: "#60a5fa" },
     ] },
   ],
@@ -1474,7 +1474,7 @@ function PlatformTraceWorkbench({
   const presetFromView: Record<WorkbenchView, string> = {
     balance: "Platform / Rake / Ride Height",
     rear_scrape: SCRAPE_SCRUB_PRESET,
-    aero_load: "Aero Load",
+    aero_load: "Speed-Density Proxy",
     scrub_steering: SCRAPE_SCRUB_PRESET,
     tires: "Tires",
     shocks: "Shocks",
@@ -3414,13 +3414,13 @@ function PlatformTraceWorkbench({
     const aeroIdx = latest("aero_load_index") as number | null;
     const dynPsf = latest("dynamic_pressure_psf") as number | null;
     const ribbonPct = aeroIdx != null ? Math.min(100, Math.max(0, (aeroIdx / 2) * 100)) : 0;
-    const ribbonColor = aeroIdx != null ? (aeroIdx > 1.2 ? "#ef4444" : aeroIdx > 0.8 ? "#f59e0b" : "#22c55e") : "#475569";
+    const ribbonColor = aeroIdx != null ? "#38bdf8" : "#475569";
     return (
     <div className="engineering-panel">
-      <p className="proxy-warning">Aero/load values are telemetry-derived estimates/proxies, not direct force sensor measurements. Confidence depends on setup geometry, mass, motion ratios, and steady-state conditions.</p>
-      {/* Aero Load Pressure Ribbon */}
-      <div className="aero-pressure-ribbon" title={`Aero Load Index: ${aeroIdx?.toFixed(3) ?? "—"} · Dynamic Pressure: ${dynPsf?.toFixed(1) ?? "—"} psf`}>
-        <span className="aero-pressure-label">Aero Load</span>
+      <p className="proxy-warning">Speed-density values use ground speed because validated wind-relative air speed is unavailable. They are display-only proxies, not aero load, drag, downforce, balance, or cross-run truth.</p>
+      {/* Ground-speed pressure reference ribbon */}
+      <div className="aero-pressure-ribbon" title={`Speed-density reference proxy: ${aeroIdx?.toFixed(3) ?? "—"} · Ground-speed pressure proxy: ${dynPsf?.toFixed(1) ?? "—"} psf`}>
+        <span className="aero-pressure-label">Speed-density proxy</span>
         <div className="aero-pressure-track">
           <div className="aero-pressure-fill aero-flow" style={{ width: `${ribbonPct}%`, background: ribbonColor }} />
         </div>
@@ -3428,13 +3428,13 @@ function PlatformTraceWorkbench({
       </div>
       <div className="aero-scatter-panel">
         <div className="aero-scatter-header">
-          <span><BarChart3 size={13} /> Speed² vs aero/load proxy</span>
+          <span><BarChart3 size={13} /> Speed² vs platform proxy</span>
           <ProxyBadge kind="proxy" />
         </div>
         {scatterPoints.length === 0 ? (
-          <p className="muted" style={{ margin: 0, fontSize: 11 }}>Unavailable: speed and aero/load proxy channels are required.</p>
+          <p className="muted" style={{ margin: 0, fontSize: 11 }}>Unavailable: speed and platform proxy channels are required.</p>
         ) : (
-          <svg className="aero-scatter-svg" viewBox="0 0 360 120" role="img" aria-label="Speed squared versus aero load proxy scatter">
+          <svg className="aero-scatter-svg" viewBox="0 0 360 120" role="img" aria-label="Speed squared versus platform proxy scatter">
             <line x1="28" y1="96" x2="344" y2="96" className="scatter-axis" />
             <line x1="28" y1="10" x2="28" y2="96" className="scatter-axis" />
             <text x="344" y="113" className="scatter-label" textAnchor="end">speed²</text>
@@ -3456,8 +3456,8 @@ function PlatformTraceWorkbench({
         )}
       </div>
       <div className="engineering-panel-grid">
-        <EngineeringMetricCard title="Aero Load Index" channelName="aero_load_index" value={latest("aero_load_index")} color="#38bdf8" />
-        <EngineeringMetricCard title="Dynamic Pressure" value={`${formatChannelValue(latest("dynamic_pressure_psf") as number, "psf")} / ${formatChannelValue(latest("dynamic_pressure_pa") as number, "Pa")}`} subtitle={`Lap index: ${formatChannelValue(latest("dynamic_pressure_lap_index") as number, "index")}`} channelName="dynamic_pressure_lap_index" color="#60a5fa" />
+        <EngineeringMetricCard title="Speed-Density Reference Proxy" channelName="aero_load_index" value={latest("aero_load_index")} subtitle="Display only · not aero load" color="#38bdf8" />
+        <EngineeringMetricCard title="Ground-Speed Pressure Proxy" value={`${formatChannelValue(latest("dynamic_pressure_psf") as number, "psf")} / ${formatChannelValue(latest("dynamic_pressure_pa") as number, "Pa")}`} subtitle={`Lap-relative proxy: ${formatChannelValue(latest("dynamic_pressure_lap_index") as number, "index")} · wind-relative air speed unavailable`} channelName="dynamic_pressure_lap_index" color="#60a5fa" />
         <EngineeringMetricCard title="Front Aero Proxy" channelName="front_aero_proxy_n" value={latest("front_aero_proxy_n")} color="#22d3ee" />
         <EngineeringMetricCard title="Rear Aero Proxy" channelName="rear_aero_proxy_n" value={latest("rear_aero_proxy_n")} color="#a78bfa" />
         <EngineeringMetricCard title="Rear Platform Proxy" channelName="rear_platform_proxy_n" value={latest("rear_platform_proxy_n")} subtitle={`Diffuser: ${formatForceProxyN(latest("rear_diffuser_proxy_n") as number | null)}`} color="#c084fc" />
@@ -3758,7 +3758,7 @@ function PlatformTraceWorkbench({
       </header>
       {!scrapeScrubChartView && (
         <p className="proxy-warning">
-          Force values are estimates/proxies derived from telemetry, setup spring rates, ride heights, shock movement, and dynamic pressure. They are not direct iRacing aerodynamic force channels.
+          Force values are estimates/proxies derived from telemetry, setup spring rates, ride heights, shock movement, source-backed motion ratios, and a ground-speed pressure proxy. They are not direct iRacing aerodynamic force channels.
         </p>
       )}
       {selection.selectedMode === "learning" && (

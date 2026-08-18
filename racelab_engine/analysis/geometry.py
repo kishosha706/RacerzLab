@@ -33,7 +33,13 @@ def compute_pitch_deg(
     Positive = rear higher than front (nose-down pitch).
     Uses atan2 for robustness.
     """
-    if front_rh_m is None or rear_rh_m is None or wheelbase_m is None or wheelbase_m <= 0:
+    if (
+        front_rh_m is None
+        or rear_rh_m is None
+        or wheelbase_m is None
+        or not math.isfinite(wheelbase_m)
+        or wheelbase_m <= 0
+    ):
         return None
     front_corrected = corrected_delta_m(front_rh_m, front_motion_ratio)
     rear_corrected = corrected_delta_m(rear_rh_m, rear_motion_ratio)
@@ -55,7 +61,13 @@ def compute_roll_deg(
     Positive = right side higher.
     Uses atan2 for robustness.
     """
-    if left_rh_m is None or right_rh_m is None or track_width_m is None or track_width_m <= 0:
+    if (
+        left_rh_m is None
+        or right_rh_m is None
+        or track_width_m is None
+        or not math.isfinite(track_width_m)
+        or track_width_m <= 0
+    ):
         return None
     left_corrected = corrected_delta_m(left_rh_m, left_motion_ratio)
     right_corrected = corrected_delta_m(right_rh_m, right_motion_ratio)
@@ -67,9 +79,13 @@ def compute_roll_deg(
 
 def ride_height_m_to_in(meters: float | None) -> float | None:
     """Convert ride height from meters to inches."""
-    return meters * 39.37007874 if meters is not None else None
+    return (
+        meters * 39.37007874
+        if meters is not None and math.isfinite(meters)
+        else None
+    )
 
 
 def ride_height_mm_to_m(mm: float | None) -> float | None:
     """Convert ride height from millimeters to meters."""
-    return mm / 1000.0 if mm is not None else None
+    return mm / 1000.0 if mm is not None and math.isfinite(mm) else None

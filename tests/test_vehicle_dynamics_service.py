@@ -463,8 +463,47 @@ def test_missing_exact_response_never_becomes_positive_support(
     assert assessment.measured_time_consequence_available
 
 
-def test_force_like_proxy_cannot_support_a_mechanism(
+def test_single_lap_time_observation_cannot_become_phase_response_or_candidate(
     monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    monkeypatch.setenv("RACELAB_DB_PATH", str(tmp_path / "p35-single-lap.sqlite3"))
+    p32 = _build_public_projection(
+        monkeypatch, tmp_path, effect_s=0.10, traffic=False
+    )
+    p20 = _p20_for_scope(p32, MechanismKind.CORNER_ROTATION)
+    p32 = _exact_response_projection(p32, p20)
+    opportunity = p32.opportunity_map.opportunities[0]
+    single_lap = opportunity.model_copy(
+        update={"source_laps": opportunity.source_laps[:1]}
+    )
+    p32 = p32.model_copy(
+        update={
+            "opportunity_map": p32.opportunity_map.model_copy(
+                update={"opportunities": (single_lap,)}
+            ),
+            "corner_chains": (),
+            "projection_sha256": canonical_json_sha256(
+                [p32.projection_sha256, "single-lap-only"]
+            ),
+        }
+    )
+
+    assessment = _assessment(p32, p20)
+
+    assert assessment.measured_time_consequence_available
+    assert assessment.response_observations == ()
+    assert assessment.problem_signature is None
+    assert assessment.mechanism_separation == ()
+    assert assessment.candidates == ()
+    assert any("source and reference lap" in item for item in assessment.blocker_reasons)
+
+
+@pytest.mark.parametrize(
+    "unsafe_channel",
+    ("front_load_proxy_n", "aero_load_index", "dynamic_pressure_psf"),
+)
+def test_force_like_proxy_cannot_support_a_mechanism(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, unsafe_channel: str
 ) -> None:
     monkeypatch.setenv("RACELAB_DB_PATH", str(tmp_path / "p35-force-proxy.sqlite3"))
     p32 = _build_public_projection(
@@ -475,7 +514,7 @@ def test_force_like_proxy_cannot_support_a_mechanism(
     contaminated = _p20_with_source_channels(
         p20,
         MechanismKind.CORNER_ROTATION,
-        ("SteeringWheelAngle", "YawRate", "front_load_proxy_n"),
+        ("SteeringWheelAngle", "YawRate", unsafe_channel),
     )
 
     assessment = _assessment(p32, contaminated)
@@ -489,7 +528,7 @@ def test_force_like_proxy_cannot_support_a_mechanism(
         for blocker in candidate.blocker_reasons
     )
     assert all(
-        "front_load_proxy_n" not in response.source_channels
+        unsafe_channel not in response.source_channels
         for response in assessment.response_observations
     )
 

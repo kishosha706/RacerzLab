@@ -8821,7 +8821,7 @@ td {
   .trackmap-marker-glow-ring { animation: none; }
 }
 
-/* ── Aero Load Pressure Ribbon ─────────────────────────────── */
+/* ── Ground-speed pressure proxy ribbon ───────────────────── */
 .aero-pressure-ribbon {
   display: flex;
   align-items: center;

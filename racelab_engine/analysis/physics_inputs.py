@@ -6,6 +6,7 @@ nominal values for a quantity that was not measured or supplied by setup truth.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,7 +30,11 @@ class VehiclePhysicsInputs:
     motion_ratio_rear: float | None = None
 
     def provided(self) -> set[str]:
-        return {k for k, v in self.__dict__.items() if v is not None}
+        return {
+            key
+            for key, value in self.__dict__.items()
+            if _valid_physics_value(key, value) is not None
+        }
 
     def confidence(self, required: list[str]) -> EstimateConfidence:
         """Return confidence that the required inputs are available."""
@@ -45,23 +50,23 @@ class VehiclePhysicsInputs:
         )
 
     def resolve_mass_kg(self) -> float | None:
-        return self.mass_kg
+        return _valid_physics_value("mass_kg", self.mass_kg)
 
     def resolve_cg_height_m(self) -> float | None:
         """Return only a supplied CG height."""
-        return self.cg_height_m
+        return _valid_physics_value("cg_height_m", self.cg_height_m)
 
     def resolve_crr(self) -> float | None:
         """Return only a supplied rolling-resistance coefficient."""
-        return self.crr
+        return _valid_physics_value("crr", self.crr)
 
     def resolve_motion_ratio_front(self) -> float | None:
         """Return only a supplied front motion ratio."""
-        return self.motion_ratio_front
+        return _valid_physics_value("motion_ratio_front", self.motion_ratio_front)
 
     def resolve_motion_ratio_rear(self) -> float | None:
         """Return only a supplied rear motion ratio."""
-        return self.motion_ratio_rear
+        return _valid_physics_value("motion_ratio_rear", self.motion_ratio_rear)
 
     def resolve_motion_ratio_corner(self, corner: str) -> float | None:
         """Return a supplied axle motion ratio for a known corner."""
@@ -91,6 +96,19 @@ def _float(d: dict[str, Any], key: str) -> float | None:
     if v is None:
         return None
     try:
-        return float(v)
+        number = float(v)
     except (TypeError, ValueError):
         return None
+    return number if math.isfinite(number) else None
+
+
+def _valid_physics_value(key: str, value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    if key == "crr":
+        return number if number >= 0.0 else None
+    return number if number > 0.0 else None

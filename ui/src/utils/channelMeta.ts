@@ -45,16 +45,18 @@ const CHANNEL_META: Record<string, ChannelUiMeta> = {
   grade_corrected_speed_loss_mph_s: { label: "Grade-Corrected Speed Loss", unit: "mph/s", isProxy: true, isEstimate: true, category: "grade", precision: 2 },
 
   // -- Dynamic pressure / aero --
-  dynamic_pressure_pa: { label: "Dynamic Pressure", unit: "Pa", isProxy: false, isEstimate: false, category: "aero", precision: 0 },
-  dynamic_pressure_psf: { label: "Dynamic Pressure", unit: "psf", isProxy: false, isEstimate: false, category: "aero", precision: 1 },
-  dynamic_pressure_lap_index: { label: "DP Lap Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
-    warning: "Lap-relative - not comparable across runs." },
-  dynamic_pressure_index: { label: "DP Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
-    warning: "Lap-relative - not comparable across runs." },
-  aero_load_index: { label: "Aero Load Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
-    warning: "Proxy - not a direct force measurement." },
-  aero_load_index_180mph: { label: "Aero Load Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
-    warning: "Proxy - not a direct force measurement." },
+  dynamic_pressure_pa: { label: "Ground-Speed Pressure Proxy", unit: "Pa", isProxy: true, isEstimate: true, category: "aero", precision: 0,
+    warning: "Display only - wind-relative air speed is unavailable." },
+  dynamic_pressure_psf: { label: "Ground-Speed Pressure Proxy", unit: "psf", isProxy: true, isEstimate: true, category: "aero", precision: 1,
+    warning: "Display only - wind-relative air speed is unavailable." },
+  dynamic_pressure_lap_index: { label: "Ground-Speed Pressure Lap Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
+    warning: "Lap-relative display proxy - not comparable across runs." },
+  dynamic_pressure_index: { label: "Ground-Speed Pressure Index", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
+    warning: "Lap-relative display proxy - not comparable across runs." },
+  aero_load_index: { label: "Speed-Density Reference Proxy", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
+    warning: "Research/display only - not aero load and not comparable across unmatched runs." },
+  aero_load_index_180mph: { label: "Speed-Density Reference Proxy", unit: "index", isProxy: true, isEstimate: true, category: "aero", precision: 3,
+    warning: "Research/display only - not aero load and not comparable across unmatched runs." },
 
   // -- Ride heights / platform --
   cfs_ride_height_in: { label: "CFS Ride Height", unit: "in", isProxy: false, isEstimate: false, category: "platform", precision: 3 },
@@ -196,14 +198,10 @@ const CHANNEL_META: Record<string, ChannelUiMeta> = {
   rf_wear_spread: { label: "RF Wear Spread", unit: "%", isProxy: true, isEstimate: true, category: "tires", precision: 2 },
   lr_wear_spread: { label: "LR Wear Spread", unit: "%", isProxy: true, isEstimate: true, category: "tires", precision: 2 },
   rr_wear_spread: { label: "RR Wear Spread", unit: "%", isProxy: true, isEstimate: true, category: "tires", precision: 2 },
-  lf_camber_temp_bias_c: { label: "LF Camber Bias", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
-  rf_camber_temp_bias_c: { label: "RF Camber Bias", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
-  lr_camber_temp_bias_c: { label: "LR Camber Bias", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
-  rr_camber_temp_bias_c: { label: "RR Camber Bias", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
-  lf_camber_bias_label: { label: "LF Camber", unit: "", isProxy: true, isEstimate: true, category: "tires", precision: 0 },
-  rf_camber_bias_label: { label: "RF Camber", unit: "", isProxy: true, isEstimate: true, category: "tires", precision: 0 },
-  lr_camber_bias_label: { label: "LR Camber", unit: "", isProxy: true, isEstimate: true, category: "tires", precision: 0 },
-  rr_camber_bias_label: { label: "RR Camber", unit: "", isProxy: true, isEstimate: true, category: "tires", precision: 0 },
+  lf_camber_temp_bias_c: { label: "LF Inboard−Outboard Snapshot", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
+  rf_camber_temp_bias_c: { label: "RF Inboard−Outboard Snapshot", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
+  lr_camber_temp_bias_c: { label: "LR Inboard−Outboard Snapshot", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
+  rr_camber_temp_bias_c: { label: "RR Inboard−Outboard Snapshot", unit: "C", isProxy: true, isEstimate: true, category: "tires", precision: 1 },
 
   // -- Shocks --
   lf_shock_defl_in: { label: "LF Shock Defl", unit: "in", isProxy: false, isEstimate: false, category: "shocks", precision: 2 },
@@ -332,4 +330,3 @@ export function getLegendLabel(channel: string, mode: "race" | "learning" = "rac
   }
   return label;
 }
-

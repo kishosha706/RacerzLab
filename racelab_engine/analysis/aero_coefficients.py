@@ -44,6 +44,14 @@ def _finite(value: Any) -> float | None:
     return number if math.isfinite(number) else None
 
 
+def _first_finite(*values: Any) -> float | None:
+    for value in values:
+        number = _finite(value)
+        if number is not None:
+            return number
+    return None
+
+
 def air_speed_mps(
     vehicle_speed_mps: float | None,
     wind_speed_mps: float | None = None,
@@ -58,12 +66,20 @@ def air_speed_mps(
     wind_speed_mps = _finite(wind_speed_mps)
     vehicle_heading_rad = _finite(vehicle_heading_rad)
     wind_heading_rad = _finite(wind_heading_rad)
+    if vehicle_speed_mps is not None and vehicle_speed_mps < 0:
+        vehicle_speed_mps = None
+    if wind_speed_mps is not None and wind_speed_mps < 0:
+        wind_speed_mps = None
     if vehicle_speed_mps is None:
         return None, confidence_from_missing(
             ["vehicle_speed_mps"], set(),
             ["Vehicle speed unavailable."],
         )
-    if wind_speed_mps is None or wind_heading_rad is None or vehicle_heading_rad is None:
+    if (
+        wind_speed_mps is None
+        or wind_heading_rad is None
+        or vehicle_heading_rad is None
+    ):
         return None, confidence_from_missing(
             ["wind_speed_mps", "wind_heading_rad", "vehicle_heading_rad"],
             set(),
@@ -93,7 +109,14 @@ def dynamic_pressure_pa(
     """
     air_density_kg_m3 = _finite(air_density_kg_m3)
     speed_mps = _finite(speed_mps)
-    if speed_mps is None or air_density_kg_m3 is None:
+    if air_density_kg_m3 is not None and air_density_kg_m3 <= 0:
+        air_density_kg_m3 = None
+    if speed_mps is not None and speed_mps < 0:
+        speed_mps = None
+    if (
+        speed_mps is None
+        or air_density_kg_m3 is None
+    ):
         return None, confidence_from_missing(
             [
                 name
@@ -114,9 +137,14 @@ def dynamic_pressure_pa(
 
 
 def aero_load_index(dynamic_pressure_pa: float | None) -> tuple[float | None, EstimateConfidence]:
-    """Cross-run comparable aero load index relative to 180 mph sea-level reference."""
+    """Research-only fixed-reference pressure ratio, never measured aero load."""
     dynamic_pressure_pa = _finite(dynamic_pressure_pa)
-    if dynamic_pressure_pa is None or REFERENCE_DYNAMIC_PRESSURE_PA <= 0:
+    if dynamic_pressure_pa is not None and dynamic_pressure_pa < 0:
+        dynamic_pressure_pa = None
+    if (
+        dynamic_pressure_pa is None
+        or REFERENCE_DYNAMIC_PRESSURE_PA <= 0
+    ):
         return None, confidence_from_missing(
             ["dynamic_pressure_pa"], set(),
             ["Dynamic pressure unavailable."],
@@ -130,11 +158,12 @@ def dynamic_pressure_air_context(
     inputs: VehiclePhysicsInputs,
 ) -> tuple[float | None, EstimateConfidence]:
     """Convenience: compute air-relative dynamic pressure from a telemetry row."""
+    _ = inputs  # retained for API compatibility; nominal physics is never read here
     v_mps = _float(row, "speed_mps")
-    wind_spd = _float(row, "wind_speed_mps") or _float(row, "WindVel")
-    wind_dir = _float(row, "wind_dir_rad") or _float(row, "WindDir")
-    yaw = _float(row, "yaw_rad") or _float(row, "Yaw")
-    air_density = _float(row, "air_density") or _float(row, "AirDensity")
+    wind_spd = _first_finite(row.get("wind_speed_mps"), row.get("WindVel"))
+    wind_dir = _first_finite(row.get("wind_dir_rad"), row.get("WindDir"))
+    yaw = _first_finite(row.get("yaw_rad"), row.get("Yaw"))
+    air_density = _first_finite(row.get("air_density"), row.get("AirDensity"))
     air_speed, air_speed_confidence = air_speed_mps(v_mps, wind_spd, yaw, wind_dir)
     if air_speed is None:
         return None, air_speed_confidence
@@ -151,6 +180,10 @@ def rolling_resistance_force_n(
     """F_rr = Crr * m * g"""
     mass_kg = _finite(mass_kg)
     crr = _finite(crr)
+    if mass_kg is not None and mass_kg <= 0:
+        mass_kg = None
+    if crr is not None and crr < 0:
+        crr = None
     if mass_kg is None or crr is None:
         return None, confidence_from_missing(
             [
@@ -171,6 +204,8 @@ def grade_force_n(
     """F_grade = m * g * sin(grade)"""
     mass_kg = _finite(mass_kg)
     grade_rad = _finite(grade_rad)
+    if mass_kg is not None and mass_kg <= 0:
+        mass_kg = None
     if mass_kg is None or grade_rad is None:
         return None, confidence_from_missing(
             [
@@ -201,12 +236,19 @@ def _coastdown_is_valid(
     - decelerating (long_accel < 0)
     - no active full-throttle resistance
     """
-    return not (
-        (throttle_pct is not None and throttle_pct >= 1.0)
-        or (brake_pct is not None and brake_pct >= 1.0)
-        or (speed_mps is not None and speed_mps < min_speed_mps)
-        or (long_accel_mps2 is not None and long_accel_mps2 >= 0)
-        or (full_throttle_resistance_index is not None and full_throttle_resistance_index > 0.01)
+    throttle_pct = _finite(throttle_pct)
+    brake_pct = _finite(brake_pct)
+    speed_mps = _finite(speed_mps)
+    long_accel_mps2 = _finite(long_accel_mps2)
+    resistance = _finite(full_throttle_resistance_index)
+    if None in {throttle_pct, brake_pct, speed_mps, long_accel_mps2}:
+        return False
+    return bool(
+        0.0 <= throttle_pct < 1.0
+        and 0.0 <= brake_pct < 1.0
+        and speed_mps >= min_speed_mps
+        and long_accel_mps2 < 0.0
+        and (resistance is None or resistance <= 0.01)
     )
 
 
@@ -228,6 +270,12 @@ def cda_coastdown_proxy_m2(
     q_air_pa = _finite(q_air_pa)
     crr = _finite(crr)
     grade_rad = _finite(grade_rad)
+    if mass_kg is not None and mass_kg <= 0:
+        mass_kg = None
+    if crr is not None and crr < 0:
+        crr = None
+    if q_air_pa is not None and q_air_pa <= 0:
+        q_air_pa = None
     if mass_kg is None:
         return None, confidence_from_missing(
             ["mass_kg"], set(),
@@ -238,7 +286,7 @@ def cda_coastdown_proxy_m2(
             ["long_accel_mps2"], set(),
             ["Longitudinal acceleration unavailable."],
         )
-    if q_air_pa is None or q_air_pa <= 0:
+    if q_air_pa is None:
         return None, confidence_from_missing(
             ["q_air_pa"], set(),
             ["Dynamic pressure unavailable or zero."],
@@ -284,7 +332,7 @@ def full_throttle_resistance_cda_proxy_m2(
     F_drag = engine_force - m*ax - F_rr - F_grade
     CdA_proxy = F_drag / q
 
-    Without engine_force_n, this is a residual proxy only.
+    All force-balance inputs, including measured engine force, are required.
     Never display as plain "CdA". Always label as "Full-Throttle Resistance CdA Proxy".
     """
     mass_kg = _finite(mass_kg)
@@ -293,6 +341,14 @@ def full_throttle_resistance_cda_proxy_m2(
     engine_force_n = _finite(engine_force_n)
     crr = _finite(crr)
     grade_rad = _finite(grade_rad)
+    if mass_kg is not None and mass_kg <= 0:
+        mass_kg = None
+    if engine_force_n is not None and engine_force_n <= 0:
+        engine_force_n = None
+    if crr is not None and crr < 0:
+        crr = None
+    if q_air_pa is not None and q_air_pa <= 0:
+        q_air_pa = None
     if mass_kg is None:
         return None, confidence_from_missing(
             ["mass_kg"], set(),
@@ -301,7 +357,6 @@ def full_throttle_resistance_cda_proxy_m2(
     if (
         long_accel_mps2 is None
         or q_air_pa is None
-        or q_air_pa <= 0
         or engine_force_n is None
     ):
         return None, confidence_from_missing(

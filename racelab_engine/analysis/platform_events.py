@@ -1005,7 +1005,9 @@ def detect_max_dynamic_pressure(rows: list[dict[str, Any]]) -> PlatformEvent | N
     air_density = _sample_value(row, "air_density")
     cfs_in = _sample_value(row, "cfs_ride_height_in")
 
-    evidence = ["Dynamic pressure peaked here due to speed and air density."]
+    evidence = [
+        "The ground-speed pressure proxy peaked here from measured speed and air density; wind-relative aero load is unavailable."
+    ]
     if speed is not None:
         evidence.append(f"Speed: {speed:.1f} mph")
     if air_density is not None:

@@ -91,6 +91,22 @@ def test_missing_scrub_dependency_is_unavailable_in_both_engines(missing: str) -
     assert vector.get("front_scrub_proxy") is None
 
 
+def test_negative_dynamic_pressure_never_becomes_zero_or_valid_index() -> None:
+    raw = [{
+        "SessionTime": 0.0,
+        "dynamic_pressure_pa": -1.0,
+        "dynamic_pressure_psf": -1.0,
+    }]
+    row = normalize_telemetry_rows(raw)[0]
+    vector = frame_to_rows(normalize_telemetry_frame(pl.DataFrame(raw)))[0]
+
+    for item in (row, vector):
+        assert item.get("dynamic_pressure_lap_index") is None
+        assert item.get("dynamic_pressure_index") is None
+        assert item.get("aero_load_index") is None
+        assert item.get("aero_load_index_180mph") is None
+
+
 def _synthetic_row(
     speed_mps: float = 50.0,
     lap_dist_m: float = 500.0,

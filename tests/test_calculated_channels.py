@@ -147,3 +147,55 @@ def test_platform_angles_require_source_backed_motion_ratios() -> None:
     assert supplied.get("front_platform_roll_deg_from_rh") is not None
     assert supplied.get("rear_platform_roll_deg_from_rh") is not None
     assert supplied.get("platform_roll_deg_from_rh") is None
+
+
+def test_research_slip_angle_requires_both_validation_receipts() -> None:
+    source = _raw_row(SteeringWheelAngle=0.08)
+    source.update(
+        {
+            "VelocityZ": 50.0,
+            "VelocityX": 1.0,
+            "YawRate": 0.2,
+            "road_wheel_steer_rad": 0.04,
+            "front_axle_to_cg_m": 1.5,
+            "rear_axle_to_cg_m": 1.5,
+        }
+    )
+    coordinate_only = normalize_telemetry_rows(
+        [{**source, "coordinate_frame_validated": True}]
+    )[0]
+    fully_validated = normalize_telemetry_rows(
+        [
+            {
+                **source,
+                "coordinate_frame_validated": True,
+                "steering_geometry_validated": True,
+            }
+        ]
+    )[0]
+
+    assert coordinate_only.get("front_slip_angle_deg") is None
+    assert fully_validated.get("front_slip_angle_deg") is not None
+    assert fully_validated.get("rear_slip_angle_deg") is not None
+
+
+def test_missing_dynamic_pressure_never_becomes_zero_index() -> None:
+    row = normalize_telemetry_rows([{"SessionTime": 0.0, "Speed": 50.0}])[0]
+
+    assert row.get("dynamic_pressure_pa") is None
+    assert row.get("dynamic_pressure_lap_index") is None
+    assert row.get("dynamic_pressure_index") is None
+    assert row.get("aero_load_index") is None
+    assert row.get("aero_load_index_180mph") is None
+
+
+def test_missing_yaw_cannot_become_zero_geometry_correction() -> None:
+    source = _raw_row(LFspeed=49.0, RFspeed=51.0, LRspeed=49.5, RRspeed=50.5)
+    source.update({"front_track_width_m": 1.6, "rear_track_width_m": 1.6})
+
+    row = normalize_telemetry_rows([source])[0]
+
+    assert row.get("front_wheel_speed_mismatch_raw") is not None
+    assert row.get("rear_wheel_speed_mismatch_raw") is not None
+    assert row.get("front_wheel_speed_mismatch_corrected") is None
+    assert row.get("rear_wheel_speed_mismatch_corrected") is None

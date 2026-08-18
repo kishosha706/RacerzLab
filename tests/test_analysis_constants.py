@@ -70,6 +70,8 @@ def test_apply_motion_ratio_requires_source_backed_ratio() -> None:
     assert apply_motion_ratio(5.0, None) is None
     assert apply_motion_ratio(5.0, 0.0) is None
     assert apply_motion_ratio(5.0, -1.0) is None
+    assert apply_motion_ratio(5.0, float("nan")) is None
+    assert apply_motion_ratio(float("inf"), 1.0) is None
 
 
 def test_apply_motion_ratio_scales() -> None:

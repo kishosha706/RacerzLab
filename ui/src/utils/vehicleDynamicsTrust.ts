@@ -571,7 +571,7 @@ const RESPONSE_METRIC_UNITS = new Map<string, string>([
   ["line_separation_m", "m"],
 ]);
 const RESPONSE_METRIC_CHANNELS = new Map<string, Set<string>>([
-  ["elapsed_time_delta_s", new Set(["session_time", "SessionTime", "lap_dist_pct_100", "lap_dist_pct"])],
+  ["elapsed_time_delta_s", new Set(["session_time", "SessionTime", "lap_dist_pct_100", "lap_dist_pct", "speed_mph", "speed_mps", "Speed"])],
   ["speed_delta_mph", new Set(["speed_mph", "Speed", "speed_mps"])],
   ["throttle_demand_delta_pct", new Set(["Throttle", "throttle_pct", "throttle_01", "throttle"])],
   ["brake_demand_delta_pct", new Set(["Brake", "brake_pct", "brake_01"])],
@@ -580,6 +580,17 @@ const RESPONSE_METRIC_CHANNELS = new Map<string, Set<string>>([
   ["longitudinal_accel_response_delta_mps2", new Set(["LongAccel", "long_accel", "long_accel_mps2"])],
   ["path_delta_m", new Set(["lat", "lon", "Lat", "Lon", "lap_dist_pct_100"])],
   ["line_separation_m", new Set(["lat", "lon", "Lat", "Lon", "lap_dist_pct_100"])],
+]);
+const RESPONSE_METRIC_SEMANTICS = new Map<string, string>([
+  ["elapsed_time_delta_s", "calculated_delta"],
+  ["speed_delta_mph", "measured_delta"],
+  ["throttle_demand_delta_pct", "measured_delta"],
+  ["brake_demand_delta_pct", "measured_delta"],
+  ["steering_wheel_demand_delta_deg", "measured_delta"],
+  ["yaw_rate_response_delta_rad_s", "measured_delta"],
+  ["longitudinal_accel_response_delta_mps2", "measured_delta"],
+  ["path_delta_m", "calculated_delta"],
+  ["line_separation_m", "calculated_delta"],
 ]);
 const UNSAFE_RESPONSE_CHANNELS = new Set([
   "front_slip_angle_deg",
@@ -591,6 +602,12 @@ const UNSAFE_RESPONSE_CHANNELS = new Set([
   "cda_coastdown_proxy_m2",
   "full_throttle_resistance_cda_proxy_m2",
   "platform_roll_deg_from_rh",
+  "dynamic_pressure_pa",
+  "dynamic_pressure_psf",
+  "dynamic_pressure_lap_index",
+  "dynamic_pressure_index",
+  "aero_load_index",
+  "aero_load_index_180mph",
 ]);
 
 function validPhaseResponseMetric(value: unknown): value is PhaseResponseMetric {
@@ -601,7 +618,7 @@ function validPhaseResponseMetric(value: unknown): value is PhaseResponseMetric 
     && /^p354\.metric:[0-9a-f]{24}$/.test(String(value.metric_id))
     && RESPONSE_METRIC_UNITS.get(String(value.quantity)) === value.units
     && finiteNumber(value.value)
-    && ["measured_delta", "calculated_delta"].includes(String(value.semantics))
+    && RESPONSE_METRIC_SEMANTICS.get(String(value.quantity)) === value.semantics
     && uniqueTexts(value.source_channels)
     && value.source_channels.length > 0
     && acceptedChannels !== undefined
@@ -620,6 +637,7 @@ function validVehicleResponseObservation(
     || !lapNumbers(value.source_lap_numbers)
     || value.source_lap_numbers.length === 0
     || !lapNumbers(value.reference_lap_numbers)
+    || value.reference_lap_numbers.length === 0
     || value.source_lap_numbers.some((lap) => (
       value.reference_lap_numbers as number[]
     ).includes(lap))
@@ -644,6 +662,7 @@ function validVehicleResponseObservation(
     || !value.metrics.every(validPhaseResponseMetric)
     || !uniqueTexts(value.source_artifact_ids)
     || value.source_artifact_ids.length === 0
+    || !value.source_artifact_ids.includes(String(value.opportunity_id))
     || !uniqueTexts(value.source_channels)
     || value.source_channels.length === 0
     || value.source_channels.some((channel) => UNSAFE_RESPONSE_CHANNELS.has(channel))
@@ -656,9 +675,15 @@ function validVehicleResponseObservation(
     value.metrics.flatMap((metric) => metric.source_channels),
   )];
   if (!sameTexts(value.source_channels, metricChannels)) return false;
-  return value.evidence_state === "measured"
-    ? value.blocker_reasons.length === 0
-    : value.blocker_reasons.length > 0;
+  const expectedEvidence = {
+    qualified: "measured",
+    blocked: "blocked_by_context",
+    unavailable: "needs_confirmation",
+  }[String(value.context_state)];
+  return value.evidence_state === expectedEvidence
+    && (value.context_state === "qualified"
+      ? value.blocker_reasons.length === 0
+      : value.blocker_reasons.length > 0);
 }
 
 function validVehicleProblemSignature(value: unknown): value is VehicleProblemSignature {
@@ -839,7 +864,8 @@ export function isPerformanceMechanismAssessment(
   const problemSignature = value.problem_signature as VehicleProblemSignature | null;
   const separationRows = value.mechanism_separation as MechanismSeparationRow[];
   const responseExpected = scope.measuredTimeConsequenceAvailable
-    && scope.responseRegime !== null;
+    && scope.responseRegime !== null
+    && scope.opportunityLapNumbers.length >= 2;
   if (responseObservations.length !== (responseExpected ? 1 : 0)
     || (responseObservations.length > 0) !== (problemSignature !== null)
     || responseObservations.some((item) => (
@@ -849,8 +875,16 @@ export function isPerformanceMechanismAssessment(
       || item.lap_pct_start !== scope.opportunityLapPctStart
       || item.lap_pct_end !== scope.opportunityLapPctEnd
       || item.phase !== scope.opportunityPhase
+      || !sameNumbers(item.source_lap_numbers, scope.supportLapNumbers)
+      || !sameNumbers(
+        item.reference_lap_numbers,
+        scope.opportunityLapNumbers.filter((lap) => !scope.supportLapNumbers.includes(lap)),
+      )
     ))) return false;
   const response = responseObservations[0];
+  const elapsedMetric = response?.metrics.filter(
+    (metric) => metric.quantity === "elapsed_time_delta_s",
+  ) ?? [];
   if (problemSignature && (
     response === undefined
     || problemSignature.response_observation_id !== response.observation_id
@@ -858,7 +892,18 @@ export function isPerformanceMechanismAssessment(
     || problemSignature.response_regime !== response.response_regime
     || problemSignature.phase !== response.phase
     || problemSignature.onset_pct !== response.onset_pct
+    || problemSignature.onset_resolution !== response.onset_resolution
+    || problemSignature.driver_demand_state !== response.driver_demand_state
+    || problemSignature.vehicle_response_state !== response.vehicle_response_state
+    || problemSignature.line_state !== response.line_state
+    || problemSignature.time_origin !== scope.timeOriginKind
+    || elapsedMetric.length !== 1
+    || problemSignature.local_time_delta_s !== elapsedMetric[0].value
+    || problemSignature.traffic_dependence !== (scope.trafficBlocked
+      ? "blocked"
+      : response.context_state === "qualified" ? "clear" : "unavailable")
   )) return false;
+  if (scope.trafficBlocked && response?.context_state !== "blocked") return false;
   if (value.traffic_blocked
     && !value.chain.some((item) => item.evidence_state === "blocked_by_context")) return false;
   if (scope.attributionBlocked && (
@@ -886,6 +931,9 @@ export function isPerformanceMechanismAssessment(
     || !sameTexts(value.performance_opportunity_ids, scope.performanceOpportunityIds)
     || !value.chain.every((item) => item.source_artifact_ids.every((id) => evidenceArtifacts.has(id)))
     || !value.focus_artifacts.every((item) => item.source_artifact_ids.every((id) => evidenceArtifacts.has(id)))
+    || !responseObservations.every((item) => (
+      item.source_artifact_ids.every((id) => evidenceArtifacts.has(id))
+    ))
     || !value.candidates.every((item) => (
       item.p32_performance_mechanism_ids
         .every((id) => (value.p32_performance_mechanism_ids as string[]).includes(id))
@@ -940,11 +988,24 @@ export function isPerformanceMechanismAssessment(
       || row.response_observation_id !== response.observation_id
       || row.mechanism_id !== candidates[index]?.mechanism_id
       || row.state !== (candidates[index]?.relevance === "candidate" ? "alive" : "blocked")
+      || !sameTexts(
+        row.required_response_kpi_ids,
+        candidates[index] ? [candidates[index].discriminator_contract_ids[0]] : [],
+      )
       || !sameTexts(row.support_artifact_ids, candidates[index]?.support_artifact_ids ?? [])
       || !sameTexts(row.contradiction_artifact_ids, candidates[index]?.contradiction_artifact_ids ?? [])
       || !sameTexts(row.discriminator_contract_ids, candidates[index]?.discriminator_contract_ids ?? [])
       || !sameTexts(row.component_family_ids, candidates[index]?.component_family_ids ?? [])
+      || (candidates[index]?.relevance === "blocked"
+        && !sameTexts(row.missing_evidence, candidates[index]?.blocker_reasons ?? []))
     ))) return false;
+  if (candidates.some((candidate) => candidate.relevance === "candidate") && (
+    response?.driver_demand_state !== "matched"
+    || response.vehicle_response_state !== "changed"
+    || response.line_state !== "matched"
+    || response.context_state !== "qualified"
+    || scope.trafficBlocked
+  )) return false;
   if (new Set(candidateIds).size !== candidateIds.length
     || focusIds.size !== focusArtifacts.length
     || (candidates.length === 0) !== (focusArtifacts.length === 0)
@@ -1130,6 +1191,37 @@ export async function hasCanonicalPerformanceMechanismAssessmentDigest(
       || !Array.isArray(value.focus_artifacts)
       || !Array.isArray(value.performance_opportunity_ids)
       || value.performance_opportunity_ids.length > 1) return false;
+    if (!Array.isArray(value.response_observations)
+      || !Array.isArray(value.mechanism_separation)) return false;
+    for (const response of value.response_observations) {
+      if (!record(response) || !Array.isArray(response.metrics)) return false;
+      for (const metric of response.metrics) {
+        if (!record(metric) || typeof metric.metric_id !== "string") return false;
+        const metricBody = { ...metric };
+        delete metricBody.metric_id;
+        const expectedMetricId = `p354.metric:${(
+          await canonicalJsonSha256(metricBody, { pythonFloatKeys: P35_PYTHON_FLOAT_KEYS })
+        ).slice(0, 24)}`;
+        if (metric.metric_id !== expectedMetricId) return false;
+      }
+      if (typeof response.observation_id !== "string") return false;
+      const responseBody = { ...response };
+      delete responseBody.observation_id;
+      const expectedResponseId = `p354.response:${(
+        await canonicalJsonSha256(responseBody, { pythonFloatKeys: P35_PYTHON_FLOAT_KEYS })
+      ).slice(0, 24)}`;
+      if (response.observation_id !== expectedResponseId) return false;
+    }
+    if (value.problem_signature !== null) {
+      if (!record(value.problem_signature)
+        || typeof value.problem_signature.signature_id !== "string") return false;
+      const signatureBody = { ...value.problem_signature };
+      delete signatureBody.signature_id;
+      const expectedSignatureId = `p354.signature:${(
+        await canonicalJsonSha256(signatureBody, { pythonFloatKeys: P35_PYTHON_FLOAT_KEYS })
+      ).slice(0, 24)}`;
+      if (value.problem_signature.signature_id !== expectedSignatureId) return false;
+    }
     const opportunityId = value.performance_opportunity_ids[0];
     const supportIds = new Set<string>();
     const contradictionIds = new Set<string>();

@@ -94,6 +94,23 @@ def test_physics_inputs_do_not_invent_defaults() -> None:
     assert inputs.resolve_motion_ratio_rear() is None
 
 
+def test_physics_inputs_reject_nonfinite_and_nonphysical_constants() -> None:
+    inputs = VehiclePhysicsInputs(
+        mass_kg=-1500.0,
+        cg_height_m=math.nan,
+        crr=-0.01,
+        motion_ratio_front=0.0,
+        motion_ratio_rear=math.inf,
+    )
+
+    assert inputs.provided() == set()
+    assert inputs.resolve_mass_kg() is None
+    assert inputs.resolve_cg_height_m() is None
+    assert inputs.resolve_crr() is None
+    assert inputs.resolve_motion_ratio_front() is None
+    assert inputs.resolve_motion_ratio_rear() is None
+
+
 # ── Aero coefficients ─────────────────────────────────────────
 
 def test_air_speed_no_wind() -> None:
@@ -887,30 +904,28 @@ def test_ackermann_scrub_proxy_missing_inputs() -> None:
 
 # ── Camber temp bias ──────────────────────────────────────────
 
-def test_camber_bias_inner_hotter() -> None:
-    """Inner hotter than outer → high_inside."""
+def test_carcass_snapshot_delta_does_not_classify_camber() -> None:
     from racelab_engine.analysis.calculated_channels import _compute_camber_bias
     row: dict = {"lf_carcass_temp_l": 120.0, "lf_carcass_temp_r": 90.0}
     _compute_camber_bias(row)
     assert row.get("lf_camber_temp_bias_c") == -30.0
-    assert row.get("lf_camber_bias_label") == "high_outside"
+    assert row.get("lf_camber_bias_label") is None
 
 
-def test_camber_bias_outer_hotter() -> None:
-    """Outer hotter than inner → high_outside."""
+def test_opposite_carcass_snapshot_delta_remains_descriptive() -> None:
     from racelab_engine.analysis.calculated_channels import _compute_camber_bias
     row: dict = {"lf_carcass_temp_l": 80.0, "lf_carcass_temp_r": 110.0}
     _compute_camber_bias(row)
     assert row.get("lf_camber_temp_bias_c") == 30.0
-    assert row.get("lf_camber_bias_label") == "high_inside"
+    assert row.get("lf_camber_bias_label") is None
 
 
-def test_camber_bias_even() -> None:
-    """Small temp difference → even."""
+def test_small_carcass_snapshot_delta_does_not_become_even_alignment() -> None:
     from racelab_engine.analysis.calculated_channels import _compute_camber_bias
     row: dict = {"lf_carcass_temp_l": 100.0, "lf_carcass_temp_r": 105.0}
     _compute_camber_bias(row)
-    assert row.get("lf_camber_bias_label") == "even"
+    assert row.get("lf_camber_temp_bias_c") == 5.0
+    assert row.get("lf_camber_bias_label") is None
 
 
 def test_camber_bias_missing_temps() -> None:
@@ -945,7 +960,7 @@ def test_new_channels_metadata_exists() -> None:
     for ch in channels:
         assert ch in CHANNEL_METADATA, f"Missing metadata for {ch}"
         desc = CHANNEL_METADATA[ch].get("description", "")
-        assert "ESTIMATE" in desc.upper() or "proxy" in desc.lower(), \
+        assert "ESTIMATE" in desc.upper() or "proxy" in desc.lower() or "REMOVED" in desc.upper(), \
             f"{ch} metadata missing estimate/proxy wording"
 
 

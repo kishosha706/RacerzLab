@@ -4,6 +4,8 @@ Centralizes thresholds and confidence baselines so that the Verdict engine,
 Target Zone Classifier, and any future analysis modules stay in sync.
 """
 
+import math
+
 # ── Speed thresholds (mph) ────────────────────────────────────
 SPEED_NOISE_THRESHOLD = 0.05  # mph — below this is considered noise/no-change
 SPEED_LARGE_CHANGE = 0.5  # mph — above this is a large/significant change
@@ -112,7 +114,8 @@ WCI_WEIGHT_PROFILES: dict[str, dict[str, float]] = {
 # ── Proxy constants ───────────────────────────────────────────
 FORCE_PROXY_WARNING = (
     "Force values are estimates/proxies derived from telemetry, setup spring rates, ride heights, "
-    "shock movement, and dynamic pressure. They are not direct iRacing aerodynamic force channels."
+    "shock movement, source-backed motion ratios, and a ground-speed pressure proxy. They are not "
+    "direct iRacing aerodynamic force channels."
 )
 
 FORCE_PROXY_CHANNELS: set[str] = {
@@ -153,10 +156,6 @@ FORCE_PROXY_CHANNELS: set[str] = {
     "grade_corrected_speed_loss_mph_s",
     "ackermann_scrub_proxy",
     "yaw_error_proxy",
-    "lf_camber_bias_label",
-    "rf_camber_bias_label",
-    "lr_camber_bias_label",
-    "rr_camber_bias_label",
     "damper_energy_proxy",
     "damper_work_proxy",
 }
@@ -166,7 +165,12 @@ def apply_motion_ratio(
     wheel_delta: float, motion_ratio: float | None
 ) -> float | None:
     """Apply a source-backed motion ratio; unknown never becomes 1:1."""
-    if motion_ratio is None or motion_ratio <= 0:
+    if (
+        motion_ratio is None
+        or not math.isfinite(motion_ratio)
+        or motion_ratio <= 0
+        or not math.isfinite(wheel_delta)
+    ):
         return None
     return wheel_delta * motion_ratio
 

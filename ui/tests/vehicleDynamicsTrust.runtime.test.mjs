@@ -139,6 +139,10 @@ const assessment = {
     driver_demand_state: "matched", vehicle_response_state: "changed",
     line_state: "matched", context_state: "qualified", persistence: "phase_local",
     metrics: [{
+      metric_id: `p354.metric:${"4".repeat(24)}`, quantity: "elapsed_time_delta_s",
+      value: 0.1, units: "s", semantics: "calculated_delta",
+      source_channels: ["speed_mph"], force_like: false, setup_authorized: false,
+    }, {
       metric_id: `p354.metric:${"2".repeat(24)}`, quantity: "speed_delta_mph",
       value: -1, units: "mph", semantics: "measured_delta",
       source_channels: ["speed_mph"], force_like: false, setup_authorized: false,
@@ -222,6 +226,38 @@ const assessment = {
   terminal_authority: "p19_only",
 };
 
+const sealP354 = async (value) => {
+  for (const response of value.response_observations) {
+    for (const metric of response.metrics) {
+      const metricBody = structuredClone(metric);
+      delete metricBody.metric_id;
+      metric.metric_id = `p354.metric:${(await canonicalJsonSha256(
+        metricBody,
+        { pythonFloatKeys: new Set(["value"]) },
+      )).slice(0, 24)}`;
+    }
+    const responseBody = structuredClone(response);
+    delete responseBody.observation_id;
+    response.observation_id = `p354.response:${(await canonicalJsonSha256(
+      responseBody,
+      { pythonFloatKeys: new Set(["lap_pct_end", "lap_pct_start", "onset_pct", "value"]) },
+    )).slice(0, 24)}`;
+  }
+  if (value.problem_signature) {
+    value.problem_signature.response_observation_id = value.response_observations[0].observation_id;
+    for (const row of value.mechanism_separation) {
+      row.response_observation_id = value.response_observations[0].observation_id;
+    }
+    const signatureBody = structuredClone(value.problem_signature);
+    delete signatureBody.signature_id;
+    value.problem_signature.signature_id = `p354.signature:${(await canonicalJsonSha256(
+      signatureBody,
+      { pythonFloatKeys: new Set(["local_time_delta_s", "onset_pct"]) },
+    )).slice(0, 24)}`;
+  }
+};
+await sealP354(assessment);
+
 const baseP32Binding = deriveCanonicalP35P32Binding([{
   opportunity_id: sources.time,
   local_delta_s: 0.1,
@@ -274,6 +310,17 @@ canonical.p35_assessment_sha256 = await canonicalPerformanceMechanismAssessmentS
 assert.equal(await hasCanonicalPerformanceMechanismAssessmentDigest(canonical), true);
 canonical.focus_artifacts[0].summary = "Digest drift.";
 assert.equal(await hasCanonicalPerformanceMechanismAssessmentDigest(canonical), false);
+const coordinatedNestedDrift = structuredClone(assessment);
+coordinatedNestedDrift.response_observations[0].metrics[0].value = 9.9;
+const coordinatedNestedBody = structuredClone(coordinatedNestedDrift);
+delete coordinatedNestedBody.p35_assessment_sha256;
+coordinatedNestedDrift.p35_assessment_sha256 =
+  await canonicalPerformanceMechanismAssessmentSha256(coordinatedNestedBody);
+assert.equal(
+  await hasCanonicalPerformanceMechanismAssessmentDigest(coordinatedNestedDrift),
+  false,
+  "a coordinated assessment rehash cannot preserve a stale nested response identity",
+);
 
 const reject = (label, mutate, customScope = scope) => {
   const hostile = structuredClone(assessment);
@@ -343,6 +390,22 @@ reject("setup narration is rejected", (value) => { value.focus_artifacts[0].summ
 reject("exact unavailable physics is rejected", (value) => { value.focus_artifacts[0].summary = "Wheel load is 1200 lb."; });
 reject("traffic needs a blocked chain stage", (value) => { value.traffic_blocked = true; });
 reject("time availability matches the chain", (value) => { value.measured_time_consequence_available = false; });
+reject("response context and evidence state remain atomic", (value) => {
+  value.response_observations[0].context_state = "blocked";
+});
+reject("response source and reference laps remain exact", (value) => {
+  value.response_observations[0].source_lap_numbers = [5];
+  value.response_observations[0].reference_lap_numbers = [4];
+});
+reject("problem signature cannot drift from response demand", (value) => {
+  value.problem_signature.driver_demand_state = "mixed";
+});
+reject("separation KPI must equal the candidate discriminator", (value) => {
+  value.mechanism_separation[0].required_response_kpi_ids = ["observation:foreign"];
+});
+reject("positive candidate requires matched response truth", (value) => {
+  value.response_observations[0].driver_demand_state = "mixed";
+});
 reject("P32 mechanisms remain current", (value) => { value.p32_performance_mechanism_ids = ["mechanism:foreign"]; });
 reject("P32 opportunities remain current", (value) => { value.performance_opportunity_ids = ["opportunity-foreign"]; });
 reject("P35 selects at most one P32 opportunity", (value) => { value.performance_opportunity_ids.push("opportunity-extra"); });
@@ -458,6 +521,7 @@ const buildBrakeAssessment = async (channels) => {
   value.strongest_support_artifact_id = supportArtifactId;
   value.strongest_contradiction_artifact_id = contradictionArtifactId;
   value.next_discriminator_contract_id = discriminatorContract;
+  await sealP354(value);
   const body = structuredClone(value);
   delete body.p35_assessment_sha256;
   value.p35_assessment_sha256 = await canonicalPerformanceMechanismAssessmentSha256(body);
@@ -579,6 +643,13 @@ zeroDeltaAssessment.performance_opportunity_ids = ["opportunity-zero"];
 zeroDeltaAssessment.chain[4].source_artifact_ids = ["opportunity-zero"];
 zeroDeltaAssessment.candidates = [];
 zeroDeltaAssessment.response_observations[0].opportunity_id = "opportunity-zero";
+zeroDeltaAssessment.response_observations[0].source_artifact_ids = [
+  "opportunity-zero",
+  sources.response,
+];
+zeroDeltaAssessment.response_observations[0].metrics.find(
+  (metric) => metric.quantity === "elapsed_time_delta_s",
+).value = 0;
 zeroDeltaAssessment.problem_signature.opportunity_id = "opportunity-zero";
 zeroDeltaAssessment.problem_signature.local_time_delta_s = 0;
 zeroDeltaAssessment.mechanism_separation = [];

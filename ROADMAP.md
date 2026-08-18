@@ -2638,6 +2638,16 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   line. Learning Mode adds a phase-resolved car-state card, native-unit response
   metrics, and an auditable mechanism-separation matrix; unavailable values stay
   absent rather than rendering as zero.
+- [x] Adversarially close coordinated and legacy physics escape paths. Nested
+  metric/response/signature IDs are content-addressed; backend and client require
+  exact source/reference laps, chain provenance, context/evidence state, metric
+  units/semantics, signature truth, and candidate/separation equality. Positive
+  support requires matched driver demand, line, changed vehicle response, clean
+  context, and no traffic. Missing or invalid motion ratios cannot unlock any
+  affected force-like spring/platform/aero proxy; missing yaw cannot become zero
+  geometry correction; nonfinite physics stays unavailable; absolute carcass-
+  temperature labels and severity coloring are removed; and ground-speed
+  pressure values are explicitly non-comparable display proxies, never aero load.
 - [ ] Add continuous-clock producer contracts for brake-to-four-line-pressure/
   deceleration, brake-release-to-yaw, throttle-to-acceleration/yaw, event-aligned
   four-corner platform/damper settling, and qualified stint migration. The current
@@ -2650,21 +2660,25 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
 
 ### P35.4 local verification - 2026-08-17
 
-- The focused 271-test physics/P3/P35 slice passed, including hostile raw-steering,
-  missing-motion-ratio, incomplete-power, fixed-tire-threshold, force-proxy,
-  traffic, driver-change, carried-loss, pit-snapshot, atomic-scope, and authority
-  cases. Whole-repository Ruff and diff integrity passed.
-- The repository collects 2,738 Python tests. Two complete runs reached one
-  unrelated pre-existing P33 10,001-record wall-clock assertion at 145-151 ms
-  against its 100 ms threshold while every functional assertion and all other
-  tests passed; that exact test then passed alone at 32 ms with the same bounded
-  four-query/no-telemetry contract. This slice does not relabel that timing miss
-  as a green monolithic run.
-- TypeScript, all 31 Vitest behavior/unit tests, the executable Crew/P35 client
-  trust guards, and the 2,208-module production build passed. Client validation
-  rejects unknown keys, hash drift, response/signature scope drift, metric/channel
-  mismatch, pit-snapshot smuggling, force-like inputs, candidate/separation drift,
-  and any setup-authority field.
+- The complete repository collected 2,754 Python tests and finished with 2,749
+  passed, five protected skips, and zero failures. The previously timing-sensitive
+  P33 10,001-record gate passed inside the monolithic run. Whole-repository Ruff,
+  changed-file bytecode compilation, and diff integrity passed.
+- Hostile coverage includes raw steering versus road-wheel semantics, missing or
+  invalid motion ratios, incomplete force/power balance, ground-speed aero
+  overclaim, fixed tire thresholds, pit-snapshot classification, missing yaw,
+  nonfinite constants, nested-ID drift, unit/semantic swaps, source/reference lap
+  swaps, foreign chain sources, signature drift, candidate/separation drift,
+  traffic, driver/line changes, carried losses, and setup-authority smuggling.
+- The real persisted Atlanta integration remained measured and traffic-blocked,
+  preserved zero positive mechanism support and zero setup authority, reread no
+  lower telemetry, and passed cold/warm deterministic replay plus coordinated
+  payload attacks under the stricter backend contract.
+- TypeScript, all 31 Vitest behavior/unit tests, both executable Crew/P35 client
+  trust programs, focused frontend contracts, and the 2,208-module production
+  build passed. The build retains the existing large-main-chunk advisory; no
+  warning threshold was weakened and no packaging work was added to this physics
+  milestone.
 
 ## P36 - Prospective Investigation Evidence Campaigns
 

@@ -76,8 +76,6 @@ export const TRACE_WORKBENCH_CHANNELS = [
   "lf_wear_spread", "rf_wear_spread", "lr_wear_spread", "rr_wear_spread",
   "lf_camber_temp_bias_c", "rf_camber_temp_bias_c",
   "lr_camber_temp_bias_c", "rr_camber_temp_bias_c",
-  "lf_camber_bias_label", "rf_camber_bias_label",
-  "lr_camber_bias_label", "rr_camber_bias_label",
 
   // ── Shocks ──
   "lf_shock_defl_in", "rf_shock_defl_in", "lr_shock_defl_in", "rr_shock_defl_in",

@@ -502,7 +502,7 @@ function TargetZoneView({ data: r, friendlyLabel, onOpenDeltaTraces }: { data: C
             {deltaRow("CFS Height", r.platform.cfs_height, "in")}
             {deltaRow("Center Rake FS", r.platform.center_rake_fs, "in")}
             {deltaRow("Side Rake", r.platform.side_rake, "in")}
-            {deltaRow("Dynamic Pressure", r.platform.dynamic_pressure, "psf")}
+            {deltaRow("Ground-Speed Pressure Proxy", r.platform.dynamic_pressure, "psf")}
           </tbody>
         </table>
       )}
@@ -527,7 +527,7 @@ function PlatformView({ platform, onOpenDeltaTraces }: { platform: PlatformCompa
           {deltaRow("Rear Avg RH", platform.rear_avg_rh, "in")}
           {deltaRow("Center Rake FS", platform.center_rake_fs, "in")}
           {deltaRow("Side Rake", platform.side_rake, "in")}
-          {deltaRow("Dynamic Pressure", platform.dynamic_pressure, "psf")}
+          {deltaRow("Ground-Speed Pressure Proxy", platform.dynamic_pressure, "psf")}
           {deltaRow("CFS Risk Score", platform.cfs_risk_score, "score")}
         </tbody>
       </table>
