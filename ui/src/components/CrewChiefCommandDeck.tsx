@@ -447,11 +447,15 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
   const dynamicsCandidateLabel = leadingDynamicsCandidate
     ? humanize(leadingDynamicsCandidate.mechanism_id.replace(/^mechanism:/, ""))
     : null;
+  const dynamicsSignature = workspace.vehicle_dynamics.problem_signature ?? null;
+  const dynamicsSignatureLine = dynamicsSignature
+    ? `${dynamicsSignature.local_time_delta_s >= 0 ? "+" : ""}${dynamicsSignature.local_time_delta_s.toFixed(3)} s ${humanize(dynamicsSignature.phase)} begins at ${dynamicsSignature.onset_pct.toFixed(1)}% lap. Driver ${humanize(dynamicsSignature.driver_demand_state)}; vehicle response ${humanize(dynamicsSignature.vehicle_response_state)}. Contradiction: ${dynamicsSignature.strongest_contradiction}`
+    : null;
   const dynamicsUnavailableReason = workspace.vehicle_dynamics.applicability_blockers[0];
   const dynamicsRaceLine = dynamicsRaceState === "ready"
-    ? `Current evidence supports ${dynamicsCandidateLabel} as a mechanism candidate to inspect.`
+    ? `${dynamicsSignatureLine ? `${dynamicsSignatureLine} ` : ""}Current evidence supports ${dynamicsCandidateLabel} as a mechanism candidate to inspect.`
     : dynamicsRaceState === "blocked"
-      ? `${workspace.vehicle_dynamics.measured_time_consequence_available
+      ? `${dynamicsSignatureLine ? `${dynamicsSignatureLine} ` : ""}${workspace.vehicle_dynamics.measured_time_consequence_available
         ? "Time loss is measured; vehicle mechanism remains unresolved."
         : "Vehicle mechanism remains unresolved."} ${sentenceFragment(dynamicsBlocker)}.`
       : `Vehicle-response evidence is unavailable in this scope${dynamicsUnavailableReason

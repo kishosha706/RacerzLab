@@ -64,6 +64,9 @@ const assessment = (): PerformanceMechanismAssessment => ({
   tire_demand_state_ids: ["tire_demand:combined_front"],
   load_path_ids: ["load_path:steering_to_front_contact"],
   response_regime: "steady_state",
+  response_observations: [],
+  problem_signature: null,
+  mechanism_separation: [],
   candidates: [{
     mechanism_id: mechanismId,
     p32_performance_mechanism_ids: ["mechanism:corner_rotation"],
@@ -470,6 +473,98 @@ describe("VehicleDynamicsBlackboard", () => {
     expect(within(board).getByText("The current iRacing build has not been reviewed.")).toBeTruthy();
     expect(within(board).getAllByText("channels unavailable")).toHaveLength(5);
     expect(within(board).queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("renders the phase-resolved response story and auditable mechanism matrix", () => {
+    const value = assessment();
+    const responseId = `p354.response:${"1".repeat(24)}`;
+    value.response_observations = [{
+      observation_id: responseId,
+      opportunity_id: "opportunity-1",
+      run_id: "run-1",
+      source_lap_numbers: [7],
+      reference_lap_numbers: [8],
+      phase: "center",
+      lap_pct_start: 42.5,
+      lap_pct_end: 51.5,
+      onset_pct: 42.5,
+      onset_resolution: "phase_boundary",
+      response_regime: "steady_state",
+      driver_demand_state: "matched",
+      vehicle_response_state: "changed",
+      line_state: "matched",
+      context_state: "qualified",
+      persistence: "carried_forward",
+      metrics: [{
+        metric_id: `p354.metric:${"2".repeat(24)}`,
+        quantity: "steering_wheel_demand_delta_deg",
+        value: 2.125,
+        units: "deg",
+        semantics: "measured_delta",
+        source_channels: ["SteeringWheelAngle"],
+        force_like: false,
+        setup_authorized: false,
+      }],
+      source_artifact_ids: ["opportunity-1"],
+      source_channels: ["SteeringWheelAngle"],
+      blocker_reasons: [],
+      evidence_state: "measured",
+      authority: "observation_only",
+      component_cause_authorized: false,
+      setup_authorized: false,
+    }];
+    value.problem_signature = {
+      signature_id: `p354.signature:${"3".repeat(24)}`,
+      response_observation_id: responseId,
+      opportunity_id: "opportunity-1",
+      time_origin: "local_generation",
+      local_time_delta_s: 0.128,
+      phase: "center",
+      onset_pct: 42.5,
+      onset_resolution: "phase_boundary",
+      response_regime: "steady_state",
+      driver_demand_state: "matched",
+      vehicle_response_state: "changed",
+      line_state: "matched",
+      speed_dependence: "not_established",
+      stint_dependence: "not_established",
+      traffic_dependence: "clear",
+      surface_dependence: "not_established",
+      front_rear_corner_scope: "unresolved",
+      strongest_contradiction: "RF tire-state development is unavailable.",
+      authority: "observation_only",
+      component_cause_authorized: false,
+      setup_authorized: false,
+    };
+    value.mechanism_separation = [{
+      mechanism_id: mechanismId,
+      response_observation_id: responseId,
+      required_response_kpi_ids: ["response:steering_to_yaw"],
+      support_artifact_ids: [supportId],
+      contradiction_artifact_ids: [contradictionId],
+      missing_evidence: ["RF tire-state development is unavailable."],
+      discriminator_contract_ids: [discriminatorContractId],
+      protected_countereffects: ["Protect entry response."],
+      component_family_ids: ["component_family:front_roll"],
+      state: "alive",
+      authority: "candidate_only",
+      setup_authorized: false,
+    }];
+
+    render(<VehicleDynamicsBlackboard
+      assessment={value}
+      evidenceEntries={[]}
+      p19Next="Repeat the exact center window."
+      onFocusEvidence={vi.fn()}
+    />);
+
+    const board = screen.getByLabelText("Vehicle Dynamics Blackboard, candidate mechanisms only");
+    expect(within(board).getByRole("heading", { name: "Phase-resolved car state" })).toBeTruthy();
+    expect(within(board).getByText("+0.128 s · center")).toBeTruthy();
+    expect(within(board).getByText("Steering-wheel demand")).toBeTruthy();
+    expect(within(board).getByText("+2.125 deg")).toBeTruthy();
+    expect(within(board).getByRole("heading", { name: "Mechanism separation" })).toBeTruthy();
+    expect(within(board).getByText("RF tire-state development is unavailable.")).toBeTruthy();
   });
 
   it("pins the Learning slice through the common narrow-shell range and stacks dense evidence", () => {

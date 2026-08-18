@@ -1030,18 +1030,18 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     # ── platform angles ──
     "platform_pitch_deg_from_rh": {
         "label": "Platform Pitch (from RH)",
-        "description": "ESTIMATE — platform pitch angle derived from front/rear ride height difference. Assumes 1:1 motion ratio unless setup data provides it. Delegates to geometry.compute_pitch_deg().",
-        "formula": "geometry.compute_pitch_deg(front_rh_m, rear_rh_m, wheelbase_m)",
-        "dependencies": ["front_avg_rh_in", "rear_avg_rh_in", "wheelbase_m"],
+        "description": "DISPLAY-ONLY PROXY — platform pitch angle from ride-height differences, source-backed wheelbase, and source-backed front/rear motion ratios. Unavailable when geometry is missing.",
+        "formula": "geometry.compute_pitch_deg(front_rh_m, rear_rh_m, wheelbase_m, front_motion_ratio, rear_motion_ratio)",
+        "dependencies": ["front_avg_rh_in", "rear_avg_rh_in", "wheelbase_m", "motion_ratio_front", "motion_ratio_rear"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
         "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "platform_roll_deg_from_rh": {
         "label": "Platform Roll (from RH)",
-        "description": "ESTIMATE — platform roll angle derived from left/right ride height difference. Assumes 1:1 motion ratio unless setup data provides it. Delegates to geometry.compute_roll_deg().",
-        "formula": "geometry.compute_roll_deg(left_rh_m, right_rh_m, track_width_m)",
-        "dependencies": ["left_avg_rh_in", "right_avg_rh_in", "front_track_width_m"],
+        "description": "REMOVED — one blended whole-car roll angle cannot be derived from mixed front/rear ride heights and one axle motion ratio. Use direct left-right height states or axle-specific source-backed estimates.",
+        "formula": "unavailable",
+        "dependencies": ["left_avg_rh_in", "right_avg_rh_in", "front_track_width_m", "rear_track_width_m", "motion_ratio_front", "motion_ratio_rear"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
         "used_by_analyses": [RIDE_HEIGHT_REVIEW],
@@ -1405,17 +1405,17 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
 
     # ── slip angles ──
     "front_slip_angle_deg": {
-        "label": "Front Slip Angle",
-        "description": "ESTIMATE — kinematic front tire slip angle from steering, yaw rate, and local velocity. Requires axle-to-CG distance from setup constants.",
-        "formula": "tire_dynamics.front_slip_angle_rad(steer, vx, vy, r, a)",
-        "dependencies": ["velocity_z", "velocity_x", "yaw_rate", "steering_rad", "front_axle_to_cg_m"],
+        "label": "Front Slip Angle (research shadow)",
+        "description": "RESEARCH SHADOW — kinematic front tire slip angle requires validated local-frame velocity semantics, source-backed road-wheel steer angle, and axle-to-CG geometry. Raw steering-wheel angle is never accepted.",
+        "formula": "tire_dynamics.front_slip_angle_rad(road_wheel_steer_rad, vx, vy, r, a)",
+        "dependencies": ["velocity_z", "velocity_x", "yaw_rate", "road_wheel_steer_rad", "front_axle_to_cg_m"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
         "used_by_events": ["STEERING_SCRUB"],
         "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "rear_slip_angle_deg": {
-        "label": "Rear Slip Angle",
-        "description": "ESTIMATE — kinematic rear tire slip angle from yaw rate and local velocity. Requires axle-to-CG distance from setup constants.",
+        "label": "Rear Slip Angle (research shadow)",
+        "description": "RESEARCH SHADOW — kinematic rear slip angle requires validated local-frame velocity semantics and axle-to-CG geometry.",
         "formula": "tire_dynamics.rear_slip_angle_rad(vx, vy, r, b)",
         "dependencies": ["velocity_z", "velocity_x", "yaw_rate", "rear_axle_to_cg_m"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
@@ -1423,8 +1423,8 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "used_by_analyses": [LINE_STEERING_REVIEW],
     },
     "slip_angle_balance_deg": {
-        "label": "Slip Angle Balance",
-        "description": "ESTIMATE — difference between front and rear slip angles (front - rear). Positive = understeer bias, negative = oversteer bias.",
+        "label": "Slip Angle Balance (research shadow)",
+        "description": "RESEARCH SHADOW — front-minus-rear kinematic slip estimate. It cannot publish a measured understeer gradient or setup direction.",
         "formula": "tire_dynamics.slip_angle_balance_rad(af, ar)",
         "dependencies": ["front_slip_angle_deg", "rear_slip_angle_deg"],
         "used_by_charts": [TIRES, DRAG_SCRUB],
@@ -1500,7 +1500,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     # ── Ackermann steering ──
     "ackermann_steering_expected_deg": {
         "label": "Ackermann Steering Expected",
-        "description": "ESTIMATE — expected steering angle from Ackermann geometry: atan(wheelbase * curvature). Bicycle model, no steering ratio. Positive = left, negative = right.",
+        "description": "RESEARCH SHADOW PROXY — expected road-wheel steer angle from bicycle geometry. It is not comparable with raw steering-wheel angle.",
         "formula": "atan(wheelbase_m * curvature_1_per_m)",
         "dependencies": ["wheelbase_m", "curvature_1_per_m"],
         "used_by_charts": [],
@@ -1509,9 +1509,9 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
     },
     "ackermann_steering_error_deg": {
         "label": "Ackermann Steering Error",
-        "description": "ESTIMATE — |actual_steering| - |expected_ackermann|. Positive = more steering than geometry predicts (understeer or extra input). Negative = less steering (oversteer or reduced input).",
-        "formula": "abs(steering_deg) - abs(ackermann_steering_expected_deg)",
-        "dependencies": ["steering_deg", "ackermann_steering_expected_deg"],
+        "description": "RESEARCH SHADOW PROXY — source-backed road-wheel steer minus expected bicycle-model steer. Unavailable when steering-rack/wheel conversion is unknown.",
+        "formula": "abs(road_wheel_steer_deg) - abs(ackermann_steering_expected_deg)",
+        "dependencies": ["road_wheel_steer_deg", "ackermann_steering_expected_deg"],
         "used_by_charts": [],
         "used_by_events": [],
         "used_by_analyses": [],
@@ -1531,7 +1531,7 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "label": "Front Platform Roll (from RH)",
         "description": "ESTIMATE — front axle roll angle from LF/RF ride height difference using front track width and front motion ratio. Not a direct chassis attitude measurement.",
         "formula": "compute_roll_deg(lf_rh_m, rf_rh_m, front_track_width_m, front_motion_ratio)",
-        "dependencies": ["lf_ride_height_mm", "rf_ride_height_mm", "front_track_width_m"],
+        "dependencies": ["lf_ride_height_mm", "rf_ride_height_mm", "front_track_width_m", "motion_ratio_front"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
         "used_by_analyses": [RIDE_HEIGHT_REVIEW],
@@ -1540,14 +1540,14 @@ CHANNEL_METADATA: dict[str, ChannelMetadata] = {
         "label": "Rear Platform Roll (from RH)",
         "description": "ESTIMATE — rear axle roll angle from LR/RR ride height difference using rear track width and rear motion ratio. Not a direct chassis attitude measurement.",
         "formula": "compute_roll_deg(lr_rh_m, rr_rh_m, rear_track_width_m, rear_motion_ratio)",
-        "dependencies": ["lr_ride_height_mm", "rr_ride_height_mm", "rear_track_width_m"],
+        "dependencies": ["lr_ride_height_mm", "rr_ride_height_mm", "rear_track_width_m", "motion_ratio_rear"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
         "used_by_events": [],
         "used_by_analyses": [RIDE_HEIGHT_REVIEW],
     },
     "platform_roll_balance_deg": {
         "label": "Platform Roll Balance",
-        "description": "ESTIMATE — front roll minus rear roll. Positive = front rolls more than rear (more front grip or softer front roll stiffness). Negative = rear rolls more.",
+        "description": "DISPLAY-ONLY PROXY — front axle ride-height roll estimate minus rear axle estimate. It does not measure grip, wheel load, or roll stiffness.",
         "formula": "front_platform_roll_deg_from_rh - rear_platform_roll_deg_from_rh",
         "dependencies": ["front_platform_roll_deg_from_rh", "rear_platform_roll_deg_from_rh"],
         "used_by_charts": [PLATFORM_RAKE_RIDE_HEIGHT, AERO_PLATFORM],
@@ -3066,9 +3066,7 @@ def _compute_g_values(item: dict[str, Any]) -> None:
 
 
 def _compute_kinematic_slip_angles(item: dict[str, Any]) -> None:
-    """Estimate front and rear slip angles using local velocity and geometry.
-    Requires local frame velocities (VelocityX/Z) and axle-to-CG distances.
-    """
+    """Research-shadow slip angles with validated geometry inputs only."""
     from racelab_engine.analysis.tire_dynamics import (
         front_slip_angle_rad, rear_slip_angle_rad, slip_angle_balance_rad
     )
@@ -3076,7 +3074,10 @@ def _compute_kinematic_slip_angles(item: dict[str, Any]) -> None:
     vx = _number(item.get("velocity_z")) or _number(item.get("speed_mps"))
     vy = _number(item.get("velocity_x"))
     r = _number(item.get("yaw_rate"))
-    steer = _number(item.get("steering_rad"))
+    # SteeringWheelAngle is driver demand, not road-wheel steer angle.  This
+    # research path activates only when a future source-backed conversion owns
+    # the explicit road-wheel channel.
+    steer = _number(item.get("road_wheel_steer_rad"))
     a = _number(item.get("front_axle_to_cg_m"))
     b = _number(item.get("rear_axle_to_cg_m"))
     
@@ -3098,7 +3099,7 @@ def _compute_platform_angles(item: dict[str, Any]) -> None:
     These are geometric estimates only — not true inertial angles.
 
     Uses geometry.py for SI-first math with motion-ratio hooks.
-    Geometry estimate assumes 1:1 motion ratio until setup data provides it.
+    Angles remain unavailable until source-backed motion ratios are present.
     """
     from racelab_engine.analysis.geometry import compute_pitch_deg, compute_roll_deg, ride_height_mm_to_m
     wb_m = _number(item.get("wheelbase_m"))
@@ -3128,10 +3129,9 @@ def _compute_platform_angles(item: dict[str, Any]) -> None:
         assert fl_mm is not None and fr_mm is not None and rl_mm is not None and rr_mm is not None
         left_m = ride_height_mm_to_m((fl_mm + rl_mm) / 2.0)
         right_m = ride_height_mm_to_m((fr_mm + rr_mm) / 2.0)
-        # Legacy global roll using blended track width
-        roll = compute_roll_deg(left_m, right_m, tw_m, left_motion_ratio=mrf, right_motion_ratio=mrf)
-        if roll is not None:
-            _set_number(item, "platform_roll_deg_from_rh", roll)
+        # A blended whole-car roll angle would combine axle geometry and use a
+        # false single motion ratio. Preserve direct height states instead.
+        _ = left_m, right_m
 
         # Front axle roll (uses front track width + front motion ratio)
         if ftw and ftw > 0:
@@ -3165,7 +3165,7 @@ def _compute_ackermann(item: dict[str, Any]) -> None:
     )
     wb = _number(item.get("wheelbase_m"))
     curv = _number(item.get("curvature_1_per_m"))
-    steer = _number(item.get("steering_deg"))
+    steer = _number(item.get("road_wheel_steer_deg"))
 
     if wb is not None and curv is not None:
         expected, _ = _ase(wb, curv)

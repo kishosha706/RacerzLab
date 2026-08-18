@@ -294,6 +294,7 @@ const vehicleDynamicsBody = {
     summary: reason, blocker_reasons: [reason], authority: "observation_only",
   })),
   tire_demand_state_ids: [], load_path_ids: [], response_regime: null,
+  response_observations: [], problem_signature: null, mechanism_separation: [],
   candidates: [], focus_artifacts: [], strongest_support_artifact_id: null,
   strongest_contradiction_artifact_id: null, next_discriminator_contract_id: null,
   unavailable_quantity_ids: mandatoryUnavailableDynamics, traffic_blocked: false,
@@ -2064,7 +2065,47 @@ opportunityDynamicsBody.p32_performance_mechanism_ids = ["center_rotation"];
 opportunityDynamicsBody.performance_opportunity_ids = ["opportunity-1"];
 opportunityDynamicsBody.measured_time_consequence_available = true;
 opportunityDynamicsBody.response_regime = "steady_state";
+const p354ResponseId = `p354.response:${"1".repeat(24)}`;
+opportunityDynamicsBody.response_observations = [{
+  observation_id: p354ResponseId, opportunity_id: "opportunity-1", run_id: "run-1",
+  source_lap_numbers: [2], reference_lap_numbers: [3], phase: "center",
+  lap_pct_start: 20, lap_pct_end: 30, onset_pct: 20,
+  onset_resolution: "phase_boundary", response_regime: "steady_state",
+  driver_demand_state: "unavailable", vehicle_response_state: "unavailable",
+  line_state: "unavailable", context_state: "qualified", persistence: "phase_local",
+  metrics: [{
+    metric_id: `p354.metric:${"2".repeat(24)}`, quantity: "speed_delta_mph",
+    value: -1, units: "mph", semantics: "measured_delta", source_channels: ["speed_mph"],
+    force_like: false, setup_authorized: false,
+  }],
+  source_artifact_ids: ["opportunity-1"], source_channels: ["speed_mph"],
+  blocker_reasons: [], evidence_state: "measured", authority: "observation_only",
+  component_cause_authorized: false, setup_authorized: false,
+}];
+opportunityDynamicsBody.problem_signature = {
+  signature_id: `p354.signature:${"3".repeat(24)}`,
+  response_observation_id: p354ResponseId, opportunity_id: "opportunity-1",
+  time_origin: "local_generation", local_time_delta_s: 0.1, phase: "center",
+  onset_pct: 20, onset_resolution: "phase_boundary", response_regime: "steady_state",
+  driver_demand_state: "unavailable", vehicle_response_state: "unavailable",
+  line_state: "unavailable", speed_dependence: "not_established",
+  stint_dependence: "not_established", traffic_dependence: "clear",
+  surface_dependence: "not_established", front_rear_corner_scope: "unresolved",
+  strongest_contradiction: "A typed P20 observation is unavailable in this exact scope.",
+  authority: "observation_only", component_cause_authorized: false,
+  setup_authorized: false,
+};
 opportunityDynamicsBody.candidates = blockedCandidates;
+opportunityDynamicsBody.mechanism_separation = blockedCandidates.map((candidate) => ({
+  mechanism_id: candidate.mechanism_id, response_observation_id: p354ResponseId,
+  required_response_kpi_ids: [candidate.discriminator_contract_ids[0]],
+  support_artifact_ids: [], contradiction_artifact_ids: [...candidate.contradiction_artifact_ids],
+  missing_evidence: [...candidate.blocker_reasons],
+  discriminator_contract_ids: [...candidate.discriminator_contract_ids],
+  protected_countereffects: ["Protect stability, tire state, workload, and downstream time."],
+  component_family_ids: [...candidate.component_family_ids], state: "blocked",
+  authority: "candidate_only", setup_authorized: false,
+}));
 opportunityDynamicsBody.focus_artifacts = blockedFocusArtifacts;
 opportunityDynamicsBody.strongest_support_artifact_id = null;
 opportunityDynamicsBody.strongest_contradiction_artifact_id =
@@ -2195,6 +2236,9 @@ emptyDynamicsBody.p32_performance_mechanism_ids = [];
 emptyDynamicsBody.performance_opportunity_ids = [];
 emptyDynamicsBody.measured_time_consequence_available = false;
 emptyDynamicsBody.response_regime = null;
+emptyDynamicsBody.response_observations = [];
+emptyDynamicsBody.problem_signature = null;
+emptyDynamicsBody.mechanism_separation = [];
 emptyDynamicsBody.candidates = [];
 emptyDynamicsBody.focus_artifacts = [];
 emptyDynamicsBody.strongest_support_artifact_id = null;
@@ -2320,6 +2364,11 @@ delete focusedDynamicsBody.p35_assessment_sha256;
 focusedDynamicsBody.candidates[0].support_artifact_ids = [supportFocusId];
 focusedDynamicsBody.candidates[0].blocker_reasons = [];
 focusedDynamicsBody.candidates[0].relevance = "candidate";
+focusedDynamicsBody.mechanism_separation[0].support_artifact_ids = [supportFocusId];
+focusedDynamicsBody.mechanism_separation[0].missing_evidence = [
+  "The candidate still requires its controlled discriminator.",
+];
+focusedDynamicsBody.mechanism_separation[0].state = "alive";
 focusedDynamicsBody.focus_artifacts = [supportFocus, ...focusedDynamicsBody.focus_artifacts];
 for (const focus of focusedDynamicsBody.focus_artifacts.slice(1)) focus.lap_numbers = [2, 3];
 focusedDynamicsBody.chain[2] = {

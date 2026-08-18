@@ -57,6 +57,7 @@ const discriminatorId = `${focusPrefix}${(await canonicalJsonSha256([
   sources.time, mechanismId, discriminatorContractId, "discriminator",
 ])).slice(0, 24)}`;
 const graphSha = "c14af7ad22a752df5710a6e695b50f085fa4d15ecb20b271b3dc6205e3113030";
+const responseObservationId = `p354.response:${"1".repeat(24)}`;
 
 const stage = (kind, sourceArtifactIds, summary, evidenceState = "measured", blockers = []) => ({
   stage: kind,
@@ -130,6 +131,45 @@ const assessment = {
   tire_demand_state_ids: [],
   load_path_ids: [],
   response_regime: "steady_state",
+  response_observations: [{
+    observation_id: responseObservationId, opportunity_id: sources.time,
+    run_id: "run-1", source_lap_numbers: [4], reference_lap_numbers: [5],
+    phase: "straight", lap_pct_start: 20, lap_pct_end: 30, onset_pct: 20,
+    onset_resolution: "phase_boundary", response_regime: "steady_state",
+    driver_demand_state: "matched", vehicle_response_state: "changed",
+    line_state: "matched", context_state: "qualified", persistence: "phase_local",
+    metrics: [{
+      metric_id: `p354.metric:${"2".repeat(24)}`, quantity: "speed_delta_mph",
+      value: -1, units: "mph", semantics: "measured_delta",
+      source_channels: ["speed_mph"], force_like: false, setup_authorized: false,
+    }],
+    source_artifact_ids: [sources.time, sources.response], source_channels: ["speed_mph"],
+    blocker_reasons: [], evidence_state: "measured", authority: "observation_only",
+    component_cause_authorized: false, setup_authorized: false,
+  }],
+  problem_signature: {
+    signature_id: `p354.signature:${"3".repeat(24)}`,
+    response_observation_id: responseObservationId, opportunity_id: sources.time,
+    time_origin: "local_generation", local_time_delta_s: 0.1, phase: "straight",
+    onset_pct: 20, onset_resolution: "phase_boundary", response_regime: "steady_state",
+    driver_demand_state: "matched", vehicle_response_state: "changed",
+    line_state: "matched", speed_dependence: "not_established",
+    stint_dependence: "not_established", traffic_dependence: "clear",
+    surface_dependence: "not_established", front_rear_corner_scope: "unresolved",
+    strongest_contradiction: "The current discriminator remains unobserved.",
+    authority: "observation_only", component_cause_authorized: false,
+    setup_authorized: false,
+  },
+  mechanism_separation: [{
+    mechanism_id: mechanismId, response_observation_id: responseObservationId,
+    required_response_kpi_ids: [discriminatorContractId],
+    support_artifact_ids: [supportId], contradiction_artifact_ids: [contradictionId],
+    missing_evidence: ["The current discriminator remains unobserved."],
+    discriminator_contract_ids: [discriminatorContractId, contradictionContractId],
+    protected_countereffects: ["Protect the following phase response."],
+    component_family_ids: ["final_drive"], state: "alive",
+    authority: "candidate_only", setup_authorized: false,
+  }],
   candidates: [{
     mechanism_id: mechanismId,
     p32_performance_mechanism_ids: ["gearing_headroom"],
@@ -376,6 +416,22 @@ const buildBrakeAssessment = async (channels) => {
     blocker_reasons: [], relevance: "candidate", authority: "candidate_only",
     component_cause_authorized: false, setup_authorized: false,
   }];
+  value.response_observations[0].phase = "brake";
+  value.response_observations[0].response_regime = "transient";
+  value.problem_signature.phase = "brake";
+  value.problem_signature.response_regime = "transient";
+  value.mechanism_separation = [{
+    mechanism_id: brakeTrust.mechanism_id,
+    response_observation_id: value.response_observations[0].observation_id,
+    required_response_kpi_ids: [brakeTrust.discriminator_observation_contract_ids[0]],
+    support_artifact_ids: [supportArtifactId],
+    contradiction_artifact_ids: [contradictionArtifactId],
+    missing_evidence: ["The controlled brake discriminator remains unobserved."],
+    discriminator_contract_ids: [...brakeTrust.discriminator_observation_contract_ids],
+    protected_countereffects: ["Protect entry stability and downstream time."],
+    component_family_ids: [...brakeTrust.component_family_ids],
+    state: "alive", authority: "candidate_only", setup_authorized: false,
+  }];
   value.focus_artifacts = [
     {
       ...value.focus_artifacts[0], artifact_id: supportArtifactId,
@@ -522,6 +578,10 @@ const zeroDeltaAssessment = structuredClone(assessment);
 zeroDeltaAssessment.performance_opportunity_ids = ["opportunity-zero"];
 zeroDeltaAssessment.chain[4].source_artifact_ids = ["opportunity-zero"];
 zeroDeltaAssessment.candidates = [];
+zeroDeltaAssessment.response_observations[0].opportunity_id = "opportunity-zero";
+zeroDeltaAssessment.problem_signature.opportunity_id = "opportunity-zero";
+zeroDeltaAssessment.problem_signature.local_time_delta_s = 0;
+zeroDeltaAssessment.mechanism_separation = [];
 zeroDeltaAssessment.focus_artifacts = [];
 zeroDeltaAssessment.strongest_support_artifact_id = null;
 zeroDeltaAssessment.strongest_contradiction_artifact_id = null;
@@ -639,6 +699,11 @@ const trafficBlockedCandidate = structuredClone(assessment);
 trafficBlockedCandidate.candidates[0].relevance = "blocked";
 trafficBlockedCandidate.candidates[0].blocker_reasons = ["Traffic blocks mechanism attribution."];
 trafficBlockedCandidate.candidates[0].support_artifact_ids = [];
+trafficBlockedCandidate.mechanism_separation[0].support_artifact_ids = [];
+trafficBlockedCandidate.mechanism_separation[0].missing_evidence = [
+  "Traffic blocks mechanism attribution.",
+];
+trafficBlockedCandidate.mechanism_separation[0].state = "blocked";
 trafficBlockedCandidate.focus_artifacts = trafficBlockedCandidate.focus_artifacts.slice(1);
 trafficBlockedCandidate.strongest_support_artifact_id = null;
 assert.equal(

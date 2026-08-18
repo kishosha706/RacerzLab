@@ -2603,6 +2603,69 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
 - Remote status: these local changes are not labeled remotely green until they
   are intentionally committed/pushed and the new exact SHA passes Actions.
 
+## P35.4 - Phase-Resolved Vehicle Response and Setup Diagnosis
+
+- [x] Remove the known unsafe nominal-physics paths from production-capable
+  helpers. Missing CG height, motion ratio, rolling resistance, air density,
+  wind/heading, grade, engine force, and power components now make the dependent
+  quantity unavailable instead of selecting 0.30 m, 1:1, 0.015, sea-level air,
+  ground speed, flat grade, zero loss, or a partial wheel-power sum.
+- [x] Keep steering and platform semantics truthful. `SteeringWheelAngle` remains
+  driver steering-wheel demand and cannot create road-wheel steer, front slip
+  angle, Ackermann error, or understeer-gradient claims. Ride-height angles
+  require source-backed motion ratios; the mixed-axle whole-car roll estimate is
+  removed while direct height states remain available.
+- [x] Stop fixed tire-temperature and slip thresholds from publishing thermal or
+  usage causes. I/M/O, pressure gain, pit-boundary carcass/wear snapshots, tire
+  distance, and slip-like exposure remain descriptive; a cause class now requires
+  future same-car/build/track/age/weather residuals and independent repetition.
+- [x] Add immutable `PhaseResponseMetric`, `VehicleResponseObservation`,
+  `VehicleProblemSignature`, and `MechanismSeparationRow` contracts. One exact
+  P32 phase/window now records measured time, driver-demand deltas, yaw/speed/
+  acceleration/line response, onset at the resolution actually known,
+  transient-versus-steady regime, persistence, source/reference lap identity,
+  context blockers, strongest contradiction, candidate support, missing evidence,
+  discriminator, protected countereffects, and component-family relevance.
+- [x] Wire the response/signature layer through the existing P35 assessment and
+  Crew workspace without adding a raw-telemetry reader or authority path. P20
+  remains the observation owner, P32 owns elapsed time and driver-versus-car
+  separation, and P19 remains the only cause, exact test, setup, Keep/Undo/Retest,
+  and terminal authority. Force-like, nominal-geometry, aero, Ackermann, and
+  slip-angle proxies are rejected from positive P35 mechanism support.
+- [x] Extend the existing Race/Learning presentation rather than add a tab. Race
+  Mode can state measured phase time, phase-boundary onset, driver-demand state,
+  vehicle-response state, leading candidate, and contradiction in one compact
+  line. Learning Mode adds a phase-resolved car-state card, native-unit response
+  metrics, and an auditable mechanism-separation matrix; unavailable values stay
+  absent rather than rendering as zero.
+- [ ] Add continuous-clock producer contracts for brake-to-four-line-pressure/
+  deceleration, brake-release-to-yaw, throttle-to-acceleration/yaw, event-aligned
+  four-corner platform/damper settling, and qualified stint migration. The current
+  slice projects only metrics already owned by typed P20/P32 evidence and does not
+  fabricate missing delay, gain, overshoot, settling, noise-floor, or repetition
+  values.
+- [ ] Promote additional ARB, differential-preload, tire-pressure, damper-row,
+  and alignment controls only after those measurement contracts earn exact
+  response evidence. P35.4 adds no new setup direction or adjacent legal value.
+
+### P35.4 local verification - 2026-08-17
+
+- The focused 271-test physics/P3/P35 slice passed, including hostile raw-steering,
+  missing-motion-ratio, incomplete-power, fixed-tire-threshold, force-proxy,
+  traffic, driver-change, carried-loss, pit-snapshot, atomic-scope, and authority
+  cases. Whole-repository Ruff and diff integrity passed.
+- The repository collects 2,738 Python tests. Two complete runs reached one
+  unrelated pre-existing P33 10,001-record wall-clock assertion at 145-151 ms
+  against its 100 ms threshold while every functional assertion and all other
+  tests passed; that exact test then passed alone at 32 ms with the same bounded
+  four-query/no-telemetry contract. This slice does not relabel that timing miss
+  as a green monolithic run.
+- TypeScript, all 31 Vitest behavior/unit tests, the executable Crew/P35 client
+  trust guards, and the 2,208-module production build passed. Client validation
+  rejects unknown keys, hash drift, response/signature scope drift, metric/channel
+  mismatch, pit-snapshot smuggling, force-like inputs, candidate/separation drift,
+  and any setup-authority field.
+
 ## P36 - Prospective Investigation Evidence Campaigns
 
 - [ ] Run the preregistered prospective campaigns needed to test whether learned

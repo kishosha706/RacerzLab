@@ -86,19 +86,19 @@ def test_physics_inputs_provided() -> None:
     assert "cg_height_m" not in inputs.provided()
 
 
-def test_physics_inputs_defaults() -> None:
+def test_physics_inputs_do_not_invent_defaults() -> None:
     inputs = VehiclePhysicsInputs()
-    assert inputs.resolve_cg_height_m() == 0.30
-    assert inputs.resolve_crr() == 0.015
-    assert inputs.resolve_motion_ratio_front() == 1.0
-    assert inputs.resolve_motion_ratio_rear() == 1.0
+    assert inputs.resolve_cg_height_m() is None
+    assert inputs.resolve_crr() is None
+    assert inputs.resolve_motion_ratio_front() is None
+    assert inputs.resolve_motion_ratio_rear() is None
 
 
 # ── Aero coefficients ─────────────────────────────────────────
 
 def test_air_speed_no_wind() -> None:
     speed, conf = air_speed_mps(50.0)
-    assert speed == 50.0
+    assert speed is None
     assert conf.tier == "low"
 
 
@@ -135,7 +135,7 @@ def test_dynamic_pressure_known() -> None:
 
 def test_dynamic_pressure_missing_density() -> None:
     q, conf = dynamic_pressure_pa(None, 50.0)
-    assert q is not None
+    assert q is None
     assert conf.tier == "low"
 
 
@@ -155,7 +155,7 @@ def test_rolling_resistance_known() -> None:
 
 def test_rolling_resistance_missing_crr() -> None:
     frr, conf = rolling_resistance_force_n(1500.0, None)
-    assert frr is not None  # defaults to 0.015
+    assert frr is None
     assert conf.tier == "low"
 
 
@@ -196,18 +196,20 @@ def test_motion_ratio_corner_front() -> None:
     assert inputs.resolve_motion_ratio_corner("rr") == 0.6
 
 
-def test_motion_ratio_corner_default() -> None:
+def test_motion_ratio_corner_unknown_stays_unavailable() -> None:
     from racelab_engine.analysis.physics_inputs import VehiclePhysicsInputs
     inputs = VehiclePhysicsInputs()
-    assert inputs.resolve_motion_ratio_corner("lf") == 1.0
-    assert inputs.resolve_motion_ratio_corner("unknown") == 1.0
+    assert inputs.resolve_motion_ratio_corner("lf") is None
+    assert inputs.resolve_motion_ratio_corner("unknown") is None
 
 
 def test_cda_coastdown_known() -> None:
     # m=1500, ax=-0.5 m/s² (coasting), q=1000 Pa, crr=0.015
     # F_drag = 1500*0.5 - 1500*9.81*0.015 = 750 - 220.7 = 529.3
     # CdA = 529.3 / 1000 = 0.529
-    cda, conf = cda_coastdown_proxy_m2(1500.0, -0.5, 1000.0, crr=0.015)
+    cda, conf = cda_coastdown_proxy_m2(
+        1500.0, -0.5, 1000.0, crr=0.015, grade_rad=0.0
+    )
     assert cda is not None
     assert abs(cda - 0.529) < 0.01
     assert conf.tier == "high"
@@ -438,7 +440,12 @@ def test_drag_power() -> None:
 
 
 def test_wheel_power_proxy() -> None:
-    total, conf = wheel_power_proxy_w(accel_power_w=225000.0, drag_power_w=25000.0)
+    total, conf = wheel_power_proxy_w(
+        accel_power_w=225000.0,
+        drag_power_w=25000.0,
+        rolling_power_w=0.0,
+        grade_power_w=0.0,
+    )
     assert total is not None
     assert abs(total - 250000.0) < 1.0
 

@@ -66,10 +66,10 @@ def test_wci_profiles_contain_expected_types() -> None:
     assert set(WCI_WEIGHT_PROFILES.keys()) == expected
 
 
-def test_apply_motion_ratio_defaults_to_one() -> None:
-    assert apply_motion_ratio(5.0, None) == 5.0
-    assert apply_motion_ratio(5.0, 0.0) == 5.0
-    assert apply_motion_ratio(5.0, -1.0) == 5.0
+def test_apply_motion_ratio_requires_source_backed_ratio() -> None:
+    assert apply_motion_ratio(5.0, None) is None
+    assert apply_motion_ratio(5.0, 0.0) is None
+    assert apply_motion_ratio(5.0, -1.0) is None
 
 
 def test_apply_motion_ratio_scales() -> None:

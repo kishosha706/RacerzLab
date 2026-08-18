@@ -87,12 +87,12 @@ def test_aero_coefficients_dynamic_pressure_and_air_speed_confidence() -> None:
     q, q_conf = coeff_dynamic_pressure_pa(None, 50.0)
     index, index_conf = aero_load_index(q)
 
-    assert ground_speed == pytest.approx(50.0)
+    assert ground_speed is None
     assert ground_conf.missing_inputs
-    assert q is not None
+    assert q is None
     assert q_conf.missing_inputs == ["air_density_kg_m3"]
-    assert index is not None
-    assert index_conf.tier == "high"
+    assert index is None
+    assert index_conf.missing_inputs
 
 
 def test_cda_proxies_return_unavailable_for_invalid_or_non_drag_conditions() -> None:
@@ -102,4 +102,4 @@ def test_cda_proxies_return_unavailable_for_invalid_or_non_drag_conditions() -> 
     assert coastdown is None
     assert "q_air_pa" in coast_conf.missing_inputs
     assert full_throttle is None
-    assert any("non-positive" in note for note in full_conf.assumptions)
+    assert "engine_force_n" in full_conf.missing_inputs

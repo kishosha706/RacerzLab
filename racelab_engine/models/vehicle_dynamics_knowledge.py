@@ -1202,6 +1202,202 @@ class VehicleDynamicsFocusArtifact(VehicleDynamicsModel):
         return self
 
 
+_PHASE_RESPONSE_CHANNELS = {
+    "elapsed_time_delta_s": frozenset(
+        {"session_time", "SessionTime", "lap_dist_pct_100", "lap_dist_pct"}
+    ),
+    "speed_delta_mph": frozenset({"speed_mph", "Speed", "speed_mps"}),
+    "throttle_demand_delta_pct": frozenset(
+        {"Throttle", "throttle_pct", "throttle_01", "throttle"}
+    ),
+    "brake_demand_delta_pct": frozenset({"Brake", "brake_pct", "brake_01"}),
+    "steering_wheel_demand_delta_deg": frozenset(
+        {"SteeringWheelAngle", "steering_deg", "steering_rad"}
+    ),
+    "yaw_rate_response_delta_rad_s": frozenset({"YawRate", "yaw_rate"}),
+    "longitudinal_accel_response_delta_mps2": frozenset(
+        {"LongAccel", "long_accel", "long_accel_mps2"}
+    ),
+    "path_delta_m": frozenset(
+        {"lat", "lon", "Lat", "Lon", "lap_dist_pct_100"}
+    ),
+    "line_separation_m": frozenset(
+        {"lat", "lon", "Lat", "Lon", "lap_dist_pct_100"}
+    ),
+}
+
+
+class PhaseResponseMetric(VehicleDynamicsModel):
+    """One producer-owned delta in an exact physical phase.
+
+    Metrics retain their native meaning. Steering is explicitly steering-wheel
+    demand, platform values remain relative, and no force-like proxy is allowed.
+    """
+
+    metric_id: str = Field(pattern=_ID_PATTERN)
+    quantity: Literal[
+        "elapsed_time_delta_s",
+        "speed_delta_mph",
+        "throttle_demand_delta_pct",
+        "brake_demand_delta_pct",
+        "steering_wheel_demand_delta_deg",
+        "yaw_rate_response_delta_rad_s",
+        "longitudinal_accel_response_delta_mps2",
+        "path_delta_m",
+        "line_separation_m",
+    ]
+    value: float = Field(allow_inf_nan=False)
+    units: Literal["s", "mph", "%", "deg", "rad/s", "m/s^2", "m"]
+    semantics: Literal["measured_delta", "calculated_delta"]
+    source_channels: tuple[str, ...] = Field(min_length=1)
+    force_like: Literal[False] = False
+    setup_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def metric_provenance_matches_quantity(self) -> PhaseResponseMetric:
+        if len(self.source_channels) != len(set(self.source_channels)):
+            raise ValueError("phase-response metric channels must be unique")
+        if not set(self.source_channels) <= _PHASE_RESPONSE_CHANNELS[self.quantity]:
+            raise ValueError(
+                "phase-response metric channels must match the measured quantity"
+            )
+        return self
+
+
+class VehicleResponseObservation(VehicleDynamicsModel):
+    """Immutable demand-to-response truth for one phase-resolved comparison."""
+
+    observation_id: str = Field(pattern=r"^p354\.response:[0-9a-f]{24}$")
+    opportunity_id: str = Field(pattern=_ID_PATTERN)
+    run_id: str = Field(min_length=1)
+    source_lap_numbers: tuple[int, ...] = Field(min_length=1)
+    reference_lap_numbers: tuple[int, ...] = ()
+    phase: str = Field(min_length=1)
+    lap_pct_start: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
+    lap_pct_end: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
+    onset_pct: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
+    onset_resolution: Literal["phase_boundary"] = "phase_boundary"
+    response_regime: DynamicResponseRegime
+    driver_demand_state: Literal["matched", "changed", "mixed", "unavailable"]
+    vehicle_response_state: Literal["changed", "not_established", "unavailable"]
+    line_state: Literal["matched", "changed", "unavailable"]
+    context_state: Literal["qualified", "blocked", "unavailable"]
+    persistence: Literal["phase_local", "carried_forward", "recovered", "unavailable"]
+    metrics: tuple[PhaseResponseMetric, ...] = Field(min_length=1)
+    source_artifact_ids: tuple[str, ...] = Field(min_length=1)
+    source_channels: tuple[str, ...] = Field(min_length=1)
+    blocker_reasons: tuple[str, ...] = ()
+    evidence_state: Literal[
+        EvidenceState.MEASURED,
+        EvidenceState.BLOCKED_BY_CONTEXT,
+        EvidenceState.NEEDS_CONFIRMATION,
+    ]
+    authority: Literal["observation_only"] = "observation_only"
+    component_cause_authorized: Literal[False] = False
+    setup_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def response_truth_is_exact_and_noncausal(self) -> VehicleResponseObservation:
+        if self.lap_pct_end < self.lap_pct_start:
+            raise ValueError("phase-response physical window is reversed")
+        if not self.lap_pct_start <= self.onset_pct <= self.lap_pct_end:
+            raise ValueError("phase-response onset must stay inside its physical window")
+        for values in (
+            self.source_lap_numbers,
+            self.reference_lap_numbers,
+            self.source_artifact_ids,
+            self.source_channels,
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError("phase-response provenance must be unique")
+        if set(self.source_lap_numbers) & set(self.reference_lap_numbers):
+            raise ValueError("source and reference response laps must be independent identities")
+        metric_ids = tuple(item.metric_id for item in self.metrics)
+        if len(metric_ids) != len(set(metric_ids)):
+            raise ValueError("phase-response metric identities must be unique")
+        unsafe = {
+            "front_slip_angle_deg",
+            "rear_slip_angle_deg",
+            "slip_angle_balance_deg",
+            "ackermann_steering_error_deg",
+            "ackermann_scrub_proxy",
+            "wheel_power_proxy_w",
+            "cda_coastdown_proxy_m2",
+            "full_throttle_resistance_cda_proxy_m2",
+            "platform_roll_deg_from_rh",
+        }
+        if unsafe.intersection(self.source_channels):
+            raise ValueError("research/display-only physics cannot support a phase response")
+        positive = self.evidence_state is EvidenceState.MEASURED
+        if positive and self.blocker_reasons:
+            raise ValueError("measured phase response cannot carry blockers")
+        if not positive and not self.blocker_reasons:
+            raise ValueError("blocked phase response requires explicit blockers")
+        return self
+
+
+class VehicleProblemSignature(VehicleDynamicsModel):
+    """Physical problem statement before mechanism or component relevance."""
+
+    signature_id: str = Field(pattern=r"^p354\.signature:[0-9a-f]{24}$")
+    response_observation_id: str = Field(pattern=r"^p354\.response:[0-9a-f]{24}$")
+    opportunity_id: str = Field(pattern=_ID_PATTERN)
+    time_origin: TimeOriginKind
+    local_time_delta_s: float = Field(allow_inf_nan=False)
+    phase: str = Field(min_length=1)
+    onset_pct: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
+    onset_resolution: Literal["phase_boundary"] = "phase_boundary"
+    response_regime: DynamicResponseRegime
+    driver_demand_state: Literal["matched", "changed", "mixed", "unavailable"]
+    vehicle_response_state: Literal["changed", "not_established", "unavailable"]
+    line_state: Literal["matched", "changed", "unavailable"]
+    speed_dependence: Literal["not_established"] = "not_established"
+    stint_dependence: Literal["not_established"] = "not_established"
+    traffic_dependence: Literal["blocked", "clear", "unavailable"]
+    surface_dependence: Literal["not_established"] = "not_established"
+    front_rear_corner_scope: Literal["unresolved"] = "unresolved"
+    strongest_contradiction: str = Field(min_length=1)
+    authority: Literal["observation_only"] = "observation_only"
+    component_cause_authorized: Literal[False] = False
+    setup_authorized: Literal[False] = False
+
+
+class MechanismSeparationRow(VehicleDynamicsModel):
+    """Auditable support/contradiction/discriminator row for one mechanism."""
+
+    mechanism_id: str = Field(pattern=_ID_PATTERN)
+    response_observation_id: str = Field(pattern=r"^p354\.response:[0-9a-f]{24}$")
+    required_response_kpi_ids: tuple[str, ...] = Field(min_length=1)
+    support_artifact_ids: tuple[str, ...] = ()
+    contradiction_artifact_ids: tuple[str, ...] = Field(min_length=1)
+    missing_evidence: tuple[str, ...] = Field(min_length=1)
+    discriminator_contract_ids: tuple[str, ...] = Field(min_length=1)
+    protected_countereffects: tuple[str, ...] = Field(min_length=1)
+    component_family_ids: tuple[str, ...] = Field(min_length=1)
+    state: Literal["alive", "weakened", "blocked"]
+    authority: Literal["candidate_only"] = "candidate_only"
+    setup_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def separation_is_auditable(self) -> MechanismSeparationRow:
+        for values in (
+            self.required_response_kpi_ids,
+            self.support_artifact_ids,
+            self.contradiction_artifact_ids,
+            self.missing_evidence,
+            self.discriminator_contract_ids,
+            self.protected_countereffects,
+            self.component_family_ids,
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError("mechanism-separation values must be unique")
+        if self.state == "alive" and not self.support_artifact_ids:
+            raise ValueError("alive mechanisms require typed support")
+        if self.state != "alive" and self.support_artifact_ids:
+            raise ValueError("weakened/blocked mechanisms cannot carry positive support")
+        return self
+
+
 class PerformanceMechanismAssessment(VehicleDynamicsModel):
     schema_version: Literal["p35.performance-mechanism-assessment.v1"] = (
         "p35.performance-mechanism-assessment.v1"
@@ -1232,6 +1428,11 @@ class PerformanceMechanismAssessment(VehicleDynamicsModel):
     tire_demand_state_ids: tuple[str, ...] = ()
     load_path_ids: tuple[str, ...] = ()
     response_regime: DynamicResponseRegime | None = None
+    response_observations: tuple[VehicleResponseObservation, ...] = Field(
+        default=(), max_length=1
+    )
+    problem_signature: VehicleProblemSignature | None = None
+    mechanism_separation: tuple[MechanismSeparationRow, ...] = ()
     candidates: tuple[PerformanceMechanismCandidate, ...] = ()
     focus_artifacts: tuple[VehicleDynamicsFocusArtifact, ...] = ()
     strongest_support_artifact_id: str | None = Field(default=None, pattern=_ID_PATTERN)
@@ -1293,6 +1494,39 @@ class PerformanceMechanismAssessment(VehicleDynamicsModel):
             )
         if self.candidates and len(self.performance_opportunity_ids) != 1:
             raise ValueError("P35 candidates require one selected P32 opportunity")
+        if self.response_observations and not (
+            self.performance_opportunity_ids and self.response_regime is not None
+        ):
+            raise ValueError(
+                "phase response requires measured time and a reviewed response regime"
+            )
+        if bool(self.problem_signature) != bool(self.response_observations):
+            raise ValueError("problem signature must bind the phase response")
+        if self.response_observations:
+            response = self.response_observations[0]
+            if (
+                response.run_id != self.run_id
+                or response.opportunity_id != self.performance_opportunity_ids[0]
+                or self.problem_signature is None
+                or self.problem_signature.response_observation_id != response.observation_id
+                or self.problem_signature.opportunity_id != response.opportunity_id
+            ):
+                raise ValueError("P35.4 response/signature scope is not atomic")
+        if self.mechanism_separation and len(self.mechanism_separation) != len(
+            self.candidates
+        ):
+            raise ValueError("every mechanism candidate requires one separation row")
+        if self.mechanism_separation and tuple(
+            item.mechanism_id for item in self.mechanism_separation
+        ) != tuple(
+            item.mechanism_id for item in self.candidates
+        ):
+            raise ValueError("mechanism separation order must match current candidates")
+        if self.response_observations and any(
+            item.response_observation_id != self.response_observations[0].observation_id
+            for item in self.mechanism_separation
+        ):
+            raise ValueError("mechanism separation must bind the current response observation")
         focus_ids = {item.artifact_id for item in self.focus_artifacts}
         focus_by_id = {item.artifact_id: item for item in self.focus_artifacts}
         for artifact_id in (

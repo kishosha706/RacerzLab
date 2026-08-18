@@ -162,11 +162,12 @@ FORCE_PROXY_CHANNELS: set[str] = {
 }
 
 # ── Motion ratio helper ───────────────────────────────────────
-def apply_motion_ratio(wheel_delta: float, motion_ratio: float | None) -> float:
-    """Apply motion ratio to convert wheel delta to spring delta.
-    Defaults to 1:1 if motion_ratio is unavailable."""
+def apply_motion_ratio(
+    wheel_delta: float, motion_ratio: float | None
+) -> float | None:
+    """Apply a source-backed motion ratio; unknown never becomes 1:1."""
     if motion_ratio is None or motion_ratio <= 0:
-        return wheel_delta
+        return None
     return wheel_delta * motion_ratio
 
 

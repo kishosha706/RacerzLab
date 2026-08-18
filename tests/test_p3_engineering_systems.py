@@ -263,7 +263,7 @@ def test_tire_pressure_pattern_remains_observational_with_snapshot_only_history(
     )
 
     assert repeated.gate.eligible is True
-    assert all("pressure_driven_heating" in corner.cause_classes for corner in repeated.corners)
+    assert all(corner.cause_classes == [] for corner in repeated.corners)
     assert all(corner.carcass_update_semantic == "pit_snapshot" for corner in repeated.corners)
     assert all(corner.wear_update_semantic == "pit_snapshot" for corner in repeated.corners)
     assert all("recommendation" not in item.model_dump() for item in repeated.conclusions)
@@ -274,6 +274,10 @@ def test_tire_pressure_pattern_remains_observational_with_snapshot_only_history(
     )
     assert all(
         any("pit-boundary snapshots" in evidence for evidence in item.contradicting_evidence)
+        for item in repeated.conclusions
+    )
+    assert all(
+        any("empirical residual" in evidence for evidence in item.contradicting_evidence)
         for item in repeated.conclusions
     )
 

@@ -581,32 +581,32 @@ def wheel_power_proxy_w(
     rolling_power_w: float | None = None,
     grade_power_w: float | None = None,
 ) -> tuple[float | None, EstimateConfidence]:
-    """Wheel power = accel + drag + rolling + grade.
+    """Wheel-power proxy from a complete four-component energy balance.
 
-    Missing components are treated as zero (lower confidence).
+    A partial sum is not wheel power. If any component is unknown the result is
+    unavailable; callers may expose an individual measured component instead.
     """
     accel_power_w = _finite(accel_power_w)
     drag_power_w = _finite(drag_power_w)
     rolling_power_w = _finite(rolling_power_w)
     grade_power_w = _finite(grade_power_w)
-    components = [p for p in [accel_power_w, drag_power_w, rolling_power_w, grade_power_w] if p is not None]
-    if not components:
+    components = [accel_power_w, drag_power_w, rolling_power_w, grade_power_w]
+    if any(component is None for component in components):
+        missing = [
+            name
+            for name, value in zip(
+                ("accel_power_w", "drag_power_w", "rolling_power_w", "grade_power_w"),
+                components,
+            )
+            if value is None
+        ]
         return None, confidence_from_missing(
-            ["accel_power_w", "drag_power_w", "rolling_power_w", "grade_power_w"],
+            missing,
             set(),
-            ["No power components available."],
+            ["Wheel power is unavailable because the force balance is incomplete."],
         )
-    total = sum(components)
-    missing = []
-    if accel_power_w is None:
-        missing.append("accel_power_w")
-    if drag_power_w is None:
-        missing.append("drag_power_w")
-    if rolling_power_w is None:
-        missing.append("rolling_power_w")
-    if grade_power_w is None:
-        missing.append("grade_power_w")
+    total = sum(component for component in components if component is not None)
     return total, confidence_from_missing(
-        missing, set(),
+        [], set(),
         ["Wheel power proxy. ESTIMATE."],
     )

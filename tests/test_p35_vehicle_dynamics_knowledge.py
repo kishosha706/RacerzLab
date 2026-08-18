@@ -15,6 +15,7 @@ from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.performance_intelligence import TimeOriginKind
 from racelab_engine.models.vehicle_dynamics_knowledge import (
     DynamicsChainStageKind,
+    PhaseResponseMetric,
     PerformanceMechanismAssessment,
     QuantitySemantics,
     TireDemandLevel,
@@ -26,6 +27,7 @@ from racelab_engine.models.vehicle_dynamics_knowledge import (
     VehicleDynamicsNodeKind,
     VehicleDynamicsPhase,
     VehicleDynamicsRuntimeTrustManifest,
+    VehicleResponseObservation,
     build_performance_mechanism_assessment,
     build_vehicle_dynamics_knowledge_graph,
     performance_mechanism_assessment_hash,
@@ -1001,4 +1003,45 @@ def test_all_fourteen_inspection_tools_are_typed_and_covered() -> None:
         assert all(
             graph.mechanism(mechanism_id).inspection_tool_id is contract.inspection_tool_id
             for mechanism_id in direct
+        )
+
+
+def test_phase_response_rejects_force_like_and_snapshot_channel_smuggling() -> None:
+    metric = PhaseResponseMetric(
+        metric_id=f"p354.metric:{'1' * 24}",
+        quantity="yaw_rate_response_delta_rad_s",
+        value=-0.02,
+        units="rad/s",
+        semantics="measured_delta",
+        source_channels=("YawRate",),
+    )
+    with pytest.raises(ValidationError, match="research/display-only physics"):
+        VehicleResponseObservation(
+            observation_id=f"p354.response:{'2' * 24}",
+            opportunity_id="p32o:test",
+            run_id="run-1",
+            source_lap_numbers=(4,),
+            reference_lap_numbers=(5,),
+            phase="center",
+            lap_pct_start=20.0,
+            lap_pct_end=30.0,
+            onset_pct=20.0,
+            response_regime="steady_state",
+            driver_demand_state="matched",
+            vehicle_response_state="changed",
+            line_state="matched",
+            context_state="qualified",
+            persistence="phase_local",
+            metrics=(metric,),
+            source_artifact_ids=("p32:chain",),
+            source_channels=("YawRate", "front_slip_angle_deg"),
+            evidence_state="measured",
+        )
+
+    with pytest.raises(ValidationError, match="match the measured quantity"):
+        PhaseResponseMetric.model_validate(
+            {
+                **metric.model_dump(mode="json"),
+                "source_channels": ["rf_carcass_temp_m"],
+            }
         )

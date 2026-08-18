@@ -68,6 +68,92 @@ export type VehicleDynamicsFocusArtifact = {
   authority: "observation_only";
 };
 
+export type PhaseResponseMetric = {
+  metric_id: string;
+  quantity:
+    | "elapsed_time_delta_s"
+    | "speed_delta_mph"
+    | "throttle_demand_delta_pct"
+    | "brake_demand_delta_pct"
+    | "steering_wheel_demand_delta_deg"
+    | "yaw_rate_response_delta_rad_s"
+    | "longitudinal_accel_response_delta_mps2"
+    | "path_delta_m"
+    | "line_separation_m";
+  value: number;
+  units: "s" | "mph" | "%" | "deg" | "rad/s" | "m/s^2" | "m";
+  semantics: "measured_delta" | "calculated_delta";
+  source_channels: string[];
+  force_like: false;
+  setup_authorized: false;
+};
+
+export type VehicleResponseObservation = {
+  observation_id: string;
+  opportunity_id: string;
+  run_id: string;
+  source_lap_numbers: number[];
+  reference_lap_numbers: number[];
+  phase: string;
+  lap_pct_start: number;
+  lap_pct_end: number;
+  onset_pct: number;
+  onset_resolution: "phase_boundary";
+  response_regime: VehicleDynamicsResponseRegime;
+  driver_demand_state: "matched" | "changed" | "mixed" | "unavailable";
+  vehicle_response_state: "changed" | "not_established" | "unavailable";
+  line_state: "matched" | "changed" | "unavailable";
+  context_state: "qualified" | "blocked" | "unavailable";
+  persistence: "phase_local" | "carried_forward" | "recovered" | "unavailable";
+  metrics: PhaseResponseMetric[];
+  source_artifact_ids: string[];
+  source_channels: string[];
+  blocker_reasons: string[];
+  evidence_state: "measured" | "blocked_by_context" | "needs_confirmation";
+  authority: "observation_only";
+  component_cause_authorized: false;
+  setup_authorized: false;
+};
+
+export type VehicleProblemSignature = {
+  signature_id: string;
+  response_observation_id: string;
+  opportunity_id: string;
+  time_origin: "local_generation" | "carried_in" | "amplified" | "recovered" | "surrendered" | "unavailable";
+  local_time_delta_s: number;
+  phase: string;
+  onset_pct: number;
+  onset_resolution: "phase_boundary";
+  response_regime: VehicleDynamicsResponseRegime;
+  driver_demand_state: "matched" | "changed" | "mixed" | "unavailable";
+  vehicle_response_state: "changed" | "not_established" | "unavailable";
+  line_state: "matched" | "changed" | "unavailable";
+  speed_dependence: "not_established";
+  stint_dependence: "not_established";
+  traffic_dependence: "blocked" | "clear" | "unavailable";
+  surface_dependence: "not_established";
+  front_rear_corner_scope: "unresolved";
+  strongest_contradiction: string;
+  authority: "observation_only";
+  component_cause_authorized: false;
+  setup_authorized: false;
+};
+
+export type MechanismSeparationRow = {
+  mechanism_id: string;
+  response_observation_id: string;
+  required_response_kpi_ids: string[];
+  support_artifact_ids: string[];
+  contradiction_artifact_ids: string[];
+  missing_evidence: string[];
+  discriminator_contract_ids: string[];
+  protected_countereffects: string[];
+  component_family_ids: string[];
+  state: "alive" | "weakened" | "blocked";
+  authority: "candidate_only";
+  setup_authorized: false;
+};
+
 export type PerformanceMechanismAssessment = {
   schema_version: "p35.performance-mechanism-assessment.v1";
   p35_assessment_sha256: string;
@@ -96,6 +182,9 @@ export type PerformanceMechanismAssessment = {
   tire_demand_state_ids: string[];
   load_path_ids: string[];
   response_regime: VehicleDynamicsResponseRegime | null;
+  response_observations: VehicleResponseObservation[];
+  problem_signature: VehicleProblemSignature | null;
+  mechanism_separation: MechanismSeparationRow[];
   candidates: PerformanceMechanismCandidate[];
   focus_artifacts: VehicleDynamicsFocusArtifact[];
   strongest_support_artifact_id: string | null;
