@@ -24082,6 +24082,14 @@
             "title": "Support Artifact Ids",
             "default": []
           },
+          "response_evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Response Evidence Ids",
+            "default": []
+          },
           "contradiction_artifact_ids": {
             "items": {
               "type": "string"
@@ -24957,6 +24965,249 @@
           "expected_workspace_revision"
         ],
         "title": "OpenInvestigationRequest"
+      },
+      "OperationalResponseEvidence": {
+        "properties": {
+          "evidence_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Evidence Id"
+          },
+          "relation": {
+            "type": "string",
+            "enum": [
+              "brake_to_pressure",
+              "brake_release_to_yaw",
+              "throttle_to_acceleration",
+              "disturbance_to_chassis",
+              "stint_migration"
+            ],
+            "title": "Relation"
+          },
+          "phase": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Phase"
+          },
+          "lap_pct_start": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Lap Pct Start"
+          },
+          "lap_pct_end": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Lap Pct End"
+          },
+          "onset_pct": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Onset Pct"
+          },
+          "repetition_count": {
+            "type": "integer",
+            "minimum": 2.0,
+            "title": "Repetition Count"
+          },
+          "source_lap_numbers": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "minItems": 2,
+            "title": "Source Lap Numbers"
+          },
+          "source_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Source Artifact Ids"
+          },
+          "source_channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Source Channels"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/OperationalResponseMetric"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Metrics"
+          },
+          "speed_min_mps": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed Min Mps"
+          },
+          "speed_median_mps": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed Median Mps"
+          },
+          "speed_max_mps": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed Max Mps"
+          },
+          "evidence_state": {
+            "type": "string",
+            "enum": [
+              "calculated",
+              "observed_correlation"
+            ],
+            "title": "Evidence State"
+          },
+          "authority": {
+            "type": "string",
+            "const": "observation_only",
+            "title": "Authority",
+            "default": "observation_only"
+          },
+          "cause_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Cause Authorized",
+            "default": false
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "evidence_id",
+          "relation",
+          "phase",
+          "lap_pct_start",
+          "lap_pct_end",
+          "onset_pct",
+          "repetition_count",
+          "source_lap_numbers",
+          "source_artifact_ids",
+          "source_channels",
+          "metrics",
+          "evidence_state"
+        ],
+        "title": "OperationalResponseEvidence",
+        "description": "Compact, non-causal bridge from P35.4 producers into P35 reasoning."
+      },
+      "OperationalResponseMetric": {
+        "properties": {
+          "metric_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Metric Id"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Label"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "units": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Units"
+          },
+          "lap_number": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lap Number"
+          },
+          "corner": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "lf",
+                  "rf",
+                  "lr",
+                  "rr"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corner"
+          },
+          "source_channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Source Channels"
+          },
+          "authority": {
+            "type": "string",
+            "const": "observation_only",
+            "title": "Authority",
+            "default": "observation_only"
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "metric_id",
+          "label",
+          "value",
+          "units",
+          "source_channels"
+        ],
+        "title": "OperationalResponseMetric",
+        "description": "One native-unit producer value projected for Learning-mode inspection."
       },
       "OpportunityEvidence": {
         "properties": {
@@ -27925,6 +28176,14 @@
                 "type": "null"
               }
             ]
+          },
+          "operational_response_evidence": {
+            "items": {
+              "$ref": "#/components/schemas/OperationalResponseEvidence"
+            },
+            "type": "array",
+            "title": "Operational Response Evidence",
+            "default": []
           },
           "mechanism_separation": {
             "items": {
@@ -39648,7 +39907,10 @@
           },
           "onset_resolution": {
             "type": "string",
-            "const": "phase_boundary",
+            "enum": [
+              "phase_boundary",
+              "canonical_clock"
+            ],
             "title": "Onset Resolution",
             "default": "phase_boundary"
           },
@@ -39685,13 +39947,20 @@
           },
           "speed_dependence": {
             "type": "string",
-            "const": "not_established",
+            "enum": [
+              "not_established",
+              "bounded_to_observed_speed_band",
+              "observed_across_distinct_speed_bands"
+            ],
             "title": "Speed Dependence",
             "default": "not_established"
           },
           "stint_dependence": {
             "type": "string",
-            "const": "not_established",
+            "enum": [
+              "not_established",
+              "observed_migration"
+            ],
             "title": "Stint Dependence",
             "default": "not_established"
           },
@@ -39706,13 +39975,19 @@
           },
           "surface_dependence": {
             "type": "string",
-            "const": "not_established",
+            "enum": [
+              "not_established",
+              "repeated_physical_location"
+            ],
             "title": "Surface Dependence",
             "default": "not_established"
           },
           "front_rear_corner_scope": {
             "type": "string",
-            "const": "unresolved",
+            "enum": [
+              "unresolved",
+              "four_corner_observed"
+            ],
             "title": "Front Rear Corner Scope",
             "default": "unresolved"
           },
@@ -39818,7 +40093,10 @@
           },
           "onset_resolution": {
             "type": "string",
-            "const": "phase_boundary",
+            "enum": [
+              "phase_boundary",
+              "canonical_clock"
+            ],
             "title": "Onset Resolution",
             "default": "phase_boundary"
           },

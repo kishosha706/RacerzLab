@@ -164,10 +164,12 @@ const assessment = {
     authority: "observation_only", component_cause_authorized: false,
     setup_authorized: false,
   },
+  operational_response_evidence: [],
   mechanism_separation: [{
     mechanism_id: mechanismId, response_observation_id: responseObservationId,
     required_response_kpi_ids: [discriminatorContractId],
     support_artifact_ids: [supportId], contradiction_artifact_ids: [contradictionId],
+    response_evidence_ids: [],
     missing_evidence: ["The current discriminator remains unobserved."],
     discriminator_contract_ids: [discriminatorContractId, contradictionContractId],
     protected_countereffects: ["Protect the following phase response."],
@@ -320,6 +322,36 @@ assert.equal(
   await hasCanonicalPerformanceMechanismAssessmentDigest(coordinatedNestedDrift),
   false,
   "a coordinated assessment rehash cannot preserve a stale nested response identity",
+);
+const forgedOperationalAxis = structuredClone(assessment);
+forgedOperationalAxis.problem_signature.stint_dependence = "observed_migration";
+const forgedOperationalAxisBody = structuredClone(forgedOperationalAxis);
+delete forgedOperationalAxisBody.p35_assessment_sha256;
+forgedOperationalAxis.p35_assessment_sha256 =
+  await canonicalPerformanceMechanismAssessmentSha256(forgedOperationalAxisBody);
+assert.equal(
+  isPerformanceMechanismAssessment(forgedOperationalAxis, {
+    ...scope,
+    assessmentSha256: forgedOperationalAxis.p35_assessment_sha256,
+  }),
+  false,
+  "a rehashed stint axis cannot exist without qualified operational evidence",
+);
+const forgedResponseReference = structuredClone(assessment);
+forgedResponseReference.mechanism_separation[0].response_evidence_ids = [
+  `p3542.response:${"f".repeat(24)}`,
+];
+const forgedResponseReferenceBody = structuredClone(forgedResponseReference);
+delete forgedResponseReferenceBody.p35_assessment_sha256;
+forgedResponseReference.p35_assessment_sha256 =
+  await canonicalPerformanceMechanismAssessmentSha256(forgedResponseReferenceBody);
+assert.equal(
+  isPerformanceMechanismAssessment(forgedResponseReference, {
+    ...scope,
+    assessmentSha256: forgedResponseReference.p35_assessment_sha256,
+  }),
+  false,
+  "a rehashed mechanism row cannot invent a response-evidence reference",
 );
 
 const reject = (label, mutate, customScope = scope) => {
@@ -488,6 +520,7 @@ const buildBrakeAssessment = async (channels) => {
     response_observation_id: value.response_observations[0].observation_id,
     required_response_kpi_ids: [brakeTrust.discriminator_observation_contract_ids[0]],
     support_artifact_ids: [supportArtifactId],
+    response_evidence_ids: [],
     contradiction_artifact_ids: [contradictionArtifactId],
     missing_evidence: ["The controlled brake discriminator remains unobserved."],
     discriminator_contract_ids: [...brakeTrust.discriminator_observation_contract_ids],

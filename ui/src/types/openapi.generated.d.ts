@@ -8579,6 +8579,11 @@ export interface components {
              * @default []
              */
             support_artifact_ids: string[];
+            /**
+             * Response Evidence Ids
+             * @default []
+             */
+            response_evidence_ids: string[];
             /** Contradiction Artifact Ids */
             contradiction_artifact_ids: string[];
             /** Missing Evidence */
@@ -8924,6 +8929,98 @@ export interface components {
              * @enum {string}
              */
             origin: "post_import" | "driver_report" | "manual_review";
+        };
+        /**
+         * OperationalResponseEvidence
+         * @description Compact, non-causal bridge from P35.4 producers into P35 reasoning.
+         */
+        OperationalResponseEvidence: {
+            /** Evidence Id */
+            evidence_id: string;
+            /**
+             * Relation
+             * @enum {string}
+             */
+            relation: "brake_to_pressure" | "brake_release_to_yaw" | "throttle_to_acceleration" | "disturbance_to_chassis" | "stint_migration";
+            /** Phase */
+            phase: string;
+            /** Lap Pct Start */
+            lap_pct_start: number;
+            /** Lap Pct End */
+            lap_pct_end: number;
+            /** Onset Pct */
+            onset_pct: number;
+            /** Repetition Count */
+            repetition_count: number;
+            /** Source Lap Numbers */
+            source_lap_numbers: number[];
+            /** Source Artifact Ids */
+            source_artifact_ids: string[];
+            /** Source Channels */
+            source_channels: string[];
+            /** Metrics */
+            metrics: components["schemas"]["OperationalResponseMetric"][];
+            /** Speed Min Mps */
+            speed_min_mps?: number | null;
+            /** Speed Median Mps */
+            speed_median_mps?: number | null;
+            /** Speed Max Mps */
+            speed_max_mps?: number | null;
+            /**
+             * Evidence State
+             * @enum {string}
+             */
+            evidence_state: "calculated" | "observed_correlation";
+            /**
+             * Authority
+             * @default observation_only
+             * @constant
+             */
+            authority: "observation_only";
+            /**
+             * Cause Authorized
+             * @default false
+             * @constant
+             */
+            cause_authorized: false;
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
+        };
+        /**
+         * OperationalResponseMetric
+         * @description One native-unit producer value projected for Learning-mode inspection.
+         */
+        OperationalResponseMetric: {
+            /** Metric Id */
+            metric_id: string;
+            /** Label */
+            label: string;
+            /** Value */
+            value: number;
+            /** Units */
+            units: string;
+            /** Lap Number */
+            lap_number?: number | null;
+            /** Corner */
+            corner?: ("lf" | "rf" | "lr" | "rr") | null;
+            /** Source Channels */
+            source_channels: string[];
+            /**
+             * Authority
+             * @default observation_only
+             * @constant
+             */
+            authority: "observation_only";
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
         };
         /** OpportunityEvidence */
         OpportunityEvidence: {
@@ -10125,6 +10222,11 @@ export interface components {
              */
             response_observations: components["schemas"]["VehicleResponseObservation"][];
             problem_signature?: components["schemas"]["VehicleProblemSignature"] | null;
+            /**
+             * Operational Response Evidence
+             * @default []
+             */
+            operational_response_evidence: components["schemas"]["OperationalResponseEvidence"][];
             /**
              * Mechanism Separation
              * @default []
@@ -14110,9 +14212,9 @@ export interface components {
             /**
              * Onset Resolution
              * @default phase_boundary
-             * @constant
+             * @enum {string}
              */
-            onset_resolution: "phase_boundary";
+            onset_resolution: "phase_boundary" | "canonical_clock";
             response_regime: components["schemas"]["DynamicResponseRegime"];
             /**
              * Driver Demand State
@@ -14132,15 +14234,15 @@ export interface components {
             /**
              * Speed Dependence
              * @default not_established
-             * @constant
+             * @enum {string}
              */
-            speed_dependence: "not_established";
+            speed_dependence: "not_established" | "bounded_to_observed_speed_band" | "observed_across_distinct_speed_bands";
             /**
              * Stint Dependence
              * @default not_established
-             * @constant
+             * @enum {string}
              */
-            stint_dependence: "not_established";
+            stint_dependence: "not_established" | "observed_migration";
             /**
              * Traffic Dependence
              * @enum {string}
@@ -14149,15 +14251,15 @@ export interface components {
             /**
              * Surface Dependence
              * @default not_established
-             * @constant
+             * @enum {string}
              */
-            surface_dependence: "not_established";
+            surface_dependence: "not_established" | "repeated_physical_location";
             /**
              * Front Rear Corner Scope
              * @default unresolved
-             * @constant
+             * @enum {string}
              */
-            front_rear_corner_scope: "unresolved";
+            front_rear_corner_scope: "unresolved" | "four_corner_observed";
             /** Strongest Contradiction */
             strongest_contradiction: string;
             /**
@@ -14205,9 +14307,9 @@ export interface components {
             /**
              * Onset Resolution
              * @default phase_boundary
-             * @constant
+             * @enum {string}
              */
-            onset_resolution: "phase_boundary";
+            onset_resolution: "phase_boundary" | "canonical_clock";
             response_regime: components["schemas"]["DynamicResponseRegime"];
             /**
              * Driver Demand State

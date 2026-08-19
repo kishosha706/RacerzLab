@@ -13,6 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from racelab_engine.models.dynamic_response import DynamicResponseReport
+from racelab_engine.analysis.stint_response_migration import StintResponseMigrationReport
 from racelab_engine.models.evidence import EvidenceState
 
 
@@ -513,6 +514,7 @@ class RunObservationIntelligence(ObservationModel):
     anomaly_envelopes: SameSetupAnomalyReport
     driver_repeatability: DriverRepeatabilitySignature
     brake_throttle_response: DynamicResponseReport | None = None
+    stint_response_migration: StintResponseMigrationReport | None = None
     blocker_reasons: tuple[str, ...] = ()
 
     @model_validator(mode="after")
@@ -530,6 +532,11 @@ class RunObservationIntelligence(ObservationModel):
             and self.brake_throttle_response.run_id != self.run_id
         ):
             raise ValueError("the dynamic-response report must match the requested run")
+        if (
+            self.stint_response_migration is not None
+            and self.stint_response_migration.run_id != self.run_id
+        ):
+            raise ValueError("the stint-response report must match the requested run")
         return self
 
 

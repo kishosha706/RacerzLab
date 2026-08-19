@@ -133,8 +133,12 @@ from racelab_engine.services.vehicle_systems_service import (
     vehicle_systems_runtime_identity,
 )
 from racelab_engine.services.vehicle_dynamics_service import (
+    _leading_opportunity,
     build_unavailable_vehicle_dynamics_assessment,
     build_vehicle_dynamics_assessment,
+)
+from racelab_engine.services.surface_disturbance_response_service import (
+    build_p35_surface_disturbance_report,
 )
 from racelab_engine.models.vehicle_dynamics_knowledge import (
     PerformanceMechanismAssessment,
@@ -4825,6 +4829,28 @@ def build_crew_chief_workspace(
             ),
             unavailable_reason=reason,
         )
+    surface_response = None
+    leading_opportunity = _leading_opportunity(p32)
+    if leading_opportunity is not None and any(
+        value in {"disturbance_compliance", "platform_roll_migration"}
+        or "disturbance" in value
+        for value in leading_opportunity.mechanism_candidates
+    ):
+        runtime_payload = getattr(p26, "runtime_identity", {})
+        build_identity = (
+            runtime_payload.get("iracing_build_version")
+            if isinstance(runtime_payload, dict)
+            else getattr(runtime_payload, "iracing_build_version", None)
+        )
+        try:
+            surface_response = build_p35_surface_disturbance_report(
+                run_id=run_id,
+                opportunity=leading_opportunity,
+                overview=overview,
+                build_identity=build_identity,
+            )
+        except (AttributeError, TypeError, ValueError):
+            surface_response = None
     try:
         p35 = build_vehicle_dynamics_assessment(
             run_id=run_id,
@@ -4836,6 +4862,9 @@ def build_crew_chief_workspace(
             p20=p20,
             p26=p26,
             p32=p32,
+            dynamic_response=bundle.observations.brake_throttle_response,
+            surface_response=surface_response,
+            stint_response=bundle.observations.stint_response_migration,
         )
     except (AttributeError, TypeError, ValueError) as exc:
         p35 = build_unavailable_vehicle_dynamics_assessment(

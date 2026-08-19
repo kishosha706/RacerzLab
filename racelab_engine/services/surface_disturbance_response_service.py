@@ -30,6 +30,8 @@ from racelab_engine.models.surface_disturbance_response import (
     SurfaceDisturbanceSettlingReport,
     SurfaceDisturbanceSettlingSignature,
 )
+from racelab_engine.models.performance_intelligence import LapTimeOpportunity
+from racelab_engine.models.session import RunOverview
 
 
 @dataclass(frozen=True)
@@ -375,7 +377,99 @@ def build_surface_disturbance_settling_report(
     )
 
 
+def build_p35_surface_disturbance_report(
+    *,
+    run_id: str,
+    opportunity: LapTimeOpportunity,
+    overview: RunOverview,
+    build_identity: str | None,
+    data_dir: str | None = None,
+) -> SurfaceDisturbanceSettlingReport:
+    """Run the repeated-event producer only for one exact P35 opportunity scope."""
+
+    from racelab_engine.analysis.lap_eligibility import eligible_laps
+    from racelab_engine.services.import_service import read_telemetry_rows
+
+    setup = overview.setup_snapshot
+    source_sha = overview.session.file_hash
+    track_identity = (
+        overview.session.track_id_or_path
+        or overview.session.track_name
+        or overview.session.track_display_name
+    )
+    sample_rate = overview.session.telemetry_rate_hz
+    if (
+        overview.run_id != run_id
+        or setup is None
+        or setup.run_id != run_id
+        or source_sha is None
+        or track_identity is None
+        or not build_identity
+        or build_identity == "unavailable"
+        or sample_rate is None
+        or opportunity.end_pct <= opportunity.start_pct
+    ):
+        return build_surface_disturbance_settling_report(())
+    columns = (
+        "lap",
+        "lap_number",
+        "lap_dist_pct_100",
+        "session_tick",
+        "session_time",
+        "speed_mps",
+        "vert_accel",
+        "yaw_rate",
+        "engineering_phase",
+        "lf_shock_vel_in_s",
+        "rf_shock_vel_in_s",
+        "lr_shock_vel_in_s",
+        "rr_shock_vel_in_s",
+        "lf_shock_defl_in",
+        "rf_shock_defl_in",
+        "lr_shock_defl_in",
+        "rr_shock_defl_in",
+    )
+    try:
+        rows = read_telemetry_rows(run_id, data_dir, columns=columns)
+    except (FileNotFoundError, OSError, TypeError, ValueError):
+        return build_surface_disturbance_settling_report(())
+    inputs: list[SurfaceDisturbanceTelemetryInput] = []
+    for lap in eligible_laps(overview.laps):
+        lap_rows = tuple(
+            row
+            for row in rows
+            if row.get("lap", row.get("lap_number")) == lap.lap_number
+        )
+        if not lap_rows:
+            continue
+        inputs.append(
+            SurfaceDisturbanceTelemetryInput(
+                data=lap_rows,
+                scope=PhysicalLapScope(
+                    run_id=run_id,
+                    source_file_sha256=source_sha,
+                    source_artifact_id=(
+                        f"{opportunity.opportunity_id}:lap:{lap.lap_number}"
+                    ),
+                    setup_id=setup.setup_id,
+                    context_id=opportunity.opportunity_id,
+                    track_identity=track_identity,
+                    build_identity=build_identity,
+                    lap_number=lap.lap_number,
+                    phase=opportunity.phase,
+                    lap_pct_start=opportunity.start_pct,
+                    lap_pct_end=opportunity.end_pct,
+                    lap_is_complete=True,
+                    lap_is_eligible=True,
+                ),
+                expected_sample_rate_hz=float(sample_rate),
+            )
+        )
+    return build_surface_disturbance_settling_report(inputs)
+
+
 __all__ = [
     "SurfaceDisturbanceTelemetryInput",
     "build_surface_disturbance_settling_report",
+    "build_p35_surface_disturbance_report",
 ]

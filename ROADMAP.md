@@ -76,6 +76,7 @@ result, and remember only what the evidence supports.
 | P35.3 - Inner Crew Chief Cognitive Closure | Verified locally; remote SHA validation awaits the next push | Reachability-aware planning, exact cause state, typed inspection traces, bounded critic outcomes, driver-answer semantics, and post-open consumption counts close the deterministic investigation loop without changing P19 or frozen P34 authority |
 | P35.4 - Phase-Resolved Vehicle Response and Setup Diagnosis | Verified deterministic response foundation; additional controls remain evidence-locked | Phase-resolved observations and qualified continuous response signatures describe driver demand and vehicle response without gaining cause, component, setup, or P19 authority |
 | P35.4.1 - Canonical Telemetry Truth Closure | Verified locally | Source identity, tick clock, physical position, geometry provenance, typed blocker scope, and channel admission fail closed before any diagnosis or learned recurrence |
+| P35.4.2 - Response-to-Mechanism Operational Integration | Verified locally; field evidence remains unearned | Qualified dynamic, repeated-disturbance, and ten-lap stint signatures refine P35 mechanism inspection without gaining support, cause, component, setup, or P19 authority |
 | P35.5 - Field-Ready Alpha Hardening | Verified local release slice; field evidence remains unearned | One honest Next Gen oval alpha opens quickly, exposes one canonical move, packages as one owned desktop instance, and ships only after semantic real-file, dependency, contract, UI, and lifecycle gates pass |
 | P36 - Prospective Investigation Evidence Campaigns | Planned; evidence collection remains data-locked | Qualified prospective campaigns produce the independent recurrence, controls, subgroups, and observable comparisons required before learned investigation ordering can earn promotion |
 
@@ -2734,6 +2735,50 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   sources, unsupported diffuser constants, typed blocker scope, pit-only channel
   semantics, legacy clock migration, and setup-authority smuggling. P19 remains
   the sole cause, exact test, setup, Keep/Undo/Retest, and terminal authority.
+
+## P35.4.2 - Response-to-Mechanism Operational Integration
+
+- [x] Carry the already-built brake/throttle response report through the shared
+  intelligence snapshot and bind qualified four-line-pressure, brake-release,
+  yaw, acceleration, lag, gain, overshoot, settling, correction, speed-band,
+  and independent-lap evidence into the current P35 assessment.
+- [x] Run the four-corner disturbance producer only when the leading P32 scope
+  names a disturbance/platform mechanism. A disturbance-compliance row may
+  reference the response only after two independent eligible laps repeat at the
+  same exact physical location and context.
+- [x] Build stint response migration from the same verified observation read and
+  exact opportunity windows. `stint_dependence` becomes `observed_migration`
+  only when at least ten consecutive clean same-setup laps clear the producer's
+  robust trend and empirical-noise gates.
+- [x] Add an immutable `OperationalResponseEvidence` projection. It can refine
+  canonical-clock onset, observed speed-band scope, repeated-surface scope, and
+  four-corner scope, but remains observation-only and cannot become P19 support,
+  component cause, setup direction, or terminal authority.
+- [x] Add Learning-only quantitative response details under the existing
+  Blackboard: BRAKE -> PRESSURE, RELEASE -> YAW, THROTTLE -> ACCELERATION,
+  DISTURBANCE -> CHASSIS, and lap-by-lap STINT MIGRATION. Race Mode and the tab
+  model remain unchanged.
+- [ ] Promote ARB, differential-preload, tire-pressure, damper-row, or alignment
+  controls. These remain evidence-locked; P35.4.2 adds no legal target or setup
+  authority.
+
+### P35.4.2 verification - 2026-08-18
+
+- The complete 3,326-test Python repository regression passed after the exact no-lap run
+  boundary was made fail-closed. The dedicated five-test hostile slice proves
+  four-corner brake-pressure completeness, missing-corner denial, repeated
+  physical disturbance identity, ten-lap stint/noise gating, and strict
+  separation between response evidence and candidate support.
+- Observation, persisted-snapshot, intelligence API, Crew Chief, P35, OpenAPI,
+  Python/client contract, and exact-authority focused suites passed together.
+  Whole-repository Ruff, TypeScript, Learning behavior tests, production build,
+  bundle budgets, and diff integrity passed.
+- The production UI built 2,228 modules. Entry remained 191.10 KB raw / 52.55 KB
+  gzip and the new quantitative evidence stayed inside the existing Learning
+  Blackboard rather than adding a workspace or initial-shell dependency.
+- Field evidence remains honestly unearned: historical 0/9, null stints 0/10,
+  negative controls 0/8, subgroups 0/9. Null Session 01 and a real P19 A/B/A2
+  outcome still require new driving and are not credited by this software slice.
 
 ## P35.5 - Field-Ready Alpha Hardening
 

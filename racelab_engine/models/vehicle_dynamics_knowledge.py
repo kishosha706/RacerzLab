@@ -1323,7 +1323,7 @@ class VehicleResponseObservation(VehicleDynamicsModel):
     lap_pct_start: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
     lap_pct_end: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
     onset_pct: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
-    onset_resolution: Literal["phase_boundary"] = "phase_boundary"
+    onset_resolution: Literal["phase_boundary", "canonical_clock"] = "phase_boundary"
     response_regime: DynamicResponseRegime
     driver_demand_state: Literal["matched", "changed", "mixed", "unavailable"]
     vehicle_response_state: Literal["changed", "not_established", "unavailable"]
@@ -1422,16 +1422,26 @@ class VehicleProblemSignature(VehicleDynamicsModel):
     local_time_delta_s: float = Field(allow_inf_nan=False)
     phase: str = Field(min_length=1)
     onset_pct: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
-    onset_resolution: Literal["phase_boundary"] = "phase_boundary"
+    onset_resolution: Literal["phase_boundary", "canonical_clock"] = "phase_boundary"
     response_regime: DynamicResponseRegime
     driver_demand_state: Literal["matched", "changed", "mixed", "unavailable"]
     vehicle_response_state: Literal["changed", "not_established", "unavailable"]
     line_state: Literal["matched", "changed", "unavailable"]
-    speed_dependence: Literal["not_established"] = "not_established"
-    stint_dependence: Literal["not_established"] = "not_established"
+    speed_dependence: Literal[
+        "not_established",
+        "bounded_to_observed_speed_band",
+        "observed_across_distinct_speed_bands",
+    ] = "not_established"
+    stint_dependence: Literal["not_established", "observed_migration"] = (
+        "not_established"
+    )
     traffic_dependence: Literal["blocked", "clear", "unavailable"]
-    surface_dependence: Literal["not_established"] = "not_established"
-    front_rear_corner_scope: Literal["unresolved"] = "unresolved"
+    surface_dependence: Literal[
+        "not_established", "repeated_physical_location"
+    ] = "not_established"
+    front_rear_corner_scope: Literal["unresolved", "four_corner_observed"] = (
+        "unresolved"
+    )
     strongest_contradiction: str = Field(min_length=1)
     authority: Literal["observation_only"] = "observation_only"
     component_cause_authorized: Literal[False] = False
@@ -1455,6 +1465,7 @@ class MechanismSeparationRow(VehicleDynamicsModel):
     response_observation_id: str = Field(pattern=r"^p354\.response:[0-9a-f]{24}$")
     required_response_kpi_ids: tuple[str, ...] = Field(min_length=1)
     support_artifact_ids: tuple[str, ...] = ()
+    response_evidence_ids: tuple[str, ...] = ()
     contradiction_artifact_ids: tuple[str, ...] = Field(min_length=1)
     missing_evidence: tuple[str, ...] = Field(min_length=1)
     discriminator_contract_ids: tuple[str, ...] = Field(min_length=1)
@@ -1469,6 +1480,7 @@ class MechanismSeparationRow(VehicleDynamicsModel):
         for values in (
             self.required_response_kpi_ids,
             self.support_artifact_ids,
+            self.response_evidence_ids,
             self.contradiction_artifact_ids,
             self.missing_evidence,
             self.discriminator_contract_ids,
@@ -1481,6 +1493,90 @@ class MechanismSeparationRow(VehicleDynamicsModel):
             raise ValueError("alive mechanisms require typed support")
         if self.state != "alive" and self.support_artifact_ids:
             raise ValueError("weakened/blocked mechanisms cannot carry positive support")
+        return self
+
+
+class OperationalResponseMetric(VehicleDynamicsModel):
+    """One native-unit producer value projected for Learning-mode inspection."""
+
+    metric_id: str = Field(pattern=_ID_PATTERN)
+    label: str = Field(min_length=1)
+    value: float = Field(allow_inf_nan=False)
+    units: str = Field(min_length=1)
+    lap_number: int | None = Field(default=None, ge=0)
+    corner: Literal["lf", "rf", "lr", "rr"] | None = None
+    source_channels: tuple[str, ...] = Field(min_length=1)
+    authority: Literal["observation_only"] = "observation_only"
+    setup_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def metric_provenance_is_unique(self) -> OperationalResponseMetric:
+        if len(self.source_channels) != len(set(self.source_channels)):
+            raise ValueError("operational-response metric channels must be unique")
+        return self
+
+
+class OperationalResponseEvidence(VehicleDynamicsModel):
+    """Compact, non-causal bridge from P35.4 producers into P35 reasoning."""
+
+    evidence_id: str = Field(pattern=_ID_PATTERN)
+    relation: Literal[
+        "brake_to_pressure",
+        "brake_release_to_yaw",
+        "throttle_to_acceleration",
+        "disturbance_to_chassis",
+        "stint_migration",
+    ]
+    phase: str = Field(min_length=1)
+    lap_pct_start: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
+    lap_pct_end: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
+    onset_pct: float = Field(ge=0.0, le=100.0, allow_inf_nan=False)
+    repetition_count: int = Field(ge=2)
+    source_lap_numbers: tuple[int, ...] = Field(min_length=2)
+    source_artifact_ids: tuple[str, ...] = Field(min_length=1)
+    source_channels: tuple[str, ...] = Field(min_length=1)
+    metrics: tuple[OperationalResponseMetric, ...] = Field(min_length=1)
+    speed_min_mps: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    speed_median_mps: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    speed_max_mps: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    evidence_state: Literal["calculated", "observed_correlation"]
+    authority: Literal["observation_only"] = "observation_only"
+    cause_authorized: Literal[False] = False
+    setup_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def operational_evidence_is_exact_and_non_authoritative(
+        self,
+    ) -> OperationalResponseEvidence:
+        if self.lap_pct_end < self.lap_pct_start:
+            raise ValueError("operational-response physical scope is reversed")
+        if not self.lap_pct_start <= self.onset_pct <= self.lap_pct_end:
+            raise ValueError("operational-response onset must stay inside its scope")
+        for values in (
+            self.source_lap_numbers,
+            self.source_artifact_ids,
+            self.source_channels,
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError("operational-response provenance must be unique")
+        if self.repetition_count != len(self.source_lap_numbers):
+            raise ValueError("response repetition count must equal cited lap identities")
+        metric_ids = tuple(item.metric_id for item in self.metrics)
+        if len(metric_ids) != len(set(metric_ids)):
+            raise ValueError("operational-response metric identities must be unique")
+        speed_values = (
+            self.speed_min_mps,
+            self.speed_median_mps,
+            self.speed_max_mps,
+        )
+        if any(value is None for value in speed_values) != all(
+            value is None for value in speed_values
+        ):
+            raise ValueError("operational-response speed band must be complete or absent")
+        if self.speed_min_mps is not None and not (
+            self.speed_min_mps <= self.speed_median_mps <= self.speed_max_mps  # type: ignore[operator]
+        ):
+            raise ValueError("operational-response speed band is not ordered")
         return self
 
 
@@ -1569,6 +1665,7 @@ class PerformanceMechanismAssessment(VehicleDynamicsModel):
         default=(), max_length=1
     )
     problem_signature: VehicleProblemSignature | None = None
+    operational_response_evidence: tuple[OperationalResponseEvidence, ...] = ()
     mechanism_separation: tuple[MechanismSeparationRow, ...] = ()
     candidates: tuple[PerformanceMechanismCandidate, ...] = ()
     focus_artifacts: tuple[VehicleDynamicsFocusArtifact, ...] = ()
@@ -1695,6 +1792,82 @@ class PerformanceMechanismAssessment(VehicleDynamicsModel):
                 raise ValueError("traffic-blocked assessment requires blocked response context")
         elif self.problem_signature is not None:
             raise ValueError("problem signature cannot exist without a phase response")
+        response_evidence_ids = tuple(
+            item.evidence_id for item in self.operational_response_evidence
+        )
+        if len(response_evidence_ids) != len(set(response_evidence_ids)):
+            raise ValueError("operational-response evidence identities must be unique")
+        if self.operational_response_evidence and not self.response_observations:
+            raise ValueError("operational response requires one current P35 response")
+        response_evidence_id_set = set(response_evidence_ids)
+        if any(
+            not set(row.response_evidence_ids) <= response_evidence_id_set
+            for row in self.mechanism_separation
+        ):
+            raise ValueError(
+                "mechanism response evidence must reference the assessment projection"
+            )
+        if self.problem_signature is not None and self.response_observations:
+            signature = self.problem_signature
+            response = self.response_observations[0]
+            expected_speed = (
+                "bounded_to_observed_speed_band"
+                if any(
+                    item.speed_median_mps is not None
+                    for item in self.operational_response_evidence
+                )
+                else "not_established"
+            )
+            expected_stint = (
+                "observed_migration"
+                if any(
+                    item.relation == "stint_migration"
+                    for item in self.operational_response_evidence
+                )
+                else "not_established"
+            )
+            has_surface = any(
+                item.relation == "disturbance_to_chassis"
+                for item in self.operational_response_evidence
+            )
+            if (
+                signature.speed_dependence != expected_speed
+                or signature.stint_dependence != expected_stint
+                or signature.surface_dependence
+                != (
+                    "repeated_physical_location"
+                    if has_surface
+                    else "not_established"
+                )
+                or signature.front_rear_corner_scope
+                != ("four_corner_observed" if has_surface else "unresolved")
+            ):
+                raise ValueError(
+                    "problem-signature response axes must derive from operational evidence"
+                )
+            precise_onset = next(
+                (
+                    item.onset_pct
+                    for item in self.operational_response_evidence
+                    if item.relation != "stint_migration"
+                    and response.lap_pct_start
+                    <= item.onset_pct
+                    <= response.lap_pct_end
+                ),
+                response.lap_pct_start,
+            )
+            expected_onset_resolution = (
+                "canonical_clock"
+                if precise_onset != response.lap_pct_start
+                else "phase_boundary"
+            )
+            if (
+                response.onset_pct != precise_onset
+                or response.onset_resolution != expected_onset_resolution
+            ):
+                raise ValueError(
+                    "phase-response onset must derive from qualified operational evidence"
+                )
         if len(self.mechanism_separation) != len(self.candidates):
             raise ValueError("every mechanism candidate requires one separation row")
         if tuple(
@@ -1765,6 +1938,14 @@ class PerformanceMechanismAssessment(VehicleDynamicsModel):
         separation_by_mechanism = {
             row.mechanism_id: row for row in self.mechanism_separation
         }
+        relations_by_mechanism = {
+            "mechanism:brake_entry_instability": {"brake_to_pressure"},
+            "mechanism:brake_release_rotation_deficit": {"brake_release_to_yaw"},
+            "mechanism:power_on_rotation_excess": {"throttle_to_acceleration"},
+            "mechanism:power_on_rotation_deficit": {"throttle_to_acceleration"},
+            "mechanism:traction_limitation_like": {"throttle_to_acceleration"},
+            "mechanism:disturbance_compliance_issue": {"disturbance_to_chassis"},
+        }
         response = self.response_observations[0] if self.response_observations else None
         for candidate in self.candidates:
             row = separation_by_mechanism[candidate.mechanism_id]
@@ -1778,6 +1959,13 @@ class PerformanceMechanismAssessment(VehicleDynamicsModel):
                 or row.support_artifact_ids != candidate.support_artifact_ids
                 or row.contradiction_artifact_ids
                 != candidate.contradiction_artifact_ids
+                or row.response_evidence_ids
+                != tuple(
+                    item.evidence_id
+                    for item in self.operational_response_evidence
+                    if item.relation
+                    in relations_by_mechanism.get(candidate.mechanism_id, set())
+                )
                 or row.discriminator_contract_ids
                 != candidate.discriminator_contract_ids
                 or row.component_family_ids != candidate.component_family_ids

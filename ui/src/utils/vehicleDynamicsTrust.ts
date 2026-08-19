@@ -2,6 +2,8 @@ import type {
   PerformanceMechanismAssessment,
   PerformanceMechanismCandidate,
   MechanismSeparationRow,
+  OperationalResponseEvidence,
+  OperationalResponseMetric,
   PhaseResponseMetric,
   VehicleDynamicsChainStage,
   VehicleDynamicsChainStageKind,
@@ -28,6 +30,7 @@ const P35_KNOWLEDGE_VERSION = p35RuntimeTrustManifest.knowledge_version;
 const P35_GRAPH_SHA256 = p35RuntimeTrustManifest.knowledge_graph_sha256;
 const P35_PYTHON_FLOAT_KEYS = new Set([
   "lap_pct_end", "lap_pct_start", "local_time_delta_s", "onset_pct", "value",
+  "speed_min_mps", "speed_median_mps", "speed_max_mps",
 ]);
 
 const CHAIN_ORDER = [
@@ -415,6 +418,7 @@ export const mechanismSeparationRowKeys = [
   "response_observation_id",
   "required_response_kpi_ids",
   "support_artifact_ids",
+  "response_evidence_ids",
   "contradiction_artifact_ids",
   "missing_evidence",
   "discriminator_contract_ids",
@@ -422,6 +426,39 @@ export const mechanismSeparationRowKeys = [
   "component_family_ids",
   "state",
   "authority",
+  "setup_authorized",
+] as const;
+
+export const operationalResponseMetricKeys = [
+  "metric_id",
+  "label",
+  "value",
+  "units",
+  "lap_number",
+  "corner",
+  "source_channels",
+  "authority",
+  "setup_authorized",
+] as const;
+
+export const operationalResponseEvidenceKeys = [
+  "evidence_id",
+  "relation",
+  "phase",
+  "lap_pct_start",
+  "lap_pct_end",
+  "onset_pct",
+  "repetition_count",
+  "source_lap_numbers",
+  "source_artifact_ids",
+  "source_channels",
+  "metrics",
+  "speed_min_mps",
+  "speed_median_mps",
+  "speed_max_mps",
+  "evidence_state",
+  "authority",
+  "cause_authorized",
   "setup_authorized",
 ] as const;
 
@@ -455,6 +492,7 @@ export const performanceMechanismAssessmentKeys = [
   "response_regime",
   "response_observations",
   "problem_signature",
+  "operational_response_evidence",
   "mechanism_separation",
   "candidates",
   "focus_artifacts",
@@ -650,7 +688,7 @@ function validVehicleResponseObservation(
     || !finiteNumber(value.onset_pct)
     || value.onset_pct < value.lap_pct_start
     || value.onset_pct > value.lap_pct_end
-    || value.onset_resolution !== "phase_boundary"
+    || !["phase_boundary", "canonical_clock"].includes(String(value.onset_resolution))
     || !["transient", "steady_state", "both"].includes(String(value.response_regime))
     || !["matched", "changed", "mixed", "unavailable"].includes(String(value.driver_demand_state))
     || !["changed", "not_established", "unavailable"].includes(String(value.vehicle_response_state))
@@ -697,16 +735,16 @@ function validVehicleProblemSignature(value: unknown): value is VehicleProblemSi
     && finiteNumber(value.onset_pct)
     && value.onset_pct >= 0
     && value.onset_pct <= 100
-    && value.onset_resolution === "phase_boundary"
+    && ["phase_boundary", "canonical_clock"].includes(String(value.onset_resolution))
     && ["transient", "steady_state", "both"].includes(String(value.response_regime))
     && ["matched", "changed", "mixed", "unavailable"].includes(String(value.driver_demand_state))
     && ["changed", "not_established", "unavailable"].includes(String(value.vehicle_response_state))
     && ["matched", "changed", "unavailable"].includes(String(value.line_state))
-    && value.speed_dependence === "not_established"
-    && value.stint_dependence === "not_established"
+    && ["not_established", "bounded_to_observed_speed_band", "observed_across_distinct_speed_bands"].includes(String(value.speed_dependence))
+    && ["not_established", "observed_migration"].includes(String(value.stint_dependence))
     && ["blocked", "clear", "unavailable"].includes(String(value.traffic_dependence))
-    && value.surface_dependence === "not_established"
-    && value.front_rear_corner_scope === "unresolved"
+    && ["not_established", "repeated_physical_location"].includes(String(value.surface_dependence))
+    && ["unresolved", "four_corner_observed"].includes(String(value.front_rear_corner_scope))
     && safeSummary(value.strongest_contradiction)
     && value.authority === "observation_only"
     && value.component_cause_authorized === false
@@ -720,6 +758,7 @@ function validMechanismSeparationRow(value: unknown): value is MechanismSeparati
     || !uniqueTexts(value.required_response_kpi_ids)
     || value.required_response_kpi_ids.length === 0
     || !uniqueTexts(value.support_artifact_ids)
+    || !uniqueTexts(value.response_evidence_ids)
     || !uniqueTexts(value.contradiction_artifact_ids)
     || value.contradiction_artifact_ids.length === 0
     || !safeTexts(value.missing_evidence)
@@ -736,6 +775,61 @@ function validMechanismSeparationRow(value: unknown): value is MechanismSeparati
   return value.state === "alive"
     ? value.support_artifact_ids.length > 0
     : value.support_artifact_ids.length === 0;
+}
+
+function validOperationalResponseMetric(
+  value: unknown,
+): value is OperationalResponseMetric {
+  return exactKeys(value, operationalResponseMetricKeys)
+    && /^p3542\.metric:[0-9a-f]{24}$/.test(String(value.metric_id))
+    && nonempty(value.label)
+    && finiteNumber(value.value)
+    && nonempty(value.units)
+    && (value.lap_number === null
+      || (Number.isInteger(value.lap_number) && Number(value.lap_number) >= 0))
+    && (value.corner === null || ["lf", "rf", "lr", "rr"].includes(String(value.corner)))
+    && uniqueTexts(value.source_channels)
+    && value.source_channels.length > 0
+    && value.authority === "observation_only"
+    && value.setup_authorized === false;
+}
+
+function validOperationalResponseEvidence(
+  value: unknown,
+): value is OperationalResponseEvidence {
+  if (!exactKeys(value, operationalResponseEvidenceKeys)
+    || !/^p3542\.response:[0-9a-f]{24}$/.test(String(value.evidence_id))
+    || !["brake_to_pressure", "brake_release_to_yaw", "throttle_to_acceleration", "disturbance_to_chassis", "stint_migration"].includes(String(value.relation))
+    || !nonempty(value.phase)
+    || !finiteNumber(value.lap_pct_start)
+    || !finiteNumber(value.lap_pct_end)
+    || value.lap_pct_start < 0
+    || value.lap_pct_end > 100
+    || value.lap_pct_start > value.lap_pct_end
+    || !finiteNumber(value.onset_pct)
+    || value.onset_pct < value.lap_pct_start
+    || value.onset_pct > value.lap_pct_end
+    || !Number.isInteger(value.repetition_count)
+    || Number(value.repetition_count) < 2
+    || !lapNumbers(value.source_lap_numbers)
+    || value.source_lap_numbers.length !== value.repetition_count
+    || !uniqueTexts(value.source_artifact_ids)
+    || value.source_artifact_ids.length === 0
+    || !uniqueTexts(value.source_channels)
+    || value.source_channels.length === 0
+    || !Array.isArray(value.metrics)
+    || value.metrics.length === 0
+    || !value.metrics.every(validOperationalResponseMetric)
+    || !["calculated", "observed_correlation"].includes(String(value.evidence_state))
+    || value.authority !== "observation_only"
+    || value.cause_authorized !== false
+    || value.setup_authorized !== false) return false;
+  const speeds = [value.speed_min_mps, value.speed_median_mps, value.speed_max_mps];
+  if (speeds.every((item) => item === null)) return true;
+  return speeds.every(finiteNumber)
+    && Number(value.speed_min_mps) >= 0
+    && Number(value.speed_min_mps) <= Number(value.speed_median_mps)
+    && Number(value.speed_median_mps) <= Number(value.speed_max_mps);
 }
 
 export type VehicleDynamicsTrustScope = {
@@ -832,6 +926,8 @@ export function isPerformanceMechanismAssessment(
     || !value.response_observations.every(validVehicleResponseObservation)
     || !(value.problem_signature === null
       || validVehicleProblemSignature(value.problem_signature))
+    || !Array.isArray(value.operational_response_evidence)
+    || !value.operational_response_evidence.every(validOperationalResponseEvidence)
     || !Array.isArray(value.mechanism_separation)
     || !value.mechanism_separation.every(validMechanismSeparationRow)
     || !Array.isArray(value.candidates)
@@ -863,6 +959,13 @@ export function isPerformanceMechanismAssessment(
   const responseObservations = value.response_observations as VehicleResponseObservation[];
   const problemSignature = value.problem_signature as VehicleProblemSignature | null;
   const separationRows = value.mechanism_separation as MechanismSeparationRow[];
+  const operationalEvidence = value.operational_response_evidence as OperationalResponseEvidence[];
+  const operationalEvidenceIds = operationalEvidence.map((item) => item.evidence_id);
+  if (new Set(operationalEvidenceIds).size !== operationalEvidenceIds.length
+    || (operationalEvidence.length > 0 && responseObservations.length === 0)
+    || separationRows.some((row) => row.response_evidence_ids.some(
+      (id) => !operationalEvidenceIds.includes(id),
+    ))) return false;
   const responseExpected = scope.measuredTimeConsequenceAvailable
     && scope.responseRegime !== null
     && scope.opportunityLapNumbers.length >= 2;
@@ -903,6 +1006,31 @@ export function isPerformanceMechanismAssessment(
       ? "blocked"
       : response.context_state === "qualified" ? "clear" : "unavailable")
   )) return false;
+  if (problemSignature && response) {
+    const expectedSpeed = operationalEvidence.some((item) => item.speed_median_mps !== null)
+      ? "bounded_to_observed_speed_band"
+      : "not_established";
+    const expectedStint = operationalEvidence.some((item) => item.relation === "stint_migration")
+      ? "observed_migration"
+      : "not_established";
+    const hasSurface = operationalEvidence.some(
+      (item) => item.relation === "disturbance_to_chassis",
+    );
+    const preciseOnset = operationalEvidence.find((item) => (
+      item.relation !== "stint_migration"
+      && item.onset_pct >= response.lap_pct_start
+      && item.onset_pct <= response.lap_pct_end
+    ))?.onset_pct ?? response.lap_pct_start;
+    if (problemSignature.speed_dependence !== expectedSpeed
+      || problemSignature.stint_dependence !== expectedStint
+      || problemSignature.surface_dependence !== (hasSurface
+        ? "repeated_physical_location" : "not_established")
+      || problemSignature.front_rear_corner_scope !== (hasSurface
+        ? "four_corner_observed" : "unresolved")
+      || response.onset_pct !== preciseOnset
+      || response.onset_resolution !== (preciseOnset !== response.lap_pct_start
+        ? "canonical_clock" : "phase_boundary")) return false;
+  }
   if (scope.trafficBlocked && response?.context_state !== "blocked") return false;
   if (value.traffic_blocked
     && !value.chain.some((item) => item.evidence_state === "blocked_by_context")) return false;
@@ -982,6 +1110,14 @@ export function isPerformanceMechanismAssessment(
     p35RuntimeTrustManifest.mechanisms.map((item) => [item.mechanism_id, item]),
   );
   const candidateIds = candidates.map((item) => item.mechanism_id);
+  const responseRelationsByMechanism = new Map<string, Set<string>>([
+    ["mechanism:brake_entry_instability", new Set(["brake_to_pressure"])],
+    ["mechanism:brake_release_rotation_deficit", new Set(["brake_release_to_yaw"])],
+    ["mechanism:power_on_rotation_excess", new Set(["throttle_to_acceleration"])],
+    ["mechanism:power_on_rotation_deficit", new Set(["throttle_to_acceleration"])],
+    ["mechanism:traction_limitation_like", new Set(["throttle_to_acceleration"])],
+    ["mechanism:disturbance_compliance_issue", new Set(["disturbance_to_chassis"])],
+  ]);
   if (separationRows.length !== candidates.length
     || separationRows.some((row, index) => (
       response === undefined
@@ -993,6 +1129,13 @@ export function isPerformanceMechanismAssessment(
         candidates[index] ? [candidates[index].discriminator_contract_ids[0]] : [],
       )
       || !sameTexts(row.support_artifact_ids, candidates[index]?.support_artifact_ids ?? [])
+      || !sameTexts(
+        row.response_evidence_ids,
+        operationalEvidence
+          .filter((item) => responseRelationsByMechanism
+            .get(row.mechanism_id)?.has(item.relation) ?? false)
+          .map((item) => item.evidence_id),
+      )
       || !sameTexts(row.contradiction_artifact_ids, candidates[index]?.contradiction_artifact_ids ?? [])
       || !sameTexts(row.discriminator_contract_ids, candidates[index]?.discriminator_contract_ids ?? [])
       || !sameTexts(row.component_family_ids, candidates[index]?.component_family_ids ?? [])

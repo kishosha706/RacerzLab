@@ -16,6 +16,9 @@ from racelab_engine.models.performance_intelligence import (
     DriverVehicleSeparation,
     PerformancePhaseState,
 )
+from racelab_engine.models.vehicle_dynamics_knowledge import (
+    PerformanceMechanismAssessment,
+)
 from racelab_engine.services.vehicle_dynamics_service import (
     _runtime_support_contract_blockers,
     _leading_opportunity,
@@ -274,6 +277,35 @@ def test_ready_assessment_requires_exact_p20_and_p32_response(
         and row.protected_countereffects
         for row in assessment.mechanism_separation
     )
+
+
+def test_operational_signature_axes_cannot_be_forged_without_response_evidence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    monkeypatch.setenv("RACELAB_DB_PATH", str(tmp_path / "p3542-forgery.sqlite3"))
+    p32 = _build_public_projection(
+        monkeypatch, tmp_path, effect_s=0.10, traffic=False
+    )
+    p20 = _p20_for_scope(p32, MechanismKind.CORNER_ROTATION)
+    p32 = _exact_response_projection(p32, p20)
+    assessment = _assessment(p32, p20)
+
+    payload = assessment.model_dump(mode="json")
+    assert payload["problem_signature"] is not None
+    payload["problem_signature"]["stint_dependence"] = "observed_migration"
+    with pytest.raises(ValueError, match="response axes"):
+        PerformanceMechanismAssessment.model_validate(
+            payload, context={"skip_content_hash": True}
+        )
+
+    payload = assessment.model_dump(mode="json")
+    payload["mechanism_separation"][0]["response_evidence_ids"] = [
+        f"p3542.response:{'f' * 24}"
+    ]
+    with pytest.raises(ValueError, match="response evidence"):
+        PerformanceMechanismAssessment.model_validate(
+            payload, context={"skip_content_hash": True}
+        )
     assert all(
         "disturbance_compliance_issue" not in item.mechanism_id
         and "brake_release_rotation_deficit" not in item.mechanism_id

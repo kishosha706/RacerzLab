@@ -10,6 +10,11 @@ from typing import Any
 from racelab_engine.analysis.dynamic_response import (
     analyze_brake_throttle_dynamic_response,
 )
+from racelab_engine.analysis.stint_response_migration import (
+    PhysicalPhaseWindow,
+    StintResponseMigrationReport,
+    analyze_stint_response_migration,
+)
 from racelab_engine.analysis.lap_eligibility import eligible_laps
 from racelab_engine.analysis.observation_intelligence import (
     adapt_event_mechanism_observations,
@@ -58,6 +63,7 @@ _OBSERVATION_COLUMNS = [
     "lap_dist_pct_100",
     "lap_dist_pct",
     "session_time",
+    "session_tick",
     "speed_mph",
     "speed_mps",
     "throttle_pct",
@@ -74,6 +80,14 @@ _OBSERVATION_COLUMNS = [
     "rf_shock_vel_in_s",
     "lr_shock_vel_in_s",
     "rr_shock_vel_in_s",
+    "lf_shock_defl_in",
+    "rf_shock_defl_in",
+    "lr_shock_defl_in",
+    "rr_shock_defl_in",
+    "lf_brake_line_pressure_bar",
+    "rf_brake_line_pressure_bar",
+    "lr_brake_line_pressure_bar",
+    "rr_brake_line_pressure_bar",
     "applied_brake_bias",
     "requested_lf_tire_cold_pressure_pa",
     "requested_rf_tire_cold_pressure_pa",
@@ -281,6 +295,35 @@ def _build_observation_intelligence_with_awareness(
         setup_id=setup_id,
         lap_setup_ids=lap_setup_ids,
     )
+    phase_windows = tuple(
+        PhysicalPhaseWindow(
+            scope_id=signature.signature_id,
+            phase=signature.phase,
+            lap_pct_start=signature.lap_pct_start,
+            lap_pct_end=signature.lap_pct_end,
+        )
+        for signature in opportunity.signatures
+        if signature.lap_pct_end > signature.lap_pct_start
+    )
+    stint_response_migration = analyze_stint_response_migration(
+        scoped_rows,
+        laps=overview.laps,
+        phase_windows=phase_windows,
+        expected_sample_rate_hz=float(
+            getattr(overview.session, "telemetry_rate_hz", None) or 0.0
+        ),
+        setup_identity_by_lap=lap_setup_ids,
+        expected_run_id=run_id,
+        expected_source_file_sha256=getattr(overview.session, "file_hash", None),
+    )
+    if stint_response_migration.run_id != run_id:
+        stint_response_migration = StintResponseMigrationReport(
+            run_id=run_id,
+            status="blocked",
+            blocker_reasons=(
+                "The stint lap inventory does not bind exactly to the requested run.",
+            ),
+        )
     if read_blocker is not None:
         # Persisted events do not remain qualified when their source telemetry
         # artifact cannot be re-bound to this exact run.
@@ -372,6 +415,7 @@ def _build_observation_intelligence_with_awareness(
             anomaly_envelopes=anomalies,
             driver_repeatability=driver,
             brake_throttle_response=brake_throttle_response,
+            stint_response_migration=stint_response_migration,
             blocker_reasons=aggregate_blockers,
         ),
         awareness=awareness,

@@ -66,6 +66,7 @@ const assessment = (): PerformanceMechanismAssessment => ({
   response_regime: "steady_state",
   response_observations: [],
   problem_signature: null,
+  operational_response_evidence: [],
   mechanism_separation: [],
   candidates: [{
     mechanism_id: mechanismId,
@@ -487,8 +488,8 @@ describe("VehicleDynamicsBlackboard", () => {
       phase: "center",
       lap_pct_start: 42.5,
       lap_pct_end: 51.5,
-      onset_pct: 42.5,
-      onset_resolution: "phase_boundary",
+      onset_pct: 43.0,
+      onset_resolution: "canonical_clock",
       response_regime: "steady_state",
       driver_demand_state: "matched",
       vehicle_response_state: "changed",
@@ -520,27 +521,59 @@ describe("VehicleDynamicsBlackboard", () => {
       time_origin: "local_generation",
       local_time_delta_s: 0.128,
       phase: "center",
-      onset_pct: 42.5,
-      onset_resolution: "phase_boundary",
+      onset_pct: 43.0,
+      onset_resolution: "canonical_clock",
       response_regime: "steady_state",
       driver_demand_state: "matched",
       vehicle_response_state: "changed",
       line_state: "matched",
-      speed_dependence: "not_established",
+      speed_dependence: "bounded_to_observed_speed_band",
       stint_dependence: "not_established",
       traffic_dependence: "clear",
-      surface_dependence: "not_established",
-      front_rear_corner_scope: "unresolved",
+      surface_dependence: "repeated_physical_location",
+      front_rear_corner_scope: "four_corner_observed",
       strongest_contradiction: "RF tire-state development is unavailable.",
       authority: "observation_only",
       component_cause_authorized: false,
       setup_authorized: false,
     };
+    const operationalId = `p3542.response:${"4".repeat(24)}`;
+    value.operational_response_evidence = [{
+      evidence_id: operationalId,
+      relation: "disturbance_to_chassis",
+      phase: "center",
+      lap_pct_start: 42.5,
+      lap_pct_end: 51.5,
+      onset_pct: 43.0,
+      repetition_count: 2,
+      source_lap_numbers: [7, 8],
+      source_artifact_ids: ["surface-settling:qualified"],
+      source_channels: ["lf_shock_vel_in_s", "lf_shock_defl_in"],
+      metrics: [{
+        metric_id: `p3542.metric:${"5".repeat(24)}`,
+        label: "shock travel settling",
+        value: 0.183,
+        units: "s",
+        lap_number: 7,
+        corner: "lf",
+        source_channels: ["lf_shock_vel_in_s", "lf_shock_defl_in"],
+        authority: "observation_only",
+        setup_authorized: false,
+      }],
+      speed_min_mps: 60.0,
+      speed_median_mps: 61.0,
+      speed_max_mps: 62.0,
+      evidence_state: "observed_correlation",
+      authority: "observation_only",
+      cause_authorized: false,
+      setup_authorized: false,
+    }];
     value.mechanism_separation = [{
       mechanism_id: mechanismId,
       response_observation_id: responseId,
       required_response_kpi_ids: ["response:steering_to_yaw"],
       support_artifact_ids: [supportId],
+      response_evidence_ids: [operationalId],
       contradiction_artifact_ids: [contradictionId],
       missing_evidence: ["RF tire-state development is unavailable."],
       discriminator_contract_ids: [discriminatorContractId],
@@ -563,6 +596,10 @@ describe("VehicleDynamicsBlackboard", () => {
     expect(within(board).getByText("+0.128 s · center")).toBeTruthy();
     expect(within(board).getByText("Steering-wheel demand")).toBeTruthy();
     expect(within(board).getByText("+2.125 deg")).toBeTruthy();
+    expect(within(board).getByText("43.0% lap · canonical clock resolution")).toBeTruthy();
+    expect(within(board).getAllByText("DISTURBANCE → CHASSIS").length).toBeGreaterThan(0);
+    expect(within(board).getByText("LF shock travel settling · L7")).toBeTruthy();
+    expect(within(board).getByText("0.183 s")).toBeTruthy();
     expect(within(board).getByRole("heading", { name: "Mechanism separation" })).toBeTruthy();
     expect(within(board).getByText("RF tire-state development is unavailable.")).toBeTruthy();
   });

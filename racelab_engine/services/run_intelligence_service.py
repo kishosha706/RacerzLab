@@ -194,13 +194,14 @@ class RunIntelligenceBundle:
     calibration: PredictionCalibrationSummary
     driver_profile: DriverPresentationProfile
     awareness: EngineeringAwarenessEvidenceBuild
+    observations: RunObservationIntelligence
 
 
 _SNAPSHOT_LOCK = RLock()
 _SNAPSHOT_CACHE: dict[str, RunIntelligenceBundle] = {}
 _SNAPSHOT_INFLIGHT: dict[str, Future[RunIntelligenceBundle]] = {}
 _SNAPSHOT_SCHEMA_VERSION = "p31.shared-intelligence.v1"
-_PERSISTED_SNAPSHOT_SCHEMA_VERSION = "p35.5.persisted-intelligence.v1"
+_PERSISTED_SNAPSHOT_SCHEMA_VERSION = "p35.4.2.persisted-intelligence.v1"
 _SNAPSHOT_BUILD_COUNT = 0
 
 
@@ -224,6 +225,7 @@ def _bundle_payload(bundle: RunIntelligenceBundle) -> dict[str, Any]:
         ],
         "calibration": bundle.calibration.model_dump(mode="json"),
         "driver_profile": bundle.driver_profile.model_dump(mode="json"),
+        "observations": bundle.observations.model_dump(mode="json"),
         "awareness": {
             "frames": [item.model_dump(mode="json") for item in bundle.awareness.frames],
             "transitions": [
@@ -272,6 +274,9 @@ def _load_persisted_snapshot(database: Path, key: str) -> RunIntelligenceBundle 
             ),
             driver_profile=DriverPresentationProfile.model_validate(
                 payload["driver_profile"]
+            ),
+            observations=RunObservationIntelligence.model_validate(
+                payload["observations"]
             ),
             awareness=EngineeringAwarenessEvidenceBuild(
                 frames=tuple(
@@ -2193,6 +2198,7 @@ def _build_run_intelligence_uncached(
         calibration=calibration,
         driver_profile=profile,
         awareness=awareness_evidence,
+        observations=observation_intelligence,
     )
 
 

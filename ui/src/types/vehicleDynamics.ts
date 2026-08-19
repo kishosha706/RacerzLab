@@ -98,7 +98,7 @@ export type VehicleResponseObservation = {
   lap_pct_start: number;
   lap_pct_end: number;
   onset_pct: number;
-  onset_resolution: "phase_boundary";
+  onset_resolution: "phase_boundary" | "canonical_clock";
   response_regime: VehicleDynamicsResponseRegime;
   driver_demand_state: "matched" | "changed" | "mixed" | "unavailable";
   vehicle_response_state: "changed" | "not_established" | "unavailable";
@@ -123,16 +123,16 @@ export type VehicleProblemSignature = {
   local_time_delta_s: number;
   phase: string;
   onset_pct: number;
-  onset_resolution: "phase_boundary";
+  onset_resolution: "phase_boundary" | "canonical_clock";
   response_regime: VehicleDynamicsResponseRegime;
   driver_demand_state: "matched" | "changed" | "mixed" | "unavailable";
   vehicle_response_state: "changed" | "not_established" | "unavailable";
   line_state: "matched" | "changed" | "unavailable";
-  speed_dependence: "not_established";
-  stint_dependence: "not_established";
+  speed_dependence: "not_established" | "bounded_to_observed_speed_band" | "observed_across_distinct_speed_bands";
+  stint_dependence: "not_established" | "observed_migration";
   traffic_dependence: "blocked" | "clear" | "unavailable";
-  surface_dependence: "not_established";
-  front_rear_corner_scope: "unresolved";
+  surface_dependence: "not_established" | "repeated_physical_location";
+  front_rear_corner_scope: "unresolved" | "four_corner_observed";
   strongest_contradiction: string;
   authority: "observation_only";
   component_cause_authorized: false;
@@ -144,6 +144,7 @@ export type MechanismSeparationRow = {
   response_observation_id: string;
   required_response_kpi_ids: string[];
   support_artifact_ids: string[];
+  response_evidence_ids: string[];
   contradiction_artifact_ids: string[];
   missing_evidence: string[];
   discriminator_contract_ids: string[];
@@ -151,6 +152,39 @@ export type MechanismSeparationRow = {
   component_family_ids: string[];
   state: "alive" | "weakened" | "blocked";
   authority: "candidate_only";
+  setup_authorized: false;
+};
+
+export type OperationalResponseMetric = {
+  metric_id: string;
+  label: string;
+  value: number;
+  units: string;
+  lap_number: number | null;
+  corner: "lf" | "rf" | "lr" | "rr" | null;
+  source_channels: string[];
+  authority: "observation_only";
+  setup_authorized: false;
+};
+
+export type OperationalResponseEvidence = {
+  evidence_id: string;
+  relation: "brake_to_pressure" | "brake_release_to_yaw" | "throttle_to_acceleration" | "disturbance_to_chassis" | "stint_migration";
+  phase: string;
+  lap_pct_start: number;
+  lap_pct_end: number;
+  onset_pct: number;
+  repetition_count: number;
+  source_lap_numbers: number[];
+  source_artifact_ids: string[];
+  source_channels: string[];
+  metrics: OperationalResponseMetric[];
+  speed_min_mps: number | null;
+  speed_median_mps: number | null;
+  speed_max_mps: number | null;
+  evidence_state: "calculated" | "observed_correlation";
+  authority: "observation_only";
+  cause_authorized: false;
   setup_authorized: false;
 };
 
@@ -184,6 +218,7 @@ export type PerformanceMechanismAssessment = {
   response_regime: VehicleDynamicsResponseRegime | null;
   response_observations: VehicleResponseObservation[];
   problem_signature: VehicleProblemSignature | null;
+  operational_response_evidence: OperationalResponseEvidence[];
   mechanism_separation: MechanismSeparationRow[];
   candidates: PerformanceMechanismCandidate[];
   focus_artifacts: VehicleDynamicsFocusArtifact[];

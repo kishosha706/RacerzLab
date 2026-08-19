@@ -324,7 +324,7 @@ const vehicleDynamicsBody = {
     summary: reason, blocker_reasons: [reason], authority: "observation_only",
   })),
   tire_demand_state_ids: [], load_path_ids: [], response_regime: null,
-  response_observations: [], problem_signature: null, mechanism_separation: [],
+  response_observations: [], problem_signature: null, operational_response_evidence: [], mechanism_separation: [],
   candidates: [], focus_artifacts: [], strongest_support_artifact_id: null,
   strongest_contradiction_artifact_id: null, next_discriminator_contract_id: null,
   unavailable_quantity_ids: mandatoryUnavailableDynamics, traffic_blocked: false,
@@ -2133,6 +2133,7 @@ opportunityDynamicsBody.candidates = blockedCandidates;
 opportunityDynamicsBody.mechanism_separation = blockedCandidates.map((candidate) => ({
   mechanism_id: candidate.mechanism_id, response_observation_id: p354ResponseId,
   required_response_kpi_ids: [candidate.discriminator_contract_ids[0]],
+  response_evidence_ids: [],
   support_artifact_ids: [], contradiction_artifact_ids: [...candidate.contradiction_artifact_ids],
   missing_evidence: [...candidate.blocker_reasons],
   discriminator_contract_ids: [...candidate.discriminator_contract_ids],

@@ -15926,6 +15926,41 @@ button:focus:not(:focus-visible) {
   font-size: 0.66rem;
 }
 .vehicle-response-metrics b { color: #d7e4ec; white-space: nowrap; }
+.vehicle-operational-response {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.vehicle-operational-response > section {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-radius: 8px;
+  background: rgba(7, 18, 27, 0.62);
+}
+.vehicle-operational-response > section > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.vehicle-operational-response ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.vehicle-operational-response li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #9fb2bf;
+  font-size: 0.72rem;
+}
+.vehicle-operational-response li b { color: #d7e4ec; white-space: nowrap; }
 .vehicle-dynamics-separation-scroll { overflow-x: auto; }
 .vehicle-dynamics-separation table {
   width: 100%;

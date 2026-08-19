@@ -59,6 +59,20 @@ function signedMetric(value: number, units: string): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(3)} ${units}`;
 }
 
+function operationalRelationLabel(value: string): string {
+  return ({
+    brake_to_pressure: "BRAKE → PRESSURE",
+    brake_release_to_yaw: "RELEASE → YAW",
+    throttle_to_acceleration: "THROTTLE → ACCELERATION",
+    disturbance_to_chassis: "DISTURBANCE → CHASSIS",
+    stint_migration: "STINT MIGRATION",
+  } as Record<string, string>)[value] ?? humanize(value).toUpperCase();
+}
+
+function operationalMetricValue(value: number, units: string): string {
+  return `${value.toFixed(units === "count" ? 1 : 3)} ${units}`;
+}
+
 function scopeLabel(entry: EvidenceScope): string {
   const laps = entry.lap_numbers.length === 0
     ? "run scope"
@@ -338,7 +352,7 @@ export function VehicleDynamicsBlackboard({
           </div>
           <div>
             <dt>ONSET</dt>
-            <dd>{problemSignature.onset_pct.toFixed(1)}% lap · phase-boundary resolution</dd>
+            <dd>{problemSignature.onset_pct.toFixed(1)}% lap · {humanize(problemSignature.onset_resolution)} resolution</dd>
           </div>
           <div>
             <dt>DRIVER</dt>
@@ -363,6 +377,29 @@ export function VehicleDynamicsBlackboard({
             <b>{signedMetric(metric.value, metric.units)}</b>
           </li>)}
         </ul>
+        {assessment.operational_response_evidence.length > 0 && <div
+          className="vehicle-operational-response"
+          aria-label="Qualified operational response evidence"
+        >
+          {assessment.operational_response_evidence.map((evidence) => <section
+            key={evidence.evidence_id}
+            data-relation={evidence.relation}
+          >
+            <div>
+              <b>{operationalRelationLabel(evidence.relation)}</b>
+              <small>{evidence.repetition_count} independent laps · {humanize(evidence.evidence_state)}</small>
+            </div>
+            <ul>
+              {evidence.metrics.slice(0, evidence.relation === "stint_migration" ? 10 : 8).map((metric) => <li key={metric.metric_id}>
+                <span>{metric.corner ? `${metric.corner.toUpperCase()} ` : ""}{metric.label}{metric.lap_number !== null ? ` · L${metric.lap_number}` : ""}</span>
+                <b>{operationalMetricValue(metric.value, metric.units)}</b>
+              </li>)}
+            </ul>
+            {evidence.speed_median_mps !== null && <small>
+              Observed speed band {evidence.speed_min_mps?.toFixed(1)}–{evidence.speed_max_mps?.toFixed(1)} m/s · median {evidence.speed_median_mps.toFixed(1)} m/s
+            </small>}
+          </section>)}
+        </div>}
         <small>Steering values are steering-wheel demand, never road-wheel angle. Onset is only shown at the resolution currently measured.</small>
       </article>}
 
@@ -454,6 +491,7 @@ export function VehicleDynamicsBlackboard({
               <th>Mechanism</th>
               <th>State</th>
               <th>Support</th>
+              <th>Response evidence</th>
               <th>Contradiction</th>
               <th>Missing evidence</th>
               <th>Best discriminator</th>
@@ -462,6 +500,12 @@ export function VehicleDynamicsBlackboard({
               <th>{displayTypedId(row.mechanism_id)}</th>
               <td>{humanize(row.state)}</td>
               <td>{row.support_artifact_ids.length || "none"}</td>
+              <td>{row.response_evidence_ids.length > 0
+                ? row.response_evidence_ids.map((id) => {
+                  const evidence = assessment.operational_response_evidence.find((item) => item.evidence_id === id);
+                  return evidence ? operationalRelationLabel(evidence.relation) : "unavailable";
+                }).join(" · ")
+                : "none"}</td>
               <td>{row.contradiction_artifact_ids.length}</td>
               <td>{row.missing_evidence[0]}</td>
               <td>{displayTypedId(row.discriminator_contract_ids[0] ?? "unavailable")}</td>

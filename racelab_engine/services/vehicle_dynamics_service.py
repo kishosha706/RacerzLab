@@ -12,6 +12,7 @@ from typing import Iterable
 
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.models.engineering_projection import EngineeringAwarenessProjection
+from racelab_engine.models.dynamic_response import DynamicResponseReport
 from racelab_engine.models.evidence import EvidenceState
 from racelab_engine.models.performance_intelligence import (
     CornerPerformanceChain,
@@ -25,6 +26,8 @@ from racelab_engine.models.vehicle_dynamics_knowledge import (
     PerformanceMechanismAssessment,
     PerformanceMechanismCandidate,
     MechanismSeparationRow,
+    OperationalResponseEvidence,
+    OperationalResponseMetric,
     PhaseResponseMetric,
     VehicleDynamicMechanism,
     VehicleDynamicsChainStage,
@@ -39,6 +42,12 @@ from racelab_engine.models.vehicle_dynamics_knowledge import (
     build_performance_mechanism_assessment,
     build_vehicle_problem_signature,
     build_vehicle_response_observation,
+)
+from racelab_engine.models.surface_disturbance_response import (
+    SurfaceDisturbanceSettlingReport,
+)
+from racelab_engine.analysis.stint_response_migration import (
+    StintResponseMigrationReport,
 )
 
 
@@ -126,6 +135,413 @@ class _ComparisonContextTruth:
 
 def _unique(values: Iterable[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(value for value in values if value))
+
+
+def _operational_metric(
+    *,
+    evidence_id: str,
+    label: str,
+    value: float | None,
+    units: str,
+    source_channels: tuple[str, ...],
+    lap_number: int | None = None,
+    corner: str | None = None,
+) -> OperationalResponseMetric | None:
+    if value is None:
+        return None
+    metric_id = "p3542.metric:" + canonical_json_sha256(
+        [evidence_id, label, value, units, lap_number, corner, source_channels]
+    )[:24]
+    return OperationalResponseMetric(
+        metric_id=metric_id,
+        label=label,
+        value=value,
+        units=units,
+        lap_number=lap_number,
+        corner=corner,
+        source_channels=source_channels,
+    )
+
+
+def _scope_overlaps_opportunity(
+    start_pct: float,
+    end_pct: float,
+    opportunity: LapTimeOpportunity,
+) -> bool:
+    return max(start_pct, opportunity.start_pct) <= min(end_pct, opportunity.end_pct)
+
+
+def _dynamic_operational_evidence(
+    report: DynamicResponseReport | None,
+    opportunity: LapTimeOpportunity,
+) -> tuple[OperationalResponseEvidence, ...]:
+    if report is None:
+        return ()
+    opportunity_phase = opportunity.phase.casefold().replace("-", "_").replace(" ", "_")
+    brake_phases = {
+        "brake",
+        "braking",
+        "brake_application",
+        "brake_release",
+        "transition",
+        "turn_in",
+        "entry",
+    }
+    throttle_phases = {
+        "throttle",
+        "throttle_pickup",
+        "initial_throttle",
+        "exit",
+        "following_straight",
+    }
+    signatures = tuple(
+        signature
+        for path in report.paths
+        if path.status in {"ready", "partial"}
+        for signature in path.signatures
+        if _scope_overlaps_opportunity(
+            signature.physical_scope.lap_pct_start,
+            signature.physical_scope.lap_pct_end,
+            opportunity,
+        )
+    )
+    evidence: list[OperationalResponseEvidence] = []
+
+    pressure = tuple(
+        signature
+        for signature in signatures
+        if ".brake_application." in signature.contract.contract_id
+        and "brake_line_pressure" in signature.contract.response_channel
+    )
+    pressure_by_channel = {
+        signature.contract.response_channel: signature for signature in pressure
+    }
+    required_pressure_channels = (
+        "lf_brake_line_pressure_bar",
+        "rf_brake_line_pressure_bar",
+        "lr_brake_line_pressure_bar",
+        "rr_brake_line_pressure_bar",
+    )
+    if opportunity_phase in brake_phases and all(
+        channel in pressure_by_channel for channel in required_pressure_channels
+    ):
+        selected = tuple(pressure_by_channel[channel] for channel in required_pressure_channels)
+        common_laps = tuple(
+            sorted(
+                set.intersection(
+                    *(set(item.repeatability.independent_lap_numbers) for item in selected)
+                )
+            )
+        )
+        if len(common_laps) >= 2:
+            evidence_id = "p3542.response:" + canonical_json_sha256(
+                [item.signature_id for item in selected]
+            )[:24]
+            metrics = tuple(
+                metric
+                for corner, signature in zip(("lf", "rf", "lr", "rr"), selected)
+                for metric in (
+                    _operational_metric(
+                        evidence_id=evidence_id,
+                        label="pressure lag",
+                        value=signature.median_observed_lag_s,
+                        units="s",
+                        corner=corner,
+                        source_channels=signature.source_channels,
+                    ),
+                    _operational_metric(
+                        evidence_id=evidence_id,
+                        label="peak pressure gain",
+                        value=signature.median_peak_gain,
+                        units=signature.gain_unit,
+                        corner=corner,
+                        source_channels=signature.source_channels,
+                    ),
+                    _operational_metric(
+                        evidence_id=evidence_id,
+                        label="repeatability strength",
+                        value=signature.repeatability.score,
+                        units="score",
+                        corner=corner,
+                        source_channels=signature.source_channels,
+                    ),
+                )
+                if metric is not None
+            )
+            evidence.append(
+                OperationalResponseEvidence(
+                    evidence_id=evidence_id,
+                    relation="brake_to_pressure",
+                    phase=selected[0].phase,
+                    lap_pct_start=max(item.physical_scope.lap_pct_start for item in selected),
+                    lap_pct_end=min(item.physical_scope.lap_pct_end for item in selected),
+                    onset_pct=selected[0].physical_scope.input_onset_lap_pct,
+                    repetition_count=len(common_laps),
+                    source_lap_numbers=common_laps,
+                    source_artifact_ids=tuple(item.signature_id for item in selected),
+                    source_channels=_unique(
+                        channel for item in selected for channel in item.source_channels
+                    ),
+                    metrics=metrics,
+                    speed_min_mps=min(item.speed_band.minimum_mps for item in selected),
+                    speed_median_mps=sum(item.speed_band.median_mps for item in selected) / len(selected),
+                    speed_max_mps=max(item.speed_band.maximum_mps for item in selected),
+                    evidence_state="calculated",
+                )
+            )
+
+    for relation, marker, response_channel in (
+        ("brake_release_to_yaw", ".brake_release.", "yaw_rate"),
+        ("throttle_to_acceleration", ".throttle_application.", "long_accel"),
+    ):
+        allowed_phases = (
+            brake_phases if relation == "brake_release_to_yaw" else throttle_phases
+        )
+        if opportunity_phase not in allowed_phases:
+            continue
+        signature = next(
+            (
+                item
+                for item in signatures
+                if marker in item.contract.contract_id
+                and item.contract.response_channel == response_channel
+            ),
+            None,
+        )
+        if signature is None:
+            continue
+        evidence_id = "p3542.response:" + canonical_json_sha256(
+            [relation, signature.signature_id]
+        )[:24]
+        metrics = tuple(
+            item
+            for item in (
+                _operational_metric(
+                    evidence_id=evidence_id,
+                    label="response lag",
+                    value=signature.median_observed_lag_s,
+                    units="s",
+                    source_channels=signature.source_channels,
+                ),
+                _operational_metric(
+                    evidence_id=evidence_id,
+                    label="initial gain",
+                    value=signature.median_initial_gain,
+                    units=signature.gain_unit,
+                    source_channels=signature.source_channels,
+                ),
+                _operational_metric(
+                    evidence_id=evidence_id,
+                    label="peak gain",
+                    value=signature.median_peak_gain,
+                    units=signature.gain_unit,
+                    source_channels=signature.source_channels,
+                ),
+                _operational_metric(
+                    evidence_id=evidence_id,
+                    label="steady gain",
+                    value=signature.median_steady_gain,
+                    units=signature.gain_unit,
+                    source_channels=signature.source_channels,
+                ),
+                _operational_metric(
+                    evidence_id=evidence_id,
+                    label="overshoot",
+                    value=signature.median_overshoot_fraction,
+                    units="fraction",
+                    source_channels=signature.source_channels,
+                ),
+                _operational_metric(
+                    evidence_id=evidence_id,
+                    label="settling",
+                    value=signature.median_settling_duration_s,
+                    units="s",
+                    source_channels=signature.source_channels,
+                ),
+                _operational_metric(
+                    evidence_id=evidence_id,
+                    label="corrections",
+                    value=signature.median_correction_count,
+                    units="count",
+                    source_channels=signature.source_channels,
+                ),
+                _operational_metric(
+                    evidence_id=evidence_id,
+                    label="repeatability strength",
+                    value=signature.repeatability.score,
+                    units="score",
+                    source_channels=signature.source_channels,
+                ),
+            )
+            if item is not None
+        )
+        evidence.append(
+            OperationalResponseEvidence(
+                evidence_id=evidence_id,
+                relation=relation,
+                phase=signature.phase,
+                lap_pct_start=signature.physical_scope.lap_pct_start,
+                lap_pct_end=signature.physical_scope.lap_pct_end,
+                onset_pct=signature.physical_scope.input_onset_lap_pct,
+                repetition_count=signature.repeatability.independent_lap_count,
+                source_lap_numbers=signature.repeatability.independent_lap_numbers,
+                source_artifact_ids=(signature.signature_id,),
+                source_channels=signature.source_channels,
+                metrics=metrics,
+                speed_min_mps=signature.speed_band.minimum_mps,
+                speed_median_mps=signature.speed_band.median_mps,
+                speed_max_mps=signature.speed_band.maximum_mps,
+                evidence_state="calculated",
+            )
+        )
+    return tuple(evidence)
+
+
+def _surface_operational_evidence(
+    report: SurfaceDisturbanceSettlingReport | None,
+    opportunity: LapTimeOpportunity,
+) -> tuple[OperationalResponseEvidence, ...]:
+    signature = report.signature if report is not None and report.status == "ready" else None
+    if signature is None or not _scope_overlaps_opportunity(
+        signature.lap_pct_start, signature.lap_pct_end, opportunity
+    ):
+        return ()
+    evidence_id = "p3542.response:" + canonical_json_sha256(
+        ["disturbance_to_chassis", signature.signature_id]
+    )[:24]
+    metrics = tuple(
+        metric
+        for episode in signature.episodes
+        for corner in episode.corner_responses
+        for metric in (
+            _operational_metric(
+                evidence_id=evidence_id,
+                label="shock velocity lag",
+                value=corner.observed_velocity_lag_s,
+                units="s",
+                lap_number=episode.scope.lap_number,
+                corner=corner.corner,
+                source_channels=corner.source_channels,
+            ),
+            _operational_metric(
+                evidence_id=evidence_id,
+                label="shock velocity peak",
+                value=corner.peak_abs_shock_velocity_in_s,
+                units="in/s",
+                lap_number=episode.scope.lap_number,
+                corner=corner.corner,
+                source_channels=corner.source_channels,
+            ),
+            _operational_metric(
+                evidence_id=evidence_id,
+                label="shock travel settling",
+                value=corner.travel_settling_duration_s,
+                units="s",
+                lap_number=episode.scope.lap_number,
+                corner=corner.corner,
+                source_channels=corner.source_channels,
+            ),
+        )
+        if metric is not None
+    )
+    return (
+        OperationalResponseEvidence(
+            evidence_id=evidence_id,
+            relation="disturbance_to_chassis",
+            phase=signature.phase,
+            lap_pct_start=signature.lap_pct_start,
+            lap_pct_end=signature.lap_pct_end,
+            onset_pct=signature.disturbance_onset_median_lap_pct,
+            repetition_count=signature.repetition_count,
+            source_lap_numbers=tuple(
+                episode.scope.lap_number for episode in signature.episodes
+            ),
+            source_artifact_ids=(signature.signature_id, *signature.source_artifact_ids),
+            source_channels=signature.source_channels,
+            metrics=metrics,
+            speed_min_mps=signature.speed_min_mps,
+            speed_median_mps=signature.median_speed_mps,
+            speed_max_mps=signature.speed_max_mps,
+            evidence_state="observed_correlation",
+        ),
+    )
+
+
+def _stint_operational_evidence(
+    report: StintResponseMigrationReport | None,
+    opportunity: LapTimeOpportunity,
+    expected_setup_id: str | None = None,
+) -> tuple[OperationalResponseEvidence, ...]:
+    if report is None:
+        return ()
+    evidence: list[OperationalResponseEvidence] = []
+    for segment in report.segments:
+        if expected_setup_id is not None and segment.setup_identity != expected_setup_id:
+            continue
+        for signature in segment.phase_signatures:
+            observed_trends = tuple(
+                trend for trend in signature.trends if trend.state == "observed"
+            )
+            if not observed_trends or not _scope_overlaps_opportunity(
+                signature.scope.lap_pct_start,
+                signature.scope.lap_pct_end,
+                opportunity,
+            ):
+                continue
+            lap_numbers = tuple(item.lap_number for item in signature.lap_responses)
+            if len(lap_numbers) < 10:
+                continue
+            evidence_id = "p3542.response:" + canonical_json_sha256(
+                ["stint_migration", segment.segment_id, signature.scope.scope_id]
+            )[:24]
+            metric_specs = (
+                ("phase time", "phase_time_s", "s", ("session_tick", "lap_dist_pct_100")),
+                ("steering demand RMS", "steering_demand_rms_deg", "deg", ("steering_deg",)),
+                ("yaw response RMS", "yaw_response_rms_rad_s", "rad/s", ("yaw_rate",)),
+                ("steering to yaw gain", "steering_to_yaw_gain_proxy_rad_s_per_deg", "rad/s/deg", ("steering_deg", "yaw_rate")),
+                ("throttle pickup", "throttle_pickup_position_pct", "% lap", ("throttle_pct", "lap_dist_pct_100")),
+            )
+            metrics = tuple(
+                metric
+                for response in signature.lap_responses
+                for label, field, units, channels in metric_specs
+                for metric in (
+                    _operational_metric(
+                        evidence_id=evidence_id,
+                        label=label,
+                        value=getattr(response, field),
+                        units=units,
+                        lap_number=response.lap_number,
+                        source_channels=tuple(
+                            channel for channel in channels if channel in response.source_channels
+                        ) or response.source_channels,
+                    ),
+                )
+                if metric is not None
+            )
+            if not metrics:
+                continue
+            evidence.append(
+                OperationalResponseEvidence(
+                    evidence_id=evidence_id,
+                    relation="stint_migration",
+                    phase=signature.scope.phase,
+                    lap_pct_start=signature.scope.lap_pct_start,
+                    lap_pct_end=signature.scope.lap_pct_end,
+                    onset_pct=signature.scope.lap_pct_start,
+                    repetition_count=len(lap_numbers),
+                    source_lap_numbers=lap_numbers,
+                    source_artifact_ids=(segment.segment_id,),
+                    source_channels=_unique(
+                        channel
+                        for response in signature.lap_responses
+                        for channel in response.source_channels
+                    ),
+                    metrics=metrics,
+                    evidence_state="observed_correlation",
+                )
+            )
+    return tuple(evidence)
 
 
 def _diagnostic_channels(values: Iterable[str]) -> tuple[str, ...]:
@@ -1219,6 +1635,7 @@ def _response_and_signature(
     phase_state: PerformancePhaseState | None,
     regime: DynamicResponseRegime | None,
     context_truth: _ComparisonContextTruth,
+    operational_evidence: tuple[OperationalResponseEvidence, ...] = (),
 ) -> tuple[tuple[VehicleResponseObservation, ...], VehicleProblemSignature | None]:
     if opportunity is None or opportunity.local_delta_s is None or regime is None:
         return (), None
@@ -1285,6 +1702,18 @@ def _response_and_signature(
             *((chain.chain_id,) if chain is not None and phase_state is not None else ()),
         )
     )
+    precise_onset = next(
+        (
+            item.onset_pct
+            for item in operational_evidence
+            if item.relation != "stint_migration"
+            and opportunity.start_pct <= item.onset_pct <= opportunity.end_pct
+        ),
+        opportunity.start_pct,
+    )
+    onset_resolution = (
+        "canonical_clock" if precise_onset != opportunity.start_pct else "phase_boundary"
+    )
     observation = build_vehicle_response_observation(
         {
             "opportunity_id": opportunity.opportunity_id,
@@ -1294,7 +1723,8 @@ def _response_and_signature(
             "phase": opportunity.phase,
             "lap_pct_start": opportunity.start_pct,
             "lap_pct_end": opportunity.end_pct,
-            "onset_pct": opportunity.start_pct,
+            "onset_pct": precise_onset,
+            "onset_resolution": onset_resolution,
             "response_regime": regime,
             "driver_demand_state": driver_state,
             "vehicle_response_state": vehicle_state,
@@ -1334,17 +1764,38 @@ def _response_and_signature(
             "time_origin": opportunity.origin_kind,
             "local_time_delta_s": opportunity.local_delta_s,
             "phase": opportunity.phase,
-            "onset_pct": opportunity.start_pct,
+            "onset_pct": precise_onset,
+            "onset_resolution": onset_resolution,
             "response_regime": regime,
             "driver_demand_state": driver_state,
             "vehicle_response_state": vehicle_state,
             "line_state": line_state,
+            "speed_dependence": (
+                "bounded_to_observed_speed_band"
+                if any(item.speed_median_mps is not None for item in operational_evidence)
+                else "not_established"
+            ),
+            "stint_dependence": (
+                "observed_migration"
+                if any(item.relation == "stint_migration" for item in operational_evidence)
+                else "not_established"
+            ),
             "traffic_dependence": (
                 "blocked"
                 if context_truth.traffic_blocked
                 else "clear"
                 if context_truth.qualified
                 else "unavailable"
+            ),
+            "surface_dependence": (
+                "repeated_physical_location"
+                if any(item.relation == "disturbance_to_chassis" for item in operational_evidence)
+                else "not_established"
+            ),
+            "front_rear_corner_scope": (
+                "four_corner_observed"
+                if any(item.relation == "disturbance_to_chassis" for item in operational_evidence)
+                else "unresolved"
             ),
             "strongest_contradiction": strongest_contradiction,
         }
@@ -1356,12 +1807,21 @@ def _mechanism_separation_rows(
     mechanisms: tuple[VehicleDynamicMechanism, ...],
     candidates: tuple[PerformanceMechanismCandidate, ...],
     response_observations: tuple[VehicleResponseObservation, ...],
+    operational_evidence: tuple[OperationalResponseEvidence, ...] = (),
 ) -> tuple[MechanismSeparationRow, ...]:
     if not response_observations:
         return ()
     by_id = {item.definition_id: item for item in mechanisms}
     response_id = response_observations[0].observation_id
     rows: list[MechanismSeparationRow] = []
+    relations_by_mechanism = {
+        "mechanism:brake_entry_instability": {"brake_to_pressure"},
+        "mechanism:brake_release_rotation_deficit": {"brake_release_to_yaw"},
+        "mechanism:power_on_rotation_excess": {"throttle_to_acceleration"},
+        "mechanism:power_on_rotation_deficit": {"throttle_to_acceleration"},
+        "mechanism:traction_limitation_like": {"throttle_to_acceleration"},
+        "mechanism:disturbance_compliance_issue": {"disturbance_to_chassis"},
+    }
     for candidate in candidates:
         mechanism = by_id[candidate.mechanism_id]
         missing = candidate.blocker_reasons or (
@@ -1373,6 +1833,12 @@ def _mechanism_separation_rows(
                 response_observation_id=response_id,
                 required_response_kpi_ids=mechanism.support_contract_ids,
                 support_artifact_ids=candidate.support_artifact_ids,
+                response_evidence_ids=tuple(
+                    item.evidence_id
+                    for item in operational_evidence
+                    if item.relation
+                    in relations_by_mechanism.get(candidate.mechanism_id, set())
+                ),
                 contradiction_artifact_ids=candidate.contradiction_artifact_ids,
                 missing_evidence=missing,
                 discriminator_contract_ids=candidate.discriminator_contract_ids,
@@ -1393,6 +1859,9 @@ def build_vehicle_dynamics_assessment(
     p20: EngineeringAwarenessProjection,
     p26: object,
     p32: PerformanceIntelligenceProjection,
+    dynamic_response: DynamicResponseReport | None = None,
+    surface_response: SurfaceDisturbanceSettlingReport | None = None,
+    stint_response: StintResponseMigrationReport | None = None,
 ) -> PerformanceMechanismAssessment:
     """Build one current P35 assessment without reading raw telemetry.
 
@@ -1402,6 +1871,7 @@ def build_vehicle_dynamics_assessment(
 
     p26_graph_version = str(getattr(p26, "graph_version"))
     p26_graph_sha256 = str(getattr(p26, "knowledge_graph_sha256"))
+    expected_setup_id = getattr(p26, "setup_id", None)
     if (
         p32.run_id != run_id
         or p32.session_id != session_id
@@ -1418,6 +1888,14 @@ def build_vehicle_dynamics_assessment(
         != p19_reasoning_snapshot_sha256
         or getattr(p26, "reasoning_snapshot_sha256", None)
         != p19_reasoning_snapshot_sha256
+        or (dynamic_response is not None and dynamic_response.run_id != run_id)
+        or (stint_response is not None and stint_response.run_id != run_id)
+        or (
+            dynamic_response is not None
+            and dynamic_response.setup_id is not None
+            and expected_setup_id is not None
+            and dynamic_response.setup_id != expected_setup_id
+        )
     ):
         raise ValueError("P35 requires one exact atomic P19/P20/P26/P32 scope")
 
@@ -1435,6 +1913,19 @@ def build_vehicle_dynamics_assessment(
     )
 
     opportunity = _leading_opportunity(p32)
+    operational_response_evidence = (
+        (
+            *_dynamic_operational_evidence(dynamic_response, opportunity),
+            *_surface_operational_evidence(surface_response, opportunity),
+            *_stint_operational_evidence(
+                stint_response,
+                opportunity,
+                expected_setup_id=expected_setup_id,
+            ),
+        )
+        if opportunity is not None
+        else ()
+    )
     phase = _phase_kind(opportunity.phase if opportunity is not None else "transition")
     regime = (
         _response_regime(phase)
@@ -1474,6 +1965,7 @@ def build_vehicle_dynamics_assessment(
         phase_state=phase_state,
         regime=regime,
         context_truth=context_truth,
+        operational_evidence=operational_response_evidence,
     )
 
     p32_mechanism_ids = _unique(
@@ -1514,6 +2006,7 @@ def build_vehicle_dynamics_assessment(
         mechanisms,
         candidates,
         response_observations,
+        operational_response_evidence,
     )
 
     # Graph states remain reviewed possibilities until one typed observer
@@ -1634,6 +2127,7 @@ def build_vehicle_dynamics_assessment(
             "response_regime": regime,
             "response_observations": response_observations,
             "problem_signature": problem_signature,
+            "operational_response_evidence": operational_response_evidence,
             "mechanism_separation": mechanism_separation,
             "candidates": candidates,
             "focus_artifacts": focus_artifacts,
