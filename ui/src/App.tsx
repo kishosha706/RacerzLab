@@ -59,7 +59,10 @@ import type {
 } from "./types/telemetry";
 import type { RaceLabSession, SessionSelectionSource } from "./types/session";
 import type { IntelligenceCitation, IntelligenceCitationWorkspace, IntelligenceNextTrustworthyMove } from "./types/intelligence";
-import type { CrewChiefEvidenceEntry } from "./types/crewChief";
+import type {
+  CrewChiefEngineeringResponseArtifact,
+  CrewChiefEvidenceEntry,
+} from "./types/crewChief";
 import type { LearningEvidenceReference } from "./types/engineeringLearning";
 import { canonicalJsonSha256 } from "./utils/canonicalJsonSha256";
 import {
@@ -1627,6 +1630,10 @@ function CockpitShell() {
     const producerId = provenance ? provenance.producer_id : (target as CrewChiefEvidenceEntry).producer_id;
     const artifactId = provenance ? provenance.artifact_id : (target as CrewChiefEvidenceEntry).artifact_id;
     const componentId = provenance ? null : (target as CrewChiefEvidenceEntry).component_ids[0] ?? null;
+    const responseEnvelope: CrewChiefEngineeringResponseArtifact | null = !provenance
+      && (target as CrewChiefEvidenceEntry).typed_artifact?.artifact_type === "engineering_response"
+      ? (target as CrewChiefEvidenceEntry).typed_artifact as CrewChiefEngineeringResponseArtifact
+      : null;
     const lap = lapNumbers[0] ?? null;
     const hasWindow = lapPctStart != null && lapPctEnd != null;
     const midpoint = hasWindow ? (lapPctStart + lapPctEnd) / 2 : null;
@@ -1642,6 +1649,14 @@ function CockpitShell() {
       eventId: null,
       producerId,
       artifactId,
+      caseId: responseEnvelope?.case_id ?? null,
+      caseRevision: responseEnvelope?.case_revision_sha256 ?? null,
+      mechanismIds: provenance ? [] : (target as CrewChiefEvidenceEntry).mechanism_ids,
+      responseRelationId: responseEnvelope?.response.relation ?? null,
+      componentIds: provenance ? [] : (target as CrewChiefEvidenceEntry).component_ids,
+      effectIds: [],
+      controlKeys: provenance ? [] : (target as CrewChiefEvidenceEntry).control_keys,
+      p19CauseIds: [],
       sampleIndex: null,
       lapDistFt: null,
       lapPct: midpoint,

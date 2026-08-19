@@ -11,6 +11,7 @@ from racelab_engine.analysis.test_director import (
     TestQualityResult,
     score_test_execution,
 )
+from racelab_engine.models.engineering_case import ControlledResponseReceipt
 
 
 class VehicleConditionEpoch(BaseModel):
@@ -69,6 +70,7 @@ class ControlledWorkflow(BaseModel):
     execution: TestExecution | None = None
     reproduction_snapshot: dict[str, Any] = Field(default_factory=dict)
     quality: TestQualityResult | None = None
+    controlled_response_receipt: ControlledResponseReceipt | None = None
     learning_admitted: bool | None = None
     learning_capture_state: Literal["not_applicable", "captured", "blocked"] = (
         "not_applicable"
@@ -132,6 +134,21 @@ class ControlledWorkflow(BaseModel):
                 for laps in stage_laps
             )
         )
+        if self.controlled_response_receipt is not None and (
+            self.status != "scored"
+            or self.controlled_response_receipt.workflow_id != self.workflow_id
+            or tuple(
+                item.run_id for item in self.controlled_response_receipt.stages
+            )
+            != tuple(self.stage_run_ids.get(stage) for stage in stages)
+        ):
+            raise ValueError(
+                "controlled response receipt must bind the exact scored A/B/A2 workflow"
+            )
+        if self.status == "scored" and self.controlled_response_receipt is None:
+            # Persisted pre-P35.4.3 workflows remain readable. New scoring paths
+            # always attach a receipt before persistence.
+            pass
         if execution is not None and not complete_scope and any(
             value is not None
             for value in (

@@ -11,6 +11,7 @@ const workflowKeys = [
   "packet", "p32_opportunity_id", "p32_projection_sha256",
   "engineering_knowledge_projection_sha256", "stage_run_ids", "stage_eligible_lap_numbers", "stage_experiment_contexts",
   "analysis_version", "execution", "reproduction_snapshot", "quality", "learning_admitted",
+  "controlled_response_receipt",
   "learning_capture_state", "learning_capture_experience_id",
   "learning_capture_experience_sha256", "learning_capture_blocker_reason",
 ] as const;
@@ -23,6 +24,11 @@ const exactKeys = (value: Record<string, unknown>, keys: readonly string[]): boo
 const nonempty = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
 const nullableRecord = (value: unknown): boolean => value === null || record(value);
+const uniqueStrings = (value: unknown): value is string[] => Array.isArray(value)
+  && value.every(nonempty)
+  && new Set(value).size === value.length;
+const safeTexts = (value: unknown): value is string[] => uniqueStrings(value)
+  && value.every((item) => !hasSetupAuthorityDirective(item));
 const stageMap = (value: unknown): boolean => record(value)
   && Object.entries(value).every(([stage, runId]) => (
     ["A", "B", "A2"].includes(stage) && nonempty(runId)
@@ -38,6 +44,47 @@ const stageContextMap = (value: unknown): boolean => record(value)
   && Object.entries(value).every(([stage, context]) => (
     ["A", "B", "A2"].includes(stage) && record(context)
   ));
+
+const controlledResponseReceipt = (value: unknown, workflowId: string): boolean => {
+  if (value === null) return true;
+  if (!record(value)
+    || !/^p3543receipt_[0-9a-f]{24}$/.test(String(value.receipt_id))
+    || typeof value.receipt_sha256 !== "string" || !hash.test(value.receipt_sha256)
+    || value.workflow_id !== workflowId
+    || !nonempty(value.control_key)
+    || !nonempty(value.setup_effect_id)
+    || !nonempty(value.experiment_factor_id)
+    || ![-1, 1].includes(Number(value.direction_sign))
+    || !Array.isArray(value.stages)
+    || value.stages.length !== 3
+    || !Array.isArray(value.expected_response_relation_ids)
+    || value.expected_response_relation_ids.length === 0
+    || !Array.isArray(value.observed_metric_deltas)
+    || !["ready", "blocked"].includes(String(value.state))
+    || !safeTexts(value.blocker_reasons)
+    || value.authority !== "p19_controlled_response_receipt"
+    || value.setup_authorized !== false) return false;
+  const stages = value.stages as Array<Record<string, unknown>>;
+  const runIds = stages.map((item) => String(item.run_id));
+  const recordings = stages.map((item) => String(item.source_recording_sha256));
+  return stages.every((item, index) => (
+    record(item)
+    && item.stage === ["A", "B", "A2"][index]
+    && nonempty(item.run_id)
+    && typeof item.source_recording_sha256 === "string"
+    && hash.test(item.source_recording_sha256)
+    && typeof item.setup_snapshot_sha256 === "string"
+    && hash.test(item.setup_snapshot_sha256)
+    && uniqueStrings(item.response_artifact_ids)
+    && uniqueStrings(item.source_channels)
+    && Array.isArray(item.eligible_lap_numbers)
+    && item.eligible_lap_numbers.length >= 3
+  )) && new Set(runIds).size === 3
+    && new Set(recordings).size === 3
+    && (value.state === "ready"
+      ? value.observed_metric_deltas.length > 0 && value.blocker_reasons.length === 0
+      : value.observed_metric_deltas.length === 0 && value.blocker_reasons.length > 0);
+};
 
 export function hasValidLearningCaptureMetadata(value: unknown): boolean {
   if (!record(value)
@@ -92,6 +139,7 @@ export function isControlledWorkflowResponse(value: unknown): value is Controlle
     || !nullableRecord(value.execution)
     || !record(value.reproduction_snapshot)
     || !nullableRecord(value.quality)
+    || !controlledResponseReceipt(value.controlled_response_receipt, String(value.workflow_id))
     || !(value.learning_admitted === null || typeof value.learning_admitted === "boolean")
     || !hasValidLearningCaptureMetadata(value)) return false;
   const performanceIdentity = [

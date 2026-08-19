@@ -7,6 +7,7 @@ import pytest
 
 from racelab_engine.analysis.dynamic_response import (
     BRAKE_THROTTLE_RESPONSE_CONTRACTS,
+    VEHICLE_INPUT_RESPONSE_CONTRACTS,
     analyze_brake_throttle_dynamic_response,
 )
 from racelab_engine.models.dynamic_response import DynamicResponseSignature
@@ -37,7 +38,21 @@ def _throttle(index: int) -> float:
     return 100.0
 
 
+def _steering(index: int) -> float:
+    if index < 8:
+        return 0.0
+    if index < 16:
+        return float((index - 7) * 1.25)
+    if index < 28:
+        return 10.0
+    if index < 36:
+        return float(max(0.0, 10.0 - (index - 27) * 1.25))
+    return 0.0
+
+
 def _phase(index: int) -> str:
+    if 8 <= index < 20:
+        return "turn_in"
     if 20 <= index < 50:
         return "brake_application"
     if 50 <= index < 70:
@@ -85,6 +100,9 @@ def _rows(
             yaw_throttle_input = (
                 0.0 if inactive else _throttle(max(0, profile_index - 3))
             )
+            steering_yaw_input = (
+                0.0 if inactive else _steering(max(0, profile_index - 2))
+            )
             session_time = lap_start + index / _RATE_HZ
             if duplicate_session_time and index == 26:
                 session_time = lap_start + (index - 1) / _RATE_HZ
@@ -101,10 +119,15 @@ def _rows(
                 "speed_mps": 42.0 + 0.01 * index,
                 "brake_pct": 0.0 if inactive else _brake(profile_index),
                 "throttle_pct": 0.0 if inactive else _throttle(profile_index),
+                "steering_deg": 0.0 if inactive else _steering(profile_index),
                 "long_accel": (
                     -0.04 * brake_accel_input + 0.025 * throttle_accel_input
                 ),
-                "yaw_rate": 0.001 * yaw_brake_input + 0.002 * yaw_throttle_input,
+                "yaw_rate": (
+                    0.01 * yaw_brake_input
+                    + 0.002 * yaw_throttle_input
+                    + 0.01 * steering_yaw_input
+                ),
                 "engineering_phase": (
                     "straight" if inactive else _phase(profile_index)
                 ),
@@ -154,7 +177,7 @@ def test_brake_throttle_signatures_use_qualified_clock_and_distinct_laps() -> No
     report = _analyze(_rows())
 
     assert report.status == "ready"
-    assert len(report.paths) == len(BRAKE_THROTTLE_RESPONSE_CONTRACTS) == 13
+    assert len(report.paths) == len(VEHICLE_INPUT_RESPONSE_CONTRACTS) == 14
     assert all(binding.clock_state == "qualified" for binding in report.clock_bindings)
     assert all(binding.primary_clock == "session_tick" for binding in report.clock_bindings)
     assert all(not binding.blockers for binding in report.clock_bindings)
@@ -166,7 +189,7 @@ def test_brake_throttle_signatures_use_qualified_clock_and_distinct_laps() -> No
     )
 
     signatures = _signatures(report)
-    assert len(signatures) == 13
+    assert len(signatures) == 14
     for signature in signatures:
         assert signature.repeatability.independent_lap_numbers == (1, 2)
         assert signature.repeatability.independent_lap_count == 2
@@ -231,7 +254,7 @@ def test_nonfinite_response_never_becomes_a_numeric_signature() -> None:
     yaw_paths = [
         path for path in report.paths if path.contract.response_channel == "yaw_rate"
     ]
-    assert len(yaw_paths) == 3
+    assert len(yaw_paths) == 4
     assert all(path.status == "blocked" for path in yaw_paths)
     assert not any(
         signature.contract.response_channel == "yaw_rate"

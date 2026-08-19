@@ -15961,6 +15961,33 @@ button:focus:not(:focus-visible) {
   font-size: 0.72rem;
 }
 .vehicle-operational-response li b { color: #d7e4ec; white-space: nowrap; }
+.engineering-case-receipt {
+  display: grid;
+  gap: 10px;
+  border-color: rgba(45, 212, 191, 0.28) !important;
+  background: linear-gradient(145deg, rgba(8, 28, 30, 0.92), rgba(7, 18, 27, 0.9)) !important;
+}
+.engineering-case-receipt > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.engineering-case-receipt > ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.engineering-case-receipt > ul button {
+  display: grid;
+  width: 100%;
+  gap: 3px;
+  text-align: left;
+}
+.engineering-case-receipt details p { display: grid; gap: 3px; }
 .vehicle-dynamics-separation-scroll { overflow-x: auto; }
 .vehicle-dynamics-separation table {
   width: 100%;

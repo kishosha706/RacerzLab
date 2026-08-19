@@ -11,6 +11,9 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from racelab_engine.identity import canonical_json_sha256
+from racelab_engine.knowledge.engineering_semantic_registry import (
+    response_relations_for_mechanism,
+)
 from racelab_engine.models.engineering_projection import EngineeringAwarenessProjection
 from racelab_engine.models.dynamic_response import DynamicResponseReport
 from racelab_engine.models.evidence import EvidenceState
@@ -194,6 +197,13 @@ def _dynamic_operational_evidence(
         "exit",
         "following_straight",
     }
+    steering_phases = {
+        "steering_application",
+        "turn_in",
+        "entry",
+        "center",
+        "transition",
+    }
     signatures = tuple(
         signature
         for path in report.paths
@@ -291,11 +301,19 @@ def _dynamic_operational_evidence(
             )
 
     for relation, marker, response_channel in (
+        ("brake_to_deceleration", ".brake_application.", "long_accel"),
+        ("brake_to_yaw", ".brake_application.", "yaw_rate"),
         ("brake_release_to_yaw", ".brake_release.", "yaw_rate"),
         ("throttle_to_acceleration", ".throttle_application.", "long_accel"),
+        ("throttle_to_yaw", ".throttle_application.", "yaw_rate"),
+        ("steering_wheel_to_yaw", ".steering_application.", "yaw_rate"),
     ):
         allowed_phases = (
-            brake_phases if relation == "brake_release_to_yaw" else throttle_phases
+            steering_phases
+            if relation == "steering_wheel_to_yaw"
+            else brake_phases
+            if relation.startswith("brake_")
+            else throttle_phases
         )
         if opportunity_phase not in allowed_phases:
             continue
@@ -1814,14 +1832,6 @@ def _mechanism_separation_rows(
     by_id = {item.definition_id: item for item in mechanisms}
     response_id = response_observations[0].observation_id
     rows: list[MechanismSeparationRow] = []
-    relations_by_mechanism = {
-        "mechanism:brake_entry_instability": {"brake_to_pressure"},
-        "mechanism:brake_release_rotation_deficit": {"brake_release_to_yaw"},
-        "mechanism:power_on_rotation_excess": {"throttle_to_acceleration"},
-        "mechanism:power_on_rotation_deficit": {"throttle_to_acceleration"},
-        "mechanism:traction_limitation_like": {"throttle_to_acceleration"},
-        "mechanism:disturbance_compliance_issue": {"disturbance_to_chassis"},
-    }
     for candidate in candidates:
         mechanism = by_id[candidate.mechanism_id]
         missing = candidate.blocker_reasons or (
@@ -1837,7 +1847,7 @@ def _mechanism_separation_rows(
                     item.evidence_id
                     for item in operational_evidence
                     if item.relation
-                    in relations_by_mechanism.get(candidate.mechanism_id, set())
+                    in response_relations_for_mechanism(candidate.mechanism_id)
                 ),
                 contradiction_artifact_ids=candidate.contradiction_artifact_ids,
                 missing_evidence=missing,

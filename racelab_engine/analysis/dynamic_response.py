@@ -162,10 +162,26 @@ THROTTLE_APPLICATION_RESPONSE_CONTRACTS = (
     ),
 )
 
+STEERING_WHEEL_RESPONSE_CONTRACTS = (
+    _path(
+        event="steering_application",
+        input_channel="steering_wheel_demand_magnitude_deg",
+        transition="rising",
+        response_channel="yaw_rate",
+        response_unit="rad/s",
+        response_polarity="either",
+    ),
+)
+
 BRAKE_THROTTLE_RESPONSE_CONTRACTS = (
     *BRAKE_APPLICATION_RESPONSE_CONTRACTS,
     *BRAKE_RELEASE_RESPONSE_CONTRACTS,
     *THROTTLE_APPLICATION_RESPONSE_CONTRACTS,
+)
+
+VEHICLE_INPUT_RESPONSE_CONTRACTS = (
+    *BRAKE_THROTTLE_RESPONSE_CONTRACTS,
+    *STEERING_WHEEL_RESPONSE_CONTRACTS,
 )
 
 
@@ -219,6 +235,12 @@ def _lap_position(row: Mapping[str, Any]) -> float | None:
 
 
 def _channel_value(row: Mapping[str, Any], channel: str) -> float | None:
+    if channel == "steering_wheel_demand_magnitude_deg":
+        for source in ("steering_deg", "SteeringWheelAngle"):
+            value = _finite(row.get(source))
+            if value is not None:
+                return abs(value)
+        return None
     value = _finite(row.get(channel))
     if value is not None:
         return value
@@ -240,6 +262,10 @@ def _source_name(rows: Sequence[Mapping[str, Any]], channel: str) -> str:
         "session_time": ("session_time", "SessionTime"),
         "lap_dist_pct_100": ("lap_dist_pct_100", "lap_dist_pct", "LapDistPct"),
         "speed_mps": ("speed_mps", "Speed"),
+        "steering_wheel_demand_magnitude_deg": (
+            "steering_deg",
+            "SteeringWheelAngle",
+        ),
     }.get(channel, (channel,))
     return next(
         (
@@ -397,6 +423,8 @@ def _phase_for_event(
         return explicit
     if input_channel == "brake_pct":
         return "brake_application" if transition == "rising" else "brake_release"
+    if input_channel == "steering_wheel_demand_magnitude_deg":
+        return "steering_application"
     return "initial_throttle"
 
 
@@ -1140,7 +1168,7 @@ def _blocked_paths(
             independent_lap_count=0,
             blocker_reasons=reasons,
         )
-        for contract in BRAKE_THROTTLE_RESPONSE_CONTRACTS
+        for contract in VEHICLE_INPUT_RESPONSE_CONTRACTS
     )
 
 
@@ -1244,7 +1272,7 @@ def analyze_brake_throttle_dynamic_response(
     assert setup_id is not None
     paths = tuple(
         _path_result(contract, prepared, setup_id=setup_id)
-        for contract in BRAKE_THROTTLE_RESPONSE_CONTRACTS
+        for contract in VEHICLE_INPUT_RESPONSE_CONTRACTS
     )
     ready = [path for path in paths if path.status == "ready"]
     evidence = [path for path in paths if path.status in {"ready", "partial"}]
@@ -1276,6 +1304,8 @@ __all__ = [
     "BRAKE_APPLICATION_RESPONSE_CONTRACTS",
     "BRAKE_RELEASE_RESPONSE_CONTRACTS",
     "BRAKE_THROTTLE_RESPONSE_CONTRACTS",
+    "STEERING_WHEEL_RESPONSE_CONTRACTS",
+    "VEHICLE_INPUT_RESPONSE_CONTRACTS",
     "THROTTLE_APPLICATION_RESPONSE_CONTRACTS",
     "analyze_brake_throttle_dynamic_response",
 ]

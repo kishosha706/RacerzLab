@@ -39,6 +39,7 @@ from racelab_engine.models.crew_chief import (
     CrewChiefToolResult,
     CrewChiefTrackDemandArtifact,
     CrewChiefUnavailablePerformanceArtifact,
+    CrewChiefEngineeringResponseArtifact,
     CrewChiefVehicleDynamicsFocusArtifact,
     CrewChiefWorkspace,
     CrewChiefWorkspaceIdentity,
@@ -159,6 +160,13 @@ from racelab_engine.storage.investigation_adaptation_repository import (
 from racelab_engine.storage.repository import RaceLabRepository
 from racelab_engine.services.engineering_knowledge_service import (
     build_current_engineering_knowledge,
+)
+from racelab_engine.services.engineering_case_service import (
+    build_capability_resolutions,
+    build_canonical_engineering_case,
+    build_engineering_response_artifacts,
+    build_p19_response_admissions,
+    build_setup_effect_readiness,
 )
 
 
@@ -985,6 +993,7 @@ def _evidence_index(
     repository: RaceLabRepository | None = None,
     learning_prior: CrewChiefLearningPrior | None = None,
     p35: PerformanceMechanismAssessment | None = None,
+    response_artifacts: tuple[object, ...] = (),
 ) -> EngineeringEvidenceIndex:
     report = bundle.report
     repository = repository or RaceLabRepository()
@@ -1668,6 +1677,52 @@ def _evidence_index(
                 ),
             )
     if p35 is not None:
+        from racelab_engine.knowledge.engineering_semantic_registry import (
+            semantic_entry,
+        )
+
+        for response in response_artifacts:
+            semantic = semantic_entry(response.relation)
+            entries[response.artifact_id] = EngineeringEvidenceIndexEntry(
+                artifact_id=response.artifact_id,
+                producer_id=f"p35.response.{response.relation}",
+                run_id=identity.run_id,
+                session_id=identity.session_id,
+                setup_id=identity.setup_id,
+                workspace_run_id=identity.run_id,
+                workspace_session_id=identity.session_id,
+                workspace_setup_id=identity.setup_id,
+                source_run_id=identity.run_id,
+                source_session_id=identity.session_id,
+                source_setup_id=identity.setup_id,
+                source_setup_sha256=identity.setup_snapshot_sha256,
+                source_build_context_sha256=identity.vehicle_runtime_identity_hash,
+                source_provenance_available=True,
+                lap_numbers=response.source_lap_numbers,
+                lap_pct_start=response.lap_pct_start,
+                lap_pct_end=response.lap_pct_end,
+                phase=response.phase,
+                mechanism_ids=(
+                    _mechanisms(semantic.p20_mechanism_ids) if semantic else ()
+                ),
+                component_ids=(
+                    semantic.p26_component_family_ids if semantic else ()
+                ),
+                objective=objective,
+                source_channels=response.operational_evidence.source_channels,
+                evidence_state=EvidenceState(
+                    response.operational_evidence.evidence_state
+                ),
+                polarity="neutral",
+                blocker_reasons=response.blocker_reasons,
+                typed_artifact=CrewChiefEngineeringResponseArtifact(
+                    case_id=response.case_id,
+                    case_revision_sha256=response.case_revision_sha256,
+                    assessment_sha256=p35.p35_assessment_sha256,
+                    response=response,
+                ),
+                authority_ceiling="observation_only",
+            )
         support_ids = {
             artifact_id
             for candidate in p35.candidates
@@ -2425,6 +2480,9 @@ def _tool_eligibility(
         and item.experiment_factor_id is not None
         and item.setup_authorized
     )
+    response_evidence_available = any(
+        producer.startswith("p35.response.") for producer in producers
+    )
     tier_by_band = {
         "integrity": "integrity_context",
         "context": "integrity_context",
@@ -2440,6 +2498,7 @@ def _tool_eligibility(
     for definition in _TOOLS:
         tool_id = definition.tool_id
         missing: list[str] = []
+        satisfied_by_response = False
         relevant = folded is not None and folded.status == "open" and tool_id not in completed
         if tool_id in producer_by_tool and producer_by_tool[tool_id] not in producers:
             relevant = False
@@ -2447,9 +2506,30 @@ def _tool_eligibility(
         if tool_id in _P35_TOOL_IDS and f"p35.{tool_id.removeprefix('inspect_')}" not in producers:
             relevant = False
             missing.append("exact P35 focus artifact")
+        if tool_id in _P35_TOOL_IDS:
+            from racelab_engine.knowledge.engineering_semantic_registry import (
+                compile_engineering_semantic_registry,
+            )
+
+            satisfying_relations = {
+                item.relation_id
+                for item in compile_engineering_semantic_registry().entries
+                if tool_id in item.crew_inspection_tool_ids
+            }
+            satisfied_by_response = any(
+                f"p35.response.{relation}" in producers
+                for relation in satisfying_relations
+            )
+            if satisfied_by_response:
+                relevant = False
+                missing.clear()
         if tool_id == "inspect_setup_knowledge_for_mechanism" and not (
             active_hypotheses
-            and (len(p35.candidates) > 1 or p35.next_discriminator_contract_id)
+            and (
+                len(p35.candidates) > 1
+                or p35.next_discriminator_contract_id
+                or response_evidence_available
+            )
         ):
             relevant = False
             missing.append("ambiguous active P35.2 mechanism bridge")
@@ -2463,6 +2543,8 @@ def _tool_eligibility(
             skip_reason = (
                 "Inspection already completed."
                 if tool_id in completed
+                else "Qualified response evidence already satisfies this generic inspection."
+                if satisfied_by_response
                 else "Investigation is not open."
                 if folded is None or folded.status != "open"
                 else f"Missing: {', '.join(missing)}."
@@ -2478,6 +2560,14 @@ def _tool_eligibility(
                     or (
                         tool_id in _P35_TOOL_IDS
                         and item.producer_id == f"p35.{tool_id.removeprefix('inspect_')}"
+                    )
+                    or (
+                        tool_id
+                        in {
+                            "inspect_setup_knowledge_for_mechanism",
+                            "inspect_control_experiment_contract",
+                        }
+                        and item.producer_id.startswith("p35.response.")
                     )
                 }
             )
@@ -3746,6 +3836,12 @@ def _candidate_tool_entries(
             for item in exact_hypotheses
             for mechanism_id in item.p35_mechanism_ids
         }
+        response_artifact_ids = {
+            artifact_id
+            for item in workspace.engineering_case.effect_readiness
+            if not effect_ids or item.effect_id in effect_ids
+            for artifact_id in item.response_artifact_ids
+        }
         required_ids = {
             workspace.vehicle_dynamics.strongest_contradiction_artifact_id,
         }
@@ -3755,6 +3851,7 @@ def _candidate_tool_entries(
             if item.producer_id.startswith("p35.")
             and (
                 item.artifact_id in exact_artifact_ids
+                or item.artifact_id in response_artifact_ids
                 or item.artifact_id in required_ids
                 or bool(exact_mechanisms.intersection(item.mechanism_ids))
             )
@@ -3771,15 +3868,29 @@ def _candidate_tool_entries(
             if subgoal is not None and subgoal.selected_tool == tool_id
             else ()
         )
+        response_artifact_ids = {
+            artifact_id
+            for item in workspace.engineering_case.effect_readiness
+            if (
+                (not exact_controls or bool(exact_controls.intersection(item.exact_control_keys)))
+                and (not exact_factors or item.experiment_factor_id in exact_factors)
+            )
+            for artifact_id in item.response_artifact_ids
+        }
         selected = (
             tuple(
                 item
                 for item in entries
                 if exact_controls
                 and exact_factors
-                and bool(exact_controls.intersection(item.control_keys))
-                and item.producer_id
-                in {"p19.reasoning_snapshot", "p26.component_awareness"}
+                and (
+                    (
+                        bool(exact_controls.intersection(item.control_keys))
+                        and item.producer_id
+                        in {"p19.reasoning_snapshot", "p26.component_awareness"}
+                    )
+                    or item.artifact_id in response_artifact_ids
+                )
             )
             if subgoal is not None
             else tuple(
@@ -4996,6 +5107,18 @@ def build_crew_chief_workspace(
     driver_memory_ids = tuple(
         item.record_id for item in repository.list_driver_memory(session_id)
     )
+    manifest = read_telemetry_manifest(run_id)
+    recording_sha256 = str(
+        manifest.get("source_file_sha256") or overview.session.file_hash or ""
+    )
+    response_artifacts = build_engineering_response_artifacts(
+        workspace_revision=identity.workspace_revision,
+        run_id=run_id,
+        session_id=session_id,
+        setup_id=identity.setup_id,
+        recording_sha256=recording_sha256,
+        operational_evidence=p35.operational_response_evidence,
+    )
     evidence_index = _evidence_index(
         bundle,
         identity,
@@ -5005,6 +5128,7 @@ def build_crew_chief_workspace(
         storage_repository,
         learning_prior,
         p35,
+        response_artifacts,
     )
     p19_cause_ids = tuple(
         cause.cause_id for cause in bundle.report.reasoning_snapshot.causes
@@ -5145,6 +5269,52 @@ def build_crew_chief_workspace(
         p33=learning_prior,
         p19_terminal_decision=decision,
     )
+    response_observation = (
+        p35.response_observations[0] if p35.response_observations else None
+    )
+    p19_response_admissions = build_p19_response_admissions(
+        case_id=response_artifacts[0].case_id
+        if response_artifacts
+        else f"p3543case_{identity.workspace_revision[:24]}",
+        case_revision_sha256=identity.workspace_revision,
+        p19_reasoning_snapshot_sha256=identity.reasoning_snapshot_sha256,
+        causes=bundle.report.reasoning_snapshot.causes,
+        response_artifacts=response_artifacts,
+        driver_demand_state=(
+            response_observation.driver_demand_state
+            if response_observation is not None
+            else "unavailable"
+        ),
+        context_state=(
+            response_observation.context_state
+            if response_observation is not None
+            else "unavailable"
+        ),
+        traffic_blocked=p35.traffic_blocked,
+    )
+    effect_readiness = build_setup_effect_readiness(
+        engineering_knowledge.hypotheses,
+        response_artifacts,
+        p19_response_admissions,
+    )
+    capability_resolutions = build_capability_resolutions(
+        effect_readiness,
+        response_artifacts,
+    )
+    engineering_case = build_canonical_engineering_case(
+        identity=identity,
+        recording_sha256=recording_sha256,
+        evidence_index_sha256=evidence_index.index_hash,
+        p351_projection=engineering_knowledge,
+        response_artifacts=response_artifacts,
+        p19_admissions=p19_response_admissions,
+        p35=p35,
+        p26=p26,
+        terminal_decision=decision,
+        effect_readiness=effect_readiness,
+        capability_resolutions=capability_resolutions,
+        investigation_id=(investigation.investigation_id if investigation else None),
+    )
     baseline_subgoal = _subgoal(
         bundle,
         folded,
@@ -5191,6 +5361,7 @@ def build_crew_chief_workspace(
         investigation=investigation,
         folded_state=folded,
         evidence_index=evidence_index,
+        engineering_case=engineering_case,
         available_tools=_TOOLS,
         tool_eligibility=tool_eligibility,
         current_subgoal=subgoal,

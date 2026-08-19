@@ -799,7 +799,7 @@ function validOperationalResponseEvidence(
 ): value is OperationalResponseEvidence {
   if (!exactKeys(value, operationalResponseEvidenceKeys)
     || !/^p3542\.response:[0-9a-f]{24}$/.test(String(value.evidence_id))
-    || !["brake_to_pressure", "brake_release_to_yaw", "throttle_to_acceleration", "disturbance_to_chassis", "stint_migration"].includes(String(value.relation))
+    || !["brake_to_pressure", "brake_to_deceleration", "brake_to_yaw", "brake_release_to_yaw", "throttle_to_acceleration", "throttle_to_yaw", "steering_wheel_to_yaw", "disturbance_to_chassis", "stint_migration"].includes(String(value.relation))
     || !nonempty(value.phase)
     || !finiteNumber(value.lap_pct_start)
     || !finiteNumber(value.lap_pct_end)
@@ -1111,12 +1111,13 @@ export function isPerformanceMechanismAssessment(
   );
   const candidateIds = candidates.map((item) => item.mechanism_id);
   const responseRelationsByMechanism = new Map<string, Set<string>>([
-    ["mechanism:brake_entry_instability", new Set(["brake_to_pressure"])],
+    ["mechanism:brake_entry_instability", new Set(["brake_to_pressure", "brake_to_deceleration", "brake_to_yaw"])],
     ["mechanism:brake_release_rotation_deficit", new Set(["brake_release_to_yaw"])],
-    ["mechanism:power_on_rotation_excess", new Set(["throttle_to_acceleration"])],
-    ["mechanism:power_on_rotation_deficit", new Set(["throttle_to_acceleration"])],
+    ["mechanism:power_on_rotation_excess", new Set(["throttle_to_yaw"])],
+    ["mechanism:power_on_rotation_deficit", new Set(["throttle_to_acceleration", "throttle_to_yaw", "stint_migration"])],
     ["mechanism:traction_limitation_like", new Set(["throttle_to_acceleration"])],
     ["mechanism:disturbance_compliance_issue", new Set(["disturbance_to_chassis"])],
+    ["mechanism:center_rotation_deficit", new Set(["steering_wheel_to_yaw", "stint_migration"])],
   ]);
   if (separationRows.length !== candidates.length
     || separationRows.some((row, index) => (

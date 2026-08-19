@@ -48,6 +48,7 @@ const workflow = {
   execution: null,
   reproduction_snapshot: {},
   quality: null,
+  controlled_response_receipt: null,
   learning_admitted: null,
   learning_capture_state: "not_applicable",
   learning_capture_experience_id: null,

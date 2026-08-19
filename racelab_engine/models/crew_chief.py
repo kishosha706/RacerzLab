@@ -44,6 +44,10 @@ from racelab_engine.models.vehicle_dynamics_knowledge import (
     VehicleDynamicsFocusArtifact,
 )
 from racelab_engine.models.vehicle_systems import VehicleSystemsRuntimeIdentity
+from racelab_engine.models.engineering_case import (
+    CanonicalEngineeringCase,
+    EngineeringResponseArtifact,
+)
 
 
 class CrewChiefModel(BaseModel):
@@ -269,6 +273,23 @@ class CrewChiefVehicleDynamicsFocusArtifact(CrewChiefModel):
         return self
 
 
+class CrewChiefEngineeringResponseArtifact(CrewChiefModel):
+    artifact_type: Literal["engineering_response"] = "engineering_response"
+    case_id: str = Field(pattern=r"^p3543case_[0-9a-f]{24}$")
+    case_revision_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    assessment_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    response: EngineeringResponseArtifact
+
+    @model_validator(mode="after")
+    def response_case_is_exact(self) -> CrewChiefEngineeringResponseArtifact:
+        if (
+            self.case_id != self.response.case_id
+            or self.case_revision_sha256 != self.response.case_revision_sha256
+        ):
+            raise ValueError("response evidence envelope must preserve case identity")
+        return self
+
+
 CrewChiefEvidenceArtifact = Annotated[
     CrewChiefLapTimeOpportunityArtifact
     | CrewChiefTimeLossOriginArtifact
@@ -280,7 +301,8 @@ CrewChiefEvidenceArtifact = Annotated[
     | CrewChiefComponentPerformanceLinkArtifact
     | CrewChiefObjectiveEnvelopeArtifact
     | CrewChiefUnavailablePerformanceArtifact
-    | CrewChiefVehicleDynamicsFocusArtifact,
+    | CrewChiefVehicleDynamicsFocusArtifact
+    | CrewChiefEngineeringResponseArtifact,
     Field(discriminator="artifact_type"),
 ]
 
@@ -1054,6 +1076,34 @@ class EngineeringEvidenceIndexEntry(CrewChiefModel):
             for tool_id in _P35_INSPECTION_TOOL_IDS
         }
         expected_dynamics_tool = dynamics_tools.get(self.producer_id)
+        if self.producer_id.startswith("p35.response."):
+            if not isinstance(
+                self.typed_artifact, CrewChiefEngineeringResponseArtifact
+            ):
+                raise ValueError("P35 response evidence requires its typed artifact")
+            response = self.typed_artifact.response
+            if (
+                self.producer_id != f"p35.response.{response.relation}"
+                or self.artifact_id != response.artifact_id
+                or self.run_id != response.run_id
+                or self.session_id != response.session_id
+                or self.setup_id != response.setup_id
+                or self.lap_numbers != response.source_lap_numbers
+                or self.lap_pct_start != response.lap_pct_start
+                or self.lap_pct_end != response.lap_pct_end
+                or self.phase != response.phase
+                or self.source_channels
+                != response.operational_evidence.source_channels
+                or self.evidence_state.value
+                != response.operational_evidence.evidence_state
+                or self.polarity != "neutral"
+                or self.blocker_reasons != response.blocker_reasons
+                or self.authority_ceiling != "observation_only"
+            ):
+                raise ValueError(
+                    "P35 response index entry must exactly mirror its typed artifact"
+                )
+            return self
         if expected_type is None and expected_dynamics_tool is None:
             if self.typed_artifact is not None:
                 raise ValueError("only typed P32/P35 evidence may carry an artifact")
@@ -1682,6 +1732,7 @@ class CrewChiefWorkspace(CrewChiefModel):
     investigation: CrewChiefInvestigation | None = None
     folded_state: FoldedInvestigationState | None = None
     evidence_index: EngineeringEvidenceIndex
+    engineering_case: CanonicalEngineeringCase
     available_tools: tuple[CrewChiefToolDefinition, ...]
     tool_eligibility: tuple[CrewChiefToolEligibility, ...] = ()
     current_subgoal: InvestigationSubgoal | None = None
@@ -1718,6 +1769,63 @@ class CrewChiefWorkspace(CrewChiefModel):
     def projection_scope_is_atomic(self) -> CrewChiefWorkspace:
         if self.evidence_index.workspace_revision != self.identity.workspace_revision:
             raise ValueError("evidence index must match the workspace revision")
+        case = self.engineering_case
+        if (
+            case.case_revision_sha256 != self.identity.workspace_revision
+            or case.workspace_revision != self.identity.workspace_revision
+            or case.run_id != self.identity.run_id
+            or case.session_id != self.identity.session_id
+            or case.setup_id != self.identity.setup_id
+            or case.setup_snapshot_sha256 != self.identity.setup_snapshot_sha256
+            or case.objective_id != self.identity.objective_id.value
+            or case.condition_epoch_sha256 != self.identity.run_sentinel_sha256
+            or case.p19_reasoning_snapshot_sha256
+            != self.identity.reasoning_snapshot_sha256
+            or case.p20_state_revision != self.identity.p20_state_revision
+            or case.p26_knowledge_graph_sha256
+            != self.identity.p26_knowledge_graph_sha256
+            or case.p32_projection_sha256 != self.identity.p32_projection_sha256
+            or case.p35_assessment_sha256 != self.identity.p35_assessment_sha256
+            or case.p33_projection_sha256 != self.identity.learning_projection_sha256
+            or case.evidence_index_sha256 != self.evidence_index.index_hash
+        ):
+            raise ValueError("canonical engineering case must match the workspace atomically")
+        response_entries = tuple(
+            item
+            for item in self.evidence_index.entries
+            if item.producer_id.startswith("p35.response.")
+        )
+        response_artifact_ids = tuple(
+            item.artifact_id for item in case.response_artifacts
+        )
+        if (
+            tuple(item.artifact_id for item in response_entries)
+            != tuple(sorted(response_artifact_ids))
+            or set(response_artifact_ids)
+            != {
+                item.evidence_id
+                for item in self.vehicle_dynamics.operational_response_evidence
+            }
+            or any(
+                not isinstance(
+                    item.typed_artifact, CrewChiefEngineeringResponseArtifact
+                )
+                or item.typed_artifact.case_id != case.case_id
+                or item.typed_artifact.case_revision_sha256
+                != case.case_revision_sha256
+                or item.typed_artifact.assessment_sha256
+                != self.identity.p35_assessment_sha256
+                for item in response_entries
+            )
+            or any(
+                response_id not in set(response_artifact_ids)
+                for row in self.vehicle_dynamics.mechanism_separation
+                for response_id in row.response_evidence_ids
+            )
+        ):
+            raise ValueError(
+                "every P35 response evidence identity must resolve exactly once in the case index"
+            )
         tool_ids = tuple(item.tool_id for item in self.available_tools)
         eligibility_ids = tuple(item.tool_id for item in self.tool_eligibility)
         if (
@@ -2113,6 +2221,7 @@ class CrewChiefWorkspace(CrewChiefModel):
             item.artifact_id: item
             for item in self.evidence_index.entries
             if item.producer_id.startswith("p35.")
+            and not item.producer_id.startswith("p35.response.")
         }
         focus_by_id = {item.artifact_id: item for item in dynamics.focus_artifacts}
         expected_focus_ids: set[str] = set()
@@ -2818,6 +2927,30 @@ class CrewChiefWorkspace(CrewChiefModel):
         if knowledge != expected_knowledge:
             raise ValueError(
                 "P35.1 knowledge must equal its canonical producer-derived projection"
+            )
+        from racelab_engine.services.engineering_case_service import (
+            build_capability_resolutions,
+            build_setup_effect_readiness,
+        )
+
+        expected_effect_readiness = build_setup_effect_readiness(
+            knowledge.hypotheses,
+            case.response_artifacts,
+            case.p19_response_admissions,
+        )
+        expected_capability_resolutions = build_capability_resolutions(
+            expected_effect_readiness,
+            case.response_artifacts,
+        )
+        if (
+            case.p351_projection_sha256 != knowledge.projection_sha256
+            or case.effect_readiness != expected_effect_readiness
+            or case.capability_resolutions != expected_capability_resolutions
+            or case.terminal_move_sha256
+            != canonical_json_sha256(self.terminal_decision)
+        ):
+            raise ValueError(
+                "canonical engineering case must equal its P35.1/readiness producers"
             )
         return self
 

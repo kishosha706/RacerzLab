@@ -2581,6 +2581,36 @@ def build_controlled_workflow_experience(
     context, problem, provenance = _workflow_context_and_provenance(
         workflow, repository
     )
+    controlled_response_receipt = workflow.controlled_response_receipt
+    if controlled_response_receipt is not None:
+        provenance_by_run = {item.run_id: item for item in provenance}
+        response_provenance: list[EngineeringSourceProvenance] = []
+        for stage in controlled_response_receipt.stages:
+            base = provenance_by_run.get(stage.run_id)
+            if base is None:
+                raise ValueError(
+                    "P33 controlled response stage lacks exact run/setup/build provenance"
+                )
+            for artifact_id in stage.response_artifact_ids:
+                response_provenance.append(
+                    EngineeringSourceProvenance.build(
+                        artifact_id=artifact_id,
+                        producer_id="p3543.controlled_response",
+                        run_id=base.run_id,
+                        session_id=base.session_id,
+                        setup_id=base.setup_id,
+                        setup_snapshot_sha256=base.setup_snapshot_sha256,
+                        build_context_sha256=base.build_context_sha256,
+                        lap_numbers=stage.eligible_lap_numbers,
+                        lap_pct_start=stage.lap_pct_start,
+                        lap_pct_end=stage.lap_pct_end,
+                        phase=stage.phase,
+                        source_channels=stage.source_channels,
+                        evidence_state=EvidenceState.CONTROLLED_TEST_EFFECT,
+                        polarity="neutral",
+                    )
+                )
+        provenance = (*provenance, *response_provenance)
     (
         mechanism,
         control_response,
@@ -2612,6 +2642,24 @@ def build_controlled_workflow_experience(
         if carry > 0
         else "no_measured_carry"
     )
+    expected_response = (
+        "Expected A/B/A2 response relations: "
+        + ", ".join(controlled_response_receipt.expected_response_relation_ids)
+        + "."
+        if controlled_response_receipt is not None
+        else "The workflow preserved its predeclared controlled response metric."
+    )
+    observed_response = (
+        "Observed A/B/A2 response deltas: "
+        + "; ".join(
+            f"{item.relation} {item.label} {item.observed_b_delta:+.6g} {item.units}"
+            for item in controlled_response_receipt.observed_metric_deltas[:6]
+        )
+        + "."
+        if controlled_response_receipt is not None
+        and controlled_response_receipt.observed_metric_deltas
+        else f"The recorded control response was {control_response.replace('_', ' ')}."
+    )
     response = CarResponseFact(
         response_id="p33response_"
         + canonical_json_sha256(
@@ -2621,10 +2669,8 @@ def build_controlled_workflow_experience(
         control=card.control_key,
         direction="increase" if card.direction_sign > 0 else "decrease",
         magnitude_class="adjacent",
-        expected_vehicle_response="The workflow preserved its predeclared controlled response metric.",
-        observed_vehicle_response=(
-            f"The recorded control response was {control_response.replace('_', ' ')}."
-        ),
+        expected_vehicle_response=expected_response,
+        observed_vehicle_response=observed_response,
         p32_time_origin=execution.time_origin_phase or outcome_phase,
         phase_time_effect_s=effect,
         carry_effect_s=carry,
@@ -2634,6 +2680,11 @@ def build_controlled_workflow_experience(
         control_response_assessment=control_response,
         policy_verdict=verdict,
         source_workflow_id=workflow.workflow_id,
+        source_response_record_id=(
+            controlled_response_receipt.receipt_id
+            if controlled_response_receipt is not None
+            else None
+        ),
         source_artifact_ids=artifact_ids,
     )
     driver_contributions = (
@@ -2675,6 +2726,11 @@ def build_controlled_workflow_experience(
         driver_contributions=driver_contributions,
         car_response=response,
         dead_ends=dead_ends,
+        source_response_record_ids=(
+            (controlled_response_receipt.receipt_id,)
+            if controlled_response_receipt is not None
+            else ()
+        ),
         source_artifact_ids=artifact_ids,
         source_provenance=provenance,
     )

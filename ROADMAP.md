@@ -77,6 +77,7 @@ result, and remember only what the evidence supports.
 | P35.4 - Phase-Resolved Vehicle Response and Setup Diagnosis | Verified deterministic response foundation; additional controls remain evidence-locked | Phase-resolved observations and qualified continuous response signatures describe driver demand and vehicle response without gaining cause, component, setup, or P19 authority |
 | P35.4.1 - Canonical Telemetry Truth Closure | Verified locally | Source identity, tick clock, physical position, geometry provenance, typed blocker scope, and channel admission fail closed before any diagnosis or learned recurrence |
 | P35.4.2 - Response-to-Mechanism Operational Integration | Verified locally; field evidence remains unearned | Qualified dynamic, repeated-disturbance, and ten-lap stint signatures refine P35 mechanism inspection without gaining support, cause, component, setup, or P19 authority |
+| P35.4.3 - Closed-Loop Engineering Interconnectivity | Verified locally; P36 qualification remains field-locked | One canonical case, first-class response artifacts, P19-owned admission, A/B/A2 response receipts, effect readiness, quantity observability, capability routing, memory capture, and semantic focus share one revision without changing authority |
 | P35.5 - Field-Ready Alpha Hardening | Verified local release slice; field evidence remains unearned | One honest Next Gen oval alpha opens quickly, exposes one canonical move, packages as one owned desktop instance, and ships only after semantic real-file, dependency, contract, UI, and lifecycle gates pass |
 | P36 - Prospective Investigation Evidence Campaigns | Planned; evidence collection remains data-locked | Qualified prospective campaigns produce the independent recurrence, controls, subgroups, and observable comparisons required before learned investigation ordering can earn promotion |
 
@@ -2780,6 +2781,79 @@ truth gaps with public-builder, restart, client-boundary, and real-telemetry pro
   negative controls 0/8, subgroups 0/9. Null Session 01 and a real P19 A/B/A2
   outcome still require new driving and are not credited by this software slice.
 
+## P35.4.3 - Closed-Loop Engineering Interconnectivity
+
+- [x] Promote every qualified operational response into one globally addressable
+  `EngineeringResponseArtifact` in the canonical Crew evidence index. The exact
+  case, revision, recording, run/session/setup, physical scope, qualified-clock
+  contract, laps, independence units, producer, channels, native metrics, and
+  authority ceiling remain content-addressed and every P35 response reference
+  resolves exactly once.
+- [x] Add one immutable `CanonicalEngineeringCase` receipt over the existing
+  shared snapshot. It binds recording/setup/condition identity, P19/P20/P26/P32/
+  P35/P35.1/P33 revisions, evidence-index hash, problem, response artifacts,
+  mechanism rows, component inventory, investigation/discriminator, terminal
+  move, readiness, capability routing, memory boundary, and P36 capture state.
+- [x] Add a P19-owned response adapter. It consumes raw qualified response facts,
+  checks existing typed mechanism contracts and context, and records support,
+  contradiction, unresolved, or blocked admission without modifying current
+  cause rank, evidence graph, terminal move, or setup authority.
+- [x] Extend the controlled A/B/A2 workflow with a content-addressed
+  `ControlledResponseReceipt`. Exact independent recordings, restored A/A2
+  setup state, isolated B state, physical scope, overlapping speed band,
+  expected relations, observed native-unit deltas, performance effect,
+  countereffects, control response, and policy verdict remain separate.
+- [x] Compile one relationship-only `EngineeringSemanticRegistry` across response
+  relations, phases, P20 mechanism kinds, P35 mechanisms, P26 quantities and
+  component families, Crew inspections, discriminators, channels, and protected
+  countereffects. It validates routing but cannot rank or authorize.
+- [x] Expand continuous response vocabulary to brake-to-deceleration,
+  brake-to-yaw, throttle-to-yaw, and steering-wheel-demand magnitude-to-yaw.
+  Steering remains driver steering-wheel demand, never inferred road-wheel angle.
+- [x] Give all 92 setup effects a live `knowledge_only`, `measurement_ready`,
+  `response_evidence_ready`, `p19_testable`, or `blocked` state. Response-ready
+  remains measurement-only until an exact legal option, countereffect evidence,
+  experiment factor, and P19 projection exist.
+- [x] Project response evidence into quantity-level P26 observability without
+  promoting a component to supported; route every current missing-evidence item
+  to available-now channels, a new-run mission, pit-snapshot-only truth, or
+  structural unavailability.
+- [x] Make Crew eligibility consume qualified response readiness, skip redundant
+  generic inspections, include response artifacts in mechanism/setup and
+  experiment-contract inspection, and expose one case-bound semantic focus
+  through the existing evidence navigation rather than a second selection system.
+- [x] Attach controlled response receipt and exact response-artifact provenance
+  to P33 controlled-workflow experience. Memory remains attention-only and cannot
+  modify current P19 truth.
+- [x] Produce a case-owned P36 qualification decision for ordinary product use.
+  Without a real completed qualification certificate it remains `pending`, and
+  no historical, null, negative-control, subgroup, or prospective count changes.
+- [ ] Earn a qualified real Engineering Case, Null Session 01, and a source-owned
+  response-complete P19 A/B/A2 receipt. **FIELD DATA REQUIRED.**
+
+### P35.4.3 verification - 2026-08-19
+
+- The complete 3,331-test Python collection passed with 3,328 successes, three
+  protected skips, and zero failures. Five dedicated hostiles prove registry
+  closure, global response identity, foreign-case rejection, P19 non-mutation,
+  response-ready authority containment, unchanged P36 counts, and exact A/B/A2
+  recording/setup/scope/speed separation.
+- Existing P19 release proof, controlled-workflow integrity/scoring, P33 durable
+  memory, P34 containment, P35/Crew real Atlanta, OpenAPI, and executable client
+  trust suites passed. Rehashed coordinated payloads cannot bypass the case,
+  evidence-index, nested artifact, P19 admission, or controlled receipt hashes.
+- Frontend: 44 Vitest behaviors, TypeScript, whole-repository Ruff, generated
+  88-path/376-schema OpenAPI parity, diff integrity, and the 2,228-module
+  production build passed. Entry remained 193.33 KB raw / 53.10 KB gzip and CSS
+  300.22 KB raw / 52.90 KB gzip; all configured bundle budgets passed.
+- Learning Mode exposes the one case revision, response artifacts, P19 admission
+  count, observable quantities, response/P19 readiness, capability-linked gaps,
+  and exact response navigation. Race Mode, P19 authority, the eight current
+  experiment-factor families, and the existing workspace model remain unchanged.
+- Scientific counts remain historical **0/9**, same-setup null **0/10**,
+  negative controls **0/8**, subgroups **0/9**, prospective locked, and no
+  activation earned. Software receipts do not manufacture driving evidence.
+
 ## P35.5 - Field-Ready Alpha Hardening
 
 - [x] Bound the current decision product to an honest NASCAR Next Gen oval alpha.
@@ -2974,3 +3048,4 @@ Implementation queue completed in this pass:
 | 2026-08-17 | Polished P35.3 end-to-end wiring locally | Typed driver scope now materially orders the next physical inspection while P19 cause truth remains unchanged; reconstructed and persisted critic state must agree; eligibility order, active relevance, exact selection receipts, strongest contradictions, and measured tool durations fail closed across server and client; and one persisted driver continue action remains one count even when bounded work emits multiple trace events. Learning Mode now exposes the active subgoal, evidence gate, eligibility, selection receipt, and post-open resource use. The full 2,734-test collection completed with 2,729 passes and five protected skips, plus 11 dedicated P35.3 tests, the frozen P34 suite, whole-repository Ruff, frontend contract fixtures, TypeScript, 30 UI behaviors, the 2,208-module build, real Atlanta boundary proof, and diff integrity. P19 and frozen P34 authority remain unchanged; remote validation still awaits an intentional push and green Actions result. |
 | 2026-08-18 | Verified P35.4.1 Canonical Telemetry Truth Closure locally | Physical alignment is driver-input invariant; full source SHA owns recording independence; tick-primary timing is mandatory for eligible decisions; nominal diffuser geometry is unavailable; typed blockers scope authority; all 62 audited channels have explicit roles; Learning Telemetry Capabilities and executable chart truth are restored; and the first brake/throttle, surface-settling, and stint-migration response producers remain observation-only. The complete 2,839-test collection passed with 2,836 successes and three protected DuckDB skips, plus 214 focused hostiles, 38 UI behaviors, Ruff, TypeScript, the 2,209-module budgeted build, diff integrity, live 1,280/390-pixel Race/Learning verification, and the protected 26,556-record/277-channel Atlanta release audit. P19 remains sole setup authority and P36 remains data-locked. |
 | 2026-08-18 | Verified P35.5 field-ready alpha hardening locally | Next Gen oval scope and ordinal evidence wording are honest; one compact cached shell move replaces eager full-intelligence run-open work; returning-session resume, continuous lap playback, exact zoom persistence, grouped evidence debt, shortcut disablement, generated contracts, locked dependencies, single-instance sidecar identity/restart, semantic real-file gates, Windows packaging, and lifecycle smoke are wired without changing P19 authority. The current 2,850-test Python collection is covered by the green definitive 2,847-test run plus focused closure of the three later additions, 43 UI behaviors, two Chromium flows, TypeScript, Ruff, Cargo, zero npm advisories, generated 88-path/96-operation OpenAPI parity, the 2,228-module budgeted build, MSI/NSIS bundles, and packaged ownership/shutdown smoke. Shell access is 13.173 ms unbuilt / 28.376 ms cached without starting intelligence; full first construction remains measured at 12.226 s, while digest-verified exact-semantic restart reuse is 104.327 ms with zero fresh build count. Null Session 01, real A/B/A2, P23/P36 evidence, and every statistical activation remain unearned. |
+| 2026-08-19 | Verified P35.4.3 closed-loop engineering interconnectivity locally | Operational responses are now first-class case/index artifacts; one atomic Engineering Case binds all current producer revisions; P19 owns non-mutating response admission; A/B/A2 scoring can retain exact response receipts; the semantic registry connects response/mechanism/quantity/component/Crew vocabularies; all 92 effects expose readiness; capability debt routes to current channels, new runs, pit snapshots, or structural unavailability; P33 retains controlled response provenance; and one semantic focus reuses canonical evidence navigation. The complete 3,331-test Python collection passed with three protected skips, plus five dedicated hostiles, 44 UI behaviors, executable client guards, whole-repo Ruff, TypeScript, generated 88-path/376-schema OpenAPI parity, the 2,228-module budgeted build, and diff integrity. P19 remains sole cause/setup/terminal authority and P36 counts remain 0/9, 0/10, 0/8, and 0/9. |

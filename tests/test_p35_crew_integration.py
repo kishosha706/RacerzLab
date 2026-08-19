@@ -824,7 +824,10 @@ def test_real_atlanta_p35_is_read_only_traffic_blocked_and_authority_invariant(
     foreign_component = build_performance_mechanism_assessment(
         foreign_component_payload
     )
-    with pytest.raises(ValidationError, match="runtime trust manifest"):
+    with pytest.raises(
+        ValidationError,
+        match="runtime trust manifest|canonical engineering case",
+    ):
         CrewChiefWorkspace.model_validate(
             _coordinated_p35_workspace_payload(workspace, foreign_component)
         )
@@ -837,7 +840,8 @@ def test_real_atlanta_p35_is_read_only_traffic_blocked_and_authority_invariant(
         foreign_runtime_payload
     )
     with pytest.raises(
-        ValidationError, match="atomic non-authoritative Crew workspace"
+        ValidationError,
+        match="atomic non-authoritative Crew workspace|canonical engineering case",
     ):
         CrewChiefWorkspace.model_validate(
             _coordinated_p35_workspace_payload(workspace, foreign_runtime)
@@ -909,7 +913,10 @@ def test_real_atlanta_p35_is_read_only_traffic_blocked_and_authority_invariant(
     renamed_assessment = build_performance_mechanism_assessment(
         renamed_focus_payload
     )
-    with pytest.raises(ValidationError, match="canonical producer formula"):
+    with pytest.raises(
+        ValidationError,
+        match="canonical producer formula|canonical engineering case",
+    ):
         CrewChiefWorkspace.model_validate(
             _coordinated_p35_workspace_payload(
                 workspace,
@@ -927,7 +934,10 @@ def test_real_atlanta_p35_is_read_only_traffic_blocked_and_authority_invariant(
         (*p35.unavailable_quantity_ids[1:], "quantity:invented_exact_force")
     )
     unavailable = build_performance_mechanism_assessment(unavailable_payload)
-    with pytest.raises(ValidationError, match="frozen contract"):
+    with pytest.raises(
+        ValidationError,
+        match="frozen contract|canonical engineering case",
+    ):
         CrewChiefWorkspace.model_validate(
             _coordinated_p35_workspace_payload(workspace, unavailable)
         )

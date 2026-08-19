@@ -412,6 +412,9 @@ async function trustedCrewChiefResponse(
   if (!await crewTrust.hasCanonicalCrewEvidenceIndexDigest(payload)) {
     throw new Error("Crew Chief failed its canonical evidence-index identity check.");
   }
+  if (!await crewTrust.hasCanonicalEngineeringCaseDigest(payload)) {
+    throw new Error("Crew Chief failed its canonical P35.4.3 engineering-case identity check.");
+  }
   if (!await learningTrust.hasCanonicalEngineeringLearningDigests(payload.learning_prior)) {
     throw new Error("Crew Chief failed its canonical P33 learning identity check.");
   }

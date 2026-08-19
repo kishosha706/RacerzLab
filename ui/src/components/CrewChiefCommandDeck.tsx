@@ -629,6 +629,41 @@ export function CrewChiefCommandDeck({ runId, sessionId, report, scopeRunIds, le
 
       {learning && (
         <div className="crew-chief-learning">
+          <section className="engineering-case-receipt" aria-label="Canonical Engineering Case">
+            <header>
+              <div>
+                <span className="eyebrow">CANONICAL ENGINEERING CASE · ONE REVISION</span>
+                <h3>{workspace.engineering_case.case_id}</h3>
+              </div>
+              <span>{workspace.engineering_case.response_artifacts.length} response artifacts</span>
+            </header>
+            <p>
+              P19 admissions {workspace.engineering_case.p19_response_admissions.filter((item) => item.state === "admitted").length}
+              {" · "}observable quantities {workspace.engineering_case.quantity_observability.length}
+              {" · "}P19-testable effects {workspace.engineering_case.effect_readiness.filter((item) => item.state === "p19_testable").length}
+              {" · "}response-ready effects {workspace.engineering_case.effect_readiness.filter((item) => item.state === "response_evidence_ready").length}
+            </p>
+            {workspace.engineering_case.response_artifacts.length > 0 && <ul>
+              {workspace.engineering_case.response_artifacts.map((artifact) => {
+                const entry = workspace.evidence_index.entries.find((item) => item.artifact_id === artifact.artifact_id);
+                return <li key={artifact.artifact_id}>
+                  <button type="button" disabled={!entry} onClick={() => { if (entry) onFocusEvidence(entry); }}>
+                    <b>{humanize(artifact.relation)}</b>
+                    <span>Laps {artifact.source_lap_numbers.join(", ")} · {artifact.lap_pct_start.toFixed(1)}–{artifact.lap_pct_end.toFixed(1)}%</span>
+                  </button>
+                </li>;
+              })}
+            </ul>}
+            {workspace.engineering_case.capability_resolutions.length > 0 && <details>
+              <summary>{workspace.engineering_case.capability_resolutions.length} capability-linked evidence gaps</summary>
+              {workspace.engineering_case.capability_resolutions.slice(0, 12).map((item) => <p key={item.resolution_id}>
+                <b>{humanize(item.status)}</b> {item.missing_evidence}<small>{item.required_channel_ids.join(", ") || "No current typed channel"} · {item.recovery}</small>
+              </p>)}
+            </details>}
+            <small>
+              Case revision {workspace.engineering_case.case_revision_sha256.slice(0, 12)} · P19 rank unchanged · setup authority false · P36 counts unchanged.
+            </small>
+          </section>
           <p
             className="vehicle-dynamics-learning-handoff"
             data-state={dynamicsRaceState}

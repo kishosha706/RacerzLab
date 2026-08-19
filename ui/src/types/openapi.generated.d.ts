@@ -2411,6 +2411,113 @@ export interface components {
             /** Readiness Reason */
             readiness_reason: string;
         };
+        /** CanonicalEngineeringCase */
+        CanonicalEngineeringCase: {
+            /**
+             * Schema Version
+             * @default p3543.canonical-engineering-case.v1
+             * @constant
+             */
+            schema_version: "p3543.canonical-engineering-case.v1";
+            /** Case Id */
+            case_id: string;
+            /** Case Sha256 */
+            case_sha256: string;
+            /** Case Revision Sha256 */
+            case_revision_sha256: string;
+            /** Run Id */
+            run_id: string;
+            /** Session Id */
+            session_id: string;
+            /** Recording Sha256 */
+            recording_sha256: string;
+            /** Setup Id */
+            setup_id: string;
+            /** Setup Snapshot Sha256 */
+            setup_snapshot_sha256: string;
+            /** Objective Id */
+            objective_id: string;
+            /** Condition Epoch Sha256 */
+            condition_epoch_sha256: string;
+            /** P19 Reasoning Snapshot Sha256 */
+            p19_reasoning_snapshot_sha256: string;
+            /** P20 State Revision */
+            p20_state_revision: string;
+            /** P26 Knowledge Graph Sha256 */
+            p26_knowledge_graph_sha256: string;
+            /** P32 Projection Sha256 */
+            p32_projection_sha256: string;
+            /** P35 Assessment Sha256 */
+            p35_assessment_sha256: string;
+            /** P351 Projection Sha256 */
+            p351_projection_sha256: string;
+            /** P33 Projection Sha256 */
+            p33_projection_sha256: string;
+            /** Evidence Index Sha256 */
+            evidence_index_sha256: string;
+            /** Primary Opportunity Id */
+            primary_opportunity_id?: string | null;
+            /**
+             * Response Artifacts
+             * @default []
+             */
+            response_artifacts: components["schemas"]["EngineeringResponseArtifact"][];
+            /**
+             * P19 Response Admissions
+             * @default []
+             */
+            p19_response_admissions: components["schemas"]["P19ResponseAdmission"][];
+            /**
+             * Mechanism Ids
+             * @default []
+             */
+            mechanism_ids: string[];
+            /**
+             * Component Ids
+             * @default []
+             */
+            component_ids: string[];
+            /** Effect Readiness */
+            effect_readiness: components["schemas"]["SetupEffectReadiness"][];
+            /** Active Discriminator Id */
+            active_discriminator_id?: string | null;
+            /** Investigation Id */
+            investigation_id?: string | null;
+            /** Workspace Revision */
+            workspace_revision: string;
+            /** Terminal Move Sha256 */
+            terminal_move_sha256: string;
+            /**
+             * Capability Resolutions
+             * @default []
+             */
+            capability_resolutions: components["schemas"]["CapabilityEvidenceResolution"][];
+            /**
+             * Quantity Observability
+             * @default []
+             */
+            quantity_observability: components["schemas"]["CaseQuantityObservability"][];
+            semantic_focus: components["schemas"]["EngineeringSemanticFocusState"];
+            campaign_capture: components["schemas"]["EngineeringCaseCampaignCapture"];
+            /**
+             * Authority
+             * @default case_receipt_only
+             * @constant
+             */
+            authority: "case_receipt_only";
+            /**
+             * P19 Authority Unchanged
+             * @default true
+             * @constant
+             */
+            p19_authority_unchanged: true;
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
+        };
         /** CapabilityActivationAudit */
         CapabilityActivationAudit: {
             /** Rank */
@@ -2466,6 +2573,42 @@ export interface components {
              * @default false
              */
             selected: boolean;
+        };
+        /** CapabilityEvidenceResolution */
+        CapabilityEvidenceResolution: {
+            /** Resolution Id */
+            resolution_id: string;
+            /** Missing Evidence */
+            missing_evidence: string;
+            /**
+             * Required Channel Ids
+             * @default []
+             */
+            required_channel_ids: string[];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "available_now" | "requires_new_run" | "pit_snapshot_only" | "structurally_unavailable";
+            /** Recovery */
+            recovery: string;
+            /**
+             * Source Artifact Ids
+             * @default []
+             */
+            source_artifact_ids: string[];
+            /**
+             * Authority
+             * @default measurement_routing_only
+             * @constant
+             */
+            authority: "measurement_routing_only";
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
         };
         /** CapabilityReadiness */
         CapabilityReadiness: {
@@ -2614,6 +2757,39 @@ export interface components {
              * @constant
              */
             authority: "controlled_history_only";
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
+        };
+        /** CaseQuantityObservability */
+        CaseQuantityObservability: {
+            /** Quantity Id */
+            quantity_id: string;
+            /** Component Family Ids */
+            component_family_ids: string[];
+            /** Response Artifact Ids */
+            response_artifact_ids: string[];
+            /**
+             * State
+             * @default currently_observable
+             * @constant
+             */
+            state: "currently_observable";
+            /**
+             * Authority
+             * @default quantity_observation_only
+             * @constant
+             */
+            authority: "quantity_observation_only";
+            /**
+             * Component Support Authorized
+             * @default false
+             * @constant
+             */
+            component_support_authorized: false;
             /**
              * Setup Authorized
              * @default false
@@ -3534,6 +3710,160 @@ export interface components {
              */
             setup_authorized: false;
         };
+        /** ControlledResponseMetricDelta */
+        ControlledResponseMetricDelta: {
+            /** Metric Id */
+            metric_id: string;
+            /** Relation */
+            relation: string;
+            /** Label */
+            label: string;
+            /** Units */
+            units: string;
+            /** Corner */
+            corner?: ("lf" | "rf" | "lr" | "rr") | null;
+            /** Stage A Value */
+            stage_a_value: number;
+            /** Stage B Value */
+            stage_b_value: number;
+            /** Stage A2 Value */
+            stage_a2_value: number;
+            /** Baseline Repeat Delta */
+            baseline_repeat_delta: number;
+            /** Observed B Delta */
+            observed_b_delta: number;
+            /** Source Artifact Ids */
+            source_artifact_ids: string[];
+            /**
+             * Evidence State
+             * @default controlled_test_effect
+             * @constant
+             */
+            evidence_state: "controlled_test_effect";
+        };
+        /**
+         * ControlledResponseReceipt
+         * @description P19-owned separation of response, performance, and policy truth.
+         */
+        ControlledResponseReceipt: {
+            /** Receipt Id */
+            receipt_id: string;
+            /** Receipt Sha256 */
+            receipt_sha256: string;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Control Key */
+            control_key: string;
+            /** Setup Effect Id */
+            setup_effect_id: string;
+            /** Experiment Factor Id */
+            experiment_factor_id: string;
+            /**
+             * Direction Sign
+             * @enum {integer}
+             */
+            direction_sign: -1 | 1;
+            /** Stages */
+            stages: components["schemas"]["ControlledStageResponseReceipt"][];
+            /** Expected Response Relation Ids */
+            expected_response_relation_ids: string[];
+            /**
+             * Observed Metric Deltas
+             * @default []
+             */
+            observed_metric_deltas: components["schemas"]["ControlledResponseMetricDelta"][];
+            /** Performance Effect S */
+            performance_effect_s?: number | null;
+            /** Time Origin Phase */
+            time_origin_phase?: string | null;
+            /** Time Origin Pct */
+            time_origin_pct?: number | null;
+            /** Downstream Carry Effect S */
+            downstream_carry_effect_s?: number | null;
+            /**
+             * Countereffects
+             * @default []
+             */
+            countereffects: string[];
+            /**
+             * Mechanism Assessment
+             * @enum {string}
+             */
+            mechanism_assessment: "inconclusive" | "invalid";
+            /**
+             * Control Response Assessment
+             * @enum {string}
+             */
+            control_response_assessment: "matched" | "missed" | "inconclusive" | "unavailable" | "invalid";
+            /**
+             * Policy Verdict
+             * @enum {string}
+             */
+            policy_verdict: "keep" | "undo" | "retest" | "invalid";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ready" | "blocked";
+            /**
+             * Blocker Reasons
+             * @default []
+             */
+            blocker_reasons: string[];
+            /**
+             * Authority
+             * @default p19_controlled_response_receipt
+             * @constant
+             */
+            authority: "p19_controlled_response_receipt";
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
+        };
+        /** ControlledStageResponseReceipt */
+        ControlledStageResponseReceipt: {
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "A" | "B" | "A2";
+            /** Run Id */
+            run_id: string;
+            /** Source Recording Sha256 */
+            source_recording_sha256: string;
+            /** Setup Snapshot Sha256 */
+            setup_snapshot_sha256: string;
+            /**
+             * Response Artifact Ids
+             * @default []
+             */
+            response_artifact_ids: string[];
+            /**
+             * Source Channels
+             * @default []
+             */
+            source_channels: string[];
+            /** Eligible Lap Numbers */
+            eligible_lap_numbers: number[];
+            /** Phase */
+            phase: string;
+            /** Lap Pct Start */
+            lap_pct_start: number;
+            /** Lap Pct End */
+            lap_pct_end: number;
+            /** Speed Min Mps */
+            speed_min_mps?: number | null;
+            /** Speed Max Mps */
+            speed_max_mps?: number | null;
+            /**
+             * Blocker Reasons
+             * @default []
+             */
+            blocker_reasons: string[];
+        };
         /** ControlledTestCard */
         ControlledTestCard: {
             /** Hypothesis */
@@ -3672,6 +4002,7 @@ export interface components {
             /** Reproduction Snapshot */
             reproduction_snapshot?: Record<string, never>;
             quality?: components["schemas"]["TestQualityResult"] | null;
+            controlled_response_receipt?: components["schemas"]["ControlledResponseReceipt"] | null;
             /** Learning Admitted */
             learning_admitted?: boolean | null;
             /**
@@ -3855,6 +4186,21 @@ export interface components {
             /** End Pct */
             end_pct: number;
             separation: components["schemas"]["DriverVehicleSeparation"];
+        };
+        /** CrewChiefEngineeringResponseArtifact */
+        CrewChiefEngineeringResponseArtifact: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            artifact_type: "engineering_response";
+            /** Case Id */
+            case_id: string;
+            /** Case Revision Sha256 */
+            case_revision_sha256: string;
+            /** Assessment Sha256 */
+            assessment_sha256: string;
+            response: components["schemas"]["EngineeringResponseArtifact"];
         };
         /** CrewChiefExitCarryArtifact */
         CrewChiefExitCarryArtifact: {
@@ -4380,6 +4726,7 @@ export interface components {
             investigation?: components["schemas"]["CrewChiefInvestigation"] | null;
             folded_state?: components["schemas"]["FoldedInvestigationState"] | null;
             evidence_index: components["schemas"]["EngineeringEvidenceIndex"];
+            engineering_case: components["schemas"]["CanonicalEngineeringCase"];
             /** Available Tools */
             available_tools: components["schemas"]["CrewChiefToolDefinition"][];
             /**
@@ -5626,6 +5973,49 @@ export interface components {
          * @enum {string}
          */
         EngineeringBlockerSeverity: "info" | "warning" | "blocker" | "critical";
+        /** EngineeringCaseCampaignCapture */
+        EngineeringCaseCampaignCapture: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "rejected" | "qualified" | "duplicate" | "corrupt";
+            /**
+             * Blocker Reasons
+             * @default []
+             */
+            blocker_reasons: string[];
+            /**
+             * Historical Count Credited
+             * @default false
+             * @constant
+             */
+            historical_count_credited: false;
+            /**
+             * Null Count Credited
+             * @default false
+             * @constant
+             */
+            null_count_credited: false;
+            /**
+             * Negative Control Count Credited
+             * @default false
+             * @constant
+             */
+            negative_control_count_credited: false;
+            /**
+             * Subgroup Count Credited
+             * @default false
+             * @constant
+             */
+            subgroup_count_credited: false;
+            /**
+             * Authority
+             * @default qualification_only
+             * @constant
+             */
+            authority: "qualification_only";
+        };
         /** EngineeringConclusion */
         EngineeringConclusion: {
             /** Key */
@@ -5750,7 +6140,7 @@ export interface components {
              */
             blocker_reasons: string[];
             /** Typed Artifact */
-            typed_artifact?: (components["schemas"]["CrewChiefLapTimeOpportunityArtifact"] | components["schemas"]["CrewChiefTimeLossOriginArtifact"] | components["schemas"]["CrewChiefCornerPerformanceChainArtifact"] | components["schemas"]["CrewChiefExitCarryArtifact"] | components["schemas"]["CrewChiefPathEfficiencyArtifact"] | components["schemas"]["CrewChiefDriverVehicleSeparationArtifact"] | components["schemas"]["CrewChiefTrackDemandArtifact"] | components["schemas"]["CrewChiefComponentPerformanceLinkArtifact"] | components["schemas"]["CrewChiefObjectiveEnvelopeArtifact"] | components["schemas"]["CrewChiefUnavailablePerformanceArtifact"] | components["schemas"]["CrewChiefVehicleDynamicsFocusArtifact"]) | null;
+            typed_artifact?: (components["schemas"]["CrewChiefLapTimeOpportunityArtifact"] | components["schemas"]["CrewChiefTimeLossOriginArtifact"] | components["schemas"]["CrewChiefCornerPerformanceChainArtifact"] | components["schemas"]["CrewChiefExitCarryArtifact"] | components["schemas"]["CrewChiefPathEfficiencyArtifact"] | components["schemas"]["CrewChiefDriverVehicleSeparationArtifact"] | components["schemas"]["CrewChiefTrackDemandArtifact"] | components["schemas"]["CrewChiefComponentPerformanceLinkArtifact"] | components["schemas"]["CrewChiefObjectiveEnvelopeArtifact"] | components["schemas"]["CrewChiefUnavailablePerformanceArtifact"] | components["schemas"]["CrewChiefVehicleDynamicsFocusArtifact"] | components["schemas"]["CrewChiefEngineeringResponseArtifact"]) | null;
             /**
              * Authority Ceiling
              * @enum {string}
@@ -5809,6 +6199,148 @@ export interface components {
          * @enum {string}
          */
         EngineeringObjective: "qualifying_peak" | "race_long_run" | "tire_conservation" | "driver_confidence" | "traffic_robustness" | "superspeedway_stability" | "fuel_strategy";
+        /**
+         * EngineeringResponseArtifact
+         * @description Globally addressable envelope for one P35.4 response observation.
+         */
+        EngineeringResponseArtifact: {
+            /**
+             * Artifact Type
+             * @default engineering_response
+             * @constant
+             */
+            artifact_type: "engineering_response";
+            /** Artifact Id */
+            artifact_id: string;
+            /** Artifact Sha256 */
+            artifact_sha256: string;
+            /** Case Id */
+            case_id: string;
+            /** Case Revision Sha256 */
+            case_revision_sha256: string;
+            /** Run Id */
+            run_id: string;
+            /** Session Id */
+            session_id: string;
+            /** Setup Id */
+            setup_id: string;
+            /** Source Recording Sha256 */
+            source_recording_sha256: string;
+            /** Source Producer Id */
+            source_producer_id: string;
+            /** Relation */
+            relation: string;
+            /** Lap Pct Start */
+            lap_pct_start: number;
+            /** Lap Pct End */
+            lap_pct_end: number;
+            /** Phase */
+            phase: string;
+            /**
+             * Canonical Clock Contract
+             * @default qualified_session_tick
+             * @constant
+             */
+            canonical_clock_contract: "qualified_session_tick";
+            /** Source Lap Numbers */
+            source_lap_numbers: number[];
+            /**
+             * Reference Lap Numbers
+             * @default []
+             */
+            reference_lap_numbers: number[];
+            /** Independence Unit Ids */
+            independence_unit_ids: string[];
+            operational_evidence: components["schemas"]["OperationalResponseEvidence"];
+            /**
+             * Applicability
+             * @default exact_current_case
+             * @constant
+             */
+            applicability: "exact_current_case";
+            /**
+             * Blocker Reasons
+             * @default []
+             */
+            blocker_reasons: string[];
+            /**
+             * Authority Ceiling
+             * @default observation_only
+             * @constant
+             */
+            authority_ceiling: "observation_only";
+            /**
+             * P19 Support Authorized
+             * @default false
+             * @constant
+             */
+            p19_support_authorized: false;
+            /**
+             * Component Support Authorized
+             * @default false
+             * @constant
+             */
+            component_support_authorized: false;
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
+        };
+        /** EngineeringSemanticFocusState */
+        EngineeringSemanticFocusState: {
+            /** Case Id */
+            case_id: string;
+            /** Case Revision Sha256 */
+            case_revision_sha256: string;
+            /** Artifact Id */
+            artifact_id?: string | null;
+            /**
+             * Lap Numbers
+             * @default []
+             */
+            lap_numbers: number[];
+            /** Lap Pct Start */
+            lap_pct_start?: number | null;
+            /** Lap Pct End */
+            lap_pct_end?: number | null;
+            /** Phase */
+            phase?: string | null;
+            /**
+             * Mechanism Ids
+             * @default []
+             */
+            mechanism_ids: string[];
+            /** Response Relation Id */
+            response_relation_id?: string | null;
+            /**
+             * Component Ids
+             * @default []
+             */
+            component_ids: string[];
+            /**
+             * Effect Ids
+             * @default []
+             */
+            effect_ids: string[];
+            /**
+             * Control Keys
+             * @default []
+             */
+            control_keys: string[];
+            /**
+             * P19 Cause Ids
+             * @default []
+             */
+            p19_cause_ids: string[];
+            /**
+             * Authority
+             * @default navigation_only
+             * @constant
+             */
+            authority: "navigation_only";
+        };
         /**
          * EngineeringSourceProvenance
          * @description One exact historical artifact bound to its run/setup/build reality.
@@ -8941,7 +9473,7 @@ export interface components {
              * Relation
              * @enum {string}
              */
-            relation: "brake_to_pressure" | "brake_release_to_yaw" | "throttle_to_acceleration" | "disturbance_to_chassis" | "stint_migration";
+            relation: "brake_to_pressure" | "brake_to_deceleration" | "brake_to_yaw" | "brake_release_to_yaw" | "throttle_to_acceleration" | "throttle_to_yaw" | "steering_wheel_to_yaw" | "disturbance_to_chassis" | "stint_migration";
             /** Phase */
             phase: string;
             /** Lap Pct Start */
@@ -9206,6 +9738,94 @@ export interface components {
             authority_level: "observation" | "measurement" | "controlled_setup" | "blocked";
             /** Setup Authorized */
             setup_authorized: boolean;
+        };
+        /**
+         * P19ResponseAdmission
+         * @description P19-owned interpretation receipt; never a replacement reasoning snapshot.
+         */
+        P19ResponseAdmission: {
+            /** Admission Id */
+            admission_id: string;
+            /** Admission Sha256 */
+            admission_sha256: string;
+            /** Case Id */
+            case_id: string;
+            /** Case Revision Sha256 */
+            case_revision_sha256: string;
+            /** Response Artifact Id */
+            response_artifact_id: string;
+            /** P19 Reasoning Snapshot Sha256 */
+            p19_reasoning_snapshot_sha256: string;
+            /**
+             * Assessments
+             * @default []
+             */
+            assessments: components["schemas"]["P19ResponseCauseAssessment"][];
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "admitted" | "unresolved" | "blocked";
+            /**
+             * Blocker Reasons
+             * @default []
+             */
+            blocker_reasons: string[];
+            /**
+             * Authority
+             * @default p19_response_adapter_only
+             * @constant
+             */
+            authority: "p19_response_adapter_only";
+            /**
+             * Reasoning Rank Modified
+             * @default false
+             * @constant
+             */
+            reasoning_rank_modified: false;
+            /**
+             * Terminal Action Modified
+             * @default false
+             * @constant
+             */
+            terminal_action_modified: false;
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
+        };
+        /** P19ResponseCauseAssessment */
+        P19ResponseCauseAssessment: {
+            /** Cause Id */
+            cause_id: string;
+            /** Matched Mechanism Ids */
+            matched_mechanism_ids: string[];
+            /**
+             * Result
+             * @enum {string}
+             */
+            result: "supports_existing_contract" | "contradicts_existing_contract" | "unresolved" | "blocked";
+            /** Basis */
+            basis: string;
+            /**
+             * Blocker Reasons
+             * @default []
+             */
+            blocker_reasons: string[];
+            /**
+             * Rank Modified
+             * @default false
+             * @constant
+             */
+            rank_modified: false;
+            /**
+             * Setup Authorized
+             * @default false
+             * @constant
+             */
+            setup_authorized: false;
         };
         /** P19TestableControl */
         P19TestableControl: {
@@ -12161,6 +12781,55 @@ export interface components {
             shift_light_rpm_thresholds?: components["schemas"]["ShiftLightRpmThresholds"] | null;
             /** Notes */
             notes?: string[];
+        };
+        /** SetupEffectReadiness */
+        SetupEffectReadiness: {
+            /** Effect Id */
+            effect_id: string;
+            /** Bridge Id */
+            bridge_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "knowledge_only" | "measurement_ready" | "response_evidence_ready" | "p19_testable" | "blocked";
+            /**
+             * Response Artifact Ids
+             * @default []
+             */
+            response_artifact_ids: string[];
+            /**
+             * Expected Response Relation Ids
+             * @default []
+             */
+            expected_response_relation_ids: string[];
+            /**
+             * Exact Control Keys
+             * @default []
+             */
+            exact_control_keys: string[];
+            /** Experiment Factor Id */
+            experiment_factor_id?: string | null;
+            /**
+             * Countereffect Measurement Ids
+             * @default []
+             */
+            countereffect_measurement_ids: string[];
+            /**
+             * Missing Evidence
+             * @default []
+             */
+            missing_evidence: string[];
+            /**
+             * Authority
+             * @enum {string}
+             */
+            authority: "knowledge_only" | "measurement_only" | "exact_p19_projection";
+            /**
+             * Setup Authorized
+             * @default false
+             */
+            setup_authorized: boolean;
         };
         /** SetupExperimentFactor */
         SetupExperimentFactor: {

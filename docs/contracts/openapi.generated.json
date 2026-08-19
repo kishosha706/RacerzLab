@@ -7230,6 +7230,258 @@
         ],
         "title": "CandidateEvidenceReadiness"
       },
+      "CanonicalEngineeringCase": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "p3543.canonical-engineering-case.v1",
+            "title": "Schema Version",
+            "default": "p3543.canonical-engineering-case.v1"
+          },
+          "case_id": {
+            "type": "string",
+            "pattern": "^p3543case_[0-9a-f]{24}$",
+            "title": "Case Id"
+          },
+          "case_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Case Sha256"
+          },
+          "case_revision_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Case Revision Sha256"
+          },
+          "run_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Session Id"
+          },
+          "recording_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Recording Sha256"
+          },
+          "setup_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Setup Id"
+          },
+          "setup_snapshot_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Setup Snapshot Sha256"
+          },
+          "objective_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Objective Id"
+          },
+          "condition_epoch_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Condition Epoch Sha256"
+          },
+          "p19_reasoning_snapshot_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "P19 Reasoning Snapshot Sha256"
+          },
+          "p20_state_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "P20 State Revision"
+          },
+          "p26_knowledge_graph_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "P26 Knowledge Graph Sha256"
+          },
+          "p32_projection_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "P32 Projection Sha256"
+          },
+          "p35_assessment_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "P35 Assessment Sha256"
+          },
+          "p351_projection_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "P351 Projection Sha256"
+          },
+          "p33_projection_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "P33 Projection Sha256"
+          },
+          "evidence_index_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Evidence Index Sha256"
+          },
+          "primary_opportunity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Opportunity Id"
+          },
+          "response_artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/EngineeringResponseArtifact"
+            },
+            "type": "array",
+            "title": "Response Artifacts",
+            "default": []
+          },
+          "p19_response_admissions": {
+            "items": {
+              "$ref": "#/components/schemas/P19ResponseAdmission"
+            },
+            "type": "array",
+            "title": "P19 Response Admissions",
+            "default": []
+          },
+          "mechanism_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Mechanism Ids",
+            "default": []
+          },
+          "component_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Component Ids",
+            "default": []
+          },
+          "effect_readiness": {
+            "items": {
+              "$ref": "#/components/schemas/SetupEffectReadiness"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Effect Readiness"
+          },
+          "active_discriminator_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_.:-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Discriminator Id"
+          },
+          "investigation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investigation Id"
+          },
+          "workspace_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Workspace Revision"
+          },
+          "terminal_move_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Terminal Move Sha256"
+          },
+          "capability_resolutions": {
+            "items": {
+              "$ref": "#/components/schemas/CapabilityEvidenceResolution"
+            },
+            "type": "array",
+            "title": "Capability Resolutions",
+            "default": []
+          },
+          "quantity_observability": {
+            "items": {
+              "$ref": "#/components/schemas/CaseQuantityObservability"
+            },
+            "type": "array",
+            "title": "Quantity Observability",
+            "default": []
+          },
+          "semantic_focus": {
+            "$ref": "#/components/schemas/EngineeringSemanticFocusState"
+          },
+          "campaign_capture": {
+            "$ref": "#/components/schemas/EngineeringCaseCampaignCapture"
+          },
+          "authority": {
+            "type": "string",
+            "const": "case_receipt_only",
+            "title": "Authority",
+            "default": "case_receipt_only"
+          },
+          "p19_authority_unchanged": {
+            "type": "boolean",
+            "const": true,
+            "title": "P19 Authority Unchanged",
+            "default": true
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "case_id",
+          "case_sha256",
+          "case_revision_sha256",
+          "run_id",
+          "session_id",
+          "recording_sha256",
+          "setup_id",
+          "setup_snapshot_sha256",
+          "objective_id",
+          "condition_epoch_sha256",
+          "p19_reasoning_snapshot_sha256",
+          "p20_state_revision",
+          "p26_knowledge_graph_sha256",
+          "p32_projection_sha256",
+          "p35_assessment_sha256",
+          "p351_projection_sha256",
+          "p33_projection_sha256",
+          "evidence_index_sha256",
+          "effect_readiness",
+          "workspace_revision",
+          "terminal_move_sha256",
+          "semantic_focus",
+          "campaign_capture"
+        ],
+        "title": "CanonicalEngineeringCase"
+      },
       "CapabilityActivationAudit": {
         "properties": {
           "rank": {
@@ -7379,6 +7631,72 @@
           "selection_reason"
         ],
         "title": "CapabilityActivationAudit"
+      },
+      "CapabilityEvidenceResolution": {
+        "properties": {
+          "resolution_id": {
+            "type": "string",
+            "pattern": "^p3543cap_[0-9a-f]{24}$",
+            "title": "Resolution Id"
+          },
+          "missing_evidence": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Missing Evidence"
+          },
+          "required_channel_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Required Channel Ids",
+            "default": []
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "available_now",
+              "requires_new_run",
+              "pit_snapshot_only",
+              "structurally_unavailable"
+            ],
+            "title": "Status"
+          },
+          "recovery": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Recovery"
+          },
+          "source_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Artifact Ids",
+            "default": []
+          },
+          "authority": {
+            "type": "string",
+            "const": "measurement_routing_only",
+            "title": "Authority",
+            "default": "measurement_routing_only"
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "resolution_id",
+          "missing_evidence",
+          "status",
+          "recovery"
+        ],
+        "title": "CapabilityEvidenceResolution"
       },
       "CapabilityReadiness": {
         "properties": {
@@ -7755,6 +8073,63 @@
           "statement"
         ],
         "title": "CarResponseFingerprint"
+      },
+      "CaseQuantityObservability": {
+        "properties": {
+          "quantity_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Quantity Id"
+          },
+          "component_family_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Component Family Ids"
+          },
+          "response_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Response Artifact Ids"
+          },
+          "state": {
+            "type": "string",
+            "const": "currently_observable",
+            "title": "State",
+            "default": "currently_observable"
+          },
+          "authority": {
+            "type": "string",
+            "const": "quantity_observation_only",
+            "title": "Authority",
+            "default": "quantity_observation_only"
+          },
+          "component_support_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Component Support Authorized",
+            "default": false
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "quantity_id",
+          "component_family_ids",
+          "response_artifact_ids"
+        ],
+        "title": "CaseQuantityObservability"
       },
       "ChannelCatalogItem": {
         "properties": {
@@ -10217,6 +10592,408 @@
         ],
         "title": "ControlledKnowledgeHistory"
       },
+      "ControlledResponseMetricDelta": {
+        "properties": {
+          "metric_id": {
+            "type": "string",
+            "pattern": "^p3543metric_[0-9a-f]{24}$",
+            "title": "Metric Id"
+          },
+          "relation": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Relation"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Label"
+          },
+          "units": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Units"
+          },
+          "corner": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "lf",
+                  "rf",
+                  "lr",
+                  "rr"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corner"
+          },
+          "stage_a_value": {
+            "type": "number",
+            "title": "Stage A Value"
+          },
+          "stage_b_value": {
+            "type": "number",
+            "title": "Stage B Value"
+          },
+          "stage_a2_value": {
+            "type": "number",
+            "title": "Stage A2 Value"
+          },
+          "baseline_repeat_delta": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Baseline Repeat Delta"
+          },
+          "observed_b_delta": {
+            "type": "number",
+            "title": "Observed B Delta"
+          },
+          "source_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 3,
+            "title": "Source Artifact Ids"
+          },
+          "evidence_state": {
+            "type": "string",
+            "const": "controlled_test_effect",
+            "title": "Evidence State",
+            "default": "controlled_test_effect"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "metric_id",
+          "relation",
+          "label",
+          "units",
+          "stage_a_value",
+          "stage_b_value",
+          "stage_a2_value",
+          "baseline_repeat_delta",
+          "observed_b_delta",
+          "source_artifact_ids"
+        ],
+        "title": "ControlledResponseMetricDelta"
+      },
+      "ControlledResponseReceipt": {
+        "properties": {
+          "receipt_id": {
+            "type": "string",
+            "pattern": "^p3543receipt_[0-9a-f]{24}$",
+            "title": "Receipt Id"
+          },
+          "receipt_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Receipt Sha256"
+          },
+          "workflow_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Workflow Id"
+          },
+          "control_key": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Control Key"
+          },
+          "setup_effect_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Setup Effect Id"
+          },
+          "experiment_factor_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Experiment Factor Id"
+          },
+          "direction_sign": {
+            "type": "integer",
+            "enum": [
+              -1,
+              1
+            ],
+            "title": "Direction Sign"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/ControlledStageResponseReceipt"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Stages"
+          },
+          "expected_response_relation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Expected Response Relation Ids"
+          },
+          "observed_metric_deltas": {
+            "items": {
+              "$ref": "#/components/schemas/ControlledResponseMetricDelta"
+            },
+            "type": "array",
+            "title": "Observed Metric Deltas",
+            "default": []
+          },
+          "performance_effect_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Performance Effect S"
+          },
+          "time_origin_phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Origin Phase"
+          },
+          "time_origin_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Origin Pct"
+          },
+          "downstream_carry_effect_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Downstream Carry Effect S"
+          },
+          "countereffects": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Countereffects",
+            "default": []
+          },
+          "mechanism_assessment": {
+            "type": "string",
+            "enum": [
+              "inconclusive",
+              "invalid"
+            ],
+            "title": "Mechanism Assessment"
+          },
+          "control_response_assessment": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "missed",
+              "inconclusive",
+              "unavailable",
+              "invalid"
+            ],
+            "title": "Control Response Assessment"
+          },
+          "policy_verdict": {
+            "type": "string",
+            "enum": [
+              "keep",
+              "undo",
+              "retest",
+              "invalid"
+            ],
+            "title": "Policy Verdict"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "blocked"
+            ],
+            "title": "State"
+          },
+          "blocker_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocker Reasons",
+            "default": []
+          },
+          "authority": {
+            "type": "string",
+            "const": "p19_controlled_response_receipt",
+            "title": "Authority",
+            "default": "p19_controlled_response_receipt"
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "receipt_id",
+          "receipt_sha256",
+          "workflow_id",
+          "control_key",
+          "setup_effect_id",
+          "experiment_factor_id",
+          "direction_sign",
+          "stages",
+          "expected_response_relation_ids",
+          "mechanism_assessment",
+          "control_response_assessment",
+          "policy_verdict",
+          "state"
+        ],
+        "title": "ControlledResponseReceipt",
+        "description": "P19-owned separation of response, performance, and policy truth."
+      },
+      "ControlledStageResponseReceipt": {
+        "properties": {
+          "stage": {
+            "type": "string",
+            "enum": [
+              "A",
+              "B",
+              "A2"
+            ],
+            "title": "Stage"
+          },
+          "run_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "source_recording_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Recording Sha256"
+          },
+          "setup_snapshot_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Setup Snapshot Sha256"
+          },
+          "response_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Response Artifact Ids",
+            "default": []
+          },
+          "source_channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Channels",
+            "default": []
+          },
+          "eligible_lap_numbers": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "minItems": 3,
+            "title": "Eligible Lap Numbers"
+          },
+          "phase": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Phase"
+          },
+          "lap_pct_start": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Lap Pct Start"
+          },
+          "lap_pct_end": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Lap Pct End"
+          },
+          "speed_min_mps": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed Min Mps"
+          },
+          "speed_max_mps": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed Max Mps"
+          },
+          "blocker_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocker Reasons",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "stage",
+          "run_id",
+          "source_recording_sha256",
+          "setup_snapshot_sha256",
+          "eligible_lap_numbers",
+          "phase",
+          "lap_pct_start",
+          "lap_pct_end"
+        ],
+        "title": "ControlledStageResponseReceipt"
+      },
       "ControlledTestCard": {
         "properties": {
           "hypothesis": {
@@ -10582,6 +11359,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/TestQualityResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "controlled_response_receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ControlledResponseReceipt"
               },
               {
                 "type": "null"
@@ -11139,6 +11926,43 @@
           "separation"
         ],
         "title": "CrewChiefDriverVehicleSeparationArtifact"
+      },
+      "CrewChiefEngineeringResponseArtifact": {
+        "properties": {
+          "artifact_type": {
+            "type": "string",
+            "const": "engineering_response",
+            "title": "Artifact Type",
+            "default": "engineering_response"
+          },
+          "case_id": {
+            "type": "string",
+            "pattern": "^p3543case_[0-9a-f]{24}$",
+            "title": "Case Id"
+          },
+          "case_revision_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Case Revision Sha256"
+          },
+          "assessment_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Assessment Sha256"
+          },
+          "response": {
+            "$ref": "#/components/schemas/EngineeringResponseArtifact"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "case_id",
+          "case_revision_sha256",
+          "assessment_sha256",
+          "response"
+        ],
+        "title": "CrewChiefEngineeringResponseArtifact"
       },
       "CrewChiefExitCarryArtifact": {
         "properties": {
@@ -12327,6 +13151,9 @@
           "evidence_index": {
             "$ref": "#/components/schemas/EngineeringEvidenceIndex"
           },
+          "engineering_case": {
+            "$ref": "#/components/schemas/CanonicalEngineeringCase"
+          },
           "available_tools": {
             "items": {
               "$ref": "#/components/schemas/CrewChiefToolDefinition"
@@ -12513,6 +13340,7 @@
           "identity",
           "generated_at",
           "evidence_index",
+          "engineering_case",
           "available_tools",
           "critique",
           "performance_intelligence",
@@ -15579,6 +16407,65 @@
         ],
         "title": "EngineeringBlockerSeverity"
       },
+      "EngineeringCaseCampaignCapture": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "rejected",
+              "qualified",
+              "duplicate",
+              "corrupt"
+            ],
+            "title": "State"
+          },
+          "blocker_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocker Reasons",
+            "default": []
+          },
+          "historical_count_credited": {
+            "type": "boolean",
+            "const": false,
+            "title": "Historical Count Credited",
+            "default": false
+          },
+          "null_count_credited": {
+            "type": "boolean",
+            "const": false,
+            "title": "Null Count Credited",
+            "default": false
+          },
+          "negative_control_count_credited": {
+            "type": "boolean",
+            "const": false,
+            "title": "Negative Control Count Credited",
+            "default": false
+          },
+          "subgroup_count_credited": {
+            "type": "boolean",
+            "const": false,
+            "title": "Subgroup Count Credited",
+            "default": false
+          },
+          "authority": {
+            "type": "string",
+            "const": "qualification_only",
+            "title": "Authority",
+            "default": "qualification_only"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "EngineeringCaseCampaignCapture"
+      },
       "EngineeringConclusion": {
         "properties": {
           "key": {
@@ -15956,6 +16843,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/CrewChiefVehicleDynamicsFocusArtifact"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CrewChiefEngineeringResponseArtifact"
                   }
                 ],
                 "discriminator": {
@@ -15964,6 +16854,7 @@
                     "component_performance_link": "#/components/schemas/CrewChiefComponentPerformanceLinkArtifact",
                     "corner_performance_chain": "#/components/schemas/CrewChiefCornerPerformanceChainArtifact",
                     "driver_vehicle_separation": "#/components/schemas/CrewChiefDriverVehicleSeparationArtifact",
+                    "engineering_response": "#/components/schemas/CrewChiefEngineeringResponseArtifact",
                     "exit_carry": "#/components/schemas/CrewChiefExitCarryArtifact",
                     "lap_time_opportunity": "#/components/schemas/CrewChiefLapTimeOpportunityArtifact",
                     "objective_envelope": "#/components/schemas/CrewChiefObjectiveEnvelopeArtifact",
@@ -16145,6 +17036,312 @@
           "fuel_strategy"
         ],
         "title": "EngineeringObjective"
+      },
+      "EngineeringResponseArtifact": {
+        "properties": {
+          "artifact_type": {
+            "type": "string",
+            "const": "engineering_response",
+            "title": "Artifact Type",
+            "default": "engineering_response"
+          },
+          "artifact_id": {
+            "type": "string",
+            "pattern": "^p3542\\.response:[0-9a-f]{24}$",
+            "title": "Artifact Id"
+          },
+          "artifact_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Artifact Sha256"
+          },
+          "case_id": {
+            "type": "string",
+            "pattern": "^p3543case_[0-9a-f]{24}$",
+            "title": "Case Id"
+          },
+          "case_revision_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Case Revision Sha256"
+          },
+          "run_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Session Id"
+          },
+          "setup_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Setup Id"
+          },
+          "source_recording_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Recording Sha256"
+          },
+          "source_producer_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Source Producer Id"
+          },
+          "relation": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Relation"
+          },
+          "lap_pct_start": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Lap Pct Start"
+          },
+          "lap_pct_end": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Lap Pct End"
+          },
+          "phase": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Phase"
+          },
+          "canonical_clock_contract": {
+            "type": "string",
+            "const": "qualified_session_tick",
+            "title": "Canonical Clock Contract",
+            "default": "qualified_session_tick"
+          },
+          "source_lap_numbers": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "minItems": 2,
+            "title": "Source Lap Numbers"
+          },
+          "reference_lap_numbers": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Reference Lap Numbers",
+            "default": []
+          },
+          "independence_unit_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 2,
+            "title": "Independence Unit Ids"
+          },
+          "operational_evidence": {
+            "$ref": "#/components/schemas/OperationalResponseEvidence"
+          },
+          "applicability": {
+            "type": "string",
+            "const": "exact_current_case",
+            "title": "Applicability",
+            "default": "exact_current_case"
+          },
+          "blocker_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocker Reasons",
+            "default": []
+          },
+          "authority_ceiling": {
+            "type": "string",
+            "const": "observation_only",
+            "title": "Authority Ceiling",
+            "default": "observation_only"
+          },
+          "p19_support_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "P19 Support Authorized",
+            "default": false
+          },
+          "component_support_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Component Support Authorized",
+            "default": false
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "artifact_sha256",
+          "case_id",
+          "case_revision_sha256",
+          "run_id",
+          "session_id",
+          "setup_id",
+          "source_recording_sha256",
+          "source_producer_id",
+          "relation",
+          "lap_pct_start",
+          "lap_pct_end",
+          "phase",
+          "source_lap_numbers",
+          "independence_unit_ids",
+          "operational_evidence"
+        ],
+        "title": "EngineeringResponseArtifact",
+        "description": "Globally addressable envelope for one P35.4 response observation."
+      },
+      "EngineeringSemanticFocusState": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "pattern": "^p3543case_[0-9a-f]{24}$",
+            "title": "Case Id"
+          },
+          "case_revision_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Case Revision Sha256"
+          },
+          "artifact_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_.:-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Id"
+          },
+          "lap_numbers": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Lap Numbers",
+            "default": []
+          },
+          "lap_pct_start": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lap Pct Start"
+          },
+          "lap_pct_end": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lap Pct End"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "mechanism_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Mechanism Ids",
+            "default": []
+          },
+          "response_relation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_.:-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Relation Id"
+          },
+          "component_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Component Ids",
+            "default": []
+          },
+          "effect_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Effect Ids",
+            "default": []
+          },
+          "control_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Control Keys",
+            "default": []
+          },
+          "p19_cause_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "P19 Cause Ids",
+            "default": []
+          },
+          "authority": {
+            "type": "string",
+            "const": "navigation_only",
+            "title": "Authority",
+            "default": "navigation_only"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "case_id",
+          "case_revision_sha256"
+        ],
+        "title": "EngineeringSemanticFocusState"
       },
       "EngineeringSourceProvenance": {
         "properties": {
@@ -24977,8 +26174,12 @@
             "type": "string",
             "enum": [
               "brake_to_pressure",
+              "brake_to_deceleration",
+              "brake_to_yaw",
               "brake_release_to_yaw",
               "throttle_to_acceleration",
+              "throttle_to_yaw",
+              "steering_wheel_to_yaw",
               "disturbance_to_chassis",
               "stint_migration"
             ],
@@ -25663,6 +26864,163 @@
           "setup_authorized"
         ],
         "title": "P19ReasoningMemory"
+      },
+      "P19ResponseAdmission": {
+        "properties": {
+          "admission_id": {
+            "type": "string",
+            "pattern": "^p19response_[0-9a-f]{24}$",
+            "title": "Admission Id"
+          },
+          "admission_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Admission Sha256"
+          },
+          "case_id": {
+            "type": "string",
+            "pattern": "^p3543case_[0-9a-f]{24}$",
+            "title": "Case Id"
+          },
+          "case_revision_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Case Revision Sha256"
+          },
+          "response_artifact_id": {
+            "type": "string",
+            "pattern": "^p3542\\.response:[0-9a-f]{24}$",
+            "title": "Response Artifact Id"
+          },
+          "p19_reasoning_snapshot_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "P19 Reasoning Snapshot Sha256"
+          },
+          "assessments": {
+            "items": {
+              "$ref": "#/components/schemas/P19ResponseCauseAssessment"
+            },
+            "type": "array",
+            "title": "Assessments",
+            "default": []
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "admitted",
+              "unresolved",
+              "blocked"
+            ],
+            "title": "State"
+          },
+          "blocker_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocker Reasons",
+            "default": []
+          },
+          "authority": {
+            "type": "string",
+            "const": "p19_response_adapter_only",
+            "title": "Authority",
+            "default": "p19_response_adapter_only"
+          },
+          "reasoning_rank_modified": {
+            "type": "boolean",
+            "const": false,
+            "title": "Reasoning Rank Modified",
+            "default": false
+          },
+          "terminal_action_modified": {
+            "type": "boolean",
+            "const": false,
+            "title": "Terminal Action Modified",
+            "default": false
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "admission_id",
+          "admission_sha256",
+          "case_id",
+          "case_revision_sha256",
+          "response_artifact_id",
+          "p19_reasoning_snapshot_sha256",
+          "state"
+        ],
+        "title": "P19ResponseAdmission",
+        "description": "P19-owned interpretation receipt; never a replacement reasoning snapshot."
+      },
+      "P19ResponseCauseAssessment": {
+        "properties": {
+          "cause_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Cause Id"
+          },
+          "matched_mechanism_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Matched Mechanism Ids"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "supports_existing_contract",
+              "contradicts_existing_contract",
+              "unresolved",
+              "blocked"
+            ],
+            "title": "Result"
+          },
+          "basis": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Basis"
+          },
+          "blocker_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocker Reasons",
+            "default": []
+          },
+          "rank_modified": {
+            "type": "boolean",
+            "const": false,
+            "title": "Rank Modified",
+            "default": false
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "const": false,
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "cause_id",
+          "matched_mechanism_ids",
+          "result",
+          "basis"
+        ],
+        "title": "P19ResponseCauseAssessment"
       },
       "P19TestableControl": {
         "properties": {
@@ -33815,6 +35173,106 @@
           "run_id"
         ],
         "title": "SessionSummary"
+      },
+      "SetupEffectReadiness": {
+        "properties": {
+          "effect_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.:-]*$",
+            "title": "Effect Id"
+          },
+          "bridge_id": {
+            "type": "string",
+            "pattern": "^p351b_[0-9a-f]{24}$",
+            "title": "Bridge Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "knowledge_only",
+              "measurement_ready",
+              "response_evidence_ready",
+              "p19_testable",
+              "blocked"
+            ],
+            "title": "State"
+          },
+          "response_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Response Artifact Ids",
+            "default": []
+          },
+          "expected_response_relation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Expected Response Relation Ids",
+            "default": []
+          },
+          "exact_control_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Exact Control Keys",
+            "default": []
+          },
+          "experiment_factor_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_.:-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experiment Factor Id"
+          },
+          "countereffect_measurement_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Countereffect Measurement Ids",
+            "default": []
+          },
+          "missing_evidence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Evidence",
+            "default": []
+          },
+          "authority": {
+            "type": "string",
+            "enum": [
+              "knowledge_only",
+              "measurement_only",
+              "exact_p19_projection"
+            ],
+            "title": "Authority"
+          },
+          "setup_authorized": {
+            "type": "boolean",
+            "title": "Setup Authorized",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "effect_id",
+          "bridge_id",
+          "state",
+          "authority"
+        ],
+        "title": "SetupEffectReadiness"
       },
       "SetupExperimentFactor": {
         "properties": {

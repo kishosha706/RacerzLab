@@ -418,6 +418,45 @@ export type TestQualityResult = {
 
 export type LearningCaptureState = "not_applicable" | "captured" | "blocked";
 
+export type ControlledResponseReceipt = {
+  receipt_id: string;
+  receipt_sha256: string;
+  workflow_id: string;
+  control_key: string;
+  setup_effect_id: string;
+  experiment_factor_id: string;
+  direction_sign: -1 | 1;
+  stages: Array<{
+    stage: "A" | "B" | "A2";
+    run_id: string;
+    source_recording_sha256: string;
+    setup_snapshot_sha256: string;
+    response_artifact_ids: string[];
+    source_channels: string[];
+    eligible_lap_numbers: number[];
+    phase: string;
+    lap_pct_start: number;
+    lap_pct_end: number;
+    speed_min_mps: number | null;
+    speed_max_mps: number | null;
+    blocker_reasons: string[];
+  }>;
+  expected_response_relation_ids: string[];
+  observed_metric_deltas: Array<Record<string, unknown>>;
+  performance_effect_s: number | null;
+  time_origin_phase: string | null;
+  time_origin_pct: number | null;
+  downstream_carry_effect_s: number | null;
+  countereffects: string[];
+  mechanism_assessment: "inconclusive" | "invalid";
+  control_response_assessment: "matched" | "missed" | "inconclusive" | "unavailable" | "invalid";
+  policy_verdict: "keep" | "undo" | "retest" | "invalid";
+  state: "ready" | "blocked";
+  blocker_reasons: string[];
+  authority: "p19_controlled_response_receipt";
+  setup_authorized: false;
+};
+
 export type ControlledWorkflow = {
   workflow_id: string;
   created_at: string;
@@ -448,6 +487,7 @@ export type ControlledWorkflow = {
   } | null;
   reproduction_snapshot: Record<string, unknown>;
   quality: TestQualityResult | null;
+  controlled_response_receipt: ControlledResponseReceipt | null;
   learning_admitted: boolean | null;
   learning_capture_state: LearningCaptureState;
   learning_capture_experience_id: string | null;

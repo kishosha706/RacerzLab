@@ -62,8 +62,12 @@ function signedMetric(value: number, units: string): string {
 function operationalRelationLabel(value: string): string {
   return ({
     brake_to_pressure: "BRAKE → PRESSURE",
+    brake_to_deceleration: "BRAKE → DECELERATION",
+    brake_to_yaw: "BRAKE → YAW",
     brake_release_to_yaw: "RELEASE → YAW",
     throttle_to_acceleration: "THROTTLE → ACCELERATION",
+    throttle_to_yaw: "THROTTLE → YAW",
+    steering_wheel_to_yaw: "STEERING-WHEEL → YAW",
     disturbance_to_chassis: "DISTURBANCE → CHASSIS",
     stint_migration: "STINT MIGRATION",
   } as Record<string, string>)[value] ?? humanize(value).toUpperCase();
@@ -398,6 +402,13 @@ export function VehicleDynamicsBlackboard({
             {evidence.speed_median_mps !== null && <small>
               Observed speed band {evidence.speed_min_mps?.toFixed(1)}–{evidence.speed_max_mps?.toFixed(1)} m/s · median {evidence.speed_median_mps.toFixed(1)} m/s
             </small>}
+            {evidenceById.get(evidence.evidence_id) && <button
+              type="button"
+              className="vehicle-dynamics-focus"
+              onClick={() => onFocusEvidence(evidenceById.get(evidence.evidence_id)!)}
+            >
+              Open connected response evidence
+            </button>}
           </section>)}
         </div>}
         <small>Steering values are steering-wheel demand, never road-wheel angle. Onset is only shown at the resolution currently measured.</small>

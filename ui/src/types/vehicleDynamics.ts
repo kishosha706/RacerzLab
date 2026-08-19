@@ -169,7 +169,7 @@ export type OperationalResponseMetric = {
 
 export type OperationalResponseEvidence = {
   evidence_id: string;
-  relation: "brake_to_pressure" | "brake_release_to_yaw" | "throttle_to_acceleration" | "disturbance_to_chassis" | "stint_migration";
+  relation: "brake_to_pressure" | "brake_to_deceleration" | "brake_to_yaw" | "brake_release_to_yaw" | "throttle_to_acceleration" | "throttle_to_yaw" | "steering_wheel_to_yaw" | "disturbance_to_chassis" | "stint_migration";
   phase: string;
   lap_pct_start: number;
   lap_pct_end: number;

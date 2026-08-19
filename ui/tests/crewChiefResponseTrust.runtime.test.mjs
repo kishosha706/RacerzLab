@@ -552,6 +552,8 @@ const synchronizeEngineeringKnowledge = async (value) => {
     ...body,
     projection_sha256: await canonicalJsonSha256(body),
   };
+  value.engineering_case.p351_projection_sha256 = value.engineering_knowledge.projection_sha256;
+  value.engineering_case.p35_assessment_sha256 = value.vehicle_dynamics.p35_assessment_sha256;
 };
 const workspace = {
   schema_version: "p352.crew-chief-workspace.v1",
@@ -572,6 +574,44 @@ const workspace = {
   },
   evidence_index: {
     workspace_revision: h("c"), index_hash: await canonicalJsonSha256([]), entries: [],
+  },
+  engineering_case: {
+    schema_version: "p3543.canonical-engineering-case.v1",
+    case_id: `p3543case_${h("c").slice(0, 24)}`,
+    case_sha256: h("9"), case_revision_sha256: h("c"),
+    run_id: "run-1", session_id: "session-1", recording_sha256: h("8"),
+    setup_id: "setup-1", setup_snapshot_sha256: h("b"), objective_id: "race_long_run",
+    condition_epoch_sha256: h("6"), p19_reasoning_snapshot_sha256: h("a"),
+    p20_state_revision: h("d"), p26_knowledge_graph_sha256: h("e"),
+    p32_projection_sha256: h("7"), p35_assessment_sha256: vehicleDynamics.p35_assessment_sha256,
+    p351_projection_sha256: engineeringKnowledge.projection_sha256,
+    p33_projection_sha256: h("2"), evidence_index_sha256: await canonicalJsonSha256([]),
+    primary_opportunity_id: null, response_artifacts: [], p19_response_admissions: [],
+    mechanism_ids: [], component_ids: [...new Set(ENGINEERING_KNOWLEDGE_STATIC_REGISTRY.flatMap(
+      (item) => item.possibleComponentFamilyIds,
+    ))],
+    effect_readiness: emptyKnowledgeHypotheses.map((item) => ({
+      effect_id: item.effect_id, bridge_id: item.bridge_id, state: "knowledge_only",
+      response_artifact_ids: [], expected_response_relation_ids: [], exact_control_keys: [],
+      experiment_factor_id: item.experiment_factor_id, countereffect_measurement_ids: [],
+      missing_evidence: [...item.missing_evidence], authority: "knowledge_only",
+      setup_authorized: false,
+    })),
+    active_discriminator_id: null, investigation_id: null, workspace_revision: h("c"),
+    terminal_move_sha256: h("7"), capability_resolutions: [], quantity_observability: [],
+    semantic_focus: {
+      case_id: `p3543case_${h("c").slice(0, 24)}`, case_revision_sha256: h("c"),
+      artifact_id: null, lap_numbers: [], lap_pct_start: null, lap_pct_end: null,
+      phase: null, mechanism_ids: [], response_relation_id: null, component_ids: [],
+      effect_ids: [], control_keys: [], p19_cause_ids: [], authority: "navigation_only",
+    },
+    campaign_capture: {
+      state: "pending", blocker_reasons: ["Real qualified sessions are required."],
+      historical_count_credited: false, null_count_credited: false,
+      negative_control_count_credited: false, subgroup_count_credited: false,
+      authority: "qualification_only",
+    },
+    authority: "case_receipt_only", p19_authority_unchanged: true, setup_authorized: false,
   },
   available_tools: availableTools,
   tool_eligibility: availableTools.map((tool) => ({
@@ -622,6 +662,7 @@ const workspace = {
   },
 };
 workspace.identity.run_sentinel_sha256 = await canonicalEngineeringLearningSha256(workspace.run_sentinel);
+workspace.engineering_case.condition_epoch_sha256 = workspace.identity.run_sentinel_sha256;
 const scope = { runId: "run-1", sessionId: "session-1", report, objectiveId: "race_long_run" };
 const rehashEngineeringKnowledge = async (value) => {
   const body = structuredClone(value.engineering_knowledge);
@@ -782,6 +823,10 @@ unavailableRuntimeWorkspace.engineering_knowledge.hypotheses.forEach((item) => {
   const { projection_sha256: _digest, ...body } = unavailableRuntimeWorkspace.engineering_knowledge;
   unavailableRuntimeWorkspace.engineering_knowledge.projection_sha256 = await canonicalJsonSha256(body);
 }
+unavailableRuntimeWorkspace.engineering_case.p35_assessment_sha256 =
+  unavailableRuntimeWorkspace.vehicle_dynamics.p35_assessment_sha256;
+unavailableRuntimeWorkspace.engineering_case.p351_projection_sha256 =
+  unavailableRuntimeWorkspace.engineering_knowledge.projection_sha256;
 const unavailableRuntimeScope = { ...scope, report: unavailableRuntimeReport };
 assert.equal(
   isCrewChiefWorkspaceResponse(unavailableRuntimeWorkspace, unavailableRuntimeScope),
@@ -1455,6 +1500,8 @@ discriminatorWorkspace.performance_intelligence.explanation_chain.p19_next_move 
 discriminatorWorkspace.identity.run_sentinel_sha256 = await canonicalEngineeringLearningSha256(
   discriminatorWorkspace.run_sentinel,
 );
+discriminatorWorkspace.engineering_case.condition_epoch_sha256 =
+  discriminatorWorkspace.identity.run_sentinel_sha256;
 const discriminatorScope = structuredClone(missionScope);
 discriminatorScope.report.best_measurement = { title: "Evidence discriminator" };
 discriminatorScope.report.briefing.action.title = "Run the evidence discriminator";

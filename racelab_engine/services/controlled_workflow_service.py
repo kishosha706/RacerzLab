@@ -10,6 +10,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import median
+from types import SimpleNamespace
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -48,12 +49,21 @@ from racelab_engine.analysis.time_alignment import (
     TimeAlignmentResult,
     analyze_time_alignment,
 )
+from racelab_engine.analysis.dynamic_response import (
+    analyze_brake_throttle_dynamic_response,
+)
 from racelab_engine.identity import canonical_json_sha256
 from racelab_engine.knowledge.setup.dial_in_controls import (
     expanded_related_setup_keys,
     experiment_factor_id_for_effect,
 )
 from racelab_engine.knowledge.setup.dial_in_service import build_dial_in_response
+from racelab_engine.knowledge.setup.engineering_knowledge import (
+    compile_mechanism_setup_bridges,
+)
+from racelab_engine.knowledge.engineering_semantic_registry import (
+    compile_engineering_semantic_registry,
+)
 from racelab_engine.knowledge.setup.evidence_adapter import (
     event_matches_phase,
     event_matches_zone,
@@ -66,7 +76,13 @@ from racelab_engine.models.controlled_workflow import (
     VehicleConditionEpoch,
 )
 from racelab_engine.models.evidence import EvidenceState
+from racelab_engine.models.engineering_case import (
+    ControlledResponseMetricDelta,
+    ControlledResponseReceipt,
+    ControlledStageResponseReceipt,
+)
 from racelab_engine.recording_identity import (
+    RecordingIdentityError,
     require_independent_recordings,
     resolve_recording_sha256,
 )
@@ -86,6 +102,9 @@ from racelab_engine.services.session_intelligence_service import (
     evaluate_hypothesis_repeat,
 )
 from racelab_engine.services.session_service import get_session, list_sessions
+from racelab_engine.services.vehicle_dynamics_service import (
+    _dynamic_operational_evidence,
+)
 from racelab_engine.storage.repository import RaceLabRepository
 
 _log = logging.getLogger(__name__)
@@ -107,6 +126,8 @@ _WORKFLOW_COLUMNS = [
     "player_tow_service_time_s", "player_pit_service_status",
     "pit_repair_remaining_s", "pit_optional_repair_remaining_s", "pending_pit_service_flags",
     "applied_brake_bias",
+    "lf_brake_line_pressure_bar", "rf_brake_line_pressure_bar",
+    "lr_brake_line_pressure_bar", "rr_brake_line_pressure_bar",
     "player_tire_compound", "tire_compound",
     "tire_sets_used", "left_tire_sets_used", "right_tire_sets_used",
     "car_distance_ahead_m", "car_distance_behind_m",
@@ -2779,6 +2800,263 @@ def validate_workflow_for_authoritative_use(
     return fresh
 
 
+def _controlled_response_setup_state_sha256(setup: Any) -> str:
+    payload = setup.model_dump(mode="json") if setup is not None else {}
+    for field in (
+        "run_id",
+        "setup_id",
+        "setup_name",
+        "captured_at",
+        "source_run_id",
+    ):
+        payload.pop(field, None)
+    return canonical_json_sha256(payload)
+
+
+def _expected_response_relations(effect_id: str, target_phase: str) -> tuple[str, ...]:
+    bridge = next(
+        (
+            item
+            for item in compile_mechanism_setup_bridges()
+            if item.effect_id == effect_id
+        ),
+        None,
+    )
+    mechanisms = set(bridge.p35_mechanism_ids if bridge is not None else ())
+    phase = target_phase.casefold().replace("-", "_").replace(" ", "_")
+    relations = tuple(
+        item.relation_id
+        for item in compile_engineering_semantic_registry().entries
+        if mechanisms.intersection(item.p35_mechanism_ids)
+        and (
+            phase in item.problem_phases
+            or (phase == "braking" and "brake" in item.problem_phases)
+            or (phase == "initial_throttle" and "throttle_pickup" in item.problem_phases)
+        )
+    )
+    if relations:
+        return relations
+    fallback = (
+        "brake_to_yaw"
+        if phase in {"brake", "braking"}
+        else "throttle_to_yaw"
+        if phase in {"throttle", "throttle_pickup", "initial_throttle", "exit"}
+        else "steering_wheel_to_yaw"
+    )
+    return (fallback,)
+
+
+def _build_controlled_response_receipt(
+    *,
+    workflow: ControlledWorkflow,
+    card: ControlledTestCard,
+    overviews: dict[str, Any],
+    setups: dict[str, Any],
+    lap_rows: dict[str, list[list[dict[str, Any]]]],
+    stage_eligible_lap_numbers: dict[str, tuple[int, ...]],
+    execution: TestExecution,
+    quality: Any,
+) -> ControlledResponseReceipt | None:
+    if card.setup_effect_id is None or card.experiment_factor_id is None:
+        return None
+    expected_relations = _expected_response_relations(
+        card.setup_effect_id,
+        card.target_phase,
+    )
+    evidence_by_stage: dict[str, tuple[Any, ...]] = {}
+    stage_receipts: list[ControlledStageResponseReceipt] = []
+    for stage in ("A", "B", "A2"):
+        run_id = workflow.stage_run_ids[stage]
+        rows = [dict(row, run_id=run_id) for lap in lap_rows[stage] for row in lap]
+        report = analyze_brake_throttle_dynamic_response(
+            rows,
+            run_id=run_id,
+            setup_id=setups[stage].setup_id,
+            eligible_lap_numbers=stage_eligible_lap_numbers[stage],
+            expected_sample_rate_hz=overviews[stage].session.telemetry_rate_hz,
+        )
+        scope = SimpleNamespace(
+            start_pct=workflow.packet.opportunity.start_pct,
+            end_pct=workflow.packet.opportunity.end_pct,
+            phase=card.target_phase,
+        )
+        projected = tuple(
+            item
+            for item in _dynamic_operational_evidence(report, scope)
+            if item.relation in expected_relations
+        )
+        evidence_by_stage[stage] = projected
+        speed_min = min(
+            (item.speed_min_mps for item in projected if item.speed_min_mps is not None),
+            default=None,
+        )
+        speed_max = max(
+            (item.speed_max_mps for item in projected if item.speed_max_mps is not None),
+            default=None,
+        )
+        manifest = read_telemetry_manifest(run_id)
+        try:
+            recording_sha = resolve_recording_sha256(
+                run_id=run_id,
+                stored_source_sha256=overviews[stage].session.file_hash,
+                manifest_source_sha256=manifest.get("source_file_sha256"),
+            )
+        except RecordingIdentityError:
+            # Pre-P35.4.3 synthetic/legacy scoring remains readable but cannot
+            # publish a response receipt without immutable recording identity.
+            return None
+        blockers = (
+            ()
+            if projected
+            else tuple(
+                dict.fromkeys(
+                    (
+                        *report.blocker_reasons,
+                        "No expected response relation qualified in this exact stage scope.",
+                    )
+                )
+            )
+        )
+        stage_receipts.append(
+            ControlledStageResponseReceipt(
+                stage=stage,
+                run_id=run_id,
+                source_recording_sha256=recording_sha,
+                setup_snapshot_sha256=_controlled_response_setup_state_sha256(
+                    setups[stage]
+                ),
+                response_artifact_ids=tuple(item.evidence_id for item in projected),
+                source_channels=tuple(
+                    dict.fromkeys(
+                        channel
+                        for item in projected
+                        for channel in item.source_channels
+                    )
+                ),
+                eligible_lap_numbers=stage_eligible_lap_numbers[stage],
+                phase=card.target_phase,
+                lap_pct_start=workflow.packet.opportunity.start_pct,
+                lap_pct_end=workflow.packet.opportunity.end_pct,
+                speed_min_mps=speed_min,
+                speed_max_mps=speed_max,
+                blocker_reasons=blockers,
+            )
+        )
+
+    def metric_values(stage: str) -> dict[tuple[str, str, str | None, str], tuple[float, str]]:
+        values: dict[tuple[str, str, str | None, str], list[tuple[float, str]]] = {}
+        for evidence in evidence_by_stage[stage]:
+            for metric in evidence.metrics:
+                key = (evidence.relation, metric.label, metric.corner, metric.units)
+                values.setdefault(key, []).append((metric.value, evidence.evidence_id))
+        return {
+            key: (
+                float(median(item[0] for item in items)),
+                items[0][1],
+            )
+            for key, items in values.items()
+        }
+
+    stage_metrics = {stage: metric_values(stage) for stage in ("A", "B", "A2")}
+    shared = set(stage_metrics["A"]) & set(stage_metrics["B"]) & set(stage_metrics["A2"])
+    deltas: list[ControlledResponseMetricDelta] = []
+    for relation, label, corner, units in sorted(
+        shared, key=lambda item: (item[0], item[1], item[2] or "", item[3])
+    ):
+        key = (relation, label, corner, units)
+        a_value, a_artifact = stage_metrics["A"][key]
+        b_value, b_artifact = stage_metrics["B"][key]
+        a2_value, a2_artifact = stage_metrics["A2"][key]
+        baseline = float(median((a_value, a2_value)))
+        identity = canonical_json_sha256(
+            [workflow.workflow_id, key, a_value, b_value, a2_value]
+        )
+        deltas.append(
+            ControlledResponseMetricDelta(
+                metric_id=f"p3543metric_{identity[:24]}",
+                relation=relation,
+                label=label,
+                units=units,
+                corner=corner,
+                stage_a_value=a_value,
+                stage_b_value=b_value,
+                stage_a2_value=a2_value,
+                baseline_repeat_delta=abs(a_value - a2_value),
+                observed_b_delta=b_value - baseline,
+                source_artifact_ids=(a_artifact, b_artifact, a2_artifact),
+            )
+        )
+    blockers = tuple(
+        dict.fromkeys(
+            reason
+            for item in stage_receipts
+            for reason in item.blocker_reasons
+        )
+    )
+    ready = bool(deltas) and not blockers and quality.verdict != "invalid"
+    countereffects = tuple(
+        dict.fromkeys(
+            (
+                *quality.contradictory_evidence,
+                *(
+                    card.countereffects
+                    if quality.verdict == "undo" and not quality.contradictory_evidence
+                    else ()
+                ),
+            )
+        )
+    )
+    control_response = (
+        "invalid"
+        if quality.verdict == "invalid"
+        else "matched"
+        if ready and quality.controlled_effect_eligible
+        else "inconclusive"
+        if deltas
+        else "unavailable"
+    )
+    receipt_blockers = blockers or (
+        ("No common A/B/A2 response metric cleared exact scope and speed gates.",)
+        if not ready
+        else ()
+    )
+    return ControlledResponseReceipt.build(
+        workflow_id=workflow.workflow_id,
+        control_key=card.control_key,
+        setup_effect_id=card.setup_effect_id,
+        experiment_factor_id=card.experiment_factor_id,
+        direction_sign=card.direction_sign,
+        stages=tuple(stage_receipts),
+        expected_response_relation_ids=expected_relations,
+        observed_metric_deltas=tuple(deltas) if ready else (),
+        performance_effect_s=(
+            float(
+                median(
+                    (
+                        execution.phase_effect_b_vs_a_s,
+                        execution.phase_effect_b_vs_a2_s,
+                    )
+                )
+            )
+            if quality.verdict != "invalid"
+            and execution.phase_effect_b_vs_a_s is not None
+            and execution.phase_effect_b_vs_a2_s is not None
+            else None
+        ),
+        time_origin_phase=execution.time_origin_phase,
+        time_origin_pct=execution.time_origin_pct,
+        downstream_carry_effect_s=execution.downstream_carry_effect_s,
+        countereffects=countereffects,
+        mechanism_assessment=(
+            "invalid" if quality.verdict == "invalid" else "inconclusive"
+        ),
+        control_response_assessment=control_response,
+        policy_verdict=quality.verdict,
+        state="ready" if ready else "blocked",
+        blocker_reasons=receipt_blockers,
+    )
+
+
 def score_workflow(
     workflow_id: str,
     *,
@@ -3269,11 +3547,22 @@ def score_workflow(
             "p19_authority_binding"
         ),
     }
+    controlled_response_receipt = _build_controlled_response_receipt(
+        workflow=workflow,
+        card=card,
+        overviews=overviews,
+        setups=setups,
+        lap_rows=lap_rows,
+        stage_eligible_lap_numbers=stage_eligible_lap_numbers,
+        execution=execution,
+        quality=result,
+    )
     updated = workflow.model_copy(update={
         "stage_eligible_lap_numbers": stage_eligible_lap_numbers,
         "execution": execution,
         "reproduction_snapshot": reproduction_snapshot,
         "quality": result,
+        "controlled_response_receipt": controlled_response_receipt,
         "learning_admitted": learning_admitted,
         "status": "scored",
         "updated_at": datetime.now(timezone.utc),

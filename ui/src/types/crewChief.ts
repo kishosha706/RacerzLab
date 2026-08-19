@@ -20,6 +20,10 @@ import type {
 import type { VehicleSystemsRuntimeIdentity } from "./vehicleSystems";
 import type { EngineeringAwarenessProjection } from "./engineeringAwareness";
 import type { CurrentEngineeringKnowledgeProjection } from "./engineeringKnowledge";
+import type {
+  CanonicalEngineeringCase,
+  EngineeringResponseArtifact,
+} from "./engineeringCase";
 
 export type EngineeringObjective =
   | "qualifying_peak"
@@ -89,9 +93,18 @@ export type CrewChiefVehicleDynamicsFocusArtifact = {
   focus: VehicleDynamicsFocusArtifact;
 };
 
+export type CrewChiefEngineeringResponseArtifact = {
+  artifact_type: "engineering_response";
+  case_id: string;
+  case_revision_sha256: string;
+  assessment_sha256: string;
+  response: EngineeringResponseArtifact;
+};
+
 export type CrewChiefEvidenceArtifact =
   | CrewChiefPerformanceArtifact
-  | CrewChiefVehicleDynamicsFocusArtifact;
+  | CrewChiefVehicleDynamicsFocusArtifact
+  | CrewChiefEngineeringResponseArtifact;
 
 export type CrewChiefWorkspaceIdentity = {
   run_id: string;
@@ -258,6 +271,7 @@ export type CrewChiefWorkspace = {
     entries: CrewChiefEvidenceEntry[];
     index_hash: string;
   };
+  engineering_case: CanonicalEngineeringCase;
   available_tools: CrewChiefToolDefinition[];
   tool_eligibility: Array<{
     tool_id: string;

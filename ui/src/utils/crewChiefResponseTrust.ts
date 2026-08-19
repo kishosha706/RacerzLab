@@ -99,11 +99,15 @@ const crewEvidenceIndexFloatKeys = new Set([
   "long_accel_delta",
   "median_corner_duration_s",
   "path_delta_m",
+  "onset_pct",
   "persistence_distance_pct",
   "platform_load_speed_bands_mph",
   "reference_traffic_exposure_fraction",
   "source_traffic_exposure_fraction",
   "speed_delta_mph",
+  "speed_max_mps",
+  "speed_median_mps",
+  "speed_min_mps",
   "speed_max_mph",
   "speed_min_mph",
   "start_pct",
@@ -111,6 +115,7 @@ const crewEvidenceIndexFloatKeys = new Set([
   "throttle_delta_pct",
   "traffic_exposure_fraction",
   "yaw_rate_delta",
+  "value",
 ]);
 const engineeringObjectives = new Set([
   "qualifying_peak", "race_long_run", "tire_conservation", "driver_confidence",
@@ -533,6 +538,44 @@ export async function hasCanonicalCrewEvidenceIndexDigest(
   }
 }
 
+export async function hasCanonicalEngineeringCaseDigest(
+  workspace: CrewChiefWorkspace,
+): Promise<boolean> {
+  try {
+    const engineeringCase = structuredClone(workspace.engineering_case);
+    const caseId = engineeringCase.case_id;
+    const caseSha = engineeringCase.case_sha256;
+    delete (engineeringCase as Partial<typeof engineeringCase>).case_id;
+    delete (engineeringCase as Partial<typeof engineeringCase>).case_sha256;
+    if (caseId !== `p3543case_${engineeringCase.case_revision_sha256.slice(0, 24)}`
+      || await canonicalJsonSha256(engineeringCase, {
+        pythonFloatKeys: crewEvidenceIndexFloatKeys,
+      }) !== caseSha) return false;
+    for (const response of workspace.engineering_case.response_artifacts) {
+      const body = structuredClone(response);
+      const digest = body.artifact_sha256;
+      delete (body as Partial<typeof body>).artifact_sha256;
+      if (await canonicalJsonSha256(body, {
+        pythonFloatKeys: crewEvidenceIndexFloatKeys,
+      }) !== digest) return false;
+    }
+    for (const admission of workspace.engineering_case.p19_response_admissions) {
+      const body = structuredClone(admission);
+      const admissionId = body.admission_id;
+      const digest = body.admission_sha256;
+      delete (body as Partial<typeof body>).admission_id;
+      delete (body as Partial<typeof body>).admission_sha256;
+      if (admissionId !== `p19response_${digest.slice(0, 24)}`
+        || await canonicalJsonSha256(body, {
+          pythonFloatKeys: crewEvidenceIndexFloatKeys,
+        }) !== digest) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function validWorkspaceIdentityShape(value: unknown): value is Record<string, unknown> {
   if (!exactKeys(value, workspaceIdentityKeys)) return false;
   return typeof value.run_id === "string" && value.run_id.length > 0
@@ -694,10 +737,153 @@ function validToolDefinition(value: unknown): value is Record<string, unknown> {
     && uniqueStrings(value.required_sources);
 }
 
+function validCanonicalEngineeringCase(
+  value: unknown,
+  identity: Record<string, unknown>,
+  entries: readonly CrewChiefEvidenceEntry[],
+  indexHash: string,
+  dynamics: PerformanceMechanismAssessment,
+  knowledge: Record<string, unknown>,
+): boolean {
+  if (!record(value)
+    || value.schema_version !== "p3543.canonical-engineering-case.v1"
+    || !/^p3543case_[0-9a-f]{24}$/.test(String(value.case_id))
+    || typeof value.case_sha256 !== "string" || !hash.test(value.case_sha256)
+    || value.case_revision_sha256 !== identity.workspace_revision
+    || value.workspace_revision !== identity.workspace_revision
+    || value.run_id !== identity.run_id
+    || value.session_id !== identity.session_id
+    || value.setup_id !== identity.setup_id
+    || value.setup_snapshot_sha256 !== identity.setup_snapshot_sha256
+    || value.objective_id !== identity.objective_id
+    || value.condition_epoch_sha256 !== identity.run_sentinel_sha256
+    || value.p19_reasoning_snapshot_sha256 !== identity.reasoning_snapshot_sha256
+    || value.p20_state_revision !== identity.p20_state_revision
+    || value.p26_knowledge_graph_sha256 !== identity.p26_knowledge_graph_sha256
+    || value.p32_projection_sha256 !== identity.p32_projection_sha256
+    || value.p35_assessment_sha256 !== identity.p35_assessment_sha256
+    || value.p33_projection_sha256 !== identity.learning_projection_sha256
+    || value.evidence_index_sha256 !== indexHash
+    || value.p351_projection_sha256 !== knowledge.projection_sha256
+    || !Array.isArray(value.response_artifacts)
+    || !Array.isArray(value.p19_response_admissions)
+    || !Array.isArray(value.effect_readiness)
+    || !Array.isArray(value.capability_resolutions)
+    || !Array.isArray(value.quantity_observability)
+    || !record(value.semantic_focus)
+    || !record(value.campaign_capture)
+    || value.authority !== "case_receipt_only"
+    || value.p19_authority_unchanged !== true
+    || value.setup_authorized !== false) return false;
+  const responseIds = value.response_artifacts.map((item) => (
+    record(item) ? String(item.artifact_id) : ""
+  ));
+  const expectedResponseIds = dynamics.operational_response_evidence.map(
+    (item) => item.evidence_id,
+  );
+  const responseEntries = entries.filter((entry) => (
+    entry.producer_id.startsWith("p35.response.")
+  ));
+  if (new Set(responseIds).size !== responseIds.length
+    || !sameJson([...responseIds].sort(), [...expectedResponseIds].sort())
+    || !sameJson(
+      responseEntries.map((entry) => entry.artifact_id).sort(),
+      [...responseIds].sort(),
+    )
+    || value.response_artifacts.some((item) => (
+      !record(item)
+      || item.case_id !== value.case_id
+      || item.case_revision_sha256 !== value.case_revision_sha256
+      || item.run_id !== value.run_id
+      || item.session_id !== value.session_id
+      || item.setup_id !== value.setup_id
+      || item.source_recording_sha256 !== value.recording_sha256
+      || item.authority_ceiling !== "observation_only"
+      || item.p19_support_authorized !== false
+      || item.component_support_authorized !== false
+      || item.setup_authorized !== false
+    ))) return false;
+  const admissionResponseIds = value.p19_response_admissions.map((item) => (
+    record(item) ? String(item.response_artifact_id) : ""
+  ));
+  if (new Set(admissionResponseIds).size !== admissionResponseIds.length
+    || !sameJson([...admissionResponseIds].sort(), [...responseIds].sort())
+    || value.p19_response_admissions.some((item) => (
+    !record(item)
+    || item.case_id !== value.case_id
+    || item.case_revision_sha256 !== value.case_revision_sha256
+    || !responseIds.includes(String(item.response_artifact_id))
+    || item.p19_reasoning_snapshot_sha256 !== identity.reasoning_snapshot_sha256
+    || item.reasoning_rank_modified !== false
+    || item.terminal_action_modified !== false
+    || item.setup_authorized !== false
+  ))) return false;
+  const effectIds = value.effect_readiness.map((item) => (
+    record(item) ? String(item.effect_id) : ""
+  ));
+  const hypotheses = Array.isArray(knowledge.hypotheses) ? knowledge.hypotheses : [];
+  if (effectIds.length !== hypotheses.length
+    || new Set(effectIds).size !== effectIds.length
+    || !sameJson(
+      [...effectIds].sort(),
+      hypotheses.map((item) => record(item) ? String(item.effect_id) : "").sort(),
+    )
+    || value.effect_readiness.some((item) => (
+      !record(item)
+      || !["knowledge_only", "measurement_ready", "response_evidence_ready", "p19_testable", "blocked"]
+        .includes(String(item.state))
+      || !uniqueStrings(item.response_artifact_ids)
+      || item.response_artifact_ids.some((id) => !responseIds.includes(id))
+      || (item.state === "p19_testable") !== (item.setup_authorized === true)
+    ))) return false;
+  const focus = value.semantic_focus;
+  if (focus.case_id !== value.case_id
+    || focus.case_revision_sha256 !== value.case_revision_sha256
+    || (focus.artifact_id !== null && !responseIds.includes(String(focus.artifact_id)))
+    || focus.authority !== "navigation_only") return false;
+  return value.campaign_capture.historical_count_credited === false
+    && value.campaign_capture.null_count_credited === false
+    && value.campaign_capture.negative_control_count_credited === false
+    && value.campaign_capture.subgroup_count_credited === false
+    && value.campaign_capture.authority === "qualification_only";
+}
+
 function validTypedArtifactEnvelope(value: Record<string, unknown>): boolean {
   const expectedType = performanceProducers.get(String(value.producer_id));
   const expectedDynamicsTool = vehicleDynamicsProducers.get(String(value.producer_id));
   const artifact = value.typed_artifact;
+  if (String(value.producer_id).startsWith("p35.response.")) {
+    if (!record(artifact) || !exactKeys(artifact, [
+      "artifact_type", "case_id", "case_revision_sha256", "assessment_sha256", "response",
+    ]) || artifact.artifact_type !== "engineering_response"
+      || !/^p3543case_[0-9a-f]{24}$/.test(String(artifact.case_id))
+      || typeof artifact.case_revision_sha256 !== "string"
+      || !hash.test(artifact.case_revision_sha256)
+      || typeof artifact.assessment_sha256 !== "string"
+      || !hash.test(artifact.assessment_sha256)
+      || !record(artifact.response)) return false;
+    const response = artifact.response;
+    return response.artifact_type === "engineering_response"
+      && response.artifact_id === value.artifact_id
+      && response.case_id === artifact.case_id
+      && response.case_revision_sha256 === artifact.case_revision_sha256
+      && response.run_id === value.run_id
+      && response.session_id === value.session_id
+      && response.setup_id === value.setup_id
+      && response.relation === String(value.producer_id).replace(/^p35\.response\./, "")
+      && response.lap_pct_start === value.lap_pct_start
+      && response.lap_pct_end === value.lap_pct_end
+      && response.phase === value.phase
+      && sameJson(response.source_lap_numbers, value.lap_numbers)
+      && record(response.operational_evidence)
+      && response.operational_evidence.evidence_id === value.artifact_id
+      && sameJson(response.operational_evidence.source_channels, value.source_channels)
+      && response.operational_evidence.evidence_state === value.evidence_state
+      && response.authority_ceiling === "observation_only"
+      && response.p19_support_authorized === false
+      && response.component_support_authorized === false
+      && response.setup_authorized === false;
+  }
   if (expectedType === undefined && expectedDynamicsTool === undefined) return artifact === null;
   if (!record(artifact) || typeof artifact.artifact_type !== "string") return false;
   if (expectedDynamicsTool !== undefined) {
@@ -832,6 +1018,9 @@ export function typedArtifactMatchesProjection(
   projection: PerformanceIntelligenceProjection,
   identity: Record<string, unknown>,
 ): boolean {
+  if (entry.producer_id.startsWith("p35.response.")) {
+    return entry.typed_artifact?.artifact_type === "engineering_response";
+  }
   if (entry.producer_id.startsWith("p35.")) {
     return entry.typed_artifact?.artifact_type === "vehicle_dynamics_focus";
   }
@@ -1086,7 +1275,10 @@ export function p35FocusEntriesMatchAssessment(
   report: RunIntelligenceReport,
   awareness: EngineeringAwarenessProjection,
 ): boolean {
-  const dynamicsEntries = entries.filter((entry) => entry.producer_id.startsWith("p35."));
+  const dynamicsEntries = entries.filter((entry) => (
+    entry.producer_id.startsWith("p35.")
+    && !entry.producer_id.startsWith("p35.response.")
+  ));
   if (dynamicsEntries.length !== assessment.focus_artifacts.length) return false;
   const dynamicsById = new Map(dynamicsEntries.map((entry) => [entry.artifact_id, entry]));
   if (dynamicsById.size !== dynamicsEntries.length) return false;
@@ -1320,6 +1512,7 @@ export function isCrewChiefWorkspaceResponse(
     !record(value.identity)
     || !record(value.terminal_decision)
     || !record(value.evidence_index)
+    || !record(value.engineering_case)
     || !record(value.run_sentinel)
     || !record(value.critique)
     || !record(value.adaptive_research)
@@ -1626,6 +1819,14 @@ export function isCrewChiefWorkspaceResponse(
     value.engineering_knowledge,
     value as unknown as CrewChiefWorkspace,
     scope.report.vehicle_systems ?? null,
+  )) return false;
+  if (!validCanonicalEngineeringCase(
+    value.engineering_case,
+    identity,
+    trustedEntries,
+    String(value.evidence_index.index_hash),
+    trustedDynamics,
+    value.engineering_knowledge as Record<string, unknown>,
   )) return false;
   if (
     !exactKeys(decision, [

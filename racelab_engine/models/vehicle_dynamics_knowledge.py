@@ -1522,8 +1522,12 @@ class OperationalResponseEvidence(VehicleDynamicsModel):
     evidence_id: str = Field(pattern=_ID_PATTERN)
     relation: Literal[
         "brake_to_pressure",
+        "brake_to_deceleration",
+        "brake_to_yaw",
         "brake_release_to_yaw",
         "throttle_to_acceleration",
+        "throttle_to_yaw",
+        "steering_wheel_to_yaw",
         "disturbance_to_chassis",
         "stint_migration",
     ]
@@ -1938,14 +1942,9 @@ class PerformanceMechanismAssessment(VehicleDynamicsModel):
         separation_by_mechanism = {
             row.mechanism_id: row for row in self.mechanism_separation
         }
-        relations_by_mechanism = {
-            "mechanism:brake_entry_instability": {"brake_to_pressure"},
-            "mechanism:brake_release_rotation_deficit": {"brake_release_to_yaw"},
-            "mechanism:power_on_rotation_excess": {"throttle_to_acceleration"},
-            "mechanism:power_on_rotation_deficit": {"throttle_to_acceleration"},
-            "mechanism:traction_limitation_like": {"throttle_to_acceleration"},
-            "mechanism:disturbance_compliance_issue": {"disturbance_to_chassis"},
-        }
+        from racelab_engine.knowledge.engineering_semantic_registry import (
+            response_relations_for_mechanism,
+        )
         response = self.response_observations[0] if self.response_observations else None
         for candidate in self.candidates:
             row = separation_by_mechanism[candidate.mechanism_id]
@@ -1964,7 +1963,7 @@ class PerformanceMechanismAssessment(VehicleDynamicsModel):
                     item.evidence_id
                     for item in self.operational_response_evidence
                     if item.relation
-                    in relations_by_mechanism.get(candidate.mechanism_id, set())
+                    in response_relations_for_mechanism(candidate.mechanism_id)
                 )
                 or row.discriminator_contract_ids
                 != candidate.discriminator_contract_ids

@@ -91,13 +91,18 @@ def test_dynamic_paths_project_native_lag_gain_settling_and_repeatability() -> N
         *_dynamic_operational_evidence(
             report, _opportunity(phase="initial_throttle")
         ),
+        *_dynamic_operational_evidence(report, _opportunity(phase="center")),
     )
 
     by_relation = {item.relation: item for item in evidence}
     assert set(by_relation) == {
-        "brake_to_pressure",
-        "brake_release_to_yaw",
-        "throttle_to_acceleration",
+            "brake_to_pressure",
+            "brake_to_deceleration",
+            "brake_to_yaw",
+            "brake_release_to_yaw",
+            "throttle_to_acceleration",
+            "throttle_to_yaw",
+            "steering_wheel_to_yaw",
     }
     pressure = by_relation["brake_to_pressure"]
     assert pressure.repetition_count == 2
@@ -125,9 +130,10 @@ def test_incomplete_brake_pressure_path_cannot_become_four_corner_evidence() -> 
     )
 
     assert "brake_to_pressure" not in {item.relation for item in evidence}
-    assert _dynamic_operational_evidence(
+    center = _dynamic_operational_evidence(
         analyze_dynamic(dynamic_rows()), _opportunity(phase="center")
-    ) == ()
+    )
+    assert {item.relation for item in center} == {"steering_wheel_to_yaw"}
 
 
 def test_surface_response_requires_repeated_exact_physical_event() -> None:

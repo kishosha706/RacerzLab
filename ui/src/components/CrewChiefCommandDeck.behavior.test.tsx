@@ -97,6 +97,15 @@ const workspace = () => ({
   investigation: null,
   folded_state: null,
   evidence_index: { entries: [] },
+  engineering_case: {
+    case_id: `p3543case_${"1".repeat(24)}`,
+    case_revision_sha256: "1".repeat(64),
+    response_artifacts: [],
+    p19_response_admissions: [],
+    quantity_observability: [],
+    effect_readiness: [{ state: "knowledge_only" }],
+    capability_resolutions: [],
+  },
   performance_intelligence: {
     speed_story: {
       next: "Collect three clean laps.", observed_direction: "unavailable", what_costs_time: "No clean comparison yet.",
@@ -322,6 +331,10 @@ describe("CrewChiefCommandDeck boundary states", () => {
     render(<CrewChiefCommandDeck {...props} learning />);
 
     const spine = await screen.findByLabelText("Unified Dial-In engineering knowledge");
+    const engineeringCase = screen.getByLabelText("Canonical Engineering Case");
+    expect(engineeringCase.textContent).toContain("ONE REVISION");
+    expect(engineeringCase.textContent).toContain("P19 rank unchanged");
+    expect(engineeringCase.textContent).toContain("P36 counts unchanged");
     for (const heading of [
       "Why this system is relevant",
       "What it physically changes",
@@ -336,6 +349,48 @@ describe("CrewChiefCommandDeck boundary states", () => {
     expect(spine.textContent).toContain("Changes direction-neutral front roll support.");
     expect(spine.textContent).not.toContain("proposed value");
     expect(spine.textContent).not.toContain("setup target");
+  });
+
+  it("navigates a first-class response artifact through the existing evidence focus", async () => {
+    const value = workspace() as any;
+    const artifactId = `p3542.response:${"7".repeat(24)}`;
+    const entry = {
+      artifact_id: artifactId,
+      producer_id: "p35.response.steering_wheel_to_yaw",
+      run_id: "run-1",
+      session_id: "session-1",
+      setup_id: "setup-1",
+      source_run_id: "run-1",
+      source_session_id: "session-1",
+      source_setup_id: "setup-1",
+      source_provenance_available: true,
+      lap_numbers: [3, 4],
+      lap_pct_start: 20,
+      lap_pct_end: 30,
+      phase: "center",
+      mechanism_ids: ["corner_rotation"],
+      component_ids: ["steering", "tires"],
+      control_keys: [],
+      source_channels: ["steering_deg", "yaw_rate"],
+      evidence_state: "calculated",
+      polarity: "neutral",
+      blocker_reasons: [],
+      authority_ceiling: "observation_only",
+    };
+    value.evidence_index.entries = [entry];
+    value.engineering_case.response_artifacts = [{
+      artifact_id: artifactId,
+      relation: "steering_wheel_to_yaw",
+      source_lap_numbers: [3, 4],
+      lap_pct_start: 20,
+      lap_pct_end: 30,
+    }];
+    api.fetchCrewChiefWorkspace.mockResolvedValue(value);
+    render(<CrewChiefCommandDeck {...props} learning />);
+
+    const button = await screen.findByRole("button", { name: /steering wheel to yaw/i });
+    fireEvent.click(button);
+    expect(props.onFocusEvidence).toHaveBeenCalledWith(entry);
   });
 
   it("names only the leading supported mechanism candidate in the Race secondary line", async () => {
